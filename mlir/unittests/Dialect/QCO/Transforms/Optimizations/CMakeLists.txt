@@ -21,6 +21,7 @@ target_link_libraries(
   ${target_name}
   PRIVATE GTest::gtest_main
           MLIRControlFlowDialect
+          MLIRQCODDFunctionality
           MLIRQCOProgramBuilder
           MLIRQCOTransforms
           MLIRQCOUtils

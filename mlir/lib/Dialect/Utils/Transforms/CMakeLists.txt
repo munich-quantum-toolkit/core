@@ -9,6 +9,7 @@
 add_mlir_library(
   MLIRMQTTransforms
   NormalizeGlobalPhases.cpp
+  UnrollModifiers.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/Utils/Transforms
   LINK_LIBS

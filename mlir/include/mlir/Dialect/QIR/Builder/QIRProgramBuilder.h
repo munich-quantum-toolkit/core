@@ -391,6 +391,9 @@ public:
   // Unitary Operations
   //===--------------------------------------------------------------------===//
 
+  // Calls with one or two controls use dedicated c*/cc* functions. Calls with
+  // three or more controls use the generic __ctl/__ctladj specialization.
+
   // GPhaseOp
 
   /**
@@ -545,8 +548,8 @@ public:
    * builder.OP_NAME(PARAM, q);                                                \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q, %PARAM) : (!llvm.ptr,   \
-   * f64) -> ()                                                                \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%PARAM, %q) : (f64,         \
+   * !llvm.ptr) -> ()                                                          \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM),        \
@@ -564,8 +567,8 @@ public:
    * builder.c##OP_NAME(PARAM, q0, q1);                                        \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1, %PARAM) :        \
-   * (!llvm.ptr, !llvm.ptr, f64) -> ()                                         \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%PARAM, %q0, %q1) :        \
+   * (f64, !llvm.ptr, !llvm.ptr) -> ()                                         \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),     \
@@ -583,8 +586,8 @@ public:
    * builder.mc##OP_NAME(PARAM, {q0, q1}, q2);                                 \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2, %PARAM) :  \
-   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64) -> ()                              \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%PARAM, %q0, %q1, %q2) :  \
+   * (f64, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                              \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),    \
@@ -613,8 +616,8 @@ public:
    * builder.OP_NAME(PARAM1, PARAM2, q);                                       \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q, %PARAM1, %PARAM2) :     \
-   * (!llvm.ptr, f64, f64) -> ()                                               \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%PARAM1, %PARAM2, %q) :     \
+   * (f64, f64, !llvm.ptr) -> ()                                               \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),       \
@@ -634,8 +637,8 @@ public:
    * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1);                               \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1, %PARAM1,         \
-   * %PARAM2) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()                         \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%PARAM1, %PARAM2, %q0,     \
+   * %q1) : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()                             \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
@@ -655,15 +658,15 @@ public:
    * builder.mc##OP_NAME(PARAM1, PARAM2, {q0, q1}, q2);                        \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2, %PARAM1,   \
-   * %PARAM2) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64, f64) -> ()              \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%PARAM1, %PARAM2, %q0,    \
+   * %q1, %q2) : (f64, f64, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()             \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),   \
                                  const std::variant<double, Value>&(PARAM2),   \
                                  ValueRange controls, Value target);
 
-  DECLARE_ONE_TARGET_TWO_PARAMETER(r, r, theta, phi)
+  DECLARE_ONE_TARGET_TWO_PARAMETER(r, prx, theta, phi)
   DECLARE_ONE_TARGET_TWO_PARAMETER(u2, u2, phi, lambda)
 
 #undef DECLARE_ONE_TARGET_TWO_PARAMETER
@@ -686,9 +689,8 @@ public:
    * builder.OP_NAME(PARAM1, PARAM2, PARAM3, q);                               \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q, %PARAM1, %PARAM2,       \
-   * %PARAM3) :                                                                \
-   * (!llvm.ptr, f64, f64, f64) -> ()                                          \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%PARAM1, %PARAM2, %PARAM3,  \
+   * %q) : (f64, f64, f64, !llvm.ptr) -> ()                                    \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),       \
@@ -710,8 +712,8 @@ public:
    * builder.c##OP_NAME(PARAM1, PARAM2, PARAM3, q0, q1);                       \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1, %PARAM1,         \
-   * %PARAM2, %PARAM3) : (!llvm.ptr, !llvm.ptr, f64, f64, f64) -> ()           \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%PARAM1, %PARAM2, %PARAM3, \
+   * %q0, %q1) : (f64, f64, f64, !llvm.ptr, !llvm.ptr) -> ()                   \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
@@ -733,9 +735,9 @@ public:
    * builder.mc##OP_NAME(PARAM1, PARAM2, PARAM3, {q0, q1}, q2);                \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2, %PARAM1,   \
-   * %PARAM2, %PARAM3) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64, f64, f64) ->   \
-   * ()                                                                        \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(                          \
+   * %PARAM1, %PARAM2, %PARAM3, %q0, %q1, %q2) :                               \
+   * (f64, f64, f64, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                    \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),   \
@@ -828,8 +830,8 @@ public:
    * builder.OP_NAME(PARAM, q0, q1);                                           \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q0, %q1, %PARAM) :         \
-   * (!llvm.ptr, !llvm.ptr, f64) -> ()                                         \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%PARAM, %q0, %q1) :         \
+   * (f64, !llvm.ptr, !llvm.ptr) -> ()                                         \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM),        \
@@ -848,8 +850,8 @@ public:
    * builder.c##OP_NAME(PARAM, q0, q1, q2);                                    \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1, %q2, %PARAM) :   \
-   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64) -> ()                              \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%PARAM, %q0, %q1, %q2) :   \
+   * (f64, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                              \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),     \
@@ -868,8 +870,8 @@ public:
    * builder.mc##OP_NAME(PARAM, {q0, q1}, q2, q3);                             \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2, %q3,       \
-   * %PARAM) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, f64) -> ()         \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%PARAM, %q0, %q1, %q2,    \
+   * %q3) : (f64, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()            \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),    \
@@ -900,8 +902,8 @@ public:
    * builder.OP_NAME(PARAM1, PARAM2, q0, q1);                                  \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q0, %q1, %PARAM1, %PARAM2) \
-   * : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()                                  \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%PARAM1, %PARAM2, %q0, %q1) \
+   * : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()                                  \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),       \
@@ -922,8 +924,8 @@ public:
    * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1, q2);                           \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1, %q2, %PARAM1,    \
-   * %PARAM2) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64, f64) -> ()              \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%PARAM1, %PARAM2, %q0,     \
+   * %q1, %q2) : (f64, f64, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()             \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
@@ -944,9 +946,9 @@ public:
    * builder.mc##OP_NAME(PARAM1, PARAM2, {q0, q1}, q2, q3);                    \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2, %q3,       \
-   * %PARAM1, %PARAM2) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, f64,     \
-   * f64) -> ()                                                                \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%PARAM1, %PARAM2, %q0,    \
+   * %q1, %q2, %q3) : (f64, f64, !llvm.ptr, !llvm.ptr, !llvm.ptr,              \
+   * !llvm.ptr) -> ()                                                          \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),   \

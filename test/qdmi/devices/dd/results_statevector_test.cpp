@@ -16,7 +16,6 @@
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 #include "qir/helpers/test_utils.hpp"
-#include "qir/runtime/Runtime.hpp"
 
 #include <gtest/gtest.h>
 
@@ -24,7 +23,6 @@
 #include <complex>
 #include <cstddef>
 #include <numbers>
-#include <sstream>
 #include <vector>
 
 TEST(ResultsStatevector, DenseNormalizedAndBufferTooSmall) {
@@ -109,16 +107,7 @@ TEST(ResultsStatevector, HistogramRequestsInvalidWithShotsZero) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-namespace {
-
-class QIRStateExtractionTest : public testing::Test {
-protected:
-  std::ostringstream sink;
-  void SetUp() override { qir::Runtime::getInstance().setOstream(sink); }
-  void TearDown() override { qir::Runtime::getInstance().resetOstream(); }
-};
-
-TEST_F(QIRStateExtractionTest, BellPairStaticBaseStringYieldsBellState) {
+TEST(ResultsStatevector, QIRBaseStringYieldsBellState) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   const auto program = qir_test::getProgram("BellPairStatic.ll");
@@ -138,5 +127,3 @@ TEST_F(QIRStateExtractionTest, BellPairStaticBaseStringYieldsBellState) {
   EXPECT_NEAR(std::abs(vec[2]), 0.0, 1e-6);
   EXPECT_NEAR(std::abs(vec[3]), invSqrt2, 1e-6);
 }
-
-} // namespace

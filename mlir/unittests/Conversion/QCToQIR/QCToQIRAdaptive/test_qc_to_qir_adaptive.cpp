@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -49,8 +50,8 @@ namespace {
 
 struct QCToQIRAdaptiveTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<qir::QIRProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<qir::QIRProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCToQIRAdaptiveTestCase& info);
@@ -59,10 +60,10 @@ struct QCToQIRAdaptiveTestCase {
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os,
                          const QCToQIRAdaptiveTestCase& info) {
-  return os << "QCToQIRAdaptive{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "QCToQIRAdaptive{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QCToQIRAdaptiveTest
@@ -84,6 +85,13 @@ protected:
 } // namespace
 
 static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
+  pm.addPass(mlir::mqt::createUnrollModifiers());
+  pm.addPass(createQCToQIRAdaptive());
+  return pm.run(moduleOp);
+}
+
+static LogicalResult runQCToQIRAdaptiveConversionSimple(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createQCToQIRAdaptive());
   return pm.run(moduleOp);
@@ -117,10 +125,9 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsControlledPhaseWithNonHoistableAngle) {
   builder.initialize();
   const auto control = builder.allocQubit();
   const auto target = builder.allocQubit();
-  builder.ctrl(control, target, [&](Value targetArg) {
+  builder.ctrl(control, target, [&](Value /*targetArg*/) {
     auto angle = func::CallOp::create(builder, builder.getLoc(), "angle",
                                       builder.getF64Type(), ValueRange{});
-    builder.x(targetArg);
     builder.gphase(angle.getResult(0));
   });
   auto moduleOp = builder.finalize();
@@ -188,7 +195,7 @@ TEST(QCToQIRAdaptiveNativeTest, LowersPopulationCountThroughMathToLLVM) {
   auto module = builder.finalize();
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
 
   bool retainsMathPopulationCount = false;
@@ -283,7 +290,7 @@ TEST(QCToQIRAdaptiveNativeTest, RecordsReturnedRegisterMeasurement) {
   builder.retype(result.getType());
   auto module = builder.finalize(result);
   ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
   EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(
       qir::QIR_RESULT_ARRAY_RECORD_OUTPUT));
@@ -313,7 +320,7 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementClassicalStore) {
         "only supports storing direct measurement results");
     return success();
   });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
@@ -359,7 +366,7 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsZeroStoreAfterMeasurement) {
         StringRef(message).contains("leading zero initialization");
     return success();
   });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
@@ -407,9 +414,9 @@ TEST(QCToQIRAdaptiveNativeTest, IgnoresClassicalRegisterDeallocation) {
 TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
-  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
+  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -427,8 +434,8 @@ TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference =
-      mqt::test::buildMLIRProgram(context.get(), referenceBuilder,
-                                  qir::QIRProgramBuilder::Profile::Adaptive);
+      ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder,
+                                    qir::QIRProgramBuilder::Profile::Adaptive);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -1113,6 +1120,6 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(QCToQIRCtrlOpTest, QCToQIRAdaptiveTest,
                          testing::Values(QCToQIRAdaptiveTestCase{
-                             "NestedCtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
+                             "CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
                              MQT_NAMED_BUILDER(qir::ctrlTwo<true>)}));
 /// @}

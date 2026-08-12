@@ -10,51 +10,128 @@
 
 #include "qir/jit/IRRewriter.hpp"
 
-#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallPtrSet.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/IR/Attributes.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/CFG.h>
 #include <llvm/IR/Constant.h>
+#include <llvm/IR/Dominators.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
-#include <llvm/IR/Module.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Transforms/Utils/Local.h>
 
-#include <algorithm>
-#include <cstddef>
+#include <stdexcept>
 
 namespace qir {
 
-static bool isStripTarget(const llvm::CallInst& call) {
-  const auto* callee = call.getCalledFunction();
-  if (callee == nullptr) {
-    return false;
-  }
-  const auto name = callee->getName();
-  return std::ranges::any_of(
-      STRIP_TARGETS, [&](llvm::StringRef target) { return name == target; });
+static constexpr llvm::StringLiteral TERMINAL_REGION_ERROR =
+    "QIR state extraction requires irreversible operations to form a terminal "
+    "region";
+
+static bool isIrreversible(const llvm::CallBase& call) {
+  const auto* callee = llvm::dyn_cast<llvm::Function>(
+      call.getCalledOperand()->stripPointerCasts());
+  return callee != nullptr && callee->hasFnAttribute("irreversible");
 }
 
-std::size_t stripMeasurementRelatedCalls(llvm::Module& m) {
-  std::size_t erased = 0;
-  for (auto& fn : m) {
-    for (auto& bb : fn) {
-      for (auto& inst : llvm::make_early_inc_range(bb)) {
-        auto* call = llvm::dyn_cast<llvm::CallInst>(&inst);
-        if (call == nullptr || !isStripTarget(*call)) {
-          continue;
-        }
-        // `m` and `measure` return a `Result*`.
-        // Replace uses of `m` and `measure` return values with a null before
-        // erasure so they do not dangle.
-        if (!call->getType()->isVoidTy() && !call->use_empty()) {
-          call->replaceAllUsesWith(
-              llvm::Constant::getNullValue(call->getType()));
-        }
-        call->eraseFromParent();
-        ++erased;
+static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
+  llvm::SmallPtrSet<llvm::BasicBlock*, 8> visited;
+  llvm::SmallVector<llvm::BasicBlock*, 8> pending;
+
+  auto inspect = [&](llvm::BasicBlock& block,
+                     llvm::BasicBlock::iterator begin) {
+    for (auto it = begin; it != block.end(); ++it) {
+      const auto* call = llvm::dyn_cast<llvm::CallBase>(&*it);
+      const auto* callee =
+          call == nullptr ? nullptr
+                          : llvm::dyn_cast<llvm::Function>(
+                                call->getCalledOperand()->stripPointerCasts());
+      if (callee != nullptr &&
+          callee->getName().starts_with("__quantum__qis__") &&
+          !isIrreversible(*call)) {
+        throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+      }
+    }
+
+    auto* terminator = block.getTerminator();
+    if (terminator->getNumSuccessors() > 1) {
+      throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+    }
+    for (auto* successor : llvm::successors(&block)) {
+      pending.emplace_back(successor);
+    }
+  };
+
+  auto* boundaryBlock = boundary.getParent();
+  visited.insert(boundaryBlock);
+  inspect(*boundaryBlock, boundary.getIterator());
+  while (!pending.empty()) {
+    auto* block = pending.pop_back_val();
+    if (!visited.insert(block).second) {
+      throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+    }
+    inspect(*block, block->begin());
+  }
+}
+
+bool prepareForStateExtraction(llvm::Function& entryPoint) {
+  if (!entryPoint.getReturnType()->isIntegerTy(64) || !entryPoint.arg_empty()) {
+    throw std::invalid_argument(
+        "QIR state extraction requires an i64() entry point");
+  }
+
+  const auto profile = entryPoint.getFnAttribute("qir_profiles");
+  if (!profile.isStringAttribute() ||
+      profile.getValueAsString() != "base_profile") {
+    throw std::invalid_argument(
+        "QIR state extraction requires a Base Profile entry point");
+  }
+
+  llvm::SmallVector<llvm::CallInst*, 8> irreversibleCalls;
+  for (auto& block : entryPoint) {
+    for (auto& instruction : block) {
+      auto* call = llvm::dyn_cast<llvm::CallInst>(&instruction);
+      if (call != nullptr && isIrreversible(*call)) {
+        irreversibleCalls.emplace_back(call);
       }
     }
   }
-  return erased;
+  if (irreversibleCalls.empty()) {
+    return false;
+  }
+
+  const llvm::DominatorTree dominators(entryPoint);
+  llvm::CallInst* boundary = nullptr;
+  for (auto* candidate : irreversibleCalls) {
+    bool dominatesAll = true;
+    for (auto* call : irreversibleCalls) {
+      if (candidate != call && !dominators.dominates(candidate, call)) {
+        dominatesAll = false;
+        break;
+      }
+    }
+    if (dominatesAll) {
+      boundary = candidate;
+      break;
+    }
+  }
+  if (boundary == nullptr) {
+    throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+  }
+
+  requireTerminalIrreversibleRegion(*boundary);
+  auto* prefix = boundary->getParent();
+  prefix->splitBasicBlock(boundary, "state-extraction.discarded");
+  auto* oldTerminator = prefix->getTerminator();
+  llvm::IRBuilder<> builder(oldTerminator);
+  builder.CreateRet(llvm::Constant::getNullValue(entryPoint.getReturnType()));
+  oldTerminator->eraseFromParent();
+  llvm::removeUnreachableBlocks(entryPoint);
+  return true;
 }
 
 } // namespace qir
