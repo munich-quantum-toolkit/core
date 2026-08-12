@@ -180,6 +180,10 @@ class Job:
     def num_shots(self) -> int:
         """The number of shots."""
 
+    @property
+    def queue_position(self) -> int | None:
+        """The number of jobs ahead in the queue, or None if unavailable or not applicable in the current state."""
+
     def __eq__(self, arg: object, /) -> bool: ...
     def __ne__(self, arg: object, /) -> bool: ...
 
@@ -297,6 +301,9 @@ class Device:
     def needs_calibration(self) -> int | None:
         """Returns whether the device needs calibration."""
 
+    def queue_length(self) -> int | None:
+        """Returns the current queue length, or None if unavailable."""
+
     def length_unit(self) -> str | None:
         """Returns the unit of length used by the device."""
 
@@ -368,6 +375,9 @@ class Device:
         custom5: str | bool | float | None = None,
     ) -> Job:
         """Submits an exact byte payload to the device."""
+
+    def retrieve_job_by_id(self, job_id: str) -> Job:
+        """Retrieves an existing job by its device-provided ID."""
 
     def __eq__(self, arg: object, /) -> bool: ...
     def __ne__(self, arg: object, /) -> bool: ...

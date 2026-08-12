@@ -21,12 +21,14 @@
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
+#include <llvm/ADT/APInt.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -71,9 +73,6 @@ struct TranslationState {
 
   /// Mapping from global bit index to (memref, internal index)
   BitIndexVec bitMap;
-
-  /// Classical bits known to have been measured on every current path
-  DenseSet<size_t> measuredBits;
 
   /// Whether the translation is currently within a control modifier
   bool inCtrlOp = false;
@@ -140,8 +139,8 @@ allocateQregs(QCProgramBuilder& builder,
   // Allocate quantum registers using the builder
   SmallVector<QregInfo> qregs;
   for (const auto* qregPtr : qregPtrs) {
-    auto qubitRegister =
-        builder.allocQubitRegister(static_cast<int64_t>(qregPtr->getSize()));
+    auto qubitRegister = builder.allocQubitRegister(
+        static_cast<int64_t>(qregPtr->getSize()), qregPtr->getName());
     qregs.emplace_back(qregPtr, std::move(qubitRegister.qubits));
   }
 
@@ -247,7 +246,6 @@ static void addMeasureOp(QCProgramBuilder& builder,
     const auto bitIdx = static_cast<size_t>(classics[i]);
     const auto& [memref, localIdx] = state.bitMap[bitIdx];
     builder.measure(qubit, memref, static_cast<int64_t>(localIdx));
-    state.measuredBits.insert(bitIdx);
   }
 }
 
@@ -679,61 +677,89 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
                                  TranslationState& state) {
   const auto& ifElse = dynamic_cast<const ::qc::IfElseOperation&>(operation);
 
-  if (ifElse.getControlRegister().has_value()) {
-    llvm::errs() << "IfElseOperations controlled by registers cannot be "
-                    "translated to QC at the moment\n";
-    return failure();
-  }
-
-  assert(ifElse.getControlBit().has_value());
-  const auto bitIdx = static_cast<size_t>(*ifElse.getControlBit());
-  if (!state.measuredBits.contains(bitIdx)) {
-    llvm::errs() << "Control bit does not contain a measurement result\n";
-    return failure();
-  }
-  const auto& [regMemref, localIdx] = state.bitMap[bitIdx];
-  auto index =
-      arith::ConstantIndexOp::create(builder, static_cast<int64_t>(localIdx))
-          .getResult();
-  auto controlValue =
-      memref::LoadOp::create(builder, regMemref, index).getResult();
-  auto expectedValue = builder.boolConstant(ifElse.getExpectedValueBit());
-
-  // Define comparison predicate
   const auto comparisonKind = ifElse.getComparisonKind();
-  auto predicate = arith::CmpIPredicate::eq;
-  switch (comparisonKind) {
-  case ::qc::ComparisonKind::Eq:
-    predicate = arith::CmpIPredicate::eq;
-    break;
-  case ::qc::ComparisonKind::Neq:
-    predicate = arith::CmpIPredicate::ne;
-    break;
-  default:
-    llvm::errs() << "Unsupported comparison kind in IfElseOperation\n";
-    return failure();
+  auto predicate = [&] {
+    switch (comparisonKind) {
+    case ::qc::ComparisonKind::Eq:
+      return arith::CmpIPredicate::eq;
+    case ::qc::ComparisonKind::Neq:
+      return arith::CmpIPredicate::ne;
+    case ::qc::ComparisonKind::Lt:
+      return arith::CmpIPredicate::ult;
+    case ::qc::ComparisonKind::Leq:
+      return arith::CmpIPredicate::ule;
+    case ::qc::ComparisonKind::Gt:
+      return arith::CmpIPredicate::ugt;
+    case ::qc::ComparisonKind::Geq:
+      return arith::CmpIPredicate::uge;
+    }
+    llvm_unreachable("unknown comparison kind");
+  }();
+
+  Value controlValue;
+  Value expectedValue;
+  if (const auto& controlRegister = ifElse.getControlRegister();
+      controlRegister.has_value()) {
+    assert(!ifElse.getControlBit().has_value());
+    const auto registerWidth =
+        static_cast<unsigned>(std::max<size_t>(64, controlRegister->getSize()));
+    const auto registerType = builder.getIntegerType(registerWidth);
+    for (size_t bit = 0; bit < controlRegister->getSize(); ++bit) {
+      const auto globalIdx =
+          static_cast<size_t>(controlRegister->getStartIndex()) + bit;
+      const auto& [regMemref, localIdx] = state.bitMap[globalIdx];
+      auto index = arith::ConstantIndexOp::create(
+          builder, static_cast<int64_t>(localIdx));
+      auto loaded =
+          memref::LoadOp::create(builder, regMemref, index.getResult())
+              .getResult();
+      Value extended =
+          arith::ExtUIOp::create(builder, registerType, loaded).getResult();
+      if (bit != 0) {
+        auto shift = arith::ConstantIntOp::create(
+            builder, static_cast<int64_t>(bit), registerWidth);
+        extended = arith::ShLIOp::create(builder, extended, shift).getResult();
+      }
+      controlValue = controlValue
+                         ? arith::OrIOp::create(builder, controlValue, extended)
+                               .getResult()
+                         : extended;
+    }
+    expectedValue =
+        arith::ConstantOp::create(
+            builder,
+            IntegerAttr::get(
+                registerType,
+                APInt(registerWidth, ifElse.getExpectedValueRegister(), false)))
+            .getResult();
+  } else {
+    assert(ifElse.getControlBit().has_value());
+    if (comparisonKind != ::qc::ComparisonKind::Eq &&
+        comparisonKind != ::qc::ComparisonKind::Neq) {
+      llvm::errs() << "Unsupported comparison kind in IfElseOperation\n";
+      return failure();
+    }
+    const auto bitIdx = static_cast<size_t>(*ifElse.getControlBit());
+    const auto& [regMemref, localIdx] = state.bitMap[bitIdx];
+    auto index =
+        arith::ConstantIndexOp::create(builder, static_cast<int64_t>(localIdx));
+    controlValue = memref::LoadOp::create(builder, regMemref, index.getResult())
+                       .getResult();
+    expectedValue = builder.boolConstant(ifElse.getExpectedValueBit());
   }
 
-  // Define condition
   auto condition =
       arith::CmpIOp::create(builder, predicate, controlValue, expectedValue);
 
   // Define if-else operation
   auto thenResult = success();
-  const auto measuredBefore = state.measuredBits;
-  DenseSet<size_t> measuredAfterThen;
   auto thenBuilder = [&] {
     thenResult = translateOperation(builder, *ifElse.getThenOp(), state);
-    measuredAfterThen = state.measuredBits;
-    state.measuredBits = measuredBefore;
   };
 
   auto elseResult = success();
-  DenseSet<size_t> measuredAfterElse;
   auto elseBuilder = [&] {
     elseResult = translateOperation(builder, *ifElse.getElseOp(), state);
-    measuredAfterElse = state.measuredBits;
-    state.measuredBits = measuredBefore;
   };
 
   if (ifElse.getElseOp() != nullptr) {
@@ -749,13 +775,6 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
   if (failed(elseResult)) {
     llvm::errs() << "Failed to translate else branch of IfElseOperation\n";
     return failure();
-  }
-  if (ifElse.getElseOp() != nullptr) {
-    for (const auto bit : measuredAfterThen) {
-      if (measuredAfterElse.contains(bit)) {
-        state.measuredBits.insert(bit);
-      }
-    }
   }
 
   return success();
@@ -890,7 +909,8 @@ translateOperations(QCProgramBuilder& builder,
 OwningOpRef<ModuleOp> translateQuantumComputationToQC(
     MLIRContext* context, const ::qc::QuantumComputation& quantumComputation) {
   // Create and initialize the builder (creates module and main function)
-  QCProgramBuilder builder(context);
+  QCProgramBuilder builder(
+      context, QCProgramBuilder::ClassicalRegisterInitialization::Zero);
   builder.initialize();
 
   // Allocate quantum registers using the builder

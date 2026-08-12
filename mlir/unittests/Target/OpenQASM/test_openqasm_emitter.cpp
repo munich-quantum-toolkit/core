@@ -1256,6 +1256,70 @@ if (c == 1) x q[0];
   EXPECT_EQ(conditionals, 2);
 }
 
+TEST(OpenQASMTargetTest, ZeroInitializesUnmeasuredOpenQASM2Registers) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[2];
+if (c == 0) x q[0];
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  PassManager canonicalizer(&context);
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
+
+  const auto returned = returnedBitValues(*moduleOp);
+  ASSERT_EQ(returned.size(), 2);
+  for (const auto value : returned) {
+    const auto constant = evaluateConstantInteger(value);
+    ASSERT_TRUE(constant);
+    EXPECT_TRUE(constant->isZero());
+  }
+  size_t conditionals = 0;
+  size_t xGates = 0;
+  moduleOp->walk([&](scf::IfOp) { ++conditionals; });
+  moduleOp->walk([&](qc::XOp) { ++xGates; });
+  // The register equality and source branch retain their structured form;
+  // the initialized storage provides their runtime value.
+  EXPECT_EQ(conditionals, 2);
+  EXPECT_EQ(xGates, 1);
+}
+
+TEST(OpenQASMTargetTest, ZeroInitializesUntouchedOpenQASM2RegisterBits) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[2];
+h q[0];
+measure q[0] -> c[0];
+if (c == 1) x q[0];
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  PassManager canonicalizer(&context);
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
+
+  const auto returned = returnedBitValues(*moduleOp);
+  ASSERT_EQ(returned.size(), 2);
+  const auto untouchedBit = evaluateConstantInteger(returned[1]);
+  ASSERT_TRUE(untouchedBit);
+  EXPECT_TRUE(untouchedBit->isZero());
+
+  size_t conditionals = 0;
+  moduleOp->walk([&](scf::IfOp) { ++conditionals; });
+  EXPECT_GT(conditionals, 0);
+}
+
 TEST(OpenQASMTargetTest, SelectsFloatingPowForNegativeSignedExponent) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;

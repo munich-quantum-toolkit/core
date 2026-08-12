@@ -275,6 +275,10 @@ std::optional<size_t> Device::getNeedsCalibration() const {
       QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
 }
 
+std::optional<size_t> Device::getQueueLength() const {
+  return queryProperty<std::optional<size_t>>(QDMI_DEVICE_PROPERTY_QUEUELENGTH);
+}
+
 std::optional<std::string> Device::getLengthUnit() const {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_LENGTHUNIT);
@@ -407,6 +411,15 @@ Job Device::submitJob(const std::span<const std::byte> program,
   return jobWrapper;
 }
 
+Job Device::retrieveJobById(const std::string_view jobId) const {
+  const std::string id{jobId};
+  QDMI_Job job = nullptr;
+  qdmi::throwIfError(
+      QDMI_session_retrieve_job_by_id(device_.get(), id.c_str(), &job),
+      "Retrieving job");
+  return Job{job, device_};
+}
+
 void Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
                                const CustomJobParameter& value) {
   std::visit(
@@ -522,6 +535,14 @@ size_t Job::getNumShots() const {
                               sizeof(numShots), &numShots, nullptr),
       "Querying number of shots");
   return numShots;
+}
+
+std::optional<size_t> Job::getQueuePosition() const {
+  size_t queuePosition = 0;
+  const auto result =
+      QDMI_job_query_property(job_.get(), QDMI_JOB_PROPERTY_QUEUEPOSITION,
+                              sizeof(queuePosition), &queuePosition, nullptr);
+  return detail::queuePositionFromResult(result, queuePosition);
 }
 
 std::vector<std::string> Job::getShots() const {
