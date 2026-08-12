@@ -590,6 +590,322 @@ ratio = 2.0;
   EXPECT_TRUE(QCProgram::fromQASMString(emitted->source()));
 }
 
+TEST(OpenQASMCompilerOutputTest, AngleInterfacesRoundTripThroughQCO) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+input float theta;
+output angle[8] result;
+output uint population;
+result = rotl(angle[8](theta), 1);
+population = popcount(result);
+qubit q;
+rz(result) q;
+)qasm";
+
+  auto qc = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  auto restoredQC = std::move(*qco).intoQC();
+  ASSERT_TRUE(restoredQC);
+
+  auto emitted = restoredQC->toOpenQASM3();
+  ASSERT_TRUE(emitted);
+  EXPECT_NE(emitted->source().find("input float theta;"), std::string::npos);
+  EXPECT_NE(emitted->source().find("output angle[8] result;"),
+            std::string::npos);
+  EXPECT_NE(emitted->source().find("output uint[64] population;"),
+            std::string::npos);
+  EXPECT_NE(emitted->source().find("popcount(rotl("), std::string::npos);
+  EXPECT_TRUE(QCProgram::fromQASMString(emitted->source()));
+
+  for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+    auto input = restoredQC->copy();
+    EXPECT_FALSE(std::move(input).intoQIR(profile));
+  }
+
+  constexpr llvm::StringLiteral machineWidthSource = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+input float theta;
+qubit q;
+rz(theta) q;
+)qasm";
+  auto machineWidth = QCProgram::fromQASMString(machineWidthSource.str());
+  ASSERT_TRUE(machineWidth);
+  for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+    auto input = machineWidth->copy();
+    EXPECT_FALSE(std::move(input).intoQIR(profile));
+  }
+
+  constexpr llvm::StringLiteral scalarOutputSource = R"qasm(
+OPENQASM 3.1;
+output angle[8] theta;
+theta = angle[8](1.0);
+)qasm";
+  auto scalarOutput = QCProgram::fromQASMString(scalarOutputSource.str());
+  ASSERT_TRUE(scalarOutput);
+  for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+    auto input = scalarOutput->copy();
+    EXPECT_FALSE(std::move(input).intoQIR(profile));
+  }
+
+  constexpr llvm::StringLiteral nullarySource = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+rz(angle[64](1.0)) q;
+)qasm";
+  auto nullary = QCProgram::fromQASMString(nullarySource.str());
+  ASSERT_TRUE(nullary);
+  for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+    auto input = nullary->copy();
+    auto qir = std::move(input).intoQIR(profile);
+    ASSERT_TRUE(qir);
+    const auto llvmIR = qir->llvmIR();
+    ASSERT_TRUE(llvmIR);
+    EXPECT_NE(llvmIR->find("define i64 @main()"), std::string::npos);
+    EXPECT_NE(llvmIR->find("!\"qir_major_version\", i32 2"), std::string::npos);
+    EXPECT_NE(llvmIR->find("!\"qir_minor_version\", i32 0"), std::string::npos);
+    EXPECT_NE(llvmIR->find("__quantum__qis__rz__body"), std::string::npos);
+    const auto* const expectedDynamicQubits =
+        profile == QIRProfile::Adaptive
+            ? "!\"dynamic_qubit_management\", i1 true"
+            : "!\"dynamic_qubit_management\", i1 false";
+    EXPECT_NE(llvmIR->find(expectedDynamicQubits), std::string::npos);
+    EXPECT_NE(llvmIR->find("!\"dynamic_result_management\", i1 false"),
+              std::string::npos);
+    if (profile == QIRProfile::Adaptive) {
+      EXPECT_NE(llvmIR->find("!\"backwards_branching\", i2 0"),
+                std::string::npos);
+      EXPECT_NE(llvmIR->find("!\"arrays\", i1 false"), std::string::npos);
+    } else {
+      EXPECT_EQ(llvmIR->find("uitofp"), std::string::npos) << *llvmIR;
+      EXPECT_EQ(llvmIR->find("fmul"), std::string::npos) << *llvmIR;
+      EXPECT_EQ(llvmIR->find("!\"int_computations\""), std::string::npos);
+      EXPECT_EQ(llvmIR->find("!\"float_computations\""), std::string::npos);
+    }
+  }
+
+  constexpr llvm::StringLiteral dynamicAngleSource = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+for uint i in [0:1] {
+  rz(angle[8](bit[8](uint[8](i)))) q;
+}
+)qasm";
+  auto dynamicAngle = QCProgram::fromQASMString(dynamicAngleSource.str());
+  ASSERT_TRUE(dynamicAngle);
+  EXPECT_FALSE(std::move(*dynamicAngle).intoQIR(QIRProfile::Adaptive));
+
+  constexpr llvm::StringLiteral dynamicFloatAngleSource = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+for uint i in [0:1] {
+  rz(angle[8](float[64](i))) q;
+}
+)qasm";
+  auto dynamicFloatAngle =
+      QCProgram::fromQASMString(dynamicFloatAngleSource.str());
+  ASSERT_TRUE(dynamicFloatAngle);
+  EXPECT_FALSE(std::move(*dynamicFloatAngle).intoQIR(QIRProfile::Adaptive));
+
+  constexpr llvm::StringLiteral dynamicAngleArithmeticSource = R"qasm(
+OPENQASM 3.1;
+qubit[8] q;
+output bit[8] measured;
+measured = measure q;
+angle[8] value = angle[8](measured);
+value += value;
+if (bool(value[0])) {
+  x q[0];
+}
+)qasm";
+  auto dynamicAngleArithmetic =
+      QCProgram::fromQASMString(dynamicAngleArithmeticSource.str());
+  ASSERT_TRUE(dynamicAngleArithmetic);
+  EXPECT_FALSE(
+      std::move(*dynamicAngleArithmetic).intoQIR(QIRProfile::Adaptive));
+
+  constexpr llvm::StringLiteral dynamicAngleNarrowingSource = R"qasm(
+OPENQASM 3.1;
+qubit[8] q;
+output bit[8] measured;
+measured = measure q;
+angle[8] wide = angle[8](measured);
+angle[4] narrow = wide;
+if (bool(narrow[0])) {
+  x q[0];
+}
+)qasm";
+  auto dynamicAngleNarrowing =
+      QCProgram::fromQASMString(dynamicAngleNarrowingSource.str());
+  ASSERT_TRUE(dynamicAngleNarrowing);
+  EXPECT_FALSE(std::move(*dynamicAngleNarrowing).intoQIR(QIRProfile::Adaptive));
+
+  constexpr llvm::StringLiteral dynamicAngleDivisionSource = R"qasm(
+OPENQASM 3.1;
+qubit[8] q0;
+qubit[8] q1;
+output bit[8] numerator_bits;
+numerator_bits = measure q0;
+bit[8] denominator_bits = measure q1;
+angle[8] numerator = angle[8](numerator_bits);
+angle[8] denominator = angle[8](denominator_bits);
+uint[8] quotient = numerator / denominator;
+if (quotient == uint[8](1)) {
+  x q0[0];
+}
+)qasm";
+  auto dynamicAngleDivision =
+      QCProgram::fromQASMString(dynamicAngleDivisionSource.str());
+  ASSERT_TRUE(dynamicAngleDivision);
+  auto baseDivision = dynamicAngleDivision->copy();
+  EXPECT_FALSE(std::move(baseDivision).intoQIR(QIRProfile::Base));
+  auto adaptiveDivision =
+      std::move(*dynamicAngleDivision).intoQIR(QIRProfile::Adaptive);
+  ASSERT_TRUE(adaptiveDivision);
+  const auto divisionIR = adaptiveDivision->llvmIR();
+  ASSERT_TRUE(divisionIR);
+  EXPECT_NE(divisionIR->find("udiv"), std::string::npos) << *divisionIR;
+  EXPECT_EQ(divisionIR->find("@puts"), std::string::npos) << *divisionIR;
+  EXPECT_EQ(divisionIR->find("@abort"), std::string::npos) << *divisionIR;
+}
+
+TEST(OpenQASMCompilerOutputTest,
+     PreservesAngleOperandsThroughQCQCOQCRoundTrip) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[8] theta;
+output bool lt_pi;
+output uint[8] ratio;
+lt_pi = theta < angle[8](pi);
+ratio = theta / angle[8](pi);
+)qasm";
+
+  auto qc = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  auto restoredQC = std::move(*qco).intoQC();
+  ASSERT_TRUE(restoredQC);
+  auto emitted = restoredQC->toOpenQASM3();
+  ASSERT_TRUE(emitted);
+  constexpr std::string_view exactHalfTurn = "angle[8](bit[8](uint[8](128)))";
+  const auto firstHalfTurn = emitted->source().find(exactHalfTurn);
+  ASSERT_NE(firstHalfTurn, std::string::npos) << emitted->source();
+  EXPECT_NE(emitted->source().find(exactHalfTurn,
+                                   firstHalfTurn + exactHalfTurn.size()),
+            std::string::npos)
+      << emitted->source();
+  EXPECT_TRUE(QCProgram::fromQASMString(emitted->source()));
+}
+
+TEST(OpenQASMCompilerOutputTest,
+     PreservesAngleBitPatternCastsThroughQCQCOQCRoundTrip) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[8] theta;
+input uint[8] raw;
+output uint[8] bits;
+output angle[8] recovered;
+output angle[8] shifted;
+output bool below_raw;
+bits = uint[8](bit[8](theta));
+recovered = angle[8](bit[8](raw));
+shifted = angle[8](bit[8](raw)) + angle[8](pi / 4.0);
+below_raw = uint[8](bit[8](theta)) < raw;
+)qasm";
+
+  auto qc = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  auto restoredQC = std::move(*qco).intoQC();
+  ASSERT_TRUE(restoredQC);
+  auto emitted = restoredQC->toOpenQASM3();
+  ASSERT_TRUE(emitted);
+  EXPECT_NE(emitted->source().find("bits = uint[8](bit[8](theta));"),
+            std::string::npos)
+      << emitted->source();
+  EXPECT_NE(emitted->source().find("recovered = angle[8](bit[8](raw));"),
+            std::string::npos)
+      << emitted->source();
+  EXPECT_NE(emitted->source().find("angle[8](bit[8](raw)) + "
+                                   "angle[8](bit[8](uint[8](32)))"),
+            std::string::npos)
+      << emitted->source();
+  EXPECT_NE(emitted->source().find(
+                "uint[64](uint[8](bit[8](theta))) < uint[64](raw)"),
+            std::string::npos)
+      << emitted->source();
+  EXPECT_TRUE(QCProgram::fromQASMString(emitted->source()));
+}
+
+TEST(OpenQASMCompilerOutputTest,
+     PreservesCompoundAngleDivisionBitPatternThroughRoundTrip) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[8] rhs;
+output angle[8] value;
+value = angle[8](1.0);
+value /= rhs;
+value += angle[8](pi / 4.0);
+)qasm";
+
+  auto qc = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  auto restoredQC = std::move(*qco).intoQC();
+  ASSERT_TRUE(restoredQC);
+  auto emitted = restoredQC->toOpenQASM3();
+  ASSERT_TRUE(emitted);
+  EXPECT_NE(emitted->source().find("angle[8](bit[8](uint[8]("),
+            std::string::npos)
+      << emitted->source();
+  EXPECT_TRUE(QCProgram::fromQASMString(emitted->source()))
+      << emitted->source();
+}
+
+TEST(OpenQASMCompilerOutputTest,
+     PreservesAngleBitRegistersThroughQCQCOQCRoundTrip) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[8] source;
+qubit[8] q;
+bit[8] measured = measure q;
+output angle[8] packed;
+packed = angle[8](measured);
+output bit[8] bits;
+bits = bit[8](source);
+output bit selected;
+selected = source[5];
+)qasm";
+
+  auto qc = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  auto restoredQC = std::move(*qco).intoQC();
+  ASSERT_TRUE(restoredQC);
+  auto emitted = restoredQC->toOpenQASM3();
+  ASSERT_TRUE(emitted);
+  EXPECT_NE(emitted->source().find("bits[5] = source[5];"), std::string::npos)
+      << emitted->source();
+  EXPECT_NE(emitted->source().find("selected[0] = source[5];"),
+            std::string::npos)
+      << emitted->source();
+  EXPECT_NE(emitted->source().find("packed = angle[8](bit[8]("),
+            std::string::npos)
+      << emitted->source();
+  EXPECT_TRUE(QCProgram::fromQASMString(emitted->source()))
+      << emitted->source();
+}
+
 TEST(OpenQASMCompilerOutputTest, GlobalPhasesTraverseQCQCOJeffAndQIRScopes) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
@@ -680,6 +996,11 @@ TEST_P(OpenQASMCompilerPipelineTest, TraversesTheExplicitStandardPipeline) {
   std::vector<std::string> resultTypes;
   ASSERT_TRUE(throughOptimizedQCO(source, restoredQC, resultTypes));
   auto qir = std::move(*restoredQC).intoQIR(QIRProfile::Adaptive);
+  if (!source.supportsAdaptiveQIR) {
+    EXPECT_FALSE(qir) << source.name.str()
+                      << ": unexpectedly reached frozen QIR 2.1 Adaptive";
+    return;
+  }
   ASSERT_TRUE(qir) << source.name.str() << ": QC to Adaptive QIR";
   expectQIRArtifacts(*qir, source.name, resultTypes,
                      OutputRecordingShape::AdaptiveArrays);
@@ -693,6 +1014,11 @@ TEST_P(OpenQASMCompilerPipelineTest, TraversesTheDefaultAdaptivePipeline) {
   ASSERT_TRUE(inputEntry) << source.name.str() << ": inspect QC entry";
   auto output = runDefaultPipeline(CompilerInput{std::move(*input)},
                                    ProgramFormat::QIRAdaptive);
+  if (!source.supportsAdaptiveQIR) {
+    EXPECT_FALSE(output) << source.name.str()
+                         << ": unexpectedly reached frozen QIR 2.1 Adaptive";
+    return;
+  }
   ASSERT_TRUE(output) << source.name.str() << ": default Adaptive pipeline";
   auto* qir = std::get_if<QIRProgram>(&*output);
   ASSERT_NE(qir, nullptr) << source.name.str() << ": default output format";
@@ -1065,6 +1391,100 @@ cx q[0], q[2];
   EXPECT_NE(loopProgram->str().find("scf.for"), std::string::npos);
   EXPECT_TRUE(loopProgram->unrollQuantumLoops());
   EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineTest, QCOProgramQuantizesGateAnglesExplicitly) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+rz(0.371) q;
+rz(0.172) q;
+output bit result;
+result = measure q;
+)qasm";
+  auto qc = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+
+  auto textual = qco->copy();
+  ASSERT_TRUE(
+      textual.runPassPipeline("quantize-gate-angles{precision-bits=8}"));
+  EXPECT_NE(textual.str().find("i8"), std::string::npos);
+  EXPECT_FALSE(qco->quantizeGateAngles(0));
+  EXPECT_FALSE(qco->quantizeGateAngles(65));
+  ASSERT_TRUE(qco->quantizeGateAngles(8));
+  const auto widthEight = qco->str();
+  EXPECT_NE(widthEight.find("i8"), std::string::npos);
+  EXPECT_TRUE(qco->quantizeGateAngles(8));
+  EXPECT_EQ(qco->str(), widthEight);
+  EXPECT_TRUE(qco->quantizeGateAngles(53));
+  EXPECT_NE(qco->str(), widthEight);
+
+  auto emitted = runDefaultPipeline(
+      CompilerInput{OpenQASMProgram(source.str())}, ProgramFormat::OpenQASM3,
+      nullptr, "quantize-gate-angles{precision-bits=8}");
+  ASSERT_TRUE(emitted);
+  const auto* openQASM = std::get_if<OpenQASMProgram>(&*emitted);
+  ASSERT_NE(openQASM, nullptr);
+  EXPECT_NE(openQASM->source().find("angle[8](bit[8](uint[8](22)))"),
+            std::string::npos)
+      << openQASM->source();
+}
+
+TEST_F(CompilerPipelineTest, FinalGateQuantizationSurvivesCleanup) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+U(0.371, 0.0, 0.0) q;
+gphase(-331.099188042606);
+gphase(0.1);
+output bit result;
+result = measure q;
+)qasm";
+  auto qc = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->quantizeGateAngles(64));
+  ASSERT_TRUE(qco->cleanup());
+  auto restored = std::move(*qco).intoQC();
+  ASSERT_TRUE(restored);
+  const auto openQASM = restored->toOpenQASM3();
+  ASSERT_TRUE(openQASM);
+  EXPECT_EQ(llvm::StringRef(openQASM->source()).count("angle[64]("), 6U)
+      << openQASM->source();
+  EXPECT_NE(openQASM->source().find("5606474087937741380"), std::string::npos)
+      << openQASM->source();
+  EXPECT_TRUE(QCProgram::fromQASMString(openQASM->source()))
+      << openQASM->source();
+}
+
+TEST_F(CompilerPipelineTest, QuantizedConstantsLowerToBothQIRProfiles) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+rx(0.371) q;
+)qasm";
+  for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+    auto qc = QCProgram::fromQASMString(source.str());
+    ASSERT_TRUE(qc);
+    auto qco = std::move(*qc).intoQCO();
+    ASSERT_TRUE(qco);
+    ASSERT_TRUE(qco->quantizeGateAngles(8));
+    auto restored = std::move(*qco).intoQC();
+    ASSERT_TRUE(restored);
+    auto qir = std::move(*restored).intoQIR(profile);
+    ASSERT_TRUE(qir);
+    const auto llvmIR = qir->llvmIR();
+    ASSERT_TRUE(llvmIR);
+    EXPECT_EQ(llvmIR->find("uitofp"), std::string::npos) << *llvmIR;
+    EXPECT_EQ(llvmIR->find("fmul"), std::string::npos) << *llvmIR;
+    EXPECT_NE(llvmIR->find("__quantum__qis__rx__body"), std::string::npos);
+  }
 }
 
 /**

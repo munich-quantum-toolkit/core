@@ -17,6 +17,7 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
+#include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -218,6 +219,48 @@ TEST_F(QIRTest, BaseBuilderUsesGenericSpecializationForThreeControls) {
       ArrayAttr::get(context.get(),
                      {StringAttr::get(context.get(), "qir_profiles"),
                       StringAttr::get(context.get(), "base_profile")})));
+}
+
+TEST_F(QIRTest, UsesQIR21ModuleFlagWidths) {
+  const auto build = [&](const QIRProgramBuilder::Profile profile) {
+    return QIRProgramBuilder::build(
+        context.get(),
+        [](QIRProgramBuilder& builder) { return builder.intConstant(0); },
+        profile);
+  };
+  const auto findFlag = [](ModuleOp module, const StringRef name) {
+    LLVM::ModuleFlagAttr result;
+    module->walk([&](LLVM::ModuleFlagsOp flagsOp) {
+      for (const auto flag :
+           flagsOp.getFlags().getAsRange<LLVM::ModuleFlagAttr>()) {
+        if (flag.getKey().getValue() == name) {
+          result = flag;
+        }
+      }
+    });
+    return result;
+  };
+
+  auto base = build(QIRProgramBuilder::Profile::Base);
+  ASSERT_TRUE(base);
+  const auto baseDynamicQubits =
+      findFlag(base.get(), "dynamic_qubit_management");
+  ASSERT_TRUE(baseDynamicQubits);
+  EXPECT_TRUE(isa<BoolAttr>(baseDynamicQubits.getValue()));
+  EXPECT_FALSE(findFlag(base.get(), "backwards_branching"));
+
+  auto adaptive = build(QIRProgramBuilder::Profile::Adaptive);
+  ASSERT_TRUE(adaptive);
+  const auto backwardsBranching =
+      findFlag(adaptive.get(), "backwards_branching");
+  ASSERT_TRUE(backwardsBranching);
+  const auto backwardsBranchingValue =
+      dyn_cast<IntegerAttr>(backwardsBranching.getValue());
+  ASSERT_TRUE(backwardsBranchingValue);
+  EXPECT_EQ(backwardsBranchingValue.getType().getIntOrFloatBitWidth(), 2U);
+  const auto arrays = findFlag(adaptive.get(), "arrays");
+  ASSERT_TRUE(arrays);
+  EXPECT_TRUE(isa<BoolAttr>(arrays.getValue()));
 }
 
 /// \name QIR/Operations/StandardGates/DcxOp.cpp

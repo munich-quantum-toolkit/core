@@ -21,7 +21,9 @@
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/Utils/AngleConversion.h"
 #include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "qdmi/driver/Driver.hpp"
@@ -524,30 +526,42 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat != OutputFormat::QCImport &&
       *parsedOutputFormat != OutputFormat::QCO) {
-    if (failed(runPasses([&](OpPassManager& pm) {
-          if (compilerTarget) {
+    if (compilerTarget) {
+      if (failed(runPasses([&](OpPassManager& pm) {
             populateTargetCompilationPipeline(pm, *compilerTarget);
             return success();
-          }
-          populateQCOCleanupPipeline(pm);
-          if (passPipeline.hasAnyOccurrences()) {
-            if (failed(passPipeline.addToPipeline(pm, [](const Twine& message) {
-                  llvm::errs() << message << "\n";
-                  return failure();
-                }))) {
-              return failure();
+          }))) {
+        return 1;
+      }
+    } else {
+      if (failed(runPasses([](OpPassManager& pm) {
+            populateQCOCleanupPipeline(pm);
+            return success();
+          })) ||
+          failed(runPasses([&](OpPassManager& pm) {
+            if (passPipeline.hasAnyOccurrences()) {
+              return passPipeline.addToPipeline(pm, [](const Twine& message) {
+                llvm::errs() << message << "\n";
+                return failure();
+              });
             }
-          } else {
             if (enableDecomposeMultiControlled) {
               populateDecomposeMultiControlledPipeline(
                   pm, decomposeMultiControlledMinQubits.getValue());
             }
             populateDefaultQCOOptimizationPipeline(pm);
-          }
-          populateQCOCleanupPipeline(pm);
-          return success();
-        }))) {
-      return 1;
+            return success();
+          }))) {
+        return 1;
+      }
+      const bool preserveQuantizedAngles = program.mod->getOperation()->hasAttr(
+          mqt::angle::FINAL_QUANTIZATION_ATTR);
+      if (failed(runPasses([&](OpPassManager& pm) {
+            populateQCOCleanupPipeline(pm, preserveQuantizedAngles);
+            return success();
+          }))) {
+        return 1;
+      }
     }
   }
 
@@ -565,9 +579,10 @@ static int runCompiler(int argc, char** argv) {
        *parsedOutputFormat == OutputFormat::OpenQASM3 ||
        *parsedOutputFormat == OutputFormat::QIRBase ||
        *parsedOutputFormat == OutputFormat::QIRAdaptive) &&
-      failed(runPasses([](OpPassManager& pm) {
+      failed(runPasses([&](OpPassManager& pm) {
         pm.addPass(createQCOToQC());
-        populateQCCleanupPipeline(pm);
+        populateQCCleanupPipeline(pm, program.mod->getOperation()->hasAttr(
+                                          mqt::angle::FINAL_QUANTIZATION_ATTR));
         return success();
       }))) {
     return 1;
@@ -619,6 +634,8 @@ static int runCompiler(int argc, char** argv) {
       llvm::errs() << "Failed to translate MLIR module to LLVM IR\n";
       return 1;
     }
+    qir::normalizeQIRModuleFlags(*llvmMod, *parsedOutputFormat ==
+                                               OutputFormat::QIRAdaptive);
     if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename).failed()) {
       return 1;
     }

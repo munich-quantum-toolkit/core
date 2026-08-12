@@ -98,6 +98,36 @@ QIR entry points take no arguments and return an `i64` exit code. Runtime and
 QIS declarations are checked before JIT compilation; a mismatched or unsupported
 declaration is reported with its actual and accepted LLVM function types.
 
+QC-to-QIR conversion therefore rejects unresolved OpenQASM `input` declarations
+instead of exposing them as non-profile entry-point parameters. Bind or
+specialize source inputs before QIR lowering. Source scalar outputs are not QIR
+function results either: current conversion records measurement results and
+rejects other scalar outputs until they have an explicit output-record lowering.
+This is especially important for `uint[64]` and `angle[64]`, whose complete
+unsigned domains have no single standard QIR 2.1 output primitive.
+
+Adaptive Profile emission records the classical integer and floating-point
+widths used by runtime computations in the required module flags. Base Profile
+angle constants are folded to constant `f64` QIS parameters, so their internal
+integer representation does not introduce local classical computation. Dynamic
+fixed-width angle conversion is rejected for both profiles because the required
+`bitcast` and unsigned-integer-to-floating-point instructions are not part of
+the frozen QIR 2.1 profile instruction sets. Specialize such values before QIR
+lowering. Dynamic angle arithmetic that depends on modular overflow or
+precision-reducing truncation is rejected as well: the Adaptive Profile does not
+define the overflow and value-changing truncation semantics required by
+OpenQASM. Dynamic `popcount`, `rotl`, and `rotr` are also rejected because the
+LLVM population-count and funnel-shift intrinsics are not profile instructions.
+The Base Profile rejects all remaining dynamic angle computation; use the
+Adaptive Profile for supported comparisons and exact bit operations. Canonical
+unsigned division-by-zero guards are omitted because no defined source result is
+lost; other runtime assertions remain outside the strict profiles.
+
+The frozen QIR 2.1 profile publication identifies its bitcode format with
+`qir_major_version = 2` and `qir_minor_version = 0`. MQT Core emits those module
+flags; “QIR 2.1” in this documentation refers to the profile publication, not a
+`2.1` module-version tuple.
+
 MQT Core implements the QIR 2.1 Base and Adaptive Profile runtime APIs. The JIT
 accepts one exact LLVM type for each runtime declaration, so unsupported or
 outdated overloads fail before execution.

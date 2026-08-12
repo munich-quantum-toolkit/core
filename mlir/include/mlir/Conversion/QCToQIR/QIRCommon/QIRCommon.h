@@ -35,6 +35,12 @@ enum class AllocationMode : std::uint8_t {
   Dynamic //!< The module uses dynamic qubit allocation.
 };
 
+/// QIR profile selected for conversion-time source validation.
+enum class QIRTargetProfile : std::uint8_t {
+  Base,
+  Adaptive,
+};
+
 /// Returns whether @p type represents a classical result register.
 [[nodiscard]] inline bool isClassicalBitRegister(const Type type) {
   const auto memrefType = dyn_cast<MemRefType>(type);
@@ -189,9 +195,11 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
  *
  * @param moduleOp The top-level module operation to walk
  * @param state The lowering state populated for profile-specific conversion
+ * @param profile The QIR profile selected for conversion
  */
 [[nodiscard]] LogicalResult prepareClassicalResults(Operation* moduleOp,
-                                                    LoweringState& state);
+                                                    LoweringState& state,
+                                                    QIRTargetProfile profile);
 
 /**
  * @brief Returns a result pointer for a measurement that does not write into a

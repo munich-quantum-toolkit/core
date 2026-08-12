@@ -12,20 +12,25 @@
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QC/Translation/OpenQASMAttributes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mlir/Dialect/Utils/AngleConversion.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringExtras.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -40,6 +45,7 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
@@ -461,21 +467,214 @@ static bool isLeadingZeroInitialization(memref::StoreOp storeOp,
   return true;
 }
 
-LogicalResult prepareClassicalResults(Operation* moduleOp,
-                                      LoweringState& state) {
+[[nodiscard]] static bool isEntryPoint(const func::FuncOp funcOp) {
+  const auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
+  return passthrough && llvm::any_of(passthrough, [](const Attribute attr) {
+           const auto strAttr = dyn_cast<StringAttr>(attr);
+           return strAttr && strAttr.getValue() == "entry_point";
+         });
+}
+
+[[nodiscard]] static bool
+isUnsignedDivisionSafetyAssert(cf::AssertOp assertion) {
+  const auto message = assertion.getMsg();
+  if (message != "division by zero" && message != "modulo by zero") {
+    return false;
+  }
+  Value divisor;
+  if (auto comparison = assertion.getArg().getDefiningOp<arith::CmpIOp>()) {
+    if (comparison.getPredicate() != arith::CmpIPredicate::ne) {
+      return false;
+    }
+    if (matchPattern(comparison.getRhs(), m_Zero())) {
+      divisor = comparison.getLhs();
+    } else if (matchPattern(comparison.getLhs(), m_Zero())) {
+      divisor = comparison.getRhs();
+    } else {
+      return false;
+    }
+  } else if (assertion.getArg().getType().isInteger(1)) {
+    divisor = assertion.getArg();
+  } else {
+    return false;
+  }
+  return llvm::any_of(divisor.getUsers(), [&](Operation* user) {
+    if (message == "division by zero") {
+      auto division = dyn_cast<arith::DivUIOp>(user);
+      return division && division.getRhs() == divisor;
+    }
+    auto remainder = dyn_cast<arith::RemUIOp>(user);
+    return remainder && remainder.getRhs() == divisor;
+  });
+}
+
+[[nodiscard]] static LogicalResult
+validateQIRSourceInterface(Operation* moduleOp,
+                           const QIRTargetProfile profile) {
+  bool invalid = false;
+  SmallVector<cf::AssertOp> redundantDivisionAssertions;
+  moduleOp->walk([&](func::FuncOp funcOp) {
+    if (!isEntryPoint(funcOp)) {
+      return;
+    }
+    if (!funcOp.getArguments().empty()) {
+      SmallVector<std::string> names;
+      names.reserve(funcOp.getNumArguments());
+      for (const auto [index, argument] :
+           llvm::enumerate(funcOp.getArguments())) {
+        const auto metadata = funcOp.getArgAttrOfType<DictionaryAttr>(
+            index, "mqt.openqasm.scalar");
+        const auto name =
+            metadata ? metadata.getAs<StringAttr>("name") : StringAttr{};
+        names.push_back(name ? name.str()
+                             : "argument #" + std::to_string(index));
+      }
+      funcOp.emitError()
+          << "QIR 2.1 entry points may not take parameters; specialize source "
+             "inputs before QIR conversion (inputs: "
+          << llvm::join(names, ", ") << ")";
+      invalid = true;
+    }
+    const auto dynamicAngle = funcOp.walk([&](Operation* operation) {
+      for (const auto result : operation->getResults()) {
+        if (const auto quantized = mqt::angle::matchQuantizedRadians(result);
+            quantized && !matchPattern(quantized->bits, m_Constant())) {
+          return WalkResult::interrupt();
+        }
+        if (const auto source = mqt::angle::matchFloatToBits(result);
+            source && !matchPattern(*source, m_Constant())) {
+          return WalkResult::interrupt();
+        }
+      }
+      return WalkResult::advance();
+    });
+    if (dynamicAngle.wasInterrupted()) {
+      funcOp.emitError()
+          << "QIR 2.1 profiles do not permit the runtime instructions "
+             "required by dynamic OpenQASM angle conversion; specialize "
+             "angle values before QIR conversion";
+      invalid = true;
+    }
+    const auto dynamicAngleArithmetic = funcOp.walk([&](Operation* operation) {
+      if (!operation->hasAttrOfType<UnitAttr>(openqasm::ANGLE_VALUE_ATTR) ||
+          operation->getNumResults() != 1 ||
+          matchPattern(operation->getResult(0), m_Constant())) {
+        return WalkResult::advance();
+      }
+      if (isa<arith::AddIOp, arith::SubIOp, arith::MulIOp>(operation)) {
+        return WalkResult::interrupt();
+      }
+      if (const auto resize = mqt::angle::matchResize(operation->getResult(0));
+          resize && resize->targetWidth < resize->sourceWidth &&
+          !matchPattern(resize->source, m_Constant())) {
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+    if (dynamicAngleArithmetic.wasInterrupted()) {
+      funcOp.emitError()
+          << "QIR 2.1 profiles do not define the wraparound or lossy "
+             "truncation behavior required by dynamic OpenQASM angle "
+             "arithmetic; specialize angle values before QIR conversion";
+      invalid = true;
+    }
+    if (profile == QIRTargetProfile::Base) {
+      const auto dynamicAngleComputation =
+          funcOp.walk([&](Operation* operation) {
+            if (!operation->hasAttr(openqasm::ANGLE_VALUE_ATTR) &&
+                !operation->hasAttr(openqasm::ANGLE_OPERANDS_ATTR)) {
+              return WalkResult::advance();
+            }
+            const auto isDynamic = [](const Value value) {
+              return !matchPattern(value, m_Constant());
+            };
+            if (llvm::any_of(operation->getOperands(), isDynamic) ||
+                llvm::any_of(operation->getResults(), isDynamic)) {
+              return WalkResult::interrupt();
+            }
+            return WalkResult::advance();
+          });
+      if (dynamicAngleComputation.wasInterrupted()) {
+        funcOp.emitError()
+            << "the QIR 2.1 Base Profile does not permit dynamic classical "
+               "angle computation; use the Adaptive Profile or specialize "
+               "angle values before QIR conversion";
+        invalid = true;
+      }
+    }
+    funcOp.walk([&](Operation* operation) {
+      if (!isa<math::CtPopOp, LLVM::FshlOp, LLVM::FshrOp>(operation)) {
+        return;
+      }
+      operation->emitError()
+          << "QIR 2.1 profiles do not permit population-count or "
+             "funnel-shift intrinsics; specialize popcount and rotation "
+             "operands before QIR conversion";
+      invalid = true;
+    });
+    funcOp.walk([&](cf::AssertOp assertion) {
+      if (isUnsignedDivisionSafetyAssert(assertion)) {
+        redundantDivisionAssertions.push_back(assertion);
+        return;
+      }
+      assertion.emitError()
+          << "QIR 2.1 profiles do not permit external runtime assertion "
+             "machinery; specialize the checked value before QIR conversion";
+      invalid = true;
+    });
+    funcOp.walk([&](func::ReturnOp returnOp) {
+      SmallVector<std::string> unsupportedOutputs;
+      for (const auto [index, operand] :
+           llvm::enumerate(returnOp.getOperands())) {
+        if (operand.getDefiningOp<MeasureOp>()) {
+          continue;
+        }
+        if (auto allocOp = operand.getDefiningOp<memref::AllocOp>();
+            allocOp && isClassicalBitRegister(allocOp.getType())) {
+          continue;
+        }
+        const auto scalarMetadata =
+            index < funcOp.getNumResults()
+                ? funcOp.getResultAttr(index, "mqt.openqasm.scalar")
+                : Attribute{};
+        const auto isStatus = returnOp.getNumOperands() == 1 &&
+                              operand.getType().isInteger(64) &&
+                              !scalarMetadata;
+        if (isStatus) {
+          continue;
+        }
+        const auto metadata = dyn_cast_or_null<DictionaryAttr>(scalarMetadata);
+        const auto name =
+            metadata ? metadata.getAs<StringAttr>("name") : StringAttr{};
+        unsupportedOutputs.push_back(name ? name.str()
+                                          : "result #" + std::to_string(index));
+      }
+      if (!unsupportedOutputs.empty()) {
+        returnOp.emitError()
+            << "QIR profile entry points return only an i64 status; source "
+               "scalar outputs require output-record lowering and are not "
+               "supported (outputs: "
+            << llvm::join(unsupportedOutputs, ", ") << ")";
+        invalid = true;
+      }
+    });
+  });
+  for (auto assertion : redundantDivisionAssertions) {
+    assertion.erase();
+  }
+  return failure(invalid);
+}
+
+LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
+                                      const QIRTargetProfile profile) {
+  if (failed(validateQIRSourceInterface(moduleOp, profile))) {
+    return failure();
+  }
   bool hasInvalidMemory = false;
   SmallVector<memref::StoreOp> consumedStores;
   moduleOp->walk([&](func::FuncOp funcOp) {
     // Check whether the given function is the main entrypoint
-    auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
-    bool isEntryPoint = false;
-    if (passthrough) {
-      isEntryPoint = llvm::any_of(passthrough, [](Attribute attr) {
-        auto strAttr = dyn_cast<StringAttr>(attr);
-        return strAttr && strAttr.getValue() == "entry_point";
-      });
-    }
-    if (!isEntryPoint) {
+    if (!isEntryPoint(funcOp)) {
       return;
     }
 
@@ -584,7 +783,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
         }
       }
 
-      if (keptOperands.empty() && !returnOp.getOperands().empty()) {
+      if (keptOperands.empty()) {
         OpBuilder builder(returnOp);
         auto zero =
             arith::ConstantIntOp::create(builder, returnOp.getLoc(), 0, 64);

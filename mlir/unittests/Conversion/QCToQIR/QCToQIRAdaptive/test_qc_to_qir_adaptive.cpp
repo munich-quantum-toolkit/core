@@ -30,6 +30,7 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -43,6 +44,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 
@@ -95,6 +97,28 @@ static LogicalResult runQCToQIRAdaptiveConversionSimple(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createQCToQIRAdaptive());
   return pm.run(moduleOp);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, CanonicalizesVoidEntryToStatusReturn) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize(TypeRange{});
+  auto module = builder.finalize(ValueRange{});
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  auto main = module->lookupSymbol<LLVM::LLVMFuncOp>("main");
+  ASSERT_TRUE(main);
+  EXPECT_TRUE(main.getFunctionType().getReturnType().isInteger(64));
+  EXPECT_EQ(main.getNumArguments(), 0U);
+  auto returnOp = cast<LLVM::ReturnOp>(main.getBody().back().getTerminator());
+  ASSERT_EQ(returnOp.getNumOperands(), 1U);
+  auto status = returnOp.getOperand(0).getDefiningOp<LLVM::ConstantOp>();
+  ASSERT_TRUE(status);
+  const auto statusValue = dyn_cast<IntegerAttr>(status.getValue());
+  ASSERT_TRUE(statusValue);
+  EXPECT_TRUE(statusValue.getValue().isZero());
 }
 
 TEST(QCToQIRAdaptiveNativeTest,
@@ -153,7 +177,7 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsControlledPhaseWithNonHoistableAngle) {
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
-TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
+TEST(QCToQIRAdaptiveNativeTest, RejectsControlFlowAssertionsOutsideProfile) {
   MLIRContext context;
   context
       .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
@@ -165,26 +189,20 @@ TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
   auto module = builder.finalize();
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("abort"));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("puts"));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::GlobalOp>("assert_msg"));
-  bool retainsAssertion = false;
-  bool hasConditionalBranch = false;
-  bool hasUnreachableFailure = false;
-  module->walk([&](Operation* operation) {
-    retainsAssertion |= isa<cf::AssertOp>(operation);
-    hasConditionalBranch |= isa<LLVM::CondBrOp>(operation);
-    hasUnreachableFailure |= isa<LLVM::UnreachableOp>(operation);
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "do not permit external runtime assertion machinery");
+    return success();
   });
-  EXPECT_FALSE(retainsAssertion);
-  EXPECT_TRUE(hasConditionalBranch);
-  EXPECT_TRUE(hasUnreachableFailure);
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
-TEST(QCToQIRAdaptiveNativeTest, LowersPopulationCountThroughMathToLLVM) {
+TEST(QCToQIRAdaptiveNativeTest, RejectsIntrinsicsOutsideProfile) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, func::FuncDialect, LLVM::LLVMDialect,
                       math::MathDialect>();
@@ -192,20 +210,21 @@ TEST(QCToQIRAdaptiveNativeTest, LowersPopulationCountThroughMathToLLVM) {
   builder.initialize();
   auto value = LLVM::UndefOp::create(builder, builder.getIntegerType(5));
   (void)math::CtPopOp::create(builder, value);
+  (void)LLVM::FshlOp::create(builder, value, value, value);
   auto module = builder.finalize();
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-
-  bool retainsMathPopulationCount = false;
-  bool hasLLVMPopulationCount = false;
-  module->walk([&](Operation* operation) {
-    retainsMathPopulationCount |= isa<math::CtPopOp>(operation);
-    hasLLVMPopulationCount |= isa<LLVM::CtPopOp>(operation);
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "do not permit population-count or funnel-shift intrinsics");
+    return success();
   });
-  EXPECT_FALSE(retainsMathPopulationCount);
-  EXPECT_TRUE(hasLLVMPopulationCount);
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
 TEST(QCToQIRAdaptiveNativeTest, LowersUnreturnedClassicalControlRegister) {
@@ -377,9 +396,8 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedIntegerMemref) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto type = MemRefType::get({1}, builder.getI8Type());
-  const auto memref = memref::AllocOp::create(builder, type).getResult();
-  builder.retype(type);
-  auto module = builder.finalize(memref);
+  std::ignore = memref::AllocOp::create(builder, type);
+  auto module = builder.finalize(builder.intConstant(0));
   ASSERT_TRUE(module);
 
   bool sawExpectedDiagnostic = false;

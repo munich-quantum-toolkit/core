@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mlir/Dialect/Utils/AngleConversion.h"
 #include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <llvm/Support/ErrorHandling.h>
@@ -42,6 +43,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cassert>
 #include <cstddef>
@@ -442,6 +444,15 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto* moduleOp = getOperation();
+    if (moduleOp->hasAttr(mqt::angle::FINAL_QUANTIZATION_ATTR)) {
+      PassManager passManager(ctx);
+      passManager.addPass(createCanonicalizerPass());
+      if (passManager.run(moduleOp).failed()) {
+        signalPassFailure();
+        return;
+      }
+      moduleOp->removeAttr(mqt::angle::FINAL_QUANTIZATION_ATTR);
+    }
     if (failed(mlir::mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
       signalPassFailure();
       return;
@@ -454,7 +465,8 @@ protected:
     LoweringState state;
 
     // Stage 1.0: Prepare classical result registers
-    if (failed(prepareClassicalResults(moduleOp, state))) {
+    if (failed(
+            prepareClassicalResults(moduleOp, state, QIRTargetProfile::Base))) {
       signalPassFailure();
       return;
     }
