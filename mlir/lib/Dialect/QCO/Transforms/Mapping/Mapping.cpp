@@ -979,28 +979,36 @@ private:
     return {layouts[0], std::move(swaps[0]), std::move(swaps[1])};
   }
 
-  /// Return the "average" layout by computing the borda count, where each
-  /// layout is a voter and each hardware index counts as a candidate. One vote
-  /// is the order (the permutation) of program-to-hardware indices.
-  template <typename Range> static Layout vote(Range layouts) {
+  /// Compute a routing-friendly layout compromise between a range of layouts.
+  /// Using the first layout of the range as an anchor, the function repeatedly
+  /// nudges the current layout towards the next one using happy SWAP chains.
+  /// Inspired by SABRE and to reduce ordering bias, the function performs an
+  /// additional backward pass.
+  template <typename Range>
+  Layout driveby(Range layouts, const size_t niterations = 1) {
     assert(!layouts.empty() && "expected at least one layout");
-    const auto ncandidates = (*layouts.begin()).nqubits();
 
-    SmallVector<size_t> scores(ncandidates, 0);
-    for (const Layout& layout : layouts) {
-      for (const auto [rank, hw] : enumerate(layout.getProgramToHardware())) {
-        scores[hw] += ncandidates - rank - 1;
+    FGraph f(*target);
+    Layout curr(*(layouts.begin()));
+
+    // Nudge curr towards target by applying a happy SWAP chain.
+    const auto merge = [&](const Layout& target) {
+      f.reset();
+      f.construct(curr, target);
+      if (const auto happy = f.findHappySWAPChain()) {
+        for (const auto& swap : *happy) {
+          curr.swap(swap.first, swap.second);
+        }
       }
+    };
+
+    // Perform multiple rounds of forward and backward drive-by's.
+    for (size_t i = 0; i < niterations; ++i) {
+      for_each(drop_begin(layouts), merge);
+      for_each(drop_begin(reverse(layouts)), merge);
     }
 
-    auto mapping = llvm::to_vector(llvm::seq(ncandidates));
-    llvm::sort(mapping, [&](const size_t lhs, const size_t rhs) {
-      return scores[lhs] != scores[rhs]
-                 ? scores[lhs] > scores[rhs]
-                 : lhs < rhs; // Ensure order on borda equality.
-    });
-
-    return Layout::fromMapping(mapping);
+    return curr;
   }
 
   /// Skip to the end of the two-qubit block for both wire iterators, where
@@ -1466,15 +1474,15 @@ private:
               return convergedLayout;
             })
             .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
-              auto winner = vote(map_range(
+              auto compromise = driveby(map_range(
                   children, [](const RoutingBundle& b) -> const Layout& {
                     return b.layout;
                   }));
               for (RoutingBundle& child : children) {
-                const auto swaps = restore(child.layout, winner);
+                const auto swaps = restore(child.layout, compromise);
                 insertSWAPs<Mode>(swaps, child, totalStats, rewriter);
               }
-              return winner;
+              return compromise;
             });
 
     if constexpr (Mode == RoutingMode::Hot) {
