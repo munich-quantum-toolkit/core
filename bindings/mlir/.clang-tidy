@@ -1,0 +1,4 @@
+InheritParentConfig: true
+# MLIR wrapper types have value semantics; copying one does not slice an object.
+Checks: |
+  -cppcoreguidelines-slicing,
