@@ -111,11 +111,6 @@ TEST_F(QCOQuantumIPOTest, specializeZeroArgumentDropsDiagonalGate) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  // The original callee is retained, ...
-  auto refArgs =
-      referenceBuilder.startFunction("f", {referenceBuilder.getQubitType()},
-                                     {referenceBuilder.getQubitType()});
-  referenceBuilder.endFunction({referenceBuilder.z(refArgs[0])});
   // ... while the call is redirected to a specialization without the gate.
   auto specArgs = referenceBuilder.startFunction(
       "f_spec_zero_arg_0", {referenceBuilder.getQubitType()},
@@ -148,8 +143,6 @@ TEST_F(QCOQuantumIPOTest, specializeZeroArgumentDropsReset) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs = referenceBuilder.startFunction("f", {qubitType}, {qubitType});
-  referenceBuilder.endFunction({referenceBuilder.reset(refArgs[0])});
   auto specArgs = referenceBuilder.startFunction("f_spec_zero_arg_0",
                                                  {qubitType}, {qubitType});
   referenceBuilder.endFunction({specArgs[0]});
@@ -185,12 +178,6 @@ TEST_F(QCOQuantumIPOTest, specializeZeroArgumentDropsControlledGate) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
-                                                {qubitType, qubitType});
-  auto refControl = refArgs[0];
-  auto refTarget = refArgs[1];
-  std::tie(refControl, refTarget) = referenceBuilder.cx(refControl, refTarget);
-  referenceBuilder.endFunction({refControl, refTarget});
 
   auto specArgs = referenceBuilder.startFunction(
       "f_spec_zero_arg_0", {qubitType, qubitType}, {qubitType, qubitType});
@@ -282,10 +269,6 @@ TEST_F(QCOQuantumIPOTest, reuseZeroSpecializationAcrossCallSites) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs =
-      referenceBuilder.startFunction("f", {referenceBuilder.getQubitType()},
-                                     {referenceBuilder.getQubitType()});
-  referenceBuilder.endFunction({referenceBuilder.s(refArgs[0])});
 
   auto specArgs = referenceBuilder.startFunction(
       "f_spec_zero_arg_0", {referenceBuilder.getQubitType()},
@@ -320,9 +303,6 @@ TEST_F(QCOQuantumIPOTest, specializeZeroArgumentDropsNoOpRun) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs = referenceBuilder.startFunction("f", {qubitType}, {qubitType});
-  referenceBuilder.endFunction(
-      {referenceBuilder.t(referenceBuilder.s(referenceBuilder.z(refArgs[0])))});
   auto specArgs = referenceBuilder.startFunction("f_spec_zero_arg_0",
                                                  {qubitType}, {qubitType});
   referenceBuilder.endFunction({specArgs[0]});
@@ -356,9 +336,6 @@ TEST_F(QCOQuantumIPOTest, specializeZeroArgumentDropsPhaseGate) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs =
-      referenceBuilder.startFunction("f", {qubitType, floatType}, {qubitType});
-  referenceBuilder.endFunction({referenceBuilder.p(refArgs[1], refArgs[0])});
   // The angle stays in the signature, it is simply no longer read.
   auto specArgs = referenceBuilder.startFunction(
       "f_spec_zero_arg_0", {qubitType, floatType}, {qubitType});
@@ -420,10 +397,6 @@ TEST_F(QCOQuantumIPOTest, specializePlusArgumentDropsXGate) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs =
-      referenceBuilder.startFunction("f", {referenceBuilder.getQubitType()},
-                                     {referenceBuilder.getQubitType()});
-  referenceBuilder.endFunction({referenceBuilder.x(refArgs[0])});
 
   auto specArgs = referenceBuilder.startFunction(
       "f_spec_plus_arg_0", {referenceBuilder.getQubitType()},
@@ -490,9 +463,6 @@ TEST_F(QCOQuantumIPOTest, specializeConstantRotationAngle) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs =
-      referenceBuilder.startFunction("f", {qubitType, floatType}, {qubitType});
-  referenceBuilder.endFunction({referenceBuilder.rz(refArgs[1], refArgs[0])});
 
   // The specialized copy keeps the parameter in its signature but no longer
   // reads it; the angle becomes a constant in the body.
@@ -530,9 +500,6 @@ TEST_F(QCOQuantumIPOTest, specializeHalfPiRotationAngle) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs =
-      referenceBuilder.startFunction("f", {qubitType, floatType}, {qubitType});
-  referenceBuilder.endFunction({referenceBuilder.rx(refArgs[1], refArgs[0])});
 
   auto specArgs = referenceBuilder.startFunction(
       "f_spec_fixed_angle_1", {qubitType, floatType}, {qubitType});
@@ -573,9 +540,6 @@ TEST_F(QCOQuantumIPOTest, separateRotationSpecializationPerAngle) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs =
-      referenceBuilder.startFunction("f", {qubitType, floatType}, {qubitType});
-  referenceBuilder.endFunction({referenceBuilder.rz(refArgs[1], refArgs[0])});
 
   // The rewriter reaches the pi/2 call first, so that specialization keeps the
   // plain name and the pi one gets the uniqued name.
@@ -657,8 +621,6 @@ TEST_F(QCOQuantumIPOTest, reusePlusSpecializationAcrossCallSites) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs = referenceBuilder.startFunction("f", {qubitType}, {qubitType});
-  referenceBuilder.endFunction({referenceBuilder.x(refArgs[0])});
   auto specArgs = referenceBuilder.startFunction("f_spec_plus_arg_0",
                                                  {qubitType}, {qubitType});
   referenceBuilder.endFunction({specArgs[0]});
@@ -697,9 +659,6 @@ TEST_F(QCOQuantumIPOTest, reuseRotationSpecializationAcrossCallSites) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs =
-      referenceBuilder.startFunction("f", {qubitType, floatType}, {qubitType});
-  referenceBuilder.endFunction({referenceBuilder.rz(refArgs[1], refArgs[0])});
   auto specArgs = referenceBuilder.startFunction(
       "f_spec_fixed_angle_1", {qubitType, floatType}, {qubitType});
   referenceBuilder.endFunction(
@@ -1695,11 +1654,6 @@ TEST_F(QCOQuantumIPOTest, cancelSelfInverseGateAcrossCallBoundary) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs =
-      referenceBuilder.startFunction("f", {referenceBuilder.getQubitType()},
-                                     {referenceBuilder.getQubitType()});
-  referenceBuilder.endFunction(
-      {referenceBuilder.h(referenceBuilder.x(refArgs[0]))});
 
   // Both the caller-side and the callee-side gate disappear.
   auto specArgs = referenceBuilder.startFunction(
@@ -1809,9 +1763,6 @@ TEST_F(QCOQuantumIPOTest, reuseBoundaryCommutationAcrossCallSites) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs = referenceBuilder.startFunction("f", {qubitType}, {qubitType});
-  referenceBuilder.endFunction(
-      {referenceBuilder.h(referenceBuilder.x(refArgs[0]))});
   auto specArgs = referenceBuilder.startFunction(
       "f_spec_boundary_commutation_arg_0", {qubitType}, {qubitType});
   referenceBuilder.endFunction({referenceBuilder.h(specArgs[0])});
@@ -1861,8 +1812,7 @@ TEST_F(QCOQuantumIPOTest, separateCommutationSpecializationPerParameter) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  buildCallee(referenceBuilder, "f");
-
+  // Both call sites are redirected, so the original is left without callers.
   // One specialization without the gate on parameter 0, ...
   auto spec0Args = referenceBuilder.startFunction(
       "f_spec_boundary_commutation_arg_0", {qubitType, qubitType},
@@ -1919,16 +1869,9 @@ TEST_F(QCOQuantumIPOTest, specializationAndHoistingCombined) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  // The original keeps its `z` gate, but is hoisted as well.
-  auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
-                                                {qubitType, qubitType});
-  auto refAux = refArgs[1];
-  auto refTarget = referenceBuilder.z(refArgs[0]);
-  std::tie(refAux, refTarget) = referenceBuilder.cx(refAux, refTarget);
-  refAux = referenceBuilder.reset(refAux);
-  referenceBuilder.endFunction({refTarget, refAux});
-
-  // The specialization drops the `z` gate and is hoisted too.
+  // The original loses its only caller to the specialization and is dropped
+  // before hoisting runs, so it is never given an auxiliary argument.
+  // The specialization drops the `z` gate and is hoisted.
   auto specArgs = referenceBuilder.startFunction(
       "f_spec_zero_arg_0", {qubitType, qubitType}, {qubitType, qubitType});
   auto specAux = specArgs[1];
@@ -1971,21 +1914,11 @@ TEST_F(QCOQuantumIPOTest, specializationAndBoundaryCommutationCombined) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refArgs = referenceBuilder.startFunction("f", {qubitType, qubitType},
-                                                {qubitType, qubitType});
-  auto refFirst = referenceBuilder.z(refArgs[0]);
-  auto refSecond = referenceBuilder.x(refArgs[1]);
-  refSecond = referenceBuilder.h(refSecond);
-  referenceBuilder.endFunction({refFirst, refSecond});
-
-  // The |0> specialization drops the `z` gate on the first argument.
-  auto specArgs = referenceBuilder.startFunction(
-      "f_spec_zero_arg_0", {qubitType, qubitType}, {qubitType, qubitType});
-  auto specSecond = referenceBuilder.x(specArgs[1]);
-  specSecond = referenceBuilder.h(specSecond);
-  referenceBuilder.endFunction({specArgs[0], specSecond});
-
-  // Boundary commutation then removes the `x` gates around the call.
+  // The |0> specialization drops the `z` gate on the first argument and the
+  // boundary commutation then specializes that copy in turn, so both the
+  // original and the intermediate end up without callers.
+  // Only the last link of the chain survives: it has neither the `z` gate on
+  // the first argument nor the `x` gate on the second.
   auto commutedArgs = referenceBuilder.startFunction(
       "f_spec_zero_arg_0_spec_boundary_commutation_arg_1",
       {qubitType, qubitType}, {qubitType, qubitType});
@@ -2039,27 +1972,16 @@ TEST_F(QCOQuantumIPOTest, multipleFunctionsWithDistinctOptimizations) {
   moduleOp = programBuilder.finalize();
 
   referenceBuilder.initialize();
-  auto refPrepareArgs =
-      referenceBuilder.startFunction("prepare", {qubitType}, {qubitType});
-  referenceBuilder.endFunction(
-      {referenceBuilder.h(referenceBuilder.z(refPrepareArgs[0]))});
+  // Each original loses its only caller to its specialization and is dropped.
   auto preparedSpecArgs = referenceBuilder.startFunction(
       "prepare_spec_zero_arg_0", {qubitType}, {qubitType});
   referenceBuilder.endFunction({referenceBuilder.h(preparedSpecArgs[0])});
 
-  auto refRotateArgs = referenceBuilder.startFunction(
-      "rotate", {qubitType, floatType}, {qubitType});
-  referenceBuilder.endFunction(
-      {referenceBuilder.rz(refRotateArgs[1], refRotateArgs[0])});
   auto rotateSpecArgs = referenceBuilder.startFunction(
       "rotate_spec_fixed_angle_1", {qubitType, floatType}, {qubitType});
   referenceBuilder.endFunction(
       {referenceBuilder.rz(std::numbers::pi / 2, rotateSpecArgs[0])});
 
-  auto refFlipArgs =
-      referenceBuilder.startFunction("flip", {qubitType}, {qubitType});
-  referenceBuilder.endFunction(
-      {referenceBuilder.y(referenceBuilder.x(refFlipArgs[0]))});
   auto flipSpecArgs = referenceBuilder.startFunction(
       "flip_spec_boundary_commutation_arg_0", {qubitType}, {qubitType});
   referenceBuilder.endFunction({referenceBuilder.y(flipSpecArgs[0])});

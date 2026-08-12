@@ -98,6 +98,11 @@ struct PreviousSpecializations {
   /// Keyed by callee name; angles are compared with the same tolerance the
   /// pass uses elsewhere rather than for exact equality.
   llvm::StringMap<SmallVector<RotationSpecialization>> rotationSpecializations;
+
+  /// Every callee a call was redirected away from, and every specialization
+  /// created. These are exactly the functions the pass may have left without
+  /// callers, so they are the only ones it is entitled to clean up.
+  SmallVector<func::FuncOp> touchedFunctions;
 };
 
 /**
@@ -329,6 +334,7 @@ struct ContextSensitiveSpecializationPattern final
         it != previousSpecializations.zeroSpecializations.end()) {
       if (const auto cached = it->second.find(operand);
           cached != it->second.end()) {
+        previousSpecializations.touchedFunctions.emplace_back(funcOp);
         updateSpecializedCall(callOp, cached->second, rewriter);
         return true;
       }
@@ -339,6 +345,8 @@ struct ContextSensitiveSpecializationPattern final
                                  std::to_string(operand));
     symbolTable.insert(newFunc);
     previousSpecializations.zeroSpecializations[calleeName][operand] = newFunc;
+    previousSpecializations.touchedFunctions.emplace_back(funcOp);
+    previousSpecializations.touchedFunctions.emplace_back(newFunc);
 
     // Drop the whole run of operations that leave the |0> state alone, not just
     // the first one. Every iteration erases an operation, so this terminates.
@@ -402,6 +410,7 @@ struct ContextSensitiveSpecializationPattern final
         it != previousSpecializations.plusSpecializations.end()) {
       if (const auto cached = it->second.find(operand);
           cached != it->second.end()) {
+        previousSpecializations.touchedFunctions.emplace_back(funcOp);
         updateSpecializedCall(callOp, cached->second, rewriter);
         return true;
       }
@@ -412,6 +421,8 @@ struct ContextSensitiveSpecializationPattern final
                                  std::to_string(operand));
     symbolTable.insert(newFunc);
     previousSpecializations.plusSpecializations[calleeName][operand] = newFunc;
+    previousSpecializations.touchedFunctions.emplace_back(funcOp);
+    previousSpecializations.touchedFunctions.emplace_back(newFunc);
 
     auto newParameter = newFunc.getArgument(operand);
     while (newParameter.hasOneUse() &&
@@ -469,6 +480,7 @@ struct ContextSensitiveSpecializationPattern final
                    anglesAreEqual(entry.angle, angle);
           });
       if (cached != it->second.end()) {
+        previousSpecializations.touchedFunctions.emplace_back(funcOp);
         updateSpecializedCall(callOp, cached->func, rewriter);
         return true;
       }
@@ -479,6 +491,8 @@ struct ContextSensitiveSpecializationPattern final
                                  std::to_string(operand));
     markRotationSpecialization(newFunc, operand, angle, rewriter);
     symbolTable.insert(newFunc);
+    previousSpecializations.touchedFunctions.emplace_back(funcOp);
+    previousSpecializations.touchedFunctions.emplace_back(newFunc);
     previousSpecializations.rotationSpecializations[calleeName].emplace_back(
         RotationSpecialization{
             .operand = operand, .angle = angle, .func = newFunc});
@@ -497,6 +511,52 @@ struct ContextSensitiveSpecializationPattern final
 };
 
 } // namespace
+
+/**
+ * @brief Erase the functions this pass left without callers.
+ *
+ * @details
+ * Only the functions in @p candidates are considered, which are the callees the
+ * pass redirected calls away from and the specializations it created. A private
+ * function the pass never touched is left alone even when it is unused, because
+ * removing it is the user's decision rather than this pass's.
+ *
+ * Erasing one function can orphan another, for example when a specialization is
+ * itself specialized further, so this repeats until nothing more is removed.
+ *
+ * @param symbolTable The symbol table to erase from.
+ * @param candidates The functions the pass may have orphaned. Erased entries
+ * are removed from it, so the remaining handles stay valid.
+ */
+static void
+eraseOrphanedSpecializations(SymbolTable& symbolTable,
+                             SmallVector<func::FuncOp>& candidates) {
+  // Duplicates would leave dangling handles once the first copy is erased.
+  SmallVector<func::FuncOp> unique;
+  DenseSet<Operation*> seen;
+  for (auto candidate : candidates) {
+    if (seen.insert(candidate.getOperation()).second) {
+      unique.emplace_back(candidate);
+    }
+  }
+  candidates = std::move(unique);
+
+  auto erasedAny = true;
+  while (erasedAny) {
+    erasedAny = false;
+    SmallVector<func::FuncOp> remaining;
+    for (auto candidate : candidates) {
+      if (candidate.isPrivate() && SymbolTable::symbolKnownUseEmpty(
+                                       candidate, candidate->getParentOp())) {
+        symbolTable.erase(candidate);
+        erasedAny = true;
+        continue;
+      }
+      remaining.emplace_back(candidate);
+    }
+    candidates = std::move(remaining);
+  }
+}
 
 /**
  * @brief Populates the given pattern set with the different IPO patterns.
@@ -537,9 +597,18 @@ protected:
       return;
     }
 
+    // Drop the originals the specialization orphaned before the later stages
+    // run, so that they are not walked, and not rewritten, for nothing.
+    auto& candidates = previousSpecializations.touchedFunctions;
+    eraseOrphanedSpecializations(symbolTable, candidates);
+
     runQuantumArgumentPromotion(op);
     runAuxiliaryQubitHoisting(op);
-    runQuantumFunctionBoundaryCommutation(op, symbolTable);
+    runQuantumFunctionBoundaryCommutation(op, symbolTable, &candidates);
+
+    // Boundary commutation can orphan the specializations created above, so
+    // clean up once more with the candidates both stages contributed.
+    eraseOrphanedSpecializations(symbolTable, candidates);
   }
 };
 

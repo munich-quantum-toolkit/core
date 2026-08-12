@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
@@ -73,9 +74,14 @@ void runAuxiliaryQubitHoisting(ModuleOp moduleOp);
  * @param moduleOp The module to transform.
  * @param symbolTable The symbol table of @p moduleOp. It is mutated: every
  * specialization created here is inserted into it.
+ * @param touchedFunctions Optional collector. Every callee a call was
+ * redirected away from, and every specialization created, is appended to it.
+ * Those are the functions this call may have left without callers, which lets
+ * a caller clean them up without having to guess which ones it created.
  */
-void runQuantumFunctionBoundaryCommutation(ModuleOp moduleOp,
-                                           SymbolTable& symbolTable);
+void runQuantumFunctionBoundaryCommutation(
+    ModuleOp moduleOp, SymbolTable& symbolTable,
+    SmallVectorImpl<func::FuncOp>* touchedFunctions = nullptr);
 /**
  * @brief Create target-independent two-qubit gate fusion.
  */

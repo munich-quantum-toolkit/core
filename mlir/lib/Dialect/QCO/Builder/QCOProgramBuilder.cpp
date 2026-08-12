@@ -1423,10 +1423,10 @@ SmallVector<Value> QCOProgramBuilder::startFunction(StringRef name,
   FunctionScope scope{.savedInsertPoint = saveInsertionPoint(),
                       .outerQubits = {},
                       .outerTensors = {}};
-  for (const auto& [qubit, info] : validQubits) {
+  for (const auto& qubit : validQubits) {
     scope.outerQubits.insert(qubit);
   }
-  for (const auto& [tensor, info] : validTensors) {
+  for (const auto& tensor : validTensors) {
     scope.outerTensors.insert(tensor);
   }
 
@@ -1445,11 +1445,11 @@ SmallVector<Value> QCOProgramBuilder::startFunction(StringRef name,
   SmallVector<Value> args;
   for (const auto arg : entryBlock.getArguments()) {
     if (isa<QubitType>(arg.getType())) {
-      validQubits.try_emplace(arg, QubitInfo{});
+      validQubits.insert(arg);
     } else if (isQubitTensor(arg.getType())) {
       // A tensor argument acts like a register the callee owns for the
       // duration of the call, so give it its own register id.
-      validTensors.try_emplace(arg, TensorInfo{tensorCounter++});
+      validTensors.insert(Tensor{arg, tensorCounter++});
     }
     args.emplace_back(arg);
   }
@@ -1482,14 +1482,14 @@ void QCOProgramBuilder::endFunction(ValueRange returnValues) {
     }
   }
 
-  for (const auto& [qubit, info] : validQubits) {
+  for (const auto& qubit : validQubits) {
     if (!functionScope->outerQubits.contains(qubit)) {
       llvm::reportFatalUsageError(
           "Function body has qubit values that are neither returned nor "
           "consumed");
     }
   }
-  for (const auto& [tensor, info] : validTensors) {
+  for (const auto& tensor : validTensors) {
     if (!functionScope->outerTensors.contains(tensor)) {
       llvm::reportFatalUsageError(
           "Function body has tensor values that are neither returned nor "
@@ -1573,7 +1573,7 @@ SmallVector<Value> QCOProgramBuilder::call(StringRef callee,
     validQubits.erase(qubitOperands[i]);
   }
   for (size_t i = pairedQubits; i < qubitResults.size(); ++i) {
-    validQubits.try_emplace(qubitResults[i], QubitInfo{});
+    validQubits.insert(qubitResults[i]);
   }
 
   const auto pairedTensors =
@@ -1585,7 +1585,7 @@ SmallVector<Value> QCOProgramBuilder::call(StringRef callee,
     validTensors.erase(tensorOperands[i]);
   }
   for (size_t i = pairedTensors; i < tensorResults.size(); ++i) {
-    validTensors.try_emplace(tensorResults[i], TensorInfo{tensorCounter++});
+    validTensors.insert(Tensor{tensorResults[i], tensorCounter++});
   }
 
   return SmallVector<Value>(callOp.getResults());

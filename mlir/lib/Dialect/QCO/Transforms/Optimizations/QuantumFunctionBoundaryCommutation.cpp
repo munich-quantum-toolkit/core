@@ -87,7 +87,8 @@ using BoundarySpecializations =
 static void
 tryBoundaryCommutation(func::CallOp call, SymbolTable& symbolTable,
                        uint32_t parameter,
-                       BoundarySpecializations& previousSpecializations) {
+                       BoundarySpecializations& previousSpecializations,
+                       SmallVectorImpl<func::FuncOp>* touchedFunctions) {
   auto calleeName = call.getCallee();
   auto funcOp = symbolTable.lookup<func::FuncOp>(calleeName);
 
@@ -118,6 +119,12 @@ tryBoundaryCommutation(func::CallOp call, SymbolTable& symbolTable,
   argOutside.replaceAllUsesWith(lastOp.getInputQubit(0));
   lastOp.erase();
 
+  // The call is about to be redirected away from `funcOp`, so it may lose its
+  // last caller.
+  if (touchedFunctions != nullptr) {
+    touchedFunctions->emplace_back(funcOp);
+  }
+
   if (const auto it = previousSpecializations.find(calleeName);
       it != previousSpecializations.end()) {
     if (const auto cached = it->second.find(parameter);
@@ -140,6 +147,9 @@ tryBoundaryCommutation(func::CallOp call, SymbolTable& symbolTable,
   }
   newUser.erase();
   previousSpecializations[calleeName][parameter] = newFunc;
+  if (touchedFunctions != nullptr) {
+    touchedFunctions->emplace_back(newFunc);
+  }
 
   call.setCallee(newFunc.getName());
 }
@@ -150,8 +160,9 @@ tryBoundaryCommutation(func::CallOp call, SymbolTable& symbolTable,
  * @param moduleOp The module to transform.
  * @param symbolTable The symbol table of @p moduleOp.
  */
-void runQuantumFunctionBoundaryCommutation(ModuleOp moduleOp,
-                                           SymbolTable& symbolTable) {
+void runQuantumFunctionBoundaryCommutation(
+    ModuleOp moduleOp, SymbolTable& symbolTable,
+    SmallVectorImpl<func::FuncOp>* touchedFunctions) {
   BoundarySpecializations previousSpecializations;
 
   // Collect the calls first: the commutation erases the caller-side gate, which
@@ -165,7 +176,8 @@ void runQuantumFunctionBoundaryCommutation(ModuleOp moduleOp,
       if (!isa<QubitType>(arg.getType())) {
         continue;
       }
-      tryBoundaryCommutation(call, symbolTable, i, previousSpecializations);
+      tryBoundaryCommutation(call, symbolTable, i, previousSpecializations,
+                             touchedFunctions);
     }
   }
 }
