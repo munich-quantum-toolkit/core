@@ -94,8 +94,8 @@ releases may include breaking changes.
   [#1870], [#1904], [#1911], [#1951], [#1997], [#2016], [#2060])
   ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
-  auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924])
-  ([**@DRovara**], [**@burgholzer**])
+  auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924],
+  [#2039]) ([**@DRovara**], [**@burgholzer**], [**@simon1hofmann**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
   [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464],
   [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510],
@@ -739,16 +739,17 @@ for previous changelogs._
 
 [#2060]: https://github.com/munich-quantum-toolkit/core/pull/2060
 [#2058]: https://github.com/munich-quantum-toolkit/core/pull/2058
-[#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
 [#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
+[#2039]: https://github.com/munich-quantum-toolkit/core/pull/2039
+[#2038]: https://github.com/munich-quantum-toolkit/core/pull/2038
 [#2036]: https://github.com/munich-quantum-toolkit/core/pull/2036
 [#2035]: https://github.com/munich-quantum-toolkit/core/pull/2035
-[#2038]: https://github.com/munich-quantum-toolkit/core/pull/2038
+[#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
 [#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
 [#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
 [#2017]: https://github.com/munich-quantum-toolkit/core/pull/2017
-[#2015]: https://github.com/munich-quantum-toolkit/core/pull/2015
 [#2016]: https://github.com/munich-quantum-toolkit/core/pull/2016
+[#2015]: https://github.com/munich-quantum-toolkit/core/pull/2015
 [#2014]: https://github.com/munich-quantum-toolkit/core/pull/2014
 [#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
 [#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
