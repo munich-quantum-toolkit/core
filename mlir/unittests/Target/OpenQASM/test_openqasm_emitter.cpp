@@ -92,7 +92,6 @@ shifted(0.5) q;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
 }
 
 TEST(OpenQASMTargetTest, EmitsScalarMathFunctions) {
