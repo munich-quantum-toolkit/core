@@ -18,30 +18,33 @@
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/CheckedArithmetic.h>
+#include <llvm/Support/Error.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
 namespace mlir {
 
-static void requireAdapterInput(const bool condition,
-                                const llvm::Twine& message) {
+[[nodiscard]] static llvm::Error
+requireAdapterInput(const bool condition, const llvm::Twine& message) {
   if (!condition) {
-    throw std::invalid_argument(message.str());
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument), message);
   }
+  return llvm::Error::success();
 }
 
-static void requireCircuitDevice(const bool condition,
-                                 const llvm::StringRef deviceName,
-                                 const llvm::StringRef detail) {
-  requireAdapterInput(
+[[nodiscard]] static llvm::Error
+requireCircuitDevice(const bool condition, const llvm::StringRef deviceName,
+                     const llvm::StringRef detail) {
+  return requireAdapterInput(
       condition, llvm::Twine("QDMI device '") + deviceName +
                      "' cannot be used as an MLIR compiler target: only "
                      "circuit-model devices with one qubit per non-zone site "
@@ -49,11 +52,10 @@ static void requireCircuitDevice(const bool condition,
                      detail + ")");
 }
 
-static void requireHomogeneousOperation(const bool condition,
-                                        const llvm::StringRef deviceName,
-                                        const llvm::StringRef operationName,
-                                        const llvm::StringRef detail) {
-  requireAdapterInput(
+[[nodiscard]] static llvm::Error requireHomogeneousOperation(
+    const bool condition, const llvm::StringRef deviceName,
+    const llvm::StringRef operationName, const llvm::StringRef detail) {
+  return requireAdapterInput(
       condition, llvm::Twine("QDMI device '") + deviceName + "' operation '" +
                      operationName +
                      "' cannot be represented by the MLIR compiler target: "
@@ -62,11 +64,15 @@ static void requireHomogeneousOperation(const bool condition,
                      detail + ")");
 }
 
-[[nodiscard]] static CompilerTarget::SiteId checkedSiteId(const size_t index) {
-  requireAdapterInput(
-      index <= static_cast<uintmax_t>(
-                   std::numeric_limits<CompilerTarget::SiteId>::max()),
-      "QDMI site index exceeds the nonnegative i64 compiler-target domain");
+[[nodiscard]] static llvm::Expected<CompilerTarget::SiteId>
+checkedSiteId(const size_t index) {
+  if (auto error = requireAdapterInput(
+          index <= static_cast<uintmax_t>(
+                       std::numeric_limits<CompilerTarget::SiteId>::max()),
+          "QDMI site index exceeds the nonnegative i64 compiler-target "
+          "domain")) {
+    return std::move(error);
+  }
   return static_cast<CompilerTarget::SiteId>(index);
 }
 
@@ -96,27 +102,30 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
       .Default(false);
 }
 
-static void validateHomogeneousSupport(
+[[nodiscard]] static llvm::Error validateHomogeneousSupport(
     const fomac::Operation& operation, const size_t arity,
     const std::optional<std::vector<fomac::Site>>& flattenedSites,
     const std::vector<CompilerTarget::Site>& deviceSites,
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
     const llvm::StringRef deviceName) {
   if (!flattenedSites) {
-    requireHomogeneousOperation(
+    return requireHomogeneousOperation(
         arity != 2 || !couplings, deviceName, operation.getName(),
         "the device reports an explicit topology but no ordered two-qubit "
         "site support");
-    return;
   }
   const auto operationName = operation.getName();
-  requireHomogeneousOperation(
-      flattenedSites->size() % arity == 0, deviceName, operationName,
-      "the reported site list is not divisible by the fixed arity");
-  requireHomogeneousOperation(
-      arity <= 2, deviceName, operationName,
-      "explicit site lists are supported only for one- and two-qubit "
-      "operations");
+  if (auto error = requireHomogeneousOperation(
+          flattenedSites->size() % arity == 0, deviceName, operationName,
+          "the reported site list is not divisible by the fixed arity")) {
+    return error;
+  }
+  if (auto error = requireHomogeneousOperation(
+          arity <= 2, deviceName, operationName,
+          "explicit site lists are supported only for one- and two-qubit "
+          "operations")) {
+    return error;
+  }
 
   llvm::DenseSet<CompilerTarget::SiteId> knownSites;
   knownSites.reserve(deviceSites.size());
@@ -128,16 +137,21 @@ static void validateHomogeneousSupport(
     llvm::DenseSet<CompilerTarget::SiteId> supportedSites;
     supportedSites.reserve(flattenedSites->size());
     for (const auto& site : *flattenedSites) {
-      const auto siteId = checkedSiteId(site.getIndex());
-      const auto inserted = supportedSites.insert(siteId).second;
-      requireHomogeneousOperation(
-          knownSites.contains(siteId) && inserted, deviceName, operationName,
-          "the reported one-qubit sites must be unique device sites");
+      auto siteId = checkedSiteId(site.getIndex());
+      if (!siteId) {
+        return siteId.takeError();
+      }
+      const auto inserted = supportedSites.insert(*siteId).second;
+      if (auto error = requireHomogeneousOperation(
+              knownSites.contains(*siteId) && inserted, deviceName,
+              operationName,
+              "the reported one-qubit sites must be unique device sites")) {
+        return error;
+      }
     }
-    requireHomogeneousOperation(
+    return requireHomogeneousOperation(
         supportedSites.size() == knownSites.size(), deviceName, operationName,
         "the operation is not available on every device site");
-    return;
   }
 
   llvm::DenseSet<CompilerTarget::Coupling> reportedTuples;
@@ -145,15 +159,24 @@ static void validateHomogeneousSupport(
   reportedTuples.reserve(flattenedSites->size() / arity);
   supportedCouplings.reserve(flattenedSites->size() / arity);
   for (size_t offset = 0; offset < flattenedSites->size(); offset += arity) {
-    const auto first = checkedSiteId((*flattenedSites)[offset].getIndex());
-    const auto second = checkedSiteId((*flattenedSites)[offset + 1].getIndex());
-    const auto inserted = reportedTuples.insert({first, second}).second;
-    const auto validTuple = first != second && knownSites.contains(first) &&
-                            knownSites.contains(second) && inserted;
-    requireHomogeneousOperation(
-        validTuple, deviceName, operationName,
-        "the reported two-qubit sites must be unique pairs of device sites");
-    supportedCouplings.insert(canonicalCoupling(first, second));
+    auto first = checkedSiteId((*flattenedSites)[offset].getIndex());
+    if (!first) {
+      return first.takeError();
+    }
+    auto second = checkedSiteId((*flattenedSites)[offset + 1].getIndex());
+    if (!second) {
+      return second.takeError();
+    }
+    const auto inserted = reportedTuples.insert({*first, *second}).second;
+    const auto validTuple = *first != *second && knownSites.contains(*first) &&
+                            knownSites.contains(*second) && inserted;
+    if (auto error =
+            requireHomogeneousOperation(validTuple, deviceName, operationName,
+                                        "the reported two-qubit sites must be "
+                                        "unique pairs of device sites")) {
+      return error;
+    }
+    supportedCouplings.insert(canonicalCoupling(*first, *second));
   }
 
   auto coversTarget = false;
@@ -172,13 +195,15 @@ static void validateHomogeneousSupport(
           return supportedCouplings.contains(coupling);
         });
   }
-  requireHomogeneousOperation(
-      coversTarget, deviceName, operationName,
-      couplings ? "the operation is not available on every topology edge"
-                : "the operation is not available on every all-to-all site "
-                  "pair");
+  if (auto error = requireHomogeneousOperation(
+          coversTarget, deviceName, operationName,
+          couplings ? "the operation is not available on every topology edge"
+                    : "the operation is not available on every all-to-all site "
+                      "pair")) {
+    return error;
+  }
 
-  requireHomogeneousOperation(
+  return requireHomogeneousOperation(
       isSwapInvariantOperation(operationName) ||
           std::ranges::all_of(
               supportedCouplings,
@@ -191,27 +216,34 @@ static void validateHomogeneousSupport(
       "both orientations must be available on every supported site pair");
 }
 
-[[nodiscard]] static std::optional<CompilerTarget::DurationUnit>
+[[nodiscard]] static llvm::Expected<std::optional<CompilerTarget::DurationUnit>>
 snapshotDurationUnit(const fomac::Device& device) {
   auto unit = device.getDurationUnit();
   const auto scaleFactor = device.getDurationScaleFactor();
-  requireAdapterInput(
-      unit || !scaleFactor,
-      "QDMI device reports a duration scale factor without a duration unit");
+  if (auto error = requireAdapterInput(unit || !scaleFactor,
+                                       "QDMI device reports a duration scale "
+                                       "factor without a duration unit")) {
+    return std::move(error);
+  }
   if (!unit) {
     return std::nullopt;
   }
-  return CompilerTarget::DurationUnit(std::move(*unit),
-                                      scaleFactor.value_or(1.));
+  auto durationUnit = CompilerTarget::DurationUnit::create(
+      std::move(*unit), scaleFactor.value_or(1.));
+  if (!durationUnit) {
+    return durationUnit.takeError();
+  }
+  return std::optional<CompilerTarget::DurationUnit>(std::move(*durationUnit));
 }
 
-[[nodiscard]] static std::vector<CompilerTarget::SiteTuple> snapshotSiteTuples(
+[[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::SiteTuple>>
+snapshotSiteTuples(
     const fomac::Operation& operation, const size_t arity,
     const std::optional<std::vector<fomac::Site>>& flattenedSites,
     const std::optional<uint64_t> defaultDuration,
     const std::optional<double> defaultFidelity) {
   if (!flattenedSites) {
-    return {};
+    return std::vector<CompilerTarget::SiteTuple>{};
   }
 
   std::vector<CompilerTarget::SiteTuple> siteTuples;
@@ -224,19 +256,29 @@ snapshotDurationUnit(const fomac::Device& device) {
     for (size_t index = 0; index < arity; ++index) {
       const auto& site = (*flattenedSites)[offset + index];
       sites.emplace_back(site);
-      siteIds.emplace_back(checkedSiteId(site.getIndex()));
+      auto siteId = checkedSiteId(site.getIndex());
+      if (!siteId) {
+        return siteId.takeError();
+      }
+      siteIds.emplace_back(*siteId);
     }
 
     const auto duration = operation.getDuration(sites);
     const auto fidelity = operation.getFidelity(sites);
     if (duration != defaultDuration || fidelity != defaultFidelity) {
-      siteTuples.emplace_back(std::move(siteIds), duration, fidelity);
+      auto siteTuple = CompilerTarget::SiteTuple::create(std::move(siteIds),
+                                                         duration, fidelity);
+      if (!siteTuple) {
+        return siteTuple.takeError();
+      }
+      siteTuples.emplace_back(std::move(*siteTuple));
     }
   }
   return siteTuples;
 }
 
-[[nodiscard]] static std::vector<CompilerTarget::Operation> snapshotOperations(
+[[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::Operation>>
+snapshotOperations(
     const std::vector<fomac::Operation>& operations,
     const std::vector<CompilerTarget::Site>& deviceSites,
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
@@ -244,41 +286,68 @@ snapshotDurationUnit(const fomac::Device& device) {
   std::vector<CompilerTarget::Operation> targetOperations;
   targetOperations.reserve(operations.size());
   for (const auto& operation : operations) {
-    requireCircuitDevice(!operation.isZoned(), deviceName,
-                         "the device exposes a zoned operation");
+    if (auto error =
+            requireCircuitDevice(!operation.isZoned(), deviceName,
+                                 "the device exposes a zoned operation")) {
+      return error;
+    }
     const auto arity = operation.getQubitsNum();
     if (!arity || *arity == 0) {
       continue;
     }
     const auto flattenedSites = operation.getSites();
-    validateHomogeneousSupport(operation, *arity, flattenedSites, deviceSites,
-                               couplings, deviceName);
+    if (auto error =
+            validateHomogeneousSupport(operation, *arity, flattenedSites,
+                                       deviceSites, couplings, deviceName)) {
+      return error;
+    }
     const auto duration = operation.getDuration();
     const auto fidelity = operation.getFidelity();
-    targetOperations.emplace_back(
+    auto siteTuples = snapshotSiteTuples(operation, *arity, flattenedSites,
+                                         duration, fidelity);
+    if (!siteTuples) {
+      return siteTuples.takeError();
+    }
+    auto targetOperation = CompilerTarget::Operation::create(
         operation.getName(), *arity, operation.getParametersNum(),
-        snapshotSiteTuples(operation, *arity, flattenedSites, duration,
-                           fidelity),
-        duration, fidelity);
+        std::move(*siteTuples), duration, fidelity);
+    if (!targetOperation) {
+      return targetOperation.takeError();
+    }
+    targetOperations.emplace_back(std::move(*targetOperation));
   }
   return targetOperations;
 }
 
-CompilerTarget compilerTargetFromDevice(const fomac::Device& device) {
+llvm::Expected<CompilerTarget>
+compilerTargetFromDevice(const fomac::Device& device) {
   auto deviceName = device.getName();
   const auto deviceSites = device.getSites();
-  requireCircuitDevice(
-      std::ranges::none_of(deviceSites,
-                           [](const auto& site) { return site.isZone(); }),
-      deviceName, "the device exposes zone sites");
-  requireCircuitDevice(device.getQubitsNum() == deviceSites.size(), deviceName,
-                       "the qubit count does not match the regular-site count");
+  if (auto error = requireCircuitDevice(
+          std::ranges::none_of(deviceSites,
+                               [](const auto& site) { return site.isZone(); }),
+          deviceName, "the device exposes zone sites")) {
+    return error;
+  }
+  if (auto error = requireCircuitDevice(
+          device.getQubitsNum() == deviceSites.size(), deviceName,
+          "the qubit count does not match the regular-site count")) {
+    return error;
+  }
 
   std::vector<CompilerTarget::Site> sites;
   sites.reserve(deviceSites.size());
   for (const auto& site : deviceSites) {
-    sites.emplace_back(checkedSiteId(site.getIndex()), site.getName(),
-                       site.getT1(), site.getT2());
+    auto siteId = checkedSiteId(site.getIndex());
+    if (!siteId) {
+      return siteId.takeError();
+    }
+    auto targetSite = CompilerTarget::Site::create(*siteId, site.getName(),
+                                                   site.getT1(), site.getT2());
+    if (!targetSite) {
+      return targetSite.takeError();
+    }
+    sites.emplace_back(std::move(*targetSite));
   }
 
   std::optional<std::vector<CompilerTarget::Coupling>> couplings;
@@ -286,16 +355,30 @@ CompilerTarget compilerTargetFromDevice(const fomac::Device& device) {
     couplings.emplace();
     couplings->reserve(deviceCouplings->size());
     for (const auto& [source, target] : *deviceCouplings) {
-      couplings->emplace_back(checkedSiteId(source.getIndex()),
-                              checkedSiteId(target.getIndex()));
+      auto sourceId = checkedSiteId(source.getIndex());
+      if (!sourceId) {
+        return sourceId.takeError();
+      }
+      auto targetId = checkedSiteId(target.getIndex());
+      if (!targetId) {
+        return targetId.takeError();
+      }
+      couplings->emplace_back(*sourceId, *targetId);
     }
   }
 
   auto operations =
       snapshotOperations(device.getOperations(), sites, couplings, deviceName);
+  if (!operations) {
+    return operations.takeError();
+  }
   auto durationUnit = snapshotDurationUnit(device);
-  return {std::move(deviceName), std::move(sites), std::move(couplings),
-          std::move(operations), std::move(durationUnit)};
+  if (!durationUnit) {
+    return durationUnit.takeError();
+  }
+  return CompilerTarget::create(std::move(deviceName), std::move(sites),
+                                std::move(couplings), std::move(*operations),
+                                std::move(*durationUnit));
 }
 
 } // namespace mlir
