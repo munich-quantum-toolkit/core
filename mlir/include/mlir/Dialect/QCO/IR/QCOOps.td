@@ -1120,6 +1120,9 @@ def CtrlOp : QCOOp<"ctrl",
         Control qubits are not modified by the operation and simply pass through to the outputs.
 
         The body region may contain an arbitrary amount of unitary and classical operations.
+        Classical SSA values may be captured from above, but every qubit used
+        in the body must be passed through a modifier operand and accessed via
+        its aliased block argument.
         Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
@@ -1202,6 +1205,9 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
         The operation takes a variadic number of qubits as inputs and produces corresponding output qubits.
 
         The body region may contain an arbitrary amount of unitary and classical operations.
+        Classical SSA values may be captured from above, but every qubit used
+        in the body must be passed through a modifier operand and accessed via
+        its aliased block argument.
         Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
@@ -1219,10 +1225,8 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
   let regions = (region SizedRegion<1>:$region);
   let assemblyFormat = [{
         custom<TargetAliasing>($region, $qubits_in)
-        attr-dict `:`
-        `{` type($qubits_in) `}`
-        `->`
-        `{` type($qubits_out) `}`
+        attr-dict
+        ( `:` `{` type($qubits_in)^ `}` `->` `{` type($qubits_out) `}` )?
     }];
 
   let extraClassDeclaration = [{
@@ -1284,6 +1288,9 @@ def PowOp
         - r < 0: equivalent to inv @ pow(-r) @ g.
 
         The body region may contain an arbitrary amount of unitary and classical operations.
+        Classical SSA values may be captured from above, but every qubit used
+        in the body must be passed through a modifier operand and accessed via
+        its aliased block argument.
         Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
@@ -1302,10 +1309,8 @@ def PowOp
   let regions = (region SizedRegion<1>:$region);
   let assemblyFormat = [{
         `(` $exponent `)` custom<TargetAliasing>($region, $qubits_in)
-        attr-dict `:`
-        `{` type($qubits_in) `}`
-        `->`
-        `{` type($qubits_out) `}`
+        attr-dict
+        ( `:` `{` type($qubits_in)^ `}` `->` `{` type($qubits_out) `}` )?
     }];
 
   let extraClassDeclaration = [{

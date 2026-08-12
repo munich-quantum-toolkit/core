@@ -16,7 +16,10 @@
 #include "qir_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -146,6 +149,75 @@ TEST_F(QIRTest, BuilderReturnsCompleteClassicalRegister) {
   EXPECT_FALSE(returnedRegister.record);
   EXPECT_EQ(returnedRegister.results.size(), 2U);
   EXPECT_FALSE(returnedRegister.array);
+}
+
+TEST_F(QIRTest, AdaptiveBuilderSelectsControlledSpecializationsByArity) {
+  auto module = QIRProgramBuilder::build(
+      context.get(),
+      [](QIRProgramBuilder& builder) {
+        const auto control0 = builder.allocQubit();
+        const auto control1 = builder.allocQubit();
+        const auto control2 = builder.allocQubit();
+        const auto target = builder.allocQubit();
+        builder.crx(0.25, control0, target);
+        builder.mcrx(0.5, {control0, control1}, target);
+        builder.mcrx(0.75, {control0, control1, control2}, target);
+        builder.r(0.5, 0.75, target);
+        return builder.intConstant(0);
+      },
+      QIRProgramBuilder::Profile::Adaptive);
+
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_CRX));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_CCRX));
+  auto controlledRx = module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_RX_CTL);
+  ASSERT_TRUE(controlledRx);
+  const auto argumentTypes = controlledRx.getFunctionType().getParams();
+  ASSERT_EQ(argumentTypes.size(), 2U);
+  EXPECT_EQ(argumentTypes[0], LLVM::LLVMPointerType::get(context.get()));
+  EXPECT_EQ(argumentTypes[1], LLVM::LLVMPointerType::get(context.get()));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_ARRAY_CREATE));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_TUPLE_CREATE));
+  const auto main = getMainFunction(module.get());
+  ASSERT_TRUE(main);
+  const auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
+  ASSERT_TRUE(passthrough);
+  EXPECT_TRUE(llvm::is_contained(
+      passthrough,
+      ArrayAttr::get(context.get(),
+                     {StringAttr::get(context.get(), "qir_profiles"),
+                      StringAttr::get(context.get(), "adaptive_profile")})));
+
+  EXPECT_STREQ(QIR_R, "__quantum__qis__prx__body");
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_R));
+  EXPECT_FALSE(
+      module->lookupSymbol<LLVM::LLVMFuncOp>("__quantum__qis__r__body"));
+}
+
+TEST_F(QIRTest, BaseBuilderUsesGenericSpecializationForThreeControls) {
+  auto module = QIRProgramBuilder::build(
+      context.get(),
+      [](QIRProgramBuilder& builder) {
+        const auto control0 = builder.staticQubit(0);
+        const auto control1 = builder.staticQubit(1);
+        const auto control2 = builder.staticQubit(2);
+        const auto target = builder.staticQubit(3);
+        builder.mcrx(0.25, {control0, control1, control2}, target);
+        return builder.intConstant(0);
+      },
+      QIRProgramBuilder::Profile::Base);
+
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_RX_CTL));
+  const auto main = getMainFunction(module.get());
+  ASSERT_TRUE(main);
+  const auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
+  ASSERT_TRUE(passthrough);
+  EXPECT_TRUE(llvm::is_contained(
+      passthrough,
+      ArrayAttr::get(context.get(),
+                     {StringAttr::get(context.get(), "qir_profiles"),
+                      StringAttr::get(context.get(), "base_profile")})));
 }
 
 /// \name QIR/Operations/StandardGates/DcxOp.cpp

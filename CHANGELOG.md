@@ -12,6 +12,10 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add an `unroll-modifiers` pass for unrolling multi-operation modifiers
+  ([#2015]) ([**@denialhaag**])
+- ✨ Add generic C++ and Python FoMaC support for custom device properties that
+  contain operation handles ([#2042]) ([**@burgholzer**])
 - ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
   and Python FoMaC APIs, and expose optional device queue length and job queue
   position ([#2008], [#2010]) ([**@burgholzer**])
@@ -77,7 +81,8 @@ releases may include breaking changes.
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates
   ([#1605]) ([**@lirem101**], [**@burgholzer**])
 - ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive
-  rotation gates using quaternions ([#1407], [#1674], [#2002]) ([**@J4MMlE**],
+  fixed and parameterized single-qubit gates using quaternions with global-phase
+  correction ([#1407], [#1674], [#2002], [#2038]) ([**@J4MMlE**],
   [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000]) ([**@denialhaag**],
@@ -106,6 +111,12 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🛡️ Isolate DDSIM QIR job execution and restrict statevector extraction to
+  terminal `irreversible` regions of Base-profile programs ([#2036])
+  ([**@burgholzer**])
+- 💥 Update the QIR runner for QIR 2.1 entry points and resource management,
+  with entry-point selection and reproducible multi-shot execution ([#2035])
+  ([**@burgholzer**])
 - 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
   ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
 - 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
@@ -726,9 +737,14 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
+[#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
+[#2036]: https://github.com/munich-quantum-toolkit/core/pull/2036
+[#2035]: https://github.com/munich-quantum-toolkit/core/pull/2035
+[#2038]: https://github.com/munich-quantum-toolkit/core/pull/2038
 [#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
 [#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
 [#2017]: https://github.com/munich-quantum-toolkit/core/pull/2017
+[#2015]: https://github.com/munich-quantum-toolkit/core/pull/2015
 [#2016]: https://github.com/munich-quantum-toolkit/core/pull/2016
 [#2014]: https://github.com/munich-quantum-toolkit/core/pull/2014
 [#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011

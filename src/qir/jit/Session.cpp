@@ -14,7 +14,7 @@
 #include "qir/runtime/QIR.h"
 #include "qir/runtime/Runtime.hpp"
 
-#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/CodeGen/CommandFlags.h>
 #include <llvm/ExecutionEngine/JITEventListener.h>
@@ -29,7 +29,6 @@
 #include <llvm/ExecutionEngine/Orc/LazyReexports.h>
 #include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
 #include <llvm/ExecutionEngine/Orc/SelfExecutorProcessControl.h>
-#include <llvm/ExecutionEngine/Orc/TargetProcess/TargetExecutionUtils.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/LLVMContext.h>
@@ -37,8 +36,8 @@
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
-#include <llvm/Support/DynamicLibrary.h>
 #include <llvm/Support/Error.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/TargetSelect.h>
@@ -46,12 +45,18 @@
 #include <llvm/TargetParser/Triple.h>
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
+#include <initializer_list>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -59,24 +64,54 @@
 
 namespace qir {
 
-/// Returns the function marked with the `entry_point` attribute,
-/// or @c nullptr if no such function is defined.
-static const llvm::Function* getEntryPointFunction(const llvm::Module& m) {
-  const auto it = std::ranges::find_if(m, [](const llvm::Function& fn) {
-    return fn.hasFnAttribute("entry_point");
-  });
-  return it != m.end() ? &*it : nullptr;
+static auto isEntryPoint(const llvm::Function& function) -> bool {
+  return function.hasFnAttribute("entry_point") ||
+         function.hasFnAttribute("EntryPoint");
 }
 
-/// Read the `output_labeling_schema` attribute from the program's entry point.
-/// Returns @c Labeled when the attribute is absent or its value is not
-/// exactly `ordered` (spec default).
-static Runtime::OutputSchema readOutputSchema(const llvm::Module& m) {
-  if (const auto* fn = getEntryPointFunction(m); fn != nullptr) {
-    if (const auto attr = fn->getFnAttribute("output_labeling_schema");
-        attr.isValid() && attr.getValueAsString() == "ordered") {
-      return Runtime::OutputSchema::Ordered;
+static auto selectEntryPoint(llvm::Module& module,
+                             const std::optional<std::string>& requested)
+    -> llvm::Function& {
+  std::vector<llvm::Function*> matches;
+  for (auto& function : module) {
+    if (!function.isDeclaration() && isEntryPoint(function) &&
+        (!requested || function.getName() == *requested)) {
+      matches.emplace_back(&function);
     }
+  }
+  if (matches.empty()) {
+    if (requested) {
+      throw std::runtime_error("No QIR entry point named '" + *requested +
+                               "' was found");
+    }
+    throw std::runtime_error("No QIR entry point was found");
+  }
+  if (matches.size() != 1) {
+    std::ostringstream message;
+    message << "Multiple QIR entry points were found; select one explicitly:";
+    for (const auto* function : matches) {
+      message << " " << function->getName().str();
+    }
+    throw std::runtime_error(message.str());
+  }
+  auto& entryPoint = *matches.front();
+  const auto* type = entryPoint.getFunctionType();
+  if (type->isVarArg() || type->getNumParams() != 0 ||
+      !type->getReturnType()->isIntegerTy(64)) {
+    std::string actual;
+    llvm::raw_string_ostream stream(actual);
+    type->print(stream);
+    throw std::runtime_error("QIR entry point '" + entryPoint.getName().str() +
+                             "' must have type i64 (), but has type " + actual);
+  }
+  return entryPoint;
+}
+
+static auto readOutputSchema(const llvm::Function& entryPoint)
+    -> Runtime::OutputSchema {
+  if (const auto attr = entryPoint.getFnAttribute("output_labeling_schema");
+      attr.isValid() && attr.getValueAsString() == "ordered") {
+    return Runtime::OutputSchema::Ordered;
   }
   return Runtime::OutputSchema::Labeled;
 }
@@ -103,6 +138,229 @@ static llvm::Error tryEnableDebugSupport(llvm::orc::LLJIT& jit) {
     LLVM_DEBUG(llvm::dbgs() << DEBUG_TYPE ": " << errMsg << "\n");
   }
   return llvm::Error::success();
+}
+
+namespace {
+
+enum class AbiType : uint8_t { Void, Pointer, I1, I32, I64, F64 };
+
+struct RuntimeSymbol {
+  AbiType result{};
+  std::vector<AbiType> parameters;
+  void* address{};
+};
+
+using RuntimeRegistry = std::unordered_map<std::string, RuntimeSymbol>;
+
+} // namespace
+
+static auto abiTypeName(const AbiType type) -> std::string_view {
+  switch (type) {
+  case AbiType::Void:
+    return "void";
+  case AbiType::Pointer:
+    return "ptr";
+  case AbiType::I1:
+    return "i1";
+  case AbiType::I32:
+    return "i32";
+  case AbiType::I64:
+    return "i64";
+  case AbiType::F64:
+    return "double";
+  }
+  llvm_unreachable("unknown QIR ABI type");
+}
+
+static auto matches(const llvm::Type* actual, const AbiType expected) -> bool {
+  switch (expected) {
+  case AbiType::Void:
+    return actual->isVoidTy();
+  case AbiType::Pointer:
+    return actual->isPointerTy();
+  case AbiType::I1:
+    return actual->isIntegerTy(1);
+  case AbiType::I32:
+    return actual->isIntegerTy(32);
+  case AbiType::I64:
+    return actual->isIntegerTy(64);
+  case AbiType::F64:
+    return actual->isDoubleTy();
+  }
+  llvm_unreachable("unknown QIR ABI type");
+}
+
+static auto matches(const llvm::FunctionType& actual,
+                    const RuntimeSymbol& expected) -> bool {
+  if (actual.isVarArg() || !matches(actual.getReturnType(), expected.result) ||
+      actual.getNumParams() != expected.parameters.size()) {
+    return false;
+  }
+  return std::ranges::equal(actual.params(), expected.parameters,
+                            [](const llvm::Type* type, const AbiType abiType) {
+                              return matches(type, abiType);
+                            });
+}
+
+static auto describe(const RuntimeSymbol& symbol) -> std::string {
+  std::ostringstream description;
+  description << abiTypeName(symbol.result) << " (";
+  for (std::size_t i = 0; i < symbol.parameters.size(); ++i) {
+    if (i != 0) {
+      description << ", ";
+    }
+    description << abiTypeName(symbol.parameters[i]);
+  }
+  description << ")";
+  return description.str();
+}
+
+template <typename Function>
+static auto addSymbol(RuntimeRegistry& registry, const std::string_view name,
+                      const AbiType result,
+                      std::initializer_list<AbiType> parameters,
+                      Function* function) -> void {
+  registry.insert_or_assign(
+      std::string(name),
+      RuntimeSymbol{.result = result,
+                    .parameters = parameters,
+                    .address = reinterpret_cast<void*>(function)});
+}
+
+template <typename Function>
+static auto addGate(RuntimeRegistry& registry, const std::string_view name,
+                    const std::size_t targetCount,
+                    const std::size_t parameterCount,
+                    const std::size_t controlCount, Function* function)
+    -> void {
+  std::vector<AbiType> parameters(parameterCount, AbiType::F64);
+  parameters.insert(parameters.end(), controlCount + targetCount,
+                    AbiType::Pointer);
+  registry.insert_or_assign(
+      std::string(name),
+      RuntimeSymbol{.result = AbiType::Void,
+                    .parameters = std::move(parameters),
+                    .address = reinterpret_cast<void*>(function)});
+}
+
+static auto createRuntimeRegistry() -> RuntimeRegistry {
+  RuntimeRegistry registry;
+
+#define MQT_QIR_ADD_GATE(NAME, SUFFIX, CTL_SUFFIX, TARGETS, PARAMS)            \
+  addGate(registry, "__quantum__qis__" #NAME "__" #SUFFIX, TARGETS, PARAMS, 0, \
+          &__quantum__qis__##NAME##__##SUFFIX);                                \
+  addGate(registry, "__quantum__qis__c" #NAME "__" #SUFFIX, TARGETS, PARAMS,   \
+          1, &__quantum__qis__c##NAME##__##SUFFIX);                            \
+  addGate(registry, "__quantum__qis__cc" #NAME "__" #SUFFIX, TARGETS, PARAMS,  \
+          2, &__quantum__qis__cc##NAME##__##SUFFIX);                           \
+  addSymbol(registry, "__quantum__qis__" #NAME "__" #CTL_SUFFIX,               \
+            AbiType::Void, {AbiType::Pointer, AbiType::Pointer},               \
+            &__quantum__qis__##NAME##__##CTL_SUFFIX);
+#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+  MQT_QIR_ADD_GATE(NAME, SUFFIX, CTL_SUFFIX, TARGETS, PARAMS)
+#include "mlir/Conversion/GateTable.def"
+#undef MQT_QIR_ADD_GATE
+
+  addSymbol(registry, "__quantum__qis__gphase__body", AbiType::Void,
+            {AbiType::F64}, &__quantum__qis__gphase__body);
+  addSymbol(registry, "__quantum__qis__cnot__body", AbiType::Void,
+            {AbiType::Pointer, AbiType::Pointer}, &__quantum__qis__cnot__body);
+  addSymbol(registry, "__quantum__qis__mz__body", AbiType::Void,
+            {AbiType::Pointer, AbiType::Pointer}, &__quantum__qis__mz__body);
+  addSymbol(registry, "__quantum__qis__reset__body", AbiType::Void,
+            {AbiType::Pointer}, &__quantum__qis__reset__body);
+  addSymbol(registry, "__quantum__rt__array_create_1d", AbiType::Pointer,
+            {AbiType::I32, AbiType::I64}, &__quantum__rt__array_create_1d);
+  addSymbol(registry, "__quantum__rt__array_get_size_1d", AbiType::I64,
+            {AbiType::Pointer}, &__quantum__rt__array_get_size_1d);
+  addSymbol(registry, "__quantum__rt__array_get_element_ptr_1d",
+            AbiType::Pointer, {AbiType::Pointer, AbiType::I64},
+            &__quantum__rt__array_get_element_ptr_1d);
+  addSymbol(registry, "__quantum__rt__array_update_reference_count",
+            AbiType::Void, {AbiType::Pointer, AbiType::I32},
+            &__quantum__rt__array_update_reference_count);
+  addSymbol(registry, "__quantum__rt__tuple_create", AbiType::Pointer,
+            {AbiType::I64}, &__quantum__rt__tuple_create);
+  addSymbol(registry, "__quantum__rt__tuple_update_reference_count",
+            AbiType::Void, {AbiType::Pointer, AbiType::I32},
+            &__quantum__rt__tuple_update_reference_count);
+  addSymbol(registry, "__quantum__rt__qubit_allocate", AbiType::Pointer,
+            {AbiType::Pointer}, &__quantum__rt__qubit_allocate);
+  addSymbol(registry, "__quantum__rt__qubit_release", AbiType::Void,
+            {AbiType::Pointer}, &__quantum__rt__qubit_release);
+  addSymbol(registry, "__quantum__rt__qubit_array_allocate", AbiType::Void,
+            {AbiType::I64, AbiType::Pointer, AbiType::Pointer},
+            &__quantum__rt__qubit_array_allocate);
+  addSymbol(registry, "__quantum__rt__qubit_array_release", AbiType::Void,
+            {AbiType::I64, AbiType::Pointer},
+            &__quantum__rt__qubit_array_release);
+  addSymbol(registry, "__quantum__rt__result_allocate", AbiType::Pointer,
+            {AbiType::Pointer}, &__quantum__rt__result_allocate);
+  addSymbol(registry, "__quantum__rt__result_release", AbiType::Void,
+            {AbiType::Pointer}, &__quantum__rt__result_release);
+  addSymbol(registry, "__quantum__rt__result_array_allocate", AbiType::Void,
+            {AbiType::I64, AbiType::Pointer, AbiType::Pointer},
+            &__quantum__rt__result_array_allocate);
+  addSymbol(registry, "__quantum__rt__result_array_release", AbiType::Void,
+            {AbiType::I64, AbiType::Pointer},
+            &__quantum__rt__result_array_release);
+
+  addSymbol(registry, "__quantum__rt__initialize", AbiType::Void,
+            {AbiType::Pointer}, &__quantum__rt__initialize);
+  addSymbol(registry, "__quantum__rt__read_result", AbiType::I1,
+            {AbiType::Pointer}, &__quantum__rt__read_result);
+  addSymbol(registry, "__quantum__rt__result_record_output", AbiType::Void,
+            {AbiType::Pointer, AbiType::Pointer},
+            &__quantum__rt__result_record_output);
+  addSymbol(registry, "__quantum__rt__bool_record_output", AbiType::Void,
+            {AbiType::I1, AbiType::Pointer},
+            &__quantum__rt__bool_record_output);
+  addSymbol(registry, "__quantum__rt__int_record_output", AbiType::Void,
+            {AbiType::I64, AbiType::Pointer},
+            &__quantum__rt__int_record_output);
+  addSymbol(registry, "__quantum__rt__double_record_output", AbiType::Void,
+            {AbiType::F64, AbiType::Pointer},
+            &__quantum__rt__double_record_output);
+  addSymbol(registry, "__quantum__rt__tuple_record_output", AbiType::Void,
+            {AbiType::I64, AbiType::Pointer},
+            &__quantum__rt__tuple_record_output);
+  addSymbol(registry, "__quantum__rt__array_record_output", AbiType::Void,
+            {AbiType::I64, AbiType::Pointer},
+            &__quantum__rt__array_record_output);
+  addSymbol(registry, "__quantum__rt__result_array_record_output",
+            AbiType::Void, {AbiType::I64, AbiType::Pointer, AbiType::Pointer},
+            &__quantum__rt__result_array_record_output);
+  return registry;
+}
+
+static auto selectRuntimeSymbols(const llvm::Module& module)
+    -> std::vector<std::pair<std::string, void*>> {
+  const auto registry = createRuntimeRegistry();
+  std::vector<std::pair<std::string, void*>> selected;
+  for (const auto& function : module) {
+    if (!function.isDeclaration() || function.use_empty() ||
+        !function.getName().starts_with("__quantum__")) {
+      continue;
+    }
+    const auto it = registry.find(function.getName().str());
+    if (it == registry.end()) {
+      throw std::runtime_error("Unsupported QIR runtime declaration '" +
+                               function.getName().str() + "'");
+    }
+    const auto& symbol = it->second;
+    if (!matches(*function.getFunctionType(), symbol)) {
+      std::string actual;
+      llvm::raw_string_ostream stream(actual);
+      function.getFunctionType()->print(stream);
+      std::ostringstream message;
+      message << "QIR declaration '" << function.getName().str()
+              << "' has unsupported type " << actual << "; expected "
+              << describe(symbol);
+      throw std::runtime_error(message.str());
+    }
+    selected.emplace_back(function.getName().str(), symbol.address);
+  }
+  return selected;
 }
 
 static llvm::Expected<llvm::orc::ThreadSafeModule>
@@ -142,105 +400,29 @@ JitSession::loadModuleFromMemory(const llvm::StringRef irBytes,
   return getThreadSafeModuleOrError(std::move(m), err, tsCtx_);
 }
 
-JitSession::JitSession(const llvm::StringRef inputFile, const Execution mode) {
-  initialize(loadModuleFromFile(inputFile), mode);
+JitSession::JitSession(const llvm::StringRef inputFile,
+                       const SessionOptions& options) {
+  initialize(loadModuleFromFile(inputFile), options);
 }
 
 JitSession::JitSession(const llvm::StringRef irBytes,
-                       const llvm::StringRef bufferName, const Execution mode) {
-  initialize(loadModuleFromMemory(irBytes, bufferName), mode);
+                       const llvm::StringRef bufferName,
+                       const SessionOptions& options) {
+  initialize(loadModuleFromMemory(irBytes, bufferName), options);
 }
 
 JitSession::~JitSession() { deinitialize(); }
 
-int JitSession::run(llvm::ArrayRef<std::string> args,
-                    llvm::StringRef progName) const {
-  // Manual in-process execution with RuntimeDyld.
-  return llvm::orc::runAsMain(mainFn_, args, progName);
+int64_t JitSession::run() {
+  auto* previous = Runtime::bind(runtime_.get());
+  const auto restoreRuntime =
+      llvm::make_scope_exit([previous] { Runtime::bind(previous); });
+  return entryPointFn_();
 }
 
-namespace {
-std::vector<std::pair<std::string, void*>> manualSymbols;
-} // namespace
+auto JitSession::runtime() -> Runtime& { return *runtime_; }
 
-#define REGISTER_SYMBOL(name)                                                  \
-  llvm::sys::DynamicLibrary::AddSymbol(#name,                                  \
-                                       reinterpret_cast<void*>(&(name)));      \
-  manualSymbols.emplace_back(#name, reinterpret_cast<void*>(&(name)));
-
-void JitSession::registerRuntimeSymbols() {
-  static std::once_flag flag;
-  std::call_once(flag, []() {
-    REGISTER_SYMBOL(__quantum__rt__result_get_zero);
-    REGISTER_SYMBOL(__quantum__rt__result_get_one);
-    REGISTER_SYMBOL(__quantum__rt__result_equal);
-    REGISTER_SYMBOL(__quantum__rt__result_update_reference_count);
-    REGISTER_SYMBOL(__quantum__rt__array_create_1d);
-    REGISTER_SYMBOL(__quantum__rt__array_get_size_1d);
-    REGISTER_SYMBOL(__quantum__rt__array_get_element_ptr_1d);
-    REGISTER_SYMBOL(__quantum__rt__array_update_reference_count);
-    REGISTER_SYMBOL(__quantum__rt__qubit_allocate);
-    REGISTER_SYMBOL(__quantum__rt__qubit_allocate_array);
-    REGISTER_SYMBOL(__quantum__rt__qubit_release);
-    REGISTER_SYMBOL(__quantum__rt__qubit_release_array);
-    REGISTER_SYMBOL(__quantum__qis__x__body);
-    REGISTER_SYMBOL(__quantum__qis__y__body);
-    REGISTER_SYMBOL(__quantum__qis__z__body);
-    REGISTER_SYMBOL(__quantum__qis__h__body);
-    REGISTER_SYMBOL(__quantum__qis__s__body);
-    REGISTER_SYMBOL(__quantum__qis__s__adj);
-    REGISTER_SYMBOL(__quantum__qis__sx__body);
-    REGISTER_SYMBOL(__quantum__qis__sx__adj);
-    REGISTER_SYMBOL(__quantum__qis__sqrtx__body);
-    REGISTER_SYMBOL(__quantum__qis__sqrtx__adj);
-    REGISTER_SYMBOL(__quantum__qis__t__body);
-    REGISTER_SYMBOL(__quantum__qis__t__adj);
-    REGISTER_SYMBOL(__quantum__qis__r__body);
-    REGISTER_SYMBOL(__quantum__qis__prx__body);
-    REGISTER_SYMBOL(__quantum__qis__rx__body);
-    REGISTER_SYMBOL(__quantum__qis__ry__body);
-    REGISTER_SYMBOL(__quantum__qis__rz__body);
-    REGISTER_SYMBOL(__quantum__qis__p__body);
-    REGISTER_SYMBOL(__quantum__qis__rxx__body);
-    REGISTER_SYMBOL(__quantum__qis__ryy__body);
-    REGISTER_SYMBOL(__quantum__qis__rzz__body);
-    REGISTER_SYMBOL(__quantum__qis__rzx__body);
-    REGISTER_SYMBOL(__quantum__qis__u__body);
-    REGISTER_SYMBOL(__quantum__qis__u3__body);
-    REGISTER_SYMBOL(__quantum__qis__u2__body);
-    REGISTER_SYMBOL(__quantum__qis__u1__body);
-    REGISTER_SYMBOL(__quantum__qis__cu1__body);
-    REGISTER_SYMBOL(__quantum__qis__cu3__body);
-    REGISTER_SYMBOL(__quantum__qis__cnot__body);
-    REGISTER_SYMBOL(__quantum__qis__cx__body);
-    REGISTER_SYMBOL(__quantum__qis__cy__body);
-    REGISTER_SYMBOL(__quantum__qis__cz__body);
-    REGISTER_SYMBOL(__quantum__qis__ch__body);
-    REGISTER_SYMBOL(__quantum__qis__swap__body);
-    REGISTER_SYMBOL(__quantum__qis__cswap__body);
-    REGISTER_SYMBOL(__quantum__qis__crz__body);
-    REGISTER_SYMBOL(__quantum__qis__cry__body);
-    REGISTER_SYMBOL(__quantum__qis__crx__body);
-    REGISTER_SYMBOL(__quantum__qis__cp__body);
-    REGISTER_SYMBOL(__quantum__qis__ccx__body);
-    REGISTER_SYMBOL(__quantum__qis__ccy__body);
-    REGISTER_SYMBOL(__quantum__qis__ccz__body);
-    REGISTER_SYMBOL(__quantum__qis__m__body);
-    REGISTER_SYMBOL(__quantum__qis__measure__body);
-    REGISTER_SYMBOL(__quantum__qis__mz__body);
-    REGISTER_SYMBOL(__quantum__qis__reset__body);
-    REGISTER_SYMBOL(__quantum__rt__initialize);
-    REGISTER_SYMBOL(__quantum__rt__read_result);
-    REGISTER_SYMBOL(__quantum__rt__result_record_output);
-    REGISTER_SYMBOL(__quantum__rt__bool_record_output);
-    REGISTER_SYMBOL(__quantum__rt__int_record_output);
-    REGISTER_SYMBOL(__quantum__rt__float_record_output);
-    REGISTER_SYMBOL(__quantum__rt__tuple_record_output);
-    REGISTER_SYMBOL(__quantum__rt__array_record_output);
-  });
-}
-
-#undef REGISTER_SYMBOL
+auto JitSession::runtime() const -> const Runtime& { return *runtime_; }
 
 void JitSession::initNativeTargets() {
   static std::once_flag flag;
@@ -257,25 +439,35 @@ void JitSession::initNativeTargets() {
 
 void JitSession::initialize(
     llvm::Expected<llvm::orc::ThreadSafeModule> llvmModule,
-    const Execution mode) {
+    const SessionOptions& options) {
   if (!llvmModule) {
     throw std::runtime_error(llvm::toString(llvmModule.takeError()));
   }
   module_ = std::move(*llvmModule);
+  runtime_ = std::make_unique<Runtime>();
 
-  // Configure the runtime's labeling schema from the program's entry point.
-  module_.withModuleDo([](const llvm::Module& m) {
-    Runtime::getInstance().setOutputSchema(readOutputSchema(m));
+  std::vector<std::pair<std::string, void*>> runtimeSymbols;
+  module_.withModuleDo([&](llvm::Module& module) {
+    auto& entryPoint = selectEntryPoint(module, options.entryPoint);
+    entryPointName_ = entryPoint.getName().str();
+    runtime_->setOutputSchema(readOutputSchema(entryPoint));
+    std::vector<std::pair<std::string, std::string>> metadata;
+    for (const auto attribute : entryPoint.getAttributes().getFnAttrs()) {
+      if (attribute.isStringAttribute()) {
+        metadata.emplace_back(attribute.getKindAsString().str(),
+                              attribute.getValueAsString().str());
+      }
+    }
+    runtime_->setMetadata(std::move(metadata));
+    if (options.execution == Execution::StateExtraction) {
+      prepareForStateExtraction(entryPoint);
+    }
+    runtimeSymbols = selectRuntimeSymbols(module);
   });
-
-  // In StateExtraction mode, strip QIR measurement and result-management calls
-  // so the runtime's quantum state remains intact after main returns.
-  if (mode == Execution::StateExtraction) {
-    module_.withModuleDo(
-        [](llvm::Module& m) { stripMeasurementRelatedCalls(m); });
+  if (options.seed) {
+    runtime_->seed(*options.seed);
   }
 
-  registerRuntimeSymbols();
   initNativeTargets();
 
   // Get TargetTriple and DataLayout from the main module if they're explicitly
@@ -352,7 +544,7 @@ void JitSession::initialize(
   // Register QIR runtime symbols.
   auto& jd = jit_->getMainJITDylib();
   llvm::orc::SymbolMap hostSymbols;
-  for (const auto& [name, ptr] : manualSymbols) {
+  for (const auto& [name, ptr] : runtimeSymbols) {
     hostSymbols[jit_->mangleAndIntern(name)] = {
         llvm::orc::ExecutorAddr::fromPtr(ptr), llvm::JITSymbolFlags::Exported};
   }
@@ -409,12 +601,12 @@ void JitSession::initialize(
     throw std::runtime_error(llvm::toString(std::move(err)));
   }
 
-  // Resolve the main function.
-  auto mainAddr = jit_->lookup("main");
-  if (!mainAddr) {
-    throw std::runtime_error(llvm::toString(mainAddr.takeError()));
+  // Resolve the selected QIR entry point.
+  auto entryPointAddress = jit_->lookup(entryPointName_);
+  if (!entryPointAddress) {
+    throw std::runtime_error(llvm::toString(entryPointAddress.takeError()));
   }
-  mainFn_ = mainAddr->toPtr<MainFn*>();
+  entryPointFn_ = entryPointAddress->toPtr<EntryPointFn*>();
 }
 
 void JitSession::deinitialize() const {

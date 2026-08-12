@@ -1073,6 +1073,11 @@ Value ctrlInvSandwich(QCProgramBuilder& b);
 /// Creates a circuit with a control modifier applied to two gates.
 Value ctrlTwo(QCProgramBuilder& b);
 
+/// Creates a circuit with a control modifier applied to three gates that use
+/// the targets out of order, repeat one of them, and swap the qubits of a
+/// two-qubit gate.
+Value ctrlThree(QCProgramBuilder& b);
+
 /// Creates a circuit with a control modifier applied to a controlled and a
 /// non-controlled gate.
 Value ctrlTwoMixed(QCProgramBuilder& b);
@@ -1217,6 +1222,14 @@ Value ctrlPowSxRef(QCProgramBuilder& b);
 /// pow(2) with a two-unitary body (x; rxx). The optimizer leaves multi-unitary
 /// pow bodies untouched; checks verification and the QC↔QCO round-trip.
 Value powTwo(QCProgramBuilder& b);
+
+/// Creates a circuit with a power modifier applied to two gates that act on
+/// disjoint qubits.
+Value powTwoDisjoint(QCProgramBuilder& b);
+
+/// Creates a circuit with a non-integer power modifier applied to two gates
+/// that act on disjoint qubits.
+Value powHalfDisjoint(QCProgramBuilder& b);
 
 /// pow(0) with a two-unitary body (x; rxx) — folds to identity (erased at top
 /// level).
