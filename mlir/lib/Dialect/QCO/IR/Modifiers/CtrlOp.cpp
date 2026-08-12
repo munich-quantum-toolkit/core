@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "ModifierUtils.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -20,7 +21,6 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -65,6 +65,12 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     }
     auto innerCtrlOp = dyn_cast<CtrlOp>(inner.getOperation());
     if (!innerCtrlOp) {
+      return failure();
+    }
+
+    // The rewrite hands the qubits of the modifier to the inner operation, so
+    // it must act on all of them.
+    if (innerCtrlOp.getNumQubits() != op.getNumTargets()) {
       return failure();
     }
 
@@ -117,6 +123,11 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
     auto* innerOp = inner.getOperation();
+    // The modifier is replaced by a single operation, so it must not act on
+    // more qubits than its body.
+    if (inner.getNumQubits() != op.getNumTargets()) {
+      return failure();
+    }
 
     // Inline ops from empty control modifiers, IdOp and BarrierOp
     if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(innerOp)) {
@@ -145,8 +156,12 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
 
     // Special case for single control: replace with a single POp
     if (op.getNumControls() == 1) {
-      rewriter.replaceOpWithNewOp<POp>(op, op.getInputControl(0),
-                                       gPhaseOp.getTheta());
+      auto pOp = POp::create(rewriter, op.getLoc(), op.getInputControl(0),
+                             gPhaseOp.getTheta());
+      // The phase acts only on the control; every target passes through.
+      SmallVector<Value> outputs{pOp.getOutputQubit(0)};
+      llvm::append_range(outputs, op.getTargetsIn());
+      rewriter.replaceOp(op, outputs);
       return success();
     }
 
@@ -194,6 +209,38 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
     }
 
     rewriter.replaceOp(op, op.getOperands());
+    return success();
+  }
+};
+
+/**
+ * @brief Drop the target qubits that the body does not use.
+ */
+struct DropUnusedTargets final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    auto* body = op.getBody();
+    const auto used = qco::detail::getUsedQubitIndices(*body);
+    if (used.size() == op.getNumTargets()) {
+      return failure();
+    }
+
+    const auto targets = llvm::map_to_vector(
+        used, [&](const size_t index) { return op.getTargetsIn()[index]; });
+    auto newOp =
+        CtrlOp::create(rewriter, op.getLoc(), op.getControlsIn(), targets,
+                       [&](ValueRange args) -> SmallVector<Value> {
+                         return qco::detail::inlineNarrowedBody(
+                             *body, op.getTargetsIn(), used, args, rewriter);
+                       });
+
+    SmallVector<Value> results(newOp.getControlsOut());
+    llvm::append_range(results,
+                       qco::detail::restoreUnusedQubits(op.getTargetsIn(), used,
+                                                        newOp.getTargetsOut()));
+    rewriter.replaceOp(op, results);
     return success();
   }
 };
@@ -257,12 +304,8 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 LogicalResult CtrlOp::verify() {
   auto& block = *getBody();
-  if (llvm::any_of(block, [](Operation& op) {
-        return isa<AllocOp, SinkOp, MeasureOp, ResetOp, qtensor::ExtractOp,
-                   qtensor::InsertOp>(op);
-      })) {
-    return emitOpError("body must not contain non-unitary quantum operations "
-                       "or modify a quantum register");
+  if (failed(detail::verifyModifierBody(getOperation(), block))) {
+    return failure();
   }
 
   const auto numTargets = getNumTargets();
@@ -309,7 +352,8 @@ LogicalResult CtrlOp::verify() {
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl>(context);
+  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl, DropUnusedTargets>(
+      context);
 }
 
 bool CtrlOp::hasCompileTimeKnownUnitaryMatrix() {

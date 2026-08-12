@@ -38,7 +38,8 @@ if(NOT TARGET ${TARGET_NAME})
     orcjit
     orctargetprocess
     support
-    targetparser)
+    targetparser
+    transformutils)
 
   # Add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime ${llvm_native_libs})

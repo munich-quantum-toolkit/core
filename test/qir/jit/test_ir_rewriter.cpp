@@ -12,6 +12,7 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/AsmParser/Parser.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/LLVMContext.h>
@@ -24,7 +25,6 @@
 #include <cstddef>
 #include <filesystem>
 #include <memory>
-#include <numeric>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -50,14 +50,6 @@ std::size_t countCallsTo(const llvm::Module& m, llvm::StringRef name) {
   return count;
 }
 
-std::size_t countCallsToStripTarget(const llvm::Module& m) {
-  return std::accumulate(qir::STRIP_TARGETS.begin(), qir::STRIP_TARGETS.end(),
-                         std::size_t{},
-                         [&m](std::size_t total, const auto& target) {
-                           return total + countCallsTo(m, target);
-                         });
-}
-
 std::unique_ptr<llvm::Module> loadIRFile(const std::filesystem::path& path,
                                          llvm::LLVMContext& ctx) {
   llvm::SMDiagnostic err;
@@ -77,22 +69,95 @@ protected:
   llvm::LLVMContext ctx_;
 };
 
-TEST_P(IRRewriterTest, StripMeasurementRelatedCalls) {
+TEST_P(IRRewriterTest, TruncatesAtIrreversibleBoundary) {
   const std::filesystem::path path =
       std::filesystem::path(QIR_FILES_DIR) / GetParam();
   auto llvmModule = loadIRFile(path, ctx_);
 
-  const auto numStripCalls = countCallsToStripTarget(*llvmModule);
-  ASSERT_GT(numStripCalls, 0U) << "Module has no calls to strip targets";
+  auto* entryPoint = llvmModule->getFunction("main");
+  ASSERT_NE(entryPoint, nullptr);
+  ASSERT_GT(countCallsTo(*llvmModule, "__quantum__rt__result_record_output"),
+            0U);
 
-  const auto numErased = qir::stripMeasurementRelatedCalls(*llvmModule);
-
-  EXPECT_EQ(numErased, numStripCalls);
-  EXPECT_EQ(countCallsToStripTarget(*llvmModule), 0U);
+  EXPECT_TRUE(qir::prepareForStateExtraction(*entryPoint));
+  EXPECT_EQ(countCallsTo(*llvmModule, "__quantum__qis__mz__body"), 0U);
+  EXPECT_EQ(countCallsTo(*llvmModule, "__quantum__rt__qubit_release"), 0U);
+  EXPECT_EQ(countCallsTo(*llvmModule, "__quantum__rt__result_record_output"),
+            0U);
 }
 
 INSTANTIATE_TEST_SUITE_P(BellPair, IRRewriterTest,
-                         testing::Values("BellPairStatic.ll",
-                                         "BellPairDynamic.ll"));
+                         testing::Values("BellPairStatic.ll"));
+
+TEST(IRRewriter, RemovesAllWorkAfterFirstIrreversibleCall) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 {
+  call void @prepare()
+  call void @measure()
+  call void @must_not_run()
+  ret i64 0
+}
+declare void @prepare()
+declare void @measure() #1
+declare void @must_not_run()
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+attributes #1 = { "irreversible" }
+)";
+  llvm::LLVMContext context;
+  llvm::SMDiagnostic error;
+  auto module = llvm::parseAssemblyString(ir, error, context);
+  ASSERT_NE(module, nullptr);
+  auto* entryPoint = module->getFunction("main");
+  ASSERT_NE(entryPoint, nullptr);
+
+  EXPECT_TRUE(qir::prepareForStateExtraction(*entryPoint));
+  EXPECT_EQ(countCallsTo(*module, "prepare"), 1U);
+  EXPECT_EQ(countCallsTo(*module, "measure"), 0U);
+  EXPECT_EQ(countCallsTo(*module, "must_not_run"), 0U);
+}
+
+TEST(IRRewriter, RejectsIndependentIrreversibleRegions) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 {
+entry:
+  br i1 true, label %left, label %right
+left:
+  call void @measure_left()
+  ret i64 0
+right:
+  call void @measure_right()
+  ret i64 0
+}
+declare void @measure_left() #1
+declare void @measure_right() #1
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+attributes #1 = { "irreversible" }
+)";
+  llvm::LLVMContext context;
+  llvm::SMDiagnostic error;
+  auto module = llvm::parseAssemblyString(ir, error, context);
+  ASSERT_NE(module, nullptr);
+  auto* entryPoint = module->getFunction("main");
+  ASSERT_NE(entryPoint, nullptr);
+
+  EXPECT_THROW(qir::prepareForStateExtraction(*entryPoint),
+               std::invalid_argument);
+}
+
+TEST(IRRewriter, RequiresBaseProfile) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" }
+)";
+  llvm::LLVMContext context;
+  llvm::SMDiagnostic error;
+  auto module = llvm::parseAssemblyString(ir, error, context);
+  ASSERT_NE(module, nullptr);
+  auto* entryPoint = module->getFunction("main");
+  ASSERT_NE(entryPoint, nullptr);
+
+  EXPECT_THROW(qir::prepareForStateExtraction(*entryPoint),
+               std::invalid_argument);
+}
 
 } // namespace

@@ -3539,6 +3539,31 @@ Value ctrlTwo(QCOProgramBuilder& b) {
       b, {res.first[0], res.first[1], res.second[0], res.second[1]});
 }
 
+Value ctrlThree(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  auto res =
+      b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) -> SmallVector<Value> {
+        auto t1 = b.x(targets[1]);
+        auto [r1, r0] = b.dcx(t1, targets[0]);
+        return {r0, b.y(r1)};
+      });
+  return measureAndReturn(b, {res.first[0], res.second[0], res.second[1]});
+}
+
+Value ctrlTwoUnrolled(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  auto first = b.ctrl({q[0], q[1]}, {q[2]}, [&](ValueRange targets) {
+    return SmallVector{b.x(targets[0])};
+  });
+  auto second = b.ctrl(first.first, {first.second[0], q[3]},
+                       [&](ValueRange targets) -> SmallVector<Value> {
+                         auto [t0, t1] = b.rxx(0.123, targets[0], targets[1]);
+                         return {t0, t1};
+                       });
+  return measureAndReturn(b, {second.first[0], second.first[1],
+                              second.second[0], second.second[1]});
+}
+
 Value ctrlTwoMixed(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
@@ -3664,6 +3689,19 @@ Value invTwo(QCOProgramBuilder& b) {
   return measureAndReturn(b, res);
 }
 
+Value invTwoUnrolled(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto first =
+      b.inv({q[0], q[1]}, [&](ValueRange qubits) -> SmallVector<Value> {
+        auto [t0, t1] = b.rxx(0.123, qubits[0], qubits[1]);
+        return {t0, t1};
+      });
+  auto second = b.inv({first[0]}, [&](ValueRange qubits) {
+    return SmallVector{b.x(qubits[0])};
+  });
+  return measureAndReturn(b, {second[0], first[1]});
+}
+
 Value powTwo(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
@@ -3673,6 +3711,24 @@ Value powTwo(QCOProgramBuilder& b) {
     std::tie(i0, i1) = b.rxx(0.123, i0, i1);
     return SmallVector{i0, i1};
   });
+  return measureAndReturn(b, powOut);
+}
+
+Value powTwoDisjoint(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto powOut =
+      b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) -> SmallVector<Value> {
+        return {b.s(qubits[0]), b.t(qubits[1])};
+      });
+  return measureAndReturn(b, powOut);
+}
+
+Value powHalfDisjoint(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto powOut =
+      b.pow(0.5, {q[0], q[1]}, [&](ValueRange qubits) -> SmallVector<Value> {
+        return {b.s(qubits[0]), b.t(qubits[1])};
+      });
   return measureAndReturn(b, powOut);
 }
 

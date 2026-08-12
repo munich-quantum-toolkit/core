@@ -11,7 +11,6 @@
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 
 #include "mlir/Conversion/ConversionUtils.h"
-#include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -1200,11 +1199,10 @@ protected:
              ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
             typeConverter, context);
 
-#define MQT_ADD_QCO_TO_QC_GATE(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_FN)    \
-  addGatePattern<QCO_OP, QC_OP, (TARGETS), (PARAMS)>(patterns, typeConverter,  \
-                                                     context);
-    MQT_GATE_TABLE(MQT_ADD_QCO_TO_QC_GATE)
-#undef MQT_ADD_QCO_TO_QC_GATE
+#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+  addGatePattern<qco::KEY##Op, qc::KEY##Op, (TARGETS), (PARAMS)>(              \
+      patterns, typeConverter, context);
+#include "mlir/Conversion/GateTable.def"
 
     patterns.add<ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp,
                  ConvertQCOPowOp, ConvertQCOYieldOp, ConvertQCOIfOp,
