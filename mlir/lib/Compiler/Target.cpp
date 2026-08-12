@@ -338,6 +338,11 @@ std::optional<double> CompilerTarget::Operation::fidelity() const noexcept {
 }
 
 struct CompilerTarget::Storage {
+  Storage(std::optional<std::string> targetName, std::vector<Site> targetSites,
+          std::optional<std::vector<Coupling>> targetCouplings,
+          std::optional<std::vector<Operation>> targetOperations,
+          std::optional<DurationUnit> targetDurationUnit);
+
   [[nodiscard]] static llvm::Expected<std::shared_ptr<const Storage>>
   create(std::optional<std::string> targetName, std::vector<Site> targetSites,
          std::optional<std::vector<Coupling>> targetCouplings,
@@ -364,12 +369,6 @@ struct CompilerTarget::Storage {
   llvm::StringMap<SmallVector<size_t, 1>> capabilities;
   SmallVector<GateKind> supportedGates;
   std::optional<SynthesisBasis> basis;
-
-private:
-  Storage(std::optional<std::string> targetName, std::vector<Site> targetSites,
-          std::optional<std::vector<Coupling>> targetCouplings,
-          std::optional<std::vector<Operation>> targetOperations,
-          std::optional<DurationUnit> targetDurationUnit);
 };
 
 CompilerTarget::Storage::Storage(
@@ -387,12 +386,9 @@ CompilerTarget::Storage::create(
     std::optional<std::vector<Coupling>> targetCouplings,
     std::optional<std::vector<Operation>> targetOperations,
     std::optional<DurationUnit> targetDurationUnit) {
-  // The constructor is deliberately private, so std::make_shared cannot invoke
-  // it through its implementation context.
-  // NOLINTNEXTLINE(modernize-make-shared)
-  auto storage = std::shared_ptr<Storage>(new Storage(
+  auto storage = std::make_shared<Storage>(
       std::move(targetName), std::move(targetSites), std::move(targetCouplings),
-      std::move(targetOperations), std::move(targetDurationUnit)));
+      std::move(targetOperations), std::move(targetDurationUnit));
   if (auto error = storage->initialize()) {
     return std::move(error);
   }
