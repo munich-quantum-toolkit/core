@@ -15,13 +15,19 @@
 #include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
+#include "qir/helpers/test_utils.hpp"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
+#include <memory>
+#include <numeric>
+#include <ranges>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 TEST(Concurrency, ConcurrentStatevectorReads) {
@@ -118,4 +124,33 @@ TEST(Concurrency, ConcurrentCheckDuringRun) {
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
   done.store(true);
   poller.join();
+}
+
+TEST(Concurrency, ConcurrentQIRJobsOwnTheirRuntimeState) {
+  constexpr size_t numJobs = 4;
+  constexpr size_t shots = 1024;
+  const qdmi_test::SessionGuard session{};
+  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  std::vector<std::unique_ptr<qdmi_test::JobGuard>> jobs;
+  jobs.reserve(numJobs);
+
+  for (size_t i = 0; i < numJobs; ++i) {
+    auto job = std::make_unique<qdmi_test::JobGuard>(session.session);
+    ASSERT_EQ(qdmi_test::setProgram(job->job, QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+                                    program),
+              QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::setShots(job->job, shots), QDMI_SUCCESS);
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(job->job), QDMI_SUCCESS);
+    jobs.emplace_back(std::move(job));
+  }
+
+  for (const auto& job : jobs) {
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(job->job, 0), QDMI_SUCCESS);
+    const auto [keys, values] = qdmi_test::getHistogram(job->job);
+    ASSERT_EQ(keys.size(), values.size());
+    EXPECT_EQ(std::accumulate(values.cbegin(), values.cend(), size_t{0}),
+              shots);
+    EXPECT_TRUE(std::ranges::all_of(
+        keys, [](const auto& key) { return key == "00" || key == "11"; }));
+  }
 }

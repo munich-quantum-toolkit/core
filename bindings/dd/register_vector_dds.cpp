@@ -37,7 +37,7 @@ using namespace nb::literals;
 using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-Vector getVector(const dd::vEdge& v, const dd::fp threshold = 0.) {
+Vector getVector(const dd::vEdge& v, const dd::fp threshold) {
   auto vec = v.getVector(threshold);
   auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(vec.size());
   std::ranges::copy(vec, dataPtr.get());

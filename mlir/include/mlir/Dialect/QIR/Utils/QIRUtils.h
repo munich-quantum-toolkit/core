@@ -12,14 +12,13 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
@@ -68,145 +67,62 @@ inline constexpr auto QIR_RESET = "__quantum__qis__reset__body";
 
 inline constexpr auto QIR_GPHASE = "__quantum__qis__gphase__body";
 
-#define ADD_STANDARD_GATE(NAME_BIG, NAME_SMALL)                                \
-  inline constexpr auto QIR_##NAME_BIG =                                       \
-      "__quantum__qis__" #NAME_SMALL "__body";                                 \
-  inline constexpr auto QIR_C##NAME_BIG =                                      \
-      "__quantum__qis__c" #NAME_SMALL "__body";                                \
-  inline constexpr auto QIR_CC##NAME_BIG =                                     \
-      "__quantum__qis__cc" #NAME_SMALL "__body";                               \
-  inline constexpr auto QIR_CCC##NAME_BIG =                                    \
-      "__quantum__qis__ccc" #NAME_SMALL "__body";
+inline constexpr auto QIR_ARRAY_CREATE = "__quantum__rt__array_create_1d";
+inline constexpr auto QIR_ARRAY_ELEMENT =
+    "__quantum__rt__array_get_element_ptr_1d";
+inline constexpr auto QIR_ARRAY_RELEASE =
+    "__quantum__rt__array_update_reference_count";
+inline constexpr auto QIR_TUPLE_CREATE = "__quantum__rt__tuple_create";
+inline constexpr auto QIR_TUPLE_RELEASE =
+    "__quantum__rt__tuple_update_reference_count";
 
-ADD_STANDARD_GATE(I, i)
-ADD_STANDARD_GATE(X, x)
-ADD_STANDARD_GATE(Y, y)
-ADD_STANDARD_GATE(Z, z)
-ADD_STANDARD_GATE(H, h)
-ADD_STANDARD_GATE(S, s)
-ADD_STANDARD_GATE(T, t)
-ADD_STANDARD_GATE(SX, sx)
-ADD_STANDARD_GATE(RX, rx)
-ADD_STANDARD_GATE(RY, ry)
-ADD_STANDARD_GATE(RZ, rz)
-ADD_STANDARD_GATE(P, p)
-ADD_STANDARD_GATE(R, r)
-ADD_STANDARD_GATE(U2, u2)
-ADD_STANDARD_GATE(U, u3)
-ADD_STANDARD_GATE(SWAP, swap)
-ADD_STANDARD_GATE(ISWAP, iswap)
-ADD_STANDARD_GATE(DCX, dcx)
-ADD_STANDARD_GATE(ECR, ecr)
-ADD_STANDARD_GATE(RXX, rxx)
-ADD_STANDARD_GATE(RYY, ryy)
-ADD_STANDARD_GATE(RZX, rzx)
-ADD_STANDARD_GATE(RZZ, rzz)
-ADD_STANDARD_GATE(XXPLUSYY, xx_plus_yy)
-ADD_STANDARD_GATE(XXMINUSYY, xx_minus_yy)
-ADD_STANDARD_GATE(RCCX, rccx)
+#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+  inline constexpr auto QIR_##GETTER = "__quantum__qis__" #NAME "__" #SUFFIX;  \
+  inline constexpr auto QIR_C##GETTER =                                        \
+      "__quantum__qis__c" #NAME "__" #SUFFIX;                                  \
+  inline constexpr auto QIR_CC##GETTER =                                       \
+      "__quantum__qis__cc" #NAME "__" #SUFFIX;                                 \
+  inline constexpr auto QIR_##GETTER##_CTL =                                   \
+      "__quantum__qis__" #NAME "__" #CTL_SUFFIX;
+#include "mlir/Conversion/GateTable.def"
 
-#undef ADD_STANDARD_GATE
-
-#define ADD_ADJOINT_GATE(NAME_BIG, NAME_SMALL)                                 \
-  inline constexpr auto QIR_##NAME_BIG##_ADJ =                                 \
-      "__quantum__qis__" #NAME_SMALL "__adj";                                  \
-  inline constexpr auto QIR_C##NAME_BIG##_ADJ =                                \
-      "__quantum__qis__c" #NAME_SMALL "__adj";                                 \
-  inline constexpr auto QIR_CC##NAME_BIG##_ADJ =                               \
-      "__quantum__qis__cc" #NAME_SMALL "__adj";                                \
-  inline constexpr auto QIR_CCC##NAME_BIG##_ADJ =                              \
-      "__quantum__qis__ccc" #NAME_SMALL "__adj";
-
-ADD_ADJOINT_GATE(S, s)
-ADD_ADJOINT_GATE(T, t)
-ADD_ADJOINT_GATE(SX, sx)
-
-#undef ADD_ADJOINT_GATE
-
-// Functions for getting QIR function names
-
-#define DEFINE_GETTER(NAME)                                                    \
-  /**                                                                          \
-   * @brief Gets the QIR function name for NAME                                \
-   *                                                                           \
-   * @param numControls Number of control qubits                               \
-   * @return The QIR function name                                             \
-   */                                                                          \
-  inline StringRef getFnName##NAME(size_t numControls) {                       \
-    switch (numControls) {                                                     \
-    case 0:                                                                    \
-      return QIR_##NAME;                                                       \
-    case 1:                                                                    \
-      return QIR_C##NAME;                                                      \
-    case 2:                                                                    \
-      return QIR_CC##NAME;                                                     \
-    case 3:                                                                    \
-      return QIR_CCC##NAME;                                                    \
-    default:                                                                   \
-      llvm::reportFatalUsageError(                                             \
-          "Multi-controlled with more than 3 controls are currently not "      \
-          "supported");                                                        \
-    }                                                                          \
+inline StringRef selectQISFunctionName(const StringRef body,
+                                       const StringRef singleControlled,
+                                       const StringRef doubleControlled,
+                                       const StringRef genericControlled,
+                                       const size_t numControls) {
+  switch (numControls) {
+  case 0:
+    return body;
+  case 1:
+    return singleControlled;
+  case 2:
+    return doubleControlled;
+  default:
+    return genericControlled;
   }
+}
 
-DEFINE_GETTER(I)
-DEFINE_GETTER(X)
-DEFINE_GETTER(Y)
-DEFINE_GETTER(Z)
-DEFINE_GETTER(H)
-DEFINE_GETTER(S)
-DEFINE_GETTER(T)
-DEFINE_GETTER(SX)
-DEFINE_GETTER(RX)
-DEFINE_GETTER(RY)
-DEFINE_GETTER(RZ)
-DEFINE_GETTER(P)
-DEFINE_GETTER(R)
-DEFINE_GETTER(U2)
-DEFINE_GETTER(U)
-DEFINE_GETTER(SWAP)
-DEFINE_GETTER(ISWAP)
-DEFINE_GETTER(DCX)
-DEFINE_GETTER(ECR)
-DEFINE_GETTER(RXX)
-DEFINE_GETTER(RYY)
-DEFINE_GETTER(RZX)
-DEFINE_GETTER(RZZ)
-DEFINE_GETTER(XXPLUSYY)
-DEFINE_GETTER(XXMINUSYY)
-DEFINE_GETTER(RCCX)
-
-#undef DEFINE_GETTER
-
-#define DEFINE_ADJOINT_GETTER(NAME)                                            \
-  /**                                                                          \
-   * @brief Gets the QIR function name for NAME                                \
-   *                                                                           \
-   * @param numControls Number of control qubits                               \
-   * @return The QIR function name                                             \
-   */                                                                          \
-  inline StringRef getFnName##NAME##DG(size_t numControls) {                   \
-    switch (numControls) {                                                     \
-    case 0:                                                                    \
-      return QIR_##NAME##_ADJ;                                                 \
-    case 1:                                                                    \
-      return QIR_C##NAME##_ADJ;                                                \
-    case 2:                                                                    \
-      return QIR_CC##NAME##_ADJ;                                               \
-    case 3:                                                                    \
-      return QIR_CCC##NAME##_ADJ;                                              \
-    default:                                                                   \
-      llvm::reportFatalUsageError(                                             \
-          "Multi-controlled with more than 3 controls are currently not "      \
-          "supported");                                                        \
-    }                                                                          \
+#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+  inline StringRef getFnName##GETTER(const size_t numControls) {               \
+    return selectQISFunctionName(QIR_##GETTER, QIR_C##GETTER, QIR_CC##GETTER,  \
+                                 QIR_##GETTER##_CTL, numControls);             \
   }
+#include "mlir/Conversion/GateTable.def"
 
-DEFINE_ADJOINT_GETTER(S)
-DEFINE_ADJOINT_GETTER(T)
-DEFINE_ADJOINT_GETTER(SX)
-
-#undef DEFINE_ADJOINT_GETTER
+/**
+ * @brief Emit a QIS call, materializing generic controlled arguments when
+ * required.
+ *
+ * Body, adjoint, and one- or two-control calls pass their arguments directly.
+ * Calls with three or more controls use the generic controlled specialization:
+ * the first argument is an array of controls and the second is either the
+ * single target or a tuple containing parameters followed by targets.
+ *
+ */
+void emitQISCall(OpBuilder& builder, Operation* anchor, Location loc,
+                 ValueRange parameters, ValueRange controls, ValueRange targets,
+                 StringRef fnName);
 
 /**
  * @brief Find the main LLVM function with entry_point attribute

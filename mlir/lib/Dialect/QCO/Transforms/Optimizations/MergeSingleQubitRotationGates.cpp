@@ -381,9 +381,12 @@ static std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
 }
 
 /**
- * @brief Converts a rotation gate to quaternion representation.
+ * @brief Converts a supported single-qubit gate to quaternion representation.
  *
  * - RX, RY, RZ, P: single-axis half-angle formulas.
+ * - X, Y, Z, S, Sdg, T, Tdg, SX, SXdg: fixed-axis rotations.
+ * - H: a pi rotation around the (X + Z) / sqrt(2) axis.
+ * - Id: the identity quaternion.
  * - R(theta, phi): Q(cos(θ/2), sin(θ/2)cos(φ), sin(θ/2)sin(φ), 0).
  * - U2(phi, lambda) = U(π/2, phi, lambda).
  * - U(theta, phi, lambda): ZYZ via quaternionFromZYZ.
@@ -393,9 +396,9 @@ static std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
  *         (static path: unfoldable SSA value).
  */
 template <typename T>
-static std::optional<Quat<T>>
-quaternionFromRotation(UnitaryOpInterface op, const ScalarConsts<T>& c,
-                       PatternRewriter& rewriter) {
+static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
+                                                 const ScalarConsts<T>& c,
+                                                 PatternRewriter& rewriter) {
   const Location loc = op->getLoc();
   auto param = [&](unsigned i) { return gateParam<T>(op, i, rewriter, loc); };
 
@@ -408,8 +411,48 @@ quaternionFromRotation(UnitaryOpInterface op, const ScalarConsts<T>& c,
     return axisQuaternion(*angle, *axis, c);
   }
 
-  // Multi-parameter gates each need their own conversion
+  const auto fixedAxisRotation = [&](RotationAxis axis, double angle) {
+    return axisQuaternion(Val<T>::constant(rewriter, loc, angle), axis, c);
+  };
+
+  // Fixed and multi-parameter gates each need their own conversion.
   return TypeSwitch<Operation*, std::optional<Quat<T>>>(op.getOperation())
+      .template Case<XOp>([&](XOp) {
+        return fixedAxisRotation(RotationAxis::X, std::numbers::pi);
+      })
+      .template Case<YOp>([&](YOp) {
+        return fixedAxisRotation(RotationAxis::Y, std::numbers::pi);
+      })
+      .template Case<ZOp>([&](ZOp) {
+        return fixedAxisRotation(RotationAxis::Z, std::numbers::pi);
+      })
+      .template Case<SOp>([&](SOp) {
+        return fixedAxisRotation(RotationAxis::Z, std::numbers::pi / 2.0);
+      })
+      .template Case<SdgOp>([&](SdgOp) {
+        return fixedAxisRotation(RotationAxis::Z, -std::numbers::pi / 2.0);
+      })
+      .template Case<TOp>([&](TOp) {
+        return fixedAxisRotation(RotationAxis::Z, std::numbers::pi / 4.0);
+      })
+      .template Case<TdgOp>([&](TdgOp) {
+        return fixedAxisRotation(RotationAxis::Z, -std::numbers::pi / 4.0);
+      })
+      .template Case<SXOp>([&](SXOp) {
+        return fixedAxisRotation(RotationAxis::X, std::numbers::pi / 2.0);
+      })
+      .template Case<SXdgOp>([&](SXdgOp) {
+        return fixedAxisRotation(RotationAxis::X, -std::numbers::pi / 2.0);
+      })
+      .template Case<HOp>([&](HOp) -> std::optional<Quat<T>> {
+        const auto invSqrtTwo =
+            Val<T>::constant(rewriter, loc, 1.0 / std::numbers::sqrt2);
+        return Quat<T>{
+            .w = c.zero, .x = invSqrtTwo, .y = c.zero, .z = invSqrtTwo};
+      })
+      .template Case<IdOp>([&](IdOp) -> std::optional<Quat<T>> {
+        return Quat<T>{.w = c.one, .x = c.zero, .y = c.zero, .z = c.zero};
+      })
       .template Case<ROp>([&](ROp) -> std::optional<Quat<T>> {
         const auto theta = param(0);
         const auto phi = param(1);
@@ -444,7 +487,7 @@ quaternionFromRotation(UnitaryOpInterface op, const ScalarConsts<T>& c,
 }
 
 /**
- * @brief Returns the global phase contribution of a rotation gate.
+ * @brief Returns the global phase contribution of a supported gate.
  *
  * Rotation gates can be factored as U = e^{i * phase} * SU(2), where SU(2)
  * is the quaternion-representable part and phase is the global phase:
@@ -453,6 +496,11 @@ quaternionFromRotation(UnitaryOpInterface op, const ScalarConsts<T>& c,
  * - P(theta)              -> theta / 2 (P = e^{i * theta / 2} * RZ(theta))
  * - U(theta, phi, lambda) -> (phi + lambda) / 2
  * - U2(phi, lambda)       -> (phi + lambda) / 2
+ * - X, Y, Z, H            -> pi / 2
+ * - S, SX                 -> pi / 4
+ * - Sdg, SXdg             -> -pi / 4
+ * - T / Tdg               -> +/- pi / 8
+ * - Id                    -> 0
  *
  * @return Success with the phase contribution, including an explicit zero for
  *         SU(2) gates. Failure if a required parameter does not fold on the
@@ -468,6 +516,21 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
   return TypeSwitch<Operation*, FailureOr<Val<T>>>(op.getOperation())
       .template Case<RXOp, RYOp, RZOp, ROp>(
           [&](auto) -> FailureOr<Val<T>> { return c.zero; })
+      .template Case<XOp, YOp, ZOp, HOp>(
+          [&](auto) -> FailureOr<Val<T>> { return c.pi / c.two; })
+      .template Case<SOp, SXOp>([&](auto) -> FailureOr<Val<T>> {
+        return Val<T>::constant(rewriter, loc, std::numbers::pi / 4.0);
+      })
+      .template Case<SdgOp, SXdgOp>([&](auto) -> FailureOr<Val<T>> {
+        return Val<T>::constant(rewriter, loc, -std::numbers::pi / 4.0);
+      })
+      .template Case<TOp>([&](auto) -> FailureOr<Val<T>> {
+        return Val<T>::constant(rewriter, loc, std::numbers::pi / 8.0);
+      })
+      .template Case<TdgOp>([&](auto) -> FailureOr<Val<T>> {
+        return Val<T>::constant(rewriter, loc, -std::numbers::pi / 8.0);
+      })
+      .template Case<IdOp>([&](auto) -> FailureOr<Val<T>> { return c.zero; })
       .template Case<POp>([&](auto) -> FailureOr<Val<T>> {
         const auto theta = param(0);
         if (!theta) {
@@ -513,10 +576,13 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
  * MLIR's constant folder never sees atan2(0,0) → NaN on a dead select input.
  *
  * @note Floating-point errors may accumulate when merging many gates.
- * @return {theta, phi, lambda} = {beta, alpha, gamma} suitable for UOp
+ * Normalizing either Z angle by 2*pi flips the corresponding SU(2)
+ * quaternion sign. The returned phase correction accounts for those flips.
+ *
+ * @return {theta, phi, lambda, phaseCorrection} suitable for UOp
  */
 template <typename T>
-static std::array<Val<T>, 3> anglesFromQuaternion(const Quat<T>& q,
+static std::array<Val<T>, 4> anglesFromQuaternion(const Quat<T>& q,
                                                   const ScalarConsts<T>& c) {
   PatternRewriter& rewriter = *q.w.rewriter;
   const Location loc = q.w.loc;
@@ -527,7 +593,11 @@ static std::array<Val<T>, 3> anglesFromQuaternion(const Quat<T>& q,
   // Host path can take the pure-Z shortcut without building the full tree.
   if constexpr (std::is_same_v<T, double>) {
     if (xyNearZero) {
-      return {c.zero, wrapToPi(q.z.atan2(q.w) * c.two, c), c.zero};
+      const auto alpha = q.z.atan2(q.w) * c.two;
+      const auto phi = wrapToPi(alpha, c);
+      // Wrapping alpha by 2*pi flips the SU(2) representative, which is
+      // compensated by half the removed angle as a global phase.
+      return {c.zero, phi, c.zero, (alpha - phi) / c.two};
     }
   }
 
@@ -565,11 +635,16 @@ static std::array<Val<T>, 3> anglesFromQuaternion(const Quat<T>& q,
   const auto alpha = Val<T>::select(safe, alphaSafe, alphaUnsafe);
   const auto gamma = Val<T>::select(safe, gammaSafe, c.zero);
 
-  return {beta, wrapToPi(alpha, c), wrapToPi(gamma, c)};
+  const auto phi = wrapToPi(alpha, c);
+  const auto lambda = wrapToPi(gamma, c);
+  // Each removed 2*pi Z rotation flips the SU(2) representative. Half of the
+  // total removed angle restores the original matrix as a global phase.
+  return {beta, phi, lambda, ((alpha - phi) + (gamma - lambda)) / c.two};
 }
 
 static bool isMergeable(Operation* op) {
-  return isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp>(op);
+  return isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp, XOp, YOp, ZOp, HOp, SOp,
+             SdgOp, TOp, TdgOp, SXOp, SXdgOp, IdOp>(op);
 }
 
 static bool areQuaternionMergeable(Operation* a, Operation* b) {
@@ -641,7 +716,7 @@ struct MergeSingleQubitRotationGatesPattern final
     std::optional<Quat<double>> qAccum;
     Val<double> phaseAccum = consts.zero;
     for (UnitaryOpInterface chainOp : chain) {
-      auto qi = quaternionFromRotation<double>(chainOp, consts, rewriter);
+      auto qi = quaternionFromGate<double>(chainOp, consts, rewriter);
       if (!qi) {
         return failure();
       }
@@ -653,17 +728,17 @@ struct MergeSingleQubitRotationGatesPattern final
       qAccum = qAccum ? hamiltonProduct(*qi, *qAccum) : *qi;
     }
 
-    const auto [theta, phi, lambda] = anglesFromQuaternion(*qAccum, consts);
-    const auto correction = phaseAccum - ((phi + lambda) / consts.two);
-    const double correctionHost = utils::normalizeAngle(correction.v);
+    const auto [theta, phi, lambda, eulerPhase] =
+        anglesFromQuaternion(*qAccum, consts);
+    const auto correction =
+        phaseAccum - ((phi + lambda) / consts.two) + eulerPhase;
 
     for (auto chainOp : llvm::drop_begin(chain)) {
       rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
     }
-    if (std::abs(correctionHost) > utils::TOLERANCE) {
-      GPhaseOp::create(
-          rewriter, loc,
-          utils::constantFromScalar(rewriter, loc, correctionHost));
+    if (std::abs(correction.v) > utils::TOLERANCE) {
+      GPhaseOp::create(rewriter, loc,
+                       utils::constantFromScalar(rewriter, loc, correction.v));
     }
     rewriter.replaceOpWithNewOp<UOp>(
         chain.front(), chain.front().getInputQubit(0),
@@ -680,7 +755,8 @@ struct MergeSingleQubitRotationGatesPattern final
    * correction:
    *   outPhase = (phi + lambda) / 2
    *   correction = totalInputPhase - outPhase
-   * Foldable corrections are normalized into the practical gphase range.
+   * The pass-level global-phase normalization subsequently combines and
+   * normalizes the emitted correction.
    *
    * Converts every gate before rewriting so a missing conversion Case cannot
    * leave partially rewired ops.
@@ -695,7 +771,7 @@ struct MergeSingleQubitRotationGatesPattern final
     quats.reserve(chain.size());
     Val<Value> phaseAccum = consts.zero;
     for (UnitaryOpInterface chainOp : chain) {
-      auto qi = quaternionFromRotation<Value>(chainOp, consts, rewriter);
+      auto qi = quaternionFromGate<Value>(chainOp, consts, rewriter);
       if (!qi) {
         return failure();
       }
@@ -712,13 +788,10 @@ struct MergeSingleQubitRotationGatesPattern final
       qAccum = hamiltonProduct(qi, qAccum);
     }
 
-    const auto [theta, phi, lambda] = anglesFromQuaternion(qAccum, consts);
+    const auto [theta, phi, lambda, eulerPhase] =
+        anglesFromQuaternion(qAccum, consts);
     const auto outPhase = (phi + lambda) / consts.two;
-    Val<Value> phaseCorrection = phaseAccum - outPhase;
-    if (const auto constant = utils::valueToConstantDouble(phaseCorrection.v)) {
-      phaseCorrection =
-          Val<Value>::constant(rewriter, loc, utils::normalizeAngle(*constant));
-    }
+    const Val<Value> phaseCorrection = phaseAccum - outPhase + eulerPhase;
 
     for (auto chainOp : llvm::drop_begin(chain)) {
       rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));

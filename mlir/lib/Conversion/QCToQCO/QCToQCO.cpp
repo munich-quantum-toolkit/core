@@ -11,7 +11,6 @@
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 
 #include "mlir/Conversion/ConversionUtils.h"
-#include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -1902,11 +1901,11 @@ protected:
     patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(
         typeConverter, context, &state);
 
-#define MQT_ADD_QC_TO_QCO_GATE(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_FN)    \
-  patterns.add<ConvertQCGateToQCO<QC_OP, QCO_OP, (TARGETS), (PARAMS)>>(        \
+#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+  patterns.add<                                                                \
+      ConvertQCGateToQCO<qc::KEY##Op, qco::KEY##Op, (TARGETS), (PARAMS)>>(     \
       typeConverter, context, &state);
-    MQT_GATE_TABLE(MQT_ADD_QC_TO_QCO_GATE)
-#undef MQT_ADD_QC_TO_QCO_GATE
+#include "mlir/Conversion/GateTable.def"
 
     // Conversion of qc types in func.func signatures
     // Note: This currently has limitations with signature changes

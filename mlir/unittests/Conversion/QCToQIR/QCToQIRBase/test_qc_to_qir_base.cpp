@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -26,6 +27,7 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -38,6 +40,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cstddef>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -49,8 +52,8 @@ namespace {
 
 struct QCToQIRBaseTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<qir::QIRProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<qir::QIRProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCToQIRBaseTestCase& info);
@@ -58,10 +61,10 @@ struct QCToQIRBaseTestCase {
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const QCToQIRBaseTestCase& info) {
-  return os << "QCToQIRBase{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "QCToQIRBase{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QCToQIRBaseTest : public testing::TestWithParam<QCToQIRBaseTestCase> {
@@ -83,8 +86,51 @@ protected:
 
 static LogicalResult runQCToQIRBaseConversion(ModuleOp module) {
   PassManager pm(module.getContext());
+  pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createQCToQIRBase());
   return pm.run(module);
+}
+
+static void expectFollowingXIsUncontrolled(
+    const function_ref<void(qc::QCProgramBuilder&, Value, Value)>
+        buildModifier) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto control = builder.allocQubit();
+  const auto target = builder.allocQubit();
+  buildModifier(builder, control, target);
+  builder.x(target);
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  size_t xCalls = 0;
+  size_t controlledXCalls = 0;
+  moduleOp->walk([&](LLVM::CallOp call) {
+    xCalls += call.getCallee() == qir::QIR_X;
+    controlledXCalls += call.getCallee() == qir::QIR_CX;
+  });
+  EXPECT_EQ(xCalls, 1);
+  EXPECT_EQ(controlledXCalls, 0);
+}
+
+TEST(QCToQIRBaseNativeTest, EmptyCtrlDoesNotControlFollowingGate) {
+  expectFollowingXIsUncontrolled(
+      [](qc::QCProgramBuilder& builder, const Value control,
+         const Value target) { builder.ctrl(control, target, [](Value) {}); });
+}
+
+TEST(QCToQIRBaseNativeTest, ControlledBarrierDoesNotControlFollowingGate) {
+  expectFollowingXIsUncontrolled([](qc::QCProgramBuilder& builder,
+                                    const Value control, const Value target) {
+    builder.ctrl(control, target,
+                 [&](const Value bodyTarget) { builder.barrier(bodyTarget); });
+  });
 }
 
 TEST(QCToQIRBaseNativeTest, LowersControlFlowAssertions) {
@@ -140,6 +186,31 @@ TEST(QCToQIRBaseNativeTest, LowersPopulationCountThroughMathToLLVM) {
   });
   EXPECT_FALSE(retainsMathPopulationCount);
   EXPECT_TRUE(hasLLVMPopulationCount);
+}
+
+TEST(QCToQIRBaseNativeTest, SelectsControlledSpecializationsByArity) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto control0 = builder.allocQubit();
+  const auto control1 = builder.allocQubit();
+  const auto control2 = builder.allocQubit();
+  const auto target = builder.allocQubit();
+  builder.crx(0.25, control0, target);
+  builder.mcrx(0.5, {control0, control1}, target);
+  builder.mcrx(0.75, {control0, control1, control2}, target);
+  auto module = builder.finalize();
+
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_CRX));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_CCRX));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_RX_CTL));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_ARRAY_CREATE));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_TUPLE_CREATE));
 }
 
 TEST(QCToQIRBaseNativeTest, RecordsReturnedRegisterMeasurement) {
@@ -353,9 +424,9 @@ TEST(QCToQIRBaseNativeTest, RejectsOutOfBoundsClassicalRegisterIndex) {
 TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
-  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
+  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -372,7 +443,7 @@ TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized Converted QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(
+  auto reference = ::mqt::test::buildMLIRProgram(
       context.get(), referenceBuilder, qir::QIRProgramBuilder::Profile::Base);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QIR IR" + name);
@@ -942,4 +1013,12 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRBaseTestCase{"AllocDeallocPair",
                             MQT_NAMED_BUILDER(qc::allocDeallocPair),
                             MQT_NAMED_BUILDER(qir::emptyQIR<true>)}));
+/// @}
+
+/// \name QCToQIRBase/Modifiers/CtrlOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(QCToQIRBaseCtrlOpTest, QCToQIRBaseTest,
+                         testing::Values(QCToQIRBaseTestCase{
+                             "CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
+                             MQT_NAMED_BUILDER(qir::ctrlTwo<true>)}));
 /// @}
