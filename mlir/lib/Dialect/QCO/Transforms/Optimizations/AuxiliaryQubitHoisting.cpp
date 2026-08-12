@@ -138,11 +138,10 @@ static SinkOp findDeallocForAlloc(AllocOp alloc,
       currentValue = insertOp.getResult();
       continue;
     }
-    if (user->getNumResults() != 1) {
-      // Multiple results, should not happen.
-      return nullptr;
-    }
-    currentValue = user->getResult(0);
+    // Anything else is not known to thread the qubit. Guessing that a single
+    // result carries it on would silently follow an unrelated value, so give up
+    // instead.
+    return nullptr;
   }
   return nullptr;
 }
@@ -207,6 +206,13 @@ static bool isRecursive(CallGraph& cg, func::FuncOp func) {
  */
 static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp,
                                       CallQubitMapping& callMapping) {
+  // The release point is rewritten into a reset whose result is appended to
+  // every return. That is only sound while there is a single block, because a
+  // reset in one block need not reach a return in another.
+  if (!funcOp.getBody().hasOneBlock()) {
+    return;
+  }
+
   // Collect the allocations up front: the loop below erases operations, which
   // would invalidate a walk in progress.
   SmallVector<AllocOp> allocOps;

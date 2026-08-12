@@ -29,8 +29,9 @@
 namespace mlir::qtensor {
 TypedValue<RankedTensorType> TensorIterator::tensor() const {
   // The following operations don't have an OpResult.
-  if (op_ != nullptr &&
-      isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp>(op_)) {
+  // `func::CallOp` is deliberately absent: it does produce results.
+  if (op_ != nullptr && isa<DeallocOp, scf::YieldOp, scf::ConditionOp,
+                            qco::YieldOp, func::ReturnOp>(op_)) {
     return nullptr;
   }
 

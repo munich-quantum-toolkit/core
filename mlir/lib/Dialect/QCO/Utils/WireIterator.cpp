@@ -100,8 +100,16 @@ CallQubitMapping::computeMapping(func::FuncOp callee) {
     return positionalMapping(callee);
   }
 
+  // Threading follows a single straight-line body. A callee whose control flow
+  // ends somewhere other than one `func.return` cannot be threaded, and
+  // claiming that it keeps every qubit would be worse than admitting that only
+  // the positional contract is known.
   auto returnOp =
       dyn_cast<func::ReturnOp>(callee.getBody().front().getTerminator());
+  if (!callee.getBody().hasOneBlock() || !returnOp) {
+    inProgress.erase(callee.getOperation());
+    return positionalMapping(callee);
+  }
 
   SmallVector<std::int64_t> mapping;
   for (const BlockArgument arg : callee.getArguments()) {
@@ -110,7 +118,7 @@ CallQubitMapping::computeMapping(func::FuncOp callee) {
     }
 
     std::int64_t resultIndex = KEPT;
-    if (returnOp) {
+    {
       // Follow the argument to the end of its wire. `qubit()` is null on the
       // terminating operation, so the last non-null value is the one that
       // operation consumes.
@@ -198,6 +206,18 @@ bool WireIterator::isSourceLikeOperation(Operation* op) {
   return isa<AllocOp, StaticOp, qtensor::ExtractOp>(op);
 }
 
+CallQubitMapping& WireIterator::callMapping() const {
+  // Without a shared mapping every call step re-threads the callee, and the
+  // nested calls it meets are re-threaded in turn, so the cost grows with the
+  // depth of the call graph rather than staying constant per step. Pass a
+  // shared mapping when traversing in a loop.
+  if (mapping_ != nullptr) {
+    return *mapping_;
+  }
+  localMapping = CallQubitMapping{};
+  return localMapping;
+}
+
 bool WireIterator::atWireStart() const {
   if (op_ == nullptr) {
     return true;
@@ -208,8 +228,7 @@ bool WireIterator::atWireStart() const {
   // A call is the start of the wire only when it creates the qubit rather than
   // threading one through.
   if (auto callOp = dyn_cast<func::CallOp>(op_)) {
-    CallQubitMapping local;
-    auto& mapping = mapping_ != nullptr ? *mapping_ : local;
+    auto& mapping = callMapping();
     return qubit_.getDefiningOp() == op_ &&
            mapping.getOperandForResult(callOp, qubit_) == nullptr;
   }
@@ -248,8 +267,7 @@ void WireIterator::forward() {
   // A call threads the qubit through to the matching result. When the callee
   // keeps it, the wire ends here.
   if (auto callOp = dyn_cast<func::CallOp>(op_)) {
-    CallQubitMapping local;
-    auto& mapping = mapping_ != nullptr ? *mapping_ : local;
+    auto& mapping = callMapping();
     const auto result = mapping.getResultForOperand(callOp, qubit_);
     if (!result) {
       isFinal_ = true;
@@ -327,8 +345,7 @@ void WireIterator::backward() {
       isFinal_ = false;
       return;
     }
-    CallQubitMapping local;
-    auto& mapping = mapping_ != nullptr ? *mapping_ : local;
+    auto& mapping = callMapping();
     const auto operand = mapping.getOperandForResult(callOp, qubit_);
     if (!operand) {
       // The callee created the qubit; this is the start of the wire.

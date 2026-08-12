@@ -1503,12 +1503,32 @@ SmallVector<Value> QCOProgramBuilder::call(StringRef callee,
 
   if (!llvm::equal(operands.getTypes(), funcOp.getArgumentTypes())) {
     llvm::reportFatalUsageError(
-        "Return values do not match the declared function result types");
+        "Call operands do not match the declared function argument types");
+  }
+
+  // Re-insert qubits that were extracted from a tensor operand, so the callee
+  // receives a complete register. Every other construct that hands a tensor to
+  // a nested region does the same before building it. Unlike those, a call may
+  // also carry classical operands, so `prepareInitArgs` cannot be used here;
+  // qubits passed alongside their tensor are excluded from the re-insertion.
+  DenseSet<Value> qubitOperandSet;
+  for (const auto operand : operands) {
+    if (isa<QubitType>(operand.getType())) {
+      qubitOperandSet.insert(operand);
+    }
+  }
+  SmallVector<Value> preparedOperands;
+  preparedOperands.reserve(operands.size());
+  for (const auto operand : operands) {
+    preparedOperands.emplace_back(
+        isQubitTensor(operand.getType())
+            ? prepareInitArg(operand, &qubitOperandSet)
+            : operand);
   }
 
   SmallVector<Value> qubitOperands;
   SmallVector<Value> tensorOperands;
-  for (const auto operand : operands) {
+  for (const auto operand : preparedOperands) {
     if (isa<QubitType>(operand.getType())) {
       validateQubitValue(operand);
       qubitOperands.emplace_back(operand);
@@ -1518,7 +1538,7 @@ SmallVector<Value> QCOProgramBuilder::call(StringRef callee,
     }
   }
 
-  auto callOp = func::CallOp::create(*this, funcOp, operands);
+  auto callOp = func::CallOp::create(*this, funcOp, preparedOperands);
 
   SmallVector<Value> qubitResults;
   SmallVector<Value> tensorResults;

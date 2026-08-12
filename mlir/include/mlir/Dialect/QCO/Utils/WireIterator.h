@@ -105,8 +105,9 @@ public:
    *
    * @param qubit The qubit value to start at.
    * @param mapping Optional shared cache for resolving calls. Passing one only
-   * affects performance: without it, a callee is threaded afresh on every step
-   * across a call.
+   * affects performance, but the difference is not constant: without it every
+   * step across a call re-threads the callee, and the nested calls met while
+   * doing so are re-threaded in turn. Share one when traversing in a loop.
    */
   explicit WireIterator(Value qubit, CallQubitMapping* mapping = nullptr)
       : op_(qubit.getDefiningOp()), qubit_(qubit), isFinal_(false),
@@ -181,11 +182,15 @@ private:
   Value qubit_;
   bool isFinal_;
   bool isSentinel_;
-  /// Shared, cached call mapping. Null means a throw-away mapping is used for
-  /// each call step, which is still correct but re-threads the callee. The
-  /// iterator deliberately keeps only a pointer, so that copying it stays
-  /// cheap.
+  /// @returns the mapping to resolve calls with, shared when one was supplied.
+  CallQubitMapping& callMapping() const;
+
+  /// Shared, cached call mapping. Null means the scratch mapping below is used
+  /// instead, which is still correct but re-threads callees. The iterator keeps
+  /// only a pointer to the shared one so that copying it stays cheap.
   CallQubitMapping* mapping_ = nullptr;
+  /// Scratch mapping used when no shared one was supplied.
+  mutable CallQubitMapping localMapping;
 };
 
 /**

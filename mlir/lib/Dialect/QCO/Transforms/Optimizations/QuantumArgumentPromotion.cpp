@@ -98,10 +98,14 @@ static qtensor::InsertOp findInsertForExtract(qtensor::ExtractOp extract) {
       currentValue = measureOp.getQubitOut();
       continue;
     }
-    if (user->getNumResults() != 1) {
-      return nullptr;
+    if (auto resetOp = dyn_cast<ResetOp>(user)) {
+      currentValue = resetOp.getQubitOut();
+      continue;
     }
-    currentValue = user->getResult(0);
+    // Anything else is not known to thread the qubit. Guessing that a single
+    // result carries it on would let a slot be promoted that no longer holds
+    // the extracted qubit, so give up instead.
+    return nullptr;
   }
   return nullptr;
 }
@@ -382,7 +386,14 @@ void runQuantumArgumentPromotion(ModuleOp moduleOp) {
   });
 
   for (auto& [arg, slots] : argsToPromote) {
-    promoteArgument(arg, slots);
+    // Promoting one function rewrites the call sites in others, which can
+    // invalidate a chain recorded during the walk. Re-derive it right before
+    // use rather than trusting the recorded slots.
+    auto current = canPromoteArgument(arg);
+    if (current.empty()) {
+      continue;
+    }
+    promoteArgument(arg, current);
   }
 }
 
