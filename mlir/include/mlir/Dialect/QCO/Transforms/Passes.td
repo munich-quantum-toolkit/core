@@ -90,6 +90,24 @@ def FuseSingleQubitUnitaryRuns
       "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r).">];
 }
 
+def QuantizeGateAngles : Pass<"quantize-gate-angles", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary = "Quantize QCO gate parameters as fixed-width OpenQASM angles";
+  let description = [{
+    Replaces every actual gate parameter with its nearest OpenQASM
+    `angle[N]` value, where `N` is selected by `precision-bits`. Conversion is
+    modulo 2*pi and uses round-to-nearest, ties-to-even. Both compile-time
+    constants and run-time SSA values are supported.
+
+    The pass walks gates nested in control, inverse, and power modifiers.
+    Run this opt-in pass after the final synthesis or fusion pass, because
+    later transformations may introduce new gate parameters.
+  }];
+  let options = [Option<"precisionBits", "precision-bits", "uint32_t", "0",
+                        "Required angle precision in bits (1 through 64).">];
+}
+
 //===----------------------------------------------------------------------===//
 
 def QuantumLoopUnroll

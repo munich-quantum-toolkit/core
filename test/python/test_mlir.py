@@ -459,6 +459,26 @@ def test_qco_program_runs_textual_pipeline() -> None:
         qco.run_pass_pipeline("not-a-pass")
 
 
+def test_qco_program_quantizes_gate_angles_explicitly() -> None:
+    """Quantize QCO gate parameters through the keyword-only Python API."""
+    source = """OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+rz(0.371) q;
+"""
+    qco = compile_program(source, output=OutputFormat.QCO)
+    assert isinstance(qco, QCOProgram)
+
+    qco.quantize_gate_angles(precision_bits=8)
+    width_eight = qco.ir
+    assert "i8" in width_eight
+    qco.quantize_gate_angles(precision_bits=8)
+    assert qco.ir == width_eight
+
+    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+        qco.quantize_gate_angles(precision_bits=0)
+
+
 def test_qco_program_reuses_qubits() -> None:
     """Expose the raw and composite qubit-reuse flows."""
     independent_qubits = """
