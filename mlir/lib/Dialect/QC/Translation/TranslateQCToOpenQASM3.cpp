@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QC/Translation/OpenQASMAttributes.h"
 #include "mlir/Dialect/Utils/AngleConversion.h"
 #include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
@@ -20,6 +21,7 @@
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringExtras.h>
@@ -29,6 +31,8 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/UB/IR/UBOps.h>
@@ -37,8 +41,10 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
@@ -50,6 +56,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -76,6 +83,7 @@ struct ScalarOutput {
   Value value;
   std::string name;
   std::string kind;
+  std::optional<uint32_t> angleWidth;
 };
 
 struct GateCall {
@@ -169,6 +177,12 @@ private:
   DenseMap<Value, std::string> valueNames;
   DenseSet<Value> returnedMemrefs;
   SmallVector<ScalarOutput> scalarOutputs;
+  SmallVector<ScalarOutput> scalarInputs;
+  DenseMap<Value, uint32_t> angleValues;
+  DenseSet<Value> uintValues;
+  DenseSet<Value> bitValues;
+  DenseSet<Operation*> canonicalAngleOperations;
+  std::optional<uint32_t> finalGatePrecision;
   llvm::StringSet<> usedNames;
   llvm::StringSet<> fixedHelpers;
   SmallVector<std::string> compositeHelpers;
@@ -177,6 +191,24 @@ private:
   size_t nextScalar = 0;
   size_t nextLoop = 0;
   size_t nextHelper = 0;
+
+  struct SafeShift {
+    Value lhs;
+    Value rhs;
+    StringRef operation;
+    arith::SelectOp distanceSelect;
+    arith::SelectOp resultSelect;
+    Operation* shift = nullptr;
+    Operation* result = nullptr;
+  };
+
+  struct CarriedVariable {
+    std::string name;
+    std::string kind;
+    std::optional<uint32_t> angleWidth;
+    bool unsignedInteger = false;
+    bool bit = false;
+  };
 
   [[nodiscard]] static LogicalResult fail(Operation* operation,
                                           const Twine& message) {
@@ -207,6 +239,85 @@ private:
     return uniqueName("out", nextScalar);
   }
 
+  [[nodiscard]] FailureOr<ScalarOutput>
+  scalarInterface(const DictionaryAttr metadata, const Value value,
+                  const StringRef expectedDirection) {
+    const auto failInterface =
+        [&](const Twine& message) -> FailureOr<ScalarOutput> {
+      emitError(value.getLoc()) << "OpenQASM emission error: " << message;
+      return failure();
+    };
+    if (!metadata) {
+      return failInterface("missing OpenQASM scalar interface metadata");
+    }
+    const auto kind = metadata.getAs<StringAttr>("kind");
+    const auto name = metadata.getAs<StringAttr>("name");
+    if (!kind || !name) {
+      return failInterface("malformed OpenQASM scalar interface metadata");
+    }
+
+    std::string declarationKind;
+    std::optional<uint32_t> angleWidth;
+    const auto type = value.getType();
+    if (kind.getValue() == "angle") {
+      const auto integerType = dyn_cast<IntegerType>(type);
+      if (!integerType ||
+          !mqt::angle::isSupportedWidth(integerType.getWidth())) {
+        return failInterface(
+            "angle interface metadata does not match its type");
+      }
+      const auto bitWidth = integerType.getWidth();
+      declarationKind = (Twine("angle[") + Twine(bitWidth) + "]").str();
+      angleWidth = bitWidth;
+      if (expectedDirection == "input") {
+        angleValues[value] = bitWidth;
+      }
+    } else if (kind.getValue() == "uint") {
+      const auto integerType = dyn_cast<IntegerType>(type);
+      if (!integerType ||
+          !mqt::angle::isSupportedWidth(integerType.getWidth())) {
+        return failInterface("uint interface metadata does not match its type");
+      }
+      const auto bitWidth = integerType.getWidth();
+      declarationKind = (Twine("uint[") + Twine(bitWidth) + "]").str();
+      if (expectedDirection == "input") {
+        uintValues.insert(value);
+      }
+    } else if (kind.getValue() == "int") {
+      if (!type.isInteger(64)) {
+        return failInterface("int interface metadata does not match its type");
+      }
+      declarationKind = "int";
+    } else if (kind.getValue() == "float") {
+      if (!type.isF64()) {
+        return failInterface(
+            "float interface metadata does not match its type");
+      }
+      declarationKind = "float";
+    } else if (kind.getValue() == "bool") {
+      if (!type.isInteger(1)) {
+        return failInterface("bool interface metadata does not match its type");
+      }
+      declarationKind = "bool";
+    } else {
+      return failInterface("unknown OpenQASM scalar interface kind");
+    }
+
+    std::string interfaceName;
+    if (expectedDirection == "output") {
+      interfaceName = outputName(name.getValue());
+    } else if (isValidOutputName(name.getValue()) &&
+               usedNames.insert(name.getValue()).second) {
+      interfaceName = name.getValue().str();
+    } else {
+      interfaceName = uniqueName("in", nextScalar);
+    }
+    return ScalarOutput{.value = value,
+                        .name = std::move(interfaceName),
+                        .kind = std::move(declarationKind),
+                        .angleWidth = angleWidth};
+  }
+
   [[nodiscard]] std::string qubitRegisterName(const StringRef requested) {
     if (isValidOutputName(requested) && usedNames.insert(requested).second) {
       return requested.str();
@@ -215,6 +326,16 @@ private:
   }
 
   [[nodiscard]] LogicalResult preflight() {
+    if (const auto rawPrecision =
+            moduleOp->getAttr(mqt::angle::FINAL_QUANTIZATION_ATTR)) {
+      const auto precision = dyn_cast<IntegerAttr>(rawPrecision);
+      if (!precision || precision.getValue().isZero() ||
+          precision.getValue().ugt(mqt::angle::MACHINE_WIDTH)) {
+        return fail(moduleOp, "invalid final gate-angle precision metadata");
+      }
+      finalGatePrecision =
+          static_cast<uint32_t>(precision.getValue().getZExtValue());
+    }
     SmallVector<func::FuncOp> functions(moduleOp.getOps<func::FuncOp>());
     if (functions.size() != 1) {
       return fail(moduleOp, "expected exactly one function");
@@ -223,10 +344,6 @@ private:
     if (function.isExternal() || function.getBody().getBlocks().size() != 1) {
       return fail(function,
                   "expected one defined function with one entry block");
-    }
-    if (function.getNumArguments() != 0) {
-      return fail(function, "function arguments and OpenQASM inputs are not "
-                            "supported");
     }
     const auto walkResult = function.walk([&](Operation* operation) {
       if (isa<func::CallOp>(operation)) {
@@ -251,10 +368,23 @@ private:
                                 "scope");
       }
     }
+    collectCanonicalAngleOperations();
     return success();
   }
 
   [[nodiscard]] LogicalResult collectProgramShape() {
+    for (const auto [index, argument] :
+         llvm::enumerate(function.getArguments())) {
+      auto metadata = dyn_cast_or_null<DictionaryAttr>(
+          function.getArgAttr(index, openqasm::SCALAR_ATTR));
+      auto input = scalarInterface(metadata, argument, "input");
+      if (failed(input)) {
+        return failure();
+      }
+      valueNames[argument] = input->name;
+      scalarInputs.push_back(std::move(*input));
+    }
+
     auto returnOp =
         dyn_cast<func::ReturnOp>(function.getBody().front().getTerminator());
     if (!returnOp) {
@@ -268,14 +398,24 @@ private:
         returnedMemrefs.insert(value);
         continue;
       }
-      auto kind = inferScalarKind(value);
-      if (kind.empty()) {
-        return fail(returnOp, "unsupported scalar output type for function "
-                              "result " +
-                                  Twine(index));
+      auto metadata = dyn_cast_or_null<DictionaryAttr>(
+          function.getResultAttr(index, openqasm::SCALAR_ATTR));
+      if (metadata) {
+        auto interface = scalarInterface(metadata, value, "output");
+        if (failed(interface)) {
+          return failure();
+        }
+        scalarOutputs.push_back(std::move(*interface));
+      } else {
+        auto kind = inferScalarKind(value);
+        if (kind.empty()) {
+          return fail(returnOp, "unsupported scalar output type for function "
+                                "result " +
+                                    Twine(index));
+        }
+        scalarOutputs.push_back(
+            {.value = value, .name = outputName({}), .kind = std::move(kind)});
       }
-      scalarOutputs.push_back(
-          {.value = value, .name = outputName({}), .kind = std::move(kind)});
     }
 
     for (Operation& operation : function.getBody().front().getOperations()) {
@@ -353,13 +493,33 @@ private:
     return integer && integer.getValue().isZero();
   }
 
-  [[nodiscard]] static std::string inferScalarKind(const Value value) {
+  [[nodiscard]] bool isBitValue(const Value value) const {
+    if (!value.getType().isInteger(1)) {
+      return false;
+    }
+    if (bitValues.contains(value) || value.getDefiningOp<qc::MeasureOp>()) {
+      return true;
+    }
+    auto load = value.getDefiningOp<memref::LoadOp>();
+    if (!load) {
+      return false;
+    }
+    const auto resource = resources.find(load.getMemRef());
+    return resource != resources.end() &&
+           resource->second.kind == ResourceKind::Bit;
+  }
+
+  [[nodiscard]] std::string inferScalarKind(const Value value) const {
     const auto type = value.getType();
     if (type.isInteger(1)) {
-      return value.getDefiningOp<qc::MeasureOp>() ? "bit" : "bool";
+      return isBitValue(value) ? "bit" : "bool";
     }
     if (type.isInteger(64) || type.isIndex()) {
       return "int";
+    }
+    if (const auto integer = dyn_cast<IntegerType>(type);
+        integer && integer.getWidth() <= mqt::angle::MACHINE_WIDTH) {
+      return (Twine("uint[") + Twine(integer.getWidth()) + "]").str();
     }
     if (type.isF64()) {
       return "float";
@@ -367,7 +527,121 @@ private:
     return {};
   }
 
+  void mapCarriedValue(const Value value, const CarriedVariable& variable) {
+    valueNames[value] = variable.name;
+    if (variable.angleWidth) {
+      angleValues[value] = *variable.angleWidth;
+    } else if (variable.unsignedInteger) {
+      uintValues.insert(value);
+    } else if (variable.bit) {
+      bitValues.insert(value);
+    }
+  }
+
+  [[nodiscard]] FailureOr<std::string>
+  emitCarriedValue(const Value value, const CarriedVariable& variable) {
+    if (variable.angleWidth) {
+      return emitAngleUse(value, *variable.angleWidth);
+    }
+    if (variable.unsignedInteger) {
+      return emitUnsignedOperand(value);
+    }
+    return emitExpression(value);
+  }
+
+  [[nodiscard]] FailureOr<SmallVector<CarriedVariable>>
+  declareCarriedVariables(const ValueRange results,
+                          const ArrayRef<SmallVector<Value>> sources,
+                          const ValueRange initialValues = {}) {
+    if (results.size() != sources.size() ||
+        (!initialValues.empty() && initialValues.size() != results.size())) {
+      return failure();
+    }
+    SmallVector<CarriedVariable> variables;
+    variables.reserve(results.size());
+    for (const auto [index, result] : llvm::enumerate(results)) {
+      std::optional<uint32_t> angle;
+      bool isUnsigned = false;
+      bool isBit = false;
+      for (const auto source : sources[index]) {
+        if (!angle) {
+          angle = angleWidth(source);
+        }
+        isUnsigned |= isUnsignedValue(source);
+        isBit |= isBitValue(source);
+      }
+      auto kind = inferScalarKind(result);
+      if (angle) {
+        const auto integer = dyn_cast<IntegerType>(result.getType());
+        if (!integer || integer.getWidth() != *angle) {
+          return failure();
+        }
+        kind = (Twine("angle[") + Twine(*angle) + "]").str();
+        isUnsigned = false;
+      } else if (isUnsigned) {
+        const auto integer = dyn_cast<IntegerType>(result.getType());
+        if (!integer || !mqt::angle::isSupportedWidth(integer.getWidth())) {
+          return failure();
+        }
+        kind = (Twine("uint[") + Twine(integer.getWidth()) + "]").str();
+      } else if (isBit) {
+        if (!result.getType().isInteger(1)) {
+          return failure();
+        }
+        kind = "bit";
+      }
+      if (kind.empty()) {
+        return failure();
+      }
+      CarriedVariable variable{.name = uniqueName("s", nextScalar),
+                               .kind = std::move(kind),
+                               .angleWidth = angle,
+                               .unsignedInteger = isUnsigned,
+                               .bit = isBit};
+      *output << variable.kind << ' ' << variable.name;
+      if (!initialValues.empty()) {
+        auto initializer = emitCarriedValue(initialValues[index], variable);
+        if (failed(initializer)) {
+          return failure();
+        }
+        *output << " = " << *initializer;
+      }
+      *output << ";\n";
+      mapCarriedValue(result, variable);
+      variables.push_back(std::move(variable));
+    }
+    return variables;
+  }
+
+  [[nodiscard]] LogicalResult
+  emitCarriedAssignments(const ValueRange values,
+                         const ArrayRef<CarriedVariable> variables) {
+    if (values.size() != variables.size()) {
+      return failure();
+    }
+    SmallVector<std::string> stagedNames;
+    stagedNames.reserve(values.size());
+    for (const auto [value, variable] : llvm::zip_equal(values, variables)) {
+      auto expression = emitCarriedValue(value, variable);
+      if (failed(expression)) {
+        return failure();
+      }
+      auto staged = uniqueName("next", nextScalar);
+      *output << variable.kind << ' ' << staged << " = " << *expression
+              << ";\n";
+      stagedNames.push_back(std::move(staged));
+    }
+    for (const auto [variable, staged] :
+         llvm::zip_equal(variables, stagedNames)) {
+      *output << variable.name << " = " << staged << ";\n";
+    }
+    return success();
+  }
+
   [[nodiscard]] LogicalResult emitDeclarations() {
+    for (const auto& scalar : scalarInputs) {
+      *output << "input " << scalar.kind << ' ' << scalar.name << ";\n";
+    }
     for (const auto value : resourceOrder) {
       const auto& resource = resources.at(value);
       if (resource.output) {
@@ -382,7 +656,8 @@ private:
     for (const auto& scalar : scalarOutputs) {
       *output << "output " << scalar.kind << ' ' << scalar.name << ";\n";
     }
-    if (!resourceOrder.empty() || !scalarOutputs.empty()) {
+    if (!scalarInputs.empty() || !resourceOrder.empty() ||
+        !scalarOutputs.empty()) {
       *output << '\n';
     }
     return success();
@@ -402,18 +677,26 @@ private:
 
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
     if (isa<arith::SelectOp>(&operation)) {
-      return fail(&operation, "arith.select is not supported");
+      return (canonicalAngleOperations.contains(&operation) ||
+              isSafeShiftMember(operation))
+                 ? success()
+                 : fail(&operation, "arith.select is not supported");
     }
     if (isa<arith::ConstantOp, memref::LoadOp, memref::AllocOp,
             memref::DeallocOp, qc::AllocOp, qc::DeallocOp, qc::StaticOp>(
             &operation)) {
       return success();
     }
-    if (isCanonicalAngleBridgeMember(operation)) {
-      return success();
-    }
     if (isInlineExpressionOperation(operation)) {
+      if (llvm::all_of(operation.getResults(),
+                       [](const Value result) { return result.use_empty(); })) {
+        return success();
+      }
       return validateInlineExpressionOperation(operation);
+    }
+    if (auto assertion = dyn_cast<cf::AssertOp>(&operation);
+        assertion && isUnsignedDivisionSafetyAssert(assertion)) {
+      return success();
     }
     if (isa<cf::AssertOp>(&operation) ||
         (isa<ub::PoisonOp>(&operation) &&
@@ -480,39 +763,62 @@ private:
 
   [[nodiscard]] static bool isInlineExpressionOperation(Operation& operation) {
     const auto name = operation.getName().getStringRef();
-    return isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp>(&operation) ||
+    return isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp, arith::SelectOp,
+               arith::BitcastOp, math::CtPopOp, LLVM::FshlOp, LLVM::FshrOp>(
+               &operation) ||
            !binaryOperator(name).empty() || name == "arith.negf" ||
            name == "arith.remf" || isScalarCast(name) ||
            !mathFunction(name).empty();
   }
 
-  [[nodiscard]] static bool isCanonicalAngleBridgeMember(Operation& operation) {
-    const auto isCanonicalResult = [](const Value value) {
-      return mqt::angle::matchQuantizedRadians(value).has_value();
-    };
-    if (llvm::any_of(operation.getResults(), isCanonicalResult)) {
-      return true;
-    }
-    if (!isa<arith::UIToFPOp>(operation)) {
+  [[nodiscard]] static bool
+  isUnsignedDivisionSafetyAssert(cf::AssertOp assertion) {
+    const auto message = assertion.getMsg();
+    if (message != "division by zero" && message != "modulo by zero") {
       return false;
     }
-    for (const auto result : operation.getResults()) {
-      for (Operation* user : result.getUsers()) {
-        if (llvm::any_of(user->getResults(), isCanonicalResult)) {
-          return true;
-        }
+    Value divisor;
+    if (auto comparison = assertion.getArg().getDefiningOp<arith::CmpIOp>()) {
+      if (comparison.getPredicate() != arith::CmpIPredicate::ne) {
+        return false;
       }
+      if (getConstantInteger(comparison.getRhs()) == 0) {
+        divisor = comparison.getLhs();
+      } else if (getConstantInteger(comparison.getLhs()) == 0) {
+        divisor = comparison.getRhs();
+      } else {
+        return false;
+      }
+    } else if (assertion.getArg().getType().isInteger(1)) {
+      divisor = assertion.getArg();
+    } else {
+      return false;
     }
-    return false;
+    return llvm::any_of(divisor.getUsers(), [&](Operation* user) {
+      if (message == "division by zero") {
+        auto division = dyn_cast<arith::DivUIOp>(user);
+        return division && division.getRhs() == divisor;
+      }
+      auto remainder = dyn_cast<arith::RemUIOp>(user);
+      return remainder && remainder.getRhs() == divisor;
+    });
   }
 
   [[nodiscard]] LogicalResult
   validateInlineExpressionOperation(Operation& operation) {
+    if (canonicalAngleOperations.contains(&operation) ||
+        isCanonicalAngleBridgeMember(operation) ||
+        isSafeShiftMember(operation)) {
+      return success();
+    }
     for (const auto result : operation.getResults()) {
       const auto type = result.getType();
-      if (!type.isInteger(1) && !type.isInteger(64) && !type.isIndex() &&
-          !type.isF64()) {
-        return fail(&operation, "unsupported scalar expression result type");
+      const auto integer = dyn_cast<IntegerType>(type);
+      if ((!integer || integer.getWidth() > mqt::angle::MACHINE_WIDTH) &&
+          !type.isIndex() && !type.isF64()) {
+        return fail(&operation,
+                    "unsupported scalar expression result type on '" +
+                        operation.getName().getStringRef() + "'");
       }
       if (failed(emitExpression(result))) {
         return failure();
@@ -561,21 +867,349 @@ private:
     return (Twine(resource->second.name) + "[" + Twine(*index) + "]").str();
   }
 
-  [[nodiscard]] FailureOr<std::string> emitExpression(const Value value) {
+  void collectCanonicalAngleOperations() {
+    function.walk([&](Operation* operation) {
+      if (!operation->hasAttrOfType<UnitAttr>(openqasm::ANGLE_VALUE_ATTR)) {
+        return;
+      }
+      for (const auto result : operation->getResults()) {
+        const auto integerType = dyn_cast<IntegerType>(result.getType());
+        if (!integerType) {
+          continue;
+        }
+        const auto resize = mqt::angle::matchResize(result);
+        if (!resize || resize->targetWidth != integerType.getWidth()) {
+          continue;
+        }
+        canonicalAngleOperations.insert(resize->operations.begin(),
+                                        resize->operations.end());
+      }
+    });
+
+    function.walk([&](Operation* operation) {
+      for (const auto result : operation->getResults()) {
+        const auto source = mqt::angle::matchFloatToBits(result);
+        if (!source) {
+          continue;
+        }
+        SmallVector<Value> worklist{result};
+        DenseSet<Value> visited;
+        while (!worklist.empty()) {
+          const auto value = worklist.pop_back_val();
+          if (value == *source || !visited.insert(value).second) {
+            continue;
+          }
+          auto* definingOp = value.getDefiningOp();
+          if (definingOp == nullptr) {
+            continue;
+          }
+          canonicalAngleOperations.insert(definingOp);
+          llvm::append_range(worklist, definingOp->getOperands());
+        }
+      }
+    });
+  }
+
+  [[nodiscard]] static std::optional<SafeShift>
+  matchSafeShift(const Value value) {
+    Value selected = value;
+    Operation* result = value.getDefiningOp();
+    if (auto truncation = value.getDefiningOp<arith::TruncIOp>()) {
+      selected = truncation.getIn();
+    }
+    auto resultSelect = selected.getDefiningOp<arith::SelectOp>();
+    if (!resultSelect || !getConstantInteger(resultSelect.getFalseValue()) ||
+        *getConstantInteger(resultSelect.getFalseValue()) != 0) {
+      return std::nullopt;
+    }
+
+    auto* shift = resultSelect.getTrueValue().getDefiningOp();
+    StringRef operation;
+    if (isa_and_nonnull<arith::ShLIOp>(shift)) {
+      operation = "<<";
+    } else if (isa_and_nonnull<arith::ShRUIOp>(shift)) {
+      operation = ">>";
+    } else {
+      return std::nullopt;
+    }
+    auto lhs = shift->getOperand(0);
+    auto safeDistance = shift->getOperand(1);
+    auto distanceSelect = safeDistance.getDefiningOp<arith::SelectOp>();
+    if (!distanceSelect ||
+        distanceSelect.getCondition() != resultSelect.getCondition() ||
+        !getConstantInteger(distanceSelect.getFalseValue()) ||
+        *getConstantInteger(distanceSelect.getFalseValue()) != 0) {
+      return std::nullopt;
+    }
+
+    auto comparison =
+        resultSelect.getCondition().getDefiningOp<arith::CmpIOp>();
+    if (!comparison || comparison.getPredicate() != arith::CmpIPredicate::ult ||
+        comparison.getLhs() != distanceSelect.getTrueValue()) {
+      return std::nullopt;
+    }
+    const auto limit = getConstantInteger(comparison.getRhs());
+    if (!limit || *limit <= 0) {
+      return std::nullopt;
+    }
+
+    if (auto extension = lhs.getDefiningOp<arith::ExtUIOp>()) {
+      lhs = extension.getIn();
+    }
+    auto rhs = distanceSelect.getTrueValue();
+    if (auto extension = rhs.getDefiningOp<arith::ExtUIOp>()) {
+      rhs = extension.getIn();
+    }
+    const auto lhsType = dyn_cast<IntegerType>(lhs.getType());
+    if (!lhsType || std::cmp_not_equal(lhsType.getWidth(), *limit)) {
+      return std::nullopt;
+    }
+    return SafeShift{.lhs = lhs,
+                     .rhs = rhs,
+                     .operation = operation,
+                     .distanceSelect = distanceSelect,
+                     .resultSelect = resultSelect,
+                     .shift = shift,
+                     .result = result};
+  }
+
+  [[nodiscard]] static bool isSafeShiftMember(Operation& operation) {
+    const auto matchesOperation = [&](SafeShift shift) {
+      return shift.distanceSelect.getOperation() == &operation ||
+             shift.resultSelect.getOperation() == &operation ||
+             shift.shift == &operation || shift.result == &operation;
+    };
+    for (const auto result : operation.getResults()) {
+      if (const auto shift = matchSafeShift(result);
+          shift && matchesOperation(*shift)) {
+        return true;
+      }
+      for (Operation* user : result.getUsers()) {
+        for (const auto userResult : user->getResults()) {
+          if (const auto shift = matchSafeShift(userResult);
+              shift && matchesOperation(*shift)) {
+            return true;
+          }
+          for (Operation* finalUser : userResult.getUsers()) {
+            for (const auto finalResult : finalUser->getResults()) {
+              if (const auto shift = matchSafeShift(finalResult);
+                  shift && matchesOperation(*shift)) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  [[nodiscard]] static bool isCanonicalAngleBridgeMember(Operation& operation) {
+    const auto isCanonicalResult = [](const Value value) {
+      return mqt::angle::matchQuantizedRadians(value).has_value();
+    };
+    if (llvm::any_of(operation.getResults(), isCanonicalResult)) {
+      return true;
+    }
+    if (!isa<arith::UIToFPOp>(operation)) {
+      return false;
+    }
+    for (const auto result : operation.getResults()) {
+      for (Operation* user : result.getUsers()) {
+        if (llvm::any_of(user->getResults(), isCanonicalResult)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  [[nodiscard]] std::optional<uint32_t> angleWidth(const Value value) const {
+    if (const auto known = angleValues.find(value);
+        known != angleValues.end()) {
+      return known->second;
+    }
+    const auto integerType = dyn_cast<IntegerType>(value.getType());
+    auto* definingOp = value.getDefiningOp();
+    if (!integerType || definingOp == nullptr) {
+      return std::nullopt;
+    }
+    if (!definingOp->hasAttrOfType<UnitAttr>(openqasm::ANGLE_VALUE_ATTR)) {
+      return std::nullopt;
+    }
+    return integerType.getWidth();
+  }
+
+  [[nodiscard]] static bool isAngleOperand(Operation* operation,
+                                           const int32_t position) {
+    const auto operands = operation->getAttrOfType<DenseI32ArrayAttr>(
+        openqasm::ANGLE_OPERANDS_ATTR);
+    return operands && llvm::is_contained(operands.asArrayRef(), position);
+  }
+
+  [[nodiscard]] bool isUnsignedValue(const Value value) const {
+    if (uintValues.contains(value)) {
+      return true;
+    }
+    auto* definingOp = value.getDefiningOp();
+    return definingOp != nullptr &&
+           definingOp->hasAttrOfType<UnitAttr>(openqasm::UINT_VALUE_ATTR);
+  }
+
+  [[nodiscard]] FailureOr<std::string>
+  emitSourceOperand(const Value value, const bool unsignedIntegers = false) {
+    if (const auto width = angleWidth(value)) {
+      return emitAngleUse(value, *width);
+    }
+    if (isUnsignedValue(value)) {
+      return emitExpression(value, /*unsignedIntegers=*/true);
+    }
+    return emitExpression(value, unsignedIntegers);
+  }
+
+  [[nodiscard]] FailureOr<std::string> emitUnsignedOperand(const Value value) {
+    const auto width = angleWidth(value);
+    if (!width) {
+      return emitExpression(value, /*unsignedIntegers=*/true);
+    }
+    auto expression = emitAngleUse(value, *width);
+    if (failed(expression)) {
+      return failure();
+    }
+    return (Twine("uint[") + Twine(*width) + "](bit[" + Twine(*width) + "](" +
+            *expression + "))")
+        .str();
+  }
+
+  [[nodiscard]] FailureOr<std::string> emitRotation(const Value value) {
+    auto* operation = value.getDefiningOp();
+    if (operation == nullptr || operation->getNumOperands() != 3 ||
+        operation->getOperand(0) != operation->getOperand(1)) {
+      return failExpression(value,
+                            "only funnel shifts representing rotations are "
+                            "supported");
+    }
+    auto operand =
+        angleWidth(value)
+            ? emitAngleUse(operation->getOperand(0),
+                           cast<IntegerType>(value.getType()).getWidth())
+            : emitUnsignedOperand(operation->getOperand(0));
+    auto distance = emitExpression(operation->getOperand(2),
+                                   /*unsignedIntegers=*/true);
+    if (failed(operand) || failed(distance)) {
+      return failure();
+    }
+    return (Twine(isa<LLVM::FshlOp>(operation) ? "rotl(" : "rotr(") + *operand +
+            ", int(" + *distance + "))")
+        .str();
+  }
+
+  [[nodiscard]] FailureOr<std::string> emitAngleUse(const Value bits,
+                                                    const uint32_t bitWidth) {
+    if (const auto known = angleValues.find(bits);
+        known != angleValues.end() && known->second == bitWidth) {
+      return emitExpression(bits);
+    }
+    if (const auto resize = mqt::angle::matchResize(bits);
+        resize && resize->targetWidth == bitWidth) {
+      auto expression = emitAngleUse(resize->source, resize->sourceWidth);
+      if (failed(expression)) {
+        return failure();
+      }
+      return (Twine("angle[") + Twine(bitWidth) + "](" + *expression + ")")
+          .str();
+    }
+    if (const auto shift = matchSafeShift(bits)) {
+      return emitBinary(shift->lhs, shift->operation, shift->rhs,
+                        /*unsignedIntegers=*/true,
+                        /*lhsAngle=*/true, /*rhsAngle=*/false);
+    }
+    if (const auto radians = mqt::angle::matchFloatToBits(bits)) {
+      auto expression = emitExpression(*radians);
+      if (failed(expression)) {
+        return failure();
+      }
+      return (Twine("angle[") + Twine(bitWidth) + "](" + *expression + ")")
+          .str();
+    }
+    if (auto* operation = bits.getDefiningOp();
+        operation != nullptr && isa<LLVM::FshlOp, LLVM::FshrOp>(operation)) {
+      return emitRotation(bits);
+    }
+    if (auto* operation = bits.getDefiningOp()) {
+      if (operation->hasAttrOfType<UnitAttr>(openqasm::ANGLE_VALUE_ATTR) &&
+          operation->getNumOperands() == 2 &&
+          !binaryOperator(operation->getName().getStringRef()).empty()) {
+        auto emittedOperator =
+            binaryOperator(operation->getName().getStringRef());
+        if (operation->getName().getStringRef() == "arith.andi") {
+          emittedOperator = "&";
+        } else if (operation->getName().getStringRef() == "arith.ori") {
+          emittedOperator = "|";
+        } else if (operation->getName().getStringRef() == "arith.xori") {
+          emittedOperator = "^";
+        }
+        if (operation->getName().getStringRef() == "arith.xori") {
+          llvm::APInt constant;
+          Value operand;
+          if (matchPattern(operation->getOperand(0),
+                           m_ConstantInt(&constant)) &&
+              constant.isAllOnes()) {
+            operand = operation->getOperand(1);
+          } else if (matchPattern(operation->getOperand(1),
+                                  m_ConstantInt(&constant)) &&
+                     constant.isAllOnes()) {
+            operand = operation->getOperand(0);
+          }
+          if (operand) {
+            auto expression = emitAngleUse(operand, bitWidth);
+            if (failed(expression)) {
+              return failure();
+            }
+            return (Twine("(~") + *expression + ")").str();
+          }
+        }
+        if (operation->getName().getStringRef() == "arith.subi" &&
+            getConstantInteger(operation->getOperand(0)) == 0) {
+          auto operand = emitAngleUse(operation->getOperand(1), bitWidth);
+          if (failed(operand)) {
+            return failure();
+          }
+          return (Twine("(-") + *operand + ")").str();
+        }
+        return emitBinary(
+            operation->getOperand(0), emittedOperator, operation->getOperand(1),
+            /*unsignedIntegers=*/true, isAngleOperand(operation, 0),
+            isAngleOperand(operation, 1));
+      }
+    }
+    auto expression = emitExpression(bits, /*unsignedIntegers=*/true);
+    if (failed(expression)) {
+      return failure();
+    }
+    if (isUnsignedValue(bits)) {
+      return (Twine("angle[") + Twine(bitWidth) + "](bit[" + Twine(bitWidth) +
+              "](" + *expression + "))")
+          .str();
+    }
+    return (Twine("angle[") + Twine(bitWidth) + "](bit[" + Twine(bitWidth) +
+            "](uint[" + Twine(bitWidth) + "](" + *expression + ")))")
+        .str();
+  }
+
+  [[nodiscard]] FailureOr<std::string>
+  emitExpression(const Value value, const bool unsignedIntegers = false) {
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
     }
     if (const auto quantized = mqt::angle::matchQuantizedRadians(value)) {
-      if (auto constant = quantized->bits.getDefiningOp<arith::ConstantOp>()) {
-        if (const auto integer = dyn_cast<IntegerAttr>(constant.getValue())) {
-          llvm::SmallString<32> bits;
-          integer.getValue().toString(bits, 10, false);
-          const auto width = quantized->bitWidth;
-          return (Twine("angle[") + Twine(width) + "](bit[" + Twine(width) +
-                  "](uint[" + Twine(width) + "](" + bits + ")))")
-              .str();
-        }
-      }
+      return emitAngleUse(quantized->bits, quantized->bitWidth);
+    }
+    if (const auto shift = matchSafeShift(value)) {
+      return emitBinary(shift->lhs, shift->operation, shift->rhs,
+                        /*unsignedIntegers=*/true,
+                        /*lhsAngle=*/angleWidth(value).has_value(),
+                        /*rhsAngle=*/false);
     }
     if (auto load = value.getDefiningOp<memref::LoadOp>()) {
       if (load.getIndices().size() != 1) {
@@ -588,17 +1222,98 @@ private:
       return failExpression(value, "unmapped block argument");
     }
     if (auto constant = dyn_cast<arith::ConstantOp>(operation)) {
-      return emitConstant(constant);
+      const auto integerType = dyn_cast<IntegerType>(value.getType());
+      const bool printUnsigned =
+          unsignedIntegers ||
+          (integerType && integerType.getWidth() != 1 &&
+           integerType.getWidth() != mqt::angle::MACHINE_WIDTH);
+      return emitConstant(constant, printUnsigned);
     }
     if (isa<ub::PoisonOp>(operation)) {
       return failExpression(value, "poison values are not supported");
     }
+    if (value.getType().isInteger(1) &&
+        operation->hasAttrOfType<UnitAttr>(openqasm::BIT_EXTRACT_ATTR)) {
+      Value source;
+      uint64_t bit = 0;
+      if (auto truncation = dyn_cast<arith::TruncIOp>(operation)) {
+        source = truncation.getIn();
+      } else if (auto mask = dyn_cast<arith::AndIOp>(operation)) {
+        if (getConstantInteger(mask.getLhs()) == 1) {
+          source = mask.getRhs();
+        } else if (getConstantInteger(mask.getRhs()) == 1) {
+          source = mask.getLhs();
+        }
+      }
+      if (!source) {
+        return failExpression(value, "malformed scalar bit extraction");
+      }
+      if (auto shift = source.getDefiningOp<arith::ShRUIOp>()) {
+        const auto distance = getConstantInteger(shift.getRhs());
+        if (!distance || *distance < 0) {
+          return failExpression(value, "dynamic scalar bit extraction is not "
+                                       "supported");
+        }
+        source = shift.getLhs();
+        bit = static_cast<uint64_t>(*distance);
+      }
+      const auto sourceType = dyn_cast<IntegerType>(source.getType());
+      if (sourceType && bit < sourceType.getWidth()) {
+        auto expression = emitSourceOperand(source,
+                                            /*unsignedIntegers=*/true);
+        if (failed(expression)) {
+          return failure();
+        }
+        return (Twine(*expression) + "[" + Twine(bit) + "]").str();
+      }
+    }
     if (auto cmp = dyn_cast<arith::CmpIOp>(operation)) {
+      if (cmp.getLhs().getType().isInteger(1) &&
+          (cmp.getPredicate() == arith::CmpIPredicate::eq ||
+           cmp.getPredicate() == arith::CmpIPredicate::ne)) {
+        const auto booleanConstant =
+            [](const Value candidate) -> std::optional<bool> {
+          auto constant = candidate.getDefiningOp<arith::ConstantOp>();
+          const auto integer = constant
+                                   ? dyn_cast<IntegerAttr>(constant.getValue())
+                                   : IntegerAttr{};
+          if (!integer || !integer.getType().isInteger(1)) {
+            return std::nullopt;
+          }
+          return !integer.getValue().isZero();
+        };
+        Value operand;
+        std::optional<bool> constant;
+        if (const auto rhs = booleanConstant(cmp.getRhs())) {
+          operand = cmp.getLhs();
+          constant = rhs;
+        } else if (const auto lhs = booleanConstant(cmp.getLhs())) {
+          operand = cmp.getRhs();
+          constant = lhs;
+        }
+        if (operand && constant) {
+          auto expression = emitExpression(operand);
+          if (failed(expression)) {
+            return failure();
+          }
+          const bool preserve =
+              (cmp.getPredicate() == arith::CmpIPredicate::eq) == *constant;
+          return preserve ? *expression
+                          : (Twine("(!") + *expression + ")").str();
+        }
+      }
       auto predicate = integerPredicate(cmp.getPredicate());
       if (predicate.empty()) {
         return failExpression(value, "unsupported integer comparison");
       }
-      return emitBinary(cmp.getLhs(), predicate, cmp.getRhs());
+      const auto unsignedPredicate =
+          cmp.getPredicate() == arith::CmpIPredicate::ult ||
+          cmp.getPredicate() == arith::CmpIPredicate::ule ||
+          cmp.getPredicate() == arith::CmpIPredicate::ugt ||
+          cmp.getPredicate() == arith::CmpIPredicate::uge;
+      return emitBinary(cmp.getLhs(), predicate, cmp.getRhs(),
+                        unsignedPredicate, isAngleOperand(operation, 0),
+                        isAngleOperand(operation, 1));
     }
     if (auto cmp = dyn_cast<arith::CmpFOp>(operation)) {
       auto predicate = floatPredicate(cmp.getPredicate());
@@ -606,6 +1321,17 @@ private:
         return failExpression(value, "unsupported floating-point comparison");
       }
       return emitBinary(cmp.getLhs(), predicate, cmp.getRhs());
+    }
+    if (isa<math::CtPopOp>(operation)) {
+      auto operand = emitSourceOperand(operation->getOperand(0),
+                                       /*unsignedIntegers=*/true);
+      if (failed(operand)) {
+        return failure();
+      }
+      return (Twine("popcount(") + *operand + ")").str();
+    }
+    if (isa<LLVM::FshlOp, LLVM::FshrOp>(operation)) {
+      return emitRotation(value);
     }
     const auto name = operation->getName().getStringRef();
     if (name == "arith.remf") {
@@ -620,15 +1346,27 @@ private:
       if (operation->getNumOperands() != 2) {
         return failExpression(value, "malformed binary expression");
       }
-      if ((name == "arith.andi" || name == "arith.ori" ||
-           name == "arith.xori") &&
-          !value.getType().isInteger(1)) {
-        return failExpression(value,
-                              "packed integer bitwise operations are not "
-                              "supported");
+      auto emittedOperator = binary;
+      if (!value.getType().isInteger(1) || unsignedIntegers ||
+          isUnsignedValue(value)) {
+        if (name == "arith.andi") {
+          emittedOperator = "&";
+        } else if (name == "arith.ori") {
+          emittedOperator = "|";
+        } else if (name == "arith.xori") {
+          emittedOperator = "^";
+        }
       }
-      return emitBinary(operation->getOperand(0), binary,
-                        operation->getOperand(1));
+      const bool unsignedOperands =
+          unsignedIntegers || name == "arith.divui" || name == "arith.remui" ||
+          name == "arith.shrui" ||
+          ((name == "arith.andi" || name == "arith.ori" ||
+            name == "arith.xori" || name == "arith.shli") &&
+           !value.getType().isInteger(1));
+      return emitBinary(operation->getOperand(0), emittedOperator,
+                        operation->getOperand(1), unsignedOperands,
+                        isAngleOperand(operation, 0),
+                        isAngleOperand(operation, 1));
     }
     if (name == "arith.negf") {
       auto operand = emitExpression(operation->getOperand(0));
@@ -638,7 +1376,14 @@ private:
       return (Twine("(-") + *operand + ")").str();
     }
     if (isScalarCast(name)) {
-      auto operand = emitExpression(operation->getOperand(0));
+      const auto source = operation->getOperand(0);
+      const bool angleResult =
+          operation->hasAttrOfType<UnitAttr>(openqasm::ANGLE_VALUE_ATTR);
+      auto operand = angleWidth(source) && !angleResult
+                         ? emitUnsignedOperand(source)
+                         : emitExpression(source, unsignedIntegers ||
+                                                      name == "arith.extui" ||
+                                                      name == "arith.uitofp");
       if (failed(operand)) {
         return failure();
       }
@@ -651,6 +1396,13 @@ private:
       auto type = castTarget(name, value.getType());
       if (type.empty()) {
         return failExpression(value, "unsupported scalar conversion");
+      }
+      if (value.getType().isInteger(1) && unsignedIntegers) {
+        type = "uint[1]";
+      }
+      if (name == "arith.extui" && bitValues.contains(source) &&
+          value.getType().getIntOrFloatBitWidth() > 1) {
+        return (Twine(type) + "(uint[1](" + *operand + "))").str();
       }
       return (Twine(type) + "(" + *operand + ")").str();
     }
@@ -671,14 +1423,14 @@ private:
   }
 
   [[nodiscard]] static FailureOr<std::string>
-  emitConstant(arith::ConstantOp constant) {
+  emitConstant(arith::ConstantOp constant, const bool unsignedInteger) {
     if (auto integer = dyn_cast<IntegerAttr>(constant.getValue())) {
       if (integer.getType().isInteger(1)) {
         return integer.getValue().isZero() ? std::string("false")
                                            : std::string("true");
       }
       llvm::SmallString<32> text;
-      integer.getValue().toString(text, 10, true);
+      integer.getValue().toString(text, 10, !unsignedInteger);
       return text.str().str();
     }
     if (auto floating = dyn_cast<FloatAttr>(constant.getValue())) {
@@ -703,11 +1455,25 @@ private:
     return failure();
   }
 
-  [[nodiscard]] FailureOr<std::string> emitBinary(const Value lhsValue,
-                                                  const StringRef operation,
-                                                  const Value rhsValue) {
-    auto lhs = emitExpression(lhsValue);
-    auto rhs = emitExpression(rhsValue);
+  [[nodiscard]] FailureOr<std::string>
+  emitBinary(const Value lhsValue, const StringRef operation,
+             const Value rhsValue, const bool unsignedIntegers = false,
+             const bool lhsAngle = false, const bool rhsAngle = false) {
+    auto emitOperand = [&](const Value operand, const bool forceAngle) {
+      if (forceAngle) {
+        const auto type = dyn_cast<IntegerType>(operand.getType());
+        if (!type || !mqt::angle::isSupportedWidth(type.getWidth())) {
+          return failExpression(operand, "angle operand is not a supported "
+                                         "fixed-width integer");
+        }
+        return emitAngleUse(operand, type.getWidth());
+      }
+      return unsignedIntegers ? emitUnsignedOperand(operand)
+                              : emitSourceOperand(operand,
+                                                  /*unsignedIntegers=*/false);
+    };
+    auto lhs = emitOperand(lhsValue, lhsAngle);
+    auto rhs = emitOperand(rhsValue, rhsAngle);
     if (failed(lhs) || failed(rhs)) {
       return failure();
     }
@@ -719,8 +1485,10 @@ private:
         .Cases("arith.addi", "arith.addf", "+")
         .Cases("arith.subi", "arith.subf", "-")
         .Cases("arith.muli", "arith.mulf", "*")
-        .Cases("arith.divsi", "arith.divf", "/")
-        .Case("arith.remsi", "%")
+        .Cases("arith.divsi", "arith.divui", "arith.divf", "/")
+        .Cases("arith.remsi", "arith.remui", "%")
+        .Case("arith.shli", "<<")
+        .Case("arith.shrui", ">>")
         .Case("arith.andi", "&&")
         .Case("arith.ori", "||")
         .Case("arith.xori", "!=")
@@ -743,10 +1511,13 @@ private:
     case arith::CmpIPredicate::sge:
       return ">=";
     case arith::CmpIPredicate::ult:
+      return "<";
     case arith::CmpIPredicate::ule:
+      return "<=";
     case arith::CmpIPredicate::ugt:
+      return ">";
     case arith::CmpIPredicate::uge:
-      return {};
+      return ">=";
     }
     return {};
   }
@@ -757,6 +1528,7 @@ private:
     case arith::CmpFPredicate::OEQ:
       return "==";
     case arith::CmpFPredicate::ONE:
+    case arith::CmpFPredicate::UNE:
       return "!=";
     case arith::CmpFPredicate::OLT:
       return "<";
@@ -775,20 +1547,30 @@ private:
     return llvm::StringSwitch<bool>(name)
         .Case("arith.index_cast", true)
         .Case("arith.sitofp", true)
+        .Case("arith.uitofp", true)
         .Case("arith.fptosi", true)
+        .Case("arith.fptoui", true)
+        .Case("arith.extsi", true)
+        .Case("arith.extui", true)
+        .Case("arith.trunci", true)
         .Default(false);
   }
 
-  [[nodiscard]] static StringRef castTarget(const StringRef name,
-                                            const Type resultType) {
-    if (name == "arith.sitofp" || resultType.isF64()) {
+  [[nodiscard]] static std::string castTarget(const StringRef name,
+                                              const Type resultType) {
+    if (name == "arith.sitofp" || name == "arith.uitofp" ||
+        resultType.isF64()) {
       return "float";
     }
     if (resultType.isInteger(1)) {
       return "bool";
     }
     if (resultType.isInteger(64) || resultType.isIndex()) {
-      return "int";
+      return name == "arith.fptoui" || name == "arith.extui" ? "uint[64]"
+                                                             : "int";
+    }
+    if (const auto integer = dyn_cast<IntegerType>(resultType)) {
+      return (Twine("uint[") + Twine(integer.getWidth()) + "]").str();
     }
     return {};
   }
@@ -831,13 +1613,35 @@ private:
     }
     const auto name = uniqueName("b", nextBit);
     valueNames.try_emplace(measurement.getResult(), name);
+    bitValues.insert(measurement.getResult());
     *output << "bit " << name << " = measure " << *qubit << ";\n";
     return success();
   }
 
   [[nodiscard]] LogicalResult emitIf(scf::IfOp ifOp) {
+    SmallVector<CarriedVariable> variables;
     if (ifOp.getNumResults() != 0) {
-      return fail(ifOp, "scf.if results are not supported");
+      if (ifOp.getElseRegion().empty()) {
+        return fail(ifOp, "result-bearing scf.if requires an else region");
+      }
+      auto thenYield =
+          cast<scf::YieldOp>(ifOp.getThenRegion().front().getTerminator());
+      auto elseYield =
+          cast<scf::YieldOp>(ifOp.getElseRegion().front().getTerminator());
+      if (thenYield.getNumOperands() != ifOp.getNumResults() ||
+          elseYield.getNumOperands() != ifOp.getNumResults()) {
+        return fail(ifOp, "malformed result-bearing scf.if");
+      }
+      SmallVector<SmallVector<Value>> sources(ifOp.getNumResults());
+      for (const auto index : llvm::seq<size_t>(0, ifOp.getNumResults())) {
+        sources[index].append(
+            {thenYield.getOperand(index), elseYield.getOperand(index)});
+      }
+      auto declared = declareCarriedVariables(ifOp.getResults(), sources);
+      if (failed(declared)) {
+        return fail(ifOp, "unsupported scf.if result type");
+      }
+      variables = std::move(*declared);
     }
     auto condition = emitExpression(ifOp.getCondition());
     if (failed(condition)) {
@@ -848,11 +1652,25 @@ private:
     if (failed(emitBlock(ifOp.getThenRegion().front()))) {
       return failure();
     }
+    if (!variables.empty() &&
+        failed(emitCarriedAssignments(
+            cast<scf::YieldOp>(ifOp.getThenRegion().front().getTerminator())
+                .getOperands(),
+            variables))) {
+      return failure();
+    }
     output->unindent();
     if (!ifOp.getElseRegion().empty()) {
       *output << "} else {\n";
       output->indent();
       if (failed(emitBlock(ifOp.getElseRegion().front()))) {
+        return failure();
+      }
+      if (!variables.empty() &&
+          failed(emitCarriedAssignments(
+              cast<scf::YieldOp>(ifOp.getElseRegion().front().getTerminator())
+                  .getOperands(),
+              variables))) {
         return failure();
       }
       output->unindent();
@@ -862,8 +1680,31 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitFor(scf::ForOp forOp) {
-    if (!forOp.getInitArgs().empty() || forOp.getNumResults() != 0) {
-      return fail(forOp, "scf.for loop-carried values are not supported");
+    if (forOp.getInitArgs().size() != forOp.getNumResults() ||
+        forOp.getRegionIterArgs().size() != forOp.getNumResults()) {
+      return fail(forOp, "malformed scf.for loop-carried state");
+    }
+    SmallVector<CarriedVariable> variables;
+    if (forOp.getNumResults() != 0) {
+      auto yield = cast<scf::YieldOp>(forOp.getBody()->getTerminator());
+      if (yield.getNumOperands() != forOp.getNumResults()) {
+        return fail(forOp, "malformed scf.for yield");
+      }
+      SmallVector<SmallVector<Value>> sources(forOp.getNumResults());
+      for (const auto index : llvm::seq<size_t>(0, forOp.getNumResults())) {
+        sources[index].append(
+            {forOp.getInitArgs()[index], yield.getOperand(index)});
+      }
+      auto declared = declareCarriedVariables(forOp.getResults(), sources,
+                                              forOp.getInitArgs());
+      if (failed(declared)) {
+        return fail(forOp, "unsupported scf.for result type");
+      }
+      variables = std::move(*declared);
+      for (const auto [argument, variable] :
+           llvm::zip_equal(forOp.getRegionIterArgs(), variables)) {
+        mapCarriedValue(argument, variable);
+      }
     }
     const auto lower = getConstantInteger(forOp.getLowerBound());
     const auto upper = getConstantInteger(forOp.getUpperBound());
@@ -894,6 +1735,12 @@ private:
     if (failed(emitBlock(*forOp.getBody()))) {
       return failure();
     }
+    if (!variables.empty() &&
+        failed(emitCarriedAssignments(
+            cast<scf::YieldOp>(forOp.getBody()->getTerminator()).getOperands(),
+            variables))) {
+      return failure();
+    }
     output->unindent();
     *output << "}\n";
     return success();
@@ -904,10 +1751,40 @@ private:
     auto& after = whileOp.getAfter().front();
     auto conditionOp = cast<scf::ConditionOp>(before.getTerminator());
     auto yieldOp = cast<scf::YieldOp>(after.getTerminator());
-    if (!whileOp.getInits().empty() || whileOp.getNumResults() != 0 ||
-        before.getNumArguments() != 0 || after.getNumArguments() != 0 ||
-        !conditionOp.getArgs().empty() || yieldOp.getNumOperands() != 0) {
-      return fail(whileOp, "scf.while loop-carried values are not supported");
+    const auto stateCount = whileOp.getInits().size();
+    const auto resultCount = whileOp.getNumResults();
+    if (before.getNumArguments() != stateCount ||
+        yieldOp.getNumOperands() != stateCount ||
+        after.getNumArguments() != resultCount ||
+        conditionOp.getArgs().size() != resultCount) {
+      return fail(whileOp, "malformed scf.while loop-carried state");
+    }
+    SmallVector<CarriedVariable> variables;
+    if (stateCount != 0) {
+      SmallVector<SmallVector<Value>> sources(stateCount);
+      for (const auto index : llvm::seq<size_t>(0, stateCount)) {
+        sources[index].append(
+            {whileOp.getInits()[index], yieldOp.getOperand(index)});
+      }
+      auto declared = declareCarriedVariables(before.getArguments(), sources,
+                                              whileOp.getInits());
+      if (failed(declared)) {
+        return fail(whileOp, "unsupported scf.while result type");
+      }
+      variables = std::move(*declared);
+      for (const auto resultIndex : llvm::seq<size_t>(0, resultCount)) {
+        const auto forwarded = conditionOp.getArgs()[resultIndex];
+        auto* const found = llvm::find(before.getArguments(), forwarded);
+        if (found == before.getArguments().end()) {
+          return fail(whileOp,
+                      "scf.while condition-region state updates are not "
+                      "supported");
+        }
+        const auto stateIndex = static_cast<size_t>(
+            std::distance(before.getArguments().begin(), found));
+        mapCarriedValue(after.getArgument(resultIndex), variables[stateIndex]);
+        mapCarriedValue(whileOp.getResult(resultIndex), variables[stateIndex]);
+      }
     }
     for (Operation& operation : before.without_terminator()) {
       if (auto load = dyn_cast<memref::LoadOp>(operation)) {
@@ -934,14 +1811,43 @@ private:
     if (failed(emitBlock(after))) {
       return failure();
     }
+    if (!variables.empty() &&
+        failed(emitCarriedAssignments(yieldOp.getOperands(), variables))) {
+      return failure();
+    }
     output->unindent();
     *output << "}\n";
     return success();
   }
 
   [[nodiscard]] LogicalResult emitIndexSwitch(scf::IndexSwitchOp switchOp) {
+    SmallVector<CarriedVariable> variables;
     if (switchOp.getNumResults() != 0) {
-      return fail(switchOp, "scf.index_switch results are not supported");
+      SmallVector<SmallVector<Value>> sources(switchOp.getNumResults());
+      const auto collectYield = [&](Block& block) {
+        auto yield = cast<scf::YieldOp>(block.getTerminator());
+        if (yield.getNumOperands() != switchOp.getNumResults()) {
+          return failure();
+        }
+        for (const auto index :
+             llvm::seq<size_t>(0, switchOp.getNumResults())) {
+          sources[index].push_back(yield.getOperand(index));
+        }
+        return success();
+      };
+      for (Region& region : switchOp.getCaseRegions()) {
+        if (failed(collectYield(region.front()))) {
+          return fail(switchOp, "malformed scf.index_switch case yield");
+        }
+      }
+      if (failed(collectYield(switchOp.getDefaultBlock()))) {
+        return fail(switchOp, "malformed scf.index_switch default yield");
+      }
+      auto declared = declareCarriedVariables(switchOp.getResults(), sources);
+      if (failed(declared)) {
+        return fail(switchOp, "unsupported scf.index_switch result type");
+      }
+      variables = std::move(*declared);
     }
     auto argument = emitExpression(switchOp.getArg());
     if (failed(argument)) {
@@ -950,7 +1856,17 @@ private:
 
     const auto cases = switchOp.getCases();
     if (cases.empty()) {
-      return emitBlock(switchOp.getDefaultBlock());
+      if (failed(emitBlock(switchOp.getDefaultBlock()))) {
+        return failure();
+      }
+      if (!variables.empty() &&
+          failed(emitCarriedAssignments(
+              cast<scf::YieldOp>(switchOp.getDefaultBlock().getTerminator())
+                  .getOperands(),
+              variables))) {
+        return failure();
+      }
+      return success();
     }
     *output << "switch (" << *argument << ") {\n";
     output->indent();
@@ -961,12 +1877,28 @@ private:
               emitBlock(switchOp.getCaseBlock(static_cast<unsigned>(index))))) {
         return failure();
       }
+      if (!variables.empty() &&
+          failed(emitCarriedAssignments(
+              cast<scf::YieldOp>(
+                  switchOp.getCaseBlock(static_cast<unsigned>(index))
+                      .getTerminator())
+                  .getOperands(),
+              variables))) {
+        return failure();
+      }
       output->unindent();
       *output << "}\n";
     }
     *output << "default {\n";
     output->indent();
     if (failed(emitBlock(switchOp.getDefaultBlock()))) {
+      return failure();
+    }
+    if (!variables.empty() &&
+        failed(emitCarriedAssignments(
+            cast<scf::YieldOp>(switchOp.getDefaultBlock().getTerminator())
+                .getOperands(),
+            variables))) {
       return failure();
     }
     output->unindent();
@@ -985,15 +1917,38 @@ private:
       if (isa<MemRefType>(value.getType())) {
         continue;
       }
-      auto expression = emitExpression(value);
+      const auto& scalar = scalarOutputs[scalarIndex];
+      FailureOr<std::string> expression;
+      if (scalar.angleWidth) {
+        expression = emitAngleUse(value, *scalar.angleWidth);
+      } else if (scalar.kind.starts_with("uint[")) {
+        expression = emitUnsignedOperand(value);
+      } else {
+        expression = emitExpression(value);
+      }
       if (failed(expression)) {
         return failure();
       }
-      *output << scalarOutputs[scalarIndex].name << " = " << *expression
-              << ";\n";
+      *output << scalar.name << " = " << *expression << ";\n";
       ++scalarIndex;
     }
     return success();
+  }
+
+  [[nodiscard]] FailureOr<std::string>
+  emitQuantizedGateParameter(const Value parameter,
+                             const uint32_t precisionBits) {
+    if (const auto quantized = mqt::angle::matchQuantizedRadians(parameter)) {
+      if (quantized->bitWidth != precisionBits) {
+        return failExpression(parameter,
+                              "gate-angle precision metadata does not match "
+                              "the canonical parameter bridge");
+      }
+      return emitAngleUse(quantized->bits, precisionBits);
+    }
+    return failExpression(
+        parameter,
+        "final gate-angle quantization does not match its parameter");
   }
 
   [[nodiscard]] FailureOr<GateCall> emitGateCall(UnitaryOpInterface unitary) {
@@ -1018,7 +1973,10 @@ private:
       call.modifiers = "inv @ ";
     }
     for (const auto parameter : unitary.getParameters()) {
-      auto expression = emitExpression(parameter);
+      auto expression =
+          finalGatePrecision
+              ? emitQuantizedGateParameter(parameter, *finalGatePrecision)
+              : emitExpression(parameter);
       if (failed(expression)) {
         return failure();
       }
@@ -1039,9 +1997,12 @@ private:
     auto& body = modifier.getRegion().front();
     SmallVector<Operation*> unitaries;
     for (Operation& operation : body.without_terminator()) {
+      if (auto assertion = dyn_cast<cf::AssertOp>(&operation);
+          assertion && isUnsignedDivisionSafetyAssert(assertion)) {
+        continue;
+      }
       if (!isa<UnitaryOpInterface>(&operation) &&
-          !isInlineExpressionOperation(operation) &&
-          !isCanonicalAngleBridgeMember(operation)) {
+          !isInlineExpressionOperation(operation)) {
         fail(&operation, "modifier bodies may only contain unitary operations "
                          "and scalar expressions");
         return failure();
@@ -1130,16 +2091,45 @@ private:
 
     SmallVector<Value> captures;
     DenseSet<Value> captured;
+    DenseMap<Value, uint32_t> capturedAngles;
     Value capturedQubit;
+    const auto addCapture = [&](const Value value,
+                                const std::optional<uint32_t> angle = {}) {
+      if (captured.insert(value).second) {
+        captures.push_back(value);
+      }
+      if (angle) {
+        capturedAngles[value] = *angle;
+      }
+    };
     modifier.getRegion().walk([&](Operation* operation) {
+      for (const auto result : operation->getResults()) {
+        if (const auto angle = mqt::angle::matchQuantizedRadians(result);
+            angle) {
+          Value bits = angle->bits;
+          if (!bits.getDefiningOp<arith::ConstantOp>() &&
+              !modifier.getRegion().isAncestor(bits.getParentRegion())) {
+            addCapture(bits, angle->bitWidth);
+          }
+        }
+      }
+      if (canonicalAngleOperations.contains(operation) ||
+          isCanonicalAngleBridgeMember(*operation) ||
+          (isa<cf::AssertOp>(operation) &&
+           isUnsignedDivisionSafetyAssert(cast<cf::AssertOp>(operation)))) {
+        return;
+      }
       for (auto operand : operation->getOperands()) {
         if (modifier.getRegion().isAncestor(operand.getParentRegion())) {
           continue;
         }
+        if (isa_and_nonnull<arith::ConstantOp>(operand.getDefiningOp())) {
+          continue;
+        }
         if (isa<QubitType>(operand.getType())) {
           capturedQubit = operand;
-        } else if (captured.insert(operand).second) {
-          captures.push_back(operand);
+        } else {
+          addCapture(operand, angleWidth(operand));
         }
       }
     });
@@ -1148,11 +2138,19 @@ private:
            "multi-operation modifier bodies cannot capture extra qubits");
       return failure();
     }
+    if (llvm::any_of(captures, [&](const Value capture) {
+          return !capturedAngles.contains(capture);
+        })) {
+      fail(modifier,
+           "multi-operation modifier bodies cannot capture non-angle scalar "
+           "values");
+      return failure();
+    }
 
     GateCall helperCall;
     helperCall.symbol = helperName;
     for (const auto capture : captures) {
-      auto expression = emitExpression(capture);
+      auto expression = emitAngleUse(capture, capturedAngles.at(capture));
       if (failed(expression)) {
         return failure();
       }
@@ -1160,12 +2158,21 @@ private:
     }
 
     DenseMap<Value, std::string> savedNames;
+    DenseMap<Value, uint32_t> savedAngleWidths;
     auto saveAndMap = [&](const Value value, std::string name) {
       if (const auto found = valueNames.find(value);
           found != valueNames.end()) {
         savedNames.try_emplace(value, found->second);
       }
       valueNames[value] = std::move(name);
+      if (const auto angle = capturedAngles.find(value);
+          angle != capturedAngles.end()) {
+        if (const auto previous = angleValues.find(value);
+            previous != angleValues.end()) {
+          savedAngleWidths[value] = previous->second;
+        }
+        angleValues[value] = angle->second;
+      }
     };
 
     SmallVector<std::string> parameterNames;
@@ -1212,6 +2219,12 @@ private:
         valueNames[value] = found->second;
       } else {
         valueNames.erase(value);
+      }
+      if (const auto found = savedAngleWidths.find(value);
+          found != savedAngleWidths.end()) {
+        angleValues[value] = found->second;
+      } else if (capturedAngles.contains(value)) {
+        angleValues.erase(value);
       }
     }
     for (const auto argument : body.getArguments()) {

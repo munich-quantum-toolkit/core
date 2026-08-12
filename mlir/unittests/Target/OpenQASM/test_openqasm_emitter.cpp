@@ -11,16 +11,21 @@
 #include "OpenQASMTestUtils.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QC/Translation/OpenQASMAttributes.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/Utils/AngleConversion.h"
+#include "mlir/Support/Passes.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 #include "qasm_programs.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -53,6 +58,631 @@ using namespace mlir::oq3::test;
 
 namespace {
 
+TEST(OpenQASMTargetTest, LowersAnglesToBuiltinIntegersAndRoundTripsMetadata) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+input angle[8] theta;
+output angle[8] result;
+result = theta + angle[8](pi / 2.0);
+qubit q;
+rx(result) q;
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  ASSERT_EQ(function.getNumArguments(), 1);
+  ASSERT_EQ(function.getNumResults(), 1);
+  EXPECT_TRUE(function.getArgumentTypes().front().isInteger(8));
+  EXPECT_TRUE(function.getResultTypes().front().isInteger(8));
+  EXPECT_TRUE(function.getArgAttr(0, qc::openqasm::SCALAR_ATTR));
+  EXPECT_TRUE(function.getResultAttr(0, qc::openqasm::SCALAR_ATTR));
+
+  size_t angleAdds = 0;
+  size_t angleBridges = 0;
+  moduleOp->walk([&](Operation* operation) {
+    if (auto add = dyn_cast<arith::AddIOp>(operation)) {
+      angleAdds += add.getType().isInteger(8);
+    }
+    if (auto conversion = dyn_cast<arith::UIToFPOp>(operation)) {
+      angleBridges += conversion.getIn().getType().isInteger(64);
+    }
+  });
+  EXPECT_EQ(angleAdds, 1);
+  EXPECT_EQ(angleBridges, 1);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("input angle[8] theta;"), std::string::npos);
+  EXPECT_NE(emitted->find("output angle[8] result;"), std::string::npos);
+  auto reparsed = oq3::frontend::analyzeOpenQASM(*emitted);
+  ASSERT_TRUE(reparsed) << reparsed.diagnostics.front().message << "\n"
+                        << *emitted;
+}
+
+TEST(OpenQASMTargetTest, RoundTripsEveryScalarInterfaceKind) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input bool input_bool;
+input int input_int;
+input uint[8] input_uint;
+input float input_float;
+input angle[8] input_angle;
+output bool output_bool;
+output int output_int;
+output uint[8] output_uint;
+output float output_float;
+output angle[8] output_angle;
+output_bool = bool(input_angle);
+output_int = int(input_uint);
+output_uint = uint[8](input_int);
+output_float = float(input_int);
+output_angle = angle[8](input_float);
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  ASSERT_EQ(function.getNumArguments(), 5);
+  ASSERT_EQ(function.getNumResults(), 5);
+  for (const auto index : llvm::seq<size_t>(0, 5)) {
+    EXPECT_TRUE(function.getArgAttr(index, qc::openqasm::SCALAR_ATTR));
+    EXPECT_TRUE(function.getResultAttr(index, qc::openqasm::SCALAR_ATTR));
+  }
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  for (const llvm::StringRef declaration :
+       {"input bool input_bool;", "input int input_int;",
+        "input uint[8] input_uint;", "input float input_float;",
+        "input angle[8] input_angle;", "output bool output_bool;",
+        "output int output_int;", "output uint[8] output_uint;",
+        "output float output_float;", "output angle[8] output_angle;"}) {
+    EXPECT_NE(emitted->find(declaration), std::string::npos) << *emitted;
+  }
+
+  auto reparsed = oq3::frontend::analyzeOpenQASM(*emitted);
+  ASSERT_TRUE(reparsed) << reparsed.diagnostics.front().message << '\n'
+                        << *emitted;
+  auto reimported = qc::translateQASM3ToQC(*emitted, &context);
+  ASSERT_TRUE(reimported);
+  EXPECT_TRUE(succeeded(verify(*reimported)));
+}
+
+TEST(OpenQASMTargetTest, EmitsCanonicalRuntimeFloatToAngleConversion) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input float theta;
+output angle[8] result;
+result = theta;
+qubit q;
+gphase(result);
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t truncations = 0;
+  size_t exactConversions = 0;
+  moduleOp->walk([&](Operation* operation) {
+    if (auto truncation = dyn_cast<arith::TruncIOp>(operation)) {
+      truncations += truncation.getType().isInteger(8);
+      exactConversions += mqt::angle::matchFloatToBits(truncation).has_value();
+    }
+  });
+  EXPECT_EQ(truncations, 1);
+  EXPECT_EQ(exactConversions, 1);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("angle[8](theta)"), std::string::npos);
+  EXPECT_EQ(emitted->find("_mqt_roundeven"), std::string::npos) << *emitted;
+}
+
+TEST(OpenQASMTargetTest, RecognizesCommutedCanonicalAngleConversions) {
+  MLIRContext context;
+  context
+      .loadDialect<arith::ArithDialect, func::FuncDialect, math::MathDialect>();
+  OpBuilder builder(&context);
+  auto module = ModuleOp::create(builder.getUnknownLoc());
+  const auto loc = builder.getUnknownLoc();
+  auto function =
+      func::FuncOp::create(builder, loc, "conversion_matchers",
+                           builder.getFunctionType({builder.getF64Type()}, {}));
+  module.push_back(function);
+  auto* block = function.addEntryBlock();
+  builder.setInsertionPointToStart(block);
+
+  auto bits = arith::ConstantIntOp::create(builder, loc, 64, 8).getResult();
+  EXPECT_EQ(mqt::angle::buildResize(builder, loc, bits, 8), bits);
+
+  auto radians = mqt::angle::buildBitsToRadians(builder, loc, bits);
+  auto scaledRadians = radians.getDefiningOp<arith::MulFOp>();
+  ASSERT_TRUE(scaledRadians);
+  const auto converted = scaledRadians.getLhs();
+  const auto scale = scaledRadians.getRhs();
+  scaledRadians->setOperand(0, scale);
+  scaledRadians->setOperand(1, converted);
+  const auto quantized = mqt::angle::matchQuantizedRadians(radians);
+  ASSERT_TRUE(quantized);
+  EXPECT_EQ(quantized->bits, bits);
+
+  auto one =
+      arith::ConstantOp::create(builder, loc, builder.getF64FloatAttr(1.0))
+          .getResult();
+  auto nonCanonical = arith::MulFOp::create(builder, loc, one, one).getResult();
+  EXPECT_FALSE(mqt::angle::matchQuantizedRadians(nonCanonical));
+  auto invalidScale =
+      arith::MulFOp::create(builder, loc, converted, one).getResult();
+  EXPECT_FALSE(mqt::angle::matchQuantizedRadians(invalidScale));
+
+  const auto input = block->getArgument(0);
+  auto encoded = mqt::angle::buildFloatToBits(builder, loc, input, 8);
+  auto truncated = encoded.getDefiningOp<arith::TruncIOp>();
+  ASSERT_TRUE(truncated);
+  const auto decoded = mqt::angle::matchFloatToBits(encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(*decoded, input);
+}
+
+TEST(OpenQASMTargetTest, LowersAndRoundTripsScalarAngleBitBuiltins) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+input angle[8] theta;
+input uint[8] bits;
+input int distance;
+output angle[8] rotated_angle;
+output uint[8] rotated_uint;
+output uint count;
+rotated_angle = rotl(theta, distance);
+rotated_uint = rotr(bits, distance);
+count = popcount(rotated_angle);
+qubit q;
+rz(rotated_angle) q;
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  const auto countOperations = [](ModuleOp module) {
+    std::array<size_t, 3> counts{};
+    module.walk([&](Operation* operation) {
+      counts[0] += isa<LLVM::FshlOp>(operation);
+      counts[1] += isa<LLVM::FshrOp>(operation);
+      counts[2] += isa<math::CtPopOp>(operation);
+    });
+    return counts;
+  };
+  EXPECT_EQ(countOperations(*moduleOp), (std::array<size_t, 3>{1, 1, 1}));
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("rotated_angle = rotl(theta, int("),
+            std::string::npos)
+      << *emitted;
+  EXPECT_NE(emitted->find("rotated_uint = rotr(bits, int("), std::string::npos)
+      << *emitted;
+  EXPECT_NE(emitted->find("count = uint[64](popcount(rotl(theta, int("),
+            std::string::npos)
+      << *emitted;
+
+  auto reparsed = oq3::frontend::analyzeOpenQASM(*emitted);
+  ASSERT_TRUE(reparsed) << reparsed.diagnostics.front().message << '\n'
+                        << *emitted;
+  auto reimported = qc::translateQASM3ToQC(*emitted, &context);
+  ASSERT_TRUE(reimported);
+  ASSERT_TRUE(succeeded(verify(*reimported)));
+  const auto reimportedCounts = countOperations(*reimported);
+  EXPECT_GE(reimportedCounts[0], 1);
+  EXPECT_EQ(reimportedCounts[1], 1);
+  EXPECT_EQ(reimportedCounts[2], 1);
+}
+
+TEST(OpenQASMTargetTest, EmitsCanonicalRuntimeFloatToAngle64Conversion) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input float theta;
+output angle[64] result;
+result = theta;
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("angle[64](theta)"), std::string::npos) << *emitted;
+  EXPECT_EQ(emitted->find("roundeven"), std::string::npos) << *emitted;
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted));
+}
+
+TEST(OpenQASMTargetTest, EmitsUnsignedHighBitPatternsExactly) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+const uint maximum = 18446744073709551615;
+output uint[8] byte;
+output angle[64] angle_bits;
+byte = uint[8](255);
+angle_bits = angle[64](bit[64](uint[64](maximum)));
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("byte = 255;"), std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("18446744073709551615"), std::string::npos)
+      << *emitted;
+  auto reparsed = oq3::frontend::analyzeOpenQASM(*emitted);
+  ASSERT_TRUE(reparsed) << reparsed.diagnostics.front().message << '\n'
+                        << *emitted;
+}
+
+TEST(OpenQASMTargetTest, PreservesAngleBitPatternCastsInUintContexts) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[8] theta;
+output uint[8] bits;
+output bool high_half;
+bits = uint[8](bit[8](theta));
+high_half = bits >= uint[8](128);
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("uint[8](bit[8](theta))"), std::string::npos)
+      << *emitted;
+  auto reparsed = oq3::frontend::analyzeOpenQASM(*emitted);
+  ASSERT_TRUE(reparsed) << reparsed.diagnostics.front().message << '\n'
+                        << *emitted;
+}
+
+TEST(OpenQASMTargetTest, KeepsCustomGateParametersAsAngleBits) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+gate half(theta) q {
+  rz(theta / 2) q;
+}
+input angle[64] theta;
+qubit q;
+half(theta) q;
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t radiansBridges = 0;
+  size_t floatToAngleConversions = 0;
+  moduleOp->walk([&](Operation* operation) {
+    radiansBridges += isa<arith::UIToFPOp>(operation);
+    for (const auto result : operation->getResults()) {
+      floatToAngleConversions +=
+          mqt::angle::matchFloatToBits(result).has_value();
+    }
+  });
+  EXPECT_EQ(radiansBridges, 1);
+  EXPECT_EQ(floatToAngleConversions, 0);
+}
+
+TEST(OpenQASMTargetTest, LowersDynamicAngleAndUintBooleanCasts) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[8] theta;
+input uint[8] count;
+input float value;
+output bool has_theta;
+output bool has_count;
+output bool has_value;
+has_theta = bool(theta);
+has_count = bool(count);
+has_value = bool(value);
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("theta != angle[8](bit[8](uint[8](0)))"),
+            std::string::npos)
+      << *emitted;
+  EXPECT_NE(emitted->find("count != 0"), std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("value != 0.0"), std::string::npos) << *emitted;
+  auto reparsed = oq3::frontend::analyzeOpenQASM(*emitted);
+  ASSERT_TRUE(reparsed) << reparsed.diagnostics.front().message << '\n'
+                        << *emitted;
+}
+
+TEST(OpenQASMTargetTest, CollapsesSafeDynamicAngleShifts) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+input angle[8] theta;
+input uint distance;
+output angle[8] left;
+output angle[8] right;
+left = theta << distance;
+right = theta >> distance;
+qubit q;
+rx(left) q;
+rz(right) q;
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("theta << distance"), std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("theta >> distance"), std::string::npos) << *emitted;
+  auto reparsed = oq3::frontend::analyzeOpenQASM(*emitted);
+  ASSERT_TRUE(reparsed) << reparsed.diagnostics.front().message << '\n'
+                        << *emitted;
+}
+
+TEST(OpenQASMTargetTest, CollapsesCanonicalAngleWideningAndNarrowing) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[4] narrow;
+input angle[8] wide;
+output angle[8] widened;
+output angle[4] narrowed;
+widened = angle[8](narrow);
+narrowed = angle[4](wide);
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("angle[8](narrow)"), std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("angle[4](wide)"), std::string::npos) << *emitted;
+  auto reparsed = oq3::frontend::analyzeOpenQASM(*emitted);
+  ASSERT_TRUE(reparsed) << reparsed.diagnostics.front().message << '\n'
+                        << *emitted;
+}
+
+TEST(OpenQASMTargetTest, CarriesBuiltinIntegerAnglesThroughStructuredControl) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+input angle[8] theta;
+input uint[8] factor;
+input bool repeat;
+input int selector;
+output angle[8] result;
+result = theta;
+if (factor != uint[8](0)) { result = result * factor; }
+for int i in [0:1] {
+  result = result + angle[8](pi / 4.0);
+}
+while (repeat) {
+  result = -result;
+  repeat = false;
+}
+switch (selector) {
+  case 1 { result = result + angle[8](pi / 2.0); }
+  default { result = result + angle[8](pi / 4.0); }
+}
+qubit q;
+rx(result) q;
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  size_t angleMultiplications = 0;
+  size_t angleAdditions = 0;
+  size_t angleNegations = 0;
+  size_t angleIfResults = 0;
+  size_t angleForResults = 0;
+  size_t angleWhileResults = 0;
+  size_t angleSwitchResults = 0;
+  moduleOp->walk([&](Operation* operation) {
+    if (auto multiplication = dyn_cast<arith::MulIOp>(operation)) {
+      angleMultiplications += multiplication.getType().isInteger(8);
+    }
+    if (auto addition = dyn_cast<arith::AddIOp>(operation)) {
+      angleAdditions += addition.getType().isInteger(8);
+    }
+    if (auto subtraction = dyn_cast<arith::SubIOp>(operation)) {
+      angleNegations += subtraction.getType().isInteger(8);
+    }
+    if (auto conditional = dyn_cast<scf::IfOp>(operation)) {
+      angleIfResults +=
+          llvm::count_if(conditional.getResultTypes(),
+                         [](Type type) { return type.isInteger(8); });
+    }
+    if (auto loop = dyn_cast<scf::ForOp>(operation)) {
+      angleForResults += llvm::count_if(
+          loop.getResultTypes(), [](Type type) { return type.isInteger(8); });
+    }
+    if (auto loop = dyn_cast<scf::WhileOp>(operation)) {
+      angleWhileResults += llvm::count_if(
+          loop.getResultTypes(), [](Type type) { return type.isInteger(8); });
+    }
+    if (auto switchOp = dyn_cast<scf::IndexSwitchOp>(operation)) {
+      angleSwitchResults +=
+          llvm::count_if(switchOp.getResultTypes(),
+                         [](Type type) { return type.isInteger(8); });
+    }
+  });
+  EXPECT_EQ(angleMultiplications, 1);
+  EXPECT_GE(angleAdditions, 1);
+  EXPECT_EQ(angleNegations, 1);
+  EXPECT_GE(angleIfResults, 1);
+  EXPECT_GE(angleForResults, 1);
+  EXPECT_GE(angleWhileResults, 1);
+  EXPECT_GE(angleSwitchResults, 1);
+
+  std::string ir;
+  llvm::raw_string_ostream stream(ir);
+  moduleOp->print(stream);
+  EXPECT_EQ(ir.find("!quant."), std::string::npos);
+  EXPECT_EQ(ir.find("mqt.angle"), std::string::npos);
+
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("angle[8] _mqt_s"), std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("while ("), std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("switch (selector)"), std::string::npos) << *emitted;
+  auto reparsed = oq3::frontend::analyzeOpenQASM(*emitted);
+  ASSERT_TRUE(reparsed) << reparsed.diagnostics.front().message << '\n'
+                        << *emitted;
+}
+
+TEST(OpenQASMTargetTest, UsesUnsignedIntegerAngleOperations) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[8] lhs;
+input angle[8] rhs;
+input uint[8] divisor;
+output angle[8] quotient;
+output uint[8] ratio;
+output angle[8] bits;
+output angle[8] conjunction;
+output angle[8] disjunction;
+output angle[8] negated;
+output bool less;
+quotient = lhs / divisor;
+ratio = lhs / rhs;
+bits = ~(lhs ^ rhs);
+conjunction = lhs & rhs;
+disjunction = lhs | rhs;
+negated = -lhs;
+less = lhs < rhs;
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  size_t unsignedDivisions = 0;
+  size_t bitwiseAnd = 0;
+  size_t bitwiseOrs = 0;
+  size_t bitwiseXors = 0;
+  size_t unsignedComparisons = 0;
+  moduleOp->walk([&](Operation* operation) {
+    unsignedDivisions += isa<arith::DivUIOp>(operation);
+    if (auto bitwise = dyn_cast<arith::AndIOp>(operation)) {
+      bitwiseAnd += bitwise.getType().isInteger(8);
+    }
+    if (auto bitwise = dyn_cast<arith::OrIOp>(operation)) {
+      bitwiseOrs += bitwise.getType().isInteger(8);
+    }
+    if (auto bitwise = dyn_cast<arith::XOrIOp>(operation)) {
+      bitwiseXors += bitwise.getType().isInteger(8);
+    }
+    if (auto comparison = dyn_cast<arith::CmpIOp>(operation)) {
+      unsignedComparisons +=
+          comparison.getPredicate() == arith::CmpIPredicate::ult;
+    }
+  });
+  EXPECT_EQ(unsignedDivisions, 2);
+  EXPECT_EQ(bitwiseAnd, 1);
+  EXPECT_EQ(bitwiseOrs, 1);
+  EXPECT_EQ(bitwiseXors, 2);
+  EXPECT_EQ(unsignedComparisons, 1);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  auto reparsed = oq3::frontend::analyzeOpenQASM(*emitted);
+  ASSERT_TRUE(reparsed) << reparsed.diagnostics.front().message << '\n'
+                        << *emitted;
+}
+
+TEST(OpenQASMTargetTest, PreservesAngleOperandsOfComparisonsAndAngleDivision) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[8] theta;
+output bool less_than_pi;
+output uint[8] ratio_to_pi;
+output bool less_than_computed;
+less_than_pi = theta < angle[8](pi);
+ratio_to_pi = theta / angle[8](pi);
+less_than_computed = theta < (theta + angle[8](pi));
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  auto reparsed = oq3::frontend::analyzeOpenQASM(*emitted);
+  ASSERT_TRUE(reparsed) << reparsed.diagnostics.front().message << '\n'
+                        << *emitted;
+
+  bool sawConstantComparison = false;
+  bool sawAngleDivision = false;
+  bool sawComputedComparison = false;
+  for (const auto statementId : reparsed.program->body) {
+    const auto* assignment =
+        std::get_if<oq3::frontend::ScalarAssignmentStatement>(
+            &reparsed.program->statements[statementId].data);
+    if (assignment == nullptr) {
+      continue;
+    }
+    const auto& scalar = reparsed.program->scalars[assignment->scalar];
+    if (scalar.name == "ratio_to_pi") {
+      ASSERT_TRUE(assignment->value);
+      const auto& division = reparsed.program->expressions[*assignment->value];
+      ASSERT_EQ(division.kind, oq3::frontend::ExpressionKind::Divide);
+      const auto& denominator = reparsed.program->expressions[division.rhs];
+      EXPECT_EQ(denominator.type, oq3::frontend::ScalarType::Angle);
+      ASSERT_EQ(denominator.kind, oq3::frontend::ExpressionKind::Constant);
+      EXPECT_EQ(std::get<uint64_t>(denominator.constant), 128);
+      sawAngleDivision = true;
+      continue;
+    }
+    ASSERT_TRUE(assignment->condition);
+    const auto& comparison =
+        reparsed.program->conditions[*assignment->condition];
+    ASSERT_EQ(comparison.kind, oq3::frontend::ConditionKind::Comparison);
+    const auto& rhs = reparsed.program->expressions[comparison.comparisonRhs];
+    EXPECT_EQ(rhs.type, oq3::frontend::ScalarType::Angle);
+    if (scalar.name == "less_than_pi") {
+      ASSERT_EQ(rhs.kind, oq3::frontend::ExpressionKind::Constant);
+      EXPECT_EQ(std::get<uint64_t>(rhs.constant), 128);
+      sawConstantComparison = true;
+    } else if (scalar.name == "less_than_computed") {
+      EXPECT_EQ(rhs.kind, oq3::frontend::ExpressionKind::Add);
+      EXPECT_EQ(rhs.type, oq3::frontend::ScalarType::Angle);
+      sawComputedComparison = true;
+    }
+  }
+  EXPECT_TRUE(sawConstantComparison);
+  EXPECT_TRUE(sawAngleDivision);
+  EXPECT_TRUE(sawComputedComparison);
+}
+
 TEST(OpenQASMTargetTest, EmitsVerifiedQCDirectly) {
   MLIRContext context;
   auto moduleOp = qc::translateQASM3ToQC(BROADCAST_PROGRAM, &context);
@@ -82,7 +712,7 @@ TEST(OpenQASMTargetTest, EmitsTypedGateAngleExpressions) {
 OPENQASM 3.0;
 include "stdgates.inc";
 gate shifted(theta) q {
-  rx(theta + angle[64](1.0)) q;
+  rx(theta + angle(1.0)) q;
 }
 qubit q;
 shifted(0.5) q;
@@ -92,6 +722,30 @@ shifted(0.5) q;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST(OpenQASMTargetTest, NormalizesDynamicSignedScalarBitIndices) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input angle[8] value;
+input int index;
+output bit selected;
+selected = value[index];
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawNormalization = false;
+  bool sawBoundsCheck = false;
+  moduleOp->walk([&](arith::SelectOp) { sawNormalization = true; });
+  moduleOp->walk([&](cf::AssertOp assertion) {
+    sawBoundsCheck |= assertion.getMsg() == "scalar bit index out of bounds";
+  });
+  EXPECT_TRUE(sawNormalization);
+  EXPECT_TRUE(sawBoundsCheck);
 }
 
 TEST(OpenQASMTargetTest, EmitsScalarMathFunctions) {
@@ -1494,6 +2148,26 @@ bit[2] result = measure q;
   EXPECT_GE(aliasAssertions, 3);
 }
 
+TEST(OpenQASMTargetTest, ExtendsNarrowUnsignedDynamicIndices) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+input uint[8] index;
+qubit[3] q;
+x q[index];
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t indexExtensions = 0;
+  moduleOp->walk([&](arith::ExtUIOp extension) {
+    indexExtensions += extension.getIn().getType().isInteger(8) &&
+                       extension.getType().isInteger(64);
+  });
+  EXPECT_EQ(indexExtensions, 1);
+}
+
 TEST(OpenQASMTargetTest, LoadsDynamicQubitGatesDirectly) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
@@ -2291,6 +2965,14 @@ result = measure q;
     EXPECT_EQ(loop.getBeforeBody()->getTerminator()->getNumOperands(), 2);
     EXPECT_EQ(loop.getAfterBody()->getTerminator()->getNumOperands(), 1);
   });
+
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("bit _mqt_s"), std::string::npos) << *emitted;
+  auto reparsed = oq3::frontend::analyzeOpenQASM(*emitted);
+  ASSERT_TRUE(reparsed) << reparsed.diagnostics.front().message << '\n'
+                        << *emitted;
 }
 
 TEST(OpenQASMTargetTest, CarriesEveryPotentiallyMutatedDynamicBit) {
