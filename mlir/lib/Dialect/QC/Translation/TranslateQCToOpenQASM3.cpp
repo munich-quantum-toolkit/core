@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/Utils/AngleConversion.h"
 #include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
@@ -408,6 +409,9 @@ private:
             &operation)) {
       return success();
     }
+    if (isCanonicalAngleBridgeMember(operation)) {
+      return success();
+    }
     if (isInlineExpressionOperation(operation)) {
       return validateInlineExpressionOperation(operation);
     }
@@ -482,6 +486,26 @@ private:
            !mathFunction(name).empty();
   }
 
+  [[nodiscard]] static bool isCanonicalAngleBridgeMember(Operation& operation) {
+    const auto isCanonicalResult = [](const Value value) {
+      return mqt::angle::matchQuantizedRadians(value).has_value();
+    };
+    if (llvm::any_of(operation.getResults(), isCanonicalResult)) {
+      return true;
+    }
+    if (!isa<arith::UIToFPOp>(operation)) {
+      return false;
+    }
+    for (const auto result : operation.getResults()) {
+      for (Operation* user : result.getUsers()) {
+        if (llvm::any_of(user->getResults(), isCanonicalResult)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   [[nodiscard]] LogicalResult
   validateInlineExpressionOperation(Operation& operation) {
     for (const auto result : operation.getResults()) {
@@ -540,6 +564,18 @@ private:
   [[nodiscard]] FailureOr<std::string> emitExpression(const Value value) {
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
+    }
+    if (const auto quantized = mqt::angle::matchQuantizedRadians(value)) {
+      if (auto constant = quantized->bits.getDefiningOp<arith::ConstantOp>()) {
+        if (const auto integer = dyn_cast<IntegerAttr>(constant.getValue())) {
+          llvm::SmallString<32> bits;
+          integer.getValue().toString(bits, 10, false);
+          const auto width = quantized->bitWidth;
+          return (Twine("angle[") + Twine(width) + "](bit[" + Twine(width) +
+                  "](uint[" + Twine(width) + "](" + bits + ")))")
+              .str();
+        }
+      }
     }
     if (auto load = value.getDefiningOp<memref::LoadOp>()) {
       if (load.getIndices().size() != 1) {
@@ -1004,7 +1040,8 @@ private:
     SmallVector<Operation*> unitaries;
     for (Operation& operation : body.without_terminator()) {
       if (!isa<UnitaryOpInterface>(&operation) &&
-          !isInlineExpressionOperation(operation)) {
+          !isInlineExpressionOperation(operation) &&
+          !isCanonicalAngleBridgeMember(operation)) {
         fail(&operation, "modifier bodies may only contain unitary operations "
                          "and scalar expressions");
         return failure();

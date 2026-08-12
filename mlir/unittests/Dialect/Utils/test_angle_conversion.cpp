@@ -25,7 +25,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
-#include <mlir/Pass/Pass.h>
+#include <mlir/Pass/Pass.h> // IWYU pragma: keep (factory return type)
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>

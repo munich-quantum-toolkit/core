@@ -80,7 +80,7 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
   EXPECT_TRUE(qc::translateQASM3ToQC(*source, &context));
 }
 
-TEST(OpenQASM3EmissionTest, UsesCanonicalOutputTypesWithoutResultMetadata) {
+TEST(OpenQASM3EmissionTest, UsesCanonicalOutputTypesWithResultMetadata) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 output bit measured;
@@ -102,7 +102,7 @@ real = 3.0;
   ASSERT_TRUE(moduleOp);
   auto function = *moduleOp->getOps<func::FuncOp>().begin();
   ASSERT_EQ(function.getNumResults(), 6U);
-  EXPECT_FALSE(function.getAllResultAttrs());
+  EXPECT_TRUE(function.getAllResultAttrs());
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
@@ -132,6 +132,7 @@ r = measure q;
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("gate r("), std::string::npos);
+  EXPECT_NE(emitted->find("angle[64](bit[64](uint[64]("), std::string::npos);
   EXPECT_NE(emitted->find("output bit[1] _mqt_out0;"), std::string::npos);
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
       *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
@@ -327,6 +328,7 @@ inv @ pair(theta) q;
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("gate _mqt_gate0(p0)"), std::string::npos);
+  EXPECT_NE(emitted->find("angle[64](bit[64](uint[64]("), std::string::npos);
   EXPECT_NE(emitted->find("inv @ _mqt_gate0("), std::string::npos);
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
       *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
