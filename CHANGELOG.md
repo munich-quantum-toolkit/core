@@ -93,6 +93,8 @@ releases may include breaking changes.
   [#1583], [#1588], [#1600], [#1664], [#1709], [#1716], [#1748], [#1805],
   [#1870], [#1904], [#1911], [#1951], [#1997], [#2016]) ([**@MatthiasReumann**],
   [**@burgholzer**])
+- ✨ Add passes for quantum-specific inter-procedural optimizations ([#1970])
+  ([**@DRovara**], [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
   auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924])
   ([**@DRovara**], [**@burgholzer**])
@@ -777,6 +779,7 @@ for previous changelogs._
 [#1976]: https://github.com/munich-quantum-toolkit/core/pull/1976
 [#1975]: https://github.com/munich-quantum-toolkit/core/pull/1975
 [#1972]: https://github.com/munich-quantum-toolkit/core/pull/1972
+[#1970]: https://github.com/munich-quantum-toolkit/core/pull/1970
 [#1967]: https://github.com/munich-quantum-toolkit/core/pull/1967
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965
 [#1961]: https://github.com/munich-quantum-toolkit/core/pull/1961
