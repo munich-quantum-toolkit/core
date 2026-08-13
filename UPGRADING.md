@@ -114,12 +114,6 @@ and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
 open the repository directly inside the container. If you are on Windows, we
 recommend using Docker Desktop with the WSL 2 backend.
 
-### `nanobind` updated to version 2.14.0
-
-This release updates the `nanobind` dependency to version 2.14.0, which includes
-an ABI bump. Any existing code that uses the `mqt-core` Python bindings will
-need to be recompiled with the new `nanobind` version.
-
 ## [3.8.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.7` to `3.8`.
