@@ -41,6 +41,7 @@ QTensor
 Transforms
 Conversions
 OpenQASM
+phase_estimation
 ```
 
 :::{note}
