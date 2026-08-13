@@ -51,6 +51,7 @@
 #include <string>
 #include <utility>
 
+namespace mqt::test::qasm3_translation {
 using namespace mlir;
 
 namespace {
@@ -1437,3 +1438,5 @@ INSTANTIATE_TEST_SUITE_P(
         QASM3TranslationTestCase{"ConditionIndexedBit",
                                  qasm::conditionIndexedBit,
                                  MQT_NAMED_BUILDER(conditionIndexedBit)}));
+
+} // namespace mqt::test::qasm3_translation

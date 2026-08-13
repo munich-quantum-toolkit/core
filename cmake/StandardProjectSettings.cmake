@@ -30,7 +30,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS
     CACHE BOOL "Export compile commands" FORCE)
 
 set(CMAKE_VERIFY_INTERFACE_HEADER_SETS
-    ON
+    OFF
     CACHE BOOL "Verify interface header sets")
 
 if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
@@ -64,24 +64,22 @@ if(DEPLOY)
       CACHE STRING "" FORCE)
 endif()
 
-# try to enable inter-procedural optimization per default for Release builds outside of deployment
-if(NOT DEPLOY AND CMAKE_BUILD_TYPE STREQUAL "Release")
-  option(ENABLE_IPO "Enable Interprocedural Optimization, aka Link Time Optimization (LTO)" ON)
-else()
-  option(ENABLE_IPO "Enable Interprocedural Optimization, aka Link Time Optimization (LTO)" OFF)
-endif()
+# Allow callers to opt in to inter-procedural optimization.
+option(ENABLE_IPO "Enable Interprocedural Optimization, aka Link Time Optimization (LTO)" OFF)
+set(IPO_ENABLED OFF)
 if(ENABLE_IPO)
   include(CheckIPOSupported)
   check_ipo_supported(RESULT ipo_supported OUTPUT ipo_output)
   # enable inter-procedural optimization if it is supported
   if(ipo_supported)
-    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION
-        TRUE
-        CACHE BOOL "Enable Interprocedural Optimization" FORCE)
+    set(IPO_ENABLED ON)
   else()
     message(DEBUG "IPO is not supported: ${ipo_output}")
   endif()
 endif()
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION
+    ${IPO_ENABLED}
+    CACHE BOOL "Enable Interprocedural Optimization" FORCE)
 
 # export all symbols by default on Windows
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS

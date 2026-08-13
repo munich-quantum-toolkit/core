@@ -183,8 +183,8 @@ namespace {
 
 struct QCOMatrixTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
 };
 
 class QCOMatrixTest : public testing::TestWithParam<QCOMatrixTestCase> {
@@ -560,7 +560,7 @@ TEST_F(QCOMatrixTest, PhaseProducingPowFoldsPreserveFullMatrixUnderControl) {
 
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
-    mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
+    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
 
     auto func = *moduleOp->getOps<func::FuncOp>().begin();
     EXPECT_TRUE(func.getBody().getOps<PowOp>().empty());
@@ -591,7 +591,7 @@ TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
 
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
-    mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
+    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
 
     size_t powCount = 0;
     moduleOp->walk([&](PowOp) { ++powCount; });
@@ -618,7 +618,7 @@ TEST_F(QCOMatrixTest, PowUBeyondSafeExponentRemainsUnchanged) {
 
   ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
   ASSERT_TRUE(verify(*moduleOp).succeeded());
-  mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
+  ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
   size_t powCount = 0;
   moduleOp->walk([&](PowOp) { ++powCount; });
   EXPECT_EQ(powCount, 1U);
@@ -646,7 +646,7 @@ TEST_F(QCOMatrixTest, NumericallyUnstableIntegralPowURemainsUnchanged) {
 
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
-    mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
+    ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
     size_t powCount = 0;
     moduleOp->walk([&](PowOp) { ++powCount; });
     EXPECT_EQ(powCount, 1U);

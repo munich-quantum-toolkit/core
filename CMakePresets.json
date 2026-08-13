@@ -6,7 +6,11 @@
       "hidden": true,
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "MLIR_DIR": "$env{MLIR_DIR}"
+        "MLIR_DIR": "$env{MLIR_DIR}",
+        "CMAKE_UNITY_BUILD": "ON",
+        "CMAKE_UNITY_BUILD_BATCH_SIZE": "8",
+        "CMAKE_VERIFY_INTERFACE_HEADER_SETS": "OFF",
+        "ENABLE_IPO": "OFF"
       },
       "environment": {
         "CCACHE_DIR": "${sourceDir}/.cache/ccache",
@@ -60,6 +64,14 @@
       }
     },
     {
+      "name": "release-lto",
+      "inherits": "release",
+      "displayName": "Release config with LTO",
+      "cacheVariables": {
+        "ENABLE_IPO": "ON"
+      }
+    },
+    {
       "name": "coverage",
       "inherits": "base-unix",
       "displayName": "Coverage config",
@@ -75,7 +87,9 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "BUILD_MQT_CORE_BENCHMARKS": "ON",
-        "BUILD_MQT_CORE_BINDINGS": "ON"
+        "BUILD_MQT_CORE_BINDINGS": "ON",
+        "CMAKE_UNITY_BUILD": "OFF",
+        "CMAKE_VERIFY_INTERFACE_HEADER_SETS": "ON"
       }
     },
     {
@@ -94,6 +108,14 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "release-lto-windows",
+      "inherits": "release-windows",
+      "displayName": "Windows Release config with LTO",
+      "cacheVariables": {
+        "ENABLE_IPO": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -104,6 +126,10 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "release-lto",
+      "configurePreset": "release-lto"
     },
     {
       "name": "coverage",
@@ -121,6 +147,11 @@
     {
       "name": "release-windows",
       "configurePreset": "release-windows",
+      "configuration": "Release"
+    },
+    {
+      "name": "release-lto-windows",
+      "configurePreset": "release-lto-windows",
       "configuration": "Release"
     }
   ],
@@ -142,6 +173,11 @@
       "configurePreset": "release"
     },
     {
+      "name": "release-lto",
+      "inherits": "base",
+      "configurePreset": "release-lto"
+    },
+    {
       "name": "coverage",
       "inherits": "base",
       "configurePreset": "coverage"
@@ -156,6 +192,12 @@
       "name": "release-windows",
       "inherits": "base",
       "configurePreset": "release-windows",
+      "configuration": "Release"
+    },
+    {
+      "name": "release-lto-windows",
+      "inherits": "base",
+      "configurePreset": "release-lto-windows",
       "configuration": "Release"
     }
   ]
