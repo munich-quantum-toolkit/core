@@ -170,12 +170,19 @@ class QDMIBackend(BackendV2):
     # Initialize derived mappings at class definition time
     _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES)
 
-    def __init__(self, device: QDMIDevice, provider: QDMIProvider | None = None) -> None:
+    def __init__(
+        self,
+        device: QDMIDevice,
+        provider: QDMIProvider | None = None,
+        *,
+        device_id: str | None = None,
+    ) -> None:
         """Initialize the backend with a QDMI device wrapper.
 
         Args:
             device: QDMI device wrapper.
             provider: Provider instance that created this backend.
+            device_id: Stable registry ID for the opened device, if known.
 
         Raises:
             UnsupportedDeviceError: If the device cannot be represented in Qiskit's Target model.
@@ -186,6 +193,7 @@ class QDMIBackend(BackendV2):
 
         super().__init__(name=device.name(), provider=provider, backend_version=device.version())
         self._device = device
+        self._device_id = device_id
 
         # Build Target from device
         self._target = self._build_target()
@@ -211,7 +219,13 @@ class QDMIBackend(BackendV2):
         return cls(
             device=open_device(device_id, **session_parameters),
             provider=provider,
+            device_id=device_id,
         )
+
+    @property
+    def device_id(self) -> str | None:
+        """Stable QDMI device ID, if known."""
+        return self._device_id
 
     @property
     def target(self) -> Target:

@@ -28,7 +28,8 @@ adapt the one device selected by the license environment.
       head of PR #2043.
 - [x] (2026-08-13 19:15Z) Added public typed dictionaries, the Python 3.10
       compatibility dependency, and typed stable-ID keyword arguments.
-- [ ] Preserve stable IDs on Qiskit backends.
+- [x] (2026-08-13 19:18Z) Preserved known stable IDs on Qiskit backends without
+      changing direct construction.
 - [ ] Make Qiskit provider discovery lazy and resilient.
 - [ ] Add backend factories for Qiskit primitives and simplify primitive
       constructors.
