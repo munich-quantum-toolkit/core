@@ -39,6 +39,7 @@
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
 #include <cmath>
@@ -133,9 +134,9 @@ struct DecodedGate {
 };
 
 struct WalkState {
-  QubitMap& qubits;
-  ClassicalEnv& classical;
-  dd::Package& dd;
+  QubitMap* qubits;
+  ClassicalEnv* classical;
+  dd::Package* dd;
   std::mt19937_64* rng = nullptr;
 };
 
@@ -146,7 +147,7 @@ struct WalkState {
 static FailureOr<std::optional<DecodedGate>>
 decodeStandardGate(UnitaryOpInterface unitary) {
   Operation* op = unitary.getOperation();
-  const qc::OpType type =
+  const auto type =
       TypeSwitch<Operation*, qc::OpType>(op)
           .Case<IdOp>([](auto) { return qc::OpType::I; })
           .Case<XOp>([](auto) { return qc::OpType::X; })
@@ -266,12 +267,12 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
   if (auto gphase = dyn_cast<GPhaseOp>(op)) {
     const auto theta = *utils::valueToDouble(gphase.getTheta());
     auto id = dd::Package::makeIdent();
-    id.w = walk.dd.cn.lookup(std::cos(theta), std::sin(theta));
-    state = walk.dd.applyOperation(id, state);
+    id.w = walk.dd->cn.lookup(std::cos(theta), std::sin(theta));
+    state = walk.dd->applyOperation(id, state);
     return success();
   }
   if (isa<BarrierOp>(op)) {
-    return walk.qubits.remapUnitary(unitary);
+    return walk.qubits->remapUnitary(unitary);
   }
 
   DynamicMatrix local;
@@ -280,7 +281,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
            << "unitary must have a compile-time constant matrix";
   }
 
-  auto wiresOr = walk.qubits.lookupRange(unitary.getInputQubits(), op);
+  auto wiresOr = walk.qubits->lookupRange(unitary.getInputQubits(), op);
   if (failed(wiresOr)) {
     return failure();
   }
@@ -289,8 +290,8 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
   if (wires.size() == 1) {
     const dd::GateMatrix mat{local(0, 0), local(0, 1), local(1, 0),
                              local(1, 1)};
-    state = walk.dd.applyOperation(walk.dd.makeGateDD(mat, wires[0]), state);
-    return walk.qubits.remapUnitary(unitary);
+    state = walk.dd->applyOperation(walk.dd->makeGateDD(mat, wires[0]), state);
+    return walk.qubits->remapUnitary(unitary);
   }
 
   if (wires.size() == 2) {
@@ -301,9 +302,9 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
             local(static_cast<int64_t>(row), static_cast<int64_t>(col));
       }
     }
-    state = walk.dd.applyOperation(
-        walk.dd.makeTwoQubitGateDD(mat, wires[0], wires[1]), state);
-    return walk.qubits.remapUnitary(unitary);
+    state = walk.dd->applyOperation(
+        walk.dd->makeTwoQubitGateDD(mat, wires[0], wires[1]), state);
+    return walk.qubits->remapUnitary(unitary);
   }
 
   if (wires.size() == 3) {
@@ -314,31 +315,32 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
             local(static_cast<int64_t>(row), static_cast<int64_t>(col));
       }
     }
-    state = walk.dd.applyOperation(
-        walk.dd.makeThreeQubitGateDD(mat, wires[0], wires[1], wires[2]), state);
-    return walk.qubits.remapUnitary(unitary);
+    state = walk.dd->applyOperation(
+        walk.dd->makeThreeQubitGateDD(mat, wires[0], wires[1], wires[2]),
+        state);
+    return walk.qubits->remapUnitary(unitary);
   }
 
   // Dense embed of a k-qubit QCO/MSB matrix into n wires, then rewrite to
   // DD/LSB. Cap at 12 qubits (~256 MiB dense `CMat`).
-  if (walk.qubits.numQubits > 12) {
+  if (walk.qubits->numQubits > 12) {
     return unitary.emitError()
            << "QCO DD matrix fallback supports at most 12 qubits";
   }
 
   DynamicMatrix embedded = local;
   const bool fullWidthCanonical =
-      wires.size() == walk.qubits.numQubits &&
+      wires.size() == walk.qubits->numQubits &&
       llvm::all_of(llvm::enumerate(wires),
                    [](const auto& it) { return it.value() == it.index(); });
   if (!fullWidthCanonical) {
-    embedded = embedLocalInNQubitMsb(local, walk.qubits.numQubits, wires);
+    embedded = embedLocalInNQubitMsb(local, walk.qubits->numQubits, wires);
   }
 
-  state = walk.dd.applyOperation(walk.dd.makeDDFromMatrix(toCMatInDdBasis(
-                                     embedded, walk.qubits.numQubits)),
-                                 state);
-  return walk.qubits.remapUnitary(unitary);
+  state = walk.dd->applyOperation(walk.dd->makeDDFromMatrix(toCMatInDdBasis(
+                                      embedded, walk.qubits->numQubits)),
+                                  state);
+  return walk.qubits->remapUnitary(unitary);
 }
 
 template <typename StateDD>
@@ -350,15 +352,15 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
   for (size_t i = 0; i < unitary.getNumTargets(); ++i) {
     targetVals.push_back(unitary.getInputTarget(i));
   }
-  auto targets = walk.qubits.lookupRange(targetVals, unitary.getOperation());
+  auto targets = walk.qubits->lookupRange(targetVals, unitary.getOperation());
   if (failed(targets)) {
     return failure();
   }
-  state = walk.dd.applyOperation(
-      getStandardOperationDD(walk.dd, gate.type, gate.params, controls,
+  state = walk.dd->applyOperation(
+      getStandardOperationDD(*walk.dd, gate.type, gate.params, controls,
                              {targets->begin(), targets->end()}),
       state);
-  return walk.qubits.remapUnitary(unitary);
+  return walk.qubits->remapUnitary(unitary);
 }
 
 static LogicalResult validateReturn(func::ReturnOp returnOp,
@@ -521,12 +523,12 @@ static LogicalResult bindLinearArgs(ValueRange operands, Block& block,
       return op->emitError()
              << "QCO DD simulation only supports qubit linear region args";
     }
-    const auto q = walk.qubits.lookup(operand);
+    const auto q = walk.qubits->lookup(operand);
     if (!q) {
       return op->emitError()
              << "qubit SSA value is not mapped for QCO DD construction";
     }
-    walk.qubits.bind(arg, *q);
+    walk.qubits->bind(arg, *q);
   }
   return success();
 }
@@ -543,7 +545,7 @@ static LogicalResult bindYieldResults(YieldOp yield,
   size_t idx = 0;
   for (Value result : classicalResults) {
     if (failed(
-            walk.classical.bindFrom(yield.getOperand(idx++), result, yield))) {
+            walk.classical->bindFrom(yield.getOperand(idx++), result, yield))) {
       return failure();
     }
   }
@@ -552,12 +554,12 @@ static LogicalResult bindYieldResults(YieldOp yield,
       return yield.emitError()
              << "QCO DD simulation only supports qubit linear results";
     }
-    const auto q = walk.qubits.lookup(yield.getOperand(idx++));
+    const auto q = walk.qubits->lookup(yield.getOperand(idx++));
     if (!q) {
       return yield.emitError()
              << "yielded qubit SSA value is not mapped for QCO DD construction";
     }
-    walk.qubits.bind(result, *q);
+    walk.qubits->bind(result, *q);
   }
   return success();
 }
@@ -594,17 +596,17 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
   return TypeSwitch<Operation*, LogicalResult>(&op)
       .template Case<StaticOp, SinkOp>([](auto) { return success(); })
       .template Case<arith::ConstantOp>([&](arith::ConstantOp constant) {
-        return recordConstant(constant, walk.classical);
+        return recordConstant(constant, *walk.classical);
       })
       .template Case<arith::IndexCastUIOp>([&](arith::IndexCastUIOp cast) {
-        return applyIndexCastUI(cast, walk.classical);
+        return applyIndexCastUI(cast, *walk.classical);
       })
       .template Case<arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::ShLIOp>(
           [&](Operation* classicalOp) {
-            return applyClassicalBitwise(*classicalOp, walk.classical);
+            return applyClassicalBitwise(*classicalOp, *walk.classical);
           })
       .template Case<func::ReturnOp>([&](func::ReturnOp returnOp) {
-        return validateReturn(returnOp, walk.qubits);
+        return validateReturn(returnOp, *walk.qubits);
       })
       .template Case<MeasureOp>([&](MeasureOp measureOp) -> LogicalResult {
         if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
@@ -616,14 +618,14 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return measureOp.emitError()
                    << "measurements require simulate(..., rng)";
           }
-          const auto q = walk.qubits.lookup(measureOp.getQubitIn());
+          const auto q = walk.qubits->lookup(measureOp.getQubitIn());
           if (!q) {
             return measureOp.emitError()
                    << "qubit SSA value is not mapped for QCO DD construction";
           }
-          const char bit = walk.dd.measureOneCollapsing(state, *q, *walk.rng);
-          walk.classical.bools[measureOp.getResult()] = bit == '1';
-          walk.qubits.bind(measureOp.getQubitOut(), *q);
+          const char bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
+          walk.classical->bools[measureOp.getResult()] = bit == '1';
+          walk.qubits->bind(measureOp.getQubitOut(), *q);
           return success();
         }
       })
@@ -636,19 +638,19 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           if (walk.rng == nullptr) {
             return resetOp.emitError() << "resets require simulate(..., rng)";
           }
-          const auto q = walk.qubits.lookup(resetOp.getQubitIn());
+          const auto q = walk.qubits->lookup(resetOp.getQubitIn());
           if (!q) {
             return resetOp.emitError()
                    << "qubit SSA value is not mapped for QCO DD construction";
           }
-          const char bit = walk.dd.measureOneCollapsing(state, *q, *walk.rng);
+          const char bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
           if (bit == '1') {
-            state = walk.dd.applyOperation(
-                walk.dd.makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X),
-                                   *q),
+            state = walk.dd->applyOperation(
+                walk.dd->makeGateDD(
+                    dd::opToSingleQubitGateMatrix(qc::OpType::X), *q),
                 state);
           }
-          walk.qubits.bind(resetOp.getQubitOut(), *q);
+          walk.qubits->bind(resetOp.getQubitOut(), *q);
           return success();
         }
       })
@@ -658,8 +660,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                  << "control-flow is not supported for QCO DD functionality "
                     "construction";
         } else {
-          const auto condIt = walk.classical.bools.find(ifOp.getCondition());
-          if (condIt == walk.classical.bools.end()) {
+          const auto condIt = walk.classical->bools.find(ifOp.getCondition());
+          if (condIt == walk.classical->bools.end()) {
             return ifOp.emitError()
                    << "if condition is not a concrete classical value";
           }
@@ -677,8 +679,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                      << "control-flow is not supported for QCO DD "
                         "functionality construction";
             } else {
-              const auto idxIt = walk.classical.indices.find(switchOp.getArg());
-              if (idxIt == walk.classical.indices.end()) {
+              const auto idxIt =
+                  walk.classical->indices.find(switchOp.getArg());
+              if (idxIt == walk.classical->indices.end()) {
                 return switchOp.emitError()
                        << "index_switch argument is not a concrete index";
               }
@@ -708,7 +711,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           }
           if (*decoded) {
             auto controlQubits =
-                walk.qubits.lookupRange(ctrlOp.getControlsIn(), ctrlOp);
+                walk.qubits->lookupRange(ctrlOp.getControlsIn(), ctrlOp);
             if (failed(controlQubits)) {
               return failure();
             }
@@ -793,7 +796,7 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd) {
   QubitMap qubits = std::move(*qubitsOr);
   ClassicalEnv classical;
   WalkState walkState{
-      .qubits = qubits, .classical = classical, .dd = dd, .rng = nullptr};
+      .qubits = &qubits, .classical = &classical, .dd = &dd, .rng = nullptr};
 
   dd::MatrixDD state =
       qubits.numQubits == 0
@@ -820,7 +823,7 @@ static FailureOr<dd::VectorDD> simulateImpl(func::FuncOp func,
   QubitMap qubits = std::move(*qubitsOr);
   ClassicalEnv classical;
   WalkState walkState{
-      .qubits = qubits, .classical = classical, .dd = dd, .rng = rng};
+      .qubits = &qubits, .classical = &classical, .dd = &dd, .rng = rng};
 
   dd::VectorDD state = in;
   if (failed(walk(func, walkState, state))) {
