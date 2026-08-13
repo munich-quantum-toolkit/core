@@ -16,17 +16,19 @@ from collections import Counter
 from typing import TYPE_CHECKING, cast
 from unittest.mock import Mock
 
-from mqt.core import fomac
+from mqt.core.qdmi import Device as QDMIDevice
+from mqt.core.qdmi import Job as QDMIJob
+from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
 
-def _site(index: int) -> fomac.Device.Site:
+def _site(index: int) -> QDMIDevice.Site:
     """Return a site mock with one stable index."""
     site = Mock()
     site.index.return_value = index
-    return cast("fomac.Device.Site", site)
+    return cast("QDMIDevice.Site", site)
 
 
 def operation(
@@ -36,7 +38,7 @@ def operation(
     *,
     sites: Sequence[int] | None = None,
     site_pairs: Sequence[tuple[int, int]] | None = None,
-) -> fomac.Device.Operation:
+) -> QDMIDevice.Operation:
     """Return the operation metadata consumed by the converter."""
     metadata = Mock()
     metadata.name.return_value = name
@@ -46,12 +48,12 @@ def operation(
     metadata.site_pairs.return_value = (
         None if site_pairs is None else [(_site(first), _site(second)) for first, second in site_pairs]
     )
-    return cast("fomac.Device.Operation", metadata)
+    return cast("QDMIDevice.Operation", metadata)
 
 
-def _standard_operations(program_format: fomac.ProgramFormat) -> list[fomac.Device.Operation]:
+def _standard_operations(program_format: ProgramFormat) -> list[QDMIDevice.Operation]:
     """Return the gate set used by execution tests."""
-    qasm2 = program_format == fomac.ProgramFormat.QASM2
+    qasm2 = program_format == ProgramFormat.QASM2
     return [
         operation("id" if qasm2 else "i", 1),
         operation("x", 1),
@@ -93,8 +95,8 @@ class StubDevice:
 
     def __init__(
         self,
-        operations: Sequence[fomac.Device.Operation],
-        formats: Sequence[fomac.ProgramFormat],
+        operations: Sequence[QDMIDevice.Operation],
+        formats: Sequence[ProgramFormat],
         *,
         qubits: int = 2,
         coupling_map: Sequence[tuple[int, int]] | None = None,
@@ -108,18 +110,18 @@ class StubDevice:
         self._coupling_map = coupling_map
         self._result_factory = result_factory
         self._expose_shots = expose_shots
-        self.submissions: list[tuple[str, fomac.ProgramFormat, int, Mapping[str, object]]] = []
+        self.submissions: list[tuple[str, ProgramFormat, int, Mapping[str, object]]] = []
 
     @staticmethod
     def name() -> str:
         """Return the stable stub name."""
         return "stub.qdmi"
 
-    def operations(self) -> list[fomac.Device.Operation]:
+    def operations(self) -> list[QDMIDevice.Operation]:
         """Return the advertised operations."""
         return self._operations
 
-    def supported_program_formats(self) -> list[fomac.ProgramFormat]:
+    def supported_program_formats(self) -> list[ProgramFormat]:
         """Return the advertised program formats."""
         return self._formats
 
@@ -127,7 +129,7 @@ class StubDevice:
         """Return the device width."""
         return self._qubits
 
-    def coupling_map(self) -> list[tuple[fomac.Device.Site, fomac.Device.Site]] | None:
+    def coupling_map(self) -> list[tuple[QDMIDevice.Site, QDMIDevice.Site]] | None:
         """Return the optional topology."""
         if self._coupling_map is None:
             return None
@@ -136,10 +138,10 @@ class StubDevice:
     def submit_job(
         self,
         program: str,
-        program_format: fomac.ProgramFormat,
+        program_format: ProgramFormat,
         num_shots: int,
         **parameters: object,
-    ) -> fomac.Job:
+    ) -> QDMIJob:
         """Record one submission and return an immediately completed job.
 
         Returns:
@@ -150,19 +152,19 @@ class StubDevice:
         job = Mock()
         job.id = str(len(self.submissions))
         job.wait.return_value = True
-        job.check.return_value = fomac.Job.Status.DONE
+        job.check.return_value = QDMIJob.Status.DONE
         if self._expose_shots:
             job.get_shots.return_value = shots
         else:
             job.get_shots.side_effect = RuntimeError("Not supported")
         job.get_counts.return_value = dict(Counter(shots))
-        return cast("fomac.Job", job)
+        return cast("QDMIJob", job)
 
 
 def stub_device(
     *,
-    program_format: fomac.ProgramFormat = fomac.ProgramFormat.QASM3,
-    operations: Sequence[fomac.Device.Operation] | None = None,
+    program_format: ProgramFormat = ProgramFormat.QASM3,
+    operations: Sequence[QDMIDevice.Operation] | None = None,
     qubits: int = 2,
     result_factory: Callable[[str, int], Sequence[str]] = bell_results,
     expose_shots: bool = True,

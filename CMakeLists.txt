@@ -172,7 +172,7 @@ if(BUILD_MQT_CORE_DOCUMENTATION)
       COMMENT "Copying and cleaning up generated MLIR documentation"
       VERBATIM)
   endif()
-  foreach(binding ir dd fomac na)
+  foreach(binding ir dd qdmi na)
     add_dependencies(${MQT_CORE_TARGET_NAME}-${binding}-bindings mqt-core-docs)
   endforeach()
 endif()
@@ -187,7 +187,7 @@ if(BUILD_MQT_CORE_BINDINGS)
       mqt-core-na
       mqt-core-ir-bindings
       mqt-core-dd-bindings
-      mqt-core-fomac-bindings
+      mqt-core-qdmi-bindings
       mqt-core-mlir-bindings
       mqt-core-na-bindings)
   if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)

@@ -17,7 +17,8 @@ from typing import TYPE_CHECKING
 
 import pennylane as qp
 
-from mqt.core import fomac
+from mqt.core.qdmi import Device as QDMIDevice
+from mqt.core.qdmi import ProgramFormat
 
 from .exceptions import (
     PennyLaneTranslationError as TranslationError,
@@ -47,7 +48,7 @@ class ConvertedProgram:
     """A QDMI payload plus the information required to decode its measurements."""
 
     payload: str
-    program_format: fomac.ProgramFormat
+    program_format: ProgramFormat
     wire_map: Mapping[Hashable, int]
     measurement_order: tuple[int, ...]
 
@@ -123,12 +124,12 @@ _QASM2_OPERATIONS: Mapping[str, str] = MappingProxyType({
 })
 
 
-def _device_operations(device: fomac.Device) -> dict[str, fomac.Device.Operation]:
+def _device_operations(device: QDMIDevice) -> dict[str, QDMIDevice.Operation]:
     """Return advertised operations keyed by their lower-case spelling."""
     return {operation.name().lower(): operation for operation in device.operations()}
 
 
-def _preferred_format(device: fomac.Device) -> fomac.ProgramFormat:
+def _preferred_format(device: QDMIDevice) -> ProgramFormat:
     """Choose the required QASM3-first exchange format.
 
     Returns:
@@ -138,17 +139,17 @@ def _preferred_format(device: fomac.Device) -> fomac.ProgramFormat:
         PennyLaneUnsupportedFormatError: If neither OpenQASM version is advertised.
     """
     formats = set(device.supported_program_formats())
-    if fomac.ProgramFormat.QASM3 in formats:
-        return fomac.ProgramFormat.QASM3
-    if fomac.ProgramFormat.QASM2 in formats:
-        return fomac.ProgramFormat.QASM2
+    if ProgramFormat.QASM3 in formats:
+        return ProgramFormat.QASM3
+    if ProgramFormat.QASM2 in formats:
+        return ProgramFormat.QASM2
     msg = f"QDMI device '{device.name()}' supports none of the required program formats: OpenQASM 3 or OpenQASM 2."
     raise UnsupportedFormatError(msg)
 
 
 def _resolve_qasm3_operation(
-    operation: Operator, advertised: Mapping[str, fomac.Device.Operation]
-) -> tuple[str, _OperationSpec, fomac.Device.Operation] | None:
+    operation: Operator, advertised: Mapping[str, QDMIDevice.Operation]
+) -> tuple[str, _OperationSpec, QDMIDevice.Operation] | None:
     """Resolve a PennyLane operation to one advertised QDMI spelling.
 
     Returns:
@@ -163,7 +164,7 @@ def _resolve_qasm3_operation(
     return None
 
 
-def supports_operation(operation: Operator, device: fomac.Device, program_format: fomac.ProgramFormat) -> bool:
+def supports_operation(operation: Operator, device: QDMIDevice, program_format: ProgramFormat) -> bool:
     """Return whether an operation can stop PennyLane decomposition.
 
     For OpenQASM 3, support requires an operation-table entry and one matching
@@ -171,9 +172,9 @@ def supports_operation(operation: Operator, device: fomac.Device, program_format
     requires the exact gate spelling produced by PennyLane's serializer.
     """
     advertised = _device_operations(device)
-    if program_format == fomac.ProgramFormat.QASM3:
+    if program_format == ProgramFormat.QASM3:
         return _resolve_qasm3_operation(operation, advertised) is not None
-    if program_format == fomac.ProgramFormat.QASM2:
+    if program_format == ProgramFormat.QASM2:
         spelling = _QASM2_OPERATIONS.get(operation.name)
         return spelling is not None and spelling in advertised
     return False
@@ -250,9 +251,9 @@ def _validate_operation_shape(operation: Operator, spec: _OperationSpec) -> None
 def _validate_qdmi_contract(
     operation: Operator,
     spec: _OperationSpec,
-    qdmi_operation: fomac.Device.Operation,
+    qdmi_operation: QDMIDevice.Operation,
     indices: tuple[int, ...],
-    device: fomac.Device,
+    device: QDMIDevice,
 ) -> None:
     """Validate operation metadata and any loci advertised by QDMI.
 
@@ -303,7 +304,7 @@ def _validate_qdmi_contract(
 
 def _convert_qasm3(
     tape: QuantumScript,
-    device: fomac.Device,
+    device: QDMIDevice,
     device_wires: Wires,
 ) -> ConvertedProgram:
     """Emit a minimal capability-driven OpenQASM 3 program.
@@ -346,7 +347,7 @@ def _convert_qasm3(
     payload = "\n".join(lines) + "\n"
     return ConvertedProgram(
         payload=payload,
-        program_format=fomac.ProgramFormat.QASM3,
+        program_format=ProgramFormat.QASM3,
         wire_map=wire_map,
         measurement_order=_measurement_order(tape, wire_map),
     )
@@ -354,7 +355,7 @@ def _convert_qasm3(
 
 def _convert_qasm2(
     tape: QuantumScript,
-    device: fomac.Device,
+    device: QDMIDevice,
     device_wires: Wires,
 ) -> ConvertedProgram:
     """Serialize a QASM2-only program with PennyLane's built-in converter.
@@ -390,7 +391,7 @@ def _convert_qasm2(
     wire_map = _wire_mapping(device_wires)
     return ConvertedProgram(
         payload=payload,
-        program_format=fomac.ProgramFormat.QASM2,
+        program_format=ProgramFormat.QASM2,
         wire_map=wire_map,
         measurement_order=_measurement_order(tape, wire_map),
     )
@@ -398,7 +399,7 @@ def _convert_qasm2(
 
 def convert_program(
     tape: QuantumScript,
-    device: fomac.Device,
+    device: QDMIDevice,
     device_wires: Wires,
 ) -> ConvertedProgram:
     """Convert one preprocessed tape using QASM3-first negotiation.
@@ -410,6 +411,6 @@ def convert_program(
         The converted program and its deterministic measurement metadata.
     """
     program_format = _preferred_format(device)
-    if program_format == fomac.ProgramFormat.QASM3:
+    if program_format == ProgramFormat.QASM3:
         return _convert_qasm3(tape, device, device_wires)
     return _convert_qasm2(tape, device, device_wires)

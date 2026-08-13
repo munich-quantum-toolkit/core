@@ -268,7 +268,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
 
   nb::module_::import_("typing");
   nb::module_::import_("mqt.core.ir");
-  nb::module_::import_("mqt.core.fomac");
+  nb::module_::import_("mqt.core.qdmi");
 
   nb::enum_<mlir::QIRProfile>(m, "QIRProfile", "QIR target profiles.")
       .value("BASE", mlir::QIRProfile::Base, "The QIR Base Profile.")

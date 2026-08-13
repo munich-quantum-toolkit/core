@@ -14,8 +14,8 @@ stored, copied cheaply, and reused for multiple compilations.
 Open a configured QDMI device and snapshot it as a compiler target:
 
 ```python
-from mqt.core.fomac import open_device
 from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
+from mqt.core.qdmi.driver import open_device
 
 target = CompilerTarget.from_device(open_device("mqt.sc.iqm.garnet"))
 compiled = compile_program(
