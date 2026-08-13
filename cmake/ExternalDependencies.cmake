@@ -32,7 +32,7 @@ FetchContent_Declare(
 # leak into this third-party dependency.
 function(_mqt_core_make_jeff_available)
   set(BUILD_TESTING OFF)
-  # Jeff's transitive Cap'n Proto dependency contains source files that cannot share a unity
+  # jeff's transitive Cap'n Proto dependency contains source files that cannot share a unity
   # translation unit. Keep the complete dependency subtree out of unity builds.
   set(CMAKE_UNITY_BUILD OFF)
   FetchContent_MakeAvailable(jeff-mlir)
