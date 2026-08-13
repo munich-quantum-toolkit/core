@@ -86,8 +86,8 @@ releases may include breaking changes.
   correction ([#1407], [#1674], [#2002], [#2038]) ([**@J4MMlE**],
   [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
-  [#1676], [#1706], [#1776], [#1836], [#1934], [#2000]) ([**@denialhaag**],
-  [**@burgholzer**])
+  [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018])
+  ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping scalar- and tensor-allocated
   circuits to compiler-target topologies while preserving target site IDs and
   materializing routing workspace on demand ([#1537], [#1547], [#1568], [#1581],
@@ -113,6 +113,7 @@ releases may include breaking changes.
 
 ### Changed
 
+- ⬆️ Update `nanobind` to version 2.14.0 ([#2073]) ([**@denialhaag**])
 - 🛡️ Isolate DDSIM QIR job execution and restrict statevector extraction to
   terminal `irreversible` regions of Base-profile programs ([#2036])
   ([**@burgholzer**])
@@ -738,6 +739,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2073]: https://github.com/munich-quantum-toolkit/core/pull/2073
 [#2066]: https://github.com/munich-quantum-toolkit/core/pull/2066
 [#2060]: https://github.com/munich-quantum-toolkit/core/pull/2060
 [#2058]: https://github.com/munich-quantum-toolkit/core/pull/2058
@@ -750,6 +752,7 @@ for previous changelogs._
 [#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
 [#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
 [#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
+[#2018]: https://github.com/munich-quantum-toolkit/core/pull/2018
 [#2017]: https://github.com/munich-quantum-toolkit/core/pull/2017
 [#2016]: https://github.com/munich-quantum-toolkit/core/pull/2016
 [#2015]: https://github.com/munich-quantum-toolkit/core/pull/2015

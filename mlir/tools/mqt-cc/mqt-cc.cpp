@@ -324,27 +324,13 @@ static ParsedProgram loadJeffFile(const StringRef filename,
 }
 
 /**
- * @brief Write serialized `jeff` bytes to an output file or standard output.
+ * @brief Write serialized `jeff` bytes to an output file.
  */
 static LogicalResult writeJeffOutput(ModuleOp mod, const StringRef filename) {
-  std::string errorMessage;
-  const auto output = openOutputFile(filename, &errorMessage);
-  if (!output) {
-    llvm::errs() << errorMessage << "\n";
+  if (failed(serializeToFile(mod, filename))) {
+    llvm::errs() << "Failed to write jeff file '" << filename << "'.\n";
     return failure();
   }
-
-  const auto serialized = serialize(mod);
-  const auto bytes = serialized.asBytes();
-  output->os().write(reinterpret_cast<const char*>(bytes.begin()),
-                     bytes.size());
-  output->os().flush();
-  if (output->os().has_error()) {
-    llvm::errs() << "I/O error while writing output file: " << filename << "\n";
-    return failure();
-  }
-
-  output->keep();
   return success();
 }
 
@@ -604,7 +590,7 @@ static int runCompiler(int argc, char** argv) {
 
   // Write the output
   if (*parsedOutputFormat == OutputFormat::Jeff) {
-    if (writeJeffOutput(*program.mod, outputFilename).failed()) {
+    if (failed(writeJeffOutput(*program.mod, outputFilename))) {
       return 1;
     }
   } else if (*parsedOutputFormat == OutputFormat::OpenQASM3) {
