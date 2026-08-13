@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "IPOUtils.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"

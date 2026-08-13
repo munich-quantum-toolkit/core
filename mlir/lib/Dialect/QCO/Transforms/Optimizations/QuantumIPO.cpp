@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "IPOUtils.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -54,23 +55,6 @@ static void updateSpecializedCall(func::CallOp callOp, func::FuncOp newCallee,
                                   PatternRewriter& rewriter) {
   rewriter.modifyOpInPlace(callOp,
                            [&] { callOp.setCallee(newCallee.getName()); });
-}
-
-/**
- * @brief Create a detached copy of a function under a new name.
- *
- * @details
- * The copy is not inserted into the module; the caller is responsible for
- * adding it to a symbol table.
- *
- * @param funcOp The function to copy.
- * @param newName The name of the copy.
- * @return The detached copy.
- */
-static func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName) {
-  auto newFunc = funcOp.clone();
-  newFunc.setName(newName.str());
-  return newFunc;
 }
 
 #define GEN_PASS_DEF_QUANTUMIPO

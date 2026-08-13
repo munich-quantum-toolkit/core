@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "IPOUtils.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -25,20 +26,6 @@
 #include <string>
 
 namespace mlir::qco {
-
-/**
- * @brief Create a copy of a function with a new name.
- *
- * @param funcOp The function to copy.
- * @param newName The name for the new function.
- * @return The new function operation.
- */
-static func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName) {
-  auto newFunc = funcOp.clone();
-  newFunc.setName(newName.str());
-
-  return newFunc;
-}
 
 /**
  * @brief Check if two single-qubit unitary operations cancel each other out

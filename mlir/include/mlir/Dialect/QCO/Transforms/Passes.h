@@ -10,9 +10,7 @@
 
 #pragma once
 
-#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/SymbolTable.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
@@ -36,52 +34,6 @@ namespace mlir::qco {
 #define GEN_PASS_REGISTRATION
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
 
-/**
- * @brief Replace qubit-tensor arguments by the scalar qubits a callee uses.
- *
- * @details
- * A tensor argument whose elements are taken out and put back at compile-time
- * constant indices is split into one qubit argument and one qubit result per
- * touched element, so untouched elements never cross the call boundary. Call
- * sites are rewritten to extract before and re-insert after the call.
- *
- * @param moduleOp The module to transform.
- */
-void runQuantumArgumentPromotion(ModuleOp moduleOp);
-
-/**
- * @brief Turn qubits that a callee allocates and releases itself into
- * arguments.
- *
- * @details
- * The release point becomes a `qco.reset` handed back as an extra result, so
- * the caller owns the allocation and can reuse one qubit across calls.
- * Externally visible functions, declarations and recursive functions are left
- * alone.
- *
- * @param moduleOp The module to transform.
- */
-void runAuxiliaryQubitHoisting(ModuleOp moduleOp);
-
-/**
- * @brief Cancel a self-inverse gate in front of a call against the same gate at
- * the start of the callee.
- *
- * @details
- * Both gates are removed and the call is redirected to a specialized copy of
- * the callee, cached per callee and parameter index.
- *
- * @param moduleOp The module to transform.
- * @param symbolTable The symbol table of @p moduleOp. It is mutated: every
- * specialization created here is inserted into it.
- * @param touchedFunctions Optional collector. Every callee a call was
- * redirected away from, and every specialization created, is appended to it.
- * Those are the functions this call may have left without callers, which lets
- * a caller clean them up without having to guess which ones it created.
- */
-void runQuantumFunctionBoundaryCommutation(
-    ModuleOp moduleOp, SymbolTable& symbolTable,
-    SmallVectorImpl<func::FuncOp>* touchedFunctions = nullptr);
 /**
  * @brief Create target-independent two-qubit gate fusion.
  */
