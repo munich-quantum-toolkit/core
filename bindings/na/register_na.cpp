@@ -25,7 +25,7 @@ This module contains all neutral atom related functionality of MQT Core.)pb";
   nb::module_ qdmi = m.def_submodule("qdmi");
   registerQdmi(qdmi);
 
-  nb::module_ fomac = m.def_submodule("fomac");
+  const nb::module_ fomac = m.def_submodule("fomac");
   fomac.doc() = R"pb(Deprecated compatibility aliases for mqt.core.na.qdmi.
 
 This module will be removed in MQT Core 4.0.)pb";
