@@ -19,7 +19,6 @@ from qiskit import QuantumCircuit, qasm3
 from qiskit.circuit import Gate, library
 from qiskit.quantum_info import Operator
 
-from mqt.core.fomac import open_device
 from mqt.core.ir import QuantumComputation
 from mqt.core.mlir import (
     CompilerTarget,
@@ -32,6 +31,7 @@ from mqt.core.mlir import (
     QIRProgram,
     compile_program,
 )
+from mqt.core.qdmi.driver import open_device
 
 MLIR_STRING = r"""module {
   func.func @main() -> memref<2xi1> attributes {passthrough = ["entry_point"]} {

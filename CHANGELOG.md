@@ -113,6 +113,10 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Move Python QDMI entities and the neutral-atom specialization to QDMI
+  namespaces, expose device registration and opening through
+  `mqt.core.qdmi.driver`, retain v3 FoMaC compatibility aliases, and let the
+  Qiskit adapter open stable device IDs directly ([#2074]) ([**@burgholzer**])
 - ⬆️ Update `nanobind` to version 2.14.0 ([#2073]) ([**@denialhaag**])
 - 🛡️ Isolate DDSIM QIR job execution and restrict statevector extraction to
   terminal `irreversible` regions of Base-profile programs ([#2036])
@@ -741,6 +745,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2073]: https://github.com/munich-quantum-toolkit/core/pull/2073
 [#2066]: https://github.com/munich-quantum-toolkit/core/pull/2066
 [#2060]: https://github.com/munich-quantum-toolkit/core/pull/2060

@@ -15,8 +15,8 @@ from typing import Literal, overload
 
 import qiskit
 
-import mqt.core.fomac
 import mqt.core.ir
+from mqt.core.qdmi import Device
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -254,7 +254,7 @@ class CompilerTarget:
             """The two-qubit entangler."""
 
     @staticmethod
-    def from_device(device: mqt.core.fomac.Device) -> CompilerTarget:
+    def from_device(device: Device) -> CompilerTarget:
         """Snapshot a circuit-model QDMI device."""
 
     @property

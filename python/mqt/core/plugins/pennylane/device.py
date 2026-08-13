@@ -27,7 +27,10 @@ from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, Sampl
 from pennylane.transforms import broadcast_expand, defer_measurements, split_non_commuting
 from pennylane.transforms.core import CompilePipeline
 
-from mqt.core import fomac
+from mqt.core.qdmi import Device as QDMIDeviceHandle
+from mqt.core.qdmi import Job as QDMIJobHandle
+from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi.driver import open_device
 
 from .converter import ConvertedProgram, convert_program, supports_operation
 from .exceptions import (
@@ -74,7 +77,7 @@ _SAMPLED_MEASUREMENTS = (SampleMP, CountsMP, ProbabilityMP, ExpectationMP, Varia
 
 
 def _validate_parameter_names(parameters: Mapping[str, object], allowed: frozenset[str], kind: str) -> None:
-    """Reject unknown FoMaC configuration fields before opening or submission.
+    """Reject unknown QDMI configuration fields before opening or submission.
 
     Raises:
         PennyLaneConfigurationError: If an unknown parameter name is present.
@@ -109,8 +112,8 @@ class QDMIDevice(Device):
         wires: PennyLane wire labels or number of wires. By default all QDMI
             qubits are exposed as consecutive integer wires.
         shots: Finite default shot configuration.
-        session_parameters: FoMaC device-session keyword arguments.
-        job_parameters: FoMaC custom job keyword arguments.
+        session_parameters: QDMI device-session keyword arguments.
+        job_parameters: QDMI custom job keyword arguments.
     """
 
     def __init__(
@@ -134,7 +137,7 @@ class QDMIDevice(Device):
         _validate_parameter_names(self._job_parameters, _JOB_PARAMETERS, "job")
 
         try:
-            self._qdmi_device = fomac.open_device(device_id, **self._session_parameters)
+            self._qdmi_device = open_device(device_id, **self._session_parameters)
         except (IndexError, RuntimeError, ValueError) as exc:
             msg = f"Failed to open QDMI device '{device_id}': {exc}"
             raise ConfigurationError(msg) from exc
@@ -165,8 +168,8 @@ class QDMIDevice(Device):
         return self._device_id
 
     @property
-    def qdmi_device(self) -> fomac.Device:
-        """Opened FoMaC device used for execution."""
+    def qdmi_device(self) -> QDMIDeviceHandle:
+        """Opened QDMI device used for execution."""
         return self._qdmi_device
 
     @property
@@ -179,7 +182,7 @@ class QDMIDevice(Device):
         """Cumulative wall-clock time spent submitting and waiting for QDMI jobs."""
         return self._execution_time
 
-    def _select_program_format(self) -> fomac.ProgramFormat:
+    def _select_program_format(self) -> ProgramFormat:
         """Select QASM3 before QASM2 and reject all other format sets.
 
         Returns:
@@ -189,10 +192,10 @@ class QDMIDevice(Device):
             PennyLaneUnsupportedFormatError: If neither OpenQASM version is advertised.
         """
         formats = set(self._qdmi_device.supported_program_formats())
-        if fomac.ProgramFormat.QASM3 in formats:
-            return fomac.ProgramFormat.QASM3
-        if fomac.ProgramFormat.QASM2 in formats:
-            return fomac.ProgramFormat.QASM2
+        if ProgramFormat.QASM3 in formats:
+            return ProgramFormat.QASM3
+        if ProgramFormat.QASM2 in formats:
+            return ProgramFormat.QASM2
         msg = f"QDMI device '{self._device_id}' advertises neither OpenQASM 3 nor OpenQASM 2."
         raise UnsupportedFormatError(msg)
 
@@ -245,7 +248,7 @@ class QDMIDevice(Device):
         return tuple(shot_copy.shots for shot_copy in shots.shot_vector for _ in range(shot_copy.copies))
 
     @staticmethod
-    def _shots_or_counts(job: fomac.Job) -> list[str]:
+    def _shots_or_counts(job: QDMIJobHandle) -> list[str]:
         """Read ordered shots, falling back to an equivalent expansion of counts.
 
         Returns:
@@ -268,7 +271,7 @@ class QDMIDevice(Device):
             raise ExecutionError(msg) from exc
         return [bitstring for bitstring, count in sorted(counts.items()) for _ in range(count)]
 
-    def _samples(self, job: fomac.Job, converted: ConvertedProgram, shots: int) -> np.ndarray:
+    def _samples(self, job: QDMIJobHandle, converted: ConvertedProgram, shots: int) -> np.ndarray:
         """Convert QDMI bit strings to PennyLane sample rows.
 
         Returns:
@@ -297,18 +300,18 @@ class QDMIDevice(Device):
         return np.asarray(rows, dtype=np.int8)
 
     @staticmethod
-    def _require_done(job: fomac.Job) -> None:
+    def _require_done(job: QDMIJobHandle) -> None:
         """Require successful QDMI completion.
 
         Raises:
             PennyLaneExecutionError: If the terminal QDMI status is not ``DONE``.
         """
         status = job.check()
-        if status != fomac.Job.Status.DONE:
+        if status != QDMIJobHandle.Status.DONE:
             msg = f"QDMI job '{job.id}' finished with status {status.name}."
             raise ExecutionError(msg)
 
-    def _submit(self, converted: ConvertedProgram, shots: int) -> fomac.Job:
+    def _submit(self, converted: ConvertedProgram, shots: int) -> QDMIJobHandle:
         """Submit and wait for one QDMI job.
 
         Returns:

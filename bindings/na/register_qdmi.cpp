@@ -36,10 +36,10 @@ template <pyClass T> [[nodiscard]] auto repr(T c) -> std::string {
 } // namespace
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerFomac(nb::module_& m) {
-  m.doc() = R"pb(Reconstruction of NADevice from QDMI's Device class.)pb";
+void registerQdmi(nb::module_& m) {
+  m.doc() = R"pb(Neutral-atom view of a QDMI device.)pb";
 
-  nb::module_::import_("mqt.core.fomac");
+  nb::module_::import_("mqt.core.qdmi");
 
   auto device = nb::class_<na::Session::Device, fomac::Device>(
       m, "Device", "Represents a device with a lattice of traps.");
@@ -125,15 +125,16 @@ void registerFomac(nb::module_& m) {
   device.def("__repr__", [](const fomac::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
-  device.def_static("try_create_from_device",
-                    &na::Session::Device::tryCreateFromDevice, "device"_a,
-                    R"pb(Create NA FoMaC Device from generic FoMaC Device.
+  device.def_static(
+      "try_create_from_device", &na::Session::Device::tryCreateFromDevice,
+      "device"_a,
+      R"pb(Create a neutral-atom device from a generic QDMI device.
 
 Args:
-    device: The generic FoMaC Device to convert.
+    device: The generic QDMI device to convert.
 
 Returns:
-    The converted NA FoMaC Device or None if the conversion is not possible.)pb");
+    The converted neutral-atom device or None if the conversion is not possible.)pb");
   device.def(nb::self == nb::self,
              nb::sig("def __eq__(self, arg: object, /) -> bool"));
   device.def(nb::self != nb::self,

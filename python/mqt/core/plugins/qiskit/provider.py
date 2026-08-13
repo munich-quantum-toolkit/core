@@ -14,7 +14,7 @@ devices through Qiskit's BackendV2 interface.
 
 from __future__ import annotations
 
-from ... import fomac
+from ...qdmi.driver import registered_device_ids
 from .backend import QDMIBackend
 
 __all__ = ["QDMIProvider"]
@@ -25,10 +25,10 @@ def __dir__() -> list[str]:
 
 
 class QDMIProvider:
-    """Provider for QDMI devices accessed via FoMaC.
+    """Provider for registered QDMI devices.
 
-    This provider discovers and manages QDMI devices that are available through
-    the FoMaC layer. It provides a Qiskit-idiomatic interface for device
+    This provider discovers and manages registered QDMI devices. It provides a
+    Qiskit-idiomatic interface for device
     discovery and backend instantiation.
 
     Examples:
@@ -43,50 +43,19 @@ class QDMIProvider:
 
         >>> backend = provider.get_backend("MQT Core DDSIM QDMI Device")
 
-        Create a provider with authentication:
-
-        >>> provider = QDMIProvider(token="my_token")
-        >>> # or with username and password
-        >>> provider = QDMIProvider(username="user", password="pass")
+        Configure credentials through the selected device's persistent
+        configuration or provider-specific environment.
     """
 
-    def __init__(
-        self,
-        *,
-        token: str | None = None,
-        auth_file: str | None = None,
-        auth_url: str | None = None,
-        username: str | None = None,
-        password: str | None = None,
-        project_id: str | None = None,
-        **session_kwargs: str,
-    ) -> None:
-        """Initialize the QDMI provider.
-
-        Args:
-            token: Authentication token for the session.
-            auth_file: Path to file containing authentication information.
-            auth_url: URL to authentication server.
-            username: Username for authentication.
-            password: Password for authentication.
-            project_id: Project ID for the session.
-            session_kwargs: Optional additional keyword arguments for Session initialization.
-        """
-        kwargs = {
-            "token": token,
-            "auth_file": auth_file,
-            "auth_url": auth_url,
-            "username": username,
-            "password": password,
-            "project_id": project_id,
-        }
-        if session_kwargs:
-            kwargs.update(session_kwargs)
-
-        self._session = fomac.Session(**kwargs)
-        self._backends = [
-            QDMIBackend(device=d, provider=self) for d in self._session.get_devices() if QDMIBackend.is_convertible(d)
-        ]
+    def __init__(self) -> None:
+        """Initialize a provider for the registered QDMI devices."""
+        self._backends: list[QDMIBackend] = []
+        for device_id in registered_device_ids():
+            try:
+                backend = QDMIBackend.from_device_id(device_id, provider=self)
+            except (IndexError, RuntimeError, ValueError):
+                continue
+            self._backends.append(backend)
 
     def backends(self, name: str | None = None) -> list[QDMIBackend]:
         """Return all available backends, optionally filtered by name substring.
