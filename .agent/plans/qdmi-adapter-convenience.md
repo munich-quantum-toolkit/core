@@ -1,4 +1,4 @@
-# Add convenient framework adapters for registered and Slurm-selected QDMI devices
+# Add convenient framework adapters for registered QDMI devices
 
 This ExecPlan is a living document. The sections `Progress`,
 `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
@@ -11,16 +11,11 @@ repository root.
 
 MQT Core registers QDMI devices under stable string identifiers, but users still
 need to assemble framework adapters manually. This change makes the stable ID
-the common entry point for Qiskit backends and MLIR compiler targets. It also
-lets a program inside a Slurm allocation obtain Qiskit, PennyLane, and compiler
-adapters for the allocated device without parsing the license environment or
-opening a second device session.
+the common entry point for Qiskit backends and MLIR compiler targets.
 
 After the change, a user can call `QDMIBackend.from_device_id`, then construct a
 sampler or estimator from that backend. A user can also call
-`CompilerTarget.from_device_id`. Inside a Slurm job, the functions
-`slurm.qiskit_backend`, `slurm.pennylane_device`, and `slurm.compiler_target`
-adapt the one device selected by the license environment.
+`CompilerTarget.from_device_id`.
 
 ## Progress
 
@@ -36,9 +31,29 @@ adapt the one device selected by the license environment.
       MQT-specific options mappings with explicit defaults.
 - [x] (2026-08-13 19:34Z) Added the MLIR compiler-target stable-ID factory with
       shared native session conversion and a typed stub pattern.
-- [ ] Add Slurm framework shortcuts, focused tests, and documentation.
-- [ ] Run focused and aggregate validation, review the complete diff, and
-      publish the stack.
+- [x] (2026-08-13 20:35Z) Completed focused and aggregate validation, including
+      the full supported Python and minimum-dependency matrices, native tests,
+      strict docs, recursive stubs, lint, and wheel inspection; then reviewed
+      the complete six-commit diff.
+- [x] (2026-08-13 20:46Z) Published PR #2084 against `agent/slurm-integration`
+      after re-verifying both lower stack heads and bases.
+- [x] (2026-08-13 21:20Z) Addressed review feedback by moving shared session
+      conversion out of the bindings tree and withdrawing the proposed Slurm
+      framework shortcuts.
+- [x] (2026-08-13 22:58Z) Rebased the six commits onto `main`, reran affected
+      validation, published with an exact lease, and monitored the revised head
+      to terminal CI except for the external documentation status.
+- [x] (2026-08-14 09:12Z) Addressed the second review by defining parameter
+      types in `mqt.core.typing`, replacing the native import hook with real
+      aliases, installing the shared driver header, and rerunning affected
+      validation.
+- [x] (2026-08-14 11:30Z) Centralized lazy provider enumeration so exact-name
+      lookup stops after its match, expanded compiler-target equivalence to all
+      exposed metadata, and adopted the Scientific Python compatibility-module
+      pattern for `Unpack` with verified wheel contents.
+- [x] (2026-08-14 13:05Z) Simplified provider enumeration without Ruff
+      suppressions, kept runtime path annotations introspectable, removed the
+      redundant QDMI type re-exports, and documented the primitive migration.
 
 ## Surprises & Discoveries
 
@@ -53,6 +68,10 @@ adapt the one device selected by the license environment.
 - Observation: The real Slurm test image installs the wheel without optional
   Python dependencies. Evidence: `.github/workflows/slurm.yml` and
   `test/slurm/Dockerfile` install the wheel with `--no-deps`.
+- Observation: PR #2043's Read the Docs build is terminal-cancelled according to
+  the Read the Docs API, but its GitHub status callback remains stale as
+  pending. All other lower-stack checks are terminal and successful, including
+  the real Slurm integration workflow.
 
 ## Decision Log
 
@@ -65,19 +84,46 @@ adapt the one device selected by the license environment.
   keywords give callers completion and reject misspelled fields statically,
   while mappings keep the overlapping PennyLane namespaces explicit.
   Date/Author: 2026-08-13, Codex.
-- Decision: Keep Slurm sampler and estimator construction fluent through
-  `slurm.qiskit_backend()`. Rationale: direct Slurm primitive factories would
-  duplicate backend methods without shortening the normal path materially.
-  Date/Author: 2026-08-13, Codex.
-- Decision: Resolve the Slurm environment and open the device once per shortcut
-  call. Rationale: the environment selects the allocation device, and each
-  returned adapter must own the same fresh session used for validation.
-  Date/Author: 2026-08-13, Codex.
+- Decision: Keep domain-specific public types in `mqt.core.typing`, but isolate
+  the version-dependent `Unpack` import in `mqt.core._compat.typing` and list
+  only that private bridge in Ruff's `typing-modules`. Rationale: Ruff reserves
+  this setting for modules that re-export `typing` or `typing_extensions`
+  members; treating the public runtime `TypedDict`s as typing primitives would
+  be incorrect. Date/Author: 2026-08-14, Codex.
+- Decision: Keep the narrow Ruff suppression on the runtime `os` import in
+  `mqt.core.typing`. Rationale: `typing.get_type_hints` resolves the public
+  `os.PathLike` annotations at runtime; moving the import behind `TYPE_CHECKING`
+  raises `NameError`, while hiding it behind a private alias leaks that alias
+  into generated API documentation. Date/Author: 2026-08-14, Codex.
+- Decision: Keep the Slurm adapter limited to `open_device_from_license` in this
+  PR. Rationale: review requested that the proposed framework-specific Slurm
+  shortcuts be reconsidered separately. Date/Author: 2026-08-13, Codex.
+- Decision: Keep `TypedDict` and `Unpack` instead of using data classes.
+  Rationale: `Unpack` requires a `TypedDict`, and unpacked keyword arguments are
+  the convenient API this change provides. Date/Author: 2026-08-14, Codex.
+- Decision: Keep direct primitive constructors compatible, but document backend
+  factories as the canonical path. Rationale: removing public concrete Qiskit
+  primitive classes is a separate breaking API decision and requires an explicit
+  deprecation plan. Date/Author: 2026-08-14, Codex.
+- Decision: Export the parameter dictionaries only from `mqt.core.typing`.
+  Rationale: a second path through the native `mqt.core.qdmi` module adds
+  binding and stub machinery without improving discoverability or compatibility
+  for this unreleased API. Date/Author: 2026-08-14, Codex.
+- Decision: Silently skip registered devices that open successfully but cannot
+  be represented as Qiskit backends. Rationale: incompatibility is an expected
+  result of enumerating a framework-independent registry, not an availability
+  failure that should warn users. Date/Author: 2026-08-14, Codex.
 
 ## Outcomes & Retrospective
 
-Implementation is in progress. This section will record the completed behavior,
-validation evidence, and any remaining external CI work.
+The six commits implement the typed configuration layer, stable backend
+identity, lazy provider discovery, fluent primitives, and stable-ID compiler
+targets; the proposed Slurm shortcuts were withdrawn during review. Focused
+tests and the full Python 3.10 through 3.14 current/minimum dependency matrices
+pass. Native Slurm and compiler tests, recursive stubs, strict documentation,
+full lint, a local ABI3 wheel build, wheel-content inspection, and whitespace
+validation also pass. PR #2084 now targets `main` because both lower pull
+requests merged.
 
 ## Context and Orientation
 
@@ -94,13 +140,6 @@ implemented by `bindings/qdmi/qdmi.cpp`. The Qiskit backend factory is in
 in `sampler.py` and `estimator.py`. PennyLane construction is in
 `python/mqt/core/plugins/pennylane/device.py`.
 
-Slurm selection is split between `src/fomac/Slurm.cpp`, which parses and
-validates the allocation license, and `bindings/qdmi/slurm.cpp`, which exposes
-Python functions. The selector must retain its existing grammar and accept only
-a single local license with quantity one and device state `IDLE` or `BUSY`.
-Selection does not authorize access; persistent registration and provider
-credentials remain authoritative.
-
 Generated `.pyi` files under `python/mqt/core/qdmi` and
 `python/mqt/core/mlir.pyi` must never be edited by hand. Binding signatures are
 adjusted through `bindings/patterns.txt` and regenerated with the `stubs` Nox
@@ -108,10 +147,11 @@ session.
 
 ## Plan of Work
 
-First, add `python/mqt/core/typing.py` with `QDMISessionParameters` and
-`QDMIJobParameters`. Add `typing-extensions` only for Python 3.10 and update the
-lock file. Change stable-ID Python factories to accept unpacked typed keywords.
-Apply the two mapping types to PennyLane and retain explicit runtime validation.
+First, define `QDMISessionParameters` and `QDMIJobParameters` in the public
+`mqt.core.typing` module. Add `typing-extensions` only for Python 3.10 and
+update the lock file. Change stable-ID Python factories to accept unpacked typed
+keywords. Apply the two mapping types to PennyLane and retain explicit runtime
+validation.
 
 Second, let `QDMIBackend` retain an optional stable ID. Its stable-ID factory
 sets the ID, while direct construction leaves it unset. Third, remove eager
@@ -121,20 +161,16 @@ only the requested device and accepts typed session overrides.
 
 Fourth, add `sampler` and `estimator` methods to `QDMIBackend`. Remove the
 MQT-specific `options` arguments from the direct primitive constructors and make
-estimator shots an explicit parameter. Record this API change in `UPGRADING.md`.
+estimator shots an explicit parameter.
 
-Fifth, add `CompilerTarget.from_device_id`. Move the C++ conversion of typed
-session overrides into one binding helper shared by `open_device` and MLIR.
-Regenerate recursive stubs and override the generated callable signature with a
-pattern that uses `Unpack[QDMISessionParameters]`.
+Fifth, add `CompilerTarget.from_device_id`. Put the C++ conversion of typed
+session overrides in the installed QDMI driver interface shared by `open_device`
+and MLIR. Regenerate recursive stubs and override the generated callable
+signature with a pattern that uses `Unpack[QDMISessionParameters]`.
 
-Sixth, factor Slurm selection into an internal resolver that returns the stable
-ID and one opened handle from one environment snapshot. The existing open
-function delegates to it. Native Python bindings lazily import only the adapter
-requested by the caller. PennyLane receives a private constructor for an
-already-open handle. Add focused Python tests, update the real Slurm SC job to
-exercise only the compiler target, and extend `docs/qdmi/slurm.md` with all
-public paths.
+Sixth, add the changelog entries and record the completed implementation and
+validation. The Slurm framework shortcuts explored in the original plan are out
+of scope following review.
 
 Keep these six units as signed commits in the order above. Each commit message
 must include the repository's AI-assistance trailer. Do not modify the two lower
@@ -177,19 +213,14 @@ must open no device, subsequent registry changes must be visible, exact-ID
 lookup must open one fresh session, and enumeration failures must emit a warning
 containing only the stable ID before continuing.
 
-Both Qiskit primitives must work through direct constructors and backend
-methods. Defaults must be 1024 shots and zero estimator precision unless the
-caller overrides them. Sampling and estimation must still execute against DDSIM.
+The documentation uses backend methods as the canonical Qiskit primitive
+construction path. Direct constructors remain compatible. Defaults must be 1024
+shots and zero estimator precision unless the caller overrides them. Sampling
+and estimation must still execute against DDSIM.
 
 `CompilerTarget.from_device_id("mqt.ddsim.default")` must equal the target made
 from an explicitly opened DDSIM handle. Unknown and incompatible devices must
 retain their existing errors.
-
-Each Slurm shortcut must read one environment snapshot and open one device.
-Qiskit and PennyLane shortcuts must execute against DDSIM in focused tests. The
-compiler shortcut must match the direct target. Existing malformed, compound,
-remote, non-unit, unknown, and unavailable-device errors must remain unchanged.
-Missing optional dependencies must produce the established installation hint.
 
 The aggregate branch is accepted when focused tests, recursive stubs, supported
 test sessions, documentation, lint, wheel inspection, and `git diff --check`
@@ -201,16 +232,14 @@ terminal state for the exact published revision.
 Formatting, stub generation, builds, and tests are repeatable. Keep all build
 and tool caches within this worktree through `.agent/run.sh`. If a generator
 changes unrelated output, inspect and exclude it rather than discarding user
-work. If a lower pull-request head advances, rebase only this top branch onto
-the new #2043 head and rerun affected checks. Never rewrite either reviewed
-lower branch.
+work. If `main` advances before publication, rebase this branch and rerun
+affected checks.
 
 ## Artifacts and Notes
 
-The starting revision is `a0c21c5826f54fa25d2d16bac65b65c6b59efc58`, the
-reviewed head of PR #2043. PR #2043 targets the branch of PR #2025. Publication
-must preserve that immediate-parent topology and link all three pull requests
-with the native GitHub stack workflow.
+The branch started at `a0c21c5826f54fa25d2d16bac65b65c6b59efc58`, the reviewed
+head of PR #2043. PRs #2025 and #2043 have since merged, so PR #2084 now targets
+`main`.
 
 ## Interfaces and Dependencies
 
@@ -226,11 +255,22 @@ provider, and a keyword-only optional stable ID. It exposes `device_id`,
 
 The provider exposes `device_ids`, `backends`, `get_backend`, and
 `get_backend_by_device_id`. The compiler target exposes `from_device_id`. The
-Slurm module exposes `open_device_from_license`, `qiskit_backend`,
-`pennylane_device`, and `compiler_target`. Slurm shortcuts do not accept session
-or credential overrides; only the PennyLane shortcut accepts typed job
-parameters.
+existing Slurm API remains unchanged.
 
 Revision note (2026-08-13): Created the implementation plan after verifying the
 reviewed stack base and inspecting the existing adapter, registry, binding, and
 Slurm boundaries.
+
+Revision note (2026-08-13): Recorded the completed local implementation and
+validation, the terminal-cancelled lower Read the Docs build, and publication of
+PR #2084.
+
+Revision note (2026-08-13): Updated the plan after review moved the parameter
+types into the QDMI namespace and removed the proposed Slurm shortcuts.
+
+Revision note (2026-08-14): Replaced the native typing import hook with real
+aliases to canonical public types and moved shared session conversion into the
+installed driver interface.
+
+Revision note (2026-08-14): Applied the two internal follow-ups and aligned the
+typing-module split with current Scientific Python and Boost.Histogram practice.

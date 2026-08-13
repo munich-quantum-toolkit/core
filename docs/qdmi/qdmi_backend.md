@@ -95,7 +95,7 @@ print(f"Qubits: {backend.target.num_qubits}")
 
 Optional session keywords apply explicit overrides to this fresh device session.
 Their names and value types are described by
-{py:class}`mqt.core.qdmi.QDMISessionParameters`; persistent configuration
+{py:class}`mqt.core.typing.QDMISessionParameters`; persistent configuration
 remains the default:
 
 ```python
@@ -366,9 +366,6 @@ std = pub_result.data.stds
 print(f"Expectation value: {ev}")
 print(f"Standard deviation: {std}")
 ```
-
-Direct construction of `QDMISampler(backend, ...)` and
-`QDMIEstimator(backend, ...)` remains available for applications that prefer it.
 
 You can also use parameterized circuits with the estimator:
 
