@@ -15,13 +15,12 @@
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
