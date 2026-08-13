@@ -34,7 +34,8 @@ adapt the one device selected by the license environment.
       exact-ID addressable, and resilient to unavailable devices.
 - [x] (2026-08-13 19:27Z) Added backend primitive factories and replaced the
       MQT-specific options mappings with explicit defaults.
-- [ ] Add the MLIR compiler-target stable-ID factory and regenerate stubs.
+- [x] (2026-08-13 19:34Z) Added the MLIR compiler-target stable-ID factory with
+      shared native session conversion and a typed stub pattern.
 - [ ] Add Slurm framework shortcuts, focused tests, and documentation.
 - [ ] Run focused and aggregate validation, review the complete diff, and
       publish the stack.

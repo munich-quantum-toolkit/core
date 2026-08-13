@@ -16,7 +16,9 @@ from typing import Literal, overload
 import qiskit
 
 import mqt.core.ir
+from mqt.core._compat.typing import Unpack
 from mqt.core.qdmi import Device
+from mqt.core.typing import QDMISessionParameters
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -256,6 +258,10 @@ class CompilerTarget:
     @staticmethod
     def from_device(device: Device) -> CompilerTarget:
         """Snapshot a circuit-model QDMI device."""
+
+    @staticmethod
+    def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
+        """Open a registered device and snapshot its compiler target."""
 
     @property
     def name(self) -> str | None:

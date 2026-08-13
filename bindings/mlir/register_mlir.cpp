@@ -13,6 +13,7 @@
 #include "mlir/Compiler/FoMaCAdapter.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
+#include "qdmi/driver/SessionConfig.hpp"
 #include "qiskit/Qiskit.h"
 
 #include <llvm/Support/Error.h>
@@ -538,6 +539,38 @@ means every operation is native.)pb");
             return takeResult(mlir::compilerTargetFromDevice(device));
           },
           "device"_a, "Snapshot a circuit-model QDMI device.")
+      .def_static(
+          "from_device_id",
+          [](const std::string& deviceId, std::optional<std::string> baseUrl,
+             std::optional<std::string> token,
+             std::optional<std::filesystem::path> authFile,
+             std::optional<std::string> authUrl,
+             std::optional<std::string> username,
+             std::optional<std::string> password,
+             std::optional<std::string> deviceConfig,
+             std::optional<std::filesystem::path> deviceConfigFile,
+             std::optional<std::string> custom1,
+             std::optional<std::string> custom2,
+             std::optional<std::string> custom3,
+             std::optional<std::string> custom4,
+             std::optional<std::string> custom5) {
+            const auto overrides = qdmi::makeDeviceSessionConfig(
+                std::move(baseUrl), std::move(token), std::move(authFile),
+                std::move(authUrl), std::move(username), std::move(password),
+                std::move(deviceConfig), std::move(deviceConfigFile),
+                std::move(custom1), std::move(custom2), std::move(custom3),
+                std::move(custom4), std::move(custom5));
+            auto device = fomac::Session::openDevice(deviceId, overrides);
+            return takeResult(mlir::compilerTargetFromDevice(device));
+          },
+          "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
+          "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
+          "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
+          "password"_a = std::nullopt, "device_config"_a = std::nullopt,
+          "device_config_file"_a = std::nullopt, "custom1"_a = std::nullopt,
+          "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
+          "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
+          "Open a registered device and snapshot its compiler target.")
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget& target) {

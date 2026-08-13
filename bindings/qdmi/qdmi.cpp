@@ -10,6 +10,7 @@
 
 #include "fomac/FoMaC.hpp"
 #include "qdmi/driver/Driver.hpp"
+#include "qdmi/driver/SessionConfig.hpp"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
@@ -84,42 +85,6 @@ template <typename Query>
   }
   throw nb::type_error(
       "value_type must be exactly str, bool, int, float, or bytes");
-}
-
-[[nodiscard]] auto makeDeviceSessionConfig(
-    std::optional<std::string> baseUrl, std::optional<std::string> token,
-    std::optional<std::filesystem::path> authFile,
-    std::optional<std::string> authUrl, std::optional<std::string> username,
-    std::optional<std::string> password,
-    std::optional<std::string> deviceConfig,
-    std::optional<std::filesystem::path> deviceConfigFile,
-    std::optional<std::string> custom1, std::optional<std::string> custom2,
-    std::optional<std::string> custom3, std::optional<std::string> custom4,
-    std::optional<std::string> custom5) -> qdmi::DeviceSessionConfig {
-  if (deviceConfig && deviceConfigFile) {
-    throw nb::value_error(
-        "device_config and device_config_file are mutually exclusive");
-  }
-  std::optional<qdmi::DeviceConfigurationSource> configuration;
-  if (deviceConfig) {
-    configuration =
-        qdmi::InlineDeviceConfiguration{.json = std::move(*deviceConfig)};
-  } else if (deviceConfigFile) {
-    configuration =
-        qdmi::FileDeviceConfiguration{.path = std::move(*deviceConfigFile)};
-  }
-  return {.baseUrl = std::move(baseUrl),
-          .token = std::move(token),
-          .authFile = std::move(authFile),
-          .authUrl = std::move(authUrl),
-          .username = std::move(username),
-          .password = std::move(password),
-          .deviceConfiguration = std::move(configuration),
-          .custom1 = std::move(custom1),
-          .custom2 = std::move(custom2),
-          .custom3 = std::move(custom3),
-          .custom4 = std::move(custom4),
-          .custom5 = std::move(custom5)};
 }
 
 } // namespace
@@ -717,7 +682,7 @@ when the custom slot is unsupported.)pb");
                 .id = std::move(deviceId),
                 .library = std::move(libraryPath),
                 .prefix = std::move(prefix),
-                .session = makeDeviceSessionConfig(
+                .session = qdmi::makeDeviceSessionConfig(
                     baseUrl, token, authFile, authUrl, username, password,
                     deviceConfig, deviceConfigFile, custom1, custom2, custom3,
                     custom4, custom5)};
@@ -814,7 +779,7 @@ libraries or expose their definitions.)pb");
          std::optional<std::string> custom1, std::optional<std::string> custom2,
          std::optional<std::string> custom3, std::optional<std::string> custom4,
          std::optional<std::string> custom5) {
-        const auto overrides = makeDeviceSessionConfig(
+        const auto overrides = qdmi::makeDeviceSessionConfig(
             std::move(baseUrl), std::move(token), std::move(authFile),
             std::move(authUrl), std::move(username), std::move(password),
             std::move(deviceConfig), std::move(deviceConfigFile),

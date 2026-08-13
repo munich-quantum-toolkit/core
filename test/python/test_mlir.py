@@ -373,7 +373,7 @@ def garnet_target() -> CompilerTarget:
     Returns:
         The detached compiler target.
     """
-    return CompilerTarget.from_device(open_device("mqt.sc.iqm.garnet"))
+    return CompilerTarget.from_device_id("mqt.sc.iqm.garnet")
 
 
 def test_compile_program_for_qdmi_target(garnet_target: CompilerTarget) -> None:
@@ -497,6 +497,59 @@ def test_compiler_target_snapshots_qdmi_device(garnet_target: CompilerTarget) ->
         site_tuple.fidelity is not None for operation in target.operations for site_tuple in operation.site_tuples
     )
     assert all(site_tuple.duration is None for operation in target.operations for site_tuple in operation.site_tuples)
+
+
+def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
+    """Return all metadata exposed by an immutable compiler target."""
+    duration_unit = target.duration_unit
+    synthesis_basis = target.synthesis_basis
+    return {
+        "name": target.name,
+        "duration_unit": None if duration_unit is None else (duration_unit.unit, duration_unit.scale_factor),
+        "num_qubits": target.num_qubits,
+        "sites": [(site.id, site.name, site.t1, site.t2) for site in target.sites],
+        "has_explicit_topology": target.has_explicit_topology,
+        "couplings": target.couplings,
+        "has_explicit_operations": target.has_explicit_operations,
+        "operations": [
+            (
+                operation.name,
+                operation.canonical_name,
+                operation.num_qubits,
+                operation.num_parameters,
+                operation.duration,
+                operation.fidelity,
+                [(site_tuple.sites, site_tuple.duration, site_tuple.fidelity) for site_tuple in operation.site_tuples],
+            )
+            for operation in target.operations
+        ],
+        "supported_gates": target.supported_gates,
+        "synthesis_basis": (
+            None if synthesis_basis is None else (synthesis_basis.single_qubit, synthesis_basis.entangler)
+        ),
+    }
+
+
+def test_compiler_target_from_device_id_matches_opened_device() -> None:
+    """Stable-ID construction produces the same detached DDSIM target."""
+    direct = CompilerTarget.from_device(open_device("mqt.ddsim.default"))
+    by_id = CompilerTarget.from_device_id("mqt.ddsim.default", custom1="value")
+
+    assert _compiler_target_metadata(by_id) == _compiler_target_metadata(direct)
+
+
+def test_compiler_target_from_device_id_preserves_open_and_conversion_errors() -> None:
+    """Stable-ID construction retains registry and target compatibility errors."""
+    with pytest.raises(IndexError, match="Unknown QDMI device ID"):
+        CompilerTarget.from_device_id("unknown.device")
+    with pytest.raises(ValueError, match="only circuit-model devices"):
+        CompilerTarget.from_device_id("mqt.na.default")
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        CompilerTarget.from_device_id(
+            "mqt.ddsim.default",
+            device_config="{}",
+            device_config_file=Path("device.json"),
+        )
 
 
 def test_compiler_target_rejects_qdmi_zone_model() -> None:
