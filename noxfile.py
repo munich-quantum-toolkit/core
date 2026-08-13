@@ -28,14 +28,14 @@ import nox
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
 
+
 nox.needs_version = ">=2025.10.16"
 nox.options.default_venv_backend = "uv"
 
-
-PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
-
 if os.environ.get("CI", None):
     nox.options.error_on_missing_interpreters = True
+
+PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
 
 @contextlib.contextmanager
@@ -141,7 +141,11 @@ def qiskit(session: nox.Session) -> None:
 
 @nox.session(python="3.14", reuse_venv=True)
 def docs(session: nox.Session) -> None:
-    """Build the docs. Use "--non-interactive" to avoid serving. Pass "-b linkcheck" to check links."""
+    """Build the docs.
+
+    Use ``--non-interactive`` to avoid serving.
+    Pass ``-b linkcheck`` to check links.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("-b", dest="builder", default="html", help="Build target (default: html)")
     args, posargs = parser.parse_known_args(session.posargs)
@@ -167,7 +171,7 @@ def docs(session: nox.Session) -> None:
             "-DENABLE_IPO=OFF"
         ),
     }
-    # install build and docs dependencies on top of the existing environment
+
     session.run(
         "uv",
         "sync",
@@ -178,8 +182,13 @@ def docs(session: nox.Session) -> None:
         "docs",
         env=env,
     )
-
-    shared_args = [
+    session.run(
+        "uv",
+        "run",
+        "--no-dev",  # do not auto-install dev dependencies
+        "--no-build-isolation-package",
+        "mqt-core",  # build the project without isolation
+        "sphinx-autobuild" if serve else "sphinx-build",
         "-n",  # nitpicky mode
         "-T",  # full tracebacks
         "-E",  # Doxygen inventories are regenerated for every docs build
@@ -188,16 +197,6 @@ def docs(session: nox.Session) -> None:
         "docs",
         f"docs/_build/{args.builder}",
         *posargs,
-    ]
-
-    session.run(
-        "uv",
-        "run",
-        "--no-dev",  # do not auto-install dev dependencies
-        "--no-build-isolation-package",
-        "mqt-core",  # build the project without isolation
-        "sphinx-autobuild" if serve else "sphinx-build",
-        *shared_args,
         env=env,
     )
 
@@ -205,7 +204,22 @@ def docs(session: nox.Session) -> None:
 @nox.session(reuse_venv=True, venv_backend="uv")
 def stubs(session: nox.Session) -> None:
     """Generate type stubs for Python bindings using nanobind."""
-    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    env = {
+        "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
+        # Stub generation only imports the extension modules, so this build
+        # favors compilation speed over optimized code. The settings match the
+        # documentation build, which lets both sessions share a build tree.
+        "SKBUILD_CMAKE_BUILD_TYPE": "MinSizeRel",
+        "SKBUILD_CMAKE_ARGS": (
+            "-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;"
+            "-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF;"
+            "-DCMAKE_UNITY_BUILD=ON;"
+            "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;"
+            "-DENABLE_IPO=OFF"
+        ),
+    }
+
+    session.run("uv", "sync", "--inexact", "--only-group", "build", env=env)
     session.run(
         "uv",
         "sync",
@@ -213,6 +227,8 @@ def stubs(session: nox.Session) -> None:
         "--no-dev",
         "--group",
         "build",
+        "--no-build-isolation-package",
+        "mqt-core",  # build the project without isolation
         env=env,
     )
 
