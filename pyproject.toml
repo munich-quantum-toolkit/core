@@ -201,6 +201,9 @@ unsafe-fixes = true
 show-fixes = true
 src = ["python"]
 
+[tool.ruff.per-file-target-version]
+"scripts/qiskit_c_api_adopt.py" = "py314"
+
 [tool.ruff.format]
 preview = true
 docstring-code-format = true

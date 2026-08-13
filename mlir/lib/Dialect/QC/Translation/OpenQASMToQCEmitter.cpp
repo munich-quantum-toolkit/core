@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QC/Translation/StandardGate.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
@@ -1576,111 +1577,7 @@ private:
                                      const GateLowering lowering,
                                      const ValueRange parameters,
                                      const ValueRange qubits) {
-    StringRef operationName;
-    switch (lowering) {
-    case GateLowering::GPhase:
-      operationName = qc::GPhaseOp::getOperationName();
-      break;
-    case GateLowering::Id:
-      operationName = qc::IdOp::getOperationName();
-      break;
-    case GateLowering::X:
-      operationName = qc::XOp::getOperationName();
-      break;
-    case GateLowering::Y:
-      operationName = qc::YOp::getOperationName();
-      break;
-    case GateLowering::Z:
-      operationName = qc::ZOp::getOperationName();
-      break;
-    case GateLowering::H:
-      operationName = qc::HOp::getOperationName();
-      break;
-    case GateLowering::S:
-      operationName = qc::SOp::getOperationName();
-      break;
-    case GateLowering::Sdg:
-      operationName = qc::SdgOp::getOperationName();
-      break;
-    case GateLowering::T:
-      operationName = qc::TOp::getOperationName();
-      break;
-    case GateLowering::Tdg:
-      operationName = qc::TdgOp::getOperationName();
-      break;
-    case GateLowering::SX:
-      operationName = qc::SXOp::getOperationName();
-      break;
-    case GateLowering::SXdg:
-      operationName = qc::SXdgOp::getOperationName();
-      break;
-    case GateLowering::P:
-      operationName = qc::POp::getOperationName();
-      break;
-    case GateLowering::RX:
-      operationName = qc::RXOp::getOperationName();
-      break;
-    case GateLowering::RY:
-      operationName = qc::RYOp::getOperationName();
-      break;
-    case GateLowering::RZ:
-      operationName = qc::RZOp::getOperationName();
-      break;
-    case GateLowering::R:
-      operationName = qc::ROp::getOperationName();
-      break;
-    case GateLowering::U2:
-      operationName = qc::U2Op::getOperationName();
-      break;
-    case GateLowering::U3:
-      operationName = qc::UOp::getOperationName();
-      break;
-    case GateLowering::SWAP:
-      operationName = qc::SWAPOp::getOperationName();
-      break;
-    case GateLowering::ISWAP:
-      operationName = qc::iSWAPOp::getOperationName();
-      break;
-    case GateLowering::DCX:
-      operationName = qc::DCXOp::getOperationName();
-      break;
-    case GateLowering::ECR:
-      operationName = qc::ECROp::getOperationName();
-      break;
-    case GateLowering::RCCX:
-      operationName = qc::RCCXOp::getOperationName();
-      break;
-    case GateLowering::RXX:
-      operationName = qc::RXXOp::getOperationName();
-      break;
-    case GateLowering::RYY:
-      operationName = qc::RYYOp::getOperationName();
-      break;
-    case GateLowering::RZX:
-      operationName = qc::RZXOp::getOperationName();
-      break;
-    case GateLowering::RZZ:
-      operationName = qc::RZZOp::getOperationName();
-      break;
-    case GateLowering::XXPlusYY:
-      operationName = qc::XXPlusYYOp::getOperationName();
-      break;
-    case GateLowering::XXMinusYY:
-      operationName = qc::XXMinusYYOp::getOperationName();
-      break;
-    case GateLowering::BuiltinU:
-    case GateLowering::CU:
-      llvm_unreachable("compound gate lowering requires a dedicated recipe");
-    }
-    OperationState state(loc, operationName);
-    if (lowering == GateLowering::GPhase) {
-      state.addOperands(parameters);
-    } else {
-      state.addOperands(qubits);
-      state.addOperands(parameters);
-    }
-    opBuilder.create(state);
-    return success();
+    return qc::emitStandardGate(opBuilder, loc, lowering, parameters, qubits);
   }
 
   static Value

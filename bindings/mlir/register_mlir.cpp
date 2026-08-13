@@ -13,6 +13,7 @@
 #include "mlir/Compiler/FoMaCAdapter.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
+#include "qiskit/Qiskit.h"
 
 #include <llvm/Support/Error.h>
 #include <nanobind/nanobind.h>
@@ -238,9 +239,7 @@ programFromPath(const std::filesystem::path& path) {
     const auto qiskitCircuit =
         nb::module_::import_("qiskit.circuit").attr("QuantumCircuit");
     if (nb::isinstance(program, qiskitCircuit)) {
-      const auto computation = nb::cast<qc::QuantumComputation>(
-          nb::module_::import_("mqt.core.load").attr("load")(program));
-      return takeResult(mlir::QCProgram::fromQuantumComputation(computation));
+      return bindings::qiskit::importCircuit(program);
     }
   }
 
@@ -651,10 +650,7 @@ before conversion to QCO.)pb");
       .def_static(
           "from_qiskit",
           [](const nb::object& circuit) {
-            const auto computation = nb::cast<qc::QuantumComputation>(
-                nb::module_::import_("mqt.core.load").attr("load")(circuit));
-            return takeResult(
-                mlir::QCProgram::fromQuantumComputation(computation));
+            return bindings::qiskit::importCircuit(circuit);
           },
           "circuit"_a,
           nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) "
@@ -671,6 +667,14 @@ before conversion to QCO.)pb");
            &OptionalMemberAdapter<&mlir::QCProgram::toOpenQASM3>::call,
            "Clean up and emit this QC program as OpenQASM 3 without QCO "
            "optimization.")
+      .def(
+          "to_qiskit",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return bindings::qiskit::exportCircuit(program);
+          },
+          nb::sig("def to_qiskit(self) -> qiskit.circuit.QuantumCircuit"),
+          R"pb(Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.)pb")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {

@@ -1,2 +1,5 @@
 test/circuits/** linguist-vendored
+vendor/qiskit-c-api/** linguist-vendored
+vendor/qiskit-c-api/*/include/** -text whitespace=-trailing-space
+vendor/qiskit-c-api/*/LICENSE -text whitespace=-trailing-space
 .git_archival.txt  export-subst

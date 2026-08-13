@@ -10,11 +10,14 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
 import numpy as np
 import pytest
+import qiskit
+from packaging import version
 from qiskit import QuantumCircuit, qasm3
 from qiskit.circuit import Gate, library
 from qiskit.quantum_info import Operator
@@ -32,6 +35,14 @@ from mqt.core.mlir import (
     compile_program,
 )
 from mqt.core.qdmi.driver import open_device
+
+requires_qiskit_translation = pytest.mark.skipif(
+    not (
+        version.parse("2.5") <= version.parse(qiskit.__version__) < version.parse("2.6")
+        or qiskit.__version__ == os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
+    ),
+    reason=f"no Qiskit translation is registered for {qiskit.__version__}",
+)
 
 MLIR_STRING = r"""module {
   func.func @main() -> memref<2xi1> attributes {passthrough = ["entry_point"]} {
@@ -176,6 +187,7 @@ def test_compile_program_quantum_computation() -> None:
     _assert_bell_program(result, measured=True)
 
 
+@requires_qiskit_translation
 def test_compile_program_qiskit_quantum_circuit() -> None:
     """Compile a ``QuantumCircuit``."""
     qc = QuantumCircuit(2, 2)
@@ -188,6 +200,7 @@ def test_compile_program_qiskit_quantum_circuit() -> None:
     _assert_bell_program(result, measured=True)
 
 
+@requires_qiskit_translation
 def test_compile_program_qiskit_quantum_circuit_subclass() -> None:
     """Compile a user-defined Qiskit ``QuantumCircuit`` subclass."""
 
@@ -291,6 +304,7 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
         library.RCCXGate(),
     ],
 )
+@requires_qiskit_translation
 def test_openqasm_helper_gate_matrix(gate: Gate) -> None:
     """Preserve complete helper-gate matrices, including global phase."""
     circuit = QuantumCircuit(gate.num_qubits)

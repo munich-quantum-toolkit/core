@@ -24,8 +24,10 @@ repos:
         fail_fast: true
         priority: 0
       - id: end-of-file-fixer
+        exclude: ^vendor/
         priority: 1
       - id: trailing-whitespace
+        exclude: ^vendor/
         priority: 2
 
   ## Check JSON schemata
@@ -66,7 +68,7 @@ repos:
         name: Disallow improper capitalization
         language: pygrep
         entry: \b(Nanobind|Numpy|Cmake|CCache|Github|PyTest|Mqt|Tum)\b
-        exclude: ^(\.pre-commit-config\.yaml)$
+        exclude: ^(\.pre-commit-config\.yaml|vendor/)
         priority: 0
 
   ## Check for typos

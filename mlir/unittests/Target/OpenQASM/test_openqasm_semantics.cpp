@@ -9,6 +9,7 @@
  */
 
 #include "OpenQASMTestUtils.h"
+#include "mlir/Dialect/QC/Translation/StandardGate.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
@@ -224,10 +225,17 @@ trailing(0.5) q[0], q[1];
 
 TEST(OpenQASMFrontendTest, CanonicalGateNamesRoundTripThroughTheCatalog) {
   for (const auto& entry : oq3::frontend::getGateCatalog()) {
+    const auto& descriptor = qc::getStandardGateDescriptor(entry.lowering);
     const auto canonicalName = oq3::frontend::canonicalGateName(entry.lowering);
     const auto* canonicalEntry = oq3::frontend::lookupGate(canonicalName);
     ASSERT_NE(canonicalEntry, nullptr) << canonicalName.str();
     EXPECT_EQ(canonicalEntry->lowering, entry.lowering) << entry.name.str();
+    EXPECT_EQ(canonicalEntry->parameterCount, descriptor.parameterCount)
+        << entry.name.str();
+    EXPECT_EQ(canonicalEntry->controlCount, descriptor.controlCount)
+        << entry.name.str();
+    EXPECT_EQ(canonicalEntry->targetCount, descriptor.targetCount)
+        << entry.name.str();
   }
 }
 
