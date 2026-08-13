@@ -9,254 +9,229 @@ repository root.
 
 ## Purpose / Big Picture
 
-MQT Core's native code now takes long enough to compile that routine pull
-requests occupy all available macOS runners and delay unrelated work. This
-change reduces repeated compilation without reducing the supported operating
-system or architecture coverage. A developer can observe the result by using the
-existing CMake presets: normal builds use unity compilation and skip link time
-optimization, while explicit LTO presets remain available for performance
-builds. CI retains Release and Debug coverage on Linux, macOS, and Windows but
-runs only one of each configuration per operating system.
+MQT Core's native code takes long enough to compile that routine pull requests
+occupy all available macOS runners and delay unrelated work. This change reduces
+repeated compilation without reducing supported operating-system or architecture
+coverage. Normal first-party CMake and Python package builds use unity
+compilation. The lint build remains non-unity so it can detect missing includes
+and source-order dependencies. CI retains Release and Debug coverage on Linux,
+macOS, and Windows but runs one of each configuration per operating system.
+
+The change does not alter link-time optimization, coverage, minimum-version
+testing, packaging, wheel builds, or shared workflows. Alternative linkers,
+identical code folding, and persistent compiler caching remain separate
+experiments that require measurements before adoption.
 
 ## Progress
 
 - [x] (2026-08-13 15:56Z) Create an isolated worktree from current `origin/main`
-  and read repository policy.
-- [x] (2026-08-13 16:24Z) Apply and validate the build-system defaults and unity
-      collision fixes.
-- [x] (2026-08-13 16:24Z) Apply and validate the CI matrix cleanup.
-- [x] (2026-08-13 16:24Z) Run targeted C++, Python, preset, and lint validation.
-- [x] (2026-08-13 16:31Z) Perform a fresh adversarial review and correct all
-  in-scope findings.
-- [x] (2026-08-13 16:31Z) Inspect the final diff and record the outcome.
+      and read repository policy.
+- [x] (2026-08-13 16:24Z) Enable unity builds and repair the first-party test
+  collisions exposed by combined translation units.
+- [x] (2026-08-13 16:24Z) Reduce the routine C++ matrix and remove dormant
+  extensive-CI paths.
+- [x] (2026-08-13 19:23Z) Publish the build and CI changes to draft PR #2083.
+- [x] (2026-08-13 19:40Z) Simplify the dependency opt-out and remove explicit
+  defaults and LTO changes from the final design.
+- [x] (2026-08-13 20:07Z) Run fresh Release, Debug, lint, and Python validation
+  for the simplified design.
+- [ ] Perform an adversarial review, publish the cleanup commit, update the PR
+  description, and monitor exact-head CI.
 
 ## Surprises & Discoveries
 
-- Observation: The existing `ENABLE_IPO` default is already off in CI because CI
-  forces the deployment configuration on. It is on for local Release builds.
-  Evidence: `cmake/StandardProjectSettings.cmake` derives the option default
-  from `DEPLOY` and the build type.
-- Observation: Header-set verification creates useful compile database entries
-  but its aggregate target is not part of the default build. Evidence: a fresh
-  Ninja graph did not make `all_verify_interface_header_sets` a dependency of
-  `all`.
-- Observation: A full unity build at the default batch size of eight exposes
-  four test-only name collisions. Evidence: the DD test has two `vecNear`
-  helpers, and three MLIR test targets use namespace names that become ambiguous
-  when source files share one translation unit.
-- Observation: The QC translation unity target additionally exposed a
-  source-order dependency that was invisible in separate translation units. Two
-  test files had file-scope `using namespace mlir` directives, which made later
-  public-header references to `qc` ambiguous. Evidence: the generated unity
-  source included the OpenQASM emission and translation tests before the
-  quantum-computation translation test. Wrapping each test file in a named
-  namespace contained the directive and made both unity and non-unity builds
-  compile.
-- Observation: Header verification remains available to clang-tidy without being
-  part of normal builds. Evidence: the non-unity lint compile database contains
-  1,112 lines referring to `_verify_interface_header_sets` commands and contains
-  no `/Unity/` source paths.
-- Observation: The build-system-only CI revision exposed a Windows-specific
-  third-party collision. Enabling unity globally also enabled it for Cap'n
-  Proto's KJ targets, while the former opt-out covered only `capnp`. MSVC then
-  combined platform sources with duplicate anonymous-namespace helpers.
-  Evidence: Windows Python job `94522290286` in run `31722197876` failed while
-  compiling `_deps/capnproto-build/.../kj.dir/Unity/unity_2_cxx.cxx`.
+- Observation: CI already disables interprocedural optimization because CI
+  forces deployment configuration on. Local non-deployment Release builds enable
+  it by default. Evidence: `cmake/StandardProjectSettings.cmake` derives the
+  option default from `DEPLOY` and the build type.
+- Observation: Header-set verification creates compile database entries needed
+  by clang-tidy, but its aggregate target is not part of a normal default build.
+  Evidence: a fresh Ninja graph did not make `all_verify_interface_header_sets`
+  a dependency of `all`.
+- Observation: A unity build at CMake's default batch size exposes four
+  first-party test collisions. Evidence: two DD test files define a file-local
+  helper with the same name, and three MLIR test targets leak namespace names
+  when sources share one translation unit.
+- Observation: The transitive Cap'n Proto KJ targets cannot use unity builds on
+  Windows. Evidence: a Windows Python build combined platform sources with
+  duplicate anonymous-namespace helpers and macros.
+- Observation: CMake initializes `UNITY_BUILD_BATCH_SIZE` to eight when the
+  project does not set `CMAKE_UNITY_BUILD_BATCH_SIZE`. An explicit value adds no
+  behavior.
+- Observation: The Jeff MLIR dependency contains eight C++ source files. It is
+  simpler to compile this small dependency without unity than to discover and
+  modify every target in its transitive Cap'n Proto build.
+- Observation: Linux CI already selects mold through the pinned shared
+  workflows. The portable toolchain bundles mold on Linux and LLD on Windows,
+  but not on macOS. Linker changes therefore need platform-specific A/B tests in
+  the shared workflows.
 
 ## Decision Log
 
-- Decision: Enable unity builds through first-party presets and Python package
-  configuration instead of changing the global CMake default. Rationale: An
-  embedded consumer must retain control over compilation of its surrounding
-  project. Date/Author: 2026-08-13 / Codex.
-- Decision: Keep the lint preset non-unity and enable header-set verification
-  only there. Rationale: Lint must detect missing direct includes and needs
-  compile commands for public headers. Date/Author: 2026-08-13 / Codex.
+- Decision: Enable unity through first-party presets and scikit-build-core
+  configuration instead of changing the global CMake default. Rationale:
+  embedded consumers retain control over their surrounding builds. Date/Author:
+  2026-08-13 / Codex.
+- Decision: Use CMake's default unity batch size. Rationale: the default is
+  eight, which is the tested value, and an explicit override adds no behavior.
+  Date/Author: 2026-08-13 / Codex.
+- Decision: Keep the lint preset non-unity and enable header verification only
+  there. Rationale: lint must detect direct-include defects and needs compile
+  commands for public headers. Date/Author: 2026-08-13 / Codex.
+- Decision: Set `CMAKE_UNITY_BUILD` to `OFF` in the function that makes Jeff
+  available. Rationale: function scope contains the setting to Jeff and its
+  dependencies, avoids target discovery, and restores unity for MQT Core.
+  Date/Author: 2026-08-13 / Codex.
+- Decision: Leave interprocedural optimization unchanged. Rationale: deployment
+  configuration already disables it in CI, so changing local Release behavior
+  does not improve CI time. Date/Author: 2026-08-13 / Codex.
 - Decision: Keep Python tests in Release. Rationale: scikit-build-core already
   selects Release, and these jobs provide Release coverage for architectures
   omitted from the smaller C++ matrix. Date/Author: 2026-08-13 / Codex.
-- Decision: Remove all dormant extensive CI jobs. Rationale: They are not used,
-  their Cartesian matrices consume excessive capacity, and the macOS matrix
-  includes unsupported GCC combinations. Date/Author: 2026-08-13 / Codex.
-- Decision: Contain file-scope MLIR using directives with named test namespaces
-  instead of qualifying a large set of otherwise valid QC builder references.
-  Rationale: The namespace leak was the root cause, and containing it preserves
-  source readability while making unity source order irrelevant. Date/Author:
-  2026-08-13 / Codex.
-- Decision: Disable unity recursively for every target in the transitive Cap'n
-  Proto build directory. Rationale: The incompatibility applies to KJ as well as
-  `capnp`, while Jeff and first-party MQT targets must remain eligible. A
-  directory-based traversal follows future Cap'n Proto target additions without
-  hard-coding its current target list. Date/Author: 2026-08-13 / Codex.
+- Decision: Remove dormant extensive CI jobs. Rationale: the unused Cartesian
+  matrices consume excessive capacity and include unsupported macOS GCC
+  combinations. Date/Author: 2026-08-13 / Codex.
+- Decision: Defer compiler-cache, linker, and identical-code-folding changes.
+  Rationale: their value and compatibility depend on the runner, compiler, and
+  output binary and require separate measurements. Date/Author: 2026-08-13 /
+  Codex.
 
 ## Outcomes & Retrospective
 
-Implemented the build-system and CI portions of the approved plan in the
-isolated `agent/ci-build-quick-wins` worktree. Normal first-party CMake presets
-and scikit-build-core builds now use unity batches of eight with IPO and header
-verification disabled. The lint preset remains non-unity and owns header-set
-verification. Explicit Unix and Windows LTO presets retain intentional
-performance builds. The routine C++ workflow now has six rows and no extensive
-CI plumbing; the five Python platform rows and all coverage, minimums,
-packaging, and wheel behavior are unchanged.
+The final implementation enables unity in normal first-party CMake presets and
+scikit-build-core builds. CMake supplies the default batch size of eight. The
+lint preset disables unity and enables interface-header verification. Jeff and
+its complete dependency subtree compile without unity through one
+function-scoped variable. Header verification defaults to off for ordinary
+builds. Interprocedural optimization retains its pre-existing behavior.
 
-Fresh Release and Debug unity builds succeeded. Both complete native suites
-passed, 4,488 tests each; the two existing QDMI job-ID tests were skipped in
-each configuration. A complete non-unity lint build succeeded. Its cache and
-compile database confirm unity off and header verification on. An existing
-Release cache was deliberately switched to IPO on and then reconfigured with the
-normal preset; both `ENABLE_IPO` and `CMAKE_INTERPROCEDURAL_OPTIMIZATION`
-returned to off. The LTO preset resolved both values to on.
+The routine C++ workflow has six rows: Linux ARM Release and x64 Debug, macOS
+Intel Release and ARM Debug, and Windows ARM Release and x64 Debug. The five
+Python platform jobs continue to provide Release coverage. Python coverage,
+minimum-version sessions, packaging, and wheel matrices are unchanged. All
+dormant extensive jobs, label conditions, and required-check references are
+removed.
 
-The Python package built as Release with unity on and IPO/header verification
-off. The direct Python suite passed with 600 tests and three expected Qiskit
-skips. Representative `tests-3.14` and `minimums-3.14` nox sessions passed; the
-minimums session ran 603 tests successfully. Repository-wide lint and
-`git diff --check` passed. The signed build-system commit was pushed to draft PR
+Fresh Release and Debug builds completed. Each native suite passed all 4,488
+tests, with the two expected QDMI job-ID skips. The fresh Release graph used
+first-party unity units with at most eight sources and compiled Jeff and Cap'n
+Proto from separate source files. The lint build completed without unity. Its
+compile database contains 1,112 interface-header verification entries and no
+unity source. `tests-3.14` passed 598 tests with three expected Qiskit skips.
+`minimums-3.14` passed all 601 tests. Repository lint and `git diff --check`
+passed. Exact-head CI results will be added after they reach terminal states.
 
-## 2083 and its CI run was allowed to start before the matrix cleanup commit. The
+## Context and Orientation
 
-PR is assigned to `burgholzer` and uses existing CI, tooling, code-quality, and
-skip-changelog labels. The baseline passed Ubuntu ARM Python and Release C++ but
-exposed the Cap'n Proto KJ unity failure on Windows. The follow-up build-system
-commit disables unity for the complete transitive dependency; a local
-reconfigure built `kj` and `capnp` as separate sources, and lint passed. No
-GitHub label was deleted. Final cross-platform timing and terminal CI state
-remain publication-stage evidence.
+`CMakePresets.json` defines supported local and CI CMake configurations.
+`pyproject.toml` supplies definitions to scikit-build-core when it builds the
+Python package. `cmake/StandardProjectSettings.cmake` owns ordinary project
+defaults. `cmake/ExternalDependencies.cmake` fetches Jeff MLIR, which fetches
+Cap'n Proto. `.github/workflows/ci.yml` defines MQT Core's platform matrices and
+delegates each row to pinned shared workflows.
 
-### Context and Orientation
+A unity build combines source files into generated translation units. This
+avoids repeated parsing of common headers. CMake initializes the target batch
+size to eight when the project does not override it. A function scope in CMake
+applies variables to functions and subdirectories called from that function,
+then restores the caller's value when the function returns. The Jeff setup uses
+this behavior to keep only that dependency subtree non-unity.
 
-`cmake/StandardProjectSettings.cmake` owns project-wide CMake defaults such as
-header verification and interprocedural optimization. Interprocedural
-optimization, also called link time optimization or LTO, lets the compiler
-optimize across object-file boundaries but makes linking and compilation more
-expensive. `CMakePresets.json` defines the supported local and CI CMake build
-configurations. `pyproject.toml` supplies CMake definitions to scikit-build-core
-when it builds the Python package.
+## Plan of Work
 
-CMake unity builds combine several source files into one generated translation
-unit. This avoids repeatedly parsing common headers. The batch size limits how
-many source files CMake combines. Normal builds will use the repository's
-validated batch size of eight. `cmake/ExternalDependencies.cmake` already keeps
-the incompatible Cap'n Proto target out of unity builds.
+Keep `CMAKE_UNITY_BUILD=ON` in the shared first-party preset and the
+scikit-build-core definitions. Do not set the batch size, header-verification
+default, or IPO option at those call sites. Keep the lint preset's explicit
+unity-off and header-verification-on overrides.
 
-`.github/workflows/ci.yml` defines the repository's routine platform matrices
-and delegates each matrix row to a shared reusable workflow. The Python matrix
-already covers both Linux and macOS architectures plus x64 Windows. The C++
-matrix can therefore retain one Release and one Debug row per operating system
-without losing architecture coverage across the aggregate CI system.
+Default interface-header verification to off in
+`cmake/StandardProjectSettings.cmake`. Preserve the rest of that file's IPO
+logic exactly. In `cmake/ExternalDependencies.cmake`, set unity off immediately
+before making Jeff available. Do not inspect or mutate dependency targets after
+creation.
 
-The implementation is confined to this task worktree. It must not edit another
-worktree, shared workflow repository, or GitHub label. Publication is authorized
-through draft PR #2083.
+Retain the narrow first-party source corrections needed for unity builds. Use
+distinct file-local DD helper names. Contain file-scope MLIR using directives
+and qualify ambiguous MQT namespaces. Do not exclude first-party targets from
+unity compilation.
 
-### Plan of Work
+Keep one Release and one Debug C++ row on each operating system. Remove the
+extensive C++ and Python jobs and their workflow conditions. Do not change the
+five Python jobs or the coverage, packaging, minimum-version, wheel, and shared
+workflow behavior.
 
-First, update `cmake/StandardProjectSettings.cmake` so header verification and
-IPO default to off. Ensure the CMake interprocedural optimization variable is
-also forced off when `ENABLE_IPO` is off so an existing cache cannot retain the
-old behavior.
+## Concrete Steps
 
-Next, update `CMakePresets.json`. Enable unity builds with batch size eight and
-explicitly disable IPO and header verification in the common normal presets.
-Override the lint preset so unity is off and header verification is on. Add Unix
-and Windows Release LTO configure, build, and test presets. Each LTO preset must
-use a distinct build directory through its preset name.
-
-Add the same normal-build definitions to `pyproject.toml` so Python package
-builds use unity, skip IPO, and skip header verification while retaining
-scikit-build-core's Release default. Keep the existing docs and stubs MinSizeRel
-configuration.
-
-Repair the four test-only unity collisions with narrow source changes. Rename
-the duplicate DD helper to express its local purpose. Qualify affected MQT
-namespace references from the global namespace and contain file-scope MLIR using
-directives so they cannot affect later unity sources. Do not exclude a
-first-party target from unity compilation.
-
-Finally, rewrite each routine C++ CI matrix in `.github/workflows/ci.yml` as two
-explicit rows: Linux ARM Release and x64 Debug, macOS Intel Release and ARM
-Debug, and Windows ARM Release and x64 Debug. Remove all extensive C++ and
-Python jobs and remove their references from the required-check aggregation. Do
-not change Python tests, coverage, minimum-version sessions, packaging, or
-shared workflows.
-
-### Concrete Steps
-
-Run all commands from the repository root through `.agent/run.sh` when they
-create caches.
-
-After the build-system edit, configure from a fresh cache:
+Run cache-producing commands from the repository root through `.agent/run.sh`.
+Use fresh build directories for the native acceptance builds:
 
     ./.agent/run.sh cmake --preset release
     ./.agent/run.sh cmake --build --preset release
     ./.agent/run.sh ctest --preset release
 
-Repeat with the Debug preset. Inspect `build/release/CMakeCache.txt` and the
-lint and LTO preset caches to confirm the intended values. Configure the lint
-preset without running a rewriting formatter before the source changes are
-complete.
+Repeat those commands with `debug`. Configure and build `lint`, then inspect its
+cache and compile database. Run the representative Python sessions:
 
-Install and test the Python package with:
-
-    ./.agent/run.sh uv sync --inexact --only-group build --only-group test
-    ./.agent/run.sh uv sync --inexact --no-dev --no-build-isolation-package mqt-core
-    ./.agent/run.sh uv run --no-sync pytest
+    ./.agent/run.sh uvx nox -s tests-3.14
+    ./.agent/run.sh uvx nox -s minimums-3.14
 
 Finish with:
 
     ./.agent/run.sh uvx nox -s lint
     git diff --check
 
-### Validation and Acceptance
+## Validation and Acceptance
 
-A fresh Release and Debug build must complete with unity enabled at batch size
-eight. All CTest tests must pass. The four prior collision sites must compile
-without target exclusions. The lint build must remain non-unity and its compile
-database must contain header verification entries.
+Fresh Release and Debug builds must complete with unity enabled and no explicit
+batch-size cache entry. Generated first-party unity files must combine at most
+eight sources. Jeff and Cap'n Proto build directories must contain no generated
+unity sources. All configured CTest tests must pass.
 
-The normal Release cache must contain `CMAKE_UNITY_BUILD=ON`,
-`CMAKE_UNITY_BUILD_BATCH_SIZE=8`, `ENABLE_IPO=OFF`,
-`CMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF`, and
-`CMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF`. The lint cache must contain unity off
-and header verification on. The Release LTO cache must contain `ENABLE_IPO=ON`
-and interprocedural optimization on when the compiler supports it.
+The lint cache must contain `CMAKE_UNITY_BUILD=OFF` and
+`CMAKE_VERIFY_INTERFACE_HEADER_SETS=ON`. Its compile database must contain
+interface-header verification entries and no generated unity sources. A normal
+deployment configuration must retain `ENABLE_IPO=OFF`; a local non-deployment
+Release configuration must retain the established default of `ENABLE_IPO=ON`.
 
-The Python package cache must use Release and the same normal unity, IPO, and
-header-verification values. Python tests must pass without changing coverage or
-minimum-version behavior.
+The Python package cache must use Release and unity. The `tests-3.14` and
+`minimums-3.14` sessions must pass. The CI workflow must expose exactly six
+routine C++ rows, five unchanged Python rows, and no extensive jobs. Repository
+lint and `git diff --check` must pass.
 
-The CI workflow must expose exactly six routine C++ rows, five unchanged Python
-rows, and no extensive jobs. The required-check job must not refer to a removed
-job. Repository lint and `git diff --check` must pass.
+All revised C++, Python, coverage, lint, and packaging jobs on the published
+head must reach successful terminal states. Windows Python proves the scoped
+Cap'n Proto fix. All four macOS jobs prove the most capacity-constrained
+platform.
 
-### Idempotence and Recovery
+## Idempotence and Recovery
 
 CMake configuration, builds, CTest, Python tests, and lint are safe to repeat.
-If a stale cache obscures a default, use a new preset build directory or the
-repository's cache-cleaning helper after no build process is active. Do not
-delete another worktree or shared cache. If a unity collision appears, inspect
-the generated `Unity` source and correct the smallest first-party name or
-linkage conflict instead of disabling unity for the target.
+Use a new preset build directory when a stale cache can obscure a default. Do
+not remove another worktree or shared cache. If a new first-party unity
+collision appears, inspect the generated unity source and correct the smallest
+linkage or namespace conflict instead of excluding the target.
 
-### Artifacts and Notes
+## Artifacts and Notes
 
-The original performance baseline is GitHub Actions run `31686027627`. The
-build-system-only revision is `7fecfc4ad1a051edcd7e56559edb2acb43002978`, whose
-GitHub Actions run `31722197876` provides the post-unity baseline before the
-matrix cleanup is pushed. The local design experiments measured about 34 percent
-less wall time for a representative unity build and about 38 percent more wall
-time when ThinLTO was enabled. These values are evidence for the configuration
-direction, not fixed acceptance thresholds for every compiler and operating
-system.
+GitHub Actions run `31686027627` is the original timing baseline. Cold local
+AppleClang measurements reduced a representative native and MLIR build from
+111.2 seconds to 73.2 seconds with unity compilation, about 34 percent. Compare
+the final build steps and total job times with that baseline, then monitor later
+natural runs for variance.
 
-### Interfaces and Dependencies
+Linux already uses mold in the pinned shared workflows. A future shared-workflow
+experiment can select the mold binary shipped by the portable toolchain and
+remove the separate setup action. A separate Windows experiment can compare the
+default generator and linker against Ninja and the bundled LLD. Persistent
+compiler caching should be tested on macOS first, then Windows. Identical code
+folding needs binary-size, link-time, runtime, and function-address tests; it is
+not part of this change.
 
-This change does not alter a C++ or Python runtime API. It adds the
-`release-lto` and `release-lto-windows` developer presets. It uses only standard
-CMake variables and the existing GitHub reusable workflows. It adds no package,
-compiler, action, or runtime dependency.
+## Interfaces and Dependencies
 
-Revision note: Initial plan created from the approved implementation plan and
-the exact `origin/main` source state on 2026-08-13. Updated after implementation
-and local validation on 2026-08-13.
+This change does not alter a C++ or Python runtime API. It adds no preset,
+package, compiler, action, or runtime dependency. Direct embedded CMake
+consumers do not receive a forced unity default.
+
+Revision note: Created from the approved implementation plan and updated on
+2026-08-13 to record the simplified final design.

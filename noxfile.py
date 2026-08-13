@@ -160,8 +160,7 @@ def docs(session: nox.Session) -> None:
         # Let scikit-build-core generate the MLIR reference pages while it
         # builds the extension used to execute the documentation examples.
         # The docs exercise only the DDSIM provider. The common Python package
-        # configuration enables unity builds and disables header verification
-        # and IPO.
+        # configuration enables unity builds.
         "SKBUILD_CMAKE_ARGS": (
             "-DBUILD_MQT_CORE_DOCUMENTATION=ON;-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF"
         ),
