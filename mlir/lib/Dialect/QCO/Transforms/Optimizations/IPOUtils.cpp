@@ -16,6 +16,8 @@
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/Support/LLVM.h>
 
+#include <utility>
+
 namespace mlir::qco {
 
 func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName) {
@@ -28,7 +30,7 @@ void eraseOrphanedSpecializations(SymbolTable& symbolTable,
                                   SmallVector<func::FuncOp>& candidates) {
   // Duplicates would leave dangling handles once the first copy is erased.
   SmallVector<func::FuncOp> unique;
-  DenseSet<Operation*> seen;
+  llvm::DenseSet<Operation*> seen;
   for (auto candidate : candidates) {
     if (seen.insert(candidate.getOperation()).second) {
       unique.emplace_back(candidate);
