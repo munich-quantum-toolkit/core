@@ -16,6 +16,7 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/Error.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -28,7 +29,6 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -36,6 +36,17 @@
 #include <vector>
 
 namespace mqt::test::compiler {
+template <class T> [[nodiscard]] static T valid(llvm::Expected<T> value) {
+  return llvm::cantFail(std::move(value));
+}
+
+template <class T>
+static void expectInvalid(llvm::Expected<T> value,
+                          const std::string_view expectedMessage) {
+  ASSERT_FALSE(value);
+  EXPECT_EQ(llvm::toString(value.takeError()), expectedMessage);
+}
+
 namespace {
 
 using Target = mlir::CompilerTarget;
@@ -49,18 +60,20 @@ using SiteTuple = Target::SiteTuple;
 
 TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   std::vector<Site> sites;
-  sites.emplace_back(7, "left", 100, 80);
-  sites.emplace_back(2, std::nullopt, 120, std::nullopt);
-  sites.emplace_back(11, "right");
+  sites.emplace_back(valid(Site::create(7, "left", 100, 80)));
+  sites.emplace_back(valid(Site::create(2, std::nullopt, 120, std::nullopt)));
+  sites.emplace_back(valid(Site::create(11, "right")));
 
   std::vector<Operation> operations;
+  std::vector siteTuples{valid(SiteTuple::create({7}, 0, 0.99)),
+                         valid(SiteTuple::create({2}, 5, 0.98))};
   operations.emplace_back(
-      " PRX ", 1, 2,
-      std::vector{SiteTuple{{7}, 0, 0.99}, SiteTuple{{2}, 5, 0.98}}, 0, 0.97);
+      valid(Operation::create(" PRX ", 1, 2, std::move(siteTuples), 0, 0.97)));
 
-  const Target target{"device", std::move(sites),
-                      std::vector<Coupling>{{11, 2}, {2, 11}, {7, 2}},
-                      std::move(operations), DurationUnit{"ns", 0.5}};
+  const auto target = valid(Target::create(
+      "device", std::move(sites),
+      std::vector<Coupling>{{11, 2}, {2, 11}, {7, 2}}, std::move(operations),
+      valid(DurationUnit::create("ns", 0.5))));
   // The copy itself is the behavior under test: both objects must share the
   // immutable backing storage.
   // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
@@ -93,8 +106,8 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
 }
 
 TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
-  const Target target{3};
-  const Target named{"simulator", 2};
+  const auto target = valid(Target::create(3));
+  const auto named = valid(Target::create("simulator", 2));
 
   EXPECT_FALSE(target.name());
   ASSERT_TRUE(named.name());
@@ -118,15 +131,14 @@ TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
   target.forEachNeighbour(
       1, [&](const auto neighbour) { neighbours.emplace_back(neighbour); });
   EXPECT_EQ(neighbours, (std::vector<size_t>{0, 2}));
-  EXPECT_THROW(target.siteForVertex(3), std::out_of_range);
-  EXPECT_THROW(target.areAdjacent(0, 3), std::out_of_range);
-  EXPECT_THROW(target.distanceBetween(3, 0), std::out_of_range);
-  EXPECT_THROW(target.forEachNeighbour(3, [](size_t) {}), std::out_of_range);
 }
 
 TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
-  const Target target{std::vector<Site>{Site{7}, Site{2}, Site{11}},
-                      std::vector<Coupling>{{11, 2}, {2, 11}, {7, 2}, {2, 7}}};
+  std::vector sites{valid(Site::create(7)), valid(Site::create(2)),
+                    valid(Site::create(11))};
+  const auto target = valid(
+      Target::create(std::move(sites),
+                     std::vector<Coupling>{{11, 2}, {2, 11}, {7, 2}, {2, 7}}));
 
   EXPECT_TRUE(target.hasExplicitTopology());
   EXPECT_EQ(target.couplings(), (llvm::ArrayRef<Coupling>{{2, 7}, {2, 11}}));
@@ -147,75 +159,97 @@ TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
 }
 
 TEST(CompilerTargetTest, RejectsInvalidMetadata) {
-  const auto expectInvalid = [](const auto& construct) {
-    EXPECT_THROW(construct(), std::invalid_argument);
-  };
-
-  expectInvalid([] { static_cast<void>(Target{0}); });
+  expectInvalid(Target::create(0),
+                "Compiler target must contain at least one site");
   if constexpr (sizeof(size_t) >= sizeof(uint64_t)) {
     expectInvalid(
-        [] { static_cast<void>(Target{std::numeric_limits<size_t>::max()}); });
+        Target::create(std::numeric_limits<size_t>::max()),
+        "Compiler target qubit count exceeds the nonnegative i64 site domain");
   }
-  expectInvalid([] { static_cast<void>(Site{-1}); });
-  expectInvalid([] { static_cast<void>(Site{0, ""}); });
-  expectInvalid([] { static_cast<void>(Site{0, std::nullopt, 0}); });
-  expectInvalid([] { static_cast<void>(DurationUnit{"", 1.}); });
-  expectInvalid([] { static_cast<void>(DurationUnit{"ns", 0.}); });
-  expectInvalid([] {
-    static_cast<void>(
-        DurationUnit{"ns", std::numeric_limits<double>::infinity()});
-  });
-  expectInvalid([] { static_cast<void>(SiteTuple{{0, 0}}); });
-  expectInvalid([] { static_cast<void>(SiteTuple{{0}, std::nullopt, -0.1}); });
-  expectInvalid([] { static_cast<void>(Operation{"", 1, 0}); });
-  expectInvalid([] { static_cast<void>(Operation{"x", 0, 0}); });
-  expectInvalid([] {
-    static_cast<void>(Operation{"x", 1, 0, std::vector{SiteTuple{{0, 1}}}});
-  });
-  expectInvalid([] {
-    static_cast<void>(
-        Operation{"x", 1, 0, std::vector{SiteTuple{{0}}, SiteTuple{{0}}}});
-  });
-  expectInvalid([] {
-    static_cast<void>(Operation{
-        "x", 1, 0, {}, std::nullopt, std::numeric_limits<double>::quiet_NaN()});
-  });
+  expectInvalid(Site::create(-1),
+                "Compiler target site ID must be nonnegative");
+  expectInvalid(Site::create(0, ""),
+                "Compiler target site name must not be empty when present");
+  expectInvalid(Site::create(0, std::nullopt, 0),
+                "Compiler target site T1 must be positive");
+  expectInvalid(Site::create(0, std::nullopt, std::nullopt, 0),
+                "Compiler target site T2 must be positive");
+  expectInvalid(DurationUnit::create("", 1.),
+                "Compiler target duration unit must not be empty");
+  expectInvalid(
+      DurationUnit::create("ns", 0.),
+      "Compiler target duration scale factor must be positive and finite");
+  expectInvalid(
+      DurationUnit::create("ns", std::numeric_limits<double>::infinity()),
+      "Compiler target duration scale factor must be positive and finite");
+  expectInvalid(SiteTuple::create({0, 0}),
+                "Compiler target site tuple contains a duplicate site");
+  expectInvalid(SiteTuple::create({-1}),
+                "Compiler target site tuple contains a negative site ID");
+  expectInvalid(
+      SiteTuple::create({0}, std::nullopt, -0.1),
+      "Compiler target site-tuple fidelity must be finite and in [0, 1]");
+  expectInvalid(Operation::create("", 1, 0),
+                "Compiler target operation name must not be empty");
+  expectInvalid(Operation::create("x", 0, 0),
+                "Compiler target operation qubit count must be positive");
+  expectInvalid(
+      Operation::create("x", 1, 0,
+                        std::vector{valid(SiteTuple::create({0, 1}))}),
+      "Compiler target operation site tuple does not match its arity");
+  expectInvalid(Operation::create("x", 1, 0,
+                                  std::vector{valid(SiteTuple::create({0})),
+                                              valid(SiteTuple::create({0}))}),
+                "Compiler target operation contains a duplicate site tuple");
+  expectInvalid(
+      Operation::create("x", 1, 0, {}, std::nullopt,
+                        std::numeric_limits<double>::quiet_NaN()),
+      "Compiler target operation fidelity must be finite and in [0, 1]");
 
-  expectInvalid([] { static_cast<void>(Target{std::vector<Site>{}}); });
+  expectInvalid(Target::create(std::vector<Site>{}),
+                "Compiler target must contain at least one site");
+  expectInvalid(Target::create("", 1),
+                "Compiler target name must not be empty when present");
+  expectInvalid(Target::create("invalid", 0),
+                "Compiler target must contain at least one site");
+  expectInvalid(Target::create(std::vector{valid(Site::create(1)),
+                                           valid(Site::create(1))}),
+                "Compiler target contains duplicate site IDs");
   expectInvalid(
-      [] { static_cast<void>(Target{std::vector<Site>{Site{1}, Site{1}}}); });
-  expectInvalid([] {
-    static_cast<void>(Target{std::vector<Site>{Site{0, std::nullopt, 1}}});
-  });
-  expectInvalid([] {
-    static_cast<void>(
-        Target{1, std::nullopt, std::vector{Operation{"x", 1, 0, {}, 1}}});
-  });
-  expectInvalid([] {
-    std::vector<Operation> operations;
-    operations.emplace_back("x", 1, 0, std::vector{SiteTuple{{0}, 1}});
-    static_cast<void>(Target{1, std::nullopt, std::move(operations)});
-  });
+      Target::create(std::vector{valid(Site::create(0, std::nullopt, 1))}),
+      "Compiler target timing metadata requires a duration unit");
   expectInvalid(
-      [] { static_cast<void>(Target{2, std::vector<Coupling>{{0, 0}}}); });
+      Target::create(1, std::nullopt,
+                     std::vector{valid(Operation::create("x", 1, 0, {}, 1))}),
+      "Compiler target timing metadata requires a duration unit");
   expectInvalid(
-      [] { static_cast<void>(Target{2, std::vector<Coupling>{{0, 2}}}); });
+      Target::create(
+          1, std::nullopt,
+          std::vector{valid(Operation::create(
+              "x", 1, 0, std::vector{valid(SiteTuple::create({0}, 1))}))}),
+      "Compiler target timing metadata requires a duration unit");
+  expectInvalid(Target::create(2, std::vector<Coupling>{{0, 0}}),
+                "Compiler target topology contains a self-coupling");
+  expectInvalid(Target::create(2, std::vector<Coupling>{{0, 2}}),
+                "Compiler target topology references an unknown site");
+  expectInvalid(Target::create(3, std::vector<Coupling>{{0, 1}}),
+                "Compiler target topology must be connected");
   expectInvalid(
-      [] { static_cast<void>(Target{3, std::vector<Coupling>{{0, 1}}}); });
-  expectInvalid([] {
-    std::vector<Operation> operations;
-    operations.emplace_back("x", 1, 0, std::vector{SiteTuple{{2}}});
-    static_cast<void>(Target{2, std::nullopt, std::move(operations)});
-  });
-  expectInvalid([] {
-    static_cast<void>(
-        Target{1, std::nullopt, std::vector{Operation{"cx", 2, 0}}});
-  });
+      Target::create(
+          2, std::nullopt,
+          std::vector{valid(Operation::create(
+              "x", 1, 0, std::vector{valid(SiteTuple::create({2}))}))}),
+      "Compiler target operation site tuple references an unknown site");
+  expectInvalid(
+      Target::create(1, std::nullopt,
+                     std::vector{valid(Operation::create("cx", 2, 0))}),
+      "Compiler target operation arity exceeds its site count");
 }
 
 TEST(CompilerTargetTest, DistinguishesAbsentAndEmptyOperationSets) {
-  const Target permissive{2};
-  const Target closed{2, std::nullopt, std::vector<Operation>{}};
+  const auto permissive = valid(Target::create(2));
+  const auto closed =
+      valid(Target::create(2, std::nullopt, std::vector<Operation>{}));
 
   EXPECT_FALSE(permissive.hasExplicitOperations());
   EXPECT_TRUE(permissive.operations().empty());
@@ -236,10 +270,12 @@ TEST(CompilerTargetTest, DistinguishesAbsentAndEmptyOperationSets) {
 
 TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
   const std::vector<Coupling> chain{{0, 1}, {1, 2}};
-  const Operation globalU{"U3", 1, 3};
-  const Operation cz{"cz", 2, 0, std::vector{SiteTuple{{1, 0}, 5, 0.99}}};
-  const Target target{3, chain, std::vector{globalU, cz},
-                      DurationUnit{"ns", 1.}};
+  const auto globalU = valid(Operation::create("U3", 1, 3));
+  const auto cz = valid(Operation::create(
+      "cz", 2, 0, std::vector{valid(SiteTuple::create({1, 0}, 5, 0.99))}));
+  const auto target =
+      valid(Target::create(3, chain, std::vector{globalU, cz},
+                           valid(DurationUnit::create("ns", 1.))));
 
   EXPECT_TRUE(target.supportsOperation("u", 1, 3));
   EXPECT_TRUE(target.supportsOperation(" U3 ", 1, 3));
@@ -267,12 +303,14 @@ TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
                               Entangler{GateKind::ECR, "ecr", 0},
                               Entangler{GateKind::RZX, "rzx", 1}};
   const std::vector<Coupling> chain{{0, 1}, {1, 2}};
-  const Operation globalU{"u", 1, 3};
+  const auto globalU = valid(Operation::create("u", 1, 3));
 
   for (const auto& [gate, name, numParameters] : entanglers) {
     SCOPED_TRACE(name);
-    const Operation operation{std::string{name}, 2, numParameters};
-    const Target target{3, chain, std::vector{globalU, operation}};
+    const auto operation =
+        valid(Operation::create(std::string{name}, 2, numParameters));
+    const auto target =
+        valid(Target::create(3, chain, std::vector{globalU, operation}));
     EXPECT_TRUE(llvm::is_contained(target.supportedGates(), gate));
     EXPECT_TRUE(target.supports(gate));
     ASSERT_TRUE(target.synthesisBasis());
@@ -335,13 +373,16 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
   ASSERT_NE(barrier, nullptr);
   ASSERT_NE(gphase, nullptr);
 
-  const Target target{
-      std::vector<Site>{Site{10}, Site{20}}, std::nullopt,
-      std::vector{
-          Operation{"x", 1, 0}, Operation{"measure", 1, 0},
-          Operation{"reset", 1, 0},
-          Operation{"cnot", 2, 0,
-                    std::vector{SiteTuple{{10, 20}}, SiteTuple{{20, 10}}}}}};
+  std::vector sites{valid(Site::create(10)), valid(Site::create(20))};
+  std::vector directionalTuples{valid(SiteTuple::create({10, 20})),
+                                valid(SiteTuple::create({20, 10}))};
+  std::vector operations{
+      valid(Operation::create("x", 1, 0)),
+      valid(Operation::create("measure", 1, 0)),
+      valid(Operation::create("reset", 1, 0)),
+      valid(Operation::create("cnot", 2, 0, std::move(directionalTuples)))};
+  const auto target = valid(
+      Target::create(std::move(sites), std::nullopt, std::move(operations)));
   EXPECT_TRUE(target.supports(x));
   EXPECT_TRUE(target.supports(cx));
   EXPECT_TRUE(target.supports(measure));
@@ -350,7 +391,8 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
   EXPECT_TRUE(target.supports(gphase));
   EXPECT_FALSE(target.supports(nullptr));
 
-  const Target closed{2, std::nullopt, std::vector<Operation>{}};
+  const auto closed =
+      valid(Target::create(2, std::nullopt, std::vector<Operation>{}));
   EXPECT_TRUE(closed.supports(barrier));
   EXPECT_TRUE(closed.supports(gphase));
   EXPECT_FALSE(closed.supports(x));

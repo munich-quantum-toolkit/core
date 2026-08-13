@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "ModifierUtils.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -22,7 +23,6 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -32,7 +32,6 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <numbers>
 #include <optional>
@@ -57,6 +56,12 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
     }
     auto innerCtrlOp = dyn_cast<CtrlOp>(inner.getOperation());
     if (!innerCtrlOp) {
+      return failure();
+    }
+
+    // The rewrite hands the qubits of the modifier to the inner operation, so
+    // it must act on all of them.
+    if (innerCtrlOp.getNumQubits() != op.getNumQubits()) {
       return failure();
     }
 
@@ -117,6 +122,12 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
     }
     auto innerPow = dyn_cast<PowOp>(inner.getOperation());
     if (!innerPow) {
+      return failure();
+    }
+
+    // The rewrite hands the qubits of the modifier to the inner operation, so
+    // it must act on all of them.
+    if (innerPow.getNumQubits() != invOp.getNumQubits()) {
       return failure();
     }
 
@@ -196,6 +207,11 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
       return failure();
     }
     auto* innerOp = inner.getOperation();
+    // The modifier is replaced by a single operation, so it must not act on
+    // more qubits than its body.
+    if (inner.getNumQubits() != op.getNumQubits()) {
+      return failure();
+    }
 
     // Replace the body gate in place with its inverse, operating on the same
     // (block-argument) operands; inlining the body afterwards substitutes those
@@ -343,6 +359,13 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
     if (!innerInvOp) {
       return failure();
     }
+
+    // The rewrite hands the qubits of the modifier to the inner operation, so
+    // it must act on all of them.
+    if (innerInvOp.getNumQubits() != op.getNumQubits()) {
+      return failure();
+    }
+
     if (!utils::getSoleBodyUnitary<UnitaryOpInterface>(*innerInvOp.getBody())) {
       return failure();
     }
@@ -373,6 +396,31 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
 
     rewriter.replaceOp(op, op.getOperands());
     return success();
+  }
+};
+
+/**
+ * @brief Drop the qubits that the body does not use.
+ */
+struct DropUnusedInvQubits final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InvOp op,
+                                PatternRewriter& rewriter) const override {
+    auto* body = op.getBody();
+    const auto qubits = op.getQubitsIn();
+    return qco::detail::dropUnusedQubits(
+        op, *body, qubits,
+        [&](ValueRange narrowedQubits, ArrayRef<size_t> used) -> Operation* {
+          auto newOp =
+              InvOp::create(rewriter, op.getLoc(), narrowedQubits,
+                            [&](ValueRange args) -> SmallVector<Value> {
+                              return qco::detail::inlineNarrowedBody(
+                                  *body, qubits, used, args, rewriter);
+                            });
+          return newOp;
+        },
+        rewriter);
   }
 };
 
@@ -427,12 +475,8 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
 
 LogicalResult InvOp::verify() {
   auto& block = *getBody();
-  if (llvm::any_of(block, [](Operation& op) {
-        return isa<AllocOp, SinkOp, MeasureOp, ResetOp, qtensor::ExtractOp,
-                   qtensor::InsertOp>(op);
-      })) {
-    return emitOpError("body must not contain non-unitary quantum operations "
-                       "or modify a quantum register");
+  if (failed(detail::verifyModifierBody(getOperation(), block))) {
+    return failure();
   }
 
   const auto numTargets = getNumTargets();
@@ -467,7 +511,8 @@ LogicalResult InvOp::verify() {
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<MoveCtrlOutsideInv, InvPowToNegPow, InlineSelfAdjoint,
-              ReplaceWithKnownGates, CancelNestedInv, EraseEmptyInv>(context);
+              ReplaceWithKnownGates, CancelNestedInv, EraseEmptyInv,
+              DropUnusedInvQubits>(context);
 }
 
 bool InvOp::hasCompileTimeKnownUnitaryMatrix() {

@@ -2176,6 +2176,16 @@ Value ctrlTwo(QCProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
+Value ctrlThree(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {
+    b.x(targets[1]);
+    b.dcx(targets[1], targets[0]);
+    b.y(targets[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
 Value ctrlTwoMixed(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
@@ -2510,6 +2520,24 @@ Value powTwo(QCProgramBuilder& b) {
   b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
     b.x(qubits[0]);
     b.rxx(0.123, qubits[0], qubits[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powTwoDisjoint(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    b.s(qubits[0]);
+    b.t(qubits[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powHalfDisjoint(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(0.5, {q[0], q[1]}, [&](ValueRange qubits) {
+    b.s(qubits[0]);
+    b.t(qubits[1]);
   });
   return measureAndReturn(b, q.qubits);
 }

@@ -244,39 +244,17 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
 def MeasurementLifting : Pass<"measurement-lifting", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect"];
-  let summary = "This pass attempts to move measurements as far up as "
-                "possible, shifting them above gates that commute with them. "
-                "This is done to enable qubit reuse and other optimizations.";
+  let summary = "Move measurements before compatible unitary operations";
   let description = [{
-    This pass applies measurement lifting, moving measurements up the code as far as possible.
-    Measurement lifting is a subroutine of the qubit reuse routine. The goal is to measure qubits earlier in the
-    circuit to reuse them and to potentially remove some quantum gates.
+    This pass moves computational-basis measurements toward the start of a
+    circuit. A measurement of a control can move before the controlled
+    operation. A single-qubit diagonal operation immediately before a
+    measurement is removed because it cannot affect either the outcome or the
+    post-measurement qubit. Multi-qubit diagonal operations are only commuted:
+    removing them could discard phase kickback on another qubit. Measurements
+    also move before `x` and `y`, with the classical result inverted.
 
-    Measurement lifting uses the following commutation rules:
-    ```text
-         ┌──────┐             ┌──────┐
-    ──■──┤ Meas │──────      ─┤ Meas ├──■───
-      │  └──────┘             └──────┘  │
-    ┌─┴─┐                 =>          ┌─┴─┐
-    ┤ U ├────────────────    ─────────┤ U ├─
-    └───┘                             └───┘
-    ```
-    Here, U is any (controlled) unitary gate.
-
-    ```text
-    ┌───┐┌──────┐    ┌──────┐┌───┐
-    ┤ P ├┤ Meas ├ => ┤ Meas ├┤ P ├
-    └───┘└──────┘    └──────┘└───┘
-    ```
-    Here, P is any diagonal gate, for example `z` or `s`.
-
-    ```text
-    ┌───┐┌──────┐    ┌───────┐┌───┐
-    ┤ X ├┤ Meas ├ => ┤ Meas* ├┤ X ├
-    └───┘└──────┘    └───────┘└───┘
-    ```
-    Here, Meas* is a measurement after which the outcome is classically negated. X can also be replaced by Y, which
-    is likewise anti-diagonal.
+    Earlier measurements enable qubit reuse and subsequent optimizations.
   }];
 }
 
@@ -285,16 +263,25 @@ def ReplaceClassicalControls
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect",
   ];
-  let summary =
-      "This pass attempts to replace controlled gates that are controlled by "
-      "values that are in a computational basis state and available as "
-      "measurement outcome by a classical "
-      "`qco.if` instruction. This is done to enable qubit reuse and other "
-      "optimizations.";
+  let summary = "Replace measured controls and diagonal targets with "
+                "classical data flow";
   let description = [{
-    This pass searches for control operations that immediately follow measurements and replaces them
-    with classically controlled operations, represented by `qco.if` operations.
-    This reduces quantum interactions and allows for more optimizations, e.g., by enabling qubit reuse.
+    This pass rewrites a `qco.ctrl` that immediately consumes one or more
+    measured controls into one `qco.if`. Multiple measurement outcomes are
+    combined into the condition, while unmeasured controls remain quantum
+    controls inside it. The controlled body is not duplicated.
+
+    The pass also simplifies supported diagonal operations with measured
+    targets. A measured `rz` target becomes an outcome-dependent phase on the
+    controls. One measured `rzz` target turns the operation into an
+    outcome-dependent `rz` on the other target; two measured targets leave only
+    phase kickback on coherent controls. If every participating qubit has been
+    measured, the diagonal operation is removed. Other single-target phase
+    gates can exchange a measured target with an unmeasured control before the
+    general rewrite.
+
+    Replacing quantum controls with classical conditions reduces quantum
+    interactions and can enable qubit reuse and subsequent optimizations.
   }];
 }
 

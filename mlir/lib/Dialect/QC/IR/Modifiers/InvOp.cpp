@@ -346,6 +346,29 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
   }
 };
 
+/**
+ * @brief Drop the qubits that the body does not use.
+ */
+struct DropUnusedInvQubits final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InvOp op,
+                                PatternRewriter& rewriter) const override {
+    auto* body = op.getBody();
+    const auto qubits = op.getQubits();
+    return qc::detail::dropUnusedQubits(
+        op, *body, qubits,
+        [&](ValueRange narrowedQubits, ArrayRef<size_t> used) {
+          InvOp::create(rewriter, op.getLoc(), narrowedQubits,
+                        [&](ValueRange args) {
+                          qc::detail::inlineNarrowedBody(*body, qubits, used,
+                                                         args, rewriter);
+                        });
+        },
+        rewriter);
+  }
+};
+
 } // namespace
 
 size_t InvOp::getNumBodyUnitaries() {
@@ -386,5 +409,6 @@ LogicalResult InvOp::verify() {
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<CancelNestedInv, MoveCtrlOutsideInv, InvPowToNegPow,
-              InlineSelfAdjoint, ReplaceWithKnownGates, EraseEmptyInv>(context);
+              InlineSelfAdjoint, ReplaceWithKnownGates, EraseEmptyInv,
+              DropUnusedInvQubits>(context);
 }

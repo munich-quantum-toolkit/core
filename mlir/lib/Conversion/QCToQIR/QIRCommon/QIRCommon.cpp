@@ -97,20 +97,17 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
                        LoweringState& state, StringRef fnName,
                        const size_t numTargets, const size_t numParams) {
   // Query state for modifier information
-  const auto inCtrlOp = state.inCtrlOp;
   const SmallVector<Value> controls =
-      inCtrlOp != 0 ? state.controls : SmallVector<Value>{};
+      state.inCtrlOp ? state.controls : SmallVector<Value>{};
   const auto convertedOperands = adaptor.getOperands();
   const auto targets = convertedOperands.take_front(numTargets);
   const auto parameters = convertedOperands.drop_front(numTargets);
   assert(parameters.size() == numParams && "unexpected gate parameter count");
 
   // Clean up modifier information
-  if (inCtrlOp != 0) {
-    state.inCtrlOp--;
-    if (state.inCtrlOp == 0) {
-      state.controls.clear();
-    }
+  if (state.inCtrlOp) {
+    state.inCtrlOp = false;
+    state.controls.clear();
   }
 
   qir::emitQISCall(rewriter, op, op.getLoc(), parameters, controls, targets,
@@ -216,8 +213,7 @@ struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
   matchAndRewrite(OpType op, OpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.controls.size() : 0;
+    const size_t numCtrls = state.inCtrlOp ? state.controls.size() : 0;
     const auto fnName = GetFnName(numCtrls);
     return convertUnitaryToCallOp(op, adaptor, rewriter, state, fnName,
                                   NumTargets, NumParams);
@@ -299,7 +295,7 @@ struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
   matchAndRewrite(GPhaseOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    if (state.inCtrlOp != 0) {
+    if (state.inCtrlOp) {
       return op.emitError("Controlled GPhaseOps cannot be converted to QIR");
     }
     return convertUnitaryToCallOp(op, adaptor, rewriter, state, QIR_GPHASE, 0,
@@ -334,14 +330,27 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    if (state.inCtrlOp != 0) {
+    if (state.inCtrlOp) {
       return rewriter.notifyMatchFailure(op,
                                          "Nested CtrlOps are not supported");
     }
 
-    // Update modifier information
-    state.inCtrlOp = op.getNumBodyUnitaries();
-    state.controls = llvm::to_vector(adaptor.getControls());
+    if (op.getNumBodyUnitaries() > 1) {
+      return rewriter.notifyMatchFailure(
+          op, "CtrlOps with multiple body unitaries are not supported. Run the "
+              "unroll-modifiers pass before the conversion");
+    }
+
+    // Empty control bodies and controls around no-op unitaries do not need
+    // lowering state. In particular, barrier lowering erases the operation
+    // without consuming that state, which would otherwise control the next
+    // gate.
+    auto bodyUnitary = op.getNumBodyUnitaries() == 1 ? op.getBodyUnitary(0)
+                                                     : UnitaryOpInterface{};
+    if (bodyUnitary && !isa<BarrierOp, IdOp>(bodyUnitary.getOperation())) {
+      state.inCtrlOp = true;
+      state.controls = llvm::to_vector(adaptor.getControls());
+    }
 
     // Inline block and remove operation
     rewriter.inlineBlockBefore(&op.getRegion().front(), op,

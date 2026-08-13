@@ -21,7 +21,9 @@
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "qdmi/driver/Driver.hpp"
 
@@ -33,6 +35,7 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/Error.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/Path.h>
@@ -321,27 +324,13 @@ static ParsedProgram loadJeffFile(const StringRef filename,
 }
 
 /**
- * @brief Write serialized `jeff` bytes to an output file or standard output.
+ * @brief Write serialized `jeff` bytes to an output file.
  */
 static LogicalResult writeJeffOutput(ModuleOp mod, const StringRef filename) {
-  std::string errorMessage;
-  const auto output = openOutputFile(filename, &errorMessage);
-  if (!output) {
-    llvm::errs() << errorMessage << "\n";
+  if (failed(serializeToFile(mod, filename))) {
+    llvm::errs() << "Failed to write jeff file '" << filename << "'.\n";
     return failure();
   }
-
-  const auto serialized = serialize(mod);
-  const auto bytes = serialized.asBytes();
-  output->os().write(reinterpret_cast<const char*>(bytes.begin()),
-                     bytes.size());
-  output->os().flush();
-  if (output->os().has_error()) {
-    llvm::errs() << "I/O error while writing output file: " << filename << "\n";
-    return failure();
-  }
-
-  output->keep();
   return success();
 }
 
@@ -446,7 +435,14 @@ static int runCompiler(int argc, char** argv) {
       return 1;
     }
     const auto device = fomac::Session::openDevice(qdmiDevice);
-    compilerTarget.emplace(compilerTargetFromDevice(device));
+    auto target = compilerTargetFromDevice(device);
+    if (!target) {
+      llvm::errs() << "Failed to create compiler target from QDMI device '"
+                   << qdmiDevice << "': " << llvm::toString(target.takeError())
+                   << '\n';
+      return 1;
+    }
+    compilerTarget.emplace(std::move(*target));
   }
 
   // Set up MLIR context with all required dialects
@@ -552,6 +548,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::Jeff &&
       failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(mqt::createUnrollModifiers());
         pm.addPass(createQCOToJeff());
         populateJeffCleanupPipeline(pm);
         return success();
@@ -573,6 +570,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::QIRBase &&
       failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(mqt::createUnrollModifiers());
         pm.addPass(createQCToQIRBase());
         populateQIRCleanupPipeline(pm, false);
         return success();
@@ -582,6 +580,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::QIRAdaptive &&
       failed(runPasses([](OpPassManager& pm) {
+        pm.addPass(mqt::createUnrollModifiers());
         pm.addPass(createQCToQIRAdaptive());
         populateQIRCleanupPipeline(pm, true);
         return success();
@@ -591,7 +590,7 @@ static int runCompiler(int argc, char** argv) {
 
   // Write the output
   if (*parsedOutputFormat == OutputFormat::Jeff) {
-    if (writeJeffOutput(*program.mod, outputFilename).failed()) {
+    if (failed(writeJeffOutput(*program.mod, outputFilename))) {
       return 1;
     }
   } else if (*parsedOutputFormat == OutputFormat::OpenQASM3) {
@@ -615,6 +614,8 @@ static int runCompiler(int argc, char** argv) {
       llvm::errs() << "Failed to translate MLIR module to LLVM IR\n";
       return 1;
     }
+    qir::normalizeQIRModuleFlags(*llvmMod, *parsedOutputFormat ==
+                                               OutputFormat::QIRAdaptive);
     if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename).failed()) {
       return 1;
     }

@@ -23,15 +23,20 @@ namespace mlir {
 class Block;
 class Operation;
 
-namespace qc::detail {
+namespace qco::detail {
 
 /**
- * @brief Verify the operations and SSA captures in a QC modifier body.
+ * @brief Verify the operations and SSA captures in a QCO modifier body.
  */
 [[nodiscard]] LogicalResult verifyModifierBody(Operation* modifierOp,
                                                Block& body);
 
-/** @brief Return the positions of modifier qubits used by @p body. */
+/**
+ * @brief Return the positions of the qubits that the body of a modifier uses.
+ *
+ * @details Qubits are threaded through the body, so a qubit that the body only
+ * yields back is not acted upon and can be dropped from the modifier.
+ */
 [[nodiscard]] SmallVector<size_t> getUsedQubitIndices(Block& body);
 
 /**
@@ -40,24 +45,31 @@ namespace qc::detail {
  * @param modifierOp The modifier to replace.
  * @param body The modifier body.
  * @param qubits The modifier qubits corresponding to the body arguments.
- * @param rebuild A callback that creates the narrowed modifier.
+ * @param rebuild A callback that creates and returns the narrowed modifier.
  * @param rewriter The rewriter used to replace the modifier.
  */
 [[nodiscard]] LogicalResult
 dropUnusedQubits(Operation* modifierOp, Block& body, ValueRange qubits,
-                 function_ref<void(ValueRange, ArrayRef<size_t>)> rebuild,
+                 function_ref<Operation*(ValueRange, ArrayRef<size_t>)> rebuild,
                  RewriterBase& rewriter);
 
 /**
  * @brief Inline @p body into the modifier currently being built, dropping the
- * qubits that the body does not use.
+ * qubits it does not use, and return the qubits it yields for the others.
  *
- * @details The block arguments of unused qubits have no uses, so they are
- * replaced with the corresponding qubit of the original modifier.
+ * @details The block arguments of unused qubits are only yielded, and those
+ * yields are dropped, so they are replaced with the qubits of the original
+ * modifier.
  */
-void inlineNarrowedBody(Block& body, ValueRange qubits, ArrayRef<size_t> used,
-                        ValueRange args, RewriterBase& rewriter);
+[[nodiscard]] SmallVector<Value>
+inlineNarrowedBody(Block& body, ValueRange qubits, ArrayRef<size_t> used,
+                   ValueRange args, RewriterBase& rewriter);
 
-} // namespace qc::detail
+/** @brief Replace used positions in @p inputs with @p narrowedResults. */
+[[nodiscard]] SmallVector<Value>
+restoreUnusedQubits(ValueRange inputs, ArrayRef<size_t> used,
+                    ValueRange narrowedResults);
+
+} // namespace qco::detail
 
 } // namespace mlir
