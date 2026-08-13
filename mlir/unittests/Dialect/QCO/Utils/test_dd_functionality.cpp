@@ -129,7 +129,7 @@ protected:
   static void
   expectSimulatesFromZero(func::FuncOp func, size_t nQubits,
                           llvm::ArrayRef<bool> expectedBits,
-                          std::optional<std::uint64_t> seed = std::nullopt) {
+                          std::optional<uint64_t> seed = std::nullopt) {
     auto dd = std::make_unique<dd::Package>(nQubits);
     auto expected = basisState(nQubits, expectedBits, *dd);
     if (seed) {
@@ -148,10 +148,10 @@ protected:
     dd->decRef(expected);
   }
 
-  enum class SampleApi : std::uint8_t { Sample, SampleWithClassics };
+  enum class SampleApi : uint8_t { Sample, SampleWithClassics };
 
   static void expectSampleHistogram(
-      func::FuncOp func, size_t nQubits, std::size_t shots, std::uint64_t seed,
+      func::FuncOp func, size_t nQubits, size_t shots, uint64_t seed,
       StringRef expectedShotKey, SampleApi api = SampleApi::Sample,
       std::optional<StringRef> expectedClassicalKey = std::nullopt) {
     auto dd = std::make_unique<dd::Package>(nQubits);
@@ -470,8 +470,8 @@ TEST_F(QCODDFunctionalityTest, Gphase) {
   const auto phase = std::polar(1.0, 0.25);
   const auto m0 = u0->getMatrix(1);
   const auto m1 = u1->getMatrix(1);
-  for (std::size_t r = 0; r < 2; ++r) {
-    for (std::size_t c = 0; c < 2; ++c) {
+  for (size_t r = 0; r < 2; ++r) {
+    for (size_t c = 0; c < 2; ++c) {
       EXPECT_TRUE(std::abs(m1[r][c] - (m0[r][c] * phase)) < 1e-10);
     }
   }
@@ -647,7 +647,7 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureCollapsesLikePackage) {
   });
   ASSERT_TRUE(mod);
 
-  constexpr std::uint64_t seed = 42;
+  constexpr uint64_t seed = 42;
   auto dd = std::make_unique<dd::Package>(1);
 
   std::mt19937_64 refRng(seed);
@@ -947,26 +947,6 @@ TEST_F(QCODDFunctionalityTest, SimulateScfForAppliesBodyTrips) {
   ASSERT_TRUE(mod);
 
   expectSimulatesFromZero(mainFunc(*mod), 1, {true});
-
-  auto deallocatedAlias = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @identity(%arg: memref<1xi1>) -> memref<1xi1> {
-        return %arg : memref<1xi1>
-      }
-      func.func @main() {
-        %register = memref.alloc() : memref<1xi1>
-        %alias = func.call @identity(%register)
-            : (memref<1xi1>) -> memref<1xi1>
-        %c0 = arith.constant 0 : index
-        memref.dealloc %alias : memref<1xi1>
-        %invalid = memref.load %register[%c0] : memref<1xi1>
-        return
-      }
-    }
-  )mlir",
-                                                      context.get());
-  ASSERT_TRUE(deallocatedAlias);
-  expectSimulateFail(mainFunc(*deallocatedAlias), 0);
 }
 
 TEST_F(QCODDFunctionalityTest, AcceptsScfForAtTripCountLimit) {
@@ -1214,6 +1194,95 @@ TEST_F(QCODDFunctionalityTest, RejectsEntangledQTensorDeallocation) {
   auto dd = std::make_unique<dd::Package>(2);
   std::mt19937_64 rng(3);
   EXPECT_TRUE(failed(sample(mainFunc(*mod), *dd, 1, rng)));
+}
+
+TEST_F(QCODDFunctionalityTest, DensitySimulationTracesOutEntangledQubit) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q0 = b.ry(std::numbers::pi / 3.0, b.staticQubit(0));
+    auto q1 = b.staticQubit(1);
+    std::tie(q0, q1) = b.cx(q0, q1);
+    b.qtensorDealloc(b.qtensorFromElements({q1}));
+    q0 = b.x(q0);
+    b.sink(q0);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  auto zero = dd::makeZeroState(2, *dd);
+  auto density = makeDensityMatrix(zero, 2, *dd);
+  dd->decRef(zero);
+  const auto result = simulateDensity(mainFunc(*mod), density, *dd);
+  ASSERT_TRUE(succeeded(result));
+  const auto matrix = result->getMatrix(1);
+  EXPECT_NEAR(matrix[0][0].real(), 0.25, 1e-12);
+  EXPECT_NEAR(matrix[0][1].real(), 0.0, 1e-12);
+  EXPECT_NEAR(matrix[1][0].real(), 0.0, 1e-12);
+  EXPECT_NEAR(matrix[1][1].real(), 0.75, 1e-12);
+  dd->decRef(*result);
+
+  zero = dd::makeZeroState(2, *dd);
+  density = makeDensityMatrix(zero, 2, *dd);
+  dd->decRef(zero);
+  std::mt19937_64 rng(7);
+  const auto histogram = sampleDensity(mainFunc(*mod), density, *dd, 1000, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  ASSERT_EQ(histogram->size(), 2U);
+  EXPECT_NEAR(histogram->at("0"), 250, 75);
+  EXPECT_NEAR(histogram->at("1"), 750, 75);
+}
+
+TEST_F(QCODDFunctionalityTest, DensityResetAfterEntangledDeallocation) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q0 = b.h(b.staticQubit(0));
+    auto q1 = b.staticQubit(1);
+    std::tie(q0, q1) = b.cx(q0, q1);
+    b.qtensorDealloc(b.qtensorFromElements({q1}));
+    q0 = b.reset(q0);
+    b.sink(q0);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  auto zero = dd::makeZeroState(2, *dd);
+  auto density = makeDensityMatrix(zero, 2, *dd);
+  dd->decRef(zero);
+  std::mt19937_64 rng(3);
+  const auto result = simulateDensity(mainFunc(*mod), density, *dd, rng);
+  ASSERT_TRUE(succeeded(result));
+  const auto matrix = result->getMatrix(1);
+  EXPECT_NEAR(matrix[0][0].real(), 1.0, 1e-12);
+  EXPECT_NEAR(matrix[0][1].real(), 0.0, 1e-12);
+  EXPECT_NEAR(matrix[1][0].real(), 0.0, 1e-12);
+  EXPECT_NEAR(matrix[1][1].real(), 0.0, 1e-12);
+  dd->decRef(*result);
+}
+
+TEST_F(QCODDFunctionalityTest, DensityMeasurementFeedsClassicalControl) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.h(b.staticQubit(0));
+    Value bit;
+    std::tie(q, bit) = b.measure(q);
+    q = b.qcoIf(
+        bit, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  auto zero = dd::makeZeroState(1, *dd);
+  auto density = makeDensityMatrix(zero, 1, *dd);
+  dd->decRef(zero);
+  std::mt19937_64 rng(11);
+  const auto result = simulateDensity(mainFunc(*mod), density, *dd, rng);
+  ASSERT_TRUE(succeeded(result));
+  const auto matrix = result->getMatrix(1);
+  EXPECT_NEAR(matrix[0][0].real(), 1.0, 1e-12);
+  EXPECT_NEAR(matrix[1][1].real(), 0.0, 1e-12);
+  dd->decRef(*result);
 }
 
 TEST_F(QCODDFunctionalityTest, QTensorFromElementsSupportsMatrixAndSimulation) {
@@ -1729,7 +1798,7 @@ TEST_F(QCODDFunctionalityTest, SampleHadamardApproximatelyBalanced) {
 
   auto dd = std::make_unique<dd::Package>(1);
   std::mt19937_64 rng(42);
-  constexpr std::size_t shots = 2000;
+  constexpr size_t shots = 2000;
   const auto hist = sample(mainFunc(*mod), *dd, shots, rng);
   ASSERT_TRUE(succeeded(hist));
   ASSERT_EQ(hist->size(), 2U);
@@ -2364,6 +2433,28 @@ TEST_F(QCODDFunctionalityTest, ClassicalMemRefErrorsAndDealloc) {
                                                   context.get());
   ASSERT_TRUE(useAfterFree);
   expectSimulateFail(mainFunc(*useAfterFree), 0);
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsLoadAfterAliasedMemRefDealloc) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @identity(%arg: memref<1xi1>) -> memref<1xi1> {
+        return %arg : memref<1xi1>
+      }
+      func.func @main() {
+        %register = memref.alloc() : memref<1xi1>
+        %alias = func.call @identity(%register)
+            : (memref<1xi1>) -> memref<1xi1>
+        %c0 = arith.constant 0 : index
+        memref.dealloc %alias : memref<1xi1>
+        %invalid = memref.load %register[%c0] : memref<1xi1>
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  expectSimulateFail(mainFunc(*mod), 0);
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalAndBadControlFlow) {

@@ -8,14 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "dd/DDDefinitions.hpp"
-#include "dd/Package.hpp"
+#include "ExactUnitaryTest.h"
 #include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 
@@ -38,7 +36,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -79,19 +76,6 @@ template <class T> [[nodiscard]] static T valid(llvm::Expected<T> value) {
   return numQubits;
 }
 
-[[nodiscard]] static mlir::qco::DynamicMatrix
-matrixFromDD(const dd::CMat& matrix) {
-  const auto dimension = static_cast<int64_t>(matrix.size());
-  mlir::qco::DynamicMatrix result(dimension);
-  for (int64_t row = 0; row < dimension; ++row) {
-    for (int64_t column = 0; column < dimension; ++column) {
-      result(row, column) =
-          matrix[static_cast<size_t>(row)][static_cast<size_t>(column)];
-    }
-  }
-  return result;
-}
-
 static void expectEquivalent(const OwningOpRef<ModuleOp>& expected,
                              const OwningOpRef<ModuleOp>& actual) {
   const auto expectedFunction = mainFunction(*expected);
@@ -99,21 +83,8 @@ static void expectEquivalent(const OwningOpRef<ModuleOp>& expected,
   const auto numQubits = countStaticQubits(expectedFunction);
   ASSERT_EQ(numQubits, countStaticQubits(actualFunction));
   ASSERT_GT(numQubits, 0U);
-
-  auto package = std::make_unique<dd::Package>(numQubits);
-  const auto expectedUnitary =
-      mlir::qco::buildFunctionality(expectedFunction, *package);
-  ASSERT_TRUE(mlir::succeeded(expectedUnitary));
-  const auto actualUnitary =
-      mlir::qco::buildFunctionality(actualFunction, *package);
-  ASSERT_TRUE(mlir::succeeded(actualUnitary));
-
-  const auto expectedMatrix =
-      matrixFromDD(expectedUnitary->getMatrix(numQubits));
-  const auto actualMatrix = matrixFromDD(actualUnitary->getMatrix(numQubits));
-  package->decRef(*expectedUnitary);
-  package->decRef(*actualUnitary);
-  EXPECT_TRUE(expectedMatrix.isApprox(actualMatrix));
+  mqt::test::expectFullUnitaryEqual(*expected, *actual, numQubits,
+                                    mlir::qco::MATRIX_TOLERANCE);
 }
 
 template <class Op> [[nodiscard]] static size_t countOps(ModuleOp module) {

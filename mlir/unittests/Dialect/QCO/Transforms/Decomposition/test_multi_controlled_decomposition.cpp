@@ -217,6 +217,20 @@ buildRCCXModule(MLIRContext* context) {
   return numQubits;
 }
 
+static void
+expectFunctionalityMatches(func::FuncOp funcOp,
+                           const qc::QuantumComputation& reference) {
+  const auto numQubits = countStaticQubits(funcOp);
+  ASSERT_EQ(numQubits, reference.getNqubits());
+  const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto actual = buildFunctionality(funcOp, *dd);
+  ASSERT_TRUE(succeeded(actual));
+  const auto expected = dd::buildFunctionality(reference, *dd);
+  EXPECT_EQ(*actual, expected);
+  dd->decRef(*actual);
+  dd->decRef(expected);
+}
+
 static void expectFullyDecomposed(func::FuncOp funcOp) {
   funcOp.walk([](CtrlOp op) {
     EXPECT_EQ(op.getNumControls(), 1U);
@@ -232,10 +246,6 @@ static void expectImplementsControlledPauli(func::FuncOp funcOp,
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
 
-  const auto dd = std::make_unique<dd::Package>(numQubits);
-  const auto decomposedDD = buildFunctionality(funcOp, *dd);
-  ASSERT_TRUE(succeeded(decomposedDD));
-
   qc::QuantumComputation referenceQc(numQubits);
   qc::Controls controls;
   for (size_t i = 0; i < numControls; ++i) {
@@ -248,10 +258,7 @@ static void expectImplementsControlledPauli(func::FuncOp funcOp,
     referenceQc.mcz(controls, target);
   }
 
-  const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
-  EXPECT_EQ(*decomposedDD, referenceDD);
-  dd->decRef(*decomposedDD);
-  dd->decRef(referenceDD);
+  expectFunctionalityMatches(funcOp, referenceQc);
 }
 
 static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
@@ -382,10 +389,6 @@ static void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
 
-  const auto dd = std::make_unique<dd::Package>(numQubits);
-  const auto decomposedDD = buildFunctionality(funcOp, *dd);
-  ASSERT_TRUE(succeeded(decomposedDD));
-
   qc::QuantumComputation referenceQc(numQubits);
   qc::Controls controls;
   for (size_t i = 0; i < numControls; ++i) {
@@ -393,10 +396,7 @@ static void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   }
   referenceQc.mcp(theta, controls, static_cast<qc::Qubit>(numControls));
 
-  const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
-  EXPECT_EQ(*decomposedDD, referenceDD);
-  dd->decRef(*decomposedDD);
-  dd->decRef(referenceDD);
+  expectFunctionalityMatches(funcOp, referenceQc);
 }
 
 /// Count `CtrlOp`s whose control operand count is at least @p minControlCount.
@@ -687,16 +687,9 @@ TEST_F(MultiControlledDecompositionTest, DecomposesSingleControlledSwap) {
 
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, 3U);
-  const auto dd = std::make_unique<dd::Package>(numQubits);
-  const auto decomposedDD = buildFunctionality(funcOp, *dd);
-  ASSERT_TRUE(succeeded(decomposedDD));
-
   qc::QuantumComputation referenceQc(numQubits);
   referenceQc.cswap(0, 1, 2);
-  const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
-  EXPECT_EQ(*decomposedDD, referenceDD);
-  dd->decRef(*decomposedDD);
-  dd->decRef(referenceDD);
+  expectFunctionalityMatches(funcOp, referenceQc);
 }
 
 TEST_F(MultiControlledDecompositionTest, DecomposesMultipleControlledSwap) {
@@ -716,16 +709,9 @@ TEST_F(MultiControlledDecompositionTest, DecomposesMultipleControlledSwap) {
 
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, 4U);
-  const auto dd = std::make_unique<dd::Package>(numQubits);
-  const auto decomposedDD = buildFunctionality(funcOp, *dd);
-  ASSERT_TRUE(succeeded(decomposedDD));
-
   qc::QuantumComputation referenceQc(numQubits);
   referenceQc.mcswap({0, 1}, 2, 3);
-  const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
-  EXPECT_EQ(*decomposedDD, referenceDD);
-  dd->decRef(*decomposedDD);
-  dd->decRef(referenceDD);
+  expectFunctionalityMatches(funcOp, referenceQc);
 }
 
 TEST_F(MultiControlledDecompositionTest,

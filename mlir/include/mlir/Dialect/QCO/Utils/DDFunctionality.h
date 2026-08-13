@@ -52,11 +52,12 @@ using DDBindings = DenseMap<Value, Attribute>;
  * - `qtensor.from_elements` / `extract` / `insert` / `dealloc` as linear
  *   bookkeeping over existing input wires
  * - Concrete `qco.if` / `qco.index_switch`, bounded `scf.for` / `scf.while`,
- *   standard `scf.if` / `scf.index_switch` / single-block
- *   `scf.execute_region`, concrete `cf.br` / `cf.cond_br` function CFGs, and
- *   non-recursive `func.call`
+ *   standard `scf.if` / `scf.index_switch` / multi-block
+ *   `scf.execute_region`, concrete `cf.br` / `cf.cond_br` / `cf.switch`
+ *   function CFGs, and non-recursive `func.call`
  * - Concrete integer, index, and floating-point `arith` operations and
- *   one-dimensional `memref` storage over those scalar types
+ *   common `math` operations, plus one-dimensional `memref` storage over those
+ *   scalar types, including aliases passed through `func.call`
  * - `qco.static` establishes the wire map (or qubit-typed `func` args if none);
  *   `sink` is ignored; `arith.constant` is ignored for matrix construction;
  *   `func.return` accepts qubit results only in canonical wire order
@@ -82,7 +83,7 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
  *
  * @details Same supported unitary op set as @ref buildFunctionality, plus
  * concrete classical control-flow (`qco.if`, `qco.index_switch`, `scf.if`,
- * `scf.index_switch`, and single-block `scf.execute_region`) and static- or
+ * `scf.index_switch`, and multi-block `scf.execute_region`) and static- or
  * concrete dynamic-shape 1-D `memref` registers of integer, index, or
  * floating-point values (`alloc`/`store`/`load`/`dealloc`).
  * `qco.alloc` and `qtensor.alloc` append zero-state wires, while
@@ -128,10 +129,10 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * Deterministic control-flow without measure/reset also works on the non-RNG
  * overload. Only one-dimensional qtensors of qubits are supported. Nested
  * regions are walked; `scf.for` with concrete positive step, concrete
- * `scf.while`, concrete `cf.br` / `cf.cond_br` function CFGs, and non-recursive
- * `func.call` are supported. Loops and function CFGs are limited to 10000
- * transitions. Consumes one reference to @p in regardless of whether
- * simulation succeeds or fails.
+ * `scf.while`, concrete `cf.br` / `cf.cond_br` / `cf.switch` function CFGs,
+ * and non-recursive `func.call` are supported. Loops and function CFGs are
+ * limited to 10000 transitions. Consumes one reference to @p in regardless of
+ * whether simulation succeeds or fails.
  *
  * @param func The QCO function to simulate
  * @param in The input state; one reference is consumed
@@ -144,6 +145,44 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
 FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
                                  dd::Package& dd, std::mt19937_64& rng,
                                  const DDBindings& bindings = DDBindings());
+
+/**
+ * @brief Construct the density operator @f$|\psi\rangle\langle\psi|@f$.
+ *
+ * @param state Pure input state; its reference is retained by the caller
+ * @param numQubits Number of active qubits represented by @p state
+ * @param dd The DD package to use
+ * @return A referenced matrix DD representing the pure-state density operator
+ */
+dd::MatrixDD makeDensityMatrix(const dd::VectorDD& state, size_t numQubits,
+                               dd::Package& dd);
+
+/**
+ * @brief Simulate a QCO function using a density-matrix DD.
+ *
+ * @details Unitary operations evolve the state as @f$U\rho U^\dagger@f$.
+ * Qubit and qtensor deallocation performs a physical partial trace, including
+ * for entangled qubits. The RNG overload additionally supports collapsing
+ * measurement and reset. Consumes one reference to @p in regardless of
+ * success or failure.
+ *
+ * @param func The QCO function to simulate
+ * @param in Input density matrix; one reference is consumed
+ * @param dd The DD package to use
+ * @param bindings Concrete values for symbolic scalar function arguments
+ * @return The output density-matrix DD on success
+ */
+FailureOr<dd::MatrixDD>
+simulateDensity(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
+                const DDBindings& bindings = DDBindings());
+
+/// @copydoc simulateDensity(func::FuncOp, const dd::MatrixDD&, dd::Package&,
+/// const DDBindings&)
+/// Uses @p rng for collapsing measurement and reset.
+FailureOr<dd::MatrixDD>
+simulateDensity(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
+                std::mt19937_64& rng,
+                const DDBindings& bindings = DDBindings());
 
 /**
  * @brief Sample measurement outcomes from a QCO `func.func`.
@@ -164,9 +203,9 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * @return Histogram of outcome strings on success, or failure for unsupported
  *         programs
  */
-FailureOr<std::map<std::string, std::size_t>>
-sample(func::FuncOp func, dd::Package& dd, std::size_t shots,
-       std::mt19937_64& rng, const DDBindings& bindings = DDBindings());
+FailureOr<std::map<std::string, size_t>>
+sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
+       const DDBindings& bindings = DDBindings());
 
 /**
  * @brief Sample measurement outcomes from a QCO `func.func` on a given input.
@@ -184,10 +223,22 @@ sample(func::FuncOp func, dd::Package& dd, std::size_t shots,
  * @return Histogram of outcome strings on success, or failure for unsupported
  *         programs
  */
-FailureOr<std::map<std::string, std::size_t>>
-sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
-       std::size_t shots, std::mt19937_64& rng,
-       const DDBindings& bindings = DDBindings());
+FailureOr<std::map<std::string, size_t>>
+sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd, size_t shots,
+       std::mt19937_64& rng, const DDBindings& bindings = DDBindings());
+
+/**
+ * @brief Sample a QCO function from an input density-matrix DD.
+ *
+ * @details Supports mixed states and entangled qubit deallocation. Each final
+ * sample collapses a referenced copy of the simulated density state. Programs
+ * with mid-circuit measurement or reset are re-simulated per shot. Consumes one
+ * reference to @p in.
+ */
+FailureOr<std::map<std::string, size_t>>
+sampleDensity(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
+              size_t shots, std::mt19937_64& rng,
+              const DDBindings& bindings = DDBindings());
 
 /// Histograms produced by @ref sampleWithClassics.
 struct SampleResult {

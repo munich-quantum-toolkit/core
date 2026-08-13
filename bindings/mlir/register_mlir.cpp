@@ -14,12 +14,14 @@
 #include "mlir/Compiler/FoMaCAdapter.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
@@ -150,26 +152,32 @@ makeQCODDBindings(mlir::func::FuncOp func,
       throw nb::value_error("QCO DD binding argument index is out of range");
     }
 
-    mlir::Value argument = func.getArgument(static_cast<unsigned>(index));
+    const mlir::Value argument = func.getArgument(static_cast<unsigned>(index));
     mlir::Type type = argument.getType();
     mlir::Attribute attribute;
     if (type.isInteger(1)) {
       if (const auto* value = std::get_if<bool>(&binding)) {
         attribute = mlir::BoolAttr::get(func.getContext(), *value);
       }
-    } else if (mlir::isa<mlir::IndexType, mlir::IntegerType>(type)) {
+    } else if (llvm::isa<mlir::IndexType, mlir::IntegerType>(type)) {
       if (const auto* value = std::get_if<int64_t>(&binding)) {
-        attribute = mlir::IntegerAttr::get(type, *value);
+        const auto width = llvm::isa<mlir::IndexType>(type)
+                               ? 64U
+                               : llvm::cast<mlir::IntegerType>(type).getWidth();
+        if (width >= 64U || llvm::APInt(64, static_cast<uint64_t>(*value), true)
+                                .isSignedIntN(width)) {
+          attribute = mlir::IntegerAttr::get(type, *value);
+        }
       }
-    } else if (const auto floatType = mlir::dyn_cast<mlir::FloatType>(type)) {
+    } else if (type.isIntOrFloat()) {
       if (const auto* value = std::get_if<double>(&binding)) {
-        attribute = mlir::FloatAttr::get(floatType, *value);
+        attribute = mlir::FloatAttr::get(type, *value);
       }
     } else if (const auto tensorType =
-                   mlir::dyn_cast<mlir::RankedTensorType>(type);
+                   llvm::dyn_cast<mlir::RankedTensorType>(type);
                tensorType && tensorType.getRank() == 1 &&
                tensorType.isDynamicDim(0) &&
-               mlir::isa<mlir::qco::QubitType>(tensorType.getElementType())) {
+               llvm::isa<mlir::qco::QubitType>(tensorType.getElementType())) {
       if (const auto* value = std::get_if<int64_t>(&binding);
           value != nullptr && *value >= 0) {
         attribute = mlir::IntegerAttr::get(
@@ -186,21 +194,12 @@ makeQCODDBindings(mlir::func::FuncOp func,
   return bindings;
 }
 
-[[nodiscard]] std::mt19937_64 makeRng(const std::uint64_t seed) {
-  if (seed == 0) {
+[[nodiscard]] std::mt19937_64 makeRng(const std::optional<uint64_t>& seed) {
+  if (!seed.has_value() || *seed == 0) {
     std::random_device rd;
     return std::mt19937_64(rd());
   }
-  return std::mt19937_64(seed);
-}
-
-[[nodiscard]] std::mt19937_64
-makeRng(const std::optional<std::uint64_t>& seed) {
-  if (!seed.has_value()) {
-    std::random_device rd;
-    return std::mt19937_64(rd());
-  }
-  return makeRng(*seed);
+  return std::mt19937_64(*seed);
 }
 
 /// Run @p fn under a diagnostic handler and raise `ValueError` on failure,
@@ -1025,7 +1024,7 @@ Raises:
                                      func, initialState, ddPackage, bindings);
                                });
         }
-        auto rng = makeRng(*seed);
+        auto rng = makeRng(seed);
         return takeFailureOr(
             func.getContext(), "cannot simulate this QCO program", [&] {
               return mlir::qco::simulate(func, initialState, ddPackage, rng,
@@ -1051,6 +1050,54 @@ Returns:
 
 Raises:
     ValueError: When the program is unsupported for simulation.)pb");
+
+  m.def(
+      "make_density_matrix",
+      [](const dd::VectorDD& state, const size_t numQubits,
+         dd::Package& ddPackage) {
+        if (numQubits > ddPackage.qubits()) {
+          throw nb::value_error(
+              "num_qubits exceeds the capacity of the DD package");
+        }
+        return mlir::qco::makeDensityMatrix(state, numQubits, ddPackage);
+      },
+      "state"_a, "num_qubits"_a, "dd_package"_a, nb::keep_alive<0, 3>(),
+      R"pb(Construct ``|psi><psi|`` from a pure DD state.
+
+The input vector reference remains owned by the caller. The returned matrix DD
+is referenced and must be released with ``DDPackage.dec_ref_mat``.
+
+Raises:
+    ValueError: When ``num_qubits`` exceeds the DD package capacity.)pb");
+
+  m.def(
+      "simulate_density",
+      [](const mlir::QCOProgram& program, const dd::MatrixDD& initialState,
+         dd::Package& ddPackage, const std::optional<uint64_t> seed,
+         const QCODDBindingMap& pythonBindings) {
+        auto func = entryFunc(program);
+        auto bindings = makeQCODDBindings(func, pythonBindings);
+        if (!seed.has_value()) {
+          return takeFailureOr(func.getContext(),
+                               "cannot density-simulate this QCO program", [&] {
+                                 return mlir::qco::simulateDensity(
+                                     func, initialState, ddPackage, bindings);
+                               });
+        }
+        auto rng = makeRng(seed);
+        return takeFailureOr(
+            func.getContext(), "cannot density-simulate this QCO program", [&] {
+              return mlir::qco::simulateDensity(func, initialState, ddPackage,
+                                                rng, bindings);
+            });
+      },
+      "program"_a, "initial_state"_a, "dd_package"_a, "seed"_a = nb::none(),
+      nb::kw_only(), "bindings"_a = QCODDBindingMap{}, nb::keep_alive<0, 3>(),
+      R"pb(Simulate a QCO program on a density-matrix DD.
+
+Unitary gates evolve ``rho`` as ``U rho U*`` and deallocation performs a
+partial trace, including for entangled qubits. The input matrix reference is
+consumed. Supply ``seed`` for programs containing measurement or reset.)pb");
 
   // Sampling uses a caller-provided ``dd::Package`` for the call only; the
   // binding does not share that package across threads. Release the GIL only
@@ -1079,6 +1126,8 @@ Raises:
       "bindings"_a = QCODDBindingMap{},
       R"pb(Sample final computational-basis outcomes from a QCO program.
 
+The same ``QCOProgram`` must not be sampled concurrently from multiple threads.
+
 Args:
     program: A QCO program whose entry ``func.func`` is sampled.
     dd_package: DD package with enough qubits for the program. Not thread-safe;
@@ -1094,6 +1143,31 @@ Returns:
 
 Raises:
     ValueError: When the program is unsupported for sampling.)pb");
+
+  m.def(
+      "sample_density",
+      [](const mlir::QCOProgram& program, const dd::MatrixDD& initialState,
+         dd::Package& ddPackage, const size_t shots,
+         const std::optional<uint64_t> seed,
+         const QCODDBindingMap& pythonBindings) {
+        auto func = entryFunc(program);
+        auto bindings = makeQCODDBindings(func, pythonBindings);
+        auto rng = makeRng(seed);
+        return takeFailureOr(
+            func.getContext(), "cannot density-sample this QCO program", [&] {
+              const nb::gil_scoped_release release;
+              return mlir::qco::sampleDensity(func, initialState, ddPackage,
+                                              shots, rng, bindings);
+            });
+      },
+      "program"_a, "initial_state"_a, "dd_package"_a, "shots"_a = 1024U,
+      "seed"_a = nb::none(), nb::kw_only(), "bindings"_a = QCODDBindingMap{},
+      R"pb(Sample a QCO program from a density-matrix DD.
+
+The input matrix reference is consumed. Mixed states and entangled qubit
+deallocation are supported. The DD package is not thread-safe and must not be
+shared across threads while sampling. The same ``QCOProgram`` must not be
+sampled concurrently from multiple threads.)pb");
 
   m.def(
       "sample_with_classics",
@@ -1119,6 +1193,8 @@ Raises:
       nb::kw_only(), "initial_state"_a = nb::none(),
       "bindings"_a = QCODDBindingMap{},
       R"pb(Sample final and mid-circuit classical outcomes from a QCO program.
+
+The same ``QCOProgram`` must not be sampled concurrently from multiple threads.
 
 Args:
     program: A QCO program whose entry ``func.func`` is sampled.
