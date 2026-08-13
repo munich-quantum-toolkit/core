@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from typing import overload
 
 from . import driver as driver
+from . import slurm as slurm
 
 class Job:
     """A job represents a submitted quantum program execution."""

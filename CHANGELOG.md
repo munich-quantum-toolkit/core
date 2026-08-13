@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add C++ and Python adapters that open the QDMI device named by one local
+  Slurm license environment value ([#2025]) ([**@burgholzer**])
 - ✨ Add an `unroll-modifiers` pass for unrolling multi-operation modifiers
   ([#2015]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add Qiskit circuit import and export to the compiler collection ([#2031])
@@ -762,6 +764,7 @@ for previous changelogs._
 [#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
 [#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
 [#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
+[#2025]: https://github.com/munich-quantum-toolkit/core/pull/2025
 [#2018]: https://github.com/munich-quantum-toolkit/core/pull/2018
 [#2017]: https://github.com/munich-quantum-toolkit/core/pull/2017
 [#2016]: https://github.com/munich-quantum-toolkit/core/pull/2016
