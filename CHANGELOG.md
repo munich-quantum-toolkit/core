@@ -113,6 +113,7 @@ releases may include breaking changes.
 
 ### Changed
 
+- ⬆️ Update `nanobind` to version 2.14.0 ([#2073]) ([**@denialhaag**])
 - 🛡️ Isolate DDSIM QIR job execution and restrict statevector extraction to
   terminal `irreversible` regions of Base-profile programs ([#2036])
   ([**@burgholzer**])
@@ -738,6 +739,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2073]: https://github.com/munich-quantum-toolkit/core/pull/2073
 [#2060]: https://github.com/munich-quantum-toolkit/core/pull/2060
 [#2058]: https://github.com/munich-quantum-toolkit/core/pull/2058
 [#2049]: https://github.com/munich-quantum-toolkit/core/pull/2049
