@@ -55,8 +55,10 @@ releases may include breaking changes.
   [#1979], [#2007], [#2026], [#2030], [#2066]) ([**@burgholzer**],
   [**@denialhaag**], [**@simon1hofmann**], [**@li-mingbao**], [**@DRovara**],
   [**@MatthiasReumann**])
-- ✨ Add decision diagram-based construction and simulation of static unitary
-  QCO functions ([#1915]) ([**@simon1hofmann**])
+- ✨ Add decision diagram-based construction and simulation of QCO functions,
+  including static unitaries, mid-circuit `measure`/`reset`, concrete
+  `if`/`index_switch`/`scf.for`/`func.call`, classical SSA, and dense `k>3` wire
+  embedding ([#1915], [#1973]) ([**@simon1hofmann**])
 - ✨ Add target-independent two-qubit gate fusion, target-native post-routing
   synthesis, and operation-capability and static-site conformance ([#1865],
   [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
