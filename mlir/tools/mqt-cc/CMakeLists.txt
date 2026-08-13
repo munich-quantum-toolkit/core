@@ -25,6 +25,7 @@ target_link_libraries(
           MLIRJeffToQCO
           MLIRBytecodeWriter
           MLIRMathDialect
+          MLIRQIRUtils
           MLIRTargetLLVMIRExport
           MLIRBuiltinToLLVMIRTranslation
           MLIRLLVMToLLVMIRTranslation

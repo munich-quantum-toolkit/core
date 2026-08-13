@@ -17,8 +17,9 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Error.h>
 
-#include <stdexcept>
+#include <cassert>
 #include <string>
 
 using mlir::CompilerTarget;
@@ -28,17 +29,15 @@ findOperation(const CompilerTarget& target, const llvm::StringRef name) {
   const auto* const found =
       llvm::find_if(target.operations(),
                     [&](const auto& op) { return op.canonicalName() == name; });
-  if (found == target.operations().end()) {
-    throw std::out_of_range("Target operation not found");
-  }
+  assert(found != target.operations().end() && "Target operation not found");
   return *found;
 }
 
 TEST(CompilerFoMaCAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
-  const auto target = [] {
+  const auto target = llvm::cantFail([] {
     const auto device = fomac::Session::openDevice("mqt.sc.iqm.garnet");
     return mlir::compilerTargetFromDevice(device);
-  }();
+  }());
 
   ASSERT_TRUE(target.name());
   EXPECT_EQ(*target.name(), "IQM Garnet");
@@ -83,7 +82,7 @@ TEST(CompilerFoMaCAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
 
 TEST(CompilerFoMaCAdapterTest, PreservesMissingTopologyAsAllToAll) {
   const auto device = fomac::Session::openDevice("mqt.ddsim.default");
-  const auto target = mlir::compilerTargetFromDevice(device);
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   EXPECT_EQ(target.numQubits(), 65535);
   EXPECT_FALSE(target.hasExplicitTopology());
@@ -98,15 +97,11 @@ TEST(CompilerFoMaCAdapterTest, RejectsNonhomogeneousOperationSupport) {
   overrides.deviceConfiguration =
       qdmi::FileDeviceConfiguration{MQT_CORE_MLIR_HETEROGENEOUS_SC_CONFIG};
   const auto device = fomac::Session::openDevice("mqt.sc.default", overrides);
-  try {
-    const auto target = mlir::compilerTargetFromDevice(device);
-    FAIL() << "Expected a homogeneous-operation diagnostic, got "
-           << target.operations().size() << " target operations";
-  } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string(error.what()).find("homogeneous"), std::string::npos);
-    EXPECT_NE(std::string(error.what()).find("every topology edge"),
-              std::string::npos);
-  }
+  auto target = mlir::compilerTargetFromDevice(device);
+  ASSERT_FALSE(target);
+  const auto message = llvm::toString(target.takeError());
+  EXPECT_NE(message.find("homogeneous"), std::string::npos);
+  EXPECT_NE(message.find("every topology edge"), std::string::npos);
 }
 
 TEST(CompilerFoMaCAdapterTest, RejectsDirectionalOperationWithoutReverseSites) {
@@ -114,14 +109,10 @@ TEST(CompilerFoMaCAdapterTest, RejectsDirectionalOperationWithoutReverseSites) {
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
       MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG};
   const auto device = fomac::Session::openDevice("mqt.sc.default", overrides);
-  try {
-    const auto target = mlir::compilerTargetFromDevice(device);
-    FAIL() << "Expected a bidirectional-operation diagnostic, got "
-           << target.operations().size() << " target operations";
-  } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string(error.what()).find("both orientations"),
-              std::string::npos);
-  }
+  auto target = mlir::compilerTargetFromDevice(device);
+  ASSERT_FALSE(target);
+  const auto message = llvm::toString(target.takeError());
+  EXPECT_NE(message.find("both orientations"), std::string::npos);
 }
 
 TEST(CompilerFoMaCAdapterTest,
@@ -130,7 +121,7 @@ TEST(CompilerFoMaCAdapterTest,
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
       MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG};
   const auto device = fomac::Session::openDevice("mqt.sc.default", overrides);
-  const auto target = mlir::compilerTargetFromDevice(device);
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   ASSERT_EQ(target.couplings().size(), 1);
   const auto& cx = findOperation(target, "cx");
@@ -145,13 +136,9 @@ TEST(CompilerFoMaCAdapterTest,
 
 TEST(CompilerFoMaCAdapterTest, RejectsNeutralAtomZoneModels) {
   const auto device = fomac::Session::openDevice("mqt.na.default");
-  try {
-    const auto target = mlir::compilerTargetFromDevice(device);
-    FAIL() << "Expected a neutral-atom diagnostic, got " << target.numQubits()
-           << " target sites";
-  } catch (const std::invalid_argument& error) {
-    EXPECT_NE(std::string(error.what()).find("only circuit-model devices"),
-              std::string::npos);
-    EXPECT_NE(std::string(error.what()).find("zone"), std::string::npos);
-  }
+  auto target = mlir::compilerTargetFromDevice(device);
+  ASSERT_FALSE(target);
+  const auto message = llvm::toString(target.takeError());
+  EXPECT_NE(message.find("only circuit-model devices"), std::string::npos);
+  EXPECT_NE(message.find("zone"), std::string::npos);
 }

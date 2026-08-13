@@ -413,6 +413,50 @@ def test_qco_program_compiles_for_direct_sparse_target() -> None:
     assert qco.ir.count("qco.measure") == 2
 
 
+def test_compiler_target_constructors_preserve_python_api() -> None:
+    """Construct every target metadata type and target overload."""
+    duration_unit = CompilerTarget.DurationUnit("ns", 1.0)
+    sites = [
+        CompilerTarget.Site(10, "q0", 100, 200),
+        CompilerTarget.Site(20, "q1"),
+    ]
+    site_tuple = CompilerTarget.SiteTuple([10, 20], duration=10, fidelity=0.99)
+    operation = CompilerTarget.Operation("cx", 2, 0, site_tuples=[site_tuple], duration=20, fidelity=0.98)
+
+    targets = [
+        CompilerTarget(2, duration_unit=duration_unit),
+        CompilerTarget("dense", 2, duration_unit=duration_unit),
+        CompilerTarget(sites, operations=[operation], duration_unit=duration_unit),
+        CompilerTarget("sparse", sites, operations=[operation], duration_unit=duration_unit),
+    ]
+
+    assert [target.num_qubits for target in targets] == [2, 2, 2, 2]
+    assert targets[1].name == "dense"
+    assert targets[3].name == "sparse"
+    assert sites[0].name == "q0"
+    assert sites[0].t1 == 100
+    assert sites[0].t2 == 200
+    assert site_tuple.sites == [10, 20]
+    assert len(operation.site_tuples) == 1
+    assert operation.site_tuples[0].sites == [10, 20]
+    assert duration_unit.unit == "ns"
+
+
+def test_compiler_target_construction_preserves_validation_errors() -> None:
+    """Translate explicit C++ construction errors to Python ``ValueError``."""
+    for _ in range(2):
+        with pytest.raises(ValueError, match="must contain at least one site"):
+            CompilerTarget(0)
+    with pytest.raises(ValueError, match="site ID must be nonnegative"):
+        CompilerTarget.Site(-1)
+    with pytest.raises(ValueError, match="contains a duplicate site"):
+        CompilerTarget.SiteTuple([0, 0])
+    with pytest.raises(ValueError, match="duration unit must not be empty"):
+        CompilerTarget.DurationUnit("", 1.0)
+    with pytest.raises(ValueError, match="operation qubit count must be positive"):
+        CompilerTarget.Operation("x", 0, 0)
+
+
 def test_compiler_target_snapshots_qdmi_device(garnet_target: CompilerTarget) -> None:
     """Retain IQM topology and calibration independently of the live device."""
     target = garnet_target

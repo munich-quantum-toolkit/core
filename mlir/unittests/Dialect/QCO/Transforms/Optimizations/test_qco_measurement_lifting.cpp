@@ -139,15 +139,15 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   SmallVector<Value> q0Vec;
   std::tie(q12, q0Vec) =
       programBuilder.ctrl({q1, q2}, {q0}, [&](ValueRange target) {
-        return SmallVector{programBuilder.x(target[0])};
+        return SmallVector<Value>{programBuilder.x(target[0])};
       });
   std::tie(q12, q0Vec) =
       programBuilder.ctrl({q12[1], q12[0]}, q0Vec, [&](ValueRange target) {
-        return SmallVector{programBuilder.h(target[0])};
+        return SmallVector<Value>{programBuilder.h(target[0])};
       });
   std::tie(q12, q0Vec) =
       programBuilder.ctrl({q12[1], q12[0]}, q0Vec, [&](ValueRange target) {
-        return SmallVector{programBuilder.x(target[0])};
+        return SmallVector<Value>{programBuilder.x(target[0])};
       });
 
   Value c1;
@@ -181,15 +181,15 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   SmallVector<Value> r0Vec;
   std::tie(r12, r0Vec) =
       referenceBuilder.ctrl({r1, r2}, {r0}, [&](ValueRange target) {
-        return SmallVector{referenceBuilder.x(target[0])};
+        return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
   std::tie(r12, r0Vec) =
       referenceBuilder.ctrl({r12[1], r12[0]}, r0Vec, [&](ValueRange target) {
-        return SmallVector{referenceBuilder.h(target[0])};
+        return SmallVector<Value>{referenceBuilder.h(target[0])};
       });
   std::tie(r12, r0Vec) =
       referenceBuilder.ctrl({r12[1], r12[0]}, r0Vec, [&](ValueRange target) {
-        return SmallVector{referenceBuilder.x(target[0])};
+        return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
 
   r0 = referenceBuilder.h(r0Vec[0]);
@@ -230,7 +230,7 @@ TEST_F(QCOMeasurementLiftingTest,
   SmallVector<Value> q0Vec;
   std::tie(q12, q0Vec) =
       programBuilder.ctrl({q1, q2}, {q0}, [&](ValueRange target) {
-        return SmallVector{programBuilder.x(target[0])};
+        return SmallVector<Value>{programBuilder.x(target[0])};
       });
 
   Value c1;
@@ -258,7 +258,7 @@ TEST_F(QCOMeasurementLiftingTest,
   SmallVector<Value> r0Vec;
   std::tie(r12, r0Vec) =
       referenceBuilder.ctrl({r1, r2}, {r0}, [&](ValueRange target) {
-        return SmallVector{referenceBuilder.x(target[0])};
+        return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
 
   referenceBuilder.sink(r0Vec[0]);
@@ -417,6 +417,41 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
 }
 
 /**
+ * @brief Test: An RZ immediately before a measurement is removed even when the
+ * measured qubit remains observable afterward.
+ */
+TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  auto q = programBuilder.h(programBuilder.allocQubit());
+  q = programBuilder.rz(0.789, q);
+  Value firstOutcome;
+  std::tie(q, firstOutcome) = programBuilder.measure(q);
+  q = programBuilder.h(q);
+  Value secondOutcome;
+  std::tie(q, secondOutcome) = programBuilder.measure(q);
+  programBuilder.sink(q);
+  program = programBuilder.finalize({firstOutcome, secondOutcome});
+
+  referenceBuilder.initialize(
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  auto r = referenceBuilder.h(referenceBuilder.allocQubit());
+  Value referenceFirstOutcome;
+  std::tie(r, referenceFirstOutcome) = referenceBuilder.measure(r);
+  r = referenceBuilder.h(r);
+  Value referenceSecondOutcome;
+  std::tie(r, referenceSecondOutcome) = referenceBuilder.measure(r);
+  referenceBuilder.sink(r);
+  reference = referenceBuilder.finalize(
+      {referenceFirstOutcome, referenceSecondOutcome});
+
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+/**
  * @brief Test: Tests lifting a measurement over multiple anti-diagonal gates.
  */
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
@@ -523,6 +558,55 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
   ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+/**
+ * @brief Test: A controlled diagonal gate is preserved when lifting a target
+ * measurement because it can kick phase back to the control.
+ */
+TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
+  programBuilder.initialize(
+      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+  auto control = programBuilder.h(programBuilder.allocQubit());
+  auto target = programBuilder.x(programBuilder.allocQubit());
+  std::tie(control, target) = programBuilder.cz(control, target);
+
+  Value targetOutcome;
+  std::tie(target, targetOutcome) = programBuilder.measure(target);
+  control = programBuilder.h(control);
+  Value controlOutcome;
+  std::tie(control, controlOutcome) = programBuilder.measure(control);
+  programBuilder.sink(control);
+  programBuilder.sink(target);
+  program = programBuilder.finalize({targetOutcome, controlOutcome});
+
+  referenceBuilder.initialize(
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
+  auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto referenceTarget = referenceBuilder.allocQubit();
+  Value rawTargetOutcome;
+  std::tie(referenceTarget, rawTargetOutcome) =
+      referenceBuilder.measure(referenceTarget);
+  referenceTarget = referenceBuilder.x(referenceTarget);
+  std::tie(referenceControl, referenceTarget) =
+      referenceBuilder.cz(referenceControl, referenceTarget);
+  referenceControl = referenceBuilder.h(referenceControl);
+  Value referenceControlOutcome;
+  std::tie(referenceControl, referenceControlOutcome) =
+      referenceBuilder.measure(referenceControl);
+  const auto trueConstant = referenceBuilder.boolConstant(true);
+  auto referenceTargetOutcome =
+      arith::XOrIOp::create(referenceBuilder, referenceBuilder.getLoc(),
+                            rawTargetOutcome, trueConstant);
+  referenceBuilder.sink(referenceControl);
+  referenceBuilder.sink(referenceTarget);
+  reference = referenceBuilder.finalize(
+      {referenceTargetOutcome.getResult(), referenceControlOutcome});
+
+  ASSERT_TRUE(runMeasurementLiftingPass(program.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }

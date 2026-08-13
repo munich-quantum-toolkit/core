@@ -106,12 +106,17 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
       return mlir::failure();
     }
 
-    if (isDiagonal(predecessor)) {
-      swapGateWithMeasurement(predecessorUnitary, op, rewriter);
+    if (!isDiagonal(predecessor)) {
+      return mlir::failure();
+    }
+
+    if (predecessorUnitary.isSingleQubit()) {
+      rewriter.replaceOp(predecessor, predecessorUnitary.getInputQubits());
       return mlir::success();
     }
 
-    return mlir::failure();
+    swapGateWithMeasurement(predecessorUnitary, op, rewriter);
+    return mlir::success();
   }
 };
 
@@ -141,10 +146,10 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
     if (isInverting(predecessor)) {
       swapGateWithMeasurement(predecessorUnitary, op, rewriter);
       rewriter.setInsertionPointAfter(op);
-      const mlir::Value trueConstant = rewriter.create<mlir::arith::ConstantOp>(
-          op.getLoc(), rewriter.getBoolAttr(true));
-      auto inversion = rewriter.create<mlir::arith::XOrIOp>(
-          op.getLoc(), op.getResult(), trueConstant);
+      const mlir::Value trueConstant = mlir::arith::ConstantOp::create(
+          rewriter, op.getLoc(), rewriter.getBoolAttr(true));
+      auto inversion = mlir::arith::XOrIOp::create(
+          rewriter, op.getLoc(), op.getResult(), trueConstant);
       // We need `replaceUsesWithIf` so that we can replace all uses except for
       // the one use that defines the inverted bit.
       rewriter.replaceUsesWithIf(op.getResult(), inversion.getResult(),
