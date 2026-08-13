@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING
 
 from ..._compat.optional import OptionalDependencyTester
@@ -22,9 +21,7 @@ HAS_PENNYLANE = OptionalDependencyTester(  # ruff:ignore[non-empty-init-module] 
 
 __all__ = ["HAS_PENNYLANE"]
 
-if TYPE_CHECKING or (  # ruff:ignore[non-empty-init-module] Optional plugin
-    sys.version_info >= (3, 11) and HAS_PENNYLANE
-):
+if TYPE_CHECKING or HAS_PENNYLANE:  # ruff:ignore[non-empty-init-module] Optional plugin
     from .converter import ConvertedProgram, convert_program
     from .device import DDSIMDevice, QDMIDevice
     from .exceptions import (
