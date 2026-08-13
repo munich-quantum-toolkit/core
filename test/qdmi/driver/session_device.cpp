@@ -53,6 +53,29 @@ namespace {
   return "<unset>";
 }
 
+[[nodiscard]] auto deviceStatus(const std::string& configuredStatus)
+    -> QDMI_Device_Status {
+  if (configuredStatus == "busy") {
+    return QDMI_DEVICE_STATUS_BUSY;
+  }
+  if (configuredStatus == "offline") {
+    return QDMI_DEVICE_STATUS_OFFLINE;
+  }
+  if (configuredStatus == "error") {
+    return QDMI_DEVICE_STATUS_ERROR;
+  }
+  if (configuredStatus == "maintenance") {
+    return QDMI_DEVICE_STATUS_MAINTENANCE;
+  }
+  if (configuredStatus == "calibration") {
+    return QDMI_DEVICE_STATUS_CALIBRATION;
+  }
+  if (configuredStatus == "max") {
+    return QDMI_DEVICE_STATUS_MAX;
+  }
+  return QDMI_DEVICE_STATUS_IDLE;
+}
+
 [[nodiscard]] auto childDeviceHandle() -> QDMI_Child_Device {
   static QDMI_Child_Device_impl_d child;
   return &child;
@@ -236,6 +259,11 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
       *sizeRet = sizeof(QDMI_Operation) + 1;
     }
     return value == nullptr ? QDMI_SUCCESS : QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (prop == QDMI_DEVICE_PROPERTY_STATUS) {
+    return queryValue(
+        deviceStatus(parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4)),
+        size, value, sizeRet);
   }
   if (prop != QDMI_DEVICE_PROPERTY_NAME) {
     return QDMI_ERROR_NOTSUPPORTED;

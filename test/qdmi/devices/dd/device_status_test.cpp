@@ -8,9 +8,7 @@
  * Licensed under the MIT License
  */
 
-/*
- * DDSIM QDMI Device - Device status transitions (OFFLINE/BUSY/IDLE)
- */
+/* DDSIM QDMI device status transitions. */
 #include "helpers/circuits.hpp"
 #include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
@@ -35,8 +33,9 @@ QDMI_Device_Status queryStatus(MQT_DDSIM_QDMI_Device_Session session) {
 TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
   const qdmi_test::SessionGuard s{};
 
-  // Initial status can be OFFLINE depending on implementation; do not assert
-  // it. Submit a job to force BUSY then completion to IDLE.
+  EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_IDLE);
+
+  // Submit a job to force BUSY, then wait for the return to IDLE.
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
                                   qdmi_test::QASM3_HEAVY_SAMPLING),

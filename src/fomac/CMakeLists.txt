@@ -13,11 +13,18 @@ if(NOT TARGET ${TARGET_NAME})
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME FoMaC)
 
   # Add sources to target
-  target_sources(${TARGET_NAME} PRIVATE FoMaC.cpp)
+  target_sources(${TARGET_NAME} PRIVATE FoMaC.cpp Slurm.cpp)
 
   # Add headers using file sets
-  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/fomac/FoMaC.hpp)
+  target_sources(
+    ${TARGET_NAME}
+    PUBLIC FILE_SET
+           HEADERS
+           BASE_DIRS
+           ${MQT_CORE_INCLUDE_BUILD_DIR}
+           FILES
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/fomac/FoMaC.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/fomac/Slurm.hpp)
 
   # Add link libraries
   target_link_libraries(
