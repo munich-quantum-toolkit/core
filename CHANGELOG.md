@@ -801,6 +801,7 @@ for previous changelogs._
 [#1978]: https://github.com/munich-quantum-toolkit/core/pull/1978
 [#1976]: https://github.com/munich-quantum-toolkit/core/pull/1976
 [#1975]: https://github.com/munich-quantum-toolkit/core/pull/1975
+[#1973]: https://github.com/munich-quantum-toolkit/core/pull/1973
 [#1972]: https://github.com/munich-quantum-toolkit/core/pull/1972
 [#1967]: https://github.com/munich-quantum-toolkit/core/pull/1967
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965
