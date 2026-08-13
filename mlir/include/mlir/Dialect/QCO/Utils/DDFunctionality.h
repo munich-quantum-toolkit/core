@@ -56,9 +56,10 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  * @brief Simulate a static unitary QCO `func.func` on a given input state.
  *
  * @details Same supported unitary op set as @ref buildFunctionality.
- * Mid-circuit measurements, resets, and control-flow require the RNG overload
- * below. Consumes one reference to @p in regardless of whether simulation
- * succeeds or fails.
+ * `qco.if` / `qco.index_switch` are executed when the selector is a concrete
+ * classical value. Mid-circuit measurements and resets require the RNG
+ * overload below. Consumes one reference to @p in regardless of whether
+ * simulation succeeds or fails.
  *
  * @param func The QCO function to simulate
  * @param in The input state, represented as a vector DD; one reference is
