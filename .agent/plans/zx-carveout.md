@@ -92,10 +92,10 @@ Boost.Multiprecision, or GMP artifact.
 
 The local Core branch removes the complete ZX implementation and all exclusive
 Boost/GMP integration. Clean debug and release builds each passed 4,377 tests,
-lint and HTML documentation passed, and an install smoke test contained no ZX,
-Boost.Multiprecision, GMP, or stale CMake artifact. Link checking reached the
-documentation successfully but retained only pre-existing external 403/404 and
-stale upstream-link failures.
+lint and HTML documentation passed, and both an install smoke test and a freshly
+built wheel contained no ZX, Boost.Multiprecision, GMP, or stale CMake artifact.
+Link checking reached the documentation successfully but retained only
+pre-existing external 403/404 and stale upstream-link failures.
 
 The local QCEC branch imports the implementation from Core commit
 `e56bab0360cac0c3a57db0730a253e97d5fb65c6`, isolates it in `ec::zx`, and keeps
