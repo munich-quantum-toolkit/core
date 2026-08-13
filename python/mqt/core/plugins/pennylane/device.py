@@ -55,6 +55,8 @@ if TYPE_CHECKING:
     from pennylane.tape import QuantumScript, QuantumScriptOrBatch
     from pennylane.typing import Result, ResultBatch
 
+    from mqt.core.typing import QDMIJobParameters, QDMISessionParameters
+
 __all__ = ["DDSIMDevice", "QDMIDevice"]
 
 _SESSION_PARAMETERS = frozenset({
@@ -122,8 +124,8 @@ class QDMIDevice(Device):
         wires: int | Sequence[Hashable] | None = None,
         shots: int | Sequence[int | tuple[int, int]] | Shots | None = 1024,
         *,
-        session_parameters: Mapping[str, Any] | None = None,
-        job_parameters: Mapping[str, str | bool | float | None] | None = None,
+        session_parameters: QDMISessionParameters | None = None,
+        job_parameters: QDMIJobParameters | None = None,
     ) -> None:
         """Initialize and open a fresh QDMI device session.
 
@@ -378,8 +380,8 @@ class DDSIMDevice(QDMIDevice):
         wires: int | Sequence[Hashable] | None = None,
         shots: int | Sequence[int | tuple[int, int]] | Shots | None = 1024,
         *,
-        session_parameters: Mapping[str, object] | None = None,
-        job_parameters: Mapping[str, str | bool | float | None] | None = None,
+        session_parameters: QDMISessionParameters | None = None,
+        job_parameters: QDMIJobParameters | None = None,
     ) -> None:
         """Open the built-in DDSIM device by its stable QDMI ID."""
         super().__init__(

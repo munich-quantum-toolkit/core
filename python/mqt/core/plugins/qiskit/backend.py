@@ -50,6 +50,8 @@ if TYPE_CHECKING:
     from qiskit.circuit import Instruction, Parameter
     from qiskit.circuit.parameterexpression import ParameterValueType
 
+    from ..._compat.typing import Unpack
+    from ...typing import QDMISessionParameters
     from .provider import QDMIProvider
 
     # Type alias for parameter values
@@ -194,7 +196,7 @@ class QDMIBackend(BackendV2):
         device_id: str,
         *,
         provider: QDMIProvider | None = None,
-        session_parameters: Mapping[str, Any] | None = None,
+        **session_parameters: Unpack[QDMISessionParameters],
     ) -> QDMIBackend:
         """Open a registered QDMI device and adapt it for Qiskit.
 
@@ -207,7 +209,7 @@ class QDMIBackend(BackendV2):
             A Qiskit backend for a fresh QDMI device session.
         """
         return cls(
-            device=open_device(device_id, **dict(session_parameters or {})),
+            device=open_device(device_id, **session_parameters),
             provider=provider,
         )
 
