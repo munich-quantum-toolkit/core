@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: keep (Passes.h.inc)
 
 #include <llvm/ADT/StringMap.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -26,6 +27,9 @@
 #include <string>
 
 namespace mlir::qco {
+
+#define GEN_PASS_DEF_QUANTUMFUNCTIONBOUNDARYCOMMUTATION
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 /**
  * @brief Check if two single-qubit unitary operations cancel each other out
@@ -147,10 +151,11 @@ tryBoundaryCommutation(func::CallOp call, SymbolTable& symbolTable,
  * @param moduleOp The module to transform.
  * @param symbolTable The symbol table of @p moduleOp.
  */
-void runQuantumFunctionBoundaryCommutation(
-    ModuleOp moduleOp, SymbolTable& symbolTable,
-    SmallVectorImpl<func::FuncOp>* touchedFunctions) {
+void runQuantumFunctionBoundaryCommutation(ModuleOp moduleOp) {
+  SymbolTable symbolTable(moduleOp);
   BoundarySpecializations previousSpecializations;
+  // Callees this stage redirects calls away from, plus the copies it creates.
+  SmallVector<func::FuncOp> touchedFunctions;
 
   // Collect the calls first: the commutation erases the caller-side gate, which
   // would invalidate a walk in progress.
@@ -164,9 +169,29 @@ void runQuantumFunctionBoundaryCommutation(
         continue;
       }
       tryBoundaryCommutation(call, symbolTable, i, previousSpecializations,
-                             touchedFunctions);
+                             &touchedFunctions);
     }
   }
+
+  // Drop the callees this stage left without callers.
+  eraseOrphanedSpecializations(symbolTable, touchedFunctions);
 }
+
+namespace {
+/// Wraps `runQuantumFunctionBoundaryCommutation` so it can be scheduled on its
+/// own.
+struct QuantumFunctionBoundaryCommutation final
+    : impl::QuantumFunctionBoundaryCommutationBase<
+          QuantumFunctionBoundaryCommutation> {
+  using impl::QuantumFunctionBoundaryCommutationBase<
+      QuantumFunctionBoundaryCommutation>::
+      QuantumFunctionBoundaryCommutationBase;
+
+protected:
+  void runOnOperation() override {
+    runQuantumFunctionBoundaryCommutation(getOperation());
+  }
+};
+} // namespace
 
 } // namespace mlir::qco

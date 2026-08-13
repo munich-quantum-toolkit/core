@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: keep (Passes.h.inc)
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -37,6 +38,9 @@
 #include <utility>
 
 namespace mlir::qco {
+
+#define GEN_PASS_DEF_QUANTUMARGUMENTPROMOTION
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
 
@@ -407,5 +411,19 @@ void runQuantumArgumentPromotion(ModuleOp moduleOp) {
     promoteArgument(arg, current);
   }
 }
+
+namespace {
+/// Wraps `runQuantumArgumentPromotion` so it can be scheduled on its own.
+struct QuantumArgumentPromotion final
+    : impl::QuantumArgumentPromotionBase<QuantumArgumentPromotion> {
+  using impl::QuantumArgumentPromotionBase<
+      QuantumArgumentPromotion>::QuantumArgumentPromotionBase;
+
+protected:
+  void runOnOperation() override {
+    runQuantumArgumentPromotion(getOperation());
+  }
+};
+} // namespace
 
 } // namespace mlir::qco

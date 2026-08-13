@@ -43,6 +43,31 @@ namespace mlir::qco {
 [[nodiscard]] func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName);
 
 /**
+ * @brief Erase the functions a stage left without callers.
+ *
+ * @details
+ * Only the functions in @p candidates are considered, which are the callees a
+ * stage redirected calls away from and the specializations it created. A
+ * private function no stage touched is left alone even when it is unused,
+ * because removing it is the user's decision rather than ours.
+ *
+ * Erasing one function can orphan another, for example when a specialization is
+ * itself specialized further, so this repeats until nothing more is removed.
+ *
+ * @param symbolTable The symbol table to erase from.
+ * @param candidates The functions that may have been orphaned. Erased entries
+ * are removed from it, so the remaining handles stay valid.
+ */
+void eraseOrphanedSpecializations(SymbolTable& symbolTable,
+                                  SmallVector<func::FuncOp>& candidates);
+
+/**
+ * @brief Specialize callees for what is known at their call sites.
+ * @param moduleOp The module to transform.
+ */
+void runContextSensitiveSpecialization(ModuleOp moduleOp);
+
+/**
  * @brief Replace qubit-tensor arguments by the scalar qubits a callee uses.
  *
  * @details
@@ -77,16 +102,10 @@ void runAuxiliaryQubitHoisting(ModuleOp moduleOp);
  * Both gates are removed and the call is redirected to a specialized copy of
  * the callee, cached per callee and parameter index.
  *
+ * Callees this stage leaves without callers are erased.
+ *
  * @param moduleOp The module to transform.
- * @param symbolTable The symbol table of @p moduleOp. It is mutated: every
- * specialization created here is inserted into it.
- * @param touchedFunctions Optional collector. Every callee a call was
- * redirected away from, and every specialization created, is appended to it.
- * Those are the functions this call may have left without callers, which lets
- * a caller clean them up without having to guess which ones it created.
  */
-void runQuantumFunctionBoundaryCommutation(
-    ModuleOp moduleOp, SymbolTable& symbolTable,
-    SmallVectorImpl<func::FuncOp>* touchedFunctions = nullptr);
+void runQuantumFunctionBoundaryCommutation(ModuleOp moduleOp);
 
 } // namespace mlir::qco

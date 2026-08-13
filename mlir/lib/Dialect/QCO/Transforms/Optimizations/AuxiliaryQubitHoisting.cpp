@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: keep (Passes.h.inc)
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/DenseSet.h>
@@ -34,6 +35,9 @@
 #include <utility>
 
 namespace mlir::qco {
+
+#define GEN_PASS_DEF_AUXILIARYQUBITHOISTING
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 /**
  * @brief Find the operation that releases the qubit produced by @p alloc.
@@ -356,5 +360,17 @@ void runAuxiliaryQubitHoisting(ModuleOp moduleOp) {
     tryAuxiliaryQubitHoisting(func, callMapping);
   }
 }
+
+namespace {
+/// Wraps `runAuxiliaryQubitHoisting` so it can be scheduled on its own.
+struct AuxiliaryQubitHoisting final
+    : impl::AuxiliaryQubitHoistingBase<AuxiliaryQubitHoisting> {
+  using impl::AuxiliaryQubitHoistingBase<
+      AuxiliaryQubitHoisting>::AuxiliaryQubitHoistingBase;
+
+protected:
+  void runOnOperation() override { runAuxiliaryQubitHoisting(getOperation()); }
+};
+} // namespace
 
 } // namespace mlir::qco

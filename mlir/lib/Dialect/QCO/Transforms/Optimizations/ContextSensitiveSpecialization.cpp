@@ -13,9 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-// IWYU pragma: begin_keep (Passes.h.inc)
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-// IWYU pragma: end_keep
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: keep (Passes.h.inc)
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringMap.h>
@@ -24,6 +22,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -44,6 +43,9 @@
 
 namespace mlir::qco {
 
+#define GEN_PASS_DEF_CONTEXTSENSITIVESPECIALIZATION
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+
 /**
  * @brief Redirect a call to a specialized copy of its callee.
  *
@@ -56,9 +58,6 @@ static void updateSpecializedCall(func::CallOp callOp, func::FuncOp newCallee,
   rewriter.modifyOpInPlace(callOp,
                            [&] { callOp.setCallee(newCallee.getName()); });
 }
-
-#define GEN_PASS_DEF_QUANTUMIPO
-#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
 
@@ -503,105 +502,49 @@ struct ContextSensitiveSpecializationPattern final
 } // namespace
 
 /**
- * @brief Erase the functions this pass left without callers.
- *
- * @details
- * Only the functions in @p candidates are considered, which are the callees the
- * pass redirected calls away from and the specializations it created. A private
- * function the pass never touched is left alone even when it is unused, because
- * removing it is the user's decision rather than this pass's.
- *
- * Erasing one function can orphan another, for example when a specialization is
- * itself specialized further, so this repeats until nothing more is removed.
- *
- * @param symbolTable The symbol table to erase from.
- * @param candidates The functions the pass may have orphaned. Erased entries
- * are removed from it, so the remaining handles stay valid.
- */
-static void
-eraseOrphanedSpecializations(SymbolTable& symbolTable,
-                             SmallVector<func::FuncOp>& candidates) {
-  // Duplicates would leave dangling handles once the first copy is erased.
-  SmallVector<func::FuncOp> unique;
-  DenseSet<Operation*> seen;
-  for (auto candidate : candidates) {
-    if (seen.insert(candidate.getOperation()).second) {
-      unique.emplace_back(candidate);
-    }
-  }
-  candidates = std::move(unique);
-
-  auto erasedAny = true;
-  while (erasedAny) {
-    erasedAny = false;
-    SmallVector<func::FuncOp> remaining;
-    for (auto candidate : candidates) {
-      if (candidate.isPrivate() && SymbolTable::symbolKnownUseEmpty(
-                                       candidate, candidate->getParentOp())) {
-        symbolTable.erase(candidate);
-        erasedAny = true;
-        continue;
-      }
-      remaining.emplace_back(candidate);
-    }
-    candidates = std::move(remaining);
-  }
-}
-
-/**
- * @brief Populates the given pattern set with the different IPO patterns.
+ * @brief Populate the pattern set with the specialization pattern.
  *
  * @param patterns The pattern set to populate.
+ * @param symbolTable The symbol table specializations are inserted into.
+ * @param previousSpecializations Cache of already-created specializations.
  */
-static void
-populateQuantumIPOPatterns(RewritePatternSet& patterns,
-                           SymbolTable& symbolTable,
-                           PreviousSpecializations& previousSpecializations) {
+static void populateSpecializationPatterns(
+    RewritePatternSet& patterns, SymbolTable& symbolTable,
+    PreviousSpecializations& previousSpecializations) {
   patterns.add<ContextSensitiveSpecializationPattern>(
       patterns.getContext(), symbolTable, previousSpecializations);
 }
 
-namespace {
+void runContextSensitiveSpecialization(ModuleOp moduleOp) {
+  SymbolTable symbolTable(moduleOp);
 
-/**
- * @brief This pass performs quantum inter-procedural optimizations (IPO).
- */
-struct QuantumIPO final : impl::QuantumIPOBase<QuantumIPO> {
-  using impl::QuantumIPOBase<QuantumIPO>::QuantumIPOBase;
+  RewritePatternSet patterns(moduleOp.getContext());
+  PreviousSpecializations previousSpecializations;
+  populateSpecializationPatterns(patterns, symbolTable,
+                                 previousSpecializations);
+
+  if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
+    llvm::reportFatalInternalError(
+        "failed to apply context-sensitive specialization patterns");
+  }
+
+  // Drop the callees this stage left without callers.
+  eraseOrphanedSpecializations(symbolTable,
+                               previousSpecializations.touchedFunctions);
+}
+
+namespace {
+/// Wraps `runContextSensitiveSpecialization` so it can be scheduled on its own.
+struct ContextSensitiveSpecialization final
+    : impl::ContextSensitiveSpecializationBase<ContextSensitiveSpecialization> {
+  using impl::ContextSensitiveSpecializationBase<
+      ContextSensitiveSpecialization>::ContextSensitiveSpecializationBase;
 
 protected:
   void runOnOperation() override {
-    // Get the current operation being operated on.
-    auto op = getOperation();
-    auto* ctx = &getContext();
-    SymbolTable symbolTable(op);
-
-    // Define the set of patterns to use.
-    RewritePatternSet patterns(ctx);
-    PreviousSpecializations previousSpecializations;
-    populateQuantumIPOPatterns(patterns, symbolTable, previousSpecializations);
-
-    // Apply patterns in an iterative and greedy manner.
-    if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
-      signalPassFailure();
-      return;
-    }
-
-    // Drop the originals the specialization orphaned before the later stages
-    // run, so that they are not walked, and not rewritten, for nothing.
-    auto& candidates = previousSpecializations.touchedFunctions;
-    eraseOrphanedSpecializations(symbolTable, candidates);
-
-    runQuantumArgumentPromotion(op);
-    runAuxiliaryQubitHoisting(op);
-    runQuantumFunctionBoundaryCommutation(op, symbolTable, &candidates);
-
-    // Boundary commutation can orphan the specializations created above, so
-    // clean up once more with the candidates both stages contributed.
-    eraseOrphanedSpecializations(symbolTable, candidates);
+    runContextSensitiveSpecialization(getOperation());
   }
 };
-
 } // namespace
 
 } // namespace mlir::qco

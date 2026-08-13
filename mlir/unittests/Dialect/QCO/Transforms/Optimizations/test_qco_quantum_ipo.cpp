@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
+#include "mlir/Support/Passes.h"
 
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -26,6 +27,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <memory>
 #include <numbers>
 #include <tuple>
 #include <utility>
@@ -56,15 +58,36 @@ protected:
   }
 
   /**
-   * @brief Adds the quantum IPO pass to the current context and runs it.
+   * @brief Runs the interprocedural optimization pipeline on the module.
    *
-   * @param moduleOp The moduleOp to run the pass on.
+   * @details
+   * The stages are also registered as passes in their own right, so a test that
+   * wants to isolate one of them can schedule just that pass instead.
+   *
+   * @param moduleOp The moduleOp to run the pipeline on.
    */
   static LogicalResult runQuantumIPOPass(ModuleOp moduleOp) {
     PassManager pm(moduleOp.getContext());
-    pm.addPass(createQuantumIPO());
+    populateQuantumIPOPipeline(pm);
     pm.addPass(createCanonicalizerPass());
     return pm.run(moduleOp);
+  }
+
+  /**
+   * @brief Runs a single interprocedural stage and compares against the
+   * reference.
+   *
+   * @param stage The one stage to schedule.
+   */
+  void expectSingleStageMatchesReference(std::unique_ptr<Pass> stage) {
+    PassManager pm(moduleOp->getContext());
+    pm.addPass(std::move(stage));
+    pm.addPass(createCanonicalizerPass());
+    ASSERT_TRUE(pm.run(moduleOp.get()).succeeded());
+    ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+    EXPECT_TRUE(
+        areModulesEquivalentWithPermutations(moduleOp.get(), reference.get()));
   }
 
   /**
@@ -2028,4 +2051,84 @@ TEST_F(QCOQuantumIPOTest, multipleFunctionsWithDistinctOptimizations) {
   reference = referenceBuilder.finalize();
 
   expectModuleMatchesReference();
+}
+
+// ==========================================================================
+// The stages are individually schedulable.
+// ==========================================================================
+
+/**
+ * @brief Argument promotion works when scheduled on its own, without the rest
+ * of the interprocedural pipeline.
+ */
+TEST_F(QCOQuantumIPOTest, argumentPromotionRunsOnItsOwn) {
+  const auto tensorType = programBuilder.getQubitTensorType(2);
+
+  programBuilder.initialize();
+  auto args = programBuilder.startFunction("f", {tensorType}, {tensorType});
+  auto [rest, inner] = programBuilder.qtensorExtract(args[0], 0);
+  programBuilder.endFunction(
+      {programBuilder.qtensorInsert(programBuilder.h(inner), rest, 0)});
+
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto tensor = programBuilder.qtensorFromElements({q0, q1});
+  auto results = programBuilder.call("f", {tensor});
+  programBuilder.qtensorDealloc(results[0]);
+  moduleOp = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  const auto qubitType = referenceBuilder.getQubitType();
+  auto refArgs = referenceBuilder.startFunction("f", {qubitType}, {qubitType});
+  referenceBuilder.endFunction({referenceBuilder.h(refArgs[0])});
+
+  auto refQ0 = referenceBuilder.allocQubit();
+  auto refQ1 = referenceBuilder.allocQubit();
+  auto refTensor = referenceBuilder.qtensorFromElements({refQ0, refQ1});
+  auto [refRest, refExtracted] = referenceBuilder.qtensorExtract(refTensor, 0);
+  auto refResults = referenceBuilder.call("f", {refExtracted});
+  referenceBuilder.qtensorDealloc(
+      referenceBuilder.qtensorInsert(refResults[0], refRest, 0));
+  reference = referenceBuilder.finalize();
+
+  expectSingleStageMatchesReference(createQuantumArgumentPromotion());
+}
+
+/**
+ * @brief Scheduling only the specialization stage leaves the boundary
+ * commutation undone, which the full pipeline would have applied.
+ */
+TEST_F(QCOQuantumIPOTest, specializationRunsWithoutBoundaryCommutation) {
+  const auto qubitType = programBuilder.getQubitType();
+
+  programBuilder.initialize();
+  auto args = programBuilder.startFunction("f", {qubitType, qubitType},
+                                           {qubitType, qubitType});
+  auto first = programBuilder.z(args[0]);
+  auto second = programBuilder.h(programBuilder.x(args[1]));
+  programBuilder.endFunction({first, second});
+
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.x(programBuilder.allocQubit());
+  auto results = programBuilder.call("f", {q0, q1});
+  programBuilder.sink(results[0]);
+  programBuilder.sink(results[1]);
+  moduleOp = programBuilder.finalize();
+
+  referenceBuilder.initialize();
+  // The |0> specialization drops the `z`, ...
+  auto specArgs = referenceBuilder.startFunction(
+      "f_spec_zero_arg_0", {qubitType, qubitType}, {qubitType, qubitType});
+  referenceBuilder.endFunction(
+      {specArgs[0], referenceBuilder.h(referenceBuilder.x(specArgs[1]))});
+
+  auto refQ0 = referenceBuilder.allocQubit();
+  // ... while the caller-side `x` survives, because commutation did not run.
+  auto refQ1 = referenceBuilder.x(referenceBuilder.allocQubit());
+  auto refResults = referenceBuilder.call("f_spec_zero_arg_0", {refQ0, refQ1});
+  referenceBuilder.sink(refResults[0]);
+  referenceBuilder.sink(refResults[1]);
+  reference = referenceBuilder.finalize();
+
+  expectSingleStageMatchesReference(createContextSensitiveSpecialization());
 }
