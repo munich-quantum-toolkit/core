@@ -28,10 +28,6 @@ categories:
     when:
       labels:
         - "NA"
-  - title: "🕸️ MQT Core ZX Package"
-    when:
-      labels:
-        - "ZX"
   - title: "🚀 Features and Enhancements"
     when:
       labels:

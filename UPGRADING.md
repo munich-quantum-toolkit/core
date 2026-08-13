@@ -6,6 +6,19 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Removal of the ZX-calculus library
+
+MQT Core no longer provides the `mqt-core-zx` library, the `MQT::CoreZX` CMake
+target, the `mqt-core/zx` headers, or the global `zx` namespace. Remove these
+from downstream includes and link dependencies. Equivalence-checking users
+should use [MQT QCEC]; QCEC's ZX implementation is internal and is not a
+replacement public API.
+
+The `MQT::Multiprecision` target and the `USE_SYSTEM_BOOST`,
+`MQT_CORE_WITH_GMP`, and `MQT_CORE_ZX_SYSTEM_BOOST` CMake options have also been
+removed. MQT Core no longer discovers, fetches, or exports configuration for
+Boost.Multiprecision or GMP.
+
 ### QDMI Python namespace
 
 The native Python module has moved from `mqt.core.fomac` to `mqt.core.qdmi`.

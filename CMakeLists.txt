@@ -183,7 +183,6 @@ if(BUILD_MQT_CORE_BINDINGS)
       mqt-core-algorithms
       mqt-core-circuit-optimizer
       mqt-core-dd
-      mqt-core-zx
       mqt-core-na
       mqt-core-ir-bindings
       mqt-core-dd-bindings

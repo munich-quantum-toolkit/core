@@ -124,8 +124,6 @@ releases may include breaking changes.
 - 💥 Update the QIR runner for QIR 2.1 entry points and resource management,
   with entry-point selection and reproducible multi-shot execution ([#2035])
   ([**@burgholzer**])
-- 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
-  ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
 - 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
   corresponding build options ([#1953]) ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
@@ -135,6 +133,10 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
+  `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
+  and GMP build support. Equivalence-checking users should use [MQT QCEC]; its
+  ZX implementation is internal and does not provide a replacement public API.
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466])
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
@@ -782,7 +784,6 @@ for previous changelogs._
 [#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1987]: https://github.com/munich-quantum-toolkit/core/pull/1987
 [#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
-[#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
 [#1980]: https://github.com/munich-quantum-toolkit/core/pull/1980
 [#1979]: https://github.com/munich-quantum-toolkit/core/pull/1979
