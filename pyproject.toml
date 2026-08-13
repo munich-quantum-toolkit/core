@@ -21,7 +21,7 @@ readme = "README.md"
 authors = [
     { name = "Lukas Burgholzer", email = "burgholzer@me.com" }
 ]
-keywords = ["MQT", "quantum-computing", "design-automation", "decision-diagrams", "zx-calculus"]
+keywords = ["MQT", "quantum-computing", "design-automation", "decision-diagrams"]
 license = "MIT"
 license-files = ["LICENSE"]
 
