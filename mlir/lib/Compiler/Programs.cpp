@@ -24,6 +24,7 @@
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/Utils/Transforms/Passes.h"
@@ -66,8 +67,6 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
-#include <ios>
 #include <memory>
 #include <optional>
 #include <span>
@@ -232,8 +231,7 @@ bool OpenQASMProgram::write(const std::filesystem::path& path) const {
   stream << source_;
   stream.flush();
   if (stream.has_error()) {
-    llvm::errs() << "failed to write OpenQASM output file '" << path.string()
-                 << "'\n";
+    llvm::errs() << "failed to write OpenQASM file '" << path.string() << "'\n";
     return false;
   }
   return true;
@@ -534,17 +532,8 @@ std::vector<std::byte> JeffProgram::toBytes() const {
 }
 
 bool JeffProgram::write(const std::filesystem::path& path) const {
-  const auto bytes = toBytes();
-  std::ofstream output(path, std::ios::binary);
-  if (!output) {
-    mod().emitError() << "failed to open output file '" << path.string() << "'";
-    return false;
-  }
-  output.write(reinterpret_cast<const char*>(bytes.data()),
-               static_cast<std::streamsize>(bytes.size()));
-  if (!output) {
-    mod().emitError() << "failed to write output file '" << path.string()
-                      << "'";
+  if (failed(serializeToFile(mod(), path.string()))) {
+    mod().emitError() << "failed to write jeff file '" << path.string() << "'";
     return false;
   }
   return true;
@@ -580,17 +569,20 @@ bool QIRProgram::cleanup() {
 QIRProfile QIRProgram::profile() const noexcept { return profile_; }
 
 [[nodiscard]] static std::unique_ptr<llvm::Module>
-translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
+translateToLLVM(ModuleOp mod, llvm::LLVMContext& context,
+                const QIRProfile profile) {
   auto llvmModule = translateModuleToLLVMIR(mod, context);
   if (!llvmModule) {
     mod.emitError("failed to translate QIR MLIR to LLVM IR");
+    return nullptr;
   }
+  qir::normalizeQIRModuleFlags(*llvmModule, profile == QIRProfile::Adaptive);
   return llvmModule;
 }
 
 std::optional<std::string> QIRProgram::llvmIR() const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(mod(), context);
+  auto llvmModule = translateToLLVM(mod(), context, profile_);
   if (!llvmModule) {
     return std::nullopt;
   }
@@ -602,7 +594,7 @@ std::optional<std::string> QIRProgram::llvmIR() const {
 
 std::optional<std::vector<std::byte>> QIRProgram::toBitcode() const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(mod(), context);
+  auto llvmModule = translateToLLVM(mod(), context, profile_);
   if (!llvmModule) {
     return std::nullopt;
   }
@@ -617,7 +609,7 @@ std::optional<std::vector<std::byte>> QIRProgram::toBitcode() const {
 
 bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(mod(), context);
+  auto llvmModule = translateToLLVM(mod(), context, profile_);
   if (!llvmModule) {
     return false;
   }
@@ -632,8 +624,8 @@ bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
   llvm::WriteBitcodeToFile(*llvmModule, stream);
   stream.flush();
   if (stream.has_error()) {
-    mod().emitError() << "failed to write bitcode output file '"
-                      << path.string() << "'";
+    mod().emitError() << "failed to write bitcode file '" << path.string()
+                      << "'";
     return false;
   }
   return true;

@@ -28,7 +28,8 @@ releases may include breaking changes.
   compiler APIs and `mqt-cc` ([#2003]) ([**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets and a canonical target compilation
   pipeline for decomposition, optimization, mapping, native synthesis, and
-  conformance ([#1993], [#1999]) ([**@simon1hofmann**], [**@burgholzer**])
+  conformance ([#1993], [#1999], [#2049]) ([**@simon1hofmann**],
+  [**@burgholzer**])
 - ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
   stable QDMI registry IDs ([#1992]) ([**@burgholzer**])
 - ✨ Add compiler-wide scoped global-phase normalization with exact modifier
@@ -45,8 +46,8 @@ releases may include breaking changes.
   ([#1264], [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570],
   [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751],
   [#1755], [#1787], [#1815], [#1823], [#1830], [#1886], [#1933], [#1978],
-  [#1979], [#2007], [#2026], [#2030]) ([**@burgholzer**], [**@denialhaag**],
-  [**@simon1hofmann**], [**@li-mingbao**], [**@DRovara**],
+  [#1979], [#2007], [#2026], [#2030], [#2066]) ([**@burgholzer**],
+  [**@denialhaag**], [**@simon1hofmann**], [**@li-mingbao**], [**@DRovara**],
   [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction and simulation of static unitary
   QCO functions ([#1915]) ([**@simon1hofmann**])
@@ -85,19 +86,19 @@ releases may include breaking changes.
   correction ([#1407], [#1674], [#2002], [#2038]) ([**@J4MMlE**],
   [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
-  [#1676], [#1706], [#1776], [#1836], [#1934], [#2000]) ([**@denialhaag**],
-  [**@burgholzer**])
+  [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018])
+  ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping scalar- and tensor-allocated
   circuits to compiler-target topologies while preserving target site IDs and
   materializing routing workspace on demand ([#1537], [#1547], [#1568], [#1581],
   [#1583], [#1588], [#1600], [#1664], [#1709], [#1716], [#1748], [#1805],
-  [#1870], [#1904], [#1911], [#1951], [#1997], [#2016]) ([**@MatthiasReumann**],
-  [**@burgholzer**])
+  [#1870], [#1904], [#1911], [#1951], [#1997], [#2016], [#2060])
+  ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add passes for quantum-specific inter-procedural optimizations ([#1970])
   ([**@DRovara**], [**@burgholzer**])
 - ✨ Add a pass for qubit reuse in quantum programs, as well as related
-  auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924])
-  ([**@DRovara**], [**@burgholzer**])
+  auxiliary passes and patterns ([#1705], [#1755], [#1756], [#1923], [#1924],
+  [#2039]) ([**@DRovara**], [**@burgholzer**], [**@simon1hofmann**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
   [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464],
   [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510],
@@ -114,6 +115,7 @@ releases may include breaking changes.
 
 ### Changed
 
+- ⬆️ Update `nanobind` to version 2.14.0 ([#2073]) ([**@denialhaag**])
 - 🛡️ Isolate DDSIM QIR job execution and restrict statevector extraction to
   terminal `irreversible` regions of Base-profile programs ([#2036])
   ([**@burgholzer**])
@@ -739,17 +741,23 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2073]: https://github.com/munich-quantum-toolkit/core/pull/2073
+[#2066]: https://github.com/munich-quantum-toolkit/core/pull/2066
+[#2060]: https://github.com/munich-quantum-toolkit/core/pull/2060
 [#2058]: https://github.com/munich-quantum-toolkit/core/pull/2058
-[#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
+[#2049]: https://github.com/munich-quantum-toolkit/core/pull/2049
 [#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
+[#2039]: https://github.com/munich-quantum-toolkit/core/pull/2039
+[#2038]: https://github.com/munich-quantum-toolkit/core/pull/2038
 [#2036]: https://github.com/munich-quantum-toolkit/core/pull/2036
 [#2035]: https://github.com/munich-quantum-toolkit/core/pull/2035
-[#2038]: https://github.com/munich-quantum-toolkit/core/pull/2038
+[#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
 [#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
 [#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
+[#2018]: https://github.com/munich-quantum-toolkit/core/pull/2018
 [#2017]: https://github.com/munich-quantum-toolkit/core/pull/2017
-[#2015]: https://github.com/munich-quantum-toolkit/core/pull/2015
 [#2016]: https://github.com/munich-quantum-toolkit/core/pull/2016
+[#2015]: https://github.com/munich-quantum-toolkit/core/pull/2015
 [#2014]: https://github.com/munich-quantum-toolkit/core/pull/2014
 [#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
 [#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
