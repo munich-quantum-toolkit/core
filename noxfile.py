@@ -227,16 +227,10 @@ def docs(session: nox.Session) -> None:
         "SKBUILD_CMAKE_BUILD_TYPE": "MinSizeRel",
         # Let scikit-build-core generate the MLIR reference pages while it
         # builds the extension used to execute the documentation examples.
-        # The docs exercise only the DDSIM provider. Unity builds reduce the
-        # repeated parsing cost of the LLVM-heavy sources on constrained RTD
-        # workers. Header-set verification and IPO remain enabled elsewhere.
+        # The docs exercise only the DDSIM provider. The common Python package
+        # configuration enables unity builds.
         "SKBUILD_CMAKE_ARGS": (
-            "-DBUILD_MQT_CORE_DOCUMENTATION=ON;"
-            "-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;"
-            "-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF;"
-            "-DCMAKE_UNITY_BUILD=ON;"
-            "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;"
-            "-DENABLE_IPO=OFF"
+            "-DBUILD_MQT_CORE_DOCUMENTATION=ON;-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF"
         ),
     }
 
@@ -278,13 +272,7 @@ def stubs(session: nox.Session) -> None:
         # favors compilation speed over optimized code. The settings match the
         # documentation build, which lets both sessions share a build tree.
         "SKBUILD_CMAKE_BUILD_TYPE": "MinSizeRel",
-        "SKBUILD_CMAKE_ARGS": (
-            "-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;"
-            "-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF;"
-            "-DCMAKE_UNITY_BUILD=ON;"
-            "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;"
-            "-DENABLE_IPO=OFF"
-        ),
+        "SKBUILD_CMAKE_ARGS": ("-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF"),
     }
 
     session.run("uv", "sync", "--inexact", "--only-group", "build", env=env)

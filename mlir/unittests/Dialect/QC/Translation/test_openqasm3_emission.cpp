@@ -35,6 +35,7 @@
 #include <string>
 #include <tuple>
 
+namespace mqt::test::openqasm3_emission {
 using namespace mlir;
 
 static DialectRegistry emissionDialects() {
@@ -891,3 +892,5 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
 }
 
 } // namespace
+
+} // namespace mqt::test::openqasm3_emission

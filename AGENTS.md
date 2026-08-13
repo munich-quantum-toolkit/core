@@ -57,6 +57,9 @@ MQT Core. The project-wide policy for AI-assisted contributions is
   and general computer science communities. Use the established term that most
   precisely matches the concept. If communities use different terms, explain the
   mapping once. Do not invent synonyms for variety.
+- Preserve the established capitalization of project and dependency names in
+  prose. For example, write `jeff` for the exchange format and `jeff-mlir` for
+  the related MLIR project.
 - Add tests that protect intended behavior or reproduce a concrete regression.
   Do not test provisional implementation choices that are not part of the
   supported contract.
