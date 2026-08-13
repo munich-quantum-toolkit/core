@@ -150,6 +150,8 @@ SmallVector<int64_t> CallQubitMapping::computeMapping(func::FuncOp callee) {
   return mapping;
 }
 
+void CallQubitMapping::invalidate() { cache.clear(); }
+
 ArrayRef<int64_t> CallQubitMapping::mappingFor(func::CallOp callOp) {
   auto callee = dyn_cast_or_null<func::FuncOp>(
       SymbolTable::lookupNearestSymbolFrom(callOp, callOp.getCalleeAttr()));

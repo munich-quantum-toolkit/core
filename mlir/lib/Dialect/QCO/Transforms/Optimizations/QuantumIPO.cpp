@@ -464,6 +464,12 @@ struct ContextSensitiveSpecializationPattern final
       return false;
     }
 
+    if (funcOp.getArgument(operand).use_empty()) {
+      // Nothing inside the callee reads the angle, so a specialization would be
+      // an exact copy of what it was cloned from.
+      return false;
+    }
+
     if (hasRotationSpecialization(funcOp, operand, angle)) {
       // This callee already is the specialization for that operand and angle,
       // so specializing it again would clone it forever.

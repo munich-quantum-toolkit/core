@@ -22,6 +22,7 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/InliningUtils.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -479,7 +480,6 @@ void IndexSwitchOp::print(OpAsmPrinter& p) {
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Dialect/QCO/IR/QCOOpsDialect.cpp.inc"
-#include "mlir/Transforms/InliningUtils.h"
 
 namespace {
 // Define the opt-in rules for inlining the QCO dialect

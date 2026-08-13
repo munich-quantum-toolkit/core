@@ -66,6 +66,17 @@ public:
    */
   [[nodiscard]] Value getOperandForResult(func::CallOp callOp, Value result);
 
+  /**
+   * @brief Drop everything cached.
+   *
+   * @details
+   * Must be called whenever a callee's signature changes. The recorded
+   * positions no longer describe that callee, and a mapping derived by
+   * threading a wire *through* it is stale as well, which is why the whole
+   * cache is dropped rather than the one entry.
+   */
+  void invalidate();
+
 private:
   /// Marks a qubit argument that never reaches a result.
   static constexpr int64_t KEPT = -1;

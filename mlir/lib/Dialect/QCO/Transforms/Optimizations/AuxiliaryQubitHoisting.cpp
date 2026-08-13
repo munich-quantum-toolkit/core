@@ -232,6 +232,20 @@ static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp,
       continue;
     }
 
+    // Collect the call sites before touching the signature. Once the signature
+    // changes the existing calls no longer match it, so if the uses cannot be
+    // determined it must not have been changed in the first place.
+    const auto uses = SymbolTable::getSymbolUses(funcOp, funcOp->getParentOp());
+    if (!uses) {
+      continue;
+    }
+    SmallVector<func::CallOp> callOps;
+    for (const auto use : *uses) {
+      if (auto callOp = dyn_cast<func::CallOp>(use.getUser())) {
+        callOps.emplace_back(callOp);
+      }
+    }
+
     // Add a block argument for the auxiliary qubit.
     OpBuilder builder(dealloc);
     auto* block = allocOp->getBlock();
@@ -262,6 +276,8 @@ static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp,
     auto newFuncType =
         FunctionType::get(funcOp.getContext(), newArgTypes, newResultTypes);
     funcOp.setType(newFuncType);
+    // The cached mapping describes the old signature, so it is stale now.
+    callMapping.invalidate();
 
     // Also add the reset outcome to every return. The operands are updated in
     // place so that the terminator stays valid for the ongoing walk.
@@ -272,17 +288,7 @@ static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp,
       returnOp->setOperands(newReturnValues);
     });
 
-    // Update all call sites to handle the new return value. The calls are
-    // collected first because the loop erases them.
-    SmallVector<func::CallOp> callOps;
-    if (auto uses = SymbolTable::getSymbolUses(funcOp, funcOp->getParentOp())) {
-      for (auto use : *uses) {
-        if (auto callOp = dyn_cast<func::CallOp>(use.getUser())) {
-          callOps.emplace_back(callOp);
-        }
-      }
-    }
-
+    // Update the call sites collected above to handle the new return value.
     for (auto callOp : callOps) {
       builder.setInsertionPoint(callOp);
 

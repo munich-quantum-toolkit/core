@@ -343,6 +343,20 @@ TEST_F(QCOTest, BuilderRejectsSignatureMismatchesOnAdditionalFunctions) {
       "Call operands do not match the declared function argument types");
 }
 
+TEST_F(QCOTest, BuilderRejectsUsingOuterQubitInsideFunction) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto outer = builder.allocQubit();
+        const auto qubitType = builder.getQubitType();
+        builder.startFunction("f", {qubitType}, {qubitType});
+        // `outer` belongs to `main`; a callee cannot reference it.
+        builder.h(outer);
+      },
+      "Invalid qubit value used");
+}
+
 TEST_F(QCOTest, BuilderRejectsLinearValuesLeakingOutOfFunctions) {
   EXPECT_DEATH(
       {

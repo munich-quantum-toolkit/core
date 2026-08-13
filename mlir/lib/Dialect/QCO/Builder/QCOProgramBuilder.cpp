@@ -1420,15 +1420,16 @@ SmallVector<Value> QCOProgramBuilder::startFunction(StringRef name,
         "Cannot start a function while another one is being built");
   }
 
-  FunctionScope scope{.savedInsertPoint = saveInsertionPoint(),
-                      .outerQubits = {},
-                      .outerTensors = {}};
-  for (const auto& qubit : validQubits) {
-    scope.outerQubits.insert(qubit);
-  }
-  for (const auto& tensor : validTensors) {
-    scope.outerTensors.insert(tensor);
-  }
+  // Take the surrounding scope's linear values out of tracking for the duration
+  // of the function. A callee cannot legally use a caller's SSA value, so they
+  // must not validate while its body is being built.
+  FunctionScope scope{
+      .savedInsertPoint = saveInsertionPoint(),
+      .outerQubits = SmallVector<Qubit>(validQubits.begin(), validQubits.end()),
+      .outerTensors =
+          SmallVector<Tensor>(validTensors.begin(), validTensors.end())};
+  validQubits.clear();
+  validTensors.clear();
 
   setInsertionPointToEnd(cast<ModuleOp>(module).getBody());
   auto funcOp =
@@ -1482,19 +1483,25 @@ void QCOProgramBuilder::endFunction(ValueRange returnValues) {
     }
   }
 
-  for (const auto& qubit : validQubits) {
-    if (!functionScope->outerQubits.contains(qubit)) {
-      llvm::reportFatalUsageError(
-          "Function body has qubit values that are neither returned nor "
-          "consumed");
-    }
+  // Only values created inside the function are tracked at this point, so
+  // anything left over has escaped.
+  if (!validQubits.empty()) {
+    llvm::reportFatalUsageError(
+        "Function body has qubit values that are neither returned nor "
+        "consumed");
   }
-  for (const auto& tensor : validTensors) {
-    if (!functionScope->outerTensors.contains(tensor)) {
-      llvm::reportFatalUsageError(
-          "Function body has tensor values that are neither returned nor "
-          "deallocated");
-    }
+  if (!validTensors.empty()) {
+    llvm::reportFatalUsageError(
+        "Function body has tensor values that are neither returned nor "
+        "deallocated");
+  }
+
+  // Hand the surrounding scope its linear values back.
+  for (const auto& qubit : functionScope->outerQubits) {
+    validQubits.insert(qubit);
+  }
+  for (const auto& tensor : functionScope->outerTensors) {
+    validTensors.insert(tensor);
   }
 
   func::ReturnOp::create(*this, returnValues);

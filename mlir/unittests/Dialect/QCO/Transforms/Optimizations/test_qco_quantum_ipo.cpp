@@ -569,6 +569,33 @@ TEST_F(QCOQuantumIPOTest, separateRotationSpecializationPerAngle) {
 }
 
 /**
+ * @brief An angle the callee never reads is not specialized, because the copy
+ * would be identical to the callee it was cloned from.
+ */
+TEST_F(QCOQuantumIPOTest, noSpecializationForUnusedRotationAngle) {
+  const auto qubitType = programBuilder.getQubitType();
+  const auto floatType = programBuilder.getF64Type();
+
+  const auto buildProgram = [&](QCOProgramBuilder& b) {
+    b.initialize();
+    // The angle is part of the signature but nothing in the body uses it.
+    auto args = b.startFunction("f", {qubitType, floatType}, {qubitType});
+    b.endFunction({b.h(args[0])});
+
+    auto q = b.allocQubit();
+    auto results = b.call("f", {q, b.floatConstant(std::numbers::pi)});
+    b.sink(results[0]);
+  };
+
+  buildProgram(programBuilder);
+  moduleOp = programBuilder.finalize();
+  buildProgram(referenceBuilder);
+  reference = referenceBuilder.finalize();
+
+  expectModuleMatchesReference();
+}
+
+/**
  * @brief An angle outside the set of specialized angles leaves the callee
  * untouched.
  */

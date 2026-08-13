@@ -2178,10 +2178,12 @@ private:
   struct FunctionScope {
     /// Insertion point to restore when the function is finished
     OpBuilder::InsertPoint savedInsertPoint;
-    /// Qubit values that were already tracked before the function was started
-    llvm::DenseSet<Value> outerQubits;
-    /// Tensor values that were already tracked before the function was started
-    llvm::DenseSet<Value> outerTensors;
+    /// Linear values of the surrounding scope. They are moved out of tracking
+    /// while the function is built, so that its body cannot reach across the
+    /// boundary and reference a caller's value, and put back by
+    /// `endFunction()`.
+    SmallVector<Qubit> outerQubits;
+    SmallVector<Tensor> outerTensors;
   };
 
   /// Active function scope, if a function is currently under construction.
