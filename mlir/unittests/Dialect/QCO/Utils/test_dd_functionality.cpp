@@ -805,6 +805,22 @@ TEST_F(QCODDFunctionalityTest, SampleHadamardApproximatelyBalanced) {
   EXPECT_NEAR(static_cast<double>(hist->at("0")), shots / 2.0, 150.0);
 }
 
+TEST_F(QCODDFunctionalityTest, SampleDefersTerminalMeasurement) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.x(b.staticQubit(0));
+    std::tie(q, std::ignore) = b.measure(q);
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(7);
+  const auto histogram = sample(mainFunc(*mod), *dd, 16, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 16}}));
+}
+
 TEST_F(QCODDFunctionalityTest, SampleDynamicMeasureIf) {
   // |1> measure then identity branch; final measureAll is always "1".
   auto mod = buildModule([](QCOProgramBuilder& b) {

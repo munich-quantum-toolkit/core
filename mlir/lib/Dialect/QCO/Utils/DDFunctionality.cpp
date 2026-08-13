@@ -138,6 +138,7 @@ struct WalkState {
   ClassicalEnv* classical;
   dd::Package* dd;
   std::mt19937_64* rng = nullptr;
+  bool deferTerminalMeasurements = false;
 };
 
 } // namespace
@@ -588,6 +589,16 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                     "construction";
         } else {
           if (walk.rng == nullptr) {
+            if (walk.deferTerminalMeasurements) {
+              const auto q = walk.qubits->lookup(measureOp.getQubitIn());
+              if (!q) {
+                return measureOp.emitError()
+                       << "qubit SSA value is not mapped for QCO DD "
+                          "construction";
+              }
+              walk.qubits->bind(measureOp.getQubitOut(), *q);
+              return success();
+            }
             return measureOp.emitError()
                    << "measurements require simulate(..., rng)";
           }
@@ -784,10 +795,10 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd) {
   return state;
 }
 
-static FailureOr<dd::VectorDD> simulateImpl(func::FuncOp func,
-                                            const dd::VectorDD& in,
-                                            dd::Package& dd,
-                                            std::mt19937_64* rng) {
+static FailureOr<dd::VectorDD>
+simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
+             std::mt19937_64* rng,
+             const bool deferTerminalMeasurements = false) {
   auto qubitsOr = prepare(func, dd);
   if (failed(qubitsOr)) {
     dd.decRef(in);
@@ -795,8 +806,11 @@ static FailureOr<dd::VectorDD> simulateImpl(func::FuncOp func,
   }
   QubitMap qubits = std::move(*qubitsOr);
   ClassicalEnv classical;
-  WalkState walkState{
-      .qubits = &qubits, .classical = &classical, .dd = &dd, .rng = rng};
+  WalkState walkState{.qubits = &qubits,
+                      .classical = &classical,
+                      .dd = &dd,
+                      .rng = rng,
+                      .deferTerminalMeasurements = deferTerminalMeasurements};
 
   dd::VectorDD state = in;
   if (failed(walk(func, walkState, state))) {
@@ -818,8 +832,19 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
 
 [[nodiscard]] static bool requiresDynamicSampling(func::FuncOp func) {
   bool dynamic = false;
+  bool measured = false;
   func.walk([&](Operation* op) {
-    if (isa<MeasureOp, ResetOp, IfOp, IndexSwitchOp>(op)) {
+    if (isa<ResetOp, IfOp, IndexSwitchOp>(op)) {
+      dynamic = true;
+      return WalkResult::interrupt();
+    }
+    if (isa<MeasureOp>(op)) {
+      measured = true;
+      return WalkResult::advance();
+    }
+    // Terminal measurements can be deferred to the repeated measureAll calls.
+    // Any subsequent computation may observe their collapsed state or result.
+    if (measured && !isa<SinkOp, func::ReturnOp>(op)) {
       dynamic = true;
       return WalkResult::interrupt();
     }
@@ -838,7 +863,8 @@ sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
   }
 
   if (!requiresDynamicSampling(func)) {
-    auto stateOr = simulateImpl(func, in, dd, nullptr);
+    auto stateOr = simulateImpl(func, in, dd, nullptr,
+                                /*deferTerminalMeasurements=*/true);
     if (failed(stateOr)) {
       return failure();
     }
