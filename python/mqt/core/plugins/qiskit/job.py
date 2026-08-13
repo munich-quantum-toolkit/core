@@ -20,7 +20,7 @@ from qiskit.providers import JobStatus, JobV1
 from qiskit.result import Result
 from qiskit.result.models import ExperimentResult
 
-from mqt.core import fomac
+from mqt.core.qdmi import Job as QDMIJobHandle
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -35,35 +35,35 @@ def __dir__() -> list[str]:
 
 
 class QDMIJob(JobV1):
-    """Qiskit job wrapping one or more QDMI/FoMaC jobs.
+    """Qiskit job wrapping one or more QDMI jobs.
 
     This class handles both single-circuit and multi-circuit execution,
     aggregating results from multiple QDMI jobs when needed.
 
     Args:
         backend: The backend this job runs on.
-        jobs: The FoMaC Job object(s). Can be a single job or a list of jobs.
+        jobs: One QDMI job or a list of QDMI jobs.
         circuit_names: The name(s) of the circuit(s) being executed. Can be a single name or a list of names.
     """
 
     def __init__(
         self,
         backend: QDMIBackend,
-        jobs: fomac.Job | Sequence[fomac.Job],
+        jobs: QDMIJobHandle | Sequence[QDMIJobHandle],
         circuit_names: str | Sequence[str],
     ) -> None:
         """Initialize the job.
 
         Args:
             backend: The backend to use for the job.
-            jobs: The FoMaC Job object(s).
+            jobs: One QDMI job or a list of QDMI jobs.
             circuit_names: The name(s) of the circuit(s) the job is associated with.
 
         Raises:
             ValueError: If jobs list is empty or if jobs and circuit_names have mismatched lengths.
         """
         # Normalize to lists
-        self._jobs = [jobs] if isinstance(jobs, fomac.Job) else jobs
+        self._jobs = [jobs] if isinstance(jobs, QDMIJobHandle) else jobs
         self._circuit_names = [circuit_names] if isinstance(circuit_names, str) else circuit_names
 
         # Validate non-empty jobs list
@@ -99,11 +99,11 @@ class QDMIJob(JobV1):
         for idx, (job, circuit_name) in enumerate(zip(self._jobs, self._circuit_names, strict=True)):
             # Wait for job completion if needed
             status = job.check()
-            if status not in {fomac.Job.Status.DONE, fomac.Job.Status.FAILED, fomac.Job.Status.CANCELED}:
+            if status not in {QDMIJobHandle.Status.DONE, QDMIJobHandle.Status.FAILED, QDMIJobHandle.Status.CANCELED}:
                 job.wait()
                 status = job.check()
 
-            success = status == fomac.Job.Status.DONE
+            success = status == QDMIJobHandle.Status.DONE
             overall_success = overall_success and success
 
             # Get counts if successful and not cached
@@ -146,13 +146,13 @@ class QDMIJob(JobV1):
         """
         # Map QDMI status to Qiskit JobStatus
         status_map = {
-            fomac.Job.Status.DONE: JobStatus.DONE,
-            fomac.Job.Status.RUNNING: JobStatus.RUNNING,
-            fomac.Job.Status.CANCELED: JobStatus.CANCELLED,
-            fomac.Job.Status.SUBMITTED: JobStatus.QUEUED,
-            fomac.Job.Status.QUEUED: JobStatus.QUEUED,
-            fomac.Job.Status.CREATED: JobStatus.INITIALIZING,
-            fomac.Job.Status.FAILED: JobStatus.ERROR,
+            QDMIJobHandle.Status.DONE: JobStatus.DONE,
+            QDMIJobHandle.Status.RUNNING: JobStatus.RUNNING,
+            QDMIJobHandle.Status.CANCELED: JobStatus.CANCELLED,
+            QDMIJobHandle.Status.SUBMITTED: JobStatus.QUEUED,
+            QDMIJobHandle.Status.QUEUED: JobStatus.QUEUED,
+            QDMIJobHandle.Status.CREATED: JobStatus.INITIALIZING,
+            QDMIJobHandle.Status.FAILED: JobStatus.ERROR,
         }
 
         # Collect all statuses (self._jobs is guaranteed non-empty by __init__)

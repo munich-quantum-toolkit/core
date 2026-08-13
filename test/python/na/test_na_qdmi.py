@@ -16,17 +16,17 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from mqt.core.na.fomac import devices
+from mqt.core.na.qdmi import devices
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from mqt.core.na.fomac import Device
+    from mqt.core.na.qdmi import Device
 
 
 @pytest.fixture
 def device_tuple() -> tuple[Device, Mapping[str, Any]]:
-    """Return a neutral atom FoMaC device instance."""
+    """Return a neutral-atom QDMI device instance."""
     with pathlib.Path("json/na/mqt-core-qdmi-na-device.json").open(encoding="utf-8") as f:
         device_dict = load(f)
     return next(iter(devices())), device_dict

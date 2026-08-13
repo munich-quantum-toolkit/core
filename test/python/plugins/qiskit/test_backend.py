@@ -19,17 +19,18 @@ from qiskit.circuit import Parameter
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 
-from mqt.core import fomac
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
     UnsupportedOperationError,
 )
 from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
+from mqt.core.qdmi.driver import open_device
 
 if TYPE_CHECKING:
+    from mqt.core.qdmi import Device as QDMIDevice
 
-    class _FomacDeviceLike(Protocol):  # pragma: no cover - typing helper to fix mypy errors
+    class _QDMIDeviceLike(Protocol):  # pragma: no cover - typing helper to fix mypy errors
         def name(self) -> str: ...
 
         def version(self) -> str: ...
@@ -40,9 +41,9 @@ if TYPE_CHECKING:
 
         def coupling_map(self) -> object: ...
 
-    SiteSpecificDevice = _FomacDeviceLike
-    MisconfiguredDevice = _FomacDeviceLike
-    ZonedDevice = _FomacDeviceLike
+    SiteSpecificDevice = _QDMIDeviceLike
+    MisconfiguredDevice = _QDMIDeviceLike
+    ZonedDevice = _QDMIDeviceLike
 
 
 @pytest.fixture
@@ -52,12 +53,24 @@ def ddsim_backend() -> QDMIBackend:
     Returns:
         A QDMIBackend instance wrapping the DDSIM device.
     """
-    session = fomac.Session()
-    devices = session.get_devices()
-    for device in devices:
-        if "DDSIM" in device.name():
-            return QDMIBackend(device=device, provider=None)
-    pytest.skip("DDSIM device not available")
+    return QDMIBackend.from_device_id("mqt.ddsim.default")
+
+
+def test_backend_from_device_id_forwards_session_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Open one stable device ID with explicit per-session overrides."""
+    observed: tuple[str, dict[str, object]] | None = None
+
+    def fake_open_device(device_id: str, **session_parameters: object) -> QDMIDevice:
+        nonlocal observed
+        observed = device_id, session_parameters
+        return open_device("mqt.ddsim.default")
+
+    monkeypatch.setattr("mqt.core.plugins.qiskit.backend.open_device", fake_open_device)
+
+    backend = QDMIBackend.from_device_id("test.device", session_parameters={"custom1": "value"})
+
+    assert observed == ("test.device", {"custom1": "value"})
+    assert backend.target.num_qubits > 0
 
 
 def test_backend_instantiation(ddsim_backend: QDMIBackend) -> None:
@@ -615,11 +628,5 @@ def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDM
 
 def test_zoned_operation_rejected_at_backend_init() -> None:
     """Backend rejects devices exposing zoned operations."""
-    session = fomac.Session()
-    devices = session.get_devices()
-    for device in devices:
-        if device.name().startswith("MQT NA"):
-            with pytest.raises(UnsupportedDeviceError, match="cannot be represented in Qiskit's Target model"):
-                QDMIBackend(device)
-            return
-    pytest.skip("NA device not available")
+    with pytest.raises(UnsupportedDeviceError, match="cannot be represented in Qiskit's Target model"):
+        QDMIBackend.from_device_id("mqt.na.default")
