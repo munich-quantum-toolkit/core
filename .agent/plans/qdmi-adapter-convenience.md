@@ -32,8 +32,8 @@ adapt the one device selected by the license environment.
       changing direct construction.
 - [x] (2026-08-13 19:22Z) Made provider discovery lazy, current-registry based,
       exact-ID addressable, and resilient to unavailable devices.
-- [ ] Add backend factories for Qiskit primitives and simplify primitive
-      constructors.
+- [x] (2026-08-13 19:27Z) Added backend primitive factories and replaced the
+      MQT-specific options mappings with explicit defaults.
 - [ ] Add the MLIR compiler-target stable-ID factory and regenerate stubs.
 - [ ] Add Slurm framework shortcuts, focused tests, and documentation.
 - [ ] Run focused and aggregate validation, review the complete diff, and

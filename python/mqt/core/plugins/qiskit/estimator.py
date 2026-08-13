@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from qiskit.circuit import QuantumCircuit
@@ -50,18 +50,18 @@ class QDMIEstimator(BaseEstimatorV2):
         backend: QDMIBackend,
         *,
         default_precision: float = 0.0,
-        options: dict[str, Any] | None = None,
+        default_shots: int = 1024,
     ) -> None:
         """Initialize the QDMI Estimator.
 
         Args:
             backend: The QDMI backend to execute circuits on.
             default_precision: The default precision for expectation-value estimates.
-            options: Default options for the estimator.
+            default_shots: The number of shots used when no positive precision is set.
         """
         self._backend = backend
         self._default_precision = default_precision
-        self._options = options or {}
+        self._default_shots = default_shots
 
     @property
     def backend(self) -> QDMIBackend:
@@ -119,7 +119,7 @@ class QDMIEstimator(BaseEstimatorV2):
         precision = pub.precision
 
         # Calculate shots based on precision (if provided), otherwise use default
-        shots = self._options.get("default_shots", 1024)
+        shots = self._default_shots
         if precision is not None and precision > 0:
             shots = int(np.ceil(1.0 / precision**2))
 

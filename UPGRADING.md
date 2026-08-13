@@ -105,6 +105,21 @@ will be removed in MQT Core 4.0.
 The C++ FoMaC namespace, headers, library, and `MQT::CoreFoMaC` target do not
 change.
 
+### QDMI Qiskit primitive options
+
+`QDMISampler` and `QDMIEstimator` no longer accept the MQT-specific `options`
+mapping. Pass shot and precision defaults directly, preferably through the
+backend factories:
+
+```python
+sampler = backend.sampler(default_shots=2048)
+estimator = backend.estimator(default_precision=0.01, default_shots=2048)
+```
+
+Replace `QDMIEstimator(..., options={"default_shots": shots})` with
+`QDMIEstimator(..., default_shots=shots)`. The sampler ignored its former
+`options` mapping, so remove that argument without replacement.
+
 ### QIR runner
 
 The QIR runner now invokes a selected QIR entry point as a parameterless `i64`
