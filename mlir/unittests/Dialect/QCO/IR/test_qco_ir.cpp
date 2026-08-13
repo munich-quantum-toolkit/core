@@ -357,6 +357,20 @@ TEST_F(QCOTest, BuilderRejectsUsingOuterQubitInsideFunction) {
       "Invalid qubit value used");
 }
 
+TEST_F(QCOTest, BuilderRejectsUsingOuterTensorInsideFunction) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto outer = builder.qtensorAlloc(2);
+        const auto qubitType = builder.getQubitType();
+        builder.startFunction("f", {qubitType}, {qubitType});
+        // `outer` belongs to `main`; a callee cannot reference it.
+        builder.qtensorExtract(outer, 0);
+      },
+      "Invalid tensor value used");
+}
+
 TEST_F(QCOTest, BuilderRejectsLinearValuesLeakingOutOfFunctions) {
   EXPECT_DEATH(
       {

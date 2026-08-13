@@ -239,11 +239,22 @@ static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp,
     if (!uses) {
       continue;
     }
+
+    // Every reference has to be a direct call. Anything else, such as the
+    // symbol captured in an attribute or taken as a function value, has no
+    // operand list to extend and would be left pointing at the old signature.
     SmallVector<func::CallOp> callOps;
+    auto onlyDirectCalls = true;
     for (const auto use : *uses) {
-      if (auto callOp = dyn_cast<func::CallOp>(use.getUser())) {
-        callOps.emplace_back(callOp);
+      auto callOp = dyn_cast<func::CallOp>(use.getUser());
+      if (!callOp || callOp.getCallee() != funcOp.getName()) {
+        onlyDirectCalls = false;
+        break;
       }
+      callOps.emplace_back(callOp);
+    }
+    if (!onlyDirectCalls) {
+      continue;
     }
 
     // Add a block argument for the auxiliary qubit.

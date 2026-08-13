@@ -133,6 +133,20 @@ static SmallVector<PromotedSlot> canPromoteArgument(BlockArgument arg) {
     return {};
   }
 
+  // Promotion rewrites the signature and every call site, so every reference to
+  // the function has to be a direct call. A symbol captured anywhere else would
+  // be left pointing at the old signature, so bail before anything is changed.
+  const auto uses = SymbolTable::getSymbolUses(funcOp, funcOp->getParentOp());
+  if (!uses) {
+    return {};
+  }
+  for (const auto use : *uses) {
+    auto callOp = dyn_cast<func::CallOp>(use.getUser());
+    if (!callOp || callOp.getCallee() != funcOp.getName()) {
+      return {};
+    }
+  }
+
   // Walk the chain of the threaded tensor and collect the accesses on it.
   SmallVector<qtensor::ExtractOp> extracts;
   DenseSet<Operation*> insertsOnChain;
