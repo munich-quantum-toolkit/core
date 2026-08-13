@@ -222,7 +222,7 @@ embedLocalInNQubitMsb(const DynamicMatrix& local, size_t n,
   const size_t k = wires.size();
   const auto dimN = static_cast<int64_t>(size_t{1} << n);
   DynamicMatrix out(dimN);
-  const size_t dimNSz = static_cast<size_t>(dimN);
+  const auto dimNSz = static_cast<size_t>(dimN);
   auto bitAt = [](size_t idx, size_t nQ, size_t q) -> size_t {
     return (idx >> (nQ - 1 - q)) & 1U;
   };
@@ -466,55 +466,37 @@ static LogicalResult applyBinaryIndex(OpTy op, ClassicalEnv& classical,
   return success();
 }
 
-static LogicalResult applyClassicalBitwise(Operation& op,
-                                           ClassicalEnv& classical) {
-  return TypeSwitch<Operation*, LogicalResult>(&op)
-      .Case<arith::AndIOp>([&](arith::AndIOp andOp) -> LogicalResult {
-        if (andOp.getType().isInteger(1)) {
-          return applyBinaryI1(andOp, classical,
-                               [](bool a, bool b) { return a && b; });
-        }
-        return applyBinaryIndex(andOp, classical,
-                                [](int64_t a, int64_t b) { return a & b; });
-      })
-      .Case<arith::OrIOp>([&](arith::OrIOp orOp) -> LogicalResult {
-        if (orOp.getType().isInteger(1)) {
-          return applyBinaryI1(orOp, classical,
-                               [](bool a, bool b) { return a || b; });
-        }
-        return applyBinaryIndex(orOp, classical,
-                                [](int64_t a, int64_t b) { return a | b; });
-      })
-      .Case<arith::XOrIOp>([&](arith::XOrIOp xorOp) -> LogicalResult {
-        if (xorOp.getType().isInteger(1)) {
-          return applyBinaryI1(xorOp, classical,
-                               [](bool a, bool b) { return a != b; });
-        }
-        return applyBinaryIndex(xorOp, classical,
-                                [](int64_t a, int64_t b) { return a ^ b; });
-      })
-      .Case<arith::ShLIOp>([&](arith::ShLIOp shli) {
-        return applyBinaryIndex(shli, classical,
-                                [](int64_t a, int64_t b) { return a << b; });
-      })
-      .Default([](Operation* unsupported) {
-        return unsupported->emitError()
-               << "unsupported classical op for QCO DD simulation: "
-               << unsupported->getName().getStringRef();
-      });
+template <typename OpTy>
+static LogicalResult applyClassicalBitwise(OpTy op, ClassicalEnv& classical) {
+  if constexpr (std::is_same_v<OpTy, arith::ShLIOp>) {
+    return applyBinaryIndex(op, classical,
+                            [](int64_t a, int64_t b) { return a << b; });
+  } else if (op.getType().isInteger(1)) {
+    if constexpr (std::is_same_v<OpTy, arith::AndIOp>) {
+      return applyBinaryI1(op, classical,
+                           [](bool a, bool b) { return a && b; });
+    } else if constexpr (std::is_same_v<OpTy, arith::OrIOp>) {
+      return applyBinaryI1(op, classical,
+                           [](bool a, bool b) { return a || b; });
+    } else {
+      return applyBinaryI1(op, classical,
+                           [](bool a, bool b) { return a != b; });
+    }
+  } else if constexpr (std::is_same_v<OpTy, arith::AndIOp>) {
+    return applyBinaryIndex(op, classical,
+                            [](int64_t a, int64_t b) { return a & b; });
+  } else if constexpr (std::is_same_v<OpTy, arith::OrIOp>) {
+    return applyBinaryIndex(op, classical,
+                            [](int64_t a, int64_t b) { return a | b; });
+  } else {
+    return applyBinaryIndex(op, classical,
+                            [](int64_t a, int64_t b) { return a ^ b; });
+  }
 }
 
 static LogicalResult bindLinearArgs(ValueRange operands, Block& block,
                                     WalkState& walk, Operation* op) {
-  if (operands.size() != block.getNumArguments()) {
-    return op->emitError()
-           << "region argument count does not match linear operands";
-  }
   for (auto [operand, arg] : llvm::zip_equal(operands, block.getArguments())) {
-    if (!isa<QubitType>(arg.getType())) {
-      return op->emitError()
-             << "QCO DD simulation only supports qubit linear region args";
-    }
     const auto q = walk.qubits->lookup(operand);
     if (!q) {
       return op->emitError()
@@ -529,11 +511,6 @@ static LogicalResult bindYieldResults(YieldOp yield,
                                       ValueRange classicalResults,
                                       ValueRange linearResults,
                                       WalkState& walk) {
-  const size_t expected = classicalResults.size() + linearResults.size();
-  if (yield.getNumOperands() != expected) {
-    return yield.emitError()
-           << "yield operand count does not match result segments";
-  }
   size_t idx = 0;
   for (Value result : classicalResults) {
     if (failed(
@@ -542,10 +519,6 @@ static LogicalResult bindYieldResults(YieldOp yield,
     }
   }
   for (Value result : linearResults) {
-    if (!isa<QubitType>(result.getType())) {
-      return yield.emitError()
-             << "QCO DD simulation only supports qubit linear results";
-    }
     const auto q = walk.qubits->lookup(yield.getOperand(idx++));
     if (!q) {
       return yield.emitError()
@@ -593,10 +566,18 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<arith::IndexCastUIOp>([&](arith::IndexCastUIOp cast) {
         return applyIndexCastUI(cast, *walk.classical);
       })
-      .template Case<arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::ShLIOp>(
-          [&](Operation* classicalOp) {
-            return applyClassicalBitwise(*classicalOp, *walk.classical);
-          })
+      .template Case<arith::AndIOp>([&](arith::AndIOp classicalOp) {
+        return applyClassicalBitwise(classicalOp, *walk.classical);
+      })
+      .template Case<arith::OrIOp>([&](arith::OrIOp classicalOp) {
+        return applyClassicalBitwise(classicalOp, *walk.classical);
+      })
+      .template Case<arith::XOrIOp>([&](arith::XOrIOp classicalOp) {
+        return applyClassicalBitwise(classicalOp, *walk.classical);
+      })
+      .template Case<arith::ShLIOp>([&](arith::ShLIOp classicalOp) {
+        return applyClassicalBitwise(classicalOp, *walk.classical);
+      })
       .template Case<func::ReturnOp>([&](func::ReturnOp returnOp) {
         return validateReturn(returnOp, *walk.qubits);
       })
