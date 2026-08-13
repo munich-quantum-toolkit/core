@@ -404,10 +404,6 @@ static LogicalResult recordConstant(arith::ConstantOp constant,
 
 static LogicalResult applyIndexCastUI(arith::IndexCastUIOp cast,
                                       ClassicalEnv& classical) {
-  if (!isa<IndexType>(cast.getType())) {
-    return cast.emitError()
-           << "QCO DD simulation only supports index_castui to index";
-  }
   Value in = cast.getIn();
   if (!in.getType().isInteger(1)) {
     return cast.emitError()
@@ -445,10 +441,6 @@ static FailureOr<int64_t> lookupIndex(Value value, ClassicalEnv& classical,
 template <typename OpTy>
 static LogicalResult applyBinaryI1(OpTy op, ClassicalEnv& classical,
                                    bool (*combine)(bool, bool)) {
-  if (!op.getType().isInteger(1)) {
-    return op.emitError() << "QCO DD simulation only supports i1 "
-                          << op.getOperationName();
-  }
   auto lhs = lookupBool(op.getLhs(), classical, op);
   auto rhs = lookupBool(op.getRhs(), classical, op);
   if (failed(lhs) || failed(rhs)) {
