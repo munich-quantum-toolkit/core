@@ -27,16 +27,37 @@ FetchContent_Declare(
   jeff-mlir
   GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
   GIT_TAG f702b20b9551beb38ced989c288b2e95af758801)
+# Disable unity builds for every target defined below a directory. Cap'n Proto combines translation
+# units with conflicting internal helper names, including platform-specific collisions in KJ.
+function(_mqt_core_disable_unity_builds directory)
+  get_property(
+    targets
+    DIRECTORY "${directory}"
+    PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(target IN LISTS targets)
+    set_target_properties("${target}" PROPERTIES UNITY_BUILD OFF)
+  endforeach()
+
+  get_property(
+    subdirectories
+    DIRECTORY "${directory}"
+    PROPERTY SUBDIRECTORIES)
+  foreach(subdirectory IN LISTS subdirectories)
+    _mqt_core_disable_unity_builds("${subdirectory}")
+  endforeach()
+endfunction()
+
 # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option and
 # defines a global `check` target when it is enabled. Do not let an embedding project's test setting
 # leak into this third-party dependency.
 function(_mqt_core_make_jeff_available)
   set(BUILD_TESTING OFF)
   FetchContent_MakeAvailable(jeff-mlir)
-  # Cap'n Proto combines translation units with conflicting internal helper names. Keep only this
-  # transitive dependency out of unity builds while Jeff and MQT targets remain eligible.
-  if(TARGET capnp)
-    set_target_properties(capnp PROPERTIES UNITY_BUILD OFF)
+  # Keep only this transitive dependency out of unity builds while Jeff and MQT targets remain
+  # eligible.
+  FetchContent_GetProperties(capnproto)
+  if(capnproto_POPULATED)
+    _mqt_core_disable_unity_builds("${capnproto_BINARY_DIR}")
   endif()
 endfunction()
 _mqt_core_make_jeff_available()
