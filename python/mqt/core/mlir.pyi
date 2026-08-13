@@ -10,7 +10,7 @@
 
 import enum
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Literal, overload
 
 import qiskit
@@ -517,12 +517,15 @@ class SampleResult:
     def classical(self) -> dict[str, int]:
         """Mid-circuit measure-bit histogram (encounter order)."""
 
-def build_functionality(program: QCOProgram, dd_package: mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD:
+def build_functionality(
+    program: QCOProgram, dd_package: mqt.core.dd.DDPackage, *, bindings: Mapping[int, bool | int | float] = {}
+) -> mqt.core.dd.MatrixDD:
     """Build a matrix DD for a static unitary QCO program.
 
     Args:
         program: A QCO program whose entry ``func.func`` is used to build a matrix DD.
         dd_package: DD package with enough qubits for the program.
+        bindings: Concrete entry-argument values keyed by zero-based argument index.
 
     Returns:
         Matrix DD of the program functionality.
@@ -532,7 +535,12 @@ def build_functionality(program: QCOProgram, dd_package: mqt.core.dd.DDPackage) 
     """
 
 def simulate(
-    program: QCOProgram, initial_state: mqt.core.dd.VectorDD, dd_package: mqt.core.dd.DDPackage, seed: int | None = None
+    program: QCOProgram,
+    initial_state: mqt.core.dd.VectorDD,
+    dd_package: mqt.core.dd.DDPackage,
+    seed: int | None = None,
+    *,
+    bindings: Mapping[int, bool | int | float] = {},
 ) -> mqt.core.dd.VectorDD:
     """Simulate a QCO program on a DD state.
 
@@ -542,6 +550,7 @@ def simulate(
         dd_package: DD package with enough qubits for the program.
         seed: If ``None``, rejects mid-circuit measure/reset. Otherwise seeds the
             RNG used for collapsing measurements and resets (``0`` = nondeterministic).
+        bindings: Concrete entry-argument values keyed by zero-based argument index.
 
     Returns:
         Output state DD.
@@ -551,7 +560,13 @@ def simulate(
     """
 
 def sample(
-    program: QCOProgram, dd_package: mqt.core.dd.DDPackage, shots: int = 1024, seed: int | None = None
+    program: QCOProgram,
+    dd_package: mqt.core.dd.DDPackage,
+    shots: int = 1024,
+    seed: int | None = None,
+    *,
+    initial_state: mqt.core.dd.VectorDD | None = None,
+    bindings: Mapping[int, bool | int | float] = {},
 ) -> dict[str, int]:
     """Sample final computational-basis outcomes from a QCO program.
 
@@ -562,6 +577,8 @@ def sample(
             the duration of the call).
         shots: Number of shots (default 1024).
         seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
+        initial_state: Optional input state DD; one reference is consumed.
+        bindings: Concrete entry-argument values keyed by zero-based argument index.
 
     Returns:
         Histogram of final ``measureAll`` bitstrings.
@@ -571,7 +588,13 @@ def sample(
     """
 
 def sample_with_classics(
-    program: QCOProgram, dd_package: mqt.core.dd.DDPackage, shots: int = 1024, seed: int | None = None
+    program: QCOProgram,
+    dd_package: mqt.core.dd.DDPackage,
+    shots: int = 1024,
+    seed: int | None = None,
+    *,
+    initial_state: mqt.core.dd.VectorDD | None = None,
+    bindings: Mapping[int, bool | int | float] = {},
 ) -> SampleResult:
     """Sample final and mid-circuit classical outcomes from a QCO program.
 
@@ -582,6 +605,8 @@ def sample_with_classics(
             the duration of the call).
         shots: Number of shots (default 1024).
         seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
+        initial_state: Optional input state DD; one reference is consumed.
+        bindings: Concrete entry-argument values keyed by zero-based argument index.
 
     Returns:
         A :class:`SampleResult` with ``shots`` and ``classical`` histograms.

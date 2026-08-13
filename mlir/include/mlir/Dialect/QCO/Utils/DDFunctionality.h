@@ -53,7 +53,8 @@ using DDBindings = DenseMap<Value, Attribute>;
  *   bookkeeping over existing input wires
  * - Concrete `qco.if` / `qco.index_switch`, bounded `scf.for` / `scf.while`,
  *   standard `scf.if` / `scf.index_switch` / single-block
- *   `scf.execute_region`, and non-recursive single-block `func.call`
+ *   `scf.execute_region`, concrete `cf.br` / `cf.cond_br` function CFGs, and
+ *   non-recursive `func.call`
  * - Concrete integer, index, and floating-point `arith` operations and
  *   one-dimensional `memref` storage over those scalar types
  * - `qco.static` establishes the wire map (or qubit-typed `func` args if none);
@@ -61,11 +62,10 @@ using DDBindings = DenseMap<Value, Attribute>;
  *   `func.return` accepts qubit results only in canonical wire order
  *
  * Known one-, two-, and three-qubit matrices are constructed directly as DD
- * gates. Larger compile-time unitaries (including partial wire subsets) use a
- * dense embed into the full register, rewritten from QCO/MSB to DD/LSB, limited
- * to 12 qubits (`2^n × 2^n` storage). Quantum allocations, measurements,
- * resets, unbound symbolic parameters, and non-concrete control flow are not
- * supported.
+ * gates. Larger compile-time unitaries are embedded directly into a DD over
+ * their target wires, so idle register qubits do not enlarge the local matrix.
+ * Quantum allocations, measurements, resets, unbound symbolic parameters, and
+ * non-concrete control flow are not supported.
  *
  * @param func The QCO function to construct the functionality for
  * @param dd The DD package to use (must hold at least the function's qubits)
@@ -90,11 +90,13 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
  * ownership. QTensor sizes and indices must be concrete classical values;
  * dynamic qtensor function arguments require an extent in @p bindings.
  * Mid-circuit `measure` / `reset` require the RNG overload below. Concrete-
- * bound `scf.for` loops, concrete `scf.while` loops, and non-recursive
- * single-block `func.call` are supported independently of RNG. Loops are
- * limited to 10000 trips. Qubits and one-dimensional qtensors can be carried
- * through nested regions; multi-block function bodies remain unsupported.
- * Dynamically allocated wires remain in the returned state after deallocation.
+ * bound `scf.for` loops, concrete `scf.while` loops, concrete multi-block
+ * function CFGs, and non-recursive `func.call` are supported independently of
+ * RNG. Loops and function CFGs are limited to 10000 transitions. Qubits and
+ * one-dimensional qtensors can be carried through nested regions and blocks.
+ * Deallocating a separable qtensor removes its wires from the returned state;
+ * deallocating an entangled qtensor is rejected because a statevector cannot
+ * represent the resulting mixed state.
  * Consumes one reference to @p in regardless of whether simulation succeeds
  * or fails.
  *
@@ -126,10 +128,10 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * Deterministic control-flow without measure/reset also works on the non-RNG
  * overload. Only one-dimensional qtensors of qubits are supported. Nested
  * regions are walked; `scf.for` with concrete positive step, concrete
- * `scf.while`, and
- * non-recursive single-block `func.call` are supported. Loops are limited to
- * 10000 trips; multi-block function bodies remain unsupported. Consumes one
- * reference to @p in regardless of whether simulation succeeds or fails.
+ * `scf.while`, concrete `cf.br` / `cf.cond_br` function CFGs, and non-recursive
+ * `func.call` are supported. Loops and function CFGs are limited to 10000
+ * transitions. Consumes one reference to @p in regardless of whether
+ * simulation succeeds or fails.
  *
  * @param func The QCO function to simulate
  * @param in The input state; one reference is consumed
@@ -151,9 +153,8 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * without `measure` / `reset` are simulated once and sampled without
  * collapsing (including deterministic control-flow). Programs with mid-circuit
  * `measure` / `reset` are re-simulated per shot with @p rng. Histograms are
- * final computational-basis bitstrings, not classical mid-circuit records;
- * they include dynamically allocated wires even after those wires are
- * deallocated.
+ * final computational-basis bitstrings over the wires that remain live, not
+ * classical mid-circuit records.
  *
  * @param func The QCO function to sample
  * @param dd The DD package to use
@@ -210,7 +211,7 @@ sampleWithClassics(func::FuncOp func, dd::Package& dd, size_t shots,
                    const DDBindings& bindings = DDBindings());
 
 /// @copydoc sampleWithClassics(func::FuncOp, dd::Package&, size_t,
-/// std::mt19937_64&)
+/// std::mt19937_64&, const DDBindings&)
 /// Starts from @p in; one reference is consumed.
 FailureOr<SampleResult>
 sampleWithClassics(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
