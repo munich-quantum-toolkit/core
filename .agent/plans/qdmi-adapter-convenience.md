@@ -30,7 +30,8 @@ adapt the one device selected by the license environment.
       compatibility dependency, and typed stable-ID keyword arguments.
 - [x] (2026-08-13 19:18Z) Preserved known stable IDs on Qiskit backends without
       changing direct construction.
-- [ ] Make Qiskit provider discovery lazy and resilient.
+- [x] (2026-08-13 19:22Z) Made provider discovery lazy, current-registry based,
+      exact-ID addressable, and resilient to unavailable devices.
 - [ ] Add backend factories for Qiskit primitives and simplify primitive
       constructors.
 - [ ] Add the MLIR compiler-target stable-ID factory and regenerate stubs.
