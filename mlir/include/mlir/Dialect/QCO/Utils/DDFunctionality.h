@@ -108,10 +108,8 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * @return Histogram of outcome strings on success, or failure for unsupported
  *         programs
  */
-FailureOr<std::map<std::string, std::size_t>> sample(func::FuncOp func,
-                                                     dd::Package& dd,
-                                                     std::size_t shots,
-                                                     std::mt19937_64& rng);
+FailureOr<std::map<std::string, size_t>>
+sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng);
 
 /**
  * @brief Sample measurement outcomes from a QCO `func.func` on a given input.
@@ -128,8 +126,9 @@ FailureOr<std::map<std::string, std::size_t>> sample(func::FuncOp func,
  * @return Histogram of outcome strings on success, or failure for unsupported
  *         programs
  */
-FailureOr<std::map<std::string, std::size_t>>
-sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
-       std::size_t shots, std::mt19937_64& rng);
+FailureOr<std::map<std::string, size_t>> sample(func::FuncOp func,
+                                                const dd::VectorDD& in,
+                                                dd::Package& dd, size_t shots,
+                                                std::mt19937_64& rng);
 
 } // namespace mlir::qco

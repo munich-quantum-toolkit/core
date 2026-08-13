@@ -335,7 +335,7 @@ TEST_F(QCODDFunctionalityTest, TwoQubitDensePathBeyondFallbackLimit) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     SmallVector<Value, 13> qs;
     for (int i = 0; i < 13; ++i) {
-      qs.push_back(b.staticQubit(static_cast<std::int64_t>(i)));
+      qs.push_back(b.staticQubit(static_cast<int64_t>(i)));
     }
     std::tie(qs[12], qs[0]) =
         b.ctrl(qs[12], qs[0], [&](Value t) { return b.h(b.t(t)); });
@@ -382,8 +382,8 @@ TEST_F(QCODDFunctionalityTest, Gphase) {
   const auto phase = std::polar(1.0, 0.25);
   const auto m0 = u0->getMatrix(1);
   const auto m1 = u1->getMatrix(1);
-  for (std::size_t r = 0; r < 2; ++r) {
-    for (std::size_t c = 0; c < 2; ++c) {
+  for (size_t r = 0; r < 2; ++r) {
+    for (size_t c = 0; c < 2; ++c) {
       EXPECT_TRUE(std::abs(m1[r][c] - (m0[r][c] * phase)) < 1e-10);
     }
   }
@@ -521,7 +521,7 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureCollapsesLikePackage) {
   });
   ASSERT_TRUE(mod);
 
-  constexpr std::uint64_t seed = 42;
+  constexpr uint64_t seed = 42;
   auto dd = std::make_unique<dd::Package>(1);
 
   std::mt19937_64 refRng(seed);
@@ -779,7 +779,7 @@ TEST_F(QCODDFunctionalityTest, SampleUnitaryXIsDeterministic) {
 
   auto dd = std::make_unique<dd::Package>(1);
   std::mt19937_64 rng(1);
-  constexpr std::size_t shots = 64;
+  constexpr size_t shots = 64;
   const auto hist = sample(mainFunc(*mod), *dd, shots, rng);
   ASSERT_TRUE(succeeded(hist));
   ASSERT_EQ(hist->size(), 1U);
@@ -797,7 +797,7 @@ TEST_F(QCODDFunctionalityTest, SampleHadamardApproximatelyBalanced) {
 
   auto dd = std::make_unique<dd::Package>(1);
   std::mt19937_64 rng(42);
-  constexpr std::size_t shots = 2000;
+  constexpr size_t shots = 2000;
   const auto hist = sample(mainFunc(*mod), *dd, shots, rng);
   ASSERT_TRUE(succeeded(hist));
   ASSERT_EQ(hist->size(), 2U);
@@ -821,7 +821,7 @@ TEST_F(QCODDFunctionalityTest, SampleDynamicMeasureIf) {
 
   auto dd = std::make_unique<dd::Package>(1);
   std::mt19937_64 rng(7);
-  constexpr std::size_t shots = 32;
+  constexpr size_t shots = 32;
   const auto hist = sample(mainFunc(*mod), *dd, shots, rng);
   ASSERT_TRUE(succeeded(hist));
   ASSERT_EQ(hist->size(), 1U);

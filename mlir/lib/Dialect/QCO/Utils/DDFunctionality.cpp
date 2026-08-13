@@ -847,10 +847,10 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
   return dynamic;
 }
 
-FailureOr<std::map<std::string, std::size_t>>
+FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
-       const std::size_t shots, std::mt19937_64& rng) {
-  std::map<std::string, std::size_t> counts;
+       const size_t shots, std::mt19937_64& rng) {
+  std::map<std::string, size_t> counts;
   if (shots == 0) {
     dd.decRef(in);
     return counts;
@@ -862,14 +862,14 @@ sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
       return failure();
     }
     dd::VectorDD state = *stateOr;
-    for (std::size_t i = 0; i < shots; ++i) {
+    for (size_t i = 0; i < shots; ++i) {
       counts[dd.measureAll(state, false, rng)] += 1;
     }
     dd.decRef(state);
     return counts;
   }
 
-  for (std::size_t i = 0; i < shots; ++i) {
+  for (size_t i = 0; i < shots; ++i) {
     dd.incRef(in);
     auto stateOr = simulateImpl(func, in, dd, &rng);
     if (failed(stateOr)) {
@@ -884,10 +884,10 @@ sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
   return counts;
 }
 
-FailureOr<std::map<std::string, std::size_t>> sample(func::FuncOp func,
-                                                     dd::Package& dd,
-                                                     const std::size_t shots,
-                                                     std::mt19937_64& rng) {
+FailureOr<std::map<std::string, size_t>> sample(func::FuncOp func,
+                                                dd::Package& dd,
+                                                const size_t shots,
+                                                std::mt19937_64& rng) {
   auto qubitsOr = prepare(func, dd);
   if (failed(qubitsOr)) {
     return failure();
