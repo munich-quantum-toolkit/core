@@ -61,6 +61,7 @@ add_mlir_library(
   MLIRQCOToJeff
   MLIRQCToQIRBase
   MLIRQCToQIRAdaptive
+  MLIRQIRUtils
   MLIRQCOTransforms
   MLIRQCTranslation
   MLIRParser
