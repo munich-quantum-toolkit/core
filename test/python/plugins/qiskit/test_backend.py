@@ -145,6 +145,19 @@ def test_backend_from_device_id_rejects_conflicting_device_configuration() -> No
 def test_backend_instantiation(ddsim_backend: QDMIBackend) -> None:
     """Backend exposes target qubit count."""
     assert ddsim_backend.target.num_qubits > 0
+    assert ddsim_backend.device_id == "mqt.ddsim.default"
+
+
+def test_direct_backend_has_no_stable_device_id() -> None:
+    """Direct construction remains valid when no registry ID is available."""
+    backend = QDMIBackend(open_device("mqt.ddsim.default"))
+    assert backend.device_id is None
+
+
+def test_direct_backend_accepts_explicit_stable_device_id() -> None:
+    """Specialized construction can retain the ID of an already-open device."""
+    backend = QDMIBackend(open_device("mqt.ddsim.default"), device_id="allocated.device")
+    assert backend.device_id == "allocated.device"
 
 
 def _single_qubit_circuit() -> QuantumCircuit:
