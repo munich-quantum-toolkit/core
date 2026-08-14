@@ -149,7 +149,13 @@ def docs(session: nox.Session) -> None:
     if serve:
         session.install("sphinx-autobuild")
 
-    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    env = {
+        "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
+        # Favor fast compilation for this short-lived documentation build.
+        "SKBUILD_CMAKE_BUILD_TYPE": "Debug",
+        # Header-set verification and IPO remain enabled by default elsewhere.
+        "SKBUILD_CMAKE_ARGS": "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;-DENABLE_IPO=OFF",
+    }
     # install build and docs dependencies on top of the existing environment
     session.run(
         "uv",
