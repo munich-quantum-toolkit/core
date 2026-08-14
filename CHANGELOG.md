@@ -23,6 +23,8 @@ releases may include breaking changes.
   position ([#2008], [#2010]) ([**@burgholzer**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
+- ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
+  stable QDMI registry IDs ([#1992]) ([**@burgholzer**])
 - ✨ Expose compressed vector and matrix DD serialization through bytes-based
   Python APIs ([#1983]) ([**@burgholzer**])
 - ✨ Make superconducting QDMI devices runtime configurable with session-owned
@@ -651,6 +653,7 @@ changelogs._
 [#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
 [#2008]: https://github.com/munich-quantum-toolkit/core/pull/2008
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
+[#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
 [#1980]: https://github.com/munich-quantum-toolkit/core/pull/1980

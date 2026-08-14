@@ -77,7 +77,12 @@ if(NOT TARGET ${TARGET_NAME})
     PREFIX
     ${QDMI_PREFIX}
     RUNTIME_FILES
-    ${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json)
+    ${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json
+    ${PROJECT_SOURCE_DIR}/json/sc/iqm-garnet.json
+    ${PROJECT_SOURCE_DIR}/json/sc/iqm-emerald.json
+    CONFIGURATIONS
+    "mqt.sc.iqm.garnet|iqm-garnet.json"
+    "mqt.sc.iqm.emerald|iqm-emerald.json")
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 

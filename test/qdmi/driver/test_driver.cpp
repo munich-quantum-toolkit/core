@@ -892,8 +892,8 @@ TEST(ConfiguredDriverTest, ExposesWorkingDefinitionsAndIsolatesFailures) {
   ASSERT_EQ(QDMI_session_query_session_property(
                 session, QDMI_SESSION_PROPERTY_DEVICES, 0, nullptr, &size),
             QDMI_SUCCESS);
-  ASSERT_EQ(size, 3 * sizeof(QDMI_Device));
-  std::array<QDMI_Device, 3> devices{};
+  ASSERT_EQ(size, 5 * sizeof(QDMI_Device));
+  std::array<QDMI_Device, 5> devices{};
   ASSERT_EQ(QDMI_session_query_session_property(
                 session, QDMI_SESSION_PROPERTY_DEVICES, size,
                 static_cast<void*>(devices.data()), nullptr),
@@ -902,9 +902,9 @@ TEST(ConfiguredDriverTest, ExposesWorkingDefinitionsAndIsolatesFailures) {
   std::vector<std::string> names;
   std::ranges::transform(devices, std::back_inserter(names), queryName);
   EXPECT_THAT(names,
-              testing::UnorderedElementsAre("MQT NA Default QDMI Device",
-                                            "MQT Core DDSIM QDMI Device",
-                                            "MQT SC Default QDMI Device"));
+              testing::UnorderedElementsAre(
+                  "IQM Emerald", "IQM Garnet", "MQT NA Default QDMI Device",
+                  "MQT Core DDSIM QDMI Device", "MQT SC Default QDMI Device"));
   QDMI_session_free(session);
 }
 

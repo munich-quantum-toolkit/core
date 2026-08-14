@@ -140,4 +140,28 @@ if(TARGET MQT::CoreQDMIDriver)
                mqt-core-qdmi-runtime-file-install)
   set_tests_properties(mqt-core-qdmi-runtime-file-install-verify
                        PROPERTIES FIXTURES_REQUIRED mqt-core-qdmi-runtime-file-install)
+
+  function(add_qdmi_configuration_rejection_test name invalid_configuration)
+    set(build_dir "${CMAKE_CURRENT_BINARY_DIR}/runtime-file-device-invalid-${name}")
+    set(configure_command
+        ${CMAKE_COMMAND} -S "${CMAKE_CURRENT_SOURCE_DIR}/runtime_file_device" -B "${build_dir}" -G
+        "${CMAKE_GENERATOR}"
+        "-DMQT_CORE_QDMI_HELPER=${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake"
+        "-DMQT_CORE_QDMI_TEST_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+        "-DMQT_CORE_QDMI_INVALID_CONFIGURATION=${invalid_configuration}"
+        "-DCMAKE_BUILD_TYPE=$<CONFIG>")
+    if(CMAKE_GENERATOR_PLATFORM)
+      list(APPEND configure_command -A "${CMAKE_GENERATOR_PLATFORM}")
+    endif()
+    if(CMAKE_GENERATOR_TOOLSET)
+      list(APPEND configure_command -T "${CMAKE_GENERATOR_TOOLSET}")
+    endif()
+    add_test(NAME "mqt-core-qdmi-configuration-rejects-${name}" COMMAND ${configure_command})
+    set_tests_properties("mqt-core-qdmi-configuration-rejects-${name}" PROPERTIES WILL_FAIL TRUE)
+  endfunction()
+
+  add_qdmi_configuration_rejection_test(empty-id empty-id)
+  add_qdmi_configuration_rejection_test(empty-file empty-file)
+  add_qdmi_configuration_rejection_test(duplicate-base-id duplicate-base-id)
+  add_qdmi_configuration_rejection_test(duplicate-configured-id duplicate-configured-id)
 endif()
