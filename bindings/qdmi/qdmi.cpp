@@ -434,6 +434,14 @@ when the custom slot is unsupported.)pb");
              "Returns the direct child devices managed by this device.");
 
   device.def(
+      "query_custom_operations", &fomac::Device::queryCustomOperations,
+      "custom_property"_a,
+      R"pb(Query a custom device property that contains operation handles.
+
+Returns normal :class:`Device.Operation` objects, or ``None`` when the custom
+slot is unsupported. A supported empty list is returned as an empty list.)pb");
+
+  device.def(
       "query_custom_property",
       [](const fomac::Device& self, const fomac::CustomProperty customProperty,
          const nb::handle valueType) {

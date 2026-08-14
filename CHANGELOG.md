@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add generic C++ and Python FoMaC support for custom device properties that
+  contain operation handles ([#2042]) ([**@burgholzer**])
 - ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
   and Python FoMaC APIs, and expose optional device queue length and job queue
   position ([#2008], [#2010]) ([**@burgholzer**])
@@ -637,6 +639,7 @@ changelogs._
 <!-- PR links -->
 
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
+[#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
 [#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
 [#2008]: https://github.com/munich-quantum-toolkit/core/pull/2008
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005

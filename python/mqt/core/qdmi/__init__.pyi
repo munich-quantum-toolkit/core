@@ -258,6 +258,13 @@ class Device:
     def child_devices(self) -> list[Device]:
         """Returns the direct child devices managed by this device."""
 
+    def query_custom_operations(self, custom_property: CustomProperty) -> list[Operation] | None:
+        """Query a custom device property that contains operation handles.
+
+        Returns normal :class:`Device.Operation` objects, or ``None`` when the custom
+        slot is unsupported. A supported empty list is returned as an empty list.
+        """
+
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
     @overload

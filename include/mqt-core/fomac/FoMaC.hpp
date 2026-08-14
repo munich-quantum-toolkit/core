@@ -113,6 +113,31 @@ queryCustomValue(Query query, const std::string_view description) {
   }
 }
 
+template <typename Handle, typename Query>
+[[nodiscard]] std::optional<std::vector<Handle>>
+queryHandleArray(Query query, const std::string_view description) {
+  size_t size = 0;
+  const auto sizeResult = query(0, nullptr, &size);
+  if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {
+    return std::nullopt;
+  }
+  qdmi::throwIfError(sizeResult,
+                     "Querying " + std::string(description) + " size");
+  if (size % sizeof(Handle) != 0) {
+    throw std::invalid_argument(
+        "Cannot decode " + std::string(description) + ": the device reported " +
+        std::to_string(size) + " bytes, which is not a multiple of " +
+        std::to_string(sizeof(Handle)));
+  }
+
+  std::vector<Handle> handles(size / sizeof(Handle));
+  if (size != 0) {
+    qdmi::throwIfError(query(size, static_cast<void*>(handles.data()), nullptr),
+                       "Querying " + std::string(description));
+  }
+  return handles;
+}
+
 [[nodiscard]] constexpr QDMI_Device_Property
 toDeviceProperty(const CustomProperty property) {
   switch (property) {
@@ -527,6 +552,17 @@ public:
   }
 
   /**
+   * @brief Queries a custom device property containing operation handles.
+   * @param property Custom property slot to query.
+   * @return Normal FoMaC operation wrappers, or `std::nullopt` if the slot is
+   * unsupported. A supported empty list is returned as an engaged optional.
+   * @throws std::invalid_argument If the returned byte count is not a multiple
+   * of `sizeof(QDMI_Operation)`.
+   */
+  [[nodiscard]] std::optional<std::vector<Operation>>
+  queryCustomOperations(CustomProperty property) const;
+
+  /**
    * @brief Submits a textual program.
    * @details The terminating null byte required by QDMI text formats is
    * included in the submitted payload.
@@ -585,6 +621,10 @@ private:
    */
   explicit Device(std::shared_ptr<QDMI_Device_impl_d> device)
       : device_(std::move(device)) {}
+
+  /// Wrap operation handles while retaining their owning device session.
+  [[nodiscard]] std::vector<Operation>
+  wrapOperations(std::span<const QDMI_Operation> operations) const;
 
   /// Query a device property.
   template <maybe_optional_value_or_string_or_vector T>

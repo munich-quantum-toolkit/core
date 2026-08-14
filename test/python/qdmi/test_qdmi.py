@@ -243,6 +243,11 @@ def test_device_custom_property_rejects_invalid_type(device: Device) -> None:
         device.query_custom_property(CustomProperty.CUSTOM1, cast("type[bytes]", list))
 
 
+def test_device_custom_operations_unsupported(device: Device) -> None:
+    """Unsupported custom operation lists return None instead of raw bytes."""
+    assert device.query_custom_operations(CustomProperty.CUSTOM5) is None
+
+
 def test_site_index(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site index is a non-negative integer."""
     _device, site = device_and_site

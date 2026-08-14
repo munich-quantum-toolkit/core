@@ -240,12 +240,33 @@ std::vector<Site> Device::getZones() const {
 std::vector<Operation> Device::getOperations() const {
   const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(
       QDMI_DEVICE_PROPERTY_OPERATIONS);
-  std::vector<Operation> operations;
-  operations.reserve(qdmiOperations.size());
+  return wrapOperations(qdmiOperations);
+}
+
+std::optional<std::vector<Operation>>
+Device::queryCustomOperations(const CustomProperty property) const {
+  const auto qdmiProperty = detail::toDeviceProperty(property);
+  const auto handles = detail::queryHandleArray<QDMI_Operation>(
+      [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
+        return QDMI_device_query_device_property(device_.get(), qdmiProperty,
+                                                 size, value, sizeRet);
+      },
+      "custom operation list " +
+          std::to_string(static_cast<unsigned>(property)));
+  if (!handles.has_value()) {
+    return std::nullopt;
+  }
+  return wrapOperations(*handles);
+}
+
+std::vector<Operation>
+Device::wrapOperations(const std::span<const QDMI_Operation> operations) const {
+  std::vector<Operation> wrappedOperations;
+  wrappedOperations.reserve(operations.size());
   std::ranges::transform(
-      qdmiOperations, std::back_inserter(operations),
+      operations, std::back_inserter(wrappedOperations),
       [this](const QDMI_Operation& op) -> Operation { return {device_, op}; });
-  return operations;
+  return wrappedOperations;
 }
 
 std::optional<std::vector<std::pair<Site, Site>>>
