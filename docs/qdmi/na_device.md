@@ -23,14 +23,14 @@ state, so the same allocated session can be corrected and initialized again.
 
 Driver users should use the typed `device-config` registry field or the
 `device_config` and `device_config_file` Python arguments described in
-{doc}`configuration`. Direct QDMI v1 clients use CUSTOM1 and CUSTOM2.
+{doc}`configuration`. Direct low-level QDMI clients use CUSTOM1 and CUSTOM2.
 
 ## Schema and validation
 
 Every description is a strict JSON object with `"schema-version": 1`. The
 bundled example is `json/na/mqt-core-qdmi-na-device.json`, and the C++ value
-model is {cpp-api:class}`na::Device`. Required top-level and nested fields
-cannot be omitted, unknown fields are rejected, and validation covers:
+model is {cpp:class}`na::Device`. Required top-level and nested fields cannot be
+omitted, unknown fields are rejected, and validation covers:
 
 - non-empty names and positive device capacity;
 - finite positive unit scales and supported units;

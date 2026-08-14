@@ -25,8 +25,8 @@ with the `na::Device` configuration type and the `na::readJSON` functions in
 `qdmi/devices/na/Configuration.hpp`.
 
 At runtime, use the registry `session.device-config` field or Python
-`device_config` and `device_config_file` arguments. Direct QDMI v1 clients pass
-inline JSON through CUSTOM1 or a file path through CUSTOM2.
+`device_config` and `device_config_file` arguments. Direct low-level QDMI
+clients pass inline JSON through CUSTOM1 or a file path through CUSTOM2.
 
 ### Bundled QDMI devices in embedded builds
 
@@ -124,7 +124,7 @@ an unknown or disabled ID fails. `fomac::Session::openDevice` creates a fresh
 owned session on every call. `qdmi::Driver::open(id)` retains its cached-device
 behavior for client callers.
 
-See the [QDMI device configuration guide](docs/qdmi/configuration.md) for the
+See the {doc}`QDMI device configuration guide <qdmi/configuration>` for the
 versioned JSON and TOML formats, configuration precedence, and relocatable
 device manifests.
 

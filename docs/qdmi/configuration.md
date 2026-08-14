@@ -63,10 +63,10 @@ or:
 The inline value must be a JSON object. A relative file path is resolved against
 the registry file that declares it. The complete source is one merge field:
 changing from `inline` to `file` at a higher-precedence layer replaces the
-inherited inline JSON. The Driver adapts inline JSON to QDMI v1 CUSTOM1 and a
-file path to CUSTOM2 when opening the native session. Consequently,
-`device-config` cannot be combined with raw `custom1` or `custom2`; CUSTOM3
-through CUSTOM5 remain available to providers.
+inherited inline JSON. The Driver adapts inline JSON to the low-level QDMI
+CUSTOM1 parameter and a file path to CUSTOM2 when opening the native session.
+Consequently, `device-config` cannot be combined with raw `custom1` or
+`custom2`; CUSTOM3 through CUSTOM5 remain available to providers.
 
 Relative library and authentication-file paths are resolved against the file
 that declared them. For `MQT_CORE_QDMI_CONFIG_JSON`, they resolve against the
@@ -159,13 +159,13 @@ registrations without loading native device libraries or exposing their paths,
 prefixes, or session configuration.
 
 The equivalent C++ registration operation is
-{cpp-api:func}`qdmi::Driver::registerDevice`. Duplicate IDs are rejected unless
+{cpp:func}`qdmi::Driver::registerDevice`. Duplicate IDs are rejected unless
 `replace` is true, and an opened definition cannot be replaced.
-{cpp-api:func}`qdmi::Driver::registeredDeviceIds` provides the same load-free
-enumeration, and {cpp-api:func}`qdmi::Driver::open` returns the cached device.
-{cpp-api:func}`fomac::Session::openDevice` returns a fresh device session and
-does not add it to the QDMI client catalog. Runtime registrations and explicit
-opens are not added to that catalog.
+{cpp:func}`qdmi::Driver::registeredDeviceIds` provides the same load-free
+enumeration, and {cpp:func}`qdmi::Driver::open` returns the cached device.
+{cpp:func}`fomac::Session::openDevice` returns a fresh device session and does
+not add it to the QDMI client catalog. Runtime registrations and explicit opens
+are not added to that catalog.
 
 Multiple definitions may refer to the same library and prefix. MQT Core reuses
 the initialized library while creating a fresh QDMI device session, with its own
@@ -225,8 +225,8 @@ definition by stable ID.
 
 A fully static executable has no portable shared-module location. Place the
 fragments beside the executable, point `MQT_CORE_QDMI_CONFIG_FILE` at a complete
-configuration, or use {cpp-api:func}`qdmi::Driver::registerDevice` and
-{cpp-api:func}`qdmi::Driver::open`. No install prefix is compiled into the
+configuration, or use {cpp:func}`qdmi::Driver::registerDevice` and
+{cpp:func}`qdmi::Driver::open`. No install prefix is compiled into the
 manifests.
 
 An installed MQT Core CMake package provides a helper that colocates selected
