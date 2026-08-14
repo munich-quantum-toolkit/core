@@ -33,6 +33,7 @@ from ...qdmi import Job as QDMIJobHandle
 from ...qdmi import ProgramFormat
 from ...qdmi.driver import open_device
 from .converters import qiskit_to_iqm_json
+from .estimator import QDMIEstimator
 from .exceptions import (
     CircuitValidationError,
     JobSubmissionError,
@@ -43,6 +44,7 @@ from .exceptions import (
 )
 from .gates import MoveGate
 from .job import QDMIJob
+from .sampler import QDMISampler
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, MutableSet, Sequence
@@ -50,6 +52,8 @@ if TYPE_CHECKING:
     from qiskit.circuit import Instruction, Parameter
     from qiskit.circuit.parameterexpression import ParameterValueType
 
+    from ..._compat.typing import Unpack
+    from ...typing import QDMISessionParameters
     from .provider import QDMIProvider
 
     # Type alias for parameter values
@@ -168,12 +172,19 @@ class QDMIBackend(BackendV2):
     # Initialize derived mappings at class definition time
     _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES)
 
-    def __init__(self, device: QDMIDevice, provider: QDMIProvider | None = None) -> None:
+    def __init__(
+        self,
+        device: QDMIDevice,
+        provider: QDMIProvider | None = None,
+        *,
+        device_id: str | None = None,
+    ) -> None:
         """Initialize the backend with a QDMI device wrapper.
 
         Args:
             device: QDMI device wrapper.
             provider: Provider instance that created this backend.
+            device_id: Stable registry ID for the opened device, if known.
 
         Raises:
             UnsupportedDeviceError: If the device cannot be represented in Qiskit's Target model.
@@ -184,6 +195,7 @@ class QDMIBackend(BackendV2):
 
         super().__init__(name=device.name(), provider=provider, backend_version=device.version())
         self._device = device
+        self._device_id = device_id
 
         # Build Target from device
         self._target = self._build_target()
@@ -194,7 +206,7 @@ class QDMIBackend(BackendV2):
         device_id: str,
         *,
         provider: QDMIProvider | None = None,
-        session_parameters: Mapping[str, Any] | None = None,
+        **session_parameters: Unpack[QDMISessionParameters],
     ) -> QDMIBackend:
         """Open a registered QDMI device and adapt it for Qiskit.
 
@@ -207,8 +219,39 @@ class QDMIBackend(BackendV2):
             A Qiskit backend for a fresh QDMI device session.
         """
         return cls(
-            device=open_device(device_id, **dict(session_parameters or {})),
+            device=open_device(device_id, **session_parameters),
             provider=provider,
+            device_id=device_id,
+        )
+
+    @property
+    def device_id(self) -> str | None:
+        """Stable QDMI device ID, if known."""
+        return self._device_id
+
+    def sampler(self, *, default_shots: int = 1024) -> QDMISampler:
+        """Construct a QDMI sampler for this backend.
+
+        Returns:
+            A sampler that executes on this backend.
+        """
+        return QDMISampler(self, default_shots=default_shots)
+
+    def estimator(
+        self,
+        *,
+        default_precision: float = 0.0,
+        default_shots: int = 1024,
+    ) -> QDMIEstimator:
+        """Construct a QDMI estimator for this backend.
+
+        Returns:
+            An estimator that executes on this backend.
+        """
+        return QDMIEstimator(
+            self,
+            default_precision=default_precision,
+            default_shots=default_shots,
         )
 
     @property

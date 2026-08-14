@@ -88,10 +88,9 @@ def test_estimator_precision_handling(estimator: QDMIEstimator) -> None:
     assert result[0].metadata["shots"] == other_expected_shots
 
 
-def test_estimator_options(estimator: QDMIEstimator) -> None:
-    """Test estimator options handling."""
-    # Test default_shots option
-    estimator2 = QDMIEstimator(estimator.backend, options={"default_shots": 500})
+def test_estimator_defaults(estimator: QDMIEstimator) -> None:
+    """Test explicit estimator shot and precision defaults."""
+    estimator2 = QDMIEstimator(estimator.backend, default_shots=500)
     qc = QuantumCircuit(1)
     op = SparsePauliOp("Z")
 
@@ -99,12 +98,24 @@ def test_estimator_options(estimator: QDMIEstimator) -> None:
     result = job.result()
     assert result[0].metadata["shots"] == 500
 
-    # Test default_precision option
+    # Test the default precision.
     estimator_prec = QDMIEstimator(estimator.backend, default_precision=0.1)
     job = estimator_prec.run([(qc, op)])
     result = job.result()
     # Should use default_precision -> 100 shots
     assert result[0].metadata["shots"] == 100
+
+
+def test_backend_constructs_estimator() -> None:
+    """A backend constructs an estimator that retains its identity and defaults."""
+    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
+    estimator = backend.estimator(default_shots=73)
+    qc = QuantumCircuit(1)
+    op = SparsePauliOp("Z")
+
+    assert isinstance(estimator, QDMIEstimator)
+    assert estimator.backend is backend
+    assert estimator.run([(qc, op)]).result()[0].metadata["shots"] == 73
 
 
 def test_estimator_observable_bases(estimator: QDMIEstimator) -> None:
