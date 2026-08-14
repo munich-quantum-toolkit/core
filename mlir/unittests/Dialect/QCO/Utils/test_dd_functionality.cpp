@@ -37,9 +37,11 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <random>
+#include <string>
 #include <tuple>
 #include <utility>
 
