@@ -35,7 +35,7 @@ TEST(RandomizedAlgorithms, ReproducibleWithExplicitSeed) {
 
 TEST(RandomizedAlgorithms, SeedsAreIndependentBetweenCalls) {
   constexpr std::size_t seed = 23;
-  const auto expected = qc::createBernsteinVazirani(64, seed);
+  const qc::QuantumComputation expected = qc::createBernsteinVazirani(64, seed);
 
   static_cast<void>(qc::createGrover(5, seed + 1));
   static_cast<void>(qc::createQPE(8, true, seed + 2));
