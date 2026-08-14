@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Allow target compilation to preserve unobserved quantum operations on
+  request ([#2118]) ([**@simon1hofmann**])
 - 🚸 Add typed stable-ID construction for Qiskit backends and compiler targets,
   fluent Qiskit primitives, and lazy provider discovery ([#2084])
   ([**@burgholzer**])
@@ -774,6 +776,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
+[#2118]: https://github.com/munich-quantum-toolkit/core/pull/2118
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
