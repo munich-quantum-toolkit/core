@@ -21,7 +21,7 @@
 
 namespace na {
 namespace {
-auto printParams(const std::vector<qc::fp>& params, std::ostringstream& os)
+auto printLocalParams(const std::vector<qc::fp>& params, std::ostringstream& os)
     -> void {
   if (!params.empty()) {
     for (const auto& p : params) {
@@ -36,14 +36,14 @@ auto LocalOp::toString() const -> std::string {
   ss << std::setprecision(5) << std::fixed;
   ss << "@+ " << name_ << " ";
   if (atoms_.size() == 1) {
-    printParams(params_, ss);
+    printLocalParams(params_, ss);
     ss << *atoms_.front();
     return ss.str();
   }
   ss << "[\n";
   for (const auto& atom : atoms_) {
     ss << "    ";
-    printParams(params_, ss);
+    printLocalParams(params_, ss);
     ss << *atom << "\n";
   }
   ss << "]";
