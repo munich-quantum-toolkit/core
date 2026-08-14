@@ -6,172 +6,33 @@
 #
 # Licensed under the MIT License
 
-"""Tests for OptionalDependencyTester."""
+"""Tests for optional dependency checks."""
 
 from __future__ import annotations
 
-import sys
-import warnings
-
 import pytest
 
-from mqt.core._compat.optional import OptionalDependencyTester  # ruff:ignore[import-private-name]
+from mqt.core._compat import optional  # ruff:ignore[import-private-name]
+from mqt.core._compat.optional import is_module_available  # ruff:ignore[import-private-name]
 
 
 def test_available_module() -> None:
-    """Test with a module that should be available (sys)."""
-    tester = OptionalDependencyTester("sys")
-    assert tester
-    assert bool(tester)
+    """An importable module is available."""
+    assert is_module_available("sys")
 
 
 def test_unavailable_module() -> None:
-    """Test with a module that definitely doesn't exist."""
-    tester = OptionalDependencyTester("this_module_does_not_exist_xyz123")
-    assert not tester
-    assert not bool(tester)
+    """A missing module is unavailable."""
+    assert not is_module_available("this_module_does_not_exist_xyz123")
 
 
-def test_caching() -> None:
-    """Test that availability check is cached."""
-    tester = OptionalDependencyTester("sys")
+def test_broken_module_import_is_not_hidden(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An import error inside an installed dependency remains visible."""
 
-    # First check
-    assert tester
+    def fail_import(_module: str) -> None:
+        msg = "No module named 'transitive_dependency'"
+        raise ModuleNotFoundError(msg, name="transitive_dependency")
 
-    # Cache should be set now
-    assert tester._bool  # ruff:ignore[private-member-access]
-
-    # Second check should use cache
-    assert tester
-
-
-def test_require_now_available() -> None:
-    """Test require_now with an available module."""
-    tester = OptionalDependencyTester("sys")
-    # Should not raise
-    tester.require_now("test this")
-
-
-def test_require_now_unavailable() -> None:
-    """Test require_now with an unavailable module."""
-    tester = OptionalDependencyTester("this_module_does_not_exist_xyz123")
-
-    with pytest.raises(ImportError, match="required to test this feature"):
-        tester.require_now("test this feature")
-
-
-def test_require_module_available() -> None:
-    """Test require_module returns the imported module."""
-    tester = OptionalDependencyTester("sys")
-    module = tester.require_module("test this")
-
-    assert module is sys
-
-
-def test_require_module_unavailable() -> None:
-    """Test require_module raises for unavailable module."""
-    tester = OptionalDependencyTester("this_module_does_not_exist_xyz123")
-
-    with pytest.raises(ImportError, match="required to use feature"):
-        tester.require_module("use feature")
-
-
-def test_custom_install_message() -> None:
-    """Test custom installation message appears in errors."""
-    tester = OptionalDependencyTester(
-        "nonexistent_module",
-        install_msg="Install with 'pip install special-package'",
-    )
-
-    with pytest.raises(ImportError, match="pip install special-package"):
-        tester.require_now("test")
-
-
-def test_disable_locally() -> None:
-    """Test disable_locally context manager."""
-    tester = OptionalDependencyTester("sys")
-
-    # Initially available
-    assert tester
-
-    # Temporarily disabled
-    with tester.disable_locally():
-        assert not tester
-
-    # Back to available after context
-    assert tester
-
-
-def test_disable_locally_preserves_state() -> None:
-    """Test disable_locally preserves original state including None."""
-    tester = OptionalDependencyTester("sys")
-    # Don't check yet, so _bool is None
-    assert tester._bool is None  # ruff:ignore[private-member-access]
-
-    with tester.disable_locally():
-        assert not tester
-
-    # Should be None again (not True)
-    assert tester._bool is None  # ruff:ignore[private-member-access]
-
-
-def test_disable_locally_with_unavailable() -> None:
-    """Test disable_locally works with already unavailable modules."""
-    tester = OptionalDependencyTester("this_module_does_not_exist_xyz123")
-
-    # Check it's unavailable
-    assert not tester
-
-    # Disable locally (should stay False)
-    with tester.disable_locally():
-        assert not tester
-
-    # Still unavailable after context
-    assert not tester
-
-
-def test_module_name_property() -> None:
-    """Test module_name property."""
-    tester = OptionalDependencyTester("test_module")
-    assert tester.module_name == "test_module"
-
-
-def test_repr() -> None:
-    """Test string representation."""
-    tester_available = OptionalDependencyTester("sys")
-    tester_unavailable = OptionalDependencyTester("nonexistent")
-
-    repr_available = repr(tester_available)
-    repr_unavailable = repr(tester_unavailable)
-
-    assert "sys" in repr_available
-    assert "available" in repr_available
-
-    assert "nonexistent" in repr_unavailable
-    assert "not available" in repr_unavailable
-
-
-def test_warn_on_fail() -> None:
-    """Test that warn_on_fail emits warnings when enabled."""
-    tester = OptionalDependencyTester(
-        "this_module_does_not_exist_xyz123",
-        warn_on_fail=True,
-    )
-
-    with pytest.warns(ImportWarning, match="failed to import"):
-        _ = bool(tester)
-
-
-def test_no_warn_by_default() -> None:
-    """Test that warnings are not emitted by default."""
-    tester = OptionalDependencyTester("this_module_does_not_exist_xyz123")
-
-    # Should not emit warnings
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        _ = bool(tester)
-
-    # Filter for ImportWarnings
-    import_warnings = [warning for warning in w if issubclass(warning.category, ImportWarning)]
-    assert len(import_warnings) == 0
+    monkeypatch.setattr(optional, "import_module", fail_import)
+    with pytest.raises(ModuleNotFoundError, match="transitive_dependency"):
+        is_module_available("installed_but_broken")

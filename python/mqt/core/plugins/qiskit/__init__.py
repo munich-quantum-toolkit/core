@@ -12,13 +12,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..._compat.optional import OptionalDependencyTester
+from ..._compat.optional import is_module_available
 
-# Optional dependency tester for Qiskit
-HAS_QISKIT = OptionalDependencyTester(  # ruff:ignore[non-empty-init-module] Used for handling optional plugin
-    "qiskit",
-    install_msg="Install with 'pip install mqt-core[qiskit]'",
-)
+HAS_QISKIT = is_module_available("qiskit")  # ruff:ignore[non-empty-init-module] Optional plugin
 
 __all__ = [
     "HAS_QISKIT",

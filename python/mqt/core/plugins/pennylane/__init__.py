@@ -13,12 +13,9 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from ..._compat.optional import OptionalDependencyTester
+from ..._compat.optional import is_module_available
 
-HAS_PENNYLANE = OptionalDependencyTester(  # ruff:ignore[non-empty-init-module] Optional plugin
-    "pennylane",
-    install_msg="Install with 'uv pip install mqt-core[pennylane]'",
-)
+HAS_PENNYLANE = is_module_available("pennylane")  # ruff:ignore[non-empty-init-module] Optional plugin
 
 __all__ = ["HAS_PENNYLANE"]
 
