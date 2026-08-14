@@ -46,6 +46,10 @@ that intentionally compile state-preparation circuits without observations can
 retain those operations:
 
 ```python
+qco = compile_program(
+    "state-preparation.qasm",
+    output=OutputFormat.QCO,
+)
 qco.compile_for_target(
     target,
     preserve_unobserved_quantum_operations=True,

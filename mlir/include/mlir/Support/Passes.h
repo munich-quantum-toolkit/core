@@ -58,7 +58,10 @@ void populateQCCleanupPipeline(mlir::OpPassManager& pm);
 /**
  * @brief Populate a configurable QCO-oriented cleanup pipeline.
  * @param eliminateUnobservedQuantumOperations Whether to remove unobserved
- * quantum operations.
+ * quantum operations. This parameter defaults to true. When false, only the
+ * labeled unobserved-operation elimination patterns are disabled.
+ * Canonicalization, phase normalization, CSE, QTensor shrinking, and dead-value
+ * removal remain enabled.
  */
 void populateQCOCleanupPipeline(
     mlir::OpPassManager& pm, bool eliminateUnobservedQuantumOperations = true);

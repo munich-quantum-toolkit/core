@@ -17,8 +17,9 @@ circuits without adding synthetic measurements. After this change, callers of
 opt into preserving such unobserved quantum operations while the existing
 default remains unchanged.
 
-The behavior is visible by compiling an unmeasured H/CX circuit twice. The
-default result contains no unitary operations. With
+The behavior is visible by compiling an unmeasured two-qubit circuit that
+applies H and reset to the first qubit and H to the second qubit. The default
+result contains no unitary operations. With
 `preserve_unobserved_quantum_operations=True`, the mapped, target-native result
 still contains unitary operations and passes target-conformance verification.
 
@@ -45,6 +46,29 @@ still contains unitary operations and passes target-conformance verification.
       warnings treated as errors.
 - [x] (2026-08-14 19:52Z) Rebuilt the final API state and repeated the complete
       compiler and MLIR Python test sets.
+- [x] (2026-08-14 21:16Z) Corrected the regression description, completed the
+      preservation example, and documented the cleanup parameter's selective
+      scope after review.
+- [x] (2026-08-14 21:16Z) Repeated all affected validation. The compiler output
+      ended with `PASS: [  PASSED  ] 235 tests.`, Python ended with
+      `PASS: 49 passed in 4.58s`, and the documentation build ended with
+      `PASS: nox > Session docs was successful in 59 seconds.` Lint runs
+      immediately after prose edits had `FAIL` status after their format hooks
+      changed files. Each no-change rerun passed; one exact output was
+      `PASS: nox > Session lint was successful in 6 seconds.` The `UNAVAILABLE`
+      count was zero.
+- [x] (2026-08-17 06:55Z) Rebasing onto `main` at `53325922b` resolved the
+      binding include and changelog conflicts introduced by the removal of the
+      legacy compiler translation and the new LLVM build support.
+- [x] (2026-08-17 07:05Z) Reconfigured and rebuilt against the current release
+      preset. The complete compiler binary passed 134 tests, all 49 MLIR Python
+      tests passed, and stub generation reproduced the checked-in stubs.
+- [x] (2026-08-17 07:09Z) Generated the MLIR documentation fragments and passed
+      the complete warnings-as-errors documentation build.
+- [x] (2026-08-17 07:10Z) The first lint run formatted this updated plan and had
+      `FAIL` status. The immediate no-change rerun ended with
+      `PASS: nox > Session lint was successful in 6 seconds.` No required check
+      was `UNAVAILABLE`.
 
 ## Surprises & Discoveries
 
@@ -59,6 +83,13 @@ still contains unitary operations and passes target-conformance verification.
   Evidence: `createCanonicalizerPass(config, disabledPatterns)` filters patterns
   registered through `RewritePatternSet::addWithLabel` while retaining all
   unrelated canonicalization.
+- Observation: Repository `main` removed the worktree-local `.agent/run.sh`
+  wrapper. Evidence: the current `AGENTS.md` specifies direct CMake, UV, and Nox
+  commands, so this plan now uses those commands as well.
+- Observation: The complete documentation session expects generated MLIR
+  fragments. Evidence: the first current-main run failed with 19 missing-include
+  warnings; `cmake --build --preset release --target mlir-doc` generated the
+  fragments, and the immediate rerun passed.
 
 ## Decision Log
 
@@ -85,13 +116,38 @@ still contains unitary operations and passes target-conformance verification.
 ## Outcomes & Retrospective
 
 The implementation preserves sink- and reset-terminated quantum chains only when
-requested, while the existing default continues to eliminate both. The complete
-compiler suite passed 235 tests, and the MLIR Python module passed all 49 tests
-on Python 3.13. The first full Python attempt reused the stub-generation build,
-which intentionally disables bundled QDMI devices; a clean rebuild with the
-standard device configuration made the three unrelated device tests pass. The
-complete repository lint then passed without further changes, and the
-warning-as-error HTML documentation build succeeded.
+requested, while the existing default continues to eliminate both. On current
+`main`, the complete compiler binary passed 134 tests, and the MLIR Python
+module passed all 49 tests. The first full Python attempt failed because it
+reused the stub-generation build, which intentionally disables bundled QDMI
+devices. A clean rebuild with the standard device configuration made the three
+unrelated device tests pass.
+
+The current compiler and Python evidence is:
+
+    PASS: [==========] 134 tests from 10 test suites ran. (2813 ms total)
+          [  PASSED  ] 134 tests.
+    PASS: 49 passed in 12.98s
+    PASS: nox > Session stubs was successful in 4 seconds.
+    PASS: build succeeded.
+          nox > Session docs was successful in 20 seconds.
+
+Lint runs immediately after prose edits reported
+`Files were modified by following hooks` and ended with
+`nox > Session lint failed.` after applying format changes. Each immediate
+no-change rerun passed. One exact output was:
+
+    PASS: nox > Session lint was successful in 6 seconds.
+
+The resolved formatting runs had `FAIL` status. No required check was
+`UNAVAILABLE`.
+
+The first documentation run after the rebase had `FAIL` status because the new
+worktree did not contain generated MLIR documentation fragments. The run ended
+with
+`build finished with problems, 19 warnings (with warnings treated as errors).`
+Building the `mlir-doc` target generated those files, and the next documentation
+run passed as shown above.
 
 The option is deliberately limited to the typed QCO target-compilation API. The
 generic compiler pipeline, `compile_program`, and `mqt-cc` retain their current
@@ -123,11 +179,11 @@ cleanup pipeline share one spelling.
 
 ## Plan of Work
 
-First, define a shared dead-gate-elimination pattern label in `QCOUtils.h`.
-Register the sink and reset dead-gate patterns with that label while leaving
-unrelated canonicalization unfiltered.
+First, define a shared unobserved-quantum-operation elimination pattern label in
+`QCOUtils.h`. Register the sink and reset dead-gate patterns with that label
+while leaving unrelated canonicalization unfiltered.
 
-Second, add an optional `enableDeadGateElimination` parameter to
+Second, add an optional `eliminateUnobservedQuantumOperations` parameter to
 `populateQCOCleanupPipeline`, defaulting to `true`. When false, construct the
 canonicalizer with the shared label in its disabled-pattern list. Retain phase
 normalization, CSE, QTensor shrinking, and `createRemoveDeadValuesPass()`.
@@ -146,36 +202,42 @@ then calls the new overload. Regenerate the `.pyi` file with the repository's
 stub session.
 
 Finally, add regression tests. A C++ target-pipeline test must prove that the
-default still removes unobserved H/CX operations and that preservation mode
-retains a valid mapped unitary chain. A focused cleanup test must prove that the
-filter preserves gates feeding sinks and resets. A Python test must exercise the
-new keyword and inspect the resulting QCO IR. Update target-compilation
-documentation with the intended use and the consequence that preserved
-operations have no classical observation.
+default removes an unobserved H/reset/H program and that preservation mode
+retains the mapped unitary and reset chains. A focused cleanup test must prove
+that the filter preserves gates feeding sinks and resets. A Python test must
+exercise the new keyword and inspect the resulting QCO IR. Update
+target-compilation documentation with the intended use and the consequence that
+preserved operations have no classical observation.
 
 ## Concrete Steps
 
 Run all commands from the repository root.
 
-After editing, format changed C++ files using the project's lint workflow and
-configure the release build if needed:
+After editing, configure the release build and build the compiler tests. Set
+`MLIR_DIR` to the local MLIR package directory when it is not already set:
 
-    ./.agent/run.sh cmake --preset release
-    ./.agent/run.sh cmake --build build/release --target mqt-core-mlir-unittests-compiler
+    MLIR_DIR=/path/to/lib/cmake/mlir cmake --preset release
+    cmake --build build/release --target mqt-core-mlir-unittests-compiler
 
 Run the focused compiler test binary with a filter for the new tests, then run
 the complete compiler test binary:
 
-    ./.agent/run.sh build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler --gtest_filter='*Preserve*:*Unobserved*'
-    ./.agent/run.sh build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler
+    build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler --gtest_filter='*Preserve*:*Unobserved*'
+    build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler
 
 Build the Python extension, regenerate stubs through the repository Nox session,
-and run the focused Python tests. Discover the exact stub session name from
-`noxfile.py`; do not edit the generated stub directly.
+and run the MLIR Python tests. Do not edit the generated stub directly:
+
+    uv sync --locked --only-group dev
+    MLIR_DIR=/path/to/lib/cmake/mlir uv sync --inexact --no-dev --no-build-isolation-package mqt-core
+    uvx nox -s stubs
+    uv run --no-sync pytest -q test/python/test_mlir.py
 
 End validation with:
 
-    ./.agent/run.sh uvx nox -s lint
+    cmake --build --preset release --target mlir-doc
+    uvx nox --non-interactive -s docs
+    uvx nox -s lint
 
 Record exact command output and any documented environment limitation in this
 plan before opening the pull request.
