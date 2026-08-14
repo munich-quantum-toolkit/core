@@ -1754,6 +1754,9 @@ wheels = [
 [[package]]
 name = "mqt-core"
 source = { editable = "." }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+]
 
 [package.optional-dependencies]
 pennylane = [
@@ -1821,6 +1824,7 @@ test = [
 requires-dist = [
     { name = "pennylane", marker = "python_full_version >= '3.11' and extra == 'pennylane'", specifier = ">=0.45.1,<0.46" },
     { name = "qiskit", extras = ["qasm3-import"], marker = "extra == 'qiskit'", specifier = ">=1.1.0" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'", specifier = ">=4.12" },
 ]
 provides-extras = ["pennylane", "qiskit"]
 

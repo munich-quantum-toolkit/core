@@ -50,6 +50,8 @@ if TYPE_CHECKING:
     from qiskit.circuit import Instruction, Parameter
     from qiskit.circuit.parameterexpression import ParameterValueType
 
+    from ..._compat.typing import Unpack
+    from ...typing import QDMISessionParameters
     from .provider import QDMIProvider
 
     # Type alias for parameter values
@@ -195,21 +197,32 @@ class QDMIBackend(BackendV2):
         *,
         provider: QDMIProvider | None = None,
         session_parameters: Mapping[str, Any] | None = None,
+        **session_overrides: Unpack[QDMISessionParameters],
     ) -> QDMIBackend:
         """Open a registered QDMI device and adapt it for Qiskit.
 
         Args:
             device_id: Stable ID from the QDMI device registry.
             provider: Provider to associate with the backend.
-            session_parameters: Optional overrides for this device session.
+            session_parameters: Optional v3-compatible mapping of overrides for
+                this device session.
+            session_overrides: Typed overrides for this device session.
 
         Returns:
             A Qiskit backend for a fresh QDMI device session.
+
+        Raises:
+            TypeError: If one override is present in both supported v3 call
+                styles.
         """
-        return cls(
-            device=open_device(device_id, **dict(session_parameters or {})),
-            provider=provider,
-        )
+        overrides = dict(session_parameters or {})
+        duplicates = overrides.keys() & session_overrides.keys()
+        if duplicates:
+            names = ", ".join(sorted(duplicates))
+            msg = f"QDMI session parameter(s) specified twice: {names}"
+            raise TypeError(msg)
+        overrides.update(session_overrides)
+        return cls(device=open_device(device_id, **overrides), provider=provider)
 
     @property
     def target(self) -> Target:

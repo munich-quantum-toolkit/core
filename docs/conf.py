@@ -167,6 +167,7 @@ napoleon_numpy_docstring = False
 # they are not documented objects.
 nitpick_ignore_regex = [
     ("py:class", r"Ellipsis"),
+    ("py:class", r"mqt\.core\._compat\.typing\.Unpack"),
     ("py:class", r"ParametersType"),
     ("py:class", r"pennylane\.tape\.QuantumScriptOrBatch"),
     ("py:class", r"pennylane\.transforms\.core\.CompilePipeline"),

@@ -47,6 +47,9 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dynamic = ["version"]
+dependencies = [
+  "typing-extensions>=4.12; python_version < '3.11'",
+]
 
 [project.optional-dependencies]
 pennylane = [
@@ -218,6 +221,7 @@ ignore = [
     "TID252"   # Prefer absolute imports over relative imports from parent modules
 ]
 future-annotations = true
+typing-modules = ["mqt.core._compat.typing"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["mqt.core"]

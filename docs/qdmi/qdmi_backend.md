@@ -93,8 +93,19 @@ print(f"Backend: {backend.name}")
 print(f"Qubits: {backend.target.num_qubits}")
 ```
 
-The optional `session_parameters` mapping applies explicit overrides to this
-fresh device session. Persistent configuration remains the default.
+Optional session keywords apply explicit overrides to this fresh device session.
+Their names and value types are described by
+{py:class}`mqt.core.typing.QDMISessionParameters`; persistent configuration
+remains the default. The `session_parameters` mapping remains available in MQT
+Core 3:
+
+```python
+backend = QDMIBackend.from_device_id(
+    "provider.device",
+    token="access-token",
+    custom1="provider-specific-value",
+)
+```
 
 ### Filtering Backends
 
