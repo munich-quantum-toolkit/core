@@ -48,7 +48,7 @@ TEST_P(RandomClifford, simulate) {
 
   const auto dd = std::make_unique<dd::Package>(nq);
   for (size_t i = 0; i < numReps; ++i) {
-    qc::QuantumComputation circuit =
+    const qc::QuantumComputation circuit =
         qc::createRandomCliffordCircuit(nq, static_cast<std::size_t>(nq) * nq);
     auto in = makeZeroState(nq, *dd);
     ASSERT_NO_THROW({ dd::simulate(circuit, in, *dd); });
