@@ -41,6 +41,7 @@ releases may include breaking changes.
   namespaces, expose device registration and opening through
   `mqt.core.qdmi.driver`, retain v3 FoMaC compatibility aliases, and let the
   Qiskit adapter open stable device IDs directly ([#2074]) ([**@burgholzer**])
+- ⬆️ Update `nanobind` to version 2.14.0 ([#2073]) ([**@denialhaag**])
 - 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
   ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
 
@@ -649,6 +650,7 @@ changelogs._
 
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2043]: https://github.com/munich-quantum-toolkit/core/pull/2043
+[#2073]: https://github.com/munich-quantum-toolkit/core/pull/2073
 [#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
 [#2025]: https://github.com/munich-quantum-toolkit/core/pull/2025
 [#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
