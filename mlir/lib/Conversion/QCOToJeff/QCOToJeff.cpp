@@ -468,7 +468,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   module->setAttr("jeff.toolVersion", builder.getStringAttr(MQT_CORE_VERSION));
 
   module->setAttr("jeff.version", builder.getIntegerAttr(uint16Type, 0));
-  module->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 2));
+  module->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 3));
   module->setAttr("jeff.versionPatch", builder.getIntegerAttr(uint16Type, 0));
 
   return success();
