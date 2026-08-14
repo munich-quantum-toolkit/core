@@ -8,20 +8,26 @@
 
 """PennyLane interface for gate-based QDMI devices."""
 
+# ruff: file-ignore[non-empty-init-module]
+
 from __future__ import annotations
 
 import sys
+from importlib import import_module
 from typing import TYPE_CHECKING
 
-from ..._compat.optional import is_module_available
-
-HAS_PENNYLANE = is_module_available("pennylane")  # ruff:ignore[non-empty-init-module] Optional plugin
+try:
+    import_module("pennylane")
+except ModuleNotFoundError as error:
+    if error.name != "pennylane":
+        raise
+    HAS_PENNYLANE = False
+else:
+    HAS_PENNYLANE = True
 
 __all__ = ["HAS_PENNYLANE"]
 
-if TYPE_CHECKING or (  # ruff:ignore[non-empty-init-module] Optional plugin
-    sys.version_info >= (3, 11) and HAS_PENNYLANE
-):
+if TYPE_CHECKING or (sys.version_info >= (3, 11) and HAS_PENNYLANE):
     from .converter import ConvertedProgram, convert_program
     from .device import DDSIMDevice, QDMIDevice
     from .exceptions import (
