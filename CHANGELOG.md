@@ -119,6 +119,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ♻️ Simplify Python optional-dependency checks while preserving the Qiskit and
+  PennyLane availability flags ([#2108]) ([**@simon1hofmann**])
 - 💥 Remove the unused `pybind11` CMake helper and rename
   `add_mqt_python_binding_nanobind` to `add_mqt_python_binding` ([#2106])
   ([**@denialhaag**])
@@ -754,6 +756,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
