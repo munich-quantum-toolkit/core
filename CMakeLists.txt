@@ -170,6 +170,32 @@ if(BUILD_MQT_CORE_MLIR)
   endif()
 endif()
 
+if(BUILD_MQT_CORE_BINDINGS)
+  set(MQT_CORE_WHEEL_TARGETS
+      mqt-core-ir
+      mqt-core-algorithms
+      mqt-core-circuit-optimizer
+      mqt-core-dd
+      mqt-core-zx
+      mqt-core-ds
+      mqt-core-na
+      mqt-core-ir-bindings
+      mqt-core-dd-bindings
+      mqt-core-qdmi-bindings
+      mqt-core-na-bindings)
+  if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
+    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-ddsim-device)
+  endif()
+  if(BUILD_MQT_CORE_QDMI_NA_DEVICE)
+    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-na-device)
+  endif()
+  if(BUILD_MQT_CORE_QDMI_SC_DEVICE)
+    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-sc-device)
+  endif()
+  add_custom_target(mqt-core-wheel)
+  add_dependencies(mqt-core-wheel ${MQT_CORE_WHEEL_TARGETS})
+endif()
+
 if(PROJECT_IS_TOP_LEVEL)
   if(NOT TARGET mqt-core-uninstall)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in

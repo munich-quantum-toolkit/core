@@ -90,23 +90,8 @@ ninja.version = ">=1.10"
 # Setuptools-style build caching in a local directory
 build-dir = "build/python/{build_type}"
 
-# All the targets to build
-build.targets = [
-  "mqt-core-ir",
-  "mqt-core-algorithms",
-  "mqt-core-circuit-optimizer",
-  "mqt-core-dd",
-  "mqt-core-zx",
-  "mqt-core-ds",
-  "mqt-core-na",
-  "mqt-core-ir-bindings",
-  "mqt-core-dd-bindings",
-  "mqt-core-qdmi-bindings",
-  "mqt-core-na-bindings",
-  "mqt-core-qdmi-ddsim-device",
-  "mqt-core-qdmi-na-device",
-  "mqt-core-qdmi-sc-device",
-]
+# Build the targets that match the enabled optional components.
+build.targets = ["mqt-core-wheel"]
 
 install.components = [
   "mqt-core_Runtime",
