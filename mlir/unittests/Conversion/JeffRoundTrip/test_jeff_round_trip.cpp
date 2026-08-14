@@ -274,6 +274,23 @@ static Value forLoopWithTwoMeasurements(qco::QCOProgramBuilder& b) {
   return c;
 }
 
+static Value nestedForLoopForOp(qco::QCOProgramBuilder& b) {
+  auto theta = b.floatConstant(0.123);
+  auto reg = b.qtensorAlloc(2);
+  auto res = b.scfFor(0, 2, 1, {reg}, [&](Value /*iv*/, ValueRange iterArgs) {
+    auto inner =
+        b.scfFor(0, 2, 1, iterArgs, [&](Value innerIv, ValueRange innerArgs) {
+          auto [t0, q0] = b.qtensorExtract(innerArgs[0], innerIv);
+          auto q1 = b.rx(theta, q0);
+          auto insert = b.qtensorInsert(q1, t0, innerIv);
+          return SmallVector{insert};
+        });
+    return SmallVector{inner[0]};
+  });
+  auto q = b.qtensorExtract(res[0], 0).second;
+  return b.measure(q).second;
+}
+
 static Value whileWithMeasurement(qco::QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto c = b.allocClassicalBitRegister(1);
@@ -310,6 +327,26 @@ static Value whileWithRead(qco::QCOProgramBuilder& b) {
       });
   b.sink(res[0]);
   return c;
+}
+
+static Value nestedWhileOpIfOp(qco::QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto c = b.allocClassicalBitRegister(1);
+  auto q1 = b.h(q0);
+  auto res = b.scfWhile(
+      q1,
+      [&](ValueRange iterArgs) {
+        auto q2 = b.measure(iterArgs[0], c, 0).first;
+        b.scfCondition(c, 0, q2);
+        return SmallVector{q2};
+      },
+      [&](ValueRange iterArgs) {
+        auto inner = b.qcoIf(c, 0, iterArgs[0], [&](ValueRange innerArgs) {
+          return SmallVector{b.x(innerArgs[0])};
+        });
+        return SmallVector{inner[0]};
+      });
+  return b.measure(res[0]).second;
 }
 
 static LogicalResult convertQCOToJeff(ModuleOp module) {
@@ -1130,6 +1167,9 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{"NestedForLoopWhileOp",
                               MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp),
                               MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp)},
+        JeffRoundTripTestCase{"NestedForLoopForOp",
+                              MQT_NAMED_BUILDER(nestedForLoopForOp),
+                              MQT_NAMED_BUILDER(nestedForLoopForOp)},
         JeffRoundTripTestCase{
             "NestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit),
@@ -1151,6 +1191,9 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{"SimpleDoWhile",
                               MQT_NAMED_BUILDER(qco::simpleDoWhileReset),
                               MQT_NAMED_BUILDER(qco::simpleDoWhileReset)},
+        JeffRoundTripTestCase{"NestedWhileOpIfOp",
+                              MQT_NAMED_BUILDER(nestedWhileOpIfOp),
+                              MQT_NAMED_BUILDER(nestedWhileOpIfOp)},
         JeffRoundTripTestCase{"WhileWithAngle",
                               MQT_NAMED_BUILDER(whileWithAngle),
                               MQT_NAMED_BUILDER(whileWithAngle)},

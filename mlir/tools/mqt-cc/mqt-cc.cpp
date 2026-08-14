@@ -50,6 +50,7 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/AsmState.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -451,7 +452,7 @@ static int runCompiler(int argc, char** argv) {
       .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
               LLVM::LLVMDialect, math::MathDialect, memref::MemRefDialect,
               qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-              scf::SCFDialect, jeff::JeffDialect>();
+              scf::SCFDialect, tensor::TensorDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
 
