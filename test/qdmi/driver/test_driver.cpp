@@ -843,6 +843,19 @@ constexpr std::array DEVICES{"MQT NA Default QDMI Device",
                              "MQT SC Default QDMI Device"};
 
 namespace {
+qdmi::DeviceSessionConfig
+makeDeviceConfigurationSession(qdmi::DeviceConfigurationSource source) {
+  qdmi::DeviceSessionConfig session;
+  session.deviceConfiguration = std::move(source);
+  return session;
+}
+
+qdmi::DeviceSessionConfig makeCustom3Session(std::string value) {
+  qdmi::DeviceSessionConfig session;
+  session.custom3 = std::move(value);
+  return session;
+}
+
 void registerSessionTestDevice() {
   qdmi::DeviceSessionConfig sessionConfig;
   sessionConfig.baseUrl = "registered-base";
@@ -1100,13 +1113,14 @@ TEST(DeviceRegistrationTest,
   static_cast<void>(
       driver.registerDeviceIfAbsent({.id = "test.na.runtime-default",
                                      .library = MQT_CORE_QDMI_NA_LIBRARY,
-                                     .prefix = "MQT_NA"}));
+                                     .prefix = "MQT_NA",
+                                     .session = {}}));
   static_cast<void>(driver.registerDeviceIfAbsent(
       {.id = "test.na.runtime-custom",
        .library = MQT_CORE_QDMI_NA_LIBRARY,
        .prefix = "MQT_NA",
-       .session = {.deviceConfiguration = qdmi::FileDeviceConfiguration{
-                       .path = MQT_CORE_QDMI_CUSTOM_NA_FILE}}}));
+       .session = makeDeviceConfigurationSession(qdmi::FileDeviceConfiguration{
+           .path = MQT_CORE_QDMI_CUSTOM_NA_FILE})}));
 
   const auto defaultDevice =
       fomac::Session::openDevice("test.na.runtime-default");
@@ -1134,8 +1148,8 @@ TEST(DeviceRegistrationTest,
       {.id = "test.na.runtime-invalid",
        .library = MQT_CORE_QDMI_NA_LIBRARY,
        .prefix = "MQT_NA",
-       .session = {.deviceConfiguration =
-                       qdmi::InlineDeviceConfiguration{.json = "{}"}}}));
+       .session = makeDeviceConfigurationSession(
+           qdmi::InlineDeviceConfiguration{.json = "{}"})}));
   EXPECT_THROW(
       static_cast<void>(fomac::Session::openDevice("test.na.runtime-invalid")),
       std::runtime_error);
@@ -1221,12 +1235,8 @@ TEST(DeviceRegistrationTest, CustomOperationRetainsOwningDeviceSession) {
 TEST(DeviceRegistrationTest,
      ScRuntimeConfigurationSeparatesModelsUsingOneProviderLibrary) {
   auto& driver = qdmi::Driver::get();
-  static_cast<void>(driver.registerDeviceIfAbsent(
-      {.id = "test.sc.runtime-one",
-       .library = MQT_CORE_QDMI_SC_LIBRARY,
-       .prefix = "MQT_SC",
-       .session = {.deviceConfiguration =
-                       qdmi::InlineDeviceConfiguration{.json = R"({
+  const auto firstConfig = makeDeviceConfigurationSession(
+      qdmi::InlineDeviceConfiguration{.json = R"({
                  "schema-version":1,
                  "name":"SC runtime one",
                  "numQubits":1,
@@ -1240,13 +1250,14 @@ TEST(DeviceRegistrationTest,
                    "duration":7,
                    "fidelity":0.8
                  }]
-               })"}}}));
-  static_cast<void>(driver.registerDeviceIfAbsent(
-      {.id = "test.sc.runtime-two",
-       .library = MQT_CORE_QDMI_SC_LIBRARY,
-       .prefix = "MQT_SC",
-       .session = {.deviceConfiguration =
-                       qdmi::InlineDeviceConfiguration{.json = R"({
+               })"});
+  static_cast<void>(
+      driver.registerDeviceIfAbsent({.id = "test.sc.runtime-one",
+                                     .library = MQT_CORE_QDMI_SC_LIBRARY,
+                                     .prefix = "MQT_SC",
+                                     .session = firstConfig}));
+  const auto secondConfig = makeDeviceConfigurationSession(
+      qdmi::InlineDeviceConfiguration{.json = R"({
                  "schema-version":1,
                  "name":"SC runtime two",
                  "numQubits":2,
@@ -1254,7 +1265,12 @@ TEST(DeviceRegistrationTest,
                  "qubitProperties":{"defaults":{},"overrides":[]},
                  "couplings":[[1,0]],
                  "operations":[]
-               })"}}}));
+               })"});
+  static_cast<void>(
+      driver.registerDeviceIfAbsent({.id = "test.sc.runtime-two",
+                                     .library = MQT_CORE_QDMI_SC_LIBRARY,
+                                     .prefix = "MQT_SC",
+                                     .session = secondConfig}));
 
   const auto first = fomac::Session::openDevice("test.sc.runtime-one");
   const auto second = fomac::Session::openDevice("test.sc.runtime-two");
@@ -1529,12 +1545,12 @@ TEST(DeviceSessionConfigTest, IdempotentLoadingWithDifferentConfigs) {
 TEST(DynamicDeviceLibraryTest, ReusesLibraryWithFreshDeviceSessions) {
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
   auto* const first =
-      openTestDevice(library, prefix, {.custom3 = "first-session"});
+      openTestDevice(library, prefix, makeCustom3Session("first-session"));
   const auto equivalentLibrary = std::filesystem::path(library).parent_path() /
                                  "." /
                                  std::filesystem::path(library).filename();
   auto* const second = openTestDevice(equivalentLibrary.string(), prefix,
-                                      {.custom3 = "second-session"});
+                                      makeCustom3Session("second-session"));
 
   ASSERT_NE(first, second);
   EXPECT_EQ(&first->getLibrary(), &second->getLibrary());

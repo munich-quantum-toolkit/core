@@ -70,13 +70,19 @@ private:
   std::optional<std::string> originalValue;
 };
 
+qdmi::DeviceSessionConfig makeStatusSession(const std::string& status) {
+  qdmi::DeviceSessionConfig session;
+  session.custom4 = status;
+  return session;
+}
+
 void registerStatusDevice(const std::string& id,
                           const std::string& configuredStatus) {
   static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent(
       {.id = id,
        .library = MQT_CORE_FOMAC_SLURM_TEST_DEVICE,
        .prefix = "TEST_SESSION",
-       .session = {.custom4 = configuredStatus}}));
+       .session = makeStatusSession(configuredStatus)}));
 }
 
 } // namespace

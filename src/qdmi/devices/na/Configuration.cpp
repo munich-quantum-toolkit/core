@@ -481,7 +481,8 @@ solve2DLinearEquation(const int64_t x1, const int64_t x2, const int64_t y1,
   };
   const auto det = (asLatticeFloat(x1) * asLatticeFloat(y2)) -
                    (asLatticeFloat(x2) * asLatticeFloat(y1));
-  if (constexpr auto epsilon = 1e-10; std::abs(det) < epsilon) {
+  if (constexpr auto epsilon = static_cast<LatticeFloat>(1e-10);
+      std::abs(det) < epsilon) {
     throw std::runtime_error("The system of equations has no unique solution.");
   }
   const auto detX = (asLatticeFloat(x0) * asLatticeFloat(y2)) -
