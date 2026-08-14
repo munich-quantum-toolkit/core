@@ -1142,6 +1142,9 @@ TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
   EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "missing", &job),
             QDMI_ERROR_NOTFOUND);
   EXPECT_EQ(job, nullptr);
+
+  const auto retrievedJob = device.retrieveJobById("session-job");
+  EXPECT_EQ(retrievedJob.getId(), "session-job");
 }
 
 TEST(DeviceRegistrationTest, FreshChildDeviceRetainsItsRootSession) {

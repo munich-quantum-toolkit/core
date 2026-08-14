@@ -433,7 +433,18 @@ int MQT_SC_QDMI_device_session_create_device_job(
   return session->createDeviceJob(job);
 }
 
-void MQT_SC_QDMI_device_job_free(MQT_SC_QDMI_Device_Job job) { job->free(); }
+int MQT_SC_QDMI_device_session_retrieve_device_job_by_id(
+    [[maybe_unused]] MQT_SC_QDMI_Device_Session session,
+    [[maybe_unused]] const char* jobId,
+    [[maybe_unused]] MQT_SC_QDMI_Device_Job* job) {
+  return QDMI_ERROR_NOTSUPPORTED;
+}
+
+void MQT_SC_QDMI_device_job_free(MQT_SC_QDMI_Device_Job job) {
+  if (job != nullptr) {
+    job->free();
+  }
+}
 
 int MQT_SC_QDMI_device_job_set_parameter(MQT_SC_QDMI_Device_Job job,
                                          const QDMI_Device_Job_Parameter param,

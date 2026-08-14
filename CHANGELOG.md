@@ -12,9 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Support retrieving existing jobs by ID through the QDMI client API and
-  expose optional device queue length and job queue position through the C++ and
-  Python FoMaC APIs ([#2010]) ([**@burgholzer**])
+- ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
+  and Python FoMaC APIs, and expose optional device queue length and job queue
+  position ([#2008], [#2010]) ([**@burgholzer**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
 - ✨ Expose compressed vector and matrix DD serialization through bytes-based
@@ -638,6 +638,7 @@ changelogs._
 
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
+[#2008]: https://github.com/munich-quantum-toolkit/core/pull/2008
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
