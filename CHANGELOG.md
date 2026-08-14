@@ -92,7 +92,7 @@ releases may include breaking changes.
   correction ([#1407], [#1674], [#2002], [#2038]) ([**@J4MMlE**],
   [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
-  [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018])
+  [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105])
   ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping scalar- and tensor-allocated
   circuits to compiler-target topologies while preserving target site IDs and
@@ -751,6 +751,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2073]: https://github.com/munich-quantum-toolkit/core/pull/2073
 [#2066]: https://github.com/munich-quantum-toolkit/core/pull/2066
