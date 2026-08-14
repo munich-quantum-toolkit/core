@@ -40,6 +40,21 @@ compilation to an existing QCO program. For pass-level benchmarking, the C++ API
 exposes separate factories for pre-routing optimization, mapping, native
 synthesis, and conformance verification.
 
+By default, target compilation removes quantum operations whose final qubit
+values are not observed by a measurement or returned from the program. Callers
+that intentionally compile state-preparation circuits without observations can
+retain those operations:
+
+```python
+qco.compile_for_target(
+    target,
+    preserve_unobserved_quantum_operations=True,
+)
+```
+
+Preservation is intended for compiler analysis and benchmarking. The resulting
+program still has no classical observation of those qubit values.
+
 ## Command line from a source build
 
 List the stable IDs of configured QDMI devices:

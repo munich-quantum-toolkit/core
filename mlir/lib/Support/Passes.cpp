@@ -11,6 +11,7 @@
 #include "mlir/Support/Passes.h"
 
 #include "mlir/Dialect/QC/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
@@ -26,6 +27,7 @@
 #include <mlir/Transforms/Passes.h>
 
 #include <cstdint>
+#include <string>
 
 using namespace mlir;
 
@@ -119,9 +121,16 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(OpPassManager& pm) {
+void populateQCOCleanupPipeline(
+    OpPassManager& pm, const bool eliminateUnobservedQuantumOperations) {
+  SmallVector<std::string> disabledPatterns;
+  if (!eliminateUnobservedQuantumOperations) {
+    disabledPatterns.emplace_back(
+        qco::UNOBSERVED_QUANTUM_OPERATION_ELIMINATION_PATTERN_LABEL.str());
+  }
   pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit),
+      disabledPatterns));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
@@ -146,8 +155,9 @@ void populateJeffCleanupPipeline(OpPassManager& pm) {
 }
 
 [[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp mod) {
-  return runWithPassManager(mod, populateQCOCleanupPipeline,
-                            "Failed to run the QCO cleanup pipeline.");
+  return runWithPassManager(
+      mod, [](OpPassManager& pm) { populateQCOCleanupPipeline(pm); },
+      "Failed to run the QCO cleanup pipeline.");
 }
 
 [[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp mod,

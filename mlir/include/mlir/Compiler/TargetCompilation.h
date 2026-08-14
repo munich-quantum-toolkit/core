@@ -16,6 +16,14 @@ class CompilerTarget;
 class OpPassManager;
 
 /**
+ * @brief Options for the canonical compiler-target pipeline.
+ */
+struct TargetCompilationOptions {
+  /// Preserve quantum operations whose final qubit values are unobserved.
+  bool preserveUnobservedQuantumOperations = false;
+};
+
+/**
  * @brief Populate the canonical compiler-target pipeline.
  *
  * @details Decomposes supported multi-controlled gates, performs
@@ -23,7 +31,8 @@ class OpPassManager;
  * native operations, performs a final local cleanup, and verifies target
  * conformance.
  */
-void populateTargetCompilationPipeline(OpPassManager& pm,
-                                       const CompilerTarget& target);
+void populateTargetCompilationPipeline(
+    OpPassManager& pm, const CompilerTarget& target,
+    const TargetCompilationOptions& options = {});
 
 } // namespace mlir

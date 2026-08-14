@@ -60,5 +60,7 @@ struct DeadGateElimination final : OpRewritePattern<SinkOp> {
 
 void SinkOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<RemoveAllocSinkPair, DeadGateElimination>(context);
+  results.add<RemoveAllocSinkPair>(context);
+  results.addWithLabel<DeadGateElimination>(
+      {UNOBSERVED_QUANTUM_OPERATION_ELIMINATION_PATTERN_LABEL}, context);
 }

@@ -11,6 +11,7 @@
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetCompilation.h"
 #include "qdmi/Client.hpp" // NOLINT(misc-include-cleaner)
 #include "qdmi/driver/SessionConfig.hpp"
 #include "qiskit/Qiskit.h"
@@ -774,11 +775,24 @@ operations.)pb");
            "Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle "
            "phase gates that act on at least min_qubits qubits (min_qubits "
            "must be at least 3; default 3 means wider than two-qubit).")
-      .def("compile_for_target",
-           &BooleanMemberAdapter<&mlir::QCOProgram::compileForTarget>::call,
-           "target"_a, nb::kw_only(), "enable_timing"_a = false,
-           "enable_statistics"_a = false,
-           "Compile this QCO program for the target in place.")
+      .def(
+          "compile_for_target",
+          [](mlir::QCOProgram& program, const mlir::CompilerTarget& target,
+             const bool preserveUnobservedQuantumOperations,
+             const bool enableTiming, const bool enableStatistics) {
+            const mlir::TargetCompilationOptions options{
+                .preserveUnobservedQuantumOperations =
+                    preserveUnobservedQuantumOperations};
+            requireSuccess(program.compileForTarget(
+                target, options, enableTiming, enableStatistics));
+          },
+          "target"_a, nb::kw_only(),
+          "preserve_unobserved_quantum_operations"_a = false,
+          "enable_timing"_a = false, "enable_statistics"_a = false,
+          R"pb(Compile this QCO program for the target in place.
+
+Set ``preserve_unobserved_quantum_operations=True`` to retain quantum
+operations whose final qubit values are otherwise discarded.)pb")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {

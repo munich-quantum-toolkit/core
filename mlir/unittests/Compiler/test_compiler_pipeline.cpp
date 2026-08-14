@@ -11,6 +11,7 @@
 #include "TestCaseUtils.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetCompilation.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
@@ -1178,6 +1179,63 @@ c = measure q;
   EXPECT_EQ(staticSites, (llvm::SmallVector<int64_t>{2472, 18449}));
   EXPECT_EQ(numDynamic, 0);
   EXPECT_EQ(numSwaps, 0);
+}
+
+/**
+ * @brief Test: target compilation can retain unobserved quantum operations.
+ */
+TEST_F(CompilerPipelineTest,
+       QCOProgramCanPreserveUnobservedQuantumOperationsForTarget) {
+  constexpr llvm::StringLiteral source = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+reset q[0];
+h q[1];
+)";
+  const auto buildQCO = [&source]() -> std::optional<QCOProgram> {
+    auto qc = QCProgram::fromQASMString(source);
+    if (!qc) {
+      return std::nullopt;
+    }
+    return std::move(*qc).intoQCO();
+  };
+  const auto target = llvm::cantFail(CompilerTarget::create(3));
+
+  auto defaultProgram = buildQCO();
+  ASSERT_TRUE(defaultProgram);
+  ASSERT_TRUE(defaultProgram->compileForTarget(target));
+  auto defaultModule = parseRecordedModule(defaultProgram->str());
+  ASSERT_TRUE(defaultModule);
+  size_t defaultUnitaryOperations = 0;
+  size_t defaultStaticQubits = 0;
+  defaultModule->walk([&](Operation* operation) {
+    defaultUnitaryOperations += isa<UnitaryOpInterface>(operation);
+    defaultStaticQubits += isa<StaticOp>(operation);
+  });
+  EXPECT_EQ(defaultUnitaryOperations, 0);
+  EXPECT_EQ(defaultStaticQubits, 0);
+
+  auto preservedProgram = buildQCO();
+  ASSERT_TRUE(preservedProgram);
+  const TargetCompilationOptions options{.preserveUnobservedQuantumOperations =
+                                             true};
+  ASSERT_TRUE(preservedProgram->compileForTarget(target, options));
+  auto preservedModule = parseRecordedModule(preservedProgram->str());
+  ASSERT_TRUE(preservedModule);
+  EXPECT_TRUE(verify(*preservedModule).succeeded());
+
+  size_t preservedUnitaryOperations = 0;
+  size_t preservedResets = 0;
+  size_t preservedStaticQubits = 0;
+  preservedModule->walk([&](Operation* operation) {
+    preservedUnitaryOperations += isa<UnitaryOpInterface>(operation);
+    preservedResets += isa<ResetOp>(operation);
+    preservedStaticQubits += isa<StaticOp>(operation);
+  });
+  EXPECT_EQ(preservedUnitaryOperations, 2);
+  EXPECT_EQ(preservedResets, 1);
+  EXPECT_EQ(preservedStaticQubits, 2);
 }
 
 /**

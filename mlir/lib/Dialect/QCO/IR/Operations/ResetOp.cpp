@@ -128,5 +128,7 @@ OpFoldResult ResetOp::fold(FoldAdaptor /*adaptor*/) {
 
 void ResetOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                           MLIRContext* context) {
-  results.add<RemoveResetAfterExtract, DeadGateElimination>(context);
+  results.add<RemoveResetAfterExtract>(context);
+  results.addWithLabel<DeadGateElimination>(
+      {UNOBSERVED_QUANTUM_OPERATION_ELIMINATION_PATTERN_LABEL}, context);
 }

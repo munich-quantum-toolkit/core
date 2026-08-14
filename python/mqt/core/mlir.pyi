@@ -423,9 +423,18 @@ class QCOProgram(Program):
         """Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
 
     def compile_for_target(
-        self, target: CompilerTarget, *, enable_timing: bool = False, enable_statistics: bool = False
+        self,
+        target: CompilerTarget,
+        *,
+        preserve_unobserved_quantum_operations: bool = False,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
     ) -> None:
-        """Compile this QCO program for the target in place."""
+        """Compile this QCO program for the target in place.
+
+        Set ``preserve_unobserved_quantum_operations=True`` to retain quantum
+        operations whose final qubit values are otherwise discarded.
+        """
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:
         """Convert this program to QC.

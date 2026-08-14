@@ -421,6 +421,35 @@ def test_qco_program_compiles_for_direct_sparse_target() -> None:
     assert qco.ir.count("qco.measure") == 2
 
 
+def test_qco_program_can_preserve_unobserved_quantum_operations() -> None:
+    """Retain unmeasured state preparation when target compiling on request."""
+    source = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+reset q[0];
+h q[1];
+"""
+    target = CompilerTarget(3)
+
+    default_program = compile_program(source, output=OutputFormat.QCO)
+    assert isinstance(default_program, QCOProgram)
+    default_program.compile_for_target(target)
+    assert "qco.h" not in default_program.ir
+    assert "qco.reset" not in default_program.ir
+    assert "qco.static" not in default_program.ir
+
+    preserved_program = compile_program(source, output=OutputFormat.QCO)
+    assert isinstance(preserved_program, QCOProgram)
+    preserved_program.compile_for_target(
+        target,
+        preserve_unobserved_quantum_operations=True,
+    )
+    assert preserved_program.ir.count("qco.h") == 2
+    assert preserved_program.ir.count("qco.reset") == 1
+    assert preserved_program.ir.count("qco.static") == 2
+
+
 def test_compiler_target_constructors_preserve_python_api() -> None:
     """Construct every target metadata type and target overload."""
     duration_unit = CompilerTarget.DurationUnit("ns", 1.0)

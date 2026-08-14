@@ -20,14 +20,17 @@
 
 namespace mlir {
 
-void populateTargetCompilationPipeline(OpPassManager& pm,
-                                       const CompilerTarget& target) {
-  populateQCOCleanupPipeline(pm);
+void populateTargetCompilationPipeline(
+    OpPassManager& pm, const CompilerTarget& target,
+    const TargetCompilationOptions& options) {
+  const auto eliminateUnobservedQuantumOperations =
+      !options.preserveUnobservedQuantumOperations;
+  populateQCOCleanupPipeline(pm, eliminateUnobservedQuantumOperations);
   populateDecomposeMultiControlledPipeline(pm, 3);
   populateDefaultQCOOptimizationPipeline(pm);
   pm.addPass(qco::createFuseTwoQubitGates());
   pm.addPass(qco::createMappingPass(target, qco::MappingPassOptions{}));
-  populateQCOCleanupPipeline(pm);
+  populateQCOCleanupPipeline(pm, eliminateUnobservedQuantumOperations);
   pm.addPass(qco::createTargetNativeSynthesis(target));
   pm.addPass(createCSEPass());
   pm.addPass(createRemoveDeadValuesPass());
