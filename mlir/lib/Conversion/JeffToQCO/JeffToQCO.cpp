@@ -1039,9 +1039,12 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
 
     auto inValues = adaptor.getInValues();
 
+    // The operands may already carry converted types, which `isLinearType` does
+    // not recognize. The results still carry jeff types and correspond to the
+    // in-values positionally, so they decide which in-values are qubits.
     SmallVector<Value> qubits;
-    for (auto [value, adapted] : llvm::zip(op.getInValues(), inValues)) {
-      if (isLinearType(value.getType())) {
+    for (auto [type, adapted] : llvm::zip(op.getResultTypes(), inValues)) {
+      if (isLinearType(type)) {
         qubits.push_back(adapted);
       }
     }
@@ -1172,10 +1175,13 @@ struct ConvertJeffWhileOpToQCO final : OpConversionPattern<jeff::WhileOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto inValues = adaptor.getInValues();
 
+    // The operands may already carry converted types, which `isLinearType` does
+    // not recognize. The results still carry jeff types and correspond to the
+    // in-values positionally, so they decide which in-values are qubits.
     SmallVector<Value> qubits;
     SmallVector<Type> outTypes;
-    for (auto [value, adapted] : llvm::zip(op.getInValues(), inValues)) {
-      if (isLinearType(value.getType())) {
+    for (auto [type, adapted] : llvm::zip(op.getResultTypes(), inValues)) {
+      if (isLinearType(type)) {
         qubits.push_back(adapted);
         outTypes.push_back(adapted.getType());
       }

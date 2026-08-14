@@ -185,6 +185,28 @@ private:
   LoweringState* state_;
 };
 
+/**
+ * @brief Base class for patterns that move a region into a jeff operation
+ *
+ * @details
+ * `moveRegion` clones the operations of the source region, so a nested control
+ * flow operation reaches the driver as a new operation of the same kind as the
+ * one just matched. Without bounded rewrite recursion, the driver rejects it
+ * with "pattern was already applied" and the outer operation fails to legalize.
+ * The recursion terminates because each application moves one nesting level of
+ * the original program into its jeff counterpart.
+ */
+template <typename OpType>
+class RegionMovingConversionPattern
+    : public StatefulOpConversionPattern<OpType> {
+public:
+  RegionMovingConversionPattern(TypeConverter& typeConverter,
+                                MLIRContext* context, LoweringState* state)
+      : StatefulOpConversionPattern<OpType>(typeConverter, context, state) {
+    this->setHasBoundedRewriteRecursion();
+  }
+};
+
 } // namespace
 
 /**
@@ -446,7 +468,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   module->setAttr("jeff.toolVersion", builder.getStringAttr(MQT_CORE_VERSION));
 
   module->setAttr("jeff.version", builder.getIntegerAttr(uint16Type, 0));
-  module->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 2));
+  module->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 3));
   module->setAttr("jeff.versionPatch", builder.getIntegerAttr(uint16Type, 0));
 
   return success();
@@ -1364,8 +1386,8 @@ struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
  * }
  * ```
  */
-struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+struct ConvertQCOIfOpToJeff final : RegionMovingConversionPattern<IfOp> {
+  using RegionMovingConversionPattern::RegionMovingConversionPattern;
 
   LogicalResult
   matchAndRewrite(IfOp op, OpAdaptor adaptor,
@@ -1473,8 +1495,8 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
  * }
  * ```
  */
-struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+struct ConvertSCFForOpToJeff final : RegionMovingConversionPattern<scf::ForOp> {
+  using RegionMovingConversionPattern::RegionMovingConversionPattern;
 
   LogicalResult
   matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
@@ -1556,8 +1578,8 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
  * ```
  */
 struct ConvertSCFWhileOpToJeff final
-    : StatefulOpConversionPattern<scf::WhileOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+    : RegionMovingConversionPattern<scf::WhileOp> {
+  using RegionMovingConversionPattern::RegionMovingConversionPattern;
 
   LogicalResult
   matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
