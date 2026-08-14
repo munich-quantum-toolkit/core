@@ -71,7 +71,7 @@ if(NOT TARGET ${TARGET_NAME})
   endif()
 
   # declare the Python module
-  add_mqt_python_binding_nanobind(
+  add_mqt_python_binding(
     CORE
     ${TARGET_NAME}
     ${SOURCES}
