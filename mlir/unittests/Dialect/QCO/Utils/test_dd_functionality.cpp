@@ -823,6 +823,40 @@ TEST_F(QCODDFunctionalityTest, SampleDefersTerminalMeasurement) {
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 16}}));
 }
 
+TEST_F(QCODDFunctionalityTest, SampleRejectsUnmappedTerminalMeasurement) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%unmapped: !qco.qubit) {
+        %q = qco.static 0 : !qco.qubit
+        %out, %bit = qco.measure %unmapped : !qco.qubit
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(7);
+  EXPECT_TRUE(failed(sample(mainFunc(*mod), *dd, 1, rng)));
+}
+
+TEST_F(QCODDFunctionalityTest, SampleResetUsesDynamicSampling) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.reset(b.x(b.staticQubit(0)));
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(7);
+  const auto histogram = sample(mainFunc(*mod), *dd, 16, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"0", 16}}));
+}
+
 TEST_F(QCODDFunctionalityTest, SampleDynamicMeasureIf) {
   // |1> measure then identity branch; final measureAll is always "1".
   auto mod = buildModule([](QCOProgramBuilder& b) {
