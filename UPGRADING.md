@@ -65,6 +65,23 @@ The former `add_mqt_python_binding` function built modules with `pybind11`. All
 MQT projects have switched from `pybind11` to `nanobind`, so no build used that
 function. MQT Core no longer provides it.
 
+### CoreIR API cleanup
+
+The CoreIR API cleanup requires the following migrations:
+
+- Replace `getNmeasuredQubits()` and `num_measured_qubits` with
+  `getNoutputQubits()` and `num_output_qubits`, respectively.
+- Replace permutation-aware `Operation::equals()` and `getUsedQubitsPermuted()`
+  calls by applying the permutation to cloned operations before comparing them.
+- Replace `getHighestLogicalQubitIndex()`, `printStatistics()`, and
+  `printPermutation()` with `initialLayout.maxValue()`, the individual count
+  accessors, and direct `Permutation` iteration, respectively.
+- Construct output-permutation measurements explicitly instead of calling
+  `appendMeasurementsAccordingToOutputPermutation()`.
+
+The register lookup helpers `getQubitRegister()`, `getPhysicalQubitIndex()`, and
+`physicalQubitIsAncillary()` are now private implementation details.
+
 ### Removal of the ZX-calculus library
 
 MQT Core no longer provides the `mqt-core-zx` library, the `MQT::CoreZX` CMake

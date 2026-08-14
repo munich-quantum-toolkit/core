@@ -126,9 +126,7 @@ void IfElseOperation::apply(const Permutation& permutation) {
   }
 }
 
-bool IfElseOperation::equals(const Operation& operation,
-                             const Permutation& perm1,
-                             const Permutation& perm2) const {
+bool IfElseOperation::equals(const Operation& operation) const {
   if (const auto* other = dynamic_cast<const IfElseOperation*>(&operation)) {
     if (controlRegister_ != other->controlRegister_) {
       return false;
@@ -146,14 +144,14 @@ bool IfElseOperation::equals(const Operation& operation,
       return false;
     }
     if (thenOp_ && other->thenOp_) {
-      if (!thenOp_->equals(*other->thenOp_, perm1, perm2)) {
+      if (!thenOp_->equals(*other->thenOp_)) {
         return false;
       }
     } else if (thenOp_ || other->thenOp_) {
       return false;
     }
     if (elseOp_ && other->elseOp_) {
-      if (!elseOp_->equals(*other->elseOp_, perm1, perm2)) {
+      if (!elseOp_->equals(*other->elseOp_)) {
         return false;
       }
     } else if (elseOp_ || other->elseOp_) {

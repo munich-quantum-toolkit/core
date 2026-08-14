@@ -122,6 +122,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
+  logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
+  ([**@simon1hofmann**])
 - ♻️ Simplify Python optional-dependency checks while preserving the Qiskit and
   PennyLane availability flags ([#2108]) ([**@simon1hofmann**])
 - 💥 Remove the unused `pybind11` CMake helper and rename
@@ -764,6 +767,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
+[#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
