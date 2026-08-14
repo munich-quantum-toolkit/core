@@ -21,6 +21,7 @@ releases may include breaking changes.
 - ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
   and Python FoMaC APIs, and expose optional device queue length and job queue
   position ([#2008], [#2010]) ([**@burgholzer**])
+- 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
 - ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
@@ -464,7 +465,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#320)._
 
 ### Added
 
-- 🐍 Build Python 3.14 wheels ([#1076]) ([**@denialhaag**])
+- 🐍 Start building CPython 3.14 wheels ([#1076]) ([**@denialhaag**])
 - ✨ Add MQT-internal MLIR dialect conversions ([#1001]) ([**@li-mingbao**])
 
 ### Changed
@@ -652,6 +653,7 @@ changelogs._
 [#2025]: https://github.com/munich-quantum-toolkit/core/pull/2025
 [#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
 [#2008]: https://github.com/munich-quantum-toolkit/core/pull/2008
+[#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
 [#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
