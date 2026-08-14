@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/QC/Translation/StandardGate.h"
+
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
 
@@ -26,49 +28,17 @@ enum class GateAvailability : uint8_t {
   Compatibility,
 };
 
-enum class GateLowering : uint8_t {
-  GPhase,
-  Id,
-  X,
-  Y,
-  Z,
-  H,
-  S,
-  Sdg,
-  T,
-  Tdg,
-  SX,
-  SXdg,
-  P,
-  RX,
-  RY,
-  RZ,
-  R,
-  U2,
-  U3,
-  BuiltinU,
-  CU,
-  SWAP,
-  ISWAP,
-  DCX,
-  ECR,
-  RCCX,
-  RXX,
-  RYY,
-  RZX,
-  RZZ,
-  XXPlusYY,
-  XXMinusYY,
-};
+using GateLowering = qc::StandardGate;
 
 struct GateCatalogEntry {
-  constexpr GateCatalogEntry(llvm::StringRef name, GateLowering lowering,
-                             size_t parameterCount, size_t controlCount,
-                             size_t targetCount, GateAvailability availability,
-                             bool variadicControls = false,
-                             bool inverse = false) noexcept
-      : name(name), lowering(lowering), parameterCount(parameterCount),
-        controlCount(controlCount), targetCount(targetCount),
+  GateCatalogEntry(llvm::StringRef name, GateLowering lowering,
+                   size_t controlCount, GateAvailability availability,
+                   bool variadicControls = false, bool inverse = false) noexcept
+      : name(name), lowering(lowering),
+        parameterCount(qc::getStandardGateDescriptor(lowering).parameterCount),
+        controlCount(controlCount +
+                     qc::getStandardGateDescriptor(lowering).controlCount),
+        targetCount(qc::getStandardGateDescriptor(lowering).targetCount),
         availability(availability), variadicControls(variadicControls),
         inverse(inverse) {}
 

@@ -257,7 +257,7 @@ protected:
     OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
     const auto result = runMergePass(*module);
     if (succeeded(result)) {
-      mqt::test::expectFullUnitaryEqual(*original, *module, 1);
+      ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
     }
     return result;
   }
@@ -715,7 +715,7 @@ TEST_P(MergeFixedSingleQubitGateTest, PreservesMatrix) {
   OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
   ASSERT_TRUE(runMergePass(*module).succeeded());
 
-  mqt::test::expectFullUnitaryEqual(*original, *module, 1);
+  ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RXOp>(), 0);
 }

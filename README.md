@@ -32,7 +32,6 @@ forms the backbone of the quantum software tools developed as part of the
 
 - Fully fledged intermediate representation (IR) for quantum computations.
 - A state-of-the-art decision diagram (DD) package for quantum computing.
-- A dedicated ZX-diagram package for working with the ZX-calculus.
 - A QIR runtime based on the decision diagram package.
 
 If you have any questions, feel free to create a
@@ -123,8 +122,6 @@ MQT Core is compatible with all
 
 The project relies on some external dependencies:
 
-- [boost/multiprecision](https://github.com/boostorg/multiprecision):
-  A library for multiprecision arithmetic (used in the ZX package).
 - [nlohmann/json](https://github.com/nlohmann/json):
   A JSON library for modern C++.
 - [google/googletest](https://github.com/google/googletest):
@@ -138,9 +135,6 @@ this behavior).
 
 It is recommended (although not required) to have
 [GraphViz](https://www.graphviz.org) installed for visualization purposes.
-
-If you want to use the ZX library, it is recommended (although not strictly
-necessary) to have [GMP](https://gmplib.org/) installed in your system.
 
 ## Cite This
 

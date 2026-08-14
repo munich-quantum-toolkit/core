@@ -15,8 +15,8 @@ from typing import Literal, overload
 
 import qiskit
 
-import mqt.core.fomac
 import mqt.core.ir
+from mqt.core.qdmi import Device
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -254,7 +254,7 @@ class CompilerTarget:
             """The two-qubit entangler."""
 
     @staticmethod
-    def from_device(device: mqt.core.fomac.Device) -> CompilerTarget:
+    def from_device(device: Device) -> CompilerTarget:
         """Snapshot a circuit-model QDMI device."""
 
     @property
@@ -357,6 +357,9 @@ class QCProgram(Program):
 
     def to_openqasm3(self) -> OpenQASMProgram:
         """Clean up and emit this QC program as OpenQASM 3 without QCO optimization."""
+
+    def to_qiskit(self) -> qiskit.circuit.QuantumCircuit:
+        """Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it."""
 
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
         """Convert this program to QCO.

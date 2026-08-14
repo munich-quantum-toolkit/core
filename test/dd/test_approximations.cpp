@@ -30,7 +30,8 @@ namespace {
 /**
  * @brief Compare the elements of @p a and @p b with precision @p delta.
  */
-void vecNear(const CVec& a, const CVec& b, const double delta = 1e-6) {
+void expectApproximationVectorNear(const CVec& a, const CVec& b,
+                                   const double delta = 1e-6) {
   for (std::size_t i = 0; i < b.size(); ++i) {
     EXPECT_NEAR(a[i].real(), b[i].real(), delta);
     EXPECT_NEAR(a[i].imag(), b[i].imag(), delta);
@@ -175,7 +176,7 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
 
   const CVec expected{{0.755929}, {0.654654}, {0}, {0}};
 
-  vecNear(state.getVector(), expected);
+  expectApproximationVectorNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 3);
   EXPECT_NEAR(meta.fidelity, 0.875, 1e-3);
 
@@ -231,7 +232,7 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   auto ref = simulate(qcRef, makeZeroState(nq, *dd), *dd);
 
   const CVec expected{{0}, {0}, {0}, {0, 1}};
-  vecNear(state.getVector(), expected);
+  expectApproximationVectorNear(state.getVector(), expected);
   state.printVector();
   EXPECT_EQ(state.size(), 3);
   EXPECT_NEAR(meta.fidelity, 0.75, 1e-3);
@@ -279,7 +280,7 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   const auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0, 1}, {0}, {0}, {0}, {0}, {0}, {0}, {0}};
-  vecNear(state.getVector(), expected);
+  expectApproximationVectorNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 4);
   EXPECT_NEAR(meta.fidelity, 0.75, 1e-3);
 }
@@ -326,7 +327,7 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
   auto meta = approximate(state, fidelity, *dd);
 
   const CVec expected{{0}, {-1}, {0}, {0}, {0}, {0}, {0}, {0}};
-  vecNear(state.getVector(), expected);
+  expectApproximationVectorNear(state.getVector(), expected);
   EXPECT_EQ(state.size(), 4);
   EXPECT_NEAR(meta.fidelity, 0.361, 1e-3);
 }

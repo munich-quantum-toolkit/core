@@ -1,0 +1,27 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-qdmi-bindings")
+
+if(NOT TARGET ${TARGET_NAME})
+  # collect source files
+  file(GLOB_RECURSE SOURCES **.cpp)
+
+  # declare the Python module
+  add_mqt_python_binding_nanobind(
+    CORE
+    ${TARGET_NAME}
+    ${SOURCES}
+    MODULE_NAME
+    qdmi
+    INSTALL_DIR
+    .
+    LINK_LIBS
+    MQT::CoreFoMaC)
+
+endif()

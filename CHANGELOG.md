@@ -12,8 +12,14 @@ releases may include breaking changes.
 
 ### Added
 
+- 🧪 Test static Slurm license admission and QDMI execution with DDSIM and SC,
+  and document the cluster setup ([#2043]) ([**@burgholzer**])
+- ✨ Add C++ and Python adapters that open the QDMI device named by one local
+  Slurm license environment value ([#2025]) ([**@burgholzer**])
 - ✨ Add an `unroll-modifiers` pass for unrolling multi-operation modifiers
   ([#2015]) ([**@denialhaag**], [**@burgholzer**])
+- ✨ Add Qiskit circuit import and export to the compiler collection ([#2031])
+  ([**@burgholzer**])
 - ✨ Add generic C++ and Python FoMaC support for custom device properties that
   contain operation handles ([#2042]) ([**@burgholzer**])
 - ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
@@ -115,6 +121,10 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Move Python QDMI entities and the neutral-atom specialization to QDMI
+  namespaces, expose device registration and opening through
+  `mqt.core.qdmi.driver`, retain v3 FoMaC compatibility aliases, and let the
+  Qiskit adapter open stable device IDs directly ([#2074]) ([**@burgholzer**])
 - ⬆️ Update `nanobind` to version 2.14.0 ([#2073]) ([**@denialhaag**])
 - 🛡️ Isolate DDSIM QIR job execution and restrict statevector extraction to
   terminal `irreversible` regions of Base-profile programs ([#2036])
@@ -122,8 +132,6 @@ releases may include breaking changes.
 - 💥 Update the QIR runner for QIR 2.1 entry points and resource management,
   with entry-point selection and reproducible multi-shot execution ([#2035])
   ([**@burgholzer**])
-- 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
-  ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
 - 💥 Require LLVM/MLIR and QIR support in every MQT Core build and remove the
   corresponding build options ([#1953]) ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
@@ -133,6 +141,10 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
+  `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
+  and GMP build support. Equivalence-checking users should use [MQT QCEC]; its
+  ZX implementation is internal and does not provide a replacement public API.
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466])
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
@@ -741,19 +753,23 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2073]: https://github.com/munich-quantum-toolkit/core/pull/2073
 [#2066]: https://github.com/munich-quantum-toolkit/core/pull/2066
 [#2060]: https://github.com/munich-quantum-toolkit/core/pull/2060
 [#2058]: https://github.com/munich-quantum-toolkit/core/pull/2058
 [#2049]: https://github.com/munich-quantum-toolkit/core/pull/2049
+[#2043]: https://github.com/munich-quantum-toolkit/core/pull/2043
 [#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
 [#2039]: https://github.com/munich-quantum-toolkit/core/pull/2039
 [#2038]: https://github.com/munich-quantum-toolkit/core/pull/2038
 [#2036]: https://github.com/munich-quantum-toolkit/core/pull/2036
 [#2035]: https://github.com/munich-quantum-toolkit/core/pull/2035
+[#2031]: https://github.com/munich-quantum-toolkit/core/pull/2031
 [#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
 [#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
 [#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
+[#2025]: https://github.com/munich-quantum-toolkit/core/pull/2025
 [#2018]: https://github.com/munich-quantum-toolkit/core/pull/2018
 [#2017]: https://github.com/munich-quantum-toolkit/core/pull/2017
 [#2016]: https://github.com/munich-quantum-toolkit/core/pull/2016
@@ -779,7 +795,6 @@ for previous changelogs._
 [#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1987]: https://github.com/munich-quantum-toolkit/core/pull/1987
 [#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
-[#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
 [#1980]: https://github.com/munich-quantum-toolkit/core/pull/1980
 [#1979]: https://github.com/munich-quantum-toolkit/core/pull/1979
