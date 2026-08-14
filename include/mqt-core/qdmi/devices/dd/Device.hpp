@@ -45,7 +45,7 @@ class Device final : public Singleton<Device> {
   size_t qubitsNum_ = 0;
 
   /// The status of the device.
-  std::atomic<QDMI_Device_Status> status_{QDMI_DEVICE_STATUS_OFFLINE};
+  std::atomic<QDMI_Device_Status> status_{QDMI_DEVICE_STATUS_IDLE};
 
   /// The list of device sessions.
   std::unordered_map<MQT_DDSIM_QDMI_Device_Session,

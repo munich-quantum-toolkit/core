@@ -36,6 +36,10 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
+namespace bindings {
+void registerSlurm(nb::module_& qdmiModule);
+}
+
 namespace {
 void warnAboutLegacySession() {
   constexpr auto message =
@@ -124,6 +128,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
   qdmiModule.doc() = "QDMI entities and access to MQT Core's QDMI driver.";
   auto driver = qdmiModule.def_submodule(
       "driver", "Register, discover, and open QDMI devices through MQT Core.");
+  bindings::registerSlurm(qdmiModule);
 
   // Session class
   auto session = nb::class_<fomac::Session>(driver, "Session",

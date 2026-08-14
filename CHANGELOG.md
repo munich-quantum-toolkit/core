@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add C++ and Python adapters that open the QDMI device named by one local
+  Slurm license environment value ([#2025]) ([**@burgholzer**])
 - ✨ Add generic C++ and Python FoMaC support for custom device properties that
   contain operation handles ([#2042]) ([**@burgholzer**])
 - ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
@@ -640,6 +642,7 @@ changelogs._
 
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
+[#2025]: https://github.com/munich-quantum-toolkit/core/pull/2025
 [#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
 [#2008]: https://github.com/munich-quantum-toolkit/core/pull/2008
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
