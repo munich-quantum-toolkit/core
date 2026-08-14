@@ -6,6 +6,28 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Python binding CMake helper
+
+The `add_mqt_python_binding_nanobind` function is now called
+`add_mqt_python_binding`. Rename the calls in downstream `CMakeLists.txt` files:
+
+```cmake
+add_mqt_python_binding(
+  MYPACKAGE
+  py_mypackage
+  ${SOURCES}
+  MODULE_NAME
+  _core
+  INSTALL_DIR
+  .
+  LINK_LIBS
+  MQT::Core)
+```
+
+The former `add_mqt_python_binding` function built modules with `pybind11`. All
+MQT projects have switched from `pybind11` to `nanobind`, so no build used that
+function. MQT Core no longer provides it.
+
 ### QDMI Qiskit primitive options
 
 `QDMISampler` and `QDMIEstimator` no longer accept the MQT-specific `options`

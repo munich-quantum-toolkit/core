@@ -42,6 +42,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Remove the unused `pybind11` CMake helper and rename
+  `add_mqt_python_binding_nanobind` to `add_mqt_python_binding` ([#2106])
+  ([**@denialhaag**])
 - 💥 Replace the MQT-specific QDMI primitive `options` mappings with explicit
   shot and precision defaults ([#2084]) ([**@burgholzer**])
 - ♻️ Simplify Python optional-dependency checks while preserving the Qiskit and
@@ -657,7 +660,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
-[#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
+[#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2046]: https://github.com/munich-quantum-toolkit/core/pull/2046
