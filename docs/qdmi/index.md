@@ -16,6 +16,7 @@ NA QDMI Device <na_device>
 DDSIM QDMI Device <ddsim_device>
 QDMI Driver <driver>
 QDMI device configuration <configuration>
+Slurm integration <slurm>
 QDMI-Qiskit Backend <qdmi_backend>
 PennyLane interface for QDMI devices <pennylane_device>
 ```

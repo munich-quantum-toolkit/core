@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- 🧪 Test static Slurm license admission and QDMI execution with DDSIM and SC,
+  and document the cluster setup ([#2043]) ([**@burgholzer**])
 - ✨ Add C++ and Python adapters that open the QDMI device named by one local
   Slurm license environment value ([#2025]) ([**@burgholzer**])
 - ✨ Add generic C++ and Python FoMaC support for custom device properties that
@@ -641,6 +643,7 @@ changelogs._
 <!-- PR links -->
 
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
+[#2043]: https://github.com/munich-quantum-toolkit/core/pull/2043
 [#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
 [#2025]: https://github.com/munich-quantum-toolkit/core/pull/2025
 [#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
