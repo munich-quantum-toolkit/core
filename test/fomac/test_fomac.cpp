@@ -258,6 +258,23 @@ TEST(CustomPropertyTest, RejectsIncompatibleRepresentations) {
                std::invalid_argument);
 }
 
+TEST(QueuePositionTest, ReturnsPositionOnSuccess) {
+  EXPECT_EQ(detail::queuePositionFromResult(QDMI_SUCCESS, 3), 3);
+}
+
+TEST(QueuePositionTest, ReturnsNulloptWhenUnavailable) {
+  EXPECT_EQ(detail::queuePositionFromResult(QDMI_ERROR_NOTSUPPORTED, 0),
+            std::nullopt);
+  EXPECT_EQ(detail::queuePositionFromResult(QDMI_ERROR_BADSTATE, 0),
+            std::nullopt);
+}
+
+TEST(QueuePositionTest, PropagatesOtherQueryErrors) {
+  EXPECT_THROW(std::ignore = detail::queuePositionFromResult(
+                   QDMI_ERROR_INVALIDARGUMENT, 0),
+               std::invalid_argument);
+}
+
 TEST(FoMaCTest, StatusToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_WARN_GENERAL), "General warning");
   EXPECT_STREQ(qdmi::toString(QDMI_SUCCESS), "Success");
@@ -348,6 +365,8 @@ TEST(FoMaCTest, DevicePropertyToString) {
                "SUPPORTED PROGRAM FORMATS");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CHILDDEVICES),
                "CHILD DEVICES");
+  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_QUEUELENGTH),
+               "QUEUE LENGTH");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_MAX), "MAX");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM1), "CUSTOM1");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM2), "CUSTOM2");
@@ -421,6 +440,10 @@ TEST_P(DeviceTest, CouplingMap) {
 
 TEST_P(DeviceTest, NeedsCalibration) {
   EXPECT_NO_THROW(std::ignore = device.getNeedsCalibration());
+}
+
+TEST_F(DDSimulatorDeviceTest, QueueLengthIsUnavailable) {
+  EXPECT_EQ(device.getQueueLength(), std::nullopt);
 }
 
 TEST_P(DeviceTest, LengthUnit) {
@@ -831,6 +854,10 @@ c[0] = measure q[0];
       device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
 
   EXPECT_NE(job.getId(), job2.getId());
+}
+
+TEST_F(JobTest, QueuePositionIsUnavailable) {
+  EXPECT_EQ(job.getQueuePosition(), std::nullopt);
 }
 
 TEST_F(JobTest, UnsupportedCustomPropertyAndResultReturnNullopt) {

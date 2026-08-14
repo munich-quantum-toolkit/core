@@ -523,6 +523,10 @@ TEST_P(DriverJobTest, JobQueryProperty) {
     EXPECT_EQ(numShots, 1);
   }
 
+  EXPECT_EQ(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_QUEUEPOSITION, 0,
+                                    nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+
   constexpr std::array customProperties{
       QDMI_JOB_PROPERTY_CUSTOM1, QDMI_JOB_PROPERTY_CUSTOM2,
       QDMI_JOB_PROPERTY_CUSTOM3, QDMI_JOB_PROPERTY_CUSTOM4,
@@ -775,6 +779,21 @@ TEST_P(DriverTest, QueryOperations) {
 
 TEST_P(DriverTest, SessionAlloc) {
   EXPECT_EQ(QDMI_session_alloc(nullptr), QDMI_ERROR_INVALIDARGUMENT);
+}
+
+TEST_P(DriverTest, RetrieveJobById) {
+  QDMI_Job job = nullptr;
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(nullptr, "job-id", &job),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, nullptr, &job),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "", &job),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "job-id", nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "job-id", &job),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(job, nullptr);
 }
 
 TEST_P(DriverTest, SessionInit) {
@@ -1097,6 +1116,32 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
 
   const auto probe = fomac::Session::openDevice("test.session-overrides");
   EXPECT_THAT(queryName(probe), testing::HasSubstr("active=1"));
+}
+
+TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
+  registerSessionTestDevice();
+  const auto device = fomac::Session::openDevice("test.session-overrides");
+
+  QDMI_Job job = nullptr;
+  ASSERT_EQ(QDMI_session_retrieve_job_by_id(device, "session-job", &job),
+            QDMI_SUCCESS);
+  ASSERT_NE(job, nullptr);
+
+  std::array<char, 12> id{};
+  EXPECT_EQ(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_ID, id.size(),
+                                    id.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_STREQ(id.data(), "session-job");
+  EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
+                                   sizeof(size_t), nullptr),
+            QDMI_ERROR_BADSTATE);
+  EXPECT_EQ(QDMI_job_submit(job), QDMI_ERROR_BADSTATE);
+  QDMI_job_free(job);
+
+  job = nullptr;
+  EXPECT_EQ(QDMI_session_retrieve_job_by_id(device, "missing", &job),
+            QDMI_ERROR_NOTFOUND);
+  EXPECT_EQ(job, nullptr);
 }
 
 TEST(DeviceRegistrationTest, FreshChildDeviceRetainsItsRootSession) {

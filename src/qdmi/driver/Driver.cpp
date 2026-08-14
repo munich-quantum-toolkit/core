@@ -122,6 +122,13 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
       throw std::runtime_error("Failed to load symbol: " + symbolName);        \
     }                                                                          \
   }
+
+#define LOAD_OPTIONAL_DYNAMIC_SYMBOL(symbol)                                   \
+  {                                                                            \
+    const std::string symbolName = std::string(prefix) + "_QDMI_" + #symbol;   \
+    (symbol) = reinterpret_cast<decltype(symbol)>(                             \
+        DL_SYM(libHandle_, symbolName.c_str()));                               \
+  }
   //===----------------------------------------------------------------------===//
 
   try {
@@ -136,6 +143,7 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
     LOAD_DYNAMIC_SYMBOL(device_session_set_parameter)
     // device job interface
     LOAD_DYNAMIC_SYMBOL(device_session_create_device_job)
+    LOAD_OPTIONAL_DYNAMIC_SYMBOL(device_session_retrieve_device_job_by_id)
     LOAD_DYNAMIC_SYMBOL(device_job_free)
     LOAD_DYNAMIC_SYMBOL(device_job_set_parameter)
     LOAD_DYNAMIC_SYMBOL(device_job_query_property)
@@ -158,6 +166,9 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
     throw;
   }
 }
+
+#undef LOAD_OPTIONAL_DYNAMIC_SYMBOL
+#undef LOAD_DYNAMIC_SYMBOL
 
 DynamicDeviceLibrary::~DynamicDeviceLibrary() {
   // Check if QDMI_device_finalize is not NULL before calling it.
@@ -397,6 +408,26 @@ auto QDMI_Device_impl_d::createJob(QDMI_Job* job) -> int {
   return QDMI_SUCCESS;
 }
 
+auto QDMI_Device_impl_d::retrieveJobById(const char* const jobId,
+                                         QDMI_Job* const job) -> int {
+  if (jobId == nullptr || *jobId == '\0' || job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (library_->device_session_retrieve_device_job_by_id == nullptr) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
+  QDMI_Device_Job deviceJob = nullptr;
+  const auto result = library_->device_session_retrieve_device_job_by_id(
+      deviceSession_, jobId, &deviceJob);
+  if (result != QDMI_SUCCESS) {
+    return result;
+  }
+  auto uniqueJob = std::make_unique<QDMI_Job_impl_d>(deviceJob, this);
+  const auto it = jobs_.emplace(uniqueJob.get(), std::move(uniqueJob)).first;
+  *job = it->first;
+  return QDMI_SUCCESS;
+}
+
 auto QDMI_Device_impl_d::freeJob(QDMI_Job job) -> void {
   if (job != nullptr) {
     jobs_.erase(job);
@@ -508,6 +539,8 @@ namespace {
     return QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT;
   case QDMI_JOB_PROPERTY_SHOTSNUM:
     return QDMI_DEVICE_JOB_PROPERTY_SHOTSNUM;
+  case QDMI_JOB_PROPERTY_QUEUEPOSITION:
+    return QDMI_DEVICE_JOB_PROPERTY_QUEUEPOSITION;
   case QDMI_JOB_PROPERTY_CUSTOM1:
     return QDMI_DEVICE_JOB_PROPERTY_CUSTOM1;
   case QDMI_JOB_PROPERTY_CUSTOM2:
@@ -796,6 +829,14 @@ int QDMI_device_create_job(QDMI_Device dev, QDMI_Job* job) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return dev->createJob(job);
+}
+
+int QDMI_session_retrieve_job_by_id(QDMI_Device device, const char* jobId,
+                                    QDMI_Job* job) {
+  if (device == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return device->retrieveJobById(jobId, job);
 }
 
 void QDMI_job_free(QDMI_Job job) {

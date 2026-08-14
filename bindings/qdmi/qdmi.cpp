@@ -309,6 +309,11 @@ when the custom slot is unsupported.)pb");
   job.def_prop_ro("num_shots", &fomac::Job::getNumShots,
                   "The number of shots.");
 
+  job.def_prop_ro(
+      "queue_position", &fomac::Job::getQueuePosition,
+      "The number of jobs ahead in the queue, or None if unavailable or not "
+      "applicable in the current state.");
+
   job.def(nb::self == nb::self,
           nb::sig("def __eq__(self, arg: object, /) -> bool"));
   job.def(nb::self != nb::self,
@@ -402,6 +407,9 @@ when the custom slot is unsupported.)pb");
 
   device.def("needs_calibration", &fomac::Device::getNeedsCalibration,
              "Returns whether the device needs calibration.");
+
+  device.def("queue_length", &fomac::Device::getQueueLength,
+             "Returns the current queue length, or None if unavailable.");
 
   device.def("length_unit", &fomac::Device::getLengthUnit,
              "Returns the unit of length used by the device.");
