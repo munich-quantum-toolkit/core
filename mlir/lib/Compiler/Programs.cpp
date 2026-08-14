@@ -49,6 +49,7 @@
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
@@ -83,10 +84,11 @@ namespace mlir {
 
 [[nodiscard]] static std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
-  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                  arith::ArithDialect, cf::ControlFlowDialect,
-                  func::FuncDialect, scf::SCFDialect, LLVM::LLVMDialect,
-                  memref::MemRefDialect, jeff::JeffDialect>();
+  registry
+      .insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+              arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
+              scf::SCFDialect, LLVM::LLVMDialect, memref::MemRefDialect,
+              tensor::TensorDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
 
