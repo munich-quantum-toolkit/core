@@ -305,6 +305,23 @@ TEST(OpenQASMFrontendTest, RejectsUninitializedScalarOutputs) {
             std::string::npos);
 }
 
+TEST(OpenQASMFrontendTest, RejectsRecursiveCustomGatesAfterBodyAnalysis) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+gate recursive q {
+  recursive q;
+}
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_FALSE(analyzed);
+  ASSERT_EQ(analyzed.diagnostics.size(), 1);
+  EXPECT_EQ(analyzed.diagnostics.front().message,
+            "recursive custom gate definition involving 'recursive'");
+  EXPECT_EQ(analyzed.diagnostics.front().location.line, 4);
+  EXPECT_EQ(analyzed.diagnostics.front().location.column, 3);
+}
+
 TEST(OpenQASMFrontendTest, RejectsInvalidGateControlAndBroadcastShapes) {
   constexpr llvm::StringLiteral zeroControl = R"qasm(
 OPENQASM 3.1;
