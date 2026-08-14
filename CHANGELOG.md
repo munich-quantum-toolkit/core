@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- 📝 Generate `llms.txt` documentation indexes with Sphinx-LLM ([#1989],
+  [#2046]) ([**@denialhaag**], [**@burgholzer**])
 - 🧪 Test static Slurm license admission and QDMI execution with DDSIM and SC,
   and document the cluster setup ([#2043]) ([**@burgholzer**])
 - ✨ Add C++ and Python adapters that open the QDMI device named by one local
@@ -651,6 +653,7 @@ changelogs._
 <!-- PR links -->
 
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
+[#2046]: https://github.com/munich-quantum-toolkit/core/pull/2046
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2043]: https://github.com/munich-quantum-toolkit/core/pull/2043
 [#2073]: https://github.com/munich-quantum-toolkit/core/pull/2073
@@ -659,6 +662,7 @@ changelogs._
 [#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
 [#2008]: https://github.com/munich-quantum-toolkit/core/pull/2008
 [#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
+[#1989]: https://github.com/munich-quantum-toolkit/core/pull/1989
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
 [#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
