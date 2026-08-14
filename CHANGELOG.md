@@ -22,7 +22,7 @@ releases may include breaking changes.
   ([**@burgholzer**])
 - ✨ Let a package register a program codec for a device-specific program format
   through the `mqt.core.qiskit.program_codecs` entry point group or
-  `mqt.core.plugins.qiskit.register_program_codec` ([#PRNUM]) ([**@marcelwa**])
+  `mqt.core.plugins.qiskit.register_program_codec` ([#2114]) ([**@marcelwa**])
 - 🧪 Test static Slurm license admission and QDMI execution with DDSIM and SC,
   and document the cluster setup ([#2043]) ([**@burgholzer**])
 - ✨ Add C++ and Python adapters that open the QDMI device named by one local
@@ -188,7 +188,7 @@ releases may include breaking changes.
   as compiler inputs ([#2054]) ([**@burgholzer**])
 - 💥 Remove the IQM JSON converter `qiskit_to_iqm_json` and the `MoveGate` from
   the Qiskit plugin. [QDMI-on-IQM] owns both and registers the IQM JSON codec
-  through the new entry point group ([#PRNUM]) ([**@marcelwa**])
+  through the new entry point group ([#2114]) ([**@marcelwa**])
 - 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
   `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
   and GMP build support. Equivalence-checking users should use [MQT QCEC]; its
@@ -813,6 +813,7 @@ for previous changelogs._
 [#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2115]: https://github.com/munich-quantum-toolkit/core/pull/2115
+[#2114]: https://github.com/munich-quantum-toolkit/core/pull/2114
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2111]: https://github.com/munich-quantum-toolkit/core/pull/2111
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
