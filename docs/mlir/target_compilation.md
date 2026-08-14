@@ -68,17 +68,17 @@ required pass ordering.
 
 ## C++ source-tree API
 
-The source build provides a narrow FoMaC bridge between a live QDMI device and
+The source build provides a narrow QDMI bridge between a live QDMI device and
 the compiler-owned target:
 
 ```cpp
-#include "fomac/FoMaC.hpp"
-#include "mlir/Compiler/FoMaCAdapter.h"
+#include "qdmi/Client.hpp"
+#include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Programs.h"
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 
-auto device = fomac::Session::openDevice("mqt.sc.iqm.garnet");
+auto device = qdmi::Session::openDevice("mqt.sc.iqm.garnet");
 auto target = mlir::compilerTargetFromDevice(device);
 if (!target) {
   llvm::errs() << "Failed to create compiler target: "

@@ -9,15 +9,15 @@
  */
 
 /** @file Slurm.hpp
- * @brief FoMaC adapter for selecting a QDMI device from a Slurm license
+ * @brief QDMI adapter for selecting a QDMI device from a Slurm license
  * environment value.
  */
 
 #pragma once
 
-#include "fomac/FoMaC.hpp"
+#include "qdmi/Client.hpp"
 
-namespace fomac::slurm {
+namespace qdmi::slurm {
 
 /**
  * @brief Opens the QDMI device named by the Slurm license environment.
@@ -36,4 +36,4 @@ namespace fomac::slurm {
  */
 [[nodiscard]] Device openDeviceFromLicense();
 
-} // namespace fomac::slurm
+} // namespace qdmi::slurm

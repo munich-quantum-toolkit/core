@@ -31,11 +31,9 @@
 #include <variant>
 #include <vector>
 
-namespace fomac {
-class Session;
-}
-
 namespace qdmi {
+
+class Session;
 
 /// Inline JSON used to configure one QDMI device session.
 struct InlineDeviceConfiguration {
@@ -443,7 +441,7 @@ namespace qdmi {
  */
 class Driver final : public Singleton<Driver> {
   friend class Singleton;
-  friend class fomac::Session;
+  friend class Session;
 
   /// @brief Private constructor to enforce the singleton pattern.
   Driver();

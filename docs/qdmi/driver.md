@@ -40,7 +40,7 @@ For example, an embedded simulator consumer can enable only the DDSIM device,
 while CUDA-Q can enable the DDSIM and superconducting devices used by its
 integration tests.
 
-The QDMI driver and FoMaC libraries are available independently. Device-free
+The QDMI driver and QDMI libraries are available independently. Device-free
 builds can register external device libraries through
 [QDMI device configuration](configuration.md). Building MQT Core's C++ tests
 requires all three bundled devices so that the complete device integration is
@@ -50,15 +50,10 @@ tested.
 
 The QDMI interface is the low-level contract implemented by a QDMI device. The
 MQT Core QDMI driver loads device libraries and implements the QDMI client
-interface. The C++ FoMaC library adds owning wrappers for QDMI devices, sites,
+interface. The C++ QDMI library adds owning wrappers for QDMI devices, sites,
 operations, and jobs. The Python module exposes these QDMI entities through
 {py:mod}`mqt.core.qdmi`. Its {py:mod}`mqt.core.qdmi.driver` submodule provides
 device discovery, registration, and opening.
-
-MQT Core v3 exposes device registration, discovery, and opening through module
-functions. The legacy {py:class}`~mqt.core.qdmi.driver.Session` class remains
-for v3 source compatibility. It is deprecated and will be removed in MQT Core
-4.0.
 
 ## Usage
 
@@ -71,13 +66,3 @@ for device_id in registered_device_ids():
     device = open_device(device_id)
     print(device.name())
 ```
-
-The former module remains available in MQT Core v3:
-
-```python
-from mqt.core import fomac
-```
-
-Importing `mqt.core.fomac` emits a `DeprecationWarning`. Its public objects are
-the same objects as those in {py:mod}`mqt.core.qdmi` and
-{py:mod}`mqt.core.qdmi.driver`.

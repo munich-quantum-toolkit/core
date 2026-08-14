@@ -8,10 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Compiler/FoMaCAdapter.h"
+#include "mlir/Compiler/QDMIAdapter.h"
 
-#include "fomac/FoMaC.hpp"
 #include "mlir/Compiler/Target.h"
+#include "qdmi/Client.hpp"
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringRef.h>
@@ -103,8 +103,8 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
 }
 
 [[nodiscard]] static llvm::Error validateHomogeneousSupport(
-    const fomac::Operation& operation, const size_t arity,
-    const std::optional<std::vector<fomac::Site>>& flattenedSites,
+    const qdmi::Operation& operation, const size_t arity,
+    const std::optional<std::vector<qdmi::Site>>& flattenedSites,
     const std::vector<CompilerTarget::Site>& deviceSites,
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
     const llvm::StringRef deviceName) {
@@ -217,7 +217,7 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
 }
 
 [[nodiscard]] static llvm::Expected<std::optional<CompilerTarget::DurationUnit>>
-snapshotDurationUnit(const fomac::Device& device) {
+snapshotDurationUnit(const qdmi::Device& device) {
   auto unit = device.getDurationUnit();
   const auto scaleFactor = device.getDurationScaleFactor();
   if (auto error = requireAdapterInput(unit || !scaleFactor,
@@ -237,11 +237,10 @@ snapshotDurationUnit(const fomac::Device& device) {
 }
 
 [[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::SiteTuple>>
-snapshotSiteTuples(
-    const fomac::Operation& operation, const size_t arity,
-    const std::optional<std::vector<fomac::Site>>& flattenedSites,
-    const std::optional<uint64_t> defaultDuration,
-    const std::optional<double> defaultFidelity) {
+snapshotSiteTuples(const qdmi::Operation& operation, const size_t arity,
+                   const std::optional<std::vector<qdmi::Site>>& flattenedSites,
+                   const std::optional<uint64_t> defaultDuration,
+                   const std::optional<double> defaultFidelity) {
   if (!flattenedSites) {
     return std::vector<CompilerTarget::SiteTuple>{};
   }
@@ -249,7 +248,7 @@ snapshotSiteTuples(
   std::vector<CompilerTarget::SiteTuple> siteTuples;
   siteTuples.reserve(flattenedSites->size() / arity);
   for (size_t offset = 0; offset < flattenedSites->size(); offset += arity) {
-    std::vector<fomac::Site> sites;
+    std::vector<qdmi::Site> sites;
     std::vector<CompilerTarget::SiteId> siteIds;
     sites.reserve(arity);
     siteIds.reserve(arity);
@@ -279,7 +278,7 @@ snapshotSiteTuples(
 
 [[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::Operation>>
 snapshotOperations(
-    const std::vector<fomac::Operation>& operations,
+    const std::vector<qdmi::Operation>& operations,
     const std::vector<CompilerTarget::Site>& deviceSites,
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
     const llvm::StringRef deviceName) {
@@ -320,7 +319,7 @@ snapshotOperations(
 }
 
 llvm::Expected<CompilerTarget>
-compilerTargetFromDevice(const fomac::Device& device) {
+compilerTargetFromDevice(const qdmi::Device& device) {
   auto deviceName = device.getName();
   const auto deviceSites = device.getSites();
   if (auto error = requireCircuitDevice(

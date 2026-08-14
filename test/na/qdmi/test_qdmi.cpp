@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "na/fomac/Device.hpp"
+#include "na/qdmi/Device.hpp"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -32,23 +32,7 @@ auto canonicallyOrderLatticeVectors(nlohmann::json& device) -> void {
 // ignore the linter warning regarding nlohmann::json and the compile time
 // definitions
 // NOLINTBEGIN(misc-include-cleaner)
-TEST(TestNAFoMaC, TrapsJSONRoundTrip) {
-  nlohmann::json fomacDevice;
-  // Open the file
-  std::ifstream file(NA_DEVICE_JSON);
-  ASSERT_TRUE(file.is_open()) << "Failed to open json file: " NA_DEVICE_JSON;
-  // Parse the JSON file
-  try {
-    fomacDevice = nlohmann::json::parse(file);
-  } catch (const nlohmann::json::parse_error& e) {
-    GTEST_FAIL() << "JSON parsing error: " << e.what();
-  }
-  nlohmann::json qdmiDevice = Session::getDevices().front();
-  canonicallyOrderLatticeVectors(fomacDevice);
-  canonicallyOrderLatticeVectors(qdmiDevice);
-  EXPECT_EQ(fomacDevice["traps"], qdmiDevice["traps"]);
-}
-TEST(TestNAFoMaC, FullJSONRoundTrip) {
+TEST(TestNAQDMI, TrapsJSONRoundTrip) {
   nlohmann::json jsonDevice;
   // Open the file
   std::ifstream file(NA_DEVICE_JSON);
@@ -59,10 +43,26 @@ TEST(TestNAFoMaC, FullJSONRoundTrip) {
   } catch (const nlohmann::json::parse_error& e) {
     GTEST_FAIL() << "JSON parsing error: " << e.what();
   }
-  nlohmann::json fomacDevice = Session::getDevices().front();
+  nlohmann::json qdmiDevice = Session::getDevices().front();
   canonicallyOrderLatticeVectors(jsonDevice);
-  canonicallyOrderLatticeVectors(fomacDevice);
-  EXPECT_EQ(jsonDevice, fomacDevice);
+  canonicallyOrderLatticeVectors(qdmiDevice);
+  EXPECT_EQ(jsonDevice["traps"], qdmiDevice["traps"]);
+}
+TEST(TestNAQDMI, FullJSONRoundTrip) {
+  nlohmann::json jsonDevice;
+  // Open the file
+  std::ifstream file(NA_DEVICE_JSON);
+  ASSERT_TRUE(file.is_open()) << "Failed to open json file: " NA_DEVICE_JSON;
+  // Parse the JSON file
+  try {
+    jsonDevice = nlohmann::json::parse(file);
+  } catch (const nlohmann::json::parse_error& e) {
+    GTEST_FAIL() << "JSON parsing error: " << e.what();
+  }
+  nlohmann::json qdmiDevice = Session::getDevices().front();
+  canonicallyOrderLatticeVectors(jsonDevice);
+  canonicallyOrderLatticeVectors(qdmiDevice);
+  EXPECT_EQ(jsonDevice, qdmiDevice);
 }
 // NOLINTEND(misc-include-cleaner)
 } // namespace na
