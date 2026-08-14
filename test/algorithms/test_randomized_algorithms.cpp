@@ -12,6 +12,7 @@
 #include "algorithms/Grover.hpp"
 #include "algorithms/QPE.hpp"
 #include "algorithms/RandomCliffordCircuit.hpp"
+#include "ir/QuantumComputation.hpp"
 
 #include <gtest/gtest.h>
 
