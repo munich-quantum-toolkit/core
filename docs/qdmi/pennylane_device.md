@@ -11,7 +11,7 @@ mystnb:
 The {py:mod}`mqt.core.plugins.pennylane` module implements PennyLane's device
 interface for gate-based quantum devices exposed through QDMI. PennyLane
 programs are preprocessed into executable tapes, converted to a program format
-advertised by the selected QDMI device, submitted through FoMaC, and
+advertised by the selected QDMI device, submitted through the QDMI bindings, and
 reconstructed from finite-shot QDMI results.
 
 Any registered gate-based QDMI device can use this integration if it advertises

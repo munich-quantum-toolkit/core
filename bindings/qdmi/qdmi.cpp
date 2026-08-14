@@ -9,7 +9,6 @@
  */
 
 #include "fomac/FoMaC.hpp"
-
 #include "qdmi/driver/Driver.hpp"
 
 #include <nanobind/nanobind.h>
@@ -38,6 +37,15 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 namespace {
+void warnAboutLegacySession() {
+  constexpr auto message =
+      "mqt.core.qdmi.driver.Session is deprecated and will be removed in MQT "
+      "Core 4.0; use the module-level driver functions instead";
+  nb::module_::import_("warnings")
+      .attr("warn")(message, nb::builtins()["DeprecationWarning"],
+                    "stacklevel"_a = 1);
+}
+
 template <typename Query>
 [[nodiscard]] nb::object queryCustomValue(Query query,
                                           const nb::handle valueType) {
@@ -112,13 +120,17 @@ template <typename Query>
 
 } // namespace
 
-NB_MODULE(MQT_CORE_MODULE_NAME, m) {
-  // Session class
-  auto session = nb::class_<fomac::Session>(
-      m, "Session", R"pb(A FoMaC session for managing QDMI devices.
+NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
+  qdmiModule.doc() = "QDMI entities and access to MQT Core's QDMI driver.";
+  auto driver = qdmiModule.def_submodule(
+      "driver", "Register, discover, and open QDMI devices through MQT Core.");
 
-Allows creating isolated sessions with separate authentication settings.
-All authentication parameters are optional and can be provided as keyword arguments to the constructor.)pb");
+  // Session class
+  auto session = nb::class_<fomac::Session>(driver, "Session",
+                                            R"pb(A legacy QDMI client session.
+
+This class is deprecated and will be removed in MQT Core 4.0. Use the module
+functions to register, inspect, and open devices.)pb");
 
   session.def(
       "__init__",
@@ -131,6 +143,7 @@ All authentication parameters are optional and can be provided as keyword argume
          std::optional<std::string> custom1, std::optional<std::string> custom2,
          std::optional<std::string> custom3, std::optional<std::string> custom4,
          std::optional<std::string> custom5) {
+        warnAboutLegacySession();
         const fomac::SessionConfig config{.token = std::move(token),
                                           .authFile = std::move(authFile),
                                           .authUrl = std::move(authUrl),
@@ -150,7 +163,7 @@ All authentication parameters are optional and can be provided as keyword argume
       "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
       "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
       "custom5"_a = std::nullopt,
-      R"pb(Create a new FoMaC session with optional authentication.
+      R"pb(Create a deprecated QDMI client session with optional authentication.
 
 Args:
     token: Authentication token
@@ -170,7 +183,7 @@ Raises:
     RuntimeError: If auth_url has invalid format
 
 Example:
-    >>> from mqt.core.fomac import Session
+    >>> from mqt.core.qdmi.driver import Session
     >>> # Session without authentication
     >>> session = Session()
     >>> devices = session.get_devices()
@@ -198,7 +211,8 @@ Returns:
 
   // Job class
   auto job = nb::class_<fomac::Job>(
-      m, "Job", "A job represents a submitted quantum program execution.");
+      qdmiModule, "Job",
+      "A job represents a submitted quantum program execution.");
 
   job.def("check", &fomac::Job::check,
           "Returns the current status of the job.");
@@ -311,7 +325,7 @@ when the custom slot is unsupported.)pb");
       .value("FAILED", QDMI_JOB_STATUS_FAILED);
 
   // ProgramFormat enum
-  nb::enum_<QDMI_Program_Format>(m, "ProgramFormat",
+  nb::enum_<QDMI_Program_Format>(qdmiModule, "ProgramFormat",
                                  "Enumeration of program formats.")
       .value("QASM2", QDMI_PROGRAM_FORMAT_QASM2)
       .value("QASM3", QDMI_PROGRAM_FORMAT_QASM3)
@@ -330,7 +344,7 @@ when the custom slot is unsupported.)pb");
       .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5);
 
   nb::enum_<fomac::CustomProperty>(
-      m, "CustomProperty",
+      qdmiModule, "CustomProperty",
       "An implementation-defined custom property or result slot.")
       .value("CUSTOM1", fomac::CustomProperty::Custom1)
       .value("CUSTOM2", fomac::CustomProperty::Custom2)
@@ -340,7 +354,7 @@ when the custom slot is unsupported.)pb");
 
   // Device class
   auto device = nb::class_<fomac::Device>(
-      m, "Device",
+      qdmiModule, "Device",
       "A device represents a quantum device with its properties and "
       "capabilities.");
 
@@ -550,7 +564,6 @@ when the custom slot is unsupported.)pb");
            nb::sig("def __eq__(self, arg: object, /) -> bool"));
   site.def(nb::self != nb::self,
            nb::sig("def __ne__(self, arg: object, /) -> bool"));
-
   // Operation class
   auto operation = nb::class_<fomac::Operation>(
       device, "Operation",
@@ -632,7 +645,7 @@ when the custom slot is unsupported.)pb");
       nb::sig("def query_custom_property(self, custom_property: "
               "CustomProperty, "
               "value_type: type[str] | type[bool] | type[int] | type[float] | "
-              "type[bytes], sites: Sequence[mqt.core.fomac.Device.Site] = "
+              "type[bytes], sites: Sequence[mqt.core.qdmi.Device.Site] = "
               "..., params: Sequence[float] = ...) -> str | bool | int | "
               "float | bytes | None"),
       R"pb(Query an implementation-defined custom operation property.
@@ -649,9 +662,8 @@ when the custom slot is unsupported.)pb");
                 nb::sig("def __eq__(self, arg: object, /) -> bool"));
   operation.def(nb::self != nb::self,
                 nb::sig("def __ne__(self, arg: object, /) -> bool"));
-
   nb::class_<qdmi::DeviceDefinition>(
-      m, "DeviceDefinition",
+      driver, "DeviceDefinition",
       R"pb(A stable QDMI device registration that can be stored before loading.)pb")
       .def(
           "__init__",
@@ -715,7 +727,7 @@ Args:
       .def_ro("prefix", &qdmi::DeviceDefinition::prefix,
               R"pb(Prefix used for the QDMI device interface functions.)pb");
 
-  m.def(
+  driver.def(
       "register_device",
       [](qdmi::DeviceDefinition definition, const bool replace) {
         qdmi::Driver::get().registerDevice(std::move(definition), replace);
@@ -731,7 +743,7 @@ Raises:
     ValueError: If the definition is invalid or its ID is already registered.
     RuntimeError: If replacing an already opened ID.)pb");
 
-  m.def(
+  driver.def(
       "register_device_if_absent",
       [](qdmi::DeviceDefinition definition) {
         return qdmi::Driver::get().registerDeviceIfAbsent(
@@ -752,7 +764,7 @@ Returns:
 Raises:
     ValueError: If the definition is invalid.)pb");
 
-  m.def(
+  driver.def(
       "registered_device_ids",
       [] { return qdmi::Driver::get().registeredDeviceIds(); },
       R"pb(Return registered, enabled QDMI device IDs in registration order.
@@ -760,7 +772,7 @@ Raises:
 This includes devices registered at runtime and does not load native device
 libraries or expose their definitions.)pb");
 
-  m.def(
+  driver.def(
       "open_device",
       [](const std::string& deviceId, std::optional<std::string> baseUrl,
          std::optional<std::string> token,
@@ -810,7 +822,7 @@ Args:
     custom5: Optional custom configuration parameter 5 override.
 
 Returns:
-    Device: The opened device, ready for direct backend construction.
+    mqt.core.qdmi.Device: The opened device, ready for direct backend construction.
 
 Raises:
     IndexError: If the ID is not registered.

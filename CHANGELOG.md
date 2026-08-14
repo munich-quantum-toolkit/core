@@ -23,6 +23,10 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Move Python QDMI entities and the neutral-atom specialization to QDMI
+  namespaces, expose device registration and opening through
+  `mqt.core.qdmi.driver`, retain v3 FoMaC compatibility aliases, and let the
+  Qiskit adapter open stable device IDs directly ([#2074]) ([**@burgholzer**])
 - 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
   ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
 
@@ -629,6 +633,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
