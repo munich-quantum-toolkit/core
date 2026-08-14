@@ -25,8 +25,6 @@ if(NOT TARGET ${TARGET_NAME})
     PUBLIC qdmi::qdmi MQT::CoreQDMICommon
     PRIVATE qdmi::qdmi_project_warnings nlohmann_json::nlohmann_json spdlog::spdlog
             ${CMAKE_DL_LIBS})
-  target_include_directories(${TARGET_NAME} SYSTEM
-                             PRIVATE ${PROJECT_SOURCE_DIR}/vendor/tomlplusplus)
 
   mqt_get_qdmi_device_targets(QDMI_DEVICE_TARGETS)
 

@@ -13,7 +13,6 @@
 #include "qdmi/driver/Driver.hpp"
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
-#include <toml.hpp>
 
 #include <algorithm>
 #include <cstdlib>
@@ -23,7 +22,6 @@
 #include <map>
 #include <optional>
 #include <set>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -267,23 +265,6 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
   }
 }
 
-[[nodiscard]] auto readPyproject(const std::filesystem::path& path)
-    -> std::optional<Json> {
-  try {
-    const auto table = toml::parse_file(path.string());
-    const auto* qdmiTable = table["tool"]["qdmi"].as_table();
-    if (qdmiTable == nullptr) {
-      return std::nullopt;
-    }
-    std::ostringstream formatted;
-    formatted << toml::json_formatter{*qdmiTable};
-    return Json{{"schema-version", 1}, {"qdmi", Json::parse(formatted.str())}};
-  } catch (const toml::parse_error& error) {
-    throw std::invalid_argument(
-        path.string() + ": invalid TOML: " + std::string(error.description()));
-  }
-}
-
 template <class T>
 void mergeOptional(std::optional<T>& target, const std::optional<T>& source) {
   if (source) {
@@ -407,12 +388,6 @@ void appendFragments(std::vector<std::filesystem::path>& files,
     if (std::filesystem::is_regular_file(dedicated)) {
       return dedicated;
     }
-    auto pyproject = directory / "pyproject.toml";
-    if (std::filesystem::is_regular_file(pyproject)) {
-      if (readPyproject(pyproject)) {
-        return pyproject;
-      }
-    }
     const auto parent = directory.parent_path();
     if (parent == directory) {
       break;
@@ -521,14 +496,7 @@ DeviceRegistry::DeviceRegistry() {
   };
 
   for (const auto& file : discoverFiles()) {
-    if (file.filename() == "pyproject.toml") {
-      if (auto config = readPyproject(file)) {
-        mergePatches(parseConfiguration(*config, file, file.parent_path()));
-      }
-    } else {
-      mergePatches(
-          parseConfiguration(readJson(file), file, file.parent_path()));
-    }
+    mergePatches(parseConfiguration(readJson(file), file, file.parent_path()));
   }
   const auto inlineBase = std::filesystem::current_path();
   if (auto inlineJson = environment("MQT_CORE_QDMI_CONFIG_JSON")) {

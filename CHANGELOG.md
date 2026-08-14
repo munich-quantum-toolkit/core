@@ -57,6 +57,11 @@ releases may include breaking changes.
 - 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
   ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
 
+### Removed
+
+- 💥 Remove QDMI device configuration through `[tool.qdmi]` in `pyproject.toml`
+  and the vendored toml++ header ([#2116]) ([**@denialhaag**])
+
 ## [3.8.0] - 2026-07-30
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#380)._
@@ -660,6 +665,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084

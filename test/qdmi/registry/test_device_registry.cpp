@@ -376,40 +376,12 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
 }
 #endif
 
-TEST(DeviceRegistry, ReadsProjectConfigurationFromPyprojectToml) {
+TEST(DeviceRegistry, ReadsProjectConfigurationFromNearestQdmiJson) {
   const TemporaryDirectory directory;
-  static_cast<void>(directory.write("pyproject.toml", R"(
-    [tool.qdmi]
-    devices = [{ id = "toml", library = "device.so", prefix = "TOML" }]
-  )"));
-  const ScopedCurrentPath currentPath(directory.path());
-  const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE", "");
-  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
-#ifdef _WIN32
-  const ScopedEnvironmentVariable userConfig("APPDATA",
-                                             directory.path().string());
-#else
-  const ScopedEnvironmentVariable userConfig("XDG_CONFIG_HOME",
-                                             directory.path().string());
-#endif
-
-  const qdmi::detail::DeviceRegistry registry;
-  const auto* definition = findDefinition(registry, "toml");
-  ASSERT_NE(definition, nullptr);
-  EXPECT_EQ(std::filesystem::weakly_canonical(definition->library),
-            std::filesystem::weakly_canonical(directory.path()) / "device.so");
-}
-
-TEST(DeviceRegistry, DedicatedProjectFileWinsOverPyproject) {
-  const TemporaryDirectory directory;
-  static_cast<void>(directory.write("pyproject.toml", R"(
-    [tool.qdmi]
-    devices = [{ id = "toml", library = "toml.so", prefix = "TOML" }]
-  )"));
   static_cast<void>(directory.write("qdmi.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [
-      {"id": "json", "library": "json.so", "prefix": "JSON"}
+      {"id": "json", "library": "device.so", "prefix": "JSON"}
     ]}
   })"));
   const ScopedCurrentPath currentPath(directory.path());
@@ -417,8 +389,10 @@ TEST(DeviceRegistry, DedicatedProjectFileWinsOverPyproject) {
   const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
 
   const qdmi::detail::DeviceRegistry registry;
-  EXPECT_NE(findDefinition(registry, "json"), nullptr);
-  EXPECT_EQ(findDefinition(registry, "toml"), nullptr);
+  const auto* definition = findDefinition(registry, "json");
+  ASSERT_NE(definition, nullptr);
+  EXPECT_EQ(std::filesystem::weakly_canonical(definition->library),
+            std::filesystem::weakly_canonical(directory.path()) / "device.so");
 }
 
 TEST(DeviceRegistry, MergesProjectConfigurationOverUserConfiguration) {
@@ -477,7 +451,7 @@ TEST(DeviceRegistry, ReportsInvalidDocumentsAndDefinitionTypes) {
   }
 }
 
-TEST(DeviceRegistry, ReportsInvalidExplicitJsonAndToml) {
+TEST(DeviceRegistry, ReportsInvalidExplicitJson) {
   const TemporaryDirectory directory;
   {
     const ScopedEnvironmentVariable configFile(
@@ -490,13 +464,6 @@ TEST(DeviceRegistry, ReportsInvalidExplicitJsonAndToml) {
     const auto invalid = directory.write("invalid.json", "{");
     const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE",
                                                invalid.string());
-    EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
-                 std::invalid_argument);
-  }
-  {
-    static_cast<void>(directory.write("pyproject.toml", "[tool.qdmi\n"));
-    const ScopedCurrentPath currentPath(directory.path());
-    const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE", "");
     EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
                  std::invalid_argument);
   }

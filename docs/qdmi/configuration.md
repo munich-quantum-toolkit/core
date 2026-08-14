@@ -1,9 +1,9 @@
 # QDMI device configuration
 
-MQT Core discovers QDMI device definitions from versioned JSON or TOML
-configuration. Discovery only parses definitions. When the QDMI driver
-initializes a client session, it opens the configured native libraries. The
-stable-ID API opens only the requested device.
+MQT Core discovers QDMI device definitions from versioned JSON configuration.
+Discovery only parses definitions. When the QDMI driver initializes a client
+session, it opens the configured native libraries. The stable-ID API opens only
+the requested device.
 
 :::{warning}
 QDMI configuration is a native-code loading trust boundary. Use configuration
@@ -84,8 +84,7 @@ Definitions are merged field by field by ID, from lowest to highest precedence:
 1. generated `*.qdmi.json` fragments packaged beside the MQT Core Driver;
 2. the system `qdmi.json`;
 3. the user or XDG `qdmi.json`;
-4. the nearest project `qdmi.json`, or `[tool.qdmi]` in `pyproject.toml` when no
-   dedicated file exists in that directory;
+4. the nearest project `qdmi.json`;
 5. `MQT_CORE_QDMI_CONFIG_JSON`.
 
 On Unix, file configuration uses `/etc/mqt-core/qdmi.json` and then
@@ -95,8 +94,7 @@ On Unix, file configuration uses `/etc/mqt-core/qdmi.json` and then
 
 An entry containing only its ID and `"enabled": false` masks an inherited
 definition. Since definitions are merged field by field, a later definition with
-the same ID must explicitly set `"enabled": true` to enable it again. Within one
-directory, `qdmi.json` takes precedence over `pyproject.toml`. The final
+the same ID must explicitly set `"enabled": true` to enable it again. The final
 disabled ID remains reserved, so fallback registration cannot silently re-enable
 a device that an administrator disabled.
 
