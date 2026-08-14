@@ -6,6 +6,21 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### QDMI Qiskit primitive options
+
+`QDMISampler` and `QDMIEstimator` no longer accept the MQT-specific `options`
+mapping. Pass shot and precision defaults directly, preferably through the
+backend factories:
+
+```python
+sampler = backend.sampler(default_shots=2048)
+estimator = backend.estimator(default_precision=0.01, default_shots=2048)
+```
+
+Replace `QDMIEstimator(..., options={"default_shots": shots})` with
+`QDMIEstimator(..., default_shots=shots)`. The sampler ignored its former
+`options` mapping, so remove that argument without replacement.
+
 ### Runtime-configurable SC QDMI device
 
 The built-in superconducting QDMI provider now parses its device description

@@ -33,6 +33,7 @@ from ...qdmi import Job as QDMIJobHandle
 from ...qdmi import ProgramFormat
 from ...qdmi.driver import open_device
 from .converters import qiskit_to_iqm_json
+from .estimator import QDMIEstimator
 from .exceptions import (
     CircuitValidationError,
     JobSubmissionError,
@@ -43,6 +44,7 @@ from .exceptions import (
 )
 from .gates import MoveGate
 from .job import QDMIJob
+from .sampler import QDMISampler
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, MutableSet, Sequence
@@ -240,6 +242,31 @@ class QDMIBackend(BackendV2):
     def device_id(self) -> str | None:
         """Stable QDMI device ID, if known."""
         return self._device_id
+
+    def sampler(self, *, default_shots: int = 1024) -> QDMISampler:
+        """Construct a QDMI sampler for this backend.
+
+        Returns:
+            A sampler that executes on this backend.
+        """
+        return QDMISampler(self, default_shots=default_shots)
+
+    def estimator(
+        self,
+        *,
+        default_precision: float = 0.0,
+        default_shots: int = 1024,
+    ) -> QDMIEstimator:
+        """Construct a QDMI estimator for this backend.
+
+        Returns:
+            An estimator that executes on this backend.
+        """
+        return QDMIEstimator(
+            self,
+            default_precision=default_precision,
+            default_shots=default_shots,
+        )
 
     @property
     def target(self) -> Target:

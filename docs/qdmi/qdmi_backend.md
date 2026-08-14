@@ -312,11 +312,10 @@ The {py:class}`~mqt.core.plugins.qiskit.QDMISampler` implements the
 measurement counts (bitstrings).
 
 ```{code-cell} ipython3
-from mqt.core.plugins.qiskit import QDMISampler
 from qiskit import QuantumCircuit
 
-# Initialize sampler with the backend
-sampler = QDMISampler(backend)
+# Construct a sampler from the backend
+sampler = backend.sampler(default_shots=1024)
 
 # Create a circuit
 qc = QuantumCircuit(2)
@@ -342,13 +341,12 @@ The {py:class}`~mqt.core.plugins.qiskit.QDMIEstimator` implements the
 observables.
 
 ```{code-cell} ipython3
-from mqt.core.plugins.qiskit import QDMIEstimator
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import SparsePauliOp
 import numpy as np
 
-# Initialize estimator
-estimator = QDMIEstimator(backend)
+# Construct an estimator from the backend
+estimator = backend.estimator(default_precision=0.0, default_shots=1024)
 
 # Create a circuit and observable
 qc = QuantumCircuit(2)
@@ -369,6 +367,11 @@ std = pub_result.data.stds
 print(f"Expectation value: {ev}")
 print(f"Standard deviation: {std}")
 ```
+
+Direct construction of `QDMISampler(backend, ...)` and
+`QDMIEstimator(backend, ...)` remains available for applications that prefer it.
+The direct primitive constructors use the same explicit defaults as the backend
+factories.
 
 You can also use parameterized circuits with the estimator:
 

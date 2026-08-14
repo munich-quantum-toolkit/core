@@ -39,6 +39,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Replace the MQT-specific QDMI primitive `options` mappings with explicit
+  shot and precision defaults ([#2084]) ([**@burgholzer**])
 - ♻️ Simplify Python optional-dependency checks while preserving the Qiskit and
   PennyLane availability flags ([#2108]) ([**@simon1hofmann**])
 - 💥 Move Python QDMI entities and the neutral-atom specialization to QDMI
@@ -652,6 +654,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2046]: https://github.com/munich-quantum-toolkit/core/pull/2046
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
