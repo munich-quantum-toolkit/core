@@ -119,6 +119,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Remove the unused `pybind11` CMake helper and rename
+  `add_mqt_python_binding_nanobind` to `add_mqt_python_binding` ([#2106])
+  ([**@denialhaag**])
 - 💥 Move Python QDMI entities and the neutral-atom specialization to QDMI
   namespaces, expose device registration and opening through
   `mqt.core.qdmi.driver`, retain v3 FoMaC compatibility aliases, and let the
@@ -751,6 +754,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2073]: https://github.com/munich-quantum-toolkit/core/pull/2073
