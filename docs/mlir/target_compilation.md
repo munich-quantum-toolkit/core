@@ -15,9 +15,8 @@ Open a configured QDMI device and snapshot it as a compiler target:
 
 ```python
 from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
-from mqt.core.qdmi.driver import open_device
 
-target = CompilerTarget.from_device(open_device("mqt.sc.iqm.garnet"))
+target = CompilerTarget.from_device_id("mqt.sc.iqm.garnet")
 compiled = compile_program(
     "bell.qasm",
     target=target,

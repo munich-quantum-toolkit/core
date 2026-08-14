@@ -112,8 +112,8 @@ def test_sampler_run_multiple_cregs(sampler: QDMISampler) -> None:
     assert c1_bits.num_bits == 1
 
 
-def test_sampler_options(sampler: QDMISampler) -> None:
-    """Test sampler options mechanism."""
+def test_sampler_shot_defaults(sampler: QDMISampler) -> None:
+    """Test sampler shot defaults."""
     # 1. Use default shots from init
     sampler2 = QDMISampler(sampler.backend, default_shots=500)
     qc = QuantumCircuit(1)
@@ -127,6 +127,18 @@ def test_sampler_options(sampler: QDMISampler) -> None:
     job = sampler2.run([(qc,)], shots=200)
     result = job.result()
     assert result[0].metadata["shots"] == 200
+
+
+def test_backend_constructs_sampler() -> None:
+    """A backend constructs a sampler that retains its identity and defaults."""
+    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
+    sampler = backend.sampler(default_shots=37)
+    qc = QuantumCircuit(1)
+    qc.measure_all()
+
+    assert isinstance(sampler, QDMISampler)
+    assert sampler.backend is backend
+    assert sampler.run([(qc,)]).result()[0].metadata["shots"] == 37
 
 
 def test_sampler_no_circuits(sampler: QDMISampler) -> None:

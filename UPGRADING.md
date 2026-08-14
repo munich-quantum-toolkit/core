@@ -6,6 +6,43 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Removal of QDMI configuration through `pyproject.toml`
+
+MQT Core no longer reads QDMI device definitions from a `[tool.qdmi]` table in
+`pyproject.toml`. Project discovery now looks only for `qdmi.json`. Move an
+existing table into a `qdmi.json` file beside the `pyproject.toml`. For example,
+replace this `pyproject.toml` table:
+
+```toml
+[tool.qdmi]
+devices = [
+  { id = "example.device", library = "libexample-device.so", prefix = "EXAMPLE" },
+]
+```
+
+with this `qdmi.json`:
+
+```json
+{
+  "schema-version": 1,
+  "qdmi": {
+    "devices": [
+      {
+        "id": "example.device",
+        "library": "libexample-device.so",
+        "prefix": "EXAMPLE"
+      }
+    ]
+  }
+}
+```
+
+The JSON document adds the `"schema-version": 1` key and nests the device array
+under `qdmi`. Every other key keeps its name and meaning. Relative paths still
+resolve against the file that declares them. `MQT_CORE_QDMI_CONFIG_FILE`,
+`MQT_CORE_QDMI_CONFIG_JSON`, the system and user files, and the packaged
+`*.qdmi.json` fragments do not change.
+
 ### Python binding CMake helper
 
 The `add_mqt_python_binding_nanobind` function is now called
@@ -84,6 +121,21 @@ will be removed in MQT Core 4.0.
 
 The C++ FoMaC namespace, headers, library, and `MQT::CoreFoMaC` target do not
 change.
+
+### QDMI Qiskit primitive options
+
+`QDMISampler` and `QDMIEstimator` no longer accept the MQT-specific `options`
+mapping. Pass shot and precision defaults directly, preferably through the
+backend factories:
+
+```python
+sampler = backend.sampler(default_shots=2048)
+estimator = backend.estimator(default_precision=0.01, default_shots=2048)
+```
+
+Replace `QDMIEstimator(..., options={"default_shots": shots})` with
+`QDMIEstimator(..., default_shots=shots)`. The sampler ignored its former
+`options` mapping, so remove that argument without replacement.
 
 ### QIR runner
 

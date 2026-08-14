@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
+- 🚸 Add typed stable-ID construction for Qiskit backends and compiler targets,
+  fluent Qiskit primitives, and lazy provider discovery ([#2084])
+  ([**@burgholzer**])
 - 🧪 Test static Slurm license admission and QDMI execution with DDSIM and SC,
   and document the cluster setup ([#2043]) ([**@burgholzer**])
 - ✨ Add C++ and Python adapters that open the QDMI device named by one local
@@ -119,12 +122,16 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
+  logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
+  ([**@simon1hofmann**])
+- ♻️ Simplify Python optional-dependency checks while preserving the Qiskit and
+  PennyLane availability flags ([#2108]) ([**@simon1hofmann**])
 - 💥 Remove the unused `pybind11` CMake helper and rename
   `add_mqt_python_binding_nanobind` to `add_mqt_python_binding` ([#2106])
   ([**@denialhaag**])
-- 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
-  logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
-  ([**@simon1hofmann**]).
+- 💥 Replace the MQT-specific QDMI primitive `options` mappings with explicit
+  shot and precision defaults ([#2084]) ([**@burgholzer**])
 - 💥 Move Python QDMI entities and the neutral-atom specialization to QDMI
   namespaces, expose device registration and opening through
   `mqt.core.qdmi.driver`, retain v3 FoMaC compatibility aliases, and let the
@@ -145,6 +152,8 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove QDMI device configuration through `[tool.qdmi]` in `pyproject.toml`
+  and the vendored toml++ header ([#2116]) ([**@denialhaag**])
 - 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
   `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
   and GMP build support. Equivalence-checking users should use [MQT QCEC]; its
@@ -757,9 +766,12 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
+[#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
+[#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2073]: https://github.com/munich-quantum-toolkit/core/pull/2073
 [#2066]: https://github.com/munich-quantum-toolkit/core/pull/2066
