@@ -261,11 +261,11 @@ template <typename StateDD>
 static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
                                         WalkState& walk, StateDD& state) {
   Operation* op = unitary.getOperation();
+  if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
+    return unitary.emitError()
+           << "unitary must have a compile-time constant matrix";
+  }
   if (auto gphase = dyn_cast<GPhaseOp>(op)) {
-    if (!gphase.hasCompileTimeKnownUnitaryMatrix()) {
-      return gphase.emitError()
-             << "unitary must have a compile-time constant matrix";
-    }
     const auto theta = *utils::valueToDouble(gphase.getTheta());
     auto id = dd::Package::makeIdent();
     id.w = walk.dd->cn.lookup(std::cos(theta), std::sin(theta));
