@@ -767,9 +767,9 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
+[#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
-[#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
