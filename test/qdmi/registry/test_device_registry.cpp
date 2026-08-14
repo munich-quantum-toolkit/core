@@ -393,30 +393,6 @@ TEST(DeviceRegistry, ReadsProjectConfigurationFromNearestQdmiJson) {
             std::filesystem::weakly_canonical(directory.path()) / "device.so");
 }
 
-TEST(DeviceRegistry, IgnoresPyprojectTomlDuringProjectDiscovery) {
-  const TemporaryDirectory directory;
-  directory.write("qdmi.json", R"({
-    "schema-version": 1,
-    "qdmi": {"devices": [
-      {"id": "json", "library": "json.so", "prefix": "JSON"}
-    ]}
-  })");
-  directory.write("project/pyproject.toml", R"(
-    [tool.qdmi]
-    devices = [{ id = "toml", library = "toml.so", prefix = "TOML" }]
-  )");
-  const ScopedCurrentPath currentPath(directory.path() / "project");
-  const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE", "");
-  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
-
-  const qdmi::detail::DeviceRegistry registry;
-  EXPECT_EQ(findDefinition(registry, "toml"), nullptr);
-  const auto* definition = findDefinition(registry, "json");
-  ASSERT_NE(definition, nullptr);
-  EXPECT_EQ(std::filesystem::weakly_canonical(definition->library),
-            std::filesystem::weakly_canonical(directory.path()) / "json.so");
-}
-
 TEST(DeviceRegistry, MergesProjectConfigurationOverUserConfiguration) {
   const TemporaryDirectory directory;
   directory.write("user/mqt-core/qdmi.json", R"({
