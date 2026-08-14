@@ -442,62 +442,6 @@ TEST_F(IO, unifyRegisters) {
                   "x q[1];\n");
 }
 
-TEST_F(IO, appendMeasurementsAccordingToOutputPermutation) {
-  qc = qasm3::Importer::imports("// o 1\n"
-                                "qreg q[2];"
-                                "x q[1];");
-  qc.appendMeasurementsAccordingToOutputPermutation();
-  std::cout << qc << "\n";
-  const auto& op = qc.back();
-  ASSERT_EQ(op->getType(), qc::OpType::Measure);
-  const auto& meas = dynamic_cast<const qc::NonUnitaryOperation*>(op.get());
-  ASSERT_NE(meas, nullptr);
-  EXPECT_EQ(meas->getTargets().size(), 1U);
-  EXPECT_EQ(meas->getTargets().front(), 1U);
-  EXPECT_EQ(meas->getClassics().size(), 1U);
-  EXPECT_EQ(meas->getClassics().front(), 0U);
-}
-
-TEST_F(IO, appendMeasurementsAccordingToOutputPermutationAddRegister) {
-  qc = qasm3::Importer::imports("// o 0 1\n"
-                                "qreg q[2];"
-                                "creg d[1];"
-                                "x q;");
-  qc.appendMeasurementsAccordingToOutputPermutation();
-  std::cout << qc << "\n";
-  EXPECT_EQ(qc.getNcbits(), 2U);
-  const auto& op = qc.back();
-  ASSERT_EQ(op->getType(), qc::OpType::Measure);
-  const auto& meas = dynamic_cast<const qc::NonUnitaryOperation*>(op.get());
-  ASSERT_NE(meas, nullptr);
-  EXPECT_EQ(meas->getTargets().size(), 1U);
-  EXPECT_EQ(meas->getTargets().front(), 1U);
-  EXPECT_EQ(meas->getClassics().size(), 1U);
-  EXPECT_EQ(meas->getClassics().front(), 1U);
-  const auto& op2 = *(++qc.rbegin());
-  ASSERT_EQ(op2->getType(), qc::OpType::Measure);
-  const auto& meas2 = dynamic_cast<const qc::NonUnitaryOperation*>(op2.get());
-  ASSERT_NE(meas2, nullptr);
-  EXPECT_EQ(meas2->getTargets().size(), 1U);
-  EXPECT_EQ(meas2->getTargets().front(), 0U);
-  EXPECT_EQ(meas2->getClassics().size(), 1U);
-  EXPECT_EQ(meas2->getClassics().front(), 0U);
-  const auto qasm = qc.toQASM(false);
-  std::cout << qasm << "\n";
-  EXPECT_EQ(qasm, "// i 0 1\n"
-                  "// o 0 1\n"
-                  "OPENQASM 2.0;\n"
-                  "include \"qelib1.inc\";\n"
-                  "qreg q[2];\n"
-                  "creg d[1];\n"
-                  "creg c[1];\n"
-                  "x q[0];\n"
-                  "x q[1];\n"
-                  "barrier q;\n"
-                  "measure q[0] -> d[0];\n"
-                  "measure q[1] -> c[0];\n");
-}
-
 TEST_F(IO, NativeTwoQubitGateImportAndExport) {
   const auto gates = std::vector<std::string>{"dcx",
                                               "ecr",

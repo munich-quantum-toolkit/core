@@ -19,7 +19,6 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
-#include <iostream>
 #include <memory>
 #include <sstream>
 
@@ -53,7 +52,6 @@ TEST_P(RandomClifford, simulate) {
         qc::createRandomCliffordCircuit(nq, static_cast<std::size_t>(nq) * nq);
     auto in = makeZeroState(nq, *dd);
     ASSERT_NO_THROW({ dd::simulate(qc, in, *dd); });
-    qc.printStatistics(std::cout);
   }
 }
 
@@ -64,5 +62,4 @@ TEST_P(RandomClifford, buildFunctionality) {
   const auto qc = qc::createRandomCliffordCircuit(
       nq, static_cast<std::size_t>(nq) * nq, 12345);
   ASSERT_NO_THROW({ dd::buildFunctionality(qc, *dd); });
-  qc.printStatistics(std::cout);
 }

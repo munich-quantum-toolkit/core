@@ -122,6 +122,8 @@ releases may include breaking changes.
 - 💥 Remove the unused `pybind11` CMake helper and rename
   `add_mqt_python_binding_nanobind` to `add_mqt_python_binding` ([#2106])
   ([**@denialhaag**])
+- 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
+  logical output count to `getNoutputQubits()` and `num_output_qubits`.
 - 💥 Move Python QDMI entities and the neutral-atom specialization to QDMI
   namespaces, expose device registration and opening through
   `mqt.core.qdmi.driver`, retain v3 FoMaC compatibility aliases, and let the

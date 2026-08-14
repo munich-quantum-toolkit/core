@@ -71,11 +71,7 @@ public:
 
   [[nodiscard]] bool isStandardOperation() const override;
 
-  [[nodiscard]] bool equals(const Operation& op, const Permutation& perm1,
-                            const Permutation& perm2) const override;
-  [[nodiscard]] bool equals(const Operation& op) const override {
-    return equals(op, {}, {});
-  }
+  [[nodiscard]] bool equals(const Operation& op) const override;
 
   [[noreturn]] void dumpOpenQASM(std::ostream& of,
                                  const QubitIndexToRegisterMap& qubitMap,

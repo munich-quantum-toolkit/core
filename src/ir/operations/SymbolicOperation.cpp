@@ -329,12 +329,11 @@ bool SymbolicOperation::isStandardOperation() const {
                              [](const auto& sym) { return !sym.has_value(); });
 }
 
-bool SymbolicOperation::equals(const Operation& op, const Permutation& perm1,
-                               const Permutation& perm2) const {
+bool SymbolicOperation::equals(const Operation& op) const {
   if (!op.isSymbolicOperation() && !isStandardOperation()) {
     return false;
   }
-  if (isStandardOperation() && StandardOperation::equals(op, perm1, perm2)) {
+  if (isStandardOperation() && StandardOperation::equals(op)) {
     return true;
   }
 

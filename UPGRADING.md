@@ -28,6 +28,37 @@ The former `add_mqt_python_binding` function built modules with `pybind11`. All
 MQT projects have switched from `pybind11` to `nanobind`, so no build used that
 function. MQT Core no longer provides it.
 
+### CoreIR API cleanup
+
+Several unused or misleading CoreIR APIs have been removed for MQT Core 4.
+
+`QuantumComputation::getNmeasuredQubits()` has been renamed to
+`getNoutputQubits()`. The corresponding Python property has been renamed from
+`num_measured_qubits` to `num_output_qubits`. The value counts logical output
+qubits that are not marked as garbage; it does not count measurement operations.
+
+The permutation-aware `Operation::equals(op, permutation1, permutation2)`
+overload and `getUsedQubitsPermuted()` have been removed. Ordinary operation
+equality remains available through `equals(op)`, `operator==`, and
+`getUsedQubits()`. Code that needs to compare remapped operations should clone
+the operations, call `apply(permutation)` on the clones, and compare the
+resulting operations.
+
+`QuantumComputation::getHighestLogicalQubitIndex()`, `printStatistics()`, and
+`printPermutation()` have been removed. Use `initialLayout.maxValue()` when the
+highest logical layout value is genuinely needed, use the individual count
+accessors when reporting circuit statistics, and iterate over a `Permutation`
+when custom textual output is required. The register lookup helpers
+`getQubitRegister()`, `getPhysicalQubitIndex()`, and
+`physicalQubitIsAncillary()` are now private implementation details.
+
+`QuantumComputation::appendMeasurementsAccordingToOutputPermutation()` has also
+been removed from Core. Its sole production consumer, MQT QMAP, must own the
+output-permutation-specific measurement construction instead. Downstream code
+with the same requirement should ensure sufficient classical-register capacity,
+append a barrier, and call `measure(physicalQubit, logicalOutput)` for every
+entry in `outputPermutation`.
+
 ### Removal of the ZX-calculus library
 
 MQT Core no longer provides the `mqt-core-zx` library, the `MQT::CoreZX` CMake
