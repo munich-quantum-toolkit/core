@@ -9,7 +9,6 @@
  */
 
 #include "ir/Definitions.hpp"
-#include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/Register.hpp"
 #include "ir/operations/AodOperation.hpp"
@@ -156,6 +155,15 @@ TEST(NonStandardOperation, CommutesAtQubit) {
   EXPECT_FALSE(
       qc::SymbolicOperation(0, qc::P, {sym::Expression<qc::fp, qc::fp>()})
           .commutesAtQubit(op, 0));
+}
+
+TEST(NonUnitaryOperation, ResetEquality) {
+  const qc::NonUnitaryOperation reset0(qc::Targets{0});
+  const qc::NonUnitaryOperation equalReset(qc::Targets{0});
+  const qc::NonUnitaryOperation differentReset(qc::Targets{1});
+
+  EXPECT_EQ(reset0, equalReset);
+  EXPECT_NE(reset0, differentReset);
 }
 
 TEST(Operation, IsIndividualGate) {

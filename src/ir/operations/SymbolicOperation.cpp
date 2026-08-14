@@ -11,7 +11,6 @@
 #include "ir/operations/SymbolicOperation.hpp"
 
 #include "ir/Definitions.hpp"
-#include "ir/Permutation.hpp"
 #include "ir/Register.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/Expression.hpp"
