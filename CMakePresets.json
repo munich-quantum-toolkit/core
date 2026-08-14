@@ -5,6 +5,9 @@
       "name": "base",
       "hidden": true,
       "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_UNITY_BUILD": "ON"
+      },
       "environment": {
         "CCACHE_DIR": "${sourceDir}/.cache/ccache",
         "CCACHE_MAXSIZE": "4GiB",
@@ -108,7 +111,9 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "BUILD_MQT_CORE_BENCHMARKS": "ON",
-        "BUILD_MQT_CORE_BINDINGS": "ON"
+        "BUILD_MQT_CORE_BINDINGS": "ON",
+        "CMAKE_UNITY_BUILD": "OFF",
+        "CMAKE_VERIFY_INTERFACE_HEADER_SETS": "ON"
       }
     },
     {

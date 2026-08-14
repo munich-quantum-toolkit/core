@@ -211,13 +211,7 @@ def stubs(session: nox.Session) -> None:
         # Stub generation only imports the extension modules, so this build
         # favors compilation speed over optimized code.
         "SKBUILD_CMAKE_BUILD_TYPE": "MinSizeRel",
-        "SKBUILD_CMAKE_ARGS": (
-            "-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;"
-            "-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF;"
-            "-DCMAKE_UNITY_BUILD=ON;"
-            "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;"
-            "-DENABLE_IPO=OFF"
-        ),
+        "SKBUILD_CMAKE_ARGS": ("-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF"),
     }
 
     session.run("uv", "sync", "--inexact", "--only-group", "build", env=env)

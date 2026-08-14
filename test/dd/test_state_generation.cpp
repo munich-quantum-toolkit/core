@@ -31,7 +31,7 @@ namespace {
 /**
  * @brief Compare the elements of @p a and @p b with precision @p delta.
  */
-void vecNear(CVec a, CVec b, double delta = 1e-6) {
+void expectStateVectorNear(CVec a, CVec b, double delta = 1e-6) {
   for (std::size_t i = 0; i < b.size(); ++i) {
     EXPECT_NEAR(a[i].real(), b[i].real(), delta);
     EXPECT_NEAR(a[i].imag(), b[i].imag(), delta);
@@ -118,7 +118,7 @@ TEST(StateGenerationTest, MakeBasisDifficult) {
   auto dd = std::make_unique<Package>(nq);
   auto basis = makeBasisState(nq, state, *dd);
 
-  vecNear(basis.getVector(), vec);
+  expectStateVectorNear(basis.getVector(), vec);
 
   dd->decRef(basis);
   dd->garbageCollect(true);
@@ -142,7 +142,7 @@ TEST(StateGenerationTest, MakeGHZ) {
   auto dd = std::make_unique<Package>(nq);
   auto ghz = makeGHZState(nq, *dd);
 
-  vecNear(ghz.getVector(), vec);
+  expectStateVectorNear(ghz.getVector(), vec);
 
   dd->decRef(ghz);
   dd->garbageCollect(true);
@@ -183,7 +183,7 @@ TEST(StateGenerationTest, MakeW) {
   auto dd = std::make_unique<Package>(nq);
   auto w = makeWState(nq, *dd);
 
-  vecNear(w.getVector(), vec);
+  expectStateVectorNear(w.getVector(), vec);
 
   dd->decRef(w);
   dd->garbageCollect(true);
