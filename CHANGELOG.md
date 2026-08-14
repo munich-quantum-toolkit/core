@@ -37,6 +37,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ♻️ Simplify Python optional-dependency checks while preserving the Qiskit and
+  PennyLane availability flags ([#2108]) ([**@simon1hofmann**])
 - 💥 Move Python QDMI entities and the neutral-atom specialization to QDMI
   namespaces, expose device registration and opening through
   `mqt.core.qdmi.driver`, retain v3 FoMaC compatibility aliases, and let the
@@ -648,6 +650,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2043]: https://github.com/munich-quantum-toolkit/core/pull/2043
 [#2073]: https://github.com/munich-quantum-toolkit/core/pull/2073
