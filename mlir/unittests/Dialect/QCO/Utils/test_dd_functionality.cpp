@@ -530,7 +530,7 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureCollapsesLikePackage) {
   auto ref = dd::makeZeroState(1, *dd);
   ref = dd->applyOperation(
       dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::H), 0), ref);
-  (void)dd->measureOneCollapsing(ref, 0, refRng);
+  static_cast<void>(dd->measureOneCollapsing(ref, 0, refRng));
   const auto expected = ref.getVector();
 
   std::mt19937_64 rng(seed);
@@ -734,11 +734,11 @@ TEST_F(QCODDFunctionalityTest, SimulateAndiOriShliClassical) {
     // results need not feed the quantum path: the interpreter visits all SSA
     // operations in program order.
     auto t = b.boolConstant(true);
-    (void)arith::AndIOp::create(b, bit0, t);
-    (void)arith::OrIOp::create(b, bit1, t);
-    (void)arith::XOrIOp::create(b, bit0, bit1);
-    (void)arith::AndIOp::create(b, i0, one);
-    (void)arith::XOrIOp::create(b, i0, one);
+    static_cast<void>(arith::AndIOp::create(b, bit0, t));
+    static_cast<void>(arith::OrIOp::create(b, bit1, t));
+    static_cast<void>(arith::XOrIOp::create(b, bit0, bit1));
+    static_cast<void>(arith::AndIOp::create(b, i0, one));
+    static_cast<void>(arith::XOrIOp::create(b, i0, one));
     q2 = b.qcoIndexSwitch(packed, q2, ArrayRef<int64_t>{0, 1, 2},
                           SmallVector<function_ref<Value(Value)>>{
                               [&](Value arg) { return arg; },
