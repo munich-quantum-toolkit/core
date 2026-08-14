@@ -6,35 +6,31 @@
 #
 # Licensed under the MIT License
 
-if(TARGET MQT::CoreQDMINaDeviceGen
-   AND TARGET MQT::CoreQDMINaDeviceGenerator
-   AND TARGET MQT::CoreQDMINaDevice)
+if(TARGET MQT::CoreQDMINaDeviceConfig AND TARGET MQT::CoreQDMINaDevice)
   # Set QDMI prefix again for the tests
   set(QDMI_PREFIX "MQT_NA")
   generate_device_defs_executable(${QDMI_PREFIX} TARGET MQT::CoreQDMINaDevice)
   # Set test target name
   set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-test)
+  if(WIN32)
+    # Discover tests after the provider and its runtime assets have been copied.
+    set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
+  endif()
   # Add the test executable
-  package_add_test(${TARGET_NAME} MQT::CoreQDMINaDevice test_generator.cpp test_app.cpp
-                   test_device.cpp)
+  package_add_test(${TARGET_NAME} MQT::CoreQDMINaDevice test_configuration.cpp test_device.cpp)
   # Add dependency to enforce implementation of all interface functions
   add_dependencies(${TARGET_NAME} qdmi_test_mqt_na_device_defs)
   # Link further libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMINaDeviceGen
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMINaDeviceConfig
                                                nlohmann_json::nlohmann_json)
   # Set the executable path and version information
   target_compile_definitions(
     ${TARGET_NAME}
-    PRIVATE EXECUTABLE_PATH="$<TARGET_FILE:MQT::CoreQDMINaDeviceGenerator>"
-            MQT_CORE_VERSION="${MQT_CORE_VERSION}"
-            NA_DEVICE_JSON="${PROJECT_SOURCE_DIR}/json/na/device.json")
+    PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}"
+            NA_DEVICE_JSON="${PROJECT_SOURCE_DIR}/json/na/mqt-core-qdmi-na-device.json")
 
-  # On Windows, we need to copy the DLL to the test executable directory
+  # On Windows, copy the provider and its runtime assets beside the test executable.
   if(WIN32)
-    add_custom_command(
-      TARGET ${TARGET_NAME}
-      PRE_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMINaDevice>
-              $<TARGET_FILE_DIR:${TARGET_NAME}>)
+    mqt_copy_qdmi_runtime(${TARGET_NAME} MQT::CoreQDMINaDevice)
   endif()
 endif()

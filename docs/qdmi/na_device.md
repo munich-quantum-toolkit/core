@@ -1,28 +1,46 @@
----
-file_format: mystnb
-kernelspec:
-  name: python3
-mystnb:
-  number_source_lines: true
----
+# Neutral-atom QDMI device
 
-# MQT Core Neutral Atom QDMI Device
+The MQT Core neutral-atom (NA) provider materializes its complete device model
+when a QDMI session is initialized. Sites, zones, operations, units, and
+calibration are owned by that session. Multiple stable IDs may therefore open
+the same provider library and prefix with different device descriptions at the
+same time.
 
-## Objective
+## Configuration sources
 
-Compilation passes throughout MQT need information about the target device. The
-Neutral Atom [QDMI](https://munich-quantum-software-stack.github.io/QDMI/)
-device provides a uniform way to provide the necessary information for neutral
-atom-based quantum devices. It defines a representation to easily provide static
-information in the form of a JSON file.
+The provider selects the first available source in this order:
 
-## Describing a Device
+1. QDMI CUSTOM1 containing NUL-terminated inline JSON;
+2. QDMI CUSTOM2 containing a NUL-terminated JSON file path;
+3. `MQT_CORE_QDMI_NA_CONFIG_JSON`;
+4. `MQT_CORE_QDMI_NA_CONFIG_FILE`;
+5. `mqt-core-qdmi-na-device.json` beside the provider shared library.
 
-The basis of a such device implementation in MQT is a specification in a JSON
-file. The structure of this JSON file is defined by the {cpp:class}`na::Device`
-struct. The struct defines functions to serialize and deserialize the data using
-the [nlohmann/json](https://json.nlohmann.me) library. During compilation, this
-JSON file is parsed and the corresponding C++ code is produced by an application
-(see `src/na/device/App.cpp`) for the actual QDMI device implementation. The C++
-code is then compiled to a library that can be used by the QDMI driver. An
-example instance of a device JSON file can be found in `json/na/device.json`.
+When direct QDMI callers populate both explicit slots, inline JSON wins. Setting
+both NA environment sources is an error. Configuration cannot be changed after
+successful initialization. A failed initialization does not commit partial
+state, so the same allocated session can be corrected and initialized again.
+
+Driver users should use the typed `device-config` registry field or the
+`device_config` and `device_config_file` Python arguments described in
+{doc}`configuration`. Direct QDMI v1 clients use CUSTOM1 and CUSTOM2.
+
+## Schema and validation
+
+Every description is a strict JSON object with `"schema-version": 1`. The
+bundled example is `json/na/mqt-core-qdmi-na-device.json`, and the C++ value
+model is {cpp-api:class}`na::Device`. Required top-level and nested fields
+cannot be omitted, unknown fields are rejected, and validation covers:
+
+- non-empty names and positive device capacity;
+- finite positive unit scales and supported units;
+- lattice geometry, unique generated coordinates, sufficient sites, and bounded
+  site/pair expansion;
+- operation arity, regions, fidelities, and interaction data;
+- shuttling units and decoherence values.
+
+Applications that need to validate a description without opening a provider
+session can call `na::readJSON`; it is the same strict parser used at runtime.
+
+Handles returned by a session are valid only for that session. Queries reject
+sites or operations owned by another session.

@@ -922,7 +922,7 @@ TEST(DeviceRegistrationTest, ValidatesDuplicatesAndReplacement) {
   EXPECT_THROW(driver.registerDevice(original), std::invalid_argument);
 
   auto replacement = original;
-  replacement.session.custom1 = "replacement";
+  replacement.session.custom3 = "replacement";
   EXPECT_NO_THROW(driver.registerDevice(replacement, true));
   auto* const opened = driver.open(original.id);
   ASSERT_NE(opened, nullptr);
@@ -1092,6 +1092,55 @@ TEST(DeviceRegistrationTest, TypedConfigurationRejectsRawAdapterSlotConflict) {
   EXPECT_THROW(static_cast<void>(fomac::Session::openDevice(
                    "test.session-overrides", overrides)),
                std::invalid_argument);
+}
+
+TEST(DeviceRegistrationTest,
+     RuntimeConfigurationSeparatesModelsUsingOneNaProviderLibrary) {
+  auto& driver = qdmi::Driver::get();
+  static_cast<void>(
+      driver.registerDeviceIfAbsent({.id = "test.na.runtime-default",
+                                     .library = MQT_CORE_QDMI_NA_LIBRARY,
+                                     .prefix = "MQT_NA"}));
+  static_cast<void>(driver.registerDeviceIfAbsent(
+      {.id = "test.na.runtime-custom",
+       .library = MQT_CORE_QDMI_NA_LIBRARY,
+       .prefix = "MQT_NA",
+       .session = {.deviceConfiguration = qdmi::FileDeviceConfiguration{
+                       .path = MQT_CORE_QDMI_CUSTOM_NA_FILE}}}));
+
+  const auto defaultDevice =
+      fomac::Session::openDevice("test.na.runtime-default");
+  const auto customDevice =
+      fomac::Session::openDevice("test.na.runtime-custom");
+  EXPECT_EQ(defaultDevice.getName(), "MQT NA Default QDMI Device");
+  EXPECT_EQ(defaultDevice.getQubitsNum(), 100);
+  EXPECT_EQ(customDevice.getName(), "Custom NA Driver Device");
+  EXPECT_EQ(customDevice.getQubitsNum(), 4);
+  EXPECT_NE(defaultDevice.getSites().size(), customDevice.getSites().size());
+  ASSERT_FALSE(defaultDevice.getOperations().empty());
+  ASSERT_FALSE(customDevice.getOperations().empty());
+  EXPECT_EQ(defaultDevice.getOperations().front().getDuration(), 100);
+  EXPECT_EQ(customDevice.getOperations().front().getDuration(), 77);
+
+  qdmi::DeviceSessionConfig overrides;
+  overrides.deviceConfiguration =
+      qdmi::FileDeviceConfiguration{.path = MQT_CORE_QDMI_DEFAULT_NA_FILE};
+  const auto overridden =
+      fomac::Session::openDevice("test.na.runtime-custom", overrides);
+  EXPECT_EQ(overridden.getName(), "MQT NA Default QDMI Device");
+  EXPECT_EQ(overridden.getQubitsNum(), 100);
+
+  static_cast<void>(driver.registerDeviceIfAbsent(
+      {.id = "test.na.runtime-invalid",
+       .library = MQT_CORE_QDMI_NA_LIBRARY,
+       .prefix = "MQT_NA",
+       .session = {.deviceConfiguration =
+                       qdmi::InlineDeviceConfiguration{.json = "{}"}}}));
+  EXPECT_THROW(
+      static_cast<void>(fomac::Session::openDevice("test.na.runtime-invalid")),
+      std::runtime_error);
+  EXPECT_EQ(fomac::Session::openDevice("test.na.runtime-default").getName(),
+            "MQT NA Default QDMI Device");
 }
 
 TEST(DeviceRegistrationTest, FreshOpenCreatesDistinctSessions) {
@@ -1285,8 +1334,8 @@ TEST(DeviceSessionConfigTest, OpenWithBaseUrl) {
 
 TEST(DeviceSessionConfigTest, OpenWithCustomParameters) {
   qdmi::DeviceSessionConfig config;
-  config.custom1 = "RESONANCE_COCOS_V1";
-  config.custom2 = "test_value";
+  config.custom3 = "RESONANCE_COCOS_V1";
+  config.custom4 = "test_value";
   config.baseUrl = "http://localhost:9090";
 
   for (const auto& [lib, prefix] : TEST_DEVICE_LIBRARIES) {
@@ -1342,15 +1391,14 @@ TEST(DeviceSessionConfigTest, OpenWithUsernamePassword) {
   }
 }
 
-TEST(DeviceSessionConfigTest, OpenWithAllParameters) {
+TEST(DeviceSessionConfigTest,
+     OpenWithAuthenticationAndRemainingCustomParameters) {
   qdmi::DeviceSessionConfig config;
   config.baseUrl = "http://localhost:8080";
   config.token = "test_token";
   config.authUrl = "https://auth.example.com";
   config.username = "user";
   config.password = "pass";
-  config.custom1 = "value1";
-  config.custom2 = "value2";
   config.custom3 = "value3";
   config.custom4 = "value4";
   config.custom5 = "value5";
@@ -1390,7 +1438,7 @@ TEST(DeviceSessionConfigTest, IdempotentLoadingWithDifferentConfigs) {
     {
       qdmi::DeviceSessionConfig config;
       config.baseUrl = "http://localhost:9090";
-      config.custom1 = "API_V2";
+      config.custom3 = "API_V2";
       EXPECT_NO_THROW(static_cast<void>(openTestDevice(lib, prefix, config)););
     }
 
@@ -1406,16 +1454,13 @@ TEST(DeviceSessionConfigTest, IdempotentLoadingWithDifferentConfigs) {
 
 TEST(DynamicDeviceLibraryTest, ReusesLibraryWithFreshDeviceSessions) {
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
-  qdmi::DeviceSessionConfig firstSessionConfig;
-  firstSessionConfig.custom1 = "first-session";
-  auto* const first = openTestDevice(library, prefix, firstSessionConfig);
+  auto* const first =
+      openTestDevice(library, prefix, {.custom3 = "first-session"});
   const auto equivalentLibrary = std::filesystem::path(library).parent_path() /
                                  "." /
                                  std::filesystem::path(library).filename();
-  qdmi::DeviceSessionConfig secondSessionConfig;
-  secondSessionConfig.custom1 = "second-session";
-  auto* const second =
-      openTestDevice(equivalentLibrary.string(), prefix, secondSessionConfig);
+  auto* const second = openTestDevice(equivalentLibrary.string(), prefix,
+                                      {.custom3 = "second-session"});
 
   ASSERT_NE(first, second);
   EXPECT_EQ(&first->getLibrary(), &second->getLibrary());
