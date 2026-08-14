@@ -144,6 +144,8 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove QDMI device configuration through `[tool.qdmi]` in `pyproject.toml`
+  and the vendored toml++ header ([#2116]) ([**@denialhaag**])
 - 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
   `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
   and GMP build support. Equivalence-checking users should use [MQT QCEC]; its
@@ -756,6 +758,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
