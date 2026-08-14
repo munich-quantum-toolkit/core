@@ -20,6 +20,9 @@ releases may include breaking changes.
 - 🚸 Add typed stable-ID construction for Qiskit backends and compiler targets,
   fluent Qiskit primitives, and lazy provider discovery ([#2084])
   ([**@burgholzer**])
+- ✨ Let a package register a program codec for a device-specific program format
+  through the `mqt.core.qiskit.program_codecs` entry point group or
+  `mqt.core.plugins.qiskit.register_program_codec` ([#PRNUM]) ([**@marcelwa**])
 - 🧪 Test static Slurm license admission and QDMI execution with DDSIM and SC,
   and document the cluster setup ([#2043]) ([**@burgholzer**])
 - ✨ Add C++ and Python adapters that open the QDMI device named by one local
@@ -183,6 +186,9 @@ releases may include breaking changes.
 - 💥 Remove the legacy `QuantumComputation`-to-MLIR translator and its C++ and
   Python compiler inputs. Use OpenQASM, Qiskit circuits, or typed MLIR programs
   as compiler inputs ([#2054]) ([**@burgholzer**])
+- 💥 Remove the IQM JSON converter `qiskit_to_iqm_json` and the `MoveGate` from
+  the Qiskit plugin. [QDMI-on-IQM] owns both and registers the IQM JSON codec
+  through the new entry point group ([#PRNUM]) ([**@marcelwa**])
 - 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
   `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
   and GMP build support. Equivalence-checking users should use [MQT QCEC]; its
@@ -1190,6 +1196,7 @@ for previous changelogs._
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Common Changelog]: https://common-changelog.org
+[QDMI-on-IQM]: https://github.com/iqm-finland/QDMI-on-IQM
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
 [munich-quantum-toolkit]: https://github.com/munich-quantum-toolkit
 [PEP 639]: https://peps.python.org/pep-0639/

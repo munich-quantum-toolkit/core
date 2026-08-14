@@ -32,7 +32,7 @@ from ...qdmi import Device as QDMIDevice
 from ...qdmi import Job as QDMIJobHandle
 from ...qdmi import ProgramFormat
 from ...qdmi.driver import open_device
-from .converters import qiskit_to_iqm_json
+from .codecs import program_codec
 from .estimator import QDMIEstimator
 from .exceptions import (
     CircuitValidationError,
@@ -42,7 +42,6 @@ from .exceptions import (
     UnsupportedFormatError,
     UnsupportedOperationError,
 )
-from .gates import MoveGate
 from .job import QDMIJob
 from .sampler import QDMISampler
 
@@ -68,14 +67,17 @@ def __dir__() -> list[str]:
 
 def _build_gate_mappings_for_backend(
     gate_aliases: dict[str, set[str]],
+    extra_gates: dict[str, Instruction | type[Instruction]],
 ) -> tuple[dict[str, set[str]], dict[str, Instruction | type[Instruction]]]:
     """Build both forward (Qiskit→QDMI) and inverse (QDMI→Gate) mappings.
 
     Uses Qiskit's standard gate mapping as the canonical source of truth,
-    combined with a list of device-specific aliases.
+    combined with a list of device-specific aliases and gates.
 
     Args:
         gate_aliases: Maps canonical names to their aliases.
+        extra_gates: Maps names of gates outside Qiskit's standard library to
+            the gate that represents them.
 
     Returns:
         Tuple of (qiskit_to_qdmi_map, operation_to_gate_map).
@@ -89,8 +91,8 @@ def _build_gate_mappings_for_backend(
         "mcphase": MCPhaseGate,
         "mcp": MCPhaseGate,
         "mcx_gray": MCXGate,
-        "move": MoveGate(),
     })
+    canonical_gates.update(extra_gates)
 
     qiskit_to_qdmi: dict[str, set[str]] = {}
     operation_to_gate: dict[str, Instruction | type[Instruction]] = {}
@@ -157,6 +159,11 @@ class QDMIBackend(BackendV2):
         "mcx_recursive": {"mcx"},  # Alias for MCX with specific encoding
     }
 
+    #: Gates outside Qiskit's standard library that the device natively supports.
+    #: A subclass for a device with such a gate sets this to map the device
+    #: operation name to the gate that represents it in the Target.
+    _EXTRA_GATES: ClassVar[dict[str, Instruction | type[Instruction]]] = {}
+
     _QDMI_TO_QISKIT_GATE_MAP: ClassVar[dict[str, str]] = {
         "i": "id",
         "prx": "r",
@@ -170,7 +177,18 @@ class QDMIBackend(BackendV2):
     _OPERATION_TO_GATE_MAP: ClassVar[dict[str, Instruction | type[Instruction]]]
 
     # Initialize derived mappings at class definition time
-    _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES)
+    _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES, _EXTRA_GATES)
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:  # ruff:ignore[any-type]
+        """Rebuild the gate mappings so a subclass sees its own aliases and gates.
+
+        Args:
+            **kwargs: Keyword arguments for the base implementation.
+        """
+        super().__init_subclass__(**kwargs)
+        cls._QISKIT_TO_QDMI_GATE_MAP, cls._OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(
+            cls._GATE_ALIASES, cls._EXTRA_GATES
+        )
 
     def __init__(
         self,
@@ -424,8 +442,8 @@ class QDMIBackend(BackendV2):
                     target.update_instruction_properties(gate_name, qarg, props)
             return
 
-    @staticmethod
-    def _map_operation_to_gate(op_name: str) -> Instruction | type[Instruction] | None:
+    @classmethod
+    def _map_operation_to_gate(cls, op_name: str) -> Instruction | type[Instruction] | None:
         """Map a device operation name to a Qiskit gate.
 
         Args:
@@ -434,10 +452,10 @@ class QDMIBackend(BackendV2):
         Returns:
             Qiskit gate instance or None if not mappable.
         """
-        return QDMIBackend._OPERATION_TO_GATE_MAP.get(op_name.lower())
+        return cls._OPERATION_TO_GATE_MAP.get(op_name.lower())
 
-    @staticmethod
-    def _map_qiskit_gate_to_operation_names(qiskit_gate_name: str) -> set[str]:
+    @classmethod
+    def _map_qiskit_gate_to_operation_names(cls, qiskit_gate_name: str) -> set[str]:
         """Map a Qiskit gate name to possible QDMI device operation names.
 
         This is the inverse of _map_operation_to_gate, accounting for the fact that
@@ -449,7 +467,7 @@ class QDMIBackend(BackendV2):
         Returns:
             Set of possible QDMI device operation names that could map to this gate.
         """
-        return QDMIBackend._QISKIT_TO_QDMI_GATE_MAP.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
+        return cls._QISKIT_TO_QDMI_GATE_MAP.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
 
     def _get_operation_qargs(self, op: QDMIDevice.Operation) -> list[tuple[int]] | list[tuple[int, int]] | list[None]:
         """Get the qubit argument tuples for an operation.
@@ -533,9 +551,12 @@ class QDMIBackend(BackendV2):
         """Convert a :class:`~qiskit.circuit.QuantumCircuit` to one of the supported program formats.
 
         The conversion priority order is:
-        1. IQM JSON (if supported) - device-specific format
+        1. A registered program codec (if the device supports its format) - device-specific format
         2. OpenQASM 3 (if supported) - superset of QASM 2
         3. OpenQASM 2 (if supported) - legacy format
+
+        See :mod:`mqt.core.plugins.qiskit.codecs` for how a package registers a
+        codec for a device-specific format.
 
         Args:
             circuit: The quantum circuit to convert.
@@ -546,22 +567,27 @@ class QDMIBackend(BackendV2):
 
         Raises:
             UnsupportedFormatError: If no supported program formats are found.
-            UnsupportedOperationError: If the circuit contains operations not supported by IQM JSON.
+            UnsupportedOperationError: If the circuit contains operations the chosen format cannot express.
             TranslationError: If conversion fails.
         """
+        # Materialize once: the formats are traversed several times below
+        supported_program_formats = list(supported_program_formats)
         if not supported_program_formats:
             msg = "No supported program formats found"
             raise UnsupportedFormatError(msg)
 
-        # Try IQM JSON format first (device-specific)
-        if ProgramFormat.IQM_JSON in supported_program_formats:
+        # Try the device-specific formats a package registered a codec for
+        for fmt in supported_program_formats:
+            codec = program_codec(fmt)
+            if codec is None:
+                continue
             try:
-                return qiskit_to_iqm_json(circuit, self._device), ProgramFormat.IQM_JSON
+                return codec(circuit, self._device), fmt
             except UnsupportedOperationError:
                 # Let this propagate so caller can handle fallback
                 raise
             except Exception as exc:
-                msg = f"Failed to convert circuit to IQM JSON: {exc}"
+                msg = f"Failed to convert circuit to {fmt.name}: {exc}"
                 raise TranslationError(msg) from exc
 
         # Try OpenQASM3

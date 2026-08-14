@@ -434,11 +434,40 @@ When you run a circuit, the backend:
 1. Validates the circuit (checks for unbound parameters, supported operations,
    valid options)
 2. Converts the circuit to one of the program formats supported by the target
-   device (IQM JSON, OpenQASM 2, OpenQASM 3) using
-   {py:func}`~mqt.core.plugins.qiskit.converters.qiskit_to_iqm_json` or Qiskit's
-   built-in QASM exporters
+   device, through a registered program codec or, for OpenQASM 2 and OpenQASM 3,
+   through Qiskit's built-in exporters
 3. Submits the program to the QDMI device via `device.submit_job()`
 4. Returns a {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob`
+
+### Program Codecs
+
+MQT Core converts to OpenQASM 2 and OpenQASM 3 itself. Every other program
+format belongs to the package that owns the device. Such a package registers a
+_program codec_: a function that takes a circuit and a device and returns the
+program as a string.
+
+A package advertises its codecs through the `mqt.core.qiskit.program_codecs`
+entry point group. The entry point name is the
+{py:class}`~mqt.core.qdmi.ProgramFormat` member name:
+
+```toml
+[project.entry-points."mqt.core.qiskit.program_codecs"]
+IQM_JSON = "iqm.qdmi.converters:qiskit_to_iqm_json"
+```
+
+{py:func}`~mqt.core.plugins.qiskit.codecs.register_program_codec` does the same
+at run time:
+
+```python
+from mqt.core.plugins.qiskit import register_program_codec
+from mqt.core.qdmi import ProgramFormat
+
+register_program_codec(ProgramFormat.IQM_JSON, qiskit_to_iqm_json)
+```
+
+The backend prefers a registered codec over the built-in OpenQASM codecs. It
+tries the device's supported formats in the order the device reports them and
+uses the first one that has a codec.
 
 ### Device Introspection
 

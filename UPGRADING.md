@@ -94,6 +94,40 @@ resolve against the file that declares them. `MQT_CORE_QDMI_CONFIG_FILE`,
 `MQT_CORE_QDMI_CONFIG_JSON`, the system and user files, and the packaged
 `*.qdmi.json` fragments do not change.
 
+### IQM conversion support moved to QDMI-on-IQM
+
+MQT Core no longer provides `qiskit_to_iqm_json` or `MoveGate`.
+[QDMI-on-IQM](https://github.com/iqm-finland/QDMI-on-IQM) owns both. Import them
+from `iqm.qdmi` instead:
+
+```python
+from iqm.qdmi.converters import qiskit_to_iqm_json
+from iqm.qdmi.gates import MoveGate
+```
+
+The Qiskit backend no longer converts to IQM JSON itself. It converts to
+OpenQASM 2 and OpenQASM 3 directly and takes every other program format from a
+registered program codec. Installing `iqm-qdmi` is enough: the package
+advertises its codec through the `mqt.core.qiskit.program_codecs` entry point
+group, so a backend over an IQM device keeps submitting IQM JSON.
+
+Register a codec for another format the same way, or at run time:
+
+```python
+from mqt.core.plugins.qiskit import register_program_codec
+from mqt.core.qdmi import ProgramFormat
+
+register_program_codec(ProgramFormat.QPY, my_qpy_codec)
+```
+
+A backend subclass that must represent a device-native operation outside
+Qiskit's standard gate library sets `_EXTRA_GATES`:
+
+```python
+class MyBackend(QDMIBackend):
+    _EXTRA_GATES = {"move": MoveGate()}
+```
+
 ### Python binding CMake helper
 
 The `add_mqt_python_binding_nanobind` function is now called

@@ -30,7 +30,7 @@ __all__ = [
 
 if TYPE_CHECKING or HAS_QISKIT:
     from .backend import QDMIBackend
-    from .converters import qiskit_to_iqm_json
+    from .codecs import ProgramCodec, program_codec, register_program_codec, unregister_program_codec
     from .estimator import QDMIEstimator
     from .exceptions import (
         CircuitValidationError,
@@ -40,7 +40,6 @@ if TYPE_CHECKING or HAS_QISKIT:
         UnsupportedFormatError,
         UnsupportedOperationError,
     )
-    from .gates import MoveGate
     from .job import QDMIJob
     from .mqt_to_qiskit import mqt_to_qiskit
     from .provider import QDMIProvider
@@ -50,7 +49,7 @@ if TYPE_CHECKING or HAS_QISKIT:
     __all__ += [
         "CircuitValidationError",
         "JobSubmissionError",
-        "MoveGate",
+        "ProgramCodec",
         "QDMIBackend",
         "QDMIEstimator",
         "QDMIJob",
@@ -61,6 +60,8 @@ if TYPE_CHECKING or HAS_QISKIT:
         "UnsupportedFormatError",
         "UnsupportedOperationError",
         "mqt_to_qiskit",
-        "qiskit_to_iqm_json",
+        "program_codec",
         "qiskit_to_mqt",
+        "register_program_codec",
+        "unregister_program_codec",
     ]
