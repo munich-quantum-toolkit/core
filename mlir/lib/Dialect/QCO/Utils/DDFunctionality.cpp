@@ -833,7 +833,7 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
 [[nodiscard]] static bool requiresDynamicSampling(func::FuncOp func) {
   bool dynamic = false;
   bool measured = false;
-  func.walk([&](Operation* op) {
+  func.getBody().walk([&](Operation* op) {
     if (isa<ResetOp, IfOp, IndexSwitchOp>(op)) {
       dynamic = true;
       return WalkResult::interrupt();
