@@ -25,6 +25,8 @@ releases may include breaking changes.
   ([**@burgholzer**])
 - ✨ Expose compressed vector and matrix DD serialization through bytes-based
   Python APIs ([#1983]) ([**@burgholzer**])
+- ✨ Make superconducting QDMI devices runtime configurable with session-owned
+  topology, operations, and calibration data ([#1980]) ([**@burgholzer**])
 - ✨ Expose registered QDMI device IDs without loading device libraries
   ([#1972]) ([**@burgholzer**])
 - ✨ Add typed runtime configuration transport and relocatable assets for QDMI
@@ -651,6 +653,7 @@ changelogs._
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
+[#1980]: https://github.com/munich-quantum-toolkit/core/pull/1980
 [#1972]: https://github.com/munich-quantum-toolkit/core/pull/1972
 [#1967]: https://github.com/munich-quantum-toolkit/core/pull/1967
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965

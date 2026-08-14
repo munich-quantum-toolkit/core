@@ -6,6 +6,15 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Runtime-configurable SC QDMI device
+
+The built-in superconducting QDMI provider now parses its device description
+when each session is initialized. The `mqt-core-qdmi-sc-device-gen` target,
+SC-specific generator executable, `sc::writeHeader`, `sc::writeJSONSchema`, and
+generated `DeviceMemberInitializers.hpp` file have been removed. Replace
+generator API use with `sc::Device` and the `sc::readJSON` functions declared in
+`qdmi/devices/sc/Configuration.hpp`.
+
 ### Runtime-configurable neutral-atom QDMI device
 
 The built-in neutral-atom QDMI provider now parses its device description when
