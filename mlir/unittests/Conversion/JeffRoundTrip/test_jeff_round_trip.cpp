@@ -329,6 +329,26 @@ static Value whileWithRead(qco::QCOProgramBuilder& b) {
   return c;
 }
 
+static Value nestedWhileOpIfOp(qco::QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto c = b.allocClassicalBitRegister(1);
+  auto q1 = b.h(q0);
+  auto res = b.scfWhile(
+      q1,
+      [&](ValueRange iterArgs) {
+        auto q2 = b.measure(iterArgs[0], c, 0).first;
+        b.scfCondition(c, 0, q2);
+        return SmallVector{q2};
+      },
+      [&](ValueRange iterArgs) {
+        auto inner = b.qcoIf(c, 0, iterArgs[0], [&](ValueRange innerArgs) {
+          return SmallVector{b.x(innerArgs[0])};
+        });
+        return SmallVector{inner[0]};
+      });
+  return b.measure(res[0]).second;
+}
+
 static LogicalResult convertQCOToJeff(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
@@ -1171,6 +1191,9 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{"SimpleDoWhile",
                               MQT_NAMED_BUILDER(qco::simpleDoWhileReset),
                               MQT_NAMED_BUILDER(qco::simpleDoWhileReset)},
+        JeffRoundTripTestCase{"NestedWhileOpIfOp",
+                              MQT_NAMED_BUILDER(nestedWhileOpIfOp),
+                              MQT_NAMED_BUILDER(nestedWhileOpIfOp)},
         JeffRoundTripTestCase{"WhileWithAngle",
                               MQT_NAMED_BUILDER(whileWithAngle),
                               MQT_NAMED_BUILDER(whileWithAngle)},
