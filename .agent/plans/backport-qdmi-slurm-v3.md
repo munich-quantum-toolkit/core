@@ -21,7 +21,9 @@ runtime, select reusable IQM models, and select a registered device from a Slurm
 license environment. Administrators also get a two-node Slurm fixture and a
 concise tutorial that demonstrate cluster-wide admission without presenting
 license metadata as authorization. The documentation build emits `llms.txt` and
-`llms-full.txt` through Sphinx-LLM.
+`llms-full.txt` through Sphinx-LLM. Qiskit users can construct typed backends by
+stable device ID, inspect the retained ID, discover devices lazily, and create
+samplers and estimators from a backend.
 
 ## Progress
 
@@ -36,6 +38,17 @@ license metadata as authorization. The documentation build emits `llms.txt` and
 - [x] (2026-08-14) Added the optional-component wheel target needed by the
   faster stub build and regenerated the recursive stubs without a tracked
   result.
+- [x] (2026-08-14) Ported the applicable QDMI adapter changes from pull request
+      #2084, including its explicit primitive defaults and removal of the
+      generic `options` mapping. Retained only the compatible v3
+      `session_parameters` mapping.
+- [x] (2026-08-14) Ported the removal of dead pybind11 CMake support from pull
+      request #2106 and the removal of `[tool.qdmi]` configuration from pull
+      request #2116.
+- [x] (2026-08-14) Rescanned current `main` and added the compatible
+      documentation-build improvements from #1988 and repository guidance from
+      #2072. Rejected QIR, QCO, compiler-target, and OpenQASM changes whose
+      source layers do not exist on v3.
 - [x] (2026-08-14) Built and tested the complete non-MLIR native and Python
   surfaces and built the documentation with Sphinx-LLM.
 - [x] (2026-08-14) Completed the final lint pass and adversarial aggregate
@@ -65,6 +78,19 @@ license metadata as authorization. The documentation build emits `llms.txt` and
 - Observation: Sphinx-LLM entered `main` as part of pull request #1989, while
   pull request #2046 only added the minimum version. Both pieces are required
   for a functional backport.
+- Observation: Pull request #2084 combines adapter conveniences with deliberate
+  API simplification. MQT Core 3 has no Python MLIR compiler-target binding, so
+  that factory cannot be ported. The Qiskit primitive factories and direct
+  constructors can use the same explicit defaults as `main`, and the generic
+  `options` mapping can be removed with a focused upgrade note.
+- Observation: Pull requests #2106 and #2116 are source-breaking but suitable
+  for the planned minor release. The former removes only dead pybind11 build
+  helpers. The latter removes the deprecated `[tool.qdmi]` path while retaining
+  persistent `qdmi.json` configuration.
+- Observation: The QIR result-order fix (#1979), QIR-Runner test layer (#2044),
+  QCO drive-by layout work (#2060), and later compiler/OpenQASM changes depend
+  on source and runtime layers that are absent from v3. Partial ports would not
+  preserve their upstream contracts.
 
 ## Decision Log
 
@@ -79,8 +105,19 @@ license metadata as authorization. The documentation build emits `llms.txt` and
   typing-code removal. Date/Author: 2026-08-14 / Codex.
 - Decision: Exclude the compiler-target, QCO/QTensor, newer QIR-runtime, and
   OpenQASM semantic series. Their source paths do not exist on v3 or depend on
-  the LLVM/MLIR 22 architecture. Also exclude the explicitly breaking ZX and
-  CMake-helper removals. Date/Author: 2026-08-14 / Codex.
+  the LLVM/MLIR 22 architecture. Also exclude the explicitly breaking ZX
+  removal. Date/Author: 2026-08-14 / Codex.
+- Decision: Backport the Qiskit parts of #2084 that have a v3 implementation.
+  Keep the compatible `session_parameters` mapping, remove the generic primitive
+  `options` mapping in favor of explicit defaults, and omit
+  `CompilerTarget.from_device_id` because v3 does not expose the Python MLIR
+  compiler-target binding. Date/Author: 2026-08-14 / Codex.
+- Decision: Include #2106 and #2116 in this minor release. Their removals are
+  intentional cleanup with clear migration paths, not architectural v4-only
+  changes. Date/Author: 2026-08-14 / Codex.
+- Decision: Include #1988 and #2072 after the final rescan. Adapt #1988 to the
+  optional v3 MLIR build instead of copying the main-only documentation CMake
+  flag. Date/Author: 2026-08-14 / Codex.
 - Decision: Treat lock-only maintenance as superseded by the final lock
   generated from this aggregate dependency set. Rationale: replaying an older
   lock snapshot would replace newer, intentionally resolved metadata.
@@ -92,10 +129,12 @@ license metadata as authorization. The documentation build emits `llms.txt` and
 
 ## Outcomes & Retrospective
 
-The aggregate non-MLIR release build succeeds with LLVM 21.1.8 `llc`. All 1,526
+The aggregate non-MLIR release build succeeds with LLVM 21.1.8 `llc`. All 1,742
 CTest cases pass; two provider-specification job-ID cases are intentionally
-skipped. The complete Python suite passes 531 tests with five documented skips.
-Recursive stub generation completes without a tracked stub change.
+skipped. The updated complete Python suite passes 550 tests with five documented
+skips. The focused Python 3.10 QDMI and Qiskit suite passes 420 tests with two
+documented MLIR skips. Recursive stub generation completes without a tracked
+stub change.
 
 The Sphinx build succeeds with the existing v3 warning baseline and produces
 non-empty `llms.txt` and `llms-full.txt` outputs. The privileged Slurm fixture
@@ -156,6 +195,19 @@ apply each compatible maintenance change independently, retain v3's optional
 LLVM/MLIR 21 contract, and omit main-only architecture work. Resolve the
 combined changelog semantically and do not carry obsolete intermediate plans or
 superseded APIs.
+
+Port the applicable Qiskit adapter work from pull request #2084. Add public
+typed session and job parameter dictionaries, direct typed session keywords,
+stable backend IDs, lazy provider discovery, exact-ID lookup, and backend
+primitive factories. Keep the compatible v3 session mapping. Match `main` by
+using explicit primitive defaults and removing the generic primitive `options`
+mapping. Omit the unavailable Python MLIR compiler-target factory.
+
+Port #2106 and #2116 as separate provenance-preserving commits. Remove the
+unused pybind11 CMake helper and use one nanobind binding helper. Remove
+`[tool.qdmi]` parsing and the vendored TOML parser while retaining `qdmi.json`.
+Apply the compatible documentation-build changes from #1988 and agent guidance
+from #2072. Record the main-only exclusions from the final rescan.
 
 ## Concrete Steps
 
@@ -226,15 +278,15 @@ and rerun affected tests. Never modify another task worktree.
 ## Artifacts and Notes
 
 The combined series backports functionality from pull requests `#1974`, `#1980`,
-`#1989`, `#1992`, `#2008`, `#2010`, `#2011`, `#2019`, `#2020`, `#2021`, `#2023`,
-`#2025`, `#2027`, `#2029`, `#2042`, `#2043`, `#2046`, `#2047`, `#2059`, `#2065`,
-`#2073`, `#2074`, `#2075`, `#2083`, and `#2108`. Pull request `#2113` is the
-authoritative v3 prefix.
+`#1988`, `#1989`, `#1992`, `#2008`, `#2010`, `#2011`, `#2019`, `#2020`, `#2021`,
+`#2023`, `#2025`, `#2027`, `#2029`, `#2042`, `#2043`, `#2046`, `#2047`, `#2059`,
+`#2065`, `#2072`, `#2073`, `#2074`, `#2075`, `#2083`, `#2106`, `#2108`, and
+`#2116`. Pull request `#2113` is the authoritative v3 prefix. The series also
+backports the compatible Qiskit subset of pull request `#2084`.
 
 The lock-only pull request #2033 is represented by the final `uv lock` result.
-Compiler and QIR changes are excluded because the corresponding main source tree
-is not present on v3. Pull requests #2082 and #2106 are explicitly breaking and
-remain main-only.
+Compiler, QCO, and QIR changes are excluded where the corresponding main source
+or runtime layer is not present on v3. Pull request #2082 remains v4-only.
 
 ### Interfaces and Dependencies
 
@@ -248,6 +300,8 @@ The public additions are:
 - `fomac::slurm::openDeviceFromLicense()` and
   `mqt.core.qdmi.slurm.open_device_from_license()`;
 - runtime-configurable NA and SC providers and stable IQM model registrations.
+- typed QDMI adapter parameters, stable Qiskit backend IDs, lazy provider
+  discovery, and Qiskit sampler and estimator factories.
 
 The bundled QDMI revision exposes the matching queue and retrieval enums and
 functions. The Slurm fixture requires Slurm 25.11 or newer, Ubuntu 26.04,

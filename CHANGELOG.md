@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
+- 🚸 Add typed stable-ID construction for Qiskit backends, lazy provider
+  discovery, and sampler and estimator factories with explicit shot and
+  precision defaults ([#2084]) ([**@burgholzer**])
 - 📝 Generate `llms.txt` documentation indexes with Sphinx-LLM ([#1989],
   [#2046]) ([**@denialhaag**], [**@burgholzer**])
 - 🧪 Test static Slurm license admission and QDMI execution with DDSIM and SC,
@@ -656,6 +659,7 @@ for previous changelogs._
 
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
+[#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2046]: https://github.com/munich-quantum-toolkit/core/pull/2046
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2043]: https://github.com/munich-quantum-toolkit/core/pull/2043
