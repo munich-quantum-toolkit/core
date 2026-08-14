@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 nox.needs_version = ">=2025.10.16"
 nox.options.default_venv_backend = "uv"
 
-
 PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
 if os.environ.get("CI", None):
@@ -207,13 +206,29 @@ def docs(session: nox.Session) -> None:
 @nox.session(reuse_venv=True, venv_backend="uv")
 def stubs(session: nox.Session) -> None:
     """Generate type stubs for Python bindings using nanobind."""
-    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    env = {
+        "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
+        # Stub generation only imports the extension modules, so this build
+        # favors compilation speed over optimized code.
+        "SKBUILD_CMAKE_BUILD_TYPE": "MinSizeRel",
+        "SKBUILD_CMAKE_ARGS": (
+            "-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;"
+            "-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF;"
+            "-DCMAKE_UNITY_BUILD=ON;"
+            "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;"
+            "-DENABLE_IPO=OFF"
+        ),
+    }
+
+    session.run("uv", "sync", "--inexact", "--only-group", "build", env=env)
     session.run(
         "uv",
         "sync",
         "--no-dev",
         "--group",
         "build",
+        "--no-build-isolation-package",
+        "mqt-core",  # build the project without isolation
         env=env,
     )
 
