@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add SpecAudits, a method and probe script for auditing tests that pin
+  behavior the project never specified ([#2124]) ([**@marcelwa**])
 - 🚸 Add typed stable-ID construction for Qiskit backends and compiler targets,
   fluent Qiskit primitives, and lazy provider discovery ([#2084])
   ([**@burgholzer**])
@@ -763,6 +765,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
