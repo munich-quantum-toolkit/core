@@ -90,6 +90,12 @@ produce normal diagnostics instead of escaping as C++ exceptions.
   its stable `Failed to discover registered QDMI devices` prefix followed by
   `unknown exception`. The driver test now checks the stable adapter diagnostic
   instead of a platform-specific nested exception string.
+- Observation: The macOS 15 Qiskit job linked the nanobind extension with one
+  undefined OpenQASM semantic-analyzer member-template instantiation. The normal
+  C++ macOS job did not expose the defect because its build mode emitted the
+  instantiation. Replacing the local member template with typed qubit and bit
+  overloads backed by an ordinary helper removes the platform-dependent weak
+  symbol without changing semantic behavior.
 
 ## Decision Log
 

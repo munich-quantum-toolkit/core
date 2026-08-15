@@ -1998,8 +1998,10 @@ private:
                                             destination, global);
           } else if constexpr (std::is_same_v<T, SyntaxAssignment>) {
             return analyzeAssignment(statement.location, data, destination);
-          } else if constexpr (std::is_same_v<T, SyntaxQubitDeclaration> ||
-                               std::is_same_v<T, SyntaxBitDeclaration>) {
+          } else if constexpr (std::is_same_v<T, SyntaxQubitDeclaration>) {
+            return analyzeRegisterDeclaration(statement.location, data,
+                                              destination, global);
+          } else if constexpr (std::is_same_v<T, SyntaxBitDeclaration>) {
             return analyzeRegisterDeclaration(statement.location, data,
                                               destination, global);
           } else if constexpr (std::is_same_v<T, SyntaxMeasurement>) {
@@ -2236,29 +2238,20 @@ private:
     return success();
   }
 
-  template <class Declaration>
-  [[nodiscard]] LogicalResult
-  analyzeRegisterDeclaration(SMLoc location, const Declaration& declaration,
-                             std::vector<StatementId>& destination,
-                             const bool global) {
-    constexpr bool isQubit =
-        std::is_same_v<Declaration, SyntaxQubitDeclaration>;
-    if constexpr (isQubit) {
-      if (!global) {
-        return fail(location, "qubits must be declared at global scope");
-      }
-    } else if (declaration.output && !global) {
+  [[nodiscard]] LogicalResult analyzeRegisterDeclaration(
+      SMLoc location, StringRef identifier,
+      const std::optional<SyntaxExpressionId> size,
+      const std::optional<SyntaxExpressionId> initializer, const bool output,
+      const bool isQubit, std::vector<StatementId>& destination,
+      const bool global) {
+    if (isQubit && !global) {
+      return fail(location, "qubits must be declared at global scope");
+    }
+    if (!isQubit && output && !global) {
       return fail(location, "outputs must be declared at global scope");
     }
-    MQT_OQ3_TRY_ASSIGN(width, constantWidth(declaration.size, location));
+    MQT_OQ3_TRY_ASSIGN(width, constantWidth(size, location));
     const auto id = static_cast<RegisterId>(program.registers.size());
-    const bool output = [&] {
-      if constexpr (isQubit) {
-        return false;
-      } else {
-        return declaration.output;
-      }
-    }();
     if (width > TOTAL_REGISTER_ELEMENT_LIMIT - totalRegisterElements) {
       return fail(location,
                   Twine("total register elements exceed the limit of ") +
@@ -2267,9 +2260,9 @@ private:
     totalRegisterElements += width;
     program.registers.push_back(
         {.kind = isQubit ? RegisterKind::Qubit : RegisterKind::Bit,
-         .name = declaration.identifier.str(),
+         .name = identifier.str(),
          .width = width,
-         .isScalar = !declaration.size.has_value(),
+         .isScalar = !size.has_value(),
          .location = getSourceLocation(location)});
     // OpenQASM 2 classical bits are zero-initialized; OpenQASM 3 bits are not.
     const bool initiallyInitialized = !isQubit && program.openQASM2;
@@ -2277,7 +2270,7 @@ private:
         std::make_shared<BitInitialization>(width, initiallyInitialized));
     dynamicBitFacts.push_back(std::make_shared<DynamicBitFactSet>());
     bitGenerations.push_back(0);
-    if (failed(declare(location, declaration.identifier,
+    if (failed(declare(location, identifier,
                        {.kind = SymbolKind::Register, .id = id}))) {
       return failure();
     }
@@ -2292,24 +2285,38 @@ private:
     MQT_OQ3_TRY_ASSIGN(statement,
                        addStatement(location, DeclarationStatement{.reg = id}));
     destination.push_back(statement);
-    if constexpr (!isQubit) {
-      if (declaration.initializer) {
-        if (width != 1) {
-          return fail(
-              location,
-              "bit expression initializers require a scalar bit declaration");
-        }
-        return analyzeAssignment(
+    if (!isQubit && initializer) {
+      if (width != 1) {
+        return fail(
             location,
-            SyntaxAssignment{
-                .target =
-                    SyntaxBitReference{.location = location,
-                                       .identifier = declaration.identifier},
-                .value = *declaration.initializer},
-            destination);
+            "bit expression initializers require a scalar bit declaration");
       }
+      return analyzeAssignment(
+          location,
+          SyntaxAssignment{.target =
+                               SyntaxBitReference{.location = location,
+                                                  .identifier = identifier},
+                           .value = *initializer},
+          destination);
     }
     return success();
+  }
+
+  [[nodiscard]] LogicalResult analyzeRegisterDeclaration(
+      SMLoc location, const SyntaxQubitDeclaration& declaration,
+      std::vector<StatementId>& destination, const bool global) {
+    return analyzeRegisterDeclaration(location, declaration.identifier,
+                                      declaration.size, std::nullopt, false,
+                                      true, destination, global);
+  }
+
+  [[nodiscard]] LogicalResult analyzeRegisterDeclaration(
+      SMLoc location, const SyntaxBitDeclaration& declaration,
+      std::vector<StatementId>& destination, const bool global) {
+    return analyzeRegisterDeclaration(location, declaration.identifier,
+                                      declaration.size, declaration.initializer,
+                                      declaration.output, false, destination,
+                                      global);
   }
 
   [[nodiscard]] LogicalResult
