@@ -1,4 +1,5 @@
-# Copyright (c) 2026 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -14,7 +15,9 @@ function(require_success description)
   if(NOT result EQUAL 0)
     message(FATAL_ERROR "${description} failed with exit code ${result}:\n${output}${error}")
   endif()
-  set(command_output "${output}" PARENT_SCOPE)
+  set(command_output
+      "${output}"
+      PARENT_SCOPE)
 endfunction()
 
 function(require_failure description expected_error)
@@ -28,8 +31,7 @@ function(require_failure description expected_error)
   endif()
   string(FIND "${output}${error}" "${expected_error}" error_position)
   if(error_position EQUAL -1)
-    message(FATAL_ERROR
-            "${description} did not report '${expected_error}':\n${output}${error}")
+    message(FATAL_ERROR "${description} did not report '${expected_error}':\n${output}${error}")
   endif()
 endfunction()
 
@@ -41,27 +43,15 @@ if(ddsim_position EQUAL -1)
   message(FATAL_ERROR "QDMI device listing omitted mqt.ddsim.default:\n${command_output}")
 endif()
 
-require_failure(
-  "unknown QDMI device"
-  "mqt.unknown.device"
-  "${MQT_CC}"
-  "${INPUT_FILE}"
-  --qdmi-device=mqt.unknown.device
-  --emit=qco-optimized)
+require_failure("unknown QDMI device" "mqt.unknown.device" "${MQT_CC}" "${INPUT_FILE}"
+                --qdmi-device=mqt.unknown.device --emit=qco-optimized)
 
 require_failure(
-  "invalid QDMI registry configuration"
-  "Explicit QDMI configuration file does not exist"
-  "${MQT_CC}"
-  "--qdmi-config=${OUTPUT_DIR}/missing.json"
-  --qdmi-list-devices)
+  "invalid QDMI registry configuration" "Explicit QDMI configuration file does not exist"
+  "${MQT_CC}" "--qdmi-config=${OUTPUT_DIR}/missing.json" --qdmi-list-devices)
 
-require_success(
-  "DDSIM target compilation"
-  "${MQT_CC}"
-  "${INPUT_FILE}"
-  --qdmi-device=mqt.ddsim.default
-  --emit=qco-optimized)
+require_success("DDSIM target compilation" "${MQT_CC}" "${INPUT_FILE}"
+                --qdmi-device=mqt.ddsim.default --emit=qco-optimized)
 string(FIND "${command_output}" "qco." qco_position)
 if(qco_position EQUAL -1)
   message(FATAL_ERROR "DDSIM target compilation did not produce QCO MLIR:\n${command_output}")
