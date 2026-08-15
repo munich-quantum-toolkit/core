@@ -74,11 +74,8 @@ add_subdirectory(dd)
 # add NA library
 add_subdirectory(na)
 
-# add QDMI package library
+# add QDMI libraries
 add_subdirectory(qdmi)
-
-# add FoMaC package library
-add_subdirectory(fomac)
 
 # add QIR package library
 add_subdirectory(qir)

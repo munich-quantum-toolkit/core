@@ -22,6 +22,6 @@ if(NOT TARGET ${TARGET_NAME})
     INSTALL_DIR
     .
     LINK_LIBS
-    MQT::CoreFoMaC)
+    MQT::CoreQDMI)
 
 endif()

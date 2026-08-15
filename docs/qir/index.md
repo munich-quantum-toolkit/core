@@ -131,7 +131,7 @@ The QDMI Device accepts jobs in the following program formats: QASM2, QASM3, QIR
 Base/Adaptive Profile Module (LLVM bitcode), and QIR Base/Adaptive Profile
 String (LLVM assembly).
 
-FoMaC C++ applications submit textual programs through the
+QDMI C++ applications submit textual programs through the
 `Device::submitJob(const std::string&, ...)` overload, which includes the
 terminating null byte required by QDMI. Binary module payloads use the
 `Device::submitJob(std::span<const std::byte>, ...)` overload instead. It

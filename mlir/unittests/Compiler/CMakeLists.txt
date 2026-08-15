@@ -6,13 +6,13 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-unittests-compiler test_compiler_fomac_adapter.cpp
-                                                test_compiler_pipeline.cpp test_compiler_target.cpp)
+add_executable(mqt-core-mlir-unittests-compiler
+               test_compiler_pipeline.cpp test_compiler_qdmi_adapter.cpp test_compiler_target.cpp)
 
 target_link_libraries(
   mqt-core-mlir-unittests-compiler
   PRIVATE GTest::gtest_main
-          MQTCompilerFoMaCAdapter
+          MQTCompilerQDMIAdapter
           MQTCompilerTarget
           MQTCompilerPipeline
           MLIRQCTranslation

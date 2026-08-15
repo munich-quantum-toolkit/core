@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/Slurm.hpp"
+#include "qdmi/Slurm.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <gmock/gmock-matchers.h>
@@ -22,7 +22,7 @@
 #include <string>
 #include <utility>
 
-namespace fomac::slurm {
+namespace qdmi::slurm {
 namespace {
 
 class ScopedSlurmLicenses {
@@ -74,7 +74,7 @@ void registerStatusDevice(const std::string& id,
                           const std::string& configuredStatus) {
   static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent(
       {.id = id,
-       .library = MQT_CORE_FOMAC_SLURM_TEST_DEVICE,
+       .library = MQT_CORE_QDMI_SLURM_TEST_DEVICE,
        .prefix = "TEST_SESSION",
        .session = {.custom4 = configuredStatus}}));
 }
@@ -155,4 +155,4 @@ TEST(SlurmAdapterTest, RejectsUnavailableDeviceWithIdAndStatus) {
   }
 }
 
-} // namespace fomac::slurm
+} // namespace qdmi::slurm

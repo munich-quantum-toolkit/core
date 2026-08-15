@@ -14,9 +14,9 @@
 
 #include <llvm/Support/Error.h>
 
-namespace fomac {
+namespace qdmi {
 class Device;
-} // namespace fomac
+} // namespace qdmi
 
 namespace mlir {
 
@@ -29,6 +29,6 @@ namespace mlir {
  * circuit-model compiler pipeline.
  */
 [[nodiscard]] llvm::Expected<CompilerTarget>
-compilerTargetFromDevice(const fomac::Device& device);
+compilerTargetFromDevice(const qdmi::Device& device);
 
 } // namespace mlir

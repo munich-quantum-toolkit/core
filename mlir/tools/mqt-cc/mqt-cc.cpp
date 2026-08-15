@@ -8,8 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp"
-#include "mlir/Compiler/FoMaCAdapter.h"
+#include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/TargetCompilation.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
@@ -25,6 +24,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
+#include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <jeff/IR/JeffDialect.h>
@@ -435,7 +435,7 @@ static int runCompiler(int argc, char** argv) {
             .failed()) {
       return 1;
     }
-    const auto device = fomac::Session::openDevice(qdmiDevice);
+    const auto device = qdmi::Session::openDevice(qdmiDevice);
     auto target = compilerTargetFromDevice(device);
     if (!target) {
       llvm::errs() << "Failed to create compiler target from QDMI device '"

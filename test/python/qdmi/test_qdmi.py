@@ -11,9 +11,8 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 
@@ -21,7 +20,6 @@ from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
 from mqt.core.qdmi import CustomProperty, Device, Job, ProgramFormat
 from mqt.core.qdmi.driver import (
     DeviceDefinition,
-    Session,
     open_device,
     register_device,
     register_device_if_absent,
@@ -38,16 +36,6 @@ def _get_devices() -> list[Device]:
         List of all available QDMI devices.
     """
     return [open_device(device_id) for device_id in registered_device_ids()]
-
-
-def _legacy_session(**kwargs: Any) -> Session:  # ruff: ignore[any-type]
-    """Construct the deprecated session API and verify its warning.
-
-    Returns:
-        The constructed legacy session.
-    """
-    with pytest.warns(DeprecationWarning, match="driver.Session is deprecated"):
-        return Session(**kwargs)
 
 
 @pytest.fixture(params=_get_devices())
@@ -788,213 +776,6 @@ def test_simulator_job_get_sparse_probabilities_returns_valid_probabilities(simu
 
     assert "11" in sparse_probabilities
     assert sparse_probabilities["11"] == pytest.approx(0.5)
-
-
-def test_session_construction_with_token() -> None:
-    """Test Session construction with a token parameter.
-
-    Unsupported parameters are skipped during Session initialization,
-    so Session construction succeeds unless there's a critical error.
-    """
-    # Empty token should be accepted
-    session = _legacy_session(token="")
-    assert session is not None
-
-    # Non-empty token should be accepted
-    session = _legacy_session(token="test_token_123")  # ruff:ignore[hardcoded-password-func-arg]
-    assert session is not None
-
-    # Token with special characters should be accepted
-    session = _legacy_session(token="very_long_token_with_special_characters_!@#$%^&*()")  # ruff:ignore[hardcoded-password-func-arg]
-    assert session is not None
-
-
-def test_session_construction_with_auth_url() -> None:
-    """Test Session construction with auth URL parameter.
-
-    Valid URLs should pass validation and Session construction should succeed
-    (even if the parameter is unsupported and skipped). Invalid URLs should
-    fail validation before attempting to set the parameter.
-    """
-    # Valid HTTPS URL
-    session = _legacy_session(auth_url="https://example.com")
-    assert session is not None
-
-    # Valid HTTP URL with port and path
-    session = _legacy_session(auth_url="http://auth.server.com:8080/api")
-    assert session is not None
-
-    # Valid HTTPS URL with query parameters
-    session = _legacy_session(auth_url="https://auth.example.com/token?param=value")
-    assert session is not None
-
-    # Valid localhost URL
-    session = _legacy_session(auth_url="http://localhost")
-    assert session is not None
-
-    # Valid localhost URL with port
-    session = _legacy_session(auth_url="http://localhost:8080")
-    assert session is not None
-
-    # Valid localhost URL with port and path
-    session = _legacy_session(auth_url="https://localhost:3000/auth/api")
-    assert session is not None
-
-    # Invalid URL - not a URL at all
-    with pytest.raises(RuntimeError):
-        _legacy_session(auth_url="not-a-url")
-
-    # Invalid URL - unsupported protocol
-    with pytest.raises(RuntimeError):
-        _legacy_session(auth_url="ftp://invalid.com")
-
-    # Invalid URL - missing protocol
-    with pytest.raises(RuntimeError):
-        _legacy_session(auth_url="example.com")
-
-
-def test_session_construction_with_auth_file() -> None:
-    """Test Session construction with auth file parameter.
-
-    Existing files should pass validation and Session construction should succeed.
-    Non-existent files should fail validation before attempting to set the parameter.
-    """
-    # Test with non-existent file
-    with pytest.raises(RuntimeError):
-        _legacy_session(auth_file="/nonexistent/path/to/file.txt")
-
-    # Test with existing file
-    with tempfile.NamedTemporaryFile(encoding="utf-8", mode="w", delete=False, suffix=".txt") as tmp_file:
-        tmp_file.write("test_token_content")
-        tmp_path = tmp_file.name
-
-    try:
-        # Both string and pathlib paths should be accepted.
-        string_session = _legacy_session(auth_file=tmp_path)
-        path_session = _legacy_session(auth_file=Path(tmp_path))
-        assert string_session is not None
-        assert path_session is not None
-    finally:
-        # Clean up
-        Path(tmp_path).unlink(missing_ok=True)
-
-
-def test_session_construction_with_username_password() -> None:
-    """Test Session construction with username and password parameters.
-
-    Unsupported parameters are skipped, so construction should succeed.
-    """
-    # Username only
-    session = _legacy_session(username="user123")
-    assert session is not None
-
-    # Password only
-    session = _legacy_session(password="secure_password")  # ruff:ignore[hardcoded-password-func-arg]
-    assert session is not None
-
-    # Both username and password
-    session = _legacy_session(username="user123", password="secure_password")  # ruff:ignore[hardcoded-password-func-arg]
-    assert session is not None
-
-
-def test_session_construction_with_project_id() -> None:
-    """Test Session construction with project ID parameter.
-
-    Unsupported parameters are skipped, so construction should succeed.
-    """
-    session = _legacy_session(project_id="project-123-abc")
-    assert session is not None
-
-
-def test_session_construction_with_multiple_parameters() -> None:
-    """Test Session construction with multiple authentication parameters.
-
-    Unsupported parameters are skipped, so construction should succeed.
-    """
-    session = _legacy_session(
-        token="test_token",  # ruff:ignore[hardcoded-password-func-arg]
-        username="test_user",
-        password="test_pass",  # ruff:ignore[hardcoded-password-func-arg]
-        project_id="test_project",
-    )
-    assert session is not None
-
-
-def test_session_construction_with_custom_parameters() -> None:
-    """Test Session construction with custom configuration parameters.
-
-    Custom parameters may not be supported by all devices, or may have specific
-    validation requirements. This test verifies they can be passed to the Session
-    constructor. Currently a smoke test..
-    """
-    # Test custom1 - may succeed or fail with validation/unsupported errors
-    try:
-        session = _legacy_session(custom1="custom_value_1")
-        assert session is not None
-    except (RuntimeError, ValueError):
-        pass
-
-    # Test custom2
-    try:
-        session = _legacy_session(custom2="custom_value_2")
-        assert session is not None
-    except (RuntimeError, ValueError):
-        pass
-
-    # Test all custom parameters together
-    try:
-        session = _legacy_session(
-            custom1="value1",
-            custom2="value2",
-            custom3="value3",
-            custom4="value4",
-            custom5="value5",
-        )
-        assert session is not None
-    except (RuntimeError, ValueError):
-        pass
-
-    # Test mixing custom parameters with standard authentication
-    try:
-        session = _legacy_session(
-            token="test_token",  # ruff:ignore[hardcoded-password-func-arg]
-            custom1="custom_value",
-            project_id="project_id",
-        )
-        assert session is not None
-    except (RuntimeError, ValueError):
-        pass
-
-
-def test_session_get_devices_returns_list() -> None:
-    """Test that get_devices() returns a list of Device objects."""
-    session = _legacy_session()
-    devices = session.get_devices()
-
-    assert isinstance(devices, list)
-    assert len(devices) > 0
-
-    # All elements should be Device instances
-    for device in devices:
-        assert isinstance(device, Device)
-        # Device should have a name
-        assert len(device.name()) > 0
-
-
-def test_session_multiple_instances() -> None:
-    """Test that multiple Session instances can be created independently."""
-    session1 = _legacy_session()
-    session2 = _legacy_session()
-
-    devices1 = session1.get_devices()
-    devices2 = session2.get_devices()
-
-    # Both should return devices
-    assert len(devices1) > 0
-    assert len(devices2) > 0
-
-    # Should return the same number of devices
-    assert len(devices1) == len(devices2)
 
 
 def test_register_device_does_not_load_nonexistent_library() -> None:

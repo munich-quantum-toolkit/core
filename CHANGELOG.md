@@ -154,6 +154,10 @@ releases may include breaking changes.
 
 - 💥 Remove QDMI device configuration through `[tool.qdmi]` in `pyproject.toml`
   and the vendored toml++ header ([#2116]) ([**@denialhaag**])
+- 💥 Remove the FoMaC compatibility name from the C++ and Python QDMI APIs. Use
+  the `qdmi` C++ namespace, headers, libraries, and CMake targets; the
+  `mqt.core.qdmi` and `mqt.core.na.qdmi` Python modules; and the module-level
+  Python driver functions ([#2115]) ([**@burgholzer**])
 - 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
   `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
   and GMP build support. Equivalence-checking users should use [MQT QCEC]; its
@@ -769,6 +773,7 @@ for previous changelogs._
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
+[#2115]: https://github.com/munich-quantum-toolkit/core/pull/2115
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084

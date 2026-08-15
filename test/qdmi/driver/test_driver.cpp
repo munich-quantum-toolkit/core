@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp"
+#include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <gmock/gmock-matchers.h>
@@ -359,11 +359,11 @@ TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
     EXPECT_EQ(queryName(children[0]), "child-0");
     EXPECT_EQ(queryName(children[1]), "child-1");
 
-    const auto fomacChildren =
-        fomac::Session::createSessionlessDevice(&parent).getChildDevices();
-    ASSERT_EQ(fomacChildren.size(), 2);
-    EXPECT_EQ(fomacChildren[0].getName(), "child-0");
-    EXPECT_EQ(fomacChildren[1].getName(), "child-1");
+    const auto qdmiChildren =
+        qdmi::Session::createSessionlessDevice(&parent).getChildDevices();
+    ASSERT_EQ(qdmiChildren.size(), 2);
+    EXPECT_EQ(qdmiChildren[0].getName(), "child-0");
+    EXPECT_EQ(qdmiChildren[1].getName(), "child-1");
 
     std::array<QDMI_Device, 2> repeatedQuery{};
     ASSERT_EQ(QDMI_device_query_device_property(
@@ -1014,7 +1014,7 @@ TEST(DeviceRegistrationTest,
     overrides.token = "override-token";
     overrides.custom2 = "override-custom";
     auto device =
-        fomac::Session::openDevice("test.session-overrides", overrides);
+        qdmi::Session::openDevice("test.session-overrides", overrides);
     EXPECT_EQ(device.getName(),
               "base=registered-base;token=override-token;custom1="
               "registered-custom;custom2=override-custom;active=1");
@@ -1024,7 +1024,7 @@ TEST(DeviceRegistrationTest,
   qdmi::DeviceSessionConfig probeOverrides;
   probeOverrides.token = "probe-token";
   const auto probe =
-      fomac::Session::openDevice("test.session-overrides", probeOverrides);
+      qdmi::Session::openDevice("test.session-overrides", probeOverrides);
   EXPECT_THAT(queryName(probe), testing::HasSubstr("active=1"));
   EXPECT_EQ(clientCatalogSize(), catalogSizeBefore);
 }
@@ -1038,7 +1038,7 @@ TEST(DeviceRegistrationTest, TypedConfigurationUsesExactlyOneAdapterSlot) {
                        .json = R"({"name":"inline"})"}}}));
 
   const auto inlineDevice =
-      fomac::Session::openDevice("test.typed-configuration");
+      qdmi::Session::openDevice("test.typed-configuration");
   EXPECT_THAT(
       inlineDevice.getName(),
       testing::HasSubstr(R"(custom1={"name":"inline"};custom2=<unset>)"));
@@ -1047,7 +1047,7 @@ TEST(DeviceRegistrationTest, TypedConfigurationUsesExactlyOneAdapterSlot) {
   fileOverrides.deviceConfiguration =
       qdmi::FileDeviceConfiguration{.path = "device.json"};
   const auto fileDevice =
-      fomac::Session::openDevice("test.typed-configuration", fileOverrides);
+      qdmi::Session::openDevice("test.typed-configuration", fileOverrides);
   EXPECT_THAT(fileDevice.getName(),
               testing::HasSubstr("custom1=<unset>;custom2=device.json"));
 }
@@ -1068,7 +1068,7 @@ TEST(DeviceRegistrationTest, TypedConfigurationRejectsRawAdapterSlotConflict) {
   overrides.deviceConfiguration =
       qdmi::FileDeviceConfiguration{.path = "device.json"};
   overrides.custom2 = "raw";
-  EXPECT_THROW(static_cast<void>(fomac::Session::openDevice(
+  EXPECT_THROW(static_cast<void>(qdmi::Session::openDevice(
                    "test.session-overrides", overrides)),
                std::invalid_argument);
 }
@@ -1088,9 +1088,8 @@ TEST(DeviceRegistrationTest,
                        .path = MQT_CORE_QDMI_CUSTOM_NA_FILE}}}));
 
   const auto defaultDevice =
-      fomac::Session::openDevice("test.na.runtime-default");
-  const auto customDevice =
-      fomac::Session::openDevice("test.na.runtime-custom");
+      qdmi::Session::openDevice("test.na.runtime-default");
+  const auto customDevice = qdmi::Session::openDevice("test.na.runtime-custom");
   EXPECT_EQ(defaultDevice.getName(), "MQT NA Default QDMI Device");
   EXPECT_EQ(defaultDevice.getQubitsNum(), 100);
   EXPECT_EQ(customDevice.getName(), "Custom NA Driver Device");
@@ -1105,7 +1104,7 @@ TEST(DeviceRegistrationTest,
   overrides.deviceConfiguration =
       qdmi::FileDeviceConfiguration{.path = MQT_CORE_QDMI_DEFAULT_NA_FILE};
   const auto overridden =
-      fomac::Session::openDevice("test.na.runtime-custom", overrides);
+      qdmi::Session::openDevice("test.na.runtime-custom", overrides);
   EXPECT_EQ(overridden.getName(), "MQT NA Default QDMI Device");
   EXPECT_EQ(overridden.getQubitsNum(), 100);
 
@@ -1116,22 +1115,22 @@ TEST(DeviceRegistrationTest,
        .session = {.deviceConfiguration =
                        qdmi::InlineDeviceConfiguration{.json = "{}"}}}));
   EXPECT_THROW(
-      static_cast<void>(fomac::Session::openDevice("test.na.runtime-invalid")),
+      static_cast<void>(qdmi::Session::openDevice("test.na.runtime-invalid")),
       std::runtime_error);
-  EXPECT_EQ(fomac::Session::openDevice("test.na.runtime-default").getName(),
+  EXPECT_EQ(qdmi::Session::openDevice("test.na.runtime-default").getName(),
             "MQT NA Default QDMI Device");
 }
 
 TEST(DeviceRegistrationTest, FreshOpenCreatesDistinctSessions) {
   registerSessionTestDevice();
-  const auto first = fomac::Session::openDevice("test.session-overrides");
-  const auto second = fomac::Session::openDevice("test.session-overrides");
+  const auto first = qdmi::Session::openDevice("test.session-overrides");
+  const auto second = qdmi::Session::openDevice("test.session-overrides");
   EXPECT_NE(first, second);
 }
 
-TEST(DeviceRegistrationTest, CustomOperationListSupportsRawAndFoMaCQueries) {
+TEST(DeviceRegistrationTest, CustomOperationListSupportsRawAndQDMIQueries) {
   registerSessionTestDevice();
-  const auto device = fomac::Session::openDevice("test.session-overrides");
+  const auto device = qdmi::Session::openDevice("test.session-overrides");
 
   size_t size = 0;
   ASSERT_EQ(QDMI_device_query_device_property(
@@ -1150,7 +1149,7 @@ TEST(DeviceRegistrationTest, CustomOperationListSupportsRawAndFoMaCQueries) {
             QDMI_SUCCESS);
 
   const auto operations =
-      device.queryCustomOperations(fomac::CustomProperty::Custom1);
+      device.queryCustomOperations(qdmi::CustomProperty::Custom1);
   ASSERT_TRUE(operations.has_value());
   ASSERT_EQ(operations->size(), rawOperations.size());
   EXPECT_EQ(static_cast<QDMI_Operation>(operations->at(0)),
@@ -1168,16 +1167,16 @@ TEST(DeviceRegistrationTest, CustomOperationListSupportsRawAndFoMaCQueries) {
 TEST(DeviceRegistrationTest,
      CustomOperationListDistinguishesUnsupportedEmptyAndMalformed) {
   registerSessionTestDevice();
-  const auto device = fomac::Session::openDevice("test.session-overrides");
+  const auto device = qdmi::Session::openDevice("test.session-overrides");
 
-  EXPECT_EQ(device.queryCustomOperations(fomac::CustomProperty::Custom4),
+  EXPECT_EQ(device.queryCustomOperations(qdmi::CustomProperty::Custom4),
             std::nullopt);
   const auto empty =
-      device.queryCustomOperations(fomac::CustomProperty::Custom2);
+      device.queryCustomOperations(qdmi::CustomProperty::Custom2);
   ASSERT_TRUE(empty.has_value());
   EXPECT_TRUE(empty->empty());
-  EXPECT_THROW(static_cast<void>(device.queryCustomOperations(
-                   fomac::CustomProperty::Custom3)),
+  EXPECT_THROW(static_cast<void>(
+                   device.queryCustomOperations(qdmi::CustomProperty::Custom3)),
                std::invalid_argument);
 }
 
@@ -1185,8 +1184,8 @@ TEST(DeviceRegistrationTest, CustomOperationRetainsOwningDeviceSession) {
   registerSessionTestDevice();
   const auto operation = [] {
     const auto operations =
-        fomac::Session::openDevice("test.session-overrides")
-            .queryCustomOperations(fomac::CustomProperty::Custom1);
+        qdmi::Session::openDevice("test.session-overrides")
+            .queryCustomOperations(qdmi::CustomProperty::Custom1);
     if (!operations.has_value() || operations->empty()) {
       throw std::runtime_error("Test provider returned no custom operations");
     }
@@ -1235,8 +1234,8 @@ TEST(DeviceRegistrationTest,
                  "operations":[]
                })"}}}));
 
-  const auto first = fomac::Session::openDevice("test.sc.runtime-one");
-  const auto second = fomac::Session::openDevice("test.sc.runtime-two");
+  const auto first = qdmi::Session::openDevice("test.sc.runtime-one");
+  const auto second = qdmi::Session::openDevice("test.sc.runtime-two");
   EXPECT_EQ(first.getName(), "SC runtime one");
   EXPECT_EQ(first.getQubitsNum(), 1);
   const auto firstSites = first.getSites();
@@ -1266,16 +1265,16 @@ TEST(DeviceRegistrationTest,
         "operations":[]
       })"};
   const auto overridden =
-      fomac::Session::openDevice("test.sc.runtime-one", configurationOverride);
+      qdmi::Session::openDevice("test.sc.runtime-one", configurationOverride);
   EXPECT_EQ(overridden.getName(), "SC per-open override");
   EXPECT_EQ(overridden.getQubitsNum(), 3);
 }
 
 TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   registerSessionTestDevice();
-  std::optional<fomac::Job> job;
+  std::optional<qdmi::Job> job;
   {
-    auto device = fomac::Session::openDevice("test.session-overrides");
+    auto device = qdmi::Session::openDevice("test.session-overrides");
     job.emplace(
         device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2, 1));
   }
@@ -1284,13 +1283,13 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   EXPECT_EQ(job->getId(), "session-job");
   job.reset();
 
-  const auto probe = fomac::Session::openDevice("test.session-overrides");
+  const auto probe = qdmi::Session::openDevice("test.session-overrides");
   EXPECT_THAT(queryName(probe), testing::HasSubstr("active=1"));
 }
 
 TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
   registerSessionTestDevice();
-  const auto device = fomac::Session::openDevice("test.session-overrides");
+  const auto device = qdmi::Session::openDevice("test.session-overrides");
 
   QDMI_Job job = nullptr;
   ASSERT_EQ(QDMI_session_retrieve_job_by_id(device, "session-job", &job),
@@ -1319,11 +1318,11 @@ TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
 
 TEST(DeviceRegistrationTest, FreshChildDeviceRetainsItsRootSession) {
   registerSessionTestDevice();
-  std::optional<fomac::Device> child;
+  std::optional<qdmi::Device> child;
   {
     qdmi::DeviceSessionConfig overrides;
     overrides.custom5 = "with-child";
-    auto root = fomac::Session::openDevice("test.session-overrides", overrides);
+    auto root = qdmi::Session::openDevice("test.session-overrides", overrides);
     auto children = root.getChildDevices();
     ASSERT_EQ(children.size(), 1);
     child.emplace(std::move(children.front()));
@@ -1333,7 +1332,7 @@ TEST(DeviceRegistrationTest, FreshChildDeviceRetainsItsRootSession) {
   EXPECT_EQ(child->getName(), "child;active=2");
   child.reset();
 
-  const auto probe = fomac::Session::openDevice("test.session-overrides");
+  const auto probe = qdmi::Session::openDevice("test.session-overrides");
   EXPECT_THAT(queryName(probe), testing::HasSubstr("active=1"));
 }
 

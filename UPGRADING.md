@@ -97,10 +97,10 @@ Boost.Multiprecision or GMP.
 
 ### QDMI Python namespace
 
-The native Python module has moved from `mqt.core.fomac` to `mqt.core.qdmi`.
-QDMI entities such as `Device`, `Job`, and `ProgramFormat` are in
-`mqt.core.qdmi`. Import functions and classes from `mqt.core.qdmi.driver` for
-device discovery, registration, and opening:
+The Python QDMI API is available only in the QDMI namespace. Import QDMI
+entities such as `Device`, `Job`, and `ProgramFormat` from `mqt.core.qdmi`.
+Import functions and classes for device discovery, registration, and opening
+from `mqt.core.qdmi.driver`:
 
 ```python
 from mqt.core.qdmi.driver import open_device
@@ -108,19 +108,37 @@ from mqt.core.qdmi.driver import open_device
 device = open_device("mqt.ddsim.default")
 ```
 
-`mqt.core.fomac` remains available in MQT Core v3 and re-exports the same
-objects. Importing that module emits a `DeprecationWarning`. It will be removed
-in MQT Core 4.0. The legacy `driver.Session` class also emits a
-`DeprecationWarning` when constructed and will be removed in 4.0. Replace
-session-based discovery with `registered_device_ids()` and `open_device()` from
-`mqt.core.qdmi.driver`.
+MQT Core 4 removes `mqt.core.fomac`. Replace imports of QDMI entities with
+`mqt.core.qdmi`. Replace imports of registry functions and `DeviceDefinition`
+with `mqt.core.qdmi.driver`.
 
-The neutral-atom specialization has moved from `mqt.core.na.fomac` to
-`mqt.core.na.qdmi`. The former submodule remains a v3 compatibility alias and
-will be removed in MQT Core 4.0.
+MQT Core 4 also removes `mqt.core.qdmi.driver.Session`. Use
+`registered_device_ids()` to discover devices and `open_device()` to open a
+fresh device session. Pass provider configuration overrides to `open_device()`
+when a device needs per-open configuration.
 
-The C++ FoMaC namespace, headers, library, and `MQT::CoreFoMaC` target do not
-change.
+MQT Core 4 removes `mqt.core.na.fomac`. Import the neutral-atom specialization
+from `mqt.core.na.qdmi`.
+
+MQT Core 4 also removes the FoMaC name from its C++ API. Apply these
+replacements:
+
+- `fomac::` becomes `qdmi::`.
+- `fomac/FoMaC.hpp` becomes `qdmi/Client.hpp`.
+- `fomac/Slurm.hpp` becomes `qdmi/Slurm.hpp`.
+- `na/fomac/Device.hpp` becomes `na/qdmi/Device.hpp`.
+- `MQT::CoreFoMaC` becomes `MQT::CoreQDMI`.
+- `MQT::CoreNAFoMaC` becomes `MQT::CoreNAQDMI`.
+- `mlir/Compiler/FoMaCAdapter.h` and `MQTCompilerFoMaCAdapter` become
+  `mlir/Compiler/QDMIAdapter.h` and `MQTCompilerQDMIAdapter`.
+
+The class and function names do not change. For example:
+
+```cpp
+#include "qdmi/Client.hpp"
+
+auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+```
 
 ### QDMI Qiskit primitive options
 

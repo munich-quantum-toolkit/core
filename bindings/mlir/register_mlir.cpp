@@ -8,11 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp" // NOLINT(misc-include-cleaner)
 #include "ir/QuantumComputation.hpp"
-#include "mlir/Compiler/FoMaCAdapter.h"
 #include "mlir/Compiler/Programs.h"
+#include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
+#include "qdmi/Client.hpp" // NOLINT(misc-include-cleaner)
 #include "qdmi/driver/SessionConfig.hpp"
 #include "qiskit/Qiskit.h"
 
@@ -535,7 +535,7 @@ means every operation is native.)pb");
           "operations"_a = nb::none(), "duration_unit"_a = nb::none())
       .def_static(
           "from_device",
-          [](const fomac::Device& device) {
+          [](const qdmi::Device& device) {
             return takeResult(mlir::compilerTargetFromDevice(device));
           },
           "device"_a, "Snapshot a circuit-model QDMI device.")
@@ -560,7 +560,7 @@ means every operation is native.)pb");
                 std::move(deviceConfig), std::move(deviceConfigFile),
                 std::move(custom1), std::move(custom2), std::move(custom3),
                 std::move(custom4), std::move(custom5));
-            auto device = fomac::Session::openDevice(deviceId, overrides);
+            auto device = qdmi::Session::openDevice(deviceId, overrides);
             return takeResult(mlir::compilerTargetFromDevice(device));
           },
           "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,

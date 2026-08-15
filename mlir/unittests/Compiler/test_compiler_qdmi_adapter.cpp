@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp"
-#include "mlir/Compiler/FoMaCAdapter.h"
+#include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
+#include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <gtest/gtest.h>
@@ -33,9 +33,9 @@ findOperation(const CompilerTarget& target, const llvm::StringRef name) {
   return *found;
 }
 
-TEST(CompilerFoMaCAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
+TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   const auto target = llvm::cantFail([] {
-    const auto device = fomac::Session::openDevice("mqt.sc.iqm.garnet");
+    const auto device = qdmi::Session::openDevice("mqt.sc.iqm.garnet");
     return mlir::compilerTargetFromDevice(device);
   }());
 
@@ -80,8 +80,8 @@ TEST(CompilerFoMaCAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CZ);
 }
 
-TEST(CompilerFoMaCAdapterTest, PreservesMissingTopologyAsAllToAll) {
-  const auto device = fomac::Session::openDevice("mqt.ddsim.default");
+TEST(CompilerQDMIAdapterTest, PreservesMissingTopologyAsAllToAll) {
+  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   EXPECT_EQ(target.numQubits(), 65535);
@@ -92,11 +92,11 @@ TEST(CompilerFoMaCAdapterTest, PreservesMissingTopologyAsAllToAll) {
   EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
 }
 
-TEST(CompilerFoMaCAdapterTest, RejectsNonhomogeneousOperationSupport) {
+TEST(CompilerQDMIAdapterTest, RejectsNonhomogeneousOperationSupport) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration =
       qdmi::FileDeviceConfiguration{MQT_CORE_MLIR_HETEROGENEOUS_SC_CONFIG};
-  const auto device = fomac::Session::openDevice("mqt.sc.default", overrides);
+  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
   auto target = mlir::compilerTargetFromDevice(device);
   ASSERT_FALSE(target);
   const auto message = llvm::toString(target.takeError());
@@ -104,23 +104,23 @@ TEST(CompilerFoMaCAdapterTest, RejectsNonhomogeneousOperationSupport) {
   EXPECT_NE(message.find("every topology edge"), std::string::npos);
 }
 
-TEST(CompilerFoMaCAdapterTest, RejectsDirectionalOperationWithoutReverseSites) {
+TEST(CompilerQDMIAdapterTest, RejectsDirectionalOperationWithoutReverseSites) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
       MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG};
-  const auto device = fomac::Session::openDevice("mqt.sc.default", overrides);
+  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
   auto target = mlir::compilerTargetFromDevice(device);
   ASSERT_FALSE(target);
   const auto message = llvm::toString(target.takeError());
   EXPECT_NE(message.find("both orientations"), std::string::npos);
 }
 
-TEST(CompilerFoMaCAdapterTest,
+TEST(CompilerQDMIAdapterTest,
      PreservesDirectionalCalibrationWhenBothOrientationsExist) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
       MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG};
-  const auto device = fomac::Session::openDevice("mqt.sc.default", overrides);
+  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   ASSERT_EQ(target.couplings().size(), 1);
@@ -134,8 +134,8 @@ TEST(CompilerFoMaCAdapterTest,
   EXPECT_DOUBLE_EQ(*cx.siteTuples()[1].fidelity(), 0.92);
 }
 
-TEST(CompilerFoMaCAdapterTest, RejectsNeutralAtomZoneModels) {
-  const auto device = fomac::Session::openDevice("mqt.na.default");
+TEST(CompilerQDMIAdapterTest, RejectsNeutralAtomZoneModels) {
+  const auto device = qdmi::Session::openDevice("mqt.na.default");
   auto target = mlir::compilerTargetFromDevice(device);
   ASSERT_FALSE(target);
   const auto message = llvm::toString(target.takeError());
