@@ -84,6 +84,12 @@ produce normal diagnostics instead of escaping as C++ exceptions.
   v1.4.1, which could not load the new 22.1.8 manifest entries. The exact
   current reusable-workflows commit uses setup-mlir v1.4.2, which reads the
   remote manifest and supports versions released after its own tag.
+- Observation: The macOS ARM debug driver test converted an invalid QDMI
+  registry failure to `llvm::Error`, but the nested QDMI exception did not match
+  `std::exception` across the platform boundary. The adapter therefore emitted
+  its stable `Failed to discover registered QDMI devices` prefix followed by
+  `unknown exception`. The driver test now checks the stable adapter diagnostic
+  instead of a platform-specific nested exception string.
 
 ## Decision Log
 

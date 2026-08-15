@@ -46,9 +46,8 @@ endif()
 require_failure("unknown QDMI device" "mqt.unknown.device" "${MQT_CC}" "${INPUT_FILE}"
                 --qdmi-device=mqt.unknown.device --emit=qco-optimized)
 
-require_failure(
-  "invalid QDMI registry configuration" "Explicit QDMI configuration file does not exist"
-  "${MQT_CC}" "--qdmi-config=${OUTPUT_DIR}/missing.json" --qdmi-list-devices)
+require_failure("invalid QDMI registry configuration" "Failed to discover registered QDMI devices"
+                "${MQT_CC}" "--qdmi-config=${OUTPUT_DIR}/missing.json" --qdmi-list-devices)
 
 require_success("DDSIM target compilation" "${MQT_CC}" "${INPUT_FILE}"
                 --qdmi-device=mqt.ddsim.default --emit=qco-optimized)
