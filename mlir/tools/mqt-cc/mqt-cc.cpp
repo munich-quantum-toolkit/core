@@ -24,8 +24,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
-#include "qdmi/Client.hpp"
-#include "qdmi/driver/Driver.hpp"
 
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/Translation/Deserialize.hpp>
@@ -65,7 +63,6 @@
 
 #include <cstdint>
 #include <cstdlib>
-#include <exception>
 #include <memory>
 #include <optional>
 #include <string>
@@ -397,7 +394,13 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
   if (qdmiListDevices) {
-    for (const auto& id : qdmi::Driver::get().registeredDeviceIds()) {
+    auto deviceIds = registeredQDMIDeviceIds();
+    if (!deviceIds) {
+      llvm::errs() << "Failed to list configured QDMI devices: "
+                   << llvm::toString(deviceIds.takeError()) << '\n';
+      return 1;
+    }
+    for (const auto& id : *deviceIds) {
       llvm::outs() << id << "\n";
     }
     return 0;
@@ -435,8 +438,7 @@ static int runCompiler(int argc, char** argv) {
             .failed()) {
       return 1;
     }
-    const auto device = qdmi::Session::openDevice(qdmiDevice);
-    auto target = compilerTargetFromDevice(device);
+    auto target = compilerTargetFromDeviceId(qdmiDevice.getValue());
     if (!target) {
       llvm::errs() << "Failed to create compiler target from QDMI device '"
                    << qdmiDevice << "': " << llvm::toString(target.takeError())
@@ -628,13 +630,4 @@ static int runCompiler(int argc, char** argv) {
   return 0;
 }
 
-int main(int argc, char** argv) {
-  try {
-    return runCompiler(argc, argv);
-  } catch (const std::exception& error) {
-    llvm::errs() << "mqt-cc failed: " << error.what() << "\n";
-  } catch (...) {
-    llvm::errs() << "mqt-cc failed with an unknown exception\n";
-  }
-  return 1;
-}
+int main(int argc, char** argv) { return runCompiler(argc, argv); }

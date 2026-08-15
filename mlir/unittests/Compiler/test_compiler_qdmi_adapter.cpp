@@ -92,6 +92,19 @@ TEST(CompilerQDMIAdapterTest, PreservesMissingTopologyAsAllToAll) {
   EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
 }
 
+TEST(CompilerQDMIAdapterTest, ListsRegisteredDeviceIds) {
+  const auto deviceIds = llvm::cantFail(mlir::registeredQDMIDeviceIds());
+  EXPECT_TRUE(llvm::is_contained(deviceIds, "mqt.ddsim.default"));
+}
+
+TEST(CompilerQDMIAdapterTest, ConvertsUnknownDeviceFailureToError) {
+  auto target = mlir::compilerTargetFromDeviceId("mqt.unknown.device");
+  ASSERT_FALSE(target);
+  const auto message = llvm::toString(target.takeError());
+  EXPECT_NE(message.find("mqt.unknown.device"), std::string::npos);
+  EXPECT_NE(message.find("Unknown QDMI device ID"), std::string::npos);
+}
+
 TEST(CompilerQDMIAdapterTest, RejectsNonhomogeneousOperationSupport) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration =
