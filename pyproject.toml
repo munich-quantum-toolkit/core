@@ -281,7 +281,13 @@ build = "cp3*"
 skip = ["*-musllinux_*"]
 archs = "auto64"
 test-groups = ["test"]
-test-sources = ["test/python", "test/circuits", "json"]
+test-sources = [
+  "test/python",
+  "test/circuits",
+  "json",
+  "scripts/qiskit_c_api_adopt.py",
+  "vendor/qiskit-c-api/2.5.0",
+]
 test-command = "pytest test/python"
 build-frontend = "uv"
 test-skip = [
