@@ -28,6 +28,6 @@ target_link_libraries(
           LLVMSupport
           MLIRSupportMQT)
 
-mqt_mlir_configure_unittest_target(${target_name})
+mqt_mlir_configure_unittest_target(${target_name} REQUIRES_EH)
 
 gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)

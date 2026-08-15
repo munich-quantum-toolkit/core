@@ -14,6 +14,7 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Add sources to target
   target_sources(${TARGET_NAME} PRIVATE Session.cpp IRRewriter.cpp)
+  mqt_llvm_target_disable_rtti(${TARGET_NAME})
 
   # Add headers using file sets
   target_sources(

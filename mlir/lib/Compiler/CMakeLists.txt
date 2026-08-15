@@ -24,6 +24,8 @@ target_sources(MQTCompilerTarget PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SO
                                         FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/Target.h)
 
 # Build the optional QDMI-to-compiler-target adapter
+set(LLVM_REQUIRES_EH ON)
+set(LLVM_REQUIRES_RTTI ON)
 add_mlir_library(
   MQTCompilerQDMIAdapter
   PARTIAL_SOURCES_INTENDED
@@ -36,6 +38,8 @@ add_mlir_library(
   MQT::CoreQDMI)
 
 mqt_mlir_target_use_project_options(MQTCompilerQDMIAdapter)
+unset(LLVM_REQUIRES_EH)
+unset(LLVM_REQUIRES_RTTI)
 
 target_sources(
   MQTCompilerQDMIAdapter PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
