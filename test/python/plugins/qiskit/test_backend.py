@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+import os
+from pathlib import Path
+from typing import TYPE_CHECKING, Protocol, get_type_hints
 
 import numpy as np
 import pytest
@@ -26,6 +28,7 @@ from mqt.core.plugins.qiskit import (
 )
 from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
 from mqt.core.qdmi.driver import open_device
+from mqt.core.typing import QDMISessionParameters
 
 if TYPE_CHECKING:
     from mqt.core.qdmi import Device as QDMIDevice
@@ -67,15 +70,94 @@ def test_backend_from_device_id_forwards_session_parameters(monkeypatch: pytest.
 
     monkeypatch.setattr("mqt.core.plugins.qiskit.backend.open_device", fake_open_device)
 
+    auth_file = Path("auth.json")
+    config_file = Path("device.json")
+    session_parameters: QDMISessionParameters = {
+        "base_url": "https://device.example",
+        "token": "token",
+        "auth_file": auth_file,
+        "auth_url": "https://auth.example",
+        "username": "user",
+        "password": "password",
+        "device_config": "{}",
+        "device_config_file": config_file,
+        "custom1": "one",
+        "custom2": "two",
+        "custom3": "three",
+        "custom4": "four",
+        "custom5": "five",
+    }
+    backend = QDMIBackend.from_device_id("test.device", **session_parameters)
+
+    assert observed == ("test.device", session_parameters)
+    assert backend.target.num_qubits > 0
+
+
+def test_backend_from_device_id_preserves_v3_session_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the v3 session-parameter mapping while adding typed keywords."""
+    observed: tuple[str, dict[str, object]] | None = None
+
+    def fake_open_device(device_id: str, **session_parameters: object) -> QDMIDevice:
+        nonlocal observed
+        observed = device_id, session_parameters
+        return open_device("mqt.ddsim.default")
+
+    monkeypatch.setattr("mqt.core.plugins.qiskit.backend.open_device", fake_open_device)
+
     backend = QDMIBackend.from_device_id("test.device", session_parameters={"custom1": "value"})
 
     assert observed == ("test.device", {"custom1": "value"})
     assert backend.target.num_qubits > 0
 
 
+def test_backend_from_device_id_rejects_duplicate_session_parameters() -> None:
+    """Reject one override supplied through both supported v3 call styles."""
+    with pytest.raises(TypeError, match="specified twice: custom1"):
+        QDMIBackend.from_device_id(
+            "mqt.ddsim.default",
+            session_parameters={"custom1": "mapping"},
+            custom1="keyword",
+        )
+
+
+def test_backend_from_device_id_rejects_unknown_session_parameter() -> None:
+    """Reject unknown stable-ID factory keywords at runtime."""
+    with pytest.raises(TypeError, match="unknown"):
+        QDMIBackend.from_device_id("mqt.ddsim.default", unknown="value")
+
+
+def test_qdmi_session_parameter_annotations_are_runtime_resolvable() -> None:
+    """Expose the public TypedDict to runtime annotation consumers."""
+    annotations = get_type_hints(QDMISessionParameters)
+    assert annotations["auth_file"] == str | os.PathLike[str] | None
+
+
+def test_backend_from_device_id_rejects_conflicting_device_configuration() -> None:
+    """Retain native validation for mutually exclusive device configuration sources."""
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        QDMIBackend.from_device_id(
+            "mqt.ddsim.default",
+            device_config="{}",
+            device_config_file=Path("device.json"),
+        )
+
+
 def test_backend_instantiation(ddsim_backend: QDMIBackend) -> None:
     """Backend exposes target qubit count."""
     assert ddsim_backend.target.num_qubits > 0
+    assert ddsim_backend.device_id == "mqt.ddsim.default"
+
+
+def test_direct_backend_has_no_stable_device_id() -> None:
+    """Direct construction remains valid when no registry ID is available."""
+    backend = QDMIBackend(open_device("mqt.ddsim.default"))
+    assert backend.device_id is None
+
+
+def test_direct_backend_accepts_explicit_stable_device_id() -> None:
+    """Specialized construction can retain the ID of an already-open device."""
+    backend = QDMIBackend(open_device("mqt.ddsim.default"), device_id="allocated.device")
+    assert backend.device_id == "allocated.device"
 
 
 def _single_qubit_circuit() -> QuantumCircuit:

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 from typing import Any, cast
@@ -173,6 +174,14 @@ def test_device_needs_calibration(device: Device) -> None:
         assert isinstance(needs_cal, int)
 
 
+def test_device_queue_length(device: Device) -> None:
+    """Test that the optional device queue length is a non-negative integer."""
+    queue_length = device.queue_length()
+    if queue_length is not None:
+        assert isinstance(queue_length, int)
+        assert queue_length >= 0
+
+
 def test_device_length_unit(device: Device) -> None:
     """Test that the device length unit is a non-empty string."""
     lu = device.length_unit()
@@ -233,6 +242,11 @@ def test_device_custom_property_rejects_invalid_type(device: Device) -> None:
     """Test that custom queries accept only the documented built-in types."""
     with pytest.raises(TypeError, match="value_type must be exactly"):
         device.query_custom_property(CustomProperty.CUSTOM1, cast("type[bytes]", list))
+
+
+def test_device_custom_operations_unsupported(device: Device) -> None:
+    """Unsupported custom operation lists return None instead of raw bytes."""
+    assert device.query_custom_operations(CustomProperty.CUSTOM5) is None
 
 
 def test_site_index(device_and_site: tuple[Device, Device.Site]) -> None:
@@ -592,6 +606,14 @@ c[0] = measure q[0];
     assert job3.num_shots == 1000
 
 
+def test_device_retrieve_job_by_id_reports_unsupported_provider(
+    ddsim_device: Device,
+) -> None:
+    """Expose job retrieval through Python without requiring DDSIM support."""
+    with pytest.raises(RuntimeError, match=r"Retrieving job: Not supported\."):
+        ddsim_device.retrieve_job_by_id("unknown")
+
+
 @pytest.fixture
 def submitted_job(ddsim_device: Device) -> Job:
     """Fixture that provides a submitted job for testing.
@@ -621,6 +643,17 @@ c[0] = measure q[0];
     job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
 
     assert job1.id != job2.id
+
+
+def test_job_queue_position_is_unavailable(submitted_job: Job) -> None:
+    """Test that DDSIM does not manufacture a queue position."""
+    assert submitted_job.queue_position is None
+
+
+def test_job_queue_position_is_none_after_completion(submitted_job: Job) -> None:
+    """Test that queue position is None when it no longer applies."""
+    assert submitted_job.wait()
+    assert submitted_job.queue_position is None
 
 
 def test_job_custom_property_and_result_unsupported(submitted_job: Job) -> None:
@@ -1040,6 +1073,27 @@ def test_device_configuration_arguments_are_mutually_exclusive() -> None:
             device_config="{}",
             device_config_file="device.json",
         )
+
+
+def test_sc_open_device_accepts_runtime_configuration(tmp_path: Path) -> None:
+    """The built-in SC provider should materialize a per-open file model."""
+    configuration = json.loads(Path("json/sc/mqt-core-qdmi-sc-device.json").read_text(encoding="utf-8"))
+    configuration["name"] = "Python custom SC device"
+    configuration["numQubits"] = 5
+    configuration["couplings"] = [[0, 1], [1, 2], [2, 3], [3, 4]]
+    configuration["qubitProperties"]["overrides"] = []
+    for operation in configuration["operations"]:
+        operation.pop("sites", None)
+        operation["siteOverrides"] = []
+    configuration_file = tmp_path / "sc-device.json"
+    configuration_file.write_text(json.dumps(configuration), encoding="utf-8")
+
+    device = open_device(
+        "mqt.sc.default",
+        device_config_file=configuration_file,
+    )
+    assert device.name() == "Python custom SC device"
+    assert device.qubits_num() == 5
 
 
 def test_site_keeps_fresh_session_alive() -> None:

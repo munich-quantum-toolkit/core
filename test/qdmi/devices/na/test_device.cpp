@@ -9,17 +9,22 @@
  */
 
 #include "mqt_na_qdmi/device.h"
-#include "qdmi/devices/na/Generator.hpp"
+#include "qdmi/TestUtils.hpp"
+#include "qdmi/devices/na/Configuration.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
+#include <nlohmann/json_fwd.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -29,9 +34,9 @@
 
 namespace testing {
 namespace {
-auto stringConcat5(const std::string& a, const std::string& b,
-                   const std::string& c, const std::string& d,
-                   const std::string& e) -> std::string {
+std::string stringConcat5(const std::string& a, const std::string& b,
+                          const std::string& c, const std::string& d,
+                          const std::string& e) {
   std::stringstream ss;
   ss << a << b << c << d << e;
   return ss.str();
@@ -51,13 +56,33 @@ namespace {
 /// Hash function for a pair
 struct PairHash {
   template <class T, class U>
-  auto operator()(const std::pair<T, U>& p) const noexcept -> std::size_t {
+  std::size_t operator()(const std::pair<T, U>& p) const noexcept {
     // Use the hash of the first and second element of the pair
     return std::hash<T>{}(p.first) ^ std::hash<U>{}(p.second);
   }
 };
-[[nodiscard]] auto querySites(MQT_NA_QDMI_Device_Session session)
-    -> std::vector<MQT_NA_QDMI_Site> {
+
+using mqt::test::ScopedEnvironmentVariable;
+
+[[nodiscard]] std::string queryName(MQT_NA_QDMI_Device_Session session) {
+  size_t size = 0;
+  if (MQT_NA_QDMI_device_session_query_device_property(
+          session, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, &size) !=
+      QDMI_SUCCESS) {
+    throw std::runtime_error("Failed to query device name size");
+  }
+  std::string name(size, '\0');
+  if (MQT_NA_QDMI_device_session_query_device_property(
+          session, QDMI_DEVICE_PROPERTY_NAME, size, name.data(), nullptr) !=
+      QDMI_SUCCESS) {
+    throw std::runtime_error("Failed to query device name");
+  }
+  name.pop_back();
+  return name;
+}
+
+[[nodiscard]] std::vector<MQT_NA_QDMI_Site>
+querySites(MQT_NA_QDMI_Device_Session session) {
   size_t size = 0;
   if (MQT_NA_QDMI_device_session_query_device_property(
           session, QDMI_DEVICE_PROPERTY_SITES, 0, nullptr, &size) !=
@@ -75,8 +100,8 @@ struct PairHash {
   }
   return sites;
 }
-[[nodiscard]] auto queryOperations(MQT_NA_QDMI_Device_Session session)
-    -> std::vector<MQT_NA_QDMI_Operation> {
+[[nodiscard]] std::vector<MQT_NA_QDMI_Operation>
+queryOperations(MQT_NA_QDMI_Device_Session session) {
   size_t size = 0;
   if (MQT_NA_QDMI_device_session_query_device_property(
           session, QDMI_DEVICE_PROPERTY_OPERATIONS, 0, nullptr, &size) !=
@@ -144,6 +169,206 @@ protected:
 };
 
 } // namespace
+
+TEST(NaRuntimeConfiguration,
+     SessionsOwnIndependentModelsAndRejectForeignHandles) {
+  std::ifstream input(NA_DEVICE_JSON);
+  ASSERT_TRUE(input);
+  nlohmann::json customJson;
+  input >> customJson;
+  customJson["name"] = "Custom NA";
+  customJson["numQubits"] = 5;
+  const auto customConfiguration = customJson.dump();
+
+  MQT_NA_QDMI_Device_Session custom = nullptr;
+  MQT_NA_QDMI_Device_Session bundled = nullptr;
+  ASSERT_EQ(MQT_NA_QDMI_device_session_alloc(&custom), QDMI_SUCCESS);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_alloc(&bundled), QDMI_SUCCESS);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                custom, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
+                customConfiguration.size() + 1, customConfiguration.c_str()),
+            QDMI_SUCCESS);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_init(custom), QDMI_SUCCESS);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_init(bundled), QDMI_SUCCESS);
+
+  size_t customQubits = 0;
+  size_t bundledQubits = 0;
+  ASSERT_EQ(MQT_NA_QDMI_device_session_query_device_property(
+                custom, QDMI_DEVICE_PROPERTY_QUBITSNUM, sizeof(customQubits),
+                &customQubits, nullptr),
+            QDMI_SUCCESS);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_query_device_property(
+                bundled, QDMI_DEVICE_PROPERTY_QUBITSNUM, sizeof(bundledQubits),
+                &bundledQubits, nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(customQubits, 5);
+  EXPECT_EQ(bundledQubits, 100);
+
+  auto* const customSite = querySites(custom).front();
+  auto* const customOperation = queryOperations(custom).front();
+  EXPECT_EQ(
+      MQT_NA_QDMI_device_session_query_site_property(
+          bundled, customSite, QDMI_SITE_PROPERTY_INDEX, 0, nullptr, nullptr),
+      QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_query_operation_property(
+                bundled, customOperation, 0, nullptr, 0, nullptr,
+                QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+
+  MQT_NA_QDMI_device_session_free(bundled);
+  MQT_NA_QDMI_device_session_free(custom);
+}
+
+TEST(NaRuntimeConfiguration, ValidatesRawParameterStringsAndRetry) {
+  MQT_NA_QDMI_Device_Session session = nullptr;
+  ASSERT_EQ(MQT_NA_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, 0, nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, 0, nullptr),
+            QDMI_SUCCESS);
+  constexpr std::array embeddedNul{'x', '\0', 'y', '\0'};
+  EXPECT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2,
+                embeddedNul.size(), embeddedNul.data()),
+            QDMI_ERROR_INVALIDARGUMENT);
+  constexpr std::array missingTerminator{'x'};
+  EXPECT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
+                missingTerminator.size(), missingTerminator.data()),
+            QDMI_ERROR_INVALIDARGUMENT);
+  constexpr auto missing = std::to_array("does-not-exist.json");
+  ASSERT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, missing.size(),
+                missing.data()),
+            QDMI_SUCCESS);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_init(session), QDMI_ERROR_NOTFOUND);
+  constexpr auto malformed = std::to_array("{");
+  ASSERT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
+                malformed.size(), malformed.data()),
+            QDMI_SUCCESS);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_init(session),
+            QDMI_ERROR_INVALIDARGUMENT);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, 1, ""),
+            QDMI_SUCCESS);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2,
+                std::strlen(NA_DEVICE_JSON) + 1, NA_DEVICE_JSON),
+            QDMI_SUCCESS);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_init(session), QDMI_SUCCESS);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, 1, ""),
+            QDMI_ERROR_BADSTATE);
+  MQT_NA_QDMI_device_session_free(session);
+}
+
+TEST(NaRuntimeConfiguration, SelectsEnvironmentAndExplicitSources) {
+  std::ifstream input(NA_DEVICE_JSON);
+  ASSERT_TRUE(input);
+  nlohmann::json environmentJson;
+  input >> environmentJson;
+  environmentJson["name"] = "Environment NA";
+  const auto inlineEnvironment = environmentJson.dump();
+
+  const ScopedEnvironmentVariable environmentInline(
+      "MQT_CORE_QDMI_NA_CONFIG_JSON", inlineEnvironment);
+  const ScopedEnvironmentVariable environmentFile(
+      "MQT_CORE_QDMI_NA_CONFIG_FILE", "");
+  MQT_NA_QDMI_Device_Session environmentSession = nullptr;
+  ASSERT_EQ(MQT_NA_QDMI_device_session_alloc(&environmentSession),
+            QDMI_SUCCESS);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_init(environmentSession), QDMI_SUCCESS);
+  EXPECT_EQ(queryName(environmentSession), "Environment NA");
+  MQT_NA_QDMI_device_session_free(environmentSession);
+
+  MQT_NA_QDMI_Device_Session explicitSession = nullptr;
+  ASSERT_EQ(MQT_NA_QDMI_device_session_alloc(&explicitSession), QDMI_SUCCESS);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                explicitSession, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2,
+                std::strlen(NA_DEVICE_JSON) + 1, NA_DEVICE_JSON),
+            QDMI_SUCCESS);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_init(explicitSession), QDMI_SUCCESS);
+  EXPECT_EQ(queryName(explicitSession), "MQT NA Default QDMI Device");
+  MQT_NA_QDMI_device_session_free(explicitSession);
+}
+
+TEST(NaRuntimeConfiguration, InlineWinsOverExplicitFile) {
+  std::ifstream input(NA_DEVICE_JSON);
+  ASSERT_TRUE(input);
+  nlohmann::json inlineJson;
+  input >> inlineJson;
+  inlineJson["name"] = "Inline NA";
+  const auto configuration = inlineJson.dump();
+
+  MQT_NA_QDMI_Device_Session session = nullptr;
+  ASSERT_EQ(MQT_NA_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2,
+                std::strlen(NA_DEVICE_JSON) + 1, NA_DEVICE_JSON),
+            QDMI_SUCCESS);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
+                configuration.size() + 1, configuration.c_str()),
+            QDMI_SUCCESS);
+  ASSERT_EQ(MQT_NA_QDMI_device_session_init(session), QDMI_SUCCESS);
+  EXPECT_EQ(queryName(session), "Inline NA");
+  MQT_NA_QDMI_device_session_free(session);
+}
+
+TEST(NaRuntimeConfiguration, RejectsConflictingEnvironmentSources) {
+  const ScopedEnvironmentVariable environmentInline(
+      "MQT_CORE_QDMI_NA_CONFIG_JSON", "{}");
+  const ScopedEnvironmentVariable environmentFile(
+      "MQT_CORE_QDMI_NA_CONFIG_FILE", NA_DEVICE_JSON);
+  MQT_NA_QDMI_Device_Session session = nullptr;
+  ASSERT_EQ(MQT_NA_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
+  EXPECT_EQ(MQT_NA_QDMI_device_session_init(session),
+            QDMI_ERROR_INVALIDARGUMENT);
+  MQT_NA_QDMI_device_session_free(session);
+}
+
+TEST(NaRuntimeConfiguration, InitializesIndependentSessionsConcurrently) {
+  std::ifstream input(NA_DEVICE_JSON);
+  ASSERT_TRUE(input);
+  nlohmann::json base;
+  input >> base;
+
+  std::vector<std::future<std::string>> sessions;
+  for (size_t i = 0; i < 4; ++i) {
+    auto configuration = base;
+    const auto name = "Concurrent NA " + std::to_string(i);
+    configuration["name"] = name;
+    // Exceptions are intentionally transported to the caller by the future.
+    sessions.emplace_back(std::async(
+        std::launch::async,
+        // NOLINTNEXTLINE(bugprone-exception-escape)
+        [configuration = configuration.dump(), name] {
+          MQT_NA_QDMI_Device_Session session = nullptr;
+          if (MQT_NA_QDMI_device_session_alloc(&session) != QDMI_SUCCESS) {
+            return std::string{"allocation failed"};
+          }
+          const auto configured =
+              MQT_NA_QDMI_device_session_set_parameter(
+                  session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
+                  configuration.size() + 1,
+                  configuration.c_str()) == QDMI_SUCCESS;
+          const auto initialized =
+              configured &&
+              MQT_NA_QDMI_device_session_init(session) == QDMI_SUCCESS;
+          const auto result = initialized
+                                  ? queryName(session)
+                                  : std::string{"initialization failed"};
+          MQT_NA_QDMI_device_session_free(session);
+          return result;
+        }));
+  }
+  for (size_t i = 0; i < sessions.size(); ++i) {
+    EXPECT_EQ(sessions[i].get(), "Concurrent NA " + std::to_string(i));
+  }
+}
 
 TEST_F(NaQDMISpecificationTest, SessionAlloc) {
   EXPECT_EQ(MQT_NA_QDMI_device_session_alloc(nullptr),

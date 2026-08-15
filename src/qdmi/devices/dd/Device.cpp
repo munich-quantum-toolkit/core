@@ -849,6 +849,13 @@ int MQT_DDSIM_QDMI_device_session_create_device_job(
   return session->createDeviceJob(job);
 }
 
+int MQT_DDSIM_QDMI_device_session_retrieve_device_job_by_id(
+    [[maybe_unused]] MQT_DDSIM_QDMI_Device_Session session,
+    [[maybe_unused]] const char* jobId,
+    [[maybe_unused]] MQT_DDSIM_QDMI_Device_Job* job) {
+  return QDMI_ERROR_NOTSUPPORTED;
+}
+
 void MQT_DDSIM_QDMI_device_job_free(MQT_DDSIM_QDMI_Device_Job job) {
   job->free();
 }

@@ -5,7 +5,8 @@ The
 provides a standardized interface for describing and interacting with quantum
 devices. This part of MQT Core contains the implementation of QDMI's different
 components, such as a [QDMI driver](driver.md), a
-[QDMI device for Neutral Atom Systems](na_device.md), and a
+[QDMI device for Neutral Atom Systems](na_device.md), a
+[QDMI device for Superconducting Systems](sc_device.md), and a
 [QDMI device for a Classical Quantum Circuit Simulator](ddsim_device).
 
 ```{toctree}
@@ -13,9 +14,11 @@ components, such as a [QDMI driver](driver.md), a
 :caption: Table of Contents
 
 NA QDMI Device <na_device>
+SC QDMI Device <sc_device>
 DDSIM QDMI Device <ddsim_device>
 QDMI Driver <driver>
 QDMI device configuration <configuration>
+Slurm integration <slurm>
 QDMI-Qiskit Backend <qdmi_backend>
 PennyLane interface for QDMI devices <pennylane_device>
 ```

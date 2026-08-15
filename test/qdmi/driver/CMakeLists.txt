@@ -47,6 +47,15 @@ if(TARGET MQT::CoreQDMIDriver)
     CONTENT
       "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"mqt.na.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMINaDevice>\", \"prefix\": \"MQT_NA\"},\n      {\"id\": \"mqt.sc.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"},\n      {\"id\": \"mqt.ddsim.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"prefix\": \"MQT_DDSIM\"},\n      {\"id\": \"test.disabled\", \"enabled\": false},\n      {\"id\": \"broken.example\", \"library\": \"missing-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
   )
+  file(READ "${PROJECT_SOURCE_DIR}/json/na/mqt-core-qdmi-na-device.json" custom_na_json)
+  string(REPLACE "MQT NA Default QDMI Device" "Custom NA Driver Device" custom_na_json
+                 "${custom_na_json}")
+  string(REPLACE "\"numQubits\": 100" "\"numQubits\": 4" custom_na_json "${custom_na_json}")
+  string(REPLACE "\"width\": 9" "\"width\": 1" custom_na_json "${custom_na_json}")
+  string(REPLACE "\"height\": 9" "\"height\": 1" custom_na_json "${custom_na_json}")
+  string(REPLACE "\"duration\": 100" "\"duration\": 77" custom_na_json "${custom_na_json}")
+  set(custom_na_file "${CMAKE_CURRENT_BINARY_DIR}/custom-na-device.json")
+  file(WRITE "${custom_na_file}" "${custom_na_json}")
   string(MAKE_C_IDENTIFIER "${TARGET_NAME}-mqt-core-qdmi-metadata-device" metadata_manifest_stem)
   set(metadata_manifest_file
       "$<TARGET_FILE_DIR:${TARGET_NAME}>/${metadata_manifest_stem}.qdmi.json")
@@ -56,6 +65,10 @@ if(TARGET MQT::CoreQDMIDriver)
       "MQT_CORE_QDMI_TEST_CONFIG_FILE=\"${config_file}\""
       "MQT_CORE_QDMI_METADATA_MANIFEST=\"${metadata_manifest_file}\""
       "MQT_CORE_QDMI_SESSION_DEVICE=\"$<TARGET_FILE:mqt-core-qdmi-session-device>\""
+      "MQT_CORE_QDMI_NA_LIBRARY=\"$<TARGET_FILE:MQT::CoreQDMINaDevice>\""
+      "MQT_CORE_QDMI_CUSTOM_NA_FILE=\"${custom_na_file}\""
+      "MQT_CORE_QDMI_DEFAULT_NA_FILE=\"${PROJECT_SOURCE_DIR}/json/na/mqt-core-qdmi-na-device.json\""
+      "MQT_CORE_QDMI_SC_LIBRARY=\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\""
       "TEST_DEVICE_LIBRARIES=std::array{ std::pair{\"$<TARGET_FILE:MQT::CoreQDMINaDevice>\", \"MQT_NA\"}, std::pair{\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}, std::pair{\"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"} }"
   )
 
@@ -127,4 +140,28 @@ if(TARGET MQT::CoreQDMIDriver)
                mqt-core-qdmi-runtime-file-install)
   set_tests_properties(mqt-core-qdmi-runtime-file-install-verify
                        PROPERTIES FIXTURES_REQUIRED mqt-core-qdmi-runtime-file-install)
+
+  function(add_qdmi_configuration_rejection_test name invalid_configuration)
+    set(build_dir "${CMAKE_CURRENT_BINARY_DIR}/runtime-file-device-invalid-${name}")
+    set(configure_command
+        ${CMAKE_COMMAND} -S "${CMAKE_CURRENT_SOURCE_DIR}/runtime_file_device" -B "${build_dir}" -G
+        "${CMAKE_GENERATOR}"
+        "-DMQT_CORE_QDMI_HELPER=${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake"
+        "-DMQT_CORE_QDMI_TEST_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+        "-DMQT_CORE_QDMI_INVALID_CONFIGURATION=${invalid_configuration}"
+        "-DCMAKE_BUILD_TYPE=$<CONFIG>")
+    if(CMAKE_GENERATOR_PLATFORM)
+      list(APPEND configure_command -A "${CMAKE_GENERATOR_PLATFORM}")
+    endif()
+    if(CMAKE_GENERATOR_TOOLSET)
+      list(APPEND configure_command -T "${CMAKE_GENERATOR_TOOLSET}")
+    endif()
+    add_test(NAME "mqt-core-qdmi-configuration-rejects-${name}" COMMAND ${configure_command})
+    set_tests_properties("mqt-core-qdmi-configuration-rejects-${name}" PROPERTIES WILL_FAIL TRUE)
+  endfunction()
+
+  add_qdmi_configuration_rejection_test(empty-id empty-id)
+  add_qdmi_configuration_rejection_test(empty-file empty-file)
+  add_qdmi_configuration_rejection_test(duplicate-base-id duplicate-base-id)
+  add_qdmi_configuration_rejection_test(duplicate-configured-id duplicate-configured-id)
 endif()

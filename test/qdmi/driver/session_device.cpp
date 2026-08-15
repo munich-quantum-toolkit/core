@@ -10,6 +10,7 @@
 
 #include <qdmi/device.h>
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstring>
@@ -19,6 +20,12 @@
 
 struct QDMI_Child_Device_impl_d {};
 
+struct QDMI_Operation_impl_d {
+  const char* name;
+  size_t qubitsNum;
+  size_t parametersNum;
+};
+
 struct QDMI_Device_Session_impl_d {
   std::unordered_map<int, std::string> parameters;
   QDMI_Child_Device child = nullptr;
@@ -27,6 +34,7 @@ struct QDMI_Device_Session_impl_d {
 
 struct QDMI_Device_Job_impl_d {
   QDMI_Device_Session session = nullptr;
+  bool retrieved = false;
 };
 
 namespace {
@@ -45,9 +53,53 @@ namespace {
   return "<unset>";
 }
 
+[[nodiscard]] auto deviceStatus(const std::string& configuredStatus)
+    -> QDMI_Device_Status {
+  if (configuredStatus == "busy") {
+    return QDMI_DEVICE_STATUS_BUSY;
+  }
+  if (configuredStatus == "offline") {
+    return QDMI_DEVICE_STATUS_OFFLINE;
+  }
+  if (configuredStatus == "error") {
+    return QDMI_DEVICE_STATUS_ERROR;
+  }
+  if (configuredStatus == "maintenance") {
+    return QDMI_DEVICE_STATUS_MAINTENANCE;
+  }
+  if (configuredStatus == "calibration") {
+    return QDMI_DEVICE_STATUS_CALIBRATION;
+  }
+  if (configuredStatus == "max") {
+    return QDMI_DEVICE_STATUS_MAX;
+  }
+  return QDMI_DEVICE_STATUS_IDLE;
+}
+
 [[nodiscard]] auto childDeviceHandle() -> QDMI_Child_Device {
   static QDMI_Child_Device_impl_d child;
   return &child;
+}
+
+[[nodiscard]] auto customOperationHandles()
+    -> const std::array<QDMI_Operation, 2>& {
+  static QDMI_Operation_impl_d rotate{
+      .name = "custom-rx", .qubitsNum = 1, .parametersNum = 1};
+  static QDMI_Operation_impl_d controlledNot{
+      .name = "custom-cx", .qubitsNum = 2, .parametersNum = 0};
+  static const std::array<QDMI_Operation, 2> OPERATIONS{&rotate,
+                                                        &controlledNot};
+  return OPERATIONS;
+}
+
+[[nodiscard]] auto findCustomOperation(QDMI_Operation operation)
+    -> const QDMI_Operation_impl_d* {
+  for (auto* const handle : customOperationHandles()) {
+    if (operation == handle) {
+      return handle;
+    }
+  }
+  return nullptr;
 }
 
 auto queryString(const std::string& result, const size_t size, void* value,
@@ -63,6 +115,22 @@ auto queryString(const std::string& result, const size_t size, void* value,
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   std::memcpy(value, result.c_str(), required);
+  return QDMI_SUCCESS;
+}
+
+template <typename T>
+auto queryValue(const T& result, const size_t size, void* value,
+                size_t* sizeRet) -> int {
+  if (sizeRet != nullptr) {
+    *sizeRet = sizeof(T);
+  }
+  if (value == nullptr) {
+    return QDMI_SUCCESS;
+  }
+  if (size < sizeof(T)) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  std::memcpy(value, &result, sizeof(T));
   return QDMI_SUCCESS;
 }
 } // namespace
@@ -165,6 +233,38 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
                 sizeof(QDMI_Child_Device));
     return QDMI_SUCCESS;
   }
+  if (prop == QDMI_DEVICE_PROPERTY_CUSTOM1) {
+    const auto& operations = customOperationHandles();
+    const auto required = operations.size() * sizeof(QDMI_Operation);
+    if (sizeRet != nullptr) {
+      *sizeRet = required;
+    }
+    if (value == nullptr) {
+      return QDMI_SUCCESS;
+    }
+    if (size < required) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    std::memcpy(value, static_cast<const void*>(operations.data()), required);
+    return QDMI_SUCCESS;
+  }
+  if (prop == QDMI_DEVICE_PROPERTY_CUSTOM2) {
+    if (sizeRet != nullptr) {
+      *sizeRet = 0;
+    }
+    return QDMI_SUCCESS;
+  }
+  if (prop == QDMI_DEVICE_PROPERTY_CUSTOM3) {
+    if (sizeRet != nullptr) {
+      *sizeRet = sizeof(QDMI_Operation) + 1;
+    }
+    return value == nullptr ? QDMI_SUCCESS : QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (prop == QDMI_DEVICE_PROPERTY_STATUS) {
+    return queryValue(
+        deviceStatus(parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4)),
+        size, value, sizeRet);
+  }
   if (prop != QDMI_DEVICE_PROPERTY_NAME) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
@@ -190,10 +290,26 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_site_property(
 }
 
 extern "C" int TEST_SESSION_QDMI_device_session_query_operation_property(
-    QDMI_Device_Session /*session*/, QDMI_Operation /*operation*/,
-    size_t /*numSites*/, const QDMI_Site* /*sites*/, size_t /*numParams*/,
-    const double* /*params*/, QDMI_Operation_Property /*property*/,
-    size_t /*size*/, void* /*value*/, size_t* /*sizeRet*/) {
+    QDMI_Device_Session session, QDMI_Operation operation, size_t /*numSites*/,
+    const QDMI_Site* /*sites*/, size_t /*numParams*/, const double* /*params*/,
+    const QDMI_Operation_Property property, const size_t size, void* value,
+    size_t* sizeRet) {
+  if (session == nullptr || !session->initialized) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  const auto* const customOperation = findCustomOperation(operation);
+  if (customOperation == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (property == QDMI_OPERATION_PROPERTY_NAME) {
+    return queryString(customOperation->name, size, value, sizeRet);
+  }
+  if (property == QDMI_OPERATION_PROPERTY_QUBITSNUM) {
+    return queryValue(customOperation->qubitsNum, size, value, sizeRet);
+  }
+  if (property == QDMI_OPERATION_PROPERTY_PARAMETERSNUM) {
+    return queryValue(customOperation->parametersNum, size, value, sizeRet);
+  }
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
@@ -205,22 +321,45 @@ TEST_SESSION_QDMI_device_session_create_device_job(QDMI_Device_Session session,
   }
   // The QDMI C API transfers this allocation through an opaque raw handle.
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  *job = new (std::nothrow) QDMI_Device_Job_impl_d{session};
+  *job = new (std::nothrow) QDMI_Device_Job_impl_d{.session = session};
+  return *job == nullptr ? QDMI_ERROR_OUTOFMEM : QDMI_SUCCESS;
+}
+
+extern "C" int TEST_SESSION_QDMI_device_session_retrieve_device_job_by_id(
+    QDMI_Device_Session session, const char* jobId, QDMI_Device_Job* job) {
+  if (session == nullptr || !session->initialized || jobId == nullptr ||
+      *jobId == '\0' || job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (std::strcmp(jobId, "session-job") != 0) {
+    return QDMI_ERROR_NOTFOUND;
+  }
+  // The QDMI C API transfers this allocation through an opaque raw handle.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  *job = new (std::nothrow)
+      QDMI_Device_Job_impl_d{.session = session, .retrieved = true};
   return *job == nullptr ? QDMI_ERROR_OUTOFMEM : QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
     QDMI_Device_Job job, QDMI_Device_Job_Parameter /*parameter*/,
     size_t /*size*/, const void* /*value*/) {
-  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT : QDMI_SUCCESS;
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return job->retrieved ? QDMI_ERROR_BADSTATE : QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_query_property(
     QDMI_Device_Job job, const QDMI_Device_Job_Property prop, const size_t size,
     void* value, size_t* sizeRet) {
   if (job == nullptr || job->session == nullptr ||
-      prop != QDMI_DEVICE_JOB_PROPERTY_ID) {
+      (prop != QDMI_DEVICE_JOB_PROPERTY_ID &&
+       prop != QDMI_DEVICE_JOB_PROPERTY_QUEUEPOSITION)) {
     return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (prop == QDMI_DEVICE_JOB_PROPERTY_QUEUEPOSITION) {
+    return QDMI_ERROR_NOTSUPPORTED;
   }
   return queryString("session-job", size, value, sizeRet);
 }
@@ -229,7 +368,7 @@ extern "C" int TEST_SESSION_QDMI_device_job_submit(QDMI_Device_Job job) {
   if (job == nullptr || job->session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return QDMI_SUCCESS;
+  return job->retrieved ? QDMI_ERROR_BADSTATE : QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_cancel(QDMI_Device_Job /*job*/) {

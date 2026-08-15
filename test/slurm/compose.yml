@@ -1,0 +1,107 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+services:
+  controller:
+    build:
+      context: .
+      target: controller
+    hostname: controller
+    privileged: true
+    cgroup: host
+    tmpfs:
+      - /run
+      - /run/lock
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ../..:/workspace:ro
+      - ./runtime:/runtime
+      - ./slurm.conf:/etc/slurm/slurm.conf:ro
+      - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "systemctl",
+          "is-active",
+          "--quiet",
+          "munge.service",
+          "slurmctld.service",
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+
+  node1:
+    build:
+      context: .
+      target: compute
+    hostname: node1
+    privileged: true
+    cgroup: host
+    depends_on:
+      controller:
+        condition: service_healthy
+    tmpfs:
+      - /run
+      - /run/lock
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ../..:/workspace:ro
+      - ./runtime:/runtime
+      - ./slurm.conf:/etc/slurm/slurm.conf:ro
+      - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "systemctl",
+          "is-active",
+          "--quiet",
+          "munge.service",
+          "slurmd.service",
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+
+  node2:
+    build:
+      context: .
+      target: compute
+    hostname: node2
+    privileged: true
+    cgroup: host
+    depends_on:
+      controller:
+        condition: service_healthy
+    tmpfs:
+      - /run
+      - /run/lock
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ../..:/workspace:ro
+      - ./runtime:/runtime
+      - ./slurm.conf:/etc/slurm/slurm.conf:ro
+      - ./cgroup.conf:/etc/slurm/cgroup.conf:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "systemctl",
+          "is-active",
+          "--quiet",
+          "munge.service",
+          "slurmd.service",
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s

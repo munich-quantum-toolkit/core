@@ -9,20 +9,18 @@
  */
 
 #include "DeviceRegistry.hpp"
+#include "qdmi/TestUtils.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <optional>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <variant>
 #include <vector>
 
@@ -56,55 +54,7 @@ private:
   std::filesystem::path path_;
 };
 
-class ScopedEnvironmentVariable {
-public:
-  ScopedEnvironmentVariable(std::string name, const std::string& value)
-      : name_(std::move(name)) {
-    if (const auto* previous = std::getenv(name_.c_str());
-        previous != nullptr) {
-      previous_ = previous;
-    }
-    set(value);
-  }
-
-  ~ScopedEnvironmentVariable() {
-    if (previous_) {
-      static_cast<void>(setWithoutChecking(*previous_));
-    } else {
-#ifdef _WIN32
-      static_cast<void>(_putenv_s(name_.c_str(), ""));
-#else
-      // NOLINTNEXTLINE(misc-include-cleaner)
-      static_cast<void>(unsetenv(name_.c_str()));
-#endif
-    }
-  }
-
-  ScopedEnvironmentVariable(const ScopedEnvironmentVariable&) = delete;
-  ScopedEnvironmentVariable&
-  operator=(const ScopedEnvironmentVariable&) = delete;
-  ScopedEnvironmentVariable(ScopedEnvironmentVariable&&) = delete;
-  ScopedEnvironmentVariable& operator=(ScopedEnvironmentVariable&&) = delete;
-
-private:
-  void set(const std::string& value) const {
-    if (!setWithoutChecking(value)) {
-      throw std::runtime_error("Failed to set environment variable " + name_);
-    }
-  }
-
-  [[nodiscard]] bool setWithoutChecking(const std::string& value) const {
-#ifdef _WIN32
-    return _putenv_s(name_.c_str(), value.c_str()) == 0;
-#else
-    // NOLINTNEXTLINE(misc-include-cleaner)
-    return setenv(name_.c_str(), value.c_str(), 1) == 0;
-#endif
-  }
-
-  std::string name_;
-  std::optional<std::string> previous_;
-};
+using mqt::test::ScopedEnvironmentVariable;
 
 class ScopedCurrentPath {
 public:
@@ -399,50 +349,39 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
   const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
 
   const qdmi::detail::DeviceRegistry registry;
-  ASSERT_EQ(registry.definitions().size(), 3);
+  ASSERT_EQ(registry.definitions().size(), 5);
   EXPECT_EQ(registry.definitions().at(0).id, "mqt.ddsim.default");
   EXPECT_EQ(registry.definitions().at(1).id, "mqt.na.default");
   EXPECT_EQ(registry.definitions().at(2).id, "mqt.sc.default");
+  EXPECT_EQ(registry.definitions().at(3).id, "mqt.sc.iqm.emerald");
+  EXPECT_EQ(registry.definitions().at(4).id, "mqt.sc.iqm.garnet");
   for (const auto& definition : registry.definitions()) {
     EXPECT_TRUE(std::filesystem::is_regular_file(definition.library));
   }
+
+  const auto assertPackagedModel = [&](const std::string_view id,
+                                       const std::string_view filename) {
+    const auto* definition = findDefinition(registry, id);
+    ASSERT_NE(definition, nullptr);
+    ASSERT_TRUE(definition->session.deviceConfiguration);
+    const auto* file = std::get_if<qdmi::FileDeviceConfiguration>(
+        &*definition->session.deviceConfiguration);
+    ASSERT_NE(file, nullptr);
+    EXPECT_EQ(file->path.filename(), filename);
+    EXPECT_EQ(file->path.parent_path(), definition->library.parent_path());
+    EXPECT_TRUE(std::filesystem::is_regular_file(file->path));
+  };
+  assertPackagedModel("mqt.sc.iqm.garnet", "iqm-garnet.json");
+  assertPackagedModel("mqt.sc.iqm.emerald", "iqm-emerald.json");
 }
 #endif
 
-TEST(DeviceRegistry, ReadsProjectConfigurationFromPyprojectToml) {
+TEST(DeviceRegistry, ReadsProjectConfigurationFromNearestQdmiJson) {
   const TemporaryDirectory directory;
-  static_cast<void>(directory.write("pyproject.toml", R"(
-    [tool.qdmi]
-    devices = [{ id = "toml", library = "device.so", prefix = "TOML" }]
-  )"));
-  const ScopedCurrentPath currentPath(directory.path());
-  const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE", "");
-  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
-#ifdef _WIN32
-  const ScopedEnvironmentVariable userConfig("APPDATA",
-                                             directory.path().string());
-#else
-  const ScopedEnvironmentVariable userConfig("XDG_CONFIG_HOME",
-                                             directory.path().string());
-#endif
-
-  const qdmi::detail::DeviceRegistry registry;
-  const auto* definition = findDefinition(registry, "toml");
-  ASSERT_NE(definition, nullptr);
-  EXPECT_EQ(std::filesystem::weakly_canonical(definition->library),
-            std::filesystem::weakly_canonical(directory.path()) / "device.so");
-}
-
-TEST(DeviceRegistry, DedicatedProjectFileWinsOverPyproject) {
-  const TemporaryDirectory directory;
-  static_cast<void>(directory.write("pyproject.toml", R"(
-    [tool.qdmi]
-    devices = [{ id = "toml", library = "toml.so", prefix = "TOML" }]
-  )"));
   static_cast<void>(directory.write("qdmi.json", R"({
     "schema-version": 1,
     "qdmi": {"devices": [
-      {"id": "json", "library": "json.so", "prefix": "JSON"}
+      {"id": "json", "library": "device.so", "prefix": "JSON"}
     ]}
   })"));
   const ScopedCurrentPath currentPath(directory.path());
@@ -450,8 +389,10 @@ TEST(DeviceRegistry, DedicatedProjectFileWinsOverPyproject) {
   const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
 
   const qdmi::detail::DeviceRegistry registry;
-  EXPECT_NE(findDefinition(registry, "json"), nullptr);
-  EXPECT_EQ(findDefinition(registry, "toml"), nullptr);
+  const auto* definition = findDefinition(registry, "json");
+  ASSERT_NE(definition, nullptr);
+  EXPECT_EQ(std::filesystem::weakly_canonical(definition->library),
+            std::filesystem::weakly_canonical(directory.path()) / "device.so");
 }
 
 TEST(DeviceRegistry, MergesProjectConfigurationOverUserConfiguration) {
@@ -510,7 +451,7 @@ TEST(DeviceRegistry, ReportsInvalidDocumentsAndDefinitionTypes) {
   }
 }
 
-TEST(DeviceRegistry, ReportsInvalidExplicitJsonAndToml) {
+TEST(DeviceRegistry, ReportsInvalidExplicitJson) {
   const TemporaryDirectory directory;
   {
     const ScopedEnvironmentVariable configFile(
@@ -523,13 +464,6 @@ TEST(DeviceRegistry, ReportsInvalidExplicitJsonAndToml) {
     const auto invalid = directory.write("invalid.json", "{");
     const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE",
                                                invalid.string());
-    EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
-                 std::invalid_argument);
-  }
-  {
-    static_cast<void>(directory.write("pyproject.toml", "[tool.qdmi\n"));
-    const ScopedCurrentPath currentPath(directory.path());
-    const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE", "");
     EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
                  std::invalid_argument);
   }

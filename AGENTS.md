@@ -28,6 +28,41 @@ MQT Core. The project-wide policy for AI-assisted contributions is
   discard or overwrite changes that are outside the task.
 - Follow the patterns in neighboring files and prefer the smallest change that
   fully solves the problem.
+- Write code comments, documentation, tests, changelog entries, and public text
+  for the final design. Do not preserve prompts, review chronology, former
+  names, or abandoned approaches unless they remain necessary user-facing
+  context.
+- Apply
+  [Orwell's six rules for writing](https://www.orwellfoundation.com/the-orwell-foundation/orwell/essays-and-other-works/politics-and-the-english-language/)
+  to every category of prose, including reasoning, descriptions, commit
+  messages, documentation, docstrings, comments, test text, diagnostics, and
+  handoffs:
+
+  1. Do not use a familiar metaphor, simile, or other figure of speech.
+  2. Use a short word when it has the same meaning as a long word.
+  3. Remove every word that does not add meaning.
+  4. Use active voice when possible.
+  5. Use everyday English instead of a foreign phrase, scientific word, or
+     jargon term when this does not reduce precision.
+  6. Break a rule before it makes the text unclear, incorrect, or needlessly
+     difficult to read.
+
+  Also apply the relevant principles of
+  [ASD-STE100 Simplified Technical English](https://www.asd-ste100.org/): use
+  short, direct sentences; give each sentence one main idea; use one term for
+  one meaning; and use explicit nouns instead of vague pronouns. Treat these as
+  mandatory style rules, not as a claim of formal ASD-STE100 compliance.
+- Base terminology and phrasing on repository usage and established precedents
+  in the quantum computing, LLVM/MLIR and compiler, high-performance computing,
+  and general computer science communities. Use the established term that most
+  precisely matches the concept. If communities use different terms, explain the
+  mapping once. Do not invent synonyms for variety.
+- Add tests that protect intended behavior or reproduce a concrete regression.
+  Do not test provisional implementation choices that are not part of the
+  supported contract.
+- Remove obsolete scaffolding and diagnostic suppressions before handoff. Keep a
+  workaround or suppression only when it is still necessary, scope it as
+  narrowly as possible, and document the technical reason.
 - Add or update automated tests for every behavioral code change. During
   development, run the narrowest relevant test first, then the required lint
   checks before handoff.

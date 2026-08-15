@@ -240,12 +240,33 @@ std::vector<Site> Device::getZones() const {
 std::vector<Operation> Device::getOperations() const {
   const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(
       QDMI_DEVICE_PROPERTY_OPERATIONS);
-  std::vector<Operation> operations;
-  operations.reserve(qdmiOperations.size());
+  return wrapOperations(qdmiOperations);
+}
+
+std::optional<std::vector<Operation>>
+Device::queryCustomOperations(const CustomProperty property) const {
+  const auto qdmiProperty = detail::toDeviceProperty(property);
+  const auto handles = detail::queryHandleArray<QDMI_Operation>(
+      [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
+        return QDMI_device_query_device_property(device_.get(), qdmiProperty,
+                                                 size, value, sizeRet);
+      },
+      "custom operation list " +
+          std::to_string(static_cast<unsigned>(property)));
+  if (!handles.has_value()) {
+    return std::nullopt;
+  }
+  return wrapOperations(*handles);
+}
+
+std::vector<Operation>
+Device::wrapOperations(const std::span<const QDMI_Operation> operations) const {
+  std::vector<Operation> wrappedOperations;
+  wrappedOperations.reserve(operations.size());
   std::ranges::transform(
-      qdmiOperations, std::back_inserter(operations),
+      operations, std::back_inserter(wrappedOperations),
       [this](const QDMI_Operation& op) -> Operation { return {device_, op}; });
-  return operations;
+  return wrappedOperations;
 }
 
 std::optional<std::vector<std::pair<Site, Site>>>
@@ -273,6 +294,10 @@ Device::getCouplingMap() const {
 std::optional<size_t> Device::getNeedsCalibration() const {
   return queryProperty<std::optional<size_t>>(
       QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
+}
+
+std::optional<size_t> Device::getQueueLength() const {
+  return queryProperty<std::optional<size_t>>(QDMI_DEVICE_PROPERTY_QUEUELENGTH);
 }
 
 std::optional<std::string> Device::getLengthUnit() const {
@@ -407,6 +432,15 @@ Job Device::submitJob(const std::span<const std::byte> program,
   return jobWrapper;
 }
 
+Job Device::retrieveJobById(const std::string_view jobId) const {
+  const std::string id{jobId};
+  QDMI_Job job = nullptr;
+  qdmi::throwIfError(
+      QDMI_session_retrieve_job_by_id(device_.get(), id.c_str(), &job),
+      "Retrieving job");
+  return Job{job, device_};
+}
+
 void Device::setCustomJobParam(QDMI_Job job, const QDMI_Job_Parameter param,
                                const CustomJobParameter& value) {
   std::visit(
@@ -522,6 +556,14 @@ size_t Job::getNumShots() const {
                               sizeof(numShots), &numShots, nullptr),
       "Querying number of shots");
   return numShots;
+}
+
+std::optional<size_t> Job::getQueuePosition() const {
+  size_t queuePosition = 0;
+  const auto result =
+      QDMI_job_query_property(job_.get(), QDMI_JOB_PROPERTY_QUEUEPOSITION,
+                              sizeof(queuePosition), &queuePosition, nullptr);
+  return detail::queuePositionFromResult(result, queuePosition);
 }
 
 std::vector<std::string> Job::getShots() const {

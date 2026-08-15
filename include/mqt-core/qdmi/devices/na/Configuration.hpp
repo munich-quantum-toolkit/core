@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Configuration.hpp
+ * @brief Neutral-atom QDMI device configuration.
+ */
+
 #pragma once
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
@@ -18,10 +22,10 @@
 #include <cstdint>
 #include <functional>
 #include <istream>
-#include <ostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace na {
@@ -35,6 +39,8 @@ namespace na {
  * the length unit, respectively.
  */
 struct Device {
+  /// @brief Version of this device-description schema.
+  uint64_t schemaVersion = 1;
   /// @brief The name of the device.
   std::string name;
   /// @brief The number of qubits in the device.
@@ -267,22 +273,30 @@ public:
   Unit durationUnit = {.unit = "us", ///< Default is microseconds (us).
                        .scaleFactor = 1.0};
 
-  // Before we used the macro NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT here,
-  // too. Now, we added an id to shuttling units that must be initialized
-  // in a custom routine, so we can only use the serialize macro. Additionally,
-  // we check here whether the units are valid SI units.
-  // NOLINTNEXTLINE(misc-include-cleaner)
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE_ONLY_SERIALIZE(
-      Device, name, numQubits, traps, minAtomDistance,
-      globalSingleQubitOperations, globalMultiQubitOperations,
-      localSingleQubitOperations, localMultiQubitOperations, shuttlingUnits,
-      decoherenceTimes, lengthUnit, durationUnit)
+  /// Serialize the versioned runtime configuration.
+  // NOLINTNEXTLINE(readability-identifier-naming,misc-include-cleaner)
+  friend void to_json(nlohmann::json& json, const Device& device) {
+    json = nlohmann::json{
+        {"schema-version", device.schemaVersion},
+        {"name", device.name},
+        {"numQubits", device.numQubits},
+        {"traps", device.traps},
+        {"minAtomDistance", device.minAtomDistance},
+        {"globalSingleQubitOperations", device.globalSingleQubitOperations},
+        {"globalMultiQubitOperations", device.globalMultiQubitOperations},
+        {"localSingleQubitOperations", device.localSingleQubitOperations},
+        {"localMultiQubitOperations", device.localMultiQubitOperations},
+        {"shuttlingUnits", device.shuttlingUnits},
+        {"decoherenceTimes", device.decoherenceTimes},
+        {"lengthUnit", device.lengthUnit},
+        {"durationUnit", device.durationUnit}};
+  }
 
   // the name of the following function is given by the nlohmann::json library
   // and must not be changed
   template <typename BasicJsonType>
   // NOLINTNEXTLINE(readability-identifier-naming)
-  friend auto from_json(const BasicJsonType& json, Device& device) -> void {
+  friend void from_json(const BasicJsonType& json, Device& device) {
     const Device defaultDevice{};
     device.name = !json.is_null() ? json.value("name", defaultDevice.name)
                                   : defaultDevice.name;
@@ -355,30 +369,16 @@ public:
 };
 
 /**
- * @brief Writes a JSON schema with default values for the device configuration
- * to the specified output stream.
- * @param os is the output stream to write the JSON schema to.
- * @throws std::runtime_error if the JSON conversion fails.
- */
-auto writeJSONSchema(std::ostream& os) -> void;
-
-/**
- * @brief Writes a JSON schema with default values for the device configuration
- * to the specified path.
- * @param path The path to write the JSON schema to.
- * @throws std::runtime_error if the JSON conversion fails or the file cannot be
- * opened.
- */
-auto writeJSONSchema(const std::string& path) -> void;
-
-/**
  * @brief Parses the device configuration from an input stream.
  * @param is is the input stream containing the JSON representation of the
  * device configuration.
  * @returns The parsed device configuration as a Protobuf message.
  * @throws std::runtime_error if the JSON cannot be parsed.
  */
-[[nodiscard]] auto readJSON(std::istream& is) -> Device;
+[[nodiscard]] Device readJSON(std::istream& is);
+
+/// Parse and validate JSON text while using @p source in diagnostics.
+[[nodiscard]] Device readJSON(std::string_view json, std::string_view source);
 
 /**
  * @brief Parses the device configuration from a JSON file.
@@ -387,29 +387,7 @@ auto writeJSONSchema(const std::string& path) -> void;
  * @throws std::runtime_error if the JSON file does not exist, or the JSON file
  * cannot be parsed.
  */
-[[nodiscard]] auto readJSON(const std::string& path) -> Device;
-
-/**
- * @brief Writes a header file with the device configuration to the specified
- * output stream.
- * @param device is the protobuf representation of the device.
- * @param os is the output stream to write the header file to.
- * @throws std::runtime_error if the file cannot be opened or written to.
- * @note This implementation only supports multi-qubit gates up to two
- * qubits.
- */
-auto writeHeader(const Device& device, std::ostream& os) -> void;
-
-/**
- * @brief Writes a header file with the device configuration to the specified
- * path.
- * @param device is the protobuf representation of the device.
- * @param path is the path to write the header file to.
- * @throws std::runtime_error if the file cannot be opened or written to.
- * @note This implementation only supports multi-qubit gates up to two
- * qubits.
- */
-auto writeHeader(const Device& device, const std::string& path) -> void;
+[[nodiscard]] Device readJSON(const std::string& path);
 
 /**
  * @brief Information about a regular site in a lattice.
@@ -440,8 +418,8 @@ struct SiteInfo {
  * determinant of the lattice vector matrix is near zero, causing the system
  * of equations to have no unique solution).
  */
-auto forEachRegularSites(const std::vector<Device::Lattice>& lattices,
+void forEachRegularSites(const std::vector<Device::Lattice>& lattices,
                          const std::function<void(const SiteInfo&)>& f,
-                         size_t startId = 0) -> void;
+                         size_t startId = 0);
 
 } // namespace na

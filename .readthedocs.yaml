@@ -12,7 +12,6 @@ build:
     python: "3.14"
   apt_packages:
     - graphviz
-    - inkscape
     - zstd
   jobs:
     post_checkout:

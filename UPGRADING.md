@@ -6,6 +6,112 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Removal of QDMI configuration through `pyproject.toml`
+
+MQT Core no longer reads QDMI device definitions from a `[tool.qdmi]` table in
+`pyproject.toml`. Project discovery now looks only for `qdmi.json`. Move an
+existing table into a `qdmi.json` file beside the `pyproject.toml`. For example,
+replace this `pyproject.toml` table:
+
+```toml
+[tool.qdmi]
+devices = [
+  { id = "example.device", library = "libexample-device.so", prefix = "EXAMPLE" },
+]
+```
+
+with this `qdmi.json`:
+
+```json
+{
+  "schema-version": 1,
+  "qdmi": {
+    "devices": [
+      {
+        "id": "example.device",
+        "library": "libexample-device.so",
+        "prefix": "EXAMPLE"
+      }
+    ]
+  }
+}
+```
+
+The JSON document adds the `"schema-version": 1` key and nests the device array
+under `qdmi`. Every other key keeps its name and meaning. Relative paths still
+resolve against the file that declares them. `MQT_CORE_QDMI_CONFIG_FILE`,
+`MQT_CORE_QDMI_CONFIG_JSON`, the system and user files, and the packaged
+`*.qdmi.json` fragments do not change.
+
+### Python binding CMake helper
+
+The `add_mqt_python_binding_nanobind` function is now called
+`add_mqt_python_binding`. Rename the calls in downstream `CMakeLists.txt` files:
+
+```cmake
+add_mqt_python_binding(
+  MYPACKAGE
+  py_mypackage
+  ${SOURCES}
+  MODULE_NAME
+  _core
+  INSTALL_DIR
+  .
+  LINK_LIBS
+  MQT::Core)
+```
+
+The former `add_mqt_python_binding` function built modules with `pybind11`. All
+MQT projects have switched from `pybind11` to `nanobind`, so no build used that
+function. MQT Core no longer provides it.
+
+### QDMI Qiskit primitive options
+
+`QDMISampler` and `QDMIEstimator` no longer accept the MQT-specific `options`
+mapping. Pass shot and precision defaults directly, preferably through the
+backend factories:
+
+```python
+sampler = backend.sampler(default_shots=2048)
+estimator = backend.estimator(default_precision=0.01, default_shots=2048)
+```
+
+Replace `QDMIEstimator(..., options={"default_shots": shots})` with
+`QDMIEstimator(..., default_shots=shots)`. The sampler ignored its former
+`options` mapping, so remove that argument without replacement.
+
+### Runtime-configurable SC QDMI device
+
+The built-in superconducting QDMI provider now parses its device description
+when each session is initialized. The `mqt-core-qdmi-sc-device-gen` target,
+SC-specific generator executable, `sc::writeHeader`, `sc::writeJSONSchema`, and
+generated `DeviceMemberInitializers.hpp` file have been removed. Replace
+generator API use with `sc::Device` and the `sc::readJSON` functions declared in
+`qdmi/devices/sc/Configuration.hpp`.
+
+### Runtime-configurable neutral-atom QDMI device
+
+The built-in neutral-atom QDMI provider now parses its device description when
+each session is initialized. The `mqt-core-qdmi-na-device-gen` target,
+`mqt-core-qdmi-na-device-generator` executable, `na::writeHeader`, and generated
+`DeviceMemberInitializers.hpp` file have been removed. Replace generator API use
+with the `na::Device` configuration type and the `na::readJSON` functions in
+`qdmi/devices/na/Configuration.hpp`.
+
+At runtime, use the registry `session.device-config` field or Python
+`device_config` and `device_config_file` arguments. Direct low-level QDMI
+clients pass inline JSON through CUSTOM1 or a file path through CUSTOM2.
+
+### Bundled QDMI devices in embedded builds
+
+The bundled QDMI devices now have individual CMake options:
+`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`, `BUILD_MQT_CORE_QDMI_NA_DEVICE`, and
+`BUILD_MQT_CORE_QDMI_SC_DEVICE`. All three remain enabled by default in a
+standalone MQT Core build. They default to disabled when MQT Core is consumed
+through CMake's `FetchContent` or `add_subdirectory`; embedded consumers can
+enable only the devices they need before making MQT Core available. The QDMI
+driver and FoMaC libraries remain available independently.
+
 ### QDMI Python namespace
 
 The native Python module has moved from `mqt.core.fomac` to `mqt.core.qdmi`.
@@ -92,7 +198,7 @@ an unknown or disabled ID fails. `fomac::Session::openDevice` creates a fresh
 owned session on every call. `qdmi::Driver::open(id)` retains its cached-device
 behavior for client callers.
 
-See the [QDMI device configuration guide](docs/qdmi/configuration.md) for the
+See the {doc}`QDMI device configuration guide <qdmi/configuration>` for the
 versioned JSON and TOML formats, configuration precedence, and relocatable
 device manifests.
 

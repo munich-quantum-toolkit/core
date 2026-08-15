@@ -11,7 +11,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-ir-bindings)
   file(GLOB_RECURSE IR_SOURCES **.cpp)
 
   # declare the Python module
-  add_mqt_python_binding_nanobind(
+  add_mqt_python_binding(
     CORE
     ${MQT_CORE_TARGET_NAME}-ir-bindings
     ${IR_SOURCES}

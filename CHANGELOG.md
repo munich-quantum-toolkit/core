@@ -12,10 +12,29 @@ releases may include breaking changes.
 
 ### Added
 
+- 🚸 Add typed stable-ID construction for Qiskit backends, lazy provider
+  discovery, and sampler and estimator factories with explicit shot and
+  precision defaults ([#2084]) ([**@burgholzer**])
+- 📝 Generate `llms.txt` documentation indexes with Sphinx-LLM ([#1989],
+  [#2046]) ([**@denialhaag**], [**@burgholzer**])
+- 🧪 Test static Slurm license admission and QDMI execution with DDSIM and SC,
+  and document the cluster setup ([#2043]) ([**@burgholzer**])
+- ✨ Add C++ and Python adapters that open the QDMI device named by one local
+  Slurm license environment value ([#2025]) ([**@burgholzer**])
+- ✨ Add generic C++ and Python FoMaC support for custom device properties that
+  contain operation handles ([#2042]) ([**@burgholzer**])
+- ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
+  and Python FoMaC APIs, and expose optional device queue length and job queue
+  position ([#2008], [#2010]) ([**@burgholzer**])
+- 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
 - ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
   ([**@burgholzer**])
+- ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
+  stable QDMI registry IDs ([#1992]) ([**@burgholzer**])
 - ✨ Expose compressed vector and matrix DD serialization through bytes-based
   Python APIs ([#1983]) ([**@burgholzer**])
+- ✨ Make superconducting QDMI devices runtime configurable with session-owned
+  topology, operations, and calibration data ([#1980]) ([**@burgholzer**])
 - ✨ Expose registered QDMI device IDs without loading device libraries
   ([#1972]) ([**@burgholzer**])
 - ✨ Add typed runtime configuration transport and relocatable assets for QDMI
@@ -23,12 +42,25 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Remove the unused `pybind11` CMake helper and rename
+  `add_mqt_python_binding_nanobind` to `add_mqt_python_binding` ([#2106])
+  ([**@denialhaag**])
+- 💥 Replace the MQT-specific QDMI primitive `options` mappings with explicit
+  shot and precision defaults ([#2084]) ([**@burgholzer**])
+- ♻️ Simplify Python optional-dependency checks while preserving the Qiskit and
+  PennyLane availability flags ([#2108]) ([**@simon1hofmann**])
 - 💥 Move Python QDMI entities and the neutral-atom specialization to QDMI
   namespaces, expose device registration and opening through
   `mqt.core.qdmi.driver`, retain v3 FoMaC compatibility aliases, and let the
   Qiskit adapter open stable device IDs directly ([#2074]) ([**@burgholzer**])
+- ⬆️ Update `nanobind` to version 2.14.0 ([#2073]) ([**@denialhaag**])
 - 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
   ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
+
+### Removed
+
+- 💥 Remove QDMI device configuration through `[tool.qdmi]` in `pyproject.toml`
+  and the vendored toml++ header ([#2116]) ([**@denialhaag**])
 
 ## [3.8.0] - 2026-07-30
 
@@ -451,7 +483,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#320)._
 
 ### Added
 
-- 🐍 Build Python 3.14 wheels ([#1076]) ([**@denialhaag**])
+- 🐍 Start building CPython 3.14 wheels ([#1076]) ([**@denialhaag**])
 - ✨ Add MQT-internal MLIR dialect conversions ([#1001]) ([**@li-mingbao**])
 
 ### Changed
@@ -604,9 +636,9 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#300)._
 
 ## [2.7.0] - 2024-10-08
 
-_📚 Refer to the [GitHub Release
-Notes](https://github.com/munich-quantum-toolkit/core/releases) for previous
-changelogs._
+_📚 Refer to the
+[GitHub Release Notes](https://github.com/munich-quantum-toolkit/core/releases)
+for previous changelogs._
 
 <!-- Version links -->
 
@@ -633,10 +665,25 @@ changelogs._
 
 <!-- PR links -->
 
+[#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
+[#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
+[#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
+[#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
+[#2046]: https://github.com/munich-quantum-toolkit/core/pull/2046
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
+[#2043]: https://github.com/munich-quantum-toolkit/core/pull/2043
+[#2073]: https://github.com/munich-quantum-toolkit/core/pull/2073
+[#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
+[#2025]: https://github.com/munich-quantum-toolkit/core/pull/2025
+[#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
+[#2008]: https://github.com/munich-quantum-toolkit/core/pull/2008
+[#2011]: https://github.com/munich-quantum-toolkit/core/pull/2011
+[#1989]: https://github.com/munich-quantum-toolkit/core/pull/1989
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
+[#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
+[#1980]: https://github.com/munich-quantum-toolkit/core/pull/1980
 [#1972]: https://github.com/munich-quantum-toolkit/core/pull/1972
 [#1967]: https://github.com/munich-quantum-toolkit/core/pull/1967
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965

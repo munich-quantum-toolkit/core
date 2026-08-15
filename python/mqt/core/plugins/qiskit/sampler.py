@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 from qiskit.primitives.base import BaseSamplerV2
@@ -50,18 +50,15 @@ class QDMISampler(BaseSamplerV2):
         backend: QDMIBackend,
         *,
         default_shots: int = 1024,
-        options: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the QDMI Sampler.
 
         Args:
             backend: The QDMI backend to execute circuits on.
             default_shots: The default number of shots to use if not specified in run.
-            options: Default options for the sampler.
         """
         self._backend = backend
         self._default_shots = default_shots
-        self._options = options or {}
 
     @property
     def backend(self) -> QDMIBackend:

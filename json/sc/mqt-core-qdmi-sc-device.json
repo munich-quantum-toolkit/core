@@ -1,6 +1,23 @@
 {
+  "schema-version": 1,
   "name": "MQT SC Default QDMI Device",
   "numQubits": 100,
+  "durationUnit": {
+    "unit": "ns",
+    "scaleFactor": 1.0
+  },
+  "qubitProperties": {
+    "defaults": {
+      "t1": 100000,
+      "t2": 150000
+    },
+    "overrides": [
+      {
+        "qubit": 7,
+        "t1": 95000
+      }
+    ]
+  },
   "couplings": [
     [0, 1],
     [1, 2],
@@ -184,8 +201,33 @@
     [89, 99]
   ],
   "operations": [
-    { "name": "r", "numParameters": 2, "numQubits": 1 },
-    { "name": "cz", "numParameters": 0, "numQubits": 2 },
-    { "name": "measure", "numParameters": 0, "numQubits": 1 }
+    {
+      "name": "r",
+      "numParameters": 2,
+      "numQubits": 1,
+      "duration": 20,
+      "fidelity": 0.999
+    },
+    {
+      "name": "cz",
+      "numParameters": 0,
+      "numQubits": 2,
+      "duration": 200,
+      "fidelity": 0.99,
+      "siteOverrides": [
+        {
+          "sites": [0, 1],
+          "duration": 180,
+          "fidelity": 0.995
+        }
+      ]
+    },
+    {
+      "name": "measure",
+      "numParameters": 0,
+      "numQubits": 1,
+      "duration": 500,
+      "fidelity": 0.98
+    }
   ]
 }

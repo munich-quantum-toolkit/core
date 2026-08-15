@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from typing import overload
 
 from . import driver as driver
+from . import slurm as slurm
 
 class Job:
     """A job represents a submitted quantum program execution."""
@@ -112,6 +113,10 @@ class Job:
     @property
     def num_shots(self) -> int:
         """The number of shots."""
+
+    @property
+    def queue_position(self) -> int | None:
+        """The number of jobs ahead in the queue, or None if unavailable or not applicable in the current state."""
 
     def __eq__(self, arg: object, /) -> bool: ...
     def __ne__(self, arg: object, /) -> bool: ...
@@ -230,6 +235,9 @@ class Device:
     def needs_calibration(self) -> int | None:
         """Returns whether the device needs calibration."""
 
+    def queue_length(self) -> int | None:
+        """Returns the current queue length, or None if unavailable."""
+
     def length_unit(self) -> str | None:
         """Returns the unit of length used by the device."""
 
@@ -250,6 +258,13 @@ class Device:
 
     def child_devices(self) -> list[Device]:
         """Returns the direct child devices managed by this device."""
+
+    def query_custom_operations(self, custom_property: CustomProperty) -> list[Operation] | None:
+        """Query a custom device property that contains operation handles.
+
+        Returns normal :class:`Device.Operation` objects, or ``None`` when the custom
+        slot is unsupported. A supported empty list is returned as an empty list.
+        """
 
     @overload
     def query_custom_property(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
@@ -301,6 +316,9 @@ class Device:
         custom5: str | bool | float | None = None,
     ) -> Job:
         """Submits an exact byte payload to the device."""
+
+    def retrieve_job_by_id(self, job_id: str) -> Job:
+        """Retrieves an existing job by its device-provided ID."""
 
     def __eq__(self, arg: object, /) -> bool: ...
     def __ne__(self, arg: object, /) -> bool: ...

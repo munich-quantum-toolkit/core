@@ -1754,6 +1754,9 @@ wheels = [
 [[package]]
 name = "mqt-core"
 source = { editable = "." }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+]
 
 [package.optional-dependencies]
 pennylane = [
@@ -1792,7 +1795,7 @@ docs = [
     { name = "myst-nb" },
     { name = "openqasm-pygments" },
     { name = "pennylane", marker = "python_full_version >= '3.11'" },
-    { name = "qiskit", extra = ["qasm3-import", "visualization"] },
+    { name = "qiskit", extra = ["visualization"] },
     { name = "setuptools-scm" },
     { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
@@ -1801,8 +1804,8 @@ docs = [
     { name = "sphinx-copybutton" },
     { name = "sphinx-design", version = "0.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "sphinx-design", version = "0.7.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "sphinx-llm" },
     { name = "sphinxcontrib-bibtex" },
-    { name = "sphinxcontrib-svg2pdfconverter" },
     { name = "sphinxext-opengraph" },
 ]
 test = [
@@ -1820,18 +1823,19 @@ test = [
 requires-dist = [
     { name = "pennylane", marker = "python_full_version >= '3.11' and extra == 'pennylane'", specifier = ">=0.45.1,<0.46" },
     { name = "qiskit", extras = ["qasm3-import"], marker = "extra == 'qiskit'", specifier = ">=1.1.0" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'", specifier = ">=4.12" },
 ]
 provides-extras = ["pennylane", "qiskit"]
 
 [package.metadata.requires-dev]
 build = [
-    { name = "nanobind", specifier = "~=2.13.0" },
+    { name = "nanobind", specifier = "~=2.14.0" },
     { name = "scikit-build-core", specifier = "~=1.0.3" },
     { name = "setuptools-scm", specifier = ">=9.2.2" },
 ]
 dev = [
     { name = "lit", specifier = ">=18.1.8" },
-    { name = "nanobind", specifier = "~=2.13.0" },
+    { name = "nanobind", specifier = "~=2.14.0" },
     { name = "nox", specifier = ">=2025.11.12" },
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1" },
     { name = "numpy", marker = "python_full_version >= '3.14'", specifier = ">=2.3.2" },
@@ -1853,15 +1857,15 @@ docs = [
     { name = "myst-nb", specifier = ">=1.3.0" },
     { name = "openqasm-pygments", specifier = ">=0.2.0" },
     { name = "pennylane", marker = "python_full_version >= '3.11'", specifier = ">=0.45.1,<0.46" },
-    { name = "qiskit", extras = ["qasm3-import", "visualization"], specifier = ">=1.1.0" },
+    { name = "qiskit", extras = ["visualization"], specifier = ">=1.1.0" },
     { name = "setuptools-scm", specifier = ">=9.2.2" },
     { name = "sphinx", specifier = ">=8.1.3" },
     { name = "sphinx", marker = "python_full_version >= '3.11'", specifier = ">=8.2.3" },
     { name = "sphinx-autoapi", specifier = ">=3.6.1" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
     { name = "sphinx-design", specifier = ">=0.6.1" },
+    { name = "sphinx-llm", specifier = ">=0.4.1" },
     { name = "sphinxcontrib-bibtex", specifier = ">=2.6.5" },
-    { name = "sphinxcontrib-svg2pdfconverter", specifier = ">=1.3.0" },
     { name = "sphinxext-opengraph", specifier = ">=0.13.0" },
 ]
 test = [
@@ -1955,11 +1959,11 @@ wheels = [
 
 [[package]]
 name = "nanobind"
-version = "2.13.0"
+version = "2.14.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/07/e5/a6fc2f024eaef17c68b94b5f8f56098d31859a7840a11a3dd45da2d3908a/nanobind-2.13.0.tar.gz", hash = "sha256:c7b04d6a6a4cd57985571e605539399b51331ae455d7fce576a5e2fcb89b1dcf", size = 1052101, upload-time = "2026-06-18T06:03:49.491Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/23/a6fdf94de7bf760da93a115593cc1756a7b3d408c12681df9e4c63bf11e3/nanobind-2.14.0.tar.gz", hash = "sha256:0cf1477d8b1697abc1454028b6469e7113d9aa6ba3ced8b102cc569affbacb13", size = 1053642, upload-time = "2026-08-07T06:07:51.605Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/8d/cec69a0a804711fd89f47fad92cd2a438a1ceaafd9dabaf3b8b403b5cbba/nanobind-2.13.0-py3-none-any.whl", hash = "sha256:9268d7201eaf5519ae61b7a83175f2af77088cb4b99dd3ce5b00550f697da7b7", size = 269387, upload-time = "2026-06-18T06:03:47.508Z" },
+    { url = "https://files.pythonhosted.org/packages/94/17/fba47a85a7b0bfb9ab5a5100e8a26b361b881089c7d8cad9a95f895f1546/nanobind-2.14.0-py3-none-any.whl", hash = "sha256:a57cd4fe613db78410ca13ba007a3ffaf3125b831d8be46ec7f4351e8cf6e513", size = 269917, upload-time = "2026-08-07T06:07:50.045Z" },
 ]
 
 [[package]]
@@ -3859,6 +3863,38 @@ wheels = [
 ]
 
 [[package]]
+name = "sphinx-llm"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "sphinx-markdown-builder" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/33/58/6b1802820a17e7a128b45046d735f934af00f4290704b647b126213bdeb4/sphinx_llm-1.0.0.tar.gz", hash = "sha256:1cc8284343a0100caa3110010da5933cdad8da37d2b9dda0e2a7d503b8da6b1c", size = 381976, upload-time = "2026-08-14T07:48:29.578Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/af/5b/2a338974998bc0fe563635625abdb16a000ee06a63101b361c834cd56ccb/sphinx_llm-1.0.0-py3-none-any.whl", hash = "sha256:8d45dbe5f9caffb4d78589c35d15fc8399dd41fc5b445ee4292ff83969754e75", size = 60282, upload-time = "2026-08-14T07:48:28.161Z" },
+]
+
+[[package]]
+name = "sphinx-markdown-builder"
+version = "0.6.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "docutils", version = "0.21.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "docutils", version = "0.22.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "tabulate" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a0/58/0b7b9a7d071140b3705885d51932e8b62f520388c2772e4952189971727b/sphinx_markdown_builder-0.6.10.tar.gz", hash = "sha256:cd5acf88d52ea0146a712fd557404f10326dff3428a78ba928e59b1727fd4a86", size = 22688, upload-time = "2026-03-11T10:56:57.639Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c2/8f/9fecf3d081d5cd49eff83a17b9fef50ed741e6223ab3bb906de4ab0068f9/sphinx_markdown_builder-0.6.10-py3-none-any.whl", hash = "sha256:16d86738b9ac69fcbc86e373c31c6402c30af1fa8d98d0f62cc5f38bfe5fc26e", size = 16700, upload-time = "2026-03-11T10:56:56.135Z" },
+]
+
+[[package]]
 name = "sphinxcontrib-applehelp"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3928,20 +3964,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/3b/44/6716b257b0aa6bfd51a1b31665d1c205fb12cb5ad56de752dfa15657de2f/sphinxcontrib_serializinghtml-2.0.0.tar.gz", hash = "sha256:e9d912827f872c029017a53f0ef2180b327c3f7fd23c87229f7a8e8b70031d4d", size = 16080, upload-time = "2024-07-29T01:10:09.332Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/52/a7/d2782e4e3f77c8450f727ba74a8f12756d5ba823d81b941f1b04da9d033a/sphinxcontrib_serializinghtml-2.0.0-py3-none-any.whl", hash = "sha256:6e2cb0eef194e10c27ec0023bfeb25badbbb5868244cf5bc5bdc04e4464bf331", size = 92072, upload-time = "2024-07-29T01:10:08.203Z" },
-]
-
-[[package]]
-name = "sphinxcontrib-svg2pdfconverter"
-version = "2.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
-    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/05/11b12853b6a0398bd19d5464b68cb97dde21c354265ff2c1929f92ae03a9/sphinxcontrib_svg2pdfconverter-2.1.0.tar.gz", hash = "sha256:9756e82d5f3bf11629ffcbafb1f8a1092d3bb4789e33494032cdce9a9c8459d3", size = 6805, upload-time = "2026-03-05T18:23:44.74Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ce/7d/9b6b1ef6fe13bac6455d002ca4a626fac325cf94b4183f31cafe9b1ed17c/sphinxcontrib_svg2pdfconverter-2.1.0-py3-none-any.whl", hash = "sha256:805635ac274583e1606b0ec7fb21f16b69ca8ff223dd7e237d91127015628b0c", size = 9259, upload-time = "2026-03-05T18:23:43.662Z" },
 ]
 
 [[package]]

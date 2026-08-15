@@ -6,23 +6,19 @@
 #
 # Licensed under the MIT License
 
-from __future__ import annotations
+"""Compatibility imports for typing features."""
 
 import sys
-from typing import TYPE_CHECKING
 
 if sys.version_info >= (3, 11):
-    from typing import assert_never
-elif TYPE_CHECKING:
-    from typing_extensions import assert_never
+    from typing import Unpack as _Unpack
 else:
+    from typing_extensions import Unpack as _Unpack
 
-    def assert_never(_: object) -> None:
-        msg = "Expected code to be unreachable"
-        raise AssertionError(msg)
+# Give introspection tools an unconditional module-level export.
+Unpack = _Unpack
 
-
-__all__ = ["assert_never"]
+__all__ = ["Unpack"]
 
 
 def __dir__() -> list[str]:

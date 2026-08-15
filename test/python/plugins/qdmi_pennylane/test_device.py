@@ -201,7 +201,11 @@ def test_validates_configuration_and_width(monkeypatch: pytest.MonkeyPatch) -> N
     _patch_device(monkeypatch, qdmi)
 
     with pytest.raises(PennyLaneConfigurationError, match="unknown"):
-        QDMIDevice("fake.qdmi", wires=2, session_parameters={"unknown": "value"})
+        QDMIDevice(
+            "fake.qdmi",
+            wires=2,
+            session_parameters={"unknown": "value"},  # ty: ignore[invalid-argument-type, invalid-key]
+        )
     with pytest.raises(PennyLaneConfigurationError, match="3 wires"):
         QDMIDevice("fake.qdmi", wires=3)
 
