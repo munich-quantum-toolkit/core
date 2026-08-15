@@ -79,6 +79,11 @@ produce normal diagnostics instead of escaping as C++ exceptions.
   compile command contains `-fno-exceptions -fno-rtti`; the two MLIR
   compatibility libraries and seven tests omit the exception-disable flag and
   contain `-fno-rtti`.
+- Observation: The first PR #2125 workflow runs failed uniformly in the MLIR
+  setup step before compilation. The pinned reusable workflows used setup-mlir
+  v1.4.1, which could not load the new 22.1.8 manifest entries. The exact
+  current reusable-workflows commit uses setup-mlir v1.4.2, which reads the
+  remote manifest and supports versions released after its own tag.
 
 ## Decision Log
 
@@ -111,6 +116,11 @@ produce normal diagnostics instead of escaping as C++ exceptions.
   LLVM symbols interpose the LLVM registries in a loaded QDMI device. Keeping
   executable symbols private makes QDMI device loading safe. Date/Author:
   2026-08-15 / Codex.
+- Decision: Pin CI and upstream reusable workflows to commit
+  `12b5111fd3bbfd5434765e51a8d49182d3e2d8e0` until the pending v2.2.3 release
+  receives a tag. Rationale: v2.2.2 embeds setup-mlir v1.4.1 and cannot install
+  LLVM 22.1.8; the pinned commit embeds v1.4.2 and keeps every reusable workflow
+  immutable. Date/Author: 2026-08-15 / Codex.
 
 ## Outcomes & Retrospective
 
