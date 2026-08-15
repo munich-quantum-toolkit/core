@@ -1998,10 +1998,8 @@ private:
                                             destination, global);
           } else if constexpr (std::is_same_v<T, SyntaxAssignment>) {
             return analyzeAssignment(statement.location, data, destination);
-          } else if constexpr (std::is_same_v<T, SyntaxQubitDeclaration>) {
-            return analyzeRegisterDeclaration(statement.location, data,
-                                              destination, global);
-          } else if constexpr (std::is_same_v<T, SyntaxBitDeclaration>) {
+          } else if constexpr (std::is_same_v<T, SyntaxQubitDeclaration> ||
+                               std::is_same_v<T, SyntaxBitDeclaration>) {
             return analyzeRegisterDeclaration(statement.location, data,
                                               destination, global);
           } else if constexpr (std::is_same_v<T, SyntaxMeasurement>) {
