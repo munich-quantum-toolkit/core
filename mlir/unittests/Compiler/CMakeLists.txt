@@ -15,7 +15,7 @@ target_link_libraries(
           MQTCompilerQDMIAdapter
           MQTCompilerTarget
           MQTCompilerPipeline
-          MLIRQCTranslation
+          MLIRQCOpenQASMTranslation
           MLIRQASMPrograms
           MLIRQCProgramBuilder
           MLIRQIRProgramBuilder
@@ -23,9 +23,7 @@ target_link_libraries(
           MLIRSupportMQT
           MLIRQCPrograms
           MLIRQCOPrograms
-          MLIRQIRPrograms
-          MLIRQuantumComputationPrograms
-          MQT::CoreIR)
+          MLIRQIRPrograms)
 
 mqt_copy_qdmi_runtime(mqt-core-mlir-unittests-compiler MQT::CoreQDMIScDevice
                       MQT::CoreQDMI_DDSIM_Device MQT::CoreQDMINaDevice)

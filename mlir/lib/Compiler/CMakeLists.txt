@@ -63,7 +63,7 @@ add_mlir_library(
   MLIRQCToQIRAdaptive
   MLIRQIRUtils
   MLIRQCOTransforms
-  MLIRQCTranslation
+  MLIRQCOpenQASMTranslation
   MLIRParser
   MLIRJeffTranslation
   MLIRJeffToQCO

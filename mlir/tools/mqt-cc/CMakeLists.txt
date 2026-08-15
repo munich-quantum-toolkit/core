@@ -20,7 +20,7 @@ target_link_libraries(
           MQTCompilerPipeline
           MLIRParser
           MLIRSupport
-          MLIRQCTranslation
+          MLIRQCOpenQASMTranslation
           MLIRJeffTranslation
           MLIRJeffToQCO
           MLIRBytecodeWriter

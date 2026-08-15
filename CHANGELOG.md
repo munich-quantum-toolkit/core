@@ -158,6 +158,9 @@ releases may include breaking changes.
   the `qdmi` C++ namespace, headers, libraries, and CMake targets; the
   `mqt.core.qdmi` and `mqt.core.na.qdmi` Python modules; and the module-level
   Python driver functions ([#2115]) ([**@burgholzer**])
+- 💥 Remove the legacy `QuantumComputation`-to-MLIR translator and its C++ and
+  Python compiler inputs. Use OpenQASM, Qiskit circuits, or typed MLIR programs
+  as compiler inputs ([#2054]) ([**@burgholzer**])
 - 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
   `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
   and GMP build support. Equivalence-checking users should use [MQT QCEC]; its
@@ -782,6 +785,7 @@ for previous changelogs._
 [#2066]: https://github.com/munich-quantum-toolkit/core/pull/2066
 [#2060]: https://github.com/munich-quantum-toolkit/core/pull/2060
 [#2058]: https://github.com/munich-quantum-toolkit/core/pull/2058
+[#2054]: https://github.com/munich-quantum-toolkit/core/pull/2054
 [#2049]: https://github.com/munich-quantum-toolkit/core/pull/2049
 [#2043]: https://github.com/munich-quantum-toolkit/core/pull/2043
 [#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
