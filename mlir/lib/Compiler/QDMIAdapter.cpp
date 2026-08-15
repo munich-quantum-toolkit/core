@@ -389,19 +389,23 @@ snapshotCompilerTarget(const qdmi::Device& device) {
                                  action + ": " + detail);
 }
 
-[[nodiscard]] static llvm::Error unknownQDMIError(const llvm::Twine& action) {
-  return llvm::createStringError(std::make_error_code(std::errc::io_error),
-                                 action + ": unknown exception");
+[[nodiscard]] static llvm::Error
+qdmiError(const llvm::Twine& action, const std::exception_ptr& exception) {
+  try {
+    std::rethrow_exception(exception);
+  } catch (const std::exception& error) {
+    return qdmiError(action, error.what());
+  } catch (...) {
+    return qdmiError(action, "unknown exception");
+  }
 }
 
 llvm::Expected<CompilerTarget>
 compilerTargetFromDevice(const qdmi::Device& device) {
   try {
     return snapshotCompilerTarget(device);
-  } catch (const std::exception& error) {
-    return qdmiError("Failed to query QDMI device", error.what());
   } catch (...) {
-    return unknownQDMIError("Failed to query QDMI device");
+    return qdmiError("Failed to query QDMI device", std::current_exception());
   }
 }
 
@@ -411,21 +415,17 @@ compilerTargetFromDeviceId(const std::string_view deviceId) {
                       std::string(deviceId) + "'";
   try {
     return snapshotCompilerTarget(qdmi::Session::openDevice(deviceId));
-  } catch (const std::exception& error) {
-    return qdmiError(action, error.what());
   } catch (...) {
-    return unknownQDMIError(action);
+    return qdmiError(action, std::current_exception());
   }
 }
 
 llvm::Expected<std::vector<std::string>> registeredQDMIDeviceIds() {
   try {
     return qdmi::Driver::get().registeredDeviceIds();
-  } catch (const std::exception& error) {
-    return qdmiError("Failed to discover registered QDMI devices",
-                     error.what());
   } catch (...) {
-    return unknownQDMIError("Failed to discover registered QDMI devices");
+    return qdmiError("Failed to discover registered QDMI devices",
+                     std::current_exception());
   }
 }
 

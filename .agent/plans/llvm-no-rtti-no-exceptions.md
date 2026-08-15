@@ -96,6 +96,11 @@ produce normal diagnostics instead of escaping as C++ exceptions.
   instantiation. Replacing the local member template with typed qubit and bit
   overloads backed by an ordinary helper removes the platform-dependent weak
   symbol without changing semantic behavior.
+- Observation: C++ patch coverage first reported 82.1%. All eight missed lines
+  were duplicated defensive exception-conversion branches in the QDMI adapter. A
+  shared `std::exception_ptr` converter preserves standard diagnostics and the
+  unknown-exception fallback while leaving only the fallback branch inherently
+  unreachable through the current QDMI APIs.
 
 ## Decision Log
 
