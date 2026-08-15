@@ -43,13 +43,14 @@ produce normal diagnostics instead of escaping as C++ exceptions.
 - [x] (2026-08-15 19:15Z) Added adapter and driver tests, and documented the
       non-throwing target path.
 - [x] (2026-08-15 19:15Z) Updated every repository LLVM and MLIR pin to 22.1.8;
-      the pull request reference remains pending.
+      added the combined pull request reference after publication.
 - [x] (2026-08-15 19:20Z) Validated focused targets, the complete build and
       4,382 CTests, all supported Python suites, MLIR docs, lint, formatting,
       and compile flags against LLVM and MLIR 22.1.8. The full Sphinx build
       remains unavailable because this host has no Doxygen executable.
-- [ ] Publish the combined draft pull request after PR #2054 merges and inspect
-  all checks for the exact pushed head. A human performs the merge.
+- [x] (2026-08-15 19:40Z) Rebased onto merged PR #2054 and published draft PR
+      #2125. Inspect all checks for the exact final head before handoff. A human
+      performs the merge.
 
 ## Surprises & Discoveries
 
@@ -113,13 +114,13 @@ produce normal diagnostics instead of escaping as C++ exceptions.
 
 ## Outcomes & Retrospective
 
-The prerequisite rebase is complete and published. The combined implementation
-configures and builds fully against the stock exception-free, RTTI-free LLVM and
-MLIR 22.1.8 installation. All 4,382 configured CTests and all supported Python
-suites pass, including new QDMI driver coverage. MLIR documentation and lint
-pass. The complete compile audit matches the intended boundaries. The full
-Sphinx build is blocked only by the missing Doxygen executable. Publication
-remains pending until a human merges PR #2054.
+The prerequisite merged as PR #2054. The combined implementation configures and
+builds fully against the stock exception-free, RTTI-free LLVM and MLIR 22.1.8
+installation. All 4,382 configured CTests and all supported Python suites pass,
+including new QDMI driver coverage. MLIR documentation and lint pass. The
+complete compile audit matches the intended boundaries. The full Sphinx build is
+blocked only by the missing Doxygen executable. Draft PR #2125 contains the
+combined change.
 
 ## Context and Orientation
 
