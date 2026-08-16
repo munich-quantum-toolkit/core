@@ -125,10 +125,12 @@ getQubitMappingOfGates(mlir::Operation* gate, const std::span<double>& params) {
       })
       .Case<mlir::qco::U2Op>([&](auto) {
         return ResultMap{
-            {{0, {{0, Complex(inv_sqrt2, 0)}, {1, exp(Complex(0, params[0]))}}},
+            {{0,
+              {{0, Complex(inv_sqrt2, 0)},
+               {1, inv_sqrt2 * exp(Complex(0, params[0]))}}},
              {1,
-              {{0, -exp(Complex(0, params[1]))},
-               {1, exp(Complex(0, params[0] + params[1]))}}}}};
+              {{0, -inv_sqrt2 * exp(Complex(0, params[1]))},
+               {1, inv_sqrt2 * exp(Complex(0, params[0] + params[1]))}}}}};
       })
       .Case<mlir::qco::UOp>([&](auto) {
         const double c = cos(0.5 * params[0]);
@@ -147,8 +149,8 @@ getQubitMappingOfGates(mlir::Operation* gate, const std::span<double>& params) {
       })
       .Case<mlir::qco::iSWAPOp>([&](auto) {
         return ResultMap{{{0, {{0, Complex(1, 0)}}},
-                          {1, {{2, Complex(0, -1)}}},
-                          {2, {{1, Complex(0, -1)}}},
+                          {1, {{2, Complex(0, 1)}}},
+                          {2, {{1, Complex(0, 1)}}},
                           {3, {{3, Complex(1, 0)}}}}};
       })
       .Case<mlir::qco::DCXOp>([&](auto) {
