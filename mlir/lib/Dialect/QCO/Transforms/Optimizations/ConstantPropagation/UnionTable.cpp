@@ -296,6 +296,11 @@ void UnionTable::propagateReset(const Value quantumTarget,
     }
   }
   ute->states = vecOfNewStates;
+  if (vecOfNewStates.size() > maximumHybridEntries) {
+    putEntriesToTop({*ute});
+  } else {
+    ute->states = vecOfNewStates;
+  }
   replaceValuesGlobally(quantumTargetVec, newQuantumValueVec);
 }
 
@@ -323,8 +328,9 @@ void UnionTable::propagateIntAlloc(const Value intValue, const int64_t number) {
   auto ute = UnionTableEntry();
   ute.states.push_back(hs);
   ute.participatingClassicalValues.insert(intValue);
-  entries.insert(std::make_shared<UnionTableEntry>(ute));
-  valuesToEntries[intValue] = std::make_shared<UnionTableEntry>(ute);
+  const auto utePtr = std::make_shared<UnionTableEntry>(ute);
+  entries.insert(utePtr);
+  valuesToEntries[intValue] = utePtr;
 }
 
 void UnionTable::propagateDoubleAlloc(const Value doubleValue,
@@ -335,13 +341,17 @@ void UnionTable::propagateDoubleAlloc(const Value doubleValue,
   auto ute = UnionTableEntry();
   ute.states.push_back(hs);
   ute.participatingClassicalValues.insert(doubleValue);
-  entries.insert(std::make_shared<UnionTableEntry>(ute));
-  valuesToEntries[doubleValue] = std::make_shared<UnionTableEntry>(ute);
+  const auto utePtr = std::make_shared<UnionTableEntry>(ute);
+  entries.insert(utePtr);
+  valuesToEntries[doubleValue] = utePtr;
 }
 
 bool UnionTable::isQubitAlwaysOne(const Value q) const {
   const unsigned int qubitIndex = qubitsToGlobalIndices.at(q);
   const auto ute = valuesToEntries.at(q);
+  if (ute->top) {
+    return false;
+  }
   return std::ranges::all_of(ute->states, [&](const auto& hs) {
     return hs.isQubitAlwaysOne(qubitIndex);
   });
@@ -350,6 +360,9 @@ bool UnionTable::isQubitAlwaysOne(const Value q) const {
 bool UnionTable::isQubitAlwaysZero(const Value q) const {
   const unsigned int qubitIndex = qubitsToGlobalIndices.at(q);
   const auto ute = valuesToEntries.at(q);
+  if (ute->top) {
+    return false;
+  }
   return std::ranges::all_of(ute->states, [&](const auto& hs) {
     return hs.isQubitAlwaysZero(qubitIndex);
   });
@@ -357,12 +370,18 @@ bool UnionTable::isQubitAlwaysZero(const Value q) const {
 
 bool UnionTable::isClassicalValueAlwaysTrue(const Value c) const {
   const auto ute = valuesToEntries.at(c);
+  if (ute->top) {
+    return false;
+  }
   return std::ranges::all_of(ute->states,
                              [&](const auto& hs) { return hs.isValueTrue(c); });
 }
 
 bool UnionTable::isClassicalValueAlwaysFalse(const Value c) const {
   const auto ute = valuesToEntries.at(c);
+  if (ute->top) {
+    return false;
+  }
   return std::ranges::all_of(
       ute->states, [&](const auto& hs) { return !hs.isValueTrue(c); });
 }
@@ -378,6 +397,9 @@ bool UnionTable::hasAlwaysZeroProbability(
     participatingEntries.insert(*valuesToEntries.at(cV));
   }
   for (const auto& ute : participatingEntries) {
+    if (ute.top) {
+      return false;
+    }
     std::unordered_map<unsigned int, bool> qubitValuesThisEntry;
     llvm::DenseMap<Value, bool> classicalValuesThisEntry;
     for (const auto& [qV, qBool] : qubitValues) {
