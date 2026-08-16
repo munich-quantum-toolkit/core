@@ -40,11 +40,12 @@ QuantumState::QuantumState(const std::span<unsigned int> globalQubitNumber,
                            const std::size_t maxNonzeroAmplitudes)
     : nQubits(globalQubitNumber.size()),
       maxNonzeroAmplitudes(maxNonzeroAmplitudes) {
-  if (sizeof(unsigned int) < globalQubitNumber.size()) {
+  constexpr auto maxBitNumber = sizeof(unsigned int) * 8;
+  if (maxBitNumber < globalQubitNumber.size()) {
     throw std::domain_error("Number of qubits exceeds amount of qubits that "
                             "can be managed in the union table.");
   }
-  if (sizeof(unsigned int) < maxNonzeroAmplitudes) {
+  if (maxBitNumber < maxNonzeroAmplitudes) {
     throw std::domain_error(
         "Number of maximum nonzero amplitudes exceeds "
         "amount of amplitudes that can be managed in the union table.");
