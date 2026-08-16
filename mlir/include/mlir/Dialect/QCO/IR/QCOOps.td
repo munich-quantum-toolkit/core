@@ -1477,6 +1477,9 @@ def IfOp
         /// for the else-block, or `nullptr` on failure.
         OpOperand* getTiedElseYieldedValue(BlockArgument bbArg);
 
+        /// Return the values populated when branching to the successor.
+        ValueRange getSuccessorInputs(RegionSuccessor successor);
+
         /// Append the specified additional "qubit" operands: replace this
         /// if-op with a new if-op that has the additional qubit operands.
         /// The operands can be of qubit or qtensor type.
@@ -1626,6 +1629,9 @@ def IndexSwitchOp
         /// Return the yielded value that corresponds to the given argument
         /// for the default case, or `nullptr` on failure.
         OpOperand* getTiedDefaultYieldedValue(BlockArgument bbArg);
+
+        /// Return the values populated when branching to the successor.
+        ValueRange getSuccessorInputs(RegionSuccessor successor);
 
         /// Append the specified additional linear operands: replace this
         /// index_switch with a new index_switch that has the additional linear operands.
