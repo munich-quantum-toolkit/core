@@ -38,6 +38,5 @@ if(qdmi_device_targets)
   mqt_copy_qdmi_runtime(mqt-cc ${qdmi_device_targets})
 endif()
 
-llvm_update_compile_flags(mqt-cc)
 mlir_check_all_link_libraries(mqt-cc)
 export_executable_symbols_for_plugins(mqt-cc)

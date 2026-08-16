@@ -68,18 +68,16 @@ required pass ordering.
 
 ## C++ source-tree API
 
-The source build provides a narrow QDMI bridge between a live QDMI device and
-the compiler-owned target:
+The source build provides a narrow, non-throwing QDMI bridge between a stable
+device ID and the compiler-owned target:
 
 ```cpp
-#include "qdmi/Client.hpp"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Programs.h"
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 
-auto device = qdmi::Session::openDevice("mqt.sc.iqm.garnet");
-auto target = mlir::compilerTargetFromDevice(device);
+auto target = mlir::compilerTargetFromDeviceId("mqt.sc.iqm.garnet");
 if (!target) {
   llvm::errs() << "Failed to create compiler target: "
                << llvm::toString(target.takeError()) << '\n';

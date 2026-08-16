@@ -18,4 +18,4 @@ RUN uv tool install cmake && \
 
 # Downloads and installs a prebuilt LLVM/MLIR toolchain
 RUN curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/download/v1.4.1/setup-mlir.sh -o /tmp/setup-mlir.sh
-RUN bash /tmp/setup-mlir.sh -v 22.1.7 -p /opt/llvm && rm /tmp/setup-mlir.sh
+RUN bash /tmp/setup-mlir.sh -v 22.1.8 -p /opt/llvm && rm /tmp/setup-mlir.sh

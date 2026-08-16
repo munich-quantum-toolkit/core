@@ -20,9 +20,14 @@ target_sources(MLIRExactUnitaryTest INTERFACE FILE_SET HEADERS BASE_DIRS
                                               ${CMAKE_CURRENT_SOURCE_DIR} FILES ExactUnitaryTest.h)
 
 function(mqt_mlir_configure_unittest_target target_name)
+  cmake_parse_arguments(PARSE_ARGV 1 arg "REQUIRES_EH" "" "")
   target_include_directories(${target_name} PRIVATE ${MQT_MLIR_UNITTESTS_DIR}
                                                     ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(${target_name} PRIVATE MLIRTestCaseUtils)
+  if(arg_REQUIRES_EH)
+    set(LLVM_REQUIRES_EH ON)
+    set(LLVM_REQUIRES_RTTI ON)
+  endif()
   mqt_mlir_target_use_project_options(${target_name})
 endfunction()
 

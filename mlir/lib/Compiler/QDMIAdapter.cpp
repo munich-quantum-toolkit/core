@@ -12,6 +12,7 @@
 
 #include "mlir/Compiler/Target.h"
 #include "qdmi/Client.hpp"
+#include "qdmi/driver/Driver.hpp"
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringRef.h>
@@ -23,9 +24,11 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -318,8 +321,8 @@ snapshotOperations(
   return targetOperations;
 }
 
-llvm::Expected<CompilerTarget>
-compilerTargetFromDevice(const qdmi::Device& device) {
+[[nodiscard]] static llvm::Expected<CompilerTarget>
+snapshotCompilerTarget(const qdmi::Device& device) {
   auto deviceName = device.getName();
   const auto deviceSites = device.getSites();
   if (auto error = requireCircuitDevice(
@@ -378,6 +381,52 @@ compilerTargetFromDevice(const qdmi::Device& device) {
   return CompilerTarget::create(std::move(deviceName), std::move(sites),
                                 std::move(couplings), std::move(*operations),
                                 std::move(*durationUnit));
+}
+
+[[nodiscard]] static llvm::Error qdmiError(const llvm::Twine& action,
+                                           const char* const detail) {
+  return llvm::createStringError(std::make_error_code(std::errc::io_error),
+                                 action + ": " + detail);
+}
+
+[[nodiscard]] static llvm::Error
+qdmiError(const llvm::Twine& action, const std::exception_ptr& exception) {
+  try {
+    std::rethrow_exception(exception);
+  } catch (const std::exception& error) {
+    return qdmiError(action, error.what());
+  } catch (...) {
+    return qdmiError(action, "unknown exception");
+  }
+}
+
+llvm::Expected<CompilerTarget>
+compilerTargetFromDevice(const qdmi::Device& device) {
+  try {
+    return snapshotCompilerTarget(device);
+  } catch (...) {
+    return qdmiError("Failed to query QDMI device", std::current_exception());
+  }
+}
+
+llvm::Expected<CompilerTarget>
+compilerTargetFromDeviceId(const std::string_view deviceId) {
+  const auto action = std::string("Failed to open or query QDMI device '") +
+                      std::string(deviceId) + "'";
+  try {
+    return snapshotCompilerTarget(qdmi::Session::openDevice(deviceId));
+  } catch (...) {
+    return qdmiError(action, std::current_exception());
+  }
+}
+
+llvm::Expected<std::vector<std::string>> registeredQDMIDeviceIds() {
+  try {
+    return qdmi::Driver::get().registeredDeviceIds();
+  } catch (...) {
+    return qdmiError("Failed to discover registered QDMI devices",
+                     std::current_exception());
+  }
 }
 
 } // namespace mlir
