@@ -497,7 +497,7 @@ private:
     newTypes.append(addons.getTypes().begin(), addons.getTypes().end());
 
     auto newWhileOp =
-        rewriter.create<scf::WhileOp>(whileOp.getLoc(), newTypes, newInits);
+        scf::WhileOp::create(rewriter, whileOp.getLoc(), newTypes, newInits);
 
     const SmallVector<Location> beforeLocs(newInits.size(), whileOp.getLoc());
     const SmallVector<Location> afterLocs(newTypes.size(), whileOp.getLoc());
@@ -522,8 +522,8 @@ private:
     llvm::append_range(newConditionArgs,
                        newBefBlock->getArguments().drop_front(oldBefNumArgs));
 
-    rewriter.create<scf::ConditionOp>(
-        conditionOp.getLoc(), conditionOp.getCondition(), newConditionArgs);
+    scf::ConditionOp::create(rewriter, conditionOp.getLoc(),
+                             conditionOp.getCondition(), newConditionArgs);
     rewriter.eraseOp(conditionOp);
 
     // Replace the old yield operation with one that includes the new "after"
@@ -536,7 +536,7 @@ private:
     llvm::append_range(newYieldArgs,
                        newAftBlock->getArguments().drop_front(oldAftNumArgs));
 
-    rewriter.create<scf::YieldOp>(yieldOp.getLoc(), newYieldArgs);
+    scf::YieldOp::create(rewriter, yieldOp.getLoc(), newYieldArgs);
     rewriter.eraseOp(yieldOp);
 
     // Finally, replace the old while operation with the new one.
