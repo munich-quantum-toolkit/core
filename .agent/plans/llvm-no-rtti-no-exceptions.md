@@ -40,8 +40,8 @@ produce normal diagnostics instead of escaping as C++ exceptions.
 - [x] (2026-08-15 19:15Z) Marked only the confirmed compatibility boundaries and
       header-dependent MLIR tests as exception-enabled while keeping them
       RTTI-free with an RTTI-free LLVM installation.
-- [x] (2026-08-15 19:15Z) Added adapter and driver tests, and documented the
-      non-throwing target path.
+- [x] (2026-08-15 19:15Z) Added adapter tests, validated the driver paths, and
+      documented the non-throwing target path.
 - [x] (2026-08-15 19:15Z) Updated every repository LLVM and MLIR pin to 22.1.8;
       added the combined pull request reference after publication.
 - [x] (2026-08-15 19:20Z) Validated focused targets, the complete build and
@@ -51,6 +51,10 @@ produce normal diagnostics instead of escaping as C++ exceptions.
 - [x] (2026-08-15 19:40Z) Rebased onto merged PR #2054 and published draft PR
       #2125. Inspect all checks for the exact final head before handoff. A human
       performs the merge.
+- [x] (2026-08-16 08:05Z) Addressed the first human review. Restored MLIR plugin
+      support in `mqt-cc`, isolated the DDSIM device's static archive symbols,
+      removed the redundant driver subprocess test, and repeated the focused
+      adapter and driver checks.
 
 ## Surprises & Discoveries
 
@@ -71,9 +75,9 @@ produce normal diagnostics instead of escaping as C++ exceptions.
   statically linked LLVM symbols registers LLVM command-line options twice and
   aborts before QDMI can return an error. Evidence: the first Bell-program
   driver test reported
-  `Option 'bitcode-mdindex-threshold' registered more than once`. Removing
-  unused MLIR pass-plugin support and executable-symbol export from `mqt-cc`
-  isolates the two LLVM copies; the QDMI driver test then passed.
+  `Option 'bitcode-mdindex-threshold' registered more than once`. Hiding archive
+  symbols in the DDSIM shared device with the ELF linker's `--exclude-libs,ALL`
+  option isolates its LLVM copy while retaining plugin support in `mqt-cc`.
 - Observation: The fresh complete build confirmed the planned seven
   exception-enabled MLIR test executables without additions. Every ordinary MLIR
   compile command contains `-fno-exceptions -fno-rtti`; the two MLIR
@@ -128,11 +132,10 @@ produce normal diagnostics instead of escaping as C++ exceptions.
   Rationale: nanobind headers require both and form a language binding boundary,
   not part of the exception-free compiler driver. Date/Author: 2026-08-15 /
   Codex.
-- Decision: Do not advertise dynamic pass-plugin support from `mqt-cc`.
-  Rationale: The driver does not provide a pass-plugin interface, and exported
-  LLVM symbols interpose the LLVM registries in a loaded QDMI device. Keeping
-  executable symbols private makes QDMI device loading safe. Date/Author:
-  2026-08-15 / Codex.
+- Decision: Retain dynamic pass-plugin support in `mqt-cc` and hide symbols from
+  static dependencies in the DDSIM shared device on ELF platforms. Rationale:
+  the QDMI entry points remain exported, but the device's LLVM copy cannot
+  interpose the host's LLVM registries. Date/Author: 2026-08-16 / Codex.
 - Decision: Pin CI and upstream reusable workflows to commit
   `12b5111fd3bbfd5434765e51a8d49182d3e2d8e0` until the pending v2.2.3 release
   receives a tag. Rationale: v2.2.2 embeds setup-mlir v1.4.1 and cannot install
@@ -333,9 +336,10 @@ The full Sphinx session stopped before rendering native API documentation with:
 The combined C++ validation currently records:
 
     complete Release build against LLVM and MLIR 22.1.8: passed
-    100% tests passed out of 4382
+    100% tests passed out of 4381
     QDMI adapter tests: 8 passed
-    mqt-cc QIR and QDMI driver tests: 2 passed
+    mqt-cc QIR test: passed
+    mqt-cc QDMI listing, failure, and DDSIM compilation checks: passed manually
     exception-enabled MLIR test executables: exactly 7, all with -fno-rtti
 
 The supported Python sessions passed with these totals:
@@ -379,4 +383,5 @@ validating PR #2054. It supersedes the separate exception and RTTI plans for
 this implementation and records the narrowed QDMI adapter design. Updated the
 plan after the full 22.1.8 build to record the confirmed boundary list, the
 symbol-export loader failure, completed C++ and Python validation, and the final
-compile database audit.
+compile database audit. Updated the final design after review to retain plugin
+support and isolate the DDSIM device at the shared-library boundary.

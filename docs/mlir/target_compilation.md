@@ -94,12 +94,6 @@ if (!qco || !qco->compileForTarget(*target)) {
 }
 ```
 
-The ID factory and {code}`mlir::registeredQDMIDeviceIds` contain exceptions from
-the QDMI C++ client and return them as {code}`llvm::Error` values. This path is
-safe for an exception-free caller such as {code}`mqt-cc`. The lower-level
-{code}`mlir::compilerTargetFromDevice` overload provides the same error boundary
-for callers that already own a QDMI device.
-
 The adapter accepts circuit-model devices whose operations are available
 throughout the topology in both operand orientations. Operand-symmetric gates,
 such as CZ, may report each edge once. Neutral-atom zone models require a

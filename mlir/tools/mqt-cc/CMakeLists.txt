@@ -6,9 +6,8 @@
 #
 # Licensed under the MIT License
 
-# Keep statically linked LLVM and MLIR symbols private. Exporting them lets a loaded QDMI device
-# interpose LLVM's process-wide registries.
-add_mlir_tool(mqt-cc mqt-cc.cpp DEPENDS MQTCompilerPipeline MQTCompilerQDMIAdapter)
+# Build the compiler driver executable
+add_mlir_tool(mqt-cc mqt-cc.cpp DEPENDS MQTCompilerPipeline MQTCompilerQDMIAdapter SUPPORT_PLUGINS)
 if(BUILD_MQT_CORE_TESTS)
   # add_mlir_tool excludes tools when LLVM_BUILD_TOOLS is disabled. The driver tests require mqt-cc
   # in test-enabled default builds.
@@ -40,3 +39,4 @@ if(qdmi_device_targets)
 endif()
 
 mlir_check_all_link_libraries(mqt-cc)
+export_executable_symbols_for_plugins(mqt-cc)

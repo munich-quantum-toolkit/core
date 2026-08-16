@@ -25,6 +25,11 @@ if(NOT TARGET ${TARGET_NAME})
   # Add sources to target
   target_sources(${TARGET_NAME} PRIVATE Device.cpp)
   mqt_llvm_target_disable_rtti(${TARGET_NAME})
+  if(UNIX AND NOT APPLE)
+    # Keep symbols from static dependencies local. A plugin-enabled host can otherwise interpose
+    # LLVM's process-wide registries when it loads this device.
+    target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
+  endif()
 
   # Add headers using file sets
   target_sources(
