@@ -235,7 +235,7 @@ TEST_F(HybridStateTest, doMeasurementWithTwoResults) {
                               "{|0101> -> 1.00}: integerValue0 = 1; p = 0.30"));
 }
 
-TEST_F(HybridStateTest, doMeasurementWithNegClassicalCtrl) {
+TEST_F(HybridStateTest, doNotMeasureAsClassicalCtrlIsNegative) {
   auto hState = HybridState(fourQubits, 4, 0.6);
   constexpr auto v1 = mlir::Value();
   hState.addIntegerValue(v1, 0);
@@ -299,7 +299,7 @@ TEST_F(HybridStateTest, doResetWithTwoResults) {
                              "{|1000> -> 1.00}: integerValue0 = 0; p = 0.30"));
 }
 
-TEST_F(HybridStateTest, doResetWithNegClassicalCtrl) {
+TEST_F(HybridStateTest, doNotResetAsClassicalCtrlIsNegative) {
   auto hState = HybridState(fourQubits, 4, 0.6);
   constexpr auto v1 = mlir::Value();
   hState.addIntegerValue(v1, 0);
@@ -369,8 +369,8 @@ TEST_F(HybridStateTest, unifyTwoHybridStates) {
   auto hState2 = HybridState(vectorOneThree, 10, 0.5);
   hState2.propagateGate(hOp.getOperation(), vectorThree);
   hState2.propagateGate(xOp.getOperation(), vectorOne, vectorThree);
-  hState1.addIntegerValue(v2, 7);
-  hState1.addDoubleValue(v3, 4.2);
+  hState2.addIntegerValue(v2, 7);
+  hState2.addDoubleValue(v3, 4.2);
 
   const HybridState unified = hState1.unify(hState2);
   const auto resStr = unified.toString();
@@ -390,9 +390,9 @@ TEST_F(HybridStateTest, unifyHybridStatesOneWithoutQuantum) {
   hState1.propagateGate(hOp.getOperation(), vectorOne);
   hState1.addIntegerValue(v1, 4);
 
-  const auto hState2 = HybridState({}, 10, 0.5);
-  hState1.addIntegerValue(v2, 7);
-  hState1.addDoubleValue(v3, 4.2);
+  auto hState2 = HybridState({}, 10, 0.5);
+  hState2.addIntegerValue(v2, 7);
+  hState2.addDoubleValue(v3, 4.2);
 
   const HybridState unified = hState1.unify(hState2);
   const auto resStr = unified.toString();
@@ -409,9 +409,9 @@ TEST_F(HybridStateTest, unifyHybridStatesWithoutQuantum) {
   auto hState1 = HybridState({}, 10, 0.8);
   hState1.addIntegerValue(v1, 4);
 
-  const auto hState2 = HybridState({}, 10, 0.5);
-  hState1.addIntegerValue(v2, 7);
-  hState1.addDoubleValue(v3, 4.2);
+  auto hState2 = HybridState({}, 10, 0.5);
+  hState2.addIntegerValue(v2, 7);
+  hState2.addDoubleValue(v3, 4.2);
 
   const HybridState unified = hState1.unify(hState2);
   const auto resStr = unified.toString();
