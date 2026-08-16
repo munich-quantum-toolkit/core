@@ -168,10 +168,10 @@ class UnionTable {
     // Check if the number of entries would be too large
     unsigned int numberOfNewEntries = 1;
     for (const auto& e : entriesToUnify) {
+      if (numberOfNewEntries > maximumHybridEntries / e.states.size()) {
+        throw std::domain_error("Maximum of allowed hybrid entries exceeded.");
+      }
       numberOfNewEntries *= e.states.size();
-    }
-    if (numberOfNewEntries > maximumHybridEntries) {
-      throw std::domain_error("Maximum of allowed hybrid entries exceeded.");
     }
 
     // Create new entry
