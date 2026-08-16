@@ -49,9 +49,12 @@ QuantumState::QuantumState(const std::span<unsigned int> globalQubitNumber,
         "Number of maximum nonzero amplitudes exceeds "
         "amount of amplitudes that can be managed in the union table.");
   }
-  std::ranges::sort(globalQubitNumber);
+  std::vector<unsigned int> qubits;
+  qubits.reserve(globalQubitNumber.size());
+  std::ranges::copy(globalQubitNumber, std::back_inserter(qubits));
+  std::ranges::sort(qubits);
   unsigned int localQ = 0;
-  for (auto globalQ : globalQubitNumber) {
+  for (auto globalQ : qubits) {
     globalToLocalQubitNumber[globalQ] = localQ;
     ++localQ;
   }
