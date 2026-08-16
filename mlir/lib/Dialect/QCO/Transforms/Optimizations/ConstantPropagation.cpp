@@ -593,8 +593,9 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
     for (unsigned int inputQubitIndex = 0;
          inputQubitIndex < op->getQubits().size(); ++inputQubitIndex) {
-      rewriter.replaceAllUsesWith(op->getResults()[order.at(inputQubitIndex)],
-                                  op->getQubits()[inputQubitIndex]);
+      rewriter.replaceAllUsesWith(
+          op->getLinearResults()[order.at(inputQubitIndex)],
+          op->getQubits()[inputQubitIndex]);
     }
 
     std::vector<Value> inputQubitVec = {op->getQubits().begin(),
@@ -871,7 +872,7 @@ static WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
   const auto arguments = op->getRegion().getArguments();
   for (unsigned int argIndex = 0; argIndex < arguments.size(); ++argIndex) {
     for (unsigned int i = 0; i < numTargets; ++i) {
-      if (arguments[i] == body.getInputTarget(i)) {
+      if (arguments[argIndex] == body.getInputTarget(i)) {
         targetQubits.insert(targetQubits.begin() + i,
                             op->getInputTarget(argIndex));
         break;
@@ -1074,11 +1075,17 @@ static LogicalResult applyCP(ModuleOp module, MLIRContext* ctx,
   /// Prepare work-list.
   std::vector<Operation*> worklist;
 
+  bool entryPointFound = false;
   for (const auto func : module.getOps<func::FuncOp>()) {
 
     if (!isEntryPoint(func)) {
       continue; // Ignore non entry_point functions for now.
     }
+    if (entryPointFound) {
+      throw std::domain_error("Constant propagation does not support programs "
+                              "with more than one entry point.");
+    }
+    entryPointFound = true;
     func->walk<WalkOrder::PreOrder>(
         [&](Operation* op) { worklist.push_back(op); });
   }
