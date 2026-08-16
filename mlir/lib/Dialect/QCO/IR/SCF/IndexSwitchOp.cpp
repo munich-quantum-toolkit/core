@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "RegionBranchCompat.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
@@ -68,12 +69,14 @@ void IndexSwitchOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 void IndexSwitchOp::getSuccessorRegions(
     RegionBranchPoint point, SmallVectorImpl<RegionSuccessor>& regions) {
   if (!point.isParent()) {
-    regions.emplace_back(getOperation(), getResults());
+    regions.push_back(
+        detail::makeRegionSuccessor(getOperation(), getResults()));
     return;
   }
 
   for (Region* region : getRegions()) {
-    regions.emplace_back(region, region->getArguments());
+    regions.push_back(
+        detail::makeRegionSuccessor(region, region->getArguments()));
   }
 }
 
@@ -113,7 +116,8 @@ void IndexSwitchOp::getEntrySuccessorRegions(
   auto arg = dyn_cast_or_null<IntegerAttr>(adaptor.getArg());
   if (!arg) {
     for (Region* region : getRegions()) {
-      regions.emplace_back(region, region->getArguments());
+      regions.push_back(
+          detail::makeRegionSuccessor(region, region->getArguments()));
     }
     return;
   }
@@ -123,14 +127,22 @@ void IndexSwitchOp::getEntrySuccessorRegions(
 
   const auto* it = llvm::find(getCases(), arg.getInt());
   if (it == getCases().end()) {
-    regions.emplace_back(&getDefaultRegion(),
-                         getDefaultRegion().getArguments());
+    regions.push_back(detail::makeRegionSuccessor(
+        &getDefaultRegion(), getDefaultRegion().getArguments()));
     return;
   }
 
   const auto caseIndex = std::distance(getCases().begin(), it);
   auto& caseRegion = getCaseRegions()[caseIndex];
-  regions.emplace_back(&caseRegion, caseRegion.getArguments());
+  regions.push_back(
+      detail::makeRegionSuccessor(&caseRegion, caseRegion.getArguments()));
+}
+
+ValueRange IndexSwitchOp::getSuccessorInputs(RegionSuccessor successor) {
+  if (detail::isOperationSuccessor(successor)) {
+    return getResults();
+  }
+  return successor.getSuccessor()->getArguments();
 }
 
 OperandRange

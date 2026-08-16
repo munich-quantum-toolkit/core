@@ -250,20 +250,23 @@ Value QCOProgramBuilder::prepareInitArg(Value initArg,
 
   validateTensorValue(initArg);
   const auto regId = validTensors.find(initArg)->regId;
-  auto currentTensor = initArg;
-  for (auto it = validQubits.begin(); it != validQubits.end();) {
-    const auto& qubit = *it;
+
+  SmallVector<Qubit> qubitsToInsert;
+  for (const auto& qubit : validQubits) {
     if (qubit.regId == regId &&
         (initQubits == nullptr || !initQubits->contains(qubit))) {
-      auto newTensor =
-          qtensor::InsertOp::create(*this, qubit, currentTensor, qubit.regIndex)
-              .getResult();
-      updateTensorTracking(currentTensor, newTensor);
-      currentTensor = newTensor;
-      validQubits.erase(it++);
-    } else {
-      ++it;
+      qubitsToInsert.push_back(qubit);
     }
+  }
+
+  auto currentTensor = initArg;
+  for (const auto& qubit : qubitsToInsert) {
+    auto newTensor =
+        qtensor::InsertOp::create(*this, qubit, currentTensor, qubit.regIndex)
+            .getResult();
+    updateTensorTracking(currentTensor, newTensor);
+    currentTensor = newTensor;
+    validQubits.erase(qubit);
   }
   return currentTensor;
 }

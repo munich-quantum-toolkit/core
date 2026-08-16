@@ -688,6 +688,11 @@ TEST_F(QCOTest, IfOpWithClassicalResultRoundTripsAndPreservesTies) {
   EXPECT_EQ(ifOp.getTiedElseYieldedValue(ifOp.thenBlock()->getArgument(0)),
             nullptr);
 
+  SmallVector<RegionSuccessor> successors;
+  ifOp.getSuccessorRegions(RegionBranchPoint(ifOp.thenYield()), successors);
+  ASSERT_EQ(successors.size(), 1);
+  EXPECT_EQ(ifOp.getSuccessorInputs(successors.front()), ifOp.getResults());
+
   std::string printed;
   llvm::raw_string_ostream stream(printed);
   module->print(stream);
@@ -1007,10 +1012,17 @@ TEST_F(QCOTest, IndexSwitchWithClassicalResultRoundTripsAndPreservesTies) {
   switchOp.getEntrySuccessorRegions(operands, successors);
   ASSERT_EQ(successors.size(), 2);
   for (const RegionSuccessor successor : successors) {
-    ASSERT_EQ(successor.getSuccessorInputs().size(), 1);
+    ASSERT_EQ(switchOp.getSuccessorInputs(successor).size(), 1);
     EXPECT_EQ(switchOp.getEntrySuccessorOperands(successor).front(),
               switchOp.getTargets().front());
   }
+
+  successors.clear();
+  switchOp.getSuccessorRegions(RegionBranchPoint(switchOp.getCaseYield(0)),
+                               successors);
+  ASSERT_EQ(successors.size(), 1);
+  EXPECT_EQ(switchOp.getSuccessorInputs(successors.front()),
+            switchOp.getResults());
 
   std::string printed;
   llvm::raw_string_ostream stream(printed);

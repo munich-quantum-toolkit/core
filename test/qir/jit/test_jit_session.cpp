@@ -193,8 +193,8 @@ define i64 @native_controls() #0 {
   call void @__quantum__rt__initialize(ptr null)
   call void @__quantum__qis__x__body(ptr null)
   call void @__quantum__qis__x__body(ptr inttoptr (i64 1 to ptr))
-  call void @__quantum__qis__crx__body(double 0x400921FB54442D18, ptr null, ptr inttoptr (i64 2 to ptr))
-  call void @__quantum__qis__ccrx__body(double 0x400921FB54442D18, ptr null, ptr inttoptr (i64 1 to ptr), ptr inttoptr (i64 3 to ptr))
+  call void @__quantum__qis__crx__body(double 3.141592653589793, ptr null, ptr inttoptr (i64 2 to ptr))
+  call void @__quantum__qis__ccrx__body(double 3.141592653589793, ptr null, ptr inttoptr (i64 1 to ptr), ptr inttoptr (i64 3 to ptr))
   call void @__quantum__qis__mz__body(ptr inttoptr (i64 2 to ptr), ptr null)
   call void @__quantum__qis__mz__body(ptr inttoptr (i64 3 to ptr), ptr inttoptr (i64 1 to ptr))
   call void @__quantum__rt__result_record_output(ptr null, ptr null)
@@ -250,7 +250,7 @@ define i64 @generic_controlled() #0 {
   %args = call ptr @__quantum__rt__tuple_create(i64 16)
   %angle_slot = getelementptr { double, ptr }, ptr %args, i32 0, i32 0
   %target_slot = getelementptr { double, ptr }, ptr %args, i32 0, i32 1
-  store double 0x400921FB54442D18, ptr %angle_slot
+  store double 3.141592653589793, ptr %angle_slot
   store ptr %target, ptr %target_slot
   call void @__quantum__qis__x__body(ptr %control0)
   call void @__quantum__qis__x__body(ptr %control1)
@@ -292,7 +292,7 @@ attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
 TEST_F(JitSessionTest, RejectsQirRunnerPauliRotationAbi) {
   constexpr std::string_view ir = R"(
 define i64 @pauli_rotation() #0 {
-  call void @__quantum__qis__r__body(i2 1, double 0x400921FB54442D18, ptr null)
+  call void @__quantum__qis__r__body(i2 1, double 3.141592653589793, ptr null)
   ret i64 0
 }
 declare void @__quantum__qis__r__body(i2, double, ptr)
