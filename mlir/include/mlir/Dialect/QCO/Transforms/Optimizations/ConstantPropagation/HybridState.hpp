@@ -8,8 +8,7 @@
  * Licensed under the MIT License
  */
 
-#ifndef MQT_CORE_HYBRIDSTATE_H
-#define MQT_CORE_HYBRIDSTATE_H
+#pragma once
 
 #include "QuantumState.hpp"
 
@@ -69,7 +68,7 @@ class HybridState {
         return false;
       }
       if (doubleValues.contains(negCtrl) &&
-          std::norm(doubleValues.at(negCtrl)) > 1e-4) {
+          std::norm(doubleValues.at(negCtrl)) >= 1e-4) {
         return false;
       }
       if (!doubleValues.contains(negCtrl) && !integerValues.contains(negCtrl)) {
@@ -318,5 +317,3 @@ public:
   getValueThatIsEquivalentToQubit(unsigned int qubit) const;
 };
 } // namespace mlir::qco
-
-#endif // MQT_CORE_HYBRIDSTATE_H
