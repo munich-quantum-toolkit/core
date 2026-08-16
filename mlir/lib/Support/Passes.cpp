@@ -57,11 +57,19 @@ void registerMQTCompilerPasses() {
     qco::registerQuantumLoopUnroll();
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
+    qco::registerContextSensitiveSpecialization();
+    qco::registerQuantumArgumentPromotion();
+    qco::registerAuxiliaryQubitHoisting();
+    qco::registerQuantumFunctionBoundaryCommutation();
     mqt::registerNormalizeGlobalPhases();
     mqt::registerUnrollModifiers();
     PassPipelineRegistration<>("mqt-qco-default",
                                "Run the default MQT QCO optimization pipeline.",
                                populateDefaultQCOOptimizationPipeline);
+    PassPipelineRegistration<>(
+        "quantum-ipo",
+        "Run the interprocedural optimizations across function boundaries.",
+        populateQuantumIPOPipeline);
     PassPipelineRegistration<>(
         "mqt-qubit-reuse",
         "Prepare a QCO program for qubit reuse and reuse eligible qubits.",
@@ -79,6 +87,15 @@ void populateQubitReusePipeline(OpPassManager& pm) {
   pm.addPass(qco::createMeasurementLifting());
   pm.addPass(qco::createReplaceClassicalControls());
   pm.addPass(qco::createReuseQubits());
+}
+
+void populateQuantumIPOPipeline(OpPassManager& pm) {
+  pm.addPass(qco::createContextSensitiveSpecialization());
+  pm.addPass(qco::createQuantumArgumentPromotion());
+  pm.addPass(qco::createAuxiliaryQubitHoisting());
+  // Commutation can expose further cancellations, so it runs twice.
+  pm.addPass(qco::createQuantumFunctionBoundaryCommutation());
+  pm.addPass(qco::createQuantumFunctionBoundaryCommutation());
 }
 
 bool isDecomposeMultiControlledConfigValid(const uint64_t minQubits) {

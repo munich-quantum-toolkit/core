@@ -286,6 +286,117 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       "Register index is out of bounds");
 }
 
+TEST_F(QCOTest, BuilderRejectsMisuseOfAdditionalFunctions) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        builder.startFunction("f", {qubitType}, {qubitType});
+        builder.startFunction("g", {qubitType}, {qubitType});
+      },
+      "Cannot start a function while another one is being built");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.endFunction({});
+      },
+      "endFunction\\(\\) called without a matching startFunction\\(\\)");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.call("does_not_exist", {});
+      },
+      "Callee not found in module");
+}
+
+TEST_F(QCOTest, BuilderRejectsSignatureMismatchesOnAdditionalFunctions) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        const auto args = builder.startFunction("f", {qubitType}, {qubitType});
+        Value bit;
+        auto qubit = args[0];
+        std::tie(qubit, bit) = builder.measure(qubit);
+        builder.sink(qubit);
+        // The function promises a qubit but hands back the measurement outcome.
+        builder.endFunction({bit});
+      },
+      "Return values do not match the declared function result types");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        const auto args = builder.startFunction("f", {qubitType}, {qubitType});
+        builder.endFunction({args[0]});
+        // The callee expects a qubit, not a float.
+        builder.call("f", {builder.floatConstant(0.5)});
+      },
+      "Call operands do not match the declared function argument types");
+}
+
+TEST_F(QCOTest, BuilderRejectsUsingOuterQubitInsideFunction) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto outer = builder.allocQubit();
+        const auto qubitType = builder.getQubitType();
+        builder.startFunction("f", {qubitType}, {qubitType});
+        // `outer` belongs to `main`; a callee cannot reference it.
+        builder.h(outer);
+      },
+      "Invalid qubit value used");
+}
+
+TEST_F(QCOTest, BuilderRejectsUsingOuterTensorInsideFunction) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto outer = builder.qtensorAlloc(2);
+        const auto qubitType = builder.getQubitType();
+        builder.startFunction("f", {qubitType}, {qubitType});
+        // `outer` belongs to `main`; a callee cannot reference it.
+        builder.qtensorExtract(outer, 0);
+      },
+      "Invalid tensor value used");
+}
+
+TEST_F(QCOTest, BuilderRejectsLinearValuesLeakingOutOfFunctions) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        const auto args = builder.startFunction("f", {qubitType}, {qubitType});
+        // The freshly allocated qubit is neither returned nor sunk.
+        builder.allocQubit();
+        builder.endFunction({args[0]});
+      },
+      "neither returned nor consumed");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        const auto args = builder.startFunction("f", {qubitType}, {qubitType});
+        // The freshly allocated register is neither returned nor deallocated.
+        builder.qtensorAlloc(2);
+        builder.endFunction({args[0]});
+      },
+      "neither returned nor deallocated");
+}
+
 TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();

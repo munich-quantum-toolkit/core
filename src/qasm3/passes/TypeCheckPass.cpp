@@ -166,6 +166,12 @@ void TypeCheckPass::visitAssignmentStatement(
     return;
   }
 
+  if (exprTy.isError) {
+    // The right-hand side could not be typed; it carries no usable type and
+    // the failure has already been reported.
+    return;
+  }
+
   if (!idTy->second.type->fits(*exprTy.type)) {
     std::stringstream ss;
     ss << "Type mismatch in assignment. Expected '";
@@ -375,7 +381,17 @@ InferredType TypeCheckPass::visitMeasureExpression(
     error("Unknown identifier '" + indexedIdentifier->identifier + "'.");
     return InferredType::error();
   }
-  const auto width = it->second.type->getDesignator();
+  uint64_t width = 0;
+  const auto type = it->second.type;
+  if (type->allowsDesignator()) {
+    width = type->getDesignator();
+  } else {
+    const auto unsized = std::dynamic_pointer_cast<UnsizedType<uint64_t>>(type);
+    if (!unsized || unsized->type != qasm3::SingleQubit) {
+      return error("Cannot measure non-qubit type.");
+    }
+    width = 1;
+  }
   return InferredType{std::dynamic_pointer_cast<ResolvedType>(
       DesignatedType<uint64_t>::getBitTy(width))};
 }

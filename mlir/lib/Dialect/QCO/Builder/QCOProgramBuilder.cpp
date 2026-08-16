@@ -34,10 +34,12 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -1387,6 +1389,216 @@ QCOProgramBuilder::scfCondition(Value reg,
   auto indexValue = variantToValue(*this, getLoc(), index);
   auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
   return scfCondition(condition, yieldedValues);
+}
+
+//===----------------------------------------------------------------------===//
+// Additional Functions
+//===----------------------------------------------------------------------===//
+
+Type QCOProgramBuilder::getQubitType() { return QubitType::get(ctx); }
+
+Type QCOProgramBuilder::getQubitTensorType(const int64_t size) {
+  if (size <= 0) {
+    llvm::reportFatalUsageError("Size must be positive");
+  }
+  return RankedTensorType::get({size}, getQubitType());
+}
+
+bool QCOProgramBuilder::isQubitTensor(Type type) {
+  const auto tensorType = dyn_cast<RankedTensorType>(type);
+  return tensorType && isa<QubitType>(tensorType.getElementType());
+}
+
+SmallVector<Value> QCOProgramBuilder::startFunction(StringRef name,
+                                                    TypeRange argTypes,
+                                                    TypeRange resultTypes) {
+  checkFinalized();
+
+  if (SymbolTable::lookupSymbolIn(module, name) != nullptr) {
+    llvm::reportFatalUsageError("Function with the same name already exists");
+  }
+
+  if (functionScope.has_value()) {
+    llvm::reportFatalUsageError(
+        "Cannot start a function while another one is being built");
+  }
+
+  // Take the surrounding scope's linear values out of tracking for the duration
+  // of the function. A callee cannot legally use a caller's SSA value, so they
+  // must not validate while its body is being built.
+  FunctionScope scope{
+      .savedInsertPoint = saveInsertionPoint(),
+      .outerQubits = SmallVector<Qubit>(validQubits.begin(), validQubits.end()),
+      .outerTensors =
+          SmallVector<Tensor>(validTensors.begin(), validTensors.end())};
+  validQubits.clear();
+  validTensors.clear();
+
+  setInsertionPointToEnd(cast<ModuleOp>(module).getBody());
+  auto funcOp =
+      func::FuncOp::create(*this, name, getFunctionType(argTypes, resultTypes));
+  // The interprocedural passes only consider functions that are not externally
+  // visible, so additional functions are private by default.
+  funcOp.setPrivate();
+
+  auto& entryBlock = funcOp.getBody().emplaceBlock();
+  const SmallVector<Location> locs(argTypes.size(), getLoc());
+  entryBlock.addArguments(argTypes, locs);
+  setInsertionPointToStart(&entryBlock);
+
+  SmallVector<Value> args;
+  for (const auto arg : entryBlock.getArguments()) {
+    if (isa<QubitType>(arg.getType())) {
+      validQubits.insert(arg);
+    } else if (isQubitTensor(arg.getType())) {
+      // A tensor argument acts like a register the callee owns for the
+      // duration of the call, so give it its own register id.
+      validTensors.insert(Tensor{arg, tensorCounter++});
+    }
+    args.emplace_back(arg);
+  }
+
+  functionScope = std::move(scope);
+  return args;
+}
+
+void QCOProgramBuilder::endFunction(ValueRange returnValues) {
+  checkFinalized();
+
+  if (!functionScope.has_value()) {
+    llvm::reportFatalUsageError(
+        "endFunction() called without a matching startFunction()");
+  }
+
+  auto funcOp = cast<func::FuncOp>(getInsertionBlock()->getParentOp());
+  if (!llvm::equal(returnValues.getTypes(), funcOp.getResultTypes())) {
+    llvm::reportFatalUsageError(
+        "Return values do not match the declared function result types");
+  }
+
+  for (const auto value : returnValues) {
+    if (isa<QubitType>(value.getType())) {
+      validateQubitValue(value);
+      validQubits.erase(value);
+    } else if (isQubitTensor(value.getType())) {
+      validateTensorValue(value);
+      validTensors.erase(value);
+    }
+  }
+
+  // Only values created inside the function are tracked at this point, so
+  // anything left over has escaped.
+  if (!validQubits.empty()) {
+    llvm::reportFatalUsageError(
+        "Function body has qubit values that are neither returned nor "
+        "consumed");
+  }
+  if (!validTensors.empty()) {
+    llvm::reportFatalUsageError(
+        "Function body has tensor values that are neither returned nor "
+        "deallocated");
+  }
+
+  // Hand the surrounding scope its linear values back.
+  for (const auto& qubit : functionScope->outerQubits) {
+    validQubits.insert(qubit);
+  }
+  for (const auto& tensor : functionScope->outerTensors) {
+    validTensors.insert(tensor);
+  }
+
+  func::ReturnOp::create(*this, returnValues);
+
+  restoreInsertionPoint(functionScope->savedInsertPoint);
+  functionScope.reset();
+}
+
+SmallVector<Value> QCOProgramBuilder::call(StringRef callee,
+                                           ValueRange operands) {
+  checkFinalized();
+
+  auto funcOp = dyn_cast_or_null<func::FuncOp>(
+      SymbolTable::lookupSymbolIn(module, getStringAttr(callee)));
+  if (!funcOp) {
+    llvm::reportFatalUsageError("Callee not found in module");
+  }
+
+  if (!llvm::equal(operands.getTypes(), funcOp.getArgumentTypes())) {
+    llvm::reportFatalUsageError(
+        "Call operands do not match the declared function argument types");
+  }
+
+  // Re-insert qubits that were extracted from a tensor operand, so the callee
+  // receives a complete register. Every other construct that hands a tensor to
+  // a nested region does the same before building it. Unlike those, a call may
+  // also carry classical operands, so `prepareInitArgs` cannot be used here;
+  // qubits passed alongside their tensor are excluded from the re-insertion.
+  DenseSet<Value> qubitOperandSet;
+  for (const auto operand : operands) {
+    if (isa<QubitType>(operand.getType())) {
+      qubitOperandSet.insert(operand);
+    }
+  }
+  SmallVector<Value> preparedOperands;
+  preparedOperands.reserve(operands.size());
+  for (const auto operand : operands) {
+    preparedOperands.emplace_back(
+        isQubitTensor(operand.getType())
+            ? prepareInitArg(operand, &qubitOperandSet)
+            : operand);
+  }
+
+  SmallVector<Value> qubitOperands;
+  SmallVector<Value> tensorOperands;
+  for (const auto operand : preparedOperands) {
+    if (isa<QubitType>(operand.getType())) {
+      validateQubitValue(operand);
+      qubitOperands.emplace_back(operand);
+    } else if (isQubitTensor(operand.getType())) {
+      validateTensorValue(operand);
+      tensorOperands.emplace_back(operand);
+    }
+  }
+
+  auto callOp = func::CallOp::create(*this, funcOp, preparedOperands);
+
+  SmallVector<Value> qubitResults;
+  SmallVector<Value> tensorResults;
+  for (const auto result : callOp.getResults()) {
+    if (isa<QubitType>(result.getType())) {
+      qubitResults.emplace_back(result);
+    } else if (isQubitTensor(result.getType())) {
+      tensorResults.emplace_back(result);
+    }
+  }
+
+  // Thread the i-th linear operand into the i-th linear result of the same
+  // kind. Any operand without a matching result is consumed by the call, any
+  // result without a matching operand is newly created by it.
+  const auto pairedQubits = std::min(qubitOperands.size(), qubitResults.size());
+  for (size_t i = 0; i < pairedQubits; ++i) {
+    updateQubitTracking(qubitOperands[i], qubitResults[i]);
+  }
+  for (size_t i = pairedQubits; i < qubitOperands.size(); ++i) {
+    validQubits.erase(qubitOperands[i]);
+  }
+  for (size_t i = pairedQubits; i < qubitResults.size(); ++i) {
+    validQubits.insert(qubitResults[i]);
+  }
+
+  const auto pairedTensors =
+      std::min(tensorOperands.size(), tensorResults.size());
+  for (size_t i = 0; i < pairedTensors; ++i) {
+    updateTensorTracking(tensorOperands[i], tensorResults[i]);
+  }
+  for (size_t i = pairedTensors; i < tensorOperands.size(); ++i) {
+    validTensors.erase(tensorOperands[i]);
+  }
+  for (size_t i = pairedTensors; i < tensorResults.size(); ++i) {
+    validTensors.insert(Tensor{tensorResults[i], tensorCounter++});
+  }
+
+  return SmallVector<Value>(callOp.getResults());
 }
 
 //===----------------------------------------------------------------------===//

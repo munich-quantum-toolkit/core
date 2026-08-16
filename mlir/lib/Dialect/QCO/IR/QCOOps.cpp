@@ -22,6 +22,7 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/InliningUtils.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -480,6 +481,35 @@ void IndexSwitchOp::print(OpAsmPrinter& p) {
 
 #include "mlir/Dialect/QCO/IR/QCOOpsDialect.cpp.inc"
 
+namespace {
+// Define the opt-in rules for inlining the QCO dialect
+struct QCOInlinerInterface : public mlir::DialectInlinerInterface {
+  using DialectInlinerInterface::DialectInlinerInterface;
+
+  // Tell MLIR that any operation from the QCO dialect can be inlined
+  bool isLegalToInline(mlir::Operation* /*op*/, mlir::Region* /*dest*/,
+                       bool /*wouldBeCloned*/,
+                       mlir::IRMapping& /*valueMapping*/) const override {
+    return true;
+  }
+
+  // Tell MLIR that regions (like the inside of loops/ifs) in the QCO dialect
+  // can be inlined
+  bool isLegalToInline(mlir::Region* /*dest*/, mlir::Region* /*src*/,
+                       bool /*wouldBeCloned*/,
+                       mlir::IRMapping& /*valueMapping*/) const override {
+    return true;
+  }
+
+  // Tell MLIR that it's safe to inline calls to functions containing QCO
+  // operations
+  bool isLegalToInline(mlir::Operation* /*call*/, mlir::Operation* /*callable*/,
+                       bool /*wouldBeCloned*/) const override {
+    return true;
+  }
+};
+} // namespace
+
 void QCODialect::initialize() {
   // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   addTypes<
@@ -493,6 +523,8 @@ void QCODialect::initialize() {
 #include "mlir/Dialect/QCO/IR/QCOOps.cpp.inc"
 
       >();
+
+  addInterface<QCOInlinerInterface>();
 }
 
 //===----------------------------------------------------------------------===//

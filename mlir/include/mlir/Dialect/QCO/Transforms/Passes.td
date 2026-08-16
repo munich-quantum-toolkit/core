@@ -306,6 +306,91 @@ def ReuseQubits : Pass<"reuse-qubits", "mlir::ModuleOp"> {
   }];
 }
 
+def ContextSensitiveSpecialization
+    : Pass<"quantum-context-sensitive-specialization", "mlir::ModuleOp"> {
+  let summary = "Specialize callees for what is known at their call sites";
+  let description = [{
+        Redirects a `func.call` to a specialized copy of its callee whenever the
+        call site pins down something the callee can exploit:
+
+        - a qubit argument known to be in the |0> state, which lets operations
+          that fix |0> be dropped;
+        - a qubit argument known to be in the |+> state, which lets an `x` be
+          dropped;
+        - a compile-time constant rotation angle from a small distinguished set,
+          which is folded into the copy.
+
+        Copies are shared between call sites with the same context. A callee
+        left without callers is erased, but only when this pass created the
+        situation; unrelated unused functions are left alone.
+    }];
+
+  let dependentDialects = ["::mlir::func::FuncDialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::qtensor::QTensorDialect",
+                           "mlir::qco::QCODialect"];
+}
+
+def QuantumArgumentPromotion
+    : Pass<"quantum-argument-promotion", "mlir::ModuleOp"> {
+  let summary = "Replace qubit-tensor arguments by the qubits a callee uses";
+  let description = [{
+        A tensor argument whose elements are taken out and put back at
+        compile-time constant indices is split into one qubit argument and one
+        qubit result per touched element, so untouched elements never cross the
+        call boundary. Call sites extract before and re-insert after the call.
+
+        The callee has to hand the tensor back as its first result, every
+        reference to it has to be a direct call, and elements taken out but
+        never put back prevent promotion.
+    }];
+
+  let dependentDialects = ["::mlir::func::FuncDialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::qtensor::QTensorDialect",
+                           "mlir::qco::QCODialect"];
+}
+
+def AuxiliaryQubitHoisting
+    : Pass<"quantum-auxiliary-qubit-hoisting", "mlir::ModuleOp"> {
+  let summary = "Turn callee-internal qubits into arguments";
+  let description = [{
+        A qubit that a callee allocates and releases itself becomes an extra
+        argument, and its release point becomes a `qco.reset` handed back as an
+        extra result. The caller then owns the allocation and can reuse one
+        qubit across several calls.
+
+        Externally visible functions, declarations, recursive functions, and
+        functions with more than one block are left alone, as are allocations
+        nested inside a region.
+    }];
+
+  let dependentDialects = ["::mlir::func::FuncDialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::qtensor::QTensorDialect",
+                           "mlir::qco::QCODialect"];
+}
+
+def QuantumFunctionBoundaryCommutation
+    : Pass<"quantum-function-boundary-commutation", "mlir::ModuleOp"> {
+  let summary = "Cancel self-inverse gates across a call boundary";
+  let description = [{
+        When the operation producing a qubit argument and the first operation
+        applied to it inside the callee are the same self-inverse single-qubit
+        gate, both are removed and the call is redirected to a copy of the
+        callee without the callee-side gate.
+
+        Copies are cached per callee and per parameter, because the gate removed
+        inside belongs to one specific argument. Running the pass repeatedly can
+        expose further cancellations.
+    }];
+
+  let dependentDialects = ["::mlir::func::FuncDialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::qtensor::QTensorDialect",
+                           "mlir::qco::QCODialect"];
+}
+
 //===----------------------------------------------------------------------===//
 // Decomposition Passes
 //===----------------------------------------------------------------------===//
