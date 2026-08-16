@@ -89,8 +89,8 @@ std::string HybridState::toString() const {
 }
 
 bool HybridState::operator==(const HybridState& that) const {
-  if (top) {
-    return that.top;
+  if (top || that.top) {
+    return top == that.top;
   }
   if (std::fabs(probability - that.probability) > 1e-4 ||
       *qState.get() != *that.qState.get()) {
