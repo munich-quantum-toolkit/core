@@ -50,8 +50,6 @@ if(TARGET MQT::CoreQDMIDriver)
   file(READ "${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json" custom_sc_json)
   string(REPLACE "MQT SC Default QDMI Device" "Custom SC Driver Device" custom_sc_json
                  "${custom_sc_json}")
-  # Only override values that leave the schema valid. Reducing numQubits would orphan the per-qubit
-  # overrides that the SC schema validates against the qubit count.
   string(REPLACE "\"duration\": 20" "\"duration\": 77" custom_sc_json "${custom_sc_json}")
   set(custom_sc_file "${CMAKE_CURRENT_BINARY_DIR}/custom-sc-device.json")
   file(WRITE "${custom_sc_file}" "${custom_sc_json}")
