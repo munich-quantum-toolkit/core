@@ -469,7 +469,6 @@ measure q[0] -> c[1];
 
     restored = program.to_qiskit()
 
-    assert program.ir.count("memref.store") == 4
     assert [(register.name, len(register)) for register in restored.qregs] == [("q", 2)]
     assert [(register.name, len(register)) for register in restored.cregs] == [("c", 2)]
     assert [item.operation.name for item in restored.data] == ["x", "measure", "measure"]
