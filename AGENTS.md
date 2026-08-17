@@ -29,9 +29,8 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - Follow the patterns in neighboring files and prefer the smallest change that
   fully solves the problem.
 - Write code comments, documentation, tests, changelog entries, and public text
-  for the final design. Do not preserve prompts, review chronology, former
-  names, or abandoned approaches unless they remain necessary user-facing
-  context.
+  for the final design. Never preserve prompts, review chronology, former names,
+  or abandoned approaches unless they remain necessary user-facing context.
 - Apply
   [Orwell's six rules for writing](https://www.orwellfoundation.com/the-orwell-foundation/orwell/essays-and-other-works/politics-and-the-english-language/)
   to every category of prose, including reasoning, descriptions, commit
@@ -47,25 +46,25 @@ MQT Core. The project-wide policy for AI-assisted contributions is
   6. Break a rule before it makes the text unclear, incorrect, or needlessly
      difficult to read.
 
-  Also apply the relevant principles of
+- Apply the relevant principles of
   [ASD-STE100 Simplified Technical English](https://www.asd-ste100.org/): use
   short, direct sentences; give each sentence one main idea; use one term for
-  one meaning; and use explicit nouns instead of vague pronouns. Treat these as
-  mandatory style rules, not as a claim of formal ASD-STE100 compliance.
+  one meaning; and use explicit nouns instead of vague pronouns. These are
+  mandatory style rules, not a claim of formal ASD-STE100 compliance.
 - Base terminology and phrasing on repository usage and established precedents
   in the quantum computing, LLVM/MLIR and compiler, high-performance computing,
   and general computer science communities. Use the established term that most
   precisely matches the concept. If communities use different terms, explain the
-  mapping once. Do not invent synonyms for variety.
-- Add tests that protect intended behavior or reproduce a concrete regression.
-  Do not test provisional implementation choices that are not part of the
-  supported contract.
-- Remove obsolete scaffolding and diagnostic suppressions before handoff. Keep a
-  workaround or suppression only when it is still necessary, scope it as
-  narrowly as possible, and document the technical reason.
+  mapping once. Never invent synonyms for variety.
+- Preserve the established capitalization of project and dependency names in
+  prose. For example, write `jeff` for the exchange format and `jeff-mlir` for
+  the related MLIR project.
 - Add or update automated tests for every behavioral code change. During
   development, run the narrowest relevant test first, then the required lint
   checks before handoff.
+- Add tests that protect intended behavior or reproduce a concrete regression.
+  Never test provisional implementation choices that are not part of the
+  supported contract.
 - Place tests in the corresponding test tree, organized by the subsystem that
   owns the behavior. Within MLIR, keep tests under `mlir/unittests/` or another
   established test root; never place them under `mlir/tools/` or another
@@ -74,6 +73,9 @@ MQT Core. The project-wide policy for AI-assisted contributions is
   CLI behavior. Normal test targets and dependencies belong in the test build;
   avoid promoting an otherwise optional production tool into the default build
   solely for subprocess testing.
+- Remove obsolete scaffolding and diagnostic suppressions before handoff. Keep a
+  workaround or suppression only when it is still necessary, scope it as
+  narrowly as possible, and document the technical reason.
 - Update `CHANGELOG.md` and `UPGRADING.md` for user-facing, breaking, or
   otherwise noteworthy changes.
 - Format changelog entries with the pull request reference and every
