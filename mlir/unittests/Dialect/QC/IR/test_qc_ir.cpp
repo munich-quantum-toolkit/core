@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/Utils/DenseUnitary.h"
 #include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
@@ -314,6 +315,11 @@ TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
   ASSERT_EQ(unitaries.size(), 1U);
   EXPECT_EQ(unitaries.front().getMatrix(), xMatrix);
 
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*module)));
+  unitaries = llvm::to_vector(function.getBody().getOps<UnitaryOp>());
+  ASSERT_EQ(unitaries.size(), 1U);
+  EXPECT_EQ(unitaries.front().getMatrix(), xMatrix);
+
   const std::array<std::complex<double>, 4> identityValues{
       {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
   unitaries.front()->setAttr(
@@ -362,6 +368,50 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsMalformedShapeAndDimension) {
 
   expectRejected({2});
   expectRejected({3, 3});
+}
+
+TEST_F(QCTest, DenseUnitaryVerifierRejectsUnsupportedArityAndAttributes) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+  const auto complexType = ComplexType::get(builder.getF64Type());
+
+  const auto scalarMatrix =
+      DenseElementsAttr::get(RankedTensorType::get({1, 1}, complexType),
+                             std::complex<double>{1.0, 0.0});
+  auto zeroQubitUnitary =
+      UnitaryOp::create(builder, scalarMatrix, ValueRange{});
+
+  const auto matrixType = RankedTensorType::get({2, 2}, complexType);
+  const auto indices = DenseElementsAttr::get(
+      RankedTensorType::get({1, 2}, builder.getI64Type()),
+      ArrayRef<int64_t>{0, 0});
+  const auto values = DenseElementsAttr::get(
+      RankedTensorType::get({1}, complexType), std::complex<double>{1.0, 0.0});
+  const auto sparseMatrix =
+      SparseElementsAttr::get(matrixType, indices, values);
+  auto sparseUnitary =
+      UnitaryOp::create(builder, sparseMatrix, ValueRange{qubit});
+
+  const auto realMatrix = DenseElementsAttr::get(
+      RankedTensorType::get({2, 2}, builder.getF64Type()), 0.0);
+  auto realUnitary = UnitaryOp::create(builder, realMatrix, ValueRange{qubit});
+
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  EXPECT_TRUE(failed(zeroQubitUnitary.verify()));
+  EXPECT_TRUE(failed(sparseUnitary.verify()));
+  EXPECT_TRUE(failed(realUnitary.verify()));
+
+  EXPECT_FALSE(utils::isExactIdentityMatrix(sparseMatrix));
+  const auto rankOneMatrix = DenseElementsAttr::get(
+      RankedTensorType::get({2}, complexType), std::complex<double>{0.0, 0.0});
+  EXPECT_FALSE(utils::isExactIdentityMatrix(rankOneMatrix));
+  EXPECT_FALSE(utils::isExactIdentityMatrix(realMatrix));
+
+  zeroQubitUnitary.erase();
+  sparseUnitary.erase();
+  realUnitary.erase();
 }
 
 TEST_F(QCTest, DenseUnitaryVerifierRejectsRepeatedQubit) {

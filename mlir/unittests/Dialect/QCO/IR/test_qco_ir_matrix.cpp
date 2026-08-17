@@ -238,6 +238,18 @@ TEST_F(QCOMatrixTest, DenseUnitaryBuilderExposesMatrixAndFoldsIdentity) {
                 unitaries.front().getQubitsIn().front()),
             unitaries.front().getQubitsOut().front());
 
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*module)));
+  unitaries = llvm::to_vector(function.getBody().getOps<UnitaryOp>());
+  ASSERT_EQ(unitaries.size(), 1U);
+  EXPECT_TRUE(
+      unitaries.front().getUnitaryMatrix().isApprox(XOp::getUnitaryMatrix()));
+  EXPECT_DEATH_IF_SUPPORTED((void)unitaries.front().getInputForOutput(
+                                unitaries.front().getQubitsIn().front()),
+                            "Given qubit is not an output of UnitaryOp");
+  EXPECT_DEATH_IF_SUPPORTED((void)unitaries.front().getOutputForInput(
+                                unitaries.front().getQubitsOut().front()),
+                            "Given qubit is not an input of UnitaryOp");
+
   const std::array<std::complex<double>, 4> identityValues{
       {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
   unitaries.front()->setAttr(
