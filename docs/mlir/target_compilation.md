@@ -106,3 +106,16 @@ for registry configuration.
 
 If the program should use fewer physical qubits, run the {code}`mqt-qubit-reuse`
 pipeline before target compilation.
+
+## Physical target extent
+
+Mapping records the physical target address extent on the MLIR module as
+{code}`mqt.target_qubit_extent`. The unsigned 64-bit value is one greater than
+the largest target site identifier. It is an exclusive upper bound, not the
+number of target sites. For example, sites 5, 9, and 17 have an extent of 18.
+
+Cleanup can remove unused {code}`qco.static` and {code}`qco.sink` pairs without
+losing this metadata. Conversion from QCO to QC retains the module attribute.
+Native QC-to-Qiskit export uses the extent as the minimum circuit width. Thus, a
+program that uses two sites of a five-site dense target exports as a five-qubit
+Qiskit circuit without retaining three dead static-qubit operations.

@@ -21,6 +21,7 @@
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qasm_programs.h"
@@ -1164,6 +1165,11 @@ c = measure q;
   auto compiled = parseRecordedModule(qco->str());
   ASSERT_TRUE(compiled);
   EXPECT_TRUE(verify(*compiled).succeeded());
+  const auto extent =
+      (*compiled)->getAttrOfType<IntegerAttr>(utils::TARGET_QUBIT_EXTENT_ATTR);
+  ASSERT_TRUE(extent);
+  EXPECT_TRUE(extent.getType().isUnsignedInteger(64));
+  EXPECT_EQ(extent.getValue().getZExtValue(), 18450U);
 
   llvm::SmallVector<int64_t> staticSites;
   size_t numDynamic = 0;

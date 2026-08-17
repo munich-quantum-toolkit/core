@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Preserve the physical target address extent during QC-to-Qiskit export
+  ([#2133]) ([**@simon1hofmann**])
 - 🚸 Add typed stable-ID construction for Qiskit backends and compiler targets,
   fluent Qiskit primitives, and lazy provider discovery ([#2084])
   ([**@burgholzer**])
@@ -773,6 +775,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112

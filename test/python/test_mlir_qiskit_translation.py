@@ -518,6 +518,51 @@ def test_flat_export_rejects_symbolic_inputs() -> None:
         symbolic.to_qiskit()
 
 
+def test_qiskit_export_never_shrinks_observed_qubit_extent() -> None:
+    """Treat target metadata as a minimum rather than an override."""
+    program = QCProgram.from_mlir_str(
+        """module attributes {mqt.target_qubit_extent = 1 : ui64} {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q = qc.static 3 : !qc.qubit
+    qc.x %q : !qc.qubit
+    return
+  }
+}
+"""
+    )
+
+    restored = program.to_qiskit()
+
+    assert restored.num_qubits == 4
+
+
+@pytest.mark.parametrize(
+    ("attribute", "message"),
+    [
+        ('"five"', "must be a positive ui64 integer"),
+        ("5 : i64", "must be a positive ui64 integer"),
+        ("0 : ui64", "must be a positive ui64 integer"),
+        ("4294967296 : ui64", "cannot be represented by Qiskit"),
+    ],
+    ids=["wrong-kind", "signed-integer", "zero", "too-wide"],
+)
+def test_qiskit_export_rejects_invalid_target_qubit_extent(attribute: str, message: str) -> None:
+    """Reject malformed target-width metadata before circuit allocation."""
+    program = QCProgram.from_mlir_str(
+        f"""module attributes {{mqt.target_qubit_extent = {attribute}}} {{
+  func.func @main() attributes {{passthrough = ["entry_point"]}} {{
+    %q = qc.alloc : !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }}
+}}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match=message):
+        program.to_qiskit()
+
+
 def test_unknown_version_is_rejected_without_affecting_existing_conversion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -117,6 +117,25 @@ struct ExportState {
   uint32_t numClbits = 0;
 };
 
+[[nodiscard]] uint32_t targetQubitExtent(const mlir::ModuleOp moduleOp) {
+  const auto attribute =
+      moduleOp->getAttr(mlir::utils::TARGET_QUBIT_EXTENT_ATTR);
+  if (!attribute) {
+    return 0;
+  }
+  const auto extent = llvm::dyn_cast<mlir::IntegerAttr>(attribute);
+  if (!extent || !extent.getType().isUnsignedInteger(64) ||
+      extent.getValue().isZero()) {
+    throw std::runtime_error(
+        "QC target qubit extent must be a positive ui64 integer");
+  }
+  if (extent.getValue().ugt(std::numeric_limits<uint32_t>::max())) {
+    throw std::runtime_error(
+        "QC target qubit extent cannot be represented by Qiskit");
+  }
+  return static_cast<uint32_t>(extent.getValue().getZExtValue());
+}
+
 [[nodiscard]] std::vector<uint32_t>
 mapQubits(const mlir::ValueRange values,
           const llvm::DenseMap<mlir::Value, uint32_t>& qubits) {
@@ -534,6 +553,7 @@ nb::object exportCircuit(const mlir::QCProgram& program) {
   }
 
   ExportState state;
+  state.numQubits = targetQubitExtent(moduleOp);
   collectResources(function, state);
   collectFlatInstructions(function, state);
   const auto looseQubits = validateRegisterLayout(state.quantumRegisters,

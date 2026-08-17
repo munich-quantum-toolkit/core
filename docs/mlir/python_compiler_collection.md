@@ -177,6 +177,7 @@ program structures than its C API can construct.
 | Arbitrary unitaries                                               | Rejected             | Rejected       |
 | Register aliases or interleaved membership                        | Rejected             | Rejected       |
 | Transpiler layout metadata                                        | Accepted and ignored | Not emitted    |
+| Target address extent from MQT target compilation                 | Not applicable       | Preserved      |
 
 Lexically bound {code}`for`-loop induction parameters are supported. Numeric
 parameters passed to a custom instruction are bound before its definition is
@@ -187,6 +188,12 @@ operations.
 A circuit remains valid when {code}`circ.layout` is present. The importer
 translates the circuit operations and deliberately does not preserve physical or
 virtual layout metadata.
+
+MQT target compilation records the exclusive upper bound of physical site
+identifiers as {code}`mqt.target_qubit_extent`. Export uses this value as a
+minimum Qiskit circuit width even when compiler cleanup removed unused static
+qubits. The metadata describes the address-space extent; it does not recreate a
+Qiskit transpiler layout.
 
 Input validation finishes before an MLIR module is created. Output validation
 finishes before a Qiskit circuit is allocated. Unsupported programs therefore

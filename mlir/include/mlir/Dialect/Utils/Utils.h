@@ -50,6 +50,11 @@ inline constexpr llvm::StringLiteral CLASSICAL_REGISTER_NAME_ATTR =
 inline constexpr llvm::StringLiteral QUBIT_REGISTER_NAME_ATTR =
     "mqt.qubit_register_name";
 
+/// Unsigned module attribute that retains the physical target address extent.
+/// The extent is one greater than the largest target site identifier.
+inline constexpr llvm::StringLiteral TARGET_QUBIT_EXTENT_ATTR =
+    "mqt.target_qubit_extent";
+
 /// Check if a floating-point value is an integer.
 [[nodiscard]] inline bool isIntegerExponent(double r) {
   return r == std::floor(r) && std::isfinite(r);
