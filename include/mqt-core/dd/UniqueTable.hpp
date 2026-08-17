@@ -21,8 +21,6 @@
 #include "dd/statistics/UniqueTableStatistics.hpp"
 #include "ir/Definitions.hpp"
 
-#include <nlohmann/json_fwd.hpp>
-
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -132,10 +130,6 @@ public:
   /// Get a reference to individual statistics
   [[nodiscard]] const UniqueTableStatistics&
   getStats(std::size_t idx) const noexcept;
-
-  /// Get a JSON object with the statistics
-  [[nodiscard]] nlohmann::basic_json<>
-  getStatsJson(bool includeIndividualTables = false) const;
 
   /// Get the total number of entries
   [[nodiscard]] std::size_t getNumEntries() const noexcept;

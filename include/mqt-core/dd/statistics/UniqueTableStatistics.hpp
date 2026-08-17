@@ -16,9 +16,8 @@
 
 #include "dd/statistics/TableStatistics.hpp"
 
-#include <nlohmann/json_fwd.hpp>
-
 #include <cstddef>
+#include <string>
 
 namespace dd {
 /// \brief A class for storing statistics of a unique table
@@ -29,8 +28,8 @@ struct UniqueTableStatistics : TableStatistics {
   /// Reset all statistics (except for the peak values)
   void reset() noexcept override;
 
-  /// Get a JSON representation of the statistics
-  [[nodiscard]] nlohmann::json json() const override;
+  /// Get a JSON-formatted string representation of the statistics
+  [[nodiscard]] std::string toString() const override;
 };
 
 } // namespace dd

@@ -10,11 +10,12 @@
 
 #include "dd/statistics/TableStatistics.hpp"
 
-#include "dd/statistics/Statistics.hpp"
+#include "StatisticsJson.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <string>
 
 namespace dd {
 
@@ -55,23 +56,25 @@ double TableStatistics::getMemoryMiB() const noexcept {
   return static_cast<double>(numBuckets) * getEntrySizeMiB();
 }
 
-nlohmann::basic_json<> TableStatistics::json() const {
-  if (lookups == 0) {
+std::string TableStatistics::toString() const { return toJson(*this).dump(2U); }
+
+nlohmann::basic_json<> toJson(const TableStatistics& s) {
+  if (s.lookups == 0) {
     return "unused";
   }
 
-  auto j = Statistics::json();
-  j["num_buckets"] = numBuckets;
-  j["memory_MiB"] = getMemoryMiB();
-  j["num_entries"] = numEntries;
-  j["peak_num_entries"] = peakNumEntries;
-  j["collisions"] = collisions;
-  j["hits"] = hits;
-  j["lookups"] = lookups;
-  j["inserts"] = inserts;
-  j["hit_ratio"] = hitRatio();
-  j["col_ratio"] = colRatio();
-  j["load_factor"] = loadFactor();
+  nlohmann::basic_json<> j;
+  j["num_buckets"] = s.numBuckets;
+  j["memory_MiB"] = s.getMemoryMiB();
+  j["num_entries"] = s.numEntries;
+  j["peak_num_entries"] = s.peakNumEntries;
+  j["collisions"] = s.collisions;
+  j["hits"] = s.hits;
+  j["lookups"] = s.lookups;
+  j["inserts"] = s.inserts;
+  j["hit_ratio"] = s.hitRatio();
+  j["col_ratio"] = s.colRatio();
+  j["load_factor"] = s.loadFactor();
   return j;
 }
 

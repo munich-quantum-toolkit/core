@@ -15,9 +15,9 @@
 #pragma once
 
 #include "dd/statistics/Statistics.hpp"
-#include "nlohmann/json_fwd.hpp"
 
 #include <cstddef>
+#include <string>
 
 namespace dd {
 
@@ -81,8 +81,8 @@ struct MemoryManagerStatistics final : Statistics {
   /// Reset all statistics (except for the peak values)
   void reset() noexcept override;
 
-  /// Get a JSON representation of the statistics
-  [[nodiscard]] nlohmann::json json() const override;
+  /// Get a JSON-formatted string representation of the statistics
+  [[nodiscard]] std::string toString() const override;
 };
 
 } // namespace dd

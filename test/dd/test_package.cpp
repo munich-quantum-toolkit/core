@@ -25,6 +25,7 @@
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <array>
 #include <cmath>
@@ -2488,7 +2489,7 @@ TEST(DDPackageTest, CTPerformanceRegressionTest) {
 TEST(DDPackageTest, DataStructureStatistics) {
   constexpr auto nqubits = 1U;
   const auto dd = std::make_unique<Package>(nqubits);
-  const auto stats = getDataStructureStatistics();
+  const auto stats = nlohmann::json::parse(getDataStructureStatisticsString());
 
   EXPECT_EQ(stats["vNode"]["size_B"], 64U);
   EXPECT_EQ(stats["vNode"]["alignment_B"], 8U);
@@ -2507,9 +2508,10 @@ TEST(DDPackageTest, DDStatistics) {
   const auto dd = std::make_unique<Package>(nqubits);
   const auto dummyGate = getDD(qc::StandardOperation(0U, qc::X), *dd);
   EXPECT_NE(dummyGate.p, nullptr);
-  const auto stats = getStatistics(*dd, true);
+  const auto statsString = getStatisticsString(*dd, true);
+  const auto stats = nlohmann::json::parse(statsString);
 
-  std::cout << stats.dump(2) << "\n";
+  std::cout << statsString << "\n";
   EXPECT_TRUE(stats.contains("vector"));
   ASSERT_TRUE(stats.contains("matrix"));
   EXPECT_TRUE(stats.contains("real_numbers"));

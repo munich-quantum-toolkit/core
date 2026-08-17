@@ -10,21 +10,28 @@
 
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
+#include "StatisticsJson.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
 #include <nlohmann/json.hpp>
+
+#include <string>
 
 namespace dd {
 
 void UniqueTableStatistics::reset() noexcept { TableStatistics::reset(); }
 
-nlohmann::basic_json<> UniqueTableStatistics::json() const {
-  if (lookups == 0) {
+std::string UniqueTableStatistics::toString() const {
+  return toJson(*this).dump(2U);
+}
+
+nlohmann::basic_json<> toJson(const UniqueTableStatistics& s) {
+  if (s.lookups == 0) {
     return "unused";
   }
 
-  auto j = TableStatistics::json();
-  j["gc_runs"] = gcRuns;
+  auto j = toJson(static_cast<const TableStatistics&>(s));
+  j["gc_runs"] = s.gcRuns;
   return j;
 }
 } // namespace dd

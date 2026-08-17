@@ -14,8 +14,6 @@
 
 #pragma once
 
-#include "nlohmann/json_fwd.hpp"
-
 #include <ostream>
 #include <string>
 
@@ -32,10 +30,7 @@ struct Statistics {
   /// Reset all statistics (except for peak values)
   virtual void reset() noexcept {};
 
-  /// Get a JSON representation of the statistics
-  [[nodiscard]] virtual nlohmann::json json() const;
-
-  /// Get a pretty-printed string representation of the statistics
+  /// Get a JSON-formatted string representation of the statistics
   [[nodiscard]] virtual std::string toString() const;
 
   /**
