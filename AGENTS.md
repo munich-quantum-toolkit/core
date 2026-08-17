@@ -166,6 +166,15 @@ implementation. Keep one ExecPlan per independently implemented task and store
 it under `.agent/plans/<task-slug>.md`; the plan is a living record of that
 task's decisions and progress.
 
+## Spec Audits
+
+When a subsystem accumulates tests that pin implementation choices instead of
+the supported contract, audit it with a SpecAudit (as described in
+[`.agent/AUDITS.md`](.agent/AUDITS.md)). Keep one audit per audited scope under
+`.agent/audits/<scope-slug>.md`. An audit produces ranked verdicts with executed
+evidence and stops there; a human decides which verdicts to apply, and each one
+lands as its own pull request.
+
 ## Git and GitHub Actions
 
 - A coding agent may perform coding, Git, and GitHub workflow tasks that a human

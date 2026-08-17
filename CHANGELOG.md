@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add SpecAudits, a method and probe script for auditing tests that pin
+  behavior the project never specified ([#2124]) ([**@marcelwa**])
 - ✨ Extract the existing QCO dead-gate elimination patterns from
   canonicalization into an explicit `remove-dead-gates` pass and use it in the
   qubit-reuse pipeline ([#2118]) ([**@simon1hofmann**])
@@ -779,6 +781,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
 [#2118]: https://github.com/munich-quantum-toolkit/core/pull/2118
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
