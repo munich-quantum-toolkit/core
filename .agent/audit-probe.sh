@@ -23,7 +23,6 @@ set -eu
 
 script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repository_root=$(CDPATH= cd -- "${script_directory}/.." && pwd)
-run_wrapper="${script_directory}/run.sh"
 
 edited_file=""
 
@@ -56,8 +55,8 @@ Options:
   --with     Replacement text for that line. Use an empty string to delete it.
   --keep     Leave the injected change in place instead of restoring it.
 
-Every command runs through .agent/run.sh so tool caches stay in the worktree.
-A C++ probe needs a configured coverage preset; see AGENTS.md.
+Every command uses the build and test entry points AGENTS.md documents. A C++
+probe needs a configured coverage preset; see AGENTS.md.
 EOF
 }
 
@@ -99,36 +98,36 @@ python_coverage() {
   # $1 source path, $2 tests path, $3 optional pytest node id to deselect
   cd "${repository_root}"
   if [ -n "$3" ]; then
-    "${run_wrapper}" uv run --no-sync pytest "$2" --deselect "$3" \
+    uv run --no-sync pytest "$2" --deselect "$3" \
       --cov-config=pyproject.toml --cov -q >/dev/null 2>&1 || true
   else
-    "${run_wrapper}" uv run --no-sync pytest "$2" \
+    uv run --no-sync pytest "$2" \
       --cov-config=pyproject.toml --cov -q >/dev/null 2>&1 || true
   fi
-  "${run_wrapper}" uv run --no-sync coverage report \
+  uv run --no-sync coverage report \
     --include="$1/*" --precision=2 2>/dev/null | tail -n 1
 }
 
 python_suite() {
   # $1 tests path. Prints failing node ids, one per line.
   cd "${repository_root}"
-  "${run_wrapper}" uv run --no-sync pytest "$1" -q -p no:randomly \
+  uv run --no-sync pytest "$1" -q -p no:randomly \
     --no-header -rf 2>&1 | sed -n 's/^FAILED \([^ ]*\).*/\1/p'
 }
 
 cpp_build() {
   cd "${repository_root}"
-  "${run_wrapper}" cmake --build --preset coverage --target "$1" >/dev/null 2>&1
+  cmake --build --preset coverage --target "$1" >/dev/null 2>&1
 }
 
 cpp_suite() {
   # $1 ctest regular expression. Prints failing test names, one per line.
   cd "${repository_root}"
   if [ -n "$1" ]; then
-    "${run_wrapper}" ctest --preset coverage -R "$1" 2>&1 |
+    ctest --preset coverage -R "$1" 2>&1 |
       sed -n 's/^[[:space:]]*[0-9]* - \(.*\) (Failed)$/\1/p'
   else
-    "${run_wrapper}" ctest --preset coverage 2>&1 |
+    ctest --preset coverage 2>&1 |
       sed -n 's/^[[:space:]]*[0-9]* - \(.*\) (Failed)$/\1/p'
   fi
 }

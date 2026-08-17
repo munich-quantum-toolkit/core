@@ -27,7 +27,7 @@ the code below it freezes, because every simplification looks like a regression.
 This repository already forbids the first half. `AGENTS.md` says:
 
 > Add tests that protect intended behavior or reproduce a concrete regression.
-> Do not test provisional implementation choices that are not part of the
+> Never test provisional implementation choices that are not part of the
 > supported contract.
 
 `PLANS.md` says the same thing from the other side:
@@ -262,15 +262,15 @@ again.
 For Python, use the repository's own command and configuration:
 
 ```sh
-./.agent/run.sh uv run --no-sync pytest --cov-config=pyproject.toml
+uv run --no-sync pytest --cov-config=pyproject.toml
 ```
 
 For C++, use the coverage preset:
 
 ```sh
-./.agent/run.sh cmake --preset coverage
-./.agent/run.sh cmake --build --preset coverage
-./.agent/run.sh ctest --preset coverage
+cmake --preset coverage
+cmake --build --preset coverage
+ctest --preset coverage
 ```
 
 No change in line or branch coverage is evidence of redundancy. It is never
@@ -522,10 +522,9 @@ narrows the finding; it does not close it.
 
 ## MQT Core requirements
 
-- Run every cache-producing command through `./.agent/run.sh`, as `AGENTS.md`
-  requires.
-- Run `./.agent/run.sh uvx nox -s lint` after each batch of changes to the audit
-  file.
+- Use the build and test entry points `AGENTS.md` documents, so every candidate
+  is measured the same way.
+- Run `uvx nox -s lint` after each batch of changes to the audit file.
 - Wrap Markdown at 80 columns. The formatter reflows prose, and a bare `#123`
   that lands at the start of a line silently becomes a heading. Write pull
   request references in backticks.
