@@ -359,8 +359,12 @@ class QCProgram(Program):
     def to_openqasm3(self) -> OpenQASMProgram:
         """Clean up and emit this QC program as OpenQASM 3 without QCO optimization."""
 
-    def to_qiskit(self) -> qiskit.circuit.QuantumCircuit:
-        """Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it."""
+    def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
+        """Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
+
+        Pass the compiler target used for mapping to emit a canonical physical circuit.
+        Target-aware export requires static qubits whose site IDs belong to that target.
+        """
 
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
         """Convert this program to QCO.

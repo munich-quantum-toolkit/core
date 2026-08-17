@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mlir/Compiler/Programs.h"
+#include "mlir/Compiler/Target.h"
 
 #include <nanobind/nanobind.h>
 
@@ -21,7 +22,9 @@ namespace nb = nanobind;
 /** Import a Qiskit QuantumCircuit into a newly owned QC program. */
 [[nodiscard]] mlir::QCProgram importCircuit(nb::handle circuit);
 
-/** Return a new Qiskit QuantumCircuit. */
-[[nodiscard]] nb::object exportCircuit(const mlir::QCProgram& program);
+/** Return a new Qiskit QuantumCircuit, optionally for a compiler target. */
+[[nodiscard]] nb::object
+exportCircuit(const mlir::QCProgram& program,
+              const mlir::CompilerTarget* target = nullptr);
 
 } // namespace mqt::bindings::qiskit

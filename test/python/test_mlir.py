@@ -422,8 +422,8 @@ def test_qco_program_compiles_for_direct_sparse_target() -> None:
 
 
 @requires_qiskit_translation
-def test_target_compilation_preserves_qiskit_qubit_extent() -> None:
-    """Export a cleaned mapped program with the complete target width."""
+def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
+    """Export a mapped program with the complete compiler target."""
     target = CompilerTarget(5)
     mapped = compile_program(
         QASM_STRING,
@@ -431,16 +431,15 @@ def test_target_compilation_preserves_qiskit_qubit_extent() -> None:
         target=target,
     )
     assert isinstance(mapped, QCOProgram)
-    assert mapped.ir.count("qco.static") == 2
-    assert mapped.ir.count("qco.sink") == 2
-    assert "mqt.target_qubit_extent = 5 : ui64" in mapped.ir
+    assert 0 < mapped.ir.count("qco.static") < target.num_qubits
 
     qc = mapped.to_qc(copy=True)
-    restored = qc.to_qiskit()
+    restored = qc.to_qiskit(target=target)
 
     assert mapped.is_valid
-    assert "mqt.target_qubit_extent = 5 : ui64" in qc.ir
     assert restored.num_qubits == 5
+    assert [(register.name, len(register)) for register in restored.qregs] == [("q", 5)]
+    assert restored.layout is None
 
 
 def test_compiler_target_constructors_preserve_python_api() -> None:

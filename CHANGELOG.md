@@ -12,8 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Preserve the physical target address extent during QC-to-Qiskit export
-  ([#2133]) ([**@simon1hofmann**])
+- ✨ Add target-aware Qiskit export for mapped QC programs ([#2133])
+  ([**@simon1hofmann**])
 - 🚸 Add typed stable-ID construction for Qiskit backends and compiler targets,
   fluent Qiskit primitives, and lazy provider discovery ([#2084])
   ([**@burgholzer**])

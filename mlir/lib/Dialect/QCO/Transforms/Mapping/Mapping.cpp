@@ -22,7 +22,6 @@
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/APInt.h>
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/Sequence.h>
@@ -412,15 +411,6 @@ protected:
 
     // Fix SSA Dominance issues.
     for_each(body.getBlocks(), [](Block& b) { sortTopologically(&b); });
-
-    const auto siteIds = target->siteIds();
-    const auto largestSite = *std::ranges::max_element(siteIds);
-    const auto targetExtent = static_cast<uint64_t>(largestSite) + 1U;
-    const auto extentType =
-        IntegerType::get(&getContext(), 64, IntegerType::Unsigned);
-    mod->setAttr(
-        utils::TARGET_QUBIT_EXTENT_ATTR,
-        rewriter.getIntegerAttr(extentType, llvm::APInt(64, targetExtent)));
   }
 
 private:
