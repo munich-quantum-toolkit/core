@@ -13,6 +13,7 @@
 #include "QiskitTranslation.h"
 #include "QiskitVersion.h"
 #include "mlir/Compiler/Programs.h"
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -92,6 +93,17 @@ struct ExportedInstruction {
                              " index cannot be represented by Qiskit");
   }
   return static_cast<uint32_t>(index);
+}
+
+[[nodiscard]] mlir::CompilerTarget::SiteId
+checkedTargetSiteId(const uint64_t index) {
+  using SiteId = mlir::CompilerTarget::SiteId;
+  if (!std::in_range<SiteId>(index)) {
+    throw std::runtime_error(
+        "QC static qubit index cannot be represented by a compiler target "
+        "site ID");
+  }
+  return static_cast<SiteId>(index);
 }
 
 [[nodiscard]] uint32_t checkedAdd(const uint32_t left, const uint32_t right,
@@ -323,11 +335,23 @@ collectUnitaryInstruction(mlir::Operation& operation,
   return result;
 }
 
-void collectResources(mlir::func::FuncOp function, ExportState& state) {
+void collectResources(mlir::func::FuncOp function, ExportState& state,
+                      const mlir::CompilerTarget* const target) {
   llvm::DenseSet<uint32_t> staticIndices;
   for (auto& operation : function.getBody().front()) {
     if (auto staticQubit = llvm::dyn_cast<mlir::qc::StaticOp>(operation)) {
-      const auto index = checkedIndex(staticQubit.getIndex(), "qubit");
+      uint32_t index = 0;
+      if (target != nullptr) {
+        const auto vertex =
+            target->vertexForSite(checkedTargetSiteId(staticQubit.getIndex()));
+        if (!vertex) {
+          throw std::runtime_error(
+              "QC static qubit is not a site of the supplied compiler target");
+        }
+        index = checkedIndex(static_cast<uint64_t>(*vertex), "qubit");
+      } else {
+        index = checkedIndex(staticQubit.getIndex(), "qubit");
+      }
       if (index == std::numeric_limits<uint32_t>::max()) {
         throw std::runtime_error("qubit count cannot be represented by Qiskit");
       }
@@ -341,6 +365,10 @@ void collectResources(mlir::func::FuncOp function, ExportState& state) {
   }
   for (auto& operation : function.getBody().front()) {
     if (auto alloc = llvm::dyn_cast<mlir::qc::AllocOp>(operation)) {
+      if (target != nullptr) {
+        throw std::runtime_error(
+            "target-aware Qiskit export requires statically mapped qubits");
+      }
       state.qubits[alloc.getResult()] = state.numQubits;
       state.numQubits = checkedAdd(state.numQubits, 1U, "qubit");
       continue;
@@ -356,6 +384,10 @@ void collectResources(mlir::func::FuncOp function, ExportState& state) {
           "allocations");
     }
     if (llvm::isa<mlir::qc::QubitType>(type.getElementType())) {
+      if (target != nullptr) {
+        throw std::runtime_error(
+            "target-aware Qiskit export requires statically mapped qubits");
+      }
       const auto size = checkedIndex(type.getShape()[0], "qubit-register size");
       state.quantumBases[alloc.getResult()] = state.numQubits;
       state.quantumSizes[alloc.getResult()] = size;
@@ -515,7 +547,8 @@ void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
 
 } // namespace
 
-nb::object exportCircuit(const mlir::QCProgram& program) {
+nb::object exportCircuit(const mlir::QCProgram& program,
+                         const mlir::CompilerTarget* const target) {
   auto moduleOp = program.module();
   const auto functions = moduleOp.getOps<mlir::func::FuncOp>();
   if (functions.empty() || !llvm::hasSingleElement(functions)) {
@@ -534,8 +567,18 @@ nb::object exportCircuit(const mlir::QCProgram& program) {
   }
 
   ExportState state;
-  collectResources(function, state);
+  if (target != nullptr) {
+    state.numQubits = checkedIndex(static_cast<uint64_t>(target->numQubits()),
+                                   "target qubit count");
+  }
+  collectResources(function, state, target);
   collectFlatInstructions(function, state);
+  if (target != nullptr) {
+    Register reg{.name = "q"};
+    reg.bits.resize(state.numQubits);
+    std::iota(reg.bits.begin(), reg.bits.end(), 0U);
+    state.quantumRegisters.push_back(std::move(reg));
+  }
   const auto looseQubits = validateRegisterLayout(state.quantumRegisters,
                                                   state.numQubits, "quantum");
   const auto looseClbits = validateRegisterLayout(state.classicalRegisters,

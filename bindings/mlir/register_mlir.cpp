@@ -688,12 +688,20 @@ before conversion to QCO.)pb");
            "optimization.")
       .def(
           "to_qiskit",
-          [](const mlir::QCProgram& program) {
+          [](const mlir::QCProgram& program,
+             const mlir::CompilerTarget* const target) {
             requireValid(program);
-            return bindings::qiskit::exportCircuit(program);
+            return bindings::qiskit::exportCircuit(program, target);
           },
-          nb::sig("def to_qiskit(self) -> qiskit.circuit.QuantumCircuit"),
-          R"pb(Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.)pb")
+          nb::kw_only(), "target"_a = nb::none(),
+          nb::sig("def to_qiskit(self, *, target: CompilerTarget | None = "
+                  "None) -> qiskit.circuit.QuantumCircuit"),
+          R"pb(Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
+
+Args:
+    target: The optional compiler target used for mapping. When provided, emit
+        a canonical physical circuit. All qubits must be static, and their site
+        IDs must belong to the target.)pb")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {

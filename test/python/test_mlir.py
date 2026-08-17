@@ -421,6 +421,27 @@ def test_qco_program_compiles_for_direct_sparse_target() -> None:
     assert qco.ir.count("qco.measure") == 2
 
 
+@requires_qiskit_translation
+def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
+    """Export a mapped program with the complete compiler target."""
+    target = CompilerTarget(5)
+    mapped = compile_program(
+        QASM_STRING,
+        output=OutputFormat.QCO_OPTIMIZED,
+        target=target,
+    )
+    assert isinstance(mapped, QCOProgram)
+    assert 0 < mapped.ir.count("qco.static") < target.num_qubits
+
+    qc = mapped.to_qc(copy=True)
+    restored = qc.to_qiskit(target=target)
+
+    assert mapped.is_valid
+    assert restored.num_qubits == 5
+    assert [(register.name, len(register)) for register in restored.qregs] == [("q", 5)]
+    assert restored.layout is None
+
+
 def test_compiler_target_constructors_preserve_python_api() -> None:
     """Construct every target metadata type and target overload."""
     duration_unit = CompilerTarget.DurationUnit("ns", 1.0)

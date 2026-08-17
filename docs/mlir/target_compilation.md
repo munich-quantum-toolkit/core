@@ -112,3 +112,14 @@ for registry configuration.
 
 If the program should use fewer physical qubits, run the {code}`mqt-qubit-reuse`
 pipeline before target compilation.
+
+## Qiskit export
+
+When exporting a program that has already been mapped to a
+{py:class}`~mqt.core.mlir.CompilerTarget`, pass the same target to
+{py:meth}`~mqt.core.mlir.QCProgram.to_qiskit`. The exporter maps each static
+target site ID to its index in {py:attr}`~mqt.core.mlir.CompilerTarget.sites`
+and creates a canonical physical Qiskit circuit. The circuit has one register
+named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_qubits` qubits.
+This option does not run target compilation or emit Qiskit layout metadata.
+Target-aware export requires static qubits whose site IDs belong to that target.

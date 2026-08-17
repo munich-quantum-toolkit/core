@@ -26,8 +26,8 @@ releases may include breaking changes.
   Slurm license environment value ([#2025]) ([**@burgholzer**])
 - ✨ Add an `unroll-modifiers` pass for unrolling multi-operation modifiers
   ([#2015]) ([**@denialhaag**], [**@burgholzer**])
-- ✨ Add Qiskit circuit import and export to the compiler collection ([#2031])
-  ([**@burgholzer**])
+- ✨ Add Qiskit circuit import and export to the compiler collection ([#2031],
+  [#2133]) ([**@burgholzer**], [**@simon1hofmann**])
 - ✨ Add generic C++ and Python FoMaC support for custom device properties that
   contain operation handles ([#2042]) ([**@burgholzer**])
 - ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
@@ -781,6 +781,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
 [#2118]: https://github.com/munich-quantum-toolkit/core/pull/2118

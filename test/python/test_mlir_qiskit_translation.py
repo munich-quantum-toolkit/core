@@ -33,7 +33,7 @@ from qiskit.circuit import (
 from qiskit.circuit.classical import expr, types
 from qiskit.quantum_info import Operator
 
-from mqt.core.mlir import QCProgram, compile_program
+from mqt.core.mlir import CompilerTarget, QCProgram, compile_program
 from mqt.core.plugins.qiskit import qiskit_to_mqt
 
 installed_qiskit = Version(qiskit.__version__)
@@ -516,6 +516,84 @@ def test_flat_export_rejects_symbolic_inputs() -> None:
     )
     with pytest.raises(RuntimeError, match="symbolic or runtime inputs"):
         symbolic.to_qiskit()
+
+
+def test_target_aware_qiskit_export_maps_sparse_site_ids() -> None:
+    """Map large sparse target site IDs to dense physical-qubit indices."""
+    target = CompilerTarget(
+        "sparse target",
+        [CompilerTarget.Site(10), CompilerTarget.Site(4294967296)],
+    )
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q = qc.static 4294967296 : !qc.qubit
+    qc.x %q : !qc.qubit
+    return
+  }
+}
+"""
+    )
+
+    restored = program.to_qiskit(target=target)
+
+    assert restored.num_qubits == 2
+    assert [(register.name, len(register)) for register in restored.qregs] == [("q", 2)]
+    assert restored.layout is None
+    assert restored.data[0].operation.name == "x"
+    assert restored.find_bit(restored.data[0].qubits[0]).index == 1
+
+
+def test_target_aware_qiskit_export_rejects_unknown_site() -> None:
+    """Reject a static site that is absent from the compiler target."""
+    target = CompilerTarget(
+        "sparse target",
+        [CompilerTarget.Site(10), CompilerTarget.Site(20)],
+    )
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q = qc.static 30 : !qc.qubit
+    qc.x %q : !qc.qubit
+    return
+  }
+}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="QC static qubit is not a site of the supplied compiler target"):
+        program.to_qiskit(target=target)
+
+
+@pytest.mark.parametrize(
+    "allocation",
+    [
+        """%q = qc.alloc : !qc.qubit
+    qc.x %q : !qc.qubit
+    qc.dealloc %q : !qc.qubit""",
+        """%c0 = arith.constant 0 : index
+    %q = memref.alloc() : memref<2x!qc.qubit>
+    %q0 = memref.load %q[%c0] : memref<2x!qc.qubit>
+    qc.x %q0 : !qc.qubit
+    memref.dealloc %q : memref<2x!qc.qubit>""",
+    ],
+    ids=["scalar", "register"],
+)
+def test_target_aware_qiskit_export_rejects_dynamic_qubits(allocation: str) -> None:
+    """Require target-aware export inputs to use static qubits."""
+    target = CompilerTarget(2)
+    program = QCProgram.from_mlir_str(
+        f"""module {{
+  func.func @main() attributes {{passthrough = ["entry_point"]}} {{
+    {allocation}
+    return
+  }}
+}}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="target-aware Qiskit export requires statically mapped qubits"):
+        program.to_qiskit(target=target)
 
 
 def test_unknown_version_is_rejected_without_affecting_existing_conversion(
