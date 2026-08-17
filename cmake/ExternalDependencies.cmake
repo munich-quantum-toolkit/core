@@ -46,10 +46,6 @@ set(JSON_URL https://github.com/nlohmann/json/releases/download/v${JSON_VERSION}
 set(JSON_SystemInclude
     ON
     CACHE INTERNAL "Treat the library headers like system headers")
-# nlohmann_json is a private build-time dependency, so it is never installed.
-set(JSON_Install
-    OFF
-    CACHE BOOL "Do not install nlohmann_json; mqt-core uses it privately" FORCE)
 FetchContent_Declare(nlohmann_json URL ${JSON_URL} FIND_PACKAGE_ARGS ${JSON_VERSION})
 list(APPEND FETCH_PACKAGES nlohmann_json)
 
