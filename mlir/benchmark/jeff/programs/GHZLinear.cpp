@@ -12,17 +12,16 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 
 namespace mqt::jeff::benchmarks {
 
-using mlir::Value;
-using mlir::arith::ConstantIndexOp;
-using mlir::arith::SubIOp;
-using mlir::qc::QCProgramBuilder;
+using namespace mlir;
 
-llvm::SmallVector<Value> ghzLinear(QCProgramBuilder& b, const uint64_t n) {
+SmallVector<Value> ghzLinear(qc::QCProgramBuilder& b, const uint64_t n) {
   const auto size = static_cast<int64_t>(n);
   auto q = b.allocQubitRegister(size, "q");
   auto c = b.allocClassicalBitRegister(size, "c");
@@ -31,7 +30,8 @@ llvm::SmallVector<Value> ghzLinear(QCProgramBuilder& b, const uint64_t n) {
 
   b.h(q[0]);
   b.scfFor(1, size, 1, [&](Value iv) {
-    auto previous = SubIOp::create(b, iv, ConstantIndexOp::create(b, 1));
+    auto previous =
+        arith::SubIOp::create(b, iv, arith::ConstantIndexOp::create(b, 1));
     b.cx(b.loadQubit(q.value, previous), b.loadQubit(q.value, iv));
   });
 

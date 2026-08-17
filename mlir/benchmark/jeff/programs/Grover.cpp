@@ -11,17 +11,18 @@
 #include "Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <llvm/ADT/ArrayRef.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cmath>
 #include <cstdint>
+#include <numbers>
 
 namespace mqt::jeff::benchmarks {
 
-using mlir::Value;
-using mlir::qc::QCProgramBuilder;
+using namespace mlir;
 
-llvm::SmallVector<Value> grover(QCProgramBuilder& b, const uint64_t n) {
+SmallVector<Value> grover(qc::QCProgramBuilder& b, const uint64_t n) {
   const auto search = static_cast<int64_t>(n) - 1;
   auto q = b.allocQubitRegister(search, "q");
   auto flag = b.allocQubit();
@@ -33,8 +34,9 @@ llvm::SmallVector<Value> grover(QCProgramBuilder& b, const uint64_t n) {
   b.scfFor(0, search, 1, [&](Value iv) { b.h(b.loadQubit(q.value, iv)); });
   b.x(flag);
 
-  const auto iterations = static_cast<int64_t>(std::ceil(
-      M_PI / 4.0 * std::sqrt(std::pow(2.0, static_cast<double>(search)))));
+  const auto iterations = static_cast<int64_t>(
+      std::ceil(std::numbers::pi / 4.0 *
+                std::sqrt(std::pow(2.0, static_cast<double>(search)))));
 
   // The oracle marks the all-ones state. The diffusion operator reflects about
   // the uniform superposition.

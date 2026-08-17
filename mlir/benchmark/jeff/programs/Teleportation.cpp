@@ -11,15 +11,17 @@
 #include "Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
+
 #include <cstdint>
 
 namespace mqt::jeff::benchmarks {
 
-using mlir::Value;
-using mlir::qc::QCProgramBuilder;
+using namespace mlir;
 
-llvm::SmallVector<Value> teleportation(QCProgramBuilder& b,
-                                       const uint64_t /*n*/) {
+SmallVector<Value> teleportation(qc::QCProgramBuilder& b,
+                                 const uint64_t /*n*/) {
   auto msg = b.allocQubit();
   auto alice = b.allocQubit();
   auto bob = b.allocQubit();

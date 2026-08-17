@@ -15,17 +15,18 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 
-#include <cmath>
 #include <cstdint>
+#include <numbers>
 
 namespace mqt::jeff::benchmarks {
 
-using mlir::Value;
-using mlir::qc::QCProgramBuilder;
+using namespace mlir;
 
-llvm::SmallVector<Value> iqft(QCProgramBuilder& b, const uint64_t n) {
+SmallVector<Value> iqft(qc::QCProgramBuilder& b, const uint64_t n) {
   const auto bits = static_cast<int64_t>(n);
   auto q = b.allocQubit();
   auto res = b.allocClassicalBitRegister(bits, "res");
@@ -38,31 +39,29 @@ llvm::SmallVector<Value> iqft(QCProgramBuilder& b, const uint64_t n) {
   // raising two to a loop-dependent power. The inner loop carries the angle
   // because `QCProgramBuilder::scfFor` takes no loop-carried values.
   b.scfFor(0, bits, 1, [&](Value i) {
-    auto total = mlir::arith::ConstantIndexOp::create(b, bits);
-    auto one = mlir::arith::ConstantIndexOp::create(b, 1);
-    auto lower = mlir::arith::ConstantIndexOp::create(b, 0);
-    auto offset = mlir::arith::SubIOp::create(b, total, i);
-    const Value start = mlir::arith::ConstantFloatOp::create(
-        b, b.getF64Type(), llvm::APFloat(M_PI / 2.0));
-    const Value half = mlir::arith::ConstantFloatOp::create(b, b.getF64Type(),
-                                                            llvm::APFloat(0.5));
+    auto total = arith::ConstantIndexOp::create(b, bits);
+    auto one = arith::ConstantIndexOp::create(b, 1);
+    auto lower = arith::ConstantIndexOp::create(b, 0);
+    auto offset = arith::SubIOp::create(b, total, i);
+    const Value start = arith::ConstantFloatOp::create(
+        b, b.getF64Type(), llvm::APFloat(std::numbers::pi / 2.0));
+    const Value half =
+        arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
 
     {
-      auto loop =
-          mlir::scf::ForOp::create(b, lower, i, one, mlir::ValueRange{start});
-      const mlir::OpBuilder::InsertionGuard guard(b);
+      auto loop = scf::ForOp::create(b, lower, i, one, ValueRange{start});
+      const OpBuilder::InsertionGuard guard(b);
       b.setInsertionPointToStart(loop.getBody());
       auto angle = loop.getRegionIterArg(0);
-      auto index =
-          mlir::arith::AddIOp::create(b, offset, loop.getInductionVar());
+      auto index = arith::AddIOp::create(b, offset, loop.getInductionVar());
       b.scfIf(res, index, [&] { b.p(angle, q); });
-      const Value next = mlir::arith::MulFOp::create(b, angle, half);
-      mlir::scf::YieldOp::create(b, mlir::ValueRange{next});
+      const Value next = arith::MulFOp::create(b, angle, half);
+      scf::YieldOp::create(b, ValueRange{next});
     }
 
     b.h(q);
-    auto last = mlir::arith::ConstantIndexOp::create(b, bits - 1);
-    auto target = mlir::arith::SubIOp::create(b, last, i);
+    auto last = arith::ConstantIndexOp::create(b, bits - 1);
+    auto target = arith::SubIOp::create(b, last, i);
     b.measure(q, res, target);
     b.reset(q);
   });

@@ -13,16 +13,17 @@
 
 #include <llvm/ADT/APFloat.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
-#include <cmath>
 #include <cstdint>
+#include <numbers>
 
 namespace mqt::jeff::benchmarks {
 
-using mlir::Value;
-using mlir::qc::QCProgramBuilder;
+using namespace mlir;
 
-llvm::SmallVector<Value> multiplexer(QCProgramBuilder& b, const uint64_t n) {
+SmallVector<Value> multiplexer(qc::QCProgramBuilder& b, const uint64_t n) {
   const auto numControls = static_cast<int64_t>(n) - 1;
   const auto numStates = int64_t{1} << numControls;
 
@@ -38,8 +39,8 @@ llvm::SmallVector<Value> multiplexer(QCProgramBuilder& b, const uint64_t n) {
   // Each control state selects its own rotation. The controls are flipped so
   // that the fully controlled gate fires exactly on the current state.
   for (int64_t state = 0; state < numStates; ++state) {
-    const auto angle =
-        static_cast<double>(state) * M_PI / static_cast<double>(numStates);
+    const auto angle = static_cast<double>(state) * std::numbers::pi /
+                       static_cast<double>(numStates);
 
     for (int64_t bit = 0; bit < numControls; ++bit) {
       if (((state >> bit) & 1) == 0) {

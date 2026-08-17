@@ -15,17 +15,18 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 
-#include <cmath>
 #include <cstdint>
+#include <numbers>
 
 namespace mqt::jeff::benchmarks {
 
-using mlir::Value;
-using mlir::qc::QCProgramBuilder;
+using namespace mlir;
 
-llvm::SmallVector<Value> qft(QCProgramBuilder& b, const uint64_t n) {
+SmallVector<Value> qft(qc::QCProgramBuilder& b, const uint64_t n) {
   const auto size = static_cast<int64_t>(n);
   auto q = b.allocQubitRegister(size, "q");
   auto c = b.allocClassicalBitRegister(size, "c");
@@ -39,29 +40,28 @@ llvm::SmallVector<Value> qft(QCProgramBuilder& b, const uint64_t n) {
   b.scfFor(0, size, 1, [&](Value i) {
     b.h(b.loadQubit(q.value, i));
 
-    auto one = mlir::arith::ConstantIndexOp::create(b, 1);
-    auto lower = mlir::arith::AddIOp::create(b, i, one);
-    auto upper = mlir::arith::ConstantIndexOp::create(b, size);
-    const Value start = mlir::arith::ConstantFloatOp::create(
-        b, b.getF64Type(), llvm::APFloat(M_PI / 2.0));
-    const Value half = mlir::arith::ConstantFloatOp::create(b, b.getF64Type(),
-                                                            llvm::APFloat(0.5));
+    auto one = arith::ConstantIndexOp::create(b, 1);
+    auto lower = arith::AddIOp::create(b, i, one);
+    auto upper = arith::ConstantIndexOp::create(b, size);
+    const Value start = arith::ConstantFloatOp::create(
+        b, b.getF64Type(), llvm::APFloat(std::numbers::pi / 2.0));
+    const Value half =
+        arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
 
-    auto loop =
-        mlir::scf::ForOp::create(b, lower, upper, one, mlir::ValueRange{start});
-    const mlir::OpBuilder::InsertionGuard guard(b);
+    auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});
+    const OpBuilder::InsertionGuard guard(b);
     b.setInsertionPointToStart(loop.getBody());
     auto angle = loop.getRegionIterArg(0);
     b.cp(angle, b.loadQubit(q.value, loop.getInductionVar()),
          b.loadQubit(q.value, i));
-    const Value next = mlir::arith::MulFOp::create(b, angle, half);
-    mlir::scf::YieldOp::create(b, mlir::ValueRange{next});
+    const Value next = arith::MulFOp::create(b, angle, half);
+    scf::YieldOp::create(b, ValueRange{next});
   });
 
   // Reverse the bit order. The count is floor(size / 2).
   b.scfFor(0, size / 2, 1, [&](Value i) {
-    auto last = mlir::arith::ConstantIndexOp::create(b, size - 1);
-    auto mirrored = mlir::arith::SubIOp::create(b, last, i);
+    auto last = arith::ConstantIndexOp::create(b, size - 1);
+    auto mirrored = arith::SubIOp::create(b, last, i);
     b.swap(b.loadQubit(q.value, i), b.loadQubit(q.value, mirrored));
   });
 

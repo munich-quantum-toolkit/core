@@ -11,14 +11,16 @@
 #include "Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
+
 #include <cstdint>
 
 namespace mqt::jeff::benchmarks {
 
-using mlir::Value;
-using mlir::qc::QCProgramBuilder;
+using namespace mlir;
 
-llvm::SmallVector<Value> ghzStar(QCProgramBuilder& b, const uint64_t n) {
+SmallVector<Value> ghzStar(qc::QCProgramBuilder& b, const uint64_t n) {
   const auto size = static_cast<int64_t>(n);
   auto q = b.allocQubitRegister(size, "q");
   auto c = b.allocClassicalBitRegister(size, "c");

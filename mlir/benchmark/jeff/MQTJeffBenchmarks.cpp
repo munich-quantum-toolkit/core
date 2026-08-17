@@ -28,14 +28,14 @@
 #include <system_error>
 
 static llvm::cl::opt<uint64_t>
-    NumQubits("n", llvm::cl::desc("Size parameter of the generated programs"),
+    numQubits("n", llvm::cl::desc("Size parameter of the generated programs"),
               llvm::cl::value_desc("n"), llvm::cl::Required);
 
 static llvm::cl::opt<std::string>
-    OutputDirectory("o", llvm::cl::desc("Directory for the generated files"),
+    outputDirectory("o", llvm::cl::desc("Directory for the generated files"),
                     llvm::cl::value_desc("directory"), llvm::cl::init("."));
 
-static llvm::cl::opt<std::string> ProgramFilter(
+static llvm::cl::opt<std::string> programFilter(
     "program",
     llvm::cl::desc("Generate only the named program instead of every one"),
     llvm::cl::value_desc("name"), llvm::cl::init(""));
@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(
       argc, argv, "Generate jeff files for the structured benchmarks\n");
 
-  const std::filesystem::path directory(OutputDirectory.getValue());
+  const std::filesystem::path directory(outputDirectory.getValue());
   std::error_code error;
   std::filesystem::create_directories(directory, error);
   if (error) {
@@ -83,14 +83,14 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const auto filter = llvm::StringRef(ProgramFilter.getValue());
+  const auto filter = llvm::StringRef(programFilter.getValue());
   auto failures = 0;
   auto generated = 0;
   for (const auto& benchmark : mqt::jeff::benchmarks::benchmarks()) {
     if (!filter.empty() && benchmark.name != filter) {
       continue;
     }
-    if (generate(benchmark, NumQubits.getValue(), directory)) {
+    if (generate(benchmark, numQubits.getValue(), directory)) {
       ++generated;
     } else {
       ++failures;
