@@ -348,12 +348,11 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
   const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
 
   const qdmi::detail::DeviceRegistry registry;
-  ASSERT_EQ(registry.definitions().size(), 5);
+  ASSERT_EQ(registry.definitions().size(), 4);
   EXPECT_EQ(registry.definitions().at(0).id, "mqt.ddsim.default");
-  EXPECT_EQ(registry.definitions().at(1).id, "mqt.na.default");
-  EXPECT_EQ(registry.definitions().at(2).id, "mqt.sc.default");
-  EXPECT_EQ(registry.definitions().at(3).id, "mqt.sc.iqm.emerald");
-  EXPECT_EQ(registry.definitions().at(4).id, "mqt.sc.iqm.garnet");
+  EXPECT_EQ(registry.definitions().at(1).id, "mqt.sc.default");
+  EXPECT_EQ(registry.definitions().at(2).id, "mqt.sc.iqm.emerald");
+  EXPECT_EQ(registry.definitions().at(3).id, "mqt.sc.iqm.garnet");
   for (const auto& definition : registry.definitions()) {
     EXPECT_TRUE(std::filesystem::is_regular_file(definition.library));
   }

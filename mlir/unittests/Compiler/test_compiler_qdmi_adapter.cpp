@@ -146,12 +146,3 @@ TEST(CompilerQDMIAdapterTest,
             (llvm::ArrayRef<CompilerTarget::SiteId>{1, 0}));
   EXPECT_DOUBLE_EQ(*cx.siteTuples()[1].fidelity(), 0.92);
 }
-
-TEST(CompilerQDMIAdapterTest, RejectsNeutralAtomZoneModels) {
-  const auto device = qdmi::Session::openDevice("mqt.na.default");
-  auto target = mlir::compilerTargetFromDevice(device);
-  ASSERT_FALSE(target);
-  const auto message = llvm::toString(target.takeError());
-  EXPECT_NE(message.find("only circuit-model devices"), std::string::npos);
-  EXPECT_NE(message.find("zone"), std::string::npos);
-}

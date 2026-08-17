@@ -26,7 +26,7 @@ target_link_libraries(
           MLIRQIRPrograms)
 
 mqt_copy_qdmi_runtime(mqt-core-mlir-unittests-compiler MQT::CoreQDMIScDevice
-                      MQT::CoreQDMI_DDSIM_Device MQT::CoreQDMINaDevice)
+                      MQT::CoreQDMI_DDSIM_Device)
 target_compile_definitions(
   mqt-core-mlir-unittests-compiler
   PRIVATE

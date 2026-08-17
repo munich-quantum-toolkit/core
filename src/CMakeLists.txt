@@ -71,9 +71,6 @@ add_subdirectory(circuit_optimizer)
 # add DD package library
 add_subdirectory(dd)
 
-# add NA library
-add_subdirectory(na)
-
 # add QDMI libraries
 add_subdirectory(qdmi)
 

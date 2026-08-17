@@ -157,6 +157,11 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove the neutral-atom stack, which moves to MQT QMAP. This drops the
+  neutral-atom computation model, the neutral-atom FoMaC device session, the
+  neutral-atom QDMI device and its configuration, the `mqt.core.na` Python
+  module, `AodOperation`, and the `Move`, `Bridge`, `AodActivate`,
+  `AodDeactivate`, and `AodMove` operation kinds ([#2137]) ([**@denialhaag**])
 - 💥 Remove the random-number generator, seed, and `getGenerator()` method from
   `QuantumComputation`; randomized algorithms now own generators initialized
   from their seed arguments ([#2111]) ([**@simon1hofmann**])
@@ -781,6 +786,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
 [#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125

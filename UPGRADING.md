@@ -6,6 +6,28 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Removal of the neutral-atom stack
+
+MQT Core no longer contains any neutral-atom functionality. The complete stack
+moved to [MQT QMAP](https://github.com/munich-quantum-toolkit/qmap), which is
+now its sole owner. Depend on MQT QMAP to keep using it.
+
+MQT Core removed the following names:
+
+- The `MQT::CoreNA`, `MQT::CoreNAQDMI`, `MQT::CoreQDMINaDevice`, and
+  `MQT::CoreQDMINaDeviceConfig` CMake targets.
+- The `BUILD_MQT_CORE_QDMI_NA_DEVICE` CMake option.
+- The `na/NAComputation.hpp`, `na/entities/*.hpp`, `na/operations/*.hpp`,
+  `na/qdmi/Device.hpp`, `qdmi/devices/na/Configuration.hpp`, and
+  `ir/operations/AodOperation.hpp` headers.
+- The `na` C++ namespace.
+- The `mqt.core.na` Python module and its `mqt.core.na.qdmi` submodule.
+- The `Move`, `Bridge`, `AodActivate`, `AodDeactivate`, and `AodMove`
+  `qc::OpType` values, together with `QuantumComputation::move`,
+  `QuantumComputation::bridge`, and the OpenQASM names `move`, `bridge`,
+  `aod_activate`, `aod_deactivate`, and `aod_move`.
+- The bundled `mqt.na.default` QDMI device.
+
 ### Removal of QDMI configuration through `pyproject.toml`
 
 MQT Core no longer reads QDMI device definitions from a `[tool.qdmi]` table in

@@ -557,20 +557,12 @@ def test_compiler_target_from_device_id_preserves_open_and_conversion_errors() -
     """Stable-ID construction retains registry and target compatibility errors."""
     with pytest.raises(IndexError, match="Unknown QDMI device ID"):
         CompilerTarget.from_device_id("unknown.device")
-    with pytest.raises(ValueError, match="only circuit-model devices"):
-        CompilerTarget.from_device_id("mqt.na.default")
     with pytest.raises(ValueError, match="mutually exclusive"):
         CompilerTarget.from_device_id(
             "mqt.ddsim.default",
             device_config="{}",
             device_config_file=Path("device.json"),
         )
-
-
-def test_compiler_target_rejects_qdmi_zone_model() -> None:
-    """Reject neutral-atom zones at the circuit-target boundary."""
-    with pytest.raises(ValueError, match="only circuit-model devices"):
-        CompilerTarget.from_device(open_device("mqt.na.default"))
 
 
 def test_qco_program_runs_textual_pipeline() -> None:

@@ -75,9 +75,6 @@ struct NameToType {
 
 // Sorted lexicographically by `name`
 constexpr std::array OP_NAME_TO_TYPE{
-    NameToType{.name = "aod_activate", .type = AodActivate},
-    NameToType{.name = "aod_deactivate", .type = AodDeactivate},
-    NameToType{.name = "aod_move", .type = AodMove},
     NameToType{.name = "barrier", .type = Barrier},
     NameToType{.name = "ch", .type = H},
     NameToType{.name = "cnot", .type = X},
@@ -115,7 +112,6 @@ constexpr std::array OP_NAME_TO_TYPE{
     NameToType{.name = "mcphase", .type = P},
     NameToType{.name = "mcx", .type = X},
     NameToType{.name = "measure", .type = Measure},
-    NameToType{.name = "move", .type = Move},
     NameToType{.name = "none", .type = None},
     NameToType{.name = "p", .type = P},
     NameToType{.name = "peres", .type = Peres},

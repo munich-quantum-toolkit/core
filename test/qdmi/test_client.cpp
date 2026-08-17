@@ -1271,7 +1271,7 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
 
 TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
   const auto site = [] {
-    auto device = Session::openDevice("mqt.na.default");
+    auto device = Session::openDevice("mqt.sc.default");
     return device.getSites().front();
   }();
 
@@ -1280,7 +1280,7 @@ TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
 
 TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
   const auto operation = [] {
-    auto device = Session::openDevice("mqt.na.default");
+    auto device = Session::openDevice("mqt.sc.default");
     return device.getOperations().front();
   }();
 
@@ -1289,12 +1289,12 @@ TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
 
 TEST(DeviceOwnershipTest, SiteFromOperationKeepsFreshSessionAlive) {
   const auto site = [] {
-    auto device = Session::openDevice("mqt.na.default");
+    auto device = Session::openDevice("mqt.sc.default");
     const auto operation = device.getOperations().front();
     return operation.getSites().value().front();
   }();
 
-  EXPECT_TRUE(site.isZone());
+  EXPECT_FALSE(site.isZone());
 }
 
 namespace {
