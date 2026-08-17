@@ -14,15 +14,23 @@ releases may include breaking changes.
 
 - ✨ Add SpecAudits, a method and probe script for auditing tests that pin
   behavior the project never specified ([#2124]) ([**@marcelwa**])
+- ✨ Let a package register a program serializer for a program format through
+  the `mqt.core.qiskit.program_serializers` entry point group or
+  `mqt.core.plugins.qiskit.register_program_serializer`. MQT Core registers its
+  own OpenQASM 2 and OpenQASM 3 serializers the same way, and
+  `mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` states which
+  format the Qiskit backend picks when a device accepts several ([#2114])
+  ([**@marcelwa**])
+- ✨ Add `mqt.core.qdmi.is_binary_program_format` and
+  `mqt.core.qdmi.has_program_payload`, which state whether a program format
+  requires exact-byte submission and whether it carries a program payload at all
+  ([#2114]) ([**@marcelwa**])
 - ✨ Extract the existing QCO dead-gate elimination patterns from
   canonicalization into an explicit `remove-dead-gates` pass and use it in the
   qubit-reuse pipeline ([#2118]) ([**@simon1hofmann**])
 - 🚸 Add typed stable-ID construction for Qiskit backends and compiler targets,
   fluent Qiskit primitives, and lazy provider discovery ([#2084])
   ([**@burgholzer**])
-- ✨ Let a package register a program codec for a device-specific program format
-  through the `mqt.core.qiskit.program_codecs` entry point group or
-  `mqt.core.plugins.qiskit.register_program_codec` ([#2114]) ([**@marcelwa**])
 - 🧪 Test static Slurm license admission and QDMI execution with DDSIM and SC,
   and document the cluster setup ([#2043]) ([**@burgholzer**])
 - ✨ Add C++ and Python adapters that open the QDMI device named by one local
@@ -174,6 +182,9 @@ releases may include breaking changes.
   neutral-atom QDMI device and its configuration, the `mqt.core.na` Python
   module, `AodOperation`, and the `Move`, `Bridge`, `AodActivate`,
   `AodDeactivate`, and `AodMove` operation kinds ([#2137]) ([**@denialhaag**])
+- 💥 Remove the IQM JSON converter `qiskit_to_iqm_json` and the `MoveGate` from
+  the Qiskit plugin. [QDMI-on-IQM] owns both and registers the IQM JSON
+  serializer through the new entry point group ([#2114]) ([**@marcelwa**])
 - 💥 Remove the random-number generator, seed, and `getGenerator()` method from
   `QuantumComputation`; randomized algorithms now own generators initialized
   from their seed arguments ([#2111]) ([**@simon1hofmann**])
@@ -186,9 +197,6 @@ releases may include breaking changes.
 - 💥 Remove the legacy `QuantumComputation`-to-MLIR translator and its C++ and
   Python compiler inputs. Use OpenQASM, Qiskit circuits, or typed MLIR programs
   as compiler inputs ([#2054]) ([**@burgholzer**])
-- 💥 Remove the IQM JSON converter `qiskit_to_iqm_json` and the `MoveGate` from
-  the Qiskit plugin. [QDMI-on-IQM] owns both and registers the IQM JSON codec
-  through the new entry point group ([#2114]) ([**@marcelwa**])
 - 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
   `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
   and GMP build support. Equivalence-checking users should use [MQT QCEC]; its

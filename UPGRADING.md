@@ -101,24 +101,43 @@ MQT Core no longer provides `qiskit_to_iqm_json` or `MoveGate`.
 from `iqm.qdmi` instead:
 
 ```python
-from iqm.qdmi.converters import qiskit_to_iqm_json
+from iqm.qdmi.serializers import qiskit_to_iqm_json
 from iqm.qdmi.gates import MoveGate
 ```
 
-The Qiskit backend no longer converts to IQM JSON itself. It converts to
-OpenQASM 2 and OpenQASM 3 directly and takes every other program format from a
-registered program codec. Installing `iqm-qdmi` is enough: the package
-advertises its codec through the `mqt.core.qiskit.program_codecs` entry point
-group, so a backend over an IQM device keeps submitting IQM JSON.
+The Qiskit backend no longer serializes to IQM JSON itself. It takes every
+program format from a registered _program serializer_, including its own
+OpenQASM 2 and OpenQASM 3 serializers. Installing `iqm-qdmi` is enough: the
+package advertises its serializer through the
+`mqt.core.qiskit.program_serializers` entry point group, so a backend over an
+IQM device keeps submitting IQM JSON.
 
-Register a codec for another format the same way, or at run time:
+Register a serializer for another format the same way, or at run time. A
+serializer takes the circuit and the backend, and returns `str` for a text
+format or `bytes` for a binary format:
 
 ```python
-from mqt.core.plugins.qiskit import register_program_codec
+import io
+
+from qiskit import qpy
+
+from mqt.core.plugins.qiskit import register_program_serializer
 from mqt.core.qdmi import ProgramFormat
 
-register_program_codec(ProgramFormat.QPY, my_qpy_codec)
+
+def my_qpy_serializer(circuit, backend) -> bytes:
+    buffer = io.BytesIO()
+    qpy.dump(circuit, buffer)
+    return buffer.getvalue()
+
+
+register_program_serializer(ProgramFormat.QPY, my_qpy_serializer)
 ```
+
+`mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` states which
+format the backend picks when a device accepts several. Pass `replace=True` to
+`register_program_serializer` to take over a format that already has a
+serializer, including OpenQASM 2 and OpenQASM 3.
 
 A backend subclass that must represent a device-native operation outside
 Qiskit's standard gate library sets `_EXTRA_GATES`:

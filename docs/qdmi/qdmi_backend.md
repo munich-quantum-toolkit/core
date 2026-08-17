@@ -427,47 +427,85 @@ except UnsupportedFormatError as e:
 
 ## Implementation Details
 
-### Circuit Conversion
+### Circuit Serialization
 
 When you run a circuit, the backend:
 
 1. Validates the circuit (checks for unbound parameters, supported operations,
    valid options)
-2. Converts the circuit to one of the program formats supported by the target
-   device, through a registered program codec or, for OpenQASM 2 and OpenQASM 3,
-   through Qiskit's built-in exporters
+2. Serializes the circuit into one of the program formats supported by the
+   target device, through the program serializer registered for that format
 3. Submits the program to the QDMI device via `device.submit_job()`
 4. Returns a {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob`
 
-### Program Codecs
+### Program Serializers
 
-MQT Core converts to OpenQASM 2 and OpenQASM 3 itself. Every other program
-format belongs to the package that owns the device. Such a package registers a
-_program codec_: a function that takes a circuit and a device and returns the
-program as a string.
+A _program serializer_ turns one circuit into one program in one program format.
+MQT Core provides the serializers for OpenQASM 2 and OpenQASM 3. Every other
+format belongs to the package that owns the device, which registers its
+serializer through the same registry.
 
-A package advertises its codecs through the `mqt.core.qiskit.program_codecs`
-entry point group. The entry point name is the
-{py:class}`~mqt.core.qdmi.ProgramFormat` member name:
-
-```toml
-[project.entry-points."mqt.core.qiskit.program_codecs"]
-IQM_JSON = "iqm.qdmi.converters:qiskit_to_iqm_json"
-```
-
-{py:func}`~mqt.core.plugins.qiskit.codecs.register_program_codec` does the same
-at run time:
+A format fixes the kind of payload it carries, so there are two signatures. A
+text format takes a serializer that returns `str`:
 
 ```python
-from mqt.core.plugins.qiskit import register_program_codec
-from mqt.core.qdmi import ProgramFormat
-
-register_program_codec(ProgramFormat.IQM_JSON, qiskit_to_iqm_json)
+def serialize(circuit: QuantumCircuit, backend: QDMIBackend) -> str: ...
 ```
 
-The backend prefers a registered codec over the built-in OpenQASM codecs. It
-tries the device's supported formats in the order the device reports them and
-uses the first one that has a codec.
+A binary format takes one that returns `bytes`:
+
+```python
+def serialize(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes: ...
+```
+
+{py:func}`~mqt.core.qdmi.is_binary_program_format` states which kind a format
+carries. The backend checks the returned type against the format and raises
+{py:class}`~mqt.core.plugins.qiskit.exceptions.TranslationError` on a mismatch.
+A serializer reads the device through
+{py:attr}`~mqt.core.plugins.qiskit.backend.QDMIBackend.device` and the supported
+operations through
+{py:attr}`~mqt.core.plugins.qiskit.backend.QDMIBackend.target`.
+
+A package advertises its serializers through the
+`mqt.core.qiskit.program_serializers` entry point group. The entry point name is
+the {py:class}`~mqt.core.qdmi.ProgramFormat` member name:
+
+```toml
+[project.entry-points."mqt.core.qiskit.program_serializers"]
+IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
+```
+
+{py:func}`~mqt.core.plugins.qiskit.serializers.register_program_serializer` does
+the same at run time:
+
+```python
+from mqt.core.plugins.qiskit import register_program_serializer
+from mqt.core.qdmi import ProgramFormat
+
+register_program_serializer(ProgramFormat.IQM_JSON, qiskit_to_iqm_json)
+```
+
+Pass `replace=True` to take over a format that already has a serializer,
+including OpenQASM 2 and OpenQASM 3.
+
+A device usually accepts several formats. The backend walks them in the order of
+{py:data}`~mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` and
+uses the first one that has a serializer, so the order of the list decides and
+not the order the device reports:
+
+```text
+IQM_JSON, CUSTOM1 ... CUSTOM5,
+QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
+QIR_BASE_MODULE, QIR_BASE_STRING,
+QPY, QASM3, QASM2
+```
+
+A device-native format comes first, because a package that registers a
+serializer for its own device's format wants that format used. Among the
+standardized formats, a more capable profile beats a less capable one and a
+binary encoding beats a string encoding: the profile decides what a circuit may
+contain, while the encoding only decides how the program travels. `CALIBRATION`
+and `BATCH_JOB` are absent because they carry no program payload.
 
 ### Device Introspection
 

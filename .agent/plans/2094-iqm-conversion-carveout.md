@@ -47,11 +47,29 @@ tracker #2085. The pull request is #2114.
       two payload signatures, an explicit format preference order, MQT Core's
       own OpenQASM serializers registered through the same registry, the
       ecosystem cross-check, and the mid-term `mqt-cc` outlook.
-- [ ] Milestone 1: expose the program-format payload classification in Python.
-- [ ] Milestone 2: the serializer registry.
-- [ ] Milestone 3: the backend reduced to one ordered walk.
-- [ ] Milestone 4: the gate seam and the removal of the IQM pieces.
-- [ ] Milestone 5: documentation, changelog, upgrade guide, and full validation.
+- [x] (2026-08-17 16:20Z) Milestone 1: expose the program-format payload
+      classification in Python. `qdmi::isBinaryProgramFormat` and
+      `qdmi::hasProgramPayload` are public in
+      `include/mqt-core/qdmi/Client.hpp`, bound as
+      `mqt.core.qdmi.is_binary_program_format` and
+      `mqt.core.qdmi.has_program_payload`, and covered by
+      `QDMITest.ProgramFormatPayloadClassification` in
+      `test/qdmi/test_client.cpp` and two tests in
+      `test/python/qdmi/test_qdmi.py`.
+- [x] (2026-08-17 16:40Z) Milestone 2: the serializer registry lives in
+      `python/mqt/core/plugins/qiskit/serializers.py` and is covered by
+      `test/python/plugins/qiskit/test_serializers.py`.
+- [x] (2026-08-17 16:55Z) Milestone 3: `QDMIBackend._serialize_circuit` is one
+      ordered walk, `QDMIBackend.device` is public, and the two OpenQASM
+      serializers are module-level functions registered at import of
+      `backend.py`.
+- [x] (2026-08-17 17:00Z) Milestone 4: the gate seam and the removal of the IQM
+      pieces. The `_EXTRA_GATES` seam, the classmethod gate maps, the deletion
+      of `converters.py` and `gates.py`, and the test renames landed with the
+      first implementation and needed no change under the revised design. Only
+      the `__init__.py` exports moved to the serializer names.
+- [x] (2026-08-17 17:30Z) Milestone 5: documentation, changelog, upgrade guide,
+      and full validation.
 
 ## Surprises & Discoveries
 
@@ -72,6 +90,24 @@ tracker #2085. The pull request is #2114.
   Evidence: `python/mqt/core/qdmi/__init__.pyi` declares two overloads, one with
   `program: str` ("Submits a text job to the device.") and one with
   `program: bytes` ("Submits an exact byte payload to the device.").
+
+- Observation: `register_program_serializer` must not read the entry points,
+  even though the other registry functions do. Reading them first would let an
+  entry point occupy a format before any runtime registration, which inverts the
+  documented precedence, and it would make `backend.py` fail at import time with
+  `ValueError: A program serializer for QASM3 is already registered` as soon as
+  any installed package declared a `QASM3` entry point. Evidence: the first
+  version of `test_runtime_registration_beats_an_entry_point` failed with that
+  exact message. The registration now inserts without loading, and the entry
+  point loop keeps using `setdefault`, so a registration always wins.
+
+- Observation: naming the bound parameter `format`, as the interface section
+  first stated, fails `uvx nox -s lint`. Evidence: `ruff` reports
+  `builtin-argument-shadowing` for the generated stub
+  `python/mqt/core/qdmi/__init__.pyi`, saying that the argument `format` shadows
+  a Python builtin, and that stub must not be edited by hand. The bindings
+  therefore use `"program_format"_a`, which is also the name `Device.submit_job`
+  already uses.
 
 - Observation: Qiskit has no entry point group for turning a circuit into a
   submission payload, so there is no existing interface to conform to. Evidence:
@@ -141,6 +177,19 @@ tracker #2085. The pull request is #2114.
   gains a public `device` property so a serializer can still reach the device.
   Date/Author: 2026-08-17, @marcelwa.
 
+- Decision: `register_program_serializer` does not read the entry points, while
+  `program_serializer` and `unregister_program_serializer` do. Rationale: a
+  runtime registration takes precedence over an entry point, and it can only do
+  so if it may run before the entry points are read. MQT Core's own OpenQASM
+  registrations run while `backend.py` is still importing, so a reading
+  registration would also turn a third-party `QASM3` entry point into an import
+  error. Date/Author: 2026-08-17, @marcelwa.
+
+- Decision: the two bound classifiers name their parameter `program_format`, not
+  `format`. Rationale: `format` is a Python builtin, so `ruff` rejects it in the
+  generated stub, which must not be edited by hand. `Device.submit_job` already
+  uses `program_format`. Date/Author: 2026-08-17, @marcelwa.
+
 - Decision: entry points, not only a runtime registration call. Rationale:
   `QDMIProvider` builds a plain `QDMIBackend` for every registered device, so a
   user can reach a registered IQM device without ever importing `iqm.qdmi`. An
@@ -170,12 +219,35 @@ tracker #2085. The pull request is #2114.
 
 ## Outcomes & Retrospective
 
-To be completed at the end of Milestone 5. The first implementation reached
-working behavior under the name "program codec" and passed
-`uv run --no-sync pytest test/python` with 681 passed and 4 skipped, so the
-mechanism itself is sound. This revision changes its names, makes its ordering
-policy explicit, and makes it handle MQT Core's own formats the same way as
-everyone else's.
+All five milestones are done and the design is as described above. The Qiskit
+backend now holds no format-specific branch: `_serialize_circuit` walks
+`preferred_program_formats` and calls the first registered serializer it finds.
+MQT Core's OpenQASM 2 and OpenQASM 3 exporters sit in that registry beside any
+serializer a device package registers, so a provider can also replace them.
+Nothing in MQT Core converts to IQM JSON or defines `move` any more.
+
+The validation that closed the work, all from the repository root:
+`uv run --no-sync pytest test/python/plugins/qiskit -q` passed 110 tests,
+`uv run --no-sync pytest test/python/qdmi -q` passed 304,
+`uv run --no-sync pytest test/python -q` passed 685 with 4 skipped,
+`./build/release/test/qdmi/mqt-core-qdmi-test` passed 274, `uvx nox -s stubs`
+produced a diff holding only the two new function stubs, and `uvx nox -s lint`
+passed the full hook set.
+
+Two lessons. First, a lazily loaded registry has an ordering contract that must
+be decided per function, not per module: reading the entry points inside
+`register_program_serializer` looked harmless and would have made the adapter's
+own import fail against a third-party entry point for the same format. Second,
+the classification test in `test/qdmi/test_client.cpp` states its expectations
+through a `switch` with no default case, so the compiler, not a reviewer, is
+what notices a program format added to QDMI later.
+
+What remains is outside this repository: pull request #189 in
+`iqm-finland/QDMI-on-IQM` must ship `qiskit_to_iqm_json` and `MoveGate` and
+declare the `mqt.core.qiskit.program_serializers` entry point, and its
+serializer must take the backend rather than the device. Until both land in one
+environment, the cross-repository check in `Validation and Acceptance` cannot
+run.
 
 ## Context and Orientation
 
@@ -321,8 +393,8 @@ At the end of this work the following must exist.
 
 In `mqt.core.qdmi`, two module-level functions bound from C++:
 
-    def is_binary_program_format(format: ProgramFormat) -> bool: ...
-    def has_program_payload(format: ProgramFormat) -> bool: ...
+    def is_binary_program_format(program_format: ProgramFormat) -> bool: ...
+    def has_program_payload(program_format: ProgramFormat) -> bool: ...
 
 `is_binary_program_format` is true for `QIR_BASE_MODULE`, `QIR_ADAPTIVE_MODULE`,
 and `QPY`. `has_program_payload` is false for `CALIBRATION` and `BATCH_JOB` and
@@ -419,9 +491,9 @@ functions, replacing `hasNoGenericProgramPayload(format)` with
 not change.
 
 In `bindings/qdmi/qdmi.cpp`, immediately after the `ProgramFormat` enum, define
-the two functions on `qdmiModule` with `"format"_a` and Google-style docstrings,
-following the `job.def(...)` calls in the same file for style. Then regenerate
-the stub with `uvx nox -s stubs` and check that the only change to
+the two functions on `qdmiModule` with `"program_format"_a` and Google-style
+docstrings, following the `job.def(...)` calls in the same file for style. Then
+regenerate the stub with `uvx nox -s stubs` and check that the only change to
 `python/mqt/core/qdmi/__init__.pyi` is the two new signatures.
 
 Add C++ coverage in `test/qdmi/test_client.cpp`: a test that asserts the
