@@ -47,6 +47,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
+#include <limits>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -336,18 +337,27 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsNonUnitaryMatrix) {
   const auto qubit = builder.allocQubit();
   const auto matrixType =
       RankedTensorType::get({2, 2}, ComplexType::get(builder.getF64Type()));
-  const std::array<std::complex<double>, 4> values{
-      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.5, 0.0}}};
-  auto unitary = UnitaryOp::create(
-      builder,
-      DenseElementsAttr::get(matrixType,
-                             llvm::ArrayRef<std::complex<double>>(values)),
-      ValueRange{qubit});
-
   ScopedDiagnosticHandler handler(context.get(),
                                   [](Diagnostic&) { return success(); });
-  EXPECT_TRUE(failed(unitary.verify()));
-  unitary.erase();
+  const auto expectRejected = [&](const ArrayRef<std::complex<double>> values) {
+    auto unitary = UnitaryOp::create(
+        builder, DenseElementsAttr::get(matrixType, values), ValueRange{qubit});
+    EXPECT_TRUE(failed(unitary.verify()));
+    unitary.erase();
+  };
+
+  const std::array<std::complex<double>, 4> nonUnitaryValues{
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.5, 0.0}}};
+  expectRejected(nonUnitaryValues);
+
+  const std::array<std::complex<double>, 4> nonOrthogonalValues{
+      {{1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}}};
+  expectRejected(nonOrthogonalValues);
+
+  const auto maximum = std::numeric_limits<double>::max();
+  const std::array<std::complex<double>, 4> overflowingValues{
+      {{maximum, maximum}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
+  expectRejected(overflowingValues);
 }
 
 TEST_F(QCTest, DenseUnitaryVerifierRejectsMalformedShapeAndDimension) {

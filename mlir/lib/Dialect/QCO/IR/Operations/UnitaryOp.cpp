@@ -50,7 +50,7 @@ void UnitaryOp::build(OpBuilder& /*builder*/, OperationState& state,
                       const ValueRange qubits, const ElementsAttr matrix) {
   state.addOperands(qubits);
   state.addTypes(qubits.getTypes());
-  state.addAttribute("matrix", matrix);
+  state.addAttribute(getMatrixAttrName(state.name), matrix);
 }
 
 LogicalResult UnitaryOp::verify() {

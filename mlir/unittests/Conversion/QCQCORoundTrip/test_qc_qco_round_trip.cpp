@@ -182,9 +182,11 @@ module {
   stream.flush();
   auto reparsed = parseSourceString<ModuleOp>(serialized, &context);
   ASSERT_TRUE(reparsed);
+  ASSERT_TRUE(succeeded(verify(*reparsed)));
   qc::UnitaryOp reparsedUnitary;
   reparsed->walk([&](qc::UnitaryOp candidate) { reparsedUnitary = candidate; });
   ASSERT_TRUE(reparsedUnitary);
+  EXPECT_EQ(reparsedUnitary.getQubits().size(), 2U);
   EXPECT_EQ(reparsedUnitary.getMatrix(), originalMatrix);
 
   ASSERT_TRUE(succeeded(runRoundTrip(*module)));

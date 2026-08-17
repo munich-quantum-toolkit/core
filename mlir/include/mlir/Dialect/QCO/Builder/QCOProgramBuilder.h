@@ -1375,7 +1375,8 @@ public:
   /**
    * @brief Apply an explicitly represented dense unitary matrix
    *
-   * @param qubits Input qubits (must be valid/unconsumed)
+   * @param qubits Input qubits (must be valid/unconsumed), ordered from the
+   * most-significant basis bit to the least-significant basis bit
    * @param matrix Square row-major `complex<f64>` matrix
    * @return Output qubits
    */

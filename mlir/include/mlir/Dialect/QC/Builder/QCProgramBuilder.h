@@ -996,7 +996,8 @@ public:
   /**
    * @brief Apply an explicitly represented dense unitary matrix
    *
-   * @param qubits Target qubits
+   * @param qubits Target qubits, ordered from the most-significant basis bit
+   * to the least-significant basis bit
    * @param matrix Square row-major `complex<f64>` matrix
    * @return Reference to this builder for method chaining
    */

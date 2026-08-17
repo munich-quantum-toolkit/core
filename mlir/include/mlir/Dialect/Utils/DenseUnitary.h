@@ -89,18 +89,17 @@ verifyDenseUnitaryMatrix(Operation* operation, const ElementsAttr matrixAttr,
 
   const auto dimension = static_cast<size_t>(expectedDimension);
   for (size_t lhsColumn = 0; lhsColumn < dimension; ++lhsColumn) {
-    for (size_t rhsColumn = 0; rhsColumn < dimension; ++rhsColumn) {
-      std::complex<long double> innerProduct{};
+    for (size_t rhsColumn = lhsColumn; rhsColumn < dimension; ++rhsColumn) {
+      std::complex<double> innerProduct{};
       for (size_t row = 0; row < dimension; ++row) {
         const auto lhs = values[(row * dimension) + lhsColumn];
         const auto rhs = values[(row * dimension) + rhsColumn];
-        innerProduct +=
-            std::conj(std::complex<long double>{lhs.real(), lhs.imag()}) *
-            std::complex<long double>{rhs.real(), rhs.imag()};
+        innerProduct += std::conj(lhs) * rhs;
       }
-      const std::complex<long double> expected =
-          lhsColumn == rhsColumn ? 1.0L : 0.0L;
-      if (std::abs(innerProduct - expected) > DENSE_UNITARY_TOLERANCE) {
+      const std::complex<double> expected = lhsColumn == rhsColumn ? 1.0 : 0.0;
+      if (!std::isfinite(innerProduct.real()) ||
+          !std::isfinite(innerProduct.imag()) ||
+          std::abs(innerProduct - expected) > DENSE_UNITARY_TOLERANCE) {
         return operation->emitOpError()
                << "matrix must be unitary within absolute tolerance "
                << DENSE_UNITARY_TOLERANCE;
