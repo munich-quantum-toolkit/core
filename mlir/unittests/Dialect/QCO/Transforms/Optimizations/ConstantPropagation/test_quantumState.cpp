@@ -4,7 +4,7 @@
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
- *participatingEntries
+ *
  * Licensed under the MIT License
  */
 
