@@ -33,7 +33,6 @@
 
 #include <cstddef>
 #include <memory>
-#include <ostream>
 #include <string>
 
 namespace {
@@ -45,11 +44,6 @@ struct RemoveDeadGatesTestCase {
   std::string name;
   ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const RemoveDeadGatesTestCase& testCase) {
-    return os << testCase.name;
-  }
 };
 
 class RemoveDeadGatesTest : public testing::Test {
@@ -77,7 +71,7 @@ class RemoveDeadGatesParameterizedTest
     : public RemoveDeadGatesTest,
       public testing::WithParamInterface<RemoveDeadGatesTestCase> {};
 
-Value unobservedH(QCOProgramBuilder& builder) {
+static Value unobservedH(QCOProgramBuilder& builder) {
   auto qubit = builder.allocQubit();
   qubit = builder.h(qubit);
   builder.sink(qubit);
@@ -127,6 +121,9 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(allocQubit)},
                     RemoveDeadGatesTestCase{
                         "IfOp", MQT_NAMED_BUILDER(deadGatesWithIfOpProgram),
-                        MQT_NAMED_BUILDER(deadGatesWithIfOpSimplified)}));
+                        MQT_NAMED_BUILDER(deadGatesWithIfOpSimplified)}),
+    [](const testing::TestParamInfo<RemoveDeadGatesTestCase>& info) {
+      return info.param.name;
+    });
 
 } // namespace
