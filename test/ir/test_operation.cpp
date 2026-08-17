@@ -10,7 +10,6 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/Register.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/Expression.hpp"
@@ -23,7 +22,6 @@
 
 #include <gtest/gtest.h>
 
-#include <cstdint>
 #include <sstream>
 #include <stdexcept>
 #include <string>
