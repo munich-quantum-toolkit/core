@@ -130,10 +130,15 @@ inline double getArithDoubleOpResult(mlir::Operation* operation,
 
   const bool supported =
       mlir::TypeSwitch<mlir::Operation*, bool>(operation)
-          .Case<mlir::arith::AddFOp>(
-              [&](auto) { return result.add(rhs, rm) == llvm::APFloat::opOK; })
+          .Case<mlir::arith::AddFOp>([&](auto) {
+            result = lhs;
+            auto status = result.add(rhs, rm);
+            return (status & llvm::APFloat::opInvalidOp) == 0;
+          })
           .Case<mlir::arith::DivFOp>([&](auto) {
-            return result.divide(rhs, rm) == llvm::APFloat::opOK;
+            result = lhs;
+            auto status = result.divide(rhs, rm);
+            return (status & llvm::APFloat::opInvalidOp) == 0;
           })
           .Case<mlir::arith::MaximumFOp>([&](auto) {
             result = llvm::maximum(lhs, rhs);
@@ -153,7 +158,8 @@ inline double getArithDoubleOpResult(mlir::Operation* operation,
           })
           .Case<mlir::arith::MulFOp>([&](auto) {
             result = lhs;
-            return result.multiply(rhs, rm) == llvm::APFloat::opOK;
+            auto status = result.multiply(rhs, rm);
+            return (status & llvm::APFloat::opInvalidOp) == 0;
           })
           .Case<mlir::arith::NegFOp>([&](auto) {
             result = lhs;
@@ -162,7 +168,8 @@ inline double getArithDoubleOpResult(mlir::Operation* operation,
           })
           .Case<mlir::arith::RemFOp>([&](auto) {
             result = lhs;
-            return result.remainder(rhs) == llvm::APFloat::opOK;
+            auto status = result.remainder(rhs);
+            return (status & llvm::APFloat::opInvalidOp) == 0;
           })
           .Case<mlir::arith::SubFOp>([&](auto) {
             result = lhs;
