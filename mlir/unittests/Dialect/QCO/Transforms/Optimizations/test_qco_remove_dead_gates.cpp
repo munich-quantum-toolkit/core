@@ -35,6 +35,13 @@
 #include <memory>
 #include <string>
 
+static mlir::Value unobservedH(mlir::qco::QCOProgramBuilder& builder) {
+  auto qubit = builder.allocQubit();
+  qubit = builder.h(qubit);
+  builder.sink(qubit);
+  return builder.intConstant(0);
+}
+
 namespace {
 
 using namespace mlir;
@@ -70,13 +77,6 @@ protected:
 class RemoveDeadGatesParameterizedTest
     : public RemoveDeadGatesTest,
       public testing::WithParamInterface<RemoveDeadGatesTestCase> {};
-
-static Value unobservedH(QCOProgramBuilder& builder) {
-  auto qubit = builder.allocQubit();
-  qubit = builder.h(qubit);
-  builder.sink(qubit);
-  return builder.intConstant(0);
-}
 
 TEST_P(RemoveDeadGatesParameterizedTest, ProducesExpectedProgram) {
   const auto& testCase = GetParam();
