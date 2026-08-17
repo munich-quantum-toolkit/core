@@ -31,7 +31,7 @@ from qiskit.circuit import (
     library,
 )
 from qiskit.circuit.classical import expr, types
-from qiskit.quantum_info import Operator
+from qiskit.quantum_info import Operator, random_unitary
 
 from mqt.core.mlir import CompilerTarget, QCProgram, compile_program
 from mqt.core.plugins.qiskit import qiskit_to_mqt
@@ -106,6 +106,52 @@ def test_standard_gates_round_trip(gate: Gate) -> None:
     restored = QCProgram.from_qiskit(circuit).to_qiskit()
 
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_unitary_definition_expansion_preserves_qarg_mapping_and_source_data() -> None:
+    """Expand a numeric unitary definition without changing the source circuit data."""
+    local = QuantumCircuit(2)
+    local.global_phase = 0.23
+    local.h(0)
+    local.cx(0, 1)
+    local.rz(0.37, 1)
+
+    circuit = QuantumCircuit(3)
+    circuit.x(1)
+    circuit.append(library.UnitaryGate(Operator(local)), [2, 0])
+    source_data = list(circuit.data)
+    source_operator = Operator(circuit)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    assert np.allclose(Operator(restored).data, source_operator.data)
+    assert np.allclose(Operator(circuit).data, source_operator.data)
+    assert list(circuit.data) == source_data
+    assert circuit.count_ops() == {"x": 1, "unitary": 1}
+    assert "unitary" not in restored.count_ops()
+
+
+@pytest.mark.parametrize("num_qubits", [1, 2, 3])
+def test_unitary_definition_synthesis_paths(num_qubits: int) -> None:
+    """Import Qiskit's one-, two-, and three-qubit synthesis paths."""
+    circuit = QuantumCircuit(num_qubits)
+    matrix = random_unitary(2**num_qubits, seed=100 + num_qubits)
+    circuit.append(library.UnitaryGate(matrix), range(num_qubits))
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_quantum_volume_unitaries_import_through_definitions() -> None:
+    """Import the definition-backed unitaries used by Quantum Volume."""
+    circuit = library.quantum_volume(4, depth=3, seed=12345)
+    assert circuit.count_ops().get("unitary") == 6
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+    assert "unitary" not in restored.count_ops()
 
 
 @pytest.mark.parametrize(
@@ -332,7 +378,8 @@ def test_cyclic_and_excessively_nested_definitions_are_rejected() -> None:
         QCProgram.from_qiskit(too_deep)
 
 
-def test_exponential_definition_expansion_is_rejected_by_budget() -> None:
+@pytest.mark.parametrize("root_kind", ["custom", "unitary"])
+def test_exponential_definition_expansion_is_rejected_by_budget(root_kind: str) -> None:
     """Count repeated definitions without materializing their full expansion."""
     leaf_definition = QuantumCircuit(1)
     leaf_definition.h(0)
@@ -344,8 +391,14 @@ def test_exponential_definition_expansion_is_rejected_by_budget() -> None:
         definition.append(nested, [0])
         nested = Gate(f"branch_{level}", 1, [])
         nested.definition = definition
+    root: Gate = nested
+    if root_kind == "unitary":
+        definition = QuantumCircuit(1)
+        definition.append(nested, [0])
+        root = library.UnitaryGate(np.eye(2))
+        root.definition = definition
     circuit = QuantumCircuit(1)
-    circuit.append(nested, [0])
+    circuit.append(root, [0])
 
     with pytest.raises(RuntimeError, match="expansion exceeds 10000000 operations"):
         QCProgram.from_qiskit(circuit)
@@ -372,7 +425,7 @@ def test_value_list_loop_expansion_counts_each_iteration() -> None:
 
 
 def test_rejections_do_not_modify_source_circuits() -> None:
-    """Reject unsupported parameters, inputs, and unitaries without mutation."""
+    """Reject unsupported parameters and inputs without mutation."""
     theta = Parameter("theta")
     symbolic = QuantumCircuit(1)
     symbolic.rx(theta, 0)
@@ -390,13 +443,6 @@ def test_rejections_do_not_modify_source_circuits() -> None:
     with pytest.raises(RuntimeError, match="standalone classical variables"):
         QCProgram.from_qiskit(runtime_input)
     assert list(runtime_input.data) == input_data
-
-    unitary = QuantumCircuit(1)
-    unitary.unitary(np.eye(2), [0])
-    unitary_data = list(unitary.data)
-    with pytest.raises(RuntimeError, match="does not support arbitrary unitaries"):
-        QCProgram.from_qiskit(unitary)
-    assert list(unitary.data) == unitary_data
 
 
 @pytest.mark.parametrize("resource", ["quantum", "classical"])

@@ -174,7 +174,7 @@ program structures than its C API can construct.
 | Constant Boolean, `Uint` up to 64 bits, and `Float` expressions   | Supported            | Rejected       |
 | Standalone classical variables or variable expressions            | Rejected             | Rejected       |
 | Free symbolic parameters                                          | Rejected             | Rejected       |
-| Arbitrary unitaries                                               | Rejected             | Rejected       |
+| Numerically bound Qiskit unitaries                                | Recursively expanded | Not preserved  |
 | Register aliases or interleaved membership                        | Rejected             | Rejected       |
 | Transpiler layout metadata                                        | Accepted and ignored | Not emitted    |
 
@@ -183,6 +183,11 @@ parameters passed to a custom instruction are bound before its definition is
 expanded. Definition expansion rejects missing definitions, cycles, operand
 arity mismatches, nesting beyond 64 levels, and more than 10 million expanded
 operations.
+
+The importer also expands the numeric circuit definition that Qiskit provides
+for each {py:class}`~qiskit.circuit.library.UnitaryGate`. This conversion lowers
+the synthesized definition to standard operations. It does not retain a dense
+matrix operation for later export.
 
 A circuit remains valid when {code}`circ.layout` is present. The importer
 translates the circuit operations and deliberately does not preserve physical or

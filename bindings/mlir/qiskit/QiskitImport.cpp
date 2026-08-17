@@ -1013,8 +1013,8 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
       builder.reset(getQubit(instruction.qubits[0]));
       break;
     case OperationKind::Unitary:
-      throw std::runtime_error(
-          "Qiskit circuit import does not support arbitrary unitaries");
+      translateDefinition(index, instruction);
+      break;
     case OperationKind::ControlFlow: {
       const auto controlFlow = circuit.controlFlow(index);
       translateControlFlow(builder, *controlFlow, allQubits, classicalBits,
@@ -1069,6 +1069,7 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
     const auto instruction = circuit.instruction(index);
     if ((instruction.kind == OperationKind::Gate &&
          !instruction.standardGate) ||
+        instruction.kind == OperationKind::Unitary ||
         instruction.kind == OperationKind::Unknown) {
       if (!instruction.modifiers.empty()) {
         throw std::runtime_error(
@@ -1451,8 +1452,9 @@ void validateCircuit(const CircuitReader& circuit,
       }
       break;
     case OperationKind::Unitary:
-      throw std::runtime_error(
-          "Qiskit circuit import does not support arbitrary unitaries");
+      validateDefinition(circuit, index, localParameters, definitionDepth,
+                         controlFlowDepth);
+      break;
     case OperationKind::ControlFlow: {
       const auto controlFlow = circuit.controlFlow(index);
       validateControlFlow(*controlFlow, localParameters, rootQubits, rootClbits,
