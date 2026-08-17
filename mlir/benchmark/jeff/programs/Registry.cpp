@@ -10,21 +10,21 @@
 
 #include "Programs.h"
 
-#include <llvm/ADT/SmallVector.h>
+#include <mlir/Support/LLVM.h>
 
 namespace mqt::jeff::benchmarks {
 
-llvm::SmallVector<Benchmark> benchmarks() {
+SmallVector<Benchmark> benchmarks() {
   return {
-      {"ghz-linear", &ghzLinear, 1},
-      {"ghz-star", &ghzStar, 1},
-      {"grover", &grover, 2},
-      {"iqft", &iqft, 1},
-      {"iqpe", &iqpe, 1},
-      {"multiplexer", &multiplexer, 2},
-      {"qft", &qft, 1},
-      {"qpe", &qpe, 2},
-      {"teleportation", &teleportation, 1},
+      {.name = "ghz-linear", .build = &ghzLinear, .minimumSize = 1},
+      {.name = "ghz-star", .build = &ghzStar, .minimumSize = 1},
+      {.name = "grover", .build = &grover, .minimumSize = 2},
+      {.name = "iqft", .build = &iqft, .minimumSize = 1},
+      {.name = "iqpe", .build = &iqpe, .minimumSize = 1},
+      {.name = "multiplexer", .build = &multiplexer, .minimumSize = 2},
+      {.name = "qft", .build = &qft, .minimumSize = 1},
+      {.name = "qpe", .build = &qpe, .minimumSize = 2},
+      {.name = "teleportation", .build = &teleportation, .minimumSize = 1},
   };
 }
 

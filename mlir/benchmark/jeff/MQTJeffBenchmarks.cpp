@@ -40,11 +40,9 @@ static llvm::cl::opt<std::string> programFilter(
     llvm::cl::desc("Generate only the named program instead of every one"),
     llvm::cl::value_desc("name"), llvm::cl::init(""));
 
-namespace {
-
 /// Builds one benchmark and writes it as a `jeff` file.
-bool generate(const mqt::jeff::benchmarks::Benchmark& benchmark,
-              const uint64_t n, const std::filesystem::path& directory) {
+static bool generate(const mqt::jeff::benchmarks::Benchmark& benchmark,
+                     const uint64_t n, const std::filesystem::path& directory) {
   if (n < benchmark.minimumSize) {
     llvm::errs() << benchmark.name << ": needs n of at least "
                  << benchmark.minimumSize << ", skipping\n";
@@ -67,8 +65,6 @@ bool generate(const mqt::jeff::benchmarks::Benchmark& benchmark,
   llvm::outs() << benchmark.name << " -> " << path.string() << "\n";
   return true;
 }
-
-} // namespace
 
 int main(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(

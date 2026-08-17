@@ -12,18 +12,15 @@
 #include "programs/Programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/StringRef.h>
 
 #include <cstdint>
 #include <string>
 
 namespace mqt::jeff::benchmarks {
-namespace {
-
-/// The size the benchmarks are generated at.
-constexpr uint64_t SIZE = 7;
 
 /// Replaces the characters that a test name cannot contain.
-std::string testName(llvm::StringRef name) {
+static std::string testName(llvm::StringRef name) {
   auto sanitized = name.str();
   for (auto& character : sanitized) {
     if (character == '-') {
@@ -32,6 +29,11 @@ std::string testName(llvm::StringRef name) {
   }
   return sanitized;
 }
+
+namespace {
+
+/// The size the benchmarks are generated at.
+constexpr uint64_t SIZE = 7;
 
 class JeffBenchmarkTest : public testing::TestWithParam<Benchmark> {};
 
@@ -76,4 +78,5 @@ TEST_P(JeffBenchmarkTest, RejectsSizesBelowTheMinimum) {
 }
 
 } // namespace
+
 } // namespace mqt::jeff::benchmarks
