@@ -14,6 +14,9 @@ releases may include breaking changes.
 
 - ✨ Add SpecAudits, a method and probe script for auditing tests that pin
   behavior the project never specified ([#2124]) ([**@marcelwa**])
+- ✨ Extract the existing QCO dead-gate elimination patterns from
+  canonicalization into an explicit `remove-dead-gates` pass and use it in the
+  qubit-reuse pipeline ([#2118]) ([**@simon1hofmann**])
 - 🚸 Add typed stable-ID construction for Qiskit backends and compiler targets,
   fluent Qiskit primitives, and lazy provider discovery ([#2084])
   ([**@burgholzer**])
@@ -117,13 +120,16 @@ releases may include breaking changes.
   [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780], [#1781],
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
   [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
-  [#1976], [#2006], [#2014], [#2015], [#2017], [#2026], [#2028], [#2058])
-  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**],
-  [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
+  [#1976], [#2006], [#2014], [#2015], [#2017], [#2026], [#2028], [#2058],
+  [#2125]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
+  [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
 
+- 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
+  logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
+  ([**@simon1hofmann**])
 - ♻️ Simplify Python optional-dependency checks while preserving the Qiskit and
   PennyLane availability flags ([#2108]) ([**@simon1hofmann**])
 - 💥 Remove the unused `pybind11` CMake helper and rename
@@ -151,8 +157,18 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove the random-number generator, seed, and `getGenerator()` method from
+  `QuantumComputation`; randomized algorithms now own generators initialized
+  from their seed arguments ([#2111]) ([**@simon1hofmann**])
 - 💥 Remove QDMI device configuration through `[tool.qdmi]` in `pyproject.toml`
   and the vendored toml++ header ([#2116]) ([**@denialhaag**])
+- 💥 Remove the FoMaC compatibility name from the C++ and Python QDMI APIs. Use
+  the `qdmi` C++ namespace, headers, libraries, and CMake targets; the
+  `mqt.core.qdmi` and `mqt.core.na.qdmi` Python modules; and the module-level
+  Python driver functions ([#2115]) ([**@burgholzer**])
+- 💥 Remove the legacy `QuantumComputation`-to-MLIR translator and its C++ and
+  Python compiler inputs. Use OpenQASM, Qiskit circuits, or typed MLIR programs
+  as compiler inputs ([#2054]) ([**@burgholzer**])
 - 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
   `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
   and GMP build support. Equivalence-checking users should use [MQT QCEC]; its
@@ -766,9 +782,14 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
+[#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
+[#2118]: https://github.com/munich-quantum-toolkit/core/pull/2118
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
+[#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
+[#2115]: https://github.com/munich-quantum-toolkit/core/pull/2115
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
+[#2111]: https://github.com/munich-quantum-toolkit/core/pull/2111
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
@@ -776,6 +797,7 @@ for previous changelogs._
 [#2066]: https://github.com/munich-quantum-toolkit/core/pull/2066
 [#2060]: https://github.com/munich-quantum-toolkit/core/pull/2060
 [#2058]: https://github.com/munich-quantum-toolkit/core/pull/2058
+[#2054]: https://github.com/munich-quantum-toolkit/core/pull/2054
 [#2049]: https://github.com/munich-quantum-toolkit/core/pull/2049
 [#2043]: https://github.com/munich-quantum-toolkit/core/pull/2043
 [#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042

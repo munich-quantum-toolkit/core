@@ -26,10 +26,6 @@
 #include <variant>
 #include <vector>
 
-namespace qc {
-class QuantumComputation;
-} // namespace qc
-
 namespace mlir {
 
 class QCProgram;
@@ -164,10 +160,6 @@ public:
   [[nodiscard]] static std::optional<QCProgram>
   fromQASMFile(const std::filesystem::path& path);
 
-  /// Translate an MQT `QuantumComputation` to QC.
-  [[nodiscard]] static std::optional<QCProgram>
-  fromQuantumComputation(const ::qc::QuantumComputation& computation);
-
   /**
    * @brief Take ownership of an MLIR module that contains a QC program.
    *
@@ -178,7 +170,6 @@ public:
   [[nodiscard]] static std::optional<QCProgram>
   fromModule(std::shared_ptr<MLIRContext> context,
              OwningOpRef<ModuleOp> moduleOp);
-
   /// Create an independent QC program copy.
   [[nodiscard]] QCProgram copy() const;
 

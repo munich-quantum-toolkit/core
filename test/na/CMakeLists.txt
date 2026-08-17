@@ -12,4 +12,4 @@ if(TARGET MQT::CoreNA)
   target_link_libraries(mqt-core-na-test PRIVATE MQT::CoreQASM)
 endif()
 
-add_subdirectory(fomac)
+add_subdirectory(qdmi)

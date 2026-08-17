@@ -68,14 +68,12 @@ Acts as mutable sequence of :class:`~mqt.core.ir.operations.Operation` objects, 
 
 Args:
     nq: The number of qubits in the quantum computation.
-    nc: The number of classical bits in the quantum computation.
-    seed: The seed to use for the internal random number generator.)pb");
+    nc: The number of classical bits in the quantum computation.)pb");
 
   ///---------------------------------------------------------------------------
   ///                           \n Constructors \n
   ///---------------------------------------------------------------------------
-  qc.def(nb::init<std::size_t, std::size_t, std::size_t>(), "nq"_a = 0U,
-         "nc"_a = 0U, "seed"_a = 0U);
+  qc.def(nb::init<std::size_t, std::size_t>(), "nq"_a = 0U, "nc"_a = 0U);
 
   // expose the static constructor from qasm strings or files
   qc.def_static("from_qasm_str", &qasm3::Importer::imports, "qasm"_a,
@@ -121,10 +119,10 @@ Note:
     Garbage qubits are qubits whose final state is not relevant for the computation.)pb");
 
   qc.def_prop_ro(
-      "num_measured_qubits", &qc::QuantumComputation::getNmeasuredQubits,
-      R"pb(The number of qubits that are measured in the quantum computation.
+      "num_output_qubits", &qc::QuantumComputation::getNoutputQubits,
+      R"pb(The number of logical output qubits in the quantum computation.
 
-Computed as :math:`| \text{qubits} | - | \text{garbage} |`.)pb");
+Output qubits are the qubits that are not marked as garbage.)pb");
 
   qc.def_prop_ro("num_data_qubits",
                  &qc::QuantumComputation::getNqubitsWithoutAncillae,

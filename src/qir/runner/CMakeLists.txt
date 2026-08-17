@@ -9,7 +9,13 @@
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runner)
 
 if(NOT TARGET ${TARGET_NAME})
+  # The runner uses the exception-based Core IR and DD interfaces.
+  set(LLVM_REQUIRES_EH ON)
+  set(LLVM_REQUIRES_RTTI ON)
   add_llvm_tool(${TARGET_NAME} Runner.cpp DEPENDS intrinsics_gen EXPORT_SYMBOLS)
+  unset(LLVM_REQUIRES_EH)
+  unset(LLVM_REQUIRES_RTTI)
+  mqt_llvm_target_disable_rtti(${TARGET_NAME})
 
   # Add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRJIT MQT::CoreQIRRuntime)

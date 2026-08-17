@@ -8,11 +8,9 @@ on:
       - ".github/workflows/slurm.yml"
       - "bindings/qdmi/**"
       - "cmake/**"
-      - "include/mqt-core/fomac/**"
       - "include/mqt-core/qdmi/**"
       - "pyproject.toml"
       - "python/mqt/core/qdmi/**"
-      - "src/fomac/**"
       - "src/qdmi/**"
       - "test/slurm/**"
       - "uv.lock"
@@ -21,11 +19,9 @@ on:
       - ".github/workflows/slurm.yml"
       - "bindings/qdmi/**"
       - "cmake/**"
-      - "include/mqt-core/fomac/**"
       - "include/mqt-core/qdmi/**"
       - "pyproject.toml"
       - "python/mqt/core/qdmi/**"
-      - "src/fomac/**"
       - "src/qdmi/**"
       - "test/slurm/**"
       - "uv.lock"
@@ -52,15 +48,15 @@ jobs:
           fetch-depth: 0
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
           python-version: "3.14"
 
       - name: Set up MLIR
-        uses: munich-quantum-software/setup-mlir@fc08baf0a172e98008e6528d465de3b5dd99bc68 # v1.4.1
+        uses: munich-quantum-software/setup-mlir@3f32263ce571a8b745068980f30f188b6e800763 # v1.4.2
         with:
-          llvm-version: 22.1.7
+          llvm-version: 22.1.8
 
       - name: Build the MQT Core wheel
         run: uv build --wheel --out-dir test/slurm/dist

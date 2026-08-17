@@ -24,7 +24,6 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <iostream>
 #include <memory>
 #include <sstream>
 #include <tuple>
@@ -43,7 +42,6 @@ protected:
     std::tie(nqubits, seed) = GetParam();
     dd = std::make_unique<dd::Package>(nqubits + 1);
     qc = qc::createGrover(nqubits, seed);
-    qc.printStatistics(std::cout);
 
     // parse expected result from circuit name
     const auto& name = qc.getName();

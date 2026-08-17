@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(fomac)
+add_subdirectory(qdmi)
 
 if(NOT TARGET ${MQT_CORE_TARGET_NAME}-na)
   # collect headers and source files

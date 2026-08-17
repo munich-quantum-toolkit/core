@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/Slurm.hpp"
+#include "qdmi/Slurm.hpp"
 
-#include "fomac/FoMaC.hpp"
+#include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <qdmi/constants.h>
@@ -27,7 +27,7 @@
 #include <system_error>
 #include <vector>
 
-namespace fomac::slurm {
+namespace qdmi::slurm {
 namespace {
 
 [[nodiscard]] auto statusName(const QDMI_Device_Status status)
@@ -139,4 +139,4 @@ Device openDeviceFromLicense() {
   return device;
 }
 
-} // namespace fomac::slurm
+} // namespace qdmi::slurm

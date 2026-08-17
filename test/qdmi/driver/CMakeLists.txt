@@ -39,7 +39,7 @@ if(TARGET MQT::CoreQDMIDriver)
                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device")
 
   package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_driver.cpp)
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreFoMaC)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMI)
   set(config_file "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/configured-devices.json")
   file(
     GENERATE

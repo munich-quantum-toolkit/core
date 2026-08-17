@@ -125,8 +125,7 @@ void NonUnitaryOperation::dumpOpenQASM(std::ostream& of,
   }
 }
 
-bool NonUnitaryOperation::equals(const Operation& op, const Permutation& perm1,
-                                 const Permutation& perm2) const {
+bool NonUnitaryOperation::equals(const Operation& op) const {
   if (const auto* nonunitary = dynamic_cast<const NonUnitaryOperation*>(&op)) {
     if (getType() != nonunitary->getType()) {
       return false;
@@ -148,11 +147,7 @@ bool NonUnitaryOperation::equals(const Operation& op, const Permutation& perm1,
       auto qubitIt1 = targets.cbegin();
       auto classicIt1 = classics.cbegin();
       while (qubitIt1 != targets.cend()) {
-        if (perm1.empty()) {
-          measurements1.emplace(*qubitIt1, *classicIt1);
-        } else {
-          measurements1.emplace(perm1.at(*qubitIt1), *classicIt1);
-        }
+        measurements1.emplace(*qubitIt1, *classicIt1);
         ++qubitIt1;
         ++classicIt1;
       }
@@ -161,18 +156,14 @@ bool NonUnitaryOperation::equals(const Operation& op, const Permutation& perm1,
       auto qubitIt2 = nonunitary->targets.cbegin();
       auto classicIt2 = nonunitary->classics.cbegin();
       while (qubitIt2 != nonunitary->targets.cend()) {
-        if (perm2.empty()) {
-          measurements2.emplace(*qubitIt2, *classicIt2);
-        } else {
-          measurements2.emplace(perm2.at(*qubitIt2), *classicIt2);
-        }
+        measurements2.emplace(*qubitIt2, *classicIt2);
         ++qubitIt2;
         ++classicIt2;
       }
 
       return measurements1 == measurements2;
     }
-    return Operation::equals(op, perm1, perm2);
+    return Operation::equals(op);
   }
   return false;
 }

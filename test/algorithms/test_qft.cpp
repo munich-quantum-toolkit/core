@@ -87,7 +87,6 @@ TEST_P(QFT, Functionality) {
   // there should be no error building the functionality
   ASSERT_NO_THROW({ func = buildFunctionality(qc, *dd); });
 
-  qc.printStatistics(std::cout);
   // QFT DD should consist of 2^n nodes
   ASSERT_EQ(func.size(), 1ULL << nqubits);
 
@@ -130,7 +129,6 @@ TEST_P(QFT, FunctionalityRecursive) {
   // there should be no error building the functionality
   ASSERT_NO_THROW({ func = buildFunctionalityRecursive(qc, *dd); });
 
-  qc.printStatistics(std::cout);
   // QFT DD should consist of 2^n nodes
   ASSERT_EQ(func.size(), 1ULL << nqubits);
 
@@ -175,7 +173,6 @@ TEST_P(QFT, Simulation) {
     auto in = makeZeroState(nqubits, *dd);
     sim = simulate(qc, in, *dd);
   });
-  qc.printStatistics(std::cout);
 
   // QFT DD |0...0> sim should consist of n nodes
   ASSERT_EQ(sim.size(), nqubits + 1);

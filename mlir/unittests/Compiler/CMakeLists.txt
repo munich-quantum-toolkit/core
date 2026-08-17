@@ -6,16 +6,16 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-unittests-compiler test_compiler_fomac_adapter.cpp
-                                                test_compiler_pipeline.cpp test_compiler_target.cpp)
+add_executable(mqt-core-mlir-unittests-compiler
+               test_compiler_pipeline.cpp test_compiler_qdmi_adapter.cpp test_compiler_target.cpp)
 
 target_link_libraries(
   mqt-core-mlir-unittests-compiler
   PRIVATE GTest::gtest_main
-          MQTCompilerFoMaCAdapter
+          MQTCompilerQDMIAdapter
           MQTCompilerTarget
           MQTCompilerPipeline
-          MLIRQCTranslation
+          MLIRQCOpenQASMTranslation
           MLIRQASMPrograms
           MLIRQCProgramBuilder
           MLIRQIRProgramBuilder
@@ -23,9 +23,7 @@ target_link_libraries(
           MLIRSupportMQT
           MLIRQCPrograms
           MLIRQCOPrograms
-          MLIRQIRPrograms
-          MLIRQuantumComputationPrograms
-          MQT::CoreIR)
+          MLIRQIRPrograms)
 
 mqt_copy_qdmi_runtime(mqt-core-mlir-unittests-compiler MQT::CoreQDMIScDevice
                       MQT::CoreQDMI_DDSIM_Device MQT::CoreQDMINaDevice)
@@ -37,7 +35,7 @@ target_compile_definitions(
     MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-two-way-sc.json"
 )
 
-mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-compiler)
+mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-compiler REQUIRES_EH)
 
 gtest_discover_tests(mqt-core-mlir-unittests-compiler PROPERTIES LABELS mqt-mlir-unittests
                                                                  DISCOVERY_TIMEOUT 60)

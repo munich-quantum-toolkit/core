@@ -408,6 +408,42 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   EXPECT_EQ(numStatics, 3);
 }
 
+TEST_F(MappingPassFixture, MapNoncontiguousTargetWithUnusedSites) {
+  std::vector<CompilerTarget::Site> sites;
+  sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(7)));
+  sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(19)));
+  sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(42)));
+  const auto target = llvm::cantFail(CompilerTarget::create(std::move(sites)));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize({builder.getI1Type()});
+  auto qubit = builder.h(builder.allocQubit());
+  Value bit;
+  std::tie(qubit, bit) = builder.measure(qubit);
+  builder.sink(qubit);
+  auto module = builder.finalize(bit);
+
+  PassManager pm(module->getContext());
+  pm.addPass(createMappingPass(target, MappingPassOptions{.ntrials = 1}));
+  ASSERT_TRUE(pm.run(module.get()).succeeded());
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+
+  const DenseSet<CompilerTarget::SiteId> expectedSites{7, 19, 42};
+  size_t numAllocations = 0;
+  size_t numStatics = 0;
+  size_t numSinks = 0;
+  module->walk([&](AllocOp) { ++numAllocations; });
+  module->walk([&](StaticOp op) {
+    ++numStatics;
+    EXPECT_TRUE(expectedSites.contains(op.getIndex()));
+  });
+  module->walk([&](SinkOp) { ++numSinks; });
+  EXPECT_EQ(numAllocations, 0);
+  EXPECT_EQ(numStatics, 3);
+  EXPECT_EQ(numSinks, 3);
+}
+
 TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
   constexpr size_t numTargetQubits = 64;
   std::vector<CompilerTarget::Coupling> couplings;

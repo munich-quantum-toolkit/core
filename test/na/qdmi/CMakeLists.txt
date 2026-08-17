@@ -6,11 +6,11 @@
 #
 # Licensed under the MIT License
 
-if(TARGET MQT::CoreNAFoMaC)
+if(TARGET MQT::CoreNAQDMI)
   # Set test target name
-  set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-fomac-test)
+  set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-na-qdmi-test)
   # Add the test executable
-  package_add_test(${TARGET_NAME} MQT::CoreNAFoMaC test_fomac.cpp)
+  package_add_test(${TARGET_NAME} MQT::CoreNAQDMI test_qdmi.cpp)
   # Set the device json path
   target_compile_definitions(
     ${TARGET_NAME}

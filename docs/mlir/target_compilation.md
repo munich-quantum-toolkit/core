@@ -40,6 +40,12 @@ compilation to an existing QCO program. For pass-level benchmarking, the C++ API
 exposes separate factories for pre-routing optimization, mapping, native
 synthesis, and conformance verification.
 
+Target compilation preserves quantum operations even when their final qubit
+values are not measured or returned. This supports measurement-free programs,
+such as state preparation or larger building blocks compiled to a target-native
+instruction set. Dead gates are removed only by the explicit `remove-dead-gates`
+pass and by pipelines that include it, such as `mqt-qubit-reuse`.
+
 ## Command line from a source build
 
 List the stable IDs of configured QDMI devices:
@@ -68,18 +74,16 @@ required pass ordering.
 
 ## C++ source-tree API
 
-The source build provides a narrow FoMaC bridge between a live QDMI device and
-the compiler-owned target:
+The source build provides a narrow, non-throwing QDMI bridge between a stable
+device ID and the compiler-owned target:
 
 ```cpp
-#include "fomac/FoMaC.hpp"
-#include "mlir/Compiler/FoMaCAdapter.h"
+#include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Programs.h"
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 
-auto device = fomac::Session::openDevice("mqt.sc.iqm.garnet");
-auto target = mlir::compilerTargetFromDevice(device);
+auto target = mlir::compilerTargetFromDeviceId("mqt.sc.iqm.garnet");
 if (!target) {
   llvm::errs() << "Failed to create compiler target: "
                << llvm::toString(target.takeError()) << '\n';

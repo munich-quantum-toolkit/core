@@ -161,7 +161,7 @@ The equivalent C++ registration operation is
 `replace` is true, and an opened definition cannot be replaced.
 {cpp-api:func}`qdmi::Driver::registeredDeviceIds` provides the same load-free
 enumeration, and {cpp-api:func}`qdmi::Driver::open` returns the cached device.
-{cpp-api:func}`fomac::Session::openDevice` returns a fresh device session and
+{cpp-api:func}`qdmi::Session::openDevice` returns a fresh device session and
 does not add it to the QDMI client catalog. Runtime registrations and explicit
 opens are not added to that catalog.
 
@@ -187,8 +187,8 @@ from mqt.core.qdmi import slurm
 device = slurm.open_device_from_license()
 ```
 
-The equivalent C++ function is `fomac::slurm::openDeviceFromLicense()` from
-`fomac/Slurm.hpp`. Both functions read `SLURM_JOB_LICENSES`. They accept only
+The equivalent C++ function is `qdmi::slurm::openDeviceFromLicense()` from
+`qdmi/Slurm.hpp`. Both functions read `SLURM_JOB_LICENSES`. They accept only
 `<registered-device-id>` or `<registered-device-id>:1`. They reject remote,
 compound, and non-unit license values.
 
@@ -233,7 +233,7 @@ device libraries and manifests with an executable:
 ```cmake
 find_package(mqt-core CONFIG REQUIRED)
 add_executable(my-application main.cpp)
-target_link_libraries(my-application PRIVATE MQT::CoreFoMaC)
+target_link_libraries(my-application PRIVATE MQT::CoreQDMI)
 mqt_copy_qdmi_runtime(
   my-application
   MQT::CoreQDMINaDevice

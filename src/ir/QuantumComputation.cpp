@@ -22,7 +22,6 @@
 #include "ir/operations/SymbolicOperation.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -37,7 +36,6 @@
 #include <numeric>
 #include <optional>
 #include <ostream>
-#include <random>
 #include <ranges>
 #include <set>
 #include <sstream>
@@ -569,7 +567,7 @@ bool QuantumComputation::operator==(const QuantumComputation& rhs) const {
       initialLayout != rhs.initialLayout ||
       outputPermutation != rhs.outputPermutation ||
       ancillary != rhs.ancillary || garbage != rhs.garbage ||
-      seed != rhs.seed || globalPhase != rhs.globalPhase ||
+      globalPhase != rhs.globalPhase ||
       occurringVariables != rhs.occurringVariables) {
     return false;
   }
@@ -619,15 +617,6 @@ std::ostream& QuantumComputation::print(std::ostream& os) const {
     }
   }
   os << "\n";
-  return os;
-}
-
-std::ostream& QuantumComputation::printStatistics(std::ostream& os) const {
-  os << "QC Statistics:";
-  os << "\n\tn: " << static_cast<std::size_t>(nqubits);
-  os << "\n\tanc: " << static_cast<std::size_t>(nancillae);
-  os << "\n\tm: " << ops.size();
-  os << "\n--------------\n";
   return os;
 }
 
@@ -823,19 +812,6 @@ Qubit QuantumComputation::getPhysicalQubitIndex(
                            " not found in initial layout");
 }
 
-std::ostream&
-QuantumComputation::printPermutation(const Permutation& permutation,
-                                     std::ostream& os) {
-  for (const auto& [physical, logical] : permutation) {
-    os << "\t" << physical << ": " << logical << "\n";
-  }
-  return os;
-}
-
-Qubit QuantumComputation::getHighestLogicalQubitIndex() const {
-  return initialLayout.maxValue();
-}
-
 Qubit QuantumComputation::getHighestPhysicalQubitIndex() const {
   return initialLayout.maxKey();
 }
@@ -899,35 +875,6 @@ QuantumComputation::containsLogicalQubit(const Qubit logicalQubitIndex) const {
   return {false, std::nullopt};
 }
 
-bool QuantumComputation::isLastOperationOnQubit(
-    const const_iterator& opIt, const const_iterator& end) const {
-  if (opIt == end) {
-    return true;
-  }
-
-  // determine which qubits the gate acts on
-  std::vector<bool> actson(nqubits + nancillae);
-  for (std::size_t i = 0; i < actson.size(); ++i) {
-    if ((*opIt)->actsOn(static_cast<Qubit>(i))) {
-      actson[i] = true;
-    }
-  }
-
-  // iterate over remaining gates and check if any act on qubits overlapping
-  // with the target gate
-  auto atEnd = opIt;
-  std::advance(atEnd, 1);
-  while (atEnd != end) {
-    for (std::size_t i = 0; i < actson.size(); ++i) {
-      if (actson[i] && (*atEnd)->actsOn(static_cast<Qubit>(i))) {
-        return false;
-      }
-    }
-    ++atEnd;
-  }
-  return true;
-}
-
 const QuantumRegister&
 QuantumComputation::unifyQuantumRegisters(const std::string& regName) {
   ancillaRegisters.clear();
@@ -936,27 +883,6 @@ QuantumComputation::unifyQuantumRegisters(const std::string& regName) {
   nancillae = 0;
   quantumRegisters.try_emplace(regName, 0, nqubits, regName);
   return quantumRegisters.at(regName);
-}
-
-void QuantumComputation::appendMeasurementsAccordingToOutputPermutation(
-    const std::string& registerName) {
-  // ensure that the circuit contains enough classical registers
-  if (classicalRegisters.empty()) {
-    // in case there are no registers, create a new one
-    addClassicalRegister(outputPermutation.size(), registerName);
-  } else if (nclassics < outputPermutation.size()) {
-    if (classicalRegisters.contains(registerName)) {
-      throw std::runtime_error(
-          "[appendMeasurementsAccordingToOutputPermutation] Register " +
-          registerName + " already exists but is too small");
-    }
-    addClassicalRegister(outputPermutation.size() - nclassics, registerName);
-  }
-  barrier();
-  // append measurements according to output permutation
-  for (const auto& [qubit, clbit] : outputPermutation) {
-    measure(qubit, clbit);
-  }
 }
 
 void QuantumComputation::checkQubitRange(const Qubit qubit) const {
@@ -1022,25 +948,12 @@ void QuantumComputation::checkClassicalRegister(
 void QuantumComputation::reverse() { std::ranges::reverse(ops); }
 
 QuantumComputation::QuantumComputation(const std::size_t nq,
-                                       const std::size_t nc,
-                                       const std::size_t s)
-    : seed(s) {
+                                       const std::size_t nc) {
   if (nq > 0) {
     addQubitRegister(nq);
   }
   if (nc > 0) {
     addClassicalRegister(nc);
-  }
-  if (seed != 0) {
-    mt.seed(seed);
-  } else {
-    // create and properly seed rng
-    std::array<std::mt19937_64::result_type, std::mt19937_64::state_size>
-        randomData{};
-    std::random_device rd;
-    std::ranges::generate(randomData, [&rd]() { return rd(); });
-    std::seed_seq seeds(std::begin(randomData), std::end(randomData));
-    mt.seed(seeds);
   }
 }
 
@@ -1049,8 +962,8 @@ QuantumComputation::QuantumComputation(const QuantumComputation& qc)
       name(qc.name), quantumRegisters(qc.quantumRegisters),
       classicalRegisters(qc.classicalRegisters),
       ancillaRegisters(qc.ancillaRegisters), ancillary(qc.ancillary),
-      garbage(qc.garbage), mt(qc.mt), seed(qc.seed),
-      globalPhase(qc.globalPhase), occurringVariables(qc.occurringVariables),
+      garbage(qc.garbage), globalPhase(qc.globalPhase),
+      occurringVariables(qc.occurringVariables),
       initialLayout(qc.initialLayout), outputPermutation(qc.outputPermutation) {
   ops.reserve(qc.ops.size());
   for (const auto& op : qc.ops) {
@@ -1067,8 +980,6 @@ QuantumComputation::operator=(const QuantumComputation& qc) {
     quantumRegisters = qc.quantumRegisters;
     classicalRegisters = qc.classicalRegisters;
     ancillaRegisters = qc.ancillaRegisters;
-    mt = qc.mt;
-    seed = qc.seed;
     globalPhase = qc.globalPhase;
     occurringVariables = qc.occurringVariables;
     initialLayout = qc.initialLayout;
@@ -1293,7 +1204,7 @@ QuantumComputation::fromCompoundOperation(const CompoundOperation& op) {
   return qc;
 }
 
-std::size_t QuantumComputation::getNmeasuredQubits() const noexcept {
+std::size_t QuantumComputation::getNoutputQubits() const noexcept {
   return getNqubits() - getNgarbageQubits();
 }
 std::size_t QuantumComputation::getNgarbageQubits() const {

@@ -10,7 +10,6 @@
 
 #include "mlir/Compiler/Programs.h"
 
-#include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/TargetCompilation.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
@@ -21,7 +20,6 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
-#include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
@@ -284,18 +282,6 @@ QCProgram::fromQASMFile(const std::filesystem::path& path) {
     emitError(UnknownLoc::get(context.get()))
         << "failed to translate OpenQASM 3 file '" << path.string()
         << "' to QC";
-    return std::nullopt;
-  }
-  return QCProgram({.context = std::move(context), .mod = std::move(mod)});
-}
-
-std::optional<QCProgram>
-QCProgram::fromQuantumComputation(const ::qc::QuantumComputation& computation) {
-  auto context = createCompilerContext();
-  auto mod = translateQuantumComputationToQC(context.get(), computation);
-  if (!mod) {
-    emitError(UnknownLoc::get(context.get()),
-              "failed to translate QuantumComputation to QC");
     return std::nullopt;
   }
   return QCProgram({.context = std::move(context), .mod = std::move(mod)});

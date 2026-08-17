@@ -175,16 +175,10 @@ def test_compile_program_qasm_file(tmp_path: Path) -> None:
     _assert_bell_program(result, measured=True)
 
 
-def test_compile_program_quantum_computation() -> None:
-    """Compile a ``QuantumComputation``."""
-    qc = QuantumComputation(2, 2)
-    qc.h(0)
-    qc.cx(0, 1)
-    qc.measure(range(2), range(2))
-
-    result = compile_program(qc)
-    assert isinstance(result, QCProgram)
-    _assert_bell_program(result, measured=True)
+def test_compile_program_rejects_quantum_computation() -> None:
+    """Reject the removed legacy compiler input."""
+    with pytest.raises(RuntimeError, match="is not supported"):
+        compile_program(QuantumComputation(1))  # ty: ignore[invalid-argument-type]
 
 
 @requires_qiskit_translation
@@ -597,7 +591,10 @@ module {
     assert composite.ir.count("qco.alloc") == 2
     composite.run_qubit_reuse_pipeline()
     assert composite.ir.count("qco.alloc") == 1
-    assert "qco.reset" in composite.ir
+    assert composite.ir.count("qco.sink") == 1
+    assert "qco.h" not in composite.ir
+    assert "qco.measure" not in composite.ir
+    assert "qco.reset" not in composite.ir
 
 
 def test_typed_programs_normalize_global_phases() -> None:
@@ -638,9 +635,10 @@ def test_typed_programs_normalize_global_phases() -> None:
 
 def test_qco_program_decomposes_multi_controlled() -> None:
     """Decompose multi-controlled gates through the typed QCOProgram API."""
-    qc = QuantumComputation(3)
-    qc.mcx({0, 1}, 2)
-    qco = compile_program(qc, output=OutputFormat.QCO)
+    qco = compile_program(
+        'OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; ctrl(2) @ x q[0], q[1], q[2];',
+        output=OutputFormat.QCO,
+    )
     assert isinstance(qco, QCOProgram)
     before = qco.ir
     assert "qco.ctrl" in before

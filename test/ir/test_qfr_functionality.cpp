@@ -84,7 +84,6 @@ TEST_F(QFRFunctionality, removeTrailingIdleQubits) {
   qc.x(0);
   qc.x(2);
   std::cout << qc;
-  QuantumComputation::printPermutation(qc.outputPermutation);
   printRegisters(qc);
 
   qc.outputPermutation.erase(1);
@@ -93,13 +92,11 @@ TEST_F(QFRFunctionality, removeTrailingIdleQubits) {
   qc.stripIdleQubits();
   EXPECT_EQ(qc.getNqubits(), 2);
   std::cout << qc;
-  QuantumComputation::printPermutation(qc.outputPermutation);
   printRegisters(qc);
 
   qc.pop_back();
   qc.outputPermutation.erase(2);
   std::cout << qc;
-  QuantumComputation::printPermutation(qc.outputPermutation);
   printRegisters(qc);
 
   qc.stripIdleQubits();
@@ -153,7 +150,6 @@ TEST_F(QFRFunctionality, ancillaryQubitAtEnd) {
   EXPECT_EQ(qc.getNqubits(), 0);
   EXPECT_TRUE(qc.getQuantumRegisters().empty());
   printRegisters(qc);
-  qc.printStatistics(std::cout);
 }
 
 TEST_F(QFRFunctionality, ancillaryQubitRemoveMiddle) {
@@ -373,12 +369,6 @@ TEST_F(QFRFunctionality, OperationEquality) {
   const auto x1 = StandardOperation(1, X);
   EXPECT_FALSE(x0.equals(x1));
   EXPECT_NE(x0, x1);
-  Permutation perm0{};
-  perm0[0] = 1;
-  perm0[1] = 0;
-  EXPECT_TRUE(x0.equals(x1, perm0, {}));
-  EXPECT_TRUE(x0.equals(x1, {}, perm0));
-
   const auto cx01 = StandardOperation(0, 1, X);
   const auto cx10 = StandardOperation(1, 0, X);
   EXPECT_FALSE(cx01.equals(cx10));
@@ -402,8 +392,6 @@ TEST_F(QFRFunctionality, OperationEquality) {
   EXPECT_NE(measure0, measure1);
   EXPECT_FALSE(measure0.equals(measure2));
   EXPECT_NE(measure0, measure2);
-  EXPECT_TRUE(measure0.equals(measure2, perm0, {}));
-  EXPECT_TRUE(measure0.equals(measure2, {}, perm0));
 
   std::unique_ptr<Operation> xp0 = std::make_unique<StandardOperation>(0, X);
   std::unique_ptr<Operation> xp1 = std::make_unique<StandardOperation>(0, X);
@@ -1038,7 +1026,7 @@ TEST_F(QFRFunctionality, testSettingSetMultipleAncillariesAndGarbage) {
   ASSERT_EQ(qc.getNancillae(), 2U);
   qc.setLogicalQubitsGarbage(1U, 2U);
   ASSERT_EQ(qc.getNgarbageQubits(), 2U);
-  ASSERT_EQ(qc.getNmeasuredQubits(), 1U);
+  ASSERT_EQ(qc.getNoutputQubits(), 1U);
 }
 
 TEST_F(QFRFunctionality, StripIdleQubitsInMiddleOfCircuit) {
@@ -1462,10 +1450,11 @@ TEST_F(QFRFunctionality, TryAddingZeroSizeClassicalRegister) {
   EXPECT_THROW(qc.addClassicalRegister(0, "c"), std::runtime_error);
 }
 
-TEST_F(QFRFunctionality, TryGettingRegisterForQubitNotInRegister) {
+TEST_F(QFRFunctionality, RemoveQubitMissingRegisterThrows) {
   QuantumComputation qc{};
   qc.addQubitRegister(1, "q");
-  EXPECT_THROW(std::ignore = qc.getQubitRegister(2), std::runtime_error);
+  qc.initialLayout.emplace(2, 1);
+  EXPECT_THROW(std::ignore = qc.removeQubit(1), std::runtime_error);
 }
 
 TEST_F(QFRFunctionality, stripIdleQubits) {
@@ -1504,15 +1493,9 @@ TEST_F(QFRFunctionality, failOnAddingNonConsecutiveQubit) {
   EXPECT_THROW(qc.addQubit(2, 2, 2);, std::runtime_error);
 }
 
-TEST_F(QFRFunctionality, failOnGettingIndexOfNonExistingQubit) {
-  const QuantumComputation qc(1);
-  EXPECT_THROW(std::ignore = qc.getPhysicalQubitIndex(1);, std::runtime_error);
+TEST_F(QFRFunctionality, RemoveQubitMissingLayoutThrows) {
+  QuantumComputation qc(1);
+  EXPECT_THROW(std::ignore = qc.removeQubit(1), std::runtime_error);
 }
 
-TEST_F(QFRFunctionality, failOnRegisterMisconfigurationWithMeasurements) {
-  QuantumComputation qc(2);
-  qc.addClassicalRegister(1, "c");
-  EXPECT_THROW(qc.appendMeasurementsAccordingToOutputPermutation("c");
-               , std::runtime_error);
-}
 } // namespace qc

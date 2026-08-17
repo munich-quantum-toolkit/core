@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp"
+#include "qdmi/Client.hpp"
 #include "qdmi/common/Common.hpp"
 
 #include <gmock/gmock-matchers.h>
@@ -32,7 +32,7 @@
 #include <tuple>
 #include <vector>
 
-namespace fomac {
+namespace qdmi {
 
 namespace {
 
@@ -275,7 +275,7 @@ TEST(QueuePositionTest, PropagatesOtherQueryErrors) {
                std::invalid_argument);
 }
 
-TEST(FoMaCTest, StatusToString) {
+TEST(QDMITest, StatusToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_WARN_GENERAL), "General warning");
   EXPECT_STREQ(qdmi::toString(QDMI_SUCCESS), "Success");
   EXPECT_STREQ(qdmi::toString(QDMI_ERROR_FATAL), "A fatal error");
@@ -292,7 +292,7 @@ TEST(FoMaCTest, StatusToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_ERROR_TIMEOUT), "Timeout");
 }
 
-TEST(FoMaCTest, SitePropertyToString) {
+TEST(QDMITest, SitePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SITE_PROPERTY_INDEX), "INDEX");
   EXPECT_STREQ(qdmi::toString(QDMI_SITE_PROPERTY_T1), "T1");
   EXPECT_STREQ(qdmi::toString(QDMI_SITE_PROPERTY_T2), "T2");
@@ -315,7 +315,7 @@ TEST(FoMaCTest, SitePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SITE_PROPERTY_CUSTOM5), "CUSTOM5");
 }
 
-TEST(FoMaCTest, OperationPropertyToString) {
+TEST(QDMITest, OperationPropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_OPERATION_PROPERTY_NAME), "NAME");
   EXPECT_STREQ(qdmi::toString(QDMI_OPERATION_PROPERTY_QUBITSNUM), "QUBITS NUM");
   EXPECT_STREQ(qdmi::toString(QDMI_OPERATION_PROPERTY_PARAMETERSNUM),
@@ -339,7 +339,7 @@ TEST(FoMaCTest, OperationPropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_OPERATION_PROPERTY_CUSTOM5), "CUSTOM5");
 }
 
-TEST(FoMaCTest, DevicePropertyToString) {
+TEST(QDMITest, DevicePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_NAME), "NAME");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_VERSION), "VERSION");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_STATUS), "STATUS");
@@ -375,16 +375,16 @@ TEST(FoMaCTest, DevicePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM5), "CUSTOM5");
 }
 
-TEST(FoMaCTest, SessionPropertyToString) {
+TEST(QDMITest, SessionPropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PROPERTY_DEVICES), "DEVICES");
 }
 
-TEST(FoMaCTest, DeviceSessionParameterToString) {
+TEST(QDMITest, DeviceSessionParameterToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE),
                "CHILD DEVICE");
 }
 
-TEST(FoMaCTest, ThrowIfError) {
+TEST(QDMITest, ThrowIfError) {
   EXPECT_NO_THROW(qdmi::throwIfError(QDMI_SUCCESS, "Test"));
   EXPECT_NO_THROW(qdmi::throwIfError(QDMI_WARN_GENERAL, "Test"));
   EXPECT_THROW(qdmi::throwIfError(QDMI_ERROR_FATAL, "Test"),
@@ -1128,7 +1128,7 @@ TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
 
   // Existing file (should succeed even if parameter is unsupported)
   const auto tempDir = std::filesystem::temp_directory_path();
-  auto tmpPath = tempDir / ("fomac_test_auth_" +
+  auto tmpPath = tempDir / ("qdmi_test_auth_" +
                             std::to_string(std::hash<std::thread::id>{}(
                                 std::this_thread::get_id())) +
                             ".txt");
@@ -1347,4 +1347,4 @@ INSTANTIATE_TEST_SUITE_P(
       return name;
     });
 
-} // namespace fomac
+} // namespace qdmi

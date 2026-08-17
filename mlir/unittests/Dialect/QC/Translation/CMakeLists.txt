@@ -18,11 +18,9 @@ target_link_libraries(
           MLIRSupportMQT
           MLIRQCToQCO
           MLIRQCProgramBuilder
-          MLIRQCTranslation
+          MLIRQCOpenQASMTranslation
           MLIRQCPrograms
-          MLIRQASMPrograms
-          MLIRQuantumComputationPrograms
-          MQT::CoreIR)
+          MLIRQASMPrograms)
 
 mqt_mlir_configure_unittest_target(${target_name})
 

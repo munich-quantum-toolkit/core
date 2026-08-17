@@ -8,10 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Compiler/FoMaCAdapter.h"
+#include "mlir/Compiler/QDMIAdapter.h"
 
-#include "fomac/FoMaC.hpp"
 #include "mlir/Compiler/Target.h"
+#include "qdmi/Client.hpp"
+#include "qdmi/driver/Driver.hpp"
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringRef.h>
@@ -23,9 +24,11 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -103,8 +106,8 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
 }
 
 [[nodiscard]] static llvm::Error validateHomogeneousSupport(
-    const fomac::Operation& operation, const size_t arity,
-    const std::optional<std::vector<fomac::Site>>& flattenedSites,
+    const qdmi::Operation& operation, const size_t arity,
+    const std::optional<std::vector<qdmi::Site>>& flattenedSites,
     const std::vector<CompilerTarget::Site>& deviceSites,
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
     const llvm::StringRef deviceName) {
@@ -217,7 +220,7 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
 }
 
 [[nodiscard]] static llvm::Expected<std::optional<CompilerTarget::DurationUnit>>
-snapshotDurationUnit(const fomac::Device& device) {
+snapshotDurationUnit(const qdmi::Device& device) {
   auto unit = device.getDurationUnit();
   const auto scaleFactor = device.getDurationScaleFactor();
   if (auto error = requireAdapterInput(unit || !scaleFactor,
@@ -237,11 +240,10 @@ snapshotDurationUnit(const fomac::Device& device) {
 }
 
 [[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::SiteTuple>>
-snapshotSiteTuples(
-    const fomac::Operation& operation, const size_t arity,
-    const std::optional<std::vector<fomac::Site>>& flattenedSites,
-    const std::optional<uint64_t> defaultDuration,
-    const std::optional<double> defaultFidelity) {
+snapshotSiteTuples(const qdmi::Operation& operation, const size_t arity,
+                   const std::optional<std::vector<qdmi::Site>>& flattenedSites,
+                   const std::optional<uint64_t> defaultDuration,
+                   const std::optional<double> defaultFidelity) {
   if (!flattenedSites) {
     return std::vector<CompilerTarget::SiteTuple>{};
   }
@@ -249,7 +251,7 @@ snapshotSiteTuples(
   std::vector<CompilerTarget::SiteTuple> siteTuples;
   siteTuples.reserve(flattenedSites->size() / arity);
   for (size_t offset = 0; offset < flattenedSites->size(); offset += arity) {
-    std::vector<fomac::Site> sites;
+    std::vector<qdmi::Site> sites;
     std::vector<CompilerTarget::SiteId> siteIds;
     sites.reserve(arity);
     siteIds.reserve(arity);
@@ -279,7 +281,7 @@ snapshotSiteTuples(
 
 [[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::Operation>>
 snapshotOperations(
-    const std::vector<fomac::Operation>& operations,
+    const std::vector<qdmi::Operation>& operations,
     const std::vector<CompilerTarget::Site>& deviceSites,
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
     const llvm::StringRef deviceName) {
@@ -319,8 +321,8 @@ snapshotOperations(
   return targetOperations;
 }
 
-llvm::Expected<CompilerTarget>
-compilerTargetFromDevice(const fomac::Device& device) {
+[[nodiscard]] static llvm::Expected<CompilerTarget>
+snapshotCompilerTarget(const qdmi::Device& device) {
   auto deviceName = device.getName();
   const auto deviceSites = device.getSites();
   if (auto error = requireCircuitDevice(
@@ -379,6 +381,52 @@ compilerTargetFromDevice(const fomac::Device& device) {
   return CompilerTarget::create(std::move(deviceName), std::move(sites),
                                 std::move(couplings), std::move(*operations),
                                 std::move(*durationUnit));
+}
+
+[[nodiscard]] static llvm::Error qdmiError(const llvm::Twine& action,
+                                           const char* const detail) {
+  return llvm::createStringError(std::make_error_code(std::errc::io_error),
+                                 action + ": " + detail);
+}
+
+[[nodiscard]] static llvm::Error
+qdmiError(const llvm::Twine& action, const std::exception_ptr& exception) {
+  try {
+    std::rethrow_exception(exception);
+  } catch (const std::exception& error) {
+    return qdmiError(action, error.what());
+  } catch (...) {
+    return qdmiError(action, "unknown exception");
+  }
+}
+
+llvm::Expected<CompilerTarget>
+compilerTargetFromDevice(const qdmi::Device& device) {
+  try {
+    return snapshotCompilerTarget(device);
+  } catch (...) {
+    return qdmiError("Failed to query QDMI device", std::current_exception());
+  }
+}
+
+llvm::Expected<CompilerTarget>
+compilerTargetFromDeviceId(const std::string_view deviceId) {
+  const auto action = std::string("Failed to open or query QDMI device '") +
+                      std::string(deviceId) + "'";
+  try {
+    return snapshotCompilerTarget(qdmi::Session::openDevice(deviceId));
+  } catch (...) {
+    return qdmiError(action, std::current_exception());
+  }
+}
+
+llvm::Expected<std::vector<std::string>> registeredQDMIDeviceIds() {
+  try {
+    return qdmi::Driver::get().registeredDeviceIds();
+  } catch (...) {
+    return qdmiError("Failed to discover registered QDMI devices",
+                     std::current_exception());
+  }
 }
 
 } // namespace mlir
