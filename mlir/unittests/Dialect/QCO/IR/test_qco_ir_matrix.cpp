@@ -33,19 +33,24 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
+#include <array>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -202,6 +207,175 @@ protected:
 };
 
 } // namespace
+
+/// \name QCO/Operations/UnitaryOp.cpp
+/// @{
+TEST_F(QCOMatrixTest, DenseUnitaryBuilderExposesMatrixAndFoldsIdentity) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+  const auto matrixType =
+      RankedTensorType::get({2, 2}, ComplexType::get(builder.getF64Type()));
+  const std::array<std::complex<double>, 4> xValues{
+      {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}}};
+  builder.unitary(
+      ValueRange{qubit},
+      DenseElementsAttr::get(matrixType,
+                             llvm::ArrayRef<std::complex<double>>(xValues)));
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  auto function = *module->getOps<func::FuncOp>().begin();
+  auto unitaries = llvm::to_vector(function.getBody().getOps<UnitaryOp>());
+  ASSERT_EQ(unitaries.size(), 1U);
+  EXPECT_TRUE(
+      unitaries.front().getUnitaryMatrix().isApprox(XOp::getUnitaryMatrix()));
+  EXPECT_EQ(unitaries.front().getInputForOutput(
+                unitaries.front().getQubitsOut().front()),
+            unitaries.front().getQubitsIn().front());
+  EXPECT_EQ(unitaries.front().getOutputForInput(
+                unitaries.front().getQubitsIn().front()),
+            unitaries.front().getQubitsOut().front());
+
+  const std::array<std::complex<double>, 4> identityValues{
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
+  unitaries.front()->setAttr(
+      "matrix",
+      DenseElementsAttr::get(
+          matrixType, llvm::ArrayRef<std::complex<double>>(identityValues)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*module)));
+  EXPECT_TRUE(function.getBody().getOps<UnitaryOp>().empty());
+}
+
+TEST_F(QCOMatrixTest, DenseUnitaryVerifierRejectsRepeatedQubit) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+  const auto matrixType =
+      RankedTensorType::get({4, 4}, ComplexType::get(builder.getF64Type()));
+  const std::array<std::complex<double>, 16> identityValues{{
+      {1.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {1.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {1.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {1.0, 0.0},
+  }};
+  const auto identity = DenseElementsAttr::get(
+      matrixType, llvm::ArrayRef<std::complex<double>>(identityValues));
+  auto unitary = UnitaryOp::create(builder, ValueRange{qubit, qubit}, identity);
+
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  EXPECT_TRUE(failed(unitary.verify()));
+  unitary.erase();
+}
+
+TEST_F(QCOMatrixTest, DenseUnitaryVerifierRejectsNonFiniteMatrices) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+  const auto matrixType =
+      RankedTensorType::get({2, 2}, ComplexType::get(builder.getF64Type()));
+  const auto expectRejected = [&](const double value) {
+    const auto matrix =
+        DenseElementsAttr::get(matrixType, std::complex<double>{value, 0.0});
+    auto unitary = UnitaryOp::create(builder, ValueRange{qubit}, matrix);
+    EXPECT_TRUE(failed(unitary.verify()));
+    unitary.erase();
+  };
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+
+  expectRejected(std::numeric_limits<double>::infinity());
+  expectRejected(std::numeric_limits<double>::quiet_NaN());
+}
+
+TEST_F(QCOMatrixTest, DenseUnitaryVerifierRejectsOutputArityMismatch) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+  const auto matrixType =
+      RankedTensorType::get({2, 2}, ComplexType::get(builder.getF64Type()));
+  const std::array<std::complex<double>, 4> identityValues{
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
+  const auto identity = DenseElementsAttr::get(
+      matrixType, llvm::ArrayRef<std::complex<double>>(identityValues));
+  OperationState state(builder.getLoc(), UnitaryOp::getOperationName());
+  UnitaryOp::build(builder, state, ValueRange{qubit}, identity);
+  state.addTypes(QubitType::get(context.get()));
+  auto unitary = cast<UnitaryOp>(builder.create(state));
+
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  EXPECT_TRUE(failed(unitary.verify()));
+  unitary.erase();
+}
+
+TEST_F(QCOMatrixTest, DenseUnitaryComposesThroughModifiers) {
+  const auto matrixType = RankedTensorType::get(
+      {2, 2}, ComplexType::get(Float64Type::get(context.get())));
+  const std::array<std::complex<double>, 4> sValues{
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.0, 1.0}}};
+  const auto sMatrix = DenseElementsAttr::get(
+      matrixType, llvm::ArrayRef<std::complex<double>>(sValues));
+
+  auto inverse =
+      QCOProgramBuilder::build(context.get(), [&](QCOProgramBuilder& builder) {
+        auto qubit = builder.allocQubit();
+        qubit = builder.inv(qubit, [&](const Value argument) {
+          return builder.unitary(ValueRange{argument}, sMatrix).front();
+        });
+        return builder.measure(qubit).second;
+      });
+  ASSERT_TRUE(inverse);
+  const auto inverseMatrix = firstInvOp(*inverse).getUnitaryMatrix();
+  ASSERT_TRUE(inverseMatrix);
+  EXPECT_TRUE(inverseMatrix->isApprox(
+      DynamicMatrix(SOp::getUnitaryMatrix().adjoint())));
+
+  auto controlled =
+      QCOProgramBuilder::build(context.get(), [&](QCOProgramBuilder& builder) {
+        auto qubits = builder.allocQubitRegister(2);
+        const auto outputs =
+            builder.ctrl(qubits[0], qubits[1], [&](const Value argument) {
+              return builder.unitary(ValueRange{argument}, sMatrix).front();
+            });
+        return builder.measure(outputs.second).second;
+      });
+  ASSERT_TRUE(controlled);
+  const auto controlledMatrix = firstCtrlOp(*controlled).getUnitaryMatrix();
+  ASSERT_TRUE(controlledMatrix);
+  DynamicMatrix expected = DynamicMatrix::identity(4);
+  expected.setBottomRightCorner(SOp::getUnitaryMatrix());
+  EXPECT_TRUE(controlledMatrix->isApprox(expected));
+
+  auto powered =
+      QCOProgramBuilder::build(context.get(), [&](QCOProgramBuilder& builder) {
+        auto qubit = builder.allocQubit();
+        qubit = builder.pow(-1.0, qubit, [&](const Value argument) {
+          return builder.unitary(ValueRange{argument}, sMatrix).front();
+        });
+        return builder.measure(qubit).second;
+      });
+  ASSERT_TRUE(powered);
+  const auto poweredMatrix = firstPowOp(*powered).getUnitaryMatrix();
+  ASSERT_TRUE(poweredMatrix);
+  EXPECT_TRUE(poweredMatrix->isApprox(
+      DynamicMatrix(SOp::getUnitaryMatrix().adjoint())));
+}
+/// @}
 
 /// \name QCO/Modifiers/CtrlOp.cpp
 /// @{

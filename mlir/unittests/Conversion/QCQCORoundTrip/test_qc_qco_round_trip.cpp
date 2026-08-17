@@ -11,13 +11,16 @@
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
@@ -26,6 +29,8 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <string>
 
 using namespace mlir;
 
@@ -141,4 +146,53 @@ module {
   auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
   EXPECT_EQ(returnOp.getOperand(0), switchOp.getResult(0));
   expectNoScratchStorage(*module);
+}
+
+TEST_F(QCQCORoundTripTest, PreservesDenseUnitaryMatrixAndQubitArity) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %q0 = qc.alloc : !qc.qubit
+    %q1 = qc.alloc : !qc.qubit
+    qc.unitary dense<[
+        [(1.0,0.0), (0.0,0.0), (0.0,0.0), (0.0,0.0)],
+        [(0.0,0.0), (0.0,0.0), (1.0,0.0), (0.0,0.0)],
+        [(0.0,0.0), (1.0,0.0), (0.0,0.0), (0.0,0.0)],
+        [(0.0,0.0), (0.0,0.0), (0.0,0.0), (1.0,0.0)]]>
+        : tensor<4x4xcomplex<f64>> %q0, %q1 : !qc.qubit, !qc.qubit
+    qc.dealloc %q0 : !qc.qubit
+    qc.dealloc %q1 : !qc.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ElementsAttr originalMatrix;
+  module->walk(
+      [&](qc::UnitaryOp unitary) { originalMatrix = unitary.getMatrix(); });
+  ASSERT_TRUE(originalMatrix);
+
+  std::string serialized;
+  llvm::raw_string_ostream stream(serialized);
+  module->print(stream);
+  stream.flush();
+  auto reparsed = parseSourceString<ModuleOp>(serialized, &context);
+  ASSERT_TRUE(reparsed);
+  qc::UnitaryOp reparsedUnitary;
+  reparsed->walk([&](qc::UnitaryOp candidate) { reparsedUnitary = candidate; });
+  ASSERT_TRUE(reparsedUnitary);
+  EXPECT_EQ(reparsedUnitary.getMatrix(), originalMatrix);
+
+  ASSERT_TRUE(succeeded(runRoundTrip(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  qc::UnitaryOp unitary;
+  module->walk([&](qc::UnitaryOp candidate) { unitary = candidate; });
+  ASSERT_TRUE(unitary);
+  EXPECT_EQ(unitary.getQubits().size(), 2U);
+  EXPECT_EQ(unitary.getMatrix(), originalMatrix);
 }

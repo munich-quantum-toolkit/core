@@ -14,10 +14,12 @@
 
 #include <nanobind/nanobind.h>
 
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -46,6 +48,16 @@ struct Register {
 [[nodiscard]] uint32_t
 validateRegisterLayout(const std::vector<Register>& registers, uint32_t total,
                        std::string_view kind);
+
+/**
+ * Convert between Qiskit's LSB-first and QC/QCO's MSB-first operand convention.
+ *
+ * The permutation reverses the low @p numQubits bits of both matrix indices
+ * and is therefore its own inverse.
+ */
+[[nodiscard]] std::vector<std::complex<double>>
+reverseQubitOrder(std::span<const std::complex<double>> matrix,
+                  size_t numQubits);
 
 struct Parameter {
   std::optional<double> number = 0.0;
@@ -197,6 +209,8 @@ public:
   [[nodiscard]] virtual Register classicalRegister(size_t index) const = 0;
   [[nodiscard]] virtual Parameter globalPhase() const = 0;
   [[nodiscard]] virtual Instruction instruction(size_t index) const = 0;
+  [[nodiscard]] virtual std::vector<std::complex<double>>
+  unitary(size_t index) const = 0;
   [[nodiscard]] virtual std::unique_ptr<ControlFlowReader>
   controlFlow(size_t index) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitReader>
@@ -243,6 +257,8 @@ public:
   virtual void addMeasure(uint32_t qubit, uint32_t clbit) = 0;
   virtual void addReset(uint32_t qubit) = 0;
   virtual void addBarrier(const std::vector<uint32_t>& qubits) = 0;
+  virtual void addUnitary(const std::vector<std::complex<double>>& matrix,
+                          const std::vector<uint32_t>& qubits) = 0;
   /** Transfer the native circuit to a new owned Python QuantumCircuit. */
   [[nodiscard]] virtual nb::object finish() = 0;
 };

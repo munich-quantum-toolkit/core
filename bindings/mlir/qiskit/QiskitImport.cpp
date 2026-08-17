@@ -19,6 +19,7 @@
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/Utils/DenseUnitary.h"
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
@@ -51,6 +52,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -1012,9 +1014,25 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
       requireArity(instruction, 1, 0);
       builder.reset(getQubit(instruction.qubits[0]));
       break;
-    case OperationKind::Unitary:
-      translateDefinition(index, instruction);
-      break;
+    case OperationKind::Unitary: {
+      llvm::SmallVector<mlir::Value> operands;
+      operands.reserve(instruction.qubits.size());
+      for (const auto qubit : instruction.qubits) {
+        operands.push_back(getQubit(qubit));
+      }
+      if (operands.size() > mlir::utils::MAX_DENSE_UNITARY_QUBITS) {
+        throw std::runtime_error(
+            "Qiskit unitary exceeds the supported eight-qubit limit");
+      }
+      const auto dimension = int64_t{1} << operands.size();
+      const auto type = mlir::RankedTensorType::get(
+          {dimension, dimension}, mlir::ComplexType::get(builder.getF64Type()));
+      const auto values =
+          reverseQubitOrder(circuit.unitary(index), operands.size());
+      builder.unitary(operands,
+                      mlir::DenseElementsAttr::get(
+                          type, llvm::ArrayRef<std::complex<double>>(values)));
+    } break;
     case OperationKind::ControlFlow: {
       const auto controlFlow = circuit.controlFlow(index);
       translateControlFlow(builder, *controlFlow, allQubits, classicalBits,
@@ -1069,7 +1087,6 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
     const auto instruction = circuit.instruction(index);
     if ((instruction.kind == OperationKind::Gate &&
          !instruction.standardGate) ||
-        instruction.kind == OperationKind::Unitary ||
         instruction.kind == OperationKind::Unknown) {
       if (!instruction.modifiers.empty()) {
         throw std::runtime_error(
@@ -1452,8 +1469,15 @@ void validateCircuit(const CircuitReader& circuit,
       }
       break;
     case OperationKind::Unitary:
-      validateDefinition(circuit, index, localParameters, definitionDepth,
-                         controlFlowDepth);
+      if (!instruction.parameters.empty() || !instruction.clbits.empty() ||
+          !instruction.modifiers.empty() || instruction.qubits.empty()) {
+        throw std::runtime_error(
+            "Qiskit unitary instruction has an unsupported operand arity");
+      }
+      if (instruction.qubits.size() > mlir::utils::MAX_DENSE_UNITARY_QUBITS) {
+        throw std::runtime_error(
+            "Qiskit unitary exceeds the supported eight-qubit limit");
+      }
       break;
     case OperationKind::ControlFlow: {
       const auto controlFlow = circuit.controlFlow(index);

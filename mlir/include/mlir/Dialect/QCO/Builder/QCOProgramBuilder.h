@@ -14,6 +14,7 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringSet.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -1370,6 +1371,15 @@ public:
    * ```
    */
   ValueRange barrier(ValueRange qubits);
+
+  /**
+   * @brief Apply an explicitly represented dense unitary matrix
+   *
+   * @param qubits Input qubits (must be valid/unconsumed)
+   * @param matrix Square row-major `complex<f64>` matrix
+   * @return Output qubits
+   */
+  ValueRange unitary(ValueRange qubits, DenseElementsAttr matrix);
 
   //===--------------------------------------------------------------------===//
   // Modifiers

@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -28,6 +29,7 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -40,6 +42,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <array>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
@@ -288,6 +291,130 @@ TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   EXPECT_EQ(pow.getQubits().front(), qubit);
   EXPECT_EQ(pow.getBody()->getArgument(0), bodyQubit);
   EXPECT_TRUE(pow.verify().succeeded());
+}
+
+TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
+  const auto matrixType = RankedTensorType::get(
+      {2, 2}, ComplexType::get(Float64Type::get(context.get())));
+  const std::array<std::complex<double>, 4> xValues{
+      {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}}};
+  const auto xMatrix = DenseElementsAttr::get(
+      matrixType, llvm::ArrayRef<std::complex<double>>(xValues));
+
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+  builder.unitary(ValueRange{qubit}, xMatrix);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  auto function = *module->getOps<func::FuncOp>().begin();
+  auto unitaries = llvm::to_vector(function.getBody().getOps<UnitaryOp>());
+  ASSERT_EQ(unitaries.size(), 1U);
+  EXPECT_EQ(unitaries.front().getMatrix(), xMatrix);
+
+  const std::array<std::complex<double>, 4> identityValues{
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
+  unitaries.front()->setAttr(
+      "matrix",
+      DenseElementsAttr::get(
+          matrixType, llvm::ArrayRef<std::complex<double>>(identityValues)));
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*module)));
+  EXPECT_TRUE(function.getBody().getOps<UnitaryOp>().empty());
+}
+
+TEST_F(QCTest, DenseUnitaryVerifierRejectsNonUnitaryMatrix) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+  const auto matrixType =
+      RankedTensorType::get({2, 2}, ComplexType::get(builder.getF64Type()));
+  const std::array<std::complex<double>, 4> values{
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.5, 0.0}}};
+  auto unitary = UnitaryOp::create(
+      builder,
+      DenseElementsAttr::get(matrixType,
+                             llvm::ArrayRef<std::complex<double>>(values)),
+      ValueRange{qubit});
+
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  EXPECT_TRUE(failed(unitary.verify()));
+  unitary.erase();
+}
+
+TEST_F(QCTest, DenseUnitaryVerifierRejectsMalformedShapeAndDimension) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+  const auto complexType = ComplexType::get(builder.getF64Type());
+  const auto expectRejected = [&](const ArrayRef<int64_t> shape) {
+    const auto matrix =
+        DenseElementsAttr::get(RankedTensorType::get(shape, complexType),
+                               std::complex<double>{0.0, 0.0});
+    auto unitary = UnitaryOp::create(builder, matrix, ValueRange{qubit});
+    EXPECT_TRUE(failed(unitary.verify()));
+    unitary.erase();
+  };
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+
+  expectRejected({2});
+  expectRejected({3, 3});
+}
+
+TEST_F(QCTest, DenseUnitaryVerifierRejectsRepeatedQubit) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+  const auto matrixType =
+      RankedTensorType::get({4, 4}, ComplexType::get(builder.getF64Type()));
+  const std::array<std::complex<double>, 16> identityValues{{
+      {1.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {1.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {1.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {0.0, 0.0},
+      {1.0, 0.0},
+  }};
+  const auto identity = DenseElementsAttr::get(
+      matrixType, llvm::ArrayRef<std::complex<double>>(identityValues));
+  auto unitary = UnitaryOp::create(builder, identity, ValueRange{qubit, qubit});
+
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  EXPECT_TRUE(failed(unitary.verify()));
+  unitary.erase();
+}
+
+TEST_F(QCTest, DenseUnitaryVerifierRejectsMoreThanEightQubits) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  llvm::SmallVector<Value, 9> qubits;
+  for (size_t index = 0; index < 9U; ++index) {
+    qubits.push_back(builder.allocQubit());
+  }
+  const auto matrixType =
+      RankedTensorType::get({512, 512}, ComplexType::get(builder.getF64Type()));
+  const auto matrix =
+      DenseElementsAttr::get(matrixType, std::complex<double>{0.0, 0.0});
+  auto unitary = UnitaryOp::create(builder, matrix, ValueRange{qubits});
+
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  EXPECT_TRUE(failed(unitary.verify()));
+  unitary.erase();
 }
 
 namespace {

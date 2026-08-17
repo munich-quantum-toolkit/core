@@ -15,12 +15,14 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner): enables the std::string caster.
 #include <qiskit.h>
+#include <qiskit/complex.h>
 #include <qiskit/funcs_py.h>
 #include <qiskit/version.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -223,6 +225,34 @@ void appendControlModifier(const nb::handle object,
   }
   modifiers.push_back({.kind = GateModifierKind::Control,
                        .numControls = static_cast<uint32_t>(controls)});
+}
+
+[[nodiscard]] nb::object terminalPythonGate(const nb::handle operation,
+                                            const size_t depth = 0U) {
+  if (depth >= MAX_ANNOTATED_OPERATION_DEPTH) {
+    throw std::runtime_error(
+        "Qiskit annotated operations exceed the nesting limit of 64");
+  }
+  if (nb::hasattr(operation, "base_op")) {
+    return terminalPythonGate(
+        pythonAttribute(operation, "base_op",
+                        "Qiskit annotated operation has no base"),
+        depth + 1U);
+  }
+  if (nb::hasattr(operation, "base_gate")) {
+    return terminalPythonGate(
+        pythonAttribute(operation, "base_gate",
+                        "Qiskit controlled gate has no base"),
+        depth + 1U);
+  }
+  return nb::borrow<nb::object>(operation);
+}
+
+[[nodiscard]] bool isPythonUnitaryGate(const nb::handle operation) {
+  const auto terminal = terminalPythonGate(operation);
+  const auto unitaryGate =
+      nb::module_::import_("qiskit.circuit.library").attr("UnitaryGate");
+  return nb::isinstance(terminal, unitaryGate);
 }
 
 void normalizePythonModifier(const nb::handle modifier,
@@ -690,6 +720,17 @@ public:
     if (kind == OperationKind::ControlFlow) {
       return {.kind = kind, .name = "control_flow"};
     }
+    std::optional<Instruction> normalizedUnknown;
+    if (kind == OperationKind::Unknown) {
+      const auto operation = pythonOperation(index);
+      if (isPythonUnitaryGate(operation)) {
+        throw std::runtime_error(
+            "Qiskit circuit import supports only native, unwrapped "
+            "UnitaryGate instructions");
+      }
+      normalizedUnknown.emplace();
+      normalizePythonGate(operation, *normalizedUnknown);
+    }
     QkCircuitInstruction native{};
     qk_circuit_get_instruction(circuit_, index, &native);
     struct InstructionGuard {
@@ -714,13 +755,39 @@ public:
       result.parameters.emplace_back(normalizeParameter(parameter));
     }
     if (result.kind == OperationKind::Unknown) {
-      const auto operation = pythonOperation(index);
-      normalizePythonGate(operation, result);
+      result.name = std::move(normalizedUnknown->name);
+      result.modifiers = std::move(normalizedUnknown->modifiers);
       if (!result.modifiers.empty()) {
         result.kind = OperationKind::Gate;
       }
     }
     result.standardGate = standardGateMapping(result.name);
+    return result;
+  }
+
+  [[nodiscard]] std::vector<std::complex<double>>
+  unitary(const size_t index) const override {
+    const auto instructionData = instruction(index);
+    if (instructionData.kind != OperationKind::Unitary) {
+      throw std::runtime_error(
+          "requested unitary data for a non-unitary instruction");
+    }
+    if (instructionData.qubits.size() >=
+        std::numeric_limits<size_t>::digits / 2U) {
+      throw std::runtime_error(
+          "Qiskit unitary is too large to represent safely");
+    }
+    const auto entries = size_t{1} << (2U * instructionData.qubits.size());
+    std::vector<QkComplex64> native(entries);
+    qk_circuit_inst_unitary(
+        // Qiskit's read-only accessor is not const-correct in version 2.5.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+        const_cast<QkCircuit*>(circuit_), index, native.data());
+    std::vector<std::complex<double>> result;
+    result.reserve(entries);
+    for (const auto value : native) {
+      result.emplace_back(value.re, value.im);
+    }
     return result;
   }
 
@@ -1094,6 +1161,19 @@ public:
     checkExitCode(qk_circuit_barrier(circuit_, qubits.data(),
                                      static_cast<uint32_t>(qubits.size())),
                   "adding barrier");
+  }
+
+  void addUnitary(const std::vector<std::complex<double>>& matrix,
+                  const std::vector<uint32_t>& qubits) override {
+    std::vector<QkComplex64> native;
+    native.reserve(matrix.size());
+    for (const auto value : matrix) {
+      native.push_back({.re = value.real(), .im = value.imag()});
+    }
+    checkExitCode(qk_circuit_unitary(circuit_, native.data(), qubits.data(),
+                                     static_cast<uint32_t>(qubits.size()),
+                                     true),
+                  "adding unitary");
   }
 
   [[nodiscard]] nb::object finish() override {

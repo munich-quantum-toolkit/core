@@ -52,6 +52,8 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         if constexpr (std::is_same_v<ValueT, Matrix1x1>) {
           out = $_op.getUnitaryMatrix();
           return true;
+        } else if constexpr (std::is_same_v<ValueT, DynamicMatrix>) {
+          return out.assignFrom($_op.getUnitaryMatrix());
         }
         return false;
       } else {
@@ -81,6 +83,8 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         if constexpr (std::is_same_v<ValueT, Matrix2x2>) {
           out = $_op.getUnitaryMatrix();
           return true;
+        } else if constexpr (std::is_same_v<ValueT, DynamicMatrix>) {
+          return out.assignFrom($_op.getUnitaryMatrix());
         }
         return false;
       } else {
@@ -110,6 +114,8 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         if constexpr (std::is_same_v<ValueT, Matrix4x4>) {
           out = $_op.getUnitaryMatrix();
           return true;
+        } else if constexpr (std::is_same_v<ValueT, DynamicMatrix>) {
+          return out.assignFrom($_op.getUnitaryMatrix());
         }
         return false;
       } else {
