@@ -16,8 +16,6 @@
 
 #include "dd/Package.hpp"
 
-#include <nlohmann/json_fwd.hpp>
-
 #include <iostream>
 #include <string>
 
@@ -44,16 +42,20 @@ namespace dd {
  */
 [[nodiscard]] double computePeakMemoryMiB(const Package& package);
 
-[[nodiscard]] nlohmann::json
-getStatistics(Package& package, bool includeIndividualTables = false);
-
 /**
  * @brief Get some key statistics about data structures used by the DD package
- * @return A JSON representation of the statistics
+ * @return A JSON-formatted string representation of the statistics
  */
-[[nodiscard]] nlohmann::json getDataStructureStatistics();
+[[nodiscard]] std::string getDataStructureStatisticsString();
 
-[[nodiscard]] std::string getStatisticsString(Package& package);
+/**
+ * @brief Get key statistics about the data structures held by a package
+ * @param package The package instance
+ * @param includeIndividualTables Whether to report every unique table
+ * @return A JSON-formatted string representation of the statistics
+ */
+[[nodiscard]] std::string
+getStatisticsString(Package& package, bool includeIndividualTables = false);
 
 void printStatistics(Package& package, std::ostream& os = std::cout);
 

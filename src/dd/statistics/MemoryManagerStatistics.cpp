@@ -10,12 +10,13 @@
 
 #include "dd/statistics/MemoryManagerStatistics.hpp"
 
-#include "dd/statistics/Statistics.hpp"
+#include "StatisticsJson.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cstddef>
+#include <string>
 
 namespace dd {
 
@@ -74,24 +75,28 @@ void MemoryManagerStatistics::reset() noexcept {
   numAvailableForReuse = 0U;
 }
 
-nlohmann::basic_json<> MemoryManagerStatistics::json() const {
-  if (peakNumUsed == 0) {
+std::string MemoryManagerStatistics::toString() const {
+  return toJson(*this).dump(2U);
+}
+
+nlohmann::basic_json<> toJson(const MemoryManagerStatistics& s) {
+  if (s.peakNumUsed == 0) {
     return "unused";
   }
 
-  auto j = Statistics::json();
-  j["memory_allocated_MiB"] = getAllocatedMemoryMiB();
-  j["memory_used_MiB"] = getUsedMemoryMiB();
-  j["memory_used_MiB_peak"] = getPeakUsedMemoryMiB();
-  j["num_allocated"] = numAllocated;
-  j["num_allocations"] = numAllocations;
-  j["num_available_for_reuse"] = numAvailableForReuse;
-  j["num_available_for_reuse_peak"] = peakNumAvailableForReuse;
-  j["num_available_from_chunks"] = getNumAvailableFromChunks();
-  j["num_available_total"] = getTotalNumAvailable();
-  j["num_used"] = numUsed;
-  j["num_used_peak"] = peakNumUsed;
-  j["usage_ratio"] = getUsageRatio();
+  nlohmann::basic_json<> j;
+  j["memory_allocated_MiB"] = s.getAllocatedMemoryMiB();
+  j["memory_used_MiB"] = s.getUsedMemoryMiB();
+  j["memory_used_MiB_peak"] = s.getPeakUsedMemoryMiB();
+  j["num_allocated"] = s.numAllocated;
+  j["num_allocations"] = s.numAllocations;
+  j["num_available_for_reuse"] = s.numAvailableForReuse;
+  j["num_available_for_reuse_peak"] = s.peakNumAvailableForReuse;
+  j["num_available_from_chunks"] = s.getNumAvailableFromChunks();
+  j["num_available_total"] = s.getTotalNumAvailable();
+  j["num_used"] = s.numUsed;
+  j["num_used_peak"] = s.peakNumUsed;
+  j["usage_ratio"] = s.getUsageRatio();
   return j;
 }
 

@@ -16,8 +16,6 @@
 
 namespace dd {
 
-nlohmann::basic_json<> Statistics::json() const { return nlohmann::json{}; }
-
-std::string Statistics::toString() const { return json().dump(2U); }
+std::string Statistics::toString() const { return nlohmann::json{}.dump(2U); }
 
 } // namespace dd
