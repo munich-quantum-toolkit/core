@@ -12,8 +12,6 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add an explicit QCO pass for dead-gate removal and use it in the
-  qubit-reuse pipeline ([#2118]) ([**@simon1hofmann**])
 - 🚸 Add typed stable-ID construction for Qiskit backends and compiler targets,
   fluent Qiskit primitives, and lazy provider discovery ([#2084])
   ([**@burgholzer**])
@@ -124,6 +122,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- ♻️ Extract the existing QCO dead-gate elimination patterns from
+  canonicalization into an explicit `remove-dead-gates` pass and use it in the
+  qubit-reuse pipeline ([#2118]) ([**@simon1hofmann**])
 - 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
   logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
   ([**@simon1hofmann**])
