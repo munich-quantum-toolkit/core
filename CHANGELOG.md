@@ -152,6 +152,9 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove the random-number generator, seed, and `getGenerator()` method from
+  `QuantumComputation`; randomized algorithms now own generators initialized
+  from their seed arguments ([#2111]) ([**@simon1hofmann**])
 - 💥 Remove QDMI device configuration through `[tool.qdmi]` in `pyproject.toml`
   and the vendored toml++ header ([#2116]) ([**@denialhaag**])
 - 💥 Remove the FoMaC compatibility name from the C++ and Python QDMI APIs. Use
@@ -779,6 +782,7 @@ for previous changelogs._
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2115]: https://github.com/munich-quantum-toolkit/core/pull/2115
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
+[#2111]: https://github.com/munich-quantum-toolkit/core/pull/2111
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074

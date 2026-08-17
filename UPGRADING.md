@@ -95,6 +95,14 @@ Python code can convert a legacy circuit to OpenQASM 3 before compilation:
 program = compile_program(computation.qasm3_str())
 ```
 
+### QuantumComputation random-number generator
+
+`QuantumComputation` no longer stores a random-number generator or seed. Remove
+the third `seed` argument from C++ and Python constructor calls. C++ callers
+that used `QuantumComputation::getGenerator()` must create and own a
+random-number generator instead. Randomized circuit generators continue to
+accept a seed and now own a separate generator for each call.
+
 ### Removal of the ZX-calculus library
 
 MQT Core no longer provides the `mqt-core-zx` library, the `MQT::CoreZX` CMake

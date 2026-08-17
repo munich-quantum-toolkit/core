@@ -128,8 +128,9 @@ auto constructGroverCircuit(QuantumComputation& qc, const Qubit nq,
 
 auto createGrover(const Qubit nq, const std::size_t seed)
     -> QuantumComputation {
-  auto qc = QuantumComputation(0, 0, seed);
-  const auto targetValue = generateTargetValue(nq, qc.getGenerator());
+  auto generator = std::mt19937_64(seed);
+  const auto targetValue = generateTargetValue(nq, generator);
+  auto qc = QuantumComputation();
   constructGroverCircuit(qc, nq, targetValue);
   return qc;
 }
