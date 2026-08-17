@@ -24,7 +24,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
 
   # add link libraries
   target_link_libraries(${MQT_CORE_TARGET_NAME}-dd PUBLIC MQT::CoreIR)
-  target_link_libraries(${MQT_CORE_TARGET_NAME}-dd
                         PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
 
   # generate export header
