@@ -41,6 +41,11 @@ existing behavior.
 - Observation: Target compilation does not store the routing layout in the
   returned `QCProgram`. Correct Qiskit layout metadata therefore needs a
   separate design and is outside this work.
+- Observation: CUDA-Q represents device topology with a module-level
+  `quake.wire_set` and records mapping permutations in the function attributes
+  `mapping_reorder_idx` and `mapping_v2p`. This is a precedent for a separate
+  routing-layout retention design; it does not change the target-aware export
+  contract in this plan.
 
 ## Decision Log
 
