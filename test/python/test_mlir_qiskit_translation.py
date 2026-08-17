@@ -530,6 +530,50 @@ measure q[0] -> c[1];
     assert restored.count_ops() == {"measure": 2, "x": 1}
 
 
+def test_openqasm3_measurement_export_ignores_unused_poison() -> None:
+    """Ignore the unused poison value that initializes an OpenQASM 3 output."""
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[1] c;
+h q[1];
+c[0] = measure q[1];
+"""
+    )
+
+    restored = program.to_qiskit()
+
+    assert "ub.poison" in program.ir
+    assert [(register.name, len(register)) for register in restored.qregs] == [("q", 2)]
+    assert [(register.name, len(register)) for register in restored.cregs] == [("c", 1)]
+    assert [item.operation.name for item in restored.data] == ["h", "measure"]
+    measurement = restored.data[-1]
+    assert restored.find_bit(measurement.qubits[0]).index == 1
+    assert restored.find_bit(measurement.clbits[0]).index == 0
+
+
+def test_flat_export_rejects_used_poison() -> None:
+    """Reject poison when it participates in classical execution."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %c0 = arith.constant 0 : index
+    %poison = ub.poison : i1
+    %q = qc.alloc : !qc.qubit
+    %c = memref.alloc() : memref<1xi1>
+    memref.store %poison, %c[%c0] : memref<1xi1>
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="does not support used poison values"):
+        program.to_qiskit()
+
+
 def test_layout_is_accepted_and_ignored() -> None:
     """Import laid-out operations without retaining transpiler metadata."""
     circuit = QuantumCircuit(2)

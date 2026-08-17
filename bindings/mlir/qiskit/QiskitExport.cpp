@@ -28,6 +28,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/UB/IR/UBOps.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Matchers.h>
@@ -537,6 +538,16 @@ void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
       }
       throw std::runtime_error(
           "QC to Qiskit export encountered an unsupported memory deallocation");
+    }
+    if (auto poison = llvm::dyn_cast<mlir::ub::PoisonOp>(operation)) {
+      initializationRegister = {};
+      if (llvm::all_of(poison->getResults(), [](const mlir::Value result) {
+            return result.use_empty();
+          })) {
+        continue;
+      }
+      throw std::runtime_error(
+          "QC to Qiskit export does not support used poison values");
     }
     if (auto store = llvm::dyn_cast<mlir::memref::StoreOp>(operation)) {
       if (llvm::isa_and_nonnull<mlir::qc::MeasureOp>(
