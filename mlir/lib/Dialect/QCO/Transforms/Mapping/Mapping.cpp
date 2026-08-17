@@ -716,8 +716,7 @@ private:
     rewriter.setInsertionPoint(body.back().getTerminator());
     for (size_t prog = wires.size(); prog < layout.nqubits(); ++prog) {
       const auto hw = layout.getHardwareIndex(prog);
-      const auto site = target->siteForVertex(hw);
-      const auto qubit = staticQubits[site];
+      const auto qubit = staticQubits[hw];
 
       wires.emplace_back(qubit);
       infos.insertOrUpdate(prog, prog);
