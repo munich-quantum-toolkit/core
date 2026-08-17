@@ -1,181 +1,690 @@
 # Move IQM conversion support to QDMI-on-IQM
 
-## Why this matters
+This ExecPlan is a living document. The sections `Progress`,
+`Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
+be kept up to date as work proceeds.
+
+This ExecPlan must be maintained in accordance with `.agent/PLANS.md` from the
+repository root.
+
+## Purpose / Big Picture
 
 MQT Core's Qiskit adapter can submit a circuit to any QDMI device. To do that it
-must turn a Qiskit `QuantumCircuit` into a _program format_ the device accepts —
-a string in some agreed syntax. Core handles OpenQASM 2 and OpenQASM 3, which
-are vendor-neutral. It also handled IQM JSON, a format only IQM hardware
-understands, and shipped `MoveGate`, a Qiskit gate only IQM hardware has.
+must turn a Qiskit `QuantumCircuit` into a _program_ in a _program format_ the
+device accepts. Today the adapter also carries IQM JSON, a format only IQM
+hardware understands, and `MoveGate`, a Qiskit gate only IQM hardware has. That
+puts one vendor's format inside a vendor-neutral adapter. No device MQT Core
+ships advertises IQM JSON, and the only consumer is the external package
+`iqm-qdmi` from QDMI-on-IQM.
 
-That put one vendor's format inside a generic adapter. Nothing in Core uses it:
-no device Core ships advertises IQM JSON, and the only consumer is the external
-package `iqm-qdmi` from
-[QDMI-on-IQM](https://github.com/iqm-finland/QDMI-on-IQM).
+After this change, the package that owns a device also owns the conversion into
+that device's format and registers it with MQT Core. MQT Core keeps only the
+vendor-neutral formats, and it registers those through the same interface rather
+than hard-coding them. Someone who installs `iqm-qdmi` sees no difference: their
+circuits still reach IQM hardware as IQM JSON. Someone writing a new device
+library can add their own format without changing MQT Core.
 
-After this change, a package that owns a device also owns the conversion into
-its format, and registers it with Core. Core keeps only the vendor-neutral
-codecs. Someone installing `iqm-qdmi` sees no difference: their circuits still
-go to IQM hardware as IQM JSON. Someone writing a new device library can now add
-their own format without changing Core.
+Two observable outcomes define success. First, a package that registers a
+serializer for a format can submit a circuit to a device that advertises that
+format, and the program that reaches the device is the one the serializer
+produced. Second, nothing in MQT Core mentions IQM JSON or `move` outside the
+superconducting device models, and the Qiskit adapter still submits OpenQASM 2
+and OpenQASM 3 as before.
 
-Tracked as [#2094](https://github.com/munich-quantum-toolkit/core/issues/2094),
-under the v4 cleanup tracker
-[#2085](https://github.com/munich-quantum-toolkit/core/issues/2085).
+Tracked as issue #2094 in `munich-quantum-toolkit/core`, under the v4 cleanup
+tracker #2085. The pull request is #2114.
 
-## Terms
+## Progress
 
-- **QDMI** — the Quantum Device Management Interface, the C API through which
-  Core talks to a device. `mqt.core.qdmi` is its Python binding.
-- **Program format** — the syntax a device accepts a program in, named by a
-  member of the `ProgramFormat` enum (`QASM2`, `QASM3`, `IQM_JSON`, `QPY`, …).
-- **Program codec** — a function that converts one Qiskit circuit into one
-  program format. Signature: `(circuit, device) -> str`.
-- **Entry point** — a record a Python package writes into its own metadata at
-  install time, which another package can read without importing it. Declared
+- [x] (2026-08-14) First implementation under the name "program codec": registry
+      module, entry point group, `_EXTRA_GATES` seam, tests, docs.
+- [x] (2026-08-17 10:53Z) Review of this plan by @burgholzer on #2114 requested
+      changes to the design. Seven comments, all on this file.
+- [x] (2026-08-17) Merged `main` into the branch. Conflicts in `CHANGELOG.md`,
+      `UPGRADING.md`, and `python/mqt/core/plugins/qiskit/backend.py` resolved
+      by keeping every change from `main` and re-applying only the seam.
+- [x] (2026-08-17) Revised this plan against the review: serializer terminology,
+      two payload signatures, an explicit format preference order, MQT Core's
+      own OpenQASM serializers registered through the same registry, the
+      ecosystem cross-check, and the mid-term `mqt-cc` outlook.
+- [ ] Milestone 1: expose the program-format payload classification in Python.
+- [ ] Milestone 2: the serializer registry.
+- [ ] Milestone 3: the backend reduced to one ordered walk.
+- [ ] Milestone 4: the gate seam and the removal of the IQM pieces.
+- [ ] Milestone 5: documentation, changelog, upgrade guide, and full validation.
+
+## Surprises & Discoveries
+
+- Observation: MQT Core's C++ QDMI client already knows which program formats
+  carry a binary payload and which carry no generic payload at all, so the
+  Python side does not need to invent that classification. Evidence: in
+  `src/qdmi/Client.cpp`, an anonymous namespace defines `isBinaryProgramFormat`
+  (true for `QDMI_PROGRAM_FORMAT_QIRBASEMODULE`,
+  `QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE`, `QDMI_PROGRAM_FORMAT_QPY`) and
+  `hasNoGenericProgramPayload` (true for `QDMI_PROGRAM_FORMAT_CALIBRATION`,
+  `QDMI_PROGRAM_FORMAT_BATCHJOB`), and the text overload of `Device::submitJob`
+  throws `std::invalid_argument` with the message
+  `"Binary program formats require exact-byte submission"` when it is handed a
+  binary format.
+
+- Observation: the Python `Device.submit_job` already accepts either payload
+  type, so carrying `bytes` through the adapter needs no binding change.
+  Evidence: `python/mqt/core/qdmi/__init__.pyi` declares two overloads, one with
+  `program: str` ("Submits a text job to the device.") and one with
+  `program: bytes` ("Submits an exact byte payload to the device.").
+
+- Observation: Qiskit has no entry point group for turning a circuit into a
+  submission payload, so there is no existing interface to conform to. Evidence:
+  Qiskit's `pyproject.toml` defines exactly eight groups, all
+  transpiler-related: `qiskit.unitary_synthesis`, `qiskit.synthesis`, and
+  `qiskit.transpiler.{init,translation,routing,optimization,layout,scheduling}`.
+  `qiskit.qasm3` and `qiskit.qpy` are closed modules with no plugin lookup.
+
+## Decision Log
+
+- Decision: call the seam a _program serializer_, not a codec, converter, or
+  translator. Rationale: Qiskit itself calls this operation serialization —
+  `qiskit.qasm3.dumps` is documented as "Serialize a `QuantumCircuit` object in
+  an OpenQASM 3 string", the class behind it is
+  `qiskit.qasm3.exporter.Exporter`, and `qiskit.qpy.dump` writes the binary
+  form. IQM uses the same word: `IQMBackend.serialize_circuit` and
+  `serialize_instructions`. "Codec" is not established in this community.
+  "Translator" would collide with `qiskit.transpiler.translation` and
+  `BasisTranslator`, which mean basis translation, a different operation that
+  this same adapter also relies on. "Converter" is common at provider level
+  (`qiskit_to_ionq`, `circuit_to_aqt`) but says nothing about producing a wire
+  payload, and MQT Core already uses "convert" for in-memory conversions between
+  its own IR and Qiskit (`qiskit_to_mqt`, `mqt_to_qiskit`), which would give one
+  word two meanings. Date/Author: 2026-08-17, @marcelwa after review by
+  @burgholzer.
+
+- Decision: two serializer signatures, one per payload kind, distinguished by
+  the program format rather than by separate registries. Rationale: the review
+  asks for a text signature and a binary signature. A format fixes its payload
+  kind, so one registry keyed by `ProgramFormat` is enough, and the backend
+  checks the returned type against the format before submission. Date/Author:
+  2026-08-17, @marcelwa after review by @burgholzer.
+
+- Decision: take the payload classification from the C++ client through new
+  bindings instead of restating it in Python. Rationale: `src/qdmi/Client.cpp`
+  already decides which formats are binary and which carry no program payload,
+  and it rejects a mismatched submission. A second copy in Python would drift
+  the first time QDMI adds a format. Date/Author: 2026-08-17, @marcelwa.
+
+- Decision: record the format preference as one explicit, ordered tuple in MQT
+  Core rather than relying on the order a device happens to report, and give
+  device-native formats precedence over standardized ones. Rationale: the review
+  asks for the order to be encoded rather than left to a mapping. A package
+  registers a serializer for its own device's native format because it wants
+  that format used, and that is the precedence IQM JSON has today. Among the
+  standardized formats, a more capable profile beats a less capable one and a
+  binary encoding beats a string encoding, because the profile decides what a
+  circuit may contain while the encoding only decides how it travels. One tuple
+  in one module means the whole policy can be re-read, and changed, in one
+  place. Date/Author: 2026-08-17, @marcelwa after review by @burgholzer.
+
+- Decision: MQT Core registers its own OpenQASM 2 and OpenQASM 3 serializers
+  through the same registry. Rationale: the review asks whether this would
+  streamline the backend, and it does. The backend becomes one ordered walk with
+  no special cases, the built-in formats obey the same preference tuple as every
+  other format, and a provider whose device needs a different OpenQASM 3 export
+  can replace ours the same way it registers anything else. Date/Author:
+  2026-08-17, @marcelwa after review by @burgholzer.
+
+- Decision: a serializer receives the backend, not the device. Rationale: MQT
+  Core's own OpenQASM 3 serializer needs `backend.target.operation_names` to
+  decide which gate definitions to suppress, so a device-only signature would
+  force the built-in formats to stay hard-coded, which contradicts the decision
+  above. Passing the backend also matches the closest ecosystem precedent,
+  `qiskit_to_ionq(circuit, backend, ...)` in qiskit-ionq, which reads
+  `backend.name`, `backend.gateset()`, and `backend.options`. `QDMIBackend`
+  gains a public `device` property so a serializer can still reach the device.
+  Date/Author: 2026-08-17, @marcelwa.
+
+- Decision: entry points, not only a runtime registration call. Rationale:
+  `QDMIProvider` builds a plain `QDMIBackend` for every registered device, so a
+  user can reach a registered IQM device without ever importing `iqm.qdmi`. An
+  import-time registration would miss that path. Date/Author: 2026-08-14,
+  @marcelwa.
+
+- Decision: a bad entry point warns and is skipped rather than raising.
+  Rationale: a user with two device packages installed must not lose the working
+  one because the other is broken. Date/Author: 2026-08-14, @marcelwa.
+
+- Decision: keep the exception class name `TranslationError` even though the
+  seam is called serialization. Rationale: it belongs to a hierarchy shared with
+  the PennyLane plugin, which has `PennyLaneTranslationError`,
+  `PennyLaneUnsupportedFormatError`, and `PennyLaneUnsupportedOperationError`
+  under the same `QDMIPluginError` base. Renaming one plugin's class alone would
+  break that symmetry, and renaming both plugins' classes is a separate change
+  with its own upgrade note. Date/Author: 2026-08-17, @marcelwa.
+
+- Decision: `MoveGate` leaves MQT Core, and a subclass supplies a non-standard
+  native gate through `_EXTRA_GATES`. Rationale: after the star-topology work in
+  QDMI-on-IQM, that backend hides `move` from the `Target` entirely, so MQT
+  Core's copy would have had no user. Every provider examined solves the same
+  problem the same way: qiskit-ionq defines `GPIGate`, `GPI2Gate`, `MSGate`, and
+  `ZZGate` in `qiskit_ionq/ionq_gates.py` and injects them into its `Target`;
+  qiskit-pasqal-provider defines `HamiltonianGate`; qiskit-on-IQM defines
+  `MoveGate`. Date/Author: 2026-08-14, @marcelwa.
+
+## Outcomes & Retrospective
+
+To be completed at the end of Milestone 5. The first implementation reached
+working behavior under the name "program codec" and passed
+`uv run --no-sync pytest test/python` with 681 passed and 4 skipped, so the
+mechanism itself is sound. This revision changes its names, makes its ordering
+policy explicit, and makes it handle MQT Core's own formats the same way as
+everyone else's.
+
+## Context and Orientation
+
+### Terms
+
+- **QDMI** is the Quantum Device Management Interface, the C API through which
+  MQT Core talks to a device. `mqt.core.qdmi` is its Python binding and
+  `include/mqt-core/qdmi/Client.hpp` its C++ client.
+- A **program format** is the syntax in which a device accepts a program. Each
+  one is a member of the `ProgramFormat` enum: `QASM2`, `QASM3`,
+  `QIR_BASE_STRING`, `QIR_BASE_MODULE`, `QIR_ADAPTIVE_STRING`,
+  `QIR_ADAPTIVE_MODULE`, `CALIBRATION`, `QPY`, `IQM_JSON`, `BATCH_JOB`, and
+  `CUSTOM1` through `CUSTOM5`. A device reports the ones it accepts through
+  `Device.supported_program_formats()`.
+- A **program serializer** is a function that turns one Qiskit circuit into one
+  program in one format. A format whose payload is text has a serializer
+  returning `str`; a format whose payload is binary has one returning `bytes`.
+- An **entry point** is a record a Python package writes into its own installed
+  metadata, which another package can read without importing it. It is declared
   under `[project.entry-points."<group>"]` in `pyproject.toml`.
-- **Target** — Qiskit's model of what a backend can run: which gates, on which
-  qubits, with what duration and error.
+- A **`Target`** is Qiskit's model of what a backend can run: which operations,
+  on which qubits, with what duration and error.
 
-## Starting state
+### The files that matter
 
-Before this change, in `python/mqt/core/plugins/qiskit/`:
+Everything in the Qiskit adapter lives under `python/mqt/core/plugins/qiskit/`.
+Before this change:
 
-- `converters.py` held one function, `qiskit_to_iqm_json(circuit, device)`.
-- `gates.py` held one class, `MoveGate`, an opaque two-qubit gate named `move`.
-- `backend.py::QDMIBackend._convert_circuit` began with
-  `if ProgramFormat.IQM_JSON in supported_program_formats:` and called
-  `qiskit_to_iqm_json`, before falling through to OpenQASM 3 and OpenQASM 2.
-- `backend.py::_build_gate_mappings_for_backend` hard-coded `"move": MoveGate()`
-  into the map from device operation names to Qiskit gates.
-- `__init__.py` exported both symbols publicly.
-- `test/python/plugins/qiskit/test_mock_backend.py` held twelve
-  `test_qiskit_to_iqm_json_*` tests and three tests about `move`.
+- `converters.py` holds one function, `qiskit_to_iqm_json(circuit, device)`.
+- `gates.py` holds one class, `MoveGate`, an opaque two-qubit gate named `move`.
+- `backend.py` holds `QDMIBackend`, a `qiskit.providers.BackendV2`. Its
+  `_convert_circuit` method begins with a branch on
+  `ProgramFormat.IQM_JSON in supported_program_formats`, then falls through to
+  OpenQASM 3 and OpenQASM 2. Its module-level `_build_gate_mappings_for_backend`
+  hard-codes `"move": MoveGate()` into the map from device operation names to
+  Qiskit gates. Its `run` method converts each circuit and calls
+  `self._device.submit_job(program=..., program_format=..., num_shots=...)`.
+- `exceptions.py` holds the plugin's exception hierarchy, including
+  `TranslationError`, `UnsupportedFormatError`, and `UnsupportedOperationError`.
+- `__init__.py` re-exports the public names when Qiskit is installed.
+- The tests are in `test/python/plugins/qiskit/test_mock_backend.py`, which
+  builds a `MockQDMIDevice` in-process rather than opening a real device. It
+  holds twelve `test_qiskit_to_iqm_json_*` tests and three tests about `move`.
 
-The IQM device advertises only `QIR_BASE_STRING` and `IQM_JSON`, never any
-OpenQASM. So deleting the branch without a replacement would leave every IQM
-circuit with nothing to convert to. The seam is not optional polish; it is what
-keeps IQM execution working.
+On the C++ and binding side:
 
-## Design
+- `src/qdmi/Client.cpp` implements `qdmi::Device::submitJob` in two overloads,
+  text and bytes, and holds the two payload classifiers described under
+  `Surprises & Discoveries` in an anonymous namespace.
+- `include/mqt-core/qdmi/Client.hpp` declares that class.
+- `bindings/qdmi/qdmi.cpp` binds the whole client, including the `ProgramFormat`
+  enum, into `mqt.core.qdmi`.
+- `python/mqt/core/qdmi/__init__.pyi` is the generated stub for that module. It
+  must never be edited by hand; `uvx nox -s stubs` regenerates it.
 
-### The seam
+### Why the seam is required rather than optional
 
-A new module `python/mqt/core/plugins/qiskit/codecs.py` holds a registry keyed
-by `ProgramFormat`.
+The IQM QDMI device advertises `QIR_BASE_STRING` and `IQM_JSON` and no OpenQASM
+at all. Removing the IQM JSON branch without a replacement would therefore leave
+every circuit bound for IQM hardware with no format to serialize into, and MQT
+Core has no QIR serializer. The registry is what keeps that path working.
 
-- `register_program_codec(fmt, codec, *, replace=False)` adds one at run time.
-- `unregister_program_codec(fmt)` removes one. Tests use it to clean up.
-- `program_codec(fmt)` returns the codec or `None`.
+### Where this is going
 
-The first of those calls loads the entry point group
-`mqt.core.qiskit.program_codecs` once and caches the result. The entry point
-name is the `ProgramFormat` member name; the value points at the codec:
+In v4 and later, MQT Core intends to use `mqt-cc`, its own compiler, to produce
+programs for a device instead of relying on Qiskit's exporters. The expected
+targets are: any version of QIR a backend advertises, preferring a binary module
+over a string and the adaptive profile over the base profile; OpenQASM 3 through
+MQT Core's own exporter, which is in several respects more capable than
+Qiskit's; and QPY, probably through the Qiskit C API once that exists. OpenQASM
+2 will not generally be emitted, and a distinction between OpenQASM dialects
+along the lines of the QIR base and adaptive profiles may or may not be worth
+making.
 
-```toml
-[project.entry-points."mqt.core.qiskit.program_codecs"]
-IQM_JSON = "iqm.qdmi.converters:qiskit_to_iqm_json"
-```
+This matters for the design in two ways. The registry is the seam those
+serializers plug into, so they will replace MQT Core's registered built-ins
+rather than add branches to the backend. And the preference tuple is where the
+resulting choice between QIR, QPY, and OpenQASM is recorded, so that choice
+stays a single readable list rather than control flow spread through a method.
+When `mqt-cc` can emit QIR for a device that also has a vendor format, the
+question of which should win becomes a real one; today it does not, because MQT
+Core has no QIR serializer at all.
 
-Entry points, rather than only a runtime call, because the device library is
-discovered by Core, not the other way round: a user can enumerate devices with
-`QDMIProvider` and get a plain `QDMIBackend` over an IQM device without ever
-importing `iqm.qdmi`. An import-time registration would miss that path.
+### What the Qiskit ecosystem does
 
-An entry point naming an unknown format, or one that fails to import, produces a
-warning and is skipped. One broken package must not make every other codec
-unreachable.
+The review asked whether this design matches how Qiskit has been extended for
+other providers. It was checked against qiskit-ionq, qiskit-aqt-provider,
+qiskit-pasqal-provider, qiskit-quantinuum-provider, qiskit-ibm-runtime,
+qiskit-on-iqm, qBraid, and Qiskit itself. The findings that shaped this plan:
 
-`_convert_circuit` walks the device's supported formats in the order the device
-reports them and uses the first one with a registered codec. Only then does it
-fall back to the built-in OpenQASM 3 and OpenQASM 2 exporters. A provider codec
-therefore wins over OpenQASM, which is the precedence IQM JSON had before.
+Conversion normally lives in a plain module function that the provider's own
+`run` calls, with no registration at all: `qiskit_ionq/helpers.py`'s
+`qiskit_to_ionq(circuit, backend, ...)`,
+`qiskit_aqt_provider/circuit_to_aqt.py`'s `qiskit_to_aqt_circuit(circuit)`,
+`qiskit_pasqal_provider`'s `gen_seq(register, device, circuit)`. That works
+because each of those packages owns both the backend and the format. MQT Core
+owns the backend but not the vendor formats, which is why it needs a
+registration seam and they do not.
 
-### The gate
+Qiskit defines no entry point group for this, so there is no established
+interface to adopt. The nearest thing in Qiskit itself is the transpiler stage
+plugin: a backend returns a plugin _name_ from `get_translation_stage_plugin`,
+and the framework resolves it through the `qiskit.transpiler.translation` group.
+AQT, IQM, and IBM all use that mechanism. It is a good precedent for entry
+points as the discovery channel, and a further reason not to use the word
+"translation" for anything else in the same adapter.
 
-`MoveGate` moves to `iqm.qdmi.gates`. Core's `_build_gate_mappings_for_backend`
-takes a second argument, `extra_gates`, and `QDMIBackend` gains a `_EXTRA_GATES`
-class variable, empty by default. `__init_subclass__` rebuilds
-`_QISKIT_TO_QDMI_GATE_MAP` and `_OPERATION_TO_GATE_MAP` for each subclass from
-its own `_GATE_ALIASES` and `_EXTRA_GATES`, so a subclass adds a device-native
-gate without touching global state. `_map_operation_to_gate` and
-`_map_qiskit_gate_to_operation_names` become classmethods so a subclass reads
-its own maps rather than the base class's.
+The closest structural precedent outside Qiskit is qBraid, which registers
+program formats under a `qbraid.programs` entry point group as `ProgramSpec`
+objects carrying a `serialize` callable and a `validate` callable, and lets a
+device hold a list of them with an explicit override for which to target. That
+is the same shape as this plan: an entry point group, a callable per format, and
+an explicit selection policy.
+
+On multiple formats per backend, no provider negotiates the format with the
+device at run time. IonQ decides between its flat JSON and OpenQASM 3 with a
+predicate on the circuit, `circuit_requires_qasm3`, and tags the payload with a
+version string. qBraid uses an explicit list plus `set_target_program_type`. IBM
+negotiates only a QPY _version_, as
+`min(SERVICE_MAX_SUPPORTED_QPY_VERSION, QISKIT_QPY_VERSION)`. An explicit,
+ordered, inspectable list is therefore the conventional answer, and it is what
+this plan uses.
+
+On non-standard native gates, every provider that has one defines a `Gate`
+subclass in its own package and injects it into its `Target`. That is what
+`_EXTRA_GATES` lets a `QDMIBackend` subclass do.
 
 ### Deliberately not in scope
 
-- The alias `"r": {"prx"}` stays in Core's `_GATE_ALIASES`. `prx` is IQM
-  terminology, but Core's own superconducting device model uses it, and #2085
-  keeps that device supported.
-- `json/sc/iqm-garnet.json` and `json/sc/iqm-emerald.json` stay. They are device
-  models for the generic SC device, not conversion logic.
+The alias `"r": {"prx"}` stays in `QDMIBackend._GATE_ALIASES`, and
+`json/sc/iqm-garnet.json` and `json/sc/iqm-emerald.json` stay where they are.
+`prx` is IQM terminology, but MQT Core's own superconducting device model uses
+it, and those two files are device models rather than conversion logic. The
+reviewer agreed that all three stay.
 
-Both are worth revisiting; neither belongs in this change.
+Renaming `TranslationError` is out of scope, for the reason in the Decision Log.
+Adding a QIR or QPY serializer is out of scope: MQT Core has none today, and the
+registry is what will accept them later.
 
-## Steps
+## Interfaces and Dependencies
 
-1. Add `python/mqt/core/plugins/qiskit/codecs.py` as described above.
-2. In `backend.py`: replace the `from .converters import ...` and
-   `from .gates import ...` imports with `from .codecs import program_codec`;
-   replace the IQM branch in `_convert_circuit` with the registry walk; add the
-   `extra_gates` parameter and the `_EXTRA_GATES` / `__init_subclass__` seam;
-   turn the two `_map_*` static methods into classmethods.
-3. Delete `converters.py` and `gates.py`. Update `__init__.py` to export the
-   codec API instead of `qiskit_to_iqm_json` and `MoveGate`.
-4. In `test_mock_backend.py`: delete the `test_qiskit_to_iqm_json_*` block and
-   the `move` tests. Add a `registered_codec` fixture that registers a codec on
-   `ProgramFormat.CUSTOM1` and removes it afterwards, plus tests that the
-   backend uses it and prefers it over OpenQASM. Add a test that a subclass with
-   `_EXTRA_GATES` puts its gate in the Target while the base class does not.
-   Rename the mock's two-qubit operation `move` to `hop` so no IQM naming
-   remains.
-5. Update `docs/qdmi/qdmi_backend.md`, `CHANGELOG.md`, and `UPGRADING.md`.
+At the end of this work the following must exist.
 
-The matching change in QDMI-on-IQM adds `python/iqm/qdmi/converters.py` and
-`gates.py`, declares the entry point, and ports the conversion tests. It is a
-separate pull request in a separate repository.
+In `mqt.core.qdmi`, two module-level functions bound from C++:
 
-## How to see it working
+    def is_binary_program_format(format: ProgramFormat) -> bool: ...
+    def has_program_payload(format: ProgramFormat) -> bool: ...
 
-Build and install the package, then run the adapter tests:
+`is_binary_program_format` is true for `QIR_BASE_MODULE`, `QIR_ADAPTIVE_MODULE`,
+and `QPY`. `has_program_payload` is false for `CALIBRATION` and `BATCH_JOB` and
+true for every other member. They wrap `qdmi::isBinaryProgramFormat` and
+`qdmi::hasProgramPayload`, which move from the anonymous namespace in
+`src/qdmi/Client.cpp` into the public `include/mqt-core/qdmi/Client.hpp`,
+keeping their `constexpr noexcept` signatures over `QDMI_Program_Format`. Note
+the sign change: the existing private helper is `hasNoGenericProgramPayload`,
+and the public one states the positive.
 
-```console
-./.agent/run.sh uv sync --inexact --only-group build --only-group test
-MLIR_DIR=<llvm>/lib/cmake/mlir ./.agent/run.sh uv sync --inexact --no-build-isolation-package mqt-core
-./.agent/run.sh uv run --no-sync pytest test/python/plugins/qiskit -q
-```
+In a new module `python/mqt/core/plugins/qiskit/serializers.py`:
 
-`test_backend_uses_registered_codec` and
-`test_backend_prefers_registered_codec_over_qasm` are the two that prove the
-seam carries a program to the device.
+    ENTRY_POINT_GROUP = "mqt.core.qiskit.program_serializers"
 
-To see the cross-repository behavior, install both packages into one environment
-and check that Core finds the codec without importing `iqm.qdmi`:
+    class TextProgramSerializer(Protocol):
+        def __call__(self, circuit: QuantumCircuit,
+                     backend: QDMIBackend, /) -> str: ...
 
-```console
-$ python -c "
-from mqt.core.plugins.qiskit import program_codec
-from mqt.core.qdmi import ProgramFormat
-print(program_codec(ProgramFormat.IQM_JSON))"
-<function qiskit_to_iqm_json at ...>
-```
+    class BinaryProgramSerializer(Protocol):
+        def __call__(self, circuit: QuantumCircuit,
+                     backend: QDMIBackend, /) -> bytes: ...
 
-## Decision log
+    ProgramSerializer = TextProgramSerializer | BinaryProgramSerializer
 
-- **Entry points over a subclass-only hook.** A `_PROGRAM_CODECS` class variable
-  on `QDMIBackend` would be smaller, and `iqm-qdmi` does construct its own
-  subclass for hardware. But `QDMIProvider` builds plain `QDMIBackend` objects
-  for every registered device, and a registered IQM device reached that way
-  would have no format left to convert to. Entry points cover both paths and
-  require no import.
-- **Registration order, not a priority number.** Provider codecs beat the
-  built-in OpenQASM codecs; among themselves the device's own ordering decides.
-  A priority parameter has no consumer, and #2085 asks not to add abstraction
-  without one.
-- **`_EXTRA_GATES` rather than leaving `MoveGate` in Core.** After the
-  star-topology work in QDMI-on-IQM, that backend hides `move` from the Target
-  entirely, so Core's copy would have had no user at all. The seam keeps the
-  capability available to any device with a non-standard native gate.
-- **A warning, not an exception, for a bad entry point.** A user with two device
-  packages installed should not lose the working one because the other is
-  broken.
+    PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...]
+
+    def register_program_serializer(fmt: ProgramFormat,
+                                    serializer: ProgramSerializer,
+                                    *, replace: bool = False) -> None: ...
+    def unregister_program_serializer(fmt: ProgramFormat) -> None: ...
+    def program_serializer(fmt: ProgramFormat) -> ProgramSerializer | None: ...
+    def preferred_program_formats(
+            formats: Iterable[ProgramFormat]) -> list[ProgramFormat]: ...
+
+`PROGRAM_FORMAT_PREFERENCE` is ordered from most to least preferred:
+
+    IQM_JSON, CUSTOM1, CUSTOM2, CUSTOM3, CUSTOM4, CUSTOM5,
+    QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
+    QIR_BASE_MODULE, QIR_BASE_STRING,
+    QPY, QASM3, QASM2
+
+`CALIBRATION` and `BATCH_JOB` are absent because they carry no program payload.
+
+`preferred_program_formats` takes the formats a device reports, drops any for
+which `has_program_payload` is false, and returns the rest ordered by
+`PROGRAM_FORMAT_PREFERENCE`. A format that the tuple does not name — a member
+added to QDMI later — sorts after every format the tuple does name, keeping the
+order in which the device reported it.
+
+`register_program_serializer` raises `ValueError` when the format already has a
+serializer and `replace` is false, and also when `has_program_payload(fmt)` is
+false, because such a format cannot carry a program.
+
+In `QDMIBackend`:
+
+    @property
+    def device(self) -> QDMIDevice: ...
+
+    def _serialize_circuit(
+        self, circuit: QuantumCircuit,
+        supported_program_formats: Iterable[ProgramFormat],
+    ) -> tuple[str | bytes, ProgramFormat]: ...
+
+    _EXTRA_GATES: ClassVar[dict[str, Instruction | type[Instruction]]] = {}
+
+`python/mqt/core/plugins/qiskit/converters.py` and `gates.py` no longer exist.
+
+The matching change in QDMI-on-IQM, pull request #189 in
+`iqm-finland/QDMI-on-IQM`, owns `qiskit_to_iqm_json` and `MoveGate`, declares
+
+    [project.entry-points."mqt.core.qiskit.program_serializers"]
+    IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
+
+and takes the backend rather than the device as its second argument. It is a
+separate pull request in a separate repository and is not part of this plan's
+work, but this plan's interface is what it must match.
+
+## Plan of Work
+
+### Milestone 1: expose the payload classification in Python
+
+At the end of this milestone, Python can ask whether a program format carries a
+binary payload and whether it carries a program payload at all, and the answer
+comes from the same code the C++ submission path uses.
+
+In `include/mqt-core/qdmi/Client.hpp`, add two `constexpr noexcept` free
+functions in namespace `qdmi`, `isBinaryProgramFormat` and `hasProgramPayload`,
+with Doxygen comments that name the formats each covers and say why the
+distinction exists: a binary format must be submitted as exact bytes, and a
+format without a program payload cannot be submitted as a program at all. In
+`src/qdmi/Client.cpp`, delete the anonymous-namespace copies and use the public
+functions, replacing `hasNoGenericProgramPayload(format)` with
+`!hasProgramPayload(format)`. The behavior of both `submitJob` overloads must
+not change.
+
+In `bindings/qdmi/qdmi.cpp`, immediately after the `ProgramFormat` enum, define
+the two functions on `qdmiModule` with `"format"_a` and Google-style docstrings,
+following the `job.def(...)` calls in the same file for style. Then regenerate
+the stub with `uvx nox -s stubs` and check that the only change to
+`python/mqt/core/qdmi/__init__.pyi` is the two new signatures.
+
+Add C++ coverage in `test/qdmi/test_client.cpp`: a test that asserts the
+classification for every `QDMI_Program_Format` member, so a format added later
+fails the test rather than being silently misclassified. Add Python coverage in
+`test/python/qdmi/test_qdmi.py` for the two bound functions.
+
+### Milestone 2: the serializer registry
+
+At the end of this milestone, `python/mqt/core/plugins/qiskit/serializers.py`
+exists with the interface above and its behavior is covered by tests, but the
+backend does not use it yet.
+
+The module keeps a private dict from `ProgramFormat` to serializer and a private
+flag recording whether the entry points have been read. The first call to any of
+the registry functions reads the group `mqt.core.qiskit.program_serializers`
+through `importlib.metadata.entry_points` and caches the result. Set the flag
+before the loop, because loading an entry point imports a module that may call
+back into this one. An entry point whose name is not a `ProgramFormat` member,
+one whose format carries no program payload, and one that fails to import each
+produce a `UserWarning` naming the entry point and the reason, and are skipped;
+a runtime registration for the same format wins, so the loop uses `setdefault`.
+
+Write the module docstring so that it explains, for a reader who has never seen
+this repository, what a program serializer is, which two signatures exist and
+how the format decides between them, how a package declares one through an entry
+point, and that the preference order lives in `PROGRAM_FORMAT_PREFERENCE`.
+
+Cover in `test/python/plugins/qiskit/test_mock_backend.py`, or in a new
+`test_serializers.py` beside it if that file grows unwieldy: registering and
+looking up a serializer; the `ValueError` on a duplicate without `replace`;
+`replace=True` overriding; unregistering a format that has no serializer being a
+no-op; `ValueError` when registering for `CALIBRATION` or `BATCH_JOB`; the
+warnings for an unknown name, a payload-less format, and a failing import;
+`preferred_program_formats` ordering a shuffled list, dropping `CALIBRATION` and
+`BATCH_JOB`, and putting an unnamed format last. Every test that registers a
+serializer must remove it again, through a fixture, so registry state does not
+leak between tests.
+
+### Milestone 3: the backend reduced to one ordered walk
+
+At the end of this milestone the backend has no format-specific branch left and
+carries a binary payload through to the device unchanged.
+
+Add the public `device` property to `QDMIBackend`, beside the existing
+`device_id` property.
+
+Move the two OpenQASM bodies out of the conversion method into module-level
+functions in `backend.py`, `_serialize_to_qasm3(circuit, backend)` and
+`_serialize_to_qasm2(circuit, backend)`, and register them at the end of the
+module with `register_program_serializer`. `_serialize_to_qasm3` keeps the
+existing exclusion list and keeps deriving its basis gates from
+`backend.target.operation_names`; the comment explaining why the exclusion list
+exists must survive the move, because that reasoning is not obvious.
+Registration happens at import of `backend.py`; note in a comment that
+`mqt.core.plugins.qiskit.__init__` imports this module whenever Qiskit is
+installed, so the built-in formats are always available once the adapter is.
+
+Rename `_convert_circuit` to `_serialize_circuit` and reduce it to: materialize
+the device's formats, raise `UnsupportedFormatError` if there are none, then
+walk `preferred_program_formats(...)`, take the first format with a registered
+serializer, call it, and check the result. A `str` for a binary format or a
+`bytes` for a text format is a `TranslationError` naming the format and both
+types. `UnsupportedOperationError` from a serializer propagates unchanged, so a
+circuit the chosen format cannot express fails loudly rather than silently
+arriving in a weaker format; any other exception becomes a `TranslationError`
+that names the format. If the walk ends with nothing serialized, raise
+`UnsupportedFormatError` listing the formats that were considered.
+
+Update `run` to hold `str | bytes` and pass it to `submit_job` unchanged; both
+payload types already have an overload. Rename the local `program_str` and the
+`converted_circuits` element type accordingly.
+
+Update the existing conversion tests to the new method name and add: a device
+advertising `CUSTOM1` and `QASM3` uses the registered `CUSTOM1` serializer and
+the program that reaches `submit_job` is the one it returned; a device
+advertising several formats picks the one the preference tuple ranks first, not
+the one it reported first; a serializer for a binary format returning `bytes`
+reaches `submit_job` as `bytes`; a serializer returning the wrong type for its
+format raises `TranslationError`; a device advertising only `CALIBRATION` raises
+`UnsupportedFormatError`; and replacing the built-in `QASM3` serializer changes
+what the backend submits.
+
+### Milestone 4: the gate seam and the removal of the IQM pieces
+
+At the end of this milestone MQT Core no longer contains IQM conversion logic,
+and a subclass can add a device-native gate outside Qiskit's standard library.
+
+`_build_gate_mappings_for_backend` takes a second parameter, `extra_gates`, and
+folds it into the canonical gate mapping in place of the former hard-coded
+`"move": MoveGate()`. `QDMIBackend` gains the `_EXTRA_GATES` class variable,
+empty by default, and an `__init_subclass__` that rebuilds
+`_QISKIT_TO_QDMI_GATE_MAP` and `_OPERATION_TO_GATE_MAP` from the subclass's own
+`_GATE_ALIASES` and `_EXTRA_GATES`, so a subclass adds a gate without touching
+global state. `_map_operation_to_gate` and `_map_qiskit_gate_to_operation_names`
+become classmethods so a subclass reads its own maps rather than the base
+class's.
+
+Delete `converters.py` and `gates.py`. Update `__init__.py` to export
+`ProgramSerializer`, `program_serializer`, `register_program_serializer`, and
+`unregister_program_serializer` instead of `qiskit_to_iqm_json` and `MoveGate`,
+keeping `__all__` sorted as the linter requires.
+
+In the tests, delete the twelve `test_qiskit_to_iqm_json_*` tests and the three
+`move` tests, and rename the mock device's two-qubit operation from `move` to
+`hop` so no IQM naming remains in MQT Core's tests. Add a test that a
+`QDMIBackend` subclass declaring `_EXTRA_GATES` has that gate in its `Target`
+while the base class does not, and a test that the subclass's map does not leak
+into the base class's.
+
+### Milestone 5: documentation, changelog, upgrade guide, validation
+
+Rewrite the "Program Codecs" section of `docs/qdmi/qdmi_backend.md` as "Program
+Serializers": what a serializer is, the two signatures and how the format
+decides between them, the entry point declaration, the runtime call, and the
+preference order with the reasoning behind it. Update the numbered list further
+down that describes what happens when a circuit runs, which currently names
+`qiskit_to_iqm_json`.
+
+Update the `CHANGELOG.md` entries for #2114 to the serializer names, and add one
+for the two new `mqt.core.qdmi` functions. Update the `UPGRADING.md` section so
+it names `iqm.qdmi.serializers`, `register_program_serializer`, and the new
+entry point group, and so its example serializer takes the backend.
+
+Then run the full validation below, inspect the whole diff, and fill in
+`Outcomes & Retrospective`.
+
+## Concrete Steps
+
+All commands run from the repository root.
+
+Install the development dependencies once:
+
+    uv sync --locked --only-group dev
+
+Build and install the package after any C++ or binding change. `MLIR_DIR` must
+point at the `lib/cmake/mlir` directory of an LLVM/MLIR 22.1 or newer install:
+
+    MLIR_DIR=<llvm-prefix>/lib/cmake/mlir \
+      uv sync --inexact --no-dev --no-build-isolation-package mqt-core
+
+Regenerate the stubs after the binding change, and inspect the result:
+
+    uvx nox -s stubs
+    git diff python/mqt/core/qdmi/__init__.pyi
+
+Run the narrowest tests while iterating, then widen:
+
+    uv run --no-sync pytest test/python/plugins/qiskit -q
+    uv run --no-sync pytest test/python/qdmi -q
+    uv run --no-sync pytest test/python -q
+
+Build and run the C++ tests for the new classifiers:
+
+    cmake --preset release
+    cmake --build --preset release --target mqt-core-qdmi-test
+    ./build/release/test/qdmi/mqt-core-qdmi-test
+
+Build the documentation, which also regenerates the autoapi pages:
+
+    uvx nox --non-interactive -s docs
+
+Finish with the full hook set:
+
+    uvx nox -s lint
+
+## Validation and Acceptance
+
+The two tests that prove the seam carries a program to the device are
+`test_backend_uses_registered_serializer` and
+`test_backend_prefers_registered_serializer_over_qasm` in
+`test/python/plugins/qiskit/test_mock_backend.py`. Both register a serializer on
+`ProgramFormat.CUSTOM1` for a mock device that advertises `CUSTOM1` and `QASM3`,
+run a circuit, and assert on the program the mock's `submit_job` received. The
+first proves the registry is consulted at all; the second proves a registered
+format outranks OpenQASM.
+
+`test_backend_respects_format_preference` proves the order comes from
+`PROGRAM_FORMAT_PREFERENCE` and not from the device: the mock reports `QASM2`
+first and `QASM3` second, and the backend must submit `QASM3`.
+
+`test_backend_submits_binary_payload` proves a binary format survives as bytes:
+it registers a serializer on a binary format, and the mock's `submit_job` must
+receive a `bytes` object identical to what the serializer returned.
+
+For the C++ and binding work, `./build/release/test/qdmi/mqt-core-qdmi-test`
+must pass, including the new test that classifies every `QDMI_Program_Format`
+member, and `uv run --no-sync pytest test/python/qdmi -q` must pass.
+
+To see the cross-repository behavior, install this package and `iqm-qdmi` into
+one environment and check that MQT Core finds the serializer without importing
+`iqm.qdmi`:
+
+    $ python -c "
+    from mqt.core.plugins.qiskit import program_serializer
+    from mqt.core.qdmi import ProgramFormat
+    print(program_serializer(ProgramFormat.IQM_JSON))"
+    <function qiskit_to_iqm_json at 0x...>
+
+That check needs the matching QDMI-on-IQM release and is not part of this
+repository's test suite.
+
+`uvx nox -s lint` must pass with no new warnings, and the working tree must
+contain no generated file that the build did not produce.
+
+## Idempotence and Recovery
+
+Every step here is repeatable. The registry functions are idempotent given
+`replace=True`, and `unregister_program_serializer` on an unregistered format
+does nothing.
+
+Two steps can leave a confusing state if interrupted. Regenerating the stubs
+writes into `python/mqt/core/qdmi/__init__.pyi`; if the result looks wrong, run
+`git checkout -- python/mqt/core/qdmi/__init__.pyi` and `uvx nox -s stubs` again
+against a freshly built package, because a stale build produces a stale stub.
+And a test that registers a serializer without removing it afterwards leaks into
+later tests in the same process, which shows up as an unrelated test choosing an
+unexpected format; always register through a fixture that unregisters on
+teardown.
+
+Deleting `converters.py` and `gates.py` is the only destructive step. Do it
+after the tests that covered them are gone, so no run is left importing a
+missing module, and recover with `git checkout` against the merge base if
+needed.
+
+## Artifacts and Notes
+
+The shape of the walk that replaces the format branches, as it should read when
+Milestone 3 is done:
+
+    formats = list(supported_program_formats)
+    if not formats:
+        msg = "The device reports no supported program formats"
+        raise UnsupportedFormatError(msg)
+
+    for fmt in preferred_program_formats(formats):
+        serializer = program_serializer(fmt)
+        if serializer is None:
+            continue
+        try:
+            program = serializer(circuit, self)
+        except UnsupportedOperationError:
+            raise
+        except Exception as exc:
+            msg = f"Failed to serialize the circuit to {fmt.name}: {exc}"
+            raise TranslationError(msg) from exc
+        _check_payload_type(program, fmt)
+        return program, fmt
+
+    msg = ("No program serializer for any format the device supports: "
+           f"{[fmt.name for fmt in formats]}")
+    raise UnsupportedFormatError(msg)
+
+The evidence that the C++ client already rejects a mismatched payload, from
+`src/qdmi/Client.cpp`:
+
+    Job Device::submitJob(const std::string& program, ...) const {
+      if (isBinaryProgramFormat(format)) {
+        throw std::invalid_argument(
+            "Binary program formats require exact-byte submission");
+      }
+      if (hasNoGenericProgramPayload(format)) {
+        throw std::invalid_argument(
+            "Calibration and batch jobs do not use a generic program payload");
+      }
+      ...
