@@ -32,7 +32,6 @@ disabled by default so the consumer does not build implementations it may not
 use. They can be selected independently before making MQT Core available:
 
 - {code}`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`
-- {code}`BUILD_MQT_CORE_QDMI_NA_DEVICE`
 - {code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`
 
 For example, an embedded simulator consumer can enable only the DDSIM device,
@@ -42,8 +41,7 @@ integration tests.
 The QDMI driver and QDMI libraries are available independently. Device-free
 builds can register external device libraries through
 [QDMI device configuration](configuration.md). Building MQT Core's C++ tests
-requires all three bundled devices so that the complete device integration is
-tested.
+requires both bundled devices so that the complete device integration is tested.
 
 ## Python Bindings
 

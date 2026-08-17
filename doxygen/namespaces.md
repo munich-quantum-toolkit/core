@@ -8,10 +8,6 @@ Quantum-circuit representation and algorithms.
 
 Decision-diagram data structures and simulation algorithms.
 
-@namespace na
-
-Neutral-atom computation model and operations.
-
 @namespace qasm3
 
 OpenQASM 3 parsing, representation, and compilation support.
@@ -23,10 +19,6 @@ MQT Core's QDMI driver, owning client wrappers, and device integrations.
 @namespace qdmi::dd
 
 Decision-diagram-backed QDMI device implementation.
-
-@namespace qdmi::na
-
-Neutral-atom QDMI device implementation.
 
 @namespace qdmi::sc
 
