@@ -612,7 +612,10 @@ module {
     assert composite.ir.count("qco.alloc") == 2
     composite.run_qubit_reuse_pipeline()
     assert composite.ir.count("qco.alloc") == 1
-    assert "qco.reset" in composite.ir
+    assert composite.ir.count("qco.sink") == 1
+    assert "qco.h" not in composite.ir
+    assert "qco.measure" not in composite.ir
+    assert "qco.reset" not in composite.ir
 
 
 def test_typed_programs_normalize_global_phases() -> None:

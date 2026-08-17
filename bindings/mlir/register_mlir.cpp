@@ -698,8 +698,10 @@ before conversion to QCO.)pb");
                   "None) -> qiskit.circuit.QuantumCircuit"),
           R"pb(Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
 
-Pass the compiler target used for mapping to emit a canonical physical circuit.
-Target-aware export requires static qubits whose site IDs belong to that target.)pb")
+Args:
+    target: The optional compiler target used for mapping. When provided, emit
+        a canonical physical circuit. All qubits must be static, and their site
+        IDs must belong to the target.)pb")
       .def(
           "to_qco",
           [](mlir::QCProgram& value, const bool copy) {

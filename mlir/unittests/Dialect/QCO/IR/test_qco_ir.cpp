@@ -2658,14 +2658,6 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"StaticQubitsWithInv",
                     MQT_NAMED_BUILDER(staticQubitsWithInv),
                     MQT_NAMED_BUILDER(staticQubitsWithInv)},
-        QCOTestCase{"DeadGateElimination", MQT_NAMED_BUILDER(deadGatesProgram),
-                    MQT_NAMED_BUILDER(alloc2Qubits)},
-        QCOTestCase{"DeadGateEliminationReset",
-                    MQT_NAMED_BUILDER(deadGatesResetProgram),
-                    MQT_NAMED_BUILDER(allocQubit)},
-        QCOTestCase{"DeadGateEliminationIfOp",
-                    MQT_NAMED_BUILDER(deadGatesWithIfOpProgram),
-                    MQT_NAMED_BUILDER(deadGatesWithIfOpSimplified)},
         QCOTestCase{"AllocSinkPair", MQT_NAMED_BUILDER(allocSinkPair),
                     MQT_NAMED_BUILDER(allocQubitNoMeasure)}));
 /// @}

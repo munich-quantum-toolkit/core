@@ -71,16 +71,18 @@ protected:
       pm.addPass(createMeasurementLifting());
       pm.addPass(createReplaceClassicalControls());
     }
+    pm.addPass(createRemoveDeadGates());
     pm.addPass(createReuseQubits());
     pm.addPass(createCanonicalizerPass());
     return pm.run(module);
   }
 
   /**
-   * @brief Adds the canonicalizerPass to the current context and runs it.
+   * @brief Removes dead gates, canonicalizes the module, and runs the passes.
    */
   static LogicalResult runCanonicalizerPass(ModuleOp module) {
     PassManager pm(module.getContext());
+    pm.addPass(createRemoveDeadGates());
     pm.addPass(createCanonicalizerPass());
     return pm.run(module);
   }

@@ -306,6 +306,22 @@ def ReuseQubits : Pass<"reuse-qubits", "mlir::ModuleOp"> {
   }];
 }
 
+def RemoveDeadGates : Pass<"remove-dead-gates", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "Remove quantum gates whose results cannot be observed";
+  let description = [{
+    This pass removes dead quantum operations by walking backwards from
+    `qco.sink` and `qco.reset` operations. It removes memory-effect-free
+    unitary operations and other removable quantum operations until it reaches
+    an operation whose result is observable or whose effects must be preserved.
+
+    Dead-gate removal is explicit rather than part of canonicalization because
+    measurement-free programs may intentionally represent state preparation or
+    larger quantum building blocks. The `mqt-qubit-reuse` pipeline runs this
+    pass before attempting to reuse qubits.
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // Decomposition Passes
 //===----------------------------------------------------------------------===//

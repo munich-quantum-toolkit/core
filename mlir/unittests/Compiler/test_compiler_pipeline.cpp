@@ -1181,6 +1181,41 @@ c = measure q;
 }
 
 /**
+ * @brief Test: target compilation retains unobserved quantum operations.
+ */
+TEST_F(CompilerPipelineTest, QCOProgramPreservesUnobservedQuantumOperations) {
+  constexpr llvm::StringLiteral source = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+reset q[0];
+h q[1];
+)";
+  const auto target = llvm::cantFail(CompilerTarget::create(3));
+
+  auto qc = QCProgram::fromQASMString(source);
+  ASSERT_TRUE(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(program->compileForTarget(target));
+  auto module = parseRecordedModule(program->str());
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(verify(*module).succeeded());
+
+  size_t unitaryOperations = 0;
+  size_t resets = 0;
+  size_t staticQubits = 0;
+  module->walk([&](Operation* operation) {
+    unitaryOperations += isa<UnitaryOpInterface>(operation);
+    resets += isa<ResetOp>(operation);
+    staticQubits += isa<StaticOp>(operation);
+  });
+  EXPECT_EQ(unitaryOperations, 2U);
+  EXPECT_EQ(resets, 1U);
+  EXPECT_EQ(staticQubits, 2U);
+}
+
+/**
  * @brief Test: the default pipeline accepts an optional compiler target.
  */
 TEST_F(CompilerPipelineTest, DefaultPipelineCompilesForTarget) {

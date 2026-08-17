@@ -30,7 +30,6 @@
 #include <memory>
 #include <optional>
 #include <ostream>
-#include <random>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -65,16 +64,12 @@ protected:
   std::vector<bool> ancillary;
   std::vector<bool> garbage;
 
-  std::mt19937_64 mt;
-  std::size_t seed = 0;
-
   fp globalPhase = 0.;
 
   std::unordered_set<sym::Variable> occurringVariables;
 
 public:
-  explicit QuantumComputation(std::size_t nq = 0, std::size_t nc = 0U,
-                              std::size_t s = 0);
+  explicit QuantumComputation(std::size_t nq = 0, std::size_t nc = 0U);
   QuantumComputation(QuantumComputation&& qc) noexcept = default;
   QuantumComputation& operator=(QuantumComputation&& qc) noexcept = default;
   QuantumComputation(const QuantumComputation& qc);
@@ -126,8 +121,6 @@ public:
   [[nodiscard]] const auto& getAncillaRegisters() const noexcept {
     return ancillaRegisters;
   }
-  [[nodiscard]] decltype(mt)& getGenerator() noexcept { return mt; }
-
   [[nodiscard]] fp getGlobalPhase() const noexcept { return globalPhase; }
   [[nodiscard]] bool hasGlobalPhase() const noexcept {
     return std::abs(getGlobalPhase()) > 0;

@@ -96,10 +96,9 @@ class QuantumComputation(MutableSequence[operations.Operation]):
     Args:
         nq: The number of qubits in the quantum computation.
         nc: The number of classical bits in the quantum computation.
-        seed: The seed to use for the internal random number generator.
     """
 
-    def __init__(self, nq: int = 0, nc: int = 0, seed: int = 0) -> None: ...
+    def __init__(self, nq: int = 0, nc: int = 0) -> None: ...
     @staticmethod
     def from_qasm_str(qasm: str) -> QuantumComputation:
         """Create a QuantumComputation object from an OpenQASM string.

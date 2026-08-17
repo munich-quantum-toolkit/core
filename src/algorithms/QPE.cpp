@@ -129,9 +129,10 @@ auto constructQPECircuit(QuantumComputation& qc, const fp lambda,
 
 auto createQPE(const Qubit nq, const bool exact, const std::size_t seed)
     -> QuantumComputation {
-  auto qc = QuantumComputation(0, 0, seed);
-  const auto lambda = exact ? createExactPhase(nq, qc.getGenerator())
-                            : createInexactPhase(nq, qc.getGenerator());
+  auto generator = std::mt19937_64(seed);
+  const auto lambda = exact ? createExactPhase(nq, generator)
+                            : createInexactPhase(nq, generator);
+  auto qc = QuantumComputation();
   constructQPECircuit(qc, lambda, nq);
   return qc;
 }
@@ -194,9 +195,10 @@ auto constructIterativeQPECircuit(QuantumComputation& qc, const fp lambda,
 
 auto createIterativeQPE(const Qubit nq, const bool exact,
                         const std::size_t seed) -> QuantumComputation {
-  auto qc = QuantumComputation(0, 0, seed);
-  const auto lambda = exact ? createExactPhase(nq, qc.getGenerator())
-                            : createInexactPhase(nq, qc.getGenerator());
+  auto generator = std::mt19937_64(seed);
+  const auto lambda = exact ? createExactPhase(nq, generator)
+                            : createInexactPhase(nq, generator);
+  auto qc = QuantumComputation();
   constructIterativeQPECircuit(qc, lambda, nq);
   return qc;
 }
