@@ -30,6 +30,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Attributes.h>
@@ -50,7 +51,6 @@
 #include <cstddef>
 #include <iterator>
 #include <span>
-#include <stdexcept>
 #include <vector>
 
 namespace {

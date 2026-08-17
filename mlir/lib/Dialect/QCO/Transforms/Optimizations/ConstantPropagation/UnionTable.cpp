@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/HybridState.hpp"
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -30,7 +31,6 @@
 #include <ostream>
 #include <set>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
