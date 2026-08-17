@@ -30,9 +30,8 @@ from qiskit.transpiler import InstructionProperties, Target
 
 from ...qdmi import Device as QDMIDevice
 from ...qdmi import Job as QDMIJobHandle
-from ...qdmi import ProgramFormat
+from ...qdmi import ProgramFormat, is_binary_program_format
 from ...qdmi.driver import open_device
-from .codecs import program_codec
 from .estimator import QDMIEstimator
 from .exceptions import (
     CircuitValidationError,
@@ -44,6 +43,7 @@ from .exceptions import (
 )
 from .job import QDMIJob
 from .sampler import QDMISampler
+from .serializers import preferred_program_formats, program_serializer, register_program_serializer
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, MutableSet, Sequence
@@ -110,6 +110,102 @@ def _build_gate_mappings_for_backend(
             operation_to_gate[name] = gate
 
     return qiskit_to_qdmi, operation_to_gate
+
+
+def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
+    """Serialize a circuit into an OpenQASM 3 program.
+
+    Args:
+        circuit: The circuit to serialize.
+        backend: The backend that runs the circuit. Its Target supplies the
+            basis gates.
+
+    Returns:
+        The OpenQASM 3 program.
+    """
+    # Qiskit's OpenQASM3 exporter is fairly limited in terms of which gates it supports natively.
+    # So it needs some help from us.
+    exclusion_list = set()
+
+    # Qiskit treats "measure", "reset", and "barrier" as keywords rather than gates
+    exclusion_list.update({"measure", "reset", "barrier"})
+
+    # We also need to remove all gates that are defined in the OpenQASM `stdlib.inc`.
+    # Qiskit's exporter will otherwise complain about duplicate definitions.
+    exclusion_list.update({
+        "p",
+        "x",
+        "y",
+        "z",
+        "h",
+        "s",
+        "sdg",
+        "t",
+        "tdg",
+        "sx",
+        "rx",
+        "ry",
+        "rz",
+        "cx",
+        "cy",
+        "cz",
+        "cp",
+        "crx",
+        "cry",
+        "crz",
+        "ch",
+        "swap",
+        "ccx",
+        "cswap",
+        "cu",
+        "CX",
+        "phase",
+        "cphase",
+        "id",
+        "u1",
+        "u2",
+        "u3",
+    })
+
+    # By excluding already defined gates, we allow the exporter to emit otherwise unsupported gates without
+    # needing to provide a definition for them. The exporter will then treat them as opaque gates, which is fine
+    # as long as the target device supports them.
+    basis_gates = [gate for gate in backend.target.operation_names if gate not in exclusion_list] + ["U"]
+
+    return qasm3.dumps(circuit, basis_gates=basis_gates)
+
+
+def _serialize_to_qasm2(circuit: QuantumCircuit, backend: QDMIBackend) -> str:  # ruff:ignore[unused-function-argument]
+    """Serialize a circuit into an OpenQASM 2 program.
+
+    Args:
+        circuit: The circuit to serialize.
+        backend: The backend that runs the circuit. Qiskit's OpenQASM 2 exporter
+            takes no information from it.
+
+    Returns:
+        The OpenQASM 2 program.
+    """
+    return qasm2.dumps(circuit)
+
+
+def _check_payload_type(program: str | bytes, fmt: ProgramFormat) -> None:
+    """Check that a serialized program has the payload type its format requires.
+
+    Args:
+        program: The program a serializer returned.
+        fmt: The program format the serializer produces.
+
+    Raises:
+        TranslationError: If the payload type does not match the format.
+    """
+    expected = bytes if is_binary_program_format(fmt) else str
+    if not isinstance(program, expected):
+        msg = (
+            f"The program serializer for {fmt.name} returned {type(program).__name__}, "
+            f"but {fmt.name} requires {expected.__name__}"
+        )
+        raise TranslationError(msg)
 
 
 class QDMIBackend(BackendV2):
@@ -241,6 +337,11 @@ class QDMIBackend(BackendV2):
             provider=provider,
             device_id=device_id,
         )
+
+    @property
+    def device(self) -> QDMIDevice:
+        """The QDMI device the backend runs on."""
+        return self._device
 
     @property
     def device_id(self) -> str | None:
@@ -545,117 +646,54 @@ class QDMIBackend(BackendV2):
         """
         return circuit
 
-    def _convert_circuit(
+    def _serialize_circuit(
         self, circuit: QuantumCircuit, supported_program_formats: Iterable[ProgramFormat]
-    ) -> tuple[str, ProgramFormat]:
-        """Convert a :class:`~qiskit.circuit.QuantumCircuit` to one of the supported program formats.
+    ) -> tuple[str | bytes, ProgramFormat]:
+        """Serialize a :class:`~qiskit.circuit.QuantumCircuit` into a program the device accepts.
 
-        The conversion priority order is:
-        1. A registered program codec (if the device supports its format) - device-specific format
-        2. OpenQASM 3 (if supported) - superset of QASM 2
-        3. OpenQASM 2 (if supported) - legacy format
-
-        See :mod:`mqt.core.plugins.qiskit.codecs` for how a package registers a
-        codec for a device-specific format.
+        The method walks the formats the device supports in the order of
+        :data:`~mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE`
+        and uses the first one that has a registered serializer. See
+        :mod:`mqt.core.plugins.qiskit.serializers` for how a package registers a
+        serializer.
 
         Args:
-            circuit: The quantum circuit to convert.
-            supported_program_formats: Supported program formats.
+            circuit: The circuit to serialize.
+            supported_program_formats: The program formats the device accepts.
 
         Returns:
-            Tuple of (program string, program format).
+            Tuple of (program, program format). The program is a string for a
+            text format and bytes for a binary format.
 
         Raises:
-            UnsupportedFormatError: If no supported program formats are found.
-            UnsupportedOperationError: If the circuit contains operations the chosen format cannot express.
-            TranslationError: If conversion fails.
+            UnsupportedFormatError: If the device reports no program format that
+                has a serializer.
+            UnsupportedOperationError: If the circuit contains an operation the
+                chosen format cannot express.
+            TranslationError: If serialization fails.
         """
-        # Materialize once: the formats are traversed several times below
-        supported_program_formats = list(supported_program_formats)
-        if not supported_program_formats:
-            msg = "No supported program formats found"
+        formats = list(supported_program_formats)
+        if not formats:
+            msg = "The device reports no supported program formats"
             raise UnsupportedFormatError(msg)
 
-        # Try the device-specific formats a package registered a codec for
-        for fmt in supported_program_formats:
-            codec = program_codec(fmt)
-            if codec is None:
+        for fmt in preferred_program_formats(formats):
+            serializer = program_serializer(fmt)
+            if serializer is None:
                 continue
             try:
-                return codec(circuit, self._device), fmt
+                program = serializer(circuit, self)
             except UnsupportedOperationError:
-                # Let this propagate so caller can handle fallback
+                # A circuit the chosen format cannot express must fail loudly
+                # rather than arrive at the device in a weaker format.
                 raise
             except Exception as exc:
-                msg = f"Failed to convert circuit to {fmt.name}: {exc}"
+                msg = f"Failed to serialize the circuit to {fmt.name}: {exc}"
                 raise TranslationError(msg) from exc
+            _check_payload_type(program, fmt)
+            return program, fmt
 
-        # Try OpenQASM3
-        if ProgramFormat.QASM3 in supported_program_formats:
-            # Qiskit's OpenQASM3 exporter is fairly limited in terms of which gates it supports natively.
-            # So it needs some help from us.
-            exclusion_list = set()
-
-            # Qiskit treats "measure", "reset", and "barrier" as keywords rather than gates
-            exclusion_list.update({"measure", "reset", "barrier"})
-
-            # We also need to remove all gates that are defined in the OpenQASM `stdlib.inc`.
-            # Qiskit's exporter will otherwise complain about duplicate definitions.
-            exclusion_list.update({
-                "p",
-                "x",
-                "y",
-                "z",
-                "h",
-                "s",
-                "sdg",
-                "t",
-                "tdg",
-                "sx",
-                "rx",
-                "ry",
-                "rz",
-                "cx",
-                "cy",
-                "cz",
-                "cp",
-                "crx",
-                "cry",
-                "crz",
-                "ch",
-                "swap",
-                "ccx",
-                "cswap",
-                "cu",
-                "CX",
-                "phase",
-                "cphase",
-                "id",
-                "u1",
-                "u2",
-                "u3",
-            })
-
-            # By excluding already defined gates, we allow the exporter to emit otherwise unsupported gates without
-            # needing to provide a definition for them. The exporter will then treat them as opaque gates, which is fine
-            # as long as the target device supports them.
-            basis_gates = [gate for gate in self.target.operation_names if gate not in exclusion_list] + ["U"]
-
-            try:
-                return qasm3.dumps(circuit, basis_gates=basis_gates), ProgramFormat.QASM3
-            except Exception as exc:
-                msg = f"Failed to convert circuit to QASM3: {exc}"
-                raise TranslationError(msg) from exc
-
-        # Try OpenQASM2 (legacy)
-        if ProgramFormat.QASM2 in supported_program_formats:
-            try:
-                return qasm2.dumps(circuit), ProgramFormat.QASM2
-            except Exception as exc:
-                msg = f"Failed to convert circuit to QASM2: {exc}"
-                raise TranslationError(msg) from exc
-
-        msg = f"No conversion from Qiskit to any of the supported program formats: {supported_program_formats}"
+        msg = f"No program serializer for any format the device supports: {[fmt.name for fmt in formats]}"
         raise UnsupportedFormatError(msg)
 
     def run(
@@ -735,8 +773,8 @@ class QDMIBackend(BackendV2):
         # Process each circuit
         qdmi_jobs: list[QDMIJobHandle] = []
         circuit_names: list[str] = []
-        # First pass: validate and convert all circuits
-        converted_circuits: list[tuple[str, ProgramFormat, str]] = []
+        # First pass: validate and serialize all circuits
+        serialized_circuits: list[tuple[str | bytes, ProgramFormat, str]] = []
 
         for idx, circuit in enumerate(circuits):
             # Bind parameters if provided
@@ -769,17 +807,17 @@ class QDMIBackend(BackendV2):
                     msg = f"Unsupported operation: '{op_name}'"
                     raise UnsupportedOperationError(msg)
 
-            # Convert circuit to the specified program format
-            program_str, program_format = self._convert_circuit(bound_circuit, self._device.supported_program_formats())
+            # Serialize the circuit into a program format the device accepts
+            program, program_format = self._serialize_circuit(bound_circuit, self._device.supported_program_formats())
             circuit_name = circuit.name or f"circuit-{next(QDMIBackend._circuit_counter)}"
-            converted_circuits.append((program_str, program_format, circuit_name))
+            serialized_circuits.append((program, program_format, circuit_name))
 
         # Second pass: submit all validated circuits
-        for program_str, program_format, circuit_name in converted_circuits:
+        for program, program_format, circuit_name in serialized_circuits:
             # Submit job to QDMI device
             try:
                 qdmi_job = self._device.submit_job(
-                    program=program_str,
+                    program=program,
                     program_format=program_format,
                     num_shots=shots,
                 )
@@ -793,3 +831,12 @@ class QDMIBackend(BackendV2):
 
         # Create and return Qiskit job wrapper (handles single or multiple jobs)
         return QDMIJob(backend=self, jobs=qdmi_jobs, circuit_names=circuit_names)
+
+
+# MQT Core owns the two OpenQASM formats and registers them through the same
+# registry as everyone else, so the backend walks one ordered list of formats
+# with no format-specific branch. `mqt.core.plugins.qiskit.__init__` imports this
+# module whenever Qiskit is installed, so both formats are available as soon as
+# the adapter is.
+register_program_serializer(ProgramFormat.QASM3, _serialize_to_qasm3)
+register_program_serializer(ProgramFormat.QASM2, _serialize_to_qasm2)
