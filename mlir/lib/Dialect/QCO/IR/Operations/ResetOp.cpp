@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
@@ -102,20 +101,6 @@ struct RemoveResetAfterExtract final : OpRewritePattern<ResetOp> {
   }
 };
 
-/**
- * @brief Remove dead gates.
- */
-struct DeadGateElimination final : OpRewritePattern<ResetOp> {
-
-  explicit DeadGateElimination(MLIRContext* context)
-      : OpRewritePattern(context) {}
-
-  LogicalResult matchAndRewrite(ResetOp op,
-                                PatternRewriter& rewriter) const override {
-    return tryEliminateDeadGateValue(op.getQubitIn(), rewriter);
-  }
-};
-
 } // namespace
 
 OpFoldResult ResetOp::fold(FoldAdaptor /*adaptor*/) {
@@ -128,5 +113,5 @@ OpFoldResult ResetOp::fold(FoldAdaptor /*adaptor*/) {
 
 void ResetOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                           MLIRContext* context) {
-  results.add<RemoveResetAfterExtract, DeadGateElimination>(context);
+  results.add<RemoveResetAfterExtract>(context);
 }

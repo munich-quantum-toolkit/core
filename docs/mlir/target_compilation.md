@@ -40,6 +40,12 @@ compilation to an existing QCO program. For pass-level benchmarking, the C++ API
 exposes separate factories for pre-routing optimization, mapping, native
 synthesis, and conformance verification.
 
+Target compilation preserves quantum operations even when their final qubit
+values are not measured or returned. This supports measurement-free programs,
+such as state preparation or larger building blocks compiled to a target-native
+instruction set. Dead gates are removed only by the explicit `remove-dead-gates`
+pass and by pipelines that include it, such as `mqt-qubit-reuse`.
+
 ## Command line from a source build
 
 List the stable IDs of configured QDMI devices:

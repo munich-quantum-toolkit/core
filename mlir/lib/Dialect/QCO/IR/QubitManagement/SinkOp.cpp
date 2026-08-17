@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
@@ -42,23 +41,9 @@ struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
   }
 };
 
-/**
- * @brief Remove dead gates.
- */
-struct DeadGateElimination final : OpRewritePattern<SinkOp> {
-
-  explicit DeadGateElimination(MLIRContext* context)
-      : OpRewritePattern(context) {}
-
-  LogicalResult matchAndRewrite(SinkOp op,
-                                PatternRewriter& rewriter) const override {
-    return tryEliminateDeadGateValue(op.getQubit(), rewriter);
-  }
-};
-
 } // namespace
 
 void SinkOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<RemoveAllocSinkPair, DeadGateElimination>(context);
+  results.add<RemoveAllocSinkPair>(context);
 }

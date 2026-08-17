@@ -55,6 +55,7 @@ void registerMQTCompilerPasses() {
     qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerQuantumLoopUnroll();
+    qco::registerRemoveDeadGates();
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
     mqt::registerNormalizeGlobalPhases();
@@ -78,6 +79,7 @@ void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
 void populateQubitReusePipeline(OpPassManager& pm) {
   pm.addPass(qco::createMeasurementLifting());
   pm.addPass(qco::createReplaceClassicalControls());
+  pm.addPass(qco::createRemoveDeadGates());
   pm.addPass(qco::createReuseQubits());
 }
 
