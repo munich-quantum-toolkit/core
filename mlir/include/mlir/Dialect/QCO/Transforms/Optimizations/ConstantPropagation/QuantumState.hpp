@@ -18,7 +18,6 @@
 #include <ostream>
 #include <ranges>
 #include <span>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -54,6 +53,7 @@ class QuantumState {
   std::size_t maxNonzeroAmplitudes;
   std::unordered_map<unsigned int, unsigned int> globalToLocalQubitNumber;
   std::unordered_map<unsigned int, std::complex<double>> amplitudeMap;
+  bool top;
 
   std::string qubitStringToBinary(const unsigned int q) const {
     std::string result;
@@ -186,10 +186,6 @@ class QuantumState {
       }
     }
 
-    if (std::abs(1.0 - probabilityZero - probabilityOne) > 1e-4) {
-      throw std::domain_error(
-          "Probabilities of 0 and 1 do not add up to one after measurement.");
-    }
     auto globalKeysView = std::views::keys(globalToLocalQubitNumber);
     std::vector<unsigned int> globalKeys{globalKeysView.begin(),
                                          globalKeysView.end()};
@@ -234,15 +230,20 @@ public:
   void normalize();
 
   /**
+   * @brief This method returns whether the quantum state is top.
+   *
+   * @return True if the quantum state is top.
+   */
+  [[nodiscard("QuantumState::isTop called but ignored")]] bool isTop() const;
+
+  /**
    * @brief This method unifies two QuantumState.
    *
    * This method unifies the current QuantumState with the given one and returns
    * a new QuantumState, if the new state has no more than maxNonzeroAmplitude
-   * nonzero amplitudes. Otherwise, throws a domain_error.
+   * nonzero amplitudes. Otherwise, QuantumState becomes top.
    *
    * @param that The QuantumState to unify this with.
-   * @throw std::domain_error If the number of nonzero amplitudes would exceed
-   * maxNonzeroAmplitudes of this.
    */
   [[nodiscard("QuantumState::unify called but ignored")]] QuantumState
   unify(const QuantumState& that);
@@ -260,14 +261,13 @@ public:
    *
    * This method changes the amplitudes of a QuantumState according to the
    * applied gate. Returns the current QuantumState if it has no more than
-   * maxNonZeroAmplitude nonzero amplitudes. Otherwise, throws a domain_error.
+   * maxNonZeroAmplitude nonzero amplitudes. Otherwise, QuantumState becomes
+   * top.
    *
    * @param gate The gate to be applied.
    * @param targets A span of the global indices of the target qubits.
    * @param ctrls A span of the global indices of the ctrl qubits.
    * @param params The parameter applied to the gate.
-   * @throw std::domain_error If the number of nonzero amplitudes would exceed
-   * maxNonzeroAmplitudes.
    */
   void propagateGate(Operation* gate, std::span<unsigned int> targets,
                      std::span<unsigned int> ctrls = {},

@@ -28,7 +28,6 @@
 #include <ranges>
 #include <span>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -41,15 +40,14 @@ QuantumState::QuantumState(const std::span<unsigned int> globalQubitNumber,
     : nQubits(globalQubitNumber.size()),
       maxNonzeroAmplitudes(maxNonzeroAmplitudes) {
   constexpr auto maxBitNumber = sizeof(unsigned int) * 8;
-  if (maxBitNumber < globalQubitNumber.size()) {
-    throw std::domain_error("Number of qubits exceeds amount of qubits that "
-                            "can be managed in the union table.");
+  if (maxBitNumber < globalQubitNumber.size() ||
+      maxBitNumber < maxNonzeroAmplitudes) {
+    // Number of qubits or number of maximum nonzero amplitudes exceeds amount
+    // of qubits/amplitudes that can be managed in the union table.
+    top = true;
+    return;
   }
-  if (maxBitNumber < maxNonzeroAmplitudes) {
-    throw std::domain_error(
-        "Number of maximum nonzero amplitudes exceeds "
-        "amount of amplitudes that can be managed in the union table.");
-  }
+  top = false;
   std::vector<unsigned int> qubits;
   qubits.reserve(globalQubitNumber.size());
   std::ranges::copy(globalQubitNumber, std::back_inserter(qubits));
@@ -122,11 +120,18 @@ void QuantumState::normalize() {
   }
 }
 
+bool QuantumState::isTop() const { return top; }
+
 QuantumState QuantumState::unify(const QuantumState& that) {
   // Check if future state would be too large
   if (amplitudeMap.size() * that.amplitudeMap.size() > maxNonzeroAmplitudes) {
-    throw std::domain_error("Number of nonzero amplitudes too high. State "
-                            "needs to be treated as TOP.");
+    // Number of nonzero amplitudes too high. State needs to be treated as TOP.
+    top = true;
+    nQubits = 0;
+    maxNonzeroAmplitudes = 0;
+    globalToLocalQubitNumber.clear();
+    amplitudeMap.clear();
+    return *this;
   }
 
   std::unordered_map<unsigned int, unsigned int> newGlobalToLocalMapping;
@@ -222,8 +227,12 @@ void QuantumState::propagateGate(Operation* gate,
     }
   }
   if (amplitudeMap.size() > maxNonzeroAmplitudes) {
-    throw std::domain_error("Number of nonzero amplitudes too high. State "
-                            "needs to be treated as TOP.");
+    // Number of nonzero amplitudes too high. State needs to be treated as TOP.
+    top = true;
+    nQubits = 0;
+    maxNonzeroAmplitudes = 0;
+    globalToLocalQubitNumber.clear();
+    amplitudeMap.clear();
   }
 }
 
@@ -236,6 +245,9 @@ MeasurementResult QuantumState::resetQubit(const unsigned int target) {
 }
 
 bool QuantumState::isQubitAlwaysOne(const unsigned int q) const {
+  if (top) {
+    return false;
+  }
   const auto localIndex = globalToLocalQubitNumber.at(q);
   const auto mask = 1U << localIndex;
   return std::ranges::all_of(
@@ -244,6 +256,9 @@ bool QuantumState::isQubitAlwaysOne(const unsigned int q) const {
 }
 
 bool QuantumState::isQubitAlwaysZero(const unsigned int q) const {
+  if (top) {
+    return false;
+  }
   const auto localIndex = globalToLocalQubitNumber.at(q);
   const auto mask = 1U << localIndex;
   return std::ranges::all_of(
@@ -252,6 +267,9 @@ bool QuantumState::isQubitAlwaysZero(const unsigned int q) const {
 }
 bool QuantumState::hasAlwaysZeroAmplitude(
     const std::unordered_map<unsigned int, bool>& qubitValues) const {
+  if (top) {
+    return false;
+  }
   unsigned int localValue = 0;
   unsigned int mask = 0;
   for (const auto& [qubitIndex, qubitOne] : qubitValues) {

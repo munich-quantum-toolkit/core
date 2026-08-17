@@ -149,16 +149,15 @@ class UnionTable {
    * @brief This method unifies the given UnionTableEntries.
    *
    * This method unifies the given UnionTableEntries. If the new states have
-   * more than maxNonzeroAmplitudes, it throws a domain_error. The same holds
-   * if the resulting hybridStates are more than maximumHybridEntries.
+   * more than maxNonzeroAmplitudes, it handles these states as top. The same
+   * holds if the resulting hybridStates are more than maximumHybridEntries.
    *
    * @param entriesToUnify The UnionTableEntries to be unified.
-   * @throws domain_error If more than maNonzeroAmplitudes are created in a
-   * quantumstate or more than maximumHybridEntries are created.
+   * @return Whether the new entries are top or not.
    */
-  void unifyEntries(const std::set<UnionTableEntry>& entriesToUnify) {
+  bool unifyEntries(const std::set<UnionTableEntry>& entriesToUnify) {
     if (entriesToUnify.size() == 1) {
-      return;
+      return entriesToUnify.begin()->top;
     }
     bool entriesBecomeTop = false;
     for (const auto& e : entriesToUnify) {
@@ -168,8 +167,10 @@ class UnionTable {
     // Check if the number of entries would be too large
     unsigned int numberOfNewEntries = 1;
     for (const auto& e : entriesToUnify) {
-      if (numberOfNewEntries > maximumHybridEntries / e.states.size()) {
-        throw std::domain_error("Maximum of allowed hybrid entries exceeded.");
+      if (e.states.size() != 0 &&
+          numberOfNewEntries > maximumHybridEntries / e.states.size()) {
+        putEntriesToTop(entriesToUnify);
+        return true;
       }
       numberOfNewEntries *= e.states.size();
     }
@@ -192,7 +193,7 @@ class UnionTable {
       }
       std::vector<HybridState> unifiedHS = {};
       for (auto hs1 : newEntry.states) {
-        for (auto hs2 : e.states) {
+        for (const auto& hs2 : e.states) {
           unifiedHS.push_back(hs1.unify(hs2));
         }
       }
@@ -219,6 +220,7 @@ class UnionTable {
       }
     }
     entries.insert(ptrUTE);
+    return entriesBecomeTop;
   }
 
   /**
@@ -281,11 +283,11 @@ public:
   [[nodiscard("UnionTable::toString called but ignored")]]
   std::string toString() const;
 
-  /** @brief: Replaces values globally by new values
+  /** @brief: Replaces values globally by new values. Aborts if the size of the
+   * two parameters is not equal.
    *
    * @param replacedValues Values to be replaced
    * @param newValues Values the first values are replaced with.
-   * @throws runtime_error if the size of the two parameters is not equal.
    */
   void replaceValuesGlobally(std::span<Value> replacedValues,
                              std::span<Value> newValues);
@@ -297,7 +299,8 @@ public:
    * @brief This method applies a gate to the qubits.
    *
    * This method changes the amplitudes of a QuantumState according to the
-   * applied gate.
+   * applied gate. Aborts if a value is given but not found in the existing
+   * ones.
    *
    * @param gate The gate to be applied.
    * @param targets An array of the Values of the target qubits.
@@ -307,8 +310,6 @@ public:
    * @param posCtrlsClassical An array of the values of the ctrl bits.
    * @param negCtrlsClassical An array of the values of the negative ctrl bits.
    * @param params The parameter applied to the gate.
-   * @throws invalid_argument if a value is given, but is not found in the
-   * existing ones.
    */
   void propagateGate(Operation* gate, std::span<Value> targets,
                      std::span<Value> newQuantumTargets,
@@ -319,7 +320,8 @@ public:
                      std::span<Value> params = {});
 
   /**
-   * @brief This method propagates a classical operation.
+   * @brief This method propagates a classical operation. Aborts if a value is
+   * given, but not found in the existing ones.
    *
    *
    * @param op The operation to be applied.
@@ -327,8 +329,6 @@ public:
    * @param results The value of the result.
    * @param posCtrlsClassical An array of the values of the ctrl bits.
    * @param negCtrlsClassical An array of the values of the negative ctrl bits.
-   * @throws invalid_argument if a value is given, but is not found in the
-   * existing ones.
    */
   void propagateClassicalOperation(Operation* op, std::span<Value> targets,
                                    std::span<Value> results,
@@ -339,7 +339,9 @@ public:
    * @brief This method applies a measurement.
    *
    * This method applies a measurement, changing the qubits and the classical
-   * bit corresponding to the measurement.
+   * bit corresponding to the measurement. Aborts if a value is given, but not
+   * found in the existing ones. This does not hold for the classical target,
+   * which can be newly created.
    *
    * @param quantumTarget The value of the qubit to be measured.
    * @param newQuantumValue The value of the qubit after the measurement.
@@ -347,9 +349,6 @@ public:
    * in.
    * @param posCtrlsClassical An array of the values of the ctrl bits.
    * @param negCtrlsClassical An array of the values of the negative ctrl bits.
-   * @throws invalid_argument if a value is given, but is not found in the
-   * existing ones. This does not hold for the classical target, which can be
-   * newly created.
    */
   void propagateMeasurement(Value quantumTarget, Value newQuantumValue,
                             Value classicalTarget,
@@ -361,14 +360,13 @@ public:
    *
    * This method propagates a qubit reset. This means that the qubit is put into
    * zero state. It is also put in its own QubitState again if it does not
-   * correspond to already assigned bit values.
+   * correspond to already assigned bit values. Aborts if a value is given, but
+   * not found in the existing ones.
    *
    * @param quantumTarget The value of the qubit to be reset.
    * @param newQuantumValue The value of the qubit after the reset.
    * @param posCtrlsClassical An array of the values of the ctrl bits.
    * @param negCtrlsClassical An array of the values of the negative ctrl bits.
-   * @throws invalid_argument if a value is given, but is not found in the
-   * existing ones.
    */
   void propagateReset(Value quantumTarget, Value newQuantumValue,
                       std::span<Value> posCtrlsClassical = {},
@@ -427,13 +425,12 @@ public:
    * This method receives a number of qubit and values and checks whether
    * they have for a given value always a zero amplitude.
    * The values for the classical values are not the numeric ones, but whether
-   * they are zero (false) or non-zero (true).
+   * they are zero (false) or non-zero (true). Aborts if a value is given, but
+   * is not found in the existing ones.
    *
    * @param qubitValues Pairs of the qubits that are being checked and the
    * values that they are being checked for.
    * @param classicalValues The classical values to check.
-   * @throws invalid_argument if a value is given, but is not found in the
-   * existing ones.
    * @returns True if the amplitude is always zero, false otherwise.
    */
   [[nodiscard("HybridState::hasAlwaysZeroAmplitude called but ignored")]] bool
@@ -466,15 +463,14 @@ public:
    * This method receives a diagonal gate and checks, if only a global phase is
    * added to the circuit by it under the current configuration. If that is the
    * case, the returned optional contains the global phase. Only works with
-   * 1-qubit gates without parameters.
+   * 1-qubit gates without parameters. Aborts if a value is given, but is not
+   * found in the existing ones.
    *
    * @param op The gate to be checked.
    * @param target The Values of the target qubits.
    * @param ctrlsQuantum An array of the values of the ctrl qubits.
    * @param posCtrlsClassical An array of the values of the ctrl bits.
    * @param negCtrlsClassical An array of the values of the negative ctrl bits.
-   * @throws invalid_argument if a value is given, but is not found in the
-   * existing ones.
    * @returns An optional containing the globally added value, if applicable.
    */
   [[nodiscard("UnionTable::globalPhaseThatIsAdded called but ignored")]]

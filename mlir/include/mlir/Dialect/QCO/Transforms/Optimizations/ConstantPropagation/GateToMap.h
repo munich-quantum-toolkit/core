@@ -21,7 +21,6 @@
 #include <complex>
 #include <numbers>
 #include <span>
-#include <stdexcept>
 #include <unordered_map>
 
 /**
@@ -224,7 +223,7 @@ getQubitMappingOfGates(mlir::Operation* gate, const std::span<double>& params) {
                             {3, Complex(c, 0)}}}}};
       })
       .Default([&](auto) -> ResultMap {
-        throw std::runtime_error("Unsupported gate in mlir::qco::gatetomap");
+        llvm::report_fatal_error("Unsupported gate in mlir::qco::gatetomap");
       });
 }
 

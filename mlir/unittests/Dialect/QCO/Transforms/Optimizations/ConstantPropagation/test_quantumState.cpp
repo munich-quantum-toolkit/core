@@ -4,7 +4,7 @@
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
- *
+ *participatingEntries
  * Licensed under the MIT License
  */
 
@@ -270,8 +270,9 @@ TEST_F(QuantumStateTest, propagateGateCheckErrorIfTwoManyAmplitudesAreNonzero) {
   qState.propagateGate(hOp.getOperation(), vectorThree);
   qState.propagateGate(xOp.getOperation(), vectorTwo, vectorThree);
 
-  EXPECT_THROW(qState.propagateGate(hOp.getOperation(), vectorTwo);
-               , std::domain_error);
+  EXPECT_FALSE(qState.isTop());
+  qState.propagateGate(hOp.getOperation(), vectorTwo);
+  EXPECT_TRUE(qState.isTop());
 }
 
 TEST_F(QuantumStateTest, doMeasurementWithZeroResult) {
@@ -383,8 +384,10 @@ TEST_F(QuantumStateTest, unifyTooLargeQuantumStates) {
   auto qState2 = QuantumState(vectorOneThree, 3);
   qState2.propagateGate(hOp.getOperation(), vectorThree);
   qState2.propagateGate(xOp.getOperation(), vectorOne, vectorThree);
-
-  EXPECT_THROW(auto qs = qState1.unify(qState2), std::domain_error);
+  EXPECT_FALSE(qState1.isTop());
+  EXPECT_FALSE(qState2.isTop());
+  const auto qs = qState1.unify(qState2);
+  EXPECT_TRUE(qs.isTop());
 }
 
 TEST_F(QuantumStateTest, applyVariousGates) {
@@ -411,8 +414,8 @@ TEST_F(QuantumStateTest, applyVariousGates) {
 
   EXPECT_THAT(
       qState.toString(),
-      testing::HasSubstr("|00> -> -0.27 - i0.25, |01> -> 0.12 - i0.39, |10> "
-                         "-> -0.62 + i0.43, |11> -> -0.15 - i0.32"));
+      testing::HasSubstr("|00> -> 0.58 - i0.07, |01> -> -0.14 + i0.04, |10> "
+                         "-> 0.23 + i0.15, |11> -> -0.10 - i0.74"));
 }
 
 } // namespace

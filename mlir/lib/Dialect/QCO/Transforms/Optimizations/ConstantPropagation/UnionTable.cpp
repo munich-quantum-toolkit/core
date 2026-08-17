@@ -79,7 +79,7 @@ std::string UnionTable::toString() const {
 void UnionTable::replaceValuesGlobally(const std::span<Value> replacedValues,
                                        const std::span<Value> newValues) {
   if (replacedValues.size() != newValues.size()) {
-    throw std::domain_error(
+    llvm::report_fatal_error(
         "replacedValues and newValues do not have the same size.");
   }
 
@@ -133,10 +133,8 @@ void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
     return;
   }
 
-  try {
-    unifyEntries(participatingEntries);
-  } catch (std::domain_error&) {
-    putEntriesToTop(participatingEntries);
+  const auto becameTop = unifyEntries(participatingEntries);
+  if (becameTop) {
     replaceValuesGlobally(targets, newQuantumTargets);
     return;
   }
@@ -182,9 +180,8 @@ void UnionTable::propagateClassicalOperation(
       collectParticipatingEntries(targets, results, posCtrlsClassical,
                                   negCtrlsClassical);
 
-  try {
-    unifyEntries(participatingEntries);
-  } catch (std::domain_error&) {
+  const auto becameTop = unifyEntries(participatingEntries);
+  if (becameTop) {
     putEntriesToTop(participatingEntries);
     return;
   }
@@ -219,10 +216,8 @@ void UnionTable::propagateMeasurement(
 
   std::vector quantumTargetVec = {quantumTarget};
   std::vector newQuantumValueVec = {newQuantumValue};
-  try {
-    unifyEntries(participatingEntries);
-  } catch (std::domain_error&) {
-    putEntriesToTop(participatingEntries);
+  const auto becameTop = unifyEntries(participatingEntries);
+  if (becameTop) {
     replaceValuesGlobally(quantumTargetVec, newQuantumValueVec);
     return;
   }
@@ -266,9 +261,8 @@ void UnionTable::propagateReset(const Value quantumTarget,
                                   negCtrlsClassical);
 
   std::vector newQuantumValueVec = {newQuantumValue};
-  try {
-    unifyEntries(participatingEntries);
-  } catch (std::domain_error&) {
+  const auto becameTop = unifyEntries(participatingEntries);
+  if (becameTop) {
     putEntriesToTop(participatingEntries);
     replaceValuesGlobally(quantumTargetVec, newQuantumValueVec);
     return;
@@ -283,17 +277,10 @@ void UnionTable::propagateReset(const Value quantumTarget,
   std::vector<HybridState> vecOfNewStates;
 
   for (auto hs : ute->states) {
-    try {
-      auto newStates =
-          hs.propagateReset(qubitsToGlobalIndices.at(quantumTarget),
-                            posCtrlsClassical, negCtrlsClassical);
-      vecOfNewStates.insert(vecOfNewStates.end(), newStates.begin(),
-                            newStates.end());
-    } catch (std::domain_error&) {
-      putEntriesToTop({*ute});
-      vecOfNewStates.clear();
-      break;
-    }
+    auto newStates = hs.propagateReset(qubitsToGlobalIndices.at(quantumTarget),
+                                       posCtrlsClassical, negCtrlsClassical);
+    vecOfNewStates.insert(vecOfNewStates.end(), newStates.begin(),
+                          newStates.end());
   }
   ute->states = vecOfNewStates;
   if (vecOfNewStates.size() > maximumHybridEntries) {

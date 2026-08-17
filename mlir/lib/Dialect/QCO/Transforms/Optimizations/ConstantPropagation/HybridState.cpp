@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/ClassicalArithOperation.h"
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/QuantumState.hpp"
 
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
@@ -30,7 +31,6 @@
 #include <ostream>
 #include <span>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -151,20 +151,18 @@ void HybridState::propagateGate(Operation* gate,
       } else if (doubleValues.contains(p)) {
         paramValues.push_back(static_cast<double>(doubleValues.at(p)));
       } else {
-        throw std::domain_error(
+        llvm::report_fatal_error(
             "HybridState needs a classical value for gate parameters that is "
             "not existent in current HybridState.");
       }
     }
-    try {
-      qState->propagateGate(gate, targets, ctrlsQuantum, paramValues);
-    } catch (std::domain_error const&) {
+    qState->propagateGate(gate, targets, ctrlsQuantum, paramValues);
+    if (qState->isTop()) {
       top = true;
     }
   } else {
-    try {
-      qState->propagateGate(gate, targets, ctrlsQuantum);
-    } catch (std::domain_error const&) {
+    qState->propagateGate(gate, targets, ctrlsQuantum);
+    if (qState->isTop()) {
       top = true;
     }
   }
@@ -201,7 +199,7 @@ void HybridState::propagateClassicalOperation(
         (operand2 != nullptr && !integerValues.contains(operand2)) ||
         (operand3 != nullptr && !integerValues.contains(operand3)) ||
         !integerValues.contains(dest)) {
-      throw std::domain_error(
+      llvm::report_fatal_error(
           "HybridState needs a classical value for a classical operation that "
           "is not existent in current HybridState.");
     }
@@ -214,7 +212,7 @@ void HybridState::propagateClassicalOperation(
     if (!doubleValues.contains(operand1) ||
         (operand2 != nullptr && !doubleValues.contains(operand2)) ||
         !doubleValues.contains(dest)) {
-      throw std::domain_error(
+      llvm::report_fatal_error(
           "HybridState needs a classical value for a classical operation that "
           "is not existent in current HybridState.");
     }
@@ -227,10 +225,9 @@ void HybridState::propagateClassicalOperation(
 
 HybridState HybridState::unify(const HybridState& that) {
   auto newHybridState = HybridState();
-  try {
-    newHybridState.qState =
-        std::make_shared<QuantumState>(qState->unify(*that.qState));
-  } catch (std::domain_error const&) {
+  newHybridState.qState =
+      std::make_shared<QuantumState>(qState->unify(*that.qState));
+  if (newHybridState.qState->isTop()) {
     newHybridState.top = true;
     return newHybridState;
   }
@@ -276,8 +273,8 @@ bool HybridState::isValueTrue(const Value v) const {
   if (doubleValues.contains(v)) {
     return std::fabs(doubleValues.at(v)) > 1e-4;
   }
-  throw std::domain_error("Value of a classical value is asked which does not "
-                          "exist in the HybridState.");
+  llvm::report_fatal_error("Value of a classical value is asked which does not "
+                           "exist in the HybridState.");
 }
 
 bool HybridState::hasAlwaysZeroProbability(
@@ -294,8 +291,8 @@ bool HybridState::hasAlwaysZeroProbability(
         return true;
       }
     } else {
-      throw std::domain_error("Value of a classical value is asked which does "
-                              "not exist in the HybridState.");
+      llvm::report_fatal_error("Value of a classical value is asked which does "
+                               "not exist in the HybridState.");
     }
   }
 

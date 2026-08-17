@@ -18,7 +18,6 @@
 
 #include <complex>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -40,12 +39,12 @@ class HybridState {
 
   /**
    * @brief Checks if all positive classical controls hold and all negative
-   * classical controls do not hold.
+   * classical controls do not hold. Aborts if a classical control value cannot
+   * be found.
    *
    * @param posCtrlsClassical An array of the classical positive control values.
    * @param negCtrlsClassical An array of the classical negative control values.
    * @return True if the controls together evaluate to true.
-   * @throws domain_error If a classical control value cannot be found.
    */
   bool isOperationExecutable(const std::span<Value> posCtrlsClassical,
                              const std::span<Value> negCtrlsClassical) {
@@ -58,7 +57,7 @@ class HybridState {
         return false;
       }
       if (!doubleValues.contains(posCtrl) && !integerValues.contains(posCtrl)) {
-        throw std::domain_error(
+        llvm::report_fatal_error(
             "HybridState needs a classical value for operation control that is "
             "not existent in current HybridState.");
       }
@@ -72,7 +71,7 @@ class HybridState {
         return false;
       }
       if (!doubleValues.contains(negCtrl) && !integerValues.contains(negCtrl)) {
-        throw std::domain_error(
+        llvm::report_fatal_error(
             "HybridState needs a classical value for operation control that is "
             "not existent in current HybridState.");
       }
@@ -85,14 +84,13 @@ class HybridState {
    *
    * This method applies a measurement or reset, changing the qubits and the
    * classical values (if a measurement is applied) corresponding to the
-   * measurement.
+   * measurement. Aborts if a classical control value cannot be found.
    *
    * @param quantumTarget The index of the qubit to be measured.
    * @param reset True if a reset is applied.
    * @param classicalTarget The value to save the measurement result to.
    * @param posCtrlsClassical An array of the classical positive control values.
    * @param negCtrlsClassical An array of the classical negative control values.
-   * @throws domain_error If a classical control value cannot be found.
    * @return One or two hybrid states corresponding to the measurement or reset
    * outcomes.
    */
@@ -178,7 +176,8 @@ public:
   /**
    * @brief This method applies a gate to the state.
    *
-   * This method changes the hybrid state according to a gate.
+   * This method changes the hybrid state according to a gate. Aborts if a
+   * classical control value cannot be found.
    *
    * @param gate The name of the gate to be applied.
    * @param targets An array of the indices of the target qubits.
@@ -186,7 +185,6 @@ public:
    * @param posCtrlsClassical An array of the classical positive control values.
    * @param negCtrlsClassical An array of the classical negative control values.
    * @param params The values of parameters applied to the gate.
-   * @throws domain_error If a classical control value cannot be found.
    */
   void propagateGate(Operation* gate, std::span<unsigned int> targets,
                      std::span<unsigned int> ctrlsQuantum = {},
@@ -198,13 +196,13 @@ public:
    * @brief This method applies a measurement.
    *
    * This method applies a measurement, changing the qubits and the classical
-   * values corresponding to the measurement.
+   * values corresponding to the measurement. Aborts if a classical control
+   * value cannot be found.
    *
    * @param quantumTarget The index of the qubit to be measured.
    * @param classicalTarget The value to save the measurement result to.
    * @param posCtrlsClassical An array of the classical positive control values.
    * @param negCtrlsClassical An array of the classical negative control values.
-   * @throws domain_error If a classical control value cannot be found.
    * @return One or two hybrid states corresponding to the measurement
    * outcomes.
    */
@@ -218,12 +216,12 @@ public:
    *
    * This method applies a reset, changing the qubits and creates one or two new
    * states. The procedure is done as if the qubit was measured, put to zero if
-   * the measurement was one, and the result discarded.
+   * the measurement was one, and the result discarded. Aborts if a classical
+   * control value cannot be found.
    *
    * @param target The index of the qubit to be measured.
    * @param posCtrlsClassical An array of the classical positive control values.
    * @param negCtrlsClassical An array of the classical negative control values.
-   * @throws domain_error If a classical control value cannot be found.
    * @return One or two hybrid states corresponding to the measurement outcomes
    * during the reset, but with the qubit always in the zero state.
    */
@@ -244,8 +242,6 @@ public:
    * @param operand3 The third value used by the operation, might be null.
    * @param posCtrlsClassical An array of the classical positive control values.
    * @param negCtrlsClassical An array of the classical negative control values.
-   * @throws domain_error If a classical value cannot be found.
-   * @throws runtime_error If classical operation is not supported.
    */
   void propagateClassicalOperation(Operation* op, Value dest, Value operand1,
                                    Value operand2 = nullptr,
@@ -258,11 +254,9 @@ public:
    *
    * This method unifies the current HybridState with the given one and returns
    * a new HybridState, if the new state has no more than maxNonzeroAmplitudes.
-   * Otherwise, throws a domain_error.
+   * Otherwise, the state becomes top.
    *
    * @param that The HybridState to unify this with.
-   * @throw std::domain_error If the unified QuantumState would exceed
-   * maxNonzeroAmplitudes of this.
    */
   HybridState unify(const HybridState& that);
 
@@ -286,12 +280,12 @@ public:
    * top, it is not guaranteed that the amplitude is always zero and false is
    * returned.
    * The values for the classical values are not the numeric ones, but whether
-   * they are zero (false) or non-zero (true).
+   * they are zero (false) or non-zero (true). Aborts if a classical value
+   * cannot be found.
    *
    * @param qubitValues Pairs of the qubits that are being checked and the
    * values that they are being checked for.
    * @param classicalValues The classical values to check.
-   * @throws domain_error If a classical value cannot be found.
    * @returns True if the amplitude is always zero, false otherwise.
    */
   [[nodiscard("HybridState::hasAlwaysZeroAmplitude called but ignored")]] bool

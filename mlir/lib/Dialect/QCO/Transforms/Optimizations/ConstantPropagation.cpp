@@ -230,8 +230,8 @@ static WalkResult handleConstant(UnionTable* ut, arith::ConstantOp op,
                                  const std::span<Value> posClassicalCtrls,
                                  const std::span<Value> negClassicalCtrls) {
   if (!posClassicalCtrls.empty() || !negClassicalCtrls.empty()) {
-    throw std::logic_error("Cannot handle constant operation in conditional "
-                           "branches during constant propagation.");
+    llvm::report_fatal_error("Cannot handle constant operation in conditional "
+                             "branches during constant propagation.");
   }
 
   Value const res = op.getResult();
@@ -335,7 +335,7 @@ createOperationFromUnitaryOperation(Operation* op, PatternRewriter& rewriter,
                                                           CREATE_OP_CASE_PLUS_MINUS_OPS(
                                                               XXMinusYYOp)
           .Default([&](auto) -> Operation* {
-            throw std::runtime_error("Unsu"
+            llvm::report_fatal_error("Unsu"
                                      "ppor"
                                      "ted "
                                      "oper"
@@ -399,7 +399,8 @@ static CtrlOp removeCtrlsOfGate(CtrlOp* op,
     rewriter.replaceAllUsesWith(op->getOutputForInput(qubitCtrl), qubitCtrl);
   }
   if (ctrlsToRemove.size() == op->getNumControls()) {
-    throw std::runtime_error("Cannot remove all controls of a CtrlOp");
+    llvm::report_fatal_error("Method not suitable to remove all controls of a "
+                             "CtrlOp. Should not be called for this.");
   }
   std::vector<Value> newControlIn;
   for (const auto& ctrls : op->getInputControls()) {
@@ -586,7 +587,7 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       }
     }
     if (implicitSwap) {
-      throw std::runtime_error("Constant propagation does not allow implicit "
+      llvm::report_fatal_error("Constant propagation does not allow implicit "
                                "swapping of qubits in branching.");
     }
     // remove if Op and replace the values in the module and union table
@@ -721,7 +722,7 @@ static WalkResult handleUnitary(UnionTable* ut, UnitaryOpInterface* op,
                       newCtrlsQuantum, posClassicalCtrls, negClassicalCtrls,
                       paramValues);
   } else {
-    throw std::invalid_argument(
+    llvm::report_fatal_error(
         "Given targetValues and resultValues need to be of same size.");
   }
 
@@ -1006,7 +1007,7 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
             // func Dialect
             .Case<func::FuncOp>([&](const func::FuncOp op) {
               if (!isEntryPoint(op)) {
-                throw std::domain_error(
+                llvm::report_fatal_error(
                     "Constant propagation does not support nested functions.");
                 return WalkResult::interrupt();
               }
@@ -1027,7 +1028,7 @@ iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
                 return WalkResult::advance();
               }
 
-              throw std::runtime_error("Unsupported operation");
+              llvm::report_fatal_error("Unsupported operation");
               return WalkResult::interrupt();
             });
 
@@ -1082,8 +1083,8 @@ static LogicalResult applyCP(ModuleOp module, MLIRContext* ctx,
       continue; // Ignore non entry_point functions for now.
     }
     if (entryPointFound) {
-      throw std::domain_error("Constant propagation does not support programs "
-                              "with more than one entry point.");
+      llvm::report_fatal_error("Constant propagation does not support programs "
+                               "with more than one entry point.");
     }
     entryPointFound = true;
     func->walk<WalkOrder::PreOrder>(

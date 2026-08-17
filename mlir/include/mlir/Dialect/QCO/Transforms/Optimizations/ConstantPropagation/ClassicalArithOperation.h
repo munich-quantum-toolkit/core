@@ -21,7 +21,6 @@
 #include <mlir/IR/Operation.h>
 
 #include <cmath>
-#include <stdexcept>
 
 /**
  * This file provides information of available arith operations. It calculates
@@ -34,7 +33,7 @@ inline int64_t getArithIntegerOpResult(mlir::Operation* operation,
 
   for (mlir::Value operand : operation->getOperands()) {
     if (isa<mlir::VectorType>(operand.getType())) {
-      throw std::runtime_error(
+      llvm::report_fatal_error(
           "Constant propagation does not support vectors as classical types.");
     }
   }
@@ -69,7 +68,7 @@ inline int64_t getArithIntegerOpResult(mlir::Operation* operation,
       .Case<mlir::arith::SelectOp>(
           [&](auto) { return value1 == 0 ? value3 : value2; })
       .Default([&](auto) -> int64_t {
-        throw std::runtime_error("Unsupported integer operation in "
+        llvm::report_fatal_error("Unsupported integer operation in "
                                  "mlir::qco::classicalarithoperation");
       });
 }
@@ -79,7 +78,7 @@ inline double getArithDoubleOpResult(mlir::Operation* operation, double value1,
 
   for (mlir::Value operand : operation->getOperands()) {
     if (isa<mlir::VectorType>(operand.getType())) {
-      throw std::runtime_error(
+      llvm::report_fatal_error(
           "Constant propagation does not support vectors as classical types.");
     }
   }
@@ -101,7 +100,7 @@ inline double getArithDoubleOpResult(mlir::Operation* operation, double value1,
           [&](auto) { return remainder(value1, value2); })
       .Case<mlir::arith::SubFOp>([&](auto) { return value1 - value2; })
       .Default([&](auto) -> double {
-        throw std::runtime_error("Unsupported floating-point operation in "
+        llvm::report_fatal_error("Unsupported floating-point operation in "
                                  "mlir::qco::classicalarithoperation");
       });
 }
