@@ -454,6 +454,82 @@ def test_flat_circuit_round_trip_preserves_supported_metadata() -> None:
     ]
 
 
+def test_openqasm2_measurements_export_with_zero_initialized_register() -> None:
+    """Ignore only the implicit classical zero initialization from OpenQASM 2."""
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+x q[1];
+measure q[1] -> c[0];
+measure q[0] -> c[1];
+"""
+    )
+
+    restored = program.to_qiskit()
+
+    assert program.ir.count("memref.store") == 4
+    assert [(register.name, len(register)) for register in restored.qregs] == [("q", 2)]
+    assert [(register.name, len(register)) for register in restored.cregs] == [("c", 2)]
+    assert [item.operation.name for item in restored.data] == ["x", "measure", "measure"]
+    measurements = [item for item in restored.data if item.operation.name == "measure"]
+    assert [
+        (restored.find_bit(item.qubits[0]).index, restored.find_bit(item.clbits[0]).index) for item in measurements
+    ] == [(1, 0), (0, 1)]
+
+
+@pytest.mark.parametrize("late_value", ["false", "true"])
+def test_flat_export_rejects_classical_store_after_quantum_work(late_value: str) -> None:
+    """Do not mistake a later constant assignment for register initialization."""
+    program = QCProgram.from_mlir_str(
+        f"""module {{
+  func.func @main() attributes {{passthrough = ["entry_point"]}} {{
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %initial = arith.constant false
+    %late = arith.constant {late_value}
+    %q = qc.alloc : !qc.qubit
+    %c = memref.alloc() : memref<2xi1>
+    memref.store %initial, %c[%c0] : memref<2xi1>
+    qc.x %q : !qc.qubit
+    memref.store %late, %c[%c1] : memref<2xi1>
+    qc.dealloc %q : !qc.qubit
+    return
+  }}
+}}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="does not support classical execution"):
+        program.to_qiskit()
+
+
+def test_target_compiled_openqasm2_measurements_export() -> None:
+    """Export initialized result registers after target compilation."""
+    target = CompilerTarget(5)
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+x q[1];
+measure q[1] -> c[0];
+measure q[0] -> c[1];
+"""
+    )
+    mapped = program.to_qco(copy=True)
+    mapped.compile_for_target(target)
+
+    restored = mapped.to_qc(copy=True).to_qiskit(target=target)
+
+    assert restored.num_qubits == 5
+    assert [(register.name, len(register)) for register in restored.qregs] == [("q", 5)]
+    assert [(register.name, len(register)) for register in restored.cregs] == [("c", 2)]
+    assert restored.layout is None
+    assert restored.count_ops() == {"measure": 2, "x": 1}
+
+
 def test_layout_is_accepted_and_ignored() -> None:
     """Import laid-out operations without retaining transpiler metadata."""
     circuit = QuantumCircuit(2)
