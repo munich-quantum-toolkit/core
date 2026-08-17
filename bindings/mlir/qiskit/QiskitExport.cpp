@@ -95,6 +95,17 @@ struct ExportedInstruction {
   return static_cast<uint32_t>(index);
 }
 
+[[nodiscard]] mlir::CompilerTarget::SiteId
+checkedTargetSiteId(const uint64_t index) {
+  using SiteId = mlir::CompilerTarget::SiteId;
+  if (!std::in_range<SiteId>(index)) {
+    throw std::runtime_error(
+        "QC static qubit index cannot be represented by a compiler target "
+        "site ID");
+  }
+  return static_cast<SiteId>(index);
+}
+
 [[nodiscard]] uint32_t checkedAdd(const uint32_t left, const uint32_t right,
                                   const std::string_view kind) {
   if (right > std::numeric_limits<uint32_t>::max() - left) {
@@ -331,7 +342,8 @@ void collectResources(mlir::func::FuncOp function, ExportState& state,
     if (auto staticQubit = llvm::dyn_cast<mlir::qc::StaticOp>(operation)) {
       uint32_t index = 0;
       if (target != nullptr) {
-        const auto vertex = target->vertexForSite(staticQubit.getIndex());
+        const auto vertex =
+            target->vertexForSite(checkedTargetSiteId(staticQubit.getIndex()));
         if (!vertex) {
           throw std::runtime_error(
               "QC static qubit is not a site of the supplied compiler target");

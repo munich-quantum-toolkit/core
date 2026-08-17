@@ -519,15 +519,15 @@ def test_flat_export_rejects_symbolic_inputs() -> None:
 
 
 def test_target_aware_qiskit_export_maps_sparse_site_ids() -> None:
-    """Map target site IDs to their dense physical-qubit indices."""
+    """Map large sparse target site IDs to dense physical-qubit indices."""
     target = CompilerTarget(
         "sparse target",
-        [CompilerTarget.Site(10), CompilerTarget.Site(20)],
+        [CompilerTarget.Site(10), CompilerTarget.Site(4294967296)],
     )
     program = QCProgram.from_mlir_str(
         """module {
   func.func @main() attributes {passthrough = ["entry_point"]} {
-    %q = qc.static 20 : !qc.qubit
+    %q = qc.static 4294967296 : !qc.qubit
     qc.x %q : !qc.qubit
     return
   }

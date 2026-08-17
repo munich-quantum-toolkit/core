@@ -29,12 +29,16 @@ existing behavior.
       changelog.
 - [x] (2026-08-17 09:25Z) Run focused builds and tests, documentation checks,
       include-cleaner, lint, and diff checks.
+- [x] (2026-08-17 09:51Z) Check the unsigned `qc.static` index before converting
+      it to `CompilerTarget::SiteId` and cover a sparse site ID above the Qiskit
+      index range.
 
 ## Surprises & Discoveries
 
 - Observation: A target site ID is not a Qiskit qubit index. A target may use
-  sparse IDs such as 10 and 20 while containing only two sites. Evidence:
-  `CompilerTarget::vertexForSite` maps those IDs to compiler vertices 0 and 1.
+  sparse IDs such as 10 and 4294967296 while containing only two sites.
+  Evidence: `CompilerTarget::vertexForSite` maps those IDs to compiler vertices
+  0 and 1.
 - Observation: Qiskit uses one owning quantum register named `q` for its
   canonical physical circuit form. Layout metadata is independent of that
   register representation.
@@ -96,8 +100,8 @@ set and order during export.
 
 The first milestone adds the optional target to the native and Python export
 interfaces. At its end, the five focused Python tests pass: dense target export
-uses the full target, sparse site 20 maps to Qiskit qubit 1, and invalid static
-or dynamic resources fail with controlled errors. Generic export remains
+uses the full target, sparse site 4294967296 maps to Qiskit qubit 1, and invalid
+static or dynamic resources fail with controlled errors. Generic export remains
 unchanged.
 
 The second milestone completes the public contract and validation. At its end,
@@ -126,10 +130,10 @@ with the same target. The result must contain five qubits in one register named
 `q` and have no Qiskit layout metadata.
 
 Update `test/python/test_mlir_qiskit_translation.py` with a sparse target whose
-site IDs are 10 and 20. An operation on site 20 must act on Qiskit qubit 1. Also
-verify that export rejects a site absent from the supplied target and rejects
-dynamic scalar and register qubits. Existing tests continue to cover generic
-export without a target.
+site IDs are 10 and 4294967296. An operation on site 4294967296 must act on
+Qiskit qubit 1. Also verify that export rejects a site absent from the supplied
+target and rejects dynamic scalar and register qubits. Existing tests continue
+to cover generic export without a target.
 
 Document the final API in `docs/mlir/target_compilation.md`. State that callers
 must pass the same target used for mapping and that the option neither compiles
@@ -185,11 +189,11 @@ The end-to-end test must return a five-qubit Qiskit circuit after compilation
 uses only two sites of a five-site target. The circuit must have exactly one
 quantum register named `q`, and `circuit.layout` must be `None`.
 
-For a target with sites 10 and 20, an MLIR operation on `qc.static 20` must use
-Qiskit qubit index 1 in a two-qubit circuit. A `qc.static` site outside the
-target must fail with a controlled error. A target-aware export containing
-`qc.alloc` or a quantum `memref.alloc` must also fail. Existing target-free
-round-trip tests must continue to pass.
+For a target with sites 10 and 4294967296, an MLIR operation on
+`qc.static 4294967296` must use Qiskit qubit index 1 in a two-qubit circuit. A
+`qc.static` site outside the target must fail with a controlled error. A
+target-aware export containing `qc.alloc` or a quantum `memref.alloc` must also
+fail. Existing target-free round-trip tests must continue to pass.
 
 The generated stub must contain the keyword-only optional target argument. The
 documentation build, focused test suites, repository lint, and
@@ -206,9 +210,9 @@ command. No migration or destructive operation is required.
 
 The sparse mapping has this observable result:
 
-    target sites:       [10, 20]
-    Qiskit q indices:   [ 0,  1]
-    qc.static 20:       q[1]
+    target sites: [10, 4294967296]
+    Qiskit q indices: [0, 1]
+    qc.static 4294967296 -> q[1]
 
 The canonical physical circuit has one owning register. It deliberately has no
 `TranspileLayout` until compiler layout retention has its own contract.
