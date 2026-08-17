@@ -40,24 +40,11 @@ compilation to an existing QCO program. For pass-level benchmarking, the C++ API
 exposes separate factories for pre-routing optimization, mapping, native
 synthesis, and conformance verification.
 
-By default, target compilation removes quantum operations whose final qubit
-values are not observed by a measurement or returned from the program. Callers
-that intentionally compile state-preparation circuits without observations can
-retain those operations:
-
-```python
-qco = compile_program(
-    "state-preparation.qasm",
-    output=OutputFormat.QCO,
-)
-qco.compile_for_target(
-    target,
-    preserve_unobserved_quantum_operations=True,
-)
-```
-
-Preservation is intended for compiler analysis and benchmarking. The resulting
-program still has no classical observation of those qubit values.
+Target compilation preserves quantum operations even when their final qubit
+values are not measured or returned. This supports measurement-free programs,
+such as state preparation or larger building blocks compiled to a target-native
+instruction set. Dead gates are removed only by the explicit `remove-dead-gates`
+pass and by pipelines that include it, such as `mqt-qubit-reuse`.
 
 ## Command line from a source build
 

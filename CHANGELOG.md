@@ -12,8 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Allow target compilation to preserve unobserved quantum operations on
-  request ([#2118]) ([**@simon1hofmann**])
+- ✨ Add an explicit QCO pass for dead-gate removal and use it in the
+  qubit-reuse pipeline ([#2118]) ([**@simon1hofmann**])
 - 🚸 Add typed stable-ID construction for Qiskit backends and compiler targets,
   fluent Qiskit primitives, and lazy provider discovery ([#2084])
   ([**@burgholzer**])

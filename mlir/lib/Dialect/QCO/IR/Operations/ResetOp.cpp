@@ -102,20 +102,6 @@ struct RemoveResetAfterExtract final : OpRewritePattern<ResetOp> {
   }
 };
 
-/**
- * @brief Remove dead gates.
- */
-struct DeadGateElimination final : OpRewritePattern<ResetOp> {
-
-  explicit DeadGateElimination(MLIRContext* context)
-      : OpRewritePattern(context) {}
-
-  LogicalResult matchAndRewrite(ResetOp op,
-                                PatternRewriter& rewriter) const override {
-    return tryEliminateDeadGateValue(op.getQubitIn(), rewriter);
-  }
-};
-
 } // namespace
 
 OpFoldResult ResetOp::fold(FoldAdaptor /*adaptor*/) {
@@ -129,6 +115,4 @@ OpFoldResult ResetOp::fold(FoldAdaptor /*adaptor*/) {
 void ResetOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                           MLIRContext* context) {
   results.add<RemoveResetAfterExtract>(context);
-  results.addWithLabel<DeadGateElimination>(
-      {UNOBSERVED_QUANTUM_OPERATION_ELIMINATION_PATTERN_LABEL}, context);
 }

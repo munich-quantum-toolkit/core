@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Utils/Utils.h>
@@ -26,12 +25,6 @@
 #include <optional>
 
 namespace mlir::qco {
-
-/// Stable canonicalizer label for patterns that erase unobserved quantum
-/// operations.
-inline constexpr llvm::StringLiteral
-    UNOBSERVED_QUANTUM_OPERATION_ELIMINATION_PATTERN_LABEL =
-        "qco-unobserved-quantum-operation-elimination";
 
 /**
  * @brief Check if given quantum operation is unused (i.e., only used by sinks

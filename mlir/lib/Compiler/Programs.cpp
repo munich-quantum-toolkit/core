@@ -391,9 +391,8 @@ QCOProgram::fromMLIRFile(const std::filesystem::path& path) {
 QCOProgram QCOProgram::copy() const { return QCOProgram(cloneStorage()); }
 
 bool QCOProgram::cleanup() {
-  return succeeded(runPasses(
-      mod(), [](OpPassManager& pm) { populateQCOCleanupPipeline(pm); },
-      "failed to run the QCO cleanup pipeline"));
+  return succeeded(runPasses(mod(), populateQCOCleanupPipeline,
+                             "failed to run the QCO cleanup pipeline"));
 }
 
 bool QCOProgram::normalizeGlobalPhases() {
@@ -469,18 +468,10 @@ bool QCOProgram::decomposeMultiControlled(const uint64_t minQubits) {
 bool QCOProgram::compileForTarget(const CompilerTarget& target,
                                   const bool enableTiming,
                                   const bool enableStatistics) {
-  return compileForTarget(target, TargetCompilationOptions{}, enableTiming,
-                          enableStatistics);
-}
-
-bool QCOProgram::compileForTarget(const CompilerTarget& target,
-                                  const TargetCompilationOptions& options,
-                                  const bool enableTiming,
-                                  const bool enableStatistics) {
   return succeeded(runPasses(
       mod(),
-      [&target, &options](OpPassManager& pm) {
-        populateTargetCompilationPipeline(pm, target, options);
+      [&target](OpPassManager& pm) {
+        populateTargetCompilationPipeline(pm, target);
       },
       "failed to compile the QCO program for the target", enableTiming,
       enableStatistics));

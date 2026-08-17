@@ -59,15 +59,17 @@ protected:
   static LogicalResult runMeasurementLiftingPass(ModuleOp program) {
     PassManager pm(program.getContext());
     pm.addPass(createMeasurementLifting());
+    pm.addPass(createRemoveDeadGates());
     pm.addPass(createCanonicalizerPass());
     return pm.run(program);
   }
 
   /**
-   * @brief Adds the canonicalizerPass to the current context and runs it.
+   * @brief Removes dead gates, canonicalizes the program, and runs the passes.
    */
   static LogicalResult runCanonicalizerPass(ModuleOp program) {
     PassManager pm(program.getContext());
+    pm.addPass(createRemoveDeadGates());
     pm.addPass(createCanonicalizerPass());
     return pm.run(program);
   }

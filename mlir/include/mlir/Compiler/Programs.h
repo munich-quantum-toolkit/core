@@ -34,7 +34,6 @@ class JeffProgram;
 class OpenQASMProgram;
 class QIRProgram;
 class CompilerTarget;
-struct TargetCompilationOptions;
 
 /**
  * @brief The QIR profile represented by a QIR program.
@@ -244,12 +243,6 @@ public:
 
   /// Compile this program for a target.
   [[nodiscard]] bool compileForTarget(const CompilerTarget& target,
-                                      bool enableTiming = false,
-                                      bool enableStatistics = false);
-
-  /// Compile this program for a target with explicit pipeline options.
-  [[nodiscard]] bool compileForTarget(const CompilerTarget& target,
-                                      const TargetCompilationOptions& options,
                                       bool enableTiming = false,
                                       bool enableStatistics = false);
 

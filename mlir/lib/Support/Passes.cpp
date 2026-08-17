@@ -11,7 +11,6 @@
 #include "mlir/Support/Passes.h"
 
 #include "mlir/Dialect/QC/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
@@ -27,7 +26,6 @@
 #include <mlir/Transforms/Passes.h>
 
 #include <cstdint>
-#include <string>
 
 using namespace mlir;
 
@@ -57,6 +55,7 @@ void registerMQTCompilerPasses() {
     qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerQuantumLoopUnroll();
+    qco::registerRemoveDeadGates();
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
     mqt::registerNormalizeGlobalPhases();
@@ -80,6 +79,7 @@ void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
 void populateQubitReusePipeline(OpPassManager& pm) {
   pm.addPass(qco::createMeasurementLifting());
   pm.addPass(qco::createReplaceClassicalControls());
+  pm.addPass(qco::createRemoveDeadGates());
   pm.addPass(qco::createReuseQubits());
 }
 
@@ -121,16 +121,9 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(
-    OpPassManager& pm, const bool eliminateUnobservedQuantumOperations) {
-  SmallVector<std::string> disabledPatterns;
-  if (!eliminateUnobservedQuantumOperations) {
-    disabledPatterns.emplace_back(
-        qco::UNOBSERVED_QUANTUM_OPERATION_ELIMINATION_PATTERN_LABEL.str());
-  }
+void populateQCOCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit),
-      disabledPatterns));
+      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
@@ -155,9 +148,8 @@ void populateJeffCleanupPipeline(OpPassManager& pm) {
 }
 
 [[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp mod) {
-  return runWithPassManager(
-      mod, [](OpPassManager& pm) { populateQCOCleanupPipeline(pm); },
-      "Failed to run the QCO cleanup pipeline.");
+  return runWithPassManager(mod, populateQCOCleanupPipeline,
+                            "Failed to run the QCO cleanup pipeline.");
 }
 
 [[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp mod,
