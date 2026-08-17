@@ -26,7 +26,6 @@ from mqt.core.plugins.qiskit import (
     QDMIBackend,
     UnsupportedOperationError,
 )
-from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
 from mqt.core.qdmi.driver import open_device
 from mqt.core.typing import QDMISessionParameters
 
@@ -679,9 +678,3 @@ def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDM
     job = ddsim_backend.run(qc, shots=100)
     counts = job.result().get_counts()
     assert sum(counts.values()) == 100
-
-
-def test_zoned_operation_rejected_at_backend_init() -> None:
-    """Backend rejects devices exposing zoned operations."""
-    with pytest.raises(UnsupportedDeviceError, match="cannot be represented in Qiskit's Target model"):
-        QDMIBackend.from_device_id("mqt.na.default")

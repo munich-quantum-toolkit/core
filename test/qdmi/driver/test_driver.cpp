@@ -838,9 +838,8 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
   EXPECT_EQ(ret, QDMI_SUCCESS);
   EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
 }
-constexpr std::array DEVICES{"MQT NA Default QDMI Device",
-                             "MQT Core DDSIM QDMI Device",
-                             "MQT SC Default QDMI Device"};
+constexpr std::array DEVICES{"MQT SC Default QDMI Device",
+                             "MQT Core DDSIM QDMI Device"};
 
 namespace {
 void registerSessionTestDevice() {
@@ -875,7 +874,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST(ConfiguredDriverTest, ConstructionRegistersWithoutOpeningDevices) {
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
   EXPECT_NO_THROW(qdmi::Driver::get().registerDevice(
-      {.id = "mqt.na.default", .library = library, .prefix = prefix}, true));
+      {.id = "mqt.sc.default", .library = library, .prefix = prefix}, true));
 }
 
 TEST(ConfiguredDriverTest, ExposesWorkingDefinitionsAndIsolatesFailures) {
@@ -887,8 +886,8 @@ TEST(ConfiguredDriverTest, ExposesWorkingDefinitionsAndIsolatesFailures) {
   ASSERT_EQ(QDMI_session_query_session_property(
                 session, QDMI_SESSION_PROPERTY_DEVICES, 0, nullptr, &size),
             QDMI_SUCCESS);
-  ASSERT_EQ(size, 5 * sizeof(QDMI_Device));
-  std::array<QDMI_Device, 5> devices{};
+  ASSERT_EQ(size % sizeof(QDMI_Device), 0);
+  std::vector<QDMI_Device> devices(size / sizeof(QDMI_Device));
   ASSERT_EQ(QDMI_session_query_session_property(
                 session, QDMI_SESSION_PROPERTY_DEVICES, size,
                 static_cast<void*>(devices.data()), nullptr),
@@ -897,9 +896,9 @@ TEST(ConfiguredDriverTest, ExposesWorkingDefinitionsAndIsolatesFailures) {
   std::vector<std::string> names;
   std::ranges::transform(devices, std::back_inserter(names), queryName);
   EXPECT_THAT(names,
-              testing::UnorderedElementsAre(
-                  "IQM Emerald", "IQM Garnet", "MQT NA Default QDMI Device",
-                  "MQT Core DDSIM QDMI Device", "MQT SC Default QDMI Device"));
+              testing::UnorderedElementsAre("IQM Emerald", "IQM Garnet",
+                                            "MQT SC Default QDMI Device",
+                                            "MQT Core DDSIM QDMI Device"));
   QDMI_session_free(session);
 }
 
@@ -1074,51 +1073,48 @@ TEST(DeviceRegistrationTest, TypedConfigurationRejectsRawAdapterSlotConflict) {
 }
 
 TEST(DeviceRegistrationTest,
-     RuntimeConfigurationSeparatesModelsUsingOneNaProviderLibrary) {
+     RuntimeConfigurationSeparatesModelsUsingOneScProviderLibrary) {
   auto& driver = qdmi::Driver::get();
   static_cast<void>(
-      driver.registerDeviceIfAbsent({.id = "test.na.runtime-default",
-                                     .library = MQT_CORE_QDMI_NA_LIBRARY,
-                                     .prefix = "MQT_NA"}));
+      driver.registerDeviceIfAbsent({.id = "test.sc.runtime-default",
+                                     .library = MQT_CORE_QDMI_SC_LIBRARY,
+                                     .prefix = "MQT_SC"}));
   static_cast<void>(driver.registerDeviceIfAbsent(
-      {.id = "test.na.runtime-custom",
-       .library = MQT_CORE_QDMI_NA_LIBRARY,
-       .prefix = "MQT_NA",
+      {.id = "test.sc.runtime-custom",
+       .library = MQT_CORE_QDMI_SC_LIBRARY,
+       .prefix = "MQT_SC",
        .session = {.deviceConfiguration = qdmi::FileDeviceConfiguration{
-                       .path = MQT_CORE_QDMI_CUSTOM_NA_FILE}}}));
+                       .path = MQT_CORE_QDMI_CUSTOM_SC_FILE}}}));
 
   const auto defaultDevice =
-      qdmi::Session::openDevice("test.na.runtime-default");
-  const auto customDevice = qdmi::Session::openDevice("test.na.runtime-custom");
-  EXPECT_EQ(defaultDevice.getName(), "MQT NA Default QDMI Device");
-  EXPECT_EQ(defaultDevice.getQubitsNum(), 100);
-  EXPECT_EQ(customDevice.getName(), "Custom NA Driver Device");
-  EXPECT_EQ(customDevice.getQubitsNum(), 4);
-  EXPECT_NE(defaultDevice.getSites().size(), customDevice.getSites().size());
+      qdmi::Session::openDevice("test.sc.runtime-default");
+  const auto customDevice = qdmi::Session::openDevice("test.sc.runtime-custom");
+  EXPECT_EQ(defaultDevice.getName(), "MQT SC Default QDMI Device");
+  EXPECT_EQ(customDevice.getName(), "Custom SC Driver Device");
   ASSERT_FALSE(defaultDevice.getOperations().empty());
   ASSERT_FALSE(customDevice.getOperations().empty());
-  EXPECT_EQ(defaultDevice.getOperations().front().getDuration(), 100);
+  EXPECT_EQ(defaultDevice.getOperations().front().getDuration(), 20);
   EXPECT_EQ(customDevice.getOperations().front().getDuration(), 77);
 
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration =
-      qdmi::FileDeviceConfiguration{.path = MQT_CORE_QDMI_DEFAULT_NA_FILE};
+      qdmi::FileDeviceConfiguration{.path = MQT_CORE_QDMI_DEFAULT_SC_FILE};
   const auto overridden =
-      qdmi::Session::openDevice("test.na.runtime-custom", overrides);
-  EXPECT_EQ(overridden.getName(), "MQT NA Default QDMI Device");
-  EXPECT_EQ(overridden.getQubitsNum(), 100);
+      qdmi::Session::openDevice("test.sc.runtime-custom", overrides);
+  EXPECT_EQ(overridden.getName(), "MQT SC Default QDMI Device");
+  EXPECT_EQ(overridden.getOperations().front().getDuration(), 20);
 
   static_cast<void>(driver.registerDeviceIfAbsent(
-      {.id = "test.na.runtime-invalid",
-       .library = MQT_CORE_QDMI_NA_LIBRARY,
-       .prefix = "MQT_NA",
+      {.id = "test.sc.runtime-invalid",
+       .library = MQT_CORE_QDMI_SC_LIBRARY,
+       .prefix = "MQT_SC",
        .session = {.deviceConfiguration =
                        qdmi::InlineDeviceConfiguration{.json = "{}"}}}));
   EXPECT_THROW(
-      static_cast<void>(qdmi::Session::openDevice("test.na.runtime-invalid")),
+      static_cast<void>(qdmi::Session::openDevice("test.sc.runtime-invalid")),
       std::runtime_error);
-  EXPECT_EQ(qdmi::Session::openDevice("test.na.runtime-default").getName(),
-            "MQT NA Default QDMI Device");
+  EXPECT_EQ(qdmi::Session::openDevice("test.sc.runtime-default").getName(),
+            "MQT SC Default QDMI Device");
 }
 
 TEST(DeviceRegistrationTest, FreshOpenCreatesDistinctSessions) {

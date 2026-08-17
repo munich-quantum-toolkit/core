@@ -7,5 +7,4 @@
 # Licensed under the MIT License
 
 add_subdirectory(dd)
-add_subdirectory(na)
 add_subdirectory(sc)

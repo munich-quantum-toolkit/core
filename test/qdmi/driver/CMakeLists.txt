@@ -45,17 +45,16 @@ if(TARGET MQT::CoreQDMIDriver)
     GENERATE
     OUTPUT "${config_file}"
     CONTENT
-      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"mqt.na.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMINaDevice>\", \"prefix\": \"MQT_NA\"},\n      {\"id\": \"mqt.sc.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"},\n      {\"id\": \"mqt.ddsim.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"prefix\": \"MQT_DDSIM\"},\n      {\"id\": \"test.disabled\", \"enabled\": false},\n      {\"id\": \"broken.example\", \"library\": \"missing-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"mqt.sc.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"},\n      {\"id\": \"mqt.ddsim.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"prefix\": \"MQT_DDSIM\"},\n      {\"id\": \"test.disabled\", \"enabled\": false},\n      {\"id\": \"broken.example\", \"library\": \"missing-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
   )
-  file(READ "${PROJECT_SOURCE_DIR}/json/na/mqt-core-qdmi-na-device.json" custom_na_json)
-  string(REPLACE "MQT NA Default QDMI Device" "Custom NA Driver Device" custom_na_json
-                 "${custom_na_json}")
-  string(REPLACE "\"numQubits\": 100" "\"numQubits\": 4" custom_na_json "${custom_na_json}")
-  string(REPLACE "\"width\": 9" "\"width\": 1" custom_na_json "${custom_na_json}")
-  string(REPLACE "\"height\": 9" "\"height\": 1" custom_na_json "${custom_na_json}")
-  string(REPLACE "\"duration\": 100" "\"duration\": 77" custom_na_json "${custom_na_json}")
-  set(custom_na_file "${CMAKE_CURRENT_BINARY_DIR}/custom-na-device.json")
-  file(WRITE "${custom_na_file}" "${custom_na_json}")
+  file(READ "${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json" custom_sc_json)
+  string(REPLACE "MQT SC Default QDMI Device" "Custom SC Driver Device" custom_sc_json
+                 "${custom_sc_json}")
+  # Only override values that leave the schema valid. Reducing numQubits would orphan the per-qubit
+  # overrides that the SC schema validates against the qubit count.
+  string(REPLACE "\"duration\": 20" "\"duration\": 77" custom_sc_json "${custom_sc_json}")
+  set(custom_sc_file "${CMAKE_CURRENT_BINARY_DIR}/custom-sc-device.json")
+  file(WRITE "${custom_sc_file}" "${custom_sc_json}")
   string(MAKE_C_IDENTIFIER "${TARGET_NAME}-mqt-core-qdmi-metadata-device" metadata_manifest_stem)
   set(metadata_manifest_file
       "$<TARGET_FILE_DIR:${TARGET_NAME}>/${metadata_manifest_stem}.qdmi.json")
@@ -65,11 +64,10 @@ if(TARGET MQT::CoreQDMIDriver)
       "MQT_CORE_QDMI_TEST_CONFIG_FILE=\"${config_file}\""
       "MQT_CORE_QDMI_METADATA_MANIFEST=\"${metadata_manifest_file}\""
       "MQT_CORE_QDMI_SESSION_DEVICE=\"$<TARGET_FILE:mqt-core-qdmi-session-device>\""
-      "MQT_CORE_QDMI_NA_LIBRARY=\"$<TARGET_FILE:MQT::CoreQDMINaDevice>\""
-      "MQT_CORE_QDMI_CUSTOM_NA_FILE=\"${custom_na_file}\""
-      "MQT_CORE_QDMI_DEFAULT_NA_FILE=\"${PROJECT_SOURCE_DIR}/json/na/mqt-core-qdmi-na-device.json\""
+      "MQT_CORE_QDMI_CUSTOM_SC_FILE=\"${custom_sc_file}\""
+      "MQT_CORE_QDMI_DEFAULT_SC_FILE=\"${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json\""
       "MQT_CORE_QDMI_SC_LIBRARY=\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\""
-      "TEST_DEVICE_LIBRARIES=std::array{ std::pair{\"$<TARGET_FILE:MQT::CoreQDMINaDevice>\", \"MQT_NA\"}, std::pair{\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}, std::pair{\"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"} }"
+      "TEST_DEVICE_LIBRARIES=std::array{ std::pair{\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}, std::pair{\"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"} }"
   )
 
   mqt_copy_qdmi_runtime(${TARGET_NAME})

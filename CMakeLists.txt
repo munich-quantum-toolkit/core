@@ -64,16 +64,12 @@ option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
 option(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE "Build the MQT Core DDSIM QDMI device"
        ${PROJECT_IS_TOP_LEVEL})
-option(BUILD_MQT_CORE_QDMI_NA_DEVICE "Build the MQT Core neutral-atom QDMI device"
-       ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_QDMI_SC_DEVICE "Build the MQT Core superconducting QDMI device"
        ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_DOCUMENTATION "Generate documentation artifacts as part of the CMake build"
        OFF)
-if(BUILD_MQT_CORE_TESTS
-   AND (NOT BUILD_MQT_CORE_QDMI_DDSIM_DEVICE
-        OR NOT BUILD_MQT_CORE_QDMI_NA_DEVICE
-        OR NOT BUILD_MQT_CORE_QDMI_SC_DEVICE))
+if(BUILD_MQT_CORE_TESTS AND (NOT BUILD_MQT_CORE_QDMI_DDSIM_DEVICE OR NOT
+                                                                     BUILD_MQT_CORE_QDMI_SC_DEVICE))
   message(FATAL_ERROR "BUILD_MQT_CORE_TESTS requires all bundled QDMI devices")
 endif()
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -172,7 +168,7 @@ if(BUILD_MQT_CORE_DOCUMENTATION)
       COMMENT "Copying and cleaning up generated MLIR documentation"
       VERBATIM)
   endif()
-  foreach(binding ir dd qdmi na)
+  foreach(binding ir dd qdmi)
     add_dependencies(${MQT_CORE_TARGET_NAME}-${binding}-bindings mqt-core-docs)
   endforeach()
 endif()
@@ -183,17 +179,12 @@ if(BUILD_MQT_CORE_BINDINGS)
       mqt-core-algorithms
       mqt-core-circuit-optimizer
       mqt-core-dd
-      mqt-core-na
       mqt-core-ir-bindings
       mqt-core-dd-bindings
       mqt-core-qdmi-bindings
-      mqt-core-mlir-bindings
-      mqt-core-na-bindings)
+      mqt-core-mlir-bindings)
   if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
     list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-ddsim-device)
-  endif()
-  if(BUILD_MQT_CORE_QDMI_NA_DEVICE)
-    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-na-device)
   endif()
   if(BUILD_MQT_CORE_QDMI_SC_DEVICE)
     list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-sc-device)

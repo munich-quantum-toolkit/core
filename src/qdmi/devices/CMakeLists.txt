@@ -12,7 +12,6 @@ endif()
 if(BUILD_MQT_CORE_QDMI_SC_DEVICE)
   add_subdirectory(sc)
 endif()
-add_subdirectory(na)
 
 set(MQT_CORE_TARGETS
     ${MQT_CORE_TARGETS}

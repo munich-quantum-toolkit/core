@@ -234,11 +234,7 @@ device libraries and manifests with an executable:
 find_package(mqt-core CONFIG REQUIRED)
 add_executable(my-application main.cpp)
 target_link_libraries(my-application PRIVATE MQT::CoreQDMI)
-mqt_copy_qdmi_runtime(
-  my-application
-  MQT::CoreQDMINaDevice
-  MQT::CoreQDMIScDevice
-  MQT::CoreQDMI_DDSIM_Device)
+mqt_copy_qdmi_runtime(my-application MQT::CoreQDMIScDevice MQT::CoreQDMI_DDSIM_Device)
 ```
 
 Inside an MQT Core build, omitting the device list copies every device
