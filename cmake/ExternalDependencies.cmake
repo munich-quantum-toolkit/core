@@ -22,11 +22,12 @@ if(BUILD_MQT_CORE_BINDINGS)
   find_package(nanobind CONFIG REQUIRED)
 endif()
 
-# Fetch jeff-mlir
+# Fetch jeff-mlir. TODO: Point this back at a commit on `main` once
+# https://github.com/unitaryfoundation/jeff-mlir/pull/36 is merged.
 FetchContent_Declare(
   jeff-mlir
   GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
-  GIT_TAG f702b20b9551beb38ced989c288b2e95af758801)
+  GIT_TAG a94d241f235e3209d6b9c402585d918389e173cd)
 # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option and
 # defines a global `check` target when it is enabled. Do not let an embedding project's test setting
 # leak into this third-party dependency.

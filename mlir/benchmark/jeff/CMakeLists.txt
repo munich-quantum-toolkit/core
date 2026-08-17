@@ -6,9 +6,10 @@
 #
 # Licensed under the MIT License
 
-# The benchmark programs, one file per program
+# The benchmark programs, one file per program, and the lowering to `jeff`
 add_library(
   MQTJeffBenchmarkPrograms STATIC
+  Generate.cpp
   programs/GHZLinear.cpp
   programs/GHZStar.cpp
   programs/Grover.cpp
@@ -20,21 +21,14 @@ add_library(
   programs/Registry.cpp
   programs/Teleportation.cpp)
 target_include_directories(MQTJeffBenchmarkPrograms PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(MQTJeffBenchmarkPrograms PUBLIC MLIRQCProgramBuilder MLIRArithDialect)
+target_link_libraries(MQTJeffBenchmarkPrograms PUBLIC MLIRQCProgramBuilder MLIRArithDialect
+                                                      MQTCompilerPipeline)
 mqt_mlir_target_use_project_options(MQTJeffBenchmarkPrograms)
 llvm_update_compile_flags(MQTJeffBenchmarkPrograms)
 
-# The lowering to `jeff`. `MLIRJeffTranslation` attaches a Cap'n Proto source as a public usage
-# requirement, so a static library and an executable above it would each compile it and clash at
-# link time. Carrying the source in an interface library compiles it exactly once per executable.
-add_library(MQTJeffBenchmarkGeneration INTERFACE)
-target_sources(MQTJeffBenchmarkGeneration INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/Generate.cpp)
-target_link_libraries(MQTJeffBenchmarkGeneration INTERFACE MQTJeffBenchmarkPrograms
-                                                           MQTCompilerPipeline)
-
 # The generator executable
 add_executable(mqt-jeff-benchmarks MQTJeffBenchmarks.cpp)
-target_link_libraries(mqt-jeff-benchmarks PRIVATE MQTJeffBenchmarkGeneration MLIRSupport)
+target_link_libraries(mqt-jeff-benchmarks PRIVATE MQTJeffBenchmarkPrograms MLIRSupport)
 mqt_mlir_target_use_project_options(mqt-jeff-benchmarks)
 llvm_update_compile_flags(mqt-jeff-benchmarks)
 mlir_check_all_link_libraries(mqt-jeff-benchmarks)
