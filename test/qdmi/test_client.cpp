@@ -30,6 +30,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace qdmi {
@@ -408,6 +409,62 @@ TEST(QDMITest, ThrowIfError) {
                std::runtime_error);
   EXPECT_THROW(qdmi::throwIfError(QDMI_ERROR_TIMEOUT, "Test"),
                std::runtime_error);
+}
+
+TEST(QDMITest, ProgramFormatPayloadClassification) {
+  // The switch below states the expected classification of every program
+  // format. It has no default case, so a format added to QDMI later produces
+  // an unhandled-enumerator warning instead of an unnoticed classification.
+  constexpr auto expected =
+      [](const QDMI_Program_Format format) -> std::pair<bool, bool> {
+    switch (format) {
+    case QDMI_PROGRAM_FORMAT_QIRBASEMODULE:
+    case QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE:
+    case QDMI_PROGRAM_FORMAT_QPY:
+      return {true, true};
+    case QDMI_PROGRAM_FORMAT_CALIBRATION:
+    case QDMI_PROGRAM_FORMAT_BATCHJOB:
+      return {false, false};
+    case QDMI_PROGRAM_FORMAT_QASM2:
+    case QDMI_PROGRAM_FORMAT_QASM3:
+    case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
+    case QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING:
+    case QDMI_PROGRAM_FORMAT_IQMJSON:
+    case QDMI_PROGRAM_FORMAT_CUSTOM1:
+    case QDMI_PROGRAM_FORMAT_CUSTOM2:
+    case QDMI_PROGRAM_FORMAT_CUSTOM3:
+    case QDMI_PROGRAM_FORMAT_CUSTOM4:
+    case QDMI_PROGRAM_FORMAT_CUSTOM5:
+      return {false, true};
+    }
+    return {false, false};
+  };
+
+  // Every program format QDMI defines. A format added to QDMI must be added
+  // here as well so that the loop below covers it.
+  constexpr std::array formats{QDMI_PROGRAM_FORMAT_QASM2,
+                               QDMI_PROGRAM_FORMAT_QASM3,
+                               QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+                               QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+                               QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+                               QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+                               QDMI_PROGRAM_FORMAT_CALIBRATION,
+                               QDMI_PROGRAM_FORMAT_QPY,
+                               QDMI_PROGRAM_FORMAT_IQMJSON,
+                               QDMI_PROGRAM_FORMAT_BATCHJOB,
+                               QDMI_PROGRAM_FORMAT_CUSTOM1,
+                               QDMI_PROGRAM_FORMAT_CUSTOM2,
+                               QDMI_PROGRAM_FORMAT_CUSTOM3,
+                               QDMI_PROGRAM_FORMAT_CUSTOM4,
+                               QDMI_PROGRAM_FORMAT_CUSTOM5};
+
+  for (const auto format : formats) {
+    const auto [binary, payload] = expected(format);
+    EXPECT_EQ(qdmi::isBinaryProgramFormat(format), binary)
+        << "program format " << static_cast<int>(format);
+    EXPECT_EQ(qdmi::hasProgramPayload(format), payload)
+        << "program format " << static_cast<int>(format);
+  }
 }
 
 TEST_P(DeviceTest, Name) {
