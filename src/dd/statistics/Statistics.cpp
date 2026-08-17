@@ -10,12 +10,11 @@
 
 #include "dd/statistics/Statistics.hpp"
 
-#include <nlohmann/json.hpp>
-
 #include <string>
 
 namespace dd {
 
-std::string Statistics::toString() const { return nlohmann::json{}.dump(2U); }
+/// The base class carries no statistics, which JSON renders as a null value.
+std::string Statistics::toString() const { return "null"; }
 
 } // namespace dd
