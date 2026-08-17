@@ -15,7 +15,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace mqt::jeff::benchmarks {
+namespace mqt::benchmarks {
 
 struct Benchmark;
 
@@ -29,4 +29,4 @@ struct Benchmark;
 [[nodiscard]] std::optional<mlir::JeffProgram>
 buildJeffProgram(const Benchmark& benchmark, uint64_t n);
 
-} // namespace mqt::jeff::benchmarks
+} // namespace mqt::benchmarks

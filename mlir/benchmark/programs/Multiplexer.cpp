@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "Programs.h"
+#include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/IR/Value.h>
@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <numbers>
 
-namespace mqt::jeff::benchmarks {
+namespace mqt::benchmarks {
 
 using namespace mlir;
 
@@ -63,4 +63,4 @@ SmallVector<Value> multiplexer(qc::QCProgramBuilder& b, const uint64_t n) {
   return {c, outcome};
 }
 
-} // namespace mqt::jeff::benchmarks
+} // namespace mqt::benchmarks

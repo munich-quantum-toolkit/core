@@ -9,7 +9,7 @@
  */
 
 #include "Generate.h"
-#include "programs/Programs.h"
+#include "mlir/Benchmark/Programs.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/StringRef.h>
@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <string>
 
-namespace mqt::jeff::benchmarks {
+namespace mqt::benchmarks {
 
 /// Replaces the characters that a test name cannot contain.
 static std::string testName(llvm::StringRef name) {
@@ -79,4 +79,4 @@ TEST_P(JeffBenchmarkTest, RejectsSizesBelowTheMinimum) {
 
 } // namespace
 
-} // namespace mqt::jeff::benchmarks
+} // namespace mqt::benchmarks

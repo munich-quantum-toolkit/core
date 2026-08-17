@@ -19,7 +19,7 @@ namespace mlir::qc {
 class QCProgramBuilder;
 } // namespace mlir::qc
 
-namespace mqt::jeff::benchmarks {
+namespace mqt::benchmarks {
 
 using namespace mlir;
 
@@ -41,7 +41,7 @@ struct Benchmark {
   uint64_t minimumSize;
 };
 
-/// Returns every benchmark the generator knows about.
+/// Returns every benchmark program.
 [[nodiscard]] SmallVector<Benchmark> benchmarks();
 
 // --- Programs ------------------------------------------------------------- //
@@ -76,4 +76,4 @@ SmallVector<Value> multiplexer(qc::QCProgramBuilder& b, uint64_t n);
 /// Quantum teleportation. The program has a fixed size, so @p n is ignored.
 SmallVector<Value> teleportation(qc::QCProgramBuilder& b, uint64_t n);
 
-} // namespace mqt::jeff::benchmarks
+} // namespace mqt::benchmarks

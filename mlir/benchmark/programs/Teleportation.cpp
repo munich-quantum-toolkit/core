@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "Programs.h"
+#include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/IR/Value.h>
@@ -16,7 +16,7 @@
 
 #include <cstdint>
 
-namespace mqt::jeff::benchmarks {
+namespace mqt::benchmarks {
 
 using namespace mlir;
 
@@ -53,4 +53,4 @@ SmallVector<Value> teleportation(qc::QCProgramBuilder& b,
   return {c};
 }
 
-} // namespace mqt::jeff::benchmarks
+} // namespace mqt::benchmarks

@@ -6,4 +6,5 @@
 #
 # Licensed under the MIT License
 
+add_subdirectory(programs)
 add_subdirectory(jeff)

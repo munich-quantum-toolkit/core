@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "Programs.h"
+#include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <llvm/ADT/APFloat.h>
@@ -22,7 +22,7 @@
 #include <cstdint>
 #include <numbers>
 
-namespace mqt::jeff::benchmarks {
+namespace mqt::benchmarks {
 
 using namespace mlir;
 
@@ -71,4 +71,4 @@ SmallVector<Value> qft(qc::QCProgramBuilder& b, const uint64_t n) {
   return {c};
 }
 
-} // namespace mqt::jeff::benchmarks
+} // namespace mqt::benchmarks

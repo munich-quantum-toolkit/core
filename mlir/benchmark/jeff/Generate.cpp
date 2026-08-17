@@ -10,12 +10,12 @@
 
 #include "Generate.h"
 
+#include "mlir/Benchmark/Programs.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "programs/Programs.h"
 
 #include <jeff/IR/JeffDialect.h>
 #include <llvm/ADT/SmallVector.h>
@@ -29,40 +29,42 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Types.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
 
-namespace mqt::jeff::benchmarks {
+namespace mqt::benchmarks {
 
-std::optional<mlir::JeffProgram> buildJeffProgram(const Benchmark& benchmark,
-                                                  const uint64_t n) {
+using namespace mlir;
+
+std::optional<JeffProgram> buildJeffProgram(const Benchmark& benchmark,
+                                            const uint64_t n) {
   if (n < benchmark.minimumSize) {
     return std::nullopt;
   }
 
-  mlir::DialectRegistry registry;
+  DialectRegistry registry;
   // The conversions to QCO and jeff create operations from these dialects, so
   // every one of them must be loaded before the pipeline runs.
-  registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
-                  mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
-                  mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
-                  mlir::scf::SCFDialect, mlir::LLVM::LLVMDialect,
-                  mlir::memref::MemRefDialect, mlir::tensor::TensorDialect,
-                  mlir::jeff::JeffDialect>();
-  auto context = std::make_shared<mlir::MLIRContext>();
+  registry
+      .insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+              arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
+              scf::SCFDialect, LLVM::LLVMDialect, memref::MemRefDialect,
+              tensor::TensorDialect, jeff::JeffDialect>();
+  auto context = std::make_shared<MLIRContext>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
 
-  mlir::qc::QCProgramBuilder builder(context.get());
+  qc::QCProgramBuilder builder(context.get());
   builder.initialize();
   auto results = benchmark.build(builder, n);
 
   // `initialize` defaults the entry point to an integer result, so the function
   // is retyped to the classical registers the program returns.
-  llvm::SmallVector<mlir::Type> resultTypes;
+  SmallVector<Type> resultTypes;
   resultTypes.reserve(results.size());
   for (auto result : results) {
     resultTypes.emplace_back(result.getType());
@@ -74,7 +76,7 @@ std::optional<mlir::JeffProgram> buildJeffProgram(const Benchmark& benchmark,
     return std::nullopt;
   }
 
-  auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));
+  auto program = QCProgram::fromModule(context, std::move(moduleOp));
   if (!program || !program->cleanup()) {
     return std::nullopt;
   }
@@ -95,4 +97,4 @@ std::optional<mlir::JeffProgram> buildJeffProgram(const Benchmark& benchmark,
   return std::move(*qco).intoJeff();
 }
 
-} // namespace mqt::jeff::benchmarks
+} // namespace mqt::benchmarks

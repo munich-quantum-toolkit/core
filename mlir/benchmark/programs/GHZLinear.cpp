@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "Programs.h"
+#include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -17,7 +17,7 @@
 
 #include <cstdint>
 
-namespace mqt::jeff::benchmarks {
+namespace mqt::benchmarks {
 
 using namespace mlir;
 
@@ -41,4 +41,4 @@ SmallVector<Value> ghzLinear(qc::QCProgramBuilder& b, const uint64_t n) {
   return {c};
 }
 
-} // namespace mqt::jeff::benchmarks
+} // namespace mqt::benchmarks

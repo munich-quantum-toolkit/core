@@ -8,11 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "Programs.h"
+#include "mlir/Benchmark/Programs.h"
 
 #include <mlir/Support/LLVM.h>
 
-namespace mqt::jeff::benchmarks {
+namespace mqt::benchmarks {
 
 SmallVector<Benchmark> benchmarks() {
   return {
@@ -28,4 +28,4 @@ SmallVector<Benchmark> benchmarks() {
   };
 }
 
-} // namespace mqt::jeff::benchmarks
+} // namespace mqt::benchmarks
