@@ -43,13 +43,13 @@ namespace dd {
 [[nodiscard]] double computePeakMemoryMiB(const Package& package);
 
 /**
- * @brief Get some key statistics about data structures used by the DD package
+ * @brief Get key statistics about the data structures used by the DD package.
  * @return A JSON-formatted string representation of the statistics
  */
 [[nodiscard]] std::string getDataStructureStatisticsString();
 
 /**
- * @brief Get key statistics about the data structures held by a package
+ * @brief Get key statistics about the data structures held by @p package.
  * @param package The package instance
  * @param includeIndividualTables Whether to report every unique table
  * @return A JSON-formatted string representation of the statistics
