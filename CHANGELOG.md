@@ -37,6 +37,11 @@ releases may include breaking changes.
 - 💥 Remove the entire MQT Core QIR stack, including its runtime, JIT,
   standalone runner, DDSIM integration, build integration, tests, and
   documentation. ([#2314]) ([**@denialhaag**])
+- 💥 Remove the unused decision-diagram approximation algorithm, including the
+  `dd/Approximation.hpp` header, `dd::ApproximationMetadata`, and
+  `dd::approximate`. No replacement is provided ([#2154]) ([**@burgholzer**])
+- 🔥 Remove density matrix support from the DD package ([#1466])
+  ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
   ([**@burgholzer**])
 
@@ -766,6 +771,7 @@ for previous changelogs._
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
+[#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
 [#2141]: https://github.com/munich-quantum-toolkit/core/pull/2141
@@ -828,6 +834,7 @@ for previous changelogs._
 [#1528]: https://github.com/munich-quantum-toolkit/core/pull/1528
 [#1507]: https://github.com/munich-quantum-toolkit/core/pull/1507
 [#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
+[#1466]: https://github.com/munich-quantum-toolkit/core/pull/1466
 [#1458]: https://github.com/munich-quantum-toolkit/core/pull/1458
 [#1453]: https://github.com/munich-quantum-toolkit/core/pull/1453
 [#1447]: https://github.com/munich-quantum-toolkit/core/pull/1447

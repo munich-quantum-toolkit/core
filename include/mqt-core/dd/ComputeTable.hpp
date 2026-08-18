@@ -15,7 +15,6 @@
 
 #pragma once
 
-#include "dd/Node.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 #include "ir/Definitions.hpp"
 
@@ -73,20 +72,8 @@ public:
    */
   [[nodiscard]] std::size_t hash(const LeftOperandType& leftOperand,
                                  const RightOperandType& rightOperand) const {
-    auto h1 = std::hash<LeftOperandType>{}(leftOperand);
-    if constexpr (std::is_same_v<LeftOperandType, dNode*>) {
-      if (!dNode::isTerminal(leftOperand)) {
-        h1 = qc::combineHash(
-            h1, dd::dNode::getDensityMatrixTempFlags(leftOperand->flags));
-      }
-    }
-    auto h2 = std::hash<RightOperandType>{}(rightOperand);
-    if constexpr (std::is_same_v<RightOperandType, dNode*>) {
-      if (!dNode::isTerminal(rightOperand)) {
-        h2 = qc::combineHash(
-            h2, dd::dNode::getDensityMatrixTempFlags(rightOperand->flags));
-      }
-    }
+    const auto h1 = std::hash<LeftOperandType>{}(leftOperand);
+    const auto h2 = std::hash<RightOperandType>{}(rightOperand);
     const auto hash = qc::combineHash(h1, h2);
     const auto mask = stats.numBuckets - 1;
     return hash & mask;
@@ -121,12 +108,10 @@ public:
    * @brief Look up a result in the compute table
    * @param leftOperand The left operand
    * @param rightOperand The right operand
-   * @param useDensityMatrix Whether a density matrix is expected
    * @return A pointer to the result if it is found, otherwise nullptr.
    */
   ResultType* lookup(const LeftOperandType& leftOperand,
-                     const RightOperandType& rightOperand,
-                     [[maybe_unused]] const bool useDensityMatrix = false) {
+                     const RightOperandType& rightOperand) {
     ResultType* result = nullptr;
     ++stats.lookups;
     const auto key = hash(leftOperand, rightOperand);
@@ -142,17 +127,6 @@ public:
       return result;
     }
 
-    if constexpr (std::is_same_v<RightOperandType, dNode*> ||
-                  std::is_same_v<RightOperandType, dCachedEdge>) {
-      // Since density matrices are reduced representations of matrices, a
-      // density matrix may not be returned when a matrix is required and vice
-      // versa
-      if (!dNode::isTerminal(entry.result.p) &&
-          dNode::isDensityMatrixNode(entry.result.p->flags) !=
-              useDensityMatrix) {
-        return result;
-      }
-    }
     ++stats.hits;
     return &entry.result;
   }

@@ -138,4 +138,12 @@ intToBinaryString(const std::size_t value, const std::size_t nbits) {
   return k;
 }
 
+struct vNode;
+struct mNode;
+
+template <typename T>
+concept IsVector = std::is_same_v<T, vNode>;
+template <typename T>
+concept IsMatrix = std::is_same_v<T, mNode>;
+
 } // namespace dd

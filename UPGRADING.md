@@ -22,6 +22,22 @@ configurations.
 The bundled DDSIM QDMI device no longer accepts QIR Base or Adaptive Profile
 programs in string or module form. Use QASM2 or QASM3 with this device.
 
+### Removal of density matrix support from the DD package
+
+MQT Core no longer provides density matrix decision diagrams or the related
+deterministic and stochastic noise functionality. [MQT DDSIM] 2.5.0 and newer
+provide this functionality in the `dd::ddsim` namespace. Downstream code that
+used the MQT Core APIs must migrate to MQT DDSIM or provide the functionality
+directly. The `ATrue`, `AFalse`, `MultiATrue`, and `MultiAFalse` operation types
+have also been removed.
+
+### Removal of DD approximation support
+
+MQT Core no longer provides the decision-diagram approximation algorithm. The
+algorithm had no production owner in the MQT ecosystem. Remove uses of the
+`dd/Approximation.hpp` header, the `dd::ApproximationMetadata` type, and the
+`dd::approximate` function. MQT Core does not provide a replacement.
+
 ### Removal of the `datastructures` (sub)library
 
 MQT Core no longer provides the `datastructures` (`ds`) sublibrary. [MQT QMAP]
@@ -726,8 +742,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Other links -->
 
-[MQT DDSIM]: https://github.com/cda-tum/mqt-ddsim
-[MQT QMAP]: https://github.com/cda-tum/mqt-qmap
-[MQT QCEC]: https://github.com/cda-tum/mqt-qcec
-[MQT SyReC]: https://github.com/cda-tum/mqt-syrec
+[MQT DDSIM]: https://github.com/munich-quantum-toolkit/ddsim
+[MQT QMAP]: https://github.com/munich-quantum-toolkit/qmap
+[MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec
+[MQT SyReC]: https://github.com/munich-quantum-toolkit/syrec
 [CMake presets]: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
