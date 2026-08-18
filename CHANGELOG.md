@@ -42,8 +42,8 @@ releases may include breaking changes.
   and Python FoMaC APIs, and expose optional device queue length and job queue
   position ([#2008], [#2010]) ([**@burgholzer**])
 - 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
-- ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
-  ([**@burgholzer**])
+- ✨ Add PennyLane support for gate-based QDMI devices ([#2005], [#2147])
+  ([**@burgholzer**], [**@marcelwa**])
 - ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and
   `mqt-cc` ([#1687]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add structured OpenQASM emission from the QC dialect to the C++ and Python
@@ -808,22 +808,23 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
+[#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
+[#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
 [#2140]: https://github.com/munich-quantum-toolkit/core/pull/2140
 [#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
 [#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
 [#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136
 [#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
-[#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
+[#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2118]: https://github.com/munich-quantum-toolkit/core/pull/2118
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
-[#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
-[#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2115]: https://github.com/munich-quantum-toolkit/core/pull/2115
-[#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
 [#2114]: https://github.com/munich-quantum-toolkit/core/pull/2114
-[#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
+[#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2111]: https://github.com/munich-quantum-toolkit/core/pull/2111
+[#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
+[#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
