@@ -171,6 +171,10 @@ void TypeCheckPass::visitAssignmentStatement(
     return;
   }
 
+  if (exprTy.isError) {
+    return;
+  }
+
   if (!idTy->second.type->fits(*exprTy.type)) {
     std::stringstream ss;
     ss << "Type mismatch in assignment. Expected '";
