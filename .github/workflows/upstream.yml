@@ -25,16 +25,8 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-z3: true
-<<<<<<< HEAD
-||||||| parent of 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
-      setup-mlir: true
-      llvm-version: "22.1.8"
-=======
-      setup-mlir: true
-      llvm-version: "22.1.8"
     permissions:
       contents: read
->>>>>>> 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
 
   create-issue-on-failure:
     name: Create issue on failure

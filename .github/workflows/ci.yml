@@ -16,21 +16,10 @@ permissions: {}
 jobs:
   change-detection:
     name: 🔍 Change
-<<<<<<< HEAD
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@579203ef22082fa5d5483412f442e50d0c5ff4a7 # v2.2.2
-||||||| parent of 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
-    with:
-      additional-python-files: "mlir/**"
-
-=======
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
-    with:
-      additional-python-files: "mlir/**"
     permissions:
       contents: read
 
->>>>>>> 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
   cpp-tests-ubuntu:
     name: 🇨‌ Test 🐧
     needs: change-detection
@@ -132,16 +121,10 @@ jobs:
       # according to MQT Core's clang-tidy configuration.
       cpp-linter-ignore-extra: "vendor/**"
       setup-mlir: true
-<<<<<<< HEAD
       llvm-version: 21.1.8
-||||||| parent of 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
-      llvm-version: 22.1.8
-=======
-      llvm-version: 22.1.8
     permissions:
       contents: read
       pull-requests: write # Needed to post review comments
->>>>>>> 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
 
   python-tests:
     name: 🐍 Test
@@ -161,16 +144,8 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@579203ef22082fa5d5483412f442e50d0c5ff4a7 # v2.2.2
     with:
       runs-on: ${{ matrix.runs-on }}
-<<<<<<< HEAD
-||||||| parent of 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
-      setup-mlir: true
-      llvm-version: 22.1.8
-=======
-      setup-mlir: true
-      llvm-version: 22.1.8
     permissions:
       contents: read
->>>>>>> 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
 
   python-coverage:
     name: 🐍 Coverage
@@ -190,30 +165,16 @@ jobs:
       check-stubs: true
       enable-ty: true
       enable-mypy: false
-<<<<<<< HEAD
-||||||| parent of 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
-      setup-mlir: true
-      llvm-version: 22.1.8
-=======
-      setup-mlir: true
-      llvm-version: 22.1.8
     permissions:
       contents: read
->>>>>>> 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
 
   build-sdist:
     name: 🚀 CD
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cd)
-<<<<<<< HEAD
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@579203ef22082fa5d5483412f442e50d0c5ff4a7 # v2.2.2
-||||||| parent of 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
-=======
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
     permissions:
       contents: read
->>>>>>> 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
 
   build-wheel:
     name: 🚀 CD
@@ -234,16 +195,8 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@579203ef22082fa5d5483412f442e50d0c5ff4a7 # v2.2.2
     with:
       runs-on: ${{ matrix.runs-on }}
-<<<<<<< HEAD
-||||||| parent of 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
-      setup-mlir: true
-      llvm-version: 22.1.8
-=======
-      setup-mlir: true
-      llvm-version: 22.1.8
     permissions:
       contents: read
->>>>>>> 3354fdaa (⬆️🩹 Update pre-commit hook scientific-python/cookie to v2026.08.14 (#2142))
 
   # this job does nothing and is only used for branch protection
   required-checks-pass:
