@@ -42,8 +42,8 @@ releases may include breaking changes.
   and Python FoMaC APIs, and expose optional device queue length and job queue
   position ([#2008], [#2010]) ([**@burgholzer**])
 - 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
-- ✨ Add PennyLane support for gate-based QDMI devices ([#2005], [#2147]) ([**@burgholzer**],
-  [**@marcelwa**])
+- ✨ Add PennyLane support for gate-based QDMI devices ([#2005], [#2147])
+  ([**@burgholzer**], [**@marcelwa**])
 - ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and
   `mqt-cc` ([#1687]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add structured OpenQASM emission from the QC dialect to the C++ and Python
