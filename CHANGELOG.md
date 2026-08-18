@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add `Device::submitCalibrationJob` and
+  `mqt.core.qdmi.Device.submit_calibration_job` for triggering a calibration run
+  ([#2148]) ([**@marcelwa**], [**@burgholzer**])
 - ✨ Add SpecAudits, a method and probe script for auditing tests that pin
   behavior the project never specified ([#2124]) ([**@marcelwa**])
 - 🚸 Add typed stable-ID construction for Qiskit backends, lazy provider
@@ -61,6 +64,9 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove batch job submission from the QDMI client. `Device::submitJob` now
+  states that MQT Core does not support batch jobs ([#2148]) ([**@marcelwa**],
+  [**@burgholzer**])
 - 💥 Remove QDMI device configuration through `[tool.qdmi]` in `pyproject.toml`
   and the vendored toml++ header ([#2116]) ([**@denialhaag**])
 
@@ -670,6 +676,7 @@ for previous changelogs._
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
+[#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
