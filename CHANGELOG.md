@@ -62,6 +62,11 @@ releases may include breaking changes.
 - 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
   ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
 
+### Fixed
+
+- 🐛 Preserve the original OpenQASM type error when an assignment's right-hand
+  expression cannot be typed ([#2156]) ([**@DRovara**], [**@burgholzer**])
+
 ### Removed
 
 - 💥 Remove batch job submission from the QDMI client. `Device::submitJob` now
@@ -673,6 +678,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116

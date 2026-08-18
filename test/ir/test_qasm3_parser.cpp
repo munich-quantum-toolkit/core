@@ -1631,6 +1631,22 @@ TEST_F(Qasm3ParserTest, ImportQasmTypeMismatchAssignment) {
       qasm3::CompilerError);
 }
 
+TEST_F(Qasm3ParserTest, ImportQasmAssignmentUnknownRightHandSide) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "bit x;\n"
+                               "x = y;";
+  EXPECT_THROW(
+      {
+        try {
+          const auto qc = qasm3::Importer::imports(testfile);
+        } catch (const qasm3::CompilerError& e) {
+          EXPECT_EQ(e.message, "Type Check Error: Unknown identifier 'y'.");
+          throw;
+        }
+      },
+      qasm3::CompilerError);
+}
+
 TEST_F(Qasm3ParserTest, ImportQasmTypeMismatchBinaryExpr) {
   const std::string testfile = "OPENQASM 3.0;\n"
                                "const bit x = 0;\n"
