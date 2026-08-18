@@ -300,7 +300,7 @@ class DDPackage:
         """The maximum number of qubits that the DDPackage can handle."""
 
     def zero_state(self, num_qubits: int) -> VectorDD:
-        r"""Create the DD for the zero state :math:`| 0 \\ldots 0 \\rangle`.
+        """Create the DD for the zero state :math:`| 0 \\ldots 0 \\rangle`.
 
         Args:
             num_qubits: The number of qubits.
@@ -312,7 +312,7 @@ class DDPackage:
         """
 
     def computational_basis_state(self, num_qubits: int, state: Sequence[bool]) -> VectorDD:
-        r"""Create the DD for the computational basis state :math:`| b_{n - 1} \\ldots b_0 \\rangle`.
+        """Create the DD for the computational basis state :math:`| b_{n - 1} \\ldots b_0 \\rangle`.
 
         Args:
             num_qubits: The number of qubits.
@@ -326,7 +326,7 @@ class DDPackage:
         """
 
     def basis_state(self, num_qubits: int, state: Sequence[BasisStates]) -> VectorDD:
-        r"""Create the DD for the basis state :math:`| B_{n - 1} \\ldots B_0 \\rangle`, where :math:`B_i \\in \\{0, 1, +\\, -\\, L, R\\}`.
+        """Create the DD for the basis state :math:`| B_{n - 1} \\ldots B_0 \\rangle`, where :math:`B_i \\in \\{0, 1, +\\, -\\, L, R\\}`.
 
         Args:
             num_qubits: The number of qubits.
@@ -340,7 +340,7 @@ class DDPackage:
         """
 
     def ghz_state(self, num_qubits: int) -> VectorDD:
-        r"""Create the DD for the GHZ state :math:`\\frac{1}{\\sqrt{2}} (| 0 \\ldots 0 \\rangle + |1 \\ldots 1 \\rangle)`.
+        """Create the DD for the GHZ state :math:`\\frac{1}{\\sqrt{2}} (| 0 \\ldots 0 \\rangle + |1 \\ldots 1 \\rangle)`.
 
         Args:
             num_qubits: The number of qubits.
@@ -352,7 +352,7 @@ class DDPackage:
         """
 
     def w_state(self, num_qubits: int) -> VectorDD:
-        r"""Create the DD for the W state :math:`|W\\rangle`.
+        """Create the DD for the W state :math:`|W\\rangle`.
 
         .. math::
             |W\\rangle = \\frac{1}{\\sqrt{n}} (| 100 \\ldots 0 \\rangle + | 010 \\ldots 0 \\rangle + \\ldots + | 000 \\ldots 1 \\rangle)
@@ -506,7 +506,7 @@ class DDPackage:
         """
 
     def single_qubit_gate(self, matrix: Annotated[NDArray[np.complex128], {"shape": (2, 2)}], target: int) -> MatrixDD:
-        r"""Create the DD for a single-qubit gate.
+        """Create the DD for a single-qubit gate.
 
         Args:
             matrix: The :math:`2 \\times 2` matrix representing the single-qubit gate.
@@ -522,7 +522,7 @@ class DDPackage:
         control: mqt.core.ir.operations.Control | int,
         target: int,
     ) -> MatrixDD:
-        r"""Create the DD for a controlled single-qubit gate.
+        """Create the DD for a controlled single-qubit gate.
 
         Args:
             matrix: The :math:`2 \\times 2` matrix representing the single-qubit gate.
@@ -539,7 +539,7 @@ class DDPackage:
         controls: AbstractSet[mqt.core.ir.operations.Control | int],
         target: int,
     ) -> MatrixDD:
-        r"""Create the DD for a multi-controlled single-qubit gate.
+        """Create the DD for a multi-controlled single-qubit gate.
 
         Args:
             matrix: The :math:`2 \\times 2` matrix representing the single-qubit gate.
@@ -553,7 +553,7 @@ class DDPackage:
     def two_qubit_gate(
         self, matrix: Annotated[NDArray[np.complex128], {"shape": (4, 4)}], target0: int, target1: int
     ) -> MatrixDD:
-        r"""Create the DD for a two-qubit gate.
+        """Create the DD for a two-qubit gate.
 
         Args:
             matrix: The :math:`4 \\times 4` matrix representing the two-qubit gate.
@@ -571,7 +571,7 @@ class DDPackage:
         target0: int,
         target1: int,
     ) -> MatrixDD:
-        r"""Create the DD for a controlled two-qubit gate.
+        """Create the DD for a controlled two-qubit gate.
 
         Args:
             matrix: The :math:`4 \\times 4` matrix representing the two-qubit gate.
@@ -590,7 +590,7 @@ class DDPackage:
         target0: int,
         target1: int,
     ) -> MatrixDD:
-        r"""Create the DD for a multi-controlled two-qubit gate.
+        """Create the DD for a multi-controlled two-qubit gate.
 
         Args:
             matrix: The :math:`4 \\times 4` matrix representing the two-qubit gate.
@@ -764,7 +764,7 @@ class DDPackage:
         """
 
     def expectation_value(self, observable: MatrixDD, state: VectorDD) -> float:
-        r"""Compute the expectation value of an observable.
+        """Compute the expectation value of an observable.
 
         Notes:
             The state must have at least as many qubits as the observable non-trivially acts on.
