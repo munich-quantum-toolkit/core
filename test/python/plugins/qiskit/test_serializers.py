@@ -193,9 +193,9 @@ def test_preferred_program_formats_orders_a_shuffled_list() -> None:
 
     assert serializers.preferred_program_formats(reported) == [
         ProgramFormat.IQM_JSON,
-        ProgramFormat.QIR_BASE_STRING,
         ProgramFormat.QPY,
         ProgramFormat.QASM3,
+        ProgramFormat.QIR_BASE_STRING,
         ProgramFormat.QASM2,
     ]
 

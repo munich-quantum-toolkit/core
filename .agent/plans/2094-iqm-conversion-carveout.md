@@ -152,12 +152,20 @@ tracker #2085. The pull request is #2114.
   device-native formats precedence over standardized ones. Rationale: the review
   asks for the order to be encoded rather than left to a mapping. A package
   registers a serializer for its own device's native format because it wants
-  that format used, and that is the precedence IQM JSON has today. Among the
-  standardized formats, a more capable profile beats a less capable one and a
-  binary encoding beats a string encoding, because the profile decides what a
-  circuit may contain while the encoding only decides how it travels. One tuple
-  in one module means the whole policy can be re-read, and changed, in one
+  that format used, and that is the precedence IQM JSON has today. The
+  standardized formats follow in order of what a circuit may contain, and
+  encoding breaks a tie only within one profile, because the profile decides
+  what a program may say while the encoding decides only how it travels. One
+  tuple in one module means the whole policy can be re-read, and changed, in one
   place. Date/Author: 2026-08-17, @marcelwa after review by @burgholzer.
+
+- Decision: rank QPY and OpenQASM 3 above the QIR base profile. Rationale: an
+  earlier draft grouped the QIR formats together and put both profiles above QPY
+  and OpenQASM 3, which treats "QIR" as one capability tier. It is not. The QIR
+  base profile forbids classical feedback and mid-circuit control, while QPY
+  carries a Qiskit circuit without loss and OpenQASM 3 expresses control flow,
+  so both are more capable than QIR base and less capable than QIR adaptive.
+  Date/Author: 2026-08-18, @marcelwa after review by @burgholzer.
 
 - Decision: MQT Core registers its own OpenQASM 2 and OpenQASM 3 serializers
   through the same registry. Rationale: the review asks whether this would
@@ -433,10 +441,12 @@ In a new module `python/mqt/core/plugins/qiskit/serializers.py`:
 
     IQM_JSON, CUSTOM1, CUSTOM2, CUSTOM3, CUSTOM4, CUSTOM5,
     QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
+    QPY, QASM3,
     QIR_BASE_MODULE, QIR_BASE_STRING,
-    QPY, QASM3, QASM2
+    QASM2
 
-`CALIBRATION` and `BATCH_JOB` are absent because they carry no program payload.
+`CALIBRATION` and `BATCH_JOB` are absent because a serialized circuit is not
+what they carry.
 
 `preferred_program_formats` takes the formats a device reports, drops any for
 which `has_program_payload` is false, and returns the rest ordered by

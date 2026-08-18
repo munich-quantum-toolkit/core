@@ -128,11 +128,14 @@ ProgramSerializer = TextProgramSerializer | BinaryProgramSerializer
 
 #: The program formats in the order the backend prefers them, most preferred
 #: first. A device-native format comes first, because a package that registers a
-#: serializer for its own device's format wants that format used. Among the
-#: standardized formats, a more capable profile beats a less capable one and a
-#: binary encoding beats a string encoding: the profile decides what a circuit
-#: may contain, while the encoding only decides how the program travels.
-#: ``CALIBRATION`` and ``BATCH_JOB`` are absent because they carry no program.
+#: serializer for its own device's format wants that format used. The
+#: standardized formats follow in order of what a circuit may contain: the QIR
+#: adaptive profile allows classical control, QPY carries a Qiskit circuit
+#: without loss, and OpenQASM 3 expresses control flow, while the QIR base
+#: profile forbids classical feedback and OpenQASM 2 has no control flow at all.
+#: Encoding only breaks a tie within one profile, because it decides how the
+#: program travels rather than what it may say. ``CALIBRATION`` and
+#: ``BATCH_JOB`` are absent because a serialized circuit is not what they carry.
 PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...] = (
     ProgramFormat.IQM_JSON,
     ProgramFormat.CUSTOM1,
@@ -142,10 +145,10 @@ PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...] = (
     ProgramFormat.CUSTOM5,
     ProgramFormat.QIR_ADAPTIVE_MODULE,
     ProgramFormat.QIR_ADAPTIVE_STRING,
-    ProgramFormat.QIR_BASE_MODULE,
-    ProgramFormat.QIR_BASE_STRING,
     ProgramFormat.QPY,
     ProgramFormat.QASM3,
+    ProgramFormat.QIR_BASE_MODULE,
+    ProgramFormat.QIR_BASE_STRING,
     ProgramFormat.QASM2,
 )
 

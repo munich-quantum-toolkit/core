@@ -12,19 +12,14 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add SpecAudits, a method and probe script for auditing tests that pin
-  behavior the project never specified ([#2124]) ([**@marcelwa**])
 - ✨ Let a package register a program serializer for a program format through
-  the `mqt.core.qiskit.program_serializers` entry point group or
-  `mqt.core.plugins.qiskit.register_program_serializer`. MQT Core registers its
-  own OpenQASM 2 and OpenQASM 3 serializers the same way, and
-  `mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` states which
-  format the Qiskit backend picks when a device accepts several ([#2114])
+  the `mqt.core.qiskit.program_serializers` entry point group ([#2114])
   ([**@marcelwa**])
 - ✨ Add `mqt.core.qdmi.is_binary_program_format` and
-  `mqt.core.qdmi.has_program_payload`, which state whether a program format
-  requires exact-byte submission and whether it carries a program payload at all
+  `mqt.core.qdmi.has_program_payload` for classifying program format payloads
   ([#2114]) ([**@marcelwa**])
+- ✨ Add SpecAudits, a method and probe script for auditing tests that pin
+  behavior the project never specified ([#2124]) ([**@marcelwa**])
 - ✨ Extract the existing QCO dead-gate elimination patterns from
   canonicalization into an explicit `remove-dead-gates` pass and use it in the
   qubit-reuse pipeline ([#2118]) ([**@simon1hofmann**])
@@ -170,6 +165,8 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove the IQM JSON converter `qiskit_to_iqm_json` and the `MoveGate` from
+  the Qiskit plugin, which [QDMI-on-IQM] now owns ([#2114]) ([**@marcelwa**])
 - 💥 Remove the unused decision-diagram approximation algorithm, including the
   `dd/Approximation.hpp` header, `dd::ApproximationMetadata`, and
   `dd::approximate`. No replacement is provided ([#2154]) ([**@burgholzer**])
@@ -182,9 +179,6 @@ releases may include breaking changes.
   neutral-atom QDMI device and its configuration, the `mqt.core.na` Python
   module, `AodOperation`, and the `Move`, `Bridge`, `AodActivate`,
   `AodDeactivate`, and `AodMove` operation kinds ([#2137]) ([**@denialhaag**])
-- 💥 Remove the IQM JSON converter `qiskit_to_iqm_json` and the `MoveGate` from
-  the Qiskit plugin. [QDMI-on-IQM] owns both and registers the IQM JSON
-  serializer through the new entry point group ([#2114]) ([**@marcelwa**])
 - 💥 Remove the random-number generator, seed, and `getGenerator()` method from
   `QuantumComputation`; randomized algorithms now own generators initialized
   from their seed arguments ([#2111]) ([**@simon1hofmann**])
