@@ -15,7 +15,7 @@
 #   "pytest>=9.0.1",
 #   "pytest-xdist>=3.8.0",
 #   "scikit-build-core~=1.0.3",
-#   "setuptools-scm>=9.2.2",
+#   "vcs-versioning~=2.3.0",
 # ]
 # ///
 
