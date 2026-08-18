@@ -167,6 +167,8 @@ releases may include breaking changes.
 
 ### Fixed
 
+- 🐛 Distinguish scalar OpenQASM qubits from one-element qubit registers and
+  reject indexing scalar qubits ([#2157]) ([**@DRovara**], [**@burgholzer**])
 - 🐛 Preserve the original OpenQASM type error when an assignment's right-hand
   expression cannot be typed ([#2156]) ([**@DRovara**], [**@burgholzer**])
 
@@ -812,6 +814,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
 [#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
