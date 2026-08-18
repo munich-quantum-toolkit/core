@@ -42,8 +42,9 @@ releases may include breaking changes.
   and Python FoMaC APIs, and expose optional device queue length and job queue
   position ([#2008], [#2010]) ([**@burgholzer**])
 - 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
-- ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
-  ([**@burgholzer**])
+- ✨ Add PennyLane support for gate-based QDMI devices and read each device's
+  advertised gate set once per session ([#2005], [#2147]) ([**@burgholzer**],
+  [**@marcelwa**])
 - ✨ Integrate QDMI devices as MLIR compiler targets across C++, Python, and
   `mqt-cc` ([#1687]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add structured OpenQASM emission from the QC dialect to the C++ and Python
@@ -137,9 +138,6 @@ releases may include breaking changes.
 
 ### Changed
 
-- 🧪 Apply the first SpecAudit to the PennyLane plugin, narrowing tests that
-  pinned unspecified behavior and reading the advertised QDMI gate set once per
-  device session ([#2147]) ([**@marcelwa**])
 - 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
   logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
   ([**@simon1hofmann**])
@@ -177,9 +175,6 @@ releases may include breaking changes.
 - 💥 Remove the unused decision-diagram approximation algorithm, including the
   `dd/Approximation.hpp` header, `dd::ApproximationMetadata`, and
   `dd::approximate`. No replacement is provided ([#2154]) ([**@burgholzer**])
-- 💥 Remove `convert_program` and `ConvertedProgram` from
-  `mqt.core.plugins.pennylane`, making program conversion private behind
-  `QDMIDevice` ([#2147]) ([**@marcelwa**])
 - 💥 Remove `nlohmann_json` from the public package contract. MQT Core no longer
   installs or exports the library, no installed header exposes a `nlohmann`
   type, and the decision-diagram statistics report through strings and streams

@@ -104,16 +104,6 @@ MQT Core no longer provides the decision-diagram approximation algorithm. The
 algorithm had no production owner in the MQT ecosystem. Remove uses of the
 `dd/Approximation.hpp` header, the `dd::ApproximationMetadata` type, and the
 `dd::approximate` function. MQT Core does not provide a replacement.
-### Private PennyLane program conversion
-
-The PennyLane plugin exposes only its devices. `QDMIDevice` and `DDSIMDevice`
-are the supported entry points, and the conversion surface behind them is now
-private. MQT Core removed the following names from `mqt.core.plugins.pennylane`:
-
-- `convert_program`. Execute the tape through `QDMIDevice` instead. The
-  converter now belongs to one opened device session, so it reads the advertised
-  gate set once rather than on every operation.
-- `ConvertedProgram`, the return type of `convert_program`.
 
 ### Private `nlohmann_json` dependency
 
