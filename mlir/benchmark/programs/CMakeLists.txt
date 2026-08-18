@@ -8,25 +8,9 @@
 
 # The benchmark programs, one file per program. The programs build QC dialect modules and carry no
 # format-specific code, so any backend can reuse them.
-add_library(
-  MQTBenchmarkPrograms STATIC
-  BlockEncoding.cpp
-  FanOut.cpp
-  GHZLinear.cpp
-  GHZStar.cpp
-  Grover.cpp
-  IQFT.cpp
-  IQPE.cpp
-  Multiplexer.cpp
-  QAOA.cpp
-  QFT.cpp
-  QFTAdderClassical.cpp
-  QFTAdderQuantum.cpp
-  QPE.cpp
-  Registry.cpp
-  Teleportation.cpp
-  ToffoliHeavy.cpp
-  VQEAnsatz.cpp)
+file(GLOB PROGRAM_SOURCES *.cpp)
+
+add_library(MQTBenchmarkPrograms STATIC ${PROGRAM_SOURCES})
 target_link_libraries(MQTBenchmarkPrograms PUBLIC MLIRQCProgramBuilder MLIRArithDialect)
 mqt_mlir_target_use_project_options(MQTBenchmarkPrograms)
 llvm_update_compile_flags(MQTBenchmarkPrograms)
