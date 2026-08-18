@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import sys
+from collections import Counter
 from typing import cast
 
 import numpy as np
@@ -86,8 +87,7 @@ def test_histogram_only_device_reconstructs_samples(monkeypatch: pytest.MonkeyPa
     samples = circuit()
 
     assert samples.shape == (8, 2)
-    np.testing.assert_array_equal(samples[:4], np.zeros((4, 2), dtype=np.int8))
-    np.testing.assert_array_equal(samples[4:], np.ones((4, 2), dtype=np.int8))
+    assert Counter(map(tuple, samples.tolist())) == {(0, 0): 4, (1, 1): 4}
 
 
 def test_shot_vectors_submit_sequential_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
