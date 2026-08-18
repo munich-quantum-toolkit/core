@@ -137,6 +137,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Replace the singleton QDMI driver and client layers with public device
+  registries, immutable managers, process-default convenience functions, and
+  lifetime-safe direct device objects ([#1901]) ([**@burgholzer**])
 - 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
   logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
   ([**@simon1hofmann**])
@@ -910,6 +913,7 @@ for previous changelogs._
 [#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
 [#1910]: https://github.com/munich-quantum-toolkit/core/pull/1910
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
+[#1901]: https://github.com/munich-quantum-toolkit/core/pull/1901
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
 [#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887

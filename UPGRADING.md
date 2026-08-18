@@ -296,13 +296,21 @@ replacements:
 - `mlir/Compiler/FoMaCAdapter.h` and `MQTCompilerFoMaCAdapter` become
   `mlir/Compiler/QDMIAdapter.h` and `MQTCompilerQDMIAdapter`.
 
-The class and function names do not change. For example:
+MQT Core 4 removes the singleton `qdmi::Driver`, the `qdmi::Session` factory,
+the `qdmi/driver/Driver.hpp` header, and the `MQT::CoreQDMIDriver` CMake target.
+Use the free process-default functions for the shortest migration:
 
 ```cpp
-#include "qdmi/Client.hpp"
+#include "qdmi/DeviceManager.hpp"
 
-auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+auto device = qdmi::openDevice("mqt.ddsim.default");
 ```
+
+Use `qdmi::DeviceRegistry` and `qdmi::DeviceManager` when code needs an isolated
+registry snapshot. Each open creates a fresh session. Replacing a definition
+affects future opens but does not change live devices. The `qdmi/Client.hpp`
+header remains as a forwarding include for the device object model; new code
+should include the specific QDMI headers that it uses.
 
 ### QDMI Qiskit primitive options
 
@@ -456,7 +464,7 @@ stable device ID followed by an explicit open. In Python, replace
 `add_dynamic_device_library(library_path, prefix, ...)` with:
 
 ```python
-from mqt.core.fomac import DeviceDefinition, open_device, register_device
+from mqt.core.qdmi.driver import DeviceDefinition, open_device, register_device
 
 definition = DeviceDefinition("my.device", library_path, prefix, base_url="https://device.example")
 register_device(definition)
@@ -476,19 +484,18 @@ The equivalent C++ flow is:
 qdmi::DeviceDefinition definition{.id = "my.device",
                                   .library = libraryPath,
                                   .prefix = prefix};
-auto& driver = qdmi::Driver::get();
-driver.registerDevice(definition);
-auto device = fomac::Session::openDevice("my.device");
+qdmi::registerDevice(definition);
+auto device = qdmi::openDevice("my.device");
 ```
 
 Registration validates and stores metadata without loading native code. Opening
-an unknown or disabled ID fails. `fomac::Session::openDevice` creates a fresh
-owned session on every call. `qdmi::Driver::open(id)` retains its cached-device
-behavior for client callers.
+an unknown or disabled ID fails. `qdmi::openDevice` creates a fresh owned
+session on every call. An explicit `qdmi::DeviceManager` opens from an isolated,
+immutable snapshot instead of the process-default registry.
 
 See the {doc}`QDMI device configuration guide <qdmi/configuration>` for the
-versioned JSON and TOML formats, configuration precedence, and relocatable
-device manifests.
+versioned JSON format, configuration precedence, and relocatable device
+manifests.
 
 ### FoMaC program payload handling
 

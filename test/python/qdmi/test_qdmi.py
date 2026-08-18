@@ -26,9 +26,9 @@ from mqt.core.qdmi import (
 )
 from mqt.core.qdmi.driver import (
     DeviceDefinition,
+    DeviceManager,
+    DeviceRegistry,
     open_device,
-    register_device,
-    register_device_if_absent,
     registered_device_ids,
 )
 
@@ -815,28 +815,35 @@ def test_register_device_does_not_load_nonexistent_library() -> None:
     assert definition.device_id == "python.missing"
     assert definition.library_path == library_path
     assert definition.prefix == "PREFIX"
-    register_device(definition)
+    registry = DeviceRegistry([definition])
+    manager = DeviceManager(registry)
+    assert registry.device_ids == ["python.missing"]
+    assert manager.device_ids == ["python.missing"]
     with pytest.raises(RuntimeError):
-        open_device("python.missing")
+        manager.open("python.missing")
+
+    result = manager.open_all()
+    assert result.devices == {}
+    assert "Could not open QDMI device library" in result.errors["python.missing"]
 
 
 def test_register_device_if_absent_only_ignores_existing_id() -> None:
     """Idempotent registration still validates duplicate definitions."""
     definition = DeviceDefinition("python.if-absent", "/nonexistent/device.so", "PREFIX")
-    assert register_device_if_absent(definition)
-    assert not register_device_if_absent(definition)
+    registry = DeviceRegistry([])
+    assert registry.register_device_if_absent(definition)
+    assert not registry.register_device_if_absent(definition)
     with pytest.raises(ValueError, match="library must not be empty"):
-        register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
+        registry.register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
 
 
 def test_registered_device_ids_include_runtime_registrations_in_order() -> None:
     """Stable-ID enumeration is ordered and does not load native libraries."""
-    ids_before = registered_device_ids()
-    register_device(DeviceDefinition("python.enumeration.first", "/nonexistent/first.so", "FIRST"))
-    register_device(DeviceDefinition("python.enumeration.second", "/nonexistent/second.so", "SECOND"))
+    registry = DeviceRegistry([])
+    registry.register_device(DeviceDefinition("python.enumeration.first", "/nonexistent/first.so", "FIRST"))
+    registry.register_device(DeviceDefinition("python.enumeration.second", "/nonexistent/second.so", "SECOND"))
 
-    assert registered_device_ids() == [
-        *ids_before,
+    assert registry.device_ids == [
         "python.enumeration.first",
         "python.enumeration.second",
     ]

@@ -11,8 +11,9 @@
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
-#include "qdmi/Client.hpp" // NOLINT(misc-include-cleaner)
-#include "qdmi/driver/SessionConfig.hpp"
+#include "qdmi/Device.hpp"
+#include "qdmi/DeviceManager.hpp"
+#include "qdmi/SessionConfig.hpp"
 #include "qiskit/Qiskit.h"
 
 #include <llvm/Support/Error.h>
@@ -552,7 +553,7 @@ means every operation is native.)pb");
                 std::move(deviceConfig), std::move(deviceConfigFile),
                 std::move(custom1), std::move(custom2), std::move(custom3),
                 std::move(custom4), std::move(custom5));
-            auto device = qdmi::Session::openDevice(deviceId, overrides);
+            auto device = qdmi::openDevice(deviceId, overrides);
             return takeResult(mlir::compilerTargetFromDevice(device));
           },
           "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,

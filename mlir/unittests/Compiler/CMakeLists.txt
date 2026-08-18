@@ -6,8 +6,11 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-unittests-compiler
-               test_compiler_pipeline.cpp test_compiler_qdmi_adapter.cpp test_compiler_target.cpp)
+set(compiler_test_sources test_compiler_pipeline.cpp test_compiler_target.cpp)
+if(TARGET MQT::CoreQDMIScDevice AND TARGET MQT::CoreQDMI_DDSIM_Device)
+  list(APPEND compiler_test_sources test_compiler_qdmi_adapter.cpp)
+endif()
+add_executable(mqt-core-mlir-unittests-compiler ${compiler_test_sources})
 
 target_link_libraries(
   mqt-core-mlir-unittests-compiler
@@ -25,15 +28,17 @@ target_link_libraries(
           MLIRQCOPrograms
           MLIRQIRPrograms)
 
-mqt_copy_qdmi_runtime(mqt-core-mlir-unittests-compiler MQT::CoreQDMIScDevice
-                      MQT::CoreQDMI_DDSIM_Device)
-target_compile_definitions(
-  mqt-core-mlir-unittests-compiler
-  PRIVATE
-    MQT_CORE_MLIR_HETEROGENEOUS_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/heterogeneous-sc.json"
-    MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-one-way-sc.json"
-    MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-two-way-sc.json"
-)
+if(TARGET MQT::CoreQDMIScDevice AND TARGET MQT::CoreQDMI_DDSIM_Device)
+  mqt_copy_qdmi_runtime(mqt-core-mlir-unittests-compiler MQT::CoreQDMIScDevice
+                        MQT::CoreQDMI_DDSIM_Device)
+  target_compile_definitions(
+    mqt-core-mlir-unittests-compiler
+    PRIVATE
+      MQT_CORE_MLIR_HETEROGENEOUS_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/heterogeneous-sc.json"
+      MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-one-way-sc.json"
+      MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-two-way-sc.json"
+  )
+endif()
 
 mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-compiler REQUIRES_EH)
 

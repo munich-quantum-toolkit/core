@@ -8,9 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "DeviceRegistry.hpp"
+#include "qdmi/DeviceRegistry.hpp"
 
-#include "qdmi/driver/Driver.hpp"
+#include "DefaultDeviceRegistry.hpp"
+#include "qdmi/SessionConfig.hpp"
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 
@@ -19,7 +20,9 @@
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <iterator>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -31,11 +34,13 @@
 
 #ifdef _WIN32
 #include <windows.h>
+
+#include <memory>
 #else
 #include <dlfcn.h>
 #endif
 
-namespace qdmi::detail {
+namespace qdmi {
 namespace {
 using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
 
@@ -63,8 +68,8 @@ struct DefinitionPatch {
   std::filesystem::path source;
 };
 
-[[nodiscard]] auto sourceLabel(const std::filesystem::path& source,
-                               const std::string_view path) -> std::string {
+[[nodiscard]] std::string sourceLabel(const std::filesystem::path& source,
+                                      const std::string_view path) {
   return source.string() + ":" + std::string(path);
 }
 
@@ -90,10 +95,9 @@ void rejectUnknownKeys(const Json& value,
   }
 }
 
-[[nodiscard]] auto optionalString(const Json& value, const std::string& key,
-                                  const std::filesystem::path& source,
-                                  const std::string& path)
-    -> std::optional<std::string> {
+[[nodiscard]] std::optional<std::string>
+optionalString(const Json& value, const std::string& key,
+               const std::filesystem::path& source, const std::string& path) {
   const auto it = value.find(key);
   if (it == value.end()) {
     return std::nullopt;
@@ -105,27 +109,25 @@ void rejectUnknownKeys(const Json& value,
   return it->get<std::string>();
 }
 
-[[nodiscard]] auto resolvePath(std::filesystem::path path,
-                               const std::filesystem::path& base)
-    -> std::filesystem::path {
+[[nodiscard]] std::filesystem::path
+resolvePath(std::filesystem::path path, const std::filesystem::path& base) {
   if (path.is_relative()) {
     path = base / path;
   }
   return path.lexically_normal();
 }
 
-[[nodiscard]] auto absolutePath(const std::filesystem::path& path)
-    -> std::filesystem::path {
+[[nodiscard]] std::filesystem::path
+absolutePath(const std::filesystem::path& path) {
   if (path.empty()) {
     return {};
   }
   return std::filesystem::absolute(path).lexically_normal();
 }
 
-[[nodiscard]] auto
+[[nodiscard]] SessionPatch
 parseSessionPatch(const Json& value, const std::filesystem::path& source,
-                  const std::string& path, const std::filesystem::path& base)
-    -> SessionPatch {
+                  const std::string& path, const std::filesystem::path& base) {
   requireObject(value, source, path);
   rejectUnknownKeys(value,
                     {"base-url", "token", "auth-file", "auth-url", "username",
@@ -177,10 +179,9 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
   return patch;
 }
 
-[[nodiscard]] auto
+[[nodiscard]] DefinitionPatch
 parseDevicePatch(const Json& value, const std::filesystem::path& source,
-                 const std::string& path, const std::filesystem::path& base)
-    -> DefinitionPatch {
+                 const std::string& path, const std::filesystem::path& base) {
   requireObject(value, source, path);
   rejectUnknownKeys(value, {"id", "library", "prefix", "enabled", "session"},
                     source, path);
@@ -209,10 +210,9 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
   return patch;
 }
 
-[[nodiscard]] auto parseConfiguration(const Json& root,
-                                      const std::filesystem::path& source,
-                                      const std::filesystem::path& base)
-    -> std::vector<DefinitionPatch> {
+[[nodiscard]] std::vector<DefinitionPatch>
+parseConfiguration(const Json& root, const std::filesystem::path& source,
+                   const std::filesystem::path& base) {
   requireObject(root, source, "$");
   rejectUnknownKeys(root, {"schema-version", "qdmi"}, source, "$");
   const auto version = root.find("schema-version");
@@ -251,7 +251,7 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
   return patches;
 }
 
-[[nodiscard]] auto readJson(const std::filesystem::path& path) -> Json {
+[[nodiscard]] Json readJson(const std::filesystem::path& path) {
   std::ifstream stream(path);
   if (!stream) {
     throw std::runtime_error("Cannot open QDMI configuration file: " +
@@ -295,7 +295,7 @@ void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
   target.source = source.source;
 }
 
-[[nodiscard]] auto moduleDirectory() -> std::filesystem::path {
+[[nodiscard]] std::filesystem::path moduleDirectory() {
 #ifdef _WIN32
   HMODULE module = nullptr;
   if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -327,7 +327,7 @@ void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
 #endif
 }
 
-[[nodiscard]] auto environment(const char* name) -> std::optional<std::string> {
+[[nodiscard]] std::optional<std::string> environment(const char* name) {
 #ifdef _WIN32
   char* raw = nullptr;
   size_t size = 0;
@@ -381,8 +381,8 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   files.insert(files.end(), found.begin(), found.end());
 }
 
-[[nodiscard]] auto nearestProjectConfiguration(std::filesystem::path directory)
-    -> std::optional<std::filesystem::path> {
+[[nodiscard]] std::optional<std::filesystem::path>
+nearestProjectConfiguration(std::filesystem::path directory) {
   while (!directory.empty()) {
     auto dedicated = directory / "qdmi.json";
     if (std::filesystem::is_regular_file(dedicated)) {
@@ -397,7 +397,7 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   return std::nullopt;
 }
 
-[[nodiscard]] auto discoverFiles() -> std::vector<std::filesystem::path> {
+[[nodiscard]] std::vector<std::filesystem::path> discoverFiles() {
   std::vector<std::filesystem::path> files;
   const auto root = moduleDirectory();
   appendFragments(files, root);
@@ -447,8 +447,8 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   return files;
 }
 
-[[nodiscard]] auto materialize(const DefinitionPatch& patch)
-    -> std::optional<qdmi::DeviceDefinition> {
+[[nodiscard]] std::optional<DeviceDefinition>
+materialize(const DefinitionPatch& patch) {
   if (!patch.enabled.value_or(true)) {
     return std::nullopt;
   }
@@ -460,7 +460,7 @@ void appendFragments(std::vector<std::filesystem::path>& files,
     throw std::invalid_argument(patch.source.string() + ": enabled device '" +
                                 patch.id + "' is missing prefix");
   }
-  qdmi::DeviceDefinition definition;
+  DeviceDefinition definition;
   definition.id = patch.id;
   definition.library = *patch.library;
   definition.prefix = *patch.prefix;
@@ -512,11 +512,110 @@ DeviceRegistry::DeviceRegistry() {
   for (auto& [unused, patch] : merged) {
     static_cast<void>(unused);
     if (!patch.enabled.value_or(true)) {
-      disabledIds_.emplace_back(std::move(patch.id));
+      disabledIds_.emplace(std::move(patch.id));
     } else if (auto definition = materialize(patch)) {
       definitions_.emplace_back(std::move(*definition));
     }
   }
 }
 
-} // namespace qdmi::detail
+DeviceRegistry::DeviceRegistry(std::vector<DeviceDefinition> definitions) {
+  for (auto& definition : definitions) {
+    registerDevice(std::move(definition));
+  }
+}
+
+std::vector<std::string> DeviceRegistry::deviceIds() const {
+  std::vector<std::string> ids;
+  ids.reserve(definitions_.size());
+  std::ranges::transform(definitions_, std::back_inserter(ids),
+                         &DeviceDefinition::id);
+  return ids;
+}
+
+namespace {
+
+void validateDefinition(const DeviceDefinition& definition) {
+  if (definition.id.empty()) {
+    throw std::invalid_argument("Device definition ID must not be empty");
+  }
+  if (definition.library.empty()) {
+    throw std::invalid_argument("Device definition library must not be empty");
+  }
+  if (definition.prefix.empty()) {
+    throw std::invalid_argument("Device definition prefix must not be empty");
+  }
+}
+
+struct DefaultRegistryState {
+  std::mutex mutex;
+  DeviceRegistry registry;
+};
+
+DefaultRegistryState& defaultRegistryState() {
+  static DefaultRegistryState state;
+  return state;
+}
+
+} // namespace
+
+void DeviceRegistry::registerDevice(DeviceDefinition definition,
+                                    const bool replace) {
+  validateDefinition(definition);
+  if (disabledIds_.contains(definition.id)) {
+    if (!replace) {
+      throw std::invalid_argument("QDMI device ID '" + definition.id +
+                                  "' is disabled by configuration");
+    }
+    disabledIds_.erase(definition.id);
+  }
+
+  const auto existing =
+      std::ranges::find(definitions_, definition.id, &DeviceDefinition::id);
+  if (existing == definitions_.end()) {
+    definitions_.emplace_back(std::move(definition));
+    return;
+  }
+  if (!replace) {
+    throw std::invalid_argument("QDMI device ID '" + definition.id +
+                                "' is already registered");
+  }
+  *existing = std::move(definition);
+}
+
+bool DeviceRegistry::registerDeviceIfAbsent(DeviceDefinition definition) {
+  validateDefinition(definition);
+  if (disabledIds_.contains(definition.id) ||
+      std::ranges::find(definitions_, definition.id, &DeviceDefinition::id) !=
+          definitions_.end()) {
+    return false;
+  }
+  definitions_.emplace_back(std::move(definition));
+  return true;
+}
+
+void registerDevice(DeviceDefinition definition, const bool replace) {
+  auto& state = defaultRegistryState();
+  const std::scoped_lock lock(state.mutex);
+  state.registry.registerDevice(std::move(definition), replace);
+}
+
+bool registerDeviceIfAbsent(DeviceDefinition definition) {
+  auto& state = defaultRegistryState();
+  const std::scoped_lock lock(state.mutex);
+  return state.registry.registerDeviceIfAbsent(std::move(definition));
+}
+
+std::vector<std::string> registeredDeviceIds() {
+  auto& state = defaultRegistryState();
+  const std::scoped_lock lock(state.mutex);
+  return state.registry.deviceIds();
+}
+
+DeviceRegistry detail::snapshotDefaultDeviceRegistry() {
+  auto& state = defaultRegistryState();
+  const std::scoped_lock lock(state.mutex);
+  return state.registry;
+}
+
+} // namespace qdmi

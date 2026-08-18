@@ -10,6 +10,8 @@
 
 import os
 import pathlib
+from collections.abc import Sequence
+from typing import overload
 
 import mqt.core.qdmi
 
@@ -69,16 +71,109 @@ class DeviceDefinition:
     def prefix(self) -> str:
         """Prefix used for the QDMI device interface functions."""
 
+class DeviceRegistry:
+    """Discover or explicitly register QDMI device definitions."""
+
+    @overload
+    def __init__(self) -> None:
+        """Discover definitions from the standard configuration sources."""
+
+    @overload
+    def __init__(self, definitions: Sequence[DeviceDefinition]) -> None:
+        """Create an isolated registry from explicit definitions."""
+
+    @property
+    def definitions(self) -> list[DeviceDefinition]:
+        """Enabled definitions in stable registration order."""
+
+    @property
+    def device_ids(self) -> list[str]:
+        """Enabled stable device IDs."""
+
+    def register_device(self, definition: DeviceDefinition, *, replace: bool = False) -> None:
+        """Register a definition, optionally replacing the same ID."""
+
+    def register_device_if_absent(self, definition: DeviceDefinition) -> bool:
+        """Register a fallback unless its ID exists or is disabled."""
+
+class OpenAllResult:
+    """Per-ID successes and failures from opening all registered devices."""
+
+    @property
+    def devices(self) -> dict[str, mqt.core.qdmi.Device]:
+        """Successfully opened devices keyed by stable ID."""
+
+    @property
+    def errors(self) -> dict[str, str]:
+        """Error messages for devices that could not be opened."""
+
+class DeviceManager:
+    """An immutable registry snapshot that opens fresh device sessions."""
+
+    @overload
+    def __init__(self) -> None:
+        """Snapshot the current process default registry."""
+
+    @overload
+    def __init__(self, registry: DeviceRegistry) -> None:
+        """Snapshot an explicit registry."""
+
+    @property
+    def definitions(self) -> list[DeviceDefinition]:
+        """Definitions in this immutable snapshot."""
+
+    @property
+    def device_ids(self) -> list[str]:
+        """Stable IDs in this immutable snapshot."""
+
+    def open(
+        self,
+        device_id: str,
+        *,
+        base_url: str | None = None,
+        token: str | None = None,
+        auth_file: str | os.PathLike | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        device_config: str | None = None,
+        device_config_file: str | os.PathLike | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> mqt.core.qdmi.Device:
+        """Open a fresh session for one stable device ID."""
+
+    def open_all(
+        self,
+        *,
+        base_url: str | None = None,
+        token: str | None = None,
+        auth_file: str | os.PathLike | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        device_config: str | None = None,
+        device_config_file: str | os.PathLike | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> OpenAllResult:
+        """Open all devices and isolate failures by stable ID."""
+
 def register_device(definition: DeviceDefinition, *, replace: bool = False) -> None:
     """Register a QDMI device definition without loading its library.
 
     Args:
         definition: Definition to validate and store.
-        replace: Replace an existing definition if it has not been opened.
+        replace: Replace an existing definition for future opens.
 
     Raises:
         ValueError: If the definition is invalid or its ID is already registered.
-        RuntimeError: If replacing an already opened ID.
     """
 
 def register_device_if_absent(definition: DeviceDefinition) -> bool:
