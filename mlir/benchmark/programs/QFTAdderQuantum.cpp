@@ -11,7 +11,6 @@
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <llvm/ADT/APFloat.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -30,8 +29,8 @@ namespace {
 /// Applies a quantum Fourier transform, or its inverse, to @p reg.
 void transform(qc::QCProgramBuilder& b, Value reg, const int64_t size,
                const double sign) {
-  auto one = arith::ConstantIndexOp::create(b, 1);
-  auto last = arith::ConstantIndexOp::create(b, size - 1);
+  auto one = b.indexConstant(1);
+  auto last = b.indexConstant(size - 1);
 
   b.scfFor(0, size, 1, [&](Value step) {
     // The inverse runs the same rotations in the opposite order.
@@ -41,11 +40,9 @@ void transform(qc::QCProgramBuilder& b, Value reg, const int64_t size,
     }
 
     auto lower = arith::AddIOp::create(b, i, one);
-    auto upper = arith::ConstantIndexOp::create(b, size);
-    auto start = arith::ConstantFloatOp::create(
-        b, b.getF64Type(), llvm::APFloat(sign * std::numbers::pi / 2.0));
-    auto half =
-        arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
+    auto upper = b.indexConstant(size);
+    auto start = b.floatConstant(sign * std::numbers::pi / 2.0);
+    auto half = b.floatConstant(0.5);
 
     auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});
     {
@@ -79,14 +76,12 @@ SmallVector<Value> qftAdderQuantum(qc::QCProgramBuilder& b, const uint64_t n) {
   // that qubit `x[j - d]` contributes to `y[j]` halves as the distance grows.
   transform(b, y.value, size, 1.0);
 
-  auto one = arith::ConstantIndexOp::create(b, 1);
+  auto one = b.indexConstant(1);
   b.scfFor(0, size, 1, [&](Value j) {
     auto count = arith::AddIOp::create(b, j, one);
-    auto lower = arith::ConstantIndexOp::create(b, 0);
-    auto start = arith::ConstantFloatOp::create(
-        b, b.getF64Type(), llvm::APFloat(std::numbers::pi));
-    auto half =
-        arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
+    auto lower = b.indexConstant(0);
+    auto start = b.floatConstant(std::numbers::pi);
+    auto half = b.floatConstant(0.5);
 
     auto loop = scf::ForOp::create(b, lower, count, one, ValueRange{start});
     OpBuilder::InsertionGuard guard(b);

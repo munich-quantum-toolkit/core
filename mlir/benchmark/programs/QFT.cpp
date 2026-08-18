@@ -11,7 +11,6 @@
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <llvm/ADT/APFloat.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -40,13 +39,11 @@ SmallVector<Value> qft(qc::QCProgramBuilder& b, const uint64_t n) {
   b.scfFor(0, size, 1, [&](Value i) {
     b.h(b.loadQubit(q.value, i));
 
-    auto one = arith::ConstantIndexOp::create(b, 1);
+    auto one = b.indexConstant(1);
     auto lower = arith::AddIOp::create(b, i, one);
-    auto upper = arith::ConstantIndexOp::create(b, size);
-    auto start = arith::ConstantFloatOp::create(
-        b, b.getF64Type(), llvm::APFloat(std::numbers::pi / 2.0));
-    auto half =
-        arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
+    auto upper = b.indexConstant(size);
+    auto start = b.floatConstant(std::numbers::pi / 2.0);
+    auto half = b.floatConstant(0.5);
 
     auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});
     OpBuilder::InsertionGuard guard(b);
@@ -60,7 +57,7 @@ SmallVector<Value> qft(qc::QCProgramBuilder& b, const uint64_t n) {
 
   // Reverse the bit order. The count is floor(size / 2).
   b.scfFor(0, size / 2, 1, [&](Value i) {
-    auto last = arith::ConstantIndexOp::create(b, size - 1);
+    auto last = b.indexConstant(size - 1);
     auto mirrored = arith::SubIOp::create(b, last, i);
     b.swap(b.loadQubit(q.value, i), b.loadQubit(q.value, mirrored));
   });

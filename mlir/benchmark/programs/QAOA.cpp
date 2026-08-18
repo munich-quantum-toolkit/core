@@ -41,7 +41,7 @@ SmallVector<Value> qaoa(qc::QCProgramBuilder& b, const uint64_t n) {
 
   // Each layer applies the cost operator of a ring of couplings and then the
   // mixer. The problem graph is fixed, so the layer count is a constant.
-  auto one = arith::ConstantIndexOp::create(b, 1);
+  auto one = b.indexConstant(1);
   b.scfFor(0, QAOA_LAYERS, 1, [&](Value) {
     b.scfFor(0, size - 1, 1, [&](Value i) {
       auto next = arith::AddIOp::create(b, i, one);

@@ -11,7 +11,6 @@
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <llvm/ADT/APFloat.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -41,11 +40,9 @@ SmallVector<Value> vqe(qc::QCProgramBuilder& b, const uint64_t n) {
   auto q = b.allocQubitRegister(size, "q");
   auto c = b.allocClassicalBitRegister(size, "c");
 
-  auto one = arith::ConstantIndexOp::create(b, 1);
-  auto initial = arith::ConstantFloatOp::create(
-      b, b.getF64Type(), llvm::APFloat(VQE_INITIAL_ANGLE));
-  auto decay = arith::ConstantFloatOp::create(b, b.getF64Type(),
-                                              llvm::APFloat(VQE_DECAY));
+  auto one = b.indexConstant(1);
+  auto initial = b.floatConstant(VQE_INITIAL_ANGLE);
+  auto decay = b.floatConstant(VQE_DECAY);
 
   // One round evaluates the ansatz at the current angle and reads one qubit.
   // The optimizer shrinks the angle and repeats until a round reports that the

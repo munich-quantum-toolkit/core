@@ -11,7 +11,6 @@
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <llvm/ADT/APFloat.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -40,19 +39,17 @@ SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& b,
   b.scfFor(0, size, 1, [&](Value iv) { b.reset(b.loadQubit(q.value, iv)); });
   b.scfFor(0, size, 1, [&](Value iv) { b.h(b.loadQubit(q.value, iv)); });
 
-  auto one = arith::ConstantIndexOp::create(b, 1);
-  auto last = arith::ConstantIndexOp::create(b, size - 1);
+  auto one = b.indexConstant(1);
+  auto last = b.indexConstant(size - 1);
 
   // Adding a classical constant in the Fourier basis needs no controls. Each
   // qubit takes one phase that depends only on the constant, so the whole
   // addition is a single layer of phase gates between the two transforms.
   b.scfFor(0, size, 1, [&](Value i) {
     auto lower = arith::AddIOp::create(b, i, one);
-    auto upper = arith::ConstantIndexOp::create(b, size);
-    auto start = arith::ConstantFloatOp::create(
-        b, b.getF64Type(), llvm::APFloat(std::numbers::pi / 2.0));
-    auto half =
-        arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
+    auto upper = b.indexConstant(size);
+    auto start = b.floatConstant(std::numbers::pi / 2.0);
+    auto half = b.floatConstant(0.5);
 
     auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});
     {
@@ -78,11 +75,9 @@ SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& b,
     b.h(b.loadQubit(q.value, i));
 
     auto lower = arith::AddIOp::create(b, i, one);
-    auto upper = arith::ConstantIndexOp::create(b, size);
-    auto start = arith::ConstantFloatOp::create(
-        b, b.getF64Type(), llvm::APFloat(-std::numbers::pi / 2.0));
-    auto half =
-        arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
+    auto upper = b.indexConstant(size);
+    auto start = b.floatConstant(-std::numbers::pi / 2.0);
+    auto half = b.floatConstant(0.5);
 
     auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});
     OpBuilder::InsertionGuard guard(b);

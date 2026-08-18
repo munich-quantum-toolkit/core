@@ -30,8 +30,7 @@ SmallVector<Value> ghzLinear(qc::QCProgramBuilder& b, const uint64_t n) {
 
   b.h(q[0]);
   b.scfFor(1, size, 1, [&](Value iv) {
-    auto previous =
-        arith::SubIOp::create(b, iv, arith::ConstantIndexOp::create(b, 1));
+    auto previous = arith::SubIOp::create(b, iv, b.indexConstant(1));
     b.cx(b.loadQubit(q.value, previous), b.loadQubit(q.value, iv));
   });
 

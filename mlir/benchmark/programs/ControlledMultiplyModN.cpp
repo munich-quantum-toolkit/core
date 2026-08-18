@@ -11,7 +11,6 @@
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <llvm/ADT/APFloat.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -35,8 +34,8 @@ constexpr int64_t MODULUS = 5;
 /// Applies a quantum Fourier transform, or its inverse, to @p reg.
 void fourierTransform(qc::QCProgramBuilder& b, Value reg, const int64_t size,
                       const double sign) {
-  auto one = arith::ConstantIndexOp::create(b, 1);
-  auto last = arith::ConstantIndexOp::create(b, size - 1);
+  auto one = b.indexConstant(1);
+  auto last = b.indexConstant(size - 1);
 
   b.scfFor(0, size, 1, [&](Value step) {
     // The inverse runs the same rotations in the opposite order.
@@ -46,11 +45,9 @@ void fourierTransform(qc::QCProgramBuilder& b, Value reg, const int64_t size,
     }
 
     auto lower = arith::AddIOp::create(b, i, one);
-    auto upper = arith::ConstantIndexOp::create(b, size);
-    auto start = arith::ConstantFloatOp::create(
-        b, b.getF64Type(), llvm::APFloat(sign * std::numbers::pi / 2.0));
-    auto half =
-        arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
+    auto upper = b.indexConstant(size);
+    auto start = b.floatConstant(sign * std::numbers::pi / 2.0);
+    auto half = b.floatConstant(0.5);
 
     auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});
     {
@@ -91,22 +88,19 @@ SmallVector<Value> controlledMultiplyModN(qc::QCProgramBuilder& b,
 
   fourierTransform(b, acc.value, size, 1.0);
 
-  auto zero = arith::ConstantIndexOp::create(b, 0);
-  auto one = arith::ConstantIndexOp::create(b, 1);
-  auto factors = arith::ConstantIndexOp::create(b, factor);
-  auto width = arith::ConstantIndexOp::create(b, size);
-  auto two =
-      arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(2.0));
-  auto half =
-      arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
+  auto zero = b.indexConstant(0);
+  auto one = b.indexConstant(1);
+  auto factors = b.indexConstant(factor);
+  auto width = b.indexConstant(size);
+  auto two = b.floatConstant(2.0);
+  auto half = b.floatConstant(0.5);
 
   // Each multiplier qubit adds a shifted copy of the multiplier into the
   // accumulator, and every addition is a layer of phases in the Fourier basis.
   // The shift doubles the phase from one multiplier qubit to the next, and the
   // phase halves down the accumulator, so both angles come from the loops.
-  auto base = arith::ConstantFloatOp::create(
-      b, b.getF64Type(),
-      llvm::APFloat(std::numbers::pi * static_cast<double>(MULTIPLIER)));
+  auto base =
+      b.floatConstant(std::numbers::pi * static_cast<double>(MULTIPLIER));
   auto outer = scf::ForOp::create(b, zero, factors, one, ValueRange{base});
   {
     OpBuilder::InsertionGuard guard(b);
@@ -145,9 +139,8 @@ SmallVector<Value> controlledMultiplyModN(qc::QCProgramBuilder& b,
         b.scfCondition(overflow);
       },
       [&] {
-        auto start = arith::ConstantFloatOp::create(
-            b, b.getF64Type(),
-            llvm::APFloat(-std::numbers::pi * static_cast<double>(MODULUS)));
+        auto start =
+            b.floatConstant(-std::numbers::pi * static_cast<double>(MODULUS));
         auto loop = scf::ForOp::create(b, zero, width, one, ValueRange{start});
         OpBuilder::InsertionGuard guard(b);
         b.setInsertionPointToStart(loop.getBody());

@@ -32,8 +32,8 @@ SmallVector<Value> toffoliHeavy(qc::QCProgramBuilder& b, const uint64_t n) {
 
   // A chain of Toffoli gates. Each gate takes its two controls from the
   // preceding qubits, so the chain carries a running AND along the register.
-  auto one = arith::ConstantIndexOp::create(b, 1);
-  auto two = arith::ConstantIndexOp::create(b, 2);
+  auto one = b.indexConstant(1);
+  auto two = b.indexConstant(2);
   b.scfFor(0, size - 2, 1, [&](Value iv) {
     auto second = arith::AddIOp::create(b, iv, one);
     auto target = arith::AddIOp::create(b, iv, two);

@@ -11,7 +11,6 @@
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <llvm/ADT/APFloat.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -39,14 +38,12 @@ SmallVector<Value> iqft(qc::QCProgramBuilder& b, const uint64_t n) {
   // raising two to a loop-dependent power. The inner loop carries the angle
   // because `QCProgramBuilder::scfFor` takes no loop-carried values.
   b.scfFor(0, bits, 1, [&](Value i) {
-    auto total = arith::ConstantIndexOp::create(b, bits);
-    auto one = arith::ConstantIndexOp::create(b, 1);
-    auto lower = arith::ConstantIndexOp::create(b, 0);
+    auto total = b.indexConstant(bits);
+    auto one = b.indexConstant(1);
+    auto lower = b.indexConstant(0);
     auto offset = arith::SubIOp::create(b, total, i);
-    auto start = arith::ConstantFloatOp::create(
-        b, b.getF64Type(), llvm::APFloat(std::numbers::pi / 2.0));
-    auto half =
-        arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
+    auto start = b.floatConstant(std::numbers::pi / 2.0);
+    auto half = b.floatConstant(0.5);
 
     {
       auto loop = scf::ForOp::create(b, lower, i, one, ValueRange{start});
@@ -60,7 +57,7 @@ SmallVector<Value> iqft(qc::QCProgramBuilder& b, const uint64_t n) {
     }
 
     b.h(q);
-    auto last = arith::ConstantIndexOp::create(b, bits - 1);
+    auto last = b.indexConstant(bits - 1);
     auto target = arith::SubIOp::create(b, last, i);
     b.measure(q, res, target);
     b.reset(q);

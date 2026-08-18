@@ -34,7 +34,7 @@ SmallVector<Value> mlqae(qc::QCProgramBuilder& b, const uint64_t n) {
   auto c = b.allocClassicalBitRegister(size, "c");
 
   const SmallVector<Value> controls(q.qubits);
-  auto one = arith::ConstantIndexOp::create(b, 1);
+  auto one = b.indexConstant(1);
 
   // Every round prepares the state again and then applies the Grover operator
   // a number of times that doubles from round to round. The schedule turns the

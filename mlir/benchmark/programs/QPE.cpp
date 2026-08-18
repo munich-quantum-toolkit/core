@@ -11,7 +11,6 @@
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <llvm/ADT/APFloat.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -48,13 +47,11 @@ SmallVector<Value> qpe(qc::QCProgramBuilder& b, const uint64_t n) {
   // controlled power is one rotation whose angle doubles. The loop carries the
   // angle because `QCProgramBuilder::scfFor` takes no loop-carried values.
   {
-    auto lower = arith::ConstantIndexOp::create(b, 0);
-    auto upper = arith::ConstantIndexOp::create(b, counting);
-    auto step = arith::ConstantIndexOp::create(b, 1);
-    auto start = arith::ConstantFloatOp::create(b, b.getF64Type(),
-                                                llvm::APFloat(QPE_PHASE));
-    auto two =
-        arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(2.0));
+    auto lower = b.indexConstant(0);
+    auto upper = b.indexConstant(counting);
+    auto step = b.indexConstant(1);
+    auto start = b.floatConstant(QPE_PHASE);
+    auto two = b.floatConstant(2.0);
 
     auto loop = scf::ForOp::create(b, lower, upper, step, ValueRange{start});
     OpBuilder::InsertionGuard guard(b);
@@ -67,19 +64,17 @@ SmallVector<Value> qpe(qc::QCProgramBuilder& b, const uint64_t n) {
 
   // Inverse quantum Fourier transform on the counting register.
   b.scfFor(0, counting / 2, 1, [&](Value i) {
-    auto last = arith::ConstantIndexOp::create(b, counting - 1);
+    auto last = b.indexConstant(counting - 1);
     auto mirrored = arith::SubIOp::create(b, last, i);
     b.swap(b.loadQubit(q.value, i), b.loadQubit(q.value, mirrored));
   });
 
   b.scfFor(0, counting, 1, [&](Value i) {
-    auto one = arith::ConstantIndexOp::create(b, 1);
+    auto one = b.indexConstant(1);
     auto lower = arith::AddIOp::create(b, i, one);
-    auto upper = arith::ConstantIndexOp::create(b, counting);
-    auto start = arith::ConstantFloatOp::create(
-        b, b.getF64Type(), llvm::APFloat(-std::numbers::pi / 2.0));
-    auto half =
-        arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
+    auto upper = b.indexConstant(counting);
+    auto start = b.floatConstant(-std::numbers::pi / 2.0);
+    auto half = b.floatConstant(0.5);
 
     {
       auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});

@@ -38,7 +38,7 @@ SmallVector<Value> vqeAnsatz(qc::QCProgramBuilder& b, const uint64_t n) {
 
   // A hardware-efficient ansatz: every layer applies a rotation to each qubit
   // and then entangles neighbouring qubits along a chain.
-  auto one = arith::ConstantIndexOp::create(b, 1);
+  auto one = b.indexConstant(1);
   b.scfFor(0, VQE_REPETITIONS, 1, [&](Value) {
     b.scfFor(0, size, 1,
              [&](Value i) { b.ry(VQE_ANGLE, b.loadQubit(q.value, i)); });

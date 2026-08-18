@@ -11,7 +11,6 @@
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <llvm/ADT/APFloat.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -46,16 +45,13 @@ SmallVector<Value> iqpe(qc::QCProgramBuilder& b, const uint64_t n) {
   // runs over the distance from the last bit. Each controlled power is one
   // rotation whose angle halves on every step. Both loops carry their angle
   // because `QCProgramBuilder::scfFor` takes no loop-carried values.
-  auto lower = arith::ConstantIndexOp::create(b, 0);
-  auto upper = arith::ConstantIndexOp::create(b, precision);
-  auto one = arith::ConstantIndexOp::create(b, 1);
-  auto last = arith::ConstantIndexOp::create(b, precision - 1);
-  auto first = arith::ConstantFloatOp::create(
-      b, b.getF64Type(),
-      llvm::APFloat(std::pow(2.0, static_cast<double>(precision - 1)) *
-                    IQPE_PHASE));
-  auto half =
-      arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
+  auto lower = b.indexConstant(0);
+  auto upper = b.indexConstant(precision);
+  auto one = b.indexConstant(1);
+  auto last = b.indexConstant(precision - 1);
+  auto first = b.floatConstant(
+      std::pow(2.0, static_cast<double>(precision - 1) * IQPE_PHASE));
+  auto half = b.floatConstant(0.5);
 
   auto outer = scf::ForOp::create(b, lower, upper, one, ValueRange{first});
   OpBuilder::InsertionGuard guard(b);
@@ -68,8 +64,7 @@ SmallVector<Value> iqpe(qc::QCProgramBuilder& b, const uint64_t n) {
 
   // Correct against the bits that were already measured.
   {
-    auto start = arith::ConstantFloatOp::create(
-        b, b.getF64Type(), llvm::APFloat(std::numbers::pi / 2.0));
+    auto start = b.floatConstant(std::numbers::pi / 2.0);
     auto innerLower = arith::AddIOp::create(b, index, one);
     auto inner =
         scf::ForOp::create(b, innerLower, upper, one, ValueRange{start});

@@ -11,7 +11,6 @@
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 

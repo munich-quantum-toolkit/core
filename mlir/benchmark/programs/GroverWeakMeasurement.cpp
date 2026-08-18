@@ -63,8 +63,8 @@ SmallVector<Value> groverWeakMeasurement(qc::QCProgramBuilder& b,
         b.reset(probe);
         b.mcry(PROBE_ANGLE, oracleControls, probe);
         auto reported = b.measure(probe);
-        auto unreported = arith::XOrIOp::create(
-            b, reported, arith::ConstantIntOp::create(b, 1, 1));
+        auto unreported =
+            arith::XOrIOp::create(b, reported, b.boolConstant(true));
         b.scfCondition(unreported);
       },
       [] {});
