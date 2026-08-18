@@ -98,4 +98,19 @@ SmallVector<Value> vqeAnsatz(qc::QCProgramBuilder& b, uint64_t n);
 /// QAOA on a ring of @p n qubits with a fixed layer count.
 SmallVector<Value> qaoa(qc::QCProgramBuilder& b, uint64_t n);
 
+/// Controlled multiplication modulo a constant on @p n qubits: one control, one
+/// ancilla, and the rest split between the multiplier and the accumulator.
+SmallVector<Value> controlledMultiplyModN(qc::QCProgramBuilder& b, uint64_t n);
+
+/// Grover's search on @p n qubits that repeats until a weakly coupled probe
+/// reports the marked state.
+SmallVector<Value> groverWeakMeasurement(qc::QCProgramBuilder& b, uint64_t n);
+
+/// VQE on @p n qubits, with the optimization loop driven by the measurements.
+SmallVector<Value> vqe(qc::QCProgramBuilder& b, uint64_t n);
+
+/// Maximum likelihood amplitude estimation on @p n qubits, with one round per
+/// power of the Grover operator.
+SmallVector<Value> mlqae(qc::QCProgramBuilder& b, uint64_t n);
+
 } // namespace mqt::benchmark
