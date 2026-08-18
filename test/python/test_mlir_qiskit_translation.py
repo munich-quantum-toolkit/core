@@ -454,6 +454,125 @@ def test_flat_circuit_round_trip_preserves_supported_metadata() -> None:
     ]
 
 
+def test_openqasm2_measurements_export_with_zero_initialized_register() -> None:
+    """Ignore only the implicit classical zero initialization from OpenQASM 2."""
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+x q[1];
+measure q[1] -> c[0];
+measure q[0] -> c[1];
+"""
+    )
+
+    restored = program.to_qiskit()
+
+    assert [(register.name, len(register)) for register in restored.qregs] == [("q", 2)]
+    assert [(register.name, len(register)) for register in restored.cregs] == [("c", 2)]
+    assert [item.operation.name for item in restored.data] == ["x", "measure", "measure"]
+    measurements = [item for item in restored.data if item.operation.name == "measure"]
+    assert [
+        (restored.find_bit(item.qubits[0]).index, restored.find_bit(item.clbits[0]).index) for item in measurements
+    ] == [(1, 0), (0, 1)]
+
+
+@pytest.mark.parametrize("late_value", ["false", "true"])
+def test_flat_export_rejects_classical_store_after_quantum_work(late_value: str) -> None:
+    """Do not mistake a later constant assignment for register initialization."""
+    program = QCProgram.from_mlir_str(
+        f"""module {{
+  func.func @main() attributes {{passthrough = ["entry_point"]}} {{
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %initial = arith.constant false
+    %late = arith.constant {late_value}
+    %q = qc.alloc : !qc.qubit
+    %c = memref.alloc() : memref<2xi1>
+    memref.store %initial, %c[%c0] : memref<2xi1>
+    qc.x %q : !qc.qubit
+    memref.store %late, %c[%c1] : memref<2xi1>
+    qc.dealloc %q : !qc.qubit
+    return
+  }}
+}}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="does not support classical execution"):
+        program.to_qiskit()
+
+
+def test_target_compiled_openqasm2_measurements_export() -> None:
+    """Export initialized result registers after target compilation."""
+    target = CompilerTarget(5)
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+x q[1];
+measure q[1] -> c[0];
+measure q[0] -> c[1];
+"""
+    )
+    mapped = program.to_qco(copy=True)
+    mapped.compile_for_target(target)
+
+    restored = mapped.to_qc(copy=True).to_qiskit(target=target)
+
+    assert restored.num_qubits == 5
+    assert [(register.name, len(register)) for register in restored.qregs] == [("q", 5)]
+    assert [(register.name, len(register)) for register in restored.cregs] == [("c", 2)]
+    assert restored.layout is None
+    assert restored.count_ops() == {"measure": 2, "x": 1}
+
+
+def test_openqasm3_measurement_export_ignores_unused_poison() -> None:
+    """Ignore the unused poison value that initializes an OpenQASM 3 output."""
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[1] c;
+h q[1];
+c[0] = measure q[1];
+"""
+    )
+
+    restored = program.to_qiskit()
+
+    assert "ub.poison" in program.ir
+    assert [(register.name, len(register)) for register in restored.qregs] == [("q", 2)]
+    assert [(register.name, len(register)) for register in restored.cregs] == [("c", 1)]
+    assert [item.operation.name for item in restored.data] == ["h", "measure"]
+    measurement = restored.data[-1]
+    assert restored.find_bit(measurement.qubits[0]).index == 1
+    assert restored.find_bit(measurement.clbits[0]).index == 0
+
+
+def test_flat_export_rejects_used_poison() -> None:
+    """Reject poison when it participates in classical execution."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %c0 = arith.constant 0 : index
+    %poison = ub.poison : i1
+    %q = qc.alloc : !qc.qubit
+    %c = memref.alloc() : memref<1xi1>
+    memref.store %poison, %c[%c0] : memref<1xi1>
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="does not support used poison values"):
+        program.to_qiskit()
+
+
 def test_layout_is_accepted_and_ignored() -> None:
     """Import laid-out operations without retaining transpiler metadata."""
     circuit = QuantumCircuit(2)
@@ -694,6 +813,20 @@ def test_nested_structured_control_and_bound_loop_parameter() -> None:
     assert "scf.index_switch" in program.ir
     with pytest.raises(RuntimeError, match="cannot construct structured control flow"):
         program.to_qiskit()
+
+
+def test_qiskit_import_zero_initializes_clbits_before_control_flow() -> None:
+    """Initialize Qiskit clbits before a condition reads them."""
+    circuit = QuantumCircuit(1, 1)
+    with circuit.if_test((circuit.clbits[0], False)):
+        circuit.x(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    false_constant = ir.index("arith.constant false")
+    initialization = ir.index("memref.store", false_constant)
+    condition_load = ir.index("memref.load", initialization)
+    assert false_constant < initialization < condition_load
 
 
 @pytest.mark.parametrize(

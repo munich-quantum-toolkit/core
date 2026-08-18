@@ -28,8 +28,10 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/UB/IR/UBOps.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
@@ -44,6 +46,7 @@
 #include <cstdint>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -485,14 +488,41 @@ void collectResources(mlir::func::FuncOp function, ExportState& state,
   }
 }
 
+[[nodiscard]] std::optional<uint32_t>
+initialClassicalZeroStoreIndex(mlir::memref::StoreOp store,
+                               mlir::Value registerValue,
+                               const ExportState& state) {
+  if (store.getMemref() != registerValue || store.getIndices().size() != 1U ||
+      !mlir::matchPattern(store.getValueToStore(), mlir::m_Zero())) {
+    return std::nullopt;
+  }
+
+  const auto size = state.classicalSizes.find(registerValue);
+  const auto index = mlir::getConstantIntValue(store.getIndices().front());
+  if (size == state.classicalSizes.end() || !index || *index < 0 ||
+      std::cmp_greater_equal(*index, size->second)) {
+    return std::nullopt;
+  }
+  return static_cast<uint32_t>(*index);
+}
+
 void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
+  mlir::Value initializationRegister;
+  llvm::DenseSet<uint32_t> initializedClassicalBits;
   for (auto& operation : function.getBody().front()) {
-    if (llvm::isa<mlir::arith::ConstantOp, mlir::memref::AllocOp,
-                  mlir::qc::AllocOp, mlir::qc::DeallocOp, mlir::qc::StaticOp,
-                  mlir::func::ReturnOp>(operation)) {
+    if (auto alloc = llvm::dyn_cast<mlir::memref::AllocOp>(operation)) {
+      initializationRegister = {};
+      initializedClassicalBits.clear();
+      if (state.classicalBases.contains(alloc.getResult())) {
+        initializationRegister = alloc.getResult();
+      }
+      continue;
+    }
+    if (llvm::isa<mlir::arith::ConstantOp>(operation)) {
       continue;
     }
     if (auto load = llvm::dyn_cast<mlir::memref::LoadOp>(operation)) {
+      initializationRegister = {};
       if (state.qubits.contains(load.getResult())) {
         continue;
       }
@@ -501,6 +531,7 @@ void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
           "loads");
     }
     if (auto dealloc = llvm::dyn_cast<mlir::memref::DeallocOp>(operation)) {
+      initializationRegister = {};
       if (state.quantumBases.contains(dealloc.getMemref()) ||
           state.classicalBases.contains(dealloc.getMemref())) {
         continue;
@@ -508,13 +539,37 @@ void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
       throw std::runtime_error(
           "QC to Qiskit export encountered an unsupported memory deallocation");
     }
-    if (auto store = llvm::dyn_cast<mlir::memref::StoreOp>(operation)) {
-      if (llvm::isa_and_nonnull<mlir::qc::MeasureOp>(
-              store.getValueToStore().getDefiningOp())) {
+    if (auto poison = llvm::dyn_cast<mlir::ub::PoisonOp>(operation)) {
+      initializationRegister = {};
+      if (llvm::all_of(poison->getResults(), [](const mlir::Value result) {
+            return result.use_empty();
+          })) {
         continue;
       }
       throw std::runtime_error(
+          "QC to Qiskit export does not support used poison values");
+    }
+    if (auto store = llvm::dyn_cast<mlir::memref::StoreOp>(operation)) {
+      if (llvm::isa_and_nonnull<mlir::qc::MeasureOp>(
+              store.getValueToStore().getDefiningOp())) {
+        initializationRegister = {};
+        continue;
+      }
+      if (initializationRegister) {
+        const auto index = initialClassicalZeroStoreIndex(
+            store, initializationRegister, state);
+        if (index && initializedClassicalBits.insert(*index).second) {
+          continue;
+        }
+      }
+      initializationRegister = {};
+      throw std::runtime_error(
           "QC to Qiskit export does not support classical execution");
+    }
+    initializationRegister = {};
+    if (llvm::isa<mlir::qc::AllocOp, mlir::qc::DeallocOp, mlir::qc::StaticOp,
+                  mlir::func::ReturnOp>(operation)) {
+      continue;
     }
     if (auto phase = llvm::dyn_cast<mlir::qc::GPhaseOp>(operation)) {
       state.globalPhase += exportParameter(phase.getTheta());
