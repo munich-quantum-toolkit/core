@@ -359,15 +359,6 @@ class QCProgram(Program):
     def to_openqasm3(self) -> OpenQASMProgram:
         """Clean up and emit this QC program as OpenQASM 3 without QCO optimization."""
 
-    def num_two_qubit_gates(self) -> int:
-        """Count the gates in this program that act on exactly two qubits.
-
-        Control qubits contributed by enclosing modifiers count towards the arity of a
-        gate, so a ``qc.x`` nested in a single-control ``qc.ctrl`` is a two-qubit gate.
-        Barriers are not counted. Gates in a loop or a called function are counted
-        once, independently of how often they execute.
-        """
-
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
         """Translate this QC program to a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` without consuming it.
 
@@ -387,6 +378,15 @@ class QCProgram(Program):
         """Lower this program to QIR for the requested profile.
 
         Set ``copy=True`` to preserve it.
+        """
+
+    def num_two_qubit_gates(self) -> int:
+        """Count the gates in this program that act on exactly two qubits.
+
+        Control qubits contributed by enclosing modifiers count towards the arity of a
+        gate, so a ``qc.x`` nested in a single-control ``qc.ctrl`` is a two-qubit gate.
+        Barriers are not counted. Gates in a loop or a called function are counted
+        once, independently of how often they execute.
         """
 
 class QCOProgram(Program):

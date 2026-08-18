@@ -182,6 +182,12 @@ public:
   /// Translate this program to portable OpenQASM without consuming it.
   [[nodiscard]] std::optional<OpenQASMProgram> toOpenQASM3() const;
 
+  /// Consume this program and convert it to QCO.
+  [[nodiscard]] std::optional<QCOProgram> intoQCO() &&;
+
+  /// Consume this program and lower it to QIR.
+  [[nodiscard]] std::optional<QIRProgram> intoQIR(QIRProfile profile) &&;
+
   /**
    * @brief Count the gates in this program that act on exactly two qubits.
    *
@@ -191,12 +197,6 @@ public:
    * function are counted once, independently of how often they execute.
    */
   [[nodiscard]] size_t numTwoQubitGates() const;
-
-  /// Consume this program and convert it to QCO.
-  [[nodiscard]] std::optional<QCOProgram> intoQCO() &&;
-
-  /// Consume this program and lower it to QIR.
-  [[nodiscard]] std::optional<QIRProgram> intoQIR(QIRProfile profile) &&;
 };
 
 /**

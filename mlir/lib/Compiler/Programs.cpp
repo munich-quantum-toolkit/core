@@ -342,30 +342,6 @@ std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
   return OpenQASMProgram(std::move(*source));
 }
 
-size_t QCProgram::numTwoQubitGates() const {
-  size_t count = 0;
-  mod().walk([&count](qc::UnitaryOpInterface op) {
-    // Modifiers describe the gates in their region rather than a gate of their
-    // own, and barriers are not gates at all.
-    if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qc::BarrierOp>(op)) {
-      return;
-    }
-    auto numQubits = op.getNumQubits();
-    for (auto* parent = op->getParentOp(); parent != nullptr;
-         parent = parent->getParentOp()) {
-      if (auto ctrl = dyn_cast<qc::CtrlOp>(parent)) {
-        numQubits += ctrl.getNumControls();
-      } else if (!isa<qc::InvOp, qc::PowOp>(parent)) {
-        break;
-      }
-    }
-    if (numQubits == 2) {
-      ++count;
-    }
-  });
-  return count;
-}
-
 std::optional<QCOProgram> QCProgram::intoQCO() && {
   if (failed(runPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createQCToQCO()); },
@@ -394,6 +370,30 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
     return std::nullopt;
   }
   return result;
+}
+
+size_t QCProgram::numTwoQubitGates() const {
+  size_t count = 0;
+  mod().walk([&count](qc::UnitaryOpInterface op) {
+    // Modifiers describe the gates in their region rather than a gate of their
+    // own, and barriers are not gates at all.
+    if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qc::BarrierOp>(op)) {
+      return;
+    }
+    auto numQubits = op.getNumQubits();
+    for (auto* parent = op->getParentOp(); parent != nullptr;
+         parent = parent->getParentOp()) {
+      if (auto ctrl = dyn_cast<qc::CtrlOp>(parent)) {
+        numQubits += ctrl.getNumControls();
+      } else if (!isa<qc::InvOp, qc::PowOp>(parent)) {
+        break;
+      }
+    }
+    if (numQubits == 2) {
+      ++count;
+    }
+  });
+  return count;
 }
 
 //===----------------------------------------------------------------------===//

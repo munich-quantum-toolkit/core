@@ -687,18 +687,6 @@ before conversion to QCO.)pb");
            "Clean up and emit this QC program as OpenQASM 3 without QCO "
            "optimization.")
       .def(
-          "num_two_qubit_gates",
-          [](const mlir::QCProgram& program) {
-            requireValid(program);
-            return program.numTwoQubitGates();
-          },
-          R"pb(Count the gates in this program that act on exactly two qubits.
-
-Control qubits contributed by enclosing modifiers count towards the arity of a
-gate, so a ``qc.x`` nested in a single-control ``qc.ctrl`` is a two-qubit gate.
-Barriers are not counted. Gates in a loop or a called function are counted
-once, independently of how often they execute.)pb")
-      .def(
           "to_qiskit",
           [](const mlir::QCProgram& program,
              const mlir::CompilerTarget* const target) {
@@ -734,7 +722,19 @@ Set ``copy=True`` to preserve it.)pb")
           "profile"_a, nb::kw_only(), "copy"_a = false,
           R"pb(Lower this program to QIR for the requested profile.
 
-Set ``copy=True`` to preserve it.)pb");
+Set ``copy=True`` to preserve it.)pb")
+      .def(
+          "num_two_qubit_gates",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.numTwoQubitGates();
+          },
+          R"pb(Count the gates in this program that act on exactly two qubits.
+
+Control qubits contributed by enclosing modifiers count towards the arity of a
+gate, so a ``qc.x`` nested in a single-control ``qc.ctrl`` is a two-qubit gate.
+Barriers are not counted. Gates in a loop or a called function are counted
+once, independently of how often they execute.)pb");
 
   auto qcoProgram = nb::class_<mlir::QCOProgram, mlir::Program>(
       m, "QCOProgram", R"pb(A compiler program in the QCO dialect.
