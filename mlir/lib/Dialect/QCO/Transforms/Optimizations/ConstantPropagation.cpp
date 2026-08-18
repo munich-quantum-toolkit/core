@@ -564,28 +564,26 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     // operands and get order of returned qubits
     std::vector<unsigned int> order;
     bool implicitSwap = false;
-    if (!thenArgs.empty()) {
-      for (unsigned int i = 0; i < thenBlock->getArguments().size(); ++i) {
-        auto it = std::ranges::find(thenArgs, thenBlock->getArguments()[i]);
-        if (it != thenArgs.end()) {
-          const unsigned int pos = std::distance(thenArgs.begin(), it);
+    for (unsigned int i = 0; i < thenBlock->getArguments().size(); ++i) {
+      auto it = std::ranges::find(thenArgs, thenBlock->getArguments()[i]);
+      if (it != thenArgs.end()) {
+        const unsigned int pos = std::distance(thenArgs.begin(), it);
+        order.push_back(pos);
+      }
+    }
+
+    for (unsigned int i = 0; i < elseBlock->getArguments().size(); ++i) {
+      auto it = std::ranges::find(elseArgs, elseBlock->getArguments()[i]);
+      if (it != elseArgs.end()) {
+        const unsigned int pos = std::distance(elseArgs.begin(), it);
+        if (!thenArgs.empty()) {
+          implicitSwap |= order.at(i) != pos;
+        } else {
           order.push_back(pos);
         }
       }
     }
-    if (!elseArgs.empty()) {
-      for (unsigned int i = 0; i < elseBlock->getArguments().size(); ++i) {
-        auto it = std::ranges::find(elseArgs, elseBlock->getArguments()[i]);
-        if (it != elseArgs.end()) {
-          const unsigned int pos = std::distance(elseArgs.begin(), it);
-          if (!thenArgs.empty()) {
-            implicitSwap |= order.at(i) != pos;
-          } else {
-            order.push_back(pos);
-          }
-        }
-      }
-    }
+
     if (implicitSwap) {
       llvm::report_fatal_error("Constant propagation does not allow implicit "
                                "swapping of qubits in branching.");
