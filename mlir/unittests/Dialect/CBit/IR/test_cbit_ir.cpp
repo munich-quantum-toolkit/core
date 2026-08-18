@@ -23,11 +23,14 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Parser/Parser.h>
+#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <memory>
 #include <string>
@@ -173,5 +176,65 @@ TEST_F(CBitIRTest, ReportsMemoryEffects) {
   ASSERT_EQ(effects.size(), 1);
   EXPECT_TRUE(isa<MemoryEffects::Write>(effects.front().getEffect()));
   EXPECT_EQ(effects.front().getValue(), store.getReg());
+}
+
+TEST_F(CBitIRTest, ForwardsStraightLineStoresAndZeroInitialization) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @main() -> (i1, i1) {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %true = arith.constant true
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %zero = cbit.load %reg[%c0] : !cbit.reg<2>
+        cbit.store %true, %reg[%c1] : !cbit.reg<2>
+        %stored = cbit.load %reg[%c1] : !cbit.reg<2>
+        return %zero, %stored : i1, i1
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+
+  PassManager canonicalizer(context.get());
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
+
+  auto funcOp = *moduleOp->getOps<func::FuncOp>().begin();
+  auto returnOp = *funcOp.getOps<func::ReturnOp>().begin();
+  std::string canonicalized;
+  llvm::raw_string_ostream canonicalizedStream(canonicalized);
+  moduleOp->print(canonicalizedStream);
+  APInt zero;
+  APInt stored;
+  EXPECT_TRUE(matchPattern(returnOp.getOperand(0), m_ConstantInt(&zero)))
+      << canonicalized;
+  EXPECT_TRUE(matchPattern(returnOp.getOperand(1), m_ConstantInt(&stored)))
+      << canonicalized;
+  EXPECT_TRUE(zero.isZero());
+  EXPECT_TRUE(stored.isOne());
+}
+
+TEST_F(CBitIRTest, DoesNotForwardAcrossAnAmbiguousStore) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @main(%dynamic: index) -> i1 {
+        %c0 = arith.constant 0 : index
+        %true = arith.constant true
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        cbit.store %true, %reg[%dynamic] : !cbit.reg<2>
+        %value = cbit.load %reg[%c0] : !cbit.reg<2>
+        return %value : i1
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+
+  PassManager canonicalizer(context.get());
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
+
+  auto funcOp = *moduleOp->getOps<func::FuncOp>().begin();
+  auto returnOp = *funcOp.getOps<func::ReturnOp>().begin();
+  EXPECT_TRUE(returnOp.getOperand(0).getDefiningOp<cbit::LoadOp>());
 }
 } // namespace

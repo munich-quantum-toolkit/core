@@ -94,6 +94,7 @@ def CBit_LoadOp : CBitOp<"load"> {
   let assemblyFormat = [{
     $reg `[` $index `]` attr-dict `:` qualified(type($reg))
   }];
+  let hasCanonicalizer = 1;
   let hasVerifier = 1;
 }
 

@@ -4357,8 +4357,7 @@ SmallVector<Value> nestedTrueIf(QCOProgramBuilder& b) {
   auto q0 = b.h(q[0]);
   auto measuredQubit = b.measure(q0, c0, 0).first;
   auto index = arith::ConstantIndexOp::create(b, 0);
-  auto condition =
-      memref::LoadOp::create(b, c0, ValueRange{index.getResult()}).getResult();
+  auto condition = b.loadClassicalBit(c0, index.getResult());
   auto ifRes = b.qcoIf(condition, measuredQubit, [&](ValueRange outerArgs) {
     auto innerResult = b.qcoIf(condition, outerArgs, [&](ValueRange innerArgs) {
       auto innerQubit = b.x(innerArgs[0]);
@@ -4379,8 +4378,7 @@ SmallVector<Value> nestedFalseIf(QCOProgramBuilder& b) {
   auto q0 = b.h(q[0]);
   auto measuredQubit = b.measure(q0, c0, 0).first;
   auto index = arith::ConstantIndexOp::create(b, 0);
-  auto condition =
-      memref::LoadOp::create(b, c0, ValueRange{index.getResult()}).getResult();
+  auto condition = b.loadClassicalBit(c0, index.getResult());
   auto ifRes = b.qcoIf(
       condition, measuredQubit,
       [&](ValueRange args) {

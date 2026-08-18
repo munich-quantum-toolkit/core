@@ -45,20 +45,24 @@ outputs.
       name, initialization, and output conversion behavior.
 - [x] (2026-08-18 21:14Z) Committed and published the compiling dialect,
       builder, and conversion foundation as draft pull request #2158. Commit
-      `8474dd0d5` is signed and passes `git verify-commit`.
+      `fe432ee83` is signed and passes `git verify-commit`.
 - [x] (2026-08-18 21:50Z) Migrated Qiskit import and export to returned CBit
       registers and removed the temporary memref and UB recognizers. All 119
       focused Python translation tests pass.
 - [x] (2026-08-18 21:50Z) Migrated OpenQASM import and export to CBit and
       removed parallel bit SSA state and classical poison placeholders. All 173
       focused translation tests pass.
-- [x] (2026-08-18 21:50Z) Migrated QIR lowering, QCO decision-diagram
-      execution, and both jeff conversion directions. The focused QIR, QCO
-      utility, and jeff suites pass.
-- [ ] Complete cross-component tests, documentation, changelog, generated stubs,
-      and all required validation.
-- [ ] Record the final evidence here, publish a signed final head, mark the pull
-      request ready, and request human review.
+- [x] (2026-08-18 21:50Z) Migrated QIR lowering, QCO decision-diagram execution,
+      and both jeff conversion directions. The focused QIR, QCO utility, and
+      jeff suites pass.
+- [x] (2026-08-18 23:45Z) Completed cross-component tests, documentation,
+      changelog, and generated stubs. The full native suite passes 4,288 tests.
+      The required Python, stub, documentation, and Python-version matrix
+      sessions pass.
+- [ ] Publish and validate the signed final head. Keep the pull request in draft
+      until link checking passes: the required link-check session currently
+      fails only on unrelated external DOI, Qiskit policy, and old Read the Docs
+      links.
 
 ## Surprises & Discoveries
 
@@ -111,6 +115,19 @@ outputs.
   capture the same non-aliasing register. Evidence: removing bit vectors from
   the frontend state preserved dynamic indexing and structured control across
   all 173 translation tests.
+- Observation: QIR Adaptive needs ordinary register storage for internal CBit
+  allocations, while returned CBit allocations use QIR result arrays. Evidence:
+  the final lowering distinguishes these cases, supports dynamic internal
+  indices, and passes all 146 Adaptive tests.
+- Observation: CBit loads must become SSA values before conversion pipelines can
+  lower structured conditions. Evidence: a conservative same-block canonicalizer
+  forwards a known prior store or zero initialization and stops at dynamic
+  aliasing, nested regions, or unknown register users. The compiler and CBit
+  tests cover both forwarding and unsafe cases.
+- Observation: Combining a measurement with its only CBit store can move the
+  measurement past intervening quantum operations if the store is not adjacent.
+  Evidence: OpenQASM emission now combines only adjacent operations, and a
+  regression test preserves the order of a delayed store.
 
 ## Decision Log
 
@@ -143,12 +160,14 @@ outputs.
 ## Outcomes & Retrospective
 
 The compatibility fix is merged and issue #2155 records the replacement
-contract. Draft pull request #2158 now contains the neutral dialect,
-per-allocation builder APIs, identity preservation across QC and QCO, the
-explicit late memref lowering, and all planned producer and consumer
-migrations. Focused CBit, builder, QC/QCO, Qiskit, OpenQASM, QIR, QCO utility,
-and jeff tests pass. The generated MLIR documentation target and lint pass.
-Complete repository validation and exact-head remote checks remain.
+contract. Draft pull request #2158 contains the neutral dialect, per-allocation
+builder APIs, identity preservation across QC and QCO, the explicit late memref
+lowering, and all planned producer and consumer migrations. The focused suites,
+the complete 4,288-test native suite, the required Python tests, all supported
+Python-version matrices, generated stubs, and documentation build pass. The
+link-check session fails on pre-existing external links that this change does
+not touch. The pull request remains a draft until that required check passes.
+Publishing and remote validation of the signed final head remain.
 
 ## Context and Orientation
 
@@ -379,9 +398,23 @@ Initial repository evidence:
     issue #2155       ✨ Add a first-class classical-bit register dialect
     draft PR #2158    ♻️ Replace implicit classical-register memrefs with CBit IR
 
-Initial local validation belongs to the merged compatibility pull request and
-does not count as validation of this implementation. Add concise transcripts for
-the new branch here as milestones complete.
+Final local validation evidence:
+
+    cmake --build --preset release --target mlir-doc             passed
+    cmake --build --preset release                               passed
+    ctest --preset release                                       4,288 passed, 1 skipped
+    uv run --no-sync pytest test/python/test_mlir_qiskit_translation.py test/python/test_mlir.py
+                                                                  167 passed
+    uvx nox -s stubs                                             passed
+    uvx nox -s tests                                             passed on Python 3.10-3.14
+    uvx nox -s minimums                                          passed on Python 3.10-3.14
+    uvx nox -s docs                                              passed
+    uvx nox -s docs -- -b linkcheck                              failed on unrelated external links
+
+The focused CBit, CBit-to-memref, QC-to-QCO, QCO-to-QC, QC/QCO round-trip, QIR
+Base, QIR Adaptive, QCO utility, jeff, QC translation, compiler, QCO IR, and
+OpenQASM test binaries all pass. `uvx nox -s lint` passes on the formatted final
+tree.
 
 ## Interfaces and Dependencies
 

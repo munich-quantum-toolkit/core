@@ -11,6 +11,7 @@
 #include "TestCaseUtils.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
@@ -116,10 +117,11 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<QCDialect, QCODialect, qtensor::QTensorDialect,
-                    arith::ArithDialect, cf::ControlFlowDialect,
-                    func::FuncDialect, memref::MemRefDialect, scf::SCFDialect,
-                    LLVM::LLVMDialect, jeff::JeffDialect>();
+    registry.insert<cbit::CBitDialect, QCDialect, QCODialect,
+                    qtensor::QTensorDialect, arith::ArithDialect,
+                    cf::ControlFlowDialect, func::FuncDialect,
+                    memref::MemRefDialect, scf::SCFDialect, LLVM::LLVMDialect,
+                    jeff::JeffDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -242,8 +244,8 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
 
 TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
   DialectRegistry registry;
-  registry.insert<QCDialect, arith::ArithDialect, func::FuncDialect,
-                  memref::MemRefDialect>();
+  registry.insert<cbit::CBitDialect, QCDialect, arith::ArithDialect,
+                  func::FuncDialect, memref::MemRefDialect>();
   auto context = std::make_shared<MLIRContext>(registry);
   context->loadAllAvailableDialects();
 
@@ -386,11 +388,11 @@ openQASMProgramName(const testing::TestParamInfo<qasm::OpenQASMProgram>& info) {
 [[nodiscard]] static std::optional<EntryInfo>
 inspectEntry(const llvm::StringRef ir) {
   DialectRegistry registry;
-  registry.insert<QCDialect, QCODialect, qtensor::QTensorDialect,
-                  arith::ArithDialect, cf::ControlFlowDialect,
-                  func::FuncDialect, math::MathDialect, memref::MemRefDialect,
-                  scf::SCFDialect, tensor::TensorDialect, ub::UBDialect,
-                  LLVM::LLVMDialect, jeff::JeffDialect>();
+  registry.insert<cbit::CBitDialect, QCDialect, QCODialect,
+                  qtensor::QTensorDialect, arith::ArithDialect,
+                  cf::ControlFlowDialect, func::FuncDialect, math::MathDialect,
+                  memref::MemRefDialect, scf::SCFDialect, tensor::TensorDialect,
+                  ub::UBDialect, LLVM::LLVMDialect, jeff::JeffDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
   auto moduleOp = parseSourceString<ModuleOp>(ir, &context);
@@ -488,9 +490,13 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
         auto expectedTypes = resultTypes;
         if (allowClassicalRegisterStorageConversion) {
           const auto normalizeClassicalRegister = [](std::string& type) {
-            if (StringRef(type).starts_with("memref<") &&
-                StringRef(type).ends_with("xi1>")) {
-              type.replace(0, StringRef("memref").size(), "tensor");
+            const auto text = StringRef(type);
+            if (text.starts_with("!cbit.reg<") && text.ends_with(">")) {
+              type = "tensor<" +
+                     text.drop_front(StringRef("!cbit.reg<").size())
+                         .drop_back()
+                         .str() +
+                     "xi1>";
             }
           };
           llvm::for_each(observedTypes, normalizeClassicalRegister);
@@ -573,7 +579,7 @@ ratio = 2.0;
   std::vector<std::string> resultTypes;
   ASSERT_TRUE(throughOptimizedQCO(program, restoredQC, resultTypes));
   EXPECT_EQ(resultTypes,
-            (std::vector<std::string>{"i64", "memref<2xi1>", "f64"}));
+            (std::vector<std::string>{"i64", "!cbit.reg<2>", "f64"}));
   ASSERT_TRUE(restoredQC);
   auto emitted = restoredQC->toOpenQASM3();
   ASSERT_TRUE(emitted);

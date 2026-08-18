@@ -475,35 +475,6 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       reg.results.assign(static_cast<size_t>(size), Value{});
     });
 
-    funcOp.walk([&](cbit::StoreOp storeOp) {
-      auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
-      auto measureOp = storeOp.getValue().getDefiningOp<MeasureOp>();
-      if (!allocOp || !state.cregIndices.contains(allocOp.getOperation())) {
-        storeOp.emitError(
-            "QIR conversion only supports storing direct measurement results "
-            "in classical result registers");
-        hasInvalidMemory = true;
-        return;
-      }
-      if (!measureOp) {
-        storeOp.emitError(
-            "QIR conversion does not support non-measurement CBit stores");
-        hasInvalidMemory = true;
-        return;
-      }
-      const auto destination = std::pair<size_t, Value>{
-          state.cregIndices.at(allocOp.getOperation()), storeOp.getIndex()};
-      const auto [it, inserted] = state.cregMeasurements.try_emplace(
-          measureOp.getOperation(), destination);
-      if (!inserted && it->second != destination) {
-        storeOp.emitError(
-            "a measurement result cannot be stored in multiple classical "
-            "register locations during QIR conversion");
-        hasInvalidMemory = true;
-      }
-      consumedStores.push_back(storeOp);
-    });
-
     const auto markRegisterForRecording = [&](const size_t registerIndex) {
       auto& reg = state.cregs[registerIndex];
       if (reg.record) {
@@ -547,6 +518,39 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       funcOp.setFunctionType(FunctionType::get(
           funcOp.getContext(), funcOp.getFunctionType().getInputs(),
           keptReturnTypes));
+    });
+
+    funcOp.walk([&](cbit::StoreOp storeOp) {
+      auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
+      if (!allocOp || !state.cregIndices.contains(allocOp.getOperation())) {
+        storeOp.emitError(
+            "QIR conversion requires direct CBit register allocations");
+        hasInvalidMemory = true;
+        return;
+      }
+      const auto registerIndex = state.cregIndices.at(allocOp.getOperation());
+      if (!state.cregs[registerIndex].record) {
+        return;
+      }
+      auto measureOp = storeOp.getValue().getDefiningOp<MeasureOp>();
+      if (!measureOp) {
+        storeOp.emitError(
+            "QIR conversion does not support non-measurement stores to "
+            "returned CBit registers");
+        hasInvalidMemory = true;
+        return;
+      }
+      const auto destination =
+          std::pair<size_t, Value>{registerIndex, storeOp.getIndex()};
+      const auto [it, inserted] = state.cregMeasurements.try_emplace(
+          measureOp.getOperation(), destination);
+      if (!inserted && it->second != destination) {
+        storeOp.emitError(
+            "a measurement result cannot be stored in multiple classical "
+            "register locations during QIR conversion");
+        hasInvalidMemory = true;
+      }
+      consumedStores.push_back(storeOp);
     });
   });
   if (hasInvalidMemory) {

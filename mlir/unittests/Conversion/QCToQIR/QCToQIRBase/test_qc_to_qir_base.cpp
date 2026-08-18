@@ -277,7 +277,8 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {
   const auto c = builder.allocClassicalBitRegister(
       1, {}, mlir::cbit::Initialization::Undefined);
   builder.storeClassicalBit(builder.boolConstant(true), c, 0);
-  auto module = builder.finalize();
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
   ASSERT_TRUE(module);
 
   bool sawExpectedDiagnostic = false;
@@ -286,7 +287,7 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
     sawExpectedDiagnostic |= StringRef(message).contains(
-        "does not support non-measurement CBit stores");
+        "does not support non-measurement stores to returned CBit registers");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
@@ -320,7 +321,8 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
       1, {}, mlir::cbit::Initialization::Undefined);
   builder.measure(q, c, 0);
   builder.storeClassicalBit(builder.boolConstant(false), c, 0);
-  auto module = builder.finalize();
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
   ASSERT_TRUE(module);
 
   bool sawExpectedDiagnostic = false;
@@ -329,7 +331,7 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
     sawExpectedDiagnostic |= StringRef(message).contains(
-        "does not support non-measurement CBit stores");
+        "does not support non-measurement stores to returned CBit registers");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
@@ -373,9 +375,9 @@ TEST(QCToQIRBaseNativeTest, RejectsDynamicClassicalRegisterIndex) {
   auto unknown = LLVM::UndefOp::create(builder, builder.getI64Type());
   auto index = arith::IndexCastOp::create(builder, builder.getIndexType(),
                                           unknown.getResult());
-  const auto result = builder.measure(q, c, index.getResult());
-  builder.retype(result.getType());
-  auto module = builder.finalize(result);
+  builder.measure(q, c, index.getResult());
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
   ASSERT_TRUE(module);
 
   bool sawExpectedDiagnostic = false;

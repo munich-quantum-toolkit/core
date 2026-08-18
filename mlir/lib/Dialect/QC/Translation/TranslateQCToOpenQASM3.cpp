@@ -785,8 +785,21 @@ private:
 
   [[nodiscard]] LogicalResult emitStore(cbit::StoreOp store) {
     auto target = emitBitReference(store.getReg(), store.getIndex());
+    if (failed(target)) {
+      return failure();
+    }
+    if (auto measurement = store.getValue().getDefiningOp<qc::MeasureOp>();
+        measurement && measurement.getResult().hasOneUse() &&
+        measurement->getNextNode() == store.getOperation()) {
+      auto qubit = emitQubit(measurement.getQubit());
+      if (failed(qubit)) {
+        return failure();
+      }
+      *output << *target << " = measure " << *qubit << ";\n";
+      return success();
+    }
     auto value = emitExpression(store.getValue());
-    if (failed(target) || failed(value)) {
+    if (failed(value)) {
       return failure();
     }
     *output << *target << " = " << *value << ";\n";
@@ -794,6 +807,13 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitMeasurement(qc::MeasureOp measurement) {
+    if (measurement.getResult().hasOneUse()) {
+      if (auto store = dyn_cast<cbit::StoreOp>(
+              *measurement.getResult().getUsers().begin());
+          store && measurement->getNextNode() == store.getOperation()) {
+        return success();
+      }
+    }
     auto qubit = emitQubit(measurement.getQubit());
     if (failed(qubit)) {
       return failure();

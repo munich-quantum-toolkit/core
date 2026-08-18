@@ -8,9 +8,9 @@ tocdepth: 3
 
 ## Register semantics
 
-`!cbit.reg<N>` represents one non-aliasing register of `N` classical bits.
-The width is static and must be positive. `cbit.alloc` states the initialization
-of each register:
+`!cbit.reg<N>` represents one non-aliasing register of `N` classical bits. The
+width is static and must be positive. `cbit.alloc` states the initialization of
+each register:
 
 - `#cbit.init<zero>` defines every element as false.
 - `#cbit.init<undefined>` leaves every element undefined until a `cbit.store`
@@ -31,8 +31,8 @@ identity, initialization, names, loads, stores, and returned results.
 
 ## Memory lowering
 
-Use `convert-cbit-to-memref` when a later pipeline requires generic memory.
-The pass converts `!cbit.reg<N>` to `memref<Nxi1>` in operations, function
+Use `convert-cbit-to-memref` when a later pipeline requires generic memory. The
+pass converts `!cbit.reg<N>` to `memref<Nxi1>` in operations, function
 signatures, calls, branches, and returns. It lowers zero initialization to an
 allocation followed by false stores. It lowers undefined initialization to an
 allocation only.

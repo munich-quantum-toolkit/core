@@ -82,6 +82,42 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
   EXPECT_TRUE(qc::translateQASM3ToQC(*source, &context));
 }
 
+TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main() -> !cbit.reg<1>
+        attributes {passthrough = ["entry_point"]} {
+      %zero = arith.constant 0 : index
+      %qubit = qc.alloc : !qc.qubit
+      %bits = cbit.alloc(#cbit.init<undefined>) source_name = "c"
+          : !cbit.reg<1>
+      %measured = qc.measure %qubit : !qc.qubit -> i1
+      qc.x %qubit : !qc.qubit
+      cbit.store %measured, %bits[%zero] : !cbit.reg<1>
+      qc.dealloc %qubit : !qc.qubit
+      return %bits : !cbit.reg<1>
+    }
+  })mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  const auto measurement = emitted->find("bit _mqt_b0 = measure _mqt_q0;");
+  const auto gate = emitted->find("x _mqt_q0;");
+  const auto store = emitted->find("c[0] = _mqt_b0;");
+  ASSERT_NE(measurement, std::string::npos) << *emitted;
+  ASSERT_NE(gate, std::string::npos) << *emitted;
+  ASSERT_NE(store, std::string::npos) << *emitted;
+  EXPECT_LT(measurement, gate);
+  EXPECT_LT(gate, store);
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
+}
+
 TEST(OpenQASM3EmissionTest, UsesCanonicalOutputTypesWithoutResultMetadata) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
@@ -167,7 +203,7 @@ TEST(OpenQASM3EmissionTest, EmitsStatementOnlyStructuredControl) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit q;
-bit condition = false;
+bit condition = measure q;
 int selector = 1;
 if (condition) {
   for int i in [0:2] {

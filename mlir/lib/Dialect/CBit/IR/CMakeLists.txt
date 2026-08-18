@@ -15,6 +15,7 @@ add_mlir_dialect_library(
   MLIRCBitOpsIncGen
   LINK_LIBS
   PRIVATE
+  MLIRArithDialect
   MLIRDialectUtils
   MLIRIR
   MLIRSideEffectInterfaces)

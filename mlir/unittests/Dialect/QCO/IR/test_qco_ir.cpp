@@ -90,8 +90,8 @@ protected:
 void QCOTest::SetUp() {
   // Register all necessary dialects
   DialectRegistry registry;
-  registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                  memref::MemRefDialect, scf::SCFDialect,
+  registry.insert<cbit::CBitDialect, QCODialect, arith::ArithDialect,
+                  func::FuncDialect, memref::MemRefDialect, scf::SCFDialect,
                   qtensor::QTensorDialect>();
   context = std::make_unique<MLIRContext>();
   context->appendDialectRegistry(registry);
@@ -887,12 +887,12 @@ TEST_F(QCOTest, IndexSwitchParser) {
   // Test IndexSwitch parser
   const char* mlirCode = R"(
       module {
-        func.func @main() -> memref<3xi1> attributes {passthrough = ["entry_point"]} {
+        func.func @main() -> !cbit.reg<3> attributes {passthrough = ["entry_point"]} {
             %c2 = arith.constant 2 : index
             %c1 = arith.constant 1 : index
             %c0 = arith.constant 0 : index
             %c3 = arith.constant 3 : index
-            %c = memref.alloc() : memref<3xi1>
+            %c = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<3>
             %0 = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
             %1 = scf.for %arg0 = %c0 to %c3 step %c1 iter_args(%arg1 = %0) -> (tensor<3x!qco.qubit>) {
             %5 = arith.remui %arg0, %c3 : index
@@ -919,18 +919,18 @@ TEST_F(QCOTest, IndexSwitchParser) {
             }
             %out_tensor, %result = qtensor.extract %1[%c0] : tensor<3x!qco.qubit>
             %qubit_out, %result_0 = qco.measure %result : !qco.qubit
-            memref.store %result_0, %c[%c0] : memref<3xi1>
+            cbit.store %result_0, %c[%c0] : !cbit.reg<3>
             %2 = qtensor.insert %qubit_out into %out_tensor[%c0] : tensor<3x!qco.qubit>
             %out_tensor_1, %result_2 = qtensor.extract %2[%c1] : tensor<3x!qco.qubit>
             %qubit_out_3, %result_4 = qco.measure %result_2 : !qco.qubit
-            memref.store %result_4, %c[%c1] : memref<3xi1>
+            cbit.store %result_4, %c[%c1] : !cbit.reg<3>
             %3 = qtensor.insert %qubit_out_3 into %out_tensor_1[%c1] : tensor<3x!qco.qubit>
             %out_tensor_5, %result_6 = qtensor.extract %3[%c2] : tensor<3x!qco.qubit>
             %qubit_out_7, %result_8 = qco.measure %result_6 : !qco.qubit
-            memref.store %result_8, %c[%c2] : memref<3xi1>
+            cbit.store %result_8, %c[%c2] : !cbit.reg<3>
             %4 = qtensor.insert %qubit_out_7 into %out_tensor_5[%c2] : tensor<3x!qco.qubit>
             qtensor.dealloc %4 : tensor<3x!qco.qubit>
-            return %c : memref<3xi1>
+            return %c : !cbit.reg<3>
         }
     })";
 
