@@ -77,7 +77,7 @@ class Term:
 class Expression:
     r"""A symbolic expression which consists of a sum of terms and a constant.
 
-    The expression is of the form :math:`constant + term_1 + term_2 + \dots + term_n`.
+    The expression is of the form :math:`constant + term_1 + term_2 + \\dots + term_n`.
     Alternatively, an expression can be created with a single term and a constant or just a constant.
 
     Args:

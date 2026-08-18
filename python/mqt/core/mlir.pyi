@@ -13,7 +13,7 @@ import os
 from collections.abc import Sequence
 from typing import Literal, overload
 
-import qiskit
+import qiskit.circuit
 
 from mqt.core._compat.typing import Unpack
 from mqt.core.qdmi import Device

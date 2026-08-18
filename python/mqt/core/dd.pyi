@@ -300,7 +300,7 @@ class DDPackage:
         """The maximum number of qubits that the DDPackage can handle."""
 
     def zero_state(self, num_qubits: int) -> VectorDD:
-        r"""Create the DD for the zero state :math:`| 0 \ldots 0 \rangle`.
+        r"""Create the DD for the zero state :math:`| 0 \\ldots 0 \\rangle`.
 
         Args:
             num_qubits: The number of qubits.
@@ -312,7 +312,7 @@ class DDPackage:
         """
 
     def computational_basis_state(self, num_qubits: int, state: Sequence[bool]) -> VectorDD:
-        r"""Create the DD for the computational basis state :math:`| b_{n - 1} \ldots b_0 \rangle`.
+        r"""Create the DD for the computational basis state :math:`| b_{n - 1} \\ldots b_0 \\rangle`.
 
         Args:
             num_qubits: The number of qubits.
@@ -326,7 +326,7 @@ class DDPackage:
         """
 
     def basis_state(self, num_qubits: int, state: Sequence[BasisStates]) -> VectorDD:
-        r"""Create the DD for the basis state :math:`| B_{n - 1} \ldots B_0 \rangle`, where :math:`B_i \in \{0, 1, +\, -\, L, R\}`.
+        r"""Create the DD for the basis state :math:`| B_{n - 1} \\ldots B_0 \\rangle`, where :math:`B_i \\in \\{0, 1, +\\, -\\, L, R\\}`.
 
         Args:
             num_qubits: The number of qubits.
@@ -340,7 +340,7 @@ class DDPackage:
         """
 
     def ghz_state(self, num_qubits: int) -> VectorDD:
-        r"""Create the DD for the GHZ state :math:`\frac{1}{\sqrt{2}} (| 0 \ldots 0 \rangle + |1 \ldots 1 \rangle)`.
+        r"""Create the DD for the GHZ state :math:`\\frac{1}{\\sqrt{2}} (| 0 \\ldots 0 \\rangle + |1 \\ldots 1 \\rangle)`.
 
         Args:
             num_qubits: The number of qubits.
@@ -352,10 +352,10 @@ class DDPackage:
         """
 
     def w_state(self, num_qubits: int) -> VectorDD:
-        r"""Create the DD for the W state :math:`|W\rangle`.
+        r"""Create the DD for the W state :math:`|W\\rangle`.
 
         .. math::
-            |W\rangle = \frac{1}{\sqrt{n}} (| 100 \ldots 0 \rangle + | 010 \ldots 0 \rangle + \ldots + | 000 \ldots 1 \rangle)
+            |W\\rangle = \\frac{1}{\\sqrt{n}} (| 100 \\ldots 0 \\rangle + | 010 \\ldots 0 \\rangle + \\ldots + | 000 \\ldots 1 \\rangle)
 
         Args:
             num_qubits: The number of qubits.
@@ -509,7 +509,7 @@ class DDPackage:
         r"""Create the DD for a single-qubit gate.
 
         Args:
-            matrix: The :math:`2 \times 2` matrix representing the single-qubit gate.
+            matrix: The :math:`2 \\times 2` matrix representing the single-qubit gate.
             target: The target qubit.
 
         Returns:
@@ -525,7 +525,7 @@ class DDPackage:
         r"""Create the DD for a controlled single-qubit gate.
 
         Args:
-            matrix: The :math:`2 \times 2` matrix representing the single-qubit gate.
+            matrix: The :math:`2 \\times 2` matrix representing the single-qubit gate.
             control: The control qubit.
             target: The target qubit.
 
@@ -542,7 +542,7 @@ class DDPackage:
         r"""Create the DD for a multi-controlled single-qubit gate.
 
         Args:
-            matrix: The :math:`2 \times 2` matrix representing the single-qubit gate.
+            matrix: The :math:`2 \\times 2` matrix representing the single-qubit gate.
             controls: The control qubits.
             target: The target qubit.
 
@@ -556,7 +556,7 @@ class DDPackage:
         r"""Create the DD for a two-qubit gate.
 
         Args:
-            matrix: The :math:`4 \times 4` matrix representing the two-qubit gate.
+            matrix: The :math:`4 \\times 4` matrix representing the two-qubit gate.
             target0: The first target qubit.
             target1: The second target qubit.
 
@@ -574,7 +574,7 @@ class DDPackage:
         r"""Create the DD for a controlled two-qubit gate.
 
         Args:
-            matrix: The :math:`4 \times 4` matrix representing the two-qubit gate.
+            matrix: The :math:`4 \\times 4` matrix representing the two-qubit gate.
             control: The control qubit.
             target0: The first target qubit.
             target1: The second target qubit.
@@ -593,7 +593,7 @@ class DDPackage:
         r"""Create the DD for a multi-controlled two-qubit gate.
 
         Args:
-            matrix: The :math:`4 \times 4` matrix representing the two-qubit gate.
+            matrix: The :math:`4 \\times 4` matrix representing the two-qubit gate.
             controls: The control qubits.
             target0: The first target qubit.
             target1: The second target qubit.
@@ -769,7 +769,7 @@ class DDPackage:
         Notes:
             The state must have at least as many qubits as the observable non-trivially acts on.
 
-            The method computes :math:`\langle \psi | O | \psi \rangle` as :math:`\langle \psi | (O | \psi \rangle)`.
+            The method computes :math:`\\langle \\psi | O | \\psi \\rangle` as :math:`\\langle \\psi | (O | \\psi \\rangle)`.
 
         Args:
             observable: The observable.
@@ -841,29 +841,29 @@ class BasisStates(enum.Enum):
     """Enumeration of basis states."""
 
     zero = 0
-    r"""The computational basis state :math:`|0\rangle`."""
+    """The computational basis state :math:`|0\\rangle`."""
 
     one = 1
-    r"""The computational basis state :math:`|1\rangle`."""
+    """The computational basis state :math:`|1\\rangle`."""
 
     plus = 2
-    r"""
-    The superposition state :math:`|+\rangle = \frac{1}{\sqrt{2}} (|0\rangle + |1\rangle)`.
+    """
+    The superposition state :math:`|+\\rangle = \\frac{1}{\\sqrt{2}} (|0\\rangle + |1\\rangle)`.
     """
 
     minus = 3
-    r"""
-    The superposition state :math:`|-\rangle = \frac{1}{\sqrt{2}} (|0\rangle - |1\rangle)`.
+    """
+    The superposition state :math:`|-\\rangle = \\frac{1}{\\sqrt{2}} (|0\\rangle - |1\\rangle)`.
     """
 
     right = 4
-    r"""
-    The superposition state :math:`|R\rangle = \frac{1}{\sqrt{2}} (|0\rangle - i |1\rangle)`.
+    """
+    The superposition state :math:`|R\\rangle = \\frac{1}{\\sqrt{2}} (|0\\rangle - i |1\\rangle)`.
     """
 
     left = 5
-    r"""
-    The superposition state :math:`|L\rangle = \frac{1}{\sqrt{2}} (|0\rangle + i |1\rangle)`.
+    """
+    The superposition state :math:`|L\\rangle = \\frac{1}{\\sqrt{2}} (|0\\rangle + i |1\\rangle)`.
     """
 
 def sample(qc: mqt.core.ir.QuantumComputation, shots: int = 1024, seed: int = 0) -> dict[str, int]:
