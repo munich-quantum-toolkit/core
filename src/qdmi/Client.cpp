@@ -392,6 +392,19 @@ Job Device::submitJob(const std::span<const std::byte> program,
                       const std::optional<CustomJobParameter>& custom5) const {
   rejectUnsupportedProgramFormat(format);
 
+  return submitJobImpl(format, program, numShots, custom1, custom2, custom3,
+                       custom4, custom5);
+}
+
+Job Device::submitJobImpl(
+    const QDMI_Program_Format format,
+    const std::optional<std::span<const std::byte>> program,
+    const std::optional<size_t> numShots,
+    const std::optional<CustomJobParameter>& custom1,
+    const std::optional<CustomJobParameter>& custom2,
+    const std::optional<CustomJobParameter>& custom3,
+    const std::optional<CustomJobParameter>& custom4,
+    const std::optional<CustomJobParameter>& custom5) const {
   QDMI_Job job = nullptr;
   qdmi::throwIfError(QDMI_device_create_job(device_.get(), &job),
                      "Creating job");
@@ -401,14 +414,18 @@ Job Device::submitJob(const std::span<const std::byte> program,
                                             QDMI_JOB_PARAMETER_PROGRAMFORMAT,
                                             sizeof(format), &format),
                      "Setting program format");
-  qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
-                                            QDMI_JOB_PARAMETER_PROGRAM,
-                                            program.size(), program.data()),
-                     "Setting program");
-  qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
-                                            QDMI_JOB_PARAMETER_SHOTSNUM,
-                                            sizeof(numShots), &numShots),
-                     "Setting number of shots");
+  if (program.has_value()) {
+    qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
+                                              QDMI_JOB_PARAMETER_PROGRAM,
+                                              program->size(), program->data()),
+                       "Setting program");
+  }
+  if (numShots.has_value()) {
+    qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
+                                              QDMI_JOB_PARAMETER_SHOTSNUM,
+                                              sizeof(*numShots), &*numShots),
+                       "Setting number of shots");
+  }
 
   if (custom1.has_value()) {
     setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM1, *custom1);
@@ -437,44 +454,10 @@ Job Device::submitCalibrationJob(
     const std::optional<CustomJobParameter>& custom3,
     const std::optional<CustomJobParameter>& custom4,
     const std::optional<CustomJobParameter>& custom5) const {
-  QDMI_Job job = nullptr;
-  qdmi::throwIfError(QDMI_device_create_job(device_.get(), &job),
-                     "Creating job");
-  Job jobWrapper{job, device_};
-
-  constexpr auto format = QDMI_PROGRAM_FORMAT_CALIBRATION;
-  qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
-                                            QDMI_JOB_PARAMETER_PROGRAMFORMAT,
-                                            sizeof(format), &format),
-                     "Setting program format");
-  // QDMI does not require a program for a calibration run, so the parameter is
-  // set only when the caller supplies one. The device defines what it means.
-  if (program.has_value()) {
-    qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
-                                              QDMI_JOB_PARAMETER_PROGRAM,
-                                              program->size(), program->data()),
-                       "Setting program");
-  }
-  // A calibration run executes no circuit, so it takes no shot count.
-
-  if (custom1.has_value()) {
-    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM1, *custom1);
-  }
-  if (custom2.has_value()) {
-    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM2, *custom2);
-  }
-  if (custom3.has_value()) {
-    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM3, *custom3);
-  }
-  if (custom4.has_value()) {
-    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM4, *custom4);
-  }
-  if (custom5.has_value()) {
-    setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM5, *custom5);
-  }
-
-  qdmi::throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");
-  return jobWrapper;
+  const auto payload =
+      program.has_value() && !program->empty() ? program : std::nullopt;
+  return submitJobImpl(QDMI_PROGRAM_FORMAT_CALIBRATION, payload, std::nullopt,
+                       custom1, custom2, custom3, custom4, custom5);
 }
 
 Job Device::submitCalibrationJob(

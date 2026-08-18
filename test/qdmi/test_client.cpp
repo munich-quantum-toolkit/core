@@ -854,6 +854,11 @@ TEST_F(DDSimulatorDeviceTest, CalibrationJobReachesTheDevice) {
   EXPECT_THROW(std::ignore = device.submitCalibrationJob(payload),
                std::runtime_error);
 
+  constexpr std::byte emptyPayloadStorage{};
+  const std::span emptyPayload{&emptyPayloadStorage, size_t{0}};
+  EXPECT_THROW(std::ignore = device.submitCalibrationJob(emptyPayload),
+               std::runtime_error);
+
   EXPECT_NO_THROW({
     try {
       std::ignore = device.submitCalibrationJob();

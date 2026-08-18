@@ -625,7 +625,8 @@ public:
    * present, the device defines what it means, which is usually a
    * configuration for the run. A calibration run executes no circuit, so no
    * shot count is set.
-   * @param program The calibration payload, or `std::nullopt` for none.
+   * @param program The calibration payload. An empty span or `std::nullopt`
+   * means that the job has no payload.
    * @see QDMI_job_submit
    */
   [[nodiscard]] Job submitCalibrationJob(
@@ -739,6 +740,16 @@ private:
       return value;
     }
   }
+
+  [[nodiscard]] Job
+  submitJobImpl(QDMI_Program_Format format,
+                std::optional<std::span<const std::byte>> program,
+                std::optional<size_t> numShots,
+                const std::optional<CustomJobParameter>& custom1,
+                const std::optional<CustomJobParameter>& custom2,
+                const std::optional<CustomJobParameter>& custom3,
+                const std::optional<CustomJobParameter>& custom4,
+                const std::optional<CustomJobParameter>& custom5) const;
 
   static void setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
                                 const CustomJobParameter& value);

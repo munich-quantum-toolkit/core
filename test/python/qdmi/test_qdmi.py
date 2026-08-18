@@ -529,7 +529,7 @@ def test_device_sends_calibration_runs_elsewhere(ddsim_device: Device) -> None:
         ddsim_device.submit_job(b"", ProgramFormat.CALIBRATION, num_shots=1)
 
 
-@pytest.mark.parametrize("program", [None, "configuration", b"\x01\x02"])
+@pytest.mark.parametrize("program", [None, "configuration", b"", b"\x01\x02"])
 def test_calibration_job_reaches_the_device(ddsim_device: Device, program: str | bytes | None) -> None:
     """Let the device decide about a calibration run, with or without a payload.
 
