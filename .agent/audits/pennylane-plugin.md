@@ -310,8 +310,15 @@ Two branches lost their old callers when the tests moved to the device boundary:
 the OpenQASM 3 and OpenQASM 2 refusals of an unadvertised operation, which
 `decompose` now reaches first. Both tests regained them by also executing a tape
 through `Device.execute` directly, which is the path where conversion, not
-preprocessing, has to refuse. Plugin coverage is 85% before and after, with
-three fewer missed statements in absolute terms over a smaller body of code.
+preprocessing, has to refuse.
+
+Codecov then rejected the patch at 92.8% of the diff, which exposed something
+the audit had not looked for: `_validate_qdmi_contract` reads advertised sites,
+site pairs, and the device coupling map, and no test exercised any of it beyond
+one site-pair rejection. Those tests now exist. Plugin coverage went from 85% to
+90%, the converter from 82% to 94%, and every source line this change added is
+covered. The one branch that could not be covered, a third program format in
+`supports`, was unreachable and is gone.
 
 `.agent/plans/qdmi-pennylane-device.md:385-387` still documents
 `ConvertedProgram` and `convert_program` as public. It is left as the record of
