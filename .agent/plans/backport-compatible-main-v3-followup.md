@@ -38,6 +38,9 @@ must pass.
 - [x] (2026-08-18 22:54Z) Regenerated stubs and the lockfile. Completed focused
   and aggregate native and Python validation, subject to the recorded local
   tool-environment limits.
+- [x] (2026-08-19 00:05Z) Rebased the signed branch onto `v3.x` after #2153
+  merged, regenerated the lockfile, repeated affected stub and Python 3.10
+  validation, and reran the complete lint suite with Python 3.14.
 - [ ] Publish a draft pull request against `v3.x`, apply repository metadata,
   and inspect checks for the exact head.
 
@@ -46,11 +49,14 @@ must pass.
 - Observation: `v3.x` already contains the automatic backports of #2141, #2142,
   and #2146. Evidence: its current first-parent history ends in pull requests
   #2144, #2143, and #2151.
-- Observation: The automatic #2145 backport remains a separate open pull
-  request. Evidence: pull request #2153 targets `v3.x` and is not merged.
-- Observation: Pull request #2157 is open but its two substantive commits are
-  available independently of its merge-from-main commit. Evidence: commits
-  `6eaea2ad` and `0009e392` contain the implementation and changelog entry.
+- Observation: The automatic #2145 backport merged while this work was in
+  progress. Evidence: pull request #2153 merged into `v3.x` as
+  `e4ef15f13002e79229d7496faa320657690974f4`. The branch was rebased onto that
+  exact commit and its lockfile was regenerated.
+- Observation: Pull request #2157 was still open when its two substantive
+  commits were applied independently of its merge-from-main commit. Evidence:
+  commits `6eaea2ad` and `0009e392` contain the implementation and changelog
+  entry. Pull request #2157 merged into `main` later in the same session.
 - Observation: The product and test changes from #2147 apply to the v3 plugin,
   but its reconciled audit ledger requires #2124 first. Evidence: #2147 modifies
   `.agent/audits/pennylane-plugin.md`, which #2124 creates.
@@ -108,15 +114,21 @@ plugin and focused Python QDMI run passed 349 tests and skipped two MLIR-only
 tests. The Python 3.10 nox session passed 522 tests and skipped eight. A regular
 wheel under Python 3.14 passed 561 tests and skipped five. The focused
 minimum-dependency PennyLane wheel passed 40 tests. `uv lock --check`, stub
-generation, and `git diff --check` passed.
+generation, the complete Python 3.14 lint suite, and `git diff --check` passed.
+After #2153 merged, the branch was rebased onto its exact `v3.x` merge commit.
+The lockfile was regenerated, stub generation left no diff, and the repeated
+Python 3.10 session passed 522 tests and skipped five.
 
 The local `tests-3.14` and `minimums-3.12` nox wrappers failed before collection
 because their editable `.start` hooks did not load compiled modules. The same
 environments passed after regular-wheel installation. The default docs and lint
 sessions initially selected Python 3.15 and hit upstream tool or missing-wheel
-limits. Python-pinned documentation and lint results are recorded when those
-checks finish. Publication remains in progress; add the draft pull-request URL
-and exact-head check state after publication.
+limits. The Python 3.14 lint session passed. A Python 3.14 regular-wheel docs
+environment completed Doxygen and Breathe setup, but Sphinx AutoAPI did not
+finish after more than six minutes while its analyzer emitted recursive
+inference warnings. Documentation validation therefore did not complete locally.
+Publication remains in progress; add the draft pull-request URL and exact-head
+check state after publication.
 
 ## Context and Orientation
 
@@ -241,8 +253,9 @@ pull request; a human reviews and merges it.
 
 The scan starts after combined backport \#2117. Automatic backports \#2141,
 \#2142, and \#2146 are already present. Pull request \#2153 remains responsible
-for \#2145. Pull requests \#2124, \#2147, \#2148, \#2156, and \#2157 are the
-main functional sources for this follow-up.
+for \#2145 and is now part of the updated `v3.x` base. Pull requests \#2124,
+\#2147, \#2148, \#2156, and \#2157 are the main functional sources for this
+follow-up.
 
 ### Interfaces and Dependencies
 
@@ -259,3 +272,7 @@ PennyLane optional-dependency and Python 3.10 boundaries remain unchanged.
 Revision note (2026-08-18): Created after refreshing the live branches and pull
 requests. The scope includes the maintainer's explicit decisions to port #2147
 in full and to include #2157 before its merge.
+
+Revision note (2026-08-19): Rebased onto the `v3.x` merge of #2153, regenerated
+the lockfile, repeated affected validation, and recorded the completed lint and
+limited documentation results.
