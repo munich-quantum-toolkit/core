@@ -201,6 +201,9 @@ def test_rejects_analytic_execution_before_submission(monkeypatch: pytest.Monkey
 
     with pytest.raises(PennyLaneValidationError, match="finite number of shots"):
         circuit()
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=0)], shots=None)
+    with pytest.raises(PennyLaneValidationError, match="finite number of shots"):
+        device.execute(tape)
     assert not qdmi.submissions
 
 

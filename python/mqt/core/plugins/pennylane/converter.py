@@ -37,11 +37,9 @@ if TYPE_CHECKING:
     from pennylane.tape import QuantumScript
     from pennylane.wires import Wires
 
-__all__ = ["ConvertedProgram", "ProgramConverter"]
-
 
 @dataclass(frozen=True)
-class ConvertedProgram:
+class _ConvertedProgram:
     """A QDMI payload plus the information required to decode its measurements."""
 
     payload: str
@@ -178,7 +176,7 @@ def _validate_operation_shape(operation: Operator, spec: _OperationSpec) -> None
         raise ValidationError(msg)
 
 
-class ProgramConverter:
+class _ProgramConverter:
     """Convert preprocessed PennyLane tapes for one opened QDMI device.
 
     The advertised operation table and the wire mapping do not change while a
@@ -216,7 +214,7 @@ class ProgramConverter:
         spelling = _QASM2_OPERATIONS.get(operation.name)
         return spelling is not None and spelling in self._advertised
 
-    def convert(self, tape: QuantumScript) -> ConvertedProgram:
+    def convert(self, tape: QuantumScript) -> _ConvertedProgram:
         """Convert one preprocessed tape to the selected program format.
 
         A QASM3 translation error is never retried as QASM2. QASM2 is selected
@@ -229,13 +227,13 @@ class ProgramConverter:
             return self._convert_qasm3(tape)
         return self._convert_qasm2(tape)
 
-    def _program(self, tape: QuantumScript, payload: str) -> ConvertedProgram:
+    def _program(self, tape: QuantumScript, payload: str) -> _ConvertedProgram:
         """Attach the measurement-decoding metadata to one converted payload.
 
         Returns:
             The converted QDMI program.
         """
-        return ConvertedProgram(
+        return _ConvertedProgram(
             payload=payload,
             program_format=self._program_format,
             wire_map=self._wire_map,
@@ -308,7 +306,7 @@ class ProgramConverter:
             msg = f"Device topology does not connect wires {indices} for operation '{operation.name}'."
             raise ValidationError(msg)
 
-    def _convert_qasm3(self, tape: QuantumScript) -> ConvertedProgram:
+    def _convert_qasm3(self, tape: QuantumScript) -> _ConvertedProgram:
         """Emit a minimal capability-driven OpenQASM 3 program.
 
         Returns:
@@ -352,7 +350,7 @@ class ProgramConverter:
         lines.append("c = measure q;")
         return self._program(tape, "\n".join(lines) + "\n")
 
-    def _convert_qasm2(self, tape: QuantumScript) -> ConvertedProgram:
+    def _convert_qasm2(self, tape: QuantumScript) -> _ConvertedProgram:
         """Serialize a QASM2-only program with PennyLane's built-in converter.
 
         Returns:

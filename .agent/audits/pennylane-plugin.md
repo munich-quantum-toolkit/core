@@ -300,7 +300,7 @@ it should be a maintainer decision rather than a drive-by change. It is listed
 last for that reason, not because it is worth least.
 
 **Applied.** `test_converter.py` is rewritten against `QDMIDevice` and
-`StubDevice.submissions`, and `ProgramConverter` binds the conversion to one
+`StubDevice.submissions`, and `_ProgramConverter` binds the conversion to one
 opened device session. Measured at the QDMI boundary on a 100-gate circuit over
 an 18-operation device: 101 `operations()` round trips and 1818 `name()` calls
 per preprocessing and conversion pass become 1 and 18 once, for the life of the
@@ -398,8 +398,8 @@ credit for them; they are recorded so the reading is not wasted.
   first whenever the tape has shots, which is always.
 - `_finite_parameter` and `_format_parameter` (`converter.py:202-228`) are 25
   lines across two functions, each with one caller.
-- `converter.py:348-353` and `converter.py:392-397` construct `ConvertedProgram`
-  twice with identical measurement-decoding arguments.
+- `converter.py:348-353` and `converter.py:392-397` construct
+  `_ConvertedProgram` twice with identical measurement-decoding arguments.
 
 **Applied.** All four landed in `#2147`, alongside the verdicts whose commits
 already touched the same lines.

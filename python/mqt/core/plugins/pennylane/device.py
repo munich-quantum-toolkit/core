@@ -32,7 +32,7 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
-from .converter import ConvertedProgram, ProgramConverter
+from .converter import _ConvertedProgram, _ProgramConverter
 from .exceptions import (
     PennyLaneConfigurationError as ConfigurationError,
 )
@@ -161,7 +161,7 @@ class QDMIDevice(Device):
         super().__init__(wires=resolved_wires, shots=None)
         self._shots = Shots(shots)
         self._program_format = self._select_program_format()
-        self._converter = ProgramConverter(self._qdmi_device, self.wires, self._program_format)
+        self._converter = _ProgramConverter(self._qdmi_device, self.wires, self._program_format)
         self._submitted_jobs = 0
         self._execution_time = 0.0
 
@@ -239,7 +239,13 @@ class QDMIDevice(Device):
 
         Returns:
             One positive shot count per required QDMI job.
+
+        Raises:
+            PennyLaneValidationError: If execution is analytic.
         """
+        if not shots:
+            msg = "QDMI devices require a finite number of shots."
+            raise ValidationError(msg)
         return tuple(shot_copy.shots for shot_copy in shots.shot_vector for _ in range(shot_copy.copies))
 
     @staticmethod
@@ -266,7 +272,7 @@ class QDMIDevice(Device):
             raise ExecutionError(msg) from exc
         return [bitstring for bitstring, count in sorted(counts.items()) for _ in range(count)]
 
-    def _samples(self, job: QDMIJobHandle, converted: ConvertedProgram, shots: int) -> np.ndarray:
+    def _samples(self, job: QDMIJobHandle, converted: _ConvertedProgram, shots: int) -> np.ndarray:
         """Convert QDMI bit strings to PennyLane sample rows.
 
         Returns:
@@ -306,7 +312,7 @@ class QDMIDevice(Device):
             msg = f"QDMI job '{job.id}' finished with status {status.name}."
             raise ExecutionError(msg)
 
-    def _submit(self, converted: ConvertedProgram, shots: int) -> QDMIJobHandle:
+    def _submit(self, converted: _ConvertedProgram, shots: int) -> QDMIJobHandle:
         """Submit and wait for one QDMI job.
 
         Returns:

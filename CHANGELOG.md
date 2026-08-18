@@ -29,8 +29,9 @@ releases may include breaking changes.
   and Python FoMaC APIs, and expose optional device queue length and job queue
   position ([#2008], [#2010]) ([**@burgholzer**])
 - 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
-- ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
-  ([**@burgholzer**])
+- ✨ Add PennyLane support for gate-based QDMI devices and read each device's
+  advertised gate set once per session ([#2005], [#2147]) ([**@burgholzer**],
+  [**@marcelwa**])
 - ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
   stable QDMI registry IDs ([#1992]) ([**@burgholzer**])
 - ✨ Expose compressed vector and matrix DD serialization through bytes-based
@@ -44,9 +45,6 @@ releases may include breaking changes.
 
 ### Changed
 
-- 🧪 Apply the first SpecAudit to the PennyLane plugin, narrowing tests that
-  pinned unspecified behavior and reading the advertised QDMI gate set once per
-  device session ([#2147]) ([**@marcelwa**])
 - 💥 Remove the unused `pybind11` CMake helper and rename
   `add_mqt_python_binding_nanobind` to `add_mqt_python_binding` ([#2106])
   ([**@denialhaag**])
@@ -64,9 +62,6 @@ releases may include breaking changes.
 
 ### Removed
 
-- 💥 Remove `convert_program` and `ConvertedProgram` from
-  `mqt.core.plugins.pennylane`, making program conversion private behind
-  `QDMIDevice` ([#2147]) ([**@marcelwa**])
 - 💥 Remove QDMI device configuration through `[tool.qdmi]` in `pyproject.toml`
   and the vendored toml++ header ([#2116]) ([**@denialhaag**])
 

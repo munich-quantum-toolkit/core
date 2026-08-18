@@ -6,17 +6,6 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### Private PennyLane program conversion
-
-The PennyLane plugin exposes only its devices. `QDMIDevice` and `DDSIMDevice`
-are the supported entry points, and the conversion surface behind them is now
-private. MQT Core removed the following names from `mqt.core.plugins.pennylane`:
-
-- `convert_program`. Execute the tape through `QDMIDevice` instead. The
-  converter now belongs to one opened device session, so it reads the advertised
-  gate set once rather than on every operation.
-- `ConvertedProgram`, the return type of `convert_program`.
-
 ### Removal of QDMI configuration through `pyproject.toml`
 
 MQT Core no longer reads QDMI device definitions from a `[tool.qdmi]` table in
