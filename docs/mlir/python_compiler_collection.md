@@ -187,8 +187,9 @@ operations.
 Dense numeric unitaries remain explicit matrix operations during import and
 export. Target compilation synthesizes supported one- and two-qubit matrices to
 the target gate set. Dense unitary operations support at most eight qubits.
-Qiskit import rejects annotated or controlled dense-unitary wrappers. Export
-supports inverse and constant powers of `1` or `-1`, but rejects controls.
+Qiskit import preserves inverse, numeric power, and closed-control modifiers on
+dense-unitary operations. Export preserves inverse and closed-control modifiers.
+Other powers require canonicalization or synthesis.
 
 A circuit remains valid when {code}`circ.layout` is present. The importer
 translates the circuit operations and deliberately does not preserve physical or

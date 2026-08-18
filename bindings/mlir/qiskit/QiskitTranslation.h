@@ -258,7 +258,8 @@ public:
   virtual void addReset(uint32_t qubit) = 0;
   virtual void addBarrier(const std::vector<uint32_t>& qubits) = 0;
   virtual void addUnitary(const std::vector<std::complex<double>>& matrix,
-                          const std::vector<uint32_t>& qubits) = 0;
+                          const std::vector<uint32_t>& qubits,
+                          uint32_t numControls) = 0;
   /** Transfer the native circuit to a new owned Python QuantumCircuit. */
   [[nodiscard]] virtual nb::object finish() = 0;
 };

@@ -67,6 +67,7 @@ struct ExportedInstruction {
   std::vector<uint32_t> clbits;
   std::vector<double> parameters;
   std::vector<std::complex<double>> matrix;
+  uint32_t unitaryControls = 0;
 };
 
 [[nodiscard]] double exportParameter(const mlir::Value value) {
@@ -190,10 +191,15 @@ modifierQubitMap(const llvm::DenseMap<mlir::Value, uint32_t>& outer,
 
 void invertGate(ExportedInstruction& instruction) {
   if (instruction.kind == ExportedInstruction::Kind::Unitary) {
-    if (instruction.qubits.size() >= std::numeric_limits<size_t>::digits / 2U) {
+    if (instruction.unitaryControls > instruction.qubits.size()) {
+      throw std::runtime_error("QC unitary has an invalid control count");
+    }
+    const auto numTargets =
+        instruction.qubits.size() - instruction.unitaryControls;
+    if (numTargets >= std::numeric_limits<size_t>::digits / 2U) {
       throw std::runtime_error("QC unitary matrix is too large to represent");
     }
-    const auto dimension = size_t{1} << instruction.qubits.size();
+    const auto dimension = size_t{1} << numTargets;
     if (dimension * dimension != instruction.matrix.size()) {
       throw std::runtime_error("QC unitary matrix has an invalid dimension");
     }
@@ -293,15 +299,14 @@ collectUnitaryInstruction(mlir::Operation& operation,
           "QC control export requires one standard gate in the modifier body");
     }
     auto result = collectUnitaryInstruction(*bodyOperations.front(), nestedMap);
-    if (result.kind == ExportedInstruction::Kind::Unitary) {
-      throw std::runtime_error(
-          "QC control export does not support dense unitary matrices");
-    }
-    if (controls.size() >
-        std::numeric_limits<uint32_t>::max() - result.gate.controls) {
+    auto& numControls = result.kind == ExportedInstruction::Kind::Unitary
+                            ? result.unitaryControls
+                            : result.gate.controls;
+    if (std::cmp_greater(controls.size(),
+                         std::numeric_limits<uint32_t>::max() - numControls)) {
       throw std::runtime_error("QC control count cannot be represented");
     }
-    result.gate.controls += static_cast<uint32_t>(controls.size());
+    numControls += static_cast<uint32_t>(controls.size());
     result.qubits.insert(result.qubits.begin(), controls.begin(),
                          controls.end());
     return result;
@@ -663,7 +668,8 @@ nb::object exportCircuit(const mlir::QCProgram& program,
       writer->addBarrier(instruction.qubits);
       break;
     case ExportedInstruction::Kind::Unitary:
-      writer->addUnitary(instruction.matrix, instruction.qubits);
+      writer->addUnitary(instruction.matrix, instruction.qubits,
+                         instruction.unitaryControls);
       break;
     }
   }
