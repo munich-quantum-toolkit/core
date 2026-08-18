@@ -47,19 +47,19 @@ void fourierTransform(qc::QCProgramBuilder& b, Value reg, const int64_t size,
 
     auto lower = arith::AddIOp::create(b, i, one);
     auto upper = arith::ConstantIndexOp::create(b, size);
-    const Value start = arith::ConstantFloatOp::create(
+    auto start = arith::ConstantFloatOp::create(
         b, b.getF64Type(), llvm::APFloat(sign * std::numbers::pi / 2.0));
-    const Value half =
+    auto half =
         arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
 
     auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});
     {
-      const OpBuilder::InsertionGuard guard(b);
+      OpBuilder::InsertionGuard guard(b);
       b.setInsertionPointToStart(loop.getBody());
       auto angle = loop.getRegionIterArg(0);
       b.cp(angle, b.loadQubit(reg, loop.getInductionVar()),
            b.loadQubit(reg, i));
-      const Value next = arith::MulFOp::create(b, angle, half);
+      auto next = arith::MulFOp::create(b, angle, half);
       scf::YieldOp::create(b, ValueRange{next});
     }
 
@@ -95,21 +95,21 @@ SmallVector<Value> controlledMultiplyModN(qc::QCProgramBuilder& b,
   auto one = arith::ConstantIndexOp::create(b, 1);
   auto factors = arith::ConstantIndexOp::create(b, factor);
   auto width = arith::ConstantIndexOp::create(b, size);
-  const Value two =
+  auto two =
       arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(2.0));
-  const Value half =
+  auto half =
       arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
 
   // Each multiplier qubit adds a shifted copy of the multiplier into the
   // accumulator, and every addition is a layer of phases in the Fourier basis.
   // The shift doubles the phase from one multiplier qubit to the next, and the
   // phase halves down the accumulator, so both angles come from the loops.
-  const Value base = arith::ConstantFloatOp::create(
+  auto base = arith::ConstantFloatOp::create(
       b, b.getF64Type(),
       llvm::APFloat(std::numbers::pi * static_cast<double>(MULTIPLIER)));
   auto outer = scf::ForOp::create(b, zero, factors, one, ValueRange{base});
   {
-    const OpBuilder::InsertionGuard guard(b);
+    OpBuilder::InsertionGuard guard(b);
     b.setInsertionPointToStart(outer.getBody());
     auto shifted = outer.getRegionIterArg(0);
     auto i = outer.getInductionVar();
@@ -117,15 +117,15 @@ SmallVector<Value> controlledMultiplyModN(qc::QCProgramBuilder& b,
 
     auto inner = scf::ForOp::create(b, zero, width, one, ValueRange{shifted});
     {
-      const OpBuilder::InsertionGuard innerGuard(b);
+      OpBuilder::InsertionGuard innerGuard(b);
       b.setInsertionPointToStart(inner.getBody());
       auto angle = inner.getRegionIterArg(0);
       b.mcp(angle, controls, b.loadQubit(acc.value, inner.getInductionVar()));
-      const Value next = arith::MulFOp::create(b, angle, half);
+      auto next = arith::MulFOp::create(b, angle, half);
       scf::YieldOp::create(b, ValueRange{next});
     }
 
-    const Value doubled = arith::MulFOp::create(b, shifted, two);
+    auto doubled = arith::MulFOp::create(b, shifted, two);
     scf::YieldOp::create(b, ValueRange{doubled});
   }
 
@@ -145,15 +145,15 @@ SmallVector<Value> controlledMultiplyModN(qc::QCProgramBuilder& b,
         b.scfCondition(overflow);
       },
       [&] {
-        const Value start = arith::ConstantFloatOp::create(
+        auto start = arith::ConstantFloatOp::create(
             b, b.getF64Type(),
             llvm::APFloat(-std::numbers::pi * static_cast<double>(MODULUS)));
         auto loop = scf::ForOp::create(b, zero, width, one, ValueRange{start});
-        const OpBuilder::InsertionGuard guard(b);
+        OpBuilder::InsertionGuard guard(b);
         b.setInsertionPointToStart(loop.getBody());
         auto angle = loop.getRegionIterArg(0);
         b.p(angle, b.loadQubit(acc.value, loop.getInductionVar()));
-        const Value next = arith::MulFOp::create(b, angle, half);
+        auto next = arith::MulFOp::create(b, angle, half);
         scf::YieldOp::create(b, ValueRange{next});
       });
 

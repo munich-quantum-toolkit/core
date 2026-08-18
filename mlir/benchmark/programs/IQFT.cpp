@@ -43,19 +43,19 @@ SmallVector<Value> iqft(qc::QCProgramBuilder& b, const uint64_t n) {
     auto one = arith::ConstantIndexOp::create(b, 1);
     auto lower = arith::ConstantIndexOp::create(b, 0);
     auto offset = arith::SubIOp::create(b, total, i);
-    const Value start = arith::ConstantFloatOp::create(
+    auto start = arith::ConstantFloatOp::create(
         b, b.getF64Type(), llvm::APFloat(std::numbers::pi / 2.0));
-    const Value half =
+    auto half =
         arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
 
     {
       auto loop = scf::ForOp::create(b, lower, i, one, ValueRange{start});
-      const OpBuilder::InsertionGuard guard(b);
+      OpBuilder::InsertionGuard guard(b);
       b.setInsertionPointToStart(loop.getBody());
       auto angle = loop.getRegionIterArg(0);
       auto index = arith::AddIOp::create(b, offset, loop.getInductionVar());
       b.scfIf(res, index, [&] { b.p(angle, q); });
-      const Value next = arith::MulFOp::create(b, angle, half);
+      auto next = arith::MulFOp::create(b, angle, half);
       scf::YieldOp::create(b, ValueRange{next});
     }
 

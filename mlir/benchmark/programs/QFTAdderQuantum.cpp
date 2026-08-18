@@ -42,19 +42,19 @@ void transform(qc::QCProgramBuilder& b, Value reg, const int64_t size,
 
     auto lower = arith::AddIOp::create(b, i, one);
     auto upper = arith::ConstantIndexOp::create(b, size);
-    const Value start = arith::ConstantFloatOp::create(
+    auto start = arith::ConstantFloatOp::create(
         b, b.getF64Type(), llvm::APFloat(sign * std::numbers::pi / 2.0));
-    const Value half =
+    auto half =
         arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
 
     auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});
     {
-      const OpBuilder::InsertionGuard guard(b);
+      OpBuilder::InsertionGuard guard(b);
       b.setInsertionPointToStart(loop.getBody());
       auto angle = loop.getRegionIterArg(0);
       b.cp(angle, b.loadQubit(reg, loop.getInductionVar()),
            b.loadQubit(reg, i));
-      const Value next = arith::MulFOp::create(b, angle, half);
+      auto next = arith::MulFOp::create(b, angle, half);
       scf::YieldOp::create(b, ValueRange{next});
     }
 
@@ -83,18 +83,18 @@ SmallVector<Value> qftAdderQuantum(qc::QCProgramBuilder& b, const uint64_t n) {
   b.scfFor(0, size, 1, [&](Value j) {
     auto count = arith::AddIOp::create(b, j, one);
     auto lower = arith::ConstantIndexOp::create(b, 0);
-    const Value start = arith::ConstantFloatOp::create(
+    auto start = arith::ConstantFloatOp::create(
         b, b.getF64Type(), llvm::APFloat(std::numbers::pi));
-    const Value half =
+    auto half =
         arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
 
     auto loop = scf::ForOp::create(b, lower, count, one, ValueRange{start});
-    const OpBuilder::InsertionGuard guard(b);
+    OpBuilder::InsertionGuard guard(b);
     b.setInsertionPointToStart(loop.getBody());
     auto angle = loop.getRegionIterArg(0);
     auto source = arith::SubIOp::create(b, j, loop.getInductionVar());
     b.cp(angle, b.loadQubit(x.value, source), b.loadQubit(y.value, j));
-    const Value next = arith::MulFOp::create(b, angle, half);
+    auto next = arith::MulFOp::create(b, angle, half);
     scf::YieldOp::create(b, ValueRange{next});
   });
 

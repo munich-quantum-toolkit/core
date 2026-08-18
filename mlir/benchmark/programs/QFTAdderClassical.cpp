@@ -49,19 +49,19 @@ SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& b,
   b.scfFor(0, size, 1, [&](Value i) {
     auto lower = arith::AddIOp::create(b, i, one);
     auto upper = arith::ConstantIndexOp::create(b, size);
-    const Value start = arith::ConstantFloatOp::create(
+    auto start = arith::ConstantFloatOp::create(
         b, b.getF64Type(), llvm::APFloat(std::numbers::pi / 2.0));
-    const Value half =
+    auto half =
         arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
 
     auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});
     {
-      const OpBuilder::InsertionGuard guard(b);
+      OpBuilder::InsertionGuard guard(b);
       b.setInsertionPointToStart(loop.getBody());
       auto angle = loop.getRegionIterArg(0);
       b.cp(angle, b.loadQubit(q.value, loop.getInductionVar()),
            b.loadQubit(q.value, i));
-      const Value next = arith::MulFOp::create(b, angle, half);
+      auto next = arith::MulFOp::create(b, angle, half);
       scf::YieldOp::create(b, ValueRange{next});
     }
     b.h(b.loadQubit(q.value, i));
@@ -79,18 +79,18 @@ SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& b,
 
     auto lower = arith::AddIOp::create(b, i, one);
     auto upper = arith::ConstantIndexOp::create(b, size);
-    const Value start = arith::ConstantFloatOp::create(
+    auto start = arith::ConstantFloatOp::create(
         b, b.getF64Type(), llvm::APFloat(-std::numbers::pi / 2.0));
-    const Value half =
+    auto half =
         arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
 
     auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});
-    const OpBuilder::InsertionGuard guard(b);
+    OpBuilder::InsertionGuard guard(b);
     b.setInsertionPointToStart(loop.getBody());
     auto angle = loop.getRegionIterArg(0);
     b.cp(angle, b.loadQubit(q.value, loop.getInductionVar()),
          b.loadQubit(q.value, i));
-    const Value next = arith::MulFOp::create(b, angle, half);
+    auto next = arith::MulFOp::create(b, angle, half);
     scf::YieldOp::create(b, ValueRange{next});
   });
 

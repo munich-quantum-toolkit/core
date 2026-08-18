@@ -50,15 +50,15 @@ SmallVector<Value> iqpe(qc::QCProgramBuilder& b, const uint64_t n) {
   auto upper = arith::ConstantIndexOp::create(b, precision);
   auto one = arith::ConstantIndexOp::create(b, 1);
   auto last = arith::ConstantIndexOp::create(b, precision - 1);
-  const Value first = arith::ConstantFloatOp::create(
+  auto first = arith::ConstantFloatOp::create(
       b, b.getF64Type(),
       llvm::APFloat(std::pow(2.0, static_cast<double>(precision - 1)) *
                     IQPE_PHASE));
-  const Value half =
+  auto half =
       arith::ConstantFloatOp::create(b, b.getF64Type(), llvm::APFloat(0.5));
 
   auto outer = scf::ForOp::create(b, lower, upper, one, ValueRange{first});
-  const OpBuilder::InsertionGuard guard(b);
+  OpBuilder::InsertionGuard guard(b);
   b.setInsertionPointToStart(outer.getBody());
   auto power = outer.getRegionIterArg(0);
   auto index = arith::SubIOp::create(b, last, outer.getInductionVar());
@@ -73,18 +73,18 @@ SmallVector<Value> iqpe(qc::QCProgramBuilder& b, const uint64_t n) {
     auto innerLower = arith::AddIOp::create(b, index, one);
     auto inner =
         scf::ForOp::create(b, innerLower, upper, one, ValueRange{start});
-    const OpBuilder::InsertionGuard innerGuard(b);
+    OpBuilder::InsertionGuard innerGuard(b);
     b.setInsertionPointToStart(inner.getBody());
     auto angle = inner.getRegionIterArg(0);
     b.scfIf(res, inner.getInductionVar(), [&] { b.p(angle, q); });
-    const Value next = arith::MulFOp::create(b, angle, half);
+    auto next = arith::MulFOp::create(b, angle, half);
     scf::YieldOp::create(b, ValueRange{next});
   }
 
   b.h(q);
   b.measure(q, res, index);
   b.reset(q);
-  const Value next = arith::MulFOp::create(b, power, half);
+  auto next = arith::MulFOp::create(b, power, half);
   scf::YieldOp::create(b, ValueRange{next});
 
   return {res};

@@ -42,10 +42,10 @@ SmallVector<Value> vqe(qc::QCProgramBuilder& b, const uint64_t n) {
   auto c = b.allocClassicalBitRegister(size, "c");
 
   auto one = arith::ConstantIndexOp::create(b, 1);
-  const Value initial = arith::ConstantFloatOp::create(
+  auto initial = arith::ConstantFloatOp::create(
       b, b.getF64Type(), llvm::APFloat(VQE_INITIAL_ANGLE));
-  const Value decay = arith::ConstantFloatOp::create(b, b.getF64Type(),
-                                                     llvm::APFloat(VQE_DECAY));
+  auto decay = arith::ConstantFloatOp::create(b, b.getF64Type(),
+                                              llvm::APFloat(VQE_DECAY));
 
   // One round evaluates the ansatz at the current angle and reads one qubit.
   // The optimizer shrinks the angle and repeats until a round reports that the
@@ -68,7 +68,7 @@ SmallVector<Value> vqe(qc::QCProgramBuilder& b, const uint64_t n) {
         scf::ConditionOp::create(b, improved, ValueRange{angle});
       },
       [&](OpBuilder&, Location, ValueRange args) {
-        const Value next = arith::MulFOp::create(b, args[0], decay);
+        auto next = arith::MulFOp::create(b, args[0], decay);
         scf::YieldOp::create(b, ValueRange{next});
       });
 
