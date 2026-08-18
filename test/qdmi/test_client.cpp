@@ -815,17 +815,55 @@ c = measure q;)";
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
   const std::string textProgram = "OPENQASM 3.0;";
-  constexpr std::array bytes{std::byte{0}};
 
   EXPECT_THROW(std::ignore = device.submitJob(
                    textProgram, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0),
                std::invalid_argument);
-  EXPECT_THROW(std::ignore = device.submitJob(
-                   textProgram, QDMI_PROGRAM_FORMAT_CALIBRATION, 0),
-               std::invalid_argument);
+}
+
+TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsBatchJobs) {
+  // A batch job's program is a list of job handles, which the byte-span API
+  // cannot express, so MQT Core states that it does not support them.
+  constexpr std::array bytes{std::byte{0}};
+
   EXPECT_THROW(std::ignore =
                    device.submitJob(bytes, QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
                std::invalid_argument);
+  EXPECT_THROW(std::ignore = device.submitJob(std::string{},
+                                              QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
+               std::invalid_argument);
+}
+
+TEST_F(DDSimulatorDeviceTest, SubmitJobSendsCalibrationRunsElsewhere) {
+  // A calibration run takes no shot count and an optional payload, so it has
+  // its own entry point rather than a special case in `submitJob`.
+  EXPECT_THROW(std::ignore = device.submitJob(
+                   std::string{}, QDMI_PROGRAM_FORMAT_CALIBRATION, 0),
+               std::invalid_argument);
+}
+
+TEST_F(DDSimulatorDeviceTest, CalibrationJobReachesTheDevice) {
+  // The DD simulator needs no calibration and rejects the format itself. What
+  // matters is that the client no longer refuses before asking: the failure
+  // comes from the device, as a runtime error rather than an argument error.
+  EXPECT_THROW(std::ignore = device.submitCalibrationJob(), std::runtime_error);
+  EXPECT_THROW(std::ignore = device.submitCalibrationJob("configuration"),
+               std::runtime_error);
+
+  constexpr std::array payload{std::byte{1}, std::byte{2}};
+  EXPECT_THROW(std::ignore = device.submitCalibrationJob(payload),
+               std::runtime_error);
+
+  EXPECT_NO_THROW({
+    try {
+      std::ignore = device.submitCalibrationJob();
+    } catch (const std::invalid_argument&) {
+      FAIL() << "the client rejected the calibration run before the device saw "
+                "it";
+    } catch (const std::runtime_error&) { // NOLINT(bugprone-empty-catch)
+      // The device declined, which is its decision to make.
+    }
+  });
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {

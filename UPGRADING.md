@@ -6,6 +6,31 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Calibration runs and batch jobs
+
+`Device::submitJob` used to reject `CALIBRATION` and `BATCH_JOB` together, which
+left MQT Core reporting that a device needs calibration through
+`needs_calibration()` without any way to trigger one. The two formats are
+different cases and are now treated as such.
+
+A calibration run has its own entry point. QDMI does not require a program for
+one, so the payload is optional; when it is present, the device defines what it
+means:
+
+```python
+device.submit_calibration_job()
+device.submit_calibration_job("configuration")
+```
+
+In C++, use `Device::submitCalibrationJob`. A calibration run executes no
+circuit, so neither form takes a shot count.
+
+Batch jobs are explicitly unsupported. A batch job's program is a list of job
+handles rather than a byte payload, which `submitJob` cannot express, so MQT
+Core says so rather than describing it as a missing payload. Passing
+`ProgramFormat.BATCH_JOB` to `submit_job` raises a `ValueError` that names the
+limitation. Support can return once a device implements the feature.
+
 ### Program serializers for the Qiskit backend
 
 The Qiskit backend no longer decides in its own code how to turn a circuit into

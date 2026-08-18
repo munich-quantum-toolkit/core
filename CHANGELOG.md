@@ -17,6 +17,9 @@ releases may include breaking changes.
   ([**@marcelwa**])
 - ✨ Add `mqt.core.qdmi.is_binary_program_format`, which states whether a
   program format requires exact-byte submission ([#2114]) ([**@marcelwa**])
+- ✨ Add `Device::submitCalibrationJob` and
+  `mqt.core.qdmi.Device.submit_calibration_job` for triggering a calibration run
+  ([#2140]) ([**@marcelwa**])
 - ✨ Add SpecAudits, a method and probe script for auditing tests that pin
   behavior the project never specified ([#2124]) ([**@marcelwa**])
 - ✨ Extract the existing QCO dead-gate elimination patterns from
@@ -164,6 +167,8 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove batch job submission from the QDMI client. `Device::submitJob` now
+  states that MQT Core does not support batch jobs ([#2140]) ([**@marcelwa**])
 - 💥 Remove the IQM JSON converter `qiskit_to_iqm_json` and the `MoveGate` from
   the Qiskit plugin, which [QDMI-on-IQM] now owns ([#2114]) ([**@marcelwa**])
 - 💥 Remove the unused decision-diagram approximation algorithm, including the
@@ -814,6 +819,7 @@ for previous changelogs._
 [#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2115]: https://github.com/munich-quantum-toolkit/core/pull/2115
+[#2140]: https://github.com/munich-quantum-toolkit/core/pull/2140
 [#2114]: https://github.com/munich-quantum-toolkit/core/pull/2114
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2111]: https://github.com/munich-quantum-toolkit/core/pull/2111
