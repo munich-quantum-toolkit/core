@@ -251,6 +251,23 @@ def test_program_conversions_are_composable() -> None:
     _assert_bell_program(result, measured=True)
 
 
+def test_qc_program_counts_two_qubit_gates() -> None:
+    """Count two-qubit gates across modifiers, wider gates, and barriers."""
+    program = QCProgram.from_qasm_str("""OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0];
+cx q[0], q[1];
+swap q[0], q[1];
+ccx q[0], q[1], q[2];
+ctrl @ swap q[0], q[1], q[2];
+inv @ cx q[0], q[1];
+barrier q[0], q[1];
+""")
+    assert program.num_two_qubit_gates() == 3
+    assert QCProgram.from_qasm_str(QASM_STRING).num_two_qubit_gates() == 1
+
+
 def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     """Emit OpenQASM directly from QC and through the optimized pipeline."""
     source = QCProgram.from_qasm_str(QASM_STRING)
