@@ -490,7 +490,7 @@ void collectResources(mlir::func::FuncOp function, ExportState& state,
 
 [[nodiscard]] std::optional<uint32_t>
 initialClassicalZeroStoreIndex(mlir::memref::StoreOp store,
-                               const mlir::Value registerValue,
+                               mlir::Value registerValue,
                                const ExportState& state) {
   if (store.getMemref() != registerValue || store.getIndices().size() != 1U ||
       !mlir::matchPattern(store.getValueToStore(), mlir::m_Zero())) {
