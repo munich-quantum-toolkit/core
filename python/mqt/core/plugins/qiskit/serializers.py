@@ -16,9 +16,8 @@ A format fixes the kind of payload it carries, so there are two signatures. A
 text format takes a :class:`TextProgramSerializer`, which returns :class:`str`.
 A binary format takes a :class:`BinaryProgramSerializer`, which returns
 :class:`bytes`. :func:`~mqt.core.qdmi.is_binary_program_format` states which
-kind a format carries. A format for which
-:func:`~mqt.core.qdmi.has_program_payload` is false carries no program at all
-and cannot have a serializer.
+kind a format carries. Two formats take no serializer at all, because a
+serialized circuit is not what they carry; see :data:`NON_CIRCUIT_FORMATS`.
 
 MQT Core registers its own OpenQASM 2 and OpenQASM 3 serializers here. Every
 other format belongs to the package that owns the device. Such a package
@@ -47,7 +46,7 @@ import warnings
 from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Protocol
 
-from ...qdmi import ProgramFormat, has_program_payload
+from ...qdmi import ProgramFormat
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -58,6 +57,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ENTRY_POINT_GROUP",
+    "NON_CIRCUIT_FORMATS",
     "PROGRAM_FORMAT_PREFERENCE",
     "BinaryProgramSerializer",
     "ProgramSerializer",
@@ -126,6 +126,18 @@ class BinaryProgramSerializer(Protocol):
 #: A serializer for one program format, text or binary.
 ProgramSerializer = TextProgramSerializer | BinaryProgramSerializer
 
+#: The program formats that no program serializer can produce. A serializer
+#: turns one Qiskit circuit into one program, and neither of these carries such
+#: a program: ``CALIBRATION`` asks the device to run a calibration routine, and
+#: ``BATCH_JOB`` carries a list of already-created jobs. This states what a
+#: circuit can be serialized into, which is a question about this adapter
+#: rather than about what
+#: :meth:`~mqt.core.qdmi.Device.submit_job` accepts.
+NON_CIRCUIT_FORMATS: frozenset[ProgramFormat] = frozenset({
+    ProgramFormat.CALIBRATION,
+    ProgramFormat.BATCH_JOB,
+})
+
 #: The program formats in the order the backend prefers them, most preferred
 #: first. A device-native format comes first, because a package that registers a
 #: serializer for its own device's format wants that format used. The
@@ -166,11 +178,11 @@ def register_program_serializer(fmt: ProgramFormat, serializer: ProgramSerialize
         replace: Replace an existing serializer for the same format.
 
     Raises:
-        ValueError: If the format carries no program payload, or if the format
-            already has a serializer and ``replace`` is false.
+        ValueError: If the format does not carry a serialized circuit, or if the
+            format already has a serializer and ``replace`` is false.
     """
-    if not has_program_payload(fmt):
-        msg = f"{fmt.name} carries no program payload, so it cannot have a program serializer."
+    if fmt in NON_CIRCUIT_FORMATS:
+        msg = f"{fmt.name} does not carry a serialized circuit, so it cannot have a program serializer."
         raise ValueError(msg)
     # This function does not read the entry points. A registration must be able
     # to precede them, because that is what gives it precedence, and because
@@ -213,22 +225,23 @@ def preferred_program_formats(formats: Iterable[ProgramFormat]) -> list[ProgramF
         formats: The program formats the device accepts.
 
     Returns:
-        Those of the given formats that carry a program payload, most preferred
-        first. A format that :data:`PROGRAM_FORMAT_PREFERENCE` does not name
+        Those of the given formats that can carry a serialized circuit, most
+        preferred first. A format that :data:`PROGRAM_FORMAT_PREFERENCE` does not name
         comes after every format it does name, in the order it was given.
     """
     ranks = {fmt: rank for rank, fmt in enumerate(PROGRAM_FORMAT_PREFERENCE)}
     unranked = len(PROGRAM_FORMAT_PREFERENCE)
-    candidates = [fmt for fmt in formats if has_program_payload(fmt)]
+    candidates = [fmt for fmt in formats if fmt not in NON_CIRCUIT_FORMATS]
     return sorted(candidates, key=lambda fmt: ranks.get(fmt, unranked))
 
 
 def _load_entry_points() -> None:
     """Load the serializers advertised through :data:`ENTRY_POINT_GROUP` once.
 
-    An entry point that names an unknown program format, names a format without
-    a program payload, or fails to load produces a warning and is skipped, so
-    one broken package cannot make every other serializer unreachable.
+    An entry point that names an unknown program format, names a format in
+    :data:`NON_CIRCUIT_FORMATS`, or fails to load produces a warning and is
+    skipped, so one broken package cannot make every other serializer
+    unreachable.
     """
     global _ENTRY_POINTS_LOADED  # ruff:ignore[global-statement] Guards a one-time import side effect
     if _ENTRY_POINTS_LOADED:
@@ -249,10 +262,10 @@ def _load_entry_points() -> None:
             )
             continue
 
-        if not has_program_payload(fmt):
+        if fmt in NON_CIRCUIT_FORMATS:
             warnings.warn(
                 f"Entry point '{entry_point.name}' in group '{ENTRY_POINT_GROUP}' names a program format that "
-                f"carries no program payload and will be skipped.",
+                f"does not carry a serialized circuit and will be skipped.",
                 UserWarning,
                 stacklevel=2,
             )

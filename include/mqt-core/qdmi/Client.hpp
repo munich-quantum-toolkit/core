@@ -246,21 +246,6 @@ isBinaryProgramFormat(const QDMI_Program_Format format) noexcept {
 }
 
 /**
- * @brief Returns whether a program format carries a program payload.
- * @details `QDMI_PROGRAM_FORMAT_CALIBRATION` and
- * `QDMI_PROGRAM_FORMAT_BATCHJOB` name a device-side routine instead of holding
- * a program. Both overloads of `Device::submitJob` reject these formats. Every
- * other format carries a program.
- * @param format The program format to classify.
- * @return True if the format carries a program payload.
- */
-[[nodiscard]] constexpr bool
-hasProgramPayload(const QDMI_Program_Format format) noexcept {
-  return format != QDMI_PROGRAM_FORMAT_CALIBRATION &&
-         format != QDMI_PROGRAM_FORMAT_BATCHJOB;
-}
-
-/**
  * @brief Concept for ranges that are contiguous in memory and can be
  * constructed with a size.
  * @details This concept is used to constrain the template parameter of the

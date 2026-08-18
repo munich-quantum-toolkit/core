@@ -47,15 +47,14 @@ tracker #2085. The pull request is #2114.
       two payload signatures, an explicit format preference order, MQT Core's
       own OpenQASM serializers registered through the same registry, the
       ecosystem cross-check, and the mid-term `mqt-cc` outlook.
-- [x] (2026-08-17 16:20Z) Milestone 1: expose the program-format payload
-      classification in Python. `qdmi::isBinaryProgramFormat` and
-      `qdmi::hasProgramPayload` are public in
+- [x] (2026-08-17 16:20Z) Milestone 1: expose the binary-payload classification
+      in Python. `qdmi::isBinaryProgramFormat` is public in
       `include/mqt-core/qdmi/Client.hpp`, bound as
-      `mqt.core.qdmi.is_binary_program_format` and
-      `mqt.core.qdmi.has_program_payload`, and covered by
-      `QDMITest.ProgramFormatPayloadClassification` in
-      `test/qdmi/test_client.cpp` and two tests in
-      `test/python/qdmi/test_qdmi.py`.
+      `mqt.core.qdmi.is_binary_program_format`, and covered by
+      `QDMITest.BinaryProgramFormatClassification` in
+      `test/qdmi/test_client.cpp` and one test in
+      `test/python/qdmi/test_qdmi.py`. A second classifier was bound and then
+      withdrawn; see the Decision Log.
 - [x] (2026-08-17 16:40Z) Milestone 2: the serializer registry lives in
       `python/mqt/core/plugins/qiskit/serializers.py` and is covered by
       `test/python/plugins/qiskit/test_serializers.py`.
@@ -158,6 +157,19 @@ tracker #2085. The pull request is #2114.
   what a program may say while the encoding decides only how it travels. One
   tuple in one module means the whole policy can be re-read, and changed, in one
   place. Date/Author: 2026-08-17, @marcelwa after review by @burgholzer.
+
+- Decision: bind only `is_binary_program_format`, and let the serializer module
+  keep its own `NON_CIRCUIT_FORMATS`. Rationale: an earlier revision also bound
+  `has_program_payload`, renamed from the private `hasNoGenericProgramPayload`.
+  Dropping "generic" made the name claim more than QDMI supports. QDMI declares
+  `CALIBRATION` as `void*` "A calibration program" and says only that triggering
+  a calibration run "does not require a program to be set", so its payload is
+  optional rather than absent, while `BATCH_JOB` takes a list of job handles
+  rather than a byte blob. One predicate cannot state both. What the registry
+  actually needs is narrower and belongs to this adapter: which formats can hold
+  a serialized circuit. MQT Core rejecting every `CALIBRATION` submission is a
+  separate, pre-existing question about `Device::submitJob`, tracked outside
+  this plan. Date/Author: 2026-08-18, @marcelwa after review by @burgholzer.
 
 - Decision: rank QPY and OpenQASM 3 above the QIR base profile. Rationale: an
   earlier draft grouped the QIR formats together and put both profiles above QPY
@@ -399,19 +411,21 @@ registry is what will accept them later.
 
 At the end of this work the following must exist.
 
-In `mqt.core.qdmi`, two module-level functions bound from C++:
+In `mqt.core.qdmi`, one module-level function bound from C++:
 
     def is_binary_program_format(program_format: ProgramFormat) -> bool: ...
-    def has_program_payload(program_format: ProgramFormat) -> bool: ...
 
-`is_binary_program_format` is true for `QIR_BASE_MODULE`, `QIR_ADAPTIVE_MODULE`,
-and `QPY`. `has_program_payload` is false for `CALIBRATION` and `BATCH_JOB` and
-true for every other member. They wrap `qdmi::isBinaryProgramFormat` and
-`qdmi::hasProgramPayload`, which move from the anonymous namespace in
+It is true for `QIR_BASE_MODULE`, `QIR_ADAPTIVE_MODULE`, and `QPY`. It wraps
+`qdmi::isBinaryProgramFormat`, which moves from the anonymous namespace in
 `src/qdmi/Client.cpp` into the public `include/mqt-core/qdmi/Client.hpp`,
-keeping their `constexpr noexcept` signatures over `QDMI_Program_Format`. Note
-the sign change: the existing private helper is `hasNoGenericProgramPayload`,
-and the public one states the positive.
+keeping its `constexpr noexcept` signature over `QDMI_Program_Format`.
+
+Which formats cannot hold a serialized circuit is a question about this adapter
+rather than about QDMI, so the serializer module answers it itself:
+
+    NON_CIRCUIT_FORMATS: frozenset[ProgramFormat]
+
+It holds `CALIBRATION` and `BATCH_JOB`.
 
 In a new module `python/mqt/core/plugins/qiskit/serializers.py`:
 
@@ -448,15 +462,15 @@ In a new module `python/mqt/core/plugins/qiskit/serializers.py`:
 `CALIBRATION` and `BATCH_JOB` are absent because a serialized circuit is not
 what they carry.
 
-`preferred_program_formats` takes the formats a device reports, drops any for
-which `has_program_payload` is false, and returns the rest ordered by
+`preferred_program_formats` takes the formats a device reports, drops any in
+`NON_CIRCUIT_FORMATS`, and returns the rest ordered by
 `PROGRAM_FORMAT_PREFERENCE`. A format that the tuple does not name — a member
 added to QDMI later — sorts after every format the tuple does name, keeping the
 order in which the device reported it.
 
 `register_program_serializer` raises `ValueError` when the format already has a
-serializer and `replace` is false, and also when `has_program_payload(fmt)` is
-false, because such a format cannot carry a program.
+serializer and `replace` is false, and also when the format is in
+`NON_CIRCUIT_FORMATS`, because no serialized circuit can go there.
 
 In `QDMIBackend`:
 
@@ -487,21 +501,19 @@ work, but this plan's interface is what it must match.
 ### Milestone 1: expose the payload classification in Python
 
 At the end of this milestone, Python can ask whether a program format carries a
-binary payload and whether it carries a program payload at all, and the answer
-comes from the same code the C++ submission path uses.
+binary payload, and the answer comes from the same code the C++ submission path
+uses.
 
-In `include/mqt-core/qdmi/Client.hpp`, add two `constexpr noexcept` free
-functions in namespace `qdmi`, `isBinaryProgramFormat` and `hasProgramPayload`,
-with Doxygen comments that name the formats each covers and say why the
-distinction exists: a binary format must be submitted as exact bytes, and a
-format without a program payload cannot be submitted as a program at all. In
-`src/qdmi/Client.cpp`, delete the anonymous-namespace copies and use the public
-functions, replacing `hasNoGenericProgramPayload(format)` with
-`!hasProgramPayload(format)`. The behavior of both `submitJob` overloads must
-not change.
+In `include/mqt-core/qdmi/Client.hpp`, add one `constexpr noexcept` free
+function in namespace `qdmi`, `isBinaryProgramFormat`, with a Doxygen comment
+that names the formats it covers and says why the distinction exists: a binary
+format must be submitted as exact bytes. In `src/qdmi/Client.cpp`, delete the
+anonymous-namespace copy of that function and use the public one.
+`hasNoGenericProgramPayload` stays private and keeps its name. The behavior of
+both `submitJob` overloads must not change.
 
 In `bindings/qdmi/qdmi.cpp`, immediately after the `ProgramFormat` enum, define
-the two functions on `qdmiModule` with `"program_format"_a` and Google-style
+the function on `qdmiModule` with `"program_format"_a` and a Google-style
 docstrings, following the `job.def(...)` calls in the same file for style. Then
 regenerate the stub with `uvx nox -s stubs` and check that the only change to
 `python/mqt/core/qdmi/__init__.pyi` is the two new signatures.

@@ -186,20 +186,6 @@ def is_binary_program_format(program_format: ProgramFormat) -> bool:
         True if the format requires exact-byte submission.
     """
 
-def has_program_payload(program_format: ProgramFormat) -> bool:
-    """Returns whether a program format carries a program payload.
-
-    ``CALIBRATION`` and ``BATCH_JOB`` name a device-side routine instead of holding
-    a program, so :meth:`Device.submit_job` rejects them. Every other format
-    carries a program.
-
-    Args:
-        program_format: The program format to classify.
-
-    Returns:
-        True if the format carries a program payload.
-    """
-
 class CustomProperty(enum.Enum):
     """An implementation-defined custom property or result slot."""
 

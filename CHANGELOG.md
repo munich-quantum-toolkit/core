@@ -15,9 +15,8 @@ releases may include breaking changes.
 - ✨ Let a package register a program serializer for a program format through
   the `mqt.core.qiskit.program_serializers` entry point group ([#2114])
   ([**@marcelwa**])
-- ✨ Add `mqt.core.qdmi.is_binary_program_format` and
-  `mqt.core.qdmi.has_program_payload` for classifying program format payloads
-  ([#2114]) ([**@marcelwa**])
+- ✨ Add `mqt.core.qdmi.is_binary_program_format`, which states whether a
+  program format requires exact-byte submission ([#2114]) ([**@marcelwa**])
 - ✨ Add SpecAudits, a method and probe script for auditing tests that pin
   behavior the project never specified ([#2124]) ([**@marcelwa**])
 - ✨ Extract the existing QCO dead-gate elimination patterns from

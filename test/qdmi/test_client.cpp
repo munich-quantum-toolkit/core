@@ -30,7 +30,6 @@
 #include <string>
 #include <thread>
 #include <tuple>
-#include <utility>
 #include <vector>
 
 namespace qdmi {
@@ -411,33 +410,31 @@ TEST(QDMITest, ThrowIfError) {
                std::runtime_error);
 }
 
-TEST(QDMITest, ProgramFormatPayloadClassification) {
+TEST(QDMITest, BinaryProgramFormatClassification) {
   // The switch below states the expected classification of every program
   // format. It has no default case, so a format added to QDMI later produces
   // an unhandled-enumerator warning instead of an unnoticed classification.
-  constexpr auto expected =
-      [](const QDMI_Program_Format format) -> std::pair<bool, bool> {
+  constexpr auto expected = [](const QDMI_Program_Format format) -> bool {
     switch (format) {
     case QDMI_PROGRAM_FORMAT_QIRBASEMODULE:
     case QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE:
     case QDMI_PROGRAM_FORMAT_QPY:
-      return {true, true};
-    case QDMI_PROGRAM_FORMAT_CALIBRATION:
-    case QDMI_PROGRAM_FORMAT_BATCHJOB:
-      return {false, false};
+      return true;
     case QDMI_PROGRAM_FORMAT_QASM2:
     case QDMI_PROGRAM_FORMAT_QASM3:
     case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
     case QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING:
+    case QDMI_PROGRAM_FORMAT_CALIBRATION:
     case QDMI_PROGRAM_FORMAT_IQMJSON:
+    case QDMI_PROGRAM_FORMAT_BATCHJOB:
     case QDMI_PROGRAM_FORMAT_CUSTOM1:
     case QDMI_PROGRAM_FORMAT_CUSTOM2:
     case QDMI_PROGRAM_FORMAT_CUSTOM3:
     case QDMI_PROGRAM_FORMAT_CUSTOM4:
     case QDMI_PROGRAM_FORMAT_CUSTOM5:
-      return {false, true};
+      return false;
     }
-    return {false, false};
+    return false;
   };
 
   // Every program format QDMI defines. A format added to QDMI must be added
@@ -459,10 +456,7 @@ TEST(QDMITest, ProgramFormatPayloadClassification) {
                                QDMI_PROGRAM_FORMAT_CUSTOM5};
 
   for (const auto format : formats) {
-    const auto [binary, payload] = expected(format);
-    EXPECT_EQ(qdmi::isBinaryProgramFormat(format), binary)
-        << "program format " << static_cast<int>(format);
-    EXPECT_EQ(qdmi::hasProgramPayload(format), payload)
+    EXPECT_EQ(qdmi::isBinaryProgramFormat(format), expected(format))
         << "program format " << static_cast<int>(format);
   }
 }

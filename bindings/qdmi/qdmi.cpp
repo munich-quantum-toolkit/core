@@ -238,20 +238,6 @@ Args:
 Returns:
     True if the format requires exact-byte submission.)pb");
 
-  qdmiModule.def(
-      "has_program_payload", &qdmi::hasProgramPayload, "program_format"_a,
-      R"pb(Returns whether a program format carries a program payload.
-
-``CALIBRATION`` and ``BATCH_JOB`` name a device-side routine instead of holding
-a program, so :meth:`Device.submit_job` rejects them. Every other format
-carries a program.
-
-Args:
-    program_format: The program format to classify.
-
-Returns:
-    True if the format carries a program payload.)pb");
-
   nb::enum_<qdmi::CustomProperty>(
       qdmiModule, "CustomProperty",
       "An implementation-defined custom property or result slot.")

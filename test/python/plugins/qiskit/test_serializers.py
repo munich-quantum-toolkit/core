@@ -124,9 +124,9 @@ def test_unregistering_an_unknown_format_does_nothing(private_registry: None) ->
 
 
 @pytest.mark.parametrize("fmt", [ProgramFormat.CALIBRATION, ProgramFormat.BATCH_JOB])
-def test_format_without_program_payload_is_rejected(fmt: ProgramFormat, private_registry: None) -> None:  # ruff:ignore[unused-function-argument]
-    """A format that carries no program cannot have a serializer."""
-    with pytest.raises(ValueError, match="carries no program payload"):
+def test_non_circuit_format_is_rejected(fmt: ProgramFormat, private_registry: None) -> None:  # ruff:ignore[unused-function-argument]
+    """A format that does not carry a serialized circuit cannot have a serializer."""
+    with pytest.raises(ValueError, match="does not carry a serialized circuit"):
         serializers.register_program_serializer(fmt, _serializer)
 
 
@@ -145,11 +145,11 @@ def test_entry_point_with_unknown_format_warns(monkeypatch: pytest.MonkeyPatch) 
         assert serializers.program_serializer(ProgramFormat.CUSTOM2) is None
 
 
-def test_entry_point_for_payloadless_format_warns(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An entry point for a format without a program payload is skipped."""
+def test_entry_point_for_non_circuit_format_warns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An entry point for a format that carries no serialized circuit is skipped."""
     _load_entry_points(monkeypatch, [_FakeEntryPoint("CALIBRATION", "pkg.mod:serializer", _serializer)])
 
-    with pytest.warns(UserWarning, match="carries no program payload"):
+    with pytest.warns(UserWarning, match="does not carry a serialized circuit"):
         assert serializers.program_serializer(ProgramFormat.CALIBRATION) is None
 
 

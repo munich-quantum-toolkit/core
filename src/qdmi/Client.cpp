@@ -37,6 +37,16 @@
 #include <vector>
 
 namespace qdmi {
+namespace {
+/// The generic program payload is a byte blob. A batch job's program is a list
+/// of job handles instead, which `submitJob` cannot express.
+[[nodiscard]] constexpr bool
+hasNoGenericProgramPayload(const QDMI_Program_Format format) noexcept {
+  return format == QDMI_PROGRAM_FORMAT_CALIBRATION ||
+         format == QDMI_PROGRAM_FORMAT_BATCHJOB;
+}
+} // namespace
+
 size_t Site::getIndex() const {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
@@ -356,7 +366,7 @@ Job Device::submitJob(const std::string& program,
     throw std::invalid_argument(
         "Binary program formats require exact-byte submission");
   }
-  if (!hasProgramPayload(format)) {
+  if (hasNoGenericProgramPayload(format)) {
     throw std::invalid_argument(
         "Calibration and batch jobs do not use a generic program payload");
   }
@@ -374,7 +384,7 @@ Job Device::submitJob(const std::span<const std::byte> program,
                       const std::optional<CustomJobParameter>& custom3,
                       const std::optional<CustomJobParameter>& custom4,
                       const std::optional<CustomJobParameter>& custom5) const {
-  if (!hasProgramPayload(format)) {
+  if (hasNoGenericProgramPayload(format)) {
     throw std::invalid_argument(
         "Calibration and batch jobs do not use a generic program payload");
   }
