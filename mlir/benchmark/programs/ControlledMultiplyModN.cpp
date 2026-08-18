@@ -52,7 +52,6 @@ SmallVector<Value> controlledMultiplyModN(qc::QCProgramBuilder& b,
   fourierTransform(b, acc.value, size, 1.0);
 
   auto zero = b.indexConstant(0);
-  auto one = b.indexConstant(1);
   auto factors = b.indexConstant(factor);
   auto width = b.indexConstant(size);
 
