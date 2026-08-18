@@ -34,9 +34,9 @@ outputs.
       with the agreed contract.
 - [x] (2026-08-18 20:35Z) Created a clean implementation branch from that `main`
       revision and added this ExecPlan before production edits.
-- [ ] Add and register the CBit dialect, its IR tests, and generated
-      documentation. The standalone dialect, compiler contexts, and four initial
-      IR tests compile and pass; narrative documentation remains.
+- [x] (2026-08-18 21:50Z) Added and registered the CBit dialect, its generated
+      and narrative documentation, and six focused IR tests for syntax, types,
+      effects, initialization, and constant bounds.
 - [x] (2026-08-18 21:12Z) Replaced the QC and QCO builder-wide memref policy
       with per-allocation CBit APIs. Both focused builder suites pass six tests,
       including independent zero and undefined registers.
@@ -46,12 +46,15 @@ outputs.
 - [x] (2026-08-18 21:14Z) Committed and published the compiling dialect,
       builder, and conversion foundation as draft pull request #2158. Commit
       `8474dd0d5` is signed and passes `git verify-commit`.
-- [ ] Migrate Qiskit import and export to returned CBit registers and remove the
-      temporary memref and UB recognizers.
-- [ ] Migrate OpenQASM import and export to CBit and remove parallel output
-      memrefs and poison placeholders.
-- [ ] Migrate QIR lowering, QCO decision-diagram execution, and QCO-to-jeff and
-      jeff-to-QCO conversion.
+- [x] (2026-08-18 21:50Z) Migrated Qiskit import and export to returned CBit
+      registers and removed the temporary memref and UB recognizers. All 119
+      focused Python translation tests pass.
+- [x] (2026-08-18 21:50Z) Migrated OpenQASM import and export to CBit and
+      removed parallel bit SSA state and classical poison placeholders. All 173
+      focused translation tests pass.
+- [x] (2026-08-18 21:50Z) Migrated QIR lowering, QCO decision-diagram
+      execution, and both jeff conversion directions. The focused QIR, QCO
+      utility, and jeff suites pass.
 - [ ] Complete cross-component tests, documentation, changelog, generated stubs,
       and all required validation.
 - [ ] Record the final evidence here, publish a signed final head, mark the pull
@@ -93,6 +96,21 @@ outputs.
   the generated include. Evidence: a clean focused rebuild failed in the
   generated headers until the CBit wrappers added explicit dependencies and a
   generated-code section; the rebuilt targets then passed.
+- Observation: Qiskit export must validate CBit stores before walking the
+  instruction stream. A dynamic index expression appears before its store and
+  would otherwise fail first as an unsupported scalar operation. Evidence: the
+  exporter now inventories direct measurement stores and gives destination
+  errors before it constructs instructions.
+- Observation: Dialect conversion adapts a CBit operand to its tensor value
+  before the QCO-to-jeff load or store pattern runs. The state map must retain
+  the original CBit identity for that adapted value. Evidence: mapping each
+  converted allocation result back to its source register fixed structured and
+  dynamic-index jeff round trips; all 142 focused tests pass.
+- Observation: OpenQASM no longer needs to carry bit registers as SCF iterated
+  values. CBit operations have explicit memory effects, and nested regions can
+  capture the same non-aliasing register. Evidence: removing bit vectors from
+  the frontend state preserved dynamic indexing and structured control across
+  all 173 translation tests.
 
 ## Decision Log
 
@@ -125,11 +143,12 @@ outputs.
 ## Outcomes & Retrospective
 
 The compatibility fix is merged and issue #2155 records the replacement
-contract. The first compiling milestone now provides the neutral dialect,
-per-allocation builder APIs, identity preservation across QC and QCO, and the
-explicit late memref lowering. The focused CBit, builder, conversion, and
-round-trip tests pass, `mqt-cc` builds, and `uvx nox -s lint` passes. Producer
-and consumer migrations remain.
+contract. Draft pull request #2158 now contains the neutral dialect,
+per-allocation builder APIs, identity preservation across QC and QCO, the
+explicit late memref lowering, and all planned producer and consumer
+migrations. Focused CBit, builder, QC/QCO, Qiskit, OpenQASM, QIR, QCO utility,
+and jeff tests pass. The generated MLIR documentation target and lint pass.
+Complete repository validation and exact-head remote checks remain.
 
 ## Context and Orientation
 

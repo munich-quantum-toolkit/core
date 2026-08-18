@@ -14,6 +14,7 @@ add_mlir_conversion_library(
   DEPENDS
   QCToQIRBaseIncGen
   LINK_LIBS
+  MLIRCBitDialect
   MLIRQIRUtils
   MLIRQCToQIRCommon
   MLIRMQTTransforms

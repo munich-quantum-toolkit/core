@@ -10,6 +10,7 @@
 
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -25,7 +26,6 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
@@ -233,14 +233,14 @@ static StringRef getEntryPointName(Operation* op) {
 }
 
 /**
- * @brief Converts tensors representing classical registers to memrefs.
+ * @brief Converts tensors representing classical registers to CBit registers.
  */
-static LogicalResult
-rewriteClassicalRegisterTensorsToMemrefs(Operation* module) {
+static LogicalResult rewriteClassicalRegisterTensorsToCBit(Operation* module) {
   OpBuilder builder(module->getContext());
   const auto result = module->walk([&](func::FuncOp funcOp) -> WalkResult {
-    DenseMap<Value, Value> memrefs;
+    DenseMap<Value, Value> registers;
     SmallVector<Operation*> toErase;
+    bool failedToRewrite = false;
     funcOp.walk<WalkOrder::PreOrder>([&](Operation* op) {
       TypeSwitch<Operation*>(op)
           .Case<tensor::EmptyOp>([&](auto emptyOp) {
@@ -251,7 +251,6 @@ rewriteClassicalRegisterTensorsToMemrefs(Operation* module) {
             }
             builder.setInsertionPoint(emptyOp);
             auto loc = emptyOp.getLoc();
-            auto elementType = tensorType.getElementType();
             auto dynamicSizes = emptyOp.getDynamicSizes();
             std::optional<int64_t> size;
             if (dynamicSizes.empty()) {
@@ -263,68 +262,81 @@ rewriteClassicalRegisterTensorsToMemrefs(Operation* module) {
             } else {
               size = getConstantIntValue(dynamicSizes[0]);
             }
-            Value memref;
-            if (size) {
-              memref = memref::AllocOp::create(
-                  builder, loc, MemRefType::get({*size}, elementType));
-            } else {
-              memref = memref::AllocOp::create(
-                  builder, loc,
-                  MemRefType::get({ShapedType::kDynamic}, elementType),
-                  ValueRange{dynamicSizes[0]});
+            if (!size) {
+              emptyOp.emitError(
+                  "jeff classical register size must be constant for CBit");
+              failedToRewrite = true;
+              return;
             }
-            memrefs[emptyOp.getResult()] = memref;
+            if (*size <= 0) {
+              emptyOp.emitError("CBit register width must be positive");
+              failedToRewrite = true;
+              return;
+            }
+            auto registerType =
+                cbit::RegisterType::get(builder.getContext(), *size);
+            auto reg =
+                cbit::AllocOp::create(builder, loc, registerType,
+                                      cbit::Initialization::Zero, StringAttr{})
+                    .getResult();
+            registers[emptyOp.getResult()] = reg;
             toErase.emplace_back(emptyOp);
           })
           .Case<tensor::InsertOp>([&](auto insertOp) {
-            auto it = memrefs.find(insertOp.getDest());
-            if (it == memrefs.end()) {
+            auto it = registers.find(insertOp.getDest());
+            if (it == registers.end()) {
               return;
             }
-            auto memref = it->second;
+            auto reg = it->second;
             builder.setInsertionPoint(insertOp);
-            memref::StoreOp::create(builder, insertOp.getLoc(),
-                                    insertOp.getScalar(), memref,
-                                    insertOp.getIndices());
-            memrefs[insertOp.getResult()] = memref;
+            cbit::StoreOp::create(builder, insertOp.getLoc(),
+                                  insertOp.getScalar(), reg,
+                                  insertOp.getIndices().front());
+            registers[insertOp.getResult()] = reg;
             toErase.emplace_back(insertOp);
           })
           .Case<tensor::ExtractOp>([&](auto extractOp) {
-            auto it = memrefs.find(extractOp.getTensor());
-            if (it == memrefs.end()) {
+            auto it = registers.find(extractOp.getTensor());
+            if (it == registers.end()) {
               return;
             }
             builder.setInsertionPoint(extractOp);
             auto newResult =
-                memref::LoadOp::create(builder, extractOp.getLoc(), it->second,
-                                       extractOp.getIndices())
+                cbit::LoadOp::create(builder, extractOp.getLoc(),
+                                     extractOp.getType(), it->second,
+                                     extractOp.getIndices().front())
                     .getResult();
             extractOp.getResult().replaceAllUsesWith(newResult);
             toErase.emplace_back(extractOp);
           })
           .Case<scf::ForOp>([&](auto forOp) {
             for (auto [i, init] : llvm::enumerate(forOp.getInitArgs())) {
-              auto it = memrefs.find(init);
-              if (it == memrefs.end()) {
+              auto it = registers.find(init);
+              if (it == registers.end()) {
                 continue;
               }
-              auto memref = it->second;
-              memrefs[forOp.getRegionIterArg(i)] = memref;
-              memrefs[forOp.getResult(i)] = memref;
+              auto reg = it->second;
+              registers[forOp.getRegionIterArg(i)] = reg;
+              registers[forOp.getResult(i)] = reg;
             }
           });
     });
 
+    if (failedToRewrite) {
+      return WalkResult::interrupt();
+    }
+
     funcOp.walk([&](scf::ForOp forOp) {
       auto* yield = forOp.getBody()->getTerminator();
       for (auto [i, init] : llvm::enumerate(forOp.getInitArgs())) {
-        auto it = memrefs.find(init);
-        if (it == memrefs.end()) {
+        auto it = registers.find(init);
+        if (it == registers.end()) {
           continue;
         }
-        forOp.getInitArgsMutable()[i].set(it->second);
-        forOp.getRegionIterArg(i).setType(it->second.getType());
-        forOp.getResult(i).setType(it->second.getType());
+        auto reg = it->second;
+        forOp.getInitArgsMutable()[i].set(reg);
+        forOp.getRegionIterArg(i).setType(reg.getType());
+        forOp.getResult(i).setType(reg.getType());
         yield->getOpOperand(i).set(it->second);
       }
     });
@@ -332,15 +344,15 @@ rewriteClassicalRegisterTensorsToMemrefs(Operation* module) {
     // Update terminator operands
     auto* terminator = funcOp.getBlocks().front().getTerminator();
     for (auto& operand : terminator->getOpOperands()) {
-      auto it = memrefs.find(operand.get());
-      if (it == memrefs.end()) {
+      auto it = registers.find(operand.get());
+      if (it == registers.end()) {
         continue;
       }
       operand.set(it->second);
     }
 
     // Update function signature
-    if (!memrefs.empty()) {
+    if (!registers.empty()) {
       funcOp.setType(builder.getFunctionType(funcOp.getArgumentTypes(),
                                              terminator->getOperandTypes()));
     }
@@ -1327,9 +1339,10 @@ protected:
 
     // Configure conversion target
     target.addIllegalDialect<jeff::JeffDialect>();
-    target.addLegalDialect<QCODialect, qtensor::QTensorDialect,
-                           arith::ArithDialect, math::MathDialect,
-                           tensor::TensorDialect, scf::SCFDialect>();
+    target
+        .addLegalDialect<cbit::CBitDialect, QCODialect, qtensor::QTensorDialect,
+                         arith::ArithDialect, math::MathDialect,
+                         tensor::TensorDialect, scf::SCFDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
       return op.getSymName() != getEntryPointName(module) ||
@@ -1368,7 +1381,7 @@ protected:
       return;
     }
 
-    if (rewriteClassicalRegisterTensorsToMemrefs(module).failed()) {
+    if (rewriteClassicalRegisterTensorsToCBit(module).failed()) {
       signalPassFailure();
       return;
     }

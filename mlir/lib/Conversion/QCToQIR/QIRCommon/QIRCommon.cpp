@@ -10,10 +10,10 @@
 
 #include "mlir/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -32,7 +32,6 @@
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
@@ -68,8 +67,10 @@ LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
 QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
     : LLVMTypeConverter(ctx) {
   addConversion([ctx](QubitType) { return LLVM::LLVMPointerType::get(ctx); });
+  addConversion(
+      [ctx](cbit::RegisterType) { return LLVM::LLVMPointerType::get(ctx); });
   addConversion([ctx](MemRefType type) -> Type {
-    if (isa<QubitType>(type.getElementType()) || isClassicalBitRegister(type)) {
+    if (isa<QubitType>(type.getElementType())) {
       return LLVM::LLVMPointerType::get(ctx);
     }
     return type;
@@ -429,42 +430,10 @@ Value getResultPtr(LoweringState& state, Operation* op,
   return result;
 }
 
-static bool isLeadingZeroInitialization(memref::StoreOp storeOp,
-                                        memref::AllocOp allocOp) {
-  if (storeOp->getBlock() != allocOp->getBlock() ||
-      !allocOp->isBeforeInBlock(storeOp) ||
-      !matchPattern(storeOp.getValueToStore(), m_Zero())) {
-    return false;
-  }
-
-  const auto type = allocOp.getType();
-  const auto index = getConstantIntValue(storeOp.getIndices().front());
-  if (!index || type.isDynamicDim(0) || *index < 0 ||
-      *index >= type.getDimSize(0)) {
-    return false;
-  }
-
-  for (const auto& use : allocOp.getMemref().getUses()) {
-    auto* user = use.getOwner();
-    auto* ancestor = storeOp->getBlock()->findAncestorOpInBlock(*user);
-    if (ancestor == nullptr || ancestor == storeOp ||
-        !ancestor->isBeforeInBlock(storeOp)) {
-      continue;
-    }
-
-    auto previousStore = dyn_cast<memref::StoreOp>(user);
-    if (ancestor != user || !previousStore ||
-        !matchPattern(previousStore.getValueToStore(), m_Zero())) {
-      return false;
-    }
-  }
-  return true;
-}
-
 LogicalResult prepareClassicalResults(Operation* moduleOp,
                                       LoweringState& state) {
   bool hasInvalidMemory = false;
-  SmallVector<memref::StoreOp> consumedStores;
+  SmallVector<cbit::StoreOp> consumedStores;
   moduleOp->walk([&](func::FuncOp funcOp) {
     // Check whether the given function is the main entrypoint
     auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
@@ -480,17 +449,17 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
     }
 
     funcOp.walk([&](memref::AllocOp allocOp) {
-      auto type = allocOp.getType();
-      if (!isClassicalBitRegister(type)) {
-        if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
-          allocOp.emitError(
-              "QIR conversion only supports one-dimensional memrefs of i1 "
-              "classical results or qc.qubit registers");
-          hasInvalidMemory = true;
-        }
-        return;
+      const auto type = allocOp.getType();
+      if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
+        allocOp.emitError(
+            "QIR conversion only supports generic memrefs for "
+            "one-dimensional qc.qubit registers; use CBit for classical "
+            "registers");
+        hasInvalidMemory = true;
       }
+    });
 
+    funcOp.walk([&](cbit::AllocOp allocOp) {
       const auto [it, inserted] = state.cregIndices.try_emplace(
           allocOp.getOperation(), state.cregs.size());
       if (inserted) {
@@ -498,24 +467,17 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       }
       auto& reg = state.cregs[it->second];
       reg.record = false;
-      if (const auto name = allocOp->getAttrOfType<StringAttr>(
-              utils::CLASSICAL_REGISTER_NAME_ATTR)) {
+      if (const auto name = allocOp.getSourceNameAttr()) {
         reg.label = name.str();
       }
-      const auto size = type.getShape()[0];
-      if (size != ShapedType::kDynamic) {
-        reg.size = size;
-        reg.results.assign(size, Value{});
-      }
+      const auto size = allocOp.getResult().getType().getWidth();
+      reg.size = size;
+      reg.results.assign(static_cast<size_t>(size), Value{});
     });
 
-    funcOp.walk([&](memref::StoreOp storeOp) {
-      const auto type = dyn_cast<MemRefType>(storeOp.getMemref().getType());
-      if (!type || !isClassicalBitRegister(type)) {
-        return;
-      }
-      auto allocOp = storeOp.getMemref().getDefiningOp<memref::AllocOp>();
-      auto measureOp = storeOp.getValueToStore().getDefiningOp<MeasureOp>();
+    funcOp.walk([&](cbit::StoreOp storeOp) {
+      auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
+      auto measureOp = storeOp.getValue().getDefiningOp<MeasureOp>();
       if (!allocOp || !state.cregIndices.contains(allocOp.getOperation())) {
         storeOp.emitError(
             "QIR conversion only supports storing direct measurement results "
@@ -524,19 +486,13 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
         return;
       }
       if (!measureOp) {
-        if (isLeadingZeroInitialization(storeOp, allocOp)) {
-          consumedStores.push_back(storeOp);
-          return;
-        }
         storeOp.emitError(
-            "QIR conversion only supports storing direct measurement results "
-            "or leading zero initialization in classical result registers");
+            "QIR conversion does not support non-measurement CBit stores");
         hasInvalidMemory = true;
         return;
       }
-      const auto destination =
-          std::pair<size_t, Value>{state.cregIndices.at(allocOp.getOperation()),
-                                   storeOp.getIndices()[0]};
+      const auto destination = std::pair<size_t, Value>{
+          state.cregIndices.at(allocOp.getOperation()), storeOp.getIndex()};
       const auto [it, inserted] = state.cregMeasurements.try_emplace(
           measureOp.getOperation(), destination);
       if (!inserted && it->second != destination) {
@@ -566,14 +522,8 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
 
       for (const auto operand : returnOp.getOperands()) {
         if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
-          if (const auto it =
-                  state.cregMeasurements.find(measureOp.getOperation());
-              it != state.cregMeasurements.end()) {
-            markRegisterForRecording(it->second.first);
-          } else {
-            state.returnedStaticResults.insert(measureOp.getOperation());
-          }
-        } else if (auto allocOp = operand.getDefiningOp<memref::AllocOp>();
+          state.returnedStaticResults.insert(measureOp.getOperation());
+        } else if (auto allocOp = operand.getDefiningOp<cbit::AllocOp>();
                    allocOp &&
                    state.cregIndices.contains(allocOp.getOperation())) {
           markRegisterForRecording(

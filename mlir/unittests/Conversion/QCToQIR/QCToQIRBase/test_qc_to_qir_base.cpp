@@ -222,9 +222,9 @@ TEST(QCToQIRBaseNativeTest, RecordsReturnedRegisterMeasurement) {
   const auto q = builder.allocQubit();
   const auto c = builder.allocClassicalBitRegister(
       1, "named_result", mlir::cbit::Initialization::Undefined);
-  const auto result = builder.measure(q, c, 0);
-  builder.retype(result.getType());
-  auto module = builder.finalize(result);
+  builder.measure(q, c, 0);
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
@@ -276,9 +276,7 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {
   builder.initialize();
   const auto c = builder.allocClassicalBitRegister(
       1, {}, mlir::cbit::Initialization::Undefined);
-  auto zero = arith::ConstantIndexOp::create(builder, 0);
-  memref::StoreOp::create(builder, builder.boolConstant(true), c,
-                          zero.getResult());
+  builder.storeClassicalBit(builder.boolConstant(true), c, 0);
   auto module = builder.finalize();
   ASSERT_TRUE(module);
 
@@ -288,7 +286,7 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
     sawExpectedDiagnostic |= StringRef(message).contains(
-        "only supports storing direct measurement results");
+        "does not support non-measurement CBit stores");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
@@ -302,10 +300,7 @@ TEST(QCToQIRBaseNativeTest, AcceptsZeroInitializedClassicalRegister) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto c = builder.allocClassicalBitRegister(
-      1, {}, mlir::cbit::Initialization::Undefined);
-  auto zero = arith::ConstantIndexOp::create(builder, 0);
-  memref::StoreOp::create(builder, builder.boolConstant(false), c,
-                          zero.getResult());
+      1, {}, mlir::cbit::Initialization::Zero);
   builder.retype(c.getType());
   auto module = builder.finalize(c);
   ASSERT_TRUE(module);
@@ -314,7 +309,7 @@ TEST(QCToQIRBaseNativeTest, AcceptsZeroInitializedClassicalRegister) {
   EXPECT_TRUE(succeeded(verify(*module)));
 }
 
-TEST(QCToQIRBaseNativeTest, RejectsZeroStoreAfterMeasurement) {
+TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                       LLVM::LLVMDialect, memref::MemRefDialect>();
@@ -324,9 +319,7 @@ TEST(QCToQIRBaseNativeTest, RejectsZeroStoreAfterMeasurement) {
   const auto c = builder.allocClassicalBitRegister(
       1, {}, mlir::cbit::Initialization::Undefined);
   builder.measure(q, c, 0);
-  auto zero = arith::ConstantIndexOp::create(builder, 0);
-  memref::StoreOp::create(builder, builder.boolConstant(false), c,
-                          zero.getResult());
+  builder.storeClassicalBit(builder.boolConstant(false), c, 0);
   auto module = builder.finalize();
   ASSERT_TRUE(module);
 
@@ -335,8 +328,8 @@ TEST(QCToQIRBaseNativeTest, RejectsZeroStoreAfterMeasurement) {
     std::string message;
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
-    sawExpectedDiagnostic |=
-        StringRef(message).contains("leading zero initialization");
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "does not support non-measurement CBit stores");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
@@ -360,8 +353,8 @@ TEST(QCToQIRBaseNativeTest, RejectsUnsupportedIntegerMemref) {
     std::string message;
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "only supports one-dimensional memrefs of i1");
+    sawExpectedDiagnostic |=
+        StringRef(message).contains("only supports generic memrefs for");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
@@ -392,35 +385,6 @@ TEST(QCToQIRBaseNativeTest, RejectsDynamicClassicalRegisterIndex) {
     diagnostic.print(stream);
     sawExpectedDiagnostic |= StringRef(message).contains(
         "requires constant classical-register measurement indices");
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
-}
-
-TEST(QCToQIRBaseNativeTest, RejectsOutOfBoundsClassicalRegisterIndex) {
-  MLIRContext context;
-  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
-                      LLVM::LLVMDialect, memref::MemRefDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(
-      1, {}, mlir::cbit::Initialization::Undefined);
-  const auto result = builder.measure(q);
-  auto index = arith::ConstantIndexOp::create(builder, 1);
-  memref::StoreOp::create(builder, result, c, index.getResult());
-  builder.retype(result.getType());
-  auto module = builder.finalize(result);
-  ASSERT_TRUE(module);
-
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "classical-register measurement index is out of bounds");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));

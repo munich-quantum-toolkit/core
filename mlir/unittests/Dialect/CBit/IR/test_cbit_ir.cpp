@@ -104,6 +104,33 @@ TEST_F(CBitIRTest, RejectsConstantOutOfBoundsIndex) {
   )mlir"));
 }
 
+TEST_F(CBitIRTest, RejectsNegativeConstantIndex) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %neg = arith.constant -1 : index
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %bit = cbit.load %reg[%neg] : !cbit.reg<2>
+        return
+      }
+    }
+  )mlir"));
+}
+
+TEST_F(CBitIRTest, RejectsInvalidOperandTypes) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %false = arith.constant false
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %bit = "cbit.load"(%reg, %false)
+            : (!cbit.reg<1>, i1) -> i1
+        return
+      }
+    }
+  )mlir"));
+}
+
 TEST_F(CBitIRTest, ReportsMemoryEffects) {
   auto moduleOp = parse(R"mlir(
     module {

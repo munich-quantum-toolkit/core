@@ -20,6 +20,7 @@
 #include "ir/Definitions.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -100,8 +101,14 @@ struct QubitMap {
 };
 
 struct ClassicalEnv {
+  struct RegisterState {
+    std::vector<bool> values;
+    std::vector<bool> initialized;
+  };
+
   DenseMap<Value, bool> bools;
   DenseMap<Value, int64_t> indices;
+  DenseMap<Value, RegisterState> registers;
 
   LogicalResult bindFrom(Value source, Value dest, Operation* op) {
     if (dest.getType().isInteger(1)) {
@@ -414,6 +421,69 @@ static FailureOr<int64_t> lookupIndex(Value value, ClassicalEnv& classical,
   return it->second;
 }
 
+static LogicalResult allocateRegister(cbit::AllocOp alloc,
+                                      ClassicalEnv& classical) {
+  const auto width =
+      static_cast<size_t>(alloc.getResult().getType().getWidth());
+  const bool initialized =
+      alloc.getInitialization() == cbit::Initialization::Zero;
+  classical.registers[alloc.getResult()] = {
+      .values = std::vector<bool>(width, false),
+      .initialized = std::vector<bool>(width, initialized)};
+  return success();
+}
+
+static FailureOr<size_t> resolveRegisterIndex(Value index,
+                                              cbit::RegisterType type,
+                                              ClassicalEnv& classical,
+                                              Operation* op) {
+  auto resolved = lookupIndex(index, classical, op);
+  if (failed(resolved)) {
+    return failure();
+  }
+  if (*resolved < 0 || *resolved >= type.getWidth()) {
+    return op->emitError() << "CBit register index " << *resolved
+                           << " is out of bounds for width " << type.getWidth();
+  }
+  return static_cast<size_t>(*resolved);
+}
+
+static LogicalResult storeRegister(cbit::StoreOp store,
+                                   ClassicalEnv& classical) {
+  const auto regIt = classical.registers.find(store.getReg());
+  if (regIt == classical.registers.end()) {
+    return store.emitError()
+           << "CBit register is not mapped for QCO DD simulation";
+  }
+  auto index = resolveRegisterIndex(store.getIndex(), store.getReg().getType(),
+                                    classical, store);
+  auto value = lookupBool(store.getValue(), classical, store);
+  if (failed(index) || failed(value)) {
+    return failure();
+  }
+  regIt->second.values[*index] = *value;
+  regIt->second.initialized[*index] = true;
+  return success();
+}
+
+static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical) {
+  const auto regIt = classical.registers.find(load.getReg());
+  if (regIt == classical.registers.end()) {
+    return load.emitError()
+           << "CBit register is not mapped for QCO DD simulation";
+  }
+  auto index = resolveRegisterIndex(load.getIndex(), load.getReg().getType(),
+                                    classical, load);
+  if (failed(index)) {
+    return failure();
+  }
+  if (!regIt->second.initialized[*index]) {
+    return load.emitError() << "read from an undefined CBit register element";
+  }
+  classical.bools[load.getResult()] = regIt->second.values[*index];
+  return success();
+}
+
 template <typename OpTy>
 static LogicalResult applyBinaryI1(OpTy op, ClassicalEnv& classical,
                                    bool (*combine)(bool, bool)) {
@@ -552,6 +622,15 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<StaticOp, SinkOp>([](auto) { return success(); })
       .template Case<arith::ConstantOp>([&](arith::ConstantOp constant) {
         return recordConstant(constant, *walk.classical);
+      })
+      .template Case<cbit::AllocOp>([&](cbit::AllocOp alloc) {
+        return allocateRegister(alloc, *walk.classical);
+      })
+      .template Case<cbit::LoadOp>([&](cbit::LoadOp load) {
+        return loadRegister(load, *walk.classical);
+      })
+      .template Case<cbit::StoreOp>([&](cbit::StoreOp store) {
+        return storeRegister(store, *walk.classical);
       })
       .template Case<arith::IndexCastUIOp>([&](arith::IndexCastUIOp cast) {
         return applyIndexCastUI(cast, *walk.classical);

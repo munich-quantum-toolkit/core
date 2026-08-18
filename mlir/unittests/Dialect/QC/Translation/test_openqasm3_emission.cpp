@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
@@ -40,9 +41,9 @@ using namespace mlir;
 
 static DialectRegistry emissionDialects() {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, cf::ControlFlowDialect,
-                  func::FuncDialect, math::MathDialect, memref::MemRefDialect,
-                  qc::QCDialect, scf::SCFDialect>();
+  registry.insert<arith::ArithDialect, cbit::CBitDialect,
+                  cf::ControlFlowDialect, func::FuncDialect, math::MathDialect,
+                  memref::MemRefDialect, qc::QCDialect, scf::SCFDialect>();
   return registry;
 }
 
@@ -141,13 +142,10 @@ r = measure q;
 
 TEST(OpenQASM3EmissionTest, RenamesOutputsThatCollideWithStandardGates) {
   constexpr llvm::StringLiteral source = R"mlir(module {
-    func.func @main() -> memref<1xi1> {
-      %bits = memref.alloc() {mqt.classical_register_name = "x"}
-          : memref<1xi1>
-      %index = arith.constant 0 : index
-      %value = arith.constant false
-      memref.store %value, %bits[%index] : memref<1xi1>
-      return %bits : memref<1xi1>
+    func.func @main() -> !cbit.reg<1> {
+      %bits = cbit.alloc(#cbit.init<zero>) source_name = "x"
+          : !cbit.reg<1>
+      return %bits : !cbit.reg<1>
     }
   })mlir";
   DialectRegistry registry = emissionDialects();
@@ -503,15 +501,15 @@ TEST(OpenQASM3EmissionTest, EmitsPhysicalQubitOperations) {
 TEST(OpenQASM3EmissionTest, ReusesClassicalRegisterNamesForOutputs) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() -> (memref<1xi1>, memref<2xi1>, i1) {
-    %single = memref.alloc() {mqt.classical_register_name = "single"}
-        : memref<1xi1>
-    %bits = memref.alloc() {mqt.classical_register_name = "bits"}
-        : memref<2xi1>
+  func.func @main() -> (!cbit.reg<1>, !cbit.reg<2>, i1) {
+    %single = cbit.alloc(#cbit.init<undefined>) source_name = "single"
+        : !cbit.reg<1>
+    %bits = cbit.alloc(#cbit.init<undefined>) source_name = "bits"
+        : !cbit.reg<2>
     %qubit = qc.alloc : !qc.qubit
     %measured = qc.measure %qubit : !qc.qubit -> i1
     qc.dealloc %qubit : !qc.qubit
-    return %single, %bits, %measured : memref<1xi1>, memref<2xi1>, i1
+    return %single, %bits, %measured : !cbit.reg<1>, !cbit.reg<2>, i1
   }
 }
 )mlir";

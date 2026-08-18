@@ -11,6 +11,7 @@
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -80,8 +81,9 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
-                    memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
+    registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                    jeff::JeffDialect, memref::MemRefDialect, qco::QCODialect,
+                    scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -371,8 +373,8 @@ static LogicalResult convertJeffToQCO(ModuleOp module) {
 
 TEST(JeffRoundTripRegressionTest, RestoresStatusResultAtEndOfEntryPoint) {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
-                  qco::QCODialect, scf::SCFDialect>();
+  registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                  jeff::JeffDialect, qco::QCODialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
   OpBuilder builder(&context);
@@ -403,8 +405,9 @@ TEST(JeffRoundTripRegressionTest, RestoresStatusResultAtEndOfEntryPoint) {
 
 TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
-                  memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
+  registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                  jeff::JeffDialect, memref::MemRefDialect, qco::QCODialect,
+                  scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
   auto program = ::mqt::test::buildMLIRProgram(
@@ -417,7 +420,7 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   EXPECT_EQ(
       main->getAttrOfType<ArrayAttr>("passthrough"),
       ArrayAttr::get(&context, {StringAttr::get(&context, "entry_point")}));
-  auto cregType = MemRefType::get({1}, IntegerType::get(&context, 1));
+  auto cregType = cbit::RegisterType::get(&context, 1);
   ASSERT_EQ(main.getFunctionType().getNumResults(), 1);
   EXPECT_EQ(main.getFunctionType().getResult(0), cregType);
   auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
@@ -427,8 +430,8 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
 
 TEST(JeffRoundTripRegressionTest, RejectsClassicalIfResultsPrecisely) {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
-                  qco::QCODialect, scf::SCFDialect>();
+  registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                  jeff::JeffDialect, qco::QCODialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
@@ -469,10 +472,11 @@ module {
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
-TEST(JeffRoundTripRegressionTest, ConvertsDynamicClassicalRegisterSize) {
+TEST(JeffRoundTripRegressionTest, RejectsLegacyClassicalMemref) {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
-                  memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
+  registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                  jeff::JeffDialect, memref::MemRefDialect, qco::QCODialect,
+                  scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
@@ -488,8 +492,7 @@ module {
   auto module = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(succeeded(convertQCOToJeff(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(failed(convertQCOToJeff(*module)));
 }
 
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {

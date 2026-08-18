@@ -599,8 +599,12 @@ static Value ifNot(qc::QCProgramBuilder& b) {
   auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
-  auto measured = b.measure(q[0]);
-  auto cond = arith::XOrIOp::create(b, measured, trueValue).getResult();
+  auto condition =
+      b.allocClassicalBitRegister(1, {}, cbit::Initialization::Undefined);
+  b.measure(q[0], condition, 0);
+  auto cond =
+      arith::XOrIOp::create(b, b.loadClassicalBit(condition, 0), trueValue)
+          .getResult();
   b.scfIf(cond, [&] { b.x(q[0]); });
   auto out =
       b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
@@ -1003,17 +1007,44 @@ named_result = measure q;
   auto translated = qc::translateQASM3ToQC(source, context.get());
   ASSERT_TRUE(translated);
 
-  memref::AllocOp classicalRegister;
-  translated->walk([&](memref::AllocOp op) {
-    if (op.getType().getElementType().isInteger(1)) {
-      classicalRegister = op;
-    }
-  });
+  cbit::AllocOp classicalRegister;
+  translated->walk([&](cbit::AllocOp op) { classicalRegister = op; });
   ASSERT_TRUE(classicalRegister);
-  const auto name = classicalRegister->getAttrOfType<StringAttr>(
-      utils::CLASSICAL_REGISTER_NAME_ATTR);
+  const auto name = classicalRegister.getSourceNameAttr();
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_result");
+}
+
+TEST_F(QASM3TranslationTest, UsesVersionSpecificBitInitialization) {
+  constexpr std::array sources{std::pair{R"qasm(OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[1];
+measure q[0] -> c[0];
+)qasm",
+                                         cbit::Initialization::Zero},
+                               std::pair{R"qasm(OPENQASM 3.0;
+qubit q;
+bit[1] c;
+c[0] = measure q;
+)qasm",
+                                         cbit::Initialization::Undefined}};
+
+  for (const auto& [source, expected] : sources) {
+    auto translated = qc::translateQASM3ToQC(source, context.get());
+    ASSERT_TRUE(translated);
+    SmallVector<cbit::AllocOp> registers;
+    bool containsPoison = false;
+    translated->walk([&](Operation* op) {
+      if (auto alloc = dyn_cast<cbit::AllocOp>(op)) {
+        registers.push_back(alloc);
+      }
+      containsPoison |= op->getName().getStringRef() == "ub.poison";
+    });
+    ASSERT_EQ(registers.size(), 1U);
+    EXPECT_EQ(registers.front().getInitialization(), expected);
+    EXPECT_FALSE(containsPoison);
+  }
 }
 
 TEST_F(QASM3TranslationTest, RetainsQubitRegisterName) {
