@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <string>
 
-namespace mqt::benchmarks {
+namespace mqt::benchmark {
 
 /// Replaces the characters that a test name cannot contain.
 static std::string testName(llvm::StringRef name) {
@@ -79,4 +79,4 @@ TEST_P(JeffBenchmarkTest, RejectsSizesBelowTheMinimum) {
 
 } // namespace
 
-} // namespace mqt::benchmarks
+} // namespace mqt::benchmark

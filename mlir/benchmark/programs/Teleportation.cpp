@@ -16,7 +16,7 @@
 
 #include <cstdint>
 
-namespace mqt::benchmarks {
+namespace mqt::benchmark {
 
 using namespace mlir;
 
@@ -53,4 +53,4 @@ SmallVector<Value> teleportation(qc::QCProgramBuilder& b,
   return {c};
 }
 
-} // namespace mqt::benchmarks
+} // namespace mqt::benchmark

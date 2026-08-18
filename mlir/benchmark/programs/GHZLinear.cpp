@@ -17,7 +17,7 @@
 
 #include <cstdint>
 
-namespace mqt::benchmarks {
+namespace mqt::benchmark {
 
 using namespace mlir;
 
@@ -41,4 +41,4 @@ SmallVector<Value> ghzLinear(qc::QCProgramBuilder& b, const uint64_t n) {
   return {c};
 }
 
-} // namespace mqt::benchmarks
+} // namespace mqt::benchmark

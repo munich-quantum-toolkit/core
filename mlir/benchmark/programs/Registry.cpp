@@ -12,7 +12,7 @@
 
 #include <mlir/Support/LLVM.h>
 
-namespace mqt::benchmarks {
+namespace mqt::benchmark {
 
 SmallVector<Benchmark> benchmarks() {
   return {
@@ -39,4 +39,4 @@ SmallVector<Benchmark> benchmarks() {
   };
 }
 
-} // namespace mqt::benchmarks
+} // namespace mqt::benchmark

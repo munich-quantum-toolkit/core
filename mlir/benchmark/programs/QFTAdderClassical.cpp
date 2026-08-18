@@ -22,7 +22,7 @@
 #include <cstdint>
 #include <numbers>
 
-namespace mqt::benchmarks {
+namespace mqt::benchmark {
 
 using namespace mlir;
 
@@ -100,4 +100,4 @@ SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& b,
   return {c};
 }
 
-} // namespace mqt::benchmarks
+} // namespace mqt::benchmark

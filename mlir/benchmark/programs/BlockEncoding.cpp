@@ -18,7 +18,7 @@
 #include <cstdint>
 #include <numbers>
 
-namespace mqt::benchmarks {
+namespace mqt::benchmark {
 
 using namespace mlir;
 
@@ -76,4 +76,4 @@ SmallVector<Value> blockEncoding(qc::QCProgramBuilder& b, const uint64_t n) {
   return {flag, c};
 }
 
-} // namespace mqt::benchmarks
+} // namespace mqt::benchmark

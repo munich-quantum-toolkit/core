@@ -19,7 +19,7 @@ namespace mlir::qc {
 class QCProgramBuilder;
 } // namespace mlir::qc
 
-namespace mqt::benchmarks {
+namespace mqt::benchmark {
 
 using namespace mlir;
 
@@ -98,4 +98,4 @@ SmallVector<Value> vqeAnsatz(qc::QCProgramBuilder& b, uint64_t n);
 /// QAOA on a ring of @p n qubits with a fixed layer count.
 SmallVector<Value> qaoa(qc::QCProgramBuilder& b, uint64_t n);
 
-} // namespace mqt::benchmarks
+} // namespace mqt::benchmark

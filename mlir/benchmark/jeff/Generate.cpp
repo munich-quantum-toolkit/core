@@ -36,7 +36,7 @@
 #include <optional>
 #include <utility>
 
-namespace mqt::benchmarks {
+namespace mqt::benchmark {
 
 using namespace mlir;
 
@@ -97,4 +97,4 @@ std::optional<JeffProgram> buildJeffProgram(const Benchmark& benchmark,
   return std::move(*qco).intoJeff();
 }
 
-} // namespace mqt::benchmarks
+} // namespace mqt::benchmark

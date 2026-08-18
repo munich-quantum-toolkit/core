@@ -41,7 +41,7 @@ static llvm::cl::opt<std::string> programFilter(
     llvm::cl::value_desc("name"), llvm::cl::init(""));
 
 /// Builds one benchmark and writes it as a `jeff` file.
-static bool generate(const mqt::benchmarks::Benchmark& benchmark,
+static bool generate(const mqt::benchmark::Benchmark& benchmark,
                      const uint64_t n, const std::filesystem::path& directory) {
   if (n < benchmark.minimumSize) {
     llvm::errs() << benchmark.name << ": needs n of at least "
@@ -49,7 +49,7 @@ static bool generate(const mqt::benchmarks::Benchmark& benchmark,
     return false;
   }
 
-  const auto program = mqt::benchmarks::buildJeffProgram(benchmark, n);
+  const auto program = mqt::benchmark::buildJeffProgram(benchmark, n);
   if (!program) {
     llvm::errs() << benchmark.name << ": failed to build the jeff program\n";
     return false;
@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
   const auto filter = llvm::StringRef(programFilter.getValue());
   auto failures = 0;
   auto generated = 0;
-  for (const auto& benchmark : mqt::benchmarks::benchmarks()) {
+  for (const auto& benchmark : mqt::benchmark::benchmarks()) {
     if (!filter.empty() && benchmark.name != filter) {
       continue;
     }
