@@ -272,3 +272,140 @@ def test_validates_operation_topology(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(PennyLaneValidationError, match=r"not advertised on device wires \(1, 0\)"):
         circuit()
     assert not qdmi.submissions
+
+
+def test_rejects_operation_on_an_unadvertised_site(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Honor the single-qubit sites a QDMI operation advertises."""
+    qdmi = StubDevice([operation("h", 1, sites=[0])], [ProgramFormat.QASM3])
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2, shots=2)
+
+    @qp.qnode(device)
+    def circuit():
+        qp.Hadamard(0)
+        qp.Hadamard(1)
+        return qp.sample(wires=[0, 1])
+
+    with pytest.raises(PennyLaneValidationError, match="not advertised on device wire 1"):
+        circuit()
+    assert not qdmi.submissions
+
+
+def test_falls_back_to_the_device_coupling_map(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use the device topology when an operation advertises no site pairs."""
+    qdmi = StubDevice(
+        [operation("h", 1), operation("cx", 2)],
+        [ProgramFormat.QASM3],
+        qubits=3,
+        coupling_map=[(0, 1)],
+        result_factory=lambda _program, shots: ["000"] * shots,
+    )
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=3, shots=2)
+
+    @qp.qnode(device)
+    def connected():
+        qp.CNOT(wires=[1, 0])
+        return qp.sample(wires=[0, 1])
+
+    @qp.qnode(device)
+    def disconnected():
+        qp.CNOT(wires=[0, 2])
+        return qp.sample(wires=[0, 2])
+
+    # The coupling map is undirected, so the reversed edge is connected too.
+    connected()
+    assert len(qdmi.submissions) == 1
+    with pytest.raises(PennyLaneValidationError, match=r"does not connect wires \(0, 2\)"):
+        disconnected()
+    assert len(qdmi.submissions) == 1
+
+
+def test_accepts_advertised_site_pairs_and_wider_operations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Accept an advertised site pair, and skip loci checks above two wires."""
+    qdmi = StubDevice(
+        [operation("h", 1), operation("cx", 2, site_pairs=[(0, 1)]), operation("ccx", 3)],
+        [ProgramFormat.QASM3],
+        qubits=3,
+        result_factory=lambda _program, shots: ["000"] * shots,
+    )
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=3, shots=2)
+
+    @qp.qnode(device)
+    def circuit():
+        qp.CNOT(wires=[0, 1])
+        qp.Toffoli(wires=[0, 1, 2])
+        return qp.sample(wires=[0, 1, 2])
+
+    circuit()
+    payload = qdmi.submissions[0][0]
+
+    assert "cx q[0],q[1];" in payload
+    assert "ccx q[0],q[1],q[2];" in payload
+
+
+@pytest.mark.parametrize(
+    ("advertised", "expected"),
+    [
+        (operation("rx", 2, 1), "advertises 2 wires"),
+        (operation("rx", 1, 0), "advertises 0 parameters"),
+    ],
+)
+def test_rejects_contradictory_qdmi_metadata(
+    monkeypatch: pytest.MonkeyPatch, advertised: object, expected: str
+) -> None:
+    """Reject a QDMI operation whose arity contradicts the operation table."""
+    qdmi = StubDevice([advertised], [ProgramFormat.QASM3])  # ty: ignore[invalid-argument-type]
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=1, shots=2)
+
+    @qp.qnode(device)
+    def circuit():
+        qp.RX(0.5, 0)
+        return qp.sample(wires=0)
+
+    with pytest.raises(PennyLaneValidationError, match=expected):
+        circuit()
+    assert not qdmi.submissions
+
+
+def test_measurement_without_wires_samples_every_device_wire(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sample every device wire when the measurement names none."""
+    qdmi = StubDevice(
+        [operation("x", 1)],
+        [ProgramFormat.QASM3],
+        result_factory=lambda _program, shots: ["10"] * shots,
+    )
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2, shots=4)
+
+    @qp.qnode(device)
+    def circuit():
+        qp.PauliX(1)
+        return qp.sample()
+
+    samples = circuit()
+
+    assert samples.shape == (4, 2)
+    np.testing.assert_array_equal(samples[0], [0, 1])
+
+
+def test_converts_an_unpreprocessed_tape(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Convert a tape handed straight to the device, without preprocessing."""
+    qdmi = StubDevice(
+        [operation("h", 1)],
+        [ProgramFormat.QASM3],
+        result_factory=lambda _program, shots: ["00"] * shots,
+    )
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2, shots=2)
+
+    # Preprocessing always names the measured wires. A tape that skips it may
+    # carry no measurement, or one that names none; both sample every wire.
+    for measurements in ([], [qp.sample()]):
+        samples = np.asarray(device.execute(qp.tape.QuantumScript([qp.Hadamard(0)], measurements, shots=2)))
+        assert samples.shape == (2, 2)
+
+    with pytest.raises(PennyLaneValidationError, match="not a device wire"):
+        device.execute(qp.tape.QuantumScript([qp.Hadamard(5)], [qp.sample(wires=0)], shots=2))
