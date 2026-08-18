@@ -10,8 +10,10 @@
 
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
+#include "dd/CachedEdge.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
+#include "dd/Node.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
