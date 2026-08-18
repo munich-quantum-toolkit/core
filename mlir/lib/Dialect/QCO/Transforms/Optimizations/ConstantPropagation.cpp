@@ -921,26 +921,24 @@ static WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
   // propagation of the body unitary
   std::vector<Value> targetQubits;
   const auto numTargets = op->getNumTargets();
-  targetQubits.reserve(numTargets);
+  targetQubits.resize(numTargets);
   const auto arguments = op->getRegion().getArguments();
   for (unsigned int argIndex = 0; argIndex < arguments.size(); ++argIndex) {
     for (unsigned int i = 0; i < numTargets; ++i) {
       if (arguments[argIndex] == body.getInputTarget(i)) {
-        targetQubits.insert(targetQubits.begin() + i,
-                            op->getInputTarget(argIndex));
+        targetQubits[i] = op->getInputTarget(argIndex);
         break;
       }
     }
   }
 
   std::vector<Value> resultQubits;
-  resultQubits.reserve(numTargets);
+  resultQubits.resize(numTargets);
   const auto yieldOP = cast<YieldOp>(*op->getBody()->rbegin());
   for (unsigned int uOpOutIndex = 0; uOpOutIndex < numTargets; ++uOpOutIndex) {
     for (unsigned int i = 0; i < numTargets; ++i) {
       if (yieldOP->getOperand(i) == body.getOutputTarget(uOpOutIndex)) {
-        resultQubits.insert(resultQubits.begin() + i,
-                            op->getOutputTarget(uOpOutIndex));
+        resultQubits[i] = op->getOutputTarget(uOpOutIndex);
         break;
       }
     }
