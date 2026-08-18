@@ -180,9 +180,7 @@ class _ProgramSerializerRegistry:
 
     The registry reads :data:`ENTRY_POINT_GROUP` once, on the first lookup
     rather than at import, because loading an entry point imports the package
-    that advertises it. Discovery is not thread-safe: two threads that reach a
-    cold registry together both read the entry points. Import-time discovery in
-    several threads is already fraught, so the registry does not lock.
+    that advertises it. The registry does not synchronize concurrent first use.
     """
 
     def __init__(self, discover: Callable[[], Iterable[EntryPoint]]) -> None:

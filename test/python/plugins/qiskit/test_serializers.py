@@ -151,14 +151,14 @@ def test_non_circuit_format_is_rejected(fmt: ProgramFormat) -> None:
         _registry().register(fmt, _serializer)
 
 
-def test_module_functions_share_one_registry() -> None:
+def test_module_functions_share_one_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     """The public functions read and write the same process-wide registry."""
-    try:
-        serializers.register_program_serializer(ProgramFormat.CUSTOM1, _serializer)
+    monkeypatch.setattr(serializers, "_REGISTRY", _registry())
+    serializers.register_program_serializer(ProgramFormat.CUSTOM1, _serializer)
 
-        assert serializers.program_serializer(ProgramFormat.CUSTOM1) is _serializer
-    finally:
-        serializers.unregister_program_serializer(ProgramFormat.CUSTOM1)
+    assert serializers.program_serializer(ProgramFormat.CUSTOM1) is _serializer
+
+    serializers.unregister_program_serializer(ProgramFormat.CUSTOM1)
 
     assert serializers.program_serializer(ProgramFormat.CUSTOM1) is None
 
