@@ -10,6 +10,8 @@
 
 #include "mlir/Conversion/CBitToMemRef/CBitToMemRef.h"
 
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -18,7 +20,12 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/Transforms/Patterns.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+
+#include <cstdint>
+#include <utility>
 
 namespace mlir {
 
@@ -93,6 +100,7 @@ struct ConvertCBitToMemRef final
     : impl::ConvertCBitToMemRefBase<ConvertCBitToMemRef> {
   using ConvertCBitToMemRefBase::ConvertCBitToMemRefBase;
 
+protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* moduleOp = getOperation();

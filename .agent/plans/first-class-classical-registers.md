@@ -59,6 +59,11 @@ outputs.
       changelog, and generated stubs. The full native suite passes 4,288 tests.
       The required Python, stub, documentation, and Python-version matrix
       sessions pass.
+- [x] (2026-08-18 23:55Z) Published signed integration commit `07df0c738`. Every
+      platform and coverage job passed, but extensive C++ lint found indirect
+      CBit includes plus helper linkage and pass visibility issues. Added direct
+      provider includes and fixed those diagnostics for a signed follow-up
+      commit.
 - [ ] Publish and validate the signed final head. Keep the pull request in draft
       until link checking passes: the required link-check session currently
       fails only on unrelated external DOI, Qiskit policy, and old Read the Docs
@@ -128,6 +133,11 @@ outputs.
   measurement past intervening quantum operations if the store is not adjacent.
   Evidence: OpenQASM emission now combines only adjacent operations, and a
   regression test preserves the order of a delayed store.
+- Observation: Unity builds hid indirect dependencies on the generated CBit
+  enum, type, and dialect declarations. Evidence: the extensive C++ lint job
+  found 87 diagnostics on the published head even though the release build and
+  local lint session passed. Direct includes and explicit helper linkage remove
+  the branch-related diagnostics, and all focused binaries still pass.
 
 ## Decision Log
 

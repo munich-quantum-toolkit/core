@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -28,7 +29,6 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
@@ -51,9 +51,9 @@
 using namespace mlir::utils;
 
 namespace mlir::qco {
-namespace {
-void validateClassicalBitIndex(const Value reg,
-                               const std::variant<int64_t, Value>& index) {
+static void
+validateClassicalBitIndex(const Value reg,
+                          const std::variant<int64_t, Value>& index) {
   const auto type = dyn_cast<cbit::RegisterType>(reg.getType());
   if (!type) {
     llvm::reportFatalUsageError("Expected a CBit register");
@@ -67,7 +67,6 @@ void validateClassicalBitIndex(const Value reg,
     }
   }
 }
-} // namespace
 
 QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(

@@ -14,13 +14,16 @@
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
+#include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/DialectImplementation.h>
+#include <mlir/IR/DialectImplementation.h> // IWYU pragma: keep
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
+#include <cstdint>
 #include <optional>
 
 using namespace mlir;
@@ -66,9 +69,9 @@ RegisterType::verify(const function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-namespace {
-LogicalResult verifyIndex(Operation* operation, const Value registerValue,
-                          const Value indexValue) {
+static LogicalResult verifyIndex(Operation* operation,
+                                 const Value registerValue,
+                                 const Value indexValue) {
   const auto index = getConstantIntValue(indexValue);
   if (!index) {
     return success();
@@ -85,12 +88,14 @@ LogicalResult verifyIndex(Operation* operation, const Value registerValue,
   return success();
 }
 
+namespace {
 struct KnownLoadValue {
   Value value;
   bool isZeroInitialization = false;
 };
+} // namespace
 
-std::optional<KnownLoadValue> findKnownLoadValue(LoadOp load) {
+static std::optional<KnownLoadValue> findKnownLoadValue(LoadOp load) {
   const auto loadIndex = getConstantIntValue(load.getIndex());
   for (auto* candidate = load->getPrevNode(); candidate != nullptr;
        candidate = candidate->getPrevNode()) {
@@ -125,6 +130,7 @@ std::optional<KnownLoadValue> findKnownLoadValue(LoadOp load) {
   return std::nullopt;
 }
 
+namespace {
 struct ForwardKnownLoad final : OpRewritePattern<LoadOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -148,9 +154,9 @@ LogicalResult LoadOp::verify() {
   return verifyIndex(getOperation(), getReg(), getIndex());
 }
 
-void LoadOp::getCanonicalizationPatterns(RewritePatternSet& patterns,
+void LoadOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  patterns.add<ForwardKnownLoad>(context);
+  results.add<ForwardKnownLoad>(context);
 }
 
 LogicalResult StoreOp::verify() {

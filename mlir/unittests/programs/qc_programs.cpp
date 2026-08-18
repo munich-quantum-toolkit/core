@@ -10,6 +10,7 @@
 
 #include "qc_programs.h"
 
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <llvm/ADT/STLExtras.h>

@@ -14,21 +14,29 @@
  */
 
 #include "mlir/Conversion/CBitToMemRef/CBitToMemRef.h"
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
+#include <cstddef>
 #include <memory>
 
 using namespace mlir;
@@ -46,7 +54,7 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  OwningOpRef<ModuleOp> convert(const StringRef source) const {
+  [[nodiscard]] OwningOpRef<ModuleOp> convert(const StringRef source) const {
     auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
     if (!moduleOp) {
       return {};

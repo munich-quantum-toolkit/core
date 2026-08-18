@@ -10,12 +10,12 @@
 
 #include "qco_programs.h"
 
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
