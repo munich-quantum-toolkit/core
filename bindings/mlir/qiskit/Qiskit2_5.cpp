@@ -13,14 +13,17 @@
 
 // Qiskit requires its umbrella header before the extension function table.
 #include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
 #include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner): enables the std::string caster.
 #include <qiskit.h>
+#include <qiskit/complex.h>
 #include <qiskit/funcs_py.h>
 #include <qiskit/version.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -223,6 +226,34 @@ void appendControlModifier(const nb::handle object,
   }
   modifiers.push_back({.kind = GateModifierKind::Control,
                        .numControls = static_cast<uint32_t>(controls)});
+}
+
+[[nodiscard]] nb::object terminalPythonGate(const nb::handle operation,
+                                            const size_t depth = 0U) {
+  if (depth >= MAX_ANNOTATED_OPERATION_DEPTH) {
+    throw std::runtime_error(
+        "Qiskit annotated operations exceed the nesting limit of 64");
+  }
+  if (nb::hasattr(operation, "base_op")) {
+    return terminalPythonGate(
+        pythonAttribute(operation, "base_op",
+                        "Qiskit annotated operation has no base"),
+        depth + 1U);
+  }
+  if (nb::hasattr(operation, "base_gate")) {
+    return terminalPythonGate(
+        pythonAttribute(operation, "base_gate",
+                        "Qiskit controlled gate has no base"),
+        depth + 1U);
+  }
+  return nb::borrow<nb::object>(operation);
+}
+
+[[nodiscard]] bool isPythonUnitaryGate(const nb::handle operation) {
+  const auto terminal = terminalPythonGate(operation);
+  const auto unitaryGate =
+      nb::module_::import_("qiskit.circuit.library").attr("UnitaryGate");
+  return nb::isinstance(terminal, unitaryGate);
 }
 
 void normalizePythonModifier(const nb::handle modifier,
@@ -690,6 +721,19 @@ public:
     if (kind == OperationKind::ControlFlow) {
       return {.kind = kind, .name = "control_flow"};
     }
+    std::optional<Instruction> normalizedUnknown;
+    if (kind == OperationKind::Unknown) {
+      const auto operation = pythonOperation(index);
+      if (isPythonUnitaryGate(operation)) {
+        Instruction result{.kind = OperationKind::Unitary, .name = "unitary"};
+        normalizePythonGate(operation, result);
+        result.name = "unitary";
+        result.qubits = pythonInstructionQubits(index);
+        return result;
+      }
+      normalizedUnknown.emplace();
+      normalizePythonGate(operation, *normalizedUnknown);
+    }
     QkCircuitInstruction native{};
     qk_circuit_get_instruction(circuit_, index, &native);
     struct InstructionGuard {
@@ -714,13 +758,88 @@ public:
       result.parameters.emplace_back(normalizeParameter(parameter));
     }
     if (result.kind == OperationKind::Unknown) {
-      const auto operation = pythonOperation(index);
-      normalizePythonGate(operation, result);
+      result.name = std::move(normalizedUnknown->name);
+      result.modifiers = std::move(normalizedUnknown->modifiers);
       if (!result.modifiers.empty()) {
         result.kind = OperationKind::Gate;
       }
     }
     result.standardGate = standardGateMapping(result.name);
+    return result;
+  }
+
+  [[nodiscard]] std::vector<std::complex<double>>
+  unitary(const size_t index) const override {
+    const auto instructionData = instruction(index);
+    if (instructionData.kind != OperationKind::Unitary) {
+      throw std::runtime_error(
+          "requested unitary data for a non-unitary instruction");
+    }
+    const auto nativeKind =
+        normalizeKind(qk_circuit_instruction_kind(circuit_, index));
+    if (nativeKind == OperationKind::Unknown) {
+      size_t numControls = 0U;
+      for (const auto& modifier : instructionData.modifiers) {
+        if (modifier.kind == GateModifierKind::Control) {
+          if (modifier.numControls >
+              std::numeric_limits<size_t>::max() - numControls) {
+            throw std::runtime_error("Qiskit control count is too large");
+          }
+          numControls += modifier.numControls;
+        }
+      }
+      if (numControls >= instructionData.qubits.size()) {
+        throw std::runtime_error(
+            "Qiskit unitary instruction has an unsupported operand arity");
+      }
+      const auto numTargets = instructionData.qubits.size() - numControls;
+      if (numTargets >= std::numeric_limits<size_t>::digits / 2U) {
+        throw std::runtime_error(
+            "Qiskit unitary is too large to represent safely");
+      }
+      const auto expectedDimension = size_t{1} << numTargets;
+      using Matrix =
+          nb::ndarray<nb::numpy, const std::complex<double>, nb::ndim<2>>;
+      try {
+        const auto terminal = terminalPythonGate(pythonOperation(index));
+        const auto matrixObject =
+            pythonAttribute(terminal, "to_matrix",
+                            "Qiskit unitary does not expose its matrix")();
+        const auto matrix = nb::cast<Matrix>(matrixObject);
+        if (matrix.shape(0) != expectedDimension ||
+            matrix.shape(1) != expectedDimension) {
+          throw std::runtime_error(
+              "Qiskit unitary matrix has an invalid dimension");
+        }
+        std::vector<std::complex<double>> result;
+        result.reserve(expectedDimension * expectedDimension);
+        for (size_t row = 0U; row < expectedDimension; ++row) {
+          for (size_t column = 0U; column < expectedDimension; ++column) {
+            result.push_back(matrix(row, column));
+          }
+        }
+        return result;
+      } catch (const nb::python_error& error) {
+        throwPythonError("Qiskit failed to read a wrapped unitary matrix",
+                         error);
+      }
+    }
+    if (instructionData.qubits.size() >=
+        std::numeric_limits<size_t>::digits / 2U) {
+      throw std::runtime_error(
+          "Qiskit unitary is too large to represent safely");
+    }
+    const auto entries = size_t{1} << (2U * instructionData.qubits.size());
+    std::vector<QkComplex64> native(entries);
+    qk_circuit_inst_unitary(
+        // Qiskit's read-only accessor is not const-correct in version 2.5.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+        const_cast<QkCircuit*>(circuit_), index, native.data());
+    std::vector<std::complex<double>> result;
+    result.reserve(entries);
+    for (const auto value : native) {
+      result.emplace_back(value.re, value.im);
+    }
     return result;
   }
 
@@ -764,6 +883,32 @@ public:
   }
 
 private:
+  [[nodiscard]] std::vector<uint32_t>
+  pythonInstructionQubits(const size_t index) const {
+    std::vector<uint32_t> result;
+    try {
+      const auto qubits =
+          pythonAttribute(data_[index], "qubits",
+                          "Qiskit circuit instruction has no qubit operands");
+      result.reserve(nb::len(qubits));
+      const auto findBit =
+          pythonAttribute(pythonCircuit_, "find_bit",
+                          "Qiskit circuit cannot resolve instruction qubits");
+      for (const nb::handle qubit : nb::iter(qubits)) {
+        const auto location = findBit(qubit);
+        const auto position = pythonUnsignedAttribute(
+            location, "index", "Qiskit qubit has an invalid circuit index");
+        if (position > std::numeric_limits<uint32_t>::max()) {
+          throw std::runtime_error("Qiskit qubit index cannot be represented");
+        }
+        result.push_back(static_cast<uint32_t>(position));
+      }
+    } catch (const nb::python_error& error) {
+      throwPythonError("Qiskit failed to resolve unitary qubits", error);
+    }
+    return result;
+  }
+
   [[nodiscard]] nb::object pythonOperation(const size_t index) const {
     if (index >= nb::len(data_)) {
       throw std::runtime_error("Qiskit instruction index is out of bounds");
@@ -1096,6 +1241,33 @@ public:
                   "adding barrier");
   }
 
+  void addUnitary(const std::vector<std::complex<double>>& matrix,
+                  const std::vector<uint32_t>& qubits,
+                  const uint32_t numControls) override {
+    if (numControls >= qubits.size()) {
+      throw std::runtime_error("Qiskit unitary has an invalid control count");
+    }
+    const std::vector targets(qubits.begin() + numControls, qubits.end());
+    std::vector<QkComplex64> native;
+    native.reserve(matrix.size());
+    for (const auto value : matrix) {
+      native.push_back({.re = value.real(), .im = value.imag()});
+    }
+    const auto instructionIndex = qk_circuit_num_instructions(circuit_);
+    checkExitCode(qk_circuit_unitary(circuit_, native.data(), targets.data(),
+                                     static_cast<uint32_t>(targets.size()),
+                                     true),
+                  "adding unitary");
+    if (numControls != 0U) {
+      // The Qiskit C API can append only a bare unitary. Defer its control
+      // wrapper until finish() exposes the Python operation.
+      pendingControlledUnitaries_.push_back(
+          {.instructionIndex = instructionIndex,
+           .numControls = numControls,
+           .qubits = qubits});
+    }
+  }
+
   [[nodiscard]] nb::object finish() override {
     if (circuit_ == nullptr) {
       throw std::runtime_error(
@@ -1106,11 +1278,60 @@ public:
     if (result == nullptr) {
       throwPythonError("Qiskit failed to create a QuantumCircuit");
     }
-    return nb::steal<nb::object>(result);
+    auto pythonCircuit = nb::steal<nb::object>(result);
+    try {
+      replacePendingControlledUnitaries(pythonCircuit);
+    } catch (const nb::python_error& error) {
+      throwPythonError("Qiskit failed to construct a controlled unitary",
+                       error);
+    }
+    return pythonCircuit;
   }
 
 private:
+  struct PendingControlledUnitary {
+    size_t instructionIndex = 0U;
+    uint32_t numControls = 0U;
+    std::vector<uint32_t> qubits;
+  };
+
+  void replacePendingControlledUnitaries(const nb::handle pythonCircuit) const {
+    auto data = pythonAttribute(pythonCircuit, "data",
+                                "Qiskit circuit has no instruction data");
+    const auto circuitQubits = pythonAttribute(pythonCircuit, "qubits",
+                                               "Qiskit circuit has no qubits");
+    for (const auto& pending : pendingControlledUnitaries_) {
+      if (pending.instructionIndex >= nb::len(data)) {
+        throw std::runtime_error(
+            "Qiskit controlled-unitary placeholder is missing");
+      }
+      const auto placeholder =
+          nb::borrow<nb::object>(data[pending.instructionIndex]);
+      const auto operation =
+          pythonAttribute(placeholder, "operation",
+                          "Qiskit unitary placeholder has no operation");
+      const auto controlled =
+          pythonAttribute(operation, "control",
+                          "Qiskit unitary operation cannot be controlled")(
+              pending.numControls, nb::arg("annotated") = true);
+      nb::list qargs;
+      for (const auto qubit : pending.qubits) {
+        if (qubit >= nb::len(circuitQubits)) {
+          throw std::runtime_error(
+              "Qiskit controlled unitary references an invalid qubit");
+        }
+        qargs.append(circuitQubits[qubit]);
+      }
+      const auto replacement =
+          pythonAttribute(placeholder, "replace",
+                          "Qiskit unitary placeholder cannot be replaced")(
+              nb::arg("operation") = controlled, nb::arg("qubits") = qargs);
+      data[pending.instructionIndex] = replacement;
+    }
+  }
+
   QkCircuit* circuit_ = nullptr;
+  std::vector<PendingControlledUnitary> pendingControlledUnitaries_;
 };
 
 class NativeTranslation final : public VersionedTranslation {
