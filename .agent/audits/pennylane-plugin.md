@@ -64,14 +64,14 @@ many QDMI jobs a shot vector decomposes into.
 
 Ranked by complexity removed per unit of risk.
 
-| #   | Assertion                   | Class          | Remedy       | Unlock                              | Risk | Status   |
-| :-- | :-------------------------- | :------------- | :----------- | :---------------------------------- | :--- | :------- |
-| 1   | `test_converter.py:131-133` | Over-specified | Narrow       | Readable QASM output                | Low  | Applied  |
-| 2   | `test_converter.py:212`     | Contract-free  | Delete       | −16 lines, −1 QDMI call per tape    | Low  | Applied  |
-| 3   | `test_device.py:89-90`      | Contract-free  | Narrow       | Frees the ordering strategy         | Low  | Applied  |
-| 4   | `test_device.py:180`        | Over-specified | Narrow       | None; the claimed guard is not real | Low  | Narrowed |
-| 5   | `test_device.py:73`         | Contract-free  | Strengthen   | None                                | Low  | Applied  |
-| 6   | `test_converter.py:27-33`   | Contract-free  | Rewrite file | −99% QDMI calls in preprocessing    | High | Applied  |
+| #    | Assertion                   | Class          | Remedy       | Unlock                              | Risk | Status   |
+| :--- | :-------------------------- | :------------- | :----------- | :---------------------------------- | :--- | :------- |
+| 1    | `test_converter.py:131-133` | Over-specified | Narrow       | Readable QASM output                | Low  | Applied  |
+| 2    | `test_converter.py:212`     | Contract-free  | Delete       | −16 lines, −1 QDMI call per tape    | Low  | Applied  |
+| 3    | `test_device.py:89-90`      | Contract-free  | Narrow       | Frees the ordering strategy         | Low  | Applied  |
+| 4    | `test_device.py:180`        | Over-specified | Narrow       | None; the claimed guard is not real | Low  | Narrowed |
+| 5    | `test_device.py:73`         | Contract-free  | Strengthen   | None                                | Low  | Applied  |
+| 6    | `test_converter.py:27-33`   | Contract-free  | Rewrite file | −99% QDMI calls in preprocessing    | High | Applied  |
 
 ## Verdicts
 

@@ -29,22 +29,23 @@ must pass.
   #2157, GitHub authentication, the worktree, and commit signing.
 - [x] (2026-08-18 22:24Z) Selected compatible changes and recorded all v3
   exclusions.
-- [ ] Port compatible maintenance and the SpecAudit method from #2121, #2122,
-  #2123, #2124, #2126, #2128, #2129, and #2130.
-- [ ] Port all non-merge commits from #2147 and adapt the final design to the
-  v3 PennyLane plugin without weakening its behavior.
-- [ ] Port QDMI calibration jobs from #2148 and OpenQASM fixes from #2156 and
-  #2157.
-- [ ] Regenerate stubs and the lockfile, then complete focused and aggregate
-  validation.
+- [x] (2026-08-18 22:43Z) Ported compatible maintenance and the SpecAudit method
+  from #2121, #2122, #2123, #2124, #2126, #2128, #2129, and #2130.
+- [x] (2026-08-18 22:43Z) Ported all 17 non-merge commits from #2147 in order
+  and retained the final private, session-bound PennyLane design on v3.
+- [x] (2026-08-18 22:43Z) Ported QDMI calibration jobs from #2148 and OpenQASM
+  fixes from #2156 and #2157.
+- [x] (2026-08-18 22:54Z) Regenerated stubs and the lockfile. Completed focused
+  and aggregate native and Python validation, subject to the recorded local
+  tool-environment limits.
 - [ ] Publish a draft pull request against `v3.x`, apply repository metadata,
   and inspect checks for the exact head.
 
 ## Surprises & Discoveries
 
-- Observation: `v3.x` already contains the automatic backports of #2141,
-  #2142, and #2146. Evidence: its current first-parent history ends in pull
-  requests #2144, #2143, and #2151.
+- Observation: `v3.x` already contains the automatic backports of #2141, #2142,
+  and #2146. Evidence: its current first-parent history ends in pull requests
+  #2144, #2143, and #2151.
 - Observation: The automatic #2145 backport remains a separate open pull
   request. Evidence: pull request #2153 targets `v3.x` and is not merged.
 - Observation: Pull request #2157 is open but its two substantive commits are
@@ -53,6 +54,18 @@ must pass.
 - Observation: The product and test changes from #2147 apply to the v3 plugin,
   but its reconciled audit ledger requires #2124 first. Evidence: #2147 modifies
   `.agent/audits/pennylane-plugin.md`, which #2124 creates.
+- Observation: Fresh editable installations made by scikit-build-core 1.0.3 in
+  local nox environments write a `.start` hook that the local Python 3.12, 3.13,
+  and 3.14 interpreters do not execute. Evidence: the source package was found
+  but compiled modules such as `mqt.core.ir` were absent from imports.
+  Regular-wheel installations of the same source passed the affected Python 3.14
+  and minimum-dependency test suites.
+- Observation: The host defaults to Python 3.15 for unpinned documentation and
+  lint environments. Several locked tools do not yet support that interpreter,
+  and SciPy has no matching ARM64 wheel. Evidence: PyO3 rejected Python 3.15,
+  cmake-format rejected its changed regex scanner, and SciPy required a missing
+  Fortran compiler. Validation therefore pins supported Python 3.13 or 3.14
+  where a hook or documentation tool needs Python.
 
 ## Decision Log
 
@@ -76,12 +89,34 @@ must pass.
 - Decision: Regenerate `uv.lock` from v3 declarations. Rationale: The main
   lockfile represents a different compiler and dependency graph. Date/Author:
   2026-08-18 / Codex.
+- Decision: Record both the failed editable nox wrappers and equivalent
+  regular-wheel results. Rationale: This distinguishes a local packaging-hook
+  failure from failures in the backported code without hiding either result.
+  Date/Author: 2026-08-18 / Codex.
 
 ## Outcomes & Retrospective
 
-Implementation, validation, and publication are in progress. Update this
-section after each major milestone with exact test results, remaining gaps, and
-the draft pull-request URL.
+Implementation is complete. The branch contains 17 ordered #2147 commits, the v3
+FoMaC adaptation of #2148, both substantive #2157 commits, the selected
+maintenance changes, a regenerated lockfile, and a v3 upgrade note. Stub
+generation left no additional diff.
+
+The LLVM 21.1.8 non-MLIR release build passed. CTest passed all 1,533 executed
+tests and skipped two device-dependent job-ID tests. The FoMaC binary passed 276
+tests. The five focused OpenQASM parser tests passed. The complete PennyLane
+plugin and focused Python QDMI run passed 349 tests and skipped two MLIR-only
+tests. The Python 3.10 nox session passed 522 tests and skipped eight. A regular
+wheel under Python 3.14 passed 561 tests and skipped five. The focused
+minimum-dependency PennyLane wheel passed 40 tests. `uv lock --check`, stub
+generation, and `git diff --check` passed.
+
+The local `tests-3.14` and `minimums-3.12` nox wrappers failed before collection
+because their editable `.start` hooks did not load compiled modules. The same
+environments passed after regular-wheel installation. The default docs and lint
+sessions initially selected Python 3.15 and hit upstream tool or missing-wheel
+limits. Python-pinned documentation and lint results are recorded when those
+checks finish. Publication remains in progress; add the draft pull-request URL
+and exact-head check state after publication.
 
 ## Context and Orientation
 
@@ -89,13 +124,14 @@ the draft pull-request URL.
 MLIR 21 support and the native FoMaC C++ implementation. Python exposes that
 implementation through the `mqt.core.qdmi` namespace. `main` contains the v4
 compiler architecture and uses the native QDMI C++ namespace, so a backport must
-adapt QDMI code to `include/mqt-core/fomac/FoMaC.hpp` and
-`src/fomac/FoMaC.cpp` without importing v4 compiler layers.
+adapt QDMI code to `include/mqt-core/fomac/FoMaC.hpp` and `src/fomac/FoMaC.cpp`
+without importing v4 compiler layers.
 
-The PennyLane plugin lives under `python/mqt/core/plugins/pennylane/`, with tests
-under `test/python/plugins/qdmi_pennylane/`. The full #2147 change makes the
-converter private, binds it to one opened QDMI session, reads advertised gates
-once, and tests conversion through `QDMIDevice` instead of a public helper.
+The PennyLane plugin lives under `python/mqt/core/plugins/pennylane/`, with
+tests under `test/python/plugins/qdmi_pennylane/`. The full #2147 change makes
+the converter private, binds it to one opened QDMI session, reads advertised
+gates once, and tests conversion through `QDMIDevice` instead of a public
+helper.
 
 The OpenQASM parser lives under `include/mqt-core/qasm3/` and `src/qasm3/`, with
 its regression tests in `test/ir/test_qasm3_parser.cpp`. Pull request #2156
@@ -108,9 +144,9 @@ as `qubit[1] q;`.
 Apply the maintenance pull requests as provenance-preserving commits, omitting
 only #2121's Qiskit C API wheel-source paths because those files do not exist on
 v3. Apply #2124 next so its audit ledger exists before #2147. Apply the 17
-non-merge #2147 commits in their original order, resolve differences against
-the v3 plugin, and add a v3 upgrade note for callers of the removed public
-converter API.
+non-merge #2147 commits in their original order, resolve differences against the
+v3 plugin, and add a v3 upgrade note for callers of the removed public converter
+API.
 
 Adapt #2148 to `fomac::Device`. Add optional binary and text calibration-job
 entry points, bind them as `submit_calibration_job`, keep custom job parameters,
@@ -124,12 +160,13 @@ commits and exclude the merge-from-main commit. Resolve all changelog entries
 semantically, preserve every human contributor, and regenerate the final v3
 lockfile.
 
-Do not port the v4-only compiler, QCO, QIR, or removal changes from #1973,
-#2054, #2111, #2112, #2114, #2115, #2118, #2119, #2125, #2127, #2133, #2136,
-#2137, #2138, #2140, or #2154. Do not port #2120 because checked-in v3 ExecPlans
-still depend on its worktree-local command wrapper.
+Do not port the v4-only compiler, QCO, QIR, or removal changes from pull
+requests \#1973, \#2054, \#2111, \#2112, \#2114, \#2115, \#2118, \#2119, \#2125,
+\#2127, \#2133, \#2136, \#2137, \#2138, \#2140, or \#2154. Do not port \#2120
+because checked-in v3 ExecPlans still depend on its worktree-local command
+wrapper.
 
-## Concrete Steps
+### Concrete Steps
 
 Run commands from the repository root. Apply each upstream commit with signing
 and provenance, inspect its full commit message, and verify the result:
@@ -166,7 +203,7 @@ Run repository-wide validation:
     ./.agent/run.sh uvx nox -s lint
     git diff --check origin/v3.x...HEAD
 
-## Validation and Acceptance
+### Validation and Acceptance
 
 The QDMI tests must prove that calibration jobs reach the device with absent,
 text, empty, and binary payloads without a shot count. Generic submission must
@@ -189,25 +226,25 @@ PennyLane session, generated stubs, documentation, the lock check, lint, commit
 signature verification, and `git diff --check`. Record exact passes, failures,
 and environmental limitations.
 
-## Idempotence and Recovery
+### Idempotence and Recovery
 
-All build, test, stub, lock, documentation, and lint commands are repeatable.
-If an upstream commit conflicts, resolve only files in that commit and continue
-the signed cherry-pick. Do not reset or discard unrelated work. Regenerate
-derived files from their declarations instead of splicing generated output.
+All build, test, stub, lock, documentation, and lint commands are repeatable. If
+an upstream commit conflicts, resolve only files in that commit and continue the
+signed cherry-pick. Do not reset or discard unrelated work. Regenerate derived
+files from their declarations instead of splicing generated output.
 
 Before rewriting any published history, create a backup ref, record the remote
 head, and use an exact `--force-with-lease` guard. Never merge the resulting
 pull request; a human reviews and merges it.
 
-## Artifacts and Notes
+### Artifacts and Notes
 
-The scan starts after combined backport #2117. Automatic backports #2141,
-#2142, and #2146 are already present. Pull request #2153 remains responsible for
-#2145. Pull requests #2124, #2147, #2148, #2156, and #2157 are the main
-functional sources for this follow-up.
+The scan starts after combined backport \#2117. Automatic backports \#2141,
+\#2142, and \#2146 are already present. Pull request \#2153 remains responsible
+for \#2145. Pull requests \#2124, \#2147, \#2148, \#2156, and \#2157 are the
+main functional sources for this follow-up.
 
-## Interfaces and Dependencies
+### Interfaces and Dependencies
 
 The final C++ API adds `fomac::Device::submitCalibrationJob` overloads for an
 optional byte span and a text payload. The final Python API adds
