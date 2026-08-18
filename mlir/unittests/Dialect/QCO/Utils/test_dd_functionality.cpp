@@ -83,7 +83,7 @@ protected:
     const auto fromQcFn = dd::buildFunctionality(qc, *dd);
     const auto fromQcoFn = buildFunctionality(func, *dd);
     ASSERT_TRUE(succeeded(fromQcoFn));
-    EXPECT_EQ(fromQcoFn->getMatrix(numQubits), fromQcFn.getMatrix(numQubits));
+    EXPECT_TRUE(*fromQcoFn == fromQcFn);
     dd->decRef(*fromQcoFn);
     dd->decRef(fromQcFn);
 
