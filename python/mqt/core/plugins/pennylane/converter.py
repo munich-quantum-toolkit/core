@@ -24,9 +24,6 @@ from .exceptions import (
     PennyLaneTranslationError as TranslationError,
 )
 from .exceptions import (
-    PennyLaneUnsupportedFormatError as UnsupportedFormatError,
-)
-from .exceptions import (
     PennyLaneUnsupportedOperationError as UnsupportedOperationError,
 )
 from .exceptions import (
@@ -40,7 +37,7 @@ if TYPE_CHECKING:
     from pennylane.tape import QuantumScript
     from pennylane.wires import Wires
 
-__all__ = ["ConvertedProgram", "convert_program", "supports_operation"]
+__all__ = ["ConvertedProgram", "ProgramConverter"]
 
 
 @dataclass(frozen=True)
@@ -124,29 +121,6 @@ _QASM2_OPERATIONS: Mapping[str, str] = MappingProxyType({
 })
 
 
-def _device_operations(device: QDMIDevice) -> dict[str, QDMIDevice.Operation]:
-    """Return advertised operations keyed by their lower-case spelling."""
-    return {operation.name().lower(): operation for operation in device.operations()}
-
-
-def _preferred_format(device: QDMIDevice) -> ProgramFormat:
-    """Choose the required QASM3-first exchange format.
-
-    Returns:
-        The selected QDMI program format.
-
-    Raises:
-        PennyLaneUnsupportedFormatError: If neither OpenQASM version is advertised.
-    """
-    formats = set(device.supported_program_formats())
-    if ProgramFormat.QASM3 in formats:
-        return ProgramFormat.QASM3
-    if ProgramFormat.QASM2 in formats:
-        return ProgramFormat.QASM2
-    msg = f"QDMI device '{device.name()}' supports none of the required program formats: OpenQASM 3 or OpenQASM 2."
-    raise UnsupportedFormatError(msg)
-
-
 def _resolve_qasm3_operation(
     operation: Operator, advertised: Mapping[str, QDMIDevice.Operation]
 ) -> tuple[str, _OperationSpec, QDMIDevice.Operation] | None:
@@ -162,41 +136,6 @@ def _resolve_qasm3_operation(
         if alias in advertised:
             return alias, spec, advertised[alias]
     return None
-
-
-def supports_operation(operation: Operator, device: QDMIDevice, program_format: ProgramFormat) -> bool:
-    """Return whether an operation can stop PennyLane decomposition.
-
-    For OpenQASM 3, support requires an operation-table entry and one matching
-    semantic spelling advertised by QDMI. For OpenQASM 2, support additionally
-    requires the exact gate spelling produced by PennyLane's serializer.
-    """
-    advertised = _device_operations(device)
-    if program_format == ProgramFormat.QASM3:
-        return _resolve_qasm3_operation(operation, advertised) is not None
-    if program_format == ProgramFormat.QASM2:
-        spelling = _QASM2_OPERATIONS.get(operation.name)
-        return spelling is not None and spelling in advertised
-    return False
-
-
-def _wire_mapping(device_wires: Wires) -> Mapping[Hashable, int]:
-    """Build an immutable, deterministic wire-label mapping.
-
-    Returns:
-        The mapping from wire labels to contiguous QASM indices.
-    """
-    return MappingProxyType({wire: index for index, wire in enumerate(device_wires)})
-
-
-def _measurement_order(tape: QuantumScript, wire_map: Mapping[Hashable, int]) -> tuple[int, ...]:
-    """Return sample columns in the order requested by the transformed tape."""
-    if not tape.measurements:
-        return tuple(wire_map.values())
-    measured_wires = tape.measurements[0].wires
-    if len(measured_wires) == 0:
-        return tuple(wire_map.values())
-    return tuple(wire_map[wire] for wire in measured_wires)
 
 
 def _finite_parameter(parameter: object, operation_name: str) -> float:
@@ -239,170 +178,212 @@ def _validate_operation_shape(operation: Operator, spec: _OperationSpec) -> None
         raise ValidationError(msg)
 
 
-def _validate_qdmi_contract(
-    operation: Operator,
-    spec: _OperationSpec,
-    qdmi_operation: QDMIDevice.Operation,
-    indices: tuple[int, ...],
-    device: QDMIDevice,
-) -> None:
-    """Validate operation metadata and any loci advertised by QDMI.
+class ProgramConverter:
+    """Convert preprocessed PennyLane tapes for one opened QDMI device.
 
-    Raises:
-        PennyLaneValidationError: If arity, parameters, or topology do not match.
+    The advertised operation table and the wire mapping do not change while a
+    device session is open, so the converter reads them once and reuses them for
+    every operation and every tape.
+
+    Args:
+        device: Opened QDMI device.
+        device_wires: PennyLane wire labels exposed by the device.
+        program_format: Program format the device selected.
     """
-    qdmi_wires = qdmi_operation.qubits_num()
-    if qdmi_wires is not None and qdmi_wires != spec.wires:
-        msg = (
-            f"QDMI operation '{qdmi_operation.name()}' advertises {qdmi_wires} wires, "
-            f"but '{operation.name}' requires {spec.wires}."
+
+    def __init__(self, device: QDMIDevice, device_wires: Wires, program_format: ProgramFormat) -> None:
+        """Read the advertised capabilities of one opened QDMI device."""
+        self._device = device
+        self._device_wires = device_wires
+        self._program_format = program_format
+        self._advertised = {operation.name().lower(): operation for operation in device.operations()}
+        self._wire_map: Mapping[Hashable, int] = MappingProxyType({
+            wire: index for index, wire in enumerate(device_wires)
+        })
+
+    def supports(self, operation: Operator) -> bool:
+        """Return whether an operation can stop PennyLane decomposition.
+
+        For OpenQASM 3, support requires an operation-table entry and one matching
+        semantic spelling advertised by QDMI. For OpenQASM 2, support additionally
+        requires the exact gate spelling produced by PennyLane's serializer.
+
+        Returns:
+            Whether the device runs the operation without further decomposition.
+        """
+        if self._program_format == ProgramFormat.QASM3:
+            return _resolve_qasm3_operation(operation, self._advertised) is not None
+        if self._program_format == ProgramFormat.QASM2:
+            spelling = _QASM2_OPERATIONS.get(operation.name)
+            return spelling is not None and spelling in self._advertised
+        return False
+
+    def convert(self, tape: QuantumScript) -> ConvertedProgram:
+        """Convert one preprocessed tape to the selected program format.
+
+        A QASM3 translation error is never retried as QASM2. QASM2 is selected
+        only if QASM3 is not advertised at all.
+
+        Returns:
+            The converted program and its deterministic measurement metadata.
+        """
+        if self._program_format == ProgramFormat.QASM3:
+            return self._convert_qasm3(tape)
+        return self._convert_qasm2(tape)
+
+    def _program(self, tape: QuantumScript, payload: str) -> ConvertedProgram:
+        """Attach the measurement-decoding metadata to one converted payload.
+
+        Returns:
+            The converted QDMI program.
+        """
+        return ConvertedProgram(
+            payload=payload,
+            program_format=self._program_format,
+            wire_map=self._wire_map,
+            measurement_order=self._measurement_order(tape),
         )
-        raise ValidationError(msg)
-    if qdmi_operation.parameters_num() != spec.parameters:
-        msg = (
-            f"QDMI operation '{qdmi_operation.name()}' advertises "
-            f"{qdmi_operation.parameters_num()} parameters, but '{operation.name}' "
-            f"requires {spec.parameters}."
-        )
-        raise ValidationError(msg)
 
-    if spec.wires == 1:
-        sites = qdmi_operation.sites()
-        if sites is not None and indices[0] not in {site.index() for site in sites}:
-            msg = f"Operation '{operation.name}' is not advertised on device wire {indices[0]}."
-            raise ValidationError(msg)
-        return
+    def _measurement_order(self, tape: QuantumScript) -> tuple[int, ...]:
+        """Return sample columns in the order requested by the transformed tape.
 
-    if spec.wires != 2:
-        return
+        Returns:
+            The device wire indices, one per sample column.
+        """
+        if not tape.measurements:
+            return tuple(self._wire_map.values())
+        measured_wires = tape.measurements[0].wires
+        if len(measured_wires) == 0:
+            return tuple(self._wire_map.values())
+        return tuple(self._wire_map[wire] for wire in measured_wires)
 
-    site_pairs = qdmi_operation.site_pairs()
-    if site_pairs is not None:
-        advertised_pairs = {(first.index(), second.index()) for first, second in site_pairs}
-        if indices not in advertised_pairs:
-            msg = f"Operation '{operation.name}' is not advertised on device wires {indices}."
-            raise ValidationError(msg)
-        return
+    def _validate_qdmi_contract(
+        self,
+        operation: Operator,
+        spec: _OperationSpec,
+        qdmi_operation: QDMIDevice.Operation,
+        indices: tuple[int, ...],
+    ) -> None:
+        """Validate operation metadata and any loci advertised by QDMI.
 
-    coupling_map = device.coupling_map()
-    if coupling_map is None:
-        return
-    edges = {(first.index(), second.index()) for first, second in coupling_map}
-    if indices not in edges and tuple(reversed(indices)) not in edges:
-        msg = f"Device topology does not connect wires {indices} for operation '{operation.name}'."
-        raise ValidationError(msg)
-
-
-def _convert_qasm3(
-    tape: QuantumScript,
-    device: QDMIDevice,
-    device_wires: Wires,
-) -> ConvertedProgram:
-    """Emit a minimal capability-driven OpenQASM 3 program.
-
-    Returns:
-        The converted QDMI program.
-
-    Raises:
-        PennyLaneUnsupportedOperationError: If no advertised spelling exists.
-        PennyLaneValidationError: If parameters, wires, or topology are invalid.
-    """
-    wire_map = _wire_mapping(device_wires)
-    advertised = _device_operations(device)
-    lines = [
-        "OPENQASM 3.0;",
-        f"qubit[{len(device_wires)}] q;",
-        f"bit[{len(device_wires)}] c;",
-    ]
-
-    for operation in tape.operations:
-        resolved = _resolve_qasm3_operation(operation, advertised)
-        if resolved is None:
-            msg = f"Operation '{operation.name}' has no supported OpenQASM 3 spelling on QDMI device '{device.name()}'."
-            raise UnsupportedOperationError(msg)
-        spelling, spec, qdmi_operation = resolved
-        _validate_operation_shape(operation, spec)
-        try:
-            indices = tuple(wire_map[wire] for wire in operation.wires)
-        except KeyError as exc:
-            msg = f"Operation '{operation.name}' uses wire {exc.args[0]!r}, which is not a device wire."
-            raise ValidationError(msg) from exc
-        _validate_qdmi_contract(operation, spec, qdmi_operation, indices, device)
-
-        # repr gives the shortest literal that reads back as the same double.
-        parameters = ",".join(repr(_finite_parameter(parameter, operation.name)) for parameter in operation.parameters)
-        parameter_list = f"({parameters})" if parameters else ""
-        operands = ",".join(f"q[{index}]" for index in indices)
-        lines.append(f"{spelling}{parameter_list} {operands};")
-
-    lines.append("c = measure q;")
-    payload = "\n".join(lines) + "\n"
-    return ConvertedProgram(
-        payload=payload,
-        program_format=ProgramFormat.QASM3,
-        wire_map=wire_map,
-        measurement_order=_measurement_order(tape, wire_map),
-    )
-
-
-def _convert_qasm2(
-    tape: QuantumScript,
-    device: QDMIDevice,
-    device_wires: Wires,
-) -> ConvertedProgram:
-    """Serialize a QASM2-only program with PennyLane's built-in converter.
-
-    Returns:
-        The converted QDMI program.
-
-    Raises:
-        PennyLaneUnsupportedOperationError: If the serializer/device intersection is empty.
-        PennyLaneTranslationError: If PennyLane cannot serialize the program.
-    """
-    advertised = _device_operations(device)
-    for operation in tape.operations:
-        spelling = _QASM2_OPERATIONS.get(operation.name)
-        if spelling is None or spelling not in advertised:
+        Raises:
+            PennyLaneValidationError: If arity, parameters, or topology do not match.
+        """
+        qdmi_wires = qdmi_operation.qubits_num()
+        if qdmi_wires is not None and qdmi_wires != spec.wires:
             msg = (
-                f"Operation '{operation.name}' cannot be serialized to an "
-                f"OpenQASM 2 gate advertised by QDMI device '{device.name()}'."
+                f"QDMI operation '{qdmi_operation.name()}' advertises {qdmi_wires} wires, "
+                f"but '{operation.name}' requires {spec.wires}."
             )
-            raise UnsupportedOperationError(msg)
+            raise ValidationError(msg)
+        if qdmi_operation.parameters_num() != spec.parameters:
+            msg = (
+                f"QDMI operation '{qdmi_operation.name()}' advertises "
+                f"{qdmi_operation.parameters_num()} parameters, but '{operation.name}' "
+                f"requires {spec.parameters}."
+            )
+            raise ValidationError(msg)
 
-    try:
-        payload = qp.to_openqasm(
-            tape,
-            wires=device_wires,
-            rotations=False,
-            measure_all=True,
-        )
-    except Exception as exc:
-        msg = f"Failed to translate the PennyLane program to OpenQASM 2: {exc}"
-        raise TranslationError(msg) from exc
+        if spec.wires == 1:
+            sites = qdmi_operation.sites()
+            if sites is not None and indices[0] not in {site.index() for site in sites}:
+                msg = f"Operation '{operation.name}' is not advertised on device wire {indices[0]}."
+                raise ValidationError(msg)
+            return
 
-    wire_map = _wire_mapping(device_wires)
-    return ConvertedProgram(
-        payload=payload,
-        program_format=ProgramFormat.QASM2,
-        wire_map=wire_map,
-        measurement_order=_measurement_order(tape, wire_map),
-    )
+        if spec.wires != 2:
+            return
 
+        site_pairs = qdmi_operation.site_pairs()
+        if site_pairs is not None:
+            advertised_pairs = {(first.index(), second.index()) for first, second in site_pairs}
+            if indices not in advertised_pairs:
+                msg = f"Operation '{operation.name}' is not advertised on device wires {indices}."
+                raise ValidationError(msg)
+            return
 
-def convert_program(
-    tape: QuantumScript,
-    device: QDMIDevice,
-    device_wires: Wires,
-) -> ConvertedProgram:
-    """Convert one preprocessed tape using QASM3-first negotiation.
+        coupling_map = self._device.coupling_map()
+        if coupling_map is None:
+            return
+        edges = {(first.index(), second.index()) for first, second in coupling_map}
+        if indices not in edges and tuple(reversed(indices)) not in edges:
+            msg = f"Device topology does not connect wires {indices} for operation '{operation.name}'."
+            raise ValidationError(msg)
 
-    A QASM3 translation error is never retried as QASM2. QASM2 is selected
-    only if QASM3 is not advertised at all.
+    def _convert_qasm3(self, tape: QuantumScript) -> ConvertedProgram:
+        """Emit a minimal capability-driven OpenQASM 3 program.
 
-    Returns:
-        The converted program and its deterministic measurement metadata.
-    """
-    program_format = _preferred_format(device)
-    if program_format == ProgramFormat.QASM3:
-        return _convert_qasm3(tape, device, device_wires)
-    return _convert_qasm2(tape, device, device_wires)
+        Returns:
+            The converted QDMI program.
+
+        Raises:
+            PennyLaneUnsupportedOperationError: If no advertised spelling exists.
+            PennyLaneValidationError: If parameters, wires, or topology are invalid.
+        """
+        lines = [
+            "OPENQASM 3.0;",
+            f"qubit[{len(self._device_wires)}] q;",
+            f"bit[{len(self._device_wires)}] c;",
+        ]
+
+        for operation in tape.operations:
+            resolved = _resolve_qasm3_operation(operation, self._advertised)
+            if resolved is None:
+                msg = (
+                    f"Operation '{operation.name}' has no supported OpenQASM 3 spelling "
+                    f"on QDMI device '{self._device.name()}'."
+                )
+                raise UnsupportedOperationError(msg)
+            spelling, spec, qdmi_operation = resolved
+            _validate_operation_shape(operation, spec)
+            try:
+                indices = tuple(self._wire_map[wire] for wire in operation.wires)
+            except KeyError as exc:
+                msg = f"Operation '{operation.name}' uses wire {exc.args[0]!r}, which is not a device wire."
+                raise ValidationError(msg) from exc
+            self._validate_qdmi_contract(operation, spec, qdmi_operation, indices)
+
+            # repr gives the shortest literal that reads back as the same double.
+            parameters = ",".join(
+                repr(_finite_parameter(parameter, operation.name)) for parameter in operation.parameters
+            )
+            parameter_list = f"({parameters})" if parameters else ""
+            operands = ",".join(f"q[{index}]" for index in indices)
+            lines.append(f"{spelling}{parameter_list} {operands};")
+
+        lines.append("c = measure q;")
+        return self._program(tape, "\n".join(lines) + "\n")
+
+    def _convert_qasm2(self, tape: QuantumScript) -> ConvertedProgram:
+        """Serialize a QASM2-only program with PennyLane's built-in converter.
+
+        Returns:
+            The converted QDMI program.
+
+        Raises:
+            PennyLaneUnsupportedOperationError: If the serializer/device intersection is empty.
+            PennyLaneTranslationError: If PennyLane cannot serialize the program.
+        """
+        # PennyLane's serializer emits whatever it knows, so the intersection
+        # with the advertised gate set has to be checked before serializing.
+        for operation in tape.operations:
+            spelling = _QASM2_OPERATIONS.get(operation.name)
+            if spelling is None or spelling not in self._advertised:
+                msg = (
+                    f"Operation '{operation.name}' cannot be serialized to an "
+                    f"OpenQASM 2 gate advertised by QDMI device '{self._device.name()}'."
+                )
+                raise UnsupportedOperationError(msg)
+
+        try:
+            payload = qp.to_openqasm(
+                tape,
+                wires=self._device_wires,
+                rotations=False,
+                measure_all=True,
+            )
+        except Exception as exc:
+            msg = f"Failed to translate the PennyLane program to OpenQASM 2: {exc}"
+            raise TranslationError(msg) from exc
+
+        return self._program(tape, payload)

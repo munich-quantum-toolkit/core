@@ -32,7 +32,7 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
-from .converter import ConvertedProgram, convert_program, supports_operation
+from .converter import ConvertedProgram, ProgramConverter
 from .exceptions import (
     PennyLaneConfigurationError as ConfigurationError,
 )
@@ -161,6 +161,7 @@ class QDMIDevice(Device):
         super().__init__(wires=resolved_wires, shots=None)
         self._shots = Shots(shots)
         self._program_format = self._select_program_format()
+        self._converter = ProgramConverter(self._qdmi_device, self.wires, self._program_format)
         self._submitted_jobs = 0
         self._execution_time = 0.0
 
@@ -222,10 +223,8 @@ class QDMIDevice(Device):
         pipeline.add_transform(measurements_from_samples)
         pipeline.add_transform(
             decompose,
-            stopping_condition=lambda operation: supports_operation(operation, self._qdmi_device, self._program_format),
-            stopping_condition_shots=lambda operation: supports_operation(
-                operation, self._qdmi_device, self._program_format
-            ),
+            stopping_condition=self._converter.supports,
+            stopping_condition_shots=self._converter.supports,
             skip_initial_state_prep=False,
             device_wires=self.wires,
             name=self.name,
@@ -240,13 +239,7 @@ class QDMIDevice(Device):
 
         Returns:
             One positive shot count per required QDMI job.
-
-        Raises:
-            PennyLaneValidationError: If execution is analytic.
         """
-        if not shots:
-            msg = "QDMI devices require a finite number of shots."
-            raise ValidationError(msg)
         return tuple(shot_copy.shots for shot_copy in shots.shot_vector for _ in range(shot_copy.copies))
 
     @staticmethod
@@ -343,7 +336,7 @@ class QDMIDevice(Device):
         Returns:
             Raw samples, partitioned when a shot vector was requested.
         """
-        converted = convert_program(tape, self._qdmi_device, self.wires)
+        converted = self._converter.convert(tape)
         results: list[np.ndarray] = []
         for shots in self._shot_copies(tape.shots):
             started = monotonic()
