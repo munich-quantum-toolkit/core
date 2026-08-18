@@ -213,10 +213,8 @@ class ProgramConverter:
         """
         if self._program_format == ProgramFormat.QASM3:
             return _resolve_qasm3_operation(operation, self._advertised) is not None
-        if self._program_format == ProgramFormat.QASM2:
-            spelling = _QASM2_OPERATIONS.get(operation.name)
-            return spelling is not None and spelling in self._advertised
-        return False
+        spelling = _QASM2_OPERATIONS.get(operation.name)
+        return spelling is not None and spelling in self._advertised
 
     def convert(self, tape: QuantumScript) -> ConvertedProgram:
         """Convert one preprocessed tape to the selected program format.
