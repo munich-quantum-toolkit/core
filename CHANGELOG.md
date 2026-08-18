@@ -159,6 +159,9 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove the unused decision-diagram approximation algorithm, including the
+  `dd/Approximation.hpp` header, `dd::ApproximationMetadata`, and
+  `dd::approximate`. No replacement is provided ([**@burgholzer**])
 - 💥 Remove `nlohmann_json` from the public package contract. MQT Core no longer
   installs or exports the library, no installed header exposes a `nlohmann`
   type, and the decision-diagram statistics report through strings and streams
