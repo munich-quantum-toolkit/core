@@ -6,6 +6,13 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Private PennyLane program conversion
+
+MQT Core no longer exports `ConvertedProgram` or `convert_program` from
+`mqt.core.plugins.pennylane`. Submit circuits through `QDMIDevice` instead. The
+device now owns the converter for its opened QDMI session and reads the
+advertised operation set once per session.
+
 ### Calibration runs and batch jobs
 
 `Device::submitJob` used to reject `CALIBRATION` and `BATCH_JOB` together, which
