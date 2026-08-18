@@ -10,18 +10,9 @@
 
 from __future__ import annotations
 
-<<<<<<< HEAD
 import os
 import subprocess
-import warnings
-||||||| parent of 4e1214fa (🔧 Replace `setuptools-scm` with `vcs-versioning` (#2145))
-import sys
-import warnings
-=======
-import sys
->>>>>>> 4e1214fa (🔧 Replace `setuptools-scm` with `vcs-versioning` (#2145))
 from importlib import metadata
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pybtex.plugin
@@ -31,15 +22,6 @@ from pybtex.style.template import field, href
 if TYPE_CHECKING:
     from pybtex.database import Entry
     from pybtex.richtext import HRef
-
-<<<<<<< HEAD
-ROOT = Path(__file__).parent.parent.resolve()
-||||||| parent of 4e1214fa (🔧 Replace `setuptools-scm` with `vcs-versioning` (#2145))
-ROOT = Path(__file__).parent.parent.resolve()
-sys.path.insert(0, str(Path(__file__).parent / "_ext"))
-=======
-sys.path.insert(0, str(Path(__file__).parent / "_ext"))
->>>>>>> 4e1214fa (🔧 Replace `setuptools-scm` with `vcs-versioning` (#2145))
 
 
 try:
