@@ -41,8 +41,9 @@ must pass.
 - [x] (2026-08-19 00:05Z) Rebased the signed branch onto `v3.x` after #2153
   merged, regenerated the lockfile, repeated affected stub and Python 3.10
   validation, and reran the complete lint suite with Python 3.14.
-- [ ] Publish a draft pull request against `v3.x`, apply repository metadata,
-  and inspect checks for the exact head.
+- [x] (2026-08-19 00:12Z) Published draft pull request #2159 against `v3.x`,
+      assigned `@burgholzer`, applied all requested labels, and started
+      exact-head check inspection.
 
 ## Surprises & Discoveries
 
@@ -127,8 +128,13 @@ limits. The Python 3.14 lint session passed. A Python 3.14 regular-wheel docs
 environment completed Doxygen and Breathe setup, but Sphinx AutoAPI did not
 finish after more than six minutes while its analyzer emitted recursive
 inference warnings. Documentation validation therefore did not complete locally.
-Publication remains in progress; add the draft pull-request URL and exact-head
-check state after publication.
+Draft pull request #2159 is available at
+<https://github.com/munich-quantum-toolkit/core/pull/2159>. It targets `v3.x`,
+is assigned to `@burgholzer`, and has all requested labels. CodeRabbit and
+pre-commit.ci passed on the first published head. Read the Docs was pending, the
+main CI workflow was queued, and the Qiskit upstream and Slurm integration
+workflows were in progress. This publication-state commit restarts those checks;
+the final handoff records the exact final-head state.
 
 ## Context and Orientation
 
@@ -276,3 +282,6 @@ in full and to include #2157 before its merge.
 Revision note (2026-08-19): Rebased onto the `v3.x` merge of #2153, regenerated
 the lockfile, repeated affected validation, and recorded the completed lint and
 limited documentation results.
+
+Revision note (2026-08-19): Opened draft pull request #2159, applied its
+assignee and labels, and began exact-head check inspection.
