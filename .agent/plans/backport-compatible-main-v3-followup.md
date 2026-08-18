@@ -100,13 +100,16 @@ must pass.
   regular-wheel results. Rationale: This distinguishes a local packaging-hook
   failure from failures in the backported code without hiding either result.
   Date/Author: 2026-08-18 / Codex.
+- Decision: Do not add a PennyLane migration note. Rationale: PennyLane support
+  has not been released, so no released caller can depend on the removed public
+  converter helpers. Date/Author: 2026-08-19 / maintainer and Codex.
 
 ## Outcomes & Retrospective
 
 Implementation is complete. The branch contains 17 ordered #2147 commits, the v3
 FoMaC adaptation of #2148, both substantive #2157 commits, the selected
-maintenance changes, a regenerated lockfile, and a v3 upgrade note. Stub
-generation left no additional diff.
+maintenance changes, and a regenerated lockfile. Stub generation left no
+additional diff.
 
 The LLVM 21.1.8 non-MLIR release build passed. CTest passed all 1,533 executed
 tests and skipped two device-dependent job-ID tests. The FoMaC binary passed 276
@@ -163,8 +166,8 @@ Apply the maintenance pull requests as provenance-preserving commits, omitting
 only #2121's Qiskit C API wheel-source paths because those files do not exist on
 v3. Apply #2124 next so its audit ledger exists before #2147. Apply the 17
 non-merge #2147 commits in their original order, resolve differences against the
-v3 plugin, and add a v3 upgrade note for callers of the removed public converter
-API.
+v3 plugin, and omit a migration note because PennyLane support has not been
+released.
 
 Adapt #2148 to `fomac::Device`. Add optional binary and text calibration-job
 entry points, bind them as `submit_calibration_job`, keep custom job parameters,
@@ -285,3 +288,6 @@ limited documentation results.
 
 Revision note (2026-08-19): Opened draft pull request #2159, applied its
 assignee and labels, and began exact-head check inspection.
+
+Revision note (2026-08-19): Removed the unreleased PennyLane migration note and
+fixed the new changelog layout and PR-link order after maintainer review.
