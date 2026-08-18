@@ -159,6 +159,9 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove the unused decision-diagram approximation algorithm, including the
+  `dd/Approximation.hpp` header, `dd::ApproximationMetadata`, and
+  `dd::approximate`. No replacement is provided ([#2154]) ([**@burgholzer**])
 - 💥 Remove `nlohmann_json` from the public package contract. MQT Core no longer
   installs or exports the library, no installed header exposes a `nlohmann`
   type, and the decision-diagram statistics report through strings and streams
@@ -792,6 +795,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
 [#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
 [#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
 [#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136
