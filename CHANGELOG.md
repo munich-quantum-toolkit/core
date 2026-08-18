@@ -12,6 +12,11 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add `Device::submitCalibrationJob` and
+  `mqt.core.qdmi.Device.submit_calibration_job` for triggering a calibration run
+  ([#2148]) ([**@marcelwa**], [**@burgholzer**])
+- ✨ Add SpecAudits, a method and probe script for auditing tests that pin
+  behavior the project never specified ([#2124]) ([**@marcelwa**])
 - 🚸 Add typed stable-ID construction for Qiskit backends, lazy provider
   discovery, and sampler and estimator factories with explicit shot and
   precision defaults ([#2084]) ([**@burgholzer**])
@@ -27,8 +32,8 @@ releases may include breaking changes.
   and Python FoMaC APIs, and expose optional device queue length and job queue
   position ([#2008], [#2010]) ([**@burgholzer**])
 - 🐍 Start building CPython 3.15 wheels ([#2011]) ([**@denialhaag**])
-- ✨ Add PennyLane support for gate-based QDMI devices ([#2005])
-  ([**@burgholzer**])
+- ✨ Add PennyLane support for gate-based QDMI devices ([#2005], [#2147])
+  ([**@burgholzer**], [**@marcelwa**])
 - ✨ Bundle reusable IQM Garnet and Emerald superconducting device models with
   stable QDMI registry IDs ([#1992]) ([**@burgholzer**])
 - ✨ Expose compressed vector and matrix DD serialization through bytes-based
@@ -57,8 +62,18 @@ releases may include breaking changes.
 - 🚀 Reduce ZX diagram growth for multi-controlled X gates with an exact
   ancilla-free quadratic decomposition ([#1984]) ([**@burgholzer**])
 
+### Fixed
+
+- 🐛 Preserve the original OpenQASM type error when an assignment's right-hand
+  expression cannot be typed ([#2156]) ([**@DRovara**], [**@burgholzer**])
+- 🐛 Distinguish scalar OpenQASM qubits from one-element qubit registers and
+  reject indexing scalar qubits ([#2157]) ([**@DRovara**], [**@burgholzer**])
+
 ### Removed
 
+- 💥 Remove batch job submission from the QDMI client. `Device::submitJob` now
+  states that MQT Core does not support batch jobs ([#2148]) ([**@marcelwa**],
+  [**@burgholzer**])
 - 💥 Remove QDMI device configuration through `[tool.qdmi]` in `pyproject.toml`
   and the vendored toml++ header ([#2116]) ([**@denialhaag**])
 
@@ -665,6 +680,11 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
+[#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
+[#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
+[#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
+[#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108

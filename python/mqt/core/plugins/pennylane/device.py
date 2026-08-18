@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import operator
-import time
+from time import monotonic
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -32,7 +32,7 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
-from .converter import ConvertedProgram, convert_program, supports_operation
+from .converter import _ConvertedProgram, _ProgramConverter
 from .exceptions import (
     PennyLaneConfigurationError as ConfigurationError,
 )
@@ -161,6 +161,7 @@ class QDMIDevice(Device):
         super().__init__(wires=resolved_wires, shots=None)
         self._shots = Shots(shots)
         self._program_format = self._select_program_format()
+        self._converter = _ProgramConverter(self._qdmi_device, self.wires, self._program_format)
         self._submitted_jobs = 0
         self._execution_time = 0.0
 
@@ -222,10 +223,8 @@ class QDMIDevice(Device):
         pipeline.add_transform(measurements_from_samples)
         pipeline.add_transform(
             decompose,
-            stopping_condition=lambda operation: supports_operation(operation, self._qdmi_device, self._program_format),
-            stopping_condition_shots=lambda operation: supports_operation(
-                operation, self._qdmi_device, self._program_format
-            ),
+            stopping_condition=self._converter.supports,
+            stopping_condition_shots=self._converter.supports,
             skip_initial_state_prep=False,
             device_wires=self.wires,
             name=self.name,
@@ -273,7 +272,7 @@ class QDMIDevice(Device):
             raise ExecutionError(msg) from exc
         return [bitstring for bitstring, count in sorted(counts.items()) for _ in range(count)]
 
-    def _samples(self, job: QDMIJobHandle, converted: ConvertedProgram, shots: int) -> np.ndarray:
+    def _samples(self, job: QDMIJobHandle, converted: _ConvertedProgram, shots: int) -> np.ndarray:
         """Convert QDMI bit strings to PennyLane sample rows.
 
         Returns:
@@ -313,7 +312,7 @@ class QDMIDevice(Device):
             msg = f"QDMI job '{job.id}' finished with status {status.name}."
             raise ExecutionError(msg)
 
-    def _submit(self, converted: ConvertedProgram, shots: int) -> QDMIJobHandle:
+    def _submit(self, converted: _ConvertedProgram, shots: int) -> QDMIJobHandle:
         """Submit and wait for one QDMI job.
 
         Returns:
@@ -343,14 +342,14 @@ class QDMIDevice(Device):
         Returns:
             Raw samples, partitioned when a shot vector was requested.
         """
-        converted = convert_program(tape, self._qdmi_device, self.wires)
+        converted = self._converter.convert(tape)
         results: list[np.ndarray] = []
         for shots in self._shot_copies(tape.shots):
-            started = time.monotonic()
+            started = monotonic()
             try:
                 results.append(self._samples(self._submit(converted, shots), converted, shots))
             finally:
-                self._execution_time += time.monotonic() - started
+                self._execution_time += monotonic() - started
 
         if tape.shots.has_partitioned_shots:
             return tuple(results)

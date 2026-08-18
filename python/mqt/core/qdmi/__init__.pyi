@@ -317,6 +317,24 @@ class Device:
     ) -> Job:
         """Submits an exact byte payload to the device."""
 
+    def submit_calibration_job(
+        self,
+        program: str | bytes | None = None,
+        *,
+        custom1: str | bool | float | None = None,
+        custom2: str | bool | float | None = None,
+        custom3: str | bool | float | None = None,
+        custom4: str | bool | float | None = None,
+        custom5: str | bool | float | None = None,
+    ) -> Job:
+        """Triggers a calibration run on the device.
+
+        QDMI does not require a program for a calibration run, so ``program`` is
+        optional and may be a string or bytes. When it is given, the device defines
+        what it means, which is usually a configuration for the run. A calibration run
+        executes no circuit, so it takes no shot count.
+        """
+
     def retrieve_job_by_id(self, job_id: str) -> Job:
         """Retrieves an existing job by its device-provided ID."""
 

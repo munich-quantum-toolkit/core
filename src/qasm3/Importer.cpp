@@ -122,6 +122,19 @@ void Importer::translateGateOperand(
   }
   const auto& qreg = qregIterator->second;
 
+  if (!indexedIdentifier->indices.empty()) {
+    if (const auto declaration =
+            declarations.find(indexedIdentifier->identifier);
+        declaration.has_value()) {
+      const auto type = std::get<1>(declaration.value()->type);
+      const auto unsizedType =
+          std::dynamic_pointer_cast<UnsizedType<uint64_t>>(type);
+      if (unsizedType && unsizedType->type == SingleQubit) {
+        throw CompilerError("Type 'qubit' cannot be indexed.", debugInfo);
+      }
+    }
+  }
+
   // full register
   if (indexedIdentifier->indices.empty()) {
     for (size_t i = 0; i < qreg.getSize(); ++i) {
@@ -349,8 +362,16 @@ void Importer::visitDeclarationStatement(
       throw CompilerError("Angle type is currently not supported.",
                           declarationStatement->debugInfo);
     }
+  } else if (const auto unsizedTy =
+                 std::dynamic_pointer_cast<UnsizedType<uint64_t>>(ty)) {
+    if (unsizedTy->type == SingleQubit) {
+      qc->addQubitRegister(1, identifier);
+    } else {
+      throw CompilerError("Only sized types or single qubits are supported.",
+                          declarationStatement->debugInfo);
+    }
   } else {
-    throw CompilerError("Only sized types are supported.",
+    throw CompilerError("Only sized types or single qubits are supported.",
                         declarationStatement->debugInfo);
   }
   declarations.emplace(identifier, declarationStatement);
