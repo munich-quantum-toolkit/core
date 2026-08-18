@@ -43,13 +43,15 @@ reports.
 from __future__ import annotations
 
 import warnings
+from enum import Enum, auto
 from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Protocol
 
 from ...qdmi import ProgramFormat
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
+    from importlib.metadata import EntryPoint
 
     from qiskit.circuit import QuantumCircuit
 
@@ -164,8 +166,166 @@ PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...] = (
     ProgramFormat.QASM2,
 )
 
-_SERIALIZERS: dict[ProgramFormat, ProgramSerializer] = {}
-_ENTRY_POINTS_LOADED = False
+
+class _LoadState(Enum):
+    """How far the registry has got with reading the entry points."""
+
+    NOT_STARTED = auto()
+    LOADING = auto()
+    LOADED = auto()
+
+
+class _ProgramSerializerRegistry:
+    """The serializers for one process, and the entry points behind them.
+
+    The registry reads :data:`ENTRY_POINT_GROUP` once, on the first lookup
+    rather than at import, because loading an entry point imports the package
+    that advertises it. Discovery is not thread-safe: two threads that reach a
+    cold registry together both read the entry points. Import-time discovery in
+    several threads is already fraught, so the registry does not lock.
+    """
+
+    def __init__(self, discover: Callable[[], Iterable[EntryPoint]]) -> None:
+        """Initialize an empty registry.
+
+        Args:
+            discover: Returns the entry points that advertise a serializer.
+                Injected so a test can supply its own without touching the
+                installed distributions.
+        """
+        self._discover = discover
+        self._serializers: dict[ProgramFormat, ProgramSerializer] = {}
+        self._load_state = _LoadState.NOT_STARTED
+
+    def register(self, fmt: ProgramFormat, serializer: ProgramSerializer, *, replace: bool = False) -> None:
+        """Add a serializer for one program format.
+
+        Registering does not read the entry points. A registration must be able
+        to precede them, because that is what gives it precedence, and because
+        ``backend.py`` registers the OpenQASM formats while the adapter is still
+        importing.
+
+        Args:
+            fmt: The program format the serializer produces.
+            serializer: The serializer to add.
+            replace: Replace an existing serializer for the same format.
+
+        Raises:
+            ValueError: If the format does not carry a serialized circuit, or if
+                the format already has a serializer and ``replace`` is false.
+        """
+        if fmt in NON_CIRCUIT_FORMATS:
+            msg = f"{fmt.name} does not carry a serialized circuit, so it cannot have a program serializer."
+            raise ValueError(msg)
+        if not replace and fmt in self._serializers:
+            msg = f"A program serializer for {fmt.name} is already registered. Pass replace=True to override it."
+            raise ValueError(msg)
+        self._serializers[fmt] = serializer
+
+    def unregister(self, fmt: ProgramFormat) -> None:
+        """Remove the serializer for one program format.
+
+        Args:
+            fmt: The program format whose serializer to remove. A format without
+                a serializer is ignored.
+        """
+        self._load_entry_points()
+        self._serializers.pop(fmt, None)
+
+    def get(self, fmt: ProgramFormat) -> ProgramSerializer | None:
+        """Return the serializer for one program format.
+
+        Args:
+            fmt: The program format to look up.
+
+        Returns:
+            The serializer, or ``None`` if no package provides one.
+        """
+        self._load_entry_points()
+        return self._serializers.get(fmt)
+
+    def _load_entry_points(self) -> None:
+        """Read the entry points once and publish what they name.
+
+        Loading an entry point imports a third-party module, which may call back
+        into this registry. Such a call sees the ``LOADING`` state and returns
+        without starting a second pass, so it observes the registrations made so
+        far and none of the discovery in flight. Publishing the discovered
+        serializers in one step at the end keeps that observation the same
+        whatever order the entry points arrive in.
+        """
+        if self._load_state is not _LoadState.NOT_STARTED:
+            return
+
+        self._load_state = _LoadState.LOADING
+        discovered: dict[ProgramFormat, ProgramSerializer] = {}
+        try:
+            for entry_point in self._discover():
+                loaded = _ProgramSerializerRegistry._load_entry_point(entry_point)
+                if loaded is not None:
+                    fmt, serializer = loaded
+                    discovered.setdefault(fmt, serializer)
+        except BaseException:
+            # Discovery did not finish, so leave the registry cold. A later
+            # lookup tries again rather than reporting an empty result forever.
+            self._load_state = _LoadState.NOT_STARTED
+            raise
+
+        # A registration made before or during discovery keeps precedence.
+        for fmt, serializer in discovered.items():
+            self._serializers.setdefault(fmt, serializer)
+        self._load_state = _LoadState.LOADED
+
+    @staticmethod
+    def _load_entry_point(entry_point: EntryPoint) -> tuple[ProgramFormat, ProgramSerializer] | None:
+        """Resolve one entry point into a format and its serializer.
+
+        An entry point that names an unknown program format, names a format in
+        :data:`NON_CIRCUIT_FORMATS`, or fails to load produces a warning and is
+        skipped, so one broken package cannot make every other serializer
+        unreachable.
+
+        Args:
+            entry_point: The entry point to resolve.
+
+        Returns:
+            The format and its serializer, or ``None`` if the entry point is
+            unusable.
+        """
+        try:
+            fmt = ProgramFormat[entry_point.name]
+        except KeyError:
+            warnings.warn(
+                f"Entry point '{entry_point.name}' in group '{ENTRY_POINT_GROUP}' does not name a program format "
+                f"and will be skipped.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return None
+
+        if fmt in NON_CIRCUIT_FORMATS:
+            warnings.warn(
+                f"Entry point '{entry_point.name}' in group '{ENTRY_POINT_GROUP}' names a program format that "
+                f"does not carry a serialized circuit and will be skipped.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return None
+
+        try:
+            serializer = entry_point.load()
+        except Exception as exc:  # ruff:ignore[blind-except] One bad package must not break the others
+            warnings.warn(
+                f"Failed to load the program serializer for {fmt.name} from '{entry_point.value}': {exc}",
+                UserWarning,
+                stacklevel=2,
+            )
+            return None
+
+        return fmt, serializer
+
+
+_REGISTRY = _ProgramSerializerRegistry(lambda: entry_points(group=ENTRY_POINT_GROUP))
 
 
 def register_program_serializer(fmt: ProgramFormat, serializer: ProgramSerializer, *, replace: bool = False) -> None:
@@ -179,19 +339,10 @@ def register_program_serializer(fmt: ProgramFormat, serializer: ProgramSerialize
 
     Raises:
         ValueError: If the format does not carry a serialized circuit, or if the
-            format already has a serializer and ``replace`` is false.
-    """
-    if fmt in NON_CIRCUIT_FORMATS:
-        msg = f"{fmt.name} does not carry a serialized circuit, so it cannot have a program serializer."
-        raise ValueError(msg)
-    # This function does not read the entry points. A registration must be able
-    # to precede them, because that is what gives it precedence, and because
-    # `backend.py` registers the OpenQASM formats while the adapter is still
-    # importing.
-    if not replace and fmt in _SERIALIZERS:
-        msg = f"A program serializer for {fmt.name} is already registered. Pass replace=True to override it."
-        raise ValueError(msg)
-    _SERIALIZERS[fmt] = serializer
+            format already has a serializer and ``replace`` is false. Raised by
+            the registry this function delegates to.
+    """  # ruff:ignore[docstring-extraneous-exception] The delegate raises it, and a caller must know
+    _REGISTRY.register(fmt, serializer, replace=replace)
 
 
 def unregister_program_serializer(fmt: ProgramFormat) -> None:
@@ -201,8 +352,7 @@ def unregister_program_serializer(fmt: ProgramFormat) -> None:
         fmt: The program format whose serializer to remove. A format without a
             serializer is ignored.
     """
-    _load_entry_points()
-    _SERIALIZERS.pop(fmt, None)
+    _REGISTRY.unregister(fmt)
 
 
 def program_serializer(fmt: ProgramFormat) -> ProgramSerializer | None:
@@ -214,8 +364,7 @@ def program_serializer(fmt: ProgramFormat) -> ProgramSerializer | None:
     Returns:
         The registered serializer, or ``None`` if no package provides one.
     """
-    _load_entry_points()
-    return _SERIALIZERS.get(fmt)
+    return _REGISTRY.get(fmt)
 
 
 def preferred_program_formats(formats: Iterable[ProgramFormat]) -> list[ProgramFormat]:
@@ -226,60 +375,11 @@ def preferred_program_formats(formats: Iterable[ProgramFormat]) -> list[ProgramF
 
     Returns:
         Those of the given formats that can carry a serialized circuit, most
-        preferred first. A format that :data:`PROGRAM_FORMAT_PREFERENCE` does not name
-        comes after every format it does name, in the order it was given.
+        preferred first. A format that :data:`PROGRAM_FORMAT_PREFERENCE` does
+        not name comes after every format it does name, in the order it was
+        given.
     """
     ranks = {fmt: rank for rank, fmt in enumerate(PROGRAM_FORMAT_PREFERENCE)}
     unranked = len(PROGRAM_FORMAT_PREFERENCE)
     candidates = [fmt for fmt in formats if fmt not in NON_CIRCUIT_FORMATS]
     return sorted(candidates, key=lambda fmt: ranks.get(fmt, unranked))
-
-
-def _load_entry_points() -> None:
-    """Load the serializers advertised through :data:`ENTRY_POINT_GROUP` once.
-
-    An entry point that names an unknown program format, names a format in
-    :data:`NON_CIRCUIT_FORMATS`, or fails to load produces a warning and is
-    skipped, so one broken package cannot make every other serializer
-    unreachable.
-    """
-    global _ENTRY_POINTS_LOADED  # ruff:ignore[global-statement] Guards a one-time import side effect
-    if _ENTRY_POINTS_LOADED:
-        return
-    # The flag guards the loop below, which imports serializer modules that may
-    # call back into this module.
-    _ENTRY_POINTS_LOADED = True
-
-    for entry_point in entry_points(group=ENTRY_POINT_GROUP):
-        try:
-            fmt = ProgramFormat[entry_point.name]
-        except KeyError:
-            warnings.warn(
-                f"Entry point '{entry_point.name}' in group '{ENTRY_POINT_GROUP}' does not name a program format "
-                f"and will be skipped.",
-                UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        if fmt in NON_CIRCUIT_FORMATS:
-            warnings.warn(
-                f"Entry point '{entry_point.name}' in group '{ENTRY_POINT_GROUP}' names a program format that "
-                f"does not carry a serialized circuit and will be skipped.",
-                UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        try:
-            serializer = entry_point.load()
-        except Exception as exc:  # ruff:ignore[blind-except] One bad package must not break the others
-            warnings.warn(
-                f"Failed to load the program serializer for {fmt.name} from '{entry_point.value}': {exc}",
-                UserWarning,
-                stacklevel=2,
-            )
-            continue
-
-        # An explicit registration for this format takes precedence.
-        _SERIALIZERS.setdefault(fmt, serializer)

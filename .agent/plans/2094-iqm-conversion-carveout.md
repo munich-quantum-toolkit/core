@@ -158,6 +158,21 @@ tracker #2085. The pull request is #2114.
   tuple in one module means the whole policy can be re-read, and changed, in one
   place. Date/Author: 2026-08-17, @marcelwa after review by @burgholzer.
 
+- Decision: hold the registry in a private `_ProgramSerializerRegistry` object
+  with an injected discovery function and a three-state load flag, rather than
+  two module globals. Rationale: `functools.cache`, the obvious way to run
+  discovery once, records its result only after the call returns, so it cannot
+  guard the re-entry that happens while an entry point imports third-party code.
+  Some process-wide state is therefore required, but it need not be loose
+  globals. The object publishes discovered serializers in one step at the end,
+  so a re-entrant lookup sees the same thing whatever order the entry points
+  arrive in; it restores `NOT_STARTED` when discovery aborts, so a failure to
+  read the distribution metadata does not mark the registry loaded forever; and
+  it takes the discovery function as an argument, so a test builds an isolated
+  registry instead of monkey-patching module state. Discovery is not
+  thread-safe, and was not before; that stays a documented non-goal.
+  Date/Author: 2026-08-18, @marcelwa after review by @burgholzer.
+
 - Decision: bind only `is_binary_program_format`, and let the serializer module
   keep its own `NON_CIRCUIT_FORMATS`. Rationale: an earlier revision also bound
   `has_program_payload`, renamed from the private `hasNoGenericProgramPayload`.
@@ -442,6 +457,11 @@ In a new module `python/mqt/core/plugins/qiskit/serializers.py`:
     ProgramSerializer = TextProgramSerializer | BinaryProgramSerializer
 
     PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...]
+
+The registry itself is private. `_ProgramSerializerRegistry` owns the
+serializers and the load state, and the module keeps one instance that the four
+public functions delegate to. Its constructor takes the function that returns
+the entry points, which is how a test isolates one registry from another.
 
     def register_program_serializer(fmt: ProgramFormat,
                                     serializer: ProgramSerializer,
