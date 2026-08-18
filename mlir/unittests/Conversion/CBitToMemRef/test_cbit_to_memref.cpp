@@ -14,7 +14,6 @@
  */
 
 #include "mlir/Conversion/CBitToMemRef/CBitToMemRef.h"
-#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 

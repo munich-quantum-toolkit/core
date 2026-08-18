@@ -59,11 +59,15 @@ outputs.
       changelog, and generated stubs. The full native suite passes 4,288 tests.
       The required Python, stub, documentation, and Python-version matrix
       sessions pass.
-- [x] (2026-08-18 23:55Z) Published signed integration commit `07df0c738`. Every
-      platform and coverage job passed, but extensive C++ lint found indirect
-      CBit includes plus helper linkage and pass visibility issues. Added direct
-      provider includes and fixed those diagnostics for a signed follow-up
-      commit.
+- [x] (2026-08-18 23:31Z) Validated published integration commit `07df0c738`.
+      Every platform and coverage job passed, but extensive C++ lint found
+      indirect CBit includes plus helper linkage and pass visibility issues.
+      Added direct provider includes and fixed those diagnostics for a signed
+      follow-up commit.
+- [x] (2026-08-18 23:47Z) The remote Clang 22.1.8 lint run on follow-up
+      `56c65d078` reduced the result to three test-context include diagnostics.
+      Fixed each reported include and reran the three affected test binaries and
+      repository lint successfully.
 - [ ] Publish and validate the signed final head. Keep the pull request in draft
       until link checking passes: the required link-check session currently
       fails only on unrelated external DOI, Qiskit policy, and old Read the Docs
