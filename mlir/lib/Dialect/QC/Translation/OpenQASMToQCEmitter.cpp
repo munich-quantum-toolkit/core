@@ -113,12 +113,7 @@ public:
   OpenQASMToQCEmitter(const oq3::frontend::TypedProgram& typedProgram,
                       MLIRContext& mlirContext)
       : program(typedProgram), context(mlirContext), emissionBudget(context),
-        builder(&context,
-                program.openQASM2
-                    ? QCProgramBuilder::ClassicalRegisterInitialization::Zero
-                    : QCProgramBuilder::ClassicalRegisterInitialization::
-                          Uninitialized),
-        qubitValues(program.registers.size()),
+        builder(&context), qubitValues(program.registers.size()),
         classicalRegisters(program.registers.size()),
         outputBitRegisters(program.registers.size(), false),
         bitValues(program.registers.size()),
@@ -1912,9 +1907,8 @@ private:
     const auto reg = classicalRegisters.at(reference.reg);
     if (!reference.dynamicIndex) {
       if (reg) {
-        auto index = arith::ConstantIndexOp::create(
-            builder, static_cast<int64_t>(reference.index));
-        return memref::LoadOp::create(builder, reg, index.getResult());
+        return builder.loadClassicalBit(reg,
+                                        static_cast<int64_t>(reference.index));
       }
       return bitValues.at(reference.reg)[reference.index];
     }
@@ -1924,9 +1918,9 @@ private:
     auto index = emitCheckedIndex(*reference.dynamicIndex, width,
                                   "dynamic classical index out of bounds");
     if (reg) {
-      auto memrefIndex =
+      auto registerIndex =
           arith::IndexCastOp::create(builder, builder.getIndexType(), index);
-      return memref::LoadOp::create(builder, reg, memrefIndex.getResult());
+      return builder.loadClassicalBit(reg, registerIndex.getResult());
     }
     auto selected = bitValues.at(reference.reg).front();
     for (int64_t bit = 1; bit < width; ++bit) {
@@ -2333,7 +2327,9 @@ private:
     }
     if (hasClassicalStorage) {
       classicalRegisters[statement.reg] = builder.allocClassicalBitRegister(
-          static_cast<int64_t>(declaration.width), declaration.name);
+          static_cast<int64_t>(declaration.width), declaration.name,
+          program.openQASM2 ? cbit::Initialization::Zero
+                            : cbit::Initialization::Undefined);
     }
     bitValues[statement.reg].resize(declaration.width);
     if (program.openQASM2) {
@@ -2351,9 +2347,8 @@ private:
     if (!target.dynamicIndex) {
       bitValues[target.reg][target.index] = value;
       if (reg) {
-        auto index = arith::ConstantIndexOp::create(
-            builder, static_cast<int64_t>(target.index));
-        memref::StoreOp::create(builder, value, reg, index.getResult());
+        builder.storeClassicalBit(value, reg,
+                                  static_cast<int64_t>(target.index));
       }
       return;
     }
@@ -2362,9 +2357,9 @@ private:
     auto index = emitCheckedIndex(*target.dynamicIndex, width,
                                   "dynamic classical index out of bounds");
     if (reg) {
-      auto memrefIndex =
+      auto registerIndex =
           arith::IndexCastOp::create(builder, builder.getIndexType(), index);
-      memref::StoreOp::create(builder, value, reg, memrefIndex.getResult());
+      builder.storeClassicalBit(value, reg, registerIndex.getResult());
     }
     if (!emissionBudget.canConstruct(3 * static_cast<size_t>(width))) {
       return;
@@ -2393,9 +2388,7 @@ private:
       return;
     }
     for (const auto [index, bit] : llvm::enumerate(bits)) {
-      auto indexValue =
-          arith::ConstantIndexOp::create(builder, static_cast<int64_t>(index));
-      memref::StoreOp::create(builder, bit, reg, indexValue.getResult());
+      builder.storeClassicalBit(bit, reg, static_cast<int64_t>(index));
     }
   }
 

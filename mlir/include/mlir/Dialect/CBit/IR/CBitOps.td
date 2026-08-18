@@ -1,0 +1,120 @@
+// Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+// Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+//
+// Licensed under the MIT License
+
+#ifndef MLIR_DIALECT_CBIT_IR_CBITOPS_TD
+#define MLIR_DIALECT_CBIT_IR_CBITOPS_TD
+
+include "mlir/Dialect/CBit/IR/CBitDialect.td"
+
+include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/EnumAttr.td"
+include "mlir/IR/OpBase.td"
+include "mlir/Interfaces/SideEffectInterfaces.td"
+
+//===----------------------------------------------------------------------===//
+// Attributes and types
+//===----------------------------------------------------------------------===//
+
+def CBit_Initialization
+    : I32EnumAttr<"Initialization", "Classical-bit register initialization",
+                  [I32EnumAttrCase<"Zero", 0, "zero">,
+                   I32EnumAttrCase<"Undefined", 1, "undefined">]> {
+  let cppNamespace = "::mlir::cbit";
+  let genSpecializedAttr = 0;
+}
+
+def CBit_InitializationAttr
+    : EnumAttr<CBitDialect, CBit_Initialization, "init"> {
+  let assemblyFormat = "`<` $value `>`";
+}
+
+def CBit_RegisterType : TypeDef<CBitDialect, "Register"> {
+  let mnemonic = "reg";
+  let summary = "A static classical-bit register";
+  let description = [{
+    `!cbit.reg<N>` is a non-aliasing register of `N` classical bits. `N` must
+    be positive and is part of the type.
+  }];
+  let parameters = (ins "int64_t":$width);
+  let assemblyFormat = "`<` $width `>`";
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// Operations
+//===----------------------------------------------------------------------===//
+
+class CBitOp<string mnemonic, list<Trait> traits = []>
+    : Op<CBitDialect, mnemonic, traits>;
+
+def CBit_AllocOp : CBitOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
+  let summary = "Allocate a classical-bit register";
+  let description = [{
+    Allocates a static classical-bit register. `zero` initialization defines
+    every element as false. Reading an element of an `undefined` register
+    before a store is undefined behavior. The optional source name records the
+    spelling used by an input format and does not make the register public.
+
+    Example:
+    ```mlir
+    %c = cbit.alloc(#cbit.init<zero>) source_name = "c" : !cbit.reg<2>
+    ```
+  }];
+
+  let arguments = (ins CBit_InitializationAttr:$initialization,
+      OptionalAttr<StrAttr>:$source_name);
+  let results = (outs CBit_RegisterType:$result);
+  let assemblyFormat = [{
+    `(` qualified($initialization) `)`
+    (`source_name` `=` $source_name^)? attr-dict
+    `:` qualified(type($result))
+  }];
+}
+
+def CBit_LoadOp : CBitOp<"load"> {
+  let summary = "Load a classical bit";
+  let description = [{
+    Reads one `i1` value from a classical-bit register. A constant index must
+    be within the static register width.
+
+    Example:
+    ```mlir
+    %bit = cbit.load %c[%index] : !cbit.reg<2>
+    ```
+  }];
+
+  let arguments = (ins Arg<CBit_RegisterType, "register", [MemRead]>:$reg,
+      Index:$index);
+  let results = (outs I1:$result);
+  let assemblyFormat = [{
+    $reg `[` $index `]` attr-dict `:` qualified(type($reg))
+  }];
+  let hasVerifier = 1;
+}
+
+def CBit_StoreOp : CBitOp<"store"> {
+  let summary = "Store a classical bit";
+  let description = [{
+    Writes one `i1` value to a classical-bit register. A constant index must be
+    within the static register width.
+
+    Example:
+    ```mlir
+    cbit.store %bit, %c[%index] : !cbit.reg<2>
+    ```
+  }];
+
+  let arguments = (ins I1:$value,
+      Arg<CBit_RegisterType, "register", [MemWrite]>:$reg, Index:$index);
+  let assemblyFormat = [{
+    $value `,` $reg `[` $index `]` attr-dict `:` qualified(type($reg))
+  }];
+  let hasVerifier = 1;
+}
+
+#endif // MLIR_DIALECT_CBIT_IR_CBITOPS_TD

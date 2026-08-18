@@ -286,7 +286,8 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfDifferentControls) {
  */
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
   auto q = programBuilder.allocQubitRegister(2);
-  auto b = programBuilder.allocClassicalBitRegister(1);
+  auto b = programBuilder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   q[0] = programBuilder.s(q[0]);
   auto [q0, q1] = programBuilder.cx(q[0], q[1]);
   q[1] = programBuilder.h(q1);
@@ -295,7 +296,8 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
   module = programBuilder.finalize({b});
 
   auto qRef = referenceBuilder.allocQubitRegister(2);
-  auto bRef = referenceBuilder.allocClassicalBitRegister(1);
+  auto bRef = referenceBuilder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   qRef[0] = referenceBuilder.s(qRef[0]);
   qRef[1] = referenceBuilder.h(qRef[1]);
   qRef[0] = referenceBuilder.h(qRef[0]);
@@ -318,7 +320,8 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
  */
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   auto q = programBuilder.allocQubitRegister(3);
-  auto b = programBuilder.allocClassicalBitRegister(1);
+  auto b = programBuilder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   auto [q12, q0] = programBuilder.ctrl({q[1], q[2]}, q[0], [&](Value target) {
     return programBuilder.x(target);
   });
@@ -328,7 +331,8 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   module = programBuilder.finalize({b});
 
   auto qRef = referenceBuilder.allocQubitRegister(3);
-  auto bRef = referenceBuilder.allocClassicalBitRegister(1);
+  auto bRef = referenceBuilder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   qRef[0] = referenceBuilder.h(qRef[0]);
   qRef[1] = referenceBuilder.h(qRef[1]);
   auto [q02Ref, q1Ref] =
@@ -353,7 +357,8 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
  */
 TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   auto q = programBuilder.allocQubitRegister(6);
-  auto b = programBuilder.allocClassicalBitRegister(3);
+  auto b = programBuilder.allocClassicalBitRegister(
+      3, {}, mlir::cbit::Initialization::Undefined);
   programBuilder.cx(q[1], q[0]);
   auto [q3, q2] = programBuilder.cx(q[3], q[2]);
   programBuilder.measure(q3, b, 0);
@@ -367,7 +372,8 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   module = programBuilder.finalize({b});
 
   auto qRef = referenceBuilder.allocQubitRegister(6);
-  auto bRef = referenceBuilder.allocClassicalBitRegister(3);
+  auto bRef = referenceBuilder.allocClassicalBitRegister(
+      3, {}, mlir::cbit::Initialization::Undefined);
   referenceBuilder.cx(qRef[1], qRef[0]);
   auto [q3Ref, q2Ref] = referenceBuilder.cx(qRef[3], qRef[2]);
   referenceBuilder.measure(q3Ref, bRef, 0);
@@ -394,7 +400,8 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
 TEST_F(QCOHadamardLiftingTest,
        doNotLiftHadamardOverCNOTIfMeasurementsAfterControlsGate) {
   auto q = programBuilder.allocQubitRegister(5);
-  auto b = programBuilder.allocClassicalBitRegister(4);
+  auto b = programBuilder.allocClassicalBitRegister(
+      4, {}, mlir::cbit::Initialization::Undefined);
   auto [q1, q0] = programBuilder.cx(q[1], q[0]);
   q[0] = programBuilder.h(q0);
   programBuilder.measure(q[0], b, 0);
@@ -410,7 +417,8 @@ TEST_F(QCOHadamardLiftingTest,
   module = programBuilder.finalize({b});
 
   auto qRef = referenceBuilder.allocQubitRegister(5);
-  auto bRef = referenceBuilder.allocClassicalBitRegister(4);
+  auto bRef = referenceBuilder.allocClassicalBitRegister(
+      4, {}, mlir::cbit::Initialization::Undefined);
   auto [qRef1, qRef0] = referenceBuilder.cx(qRef[1], qRef[0]);
   qRef[0] = referenceBuilder.h(qRef0);
   referenceBuilder.measure(qRef[0], bRef, 0);

@@ -7,6 +7,7 @@
 # Licensed under the MIT License
 
 add_subdirectory(JeffToQCO)
+add_subdirectory(CBitToMemRef)
 add_subdirectory(QCOToJeff)
 add_subdirectory(QCOToQC)
 add_subdirectory(QCToQCO)

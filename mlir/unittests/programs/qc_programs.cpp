@@ -24,7 +24,8 @@
 namespace mlir::qc {
 
 static Value measureToRegister(QCProgramBuilder& b, ValueRange qubits) {
-  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()), {},
+                                       mlir::cbit::Initialization::Undefined);
   for (auto [i, q] : llvm::enumerate(qubits)) {
     b.measure(q, c, static_cast<int64_t>(i));
   }
@@ -185,14 +186,16 @@ Value mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b) {
 
 Value singleMeasurementToSingleBit(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(1);
+  auto c =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   b.measure(q[0], c, 0);
   return c;
 }
 
 Value repeatedMeasurementToSameBit(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(1);
+  auto c =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   b.measure(q[0], c, 0);
   b.measure(q[0], c, 0);
   b.measure(q[0], c, 0);
@@ -201,7 +204,8 @@ Value repeatedMeasurementToSameBit(QCProgramBuilder& b) {
 
 SmallVector<Value> repeatedMeasurementToDifferentBits(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(3);
+  auto c =
+      b.allocClassicalBitRegister(3, {}, mlir::cbit::Initialization::Undefined);
   b.measure(q[0], c, 0);
   b.measure(q[0], c, 1);
   b.measure(q[0], c, 2);
@@ -211,8 +215,10 @@ SmallVector<Value> repeatedMeasurementToDifferentBits(QCProgramBuilder& b) {
 SmallVector<Value>
 multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(2);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   b.measure(q[0], c0, 0);
   b.measure(q[1], c1, 0);
   b.measure(q[2], c1, 1);
@@ -221,14 +227,16 @@ multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
 
 Value partialMeasurementToRegister(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(2);
+  auto c =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   b.measure(q[0], c, 0);
   return c;
 }
 
 Value dynamicallyIndexedMeasurement(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  auto c = b.allocClassicalBitRegister(2);
+  auto c =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   b.scfFor(0, 2, 1, [&](Value iv) {
     auto qubit = b.loadQubit(q.value, iv);
     b.measure(qubit, c, iv);
@@ -265,7 +273,8 @@ Value repeatedResetWithoutOp(QCProgramBuilder& b) {
 
 SmallVector<Value> resetQubitAfterSingleOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(2);
+  auto c =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   b.h(q[0]);
   b.measure(q[0], c, 0);
   b.reset(q[0]);
@@ -275,7 +284,8 @@ SmallVector<Value> resetQubitAfterSingleOp(QCProgramBuilder& b) {
 
 SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  auto c = b.allocClassicalBitRegister(4);
+  auto c =
+      b.allocClassicalBitRegister(4, {}, mlir::cbit::Initialization::Undefined);
   b.h(q[0]);
   b.measure(q[0], c, 0);
   b.reset(q[0]);
@@ -289,7 +299,8 @@ SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b) {
 
 SmallVector<Value> repeatedResetAfterSingleOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(2);
+  auto c =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   b.h(q[0]);
   b.measure(q[0], c, 0);
   b.reset(q[0]);
@@ -2553,8 +2564,10 @@ Value pow0Two(QCProgramBuilder& b) {
 
 SmallVector<Value> simpleIf(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   b.h(q[0]);
   b.measure(q[0], c0, 0);
   b.scfIf(c0, 0, [&] { b.x(q[0]); });
@@ -2564,8 +2577,10 @@ SmallVector<Value> simpleIf(QCProgramBuilder& b) {
 
 SmallVector<Value> ifElse(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   b.h(q[0]);
   b.measure(q[0], c0, 0);
   b.scfIf(c0, 0, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
@@ -2575,8 +2590,10 @@ SmallVector<Value> ifElse(QCProgramBuilder& b) {
 
 SmallVector<Value> ifTwoQubits(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(2);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   b.h(q[0]);
   b.measure(q[0], c0, 0);
   b.scfIf(c0, 0, [&] {
@@ -2590,8 +2607,10 @@ SmallVector<Value> ifTwoQubits(QCProgramBuilder& b) {
 
 SmallVector<Value> ifWithMeasurement(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   b.h(q[0]);
   b.measure(q[0], c0, 0);
   b.scfIf(c0, 0, [&] { b.measure(q[0], c1, 0); });
@@ -2600,8 +2619,10 @@ SmallVector<Value> ifWithMeasurement(QCProgramBuilder& b) {
 
 SmallVector<Value> ifWithCreg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   b.h(q[0]);
   b.measure(q[0], c0, 0);
   b.scfIf(c0, 0, [&] { b.x(q[0]); });

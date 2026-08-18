@@ -91,7 +91,8 @@ protected:
 } // namespace
 
 static Value measureToRegister(qco::QCOProgramBuilder& b, ValueRange qubits) {
-  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()), {},
+                                       mlir::cbit::Initialization::Undefined);
   for (auto [i, q] : llvm::enumerate(qubits)) {
     b.measure(q, c, static_cast<int64_t>(i));
   }
@@ -226,8 +227,10 @@ static Value nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
 static SmallVector<Value>
 nestedIfWithCapturedMeasurement(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   auto measuredQubit = b.measure(q[0], c0, 0).first;
   auto results =
       b.qcoIf(c0, 0, {measuredQubit, q[1]}, [&](ValueRange outerArgs) {
@@ -261,7 +264,8 @@ static Value whileWithAngle(qco::QCOProgramBuilder& b) {
 
 static Value forLoopWithTwoMeasurements(qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
-  auto c = b.allocClassicalBitRegister(2);
+  auto c =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   b.scfFor(0, 1, 1, {reg.value}, [&](Value /*iv*/, ValueRange iterArgs) {
     auto [t0, q0] = b.qtensorExtract(iterArgs[0], 0);
     auto q0m = b.measure(q0, c, 0).first;
@@ -293,7 +297,8 @@ static Value nestedForLoopForOp(qco::QCOProgramBuilder& b) {
 
 static Value whileWithMeasurement(qco::QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
-  auto c = b.allocClassicalBitRegister(1);
+  auto c =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   auto q1 = b.h(q0);
   auto res = b.scfWhile(
       q1,
@@ -312,7 +317,8 @@ static Value whileWithMeasurement(qco::QCOProgramBuilder& b) {
 
 static Value whileWithRead(qco::QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
-  auto c = b.allocClassicalBitRegister(1);
+  auto c =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   auto q1 = b.h(q0);
   auto res = b.scfWhile(
       q1,
@@ -331,7 +337,8 @@ static Value whileWithRead(qco::QCOProgramBuilder& b) {
 
 static Value nestedWhileOpIfOp(qco::QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
-  auto c = b.allocClassicalBitRegister(1);
+  auto c =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   auto q1 = b.h(q0);
   auto res = b.scfWhile(
       q1,

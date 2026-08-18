@@ -9,6 +9,7 @@
  */
 
 #include "TestCaseUtils.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
@@ -94,7 +95,8 @@ void QCTest::SetUp() {
 }
 
 static Value measureRegister(QCProgramBuilder& b, ValueRange qubits) {
-  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()), {},
+                                       mlir::cbit::Initialization::Undefined);
   for (auto [i, qubit] : llvm::enumerate(qubits)) {
     b.measure(qubit, c, static_cast<int64_t>(i));
   }
@@ -164,7 +166,8 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         QCProgramBuilder builder(context.get());
         builder.initialize();
         const auto q = builder.allocQubit();
-        const auto c = builder.allocClassicalBitRegister(1);
+        const auto c = builder.allocClassicalBitRegister(
+            1, {}, mlir::cbit::Initialization::Undefined);
         builder.measure(q, c, -1);
       },
       "Register index must be non-negative");
@@ -174,7 +177,8 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         QCProgramBuilder builder(context.get());
         builder.initialize();
         const auto q = builder.allocQubit();
-        const auto c = builder.allocClassicalBitRegister(1);
+        const auto c = builder.allocClassicalBitRegister(
+            1, {}, mlir::cbit::Initialization::Undefined);
         builder.measure(q, c, 1);
       },
       "Register index is out of bounds");
@@ -183,7 +187,8 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QCProgramBuilder builder(context.get());
         builder.initialize();
-        const auto c = builder.allocClassicalBitRegister(1);
+        const auto c = builder.allocClassicalBitRegister(
+            1, {}, mlir::cbit::Initialization::Undefined);
         builder.scfIf(c, -1, [] {});
       },
       "Register index must be non-negative");
@@ -192,36 +197,33 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QCProgramBuilder builder(context.get());
         builder.initialize();
-        const auto c = builder.allocClassicalBitRegister(1);
+        const auto c = builder.allocClassicalBitRegister(
+            1, {}, mlir::cbit::Initialization::Undefined);
         builder.scfCondition(c, 1);
       },
       "Register index is out of bounds");
 }
 
-TEST_F(QCTest, BuilderClassicalRegisterInitializationPolicy) {
-  const auto countStores = [&](const auto initialization) {
-    QCProgramBuilder builder(context.get(), initialization);
-    builder.initialize();
-    const auto reg = builder.allocClassicalBitRegister(3);
-    builder.retype(reg.getType());
-    auto moduleOp = builder.finalize(reg);
-    EXPECT_TRUE(moduleOp);
-    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+TEST_F(QCTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto zero =
+      builder.allocClassicalBitRegister(3, "zero", cbit::Initialization::Zero);
+  const auto undefined = builder.allocClassicalBitRegister(
+      2, "undefined", cbit::Initialization::Undefined);
+  builder.retype({zero.getType(), undefined.getType()});
+  auto moduleOp = builder.finalize({zero, undefined});
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 
-    size_t stores = 0;
-    moduleOp->walk([&](memref::StoreOp storeOp) {
-      EXPECT_TRUE(matchPattern(storeOp.getValueToStore(), m_Zero()));
-      ++stores;
-    });
-    return stores;
-  };
-
-  EXPECT_EQ(
-      countStores(QCProgramBuilder::ClassicalRegisterInitialization::Zero), 3);
-  EXPECT_EQ(
-      countStores(
-          QCProgramBuilder::ClassicalRegisterInitialization::Uninitialized),
-      0);
+  SmallVector<cbit::AllocOp> allocations;
+  moduleOp->walk([&](cbit::AllocOp op) { allocations.push_back(op); });
+  ASSERT_EQ(allocations.size(), 2);
+  EXPECT_EQ(allocations[0].getInitialization(), cbit::Initialization::Zero);
+  EXPECT_EQ(allocations[0].getSourceName(), "zero");
+  EXPECT_EQ(allocations[1].getInitialization(),
+            cbit::Initialization::Undefined);
+  EXPECT_EQ(allocations[1].getSourceName(), "undefined");
 }
 
 TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {

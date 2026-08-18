@@ -159,7 +159,8 @@ aliasSafeNestedForLoopCtrlOpWithExtractedQubit(qc::QCProgramBuilder& b) {
     b.h(target);
     b.cx(b.loadQubit(reg.value, c0), target);
   });
-  auto result = b.allocClassicalBitRegister(1);
+  auto result =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   b.measure(control, result, 0);
   return result;
 }

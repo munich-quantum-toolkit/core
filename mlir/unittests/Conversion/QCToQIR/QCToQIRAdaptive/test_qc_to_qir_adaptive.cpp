@@ -217,7 +217,8 @@ TEST(QCToQIRAdaptiveNativeTest, LowersUnreturnedClassicalControlRegister) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1);
+  const auto c = builder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   builder.measure(q, c, 0);
   builder.scfIf(c, 0, [&] { builder.x(q); });
   auto module = builder.finalize();
@@ -242,7 +243,8 @@ TEST(QCToQIRAdaptiveNativeTest, LowersZeroInitializedClassicalControlRegister) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1);
+  const auto c = builder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   auto zero = arith::ConstantIndexOp::create(builder, 0);
   memref::StoreOp::create(builder, builder.boolConstant(false), c,
                           zero.getResult());
@@ -267,7 +269,8 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleRegisterDestinations) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(2);
+  const auto c = builder.allocClassicalBitRegister(
+      2, {}, mlir::cbit::Initialization::Undefined);
   const auto result = builder.measure(q, c, 0);
   auto one = arith::ConstantIndexOp::create(builder, 1);
   memref::StoreOp::create(builder, result, c, one.getResult());
@@ -285,7 +288,8 @@ TEST(QCToQIRAdaptiveNativeTest, RecordsReturnedRegisterMeasurement) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1, "named_result");
+  const auto c = builder.allocClassicalBitRegister(
+      1, "named_result", mlir::cbit::Initialization::Undefined);
   const auto result = builder.measure(q, c, 0);
   builder.retype(result.getType());
   auto module = builder.finalize(result);
@@ -304,7 +308,8 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementClassicalStore) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto c = builder.allocClassicalBitRegister(1);
+  const auto c = builder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   auto zero = arith::ConstantIndexOp::create(builder, 0);
   memref::StoreOp::create(builder, builder.boolConstant(true), c,
                           zero.getResult());
@@ -330,7 +335,8 @@ TEST(QCToQIRAdaptiveNativeTest, AcceptsZeroInitializedClassicalRegister) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto c = builder.allocClassicalBitRegister(1);
+  const auto c = builder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   auto zero = arith::ConstantIndexOp::create(builder, 0);
   memref::StoreOp::create(builder, builder.boolConstant(false), c,
                           zero.getResult());
@@ -349,7 +355,8 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsZeroStoreAfterMeasurement) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1);
+  const auto c = builder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   builder.measure(q, c, 0);
   auto zero = arith::ConstantIndexOp::create(builder, 0);
   memref::StoreOp::create(builder, builder.boolConstant(false), c,
@@ -402,7 +409,8 @@ TEST(QCToQIRAdaptiveNativeTest, IgnoresClassicalRegisterDeallocation) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1);
+  const auto c = builder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   builder.measure(q, c, 0);
   memref::DeallocOp::create(builder, c);
   auto module = builder.finalize();

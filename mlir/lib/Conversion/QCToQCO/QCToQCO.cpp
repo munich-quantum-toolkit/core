@@ -11,6 +11,7 @@
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 
 #include "mlir/Conversion/ConversionUtils.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -1889,7 +1890,7 @@ protected:
 
     // Configure conversion target
     target.addIllegalDialect<QCDialect>();
-    target.addLegalDialect<QCODialect, arith::ArithDialect,
+    target.addLegalDialect<cbit::CBitDialect, QCODialect, arith::ArithDialect,
                            qtensor::QTensorDialect>();
 
     target.addDynamicallyLegalDialect<memref::MemRefDialect>([](Operation* op) {

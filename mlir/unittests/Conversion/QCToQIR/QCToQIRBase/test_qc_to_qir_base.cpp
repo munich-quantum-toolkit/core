@@ -220,7 +220,8 @@ TEST(QCToQIRBaseNativeTest, RecordsReturnedRegisterMeasurement) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1, "named_result");
+  const auto c = builder.allocClassicalBitRegister(
+      1, "named_result", mlir::cbit::Initialization::Undefined);
   const auto result = builder.measure(q, c, 0);
   builder.retype(result.getType());
   auto module = builder.finalize(result);
@@ -241,10 +242,10 @@ TEST(QCToQIRBaseNativeTest, RecordsReturnedRegistersInResultOrder) {
   builder.initialize();
   const auto firstQubit = builder.allocQubit();
   const auto secondQubit = builder.allocQubit();
-  const auto firstRegister =
-      builder.allocClassicalBitRegister(1, "first_result");
-  const auto secondRegister =
-      builder.allocClassicalBitRegister(1, "second_result");
+  const auto firstRegister = builder.allocClassicalBitRegister(
+      1, "first_result", mlir::cbit::Initialization::Undefined);
+  const auto secondRegister = builder.allocClassicalBitRegister(
+      1, "second_result", mlir::cbit::Initialization::Undefined);
   builder.measure(firstQubit, firstRegister, 0);
   builder.measure(secondQubit, secondRegister, 0);
   builder.retype({secondRegister.getType(), firstRegister.getType()});
@@ -273,7 +274,8 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto c = builder.allocClassicalBitRegister(1);
+  const auto c = builder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   auto zero = arith::ConstantIndexOp::create(builder, 0);
   memref::StoreOp::create(builder, builder.boolConstant(true), c,
                           zero.getResult());
@@ -299,7 +301,8 @@ TEST(QCToQIRBaseNativeTest, AcceptsZeroInitializedClassicalRegister) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto c = builder.allocClassicalBitRegister(1);
+  const auto c = builder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   auto zero = arith::ConstantIndexOp::create(builder, 0);
   memref::StoreOp::create(builder, builder.boolConstant(false), c,
                           zero.getResult());
@@ -318,7 +321,8 @@ TEST(QCToQIRBaseNativeTest, RejectsZeroStoreAfterMeasurement) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1);
+  const auto c = builder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   builder.measure(q, c, 0);
   auto zero = arith::ConstantIndexOp::create(builder, 0);
   memref::StoreOp::create(builder, builder.boolConstant(false), c,
@@ -371,7 +375,8 @@ TEST(QCToQIRBaseNativeTest, RejectsDynamicClassicalRegisterIndex) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1);
+  const auto c = builder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   auto unknown = LLVM::UndefOp::create(builder, builder.getI64Type());
   auto index = arith::IndexCastOp::create(builder, builder.getIndexType(),
                                           unknown.getResult());
@@ -400,7 +405,8 @@ TEST(QCToQIRBaseNativeTest, RejectsOutOfBoundsClassicalRegisterIndex) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1);
+  const auto c = builder.allocClassicalBitRegister(
+      1, {}, mlir::cbit::Initialization::Undefined);
   const auto result = builder.measure(q);
   auto index = arith::ConstantIndexOp::create(builder, 1);
   memref::StoreOp::create(builder, result, c, index.getResult());

@@ -30,7 +30,8 @@ namespace mlir::qco {
 
 static Value measureAndReturnQTensor(QCOProgramBuilder& b, Value qTensor,
                                      const int64_t size) {
-  auto c = b.allocClassicalBitRegister(size);
+  auto c = b.allocClassicalBitRegister(size, {},
+                                       mlir::cbit::Initialization::Undefined);
   for (auto i = 0; i < size; ++i) {
     auto [qTensorOut, qubit] = b.qtensorExtract(qTensor, i);
     auto [q2, bit] = b.measure(qubit, c, i);
@@ -66,7 +67,8 @@ measureQTensorElement(QCOProgramBuilder& b, Value tensor,
 }
 
 static Value measureToRegister(QCOProgramBuilder& b, ValueRange qubits) {
-  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()), {},
+                                       mlir::cbit::Initialization::Undefined);
   for (auto [i, q] : llvm::enumerate(qubits)) {
     b.measure(q, c, static_cast<int64_t>(i));
   }
@@ -185,7 +187,8 @@ Value allocSinkPair(QCOProgramBuilder& b) {
 SmallVector<Value> deadGatesProgram(QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto q1 = b.allocQubit();
-  auto c = b.allocClassicalBitRegister(2);
+  auto c =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
 
   auto [q0M, m0] = b.measure(q0, c, 0);
   auto [q1M, m1] = b.measure(q1, c, 1);
@@ -200,7 +203,8 @@ SmallVector<Value> deadGatesProgram(QCOProgramBuilder& b) {
 
 SmallVector<Value> deadGatesResetProgram(QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
-  auto c = b.allocClassicalBitRegister(1);
+  auto c =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
 
   q0 = b.h(q0);
   q0 = b.reset(q0);
@@ -282,14 +286,16 @@ Value mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b) {
 
 Value singleMeasurementToSingleBit(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(1);
+  auto c =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   b.measure(q[0], c, 0);
   return c;
 }
 
 Value repeatedMeasurementToSameBit(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(1);
+  auto c =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   auto q1 = b.measure(q[0], c, 0).first;
   auto q2 = b.measure(q1, c, 0).first;
   b.measure(q2, c, 0);
@@ -298,7 +304,8 @@ Value repeatedMeasurementToSameBit(QCOProgramBuilder& b) {
 
 SmallVector<Value> repeatedMeasurementToDifferentBits(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(3);
+  auto c =
+      b.allocClassicalBitRegister(3, {}, mlir::cbit::Initialization::Undefined);
   auto q1 = b.measure(q[0], c, 0).first;
   auto q2 = b.measure(q1, c, 1).first;
   b.measure(q2, c, 2);
@@ -308,8 +315,10 @@ SmallVector<Value> repeatedMeasurementToDifferentBits(QCOProgramBuilder& b) {
 SmallVector<Value>
 multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(2);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   b.measure(q[0], c0, 0);
   b.measure(q[1], c1, 0);
   b.measure(q[2], c1, 1);
@@ -318,14 +327,16 @@ multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b) {
 
 Value partialMeasurementToRegister(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(2);
+  auto c =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   b.measure(q[0], c, 0);
   return c;
 }
 
 Value dynamicallyIndexedMeasurement(QCOProgramBuilder& b) {
   auto q = b.qtensorAlloc(2);
-  auto c = b.allocClassicalBitRegister(2);
+  auto c =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   b.scfFor(0, 2, 1, {q}, [&](Value iv, ValueRange iterArgs) {
     auto [t0, qubit] = b.qtensorExtract(iterArgs[0], iv);
     auto q1 = b.measure(qubit, c, iv).first;
@@ -364,7 +375,8 @@ Value repeatedResetWithoutOp(QCOProgramBuilder& b) {
 
 SmallVector<Value> resetQubitAfterSingleOp(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(2);
+  auto c =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   q[0] = b.h(q[0]);
   q[0] = b.measure(q[0], c, 0).first;
   q[0] = b.reset(q[0]);
@@ -374,7 +386,8 @@ SmallVector<Value> resetQubitAfterSingleOp(QCOProgramBuilder& b) {
 
 SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  auto c = b.allocClassicalBitRegister(4);
+  auto c =
+      b.allocClassicalBitRegister(4, {}, mlir::cbit::Initialization::Undefined);
   q[0] = b.h(q[0]);
   q[0] = b.measure(q[0], c, 0).first;
   q[0] = b.reset(q[0]);
@@ -388,7 +401,8 @@ SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
 
 SmallVector<Value> repeatedResetAfterSingleOp(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c = b.allocClassicalBitRegister(2);
+  auto c =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   q[0] = b.h(q[0]);
   q[0] = b.measure(q[0], c, 0).first;
   q[0] = b.reset(q[0]);
@@ -4108,8 +4122,10 @@ Value ctrlPowSx(QCOProgramBuilder& b) {
 
 SmallVector<Value> simpleIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   auto q0 = b.h(q[0]);
   auto measuredQubit = b.measure(q0, c0, 0).first;
   auto res = b.qcoIf(c0, 0, measuredQubit, [&](ValueRange args) {
@@ -4123,8 +4139,10 @@ SmallVector<Value> simpleIf(QCOProgramBuilder& b) {
 
 SmallVector<Value> ifElse(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   auto q0 = b.h(q[0]);
   auto measuredQubit = b.measure(q0, c0, 0).first;
   auto res = b.qcoIf(
@@ -4144,8 +4162,10 @@ SmallVector<Value> ifElse(QCOProgramBuilder& b) {
 
 SmallVector<Value> ifTwoQubits(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(2);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   auto q0 = b.h(q[0]);
   auto measuredQubit = b.measure(q0, c0, 0).first;
   auto res = b.qcoIf(c0, 0, {measuredQubit, q[1]}, [&](ValueRange args) {
@@ -4162,8 +4182,10 @@ SmallVector<Value> ifTwoQubits(QCOProgramBuilder& b) {
 
 SmallVector<Value> ifWithMeasurement(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   auto q0 = b.h(q[0]);
   auto measuredQubit = b.measure(q0, c0, 0).first;
   auto res = b.qcoIf(c0, 0, measuredQubit, [&](ValueRange args) {
@@ -4176,8 +4198,10 @@ SmallVector<Value> ifWithMeasurement(QCOProgramBuilder& b) {
 
 SmallVector<Value> ifWithCreg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   auto q0 = b.h(q[0]);
   auto measuredQubit = b.measure(q0, c0, 0).first;
   auto res = b.qcoIf(c0, 0, {measuredQubit}, [&](ValueRange args) {
@@ -4191,8 +4215,10 @@ SmallVector<Value> ifWithCreg(QCOProgramBuilder& b) {
 
 SmallVector<Value> simpleIfCompleteTensorState(QCOProgramBuilder& b) {
   auto tensor = b.qtensorAlloc(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   tensor = transformQTensorElement(b, tensor, 0,
                                    [&](Value qubit) { return b.h(qubit); });
   tensor = measureQTensorElement(b, tensor, 0, c0, 0);
@@ -4206,8 +4232,10 @@ SmallVector<Value> simpleIfCompleteTensorState(QCOProgramBuilder& b) {
 
 SmallVector<Value> ifElseCompleteTensorState(QCOProgramBuilder& b) {
   auto tensor = b.qtensorAlloc(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   tensor = transformQTensorElement(b, tensor, 0,
                                    [&](Value qubit) { return b.h(qubit); });
   tensor = measureQTensorElement(b, tensor, 0, c0, 0);
@@ -4227,8 +4255,10 @@ SmallVector<Value> ifElseCompleteTensorState(QCOProgramBuilder& b) {
 
 SmallVector<Value> ifTwoQubitsCompleteTensorState(QCOProgramBuilder& b) {
   auto tensor = b.qtensorAlloc(2);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(2);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
   tensor = transformQTensorElement(b, tensor, 0,
                                    [&](Value qubit) { return b.h(qubit); });
   tensor = measureQTensorElement(b, tensor, 0, c0, 0);
@@ -4245,8 +4275,10 @@ SmallVector<Value> ifTwoQubitsCompleteTensorState(QCOProgramBuilder& b) {
 
 SmallVector<Value> ifWithMeasurementCompleteTensorState(QCOProgramBuilder& b) {
   auto tensor = b.qtensorAlloc(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   tensor = transformQTensorElement(b, tensor, 0,
                                    [&](Value qubit) { return b.h(qubit); });
   tensor = measureQTensorElement(b, tensor, 0, c0, 0);
@@ -4318,8 +4350,10 @@ Value constantFalseIf(QCOProgramBuilder& b) {
 
 SmallVector<Value> nestedTrueIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   auto q0 = b.h(q[0]);
   auto measuredQubit = b.measure(q0, c0, 0).first;
   auto index = arith::ConstantIndexOp::create(b, 0);
@@ -4338,8 +4372,10 @@ SmallVector<Value> nestedTrueIf(QCOProgramBuilder& b) {
 
 SmallVector<Value> nestedFalseIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c0 = b.allocClassicalBitRegister(1);
-  auto c1 = b.allocClassicalBitRegister(1);
+  auto c0 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c1 =
+      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
   auto q0 = b.h(q[0]);
   auto measuredQubit = b.measure(q0, c0, 0).first;
   auto index = arith::ConstantIndexOp::create(b, 0);
