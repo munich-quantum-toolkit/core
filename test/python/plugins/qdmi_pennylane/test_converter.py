@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from typing import cast
 
@@ -128,9 +129,8 @@ def test_qasm3_resolves_ddsim_aliases_and_inverse_gates() -> None:
     assert "tdg q[1];" in payload
     assert "sx q[0];" in payload
     assert "sxdg q[1];" in payload
-    assert "rxx(0.10000000000000001) q[0],q[1];" in payload
-    assert "ryy(0.20000000000000001) q[0],q[1];" in payload
-    assert "rzz(0.29999999999999999) q[0],q[1];" in payload
+    emitted = dict(re.findall(r"(rxx|ryy|rzz)\(([^)]+)\) q\[0\],q\[1\];", payload))
+    assert {name: float(value) for name, value in emitted.items()} == {"rxx": 0.1, "ryy": 0.2, "rzz": 0.3}
 
 
 def test_qasm3_failure_does_not_fall_back_to_qasm2(monkeypatch: pytest.MonkeyPatch) -> None:
