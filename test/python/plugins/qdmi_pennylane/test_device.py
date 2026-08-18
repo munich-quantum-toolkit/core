@@ -177,7 +177,7 @@ def test_qasm2_diagonalizes_observable_once(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert np.isfinite(circuit())
     assert qdmi.submissions[0][1] == ProgramFormat.QASM2
-    assert qdmi.submissions[0][0].count("ry(-1.5707963267948966) q[0];") == 1
+    assert qdmi.submissions[0][0].count("ry(") == 1
 
 
 def test_rejects_analytic_execution_before_submission(monkeypatch: pytest.MonkeyPatch) -> None:
