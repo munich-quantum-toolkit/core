@@ -47,6 +47,10 @@ mqt-cc --input-format=qasm program.txt
 | Dynamic indexing           | Dynamic qubit and bit indices are supported on input. The generated QC includes bounds checks and structured dispatch where needed.                                                             |
 | Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, input declarations, arbitrary arrays, `break`, and `continue` are diagnosed.                                                          |
 
+Bit-register equality accepts unsigned integer constants of arbitrary width.
+OpenQASM 3 requires every compared bit to be initialized; OpenQASM 2 retains its
+standard zero-initialized register behavior.
+
 Syntax and semantic diagnostics retain source locations and include stacks.
 Runtime integer preconditions and dynamic-index bounds are represented
 explicitly in QC. This safety machinery is supported by the normal compiler and
@@ -113,16 +117,24 @@ QCO optimization pipeline, converts back to QC, and then exports. Calling
 {code}`mlir::QCProgram::toOpenQASM3` applies the QC cleanup pipeline but
 bypasses that QCO optimization round trip.
 
+For measurement-conditioned OpenQASM 2 programs, target compilation can expose
+the frontend's full bit-register equality as a classical SSA expression. The
+exporter recognizes that exact unchanged expression, fuses eligible direct
+measurement stores, and emits one register comparison. The constant is not
+limited to a machine integer, so this compatibility path also supports registers
+wider than 64 bits. Other expression shapes continue through the normal support
+checks below.
+
 ### Export and round-trip support
 
-| QC or MLIR concept        | Export support                                                                                                                                                                                                               |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Qubits and classical bits | Logical and physical qubits, scalar allocations, and static rank-one qubit or `i1` memrefs. Memory indices must resolve statically.                                                                                          |
-| Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u2` uses the standard compatibility alias. |
-| Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body with target qubits becomes a private generated gate.                                                                                                        |
-| Scalar values             | `i1`, `i64`, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, value-preserving casts, and supported math functions.                                                                |
-| Structured control        | Result-free `scf.if` and `scf.index_switch`, constant-range `scf.for` without iterated state, and zero-state expression-based `scf.while`. Index switches use native `switch`, `case`, and `default` statements.             |
-| Results                   | Multiple scalar and bit-register outputs using the canonical type and naming rules below.                                                                                                                                    |
+| QC or MLIR concept        | Export support                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Qubits and classical bits | Logical and physical qubits, scalar allocations, and static rank-one qubit or `i1` memrefs. Memory indices must resolve statically.                                                                                                                                                                                                                                    |
+| Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u2` uses the standard compatibility alias.                                                                                                                                           |
+| Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body with target qubits becomes a private generated gate.                                                                                                                                                                                                                                                  |
+| Scalar values             | `i1`, `i64`, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, value-preserving casts, and supported math functions.                                                                                                                                                                                                          |
+| Structured control        | Result-free `scf.if` and `scf.index_switch`, constant-range `scf.for` without iterated state, and zero-state expression-based `scf.while`. Complete register-equality conditions produced from OpenQASM 2 input are reconstructed as direct comparisons, including registers wider than 64 bits. Index switches use native `switch`, `case`, and `default` statements. |
+| Results                   | Multiple scalar and bit-register outputs using the canonical type and naming rules below.                                                                                                                                                                                                                                                                              |
 
 The exporter writes an OpenQASM 3.1 version declaration and includes
 `stdgates.inc`. Gates in MQT Core's compatibility catalog, such as `r`, `rzz`,
@@ -167,8 +179,12 @@ arbitrary CFGs, multi-block SCF regions, dynamic indices or ranges, general
 memrefs, unsupported integer widths, packed bit-vector operations, unknown
 operations, and non-unitary content inside modifier regions. SCF results,
 loop-carried values, nonempty `scf.yield`, and `arith.select` are outside the
-export subset. Multi-operation modifier bodies must have a target qubit and
-cannot capture additional qubits from an enclosing scope.
+export subset. The sole result-bearing SCF exception is a complete, unchanged
+bit-register equality produced by the OpenQASM 2 frontend. The exporter emits
+this compatibility form as one register comparison and rejects partial, mixed,
+dynamically indexed, or modified register conditions. Multi-operation modifier
+bodies must have a target qubit and cannot capture additional qubits from an
+enclosing scope.
 
 The exporter does not reconstruct the runtime checks created for dynamic indices
 or checked integer arithmetic. Surviving assertions, checked-index control flow,

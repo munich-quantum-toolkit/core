@@ -98,6 +98,8 @@ enum class ExpressionKind : uint8_t {
   Cast,
   Value,
   Index,
+  ClassicalBit,
+  ClassicalRegister,
 };
 enum class BinaryOperation : uint8_t {
   BitAnd,
@@ -134,6 +136,8 @@ struct Expression {
   bool boolValue = false;
   uint64_t uintValue = 0;
   double floatValue = 0.0;
+  uint32_t bit = 0;
+  Register reg;
   std::unique_ptr<Expression> left;
   std::unique_ptr<Expression> right;
 };
@@ -239,16 +243,22 @@ public:
 
   virtual void addQuantumRegister(std::string_view name, uint32_t size) = 0;
   virtual void addClassicalRegister(std::string_view name, uint32_t size) = 0;
-  virtual void setGlobalPhase(double phase) = 0;
+  virtual void setGlobalPhase(const Parameter& phase) = 0;
   virtual void addGate(StandardGateMapping gate,
                        const std::vector<uint32_t>& qubits,
-                       const std::vector<double>& parameters) = 0;
+                       const std::vector<Parameter>& parameters) = 0;
   virtual void addMeasure(uint32_t qubit, uint32_t clbit) = 0;
   virtual void addReset(uint32_t qubit) = 0;
   virtual void addBarrier(const std::vector<uint32_t>& qubits) = 0;
   virtual void addUnitary(const std::vector<std::complex<double>>& matrix,
                           const std::vector<uint32_t>& qubits,
                           uint32_t numControls) = 0;
+  virtual void
+  addControlFlow(ControlFlowKind kind, ClassicalTarget target, Loop loop,
+                 std::vector<SwitchCase> switchCases,
+                 std::vector<std::unique_ptr<CircuitWriter>> blocks,
+                 const std::vector<uint32_t>& qubits,
+                 const std::vector<uint32_t>& clbits) = 0;
   /** Transfer the native circuit to a new owned Python QuantumCircuit. */
   [[nodiscard]] virtual nb::object finish() = 0;
 };

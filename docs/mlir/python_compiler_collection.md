@@ -159,8 +159,14 @@ This compiler route does not construct an intermediate
 interfaces remain independent and retain their existing version range and
 behavior.
 
-Import and export have different contracts because Qiskit 2.5 can inspect more
-program structures than its C API can construct.
+The version-specific adapter uses Qiskit's native C API for flat circuit
+construction. Qiskit 2.5 provides C inspection functions, but no C constructors
+for classical expressions or structured control flow. During export, the adapter
+finalizes each validated block independently and then uses Qiskit's public
+Python classes to construct and insert the control-flow operations at their
+recorded positions. This post-processing is confined to the Qiskit 2.5 adapter
+in {code}`bindings/mlir/qiskit/Qiskit2_5.cpp`. The generic translation remains
+frontend-neutral.
 
 | Circuit feature                                                   | Import               | Export         |
 | ----------------------------------------------------------------- | -------------------- | -------------- |
@@ -169,9 +175,9 @@ program structures than its C API can construct.
 | Measurement, reset, and barrier                                   | Supported            | Supported      |
 | Canonical named registers and leading loose bits                  | Supported            | Supported      |
 | Custom instructions with finite, acyclic definitions              | Recursively expanded | Not applicable |
-| Nested `if`/`else`, `for`, `while`, and `switch`                  | Supported            | Rejected       |
-| Classical-bit and register conditions                             | Supported            | Rejected       |
-| Constant Boolean, `Uint` up to 64 bits, and `Float` expressions   | Supported            | Rejected       |
+| Nested `if`/`else`, `for`, `while`, and `switch`                  | Supported            | Supported      |
+| Classical-bit and register conditions                             | Supported            | Supported      |
+| Constant Boolean, `Uint` up to 64 bits, and `Float` expressions   | Supported            | Supported      |
 | Standalone classical variables or variable expressions            | Rejected             | Rejected       |
 | Free symbolic parameters                                          | Rejected             | Rejected       |
 | Dense numeric unitaries up to eight qubits                        | Supported            | Supported      |
@@ -184,6 +190,27 @@ expanded. Definition expansion rejects missing definitions, cycles, operand
 arity mismatches, nesting beyond 64 levels, and more than 10 million expanded
 operations.
 
+Structured-control export accepts result-free {code}`scf.if`, constant-range
+{code}`scf.for` without loop-carried values, expression-based {code}`scf.while`
+without carried state, and result-free {code}`scf.index_switch`. A live
+{code}`scf.for` induction value must reduce to an affine {code}`f64` gate
+parameter. The exporter preserves one Qiskit parameter identity for that value
+throughout its lexical body. Switch labels must be nonnegative constants.
+
+Nested blocks may capture existing qubits and classical bits but may not
+allocate or release circuit resources. Control flow and classical expressions
+may nest up to 64 levels. Boolean, unsigned-integer up to 64 bits, and
+floating-point expression operations must have a direct Qiskit equivalent. A
+captured classical snapshot must not cross a write, free, or unknown memory
+effect on the same storage. Unsupported operations, signed interpretations,
+invalid widths, non-finite constants, dynamic bounds, loop-carried values, and
+other SSA results fail during validation.
+
+Each exported measurement must write to one static classical bit in the same
+block. Its destination store must follow the measurement directly, apart from
+constant operations. A conditional or otherwise delayed destination store is
+rejected because Qiskit cannot preserve it as one measurement instruction.
+
 Dense numeric unitaries remain explicit matrix operations during import and
 export. Target compilation synthesizes supported one- and two-qubit matrices to
 the target gate set. Dense unitary operations support at most eight qubits.
@@ -195,9 +222,11 @@ A circuit remains valid when {code}`circ.layout` is present. The importer
 translates the circuit operations and deliberately does not preserve physical or
 virtual layout metadata.
 
-Input validation finishes before an MLIR module is created. Output validation
-finishes before a Qiskit circuit is allocated. Unsupported programs therefore
-fail without modifying the source object or exposing a partial result.
+Input validation finishes before an MLIR module is created. Generic output
+validation finishes before Qiskit construction starts; the version-specific
+adapter validates its constructed blocks before it returns the top-level
+circuit. Unsupported programs therefore fail without modifying the source object
+or exposing a partial result.
 
 The binding imports Qiskit only when circuit translation is requested. It
 accepts versions in the registered {code}`>=2.5.0,<2.6.0` range and verifies the

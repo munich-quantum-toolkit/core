@@ -159,7 +159,10 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
                     return IterationStep{false, 0};
                   });
 
-          if (skip || nqubits == 1) {
+          const bool isControlFlowBoundary =
+              isa<scf::ForOp, scf::WhileOp, qco::IfOp, qco::IndexSwitchOp>(
+                  it.operation());
+          if (skip || (nqubits == 1 && !isControlFlowBoundary)) {
             std::ranges::advance(it, Traits::stride());
             continue;
           }
@@ -175,7 +178,12 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
           // The caller decides if this op should be released.
           PendingItem item(nqubits);
           item.indices_.emplace_back(i);
-          pending.try_emplace(it.operation(), std::move(item));
+          auto [pendingIt, inserted] =
+              pending.try_emplace(it.operation(), std::move(item));
+          assert(inserted);
+          if (pendingIt->second.ready()) {
+            ready.try_emplace(it.operation(), pendingIt->second.indices_);
+          }
         }
 
         break; // Stop at multi-qubit unitary.

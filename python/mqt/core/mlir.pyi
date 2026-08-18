@@ -70,6 +70,7 @@ class CompilerTarget:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
     ) -> None: ...
     @overload
     def __init__(
@@ -80,6 +81,7 @@ class CompilerTarget:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
     ) -> None: ...
     @overload
     def __init__(
@@ -89,6 +91,7 @@ class CompilerTarget:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
     ) -> None: ...
     @overload
     def __init__(
@@ -99,6 +102,7 @@ class CompilerTarget:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
     ) -> None: ...
 
     class DurationUnit:
@@ -243,6 +247,21 @@ class CompilerTarget:
 
         ZXZ = 6
 
+    class ClassicalControl(enum.Enum):
+        """Opt-in runtime classical-control capability."""
+
+        CONDITIONAL = 0
+        """Runtime forward branching."""
+
+        ITERATION = 1
+        """Structured counted iteration."""
+
+        CONDITIONAL_LOOP = 2
+        """Runtime condition-terminated looping."""
+
+        MULTIWAY_BRANCH = 3
+        """Runtime multiway branching."""
+
     class SynthesisBasis:
         """One synthesis basis usable across the complete target."""
 
@@ -295,6 +314,10 @@ class CompilerTarget:
         """Operation capabilities in reported order."""
 
     @property
+    def classical_control(self) -> list[CompilerTarget.ClassicalControl]:
+        """Runtime classical-control capabilities in canonical order."""
+
+    @property
     def supported_gates(self) -> list[CompilerTarget.GateKind]:
         """Recognized native gates supported by the target."""
 
@@ -304,6 +327,9 @@ class CompilerTarget:
 
     def supports_operation(self, name: str, num_qubits: int, num_parameters: int | None = None) -> bool:
         """Whether the target supports an operation capability."""
+
+    def supports_classical_control(self, capability: ClassicalControl) -> bool:
+        """Whether the target supports a classical-control capability."""
 
 class Program:
     """Base class for a typed MLIR compiler program.

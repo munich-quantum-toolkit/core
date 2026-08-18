@@ -105,6 +105,37 @@ algorithm had no production owner in the MQT ecosystem. Remove uses of the
 `dd/Approximation.hpp` header, the `dd::ApproximationMetadata` type, and the
 `dd::approximate` function. MQT Core does not provide a replacement.
 
+### Explicit target classical-control capabilities
+
+`CompilerTarget` now rejects runtime classical control unless the target
+declares each supported form. Straight-line target compilation is unchanged.
+Code that compiles runtime conditionals, loops, or multiway branches must opt in
+when it constructs the target.
+
+For example, declare measurement-conditioned branching in Python as follows:
+
+```python
+from mqt.core.mlir import CompilerTarget
+
+target = CompilerTarget(
+    3,
+    classical_control=[CompilerTarget.ClassicalControl.CONDITIONAL],
+)
+```
+
+The equivalent C++ construction is:
+
+```cpp
+using ClassicalControl = mlir::CompilerTarget::ClassicalControl;
+auto target = mlir::CompilerTarget::create(
+    3, std::nullopt, std::nullopt, std::nullopt,
+    {ClassicalControl::Conditional});
+```
+
+Declare `Iteration`, `ConditionalLoop`, and `MultiwayBranch` separately when the
+target supports counted loops, condition-terminated loops, or switches. An empty
+declaration is the new fail-closed default.
+
 ### Private `nlohmann_json` dependency
 
 MQT Core uses `nlohmann_json` only inside its implementation. It no longer

@@ -35,6 +35,48 @@ native:
 target = CompilerTarget(3, couplings=[(0, 1), (1, 2)])
 ```
 
+Runtime classical control is opt-in. By default, a target accepts only
+straight-line quantum programs. Declare each supported control form explicitly;
+for example, a target with measurement-conditioned forward branching uses:
+
+```python
+target = CompilerTarget(
+    3,
+    classical_control=[CompilerTarget.ClassicalControl.CONDITIONAL],
+)
+```
+
+Target compilation checks these capabilities before cleanup, mapping, or
+synthesis. An unsupported program therefore fails without partially mapping the
+circuit, and the diagnostic names both the missing capability and the operation
+that requires it. The four independent capabilities are:
+
+- {code}`CONDITIONAL` for runtime {code}`qco.if` and {code}`scf.if` operations.
+- {code}`ITERATION` for counted {code}`scf.for` loops.
+- {code}`CONDITIONAL_LOOP` for runtime {code}`scf.while` loops.
+- {code}`MULTIWAY_BRANCH` for {code}`qco.index_switch` and
+  {code}`scf.index_switch` operations.
+
+Conditional support does not imply loop or multiway-branch support. The
+preflight follows only the selected region of an {code}`if` or
+{code}`index_switch` whose selector is constant. It still checks all reachable
+nested operations.
+
+Target compilation supports a static rank-one qubit tensor carried through
+{code}`qco.if` when each branch uses complete constant-index extract/insert
+chains. Cleanup threads only the tensor elements that either branch accesses as
+scalar qubits and forwards the remaining tensor around the branch. The mapper
+treats structured control as a routing boundary, including a branch that acts on
+one qubit. It adds other physical wires only when nested routing needs them.
+When routing restores SSA order, it also preserves the order of classical memory
+accesses. A condition therefore cannot move before the measurement store that
+initialized its register.
+
+Dynamic qubit indexing, unstructured control flow, dynamic or non-rank-one qubit
+tensors, and qubit-tensor state carried through other structured forms remain
+unsupported. The preflight rejects these forms before mapping even when every
+listed capability is enabled.
+
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` to apply target
 compilation to an existing QCO program. For pass-level benchmarking, the C++ API
 exposes separate factories for pre-routing optimization, mapping, native

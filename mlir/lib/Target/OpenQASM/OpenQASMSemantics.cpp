@@ -2946,16 +2946,23 @@ private:
       const auto* lhsSymbol = lhsSyntax.kind == Expr::Kind::Identifier
                                   ? lookup(lhsSyntax.identifier)
                                   : nullptr;
-      if (program.openQASM2 && condition.kind == Expr::Kind::Equal &&
-          lhsSymbol != nullptr && lhsSymbol->kind == SymbolKind::Register &&
+      if (condition.kind == Expr::Kind::Equal && lhsSymbol != nullptr &&
+          lhsSymbol->kind == SymbolKind::Register &&
           program.registers[lhsSymbol->id].kind == RegisterKind::Bit &&
           isConstantExpression(*condition.rhs)) {
         const auto& rhsSyntax = syntax.expressions[*condition.rhs];
         MQT_OQ3_TRY_ASSIGN(bits,
                            resolveBits({.location = lhsSyntax.location,
                                         .identifier = lhsSyntax.identifier}));
-        // OpenQASM 2 classical bits default to 0, so partially written
-        // registers are valid in `if (c == k)` (e.g. mid-circuit feedback).
+        // OpenQASM 2 classical bits default to zero. OpenQASM 3 register
+        // comparisons require every bit to be initialized.
+        if (!program.openQASM2) {
+          for (const auto& bit : bits) {
+            if (failed(ensureBitInitialized(bit, condition.location))) {
+              return failure();
+            }
+          }
+        }
         llvm::APInt expectedBits;
         if (rhsSyntax.kind == Expr::Kind::Int &&
             !rhsSyntax.wideInteger.empty()) {
@@ -2975,7 +2982,7 @@ private:
                std::get<int64_t>(expected.value) < 0)) {
             return fail(
                 condition.location,
-                "OpenQASM 2 register conditions require an unsigned integer");
+                "classical register conditions require an unsigned integer");
           }
           const auto expectedValue =
               expected.type == ScalarType::Uint

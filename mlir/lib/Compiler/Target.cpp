@@ -341,13 +341,15 @@ struct CompilerTarget::Storage {
   Storage(std::optional<std::string> targetName, std::vector<Site> targetSites,
           std::optional<std::vector<Coupling>> targetCouplings,
           std::optional<std::vector<Operation>> targetOperations,
-          std::optional<DurationUnit> targetDurationUnit);
+          std::optional<DurationUnit> targetDurationUnit,
+          std::vector<ClassicalControl> targetClassicalControl);
 
   [[nodiscard]] static llvm::Expected<std::shared_ptr<const Storage>>
   create(std::optional<std::string> targetName, std::vector<Site> targetSites,
          std::optional<std::vector<Coupling>> targetCouplings,
          std::optional<std::vector<Operation>> targetOperations,
-         std::optional<DurationUnit> targetDurationUnit);
+         std::optional<DurationUnit> targetDurationUnit,
+         std::vector<ClassicalControl> targetClassicalControl);
 
   [[nodiscard]] llvm::Error initialize();
 
@@ -367,6 +369,7 @@ struct CompilerTarget::Storage {
   size_t maximumDegree = 0;
   std::optional<std::vector<Operation>> operations;
   llvm::StringMap<SmallVector<size_t, 1>> capabilities;
+  std::vector<ClassicalControl> classicalControl;
   SmallVector<GateKind> supportedGates;
   std::optional<SynthesisBasis> basis;
 };
@@ -375,20 +378,24 @@ CompilerTarget::Storage::Storage(
     std::optional<std::string> targetName, std::vector<Site> targetSites,
     std::optional<std::vector<Coupling>> targetCouplings,
     std::optional<std::vector<Operation>> targetOperations,
-    std::optional<DurationUnit> targetDurationUnit)
+    std::optional<DurationUnit> targetDurationUnit,
+    std::vector<ClassicalControl> targetClassicalControl)
     : name(std::move(targetName)), durationUnit(std::move(targetDurationUnit)),
       sites(std::move(targetSites)), couplings(std::move(targetCouplings)),
-      operations(std::move(targetOperations)) {}
+      operations(std::move(targetOperations)),
+      classicalControl(std::move(targetClassicalControl)) {}
 
 llvm::Expected<std::shared_ptr<const CompilerTarget::Storage>>
 CompilerTarget::Storage::create(
     std::optional<std::string> targetName, std::vector<Site> targetSites,
     std::optional<std::vector<Coupling>> targetCouplings,
     std::optional<std::vector<Operation>> targetOperations,
-    std::optional<DurationUnit> targetDurationUnit) {
+    std::optional<DurationUnit> targetDurationUnit,
+    std::vector<ClassicalControl> targetClassicalControl) {
   auto storage = std::make_shared<Storage>(
       std::move(targetName), std::move(targetSites), std::move(targetCouplings),
-      std::move(targetOperations), std::move(targetDurationUnit));
+      std::move(targetOperations), std::move(targetDurationUnit),
+      std::move(targetClassicalControl));
   if (auto error = storage->initialize()) {
     return std::move(error);
   }
@@ -402,6 +409,24 @@ llvm::Error CompilerTarget::Storage::initialize() {
   if (sites.empty()) {
     return invalidTarget("Compiler target must contain at least one site");
   }
+
+  for (const auto capability : classicalControl) {
+    switch (capability) {
+    case ClassicalControl::Conditional:
+    case ClassicalControl::Iteration:
+    case ClassicalControl::ConditionalLoop:
+    case ClassicalControl::MultiwayBranch:
+      break;
+    default:
+      return invalidTarget(
+          "Compiler target contains an unknown classical-control capability");
+    }
+  }
+  std::ranges::sort(classicalControl, [](const auto lhs, const auto rhs) {
+    return static_cast<uint8_t>(lhs) < static_cast<uint8_t>(rhs);
+  });
+  classicalControl.erase(std::ranges::unique(classicalControl).begin(),
+                         classicalControl.end());
 
   siteIds.reserve(sites.size());
   siteToVertex.reserve(sites.size());
@@ -578,12 +603,23 @@ CompilerTarget::create(const size_t numQubits,
                        std::optional<std::vector<Coupling>> couplings,
                        std::optional<std::vector<Operation>> operations,
                        std::optional<DurationUnit> durationUnit) {
+  return create(numQubits, std::move(couplings), std::move(operations),
+                std::move(durationUnit), {});
+}
+
+llvm::Expected<CompilerTarget>
+CompilerTarget::create(const size_t numQubits,
+                       std::optional<std::vector<Coupling>> couplings,
+                       std::optional<std::vector<Operation>> operations,
+                       std::optional<DurationUnit> durationUnit,
+                       std::vector<ClassicalControl> classicalControl) {
   auto sites = makeDenseSites(numQubits);
   if (!sites) {
     return sites.takeError();
   }
   return createImpl(std::nullopt, std::move(*sites), std::move(couplings),
-                    std::move(operations), std::move(durationUnit));
+                    std::move(operations), std::move(durationUnit),
+                    std::move(classicalControl));
 }
 
 llvm::Expected<CompilerTarget>
@@ -591,13 +627,24 @@ CompilerTarget::create(std::string name, const size_t numQubits,
                        std::optional<std::vector<Coupling>> couplings,
                        std::optional<std::vector<Operation>> operations,
                        std::optional<DurationUnit> durationUnit) {
+  return create(std::move(name), numQubits, std::move(couplings),
+                std::move(operations), std::move(durationUnit), {});
+}
+
+llvm::Expected<CompilerTarget>
+CompilerTarget::create(std::string name, const size_t numQubits,
+                       std::optional<std::vector<Coupling>> couplings,
+                       std::optional<std::vector<Operation>> operations,
+                       std::optional<DurationUnit> durationUnit,
+                       std::vector<ClassicalControl> classicalControl) {
   auto sites = makeDenseSites(numQubits);
   if (!sites) {
     return sites.takeError();
   }
   return createImpl(std::optional<std::string>(std::move(name)),
                     std::move(*sites), std::move(couplings),
-                    std::move(operations), std::move(durationUnit));
+                    std::move(operations), std::move(durationUnit),
+                    std::move(classicalControl));
 }
 
 llvm::Expected<CompilerTarget>
@@ -605,8 +652,19 @@ CompilerTarget::create(std::vector<Site> sites,
                        std::optional<std::vector<Coupling>> couplings,
                        std::optional<std::vector<Operation>> operations,
                        std::optional<DurationUnit> durationUnit) {
+  return create(std::move(sites), std::move(couplings), std::move(operations),
+                std::move(durationUnit), {});
+}
+
+llvm::Expected<CompilerTarget>
+CompilerTarget::create(std::vector<Site> sites,
+                       std::optional<std::vector<Coupling>> couplings,
+                       std::optional<std::vector<Operation>> operations,
+                       std::optional<DurationUnit> durationUnit,
+                       std::vector<ClassicalControl> classicalControl) {
   return createImpl(std::nullopt, std::move(sites), std::move(couplings),
-                    std::move(operations), std::move(durationUnit));
+                    std::move(operations), std::move(durationUnit),
+                    std::move(classicalControl));
 }
 
 llvm::Expected<CompilerTarget>
@@ -614,9 +672,20 @@ CompilerTarget::create(std::string name, std::vector<Site> sites,
                        std::optional<std::vector<Coupling>> couplings,
                        std::optional<std::vector<Operation>> operations,
                        std::optional<DurationUnit> durationUnit) {
+  return create(std::move(name), std::move(sites), std::move(couplings),
+                std::move(operations), std::move(durationUnit), {});
+}
+
+llvm::Expected<CompilerTarget>
+CompilerTarget::create(std::string name, std::vector<Site> sites,
+                       std::optional<std::vector<Coupling>> couplings,
+                       std::optional<std::vector<Operation>> operations,
+                       std::optional<DurationUnit> durationUnit,
+                       std::vector<ClassicalControl> classicalControl) {
   return createImpl(std::optional<std::string>(std::move(name)),
                     std::move(sites), std::move(couplings),
-                    std::move(operations), std::move(durationUnit));
+                    std::move(operations), std::move(durationUnit),
+                    std::move(classicalControl));
 }
 
 llvm::Expected<CompilerTarget>
@@ -624,10 +693,12 @@ CompilerTarget::createImpl(std::optional<std::string> name,
                            std::vector<Site> sites,
                            std::optional<std::vector<Coupling>> couplings,
                            std::optional<std::vector<Operation>> operations,
-                           std::optional<DurationUnit> durationUnit) {
+                           std::optional<DurationUnit> durationUnit,
+                           std::vector<ClassicalControl> classicalControl) {
   auto storage =
       Storage::create(std::move(name), std::move(sites), std::move(couplings),
-                      std::move(operations), std::move(durationUnit));
+                      std::move(operations), std::move(durationUnit),
+                      std::move(classicalControl));
   if (!storage) {
     return storage.takeError();
   }
@@ -742,6 +813,16 @@ CompilerTarget::operations() const noexcept {
     return {};
   }
   return *storage_->operations;
+}
+
+ArrayRef<CompilerTarget::ClassicalControl>
+CompilerTarget::classicalControl() const noexcept {
+  return storage_->classicalControl;
+}
+
+bool CompilerTarget::supportsClassicalControl(
+    const ClassicalControl capability) const noexcept {
+  return llvm::is_contained(storage_->classicalControl, capability);
 }
 
 bool CompilerTarget::supportsOperation(

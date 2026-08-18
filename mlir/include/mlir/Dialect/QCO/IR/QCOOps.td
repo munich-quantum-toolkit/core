@@ -1722,6 +1722,7 @@ def IndexSwitchOp
         }
     }];
 
+  let hasCanonicalizer = 1;
   let hasVerifier = 1;
 }
 

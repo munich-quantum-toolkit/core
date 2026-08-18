@@ -854,6 +854,393 @@ TEST_F(QCOTest, CanonicalizesRedundantClassicalIfResults) {
   EXPECT_EQ(returnOp.getOperand(2), returnOp.getOperand(1));
 }
 
+TEST_F(QCOTest, CanonicalizesConstantIndexTensorIfToScalarQubits) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main(%condition: i1) -> i1 {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %flag, %tensor1 = qco.if %condition
+            args(%arg0 = %tensor0) -> (i1, tensor<2x!qco.qubit>) {
+          %tensor2, %q0 = qtensor.extract %arg0[%c0]
+              : tensor<2x!qco.qubit>
+          %tensor3, %q1 = qtensor.extract %tensor2[%c1]
+              : tensor<2x!qco.qubit>
+          %q2, %q3 = qco.swap %q0, %q1
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          %tensor4 = qtensor.insert %q3 into %tensor3[%c1]
+              : tensor<2x!qco.qubit>
+          %tensor5 = qtensor.insert %q2 into %tensor4[%c0]
+              : tensor<2x!qco.qubit>
+          %true = arith.constant true
+          qco.yield %true, %tensor5 : i1, tensor<2x!qco.qubit>
+        } else args(%arg0 = %tensor0) {
+          %tensor2, %q0 = qtensor.extract %arg0[%c1]
+              : tensor<2x!qco.qubit>
+          %q1 = qco.z %q0 : !qco.qubit -> !qco.qubit
+          %tensor3 = qtensor.insert %q1 into %tensor2[%c1]
+              : tensor<2x!qco.qubit>
+          %false = arith.constant false
+          qco.yield %false, %tensor3 : i1, tensor<2x!qco.qubit>
+        } {test.marker = "preserved"}
+        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
+        return %flag : i1
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(module.get())));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  IfOp ifOp;
+  module->walk([&](IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getClassicalResults().size(), 1);
+  ASSERT_EQ(ifOp.getQubits().size(), 2);
+  ASSERT_EQ(ifOp.getLinearResults().size(), 2);
+  EXPECT_EQ(
+      cast<StringAttr>(ifOp->getDiscardableAttr("test.marker")).getValue(),
+      "preserved");
+  EXPECT_TRUE(llvm::all_of(ifOp.getQubits(), [](Value value) {
+    return isa<QubitType>(value.getType());
+  }));
+  EXPECT_TRUE(llvm::all_of(ifOp.getLinearResults(), [](Value value) {
+    return isa<QubitType>(value.getType());
+  }));
+
+  size_t nestedExtracts = 0;
+  size_t nestedInserts = 0;
+  size_t swaps = 0;
+  size_t zs = 0;
+  ifOp->walk([&](Operation* operation) {
+    nestedExtracts += isa<qtensor::ExtractOp>(operation);
+    nestedInserts += isa<qtensor::InsertOp>(operation);
+    swaps += isa<SWAPOp>(operation);
+    zs += isa<ZOp>(operation);
+  });
+  EXPECT_EQ(nestedExtracts, 0);
+  EXPECT_EQ(nestedInserts, 0);
+  EXPECT_EQ(swaps, 1);
+  EXPECT_EQ(zs, 1);
+
+  size_t extracts = 0;
+  size_t inserts = 0;
+  module->walk([&](qtensor::ExtractOp) { ++extracts; });
+  module->walk([&](qtensor::InsertOp) { ++inserts; });
+  EXPECT_EQ(extracts, 2);
+  EXPECT_EQ(inserts, 2);
+}
+
+TEST_F(QCOTest, ScalarizesOnlyAccessedTensorElements) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main(%condition: i1) {
+        %c1 = arith.constant 1 : index
+        %c3 = arith.constant 3 : index
+        %tensor0 = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+        %tensor1 = qco.if %condition
+            args(%arg0 = %tensor0) -> (tensor<3x!qco.qubit>) {
+          %tensor2, %q0 = qtensor.extract %arg0[%c1]
+              : tensor<3x!qco.qubit>
+          %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
+          %tensor3 = qtensor.insert %q1 into %tensor2[%c1]
+              : tensor<3x!qco.qubit>
+          qco.yield %tensor3 : tensor<3x!qco.qubit>
+        } else args(%arg0 = %tensor0) {
+          qco.yield %arg0 : tensor<3x!qco.qubit>
+        }
+        qtensor.dealloc %tensor1 : tensor<3x!qco.qubit>
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(module.get())));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  IfOp ifOp;
+  module->walk([&](IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getQubits().size(), 1);
+  ASSERT_EQ(ifOp.getLinearResults().size(), 1);
+  EXPECT_TRUE(llvm::all_of(ifOp.getQubits(), [](Value value) {
+    return isa<QubitType>(value.getType());
+  }));
+
+  const auto thenValues = ifOp.thenYield().getTargets();
+  const auto elseValues = ifOp.elseYield().getTargets();
+  ASSERT_EQ(thenValues.size(), 1);
+  ASSERT_EQ(elseValues.size(), 1);
+  EXPECT_TRUE(isa<XOp>(thenValues[0].getDefiningOp()));
+  EXPECT_EQ(elseValues[0], ifOp.elseBlock()->getArgument(0));
+
+  size_t extracts = 0;
+  size_t inserts = 0;
+  module->walk([&](qtensor::ExtractOp) { ++extracts; });
+  module->walk([&](qtensor::InsertOp) { ++inserts; });
+  EXPECT_EQ(extracts, 1);
+  EXPECT_EQ(inserts, 1);
+}
+
+TEST_F(QCOTest, ForwardsUnaccessedTensorAroundIf) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main(%condition: i1) {
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %q0 = qco.alloc : !qco.qubit
+        %tensor1, %q1 = qco.if %condition
+            args(%tensor = %tensor0, %q = %q0)
+            -> (tensor<2x!qco.qubit>, !qco.qubit) {
+          %q2 = qco.h %q : !qco.qubit -> !qco.qubit
+          qco.yield %tensor, %q2 : tensor<2x!qco.qubit>, !qco.qubit
+        } else args(%tensor = %tensor0, %q = %q0) {
+          qco.yield %tensor, %q : tensor<2x!qco.qubit>, !qco.qubit
+        }
+        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(module.get())));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  IfOp ifOp;
+  module->walk([&](IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getQubits().size(), 1);
+  ASSERT_EQ(ifOp.getLinearResults().size(), 1);
+  EXPECT_TRUE(isa<QubitType>(ifOp.getQubits()[0].getType()));
+  EXPECT_TRUE(isa<QubitType>(ifOp.getLinearResults()[0].getType()));
+
+  const auto thenValues = ifOp.thenYield().getTargets();
+  const auto elseValues = ifOp.elseYield().getTargets();
+  ASSERT_EQ(thenValues.size(), 1);
+  ASSERT_EQ(elseValues.size(), 1);
+  EXPECT_TRUE(isa<HOp>(thenValues[0].getDefiningOp()));
+  for (const auto [index, value] : llvm::enumerate(elseValues)) {
+    EXPECT_EQ(value, ifOp.elseBlock()->getArgument(index));
+  }
+}
+
+TEST_F(QCOTest, PreservesInterleavedResultOrderWhenScalarizingTensors) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main(%condition: i1) {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %left0 = qco.alloc : !qco.qubit
+        %tensorA0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+        %middle0 = qco.alloc : !qco.qubit
+        %tensorB0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+        %right0 = qco.alloc : !qco.qubit
+        %left1, %tensorA1, %middle1, %tensorB1, %right1 =
+            qco.if %condition
+                args(%left = %left0, %tensorA = %tensorA0,
+                     %middle = %middle0, %tensorB = %tensorB0,
+                     %right = %right0)
+                -> (!qco.qubit, tensor<1x!qco.qubit>, !qco.qubit,
+                    tensor<1x!qco.qubit>, !qco.qubit) {
+          %leftOut = qco.h %left : !qco.qubit -> !qco.qubit
+          %tensorA2, %tensorAQubit = qtensor.extract %tensorA[%c0]
+              : tensor<1x!qco.qubit>
+          %tensorAQubitOut = qco.x %tensorAQubit
+              : !qco.qubit -> !qco.qubit
+          %tensorA3 = qtensor.insert %tensorAQubitOut into %tensorA2[%c0]
+              : tensor<1x!qco.qubit>
+          %middleOut = qco.y %middle : !qco.qubit -> !qco.qubit
+          %tensorB2, %tensorBQubit = qtensor.extract %tensorB[%c0]
+              : tensor<1x!qco.qubit>
+          %tensorBQubitOut = qco.z %tensorBQubit
+              : !qco.qubit -> !qco.qubit
+          %tensorB3 = qtensor.insert %tensorBQubitOut into %tensorB2[%c0]
+              : tensor<1x!qco.qubit>
+          %rightOut = qco.sx %right : !qco.qubit -> !qco.qubit
+          qco.yield %leftOut, %tensorA3, %middleOut, %tensorB3, %rightOut
+              : !qco.qubit, tensor<1x!qco.qubit>, !qco.qubit,
+                tensor<1x!qco.qubit>, !qco.qubit
+        } else args(%left = %left0, %tensorA = %tensorA0,
+                    %middle = %middle0, %tensorB = %tensorB0,
+                    %right = %right0) {
+          qco.yield %left, %tensorA, %middle, %tensorB, %right
+              : !qco.qubit, tensor<1x!qco.qubit>, !qco.qubit,
+                tensor<1x!qco.qubit>, !qco.qubit
+        }
+        %left2 = qco.s %left1 : !qco.qubit -> !qco.qubit
+        %middle2 = qco.t %middle1 : !qco.qubit -> !qco.qubit
+        %right2 = qco.sdg %right1 : !qco.qubit -> !qco.qubit
+        qco.sink %left2 : !qco.qubit
+        qtensor.dealloc %tensorA1 : tensor<1x!qco.qubit>
+        qco.sink %middle2 : !qco.qubit
+        qtensor.dealloc %tensorB1 : tensor<1x!qco.qubit>
+        qco.sink %right2 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(module.get())));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  IfOp ifOp;
+  SOp postLeft;
+  TOp postMiddle;
+  SdgOp postRight;
+  SmallVector<Value> insertedScalars;
+  module->walk([&](IfOp candidate) { ifOp = candidate; });
+  module->walk([&](SOp candidate) { postLeft = candidate; });
+  module->walk([&](TOp candidate) { postMiddle = candidate; });
+  module->walk([&](SdgOp candidate) { postRight = candidate; });
+  module->walk([&](qtensor::InsertOp insert) {
+    insertedScalars.push_back(insert.getScalar());
+  });
+
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getQubits().size(), 5);
+  ASSERT_EQ(ifOp.getLinearResults().size(), 5);
+  EXPECT_TRUE(llvm::all_of(ifOp.getQubits(), [](Value value) {
+    return isa<QubitType>(value.getType());
+  }));
+  EXPECT_TRUE(llvm::all_of(ifOp.getLinearResults(), [](Value value) {
+    return isa<QubitType>(value.getType());
+  }));
+
+  ASSERT_TRUE(postLeft);
+  ASSERT_TRUE(postMiddle);
+  ASSERT_TRUE(postRight);
+  EXPECT_EQ(cast<UnitaryOpInterface>(postLeft.getOperation())
+                .getInputQubits()
+                .front(),
+            ifOp.getLinearResults()[0]);
+  EXPECT_EQ(cast<UnitaryOpInterface>(postMiddle.getOperation())
+                .getInputQubits()
+                .front(),
+            ifOp.getLinearResults()[1]);
+  EXPECT_EQ(cast<UnitaryOpInterface>(postRight.getOperation())
+                .getInputQubits()
+                .front(),
+            ifOp.getLinearResults()[2]);
+
+  ASSERT_EQ(insertedScalars.size(), 2);
+  EXPECT_TRUE(llvm::is_contained(insertedScalars, ifOp.getLinearResults()[3]));
+  EXPECT_TRUE(llvm::is_contained(insertedScalars, ifOp.getLinearResults()[4]));
+
+  const auto thenValues = ifOp.thenYield().getTargets();
+  ASSERT_EQ(thenValues.size(), 5);
+  EXPECT_TRUE(isa<HOp>(thenValues[0].getDefiningOp()));
+  EXPECT_TRUE(isa<YOp>(thenValues[1].getDefiningOp()));
+  EXPECT_TRUE(isa<SXOp>(thenValues[2].getDefiningOp()));
+  EXPECT_TRUE(isa<XOp>(thenValues[3].getDefiningOp()));
+  EXPECT_TRUE(isa<ZOp>(thenValues[4].getDefiningOp()));
+}
+
+TEST_F(QCOTest, LeavesDynamicIndexTensorIfUnchanged) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main(%condition: i1, %index: index) {
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1 = qco.if %condition
+            args(%arg0 = %tensor0) -> (tensor<2x!qco.qubit>) {
+          %tensor2, %q0 = qtensor.extract %arg0[%index]
+              : tensor<2x!qco.qubit>
+          %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
+          %tensor3 = qtensor.insert %q1 into %tensor2[%index]
+              : tensor<2x!qco.qubit>
+          qco.yield %tensor3 : tensor<2x!qco.qubit>
+        } else args(%arg0 = %tensor0) {
+          qco.yield %arg0 : tensor<2x!qco.qubit>
+        }
+        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(module.get())));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  IfOp ifOp;
+  module->walk([&](IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getQubits().size(), 1);
+  EXPECT_TRUE(isa<RankedTensorType>(ifOp.getQubits().front().getType()));
+  size_t nestedExtracts = 0;
+  size_t nestedInserts = 0;
+  ifOp->walk([&](Operation* operation) {
+    nestedExtracts += isa<qtensor::ExtractOp>(operation);
+    nestedInserts += isa<qtensor::InsertOp>(operation);
+  });
+  EXPECT_EQ(nestedExtracts, 1);
+  EXPECT_EQ(nestedInserts, 1);
+}
+
+TEST_F(QCOTest, LeavesDynamicShapeTensorIfUnchanged) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @main(%condition: i1, %size: index) {
+        %c0 = arith.constant 0 : index
+        %tensor0 = qtensor.alloc(%size) : tensor<?x!qco.qubit>
+        %tensor1 = qco.if %condition
+            args(%arg0 = %tensor0) -> (tensor<?x!qco.qubit>) {
+          %tensor2, %q0 = qtensor.extract %arg0[%c0]
+              : tensor<?x!qco.qubit>
+          %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
+          %tensor3 = qtensor.insert %q1 into %tensor2[%c0]
+              : tensor<?x!qco.qubit>
+          qco.yield %tensor3 : tensor<?x!qco.qubit>
+        } else args(%arg0 = %tensor0) {
+          qco.yield %arg0 : tensor<?x!qco.qubit>
+        }
+        qtensor.dealloc %tensor1 : tensor<?x!qco.qubit>
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(module.get())));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  IfOp ifOp;
+  module->walk([&](IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getQubits().size(), 1);
+  const auto tensorType =
+      dyn_cast<RankedTensorType>(ifOp.getQubits().front().getType());
+  ASSERT_TRUE(tensorType);
+  EXPECT_TRUE(tensorType.isDynamicDim(0));
+  size_t nestedExtracts = 0;
+  size_t nestedInserts = 0;
+  ifOp->walk([&](Operation* operation) {
+    nestedExtracts += isa<qtensor::ExtractOp>(operation);
+    nestedInserts += isa<qtensor::InsertOp>(operation);
+  });
+  EXPECT_EQ(nestedExtracts, 1);
+  EXPECT_EQ(nestedInserts, 1);
+}
+
 TEST_F(QCOTest, IndexSwitchParser) {
   // Test IndexSwitch parser
   const char* mlirCode = R"(
@@ -1304,6 +1691,151 @@ TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
   switchOp->setAttr(
       "cases", DenseI64ArrayAttr::get(context.get(), ArrayRef<int64_t>{0, 0}));
   EXPECT_TRUE(switchOp.verify().failed());
+}
+
+TEST_F(QCOTest, CanonicalizesConstantIndexSwitchToSelectedCaseOrDefault) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @selected_case() -> (i64, i1) {
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %number, %flag, %first, %second =
+            qco.index_switch %c1 -> (i64, i1, !qco.qubit, !qco.qubit)
+        case 0 args(%arg0 = %q0, %arg1 = %q1) {
+          %firstCase = qco.y %arg0 : !qco.qubit -> !qco.qubit
+          %secondCase = qco.y %arg1 : !qco.qubit -> !qco.qubit
+          %caseNumber = arith.constant 10 : i64
+          %caseFlag = arith.constant false
+          qco.yield %caseNumber, %caseFlag, %firstCase, %secondCase
+              : i64, i1, !qco.qubit, !qco.qubit
+        }
+        case 1 args(%arg0 = %q0, %arg1 = %q1) {
+          %firstCase = qco.h %arg0 : !qco.qubit -> !qco.qubit
+          %secondCase = qco.x %arg1 : !qco.qubit -> !qco.qubit
+          %caseNumber = arith.constant 11 : i64
+          %caseFlag = arith.constant true
+          qco.yield %caseNumber, %caseFlag, %firstCase, %secondCase
+              : i64, i1, !qco.qubit, !qco.qubit
+        }
+        default args(%arg0 = %q0, %arg1 = %q1) {
+          %firstDefault = qco.z %arg0 : !qco.qubit -> !qco.qubit
+          %secondDefault = qco.z %arg1 : !qco.qubit -> !qco.qubit
+          %defaultNumber = arith.constant 12 : i64
+          %defaultFlag = arith.constant false
+          qco.yield %defaultNumber, %defaultFlag, %firstDefault, %secondDefault
+              : i64, i1, !qco.qubit, !qco.qubit
+        }
+        %firstOut = qco.s %first : !qco.qubit -> !qco.qubit
+        %secondOut = qco.t %second : !qco.qubit -> !qco.qubit
+        qco.sink %firstOut : !qco.qubit
+        qco.sink %secondOut : !qco.qubit
+        return %number, %flag : i64, i1
+      }
+
+      func.func @selected_default() -> (i64, i1) {
+        %c7 = arith.constant 7 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %number, %flag, %first, %second =
+            qco.index_switch %c7 -> (i64, i1, !qco.qubit, !qco.qubit)
+        case 0 args(%arg0 = %q0, %arg1 = %q1) {
+          %firstCase = qco.h %arg0 : !qco.qubit -> !qco.qubit
+          %secondCase = qco.h %arg1 : !qco.qubit -> !qco.qubit
+          %caseNumber = arith.constant 20 : i64
+          %caseFlag = arith.constant true
+          qco.yield %caseNumber, %caseFlag, %firstCase, %secondCase
+              : i64, i1, !qco.qubit, !qco.qubit
+        }
+        case 1 args(%arg0 = %q0, %arg1 = %q1) {
+          %firstCase = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          %secondCase = qco.x %arg1 : !qco.qubit -> !qco.qubit
+          %caseNumber = arith.constant 21 : i64
+          %caseFlag = arith.constant true
+          qco.yield %caseNumber, %caseFlag, %firstCase, %secondCase
+              : i64, i1, !qco.qubit, !qco.qubit
+        }
+        default args(%arg0 = %q0, %arg1 = %q1) {
+          %firstDefault = qco.y %arg0 : !qco.qubit -> !qco.qubit
+          %secondDefault = qco.z %arg1 : !qco.qubit -> !qco.qubit
+          %defaultNumber = arith.constant 22 : i64
+          %defaultFlag = arith.constant false
+          qco.yield %defaultNumber, %defaultFlag, %firstDefault, %secondDefault
+              : i64, i1, !qco.qubit, !qco.qubit
+        }
+        %firstOut = qco.s %first : !qco.qubit -> !qco.qubit
+        %secondOut = qco.t %second : !qco.qubit -> !qco.qubit
+        qco.sink %firstOut : !qco.qubit
+        qco.sink %secondOut : !qco.qubit
+        return %number, %flag : i64, i1
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(module.get())));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool containsSwitch = false;
+  module->walk([&](IndexSwitchOp) { containsSwitch = true; });
+  EXPECT_FALSE(containsSwitch);
+
+  const auto checkSelectedRegion = [&](const StringRef functionName,
+                                       const int64_t expectedNumber,
+                                       const bool expectedFlag,
+                                       const StringRef expectedFirstGate,
+                                       const StringRef expectedSecondGate,
+                                       const StringRef forbiddenGate0,
+                                       const StringRef forbiddenGate1) {
+    auto func = module->lookupSymbol<func::FuncOp>(functionName);
+    ASSERT_TRUE(func);
+
+    SOp firstConsumer;
+    TOp secondConsumer;
+    size_t forbiddenGates = 0;
+    func->walk([&](Operation* operation) {
+      if (auto candidate = dyn_cast<SOp>(operation)) {
+        firstConsumer = candidate;
+      } else if (auto candidate = dyn_cast<TOp>(operation)) {
+        secondConsumer = candidate;
+      }
+      const auto name = operation->getName().getStringRef();
+      forbiddenGates += name == forbiddenGate0 || name == forbiddenGate1;
+    });
+    ASSERT_TRUE(firstConsumer);
+    ASSERT_TRUE(secondConsumer);
+    EXPECT_EQ(forbiddenGates, 0);
+
+    const auto firstInput =
+        cast<UnitaryOpInterface>(firstConsumer.getOperation())
+            .getInputQubits()
+            .front();
+    const auto secondInput =
+        cast<UnitaryOpInterface>(secondConsumer.getOperation())
+            .getInputQubits()
+            .front();
+    ASSERT_TRUE(firstInput.getDefiningOp());
+    ASSERT_TRUE(secondInput.getDefiningOp());
+    EXPECT_EQ(firstInput.getDefiningOp()->getName().getStringRef(),
+              expectedFirstGate);
+    EXPECT_EQ(secondInput.getDefiningOp()->getName().getStringRef(),
+              expectedSecondGate);
+
+    auto returnOp = cast<func::ReturnOp>(func.getBody().back().back());
+    APInt number;
+    APInt flag;
+    ASSERT_TRUE(matchPattern(returnOp.getOperand(0), m_ConstantInt(&number)));
+    ASSERT_TRUE(matchPattern(returnOp.getOperand(1), m_ConstantInt(&flag)));
+    EXPECT_EQ(number.getSExtValue(), expectedNumber);
+    EXPECT_EQ(flag.isOne(), expectedFlag);
+  };
+
+  checkSelectedRegion("selected_case", 11, true, "qco.h", "qco.x", "qco.y",
+                      "qco.z");
+  checkSelectedRegion("selected_default", 22, false, "qco.y", "qco.z", "qco.h",
+                      "qco.x");
 }
 
 /// \name QCO/SCF/IfOp.cpp

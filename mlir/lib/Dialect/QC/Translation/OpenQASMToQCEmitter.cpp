@@ -48,6 +48,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 #include <tuple>
 #include <type_traits>
@@ -124,7 +125,8 @@ public:
         bitValues(program.registers.size()),
         scalarValues(program.scalars.size()),
         expressionEmissionCosts(program.expressions.size()),
-        bitVectorExpressionEmissionCosts(program.bitVectorExpressions.size()) {
+        bitVectorExpressionEmissionCosts(program.bitVectorExpressions.size()),
+        canonicalConditions(program.conditions.size()) {
     context
         .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
                      func::FuncDialect, LLVM::LLVMDialect, math::MathDialect,
@@ -139,6 +141,7 @@ public:
         outputBitRegisters.at(output.symbol) = true;
       }
     }
+    initializeCanonicalConditions();
   }
 
   OwningOpRef<ModuleOp> emit() {
@@ -214,6 +217,11 @@ private:
   std::vector<Value> scalarValues;
   mutable std::vector<std::optional<size_t>> expressionEmissionCosts;
   mutable std::vector<std::optional<size_t>> bitVectorExpressionEmissionCosts;
+  // Canonical IDs exist only for pure, static classical-bit condition trees.
+  // Cached values are valid only in the current region and memory snapshot.
+  std::vector<std::optional<frontend::ConditionId>> canonicalConditions;
+  DenseMap<frontend::ConditionId, Value> conditionCache;
+  uint64_t classicalStateGeneration = 0;
   DenseMap<const oq3::frontend::GateDefinition*, bool>
       structuredGateCapabilities;
   llvm::StringMap<const oq3::frontend::GateDefinition*> customGateIndex;
@@ -228,6 +236,72 @@ private:
 
     bool operator==(const StateSlot&) const = default;
   };
+
+  struct ConditionCacheKey {
+    frontend::ConditionKind kind = frontend::ConditionKind::Literal;
+    bool literal = false;
+    uint32_t first = 0;
+    uint32_t second = 0;
+    uint64_t index = 0;
+
+    [[nodiscard]] bool operator<(const ConditionCacheKey& other) const {
+      return std::tie(kind, literal, first, second, index) <
+             std::tie(other.kind, other.literal, other.first, other.second,
+                      other.index);
+    }
+  };
+
+  void initializeCanonicalConditions() {
+    std::map<ConditionCacheKey, frontend::ConditionId> representatives;
+    for (const auto [id, condition] : llvm::enumerate(program.conditions)) {
+      std::optional<ConditionCacheKey> key;
+      switch (condition.kind) {
+      case frontend::ConditionKind::Literal:
+        key = ConditionCacheKey{.kind = condition.kind,
+                                .literal = condition.literal};
+        break;
+      case frontend::ConditionKind::Bit:
+        if (!condition.bit.dynamicIndex) {
+          key = ConditionCacheKey{.kind = condition.kind,
+                                  .first = condition.bit.reg,
+                                  .index = condition.bit.index};
+        }
+        break;
+      case frontend::ConditionKind::Not:
+        if (canonicalConditions.at(condition.lhs)) {
+          key = ConditionCacheKey{.kind = condition.kind,
+                                  .first =
+                                      *canonicalConditions.at(condition.lhs)};
+        }
+        break;
+      case frontend::ConditionKind::And:
+      case frontend::ConditionKind::Or:
+        if (canonicalConditions.at(condition.lhs) &&
+            canonicalConditions.at(condition.rhs)) {
+          key = ConditionCacheKey{
+              .kind = condition.kind,
+              .first = *canonicalConditions.at(condition.lhs),
+              .second = *canonicalConditions.at(condition.rhs)};
+        }
+        break;
+      case frontend::ConditionKind::Scalar:
+      case frontend::ConditionKind::Measurement:
+      case frontend::ConditionKind::Comparison:
+        break;
+      }
+      if (!key) {
+        continue;
+      }
+      const auto conditionId = static_cast<frontend::ConditionId>(id);
+      const auto it = representatives.try_emplace(*key, conditionId).first;
+      canonicalConditions[conditionId] = it->second;
+    }
+  }
+
+  void invalidateConditionCache() {
+    conditionCache.clear();
+    ++classicalStateGeneration;
+  }
 
   [[nodiscard]] Location
   getLocation(const frontend::SourceLocation& source) const {
@@ -1994,9 +2068,9 @@ private:
     return arith::CmpIOp::create(builder, predicate, lhs, rhs);
   }
 
-  [[nodiscard]] Value emitCondition(const frontend::ConditionId id,
-                                    ValueRange gateParameters,
-                                    ValueRange gateQubits) {
+  [[nodiscard]] Value emitConditionUncached(const frontend::ConditionId id,
+                                            ValueRange gateParameters,
+                                            ValueRange gateQubits) {
     const auto& condition = program.conditions.at(id);
     switch (condition.kind) {
     case frontend::ConditionKind::Literal:
@@ -2011,10 +2085,12 @@ private:
           [&](Value qubit) { return builder.measure(qubit); });
     case frontend::ConditionKind::Not:
       return arith::XOrIOp::create(
-          builder, emitCondition(condition.lhs, gateParameters, gateQubits),
+          builder,
+          emitConditionUncached(condition.lhs, gateParameters, gateQubits),
           builder.boolConstant(true));
     case frontend::ConditionKind::And: {
-      auto lhs = emitCondition(condition.lhs, gateParameters, gateQubits);
+      auto lhs =
+          emitConditionUncached(condition.lhs, gateParameters, gateQubits);
       auto ifOp = scf::IfOp::create(builder, builder.getI1Type(), lhs, true);
       OpBuilder::InsertionGuard guard(builder);
       auto& thenBlock = ifOp.getThenRegion().front();
@@ -2023,7 +2099,8 @@ private:
       }
       builder.setInsertionPointToEnd(&thenBlock);
       scf::YieldOp::create(
-          builder, emitCondition(condition.rhs, gateParameters, gateQubits));
+          builder,
+          emitConditionUncached(condition.rhs, gateParameters, gateQubits));
       auto& elseBlock = ifOp.getElseRegion().front();
       if (!elseBlock.empty()) {
         elseBlock.back().erase();
@@ -2033,7 +2110,8 @@ private:
       return ifOp.getResult(0);
     }
     case frontend::ConditionKind::Or: {
-      auto lhs = emitCondition(condition.lhs, gateParameters, gateQubits);
+      auto lhs =
+          emitConditionUncached(condition.lhs, gateParameters, gateQubits);
       auto ifOp = scf::IfOp::create(builder, builder.getI1Type(), lhs, true);
       OpBuilder::InsertionGuard guard(builder);
       auto& thenBlock = ifOp.getThenRegion().front();
@@ -2048,13 +2126,33 @@ private:
       }
       builder.setInsertionPointToEnd(&elseBlock);
       scf::YieldOp::create(
-          builder, emitCondition(condition.rhs, gateParameters, gateQubits));
+          builder,
+          emitConditionUncached(condition.rhs, gateParameters, gateQubits));
       return ifOp.getResult(0);
     }
     case frontend::ConditionKind::Comparison:
       return emitComparison(condition, gateParameters);
     }
     llvm_unreachable("unknown condition kind");
+  }
+
+  [[nodiscard]] Value emitCondition(const frontend::ConditionId id,
+                                    ValueRange gateParameters,
+                                    ValueRange gateQubits) {
+    // Cache only complete statement conditions. Short-circuit operands can be
+    // defined inside an scf.if region and cannot be reused in the parent block.
+    const auto canonical = canonicalConditions.at(id);
+    if (canonical) {
+      if (const auto cached = conditionCache.find(*canonical);
+          cached != conditionCache.end()) {
+        return cached->second;
+      }
+    }
+    auto value = emitConditionUncached(id, gateParameters, gateQubits);
+    if (canonical) {
+      conditionCache.try_emplace(*canonical, value);
+    }
+    return value;
   }
 
   static constexpr uint64_t SCALAR_STATE_MASK = uint64_t{1} << 63U;
@@ -2290,6 +2388,7 @@ private:
     } else if (statement.conditionInitializer) {
       value = emitCondition(*statement.conditionInitializer, {}, gateQubits);
     }
+    invalidateConditionCache();
     scalarValues.at(statement.scalar) = value;
   }
 
@@ -2297,12 +2396,14 @@ private:
   emitScalarAssignment(const frontend::ScalarAssignmentStatement& statement,
                        ValueRange gateQubits) {
     if (statement.value) {
-      scalarValues.at(statement.scalar) =
-          emitExpression(builder, *statement.value, {});
+      auto value = emitExpression(builder, *statement.value, {});
+      invalidateConditionCache();
+      scalarValues.at(statement.scalar) = value;
       return;
     }
-    scalarValues.at(statement.scalar) =
-        emitCondition(*statement.condition, {}, gateQubits);
+    auto value = emitCondition(*statement.condition, {}, gateQubits);
+    invalidateConditionCache();
+    scalarValues.at(statement.scalar) = value;
   }
 
   void emitDeclaration(const frontend::DeclarationStatement& statement) {
@@ -2335,6 +2436,7 @@ private:
       classicalRegisters[statement.reg] = builder.allocClassicalBitRegister(
           static_cast<int64_t>(declaration.width), declaration.name);
     }
+    invalidateConditionCache();
     bitValues[statement.reg].resize(declaration.width);
     if (program.openQASM2) {
       auto zero = builder.boolConstant(false);
@@ -2347,6 +2449,7 @@ private:
   }
 
   void assignBit(const frontend::BitReference& target, Value value) {
+    invalidateConditionCache();
     const auto reg = classicalRegisters[target.reg];
     if (!target.dynamicIndex) {
       bitValues[target.reg][target.index] = value;
@@ -2387,6 +2490,7 @@ private:
       const frontend::BitVectorAssignmentStatement& assignment) {
     auto value = emitBitVectorExpression(builder, assignment.value);
     const auto bits = ensureBits(builder, value);
+    invalidateConditionCache();
     bitValues[assignment.target].assign(bits.begin(), bits.end());
     const auto reg = classicalRegisters[assignment.target];
     if (!reg) {
@@ -2444,6 +2548,8 @@ private:
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
     const auto savedBits = bitValues;
+    const auto savedConditionCache = conditionCache;
+    const auto savedClassicalStateGeneration = classicalStateGeneration;
     const auto* thenStatements = &conditional.thenStatements;
     const auto* elseStatements = &conditional.elseStatements;
     if (slots.empty() && thenStatements->empty() && !elseStatements->empty()) {
@@ -2459,6 +2565,7 @@ private:
                                 ArrayRef<frontend::StatementId> statements) {
       scalarValues = savedScalars;
       bitValues = savedBits;
+      conditionCache.clear();
       if (!block.empty()) {
         block.back().erase();
       }
@@ -2475,6 +2582,11 @@ private:
     scalarValues = savedScalars;
     bitValues = savedBits;
     assignState(slots, ifOp.getResults());
+    if (classicalStateGeneration == savedClassicalStateGeneration) {
+      conditionCache = savedConditionCache;
+    } else {
+      conditionCache.clear();
+    }
   }
 
   [[nodiscard]] Value extendRangeValue(Value value, Type targetType,
@@ -2541,6 +2653,8 @@ private:
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
     const auto savedBits = bitValues;
+    const auto savedConditionCache = conditionCache;
+    const auto savedClassicalStateGeneration = classicalStateGeneration;
 
     auto start = emitExpression(builder, loop.start, {});
     auto step = emitExpression(builder, loop.step, {});
@@ -2570,6 +2684,7 @@ private:
         builder.setInsertionPointToEnd(body);
         scalarValues = savedScalars;
         bitValues = savedBits;
+        conditionCache.clear();
         assignState(slots, forOp.getRegionIterArgs());
         auto counter = arith::IndexCastOp::create(builder, builder.getI64Type(),
                                                   forOp.getInductionVar());
@@ -2586,6 +2701,11 @@ private:
       scalarValues = savedScalars;
       bitValues = savedBits;
       assignState(slots, forOp.getResults());
+      if (classicalStateGeneration == savedClassicalStateGeneration) {
+        conditionCache = savedConditionCache;
+      } else {
+        conditionCache.clear();
+      }
       return;
     }
 
@@ -2621,6 +2741,7 @@ private:
                                     nested.getInsertionPoint());
           scalarValues = savedScalars;
           bitValues = savedBits;
+          conditionCache.clear();
           assignState(slots, arguments.drop_front());
           scalarValues.at(loop.inductionVariable) = arith::TruncIOp::create(
               builder, builder.getI64Type(), arguments.front());
@@ -2635,6 +2756,11 @@ private:
     scalarValues = savedScalars;
     bitValues = savedBits;
     assignState(slots, whileOp.getResults().drop_front());
+    if (classicalStateGeneration == savedClassicalStateGeneration) {
+      conditionCache = savedConditionCache;
+    } else {
+      conditionCache.clear();
+    }
   }
 
   void emitWhile(const frontend::WhileStatement& loop,
@@ -2643,6 +2769,8 @@ private:
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
     const auto savedBits = bitValues;
+    const auto savedConditionCache = conditionCache;
+    const auto savedClassicalStateGeneration = classicalStateGeneration;
     auto whileOp = scf::WhileOp::create(
         builder, ValueRange(initialValues).getTypes(), initialValues,
         [&](OpBuilder& nested, Location, ValueRange arguments) {
@@ -2651,6 +2779,7 @@ private:
                                     nested.getInsertionPoint());
           scalarValues = savedScalars;
           bitValues = savedBits;
+          conditionCache.clear();
           assignState(slots, arguments);
           auto condition =
               emitCondition(loop.condition, gateParameters, gateQubits);
@@ -2662,6 +2791,7 @@ private:
                                     nested.getInsertionPoint());
           scalarValues = savedScalars;
           bitValues = savedBits;
+          conditionCache.clear();
           assignState(slots, arguments);
           for (const auto statement : loop.body) {
             emitStatement(statement, gateParameters, gateQubits);
@@ -2671,6 +2801,11 @@ private:
     scalarValues = savedScalars;
     bitValues = savedBits;
     assignState(slots, whileOp.getResults());
+    if (classicalStateGeneration == savedClassicalStateGeneration) {
+      conditionCache = savedConditionCache;
+    } else {
+      conditionCache.clear();
+    }
   }
 
   void emitSwitch(const frontend::SwitchStatement& switchStatement,
@@ -2686,6 +2821,8 @@ private:
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
     const auto savedBits = bitValues;
+    const auto savedConditionCache = conditionCache;
+    const auto savedClassicalStateGeneration = classicalStateGeneration;
 
     auto control = emitExpression(builder, switchStatement.control, {});
     auto selector =
@@ -2700,6 +2837,7 @@ private:
           builder.setInsertionPointToEnd(&block);
           scalarValues = savedScalars;
           bitValues = savedBits;
+          conditionCache.clear();
           for (const auto statement : statements) {
             emitStatement(statement, gateParameters, gateQubits);
           }
@@ -2715,6 +2853,11 @@ private:
     scalarValues = savedScalars;
     bitValues = savedBits;
     assignState(slots, switchOp.getResults());
+    if (classicalStateGeneration == savedClassicalStateGeneration) {
+      conditionCache = savedConditionCache;
+    } else {
+      conditionCache.clear();
+    }
   }
 };
 

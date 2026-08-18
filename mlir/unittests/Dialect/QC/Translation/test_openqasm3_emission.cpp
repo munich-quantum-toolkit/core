@@ -150,7 +150,7 @@ TEST(OpenQASM3EmissionTest, RenamesOutputsThatCollideWithStandardGates) {
       return %bits : memref<1xi1>
     }
   })mlir";
-  DialectRegistry registry = emissionDialects();
+  const DialectRegistry registry = emissionDialects();
   MLIRContext context(registry);
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
@@ -204,6 +204,238 @@ switch (selector) {
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
       *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
       << *emitted;
+}
+
+TEST(OpenQASM3EmissionTest,
+     CompactsQASM2RegisterConditionsAndMeasurementStores) {
+  struct Fixture {
+    size_t width{};
+    llvm::StringLiteral expected{""};
+  };
+  constexpr std::array fixtures{
+      Fixture{.width = 1, .expected = "1"},
+      Fixture{.width = 64, .expected = "9223372036854775808"},
+      Fixture{.width = 151,
+              .expected = "1427247692705959881058285969449495136382746624"},
+      Fixture{.width = 301,
+              .expected = "2037035976334486086268445688409378161051468393665"
+                          "936250636140449354381299763336706183397376"},
+  };
+
+  for (const auto& fixture : fixtures) {
+    SCOPED_TRACE(fixture.width);
+    const auto lastBit = fixture.width - 1;
+    const auto source =
+        "OPENQASM 2.0;\ninclude \"qelib1.inc\";\nqreg q[1];\ncreg c[" +
+        std::to_string(fixture.width) + "];\nmeasure q[0] -> c[" +
+        std::to_string(lastBit) + "];\nif(c==" + fixture.expected.str() +
+        ") x q[0];\n";
+    MLIRContext context;
+    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
+
+    auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+    ASSERT_TRUE(succeeded(emitted));
+    EXPECT_NE(
+        emitted->find("c[" + std::to_string(lastBit) + "] = measure q[0];"),
+        std::string::npos);
+    EXPECT_EQ(emitted->find("bit _mqt_b"), std::string::npos);
+    EXPECT_NE(emitted->find("if (c == " + fixture.expected.str() + ")"),
+              std::string::npos);
+    EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+        *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+        << *emitted;
+    EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context)) << *emitted;
+  }
+}
+
+TEST(OpenQASM3EmissionTest,
+     CompactsRepeatedRegisterConditionsAcrossQuantumOperations) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> memref<1xi1> {
+    %bits = memref.alloc() {mqt.classical_register_name = "c"}
+        : memref<1xi1>
+    %control = qc.alloc : !qc.qubit
+    %target = qc.alloc : !qc.qubit
+    %zero = arith.constant 0 : index
+    %true = arith.constant true
+    %bit = memref.load %bits[%zero] : memref<1xi1>
+    %firstCondition = arith.xori %bit, %true : i1
+    scf.if %firstCondition {
+      qc.ctrl(%control) targets(%arg = %target) {
+        qc.x %arg : !qc.qubit
+        qc.yield
+      } : {!qc.qubit}, {!qc.qubit}
+    }
+    qc.barrier %control, %target : !qc.qubit, !qc.qubit
+    %secondCondition = arith.xori %bit, %true : i1
+    scf.if %secondCondition {
+      qc.h %control : !qc.qubit
+    }
+    qc.dealloc %control : !qc.qubit
+    qc.dealloc %target : !qc.qubit
+    return %bits : memref<1xi1>
+  }
+}
+)mlir";
+  const DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  const auto firstCondition = emitted->find("if (c == 0)");
+  ASSERT_NE(firstCondition, std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("if (c == 0)", firstCondition + 1),
+            std::string::npos);
+  EXPECT_NE(emitted->find("ctrl @ x "), std::string::npos);
+  EXPECT_NE(emitted->find("barrier "), std::string::npos);
+  EXPECT_NE(emitted->find("h "), std::string::npos);
+}
+
+TEST(OpenQASM3EmissionTest, CompactsSharedRegisterConditionExpressionTrees) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> memref<2xi1> {
+    %bits = memref.alloc() {mqt.classical_register_name = "c"}
+        : memref<2xi1>
+    %qubit = qc.alloc : !qc.qubit
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    %false = arith.constant false
+    %true = arith.constant true
+    %first = memref.load %bits[%zero] : memref<2xi1>
+    %condition = scf.if %first -> i1 {
+      scf.yield %false : i1
+    } else {
+      %second = memref.load %bits[%one] : memref<2xi1>
+      %inverted = arith.xori %second, %true : i1
+      scf.yield %inverted : i1
+    }
+    scf.if %condition {
+      qc.x %qubit : !qc.qubit
+    }
+    qc.barrier %qubit : !qc.qubit
+    scf.if %condition {
+      qc.h %qubit : !qc.qubit
+    }
+    qc.dealloc %qubit : !qc.qubit
+    return %bits : memref<2xi1>
+  }
+}
+)mlir";
+  const DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  const auto firstCondition = emitted->find("if (c == 0)");
+  ASSERT_NE(firstCondition, std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("if (c == 0)", firstCondition + 1),
+            std::string::npos);
+}
+
+TEST(OpenQASM3EmissionTest, ElidesDeadRegisterConditionExpressionTrees) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> memref<2xi1> {
+    %bits = memref.alloc() {mqt.classical_register_name = "c"}
+        : memref<2xi1>
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    %false = arith.constant false
+    %first = memref.load %bits[%zero] : memref<2xi1>
+    %unused = scf.if %first -> i1 {
+      scf.yield %false : i1
+    } else {
+      %second = memref.load %bits[%one] : memref<2xi1>
+      scf.yield %second : i1
+    }
+    return %bits : memref<2xi1>
+  }
+}
+)mlir";
+  const DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_EQ(emitted->find("if ("), std::string::npos) << *emitted;
+}
+
+TEST(OpenQASM3EmissionTest, DoesNotFuseMeasurementsWithMultipleUses) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> (memref<1xi1>, i1) {
+    %bits = memref.alloc() {mqt.classical_register_name = "bits"}
+        : memref<1xi1>
+    %qubit = qc.alloc : !qc.qubit
+    %zero = arith.constant 0 : index
+    %measured = qc.measure %qubit : !qc.qubit -> i1
+    memref.store %measured, %bits[%zero] : memref<1xi1>
+    qc.dealloc %qubit : !qc.qubit
+    return %bits, %measured : memref<1xi1>, i1
+  }
+}
+)mlir";
+  const DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("bit _mqt_b0 = measure"), std::string::npos);
+  EXPECT_EQ(emitted->find("bits[0] = measure"), std::string::npos);
+}
+
+TEST(OpenQASM3EmissionTest,
+     RejectsRegisterEqualityWhenTheRegisterChangesBeforeUse) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() {
+    %bits = memref.alloc() : memref<2xi1>
+    %qubit = qc.alloc : !qc.qubit
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    %false = arith.constant false
+    %true = arith.constant true
+    memref.store %false, %bits[%zero] : memref<2xi1>
+    memref.store %true, %bits[%one] : memref<2xi1>
+    %first = memref.load %bits[%zero] : memref<2xi1>
+    %condition = scf.if %first -> i1 {
+      scf.yield %false : i1
+    } else {
+      %second = memref.load %bits[%one] : memref<2xi1>
+      scf.yield %second : i1
+    }
+    memref.store %false, %bits[%one] : memref<2xi1>
+    scf.if %condition {
+      qc.x %qubit : !qc.qubit
+    }
+    qc.dealloc %qubit : !qc.qubit
+    return
+  }
+}
+)mlir";
+  const DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
 }
 
 TEST(OpenQASM3EmissionTest, EmitsNativeIndexSwitch) {
@@ -810,6 +1042,50 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
             scf.yield %one : i64
           }
           return %value : i64
+        }
+      })mlir"},
+      Fixture{.name = "partial-register-equality", .source = R"mlir(module {
+        func.func @main() {
+          %bits = memref.alloc() : memref<3xi1>
+          %qubit = qc.alloc : !qc.qubit
+          %zero = arith.constant 0 : index
+          %one = arith.constant 1 : index
+          %false = arith.constant false
+          %first = memref.load %bits[%zero] : memref<3xi1>
+          %second = memref.load %bits[%one] : memref<3xi1>
+          %condition = scf.if %first -> i1 {
+            scf.yield %second : i1
+          } else {
+            scf.yield %false : i1
+          }
+          scf.if %condition {
+            qc.x %qubit : !qc.qubit
+          }
+          qc.dealloc %qubit : !qc.qubit
+          return
+        }
+      })mlir"},
+      Fixture{.name = "side-effecting-register-equality",
+              .source = R"mlir(module {
+        func.func @main() {
+          %bits = memref.alloc() : memref<2xi1>
+          %qubit = qc.alloc : !qc.qubit
+          %zero = arith.constant 0 : index
+          %one = arith.constant 1 : index
+          %false = arith.constant false
+          %first = memref.load %bits[%zero] : memref<2xi1>
+          %second = memref.load %bits[%one] : memref<2xi1>
+          %condition = scf.if %first -> i1 {
+            memref.store %false, %bits[%one] : memref<2xi1>
+            scf.yield %second : i1
+          } else {
+            scf.yield %false : i1
+          }
+          scf.if %condition {
+            qc.x %qubit : !qc.qubit
+          }
+          qc.dealloc %qubit : !qc.qubit
+          return
         }
       })mlir"},
       Fixture{.name = "for-iterated-state", .source = R"mlir(module {

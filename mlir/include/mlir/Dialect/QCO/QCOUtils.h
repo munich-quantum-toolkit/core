@@ -54,6 +54,17 @@ inline bool checkDeadGate(Operation* op) {
          isa<QubitType>(tensorType.getElementType());
 }
 
+/**
+ * @brief Check whether every tensor input of @p op can be converted to scalar
+ * qubit threading by the qco.if canonicalization.
+ *
+ * @details The accepted tensor form is a statically shaped rank-one qubit
+ * tensor whose branches contain complete, distinct constant-index
+ * extract/insert chains. A tensor passed through untouched is accepted and is
+ * forwarded around the if by the canonicalization.
+ */
+[[nodiscard]] bool hasOnlyScalarizableTensorInputs(IfOp op);
+
 /// Maximum number of modifier targets supported by @ref
 /// composeBodyMatrix.
 inline constexpr size_t kMaxModifierTargetQubits = 10;

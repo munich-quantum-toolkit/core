@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add explicit runtime classical-control capabilities to compiler targets,
+  preserve structured control through mapping, and import and export Qiskit
+  control-flow operations ([#2162]) ([**@simon1hofmann**])
 - ✨ Let a package register a program serializer for a program format through
   the `mqt.core.qiskit.program_serializers` entry point group ([#2114])
   ([**@marcelwa**])
@@ -814,6 +817,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2162]: https://github.com/munich-quantum-toolkit/core/pull/2162
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
 [#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
