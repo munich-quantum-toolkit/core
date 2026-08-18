@@ -165,6 +165,11 @@ releases may include breaking changes.
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**],
   [**@denialhaag**])
 
+### Fixed
+
+- 🐛 Distinguish scalar OpenQASM qubits from one-element qubit registers and
+  reject indexing scalar qubits ([#2157]) ([**@DRovara**], [**@burgholzer**])
+
 ### Removed
 
 - 💥 Remove batch job submission from the QDMI client. `Device::submitJob` now
@@ -807,6 +812,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
 [#2140]: https://github.com/munich-quantum-toolkit/core/pull/2140
 [#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
