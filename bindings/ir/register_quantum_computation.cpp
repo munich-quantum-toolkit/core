@@ -111,7 +111,7 @@ Returns:
                  R"pb(The number of ancilla qubits in the quantum computation.
 
 Note:
-    Ancilla qubits are qubits that always start in a fixed state (usually :math:`|0\\rangle`).)pb");
+    Ancilla qubits are qubits that always start in a fixed state (usually :math:`|0\rangle`).)pb");
 
   qc.def_prop_ro("num_garbage_qubits",
                  &qc::QuantumComputation::getNgarbageQubits,
