@@ -12,6 +12,11 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Let a package register a program serializer for a program format through
+  the `mqt.core.qiskit.program_serializers` entry point group ([#2114])
+  ([**@marcelwa**])
+- ✨ Add `mqt.core.qdmi.is_binary_program_format`, which states whether a
+  program format requires exact-byte submission ([#2114]) ([**@marcelwa**])
 - ✨ Add SpecAudits, a method and probe script for auditing tests that pin
   behavior the project never specified ([#2124]) ([**@marcelwa**])
 - ✨ Extract the existing QCO dead-gate elimination patterns from
@@ -159,6 +164,8 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove the IQM JSON converter `qiskit_to_iqm_json` and the `MoveGate` from
+  the Qiskit plugin, which [QDMI-on-IQM] now owns ([#2114]) ([**@marcelwa**])
 - 💥 Remove the unused decision-diagram approximation algorithm, including the
   `dd/Approximation.hpp` header, `dd::ApproximationMetadata`, and
   `dd::approximate`. No replacement is provided ([#2154]) ([**@burgholzer**])
@@ -807,6 +814,7 @@ for previous changelogs._
 [#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2115]: https://github.com/munich-quantum-toolkit/core/pull/2115
+[#2114]: https://github.com/munich-quantum-toolkit/core/pull/2114
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2111]: https://github.com/munich-quantum-toolkit/core/pull/2111
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
@@ -1190,6 +1198,7 @@ for previous changelogs._
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Common Changelog]: https://common-changelog.org
+[QDMI-on-IQM]: https://github.com/iqm-finland/QDMI-on-IQM
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
 [munich-quantum-toolkit]: https://github.com/munich-quantum-toolkit
 [PEP 639]: https://peps.python.org/pep-0639/

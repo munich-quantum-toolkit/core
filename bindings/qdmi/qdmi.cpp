@@ -223,6 +223,21 @@ when the custom slot is unsupported.)pb");
       .value("CUSTOM4", QDMI_PROGRAM_FORMAT_CUSTOM4)
       .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5);
 
+  qdmiModule.def("is_binary_program_format", &qdmi::isBinaryProgramFormat,
+                 "program_format"_a,
+                 R"pb(Returns whether a program format carries a binary payload.
+
+``QIR_BASE_MODULE``, ``QIR_ADAPTIVE_MODULE``, and ``QPY`` hold bitcode or
+another serialized object. Such a payload may contain a null byte and is not
+text, so the device must receive it as exact bytes. Pass ``bytes`` to
+:meth:`Device.submit_job` for these formats and ``str`` for the others.
+
+Args:
+    program_format: The program format to classify.
+
+Returns:
+    True if the format requires exact-byte submission.)pb");
+
   nb::enum_<qdmi::CustomProperty>(
       qdmiModule, "CustomProperty",
       "An implementation-defined custom property or result slot.")

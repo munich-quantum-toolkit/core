@@ -38,13 +38,8 @@
 
 namespace qdmi {
 namespace {
-[[nodiscard]] constexpr bool
-isBinaryProgramFormat(const QDMI_Program_Format format) noexcept {
-  return format == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
-         format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE ||
-         format == QDMI_PROGRAM_FORMAT_QPY;
-}
-
+/// The generic program payload is a byte blob. A batch job's program is a list
+/// of job handles instead, which `submitJob` cannot express.
 [[nodiscard]] constexpr bool
 hasNoGenericProgramPayload(const QDMI_Program_Format format) noexcept {
   return format == QDMI_PROGRAM_FORMAT_CALIBRATION ||

@@ -6,6 +6,73 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Program serializers for the Qiskit backend
+
+The Qiskit backend no longer decides in its own code how to turn a circuit into
+a program. It takes every program format from a registered _program serializer_,
+and MQT Core registers its own OpenQASM 2 and OpenQASM 3 serializers the same
+way as everyone else.
+
+A serializer takes the circuit and the backend. It returns `str` for a text
+format and `bytes` for a binary format;
+{py:func}`~mqt.core.qdmi.is_binary_program_format` states which kind a format
+carries. Register one at run time:
+
+```python
+import io
+
+from qiskit import qpy
+
+from mqt.core.plugins.qiskit import register_program_serializer
+from mqt.core.qdmi import ProgramFormat
+
+
+def my_qpy_serializer(circuit, backend) -> bytes:
+    buffer = io.BytesIO()
+    qpy.dump(circuit, buffer)
+    return buffer.getvalue()
+
+
+register_program_serializer(ProgramFormat.QPY, my_qpy_serializer)
+```
+
+A package that owns a device advertises its serializer through the
+`mqt.core.qiskit.program_serializers` entry point group instead, so MQT Core
+finds it without importing the package:
+
+```toml
+[project.entry-points."mqt.core.qiskit.program_serializers"]
+IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
+```
+
+`mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` states which
+format the backend picks when a device accepts several. Pass `replace=True` to
+`register_program_serializer` to take over a format that already has a
+serializer, including OpenQASM 2 and OpenQASM 3.
+
+A backend subclass that must represent a device-native operation outside
+Qiskit's standard gate library sets `_EXTRA_GATES`:
+
+```python
+class MyBackend(QDMIBackend):
+    _EXTRA_GATES = {"move": MoveGate()}
+```
+
+### IQM JSON serialization moved to QDMI-on-IQM
+
+MQT Core no longer provides `qiskit_to_iqm_json` or `MoveGate`.
+[QDMI-on-IQM](https://github.com/iqm-finland/QDMI-on-IQM) owns both. Import them
+from `iqm.qdmi` instead:
+
+```python
+from iqm.qdmi.serializers import qiskit_to_iqm_json
+from iqm.qdmi.gates import MoveGate
+```
+
+Installing `iqm-qdmi` is enough to keep submitting IQM JSON. The package
+advertises its serializer through the entry point group described above, so a
+backend over an IQM device needs no code change.
+
 ### Removal of DD approximation support
 
 MQT Core no longer provides the decision-diagram approximation algorithm. The

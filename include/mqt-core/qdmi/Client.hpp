@@ -229,6 +229,23 @@ toJobResult(const CustomProperty property) {
 } // namespace detail
 
 /**
+ * @brief Returns whether a program format carries a binary payload.
+ * @details `QDMI_PROGRAM_FORMAT_QIRBASEMODULE`,
+ * `QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE`, and `QDMI_PROGRAM_FORMAT_QPY` hold
+ * bitcode or another serialized object. Such a payload can contain a null byte
+ * and is not text, so it must be submitted as exact bytes. The string overload
+ * of `Device::submitJob` rejects these formats.
+ * @param format The program format to classify.
+ * @return True if the format requires exact-byte submission.
+ */
+[[nodiscard]] constexpr bool
+isBinaryProgramFormat(const QDMI_Program_Format format) noexcept {
+  return format == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
+         format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE ||
+         format == QDMI_PROGRAM_FORMAT_QPY;
+}
+
+/**
  * @brief Concept for ranges that are contiguous in memory and can be
  * constructed with a size.
  * @details This concept is used to constrain the template parameter of the
