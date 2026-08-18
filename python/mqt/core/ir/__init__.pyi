@@ -150,9 +150,9 @@ class QuantumComputation(MutableSequence[operations.Operation]):
 
     @property
     def num_measured_qubits(self) -> int:
-        r"""The number of qubits that are measured in the quantum computation.
+        """The number of qubits that are measured in the quantum computation.
 
-        Computed as :math:`| \text{qubits} | - | \text{garbage} |`.
+        Computed as :math:`| \\text{qubits} | - | \\text{garbage} |`.
         """
 
     @property

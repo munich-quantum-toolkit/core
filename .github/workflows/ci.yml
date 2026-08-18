@@ -115,16 +115,8 @@ jobs:
       build-project: true
       files-changed-only: true
       setup-python: true
-<<<<<<< HEAD
-      install-pkgs: "nanobind==2.14.0"
-      cpp-linter-extra-args: "-std=c++20"
-||||||| parent of 4f927d75 (⬆️🐍 Update dependency nanobind to ~=2.15.0 (#2141))
-      install-pkgs: "nanobind==2.14.0"
-      cpp-linter-extra-args: "-std=c++20 -Wunused-template"
-=======
       install-pkgs: "nanobind==2.15.0"
-      cpp-linter-extra-args: "-std=c++20 -Wunused-template"
->>>>>>> 4f927d75 (⬆️🐍 Update dependency nanobind to ~=2.15.0 (#2141))
+      cpp-linter-extra-args: "-std=c++20"
       # Vendored third-party headers are checked upstream and are not maintained
       # according to MQT Core's clang-tidy configuration.
       cpp-linter-ignore-extra: "vendor/**"

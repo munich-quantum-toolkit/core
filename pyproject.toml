@@ -231,15 +231,7 @@ known-first-party = ["mqt.core"]
 "test/slurm/**" = ["DOC201", "DOC501", "INP001"]
 "docs/**" = ["T20", "INP001"]
 "noxfile.py" = ["T20", "TID251", "PLC0415"]
-<<<<<<< HEAD
-"*.pyi" = ["D418", "E501", "PYI021"]
-||||||| parent of 4f927d75 (⬆️🐍 Update dependency nanobind to ~=2.15.0 (#2141))
-"mlir/unittests/**/*.py" = ["INP001", "T201"]
-"*.pyi" = ["D418", "E501", "PYI021", "PYI011"]
-=======
-"mlir/unittests/**/*.py" = ["INP001", "T201"]
-"*.pyi" = ["D301", "D418", "E501", "PYI021", "PYI011"]
->>>>>>> 4f927d75 (⬆️🐍 Update dependency nanobind to ~=2.15.0 (#2141))
+"*.pyi" = ["D301", "D418", "E501", "PYI021"]
 "*.ipynb" = [
     "D",    # pydocstyle
     "E402", # Allow imports to appear anywhere in Jupyter notebooks
