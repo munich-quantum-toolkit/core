@@ -15,7 +15,7 @@
  * and then lowered through QCO to `jeff`.
  */
 
-#include "Generate.h"
+#include "mlir/Benchmark/Jeff/Generate.h"
 #include "mlir/Benchmark/Programs.h"
 
 #include <llvm/ADT/StringRef.h>

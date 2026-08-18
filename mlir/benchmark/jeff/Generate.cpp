@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "Generate.h"
+#include "mlir/Benchmark/Jeff/Generate.h"
 
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Compiler/Programs.h"
