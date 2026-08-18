@@ -33,8 +33,8 @@ SmallVector<Value> qftAdderQuantum(qc::QCProgramBuilder& b, const uint64_t n) {
   resetRegister(b, y.value, size);
   b.scfFor(0, size, 1, [&](Value iv) { b.h(b.loadQubit(x.value, iv)); });
 
-  // The Draper adder writes the sum into the Fourier basis of `y`. The phase
-  // that qubit `x[j - d]` contributes to `y[j]` halves as the distance grows.
+  // The Draper adder writes the sum into the Fourier basis of y. The phase that
+  // qubit x[j - d] contributes to y[j] halves as the distance grows.
   fourierTransform(b, y.value, size, 1.0);
 
   auto one = b.indexConstant(1);

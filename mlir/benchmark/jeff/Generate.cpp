@@ -62,8 +62,8 @@ std::optional<JeffProgram> buildJeffProgram(const Benchmark& benchmark,
   builder.initialize();
   auto results = benchmark.build(builder, n);
 
-  // `initialize` defaults the entry point to an integer result, so the function
-  // is retyped to the classical registers the program returns.
+  // The initialize call defaults the entry point to an integer result, so the
+  // function is retyped to the classical registers the program returns.
   SmallVector<Type> resultTypes;
   resultTypes.reserve(results.size());
   for (auto result : results) {
@@ -85,7 +85,7 @@ std::optional<JeffProgram> buildJeffProgram(const Benchmark& benchmark,
   if (!qco) {
     return std::nullopt;
   }
-  // `jeff` represents a modifier as attributes on a single gate, so modifiers
+  // jeff represents a modifier as attributes on a single gate, so modifiers
   // that wrap several operations are unrolled first. The optimization pipeline
   // can empty a modifier body, for example when it folds a zero-angle rotation
   // away, so the cleanup runs afterwards to erase the modifiers left behind.
