@@ -81,8 +81,8 @@ class OpType(enum.Enum):
     """
 
     sdg = 35
-    r"""
-    An :math:`S^\dagger` gate.
+    """
+    An :math:`S^\\dagger` gate.
 
     See Also:
         :meth:`mqt.core.ir.QuantumComputation.sdg`
@@ -97,8 +97,8 @@ class OpType(enum.Enum):
     """
 
     tdg = 39
-    r"""
-    A :math:`T^\dagger` gate.
+    """
+    A :math:`T^\\dagger` gate.
 
     See Also:
         :meth:`mqt.core.ir.QuantumComputation.tdg`
@@ -113,8 +113,8 @@ class OpType(enum.Enum):
     """
 
     vdg = 41
-    r"""
-    A :math:`V^\dagger` gate.
+    """
+    A :math:`V^\\dagger` gate.
 
     See Also:
         :meth:`mqt.core.ir.QuantumComputation.vdg`
@@ -145,16 +145,16 @@ class OpType(enum.Enum):
     """
 
     sx = 56
-    r"""
-    A :math:`\sqrt{X}` gate.
+    """
+    A :math:`\\sqrt{X}` gate.
 
     See Also:
         :meth:`mqt.core.ir.QuantumComputation.sx`
     """
 
     sxdg = 57
-    r"""
-    A :math:`\sqrt{X}^\dagger` gate.
+    """
+    A :math:`\\sqrt{X}^\\dagger` gate.
 
     See Also:
         :meth:`mqt.core.ir.QuantumComputation.sxdg`
@@ -209,8 +209,8 @@ class OpType(enum.Enum):
     """
 
     iswapdg = 77
-    r"""
-    A :math:`i\text{SWAP}^\dagger` gate.
+    """
+    A :math:`i\\text{SWAP}^\\dagger` gate.
 
     See Also:
         :meth:`mqt.core.ir.QuantumComputation.iswapdg`
@@ -225,8 +225,8 @@ class OpType(enum.Enum):
     """
 
     peresdg = 81
-    r"""
-    A :math:`\text{Peres}^\dagger` gate.
+    """
+    A :math:`\\text{Peres}^\\dagger` gate.
 
     See Also:
         :meth:`mqt.core.ir.QuantumComputation.peresdg`

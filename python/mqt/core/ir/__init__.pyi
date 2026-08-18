@@ -13,9 +13,9 @@ from collections.abc import ItemsView, Iterable, Iterator, Mapping, MutableMappi
 from collections.abc import Set as AbstractSet
 from typing import overload
 
-from . import operations as operations
-from . import registers as registers
-from . import symbolic as symbolic
+from mqt.core.ir import operations as operations
+from mqt.core.ir import registers as registers
+from mqt.core.ir import symbolic as symbolic
 
 class Permutation(MutableMapping[int, int]):
     """A class to represent a permutation of the qubits in a quantum circuit.
@@ -134,7 +134,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
 
     @property
     def num_ancilla_qubits(self) -> int:
-        r"""The number of ancilla qubits in the quantum computation.
+        """The number of ancilla qubits in the quantum computation.
 
         Note:
             Ancilla qubits are qubits that always start in a fixed state (usually :math:`|0\\rangle`).
@@ -157,9 +157,9 @@ class QuantumComputation(MutableSequence[operations.Operation]):
 
     @property
     def num_data_qubits(self) -> int:
-        r"""The number of data qubits in the quantum computation.
+        """The number of data qubits in the quantum computation.
 
-        Computed as :math:`| \text{qubits} | - | \text{ancilla} |`.
+        Computed as :math:`| \\text{qubits} | - | \\text{ancilla} |`.
         """
 
     @property
@@ -526,10 +526,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def i(self, q: int) -> None:
-        r"""Apply an identity operation.
+        """Apply an identity operation.
 
         .. math::
-            I = \begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix}
+            I = \\begin{pmatrix} 1 & 0 \\\\ 0 & 1 \\end{pmatrix}
 
         Args:
             q: The target qubit
@@ -558,10 +558,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def x(self, q: int) -> None:
-        r"""Apply a Pauli-X gate.
+        """Apply a Pauli-X gate.
 
         .. math::
-            X = \begin{pmatrix} 0 & 1 \\ 1 & 0 \end{pmatrix}
+            X = \\begin{pmatrix} 0 & 1 \\\\ 1 & 0 \\end{pmatrix}
 
         Args:
             q: The target qubit
@@ -590,10 +590,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def y(self, q: int) -> None:
-        r"""Apply a Pauli-Y gate.
+        """Apply a Pauli-Y gate.
 
         .. math::
-            Y = \begin{pmatrix} 0 & -i \\ i & 0 \end{pmatrix}
+            Y = \\begin{pmatrix} 0 & -i \\\\ i & 0 \\end{pmatrix}
 
         Args:
             q: The target qubit
@@ -622,10 +622,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def z(self, q: int) -> None:
-        r"""Apply a Pauli-Z gate.
+        """Apply a Pauli-Z gate.
 
         .. math::
-            Z = \begin{pmatrix} 1 & 0 \\ 0 & -1 \end{pmatrix}
+            Z = \\begin{pmatrix} 1 & 0 \\\\ 0 & -1 \\end{pmatrix}
 
         Args:
             q: The target qubit
@@ -654,10 +654,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def h(self, q: int) -> None:
-        r"""Apply a Hadamard gate.
+        """Apply a Hadamard gate.
 
         .. math::
-            H = \frac{1}{\sqrt{2}} \begin{pmatrix} 1 & 1 \\ 1 & -1 \end{pmatrix}
+            H = \\frac{1}{\\sqrt{2}} \\begin{pmatrix} 1 & 1 \\\\ 1 & -1 \\end{pmatrix}
 
         Args:
             q: The target qubit
@@ -686,10 +686,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def s(self, q: int) -> None:
-        r"""Apply an S (i.e., phase) gate.
+        """Apply an S (i.e., phase) gate.
 
         .. math::
-            S = \begin{pmatrix} 1 & 0 \\ 0 & i \end{pmatrix}
+            S = \\begin{pmatrix} 1 & 0 \\\\ 0 & i \\end{pmatrix}
 
         Args:
             q: The target qubit
@@ -718,17 +718,17 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def sdg(self, q: int) -> None:
-        r"""Apply an :math:`S^\dagger` gate.
+        """Apply an :math:`S^\\dagger` gate.
 
         .. math::
-            S^\dagger = \begin{pmatrix} 1 & 0 \\ 0 & -i \end{pmatrix}
+            S^\\dagger = \\begin{pmatrix} 1 & 0 \\\\ 0 & -i \\end{pmatrix}
 
         Args:
             q: The target qubit
         """
 
     def csdg(self, control: operations.Control | int, target: int) -> None:
-        r"""Apply a controlled :math:`S^\dagger` gate.
+        """Apply a controlled :math:`S^\\dagger` gate.
 
         See Also:
             :meth:`sdg`
@@ -739,7 +739,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def mcsdg(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
-        r"""Apply a multi-controlled :math:`S^\dagger` gate.
+        """Apply a multi-controlled :math:`S^\\dagger` gate.
 
         See Also:
             :meth:`sdg`
@@ -750,10 +750,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def t(self, q: int) -> None:
-        r"""Apply a T gate.
+        """Apply a T gate.
 
         .. math::
-            T = \begin{pmatrix} 1 & 0 \\ 0 & e^{i \pi / 4} \end{pmatrix}
+            T = \\begin{pmatrix} 1 & 0 \\\\ 0 & e^{i \\pi / 4} \\end{pmatrix}
 
         Args:
             q: The target qubit
@@ -782,17 +782,17 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def tdg(self, q: int) -> None:
-        r"""Apply a :math:`T^\dagger` gate.
+        """Apply a :math:`T^\\dagger` gate.
 
         .. math::
-            T^\dagger = \begin{pmatrix} 1 & 0 \\ 0 & e^{-i \pi / 4} \end{pmatrix}
+            T^\\dagger = \\begin{pmatrix} 1 & 0 \\\\ 0 & e^{-i \\pi / 4} \\end{pmatrix}
 
         Args:
             q: The target qubit
         """
 
     def ctdg(self, control: operations.Control | int, target: int) -> None:
-        r"""Apply a controlled :math:`T^\dagger` gate.
+        """Apply a controlled :math:`T^\\dagger` gate.
 
         See Also:
             :meth:`tdg`
@@ -803,7 +803,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def mctdg(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
-        r"""Apply a multi-controlled :math:`T^\dagger` gate.
+        """Apply a multi-controlled :math:`T^\\dagger` gate.
 
         See Also:
             :meth:`tdg`
@@ -814,10 +814,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def v(self, q: int) -> None:
-        r"""Apply a V gate.
+        """Apply a V gate.
 
         .. math::
-            V = \frac{1}{\sqrt{2}} \begin{pmatrix} 1 & -i \\ -i & 1 \end{pmatrix}
+            V = \\frac{1}{\\sqrt{2}} \\begin{pmatrix} 1 & -i \\\\ -i & 1 \\end{pmatrix}
 
         Args:
             q: The target qubit
@@ -846,17 +846,17 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def vdg(self, q: int) -> None:
-        r"""Apply a :math:`V^\dagger` gate.
+        """Apply a :math:`V^\\dagger` gate.
 
         .. math::
-            V^\dagger = \frac{1}{\sqrt{2}} \begin{pmatrix} 1 & i \\ i & 1 \end{pmatrix}
+            V^\\dagger = \\frac{1}{\\sqrt{2}} \\begin{pmatrix} 1 & i \\\\ i & 1 \\end{pmatrix}
 
         Args:
             q: The target qubit
         """
 
     def cvdg(self, control: operations.Control | int, target: int) -> None:
-        r"""Apply a controlled :math:`V^\dagger` gate.
+        """Apply a controlled :math:`V^\\dagger` gate.
 
         See Also:
             :meth:`vdg`
@@ -867,7 +867,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def mcvdg(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
-        r"""Apply a multi-controlled :math:`V^\dagger` gate.
+        """Apply a multi-controlled :math:`V^\\dagger` gate.
 
         See Also:
             :meth:`vdg`
@@ -878,17 +878,17 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def sx(self, q: int) -> None:
-        r"""Apply a :math:`\sqrt{X}` gate.
+        """Apply a :math:`\\sqrt{X}` gate.
 
         .. math::
-            \sqrt{X} = \frac{1}{2} \begin{pmatrix} 1 + i & 1 - i \\ 1 - i & 1 + i \end{pmatrix}
+            \\sqrt{X} = \\frac{1}{2} \\begin{pmatrix} 1 + i & 1 - i \\\\ 1 - i & 1 + i \\end{pmatrix}
 
         Args:
             q: The target qubit
         """
 
     def csx(self, control: operations.Control | int, target: int) -> None:
-        r"""Apply a controlled :math:`\sqrt{X}` gate.
+        """Apply a controlled :math:`\\sqrt{X}` gate.
 
         See Also:
             :meth:`sx`
@@ -899,7 +899,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def mcsx(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
-        r"""Apply a multi-controlled :math:`\sqrt{X}` gate.
+        """Apply a multi-controlled :math:`\\sqrt{X}` gate.
 
         See Also:
             :meth:`sx`
@@ -910,17 +910,17 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def sxdg(self, q: int) -> None:
-        r"""Apply a :math:`\sqrt{X}^\dagger` gate.
+        """Apply a :math:`\\sqrt{X}^\\dagger` gate.
 
         .. math::
-            \sqrt{X}^{\dagger} = \frac{1}{2} \begin{pmatrix} 1 - i & 1 + i \\ 1 + i & 1 - i \end{pmatrix}
+            \\sqrt{X}^{\\dagger} = \\frac{1}{2} \\begin{pmatrix} 1 - i & 1 + i \\\\ 1 + i & 1 - i \\end{pmatrix}
 
         Args:
             q: The target qubit
         """
 
     def csxdg(self, control: operations.Control | int, target: int) -> None:
-        r"""Apply a controlled :math:`\sqrt{X}^\dagger` gate.
+        """Apply a controlled :math:`\\sqrt{X}^\\dagger` gate.
 
         See Also:
             :meth:`sxdg`
@@ -931,7 +931,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def mcsxdg(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
-        r"""Apply a multi-controlled :math:`\sqrt{X}^\dagger` gate.
+        """Apply a multi-controlled :math:`\\sqrt{X}^\\dagger` gate.
 
         See Also:
             :meth:`sxdg`
@@ -942,11 +942,11 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def rx(self, theta: symbolic.Expression | float, q: int) -> None:
-        r"""Apply an :math:`R_x(\theta)` gate.
+        """Apply an :math:`R_x(\\theta)` gate.
 
         .. math::
-            R_x(\theta) = e^{-i \theta X / 2} = \cos(\theta / 2) I - i \sin(\theta / 2) X
-                        = \begin{pmatrix} \cos(\theta / 2) & -i \sin(\theta / 2) \\ -i \sin(\theta / 2) & \cos(\theta / 2) \end{pmatrix}
+            R_x(\\theta) = e^{-i \\theta X / 2} = \\cos(\\theta / 2) I - i \\sin(\\theta / 2) X
+                        = \\begin{pmatrix} \\cos(\\theta / 2) & -i \\sin(\\theta / 2) \\\\ -i \\sin(\\theta / 2) & \\cos(\\theta / 2) \\end{pmatrix}
 
         Args:
             theta: The rotation angle
@@ -954,7 +954,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def crx(self, theta: symbolic.Expression | float, control: operations.Control | int, target: int) -> None:
-        r"""Apply a controlled :math:`R_x(\theta)` gate.
+        """Apply a controlled :math:`R_x(\\theta)` gate.
 
         See Also:
             :meth:`rx`
@@ -968,7 +968,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
     def mcrx(
         self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control | int], target: int
     ) -> None:
-        r"""Apply a multi-controlled :math:`R_x(\theta)` gate.
+        """Apply a multi-controlled :math:`R_x(\\theta)` gate.
 
         See Also:
             :meth:`rx`
@@ -980,11 +980,11 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def ry(self, theta: symbolic.Expression | float, q: int) -> None:
-        r"""Apply an :math:`R_y(\theta)` gate.
+        """Apply an :math:`R_y(\\theta)` gate.
 
         .. math::
-            R_y(\theta) = e^{-i \theta Y / 2} = \cos(\theta / 2) I - i \sin(\theta / 2) Y
-                        = \begin{pmatrix} \cos(\theta / 2) & -\sin(\theta / 2) \\ \sin(\theta / 2) & \cos(\theta / 2) \end{pmatrix}
+            R_y(\\theta) = e^{-i \\theta Y / 2} = \\cos(\\theta / 2) I - i \\sin(\\theta / 2) Y
+                        = \\begin{pmatrix} \\cos(\\theta / 2) & -\\sin(\\theta / 2) \\\\ \\sin(\\theta / 2) & \\cos(\\theta / 2) \\end{pmatrix}
 
         Args:
             theta: The rotation angle
@@ -992,7 +992,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def cry(self, theta: symbolic.Expression | float, control: operations.Control | int, target: int) -> None:
-        r"""Apply a controlled :math:`R_y(\theta)` gate.
+        """Apply a controlled :math:`R_y(\\theta)` gate.
 
         See Also:
             :meth:`ry`
@@ -1006,7 +1006,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
     def mcry(
         self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control | int], target: int
     ) -> None:
-        r"""Apply a multi-controlled :math:`R_y(\theta)` gate.
+        """Apply a multi-controlled :math:`R_y(\\theta)` gate.
 
         See Also:
             :meth:`ry`
@@ -1018,10 +1018,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def rz(self, theta: symbolic.Expression | float, q: int) -> None:
-        r"""Apply an :math:`R_z(\theta)` gate.
+        """Apply an :math:`R_z(\\theta)` gate.
 
         .. math::
-            R_z(\theta) = e^{-i \theta Z / 2} = \begin{pmatrix} e^{-i \theta / 2} & 0 \\ 0 & e^{i \theta / 2} \end{pmatrix}
+            R_z(\\theta) = e^{-i \\theta Z / 2} = \\begin{pmatrix} e^{-i \\theta / 2} & 0 \\\\ 0 & e^{i \\theta / 2} \\end{pmatrix}
 
         Args:
             theta: The rotation angle
@@ -1029,7 +1029,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def crz(self, theta: symbolic.Expression | float, control: operations.Control | int, target: int) -> None:
-        r"""Apply a controlled :math:`R_z(\theta)` gate.
+        """Apply a controlled :math:`R_z(\\theta)` gate.
 
         See Also:
             :meth:`rz`
@@ -1043,7 +1043,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
     def mcrz(
         self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control | int], target: int
     ) -> None:
-        r"""Apply a multi-controlled :math:`R_z(\theta)` gate.
+        """Apply a multi-controlled :math:`R_z(\\theta)` gate.
 
         See Also:
             :meth:`rz`
@@ -1055,10 +1055,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def p(self, theta: symbolic.Expression | float, q: int) -> None:
-        r"""Apply a phase gate.
+        """Apply a phase gate.
 
         .. math::
-            P(\theta) = \begin{pmatrix} 1 & 0 \\ 0 & e^{i \theta} \end{pmatrix}
+            P(\\theta) = \\begin{pmatrix} 1 & 0 \\\\ 0 & e^{i \\theta} \\end{pmatrix}
 
         Args:
             theta: The rotation angle
@@ -1092,10 +1092,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def u2(self, phi: symbolic.Expression | float, lambda_: symbolic.Expression | float, q: int) -> None:
-        r"""Apply a :math:`U_2(\phi, \lambda)` gate.
+        """Apply a :math:`U_2(\\phi, \\lambda)` gate.
 
         .. math::
-            U_2(\phi, \lambda) = \frac{1}{\sqrt{2}} \begin{pmatrix} 1 & -e^{i \lambda} \\ e^{i \phi} & e^{i (\phi + \lambda)} \end{pmatrix}
+            U_2(\\phi, \\lambda) = \\frac{1}{\\sqrt{2}} \\begin{pmatrix} 1 & -e^{i \\lambda} \\\\ e^{i \\phi} & e^{i (\\phi + \\lambda)} \\end{pmatrix}
 
         Args:
             phi: The rotation angle
@@ -1110,7 +1110,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         control: operations.Control | int,
         target: int,
     ) -> None:
-        r"""Apply a controlled :math:`U_2(\phi, \lambda)` gate.
+        """Apply a controlled :math:`U_2(\\phi, \\lambda)` gate.
 
         See Also:
             :meth:`u2`
@@ -1129,7 +1129,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         controls: AbstractSet[operations.Control | int],
         target: int,
     ) -> None:
-        r"""Apply a multi-controlled :math:`U_2(\phi, \lambda)` gate.
+        """Apply a multi-controlled :math:`U_2(\\phi, \\lambda)` gate.
 
         See Also:
             :meth:`u2`
@@ -1142,11 +1142,11 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def r(self, theta: symbolic.Expression | float, phi: symbolic.Expression | float, q: int) -> None:
-        r"""Apply an :math:`R(\theta, \phi)` gate.
+        """Apply an :math:`R(\\theta, \\phi)` gate.
 
         .. math::
-            R(\theta, \phi) = e^{-i \frac{\theta}{2} (\cos(\phi) X + \sin(\phi) Y)}
-                            = \begin{pmatrix} \cos(\theta / 2) & -i e^{-i \phi} \sin(\theta / 2) \\ -i e^{i \phi} \sin(\theta / 2) & \cos(\theta / 2) \end{pmatrix}
+            R(\\theta, \\phi) = e^{-i \\frac{\\theta}{2} (\\cos(\\phi) X + \\sin(\\phi) Y)}
+                            = \\begin{pmatrix} \\cos(\\theta / 2) & -i e^{-i \\phi} \\sin(\\theta / 2) \\\\ -i e^{i \\phi} \\sin(\\theta / 2) & \\cos(\\theta / 2) \\end{pmatrix}
 
         Args:
             theta: The rotation angle
@@ -1161,7 +1161,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         control: operations.Control | int,
         target: int,
     ) -> None:
-        r"""Apply a controlled :math:`R(\theta, \phi)` gate.
+        """Apply a controlled :math:`R(\\theta, \\phi)` gate.
 
         See Also:
             :meth:`r`
@@ -1180,7 +1180,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         controls: AbstractSet[operations.Control | int],
         target: int,
     ) -> None:
-        r"""Apply a multi-controlled :math:`R(\theta, \phi)` gate.
+        """Apply a multi-controlled :math:`R(\\theta, \\phi)` gate.
 
         See Also:
             :meth:`r`
@@ -1199,10 +1199,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         lambda_: symbolic.Expression | float,
         q: int,
     ) -> None:
-        r"""Apply a :math:`U(\theta, \phi, \lambda)` gate.
+        """Apply a :math:`U(\\theta, \\phi, \\lambda)` gate.
 
         .. math::
-            U(\theta, \phi, \lambda) = \begin{pmatrix} \cos(\theta / 2) & -e^{i \lambda} \sin(\theta / 2) \\ e^{i \phi} \sin(\theta / 2) & e^{i (\phi + \lambda)}\cos(\theta / 2) \end{pmatrix}
+            U(\\theta, \\phi, \\lambda) = \\begin{pmatrix} \\cos(\\theta / 2) & -e^{i \\lambda} \\sin(\\theta / 2) \\\\ e^{i \\phi} \\sin(\\theta / 2) & e^{i (\\phi + \\lambda)}\\cos(\\theta / 2) \\end{pmatrix}
 
         Args:
             theta: The rotation angle
@@ -1219,7 +1219,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         control: operations.Control | int,
         target: int,
     ) -> None:
-        r"""Apply a controlled :math:`U(\theta, \phi, \lambda)` gate.
+        """Apply a controlled :math:`U(\\theta, \\phi, \\lambda)` gate.
 
         See Also:
             :meth:`u`
@@ -1240,7 +1240,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         controls: AbstractSet[operations.Control | int],
         target: int,
     ) -> None:
-        r"""Apply a multi-controlled :math:`U(\theta, \phi, \lambda)` gate.
+        """Apply a multi-controlled :math:`U(\\theta, \\phi, \\lambda)` gate.
 
         See Also:
             :meth:`u`
@@ -1254,10 +1254,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def swap(self, target1: int, target2: int) -> None:
-        r"""Apply a SWAP gate.
+        """Apply a SWAP gate.
 
         .. math::
-            \text{SWAP} = \begin{pmatrix} 1 & 0 & 0 & 0 \\ 0 & 0 & 1 & 0 \\ 0 & 1 & 0 & 0 \\ 0 & 0 & 0 & 1 \end{pmatrix}
+            \\text{SWAP} = \\begin{pmatrix} 1 & 0 & 0 & 0 \\\\ 0 & 0 & 1 & 0 \\\\ 0 & 1 & 0 & 0 \\\\ 0 & 0 & 0 & 1 \\end{pmatrix}
 
         Args:
             target1: The first target qubit
@@ -1289,10 +1289,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def dcx(self, target1: int, target2: int) -> None:
-        r"""Apply a DCX (i.e., double CNOT) gate.
+        """Apply a DCX (i.e., double CNOT) gate.
 
         .. math::
-            DCX = \begin{pmatrix} 1 & 0 & 0 & 0 \\ 0 & 0 & 0 & 1 \\ 0 & 1 & 0 & 0 \\ 0 & 0 & 1 & 0 \end{pmatrix}
+            DCX = \\begin{pmatrix} 1 & 0 & 0 & 0 \\\\ 0 & 0 & 0 & 1 \\\\ 0 & 1 & 0 & 0 \\\\ 0 & 0 & 1 & 0 \\end{pmatrix}
 
         Args:
             target1: The first target qubit
@@ -1324,10 +1324,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def ecr(self, target1: int, target2: int) -> None:
-        r"""Apply a ECR (echoed cross-resonance) gate.
+        """Apply a ECR (echoed cross-resonance) gate.
 
         .. math::
-            ECR = \frac{1}{\sqrt{2}} \begin{pmatrix} 0 & 0 & 1 & i \\ 0 & 0 & i & 1 \\ 1 & -i & 0 & 0 \\ -i & 1 & 0 & 0 \end{pmatrix}
+            ECR = \\frac{1}{\\sqrt{2}} \\begin{pmatrix} 0 & 0 & 1 & i \\\\ 0 & 0 & i & 1 \\\\ 1 & -i & 0 & 0 \\\\ -i & 1 & 0 & 0 \\end{pmatrix}
 
         Args:
             target1: The first target qubit
@@ -1359,10 +1359,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def iswap(self, target1: int, target2: int) -> None:
-        r"""Apply a :math:`i\text{SWAP}` gate.
+        """Apply a :math:`i\\text{SWAP}` gate.
 
         .. math::
-            i\text{SWAP} = \begin{pmatrix} 1 & 0 & 0 & 0 \\ 0 & 0 & i & 0 \\ 0 & i & 0 & 0 \\ 0 & 0 & 0 & 1 \end{pmatrix}
+            i\\text{SWAP} = \\begin{pmatrix} 1 & 0 & 0 & 0 \\\\ 0 & 0 & i & 0 \\\\ 0 & i & 0 & 0 \\\\ 0 & 0 & 0 & 1 \\end{pmatrix}
 
         Args:
             target1: The first target qubit
@@ -1370,7 +1370,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def ciswap(self, control: operations.Control | int, target1: int, target2: int) -> None:
-        r"""Apply a controlled :math:`i\text{SWAP}` gate.
+        """Apply a controlled :math:`i\\text{SWAP}` gate.
 
         See Also:
             :meth:`iswap`
@@ -1382,7 +1382,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def mciswap(self, controls: AbstractSet[operations.Control | int], target1: int, target2: int) -> None:
-        r"""Apply a multi-controlled :math:`i\text{SWAP}` gate.
+        """Apply a multi-controlled :math:`i\\text{SWAP}` gate.
 
         See Also:
             :meth:`iswap`
@@ -1394,10 +1394,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def iswapdg(self, target1: int, target2: int) -> None:
-        r"""Apply a :math:`i\text{SWAP}^\dagger` gate.
+        """Apply a :math:`i\\text{SWAP}^\\dagger` gate.
 
         .. math::
-            i\text{SWAP}^\dagger = \begin{pmatrix} 1 & 0 & 0 & 0 \\ 0 & 0 & -i & 0 \\ 0 & -i & 0 & 0 \\ 0 & 0 & 0 & 1 \end{pmatrix}
+            i\\text{SWAP}^\\dagger = \\begin{pmatrix} 1 & 0 & 0 & 0 \\\\ 0 & 0 & -i & 0 \\\\ 0 & -i & 0 & 0 \\\\ 0 & 0 & 0 & 1 \\end{pmatrix}
 
         Args:
             target1: The first target qubit
@@ -1405,7 +1405,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def ciswapdg(self, control: operations.Control | int, target1: int, target2: int) -> None:
-        r"""Apply a controlled :math:`i\text{SWAP}^\dagger` gate.
+        """Apply a controlled :math:`i\\text{SWAP}^\\dagger` gate.
 
         See Also:
             :meth:`iswapdg`
@@ -1417,7 +1417,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def mciswapdg(self, controls: AbstractSet[operations.Control | int], target1: int, target2: int) -> None:
-        r"""Apply a multi-controlled :math:`i\text{SWAP}^\dagger` gate.
+        """Apply a multi-controlled :math:`i\\text{SWAP}^\\dagger` gate.
 
         See Also:
             :meth:`iswapdg`
@@ -1429,10 +1429,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def peres(self, target1: int, target2: int) -> None:
-        r"""Apply a Peres gate.
+        """Apply a Peres gate.
 
         .. math::
-            \text{Peres} = \begin{pmatrix} 0 & 0 & 0 & 1 \\ 0 & 0 & 1 & 0 \\ 1 & 0 & 0 & 0 \\ 0 & 1 & 0 & 0 \end{pmatrix}
+            \\text{Peres} = \\begin{pmatrix} 0 & 0 & 0 & 1 \\\\ 0 & 0 & 1 & 0 \\\\ 1 & 0 & 0 & 0 \\\\ 0 & 1 & 0 & 0 \\end{pmatrix}
 
         Args:
             target1: The first target qubit
@@ -1464,10 +1464,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def peresdg(self, target1: int, target2: int) -> None:
-        r"""Apply a :math:`\text{Peres}^\dagger` gate.
+        """Apply a :math:`\\text{Peres}^\\dagger` gate.
 
         .. math::
-            \text{Peres}^\dagger = \begin{pmatrix} 0 & 0 & 0 & 1 \\ 0 & 0 & 1 & 0 \\ 1 & 0 & 0 & 0 \\ 0 & 1 & 0 & 0 \end{pmatrix}
+            \\text{Peres}^\\dagger = \\begin{pmatrix} 0 & 0 & 0 & 1 \\\\ 0 & 0 & 1 & 0 \\\\ 1 & 0 & 0 & 0 \\\\ 0 & 1 & 0 & 0 \\end{pmatrix}
 
         Args:
             target1: The first target qubit
@@ -1475,7 +1475,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def cperesdg(self, control: operations.Control | int, target1: int, target2: int) -> None:
-        r"""Apply a controlled :math:`\text{Peres}^\dagger` gate.
+        """Apply a controlled :math:`\\text{Peres}^\\dagger` gate.
 
         See Also:
             :meth:`peresdg`
@@ -1487,7 +1487,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def mcperesdg(self, controls: AbstractSet[operations.Control | int], target1: int, target2: int) -> None:
-        r"""Apply a multi-controlled :math:`\text{Peres}^\dagger` gate.
+        """Apply a multi-controlled :math:`\\text{Peres}^\\dagger` gate.
 
         See Also:
             :meth:`peresdg`
@@ -1499,14 +1499,14 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def rxx(self, theta: symbolic.Expression | float, target1: int, target2: int) -> None:
-        r"""Apply an :math:`R_{xx}(\theta)` gate.
+        """Apply an :math:`R_{xx}(\\theta)` gate.
 
         .. math::
-            R_{xx}(\theta) = e^{-i \theta XX / 2} = \cos(\theta / 2) I \otimes I - i \sin(\theta / 2) X \otimes X
-                           = \begin{pmatrix} \cos(\theta / 2) & 0 & 0 & -i \sin(\theta / 2) \\
-                             0 & \cos(\theta / 2) & -i \sin(\theta / 2) & 0 \\
-                             0 & -i \sin(\theta / 2) & \cos(\theta / 2) & 0 \\
-                             -i \sin(\theta / 2) & 0 & 0 & \cos(\theta / 2) \end{pmatrix}
+            R_{xx}(\\theta) = e^{-i \\theta XX / 2} = \\cos(\\theta / 2) I \\otimes I - i \\sin(\\theta / 2) X \\otimes X
+                           = \\begin{pmatrix} \\cos(\\theta / 2) & 0 & 0 & -i \\sin(\\theta / 2) \\\\
+                             0 & \\cos(\\theta / 2) & -i \\sin(\\theta / 2) & 0 \\\\
+                             0 & -i \\sin(\\theta / 2) & \\cos(\\theta / 2) & 0 \\\\
+                             -i \\sin(\\theta / 2) & 0 & 0 & \\cos(\\theta / 2) \\end{pmatrix}
 
         Args:
             theta: The rotation angle
@@ -1517,7 +1517,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
     def crxx(
         self, theta: symbolic.Expression | float, control: operations.Control | int, target1: int, target2: int
     ) -> None:
-        r"""Apply a controlled :math:`R_{xx}(\theta)` gate.
+        """Apply a controlled :math:`R_{xx}(\\theta)` gate.
 
         See Also:
             :meth:`rxx`
@@ -1536,7 +1536,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         target1: int,
         target2: int,
     ) -> None:
-        r"""Apply a multi-controlled :math:`R_{xx}(\theta)` gate.
+        """Apply a multi-controlled :math:`R_{xx}(\\theta)` gate.
 
         See Also:
             :meth:`rxx`
@@ -1549,14 +1549,14 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def ryy(self, theta: symbolic.Expression | float, target1: int, target2: int) -> None:
-        r"""Apply an :math:`R_{yy}(\theta)` gate.
+        """Apply an :math:`R_{yy}(\\theta)` gate.
 
         .. math::
-            R_{yy}(\theta) = e^{-i \theta YY / 2} = \cos(\theta / 2) I \otimes I - i \sin(\theta / 2) Y \otimes Y
-                           = \begin{pmatrix} \cos(\theta / 2) & 0 & 0 & i \sin(\theta / 2) \\
-                             0 & \cos(\theta / 2) & -i \sin(\theta / 2) & 0 \\
-                             0 & -i \sin(\theta / 2) & \cos(\theta / 2) & 0 \\
-                             i \sin(\theta / 2) & 0 & 0 & \cos(\theta / 2) \end{pmatrix}
+            R_{yy}(\\theta) = e^{-i \\theta YY / 2} = \\cos(\\theta / 2) I \\otimes I - i \\sin(\\theta / 2) Y \\otimes Y
+                           = \\begin{pmatrix} \\cos(\\theta / 2) & 0 & 0 & i \\sin(\\theta / 2) \\\\
+                             0 & \\cos(\\theta / 2) & -i \\sin(\\theta / 2) & 0 \\\\
+                             0 & -i \\sin(\\theta / 2) & \\cos(\\theta / 2) & 0 \\\\
+                             i \\sin(\\theta / 2) & 0 & 0 & \\cos(\\theta / 2) \\end{pmatrix}
 
         Args:
             theta: The rotation angle
@@ -1567,7 +1567,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
     def cryy(
         self, theta: symbolic.Expression | float, control: operations.Control | int, target1: int, target2: int
     ) -> None:
-        r"""Apply a controlled :math:`R_{yy}(\theta)` gate.
+        """Apply a controlled :math:`R_{yy}(\\theta)` gate.
 
         See Also:
             :meth:`ryy`
@@ -1586,7 +1586,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         target1: int,
         target2: int,
     ) -> None:
-        r"""Apply a multi-controlled :math:`R_{yy}(\theta)` gate.
+        """Apply a multi-controlled :math:`R_{yy}(\\theta)` gate.
 
         See Also:
             :meth:`ryy`
@@ -1599,14 +1599,14 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def rzx(self, theta: symbolic.Expression | float, target1: int, target2: int) -> None:
-        r"""Apply an :math:`R_{zx}(\theta)` gate.
+        """Apply an :math:`R_{zx}(\\theta)` gate.
 
         .. math::
-            R_{zx}(\theta) = e^{-i \theta ZX / 2} = \cos(\theta / 2) I \otimes I - i \sin(\theta / 2) Z \otimes X
-                           = \begin{pmatrix} \cos(\theta/2) & -i \sin(\theta/2) & 0 & 0 \\
-                             -i \sin(\theta/2) & \cos(\theta/2) & 0 & 0 \\
-                             0 & 0 & \cos(\theta/2) & i \sin(\theta/2) \\
-                             0 & 0 & i \sin(\theta/2) & \cos(\theta/2) \end{pmatrix}
+            R_{zx}(\\theta) = e^{-i \\theta ZX / 2} = \\cos(\\theta / 2) I \\otimes I - i \\sin(\\theta / 2) Z \\otimes X
+                           = \\begin{pmatrix} \\cos(\\theta/2) & -i \\sin(\\theta/2) & 0 & 0 \\\\
+                             -i \\sin(\\theta/2) & \\cos(\\theta/2) & 0 & 0 \\\\
+                             0 & 0 & \\cos(\\theta/2) & i \\sin(\\theta/2) \\\\
+                             0 & 0 & i \\sin(\\theta/2) & \\cos(\\theta/2) \\end{pmatrix}
 
         Args:
             theta: The rotation angle
@@ -1617,7 +1617,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
     def crzx(
         self, theta: symbolic.Expression | float, control: operations.Control | int, target1: int, target2: int
     ) -> None:
-        r"""Apply a controlled :math:`R_{zx}(\theta)` gate.
+        """Apply a controlled :math:`R_{zx}(\\theta)` gate.
 
         See Also:
             :meth:`rzx`
@@ -1636,7 +1636,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         target1: int,
         target2: int,
     ) -> None:
-        r"""Apply a multi-controlled :math:`R_{zx}(\theta)` gate.
+        """Apply a multi-controlled :math:`R_{zx}(\\theta)` gate.
 
         See Also:
             :meth:`rzx`
@@ -1649,14 +1649,14 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def rzz(self, theta: symbolic.Expression | float, target1: int, target2: int) -> None:
-        r"""Apply an :math:`R_{zz}(\theta)` gate.
+        """Apply an :math:`R_{zz}(\\theta)` gate.
 
         .. math::
-            R_{zz}(\theta) = e^{-i \theta ZZ / 2}
-                           = \begin{pmatrix} e^{-i \theta / 2} & 0 & 0 & 0 \\
-                             0 & e^{i \theta / 2} & 0 & 0 \\
-                             0 & 0 & e^{i \theta / 2} & 0 \\
-                             0 & 0 & 0 & e^{-i \theta / 2} \end{pmatrix}
+            R_{zz}(\\theta) = e^{-i \\theta ZZ / 2}
+                           = \\begin{pmatrix} e^{-i \\theta / 2} & 0 & 0 & 0 \\\\
+                             0 & e^{i \\theta / 2} & 0 & 0 \\\\
+                             0 & 0 & e^{i \\theta / 2} & 0 \\\\
+                             0 & 0 & 0 & e^{-i \\theta / 2} \\end{pmatrix}
 
         Args:
             theta: The rotation angle
@@ -1667,7 +1667,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
     def crzz(
         self, theta: symbolic.Expression | float, control: operations.Control | int, target1: int, target2: int
     ) -> None:
-        r"""Apply a controlled :math:`R_{zz}(\theta)` gate.
+        """Apply a controlled :math:`R_{zz}(\\theta)` gate.
 
         See Also:
             :meth:`rzz`
@@ -1686,7 +1686,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         target1: int,
         target2: int,
     ) -> None:
-        r"""Apply a multi-controlled :math:`R_{zz}(\theta)` gate.
+        """Apply a multi-controlled :math:`R_{zz}(\\theta)` gate.
 
         See Also:
             :meth:`rzz`
@@ -1701,14 +1701,14 @@ class QuantumComputation(MutableSequence[operations.Operation]):
     def xx_minus_yy(
         self, theta: symbolic.Expression | float, beta: symbolic.Expression | float, target1: int, target2: int
     ) -> None:
-        r"""Apply an :math:`R_{XX - YY}(\theta, \beta)` gate.
+        """Apply an :math:`R_{XX - YY}(\\theta, \\beta)` gate.
 
         .. math::
-            R_{XX - YY}(\theta, \beta) = R_{z_2}(\beta) \cdot e^{-i \frac{\theta}{2} \frac{XX - YY}{2}} \cdot R_{z_2}(-\beta)
-                                       = \begin{pmatrix} \cos(\theta / 2) & 0 & 0 & -i \sin(\theta / 2) e^{-i \beta} \\
-                                         0 & 1 & 0 & 0 \\
-                                         0 & 0 & 1 & 0 \\
-                                         -i \sin(\theta / 2) e^{i \beta} & 0 & 0 & \cos(\theta / 2) \end{pmatrix}
+            R_{XX - YY}(\\theta, \\beta) = R_{z_2}(\\beta) \\cdot e^{-i \\frac{\\theta}{2} \\frac{XX - YY}{2}} \\cdot R_{z_2}(-\\beta)
+                                       = \\begin{pmatrix} \\cos(\\theta / 2) & 0 & 0 & -i \\sin(\\theta / 2) e^{-i \\beta} \\\\
+                                         0 & 1 & 0 & 0 \\\\
+                                         0 & 0 & 1 & 0 \\\\
+                                         -i \\sin(\\theta / 2) e^{i \\beta} & 0 & 0 & \\cos(\\theta / 2) \\end{pmatrix}
 
         Args:
             theta: The rotation angle
@@ -1725,7 +1725,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         target1: int,
         target2: int,
     ) -> None:
-        r"""Apply a controlled :math:`R_{XX - YY}(\theta, \beta)` gate.
+        """Apply a controlled :math:`R_{XX - YY}(\\theta, \\beta)` gate.
 
         See Also:
             :meth:`xx_minus_yy`
@@ -1746,7 +1746,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         target1: int,
         target2: int,
     ) -> None:
-        r"""Apply a multi-controlled :math:`R_{XX - YY}(\theta, \beta)` gate.
+        """Apply a multi-controlled :math:`R_{XX - YY}(\\theta, \\beta)` gate.
 
         See Also:
             :meth:`xx_minus_yy`
@@ -1762,14 +1762,14 @@ class QuantumComputation(MutableSequence[operations.Operation]):
     def xx_plus_yy(
         self, theta: symbolic.Expression | float, beta: symbolic.Expression | float, target1: int, target2: int
     ) -> None:
-        r"""Apply an :math:`R_{XX + YY}(\theta, \beta)` gate.
+        """Apply an :math:`R_{XX + YY}(\\theta, \\beta)` gate.
 
         .. math::
-            R_{XX + YY}(\theta, \beta) = R_{z_1}(\beta) \cdot e^{-i \frac{\theta}{2} \frac{XX + YY}{2}} \cdot R_{z_1}(-\beta)
-                                       = \begin{pmatrix} 1 & 0 & 0 & 0 \\
-                                         0 & \cos(\theta / 2) & -i \sin(\theta / 2) e^{-i \beta} & 0 \\
-                                         0 & -i \sin(\theta / 2) e^{i \beta} & \cos(\theta / 2) & 0 \\
-                                         0 & 0 & 0 & 1 \end{pmatrix}
+            R_{XX + YY}(\\theta, \\beta) = R_{z_1}(\\beta) \\cdot e^{-i \\frac{\\theta}{2} \\frac{XX + YY}{2}} \\cdot R_{z_1}(-\\beta)
+                                       = \\begin{pmatrix} 1 & 0 & 0 & 0 \\\\
+                                         0 & \\cos(\\theta / 2) & -i \\sin(\\theta / 2) e^{-i \\beta} & 0 \\\\
+                                         0 & -i \\sin(\\theta / 2) e^{i \\beta} & \\cos(\\theta / 2) & 0 \\\\
+                                         0 & 0 & 0 & 1 \\end{pmatrix}
 
         Args:
             theta: The rotation angle
@@ -1786,7 +1786,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         target1: int,
         target2: int,
     ) -> None:
-        r"""Apply a controlled :math:`R_{XX + YY}(\theta, \beta)` gate.
+        """Apply a controlled :math:`R_{XX + YY}(\\theta, \\beta)` gate.
 
         See Also:
             :meth:`xx_plus_yy`
@@ -1807,7 +1807,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         target1: int,
         target2: int,
     ) -> None:
-        r"""Apply a multi-controlled :math:`R_{XX + YY}(\theta, \beta)` gate.
+        """Apply a multi-controlled :math:`R_{XX + YY}(\\theta, \\beta)` gate.
 
         See Also:
             :meth:`xx_plus_yy`
@@ -1856,10 +1856,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def gphase(self, phase: float) -> None:
-        r"""Apply a global phase gate.
+        """Apply a global phase gate.
 
         .. math::
-            GPhase(\theta) = (e^{i \theta})
+            GPhase(\\theta) = (e^{i \\theta})
 
         Args:
             phase: The rotation angle
