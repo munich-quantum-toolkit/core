@@ -12,6 +12,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   qiskit-upstream-tests:
     name: 🐍⚛️
@@ -25,6 +27,8 @@ jobs:
       setup-z3: true
       setup-mlir: true
       llvm-version: "22.1.8"
+    permissions:
+      contents: read
 
   create-issue-on-failure:
     name: Create issue on failure

@@ -39,6 +39,13 @@ repos:
       - id: check-readthedocs
         priority: 0
 
+  ## Check for security issues in GitHub Actions workflows
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.26.1
+    hooks:
+      - id: zizmor
+        priority: 0
+
   ## Check best practices for scientific Python code
   - repo: https://github.com/scientific-python/cookie
     rev: 2026.08.14

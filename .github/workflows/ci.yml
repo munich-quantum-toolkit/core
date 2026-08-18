@@ -11,12 +11,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   change-detection:
     name: 🔍 Change
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
     with:
       additional-python-files: "mlir/**"
+    permissions:
+      contents: read
 
   cpp-tests-ubuntu:
     name: 🇨 Test 🐧
@@ -39,6 +43,8 @@ jobs:
       setup-mlir: true
       llvm-version: 22.1.8
       preset-name: ${{ matrix.preset }}
+    permissions:
+      contents: read
 
   cpp-tests-macos:
     name: 🇨 Test 🍎
@@ -61,6 +67,8 @@ jobs:
       setup-mlir: true
       llvm-version: 22.1.8
       preset-name: ${{ matrix.preset }}
+    permissions:
+      contents: read
 
   cpp-tests-windows:
     name: 🇨 Test 🏁
@@ -84,6 +92,8 @@ jobs:
       llvm-version: 22.1.8
       mlir-debug: ${{ matrix.preset == 'debug-windows' }}
       preset-name: ${{ matrix.preset }}
+    permissions:
+      contents: read
 
   cpp-coverage:
     name: 🇨 Coverage
@@ -114,6 +124,9 @@ jobs:
       cpp-linter-ignore-extra: "vendor/**"
       setup-mlir: true
       llvm-version: 22.1.8
+    permissions:
+      contents: read
+      pull-requests: write # Needed to post review comments
 
   python-tests:
     name: 🐍 Test
@@ -135,6 +148,8 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
       llvm-version: 22.1.8
+    permissions:
+      contents: read
 
   python-coverage:
     name: 🐍 Coverage
@@ -156,12 +171,16 @@ jobs:
       enable-mypy: false
       setup-mlir: true
       llvm-version: 22.1.8
+    permissions:
+      contents: read
 
   build-sdist:
     name: 🚀 CD
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cd)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
+    permissions:
+      contents: read
 
   build-wheel:
     name: 🚀 CD
@@ -184,6 +203,8 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
       llvm-version: 22.1.8
+    permissions:
+      contents: read
 
   # this job does nothing and is only used for branch protection
   required-checks-pass:
