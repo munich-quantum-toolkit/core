@@ -250,13 +250,11 @@ void emitStandardGate(mlir::qc::QCProgramBuilder& builder,
                       const Instruction& instruction, mlir::ValueRange qubits,
                       llvm::ArrayRef<ParameterValue> parameters);
 
-template <typename EmitBase>
-void emitModifiedOperation(mlir::qc::QCProgramBuilder& builder,
-                           const Instruction& instruction,
-                           const mlir::ValueRange qubits,
-                           const ModifiedQubitArity arity,
-                           const LocalParameters& localParameters,
-                           EmitBase&& emitBase) {
+void emitModifiedOperation(
+    mlir::qc::QCProgramBuilder& builder, const Instruction& instruction,
+    const mlir::ValueRange qubits, const ModifiedQubitArity arity,
+    const LocalParameters& localParameters,
+    llvm::function_ref<void(mlir::ValueRange)> emitBase) {
   const auto targets = qubits.drop_front(arity.controls);
   const auto emitModifiers =
       [&](auto&& self, const size_t count,
