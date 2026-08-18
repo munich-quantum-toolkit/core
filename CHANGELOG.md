@@ -27,7 +27,7 @@ releases may include breaking changes.
 - ✨ Add an `unroll-modifiers` pass for unrolling multi-operation modifiers
   ([#2015]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add Qiskit circuit import and export to the compiler collection ([#2031],
-  [#2133]) ([**@burgholzer**], [**@simon1hofmann**])
+  [#2133], [#2136]) ([**@burgholzer**], [**@simon1hofmann**])
 - ✨ Add generic C++ and Python FoMaC support for custom device properties that
   contain operation handles ([#2042]) ([**@burgholzer**])
 - ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
@@ -63,8 +63,10 @@ releases may include breaking changes.
   [#1979], [#2007], [#2026], [#2030], [#2066]) ([**@burgholzer**],
   [**@denialhaag**], [**@simon1hofmann**], [**@li-mingbao**], [**@DRovara**],
   [**@MatthiasReumann**])
-- ✨ Add decision diagram-based construction and simulation of static unitary
-  QCO functions ([#1915]) ([**@simon1hofmann**])
+- ✨ Add decision diagram-based construction, simulation, and sampling of QCO
+  functions, including static unitaries, mid-circuit `measure`/`reset`, concrete
+  `if`/`index_switch`, initial classical SSA evaluation, dense `k>3` wire
+  embedding, and multi-shot `sample` ([#1915], [#1973]) ([**@simon1hofmann**])
 - ✨ Add target-independent two-qubit gate fusion, target-native post-routing
   synthesis, and operation-capability and static-site conformance ([#1865],
   [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -792,6 +794,7 @@ for previous changelogs._
 
 [#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
 [#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
+[#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136
 [#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
@@ -853,6 +856,7 @@ for previous changelogs._
 [#1978]: https://github.com/munich-quantum-toolkit/core/pull/1978
 [#1976]: https://github.com/munich-quantum-toolkit/core/pull/1976
 [#1975]: https://github.com/munich-quantum-toolkit/core/pull/1975
+[#1973]: https://github.com/munich-quantum-toolkit/core/pull/1973
 [#1972]: https://github.com/munich-quantum-toolkit/core/pull/1972
 [#1967]: https://github.com/munich-quantum-toolkit/core/pull/1967
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965

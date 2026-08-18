@@ -39,6 +39,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <complex>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <numeric>
@@ -57,12 +59,15 @@ struct ExportedInstruction {
     Measure,
     Reset,
     Barrier,
+    Unitary,
   };
   Kind kind = Kind::Gate;
   StandardGateMapping gate;
   std::vector<uint32_t> qubits;
   std::vector<uint32_t> clbits;
   std::vector<double> parameters;
+  std::vector<std::complex<double>> matrix;
+  uint32_t unitaryControls = 0;
 };
 
 [[nodiscard]] double exportParameter(const mlir::Value value) {
@@ -185,6 +190,28 @@ modifierQubitMap(const llvm::DenseMap<mlir::Value, uint32_t>& outer,
 }
 
 void invertGate(ExportedInstruction& instruction) {
+  if (instruction.kind == ExportedInstruction::Kind::Unitary) {
+    if (instruction.unitaryControls > instruction.qubits.size()) {
+      throw std::runtime_error("QC unitary has an invalid control count");
+    }
+    const auto numTargets =
+        instruction.qubits.size() - instruction.unitaryControls;
+    if (numTargets >= std::numeric_limits<size_t>::digits / 2U) {
+      throw std::runtime_error("QC unitary matrix is too large to represent");
+    }
+    const auto dimension = size_t{1} << numTargets;
+    if (dimension * dimension != instruction.matrix.size()) {
+      throw std::runtime_error("QC unitary matrix has an invalid dimension");
+    }
+    auto source = instruction.matrix;
+    for (size_t row = 0U; row < dimension; ++row) {
+      for (size_t column = 0U; column < dimension; ++column) {
+        instruction.matrix[(row * dimension) + column] =
+            std::conj(source[(column * dimension) + row]);
+      }
+    }
+    return;
+  }
   using Gate = mlir::qc::StandardGate;
   switch (instruction.gate.gate) {
   case Gate::Id:
@@ -272,11 +299,14 @@ collectUnitaryInstruction(mlir::Operation& operation,
           "QC control export requires one standard gate in the modifier body");
     }
     auto result = collectUnitaryInstruction(*bodyOperations.front(), nestedMap);
-    if (controls.size() >
-        std::numeric_limits<uint32_t>::max() - result.gate.controls) {
+    auto& numControls = result.kind == ExportedInstruction::Kind::Unitary
+                            ? result.unitaryControls
+                            : result.gate.controls;
+    if (std::cmp_greater(controls.size(),
+                         std::numeric_limits<uint32_t>::max() - numControls)) {
       throw std::runtime_error("QC control count cannot be represented");
     }
-    result.gate.controls += static_cast<uint32_t>(controls.size());
+    numControls += static_cast<uint32_t>(controls.size());
     result.qubits.insert(result.qubits.begin(), controls.begin(),
                          controls.end());
     return result;
@@ -311,6 +341,18 @@ collectUnitaryInstruction(mlir::Operation& operation,
       invertGate(result);
     }
     return result;
+  }
+  if (auto unitary = llvm::dyn_cast<mlir::qc::UnitaryOp>(operation)) {
+    const auto matrix =
+        llvm::cast<mlir::DenseElementsAttr>(unitary.getMatrix());
+    std::vector<std::complex<double>> values;
+    values.reserve(matrix.size());
+    llvm::append_range(values, matrix.getValues<std::complex<double>>());
+    auto targetQubits = mapQubits(unitary.getQubits(), qubits);
+    std::ranges::reverse(targetQubits);
+    return {.kind = ExportedInstruction::Kind::Unitary,
+            .qubits = std::move(targetQubits),
+            .matrix = std::move(values)};
   }
   auto gate = llvm::dyn_cast<mlir::qc::UnitaryOpInterface>(operation);
   if (!gate || llvm::isa<mlir::qc::GPhaseOp, mlir::qc::BarrierOp>(operation)) {
@@ -529,6 +571,11 @@ void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
            .qubits = mapQubits(barrier.getQubits(), state.qubits)});
       continue;
     }
+    if (llvm::isa<mlir::qc::UnitaryOp>(operation)) {
+      state.instructions.push_back(
+          collectUnitaryInstruction(operation, state.qubits));
+      continue;
+    }
     if (llvm::isa<mlir::scf::IfOp, mlir::scf::WhileOp, mlir::scf::ForOp,
                   mlir::scf::IndexSwitchOp>(operation)) {
       throw std::runtime_error(
@@ -621,6 +668,10 @@ nb::object exportCircuit(const mlir::QCProgram& program,
       break;
     case ExportedInstruction::Kind::Barrier:
       writer->addBarrier(instruction.qubits);
+      break;
+    case ExportedInstruction::Kind::Unitary:
+      writer->addUnitary(instruction.matrix, instruction.qubits,
+                         instruction.unitaryControls);
       break;
     }
   }

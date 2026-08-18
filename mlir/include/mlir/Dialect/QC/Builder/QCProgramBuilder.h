@@ -12,6 +12,7 @@
 
 #include <llvm/ADT/StringSet.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -991,6 +992,16 @@ public:
    * ```
    */
   QCProgramBuilder& barrier(ValueRange qubits);
+
+  /**
+   * @brief Apply an explicitly represented dense unitary matrix
+   *
+   * @param qubits Target qubits, ordered from the most-significant basis bit
+   * to the least-significant basis bit
+   * @param matrix Square row-major `complex<f64>` matrix
+   * @return Reference to this builder for method chaining
+   */
+  QCProgramBuilder& unitary(ValueRange qubits, DenseElementsAttr matrix);
 
   //===--------------------------------------------------------------------===//
   // Modifiers

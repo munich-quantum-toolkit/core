@@ -19,6 +19,7 @@
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/Utils/DenseUnitary.h"
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
@@ -51,6 +52,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -58,6 +60,7 @@
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -141,6 +144,56 @@ void requireArity(const Instruction& instruction, const size_t qubits,
 
 using GateArity = std::pair<size_t, size_t>;
 
+struct ModifiedQubitArity {
+  size_t controls;
+  size_t targets;
+};
+
+[[nodiscard]] size_t modifierControlCount(const Instruction& instruction) {
+  size_t controls = 0U;
+  for (const auto& modifier : instruction.modifiers) {
+    if (modifier.kind != GateModifierKind::Control) {
+      continue;
+    }
+    if (modifier.numControls > std::numeric_limits<size_t>::max() - controls) {
+      throw std::runtime_error("Qiskit control count is too large");
+    }
+    controls += modifier.numControls;
+  }
+  return controls;
+}
+
+[[nodiscard]] ModifiedQubitArity
+modifiedQubitArity(const Instruction& instruction, const size_t targets) {
+  const auto controls = modifierControlCount(instruction);
+  if (targets > std::numeric_limits<size_t>::max() - controls ||
+      instruction.qubits.size() != controls + targets) {
+    throw std::runtime_error("Qiskit instruction '" + instruction.name +
+                             "' has an unsupported modified operand arity");
+  }
+  return {.controls = controls, .targets = targets};
+}
+
+[[nodiscard]] ModifiedQubitArity
+denseUnitaryArity(const Instruction& instruction) {
+  if (!instruction.parameters.empty() || !instruction.clbits.empty()) {
+    throw std::runtime_error(
+        "Qiskit unitary instruction has an unsupported operand arity");
+  }
+  const auto controls = modifierControlCount(instruction);
+  if (instruction.qubits.size() <= controls) {
+    throw std::runtime_error(
+        "Qiskit unitary instruction has an unsupported operand arity");
+  }
+  const auto targets = instruction.qubits.size() - controls;
+  if (targets > mlir::utils::MAX_DENSE_UNITARY_QUBITS) {
+    throw std::runtime_error(
+        "Qiskit unitary supports at most " +
+        std::to_string(mlir::utils::MAX_DENSE_UNITARY_QUBITS) + " qubits");
+  }
+  return {.controls = controls, .targets = targets};
+}
+
 [[nodiscard]] std::optional<GateArity>
 gateArity(const Instruction& instruction) {
   if (!instruction.standardGate) {
@@ -198,38 +251,17 @@ void emitStandardGate(mlir::qc::QCProgramBuilder& builder,
                       const Instruction& instruction, mlir::ValueRange qubits,
                       llvm::ArrayRef<ParameterValue> parameters);
 
-void emitModifiedGate(mlir::qc::QCProgramBuilder& builder,
-                      const Instruction& instruction,
-                      const mlir::ValueRange qubits,
-                      const llvm::ArrayRef<ParameterValue> parameters,
-                      const LocalParameters& localParameters) {
-  const auto arity = gateArity(instruction);
-  if (!arity) {
-    throw std::runtime_error("unsupported modified Qiskit standard gate '" +
-                             instruction.name + "'");
-  }
-  size_t numControls = 0;
-  for (const auto& modifier : instruction.modifiers) {
-    if (modifier.kind == GateModifierKind::Control) {
-      if (modifier.numControls >
-          std::numeric_limits<size_t>::max() - numControls) {
-        throw std::runtime_error("Qiskit control count is too large");
-      }
-      numControls += modifier.numControls;
-    }
-  }
-  if (instruction.qubits.size() != numControls + arity->first ||
-      instruction.parameters.size() != arity->second) {
-    throw std::runtime_error("Qiskit instruction '" + instruction.name +
-                             "' has an unsupported modified operand arity");
-  }
-
-  const auto targets = qubits.drop_front(numControls);
+void emitModifiedOperation(
+    mlir::qc::QCProgramBuilder& builder, const Instruction& instruction,
+    const mlir::ValueRange qubits, const ModifiedQubitArity arity,
+    const LocalParameters& localParameters,
+    llvm::function_ref<void(mlir::ValueRange)> emitBase) {
+  const auto targets = qubits.drop_front(arity.controls);
   const auto emitModifiers =
       [&](auto&& self, const size_t count,
           const mlir::ValueRange targetArguments) -> void {
     if (count == 0U) {
-      emitStandardGate(builder, instruction, targetArguments, parameters);
+      emitBase(targetArguments);
       return;
     }
     const auto& modifier = instruction.modifiers[count - 1U];
@@ -256,15 +288,37 @@ void emitModifiedGate(mlir::qc::QCProgramBuilder& builder,
     throw std::runtime_error("unknown normalized Qiskit gate modifier");
   };
 
-  if (numControls == 0U) {
+  if (arity.controls == 0U) {
     emitModifiers(emitModifiers, instruction.modifiers.size(), targets);
     return;
   }
-  builder.ctrl(qubits.take_front(numControls), targets,
+  builder.ctrl(qubits.take_front(arity.controls), targets,
                [&](const mlir::ValueRange targetArguments) {
                  emitModifiers(emitModifiers, instruction.modifiers.size(),
                                targetArguments);
                });
+}
+
+void emitModifiedGate(mlir::qc::QCProgramBuilder& builder,
+                      const Instruction& instruction,
+                      const mlir::ValueRange qubits,
+                      const llvm::ArrayRef<ParameterValue> parameters,
+                      const LocalParameters& localParameters) {
+  const auto arity = gateArity(instruction);
+  if (!arity) {
+    throw std::runtime_error("unsupported modified Qiskit standard gate '" +
+                             instruction.name + "'");
+  }
+  if (instruction.parameters.size() != arity->second) {
+    throw std::runtime_error("Qiskit instruction '" + instruction.name +
+                             "' has an unsupported modified operand arity");
+  }
+  emitModifiedOperation(
+      builder, instruction, qubits,
+      modifiedQubitArity(instruction, arity->first), localParameters,
+      [&](const mlir::ValueRange targetArguments) {
+        emitStandardGate(builder, instruction, targetArguments, parameters);
+      });
 }
 
 void emitStandardGate(mlir::qc::QCProgramBuilder& builder,
@@ -1012,9 +1066,27 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
       requireArity(instruction, 1, 0);
       builder.reset(getQubit(instruction.qubits[0]));
       break;
-    case OperationKind::Unitary:
-      throw std::runtime_error(
-          "Qiskit circuit import does not support arbitrary unitaries");
+    case OperationKind::Unitary: {
+      llvm::SmallVector<mlir::Value> operands;
+      operands.reserve(instruction.qubits.size());
+      for (const auto qubit : instruction.qubits) {
+        operands.push_back(getQubit(qubit));
+      }
+      const auto arity = denseUnitaryArity(instruction);
+      auto targets = std::span{operands}.subspan(arity.controls);
+      std::ranges::reverse(targets);
+      const auto dimension = int64_t{1} << arity.targets;
+      const auto type = mlir::RankedTensorType::get(
+          {dimension, dimension}, mlir::ComplexType::get(builder.getF64Type()));
+      const auto values = circuit.unitary(index);
+      const auto matrix = mlir::DenseElementsAttr::get(
+          type, llvm::ArrayRef<std::complex<double>>(values));
+      emitModifiedOperation(builder, instruction, operands, arity,
+                            localParameters,
+                            [&](const mlir::ValueRange targetArguments) {
+                              builder.unitary(targetArguments, matrix);
+                            });
+    } break;
     case OperationKind::ControlFlow: {
       const auto controlFlow = circuit.controlFlow(index);
       translateControlFlow(builder, *controlFlow, allQubits, classicalBits,
@@ -1451,8 +1523,8 @@ void validateCircuit(const CircuitReader& circuit,
       }
       break;
     case OperationKind::Unitary:
-      throw std::runtime_error(
-          "Qiskit circuit import does not support arbitrary unitaries");
+      static_cast<void>(denseUnitaryArity(instruction));
+      break;
     case OperationKind::ControlFlow: {
       const auto controlFlow = circuit.controlFlow(index);
       validateControlFlow(*controlFlow, localParameters, rootQubits, rootClbits,

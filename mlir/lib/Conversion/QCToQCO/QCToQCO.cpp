@@ -1165,6 +1165,27 @@ struct ConvertQCGateToQCO final : StatefulOpConversionPattern<QCOpType> {
   }
 };
 
+/** Converts a variadic dense qc.unitary to its value-semantics form. */
+struct ConvertQCUnitaryOp final : StatefulOpConversionPattern<qc::UnitaryOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::UnitaryOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto* operation = op.getOperation();
+    const auto qcQubits = op.getQubits();
+    auto materialized = materializeQubits(state, operation, qcQubits, rewriter);
+    auto qcoOp = qco::UnitaryOp::create(rewriter, op.getLoc(),
+                                        materialized.values, op.getMatrix());
+
+    commitQubits(state, operation, qcQubits, qcoOp.getQubitsOut(), materialized,
+                 rewriter);
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 /**
  * @brief Converts qc.barrier to qco.barrier
  *
@@ -1889,13 +1910,14 @@ protected:
     target.addLegalOp<scf::YieldOp, scf::ConditionOp>();
 
     // Register operation conversion patterns with state tracking.
-    patterns.add<ConvertSCFForOp, ConvertSCFWhileOp, ConvertSCFIfOp,
-                 ConvertSCFIndexSwitchOp, ConvertMemRefAllocOp,
-                 ConvertMemRefLoadOp, ConvertMemRefDeallocOp, ConvertQCAllocOp,
-                 ConvertQCDeallocOp, ConvertQCStaticOp, ConvertQCMeasureOp,
-                 ConvertQCResetOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
-                 ConvertQCInvOp, ConvertQCPowOp, ConvertQCYieldOp>(
-        typeConverter, context, &state);
+    patterns
+        .add<ConvertSCFForOp, ConvertSCFWhileOp, ConvertSCFIfOp,
+             ConvertSCFIndexSwitchOp, ConvertMemRefAllocOp, ConvertMemRefLoadOp,
+             ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
+             ConvertQCStaticOp, ConvertQCMeasureOp, ConvertQCResetOp,
+             ConvertQCUnitaryOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
+             ConvertQCInvOp, ConvertQCPowOp, ConvertQCYieldOp>(typeConverter,
+                                                               context, &state);
 
     // Not part of the central gate table.
     patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(

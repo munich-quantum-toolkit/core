@@ -174,7 +174,7 @@ program structures than its C API can construct.
 | Constant Boolean, `Uint` up to 64 bits, and `Float` expressions   | Supported            | Rejected       |
 | Standalone classical variables or variable expressions            | Rejected             | Rejected       |
 | Free symbolic parameters                                          | Rejected             | Rejected       |
-| Arbitrary unitaries                                               | Rejected             | Rejected       |
+| Dense numeric unitaries up to eight qubits                        | Supported            | Supported      |
 | Register aliases or interleaved membership                        | Rejected             | Rejected       |
 | Transpiler layout metadata                                        | Accepted and ignored | Not emitted    |
 
@@ -183,6 +183,13 @@ parameters passed to a custom instruction are bound before its definition is
 expanded. Definition expansion rejects missing definitions, cycles, operand
 arity mismatches, nesting beyond 64 levels, and more than 10 million expanded
 operations.
+
+Dense numeric unitaries remain explicit matrix operations during import and
+export. Target compilation synthesizes supported one- and two-qubit matrices to
+the target gate set. Dense unitary operations support at most eight qubits.
+Qiskit import preserves inverse, numeric power, and closed-control modifiers on
+dense-unitary operations. Export preserves inverse and closed-control modifiers.
+Other powers require canonicalization or synthesis.
 
 A circuit remains valid when {code}`circ.layout` is present. The importer
 translates the circuit operations and deliberately does not preserve physical or

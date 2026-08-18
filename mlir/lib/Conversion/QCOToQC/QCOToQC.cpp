@@ -433,6 +433,20 @@ struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
   }
 };
 
+/** Converts a variadic dense qco.unitary to its reference-semantics form. */
+struct ConvertQCOUnitaryOp final : OpConversionPattern<qco::UnitaryOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::UnitaryOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto qcQubits = adaptor.getQubitsIn();
+    qc::UnitaryOp::create(rewriter, op.getLoc(), op.getMatrix(), qcQubits);
+    rewriter.replaceOp(op, qcQubits);
+    return success();
+  }
+};
+
 } // namespace
 
 template <typename QCOOp, typename QCOp, std::size_t Targets,
@@ -1195,7 +1209,7 @@ protected:
     // Register operation conversion patterns that do not need state tracking
     patterns
         .add<ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
-             ConvertQCOMeasureOp, ConvertQCOResetOp,
+             ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOUnitaryOp,
              ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
             typeConverter, context);
 
