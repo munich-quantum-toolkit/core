@@ -10,12 +10,12 @@
 # /// script
 # requires-python = ">=3.14"
 # dependencies = [
-#   "nanobind~=2.14.0",
+#   "nanobind>=2.15.0",
 #   "packaging>=24",
 #   "pytest>=9.0.1",
 #   "pytest-xdist>=3.8.0",
-#   "scikit-build-core~=1.0.3",
-#   "setuptools-scm>=9.2.2",
+#   "scikit-build-core>=1.0.3",
+#   "vcs-versioning>=2.3.0",
 # ]
 # ///
 
