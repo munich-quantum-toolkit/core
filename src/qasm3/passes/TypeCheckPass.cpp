@@ -57,9 +57,14 @@ void TypeCheckPass::checkIndexOperator(const IndexOperator& indexOperator) {
 }
 
 void TypeCheckPass::checkIndexedIdentifier(const IndexedIdentifier& id) {
-
-  if (const auto it = env.find(id.identifier); it == env.end()) {
+  const auto it = env.find(id.identifier);
+  if (it == env.end()) {
     error("Unknown identifier '" + id.identifier + "'.");
+    return;
+  }
+  if (!id.indices.empty() && !it->second.type->allowsDesignator()) {
+    error("Type '" + it->second.type->toString() + "' cannot be indexed.");
+    return;
   }
   for (const auto& index : id.indices) {
     checkIndexOperator(*index);
@@ -351,6 +356,12 @@ InferredType TypeCheckPass::visitIndexedIdentifier(
   if (indexedIdentifier->indices.empty()) {
     return type;
   }
+  if (type.isError) {
+    return type;
+  }
+  if (!type.type->allowsDesignator()) {
+    return error("Type '" + type.type->toString() + "' cannot be indexed.");
+  }
   // Assume that indexed access always results in a single element
   type.type->setDesignator(1);
   return type;
@@ -375,7 +386,18 @@ InferredType TypeCheckPass::visitMeasureExpression(
     error("Unknown identifier '" + indexedIdentifier->identifier + "'.");
     return InferredType::error();
   }
-  const auto width = it->second.type->getDesignator();
+  uint64_t width = 0;
+  const auto type = it->second.type;
+  if (type->allowsDesignator()) {
+    width = type->getDesignator();
+  } else {
+    const auto unsizedType =
+        std::dynamic_pointer_cast<UnsizedType<uint64_t>>(type);
+    if (!unsizedType || unsizedType->type != SingleQubit) {
+      return error("Cannot measure non-qubit type.");
+    }
+    width = 1;
+  }
   return InferredType{std::dynamic_pointer_cast<ResolvedType>(
       DesignatedType<uint64_t>::getBitTy(width))};
 }
