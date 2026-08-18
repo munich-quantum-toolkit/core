@@ -66,6 +66,44 @@ inline int64_t getArithIntegerOpResult(mlir::Operation* operation,
   return mlir::TypeSwitch<mlir::Operation*, int64_t>(operation)
       .Case<mlir::arith::AddIOp>([&](auto) { return (a + b).getSExtValue(); })
       .Case<mlir::arith::AndIOp>([&](auto) { return (a & b).getSExtValue(); })
+      .Case<mlir::arith::CmpIOp>([&](mlir::arith::CmpIOp cmp) {
+        using Pred = mlir::arith::CmpIPredicate;
+        bool result = false;
+        switch (cmp.getPredicate()) {
+        case Pred::eq:
+          result = (a == b);
+          break;
+        case Pred::ne:
+          result = (a != b);
+          break;
+        case Pred::slt:
+          result = a.slt(b);
+          break;
+        case Pred::sle:
+          result = a.sle(b);
+          break;
+        case Pred::sgt:
+          result = a.sgt(b);
+          break;
+        case Pred::sge:
+          result = a.sge(b);
+          break;
+        case Pred::ult:
+          result = a.ult(b);
+          break;
+        case Pred::ule:
+          result = a.ule(b);
+          break;
+        case Pred::ugt:
+          result = a.ugt(b);
+          break;
+        case Pred::uge:
+          result = a.uge(b);
+          break;
+        }
+
+        return result ? int64_t{1} : int64_t{0};
+      })
       .Case<mlir::arith::DivSIOp>(
           [&](auto) { return a.sdiv(b).getSExtValue(); })
       .Case<mlir::arith::MaxSIOp>([&](auto) {

@@ -596,6 +596,50 @@ TEST_F(QCOConstantPropagationTest, testRemoveSomeQuantumControl) {
 }
 
 /**
+ * @brief Test: This test checks that multiple quantum controls are replaced by
+ * multiple classical controls.
+ */
+TEST_F(QCOConstantPropagationTest,
+       testReplaceQuantumCtrlsByMultipleClassicalCtrls) {
+  auto q = programBuilder.allocQubitRegister(3);
+  q[0] = programBuilder.h(q[0]);
+  q[1] = programBuilder.h(q[1]);
+  auto [q0, b0] = programBuilder.measure(q[0]);
+  auto [q1, b1] = programBuilder.measure(q[1]);
+  q[1] = programBuilder.x(q1);
+  programBuilder.ctrl({q0, q[1]}, {q[2]}, [&](const ValueRange target) {
+    return SmallVector{programBuilder.x(target[0])};
+  });
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(3);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[1] = referenceBuilder.h(qRef[1]);
+  auto [qRef0, bRef0] = referenceBuilder.measure(qRef[0]);
+  auto [qRef1, bRef1] = referenceBuilder.measure(qRef[1]);
+  qRef[1] = referenceBuilder.x(qRef1);
+  const auto zero = arith::ConstantOp::create(
+                        referenceBuilder, referenceBuilder.getBoolAttr(false))
+                        .getResult();
+  const auto negated1 =
+      arith::CmpIOp::create(referenceBuilder, bRef1.getType(),
+                            arith::CmpIPredicate::eq, bRef1, zero)
+          .getResult();
+  const auto andOp =
+      arith::AndIOp::create(referenceBuilder, bRef0.getType(), bRef0, negated1)
+          .getResult();
+  referenceBuilder.qcoIf(andOp, {qRef[2]}, [&](const ValueRange target) {
+    return SmallVector{referenceBuilder.x(target[0])};
+  });
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
  * @brief Test: This test checks if a quantum control is removed if the
  * classical control implies the quantum one.
  */

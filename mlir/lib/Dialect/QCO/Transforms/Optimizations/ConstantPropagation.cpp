@@ -634,10 +634,64 @@ putOperationIntoBranch(UnionTable* ut, UnitaryOpInterface op,
                        const std::span<Value> negClassicalCtrls,
                        ControlsToModify ctrlsToMod, PatternRewriter& rewriter,
                        std::span<Operation*>& worklist) {
+  Value condition = ctrlsToMod.classicalNegCtrlsToAdd.empty()
+                        ? *ctrlsToMod.classicalPosCtrlsToAdd.begin()
+                        : *ctrlsToMod.classicalNegCtrlsToAdd.begin();
+  const auto numberOfNewConditions = ctrlsToMod.classicalPosCtrlsToAdd.size() +
+                                     ctrlsToMod.classicalNegCtrlsToAdd.size();
+  if (numberOfNewConditions > 1) {
+    // Create classical operations to consider all new classical controls
+    std::vector<Value> conditions;
+    conditions.reserve(ctrlsToMod.classicalPosCtrlsToAdd.size());
+    std::ranges::copy(ctrlsToMod.classicalPosCtrlsToAdd,
+                      std::back_inserter(conditions));
+    bool firstNegVal = true;
+    arith::ConstantOp zero;
+    for (const auto negVal : ctrlsToMod.classicalNegCtrlsToAdd) {
+      if (firstNegVal) {
+        firstNegVal = false;
+        auto i1Ty = rewriter.getI1Type();
+        zero = arith::ConstantOp::create(rewriter, op->getLoc(),
+                                         rewriter.getIntegerAttr(i1Ty, 0));
+        ut->propagateIntAlloc(zero, 0);
+      }
+      const auto negatedValOp = arith::CmpIOp::create(
+          rewriter, op->getLoc(), arith::CmpIPredicate::eq, negVal, zero);
+      const auto negatedVal = negatedValOp->getResult(0);
+      std::vector<Value> negationOperands = {
+          negatedValOp->getOperands().begin(),
+          negatedValOp->getOperands().end()};
+      std::vector<Value> negationResults = {negatedValOp->getResults().begin(),
+                                            negatedValOp->getResults().end()};
+      ut->propagateClassicalOperation(negatedValOp, negationOperands,
+                                      negationResults, posClassicalCtrls,
+                                      negClassicalCtrls);
+      conditions.push_back(negatedVal);
+    }
+    auto andOp = arith::AndIOp::create(rewriter, op->getLoc(), conditions[0],
+                                       conditions[1]);
+    condition = andOp->getResult(0);
+    std::vector<Value> operands = {andOp->getOperands().begin(),
+                                   andOp->getOperands().end()};
+    std::vector<Value> results = {andOp->getResults().begin(),
+                                  andOp->getResults().end()};
+    ut->propagateClassicalOperation(andOp, operands, results, posClassicalCtrls,
+                                    negClassicalCtrls);
+
+    for (unsigned int classicalConditionIndex = 2;
+         classicalConditionIndex < conditions.size();
+         ++classicalConditionIndex) {
+      andOp = arith::AndIOp::create(rewriter, op->getLoc(), condition,
+                                    conditions[classicalConditionIndex]);
+      condition = andOp->getResult(0);
+      operands = {andOp->getOperands().begin(), andOp->getOperands().end()};
+      results = {andOp->getResults().begin(), andOp->getResults().end()};
+      ut->propagateClassicalOperation(andOp, operands, results,
+                                      posClassicalCtrls, negClassicalCtrls);
+    }
+  }
+
   const bool createThenBranch = !ctrlsToMod.classicalPosCtrlsToAdd.empty();
-  const Value condition = createThenBranch
-                              ? *ctrlsToMod.classicalPosCtrlsToAdd.begin()
-                              : *ctrlsToMod.classicalNegCtrlsToAdd.begin();
   ValueRange insertedQubits = op.getInputQubits();
   const SmallVector locs(insertedQubits.size(), op->getLoc());
   auto newIfOp =
