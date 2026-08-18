@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import operator
-import time
+from time import monotonic
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -346,11 +346,11 @@ class QDMIDevice(Device):
         converted = convert_program(tape, self._qdmi_device, self.wires)
         results: list[np.ndarray] = []
         for shots in self._shot_copies(tape.shots):
-            started = time.monotonic()
+            started = monotonic()
             try:
                 results.append(self._samples(self._submit(converted, shots), converted, shots))
             finally:
-                self._execution_time += time.monotonic() - started
+                self._execution_time += monotonic() - started
 
         if tape.shots.has_partitioned_shots:
             return tuple(results)
