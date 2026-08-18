@@ -875,6 +875,19 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
   return qubitsOut;
 }
 
+ValueRange QCOProgramBuilder::unitary(ValueRange qubits,
+                                      DenseElementsAttr matrix) {
+  checkFinalized();
+
+  auto op = UnitaryOp::create(*this, qubits, matrix);
+  auto qubitsOut = op.getQubitsOut();
+  for (const auto [inputQubit, outputQubit] :
+       llvm::zip_equal(qubits, qubitsOut)) {
+    updateQubitTracking(inputQubit, outputQubit);
+  }
+  return qubitsOut;
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

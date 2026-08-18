@@ -14,6 +14,7 @@
 
 #include <nanobind/nanobind.h>
 
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -197,6 +198,8 @@ public:
   [[nodiscard]] virtual Register classicalRegister(size_t index) const = 0;
   [[nodiscard]] virtual Parameter globalPhase() const = 0;
   [[nodiscard]] virtual Instruction instruction(size_t index) const = 0;
+  [[nodiscard]] virtual std::vector<std::complex<double>>
+  unitary(size_t index) const = 0;
   [[nodiscard]] virtual std::unique_ptr<ControlFlowReader>
   controlFlow(size_t index) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitReader>
@@ -243,6 +246,9 @@ public:
   virtual void addMeasure(uint32_t qubit, uint32_t clbit) = 0;
   virtual void addReset(uint32_t qubit) = 0;
   virtual void addBarrier(const std::vector<uint32_t>& qubits) = 0;
+  virtual void addUnitary(const std::vector<std::complex<double>>& matrix,
+                          const std::vector<uint32_t>& qubits,
+                          uint32_t numControls) = 0;
   /** Transfer the native circuit to a new owned Python QuantumCircuit. */
   [[nodiscard]] virtual nb::object finish() = 0;
 };

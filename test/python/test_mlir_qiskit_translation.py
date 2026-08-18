@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 
@@ -31,7 +32,7 @@ from qiskit.circuit import (
     library,
 )
 from qiskit.circuit.classical import expr, types
-from qiskit.quantum_info import Operator
+from qiskit.quantum_info import Operator, random_unitary
 
 from mqt.core.mlir import CompilerTarget, QCProgram, compile_program
 from mqt.core.plugins.qiskit import qiskit_to_mqt
@@ -105,6 +106,257 @@ def test_standard_gates_round_trip(gate: Gate) -> None:
 
     restored = QCProgram.from_qiskit(circuit).to_qiskit()
 
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_dense_unitary_round_trip_preserves_qarg_mapping_and_source_data() -> None:
+    """Preserve a dense unitary and its qubit mapping without changing source data."""
+    local = QuantumCircuit(2)
+    local.global_phase = 0.23
+    local.h(0)
+    local.cx(0, 1)
+    local.rz(0.37, 1)
+
+    circuit = QuantumCircuit(3)
+    circuit.x(1)
+    local_operator = Operator(local)
+    circuit.append(library.UnitaryGate(local_operator), [2, 0])
+    source_data = list(circuit.data)
+    source_operator = Operator(circuit)
+
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert "qc.unitary" in program.ir
+    assert np.allclose(Operator(restored).data, source_operator.data)
+    assert np.allclose(Operator(circuit).data, source_operator.data)
+    assert list(circuit.data) == source_data
+    assert circuit.count_ops() == {"x": 1, "unitary": 1}
+    assert restored.count_ops() == {"x": 1, "unitary": 1}
+    restored_unitary = next(item for item in restored.data if item.operation.name == "unitary")
+    assert [restored.find_bit(qubit).index for qubit in restored_unitary.qubits] == [2, 0]
+    assert np.allclose(Operator(restored_unitary.operation).data, local_operator.data)
+
+
+def test_dense_unitary_import_converts_qiskit_qubit_order() -> None:
+    """Convert Qiskit's qubit order by reversing the operation targets."""
+    matrix = np.array([
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0j, 0.0],
+        [0.0, 0.0, 0.0, -1.0],
+        [-1.0j, 0.0, 0.0, 0.0],
+    ])
+    circuit = QuantumCircuit(2)
+    circuit.append(library.UnitaryGate(matrix), [0, 1])
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    dense_text = ir.split("qc.unitary dense<[", 1)[1].split("]>", 1)[0]
+    matches = re.findall(r"\(([-+0-9.eE]+),([-+0-9.eE]+)\)", dense_text)
+    entries = [complex(float(real), float(imaginary)) for real, imaginary in matches]
+    imported = np.asarray(entries).reshape((4, 4))
+    assert np.allclose(imported, matrix)
+    assert "%1, %0 : !qc.qubit, !qc.qubit" in ir
+
+
+@pytest.mark.parametrize("num_qubits", [1, 2, 3])
+def test_dense_unitary_round_trip(num_qubits: int) -> None:
+    """Preserve one-, two-, and three-qubit dense unitaries."""
+    circuit = QuantumCircuit(num_qubits)
+    matrix = random_unitary(2**num_qubits, seed=100 + num_qubits)
+    circuit.append(library.UnitaryGate(matrix), range(num_qubits))
+
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert "qc.unitary" in program.ir
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+    assert restored.count_ops() == {"unitary": 1}
+
+
+def test_dense_unitary_import_rejects_more_than_eight_qubits() -> None:
+    """Reject oversized matrices before constructing a compiler program."""
+    circuit = QuantumCircuit(9)
+    circuit.append(
+        library.UnitaryGate(np.eye(2**9), check_input=False),
+        range(9),
+    )
+
+    with pytest.raises(RuntimeError, match=r"supports at most \d+ qubits"):
+        QCProgram.from_qiskit(circuit)
+
+
+def test_quantum_volume_unitaries_remain_dense() -> None:
+    """Preserve the dense two-qubit unitaries used by Quantum Volume."""
+    circuit = library.quantum_volume(4, depth=3, seed=12345)
+    assert circuit.count_ops().get("unitary") == 6
+
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert program.ir.count("qc.unitary") == 6
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+    assert restored.count_ops().get("unitary") == 6
+
+
+def test_two_qubit_dense_unitary_compiles_to_target_basis() -> None:
+    """Synthesize a dense two-qubit unitary to the target basis."""
+    circuit = QuantumCircuit(2)
+    circuit.append(library.UnitaryGate(random_unitary(4, seed=2136)), [0, 1])
+    target = CompilerTarget(
+        2,
+        operations=[
+            CompilerTarget.Operation("u", 1, 3),
+            CompilerTarget.Operation("cx", 2, 0),
+        ],
+    )
+    program = QCProgram.from_qiskit(circuit).to_qco(copy=True)
+
+    program.compile_for_target(target)
+    restored = program.to_qc(copy=True).to_qiskit(target=target)
+
+    assert "qco.unitary" not in program.ir
+    assert restored.size() > 0
+    assert set(restored.count_ops()) <= {"u", "cx"}
+
+
+def test_controlled_dense_unitary_export_preserves_operation_order() -> None:
+    """Export a controlled dense matrix with a Qiskit control annotation."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() attributes {passthrough = ["entry_point"]} {
+    %control = qc.alloc : !qc.qubit
+    %target = qc.alloc : !qc.qubit
+    qc.x %control : !qc.qubit
+    qc.ctrl(%control) targets (%argument = %target) {
+      qc.unitary dense<[[(0.0,0.0), (1.0,0.0)],
+                        [(1.0,0.0), (0.0,0.0)]]>
+          : tensor<2x2xcomplex<f64>> %argument : !qc.qubit
+      qc.yield
+    } : {!qc.qubit}, {!qc.qubit}
+    qc.z %target : !qc.qubit
+    qc.dealloc %control : !qc.qubit
+    qc.dealloc %target : !qc.qubit
+    return
+  }
+}
+"""
+    )
+
+    restored = program.to_qiskit()
+
+    assert [item.operation.name for item in restored.data[:1]] == ["x"]
+    assert [item.operation.name for item in restored.data[2:]] == ["z"]
+    controlled = restored.data[1]
+    assert isinstance(controlled.operation, AnnotatedOperation)
+    assert len(controlled.operation.modifiers) == 1
+    modifier = controlled.operation.modifiers[0]
+    assert isinstance(modifier, ControlModifier)
+    assert modifier.num_ctrl_qubits == 1
+    assert modifier.ctrl_state == 1
+    assert [restored.find_bit(qubit).index for qubit in controlled.qubits] == [0, 1]
+    expected = QuantumCircuit(2)
+    expected.x(0)
+    expected.cx(0, 1)
+    expected.z(1)
+    assert np.allclose(Operator(restored).data, Operator(expected).data)
+
+
+def test_wrapped_dense_unitary_import_avoids_unsafe_c_accessor() -> None:
+    """Import wrapped dense matrices without entering Qiskit's C accessor."""
+    script = """
+import numpy as np
+from qiskit import QuantumCircuit
+from qiskit.circuit import (
+    AnnotatedOperation,
+    ControlModifier,
+    InverseModifier,
+    PowerModifier,
+)
+from qiskit.circuit.library import UnitaryGate
+from mqt.core.mlir import QCProgram
+
+unitary = UnitaryGate(np.array([[0.0, 1.0], [1.0, 0.0]]))
+renamed = UnitaryGate(np.array([[0.0, 1.0], [1.0, 0.0]]))
+renamed.name = "renamed_unitary"
+operations = [
+    unitary.control(1),
+    AnnotatedOperation(unitary, []),
+    AnnotatedOperation(unitary, InverseModifier()),
+    AnnotatedOperation(unitary, PowerModifier(0.5)),
+    AnnotatedOperation(unitary, ControlModifier(1)),
+    renamed,
+]
+for operation in operations:
+    circuit = QuantumCircuit(operation.num_qubits)
+    circuit.append(operation, circuit.qubits)
+    program = QCProgram.from_qiskit(circuit)
+    assert "qc.unitary" in program.ir
+"""
+
+    subprocess.run([sys.executable, "-c", script], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
+
+
+@pytest.mark.parametrize(
+    ("modifier", "expected"),
+    [
+        (InverseModifier(), "qc.inv"),
+        (PowerModifier(0.5), "qc.pow"),
+        (ControlModifier(2), "qc.ctrl"),
+    ],
+    ids=["inverse", "power", "control"],
+)
+def test_dense_unitary_modifiers_are_imported(
+    modifier: InverseModifier | PowerModifier | ControlModifier, expected: str
+) -> None:
+    """Preserve supported Qiskit modifiers around dense unitary operations."""
+    operation = AnnotatedOperation(
+        library.UnitaryGate(np.asarray([[1.0, 0.0], [0.0, 1.0j]])),
+        modifier,
+    )
+    circuit = QuantumCircuit(operation.num_qubits)
+    circuit.append(operation, circuit.qubits)
+
+    program = QCProgram.from_qiskit(circuit)
+
+    assert "qc.unitary" in program.ir
+    assert expected in program.ir
+    if not isinstance(modifier, PowerModifier):
+        restored = program.to_qiskit()
+        assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_controlled_dense_unitary_round_trip_preserves_qarg_order() -> None:
+    """Preserve controls and target ordering around an asymmetric matrix."""
+    operation = library.UnitaryGate(random_unitary(4, seed=2136)).control(1)
+    circuit = QuantumCircuit(4)
+    circuit.append(operation, [3, 0, 2])
+
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert "qc.ctrl" in program.ir
+    assert "qc.unitary" in program.ir
+    controlled = restored.data[0]
+    assert [restored.find_bit(qubit).index for qubit in controlled.qubits] == [3, 0, 2]
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_inverse_controlled_dense_unitary_round_trip() -> None:
+    """Preserve inverse and control modifiers around one dense unitary."""
+    unitary = library.UnitaryGate(np.asarray([[1.0, 0.0], [0.0, 1.0j]]))
+    operation = AnnotatedOperation(
+        AnnotatedOperation(unitary, ControlModifier(1)),
+        InverseModifier(),
+    )
+    circuit = QuantumCircuit(2)
+    circuit.append(operation, circuit.qubits)
+
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert "qc.ctrl" in program.ir
+    assert "qc.inv" in program.ir
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
@@ -372,7 +624,7 @@ def test_value_list_loop_expansion_counts_each_iteration() -> None:
 
 
 def test_rejections_do_not_modify_source_circuits() -> None:
-    """Reject unsupported parameters, inputs, and unitaries without mutation."""
+    """Reject unsupported parameters and inputs without mutation."""
     theta = Parameter("theta")
     symbolic = QuantumCircuit(1)
     symbolic.rx(theta, 0)
@@ -390,13 +642,6 @@ def test_rejections_do_not_modify_source_circuits() -> None:
     with pytest.raises(RuntimeError, match="standalone classical variables"):
         QCProgram.from_qiskit(runtime_input)
     assert list(runtime_input.data) == input_data
-
-    unitary = QuantumCircuit(1)
-    unitary.unitary(np.eye(2), [0])
-    unitary_data = list(unitary.data)
-    with pytest.raises(RuntimeError, match="does not support arbitrary unitaries"):
-        QCProgram.from_qiskit(unitary)
-    assert list(unitary.data) == unitary_data
 
 
 @pytest.mark.parametrize("resource", ["quantum", "classical"])
