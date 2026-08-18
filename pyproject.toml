@@ -8,7 +8,7 @@
 
 [build-system]
 requires = [
-  "nanobind~=2.14.0",
+  "nanobind~=2.15.0",
   "scikit-build-core~=1.0.3",
   "setuptools-scm>=9.2.2",
 ]
@@ -235,7 +235,7 @@ known-first-party = ["mqt.core"]
 "docs/**" = ["T20", "INP001"]
 "noxfile.py" = ["T20", "TID251", "PLC0415"]
 "mlir/unittests/**/*.py" = ["INP001", "T201"]
-"*.pyi" = ["D418", "E501", "PYI021", "PYI011"]
+"*.pyi" = ["D301", "D418", "E501", "PYI021", "PYI011"]
 "*.ipynb" = [
     "D",    # pydocstyle
     "E402", # Allow imports to appear anywhere in Jupyter notebooks
@@ -339,7 +339,7 @@ exclude = [
 
 [dependency-groups]
 build = [
-  "nanobind~=2.14.0",
+  "nanobind~=2.15.0",
   "scikit-build-core~=1.0.3",
   "setuptools-scm>=9.2.2",
 ]
