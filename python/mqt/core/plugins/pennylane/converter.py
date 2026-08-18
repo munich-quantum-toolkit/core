@@ -219,15 +219,6 @@ def _finite_parameter(parameter: object, operation_name: str) -> float:
     return value
 
 
-def _format_parameter(parameter: object, operation_name: str) -> str:
-    """Format one QASM parameter without losing double precision.
-
-    Returns:
-        The OpenQASM numeric literal.
-    """
-    return format(_finite_parameter(parameter, operation_name), ".17g")
-
-
 def _validate_operation_shape(operation: Operator, spec: _OperationSpec) -> None:
     """Validate the operation-table arity and parameter contract.
 
@@ -338,7 +329,8 @@ def _convert_qasm3(
             raise ValidationError(msg) from exc
         _validate_qdmi_contract(operation, spec, qdmi_operation, indices, device)
 
-        parameters = ",".join(_format_parameter(parameter, operation.name) for parameter in operation.parameters)
+        # repr gives the shortest literal that reads back as the same double.
+        parameters = ",".join(repr(_finite_parameter(parameter, operation.name)) for parameter in operation.parameters)
         parameter_list = f"({parameters})" if parameters else ""
         operands = ",".join(f"q[{index}]" for index in indices)
         lines.append(f"{spelling}{parameter_list} {operands};")
