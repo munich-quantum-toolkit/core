@@ -8,14 +8,12 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
@@ -36,31 +34,17 @@ SmallVector<Value> qpe(qc::QCProgramBuilder& b, const uint64_t n) {
   auto anc = b.allocQubit();
   auto c = b.allocClassicalBitRegister(counting, "c");
 
-  b.scfFor(0, counting, 1,
-           [&](Value iv) { b.reset(b.loadQubit(q.value, iv)); });
+  resetRegister(b, q.value, counting);
   b.reset(anc);
 
   b.scfFor(0, counting, 1, [&](Value iv) { b.h(b.loadQubit(q.value, iv)); });
   b.x(anc);
 
   // Repeating a phase gate 2^i times multiplies its angle by 2^i, so each
-  // controlled power is one rotation whose angle doubles. The loop carries the
-  // angle because `QCProgramBuilder::scfFor` takes no loop-carried values.
-  {
-    auto lower = b.indexConstant(0);
-    auto upper = b.indexConstant(counting);
-    auto step = b.indexConstant(1);
-    auto start = b.floatConstant(QPE_PHASE);
-    auto two = b.floatConstant(2.0);
-
-    auto loop = scf::ForOp::create(b, lower, upper, step, ValueRange{start});
-    OpBuilder::InsertionGuard guard(b);
-    b.setInsertionPointToStart(loop.getBody());
-    auto angle = loop.getRegionIterArg(0);
-    b.cp(angle, b.loadQubit(q.value, loop.getInductionVar()), anc);
-    auto next = arith::MulFOp::create(b, angle, two);
-    scf::YieldOp::create(b, ValueRange{next});
-  }
+  // controlled power is one rotation whose angle doubles.
+  scfForWithAngle(
+      b, b.indexConstant(0), b.indexConstant(counting), QPE_PHASE, 2.0,
+      [&](Value angle, Value i) { b.cp(angle, b.loadQubit(q.value, i), anc); });
 
   // Inverse quantum Fourier transform on the counting register.
   b.scfFor(0, counting / 2, 1, [&](Value i) {
@@ -70,27 +54,17 @@ SmallVector<Value> qpe(qc::QCProgramBuilder& b, const uint64_t n) {
   });
 
   b.scfFor(0, counting, 1, [&](Value i) {
-    auto one = b.indexConstant(1);
-    auto lower = arith::AddIOp::create(b, i, one);
+    auto lower = arith::AddIOp::create(b, i, b.indexConstant(1));
     auto upper = b.indexConstant(counting);
-    auto start = b.floatConstant(-std::numbers::pi / 2.0);
-    auto half = b.floatConstant(0.5);
-
-    {
-      auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});
-      OpBuilder::InsertionGuard guard(b);
-      b.setInsertionPointToStart(loop.getBody());
-      auto angle = loop.getRegionIterArg(0);
-      b.cp(angle, b.loadQubit(q.value, loop.getInductionVar()),
-           b.loadQubit(q.value, i));
-      auto next = arith::MulFOp::create(b, angle, half);
-      scf::YieldOp::create(b, ValueRange{next});
-    }
+    scfForWithAngle(b, lower, upper, -std::numbers::pi / 2.0, 0.5,
+                    [&](Value angle, Value j) {
+                      b.cp(angle, b.loadQubit(q.value, j),
+                           b.loadQubit(q.value, i));
+                    });
     b.h(b.loadQubit(q.value, i));
   });
 
-  b.scfFor(0, counting, 1,
-           [&](Value iv) { b.measure(b.loadQubit(q.value, iv), c, iv); });
+  measureRegister(b, q.value, counting, c);
 
   return {c};
 }

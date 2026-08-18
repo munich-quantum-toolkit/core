@@ -8,14 +8,12 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cmath>
@@ -43,44 +41,31 @@ SmallVector<Value> iqpe(qc::QCProgramBuilder& b, const uint64_t n) {
 
   // The bits are produced from the most significant one downwards, so the loop
   // runs over the distance from the last bit. Each controlled power is one
-  // rotation whose angle halves on every step. Both loops carry their angle
-  // because `QCProgramBuilder::scfFor` takes no loop-carried values.
+  // rotation whose angle halves on every step.
   auto lower = b.indexConstant(0);
   auto upper = b.indexConstant(precision);
   auto one = b.indexConstant(1);
   auto last = b.indexConstant(precision - 1);
-  auto first = b.floatConstant(
-      std::pow(2.0, static_cast<double>(precision - 1) * IQPE_PHASE));
-  auto half = b.floatConstant(0.5);
+  const auto first =
+      std::pow(2.0, static_cast<double>(precision - 1) * IQPE_PHASE);
 
-  auto outer = scf::ForOp::create(b, lower, upper, one, ValueRange{first});
-  OpBuilder::InsertionGuard guard(b);
-  b.setInsertionPointToStart(outer.getBody());
-  auto power = outer.getRegionIterArg(0);
-  auto index = arith::SubIOp::create(b, last, outer.getInductionVar());
+  scfForWithAngle(b, lower, upper, first, 0.5, [&](Value power, Value step) {
+    auto index = arith::SubIOp::create(b, last, step);
 
-  b.h(q);
-  b.cp(power, q, anc);
+    b.h(q);
+    b.cp(power, q, anc);
 
-  // Correct against the bits that were already measured.
-  {
-    auto start = b.floatConstant(std::numbers::pi / 2.0);
+    // Correct against the bits that were already measured.
     auto innerLower = arith::AddIOp::create(b, index, one);
-    auto inner =
-        scf::ForOp::create(b, innerLower, upper, one, ValueRange{start});
-    OpBuilder::InsertionGuard innerGuard(b);
-    b.setInsertionPointToStart(inner.getBody());
-    auto angle = inner.getRegionIterArg(0);
-    b.scfIf(res, inner.getInductionVar(), [&] { b.p(angle, q); });
-    auto next = arith::MulFOp::create(b, angle, half);
-    scf::YieldOp::create(b, ValueRange{next});
-  }
+    scfForWithAngle(b, innerLower, upper, std::numbers::pi / 2.0, 0.5,
+                    [&](Value angle, Value bit) {
+                      b.scfIf(res, bit, [&] { b.p(angle, q); });
+                    });
 
-  b.h(q);
-  b.measure(q, res, index);
-  b.reset(q);
-  auto next = arith::MulFOp::create(b, power, half);
-  scf::YieldOp::create(b, ValueRange{next});
+    b.h(q);
+    b.measure(q, res, index);
+    b.reset(q);
+  });
 
   return {res};
 }

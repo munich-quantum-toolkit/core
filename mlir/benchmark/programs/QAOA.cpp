@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -16,7 +17,6 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
-#include <numbers>
 
 namespace mqt::benchmark {
 
@@ -36,7 +36,7 @@ SmallVector<Value> qaoa(qc::QCProgramBuilder& b, const uint64_t n) {
   auto q = b.allocQubitRegister(size, "q");
   auto c = b.allocClassicalBitRegister(size, "c");
 
-  b.scfFor(0, size, 1, [&](Value iv) { b.reset(b.loadQubit(q.value, iv)); });
+  resetRegister(b, q.value, size);
   b.scfFor(0, size, 1, [&](Value iv) { b.h(b.loadQubit(q.value, iv)); });
 
   // Each layer applies the cost operator of a ring of couplings and then the
@@ -52,8 +52,7 @@ SmallVector<Value> qaoa(qc::QCProgramBuilder& b, const uint64_t n) {
              [&](Value i) { b.rx(QAOA_BETA, b.loadQubit(q.value, i)); });
   });
 
-  b.scfFor(0, size, 1,
-           [&](Value iv) { b.measure(b.loadQubit(q.value, iv), c, iv); });
+  measureRegister(b, q.value, size, c);
 
   return {c};
 }

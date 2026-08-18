@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -33,8 +34,8 @@ SmallVector<Value> blockEncoding(qc::QCProgramBuilder& b, const uint64_t n) {
   auto flag = b.allocClassicalBitRegister(2, "flag");
   auto c = b.allocClassicalBitRegister(size, "c");
 
-  b.scfFor(0, 2, 1, [&](Value iv) { b.reset(b.loadQubit(anc.value, iv)); });
-  b.scfFor(0, size, 1, [&](Value iv) { b.reset(b.loadQubit(q.value, iv)); });
+  resetRegister(b, anc.value, 2);
+  resetRegister(b, q.value, size);
   b.scfFor(0, size, 1, [&](Value iv) { b.h(b.loadQubit(q.value, iv)); });
 
   // The ancillas hold the weights of the linear combination of unitaries.
@@ -69,8 +70,7 @@ SmallVector<Value> blockEncoding(qc::QCProgramBuilder& b, const uint64_t n) {
   b.scfIf(flag, 0, [&] { b.z(q[0]); });
   b.scfIf(flag, 1, [&] { b.z(q[0]); });
 
-  b.scfFor(0, size, 1,
-           [&](Value iv) { b.measure(b.loadQubit(q.value, iv), c, iv); });
+  measureRegister(b, q.value, size, c);
 
   return {flag, c};
 }

@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -25,13 +26,12 @@ SmallVector<Value> ghzStar(qc::QCProgramBuilder& b, const uint64_t n) {
   auto q = b.allocQubitRegister(size, "q");
   auto c = b.allocClassicalBitRegister(size, "c");
 
-  b.scfFor(0, size, 1, [&](Value iv) { b.reset(b.loadQubit(q.value, iv)); });
+  resetRegister(b, q.value, size);
 
   b.h(q[0]);
   b.scfFor(1, size, 1, [&](Value iv) { b.cx(q[0], b.loadQubit(q.value, iv)); });
 
-  b.scfFor(0, size, 1,
-           [&](Value iv) { b.measure(b.loadQubit(q.value, iv), c, iv); });
+  measureRegister(b, q.value, size, c);
 
   return {c};
 }

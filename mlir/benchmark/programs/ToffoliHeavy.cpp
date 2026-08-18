@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -16,7 +17,6 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
-#include <numbers>
 
 namespace mqt::benchmark {
 
@@ -27,7 +27,7 @@ SmallVector<Value> toffoliHeavy(qc::QCProgramBuilder& b, const uint64_t n) {
   auto q = b.allocQubitRegister(size, "q");
   auto c = b.allocClassicalBitRegister(size, "c");
 
-  b.scfFor(0, size, 1, [&](Value iv) { b.reset(b.loadQubit(q.value, iv)); });
+  resetRegister(b, q.value, size);
   b.scfFor(0, size, 1, [&](Value iv) { b.h(b.loadQubit(q.value, iv)); });
 
   // A chain of Toffoli gates. Each gate takes its two controls from the
@@ -42,8 +42,7 @@ SmallVector<Value> toffoliHeavy(qc::QCProgramBuilder& b, const uint64_t n) {
     b.mcx(controls, b.loadQubit(q.value, target));
   });
 
-  b.scfFor(0, size, 1,
-           [&](Value iv) { b.measure(b.loadQubit(q.value, iv), c, iv); });
+  measureRegister(b, q.value, size, c);
 
   return {c};
 }

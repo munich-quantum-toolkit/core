@@ -8,14 +8,12 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
@@ -31,40 +29,6 @@ constexpr int64_t SHOR_BASE = 3;
 /// The modulus that the exponentiation reduces by.
 constexpr int64_t SHOR_MODULUS = 5;
 
-/// Applies a quantum Fourier transform, or its inverse, to @p reg.
-void fourier(qc::QCProgramBuilder& b, Value reg, const int64_t size,
-             const double sign) {
-  auto one = b.indexConstant(1);
-  auto last = b.indexConstant(size - 1);
-
-  b.scfFor(0, size, 1, [&](Value step) {
-    // The inverse runs the same rotations in the opposite order.
-    auto i = sign > 0.0 ? step : Value{arith::SubIOp::create(b, last, step)};
-    if (sign < 0.0) {
-      b.h(b.loadQubit(reg, i));
-    }
-
-    auto lower = arith::AddIOp::create(b, i, one);
-    auto upper = b.indexConstant(size);
-    auto start = b.floatConstant(sign * std::numbers::pi / 2.0);
-    auto half = b.floatConstant(0.5);
-
-    auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{start});
-    {
-      OpBuilder::InsertionGuard guard(b);
-      b.setInsertionPointToStart(loop.getBody());
-      auto angle = loop.getRegionIterArg(0);
-      b.cp(angle, b.loadQubit(reg, loop.getInductionVar()),
-           b.loadQubit(reg, i));
-      auto next = arith::MulFOp::create(b, angle, half);
-      scf::YieldOp::create(b, ValueRange{next});
-    }
-
-    if (sign > 0.0) {
-      b.h(b.loadQubit(reg, i));
-    }
-  });
-}
 } // namespace
 
 SmallVector<Value> shor(qc::QCProgramBuilder& b, const uint64_t n) {
@@ -77,8 +41,8 @@ SmallVector<Value> shor(qc::QCProgramBuilder& b, const uint64_t n) {
   auto c = b.allocClassicalBitRegister(steps, "c");
 
   b.reset(ctrl);
-  b.scfFor(0, size, 1, [&](Value i) { b.reset(b.loadQubit(x.value, i)); });
-  b.scfFor(0, size, 1, [&](Value i) { b.reset(b.loadQubit(acc.value, i)); });
+  resetRegister(b, x.value, size);
+  resetRegister(b, acc.value, size);
   b.reset(anc);
 
   // The work register starts in the neutral element of the multiplication.
@@ -88,97 +52,64 @@ SmallVector<Value> shor(qc::QCProgramBuilder& b, const uint64_t n) {
   auto one = b.indexConstant(1);
   auto width = b.indexConstant(size);
   auto rounds = b.indexConstant(steps);
-  auto two = b.floatConstant(2.0);
-  auto half = b.floatConstant(0.5);
 
   // Phase estimation reads one control qubit over and over. Each round
   // multiplies the accumulator by the next power of the base, corrects the
   // control from the results of the earlier rounds, and then reuses the qubit.
-  auto first =
-      b.floatConstant(std::numbers::pi * static_cast<double>(SHOR_BASE));
-  auto estimation = scf::ForOp::create(b, zero, rounds, one, ValueRange{first});
-  {
-    OpBuilder::InsertionGuard guard(b);
-    b.setInsertionPointToStart(estimation.getBody());
-    auto k = estimation.getInductionVar();
-    auto power = estimation.getRegionIterArg(0);
+  scfForWithAngle(
+      b, zero, rounds, std::numbers::pi * static_cast<double>(SHOR_BASE), 2.0,
+      [&](Value power, Value k) {
+        b.reset(ctrl);
+        b.h(ctrl);
 
-    b.reset(ctrl);
-    b.h(ctrl);
+        // The multiplication runs in the Fourier basis, so each multiplier
+        // qubit contributes a phase to every accumulator qubit. The phase
+        // doubles from one multiplier qubit to the next and halves down the
+        // accumulator.
+        fourierTransform(b, acc.value, size, 1.0);
+        scfForWithAngle(
+            b, zero, width, power, 2.0, [&](Value shifted, Value i) {
+              const SmallVector<Value> controls{ctrl, b.loadQubit(x.value, i)};
+              scfForWithAngle(
+                  b, zero, width, shifted, 0.5, [&](Value angle, Value j) {
+                    b.mcp(angle, controls, b.loadQubit(acc.value, j));
+                  });
+            });
 
-    // The multiplication runs in the Fourier basis, so each multiplier qubit
-    // contributes a phase to every accumulator qubit. The phase doubles from
-    // one multiplier qubit to the next and halves down the accumulator.
-    fourier(b, acc.value, size, 1.0);
-    auto multiply = scf::ForOp::create(b, zero, width, one, ValueRange{power});
-    {
-      OpBuilder::InsertionGuard multiplyGuard(b);
-      b.setInsertionPointToStart(multiply.getBody());
-      auto shifted = multiply.getRegionIterArg(0);
-      const SmallVector<Value> controls{
-          ctrl, b.loadQubit(x.value, multiply.getInductionVar())};
+        // The product is reduced modulo the modulus. The number of rounds
+        // depends on the product, so the loop bound is only known at runtime.
+        b.scfWhile(
+            [&] {
+              fourierTransform(b, acc.value, size, -1.0);
+              b.reset(anc);
+              b.cx(acc[size - 1], anc);
+              fourierTransform(b, acc.value, size, 1.0);
+              auto overflow = b.measure(anc);
+              b.scfCondition(overflow);
+            },
+            [&] {
+              scfForWithAngle(b, zero, width,
+                              -std::numbers::pi *
+                                  static_cast<double>(SHOR_MODULUS),
+                              0.5, [&](Value angle, Value i) {
+                                b.p(angle, b.loadQubit(acc.value, i));
+                              });
+            });
+        fourierTransform(b, acc.value, size, -1.0);
 
-      auto row = scf::ForOp::create(b, zero, width, one, ValueRange{shifted});
-      {
-        OpBuilder::InsertionGuard rowGuard(b);
-        b.setInsertionPointToStart(row.getBody());
-        auto angle = row.getRegionIterArg(0);
-        b.mcp(angle, controls, b.loadQubit(acc.value, row.getInductionVar()));
-        auto next = arith::MulFOp::create(b, angle, half);
-        scf::YieldOp::create(b, ValueRange{next});
-      }
+        // The inverse transform of the phase estimation runs on the classical
+        // side: every result measured so far rotates the control qubit, and
+        // the rotation halves the further back the result lies.
+        scfForWithAngle(b, zero, k, -std::numbers::pi / 2.0, 0.5,
+                        [&](Value angle, Value step) {
+                          auto previous = arith::SubIOp::create(
+                              b, arith::SubIOp::create(b, k, one), step);
+                          b.scfIf(c, previous, [&] { b.p(angle, ctrl); });
+                        });
 
-      auto doubled = arith::MulFOp::create(b, shifted, two);
-      scf::YieldOp::create(b, ValueRange{doubled});
-    }
-
-    // The product is reduced modulo the modulus. The number of rounds depends
-    // on the product, so the loop bound is only known at runtime.
-    b.scfWhile(
-        [&] {
-          fourier(b, acc.value, size, -1.0);
-          b.reset(anc);
-          b.cx(acc[size - 1], anc);
-          fourier(b, acc.value, size, 1.0);
-          auto overflow = b.measure(anc);
-          b.scfCondition(overflow);
-        },
-        [&] {
-          auto start = b.floatConstant(-std::numbers::pi *
-                                       static_cast<double>(SHOR_MODULUS));
-          auto loop =
-              scf::ForOp::create(b, zero, width, one, ValueRange{start});
-          OpBuilder::InsertionGuard reduceGuard(b);
-          b.setInsertionPointToStart(loop.getBody());
-          auto angle = loop.getRegionIterArg(0);
-          b.p(angle, b.loadQubit(acc.value, loop.getInductionVar()));
-          auto next = arith::MulFOp::create(b, angle, half);
-          scf::YieldOp::create(b, ValueRange{next});
-        });
-    fourier(b, acc.value, size, -1.0);
-
-    // The inverse transform of the phase estimation runs on the classical
-    // side: every result measured so far rotates the control qubit, and the
-    // rotation halves the further back the result lies.
-    auto correction = b.floatConstant(-std::numbers::pi / 2.0);
-    auto feedback = scf::ForOp::create(b, zero, k, one, ValueRange{correction});
-    {
-      OpBuilder::InsertionGuard feedbackGuard(b);
-      b.setInsertionPointToStart(feedback.getBody());
-      auto angle = feedback.getRegionIterArg(0);
-      auto previous = arith::SubIOp::create(b, arith::SubIOp::create(b, k, one),
-                                            feedback.getInductionVar());
-      b.scfIf(c, previous, [&] { b.p(angle, ctrl); });
-      auto next = arith::MulFOp::create(b, angle, half);
-      scf::YieldOp::create(b, ValueRange{next});
-    }
-
-    b.h(ctrl);
-    b.measure(ctrl, c, k);
-
-    auto squared = arith::MulFOp::create(b, power, two);
-    scf::YieldOp::create(b, ValueRange{squared});
-  }
+        b.h(ctrl);
+        b.measure(ctrl, c, k);
+      });
 
   return {c};
 }

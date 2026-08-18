@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -30,8 +31,7 @@ SmallVector<Value> multiplexer(qc::QCProgramBuilder& b, const uint64_t n) {
   auto c = b.allocClassicalBitRegister(numControls, "c");
   auto outcome = b.allocClassicalBitRegister(1, "outcome");
 
-  b.scfFor(0, numControls, 1,
-           [&](Value iv) { b.reset(b.loadQubit(controls.value, iv)); });
+  resetRegister(b, controls.value, numControls);
   b.reset(target);
 
   // Each control state selects its own rotation. The controls are flipped so
@@ -55,9 +55,7 @@ SmallVector<Value> multiplexer(qc::QCProgramBuilder& b, const uint64_t n) {
     }
   }
 
-  b.scfFor(0, numControls, 1, [&](Value iv) {
-    b.measure(b.loadQubit(controls.value, iv), c, iv);
-  });
+  measureRegister(b, controls.value, numControls, c);
   b.measure(target, outcome, 0);
 
   return {c, outcome};

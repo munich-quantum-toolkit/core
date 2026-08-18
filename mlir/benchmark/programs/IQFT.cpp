@@ -8,14 +8,12 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
@@ -35,26 +33,17 @@ SmallVector<Value> iqft(qc::QCProgramBuilder& b, const uint64_t n) {
   // One qubit is measured and reset once per result bit. The correction angle
   // depends on the distance to an earlier bit. Walking the earlier bits from
   // the closest one outwards halves the angle on every step, which avoids
-  // raising two to a loop-dependent power. The inner loop carries the angle
-  // because `QCProgramBuilder::scfFor` takes no loop-carried values.
+  // raising two to a loop-dependent power.
   b.scfFor(0, bits, 1, [&](Value i) {
     auto total = b.indexConstant(bits);
-    auto one = b.indexConstant(1);
     auto lower = b.indexConstant(0);
     auto offset = arith::SubIOp::create(b, total, i);
-    auto start = b.floatConstant(std::numbers::pi / 2.0);
-    auto half = b.floatConstant(0.5);
 
-    {
-      auto loop = scf::ForOp::create(b, lower, i, one, ValueRange{start});
-      OpBuilder::InsertionGuard guard(b);
-      b.setInsertionPointToStart(loop.getBody());
-      auto angle = loop.getRegionIterArg(0);
-      auto index = arith::AddIOp::create(b, offset, loop.getInductionVar());
-      b.scfIf(res, index, [&] { b.p(angle, q); });
-      auto next = arith::MulFOp::create(b, angle, half);
-      scf::YieldOp::create(b, ValueRange{next});
-    }
+    scfForWithAngle(b, lower, i, std::numbers::pi / 2.0, 0.5,
+                    [&](Value angle, Value step) {
+                      auto index = arith::AddIOp::create(b, offset, step);
+                      b.scfIf(res, index, [&] { b.p(angle, q); });
+                    });
 
     b.h(q);
     auto last = b.indexConstant(bits - 1);

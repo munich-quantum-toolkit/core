@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -40,7 +41,7 @@ SmallVector<Value> mlqae(qc::QCProgramBuilder& b, const uint64_t n) {
   // a number of times that doubles from round to round. The schedule turns the
   // bound of the inner loop into a runtime value.
   b.scfFor(0, size, 1, [&](Value k) {
-    b.scfFor(0, size, 1, [&](Value i) { b.reset(b.loadQubit(q.value, i)); });
+    resetRegister(b, q.value, size);
     b.reset(flag);
 
     b.scfFor(0, size, 1, [&](Value i) { b.h(b.loadQubit(q.value, i)); });

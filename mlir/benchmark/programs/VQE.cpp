@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -51,8 +52,7 @@ SmallVector<Value> vqe(qc::QCProgramBuilder& b, const uint64_t n) {
       b, TypeRange{b.getF64Type()}, ValueRange{initial},
       [&](OpBuilder&, Location, ValueRange args) {
         auto angle = args[0];
-        b.scfFor(0, size, 1,
-                 [&](Value i) { b.reset(b.loadQubit(q.value, i)); });
+        resetRegister(b, q.value, size);
         b.scfFor(0, VQE_LAYERS, 1, [&](Value) {
           b.scfFor(0, size, 1,
                    [&](Value i) { b.ry(angle, b.loadQubit(q.value, i)); });
@@ -69,8 +69,7 @@ SmallVector<Value> vqe(qc::QCProgramBuilder& b, const uint64_t n) {
         scf::YieldOp::create(b, ValueRange{next});
       });
 
-  b.scfFor(0, size, 1,
-           [&](Value i) { b.measure(b.loadQubit(q.value, i), c, i); });
+  measureRegister(b, q.value, size, c);
 
   return {c};
 }

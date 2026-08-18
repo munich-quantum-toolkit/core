@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -36,7 +37,7 @@ SmallVector<Value> groverWeakMeasurement(qc::QCProgramBuilder& b,
   auto probe = b.allocQubit();
   auto c = b.allocClassicalBitRegister(search, "c");
 
-  b.scfFor(0, search, 1, [&](Value i) { b.reset(b.loadQubit(q.value, i)); });
+  resetRegister(b, q.value, search);
   b.reset(flag);
   b.reset(probe);
 
@@ -69,8 +70,7 @@ SmallVector<Value> groverWeakMeasurement(qc::QCProgramBuilder& b,
       },
       [] {});
 
-  b.scfFor(0, search, 1,
-           [&](Value i) { b.measure(b.loadQubit(q.value, i), c, i); });
+  measureRegister(b, q.value, search, c);
 
   return {c};
 }

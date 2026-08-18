@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Benchmark/BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -15,7 +16,6 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
-#include <numbers>
 
 namespace mqt::benchmark {
 
@@ -26,7 +26,7 @@ SmallVector<Value> fanOut(qc::QCProgramBuilder& b, const uint64_t n) {
   auto q = b.allocQubitRegister(size, "q");
   auto c = b.allocClassicalBitRegister(size, "c");
 
-  b.scfFor(0, size, 1, [&](Value iv) { b.reset(b.loadQubit(q.value, iv)); });
+  resetRegister(b, q.value, size);
 
   // The first qubit holds the value that is copied. The fan-out spreads it
   // over the register so that the following layer acts on every qubit at once.
@@ -38,8 +38,7 @@ SmallVector<Value> fanOut(qc::QCProgramBuilder& b, const uint64_t n) {
   // The copies are uncomputed so that only the first qubit stays entangled.
   b.scfFor(1, size, 1, [&](Value iv) { b.cx(q[0], b.loadQubit(q.value, iv)); });
 
-  b.scfFor(0, size, 1,
-           [&](Value iv) { b.measure(b.loadQubit(q.value, iv), c, iv); });
+  measureRegister(b, q.value, size, c);
 
   return {c};
 }
