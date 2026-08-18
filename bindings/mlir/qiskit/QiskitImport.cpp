@@ -1554,7 +1554,9 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
       classicalRegisters, view->numClbits(), "classical");
 
   auto context = createContext();
-  mlir::qc::QCProgramBuilder builder(context.get());
+  mlir::qc::QCProgramBuilder builder(
+      context.get(),
+      mlir::qc::QCProgramBuilder::ClassicalRegisterInitialization::Zero);
   llvm::SmallVector<mlir::Type> resultTypes;
   if (view->numClbits() == 0U) {
     resultTypes.push_back(builder.getI64Type());
