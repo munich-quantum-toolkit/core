@@ -44,6 +44,11 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🧪 Apply the first SpecAudit to the PennyLane plugin. Tests that pinned
+  unspecified behavior are narrowed or replaced, the emitted OpenQASM parameter
+  literals become readable at identical precision, and program conversion reads
+  the advertised QDMI gate set once per device session instead of once per gate
+  ([#2147]) ([**@marcelwa**])
 - 💥 Remove the unused `pybind11` CMake helper and rename
   `add_mqt_python_binding_nanobind` to `add_mqt_python_binding` ([#2106])
   ([**@denialhaag**])
@@ -61,6 +66,9 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove `convert_program` and `ConvertedProgram` from
+  `mqt.core.plugins.pennylane`. The program-conversion surface behind
+  `QDMIDevice` is now private ([#2147]) ([**@marcelwa**])
 - 💥 Remove QDMI device configuration through `[tool.qdmi]` in `pyproject.toml`
   and the vendored toml++ header ([#2116]) ([**@denialhaag**])
 
@@ -667,6 +675,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
