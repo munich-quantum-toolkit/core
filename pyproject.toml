@@ -27,6 +27,7 @@ license-files = ["LICENSE"]
 
 classifiers = [
   "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Information Technology",
   "Intended Audience :: Science/Research",
   "Natural Language :: English",
   "Operating System :: MacOS",
@@ -43,6 +44,8 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3.15",
   "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+  "Topic :: Scientific/Engineering :: Quantum Computing",
+  "Topic :: Software Development :: Compilers",
   "Typing :: Typed",
 ]
 requires-python = ">=3.10"
