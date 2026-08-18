@@ -76,4 +76,26 @@ SmallVector<Value> multiplexer(qc::QCProgramBuilder& b, uint64_t n);
 /// Quantum teleportation. The program has a fixed size, so @p n is ignored.
 SmallVector<Value> teleportation(qc::QCProgramBuilder& b, uint64_t n);
 
+/// Block encoding of a linear combination of unitaries on @p n qubits: two
+/// ancillas holding the weights and n-2 system qubits.
+SmallVector<Value> blockEncoding(qc::QCProgramBuilder& b, uint64_t n);
+
+/// A chain of Toffoli gates across @p n qubits.
+SmallVector<Value> toffoliHeavy(qc::QCProgramBuilder& b, uint64_t n);
+
+/// Quantum fan-out of one qubit over @p n qubits, followed by a parallel layer.
+SmallVector<Value> fanOut(qc::QCProgramBuilder& b, uint64_t n);
+
+/// Draper adder of two quantum registers holding @p n / 2 qubits each.
+SmallVector<Value> qftAdderQuantum(qc::QCProgramBuilder& b, uint64_t n);
+
+/// Draper adder of a classical constant to one register of @p n qubits.
+SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& b, uint64_t n);
+
+/// Hardware-efficient VQE ansatz on @p n qubits with a fixed layer count.
+SmallVector<Value> vqeAnsatz(qc::QCProgramBuilder& b, uint64_t n);
+
+/// QAOA on a ring of @p n qubits with a fixed layer count.
+SmallVector<Value> qaoa(qc::QCProgramBuilder& b, uint64_t n);
+
 } // namespace mqt::benchmarks

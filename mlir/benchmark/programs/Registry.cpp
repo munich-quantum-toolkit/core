@@ -16,6 +16,17 @@ namespace mqt::benchmarks {
 
 SmallVector<Benchmark> benchmarks() {
   return {
+      {.name = "block-encoding", .build = &blockEncoding, .minimumSize = 3},
+      {.name = "fan-out", .build = &fanOut, .minimumSize = 2},
+      {.name = "qaoa", .build = &qaoa, .minimumSize = 3},
+      {.name = "qft-adder-classical",
+       .build = &qftAdderClassical,
+       .minimumSize = 1},
+      {.name = "qft-adder-quantum",
+       .build = &qftAdderQuantum,
+       .minimumSize = 2},
+      {.name = "toffoli-heavy", .build = &toffoliHeavy, .minimumSize = 3},
+      {.name = "vqe-ansatz", .build = &vqeAnsatz, .minimumSize = 2},
       {.name = "ghz-linear", .build = &ghzLinear, .minimumSize = 1},
       {.name = "ghz-star", .build = &ghzStar, .minimumSize = 1},
       {.name = "grover", .build = &grover, .minimumSize = 2},
