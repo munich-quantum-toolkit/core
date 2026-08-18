@@ -815,6 +815,20 @@ def test_nested_structured_control_and_bound_loop_parameter() -> None:
         program.to_qiskit()
 
 
+def test_qiskit_import_zero_initializes_clbits_before_control_flow() -> None:
+    """Initialize Qiskit clbits before a condition reads them."""
+    circuit = QuantumCircuit(1, 1)
+    with circuit.if_test((circuit.clbits[0], False)):
+        circuit.x(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    false_constant = ir.index("arith.constant false")
+    initialization = ir.index("memref.store", false_constant)
+    condition_load = ir.index("memref.load", initialization)
+    assert false_constant < initialization < condition_load
+
+
 @pytest.mark.parametrize(
     ("condition", "operation"),
     [
