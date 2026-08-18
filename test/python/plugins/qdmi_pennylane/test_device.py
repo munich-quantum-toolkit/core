@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 from collections import Counter
 from typing import cast
@@ -71,7 +72,7 @@ def test_samples_counts_probabilities_expectations_and_variances(monkeypatch: py
     assert expectation == pytest.approx(0.0)
     assert variance == pytest.approx(1.0)
     assert device.submitted_jobs == 1
-    assert device.execution_time >= 0.0
+    assert math.isfinite(device.execution_time)
 
 
 def test_histogram_only_device_reconstructs_samples(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -88,6 +89,24 @@ def test_histogram_only_device_reconstructs_samples(monkeypatch: pytest.MonkeyPa
 
     assert samples.shape == (8, 2)
     assert Counter(map(tuple, samples.tolist())) == {(0, 0): 4, (1, 1): 4}
+
+
+def test_execution_time_accumulates_one_interval_per_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Accumulate one wall-clock interval for every submitted QDMI job."""
+    qdmi = stub_device()
+    _patch_device(monkeypatch, qdmi)
+    readings = iter([0.0, 1.5, 10.0, 12.25, 100.0, 100.5])
+    monkeypatch.setattr("mqt.core.plugins.pennylane.device.monotonic", lambda: next(readings))
+    device = QDMIDevice("fake.qdmi", wires=2, shots=[(5, 2), 7])
+
+    @qp.qnode(device)
+    def circuit():
+        return qp.probs(wires=[0, 1])
+
+    circuit()
+
+    assert device.submitted_jobs == 3
+    assert device.execution_time == pytest.approx(1.5 + 2.25 + 0.5)
 
 
 def test_shot_vectors_submit_sequential_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
