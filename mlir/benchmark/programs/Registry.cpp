@@ -32,6 +32,7 @@ SmallVector<Benchmark> benchmarks() {
       {.name = "qft-adder-quantum",
        .build = &qftAdderQuantum,
        .minimumSize = 2},
+      {.name = "shor", .build = &shor, .minimumSize = 4},
       {.name = "toffoli-heavy", .build = &toffoliHeavy, .minimumSize = 3},
       {.name = "vqe", .build = &vqe, .minimumSize = 2},
       {.name = "vqe-ansatz", .build = &vqeAnsatz, .minimumSize = 2},

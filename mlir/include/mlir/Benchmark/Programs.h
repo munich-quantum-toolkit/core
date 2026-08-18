@@ -113,4 +113,8 @@ SmallVector<Value> vqe(qc::QCProgramBuilder& b, uint64_t n);
 /// power of the Grover operator.
 SmallVector<Value> mlqae(qc::QCProgramBuilder& b, uint64_t n);
 
+/// Shor's algorithm on @p n qubits, with phase estimation over modular
+/// multiplication on a control qubit that every round reuses.
+SmallVector<Value> shor(qc::QCProgramBuilder& b, uint64_t n);
+
 } // namespace mqt::benchmark
