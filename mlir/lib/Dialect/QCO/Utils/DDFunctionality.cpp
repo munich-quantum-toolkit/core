@@ -470,8 +470,22 @@ static LogicalResult applyBinaryIndex(OpTy op, ClassicalEnv& classical,
 template <typename OpTy>
 static LogicalResult applyClassicalBitwise(OpTy op, ClassicalEnv& classical) {
   if constexpr (std::is_same_v<OpTy, arith::ShLIOp>) {
-    return applyBinaryIndex(op, classical,
-                            [](int64_t a, int64_t b) { return a << b; });
+    if (!isa<IndexType>(op.getType())) {
+      return op.emitError() << "QCO DD simulation only supports index "
+                            << op.getOperationName();
+    }
+    auto lhs = lookupIndex(op.getLhs(), classical, op);
+    auto rhs = lookupIndex(op.getRhs(), classical, op);
+    if (failed(lhs) || failed(rhs)) {
+      return failure();
+    }
+    if (*rhs < 0 || *rhs >= 64) {
+      return op.emitError()
+             << "shift amount out of range for QCO DD simulation";
+    }
+    classical.indices[op.getResult()] = static_cast<int64_t>(
+        static_cast<uint64_t>(*lhs) << static_cast<unsigned>(*rhs));
+    return success();
   } else if (op.getType().isInteger(1)) {
     if constexpr (std::is_same_v<OpTy, arith::AndIOp>) {
       return applyBinaryI1(op, classical,

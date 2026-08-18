@@ -37,6 +37,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <numbers>
@@ -769,6 +770,58 @@ TEST_F(QCODDFunctionalityTest, SimulateAndiOriShliClassical) {
   EXPECT_EQ(out->getVector(), expected.getVector());
   dd->decRef(*out);
   dd->decRef(expected);
+}
+
+TEST_F(QCODDFunctionalityTest, AcceptsLargestValidShift) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    auto one = arith::ConstantIndexOp::create(b, 1).getResult();
+    auto amount = arith::ConstantIndexOp::create(b, 63).getResult();
+    auto shifted = arith::ShLIOp::create(b, one, amount).getResult();
+    q = b.qcoIndexSwitch(shifted, q,
+                         ArrayRef<int64_t>{std::numeric_limits<int64_t>::min()},
+                         SmallVector<function_ref<Value(Value)>>{
+                             [&](Value arg) { return b.x(arg); }},
+                         [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(1);
+  const auto out =
+      simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
+  ASSERT_TRUE(succeeded(out));
+  auto expected = dd->applyOperation(
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+      dd::makeZeroState(1, *dd));
+  EXPECT_EQ(out->getVector(), expected.getVector());
+  dd->decRef(*out);
+  dd->decRef(expected);
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsOutOfRangeShift) {
+  for (const int64_t amount : {-1, 64}) {
+    auto mod = buildModule([amount](QCOProgramBuilder& b) {
+      auto q = b.staticQubit(0);
+      auto one = arith::ConstantIndexOp::create(b, 1).getResult();
+      auto bad = arith::ConstantIndexOp::create(b, amount).getResult();
+      auto shifted = arith::ShLIOp::create(b, one, bad).getResult();
+      q = b.qcoIndexSwitch(shifted, q, ArrayRef<int64_t>{0},
+                           SmallVector<function_ref<Value(Value)>>{
+                               [&](Value arg) { return arg; }},
+                           [&](Value arg) { return arg; });
+      b.sink(q);
+      return b.intConstant(0);
+    });
+    ASSERT_TRUE(mod);
+
+    auto dd = std::make_unique<dd::Package>(1);
+    std::mt19937_64 rng(1);
+    EXPECT_TRUE(
+        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, SampleUnitaryXIsDeterministic) {
