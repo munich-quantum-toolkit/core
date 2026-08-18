@@ -137,6 +137,11 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🧪 Apply the first SpecAudit to the PennyLane plugin. Tests that pinned
+  unspecified behavior are narrowed or replaced, the emitted OpenQASM parameter
+  literals become readable at identical precision, and program conversion reads
+  the advertised QDMI gate set once per device session instead of once per gate
+  ([#2147]) ([**@marcelwa**])
 - 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
   logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
   ([**@simon1hofmann**])
@@ -174,6 +179,9 @@ releases may include breaking changes.
 - 💥 Remove the unused decision-diagram approximation algorithm, including the
   `dd/Approximation.hpp` header, `dd::ApproximationMetadata`, and
   `dd::approximate`. No replacement is provided ([#2154]) ([**@burgholzer**])
+- 💥 Remove `convert_program` and `ConvertedProgram` from
+  `mqt.core.plugins.pennylane`. The program-conversion surface behind
+  `QDMIDevice` is now private ([#2147]) ([**@marcelwa**])
 - 💥 Remove `nlohmann_json` from the public package contract. MQT Core no longer
   installs or exports the library, no installed header exposes a `nlohmann`
   type, and the decision-diagram statistics report through strings and streams
@@ -808,6 +816,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
+[#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
 [#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
 [#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
 [#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136

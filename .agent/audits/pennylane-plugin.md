@@ -13,6 +13,18 @@ probe output.
 Method: [`.agent/AUDITS.md`](../AUDITS.md). Probe tool:
 [`.agent/audit-probe.sh`](../audit-probe.sh).
 
+Reconciled on 2026-08-18 against `3354fdaab`. Every `file:line` below was
+re-read at that commit and still resolved to the line it named, so the drift
+since the baseline invalidated no verdict. Pull request `#2147` applied all six.
+Each verdict now carries an **Applied** paragraph saying what landed and what
+did not.
+
+After that pull request the scope is 878 source lines and 891 test lines across
+26 test functions and 33 collected cases. The source lost 37 lines; the tests
+gained 57, because driving conversion through `QDMIDevice` costs QNode
+boilerplate that a direct converter call did not. The payoff of verdict 6 is the
+round trips it removed, not the lines, and the summary table below says so.
+
 ## Why this scope
 
 The plugin arrived in one commit, `077b73f80` (`#2005`), which added the four
@@ -52,14 +64,14 @@ many QDMI jobs a shot vector decomposes into.
 
 Ranked by complexity removed per unit of risk.
 
-| #    | Assertion                   | Class          | Remedy       | Unlock                              | Risk |
-| :--- | :-------------------------- | :------------- | :----------- | :---------------------------------- | :--- |
-| 1    | `test_converter.py:131-133` | Over-specified | Narrow       | Readable QASM output                | Low  |
-| 2    | `test_converter.py:212`     | Contract-free  | Delete       | −16 lines, −1 QDMI call per tape    | Low  |
-| 3    | `test_device.py:89-90`      | Contract-free  | Narrow       | Frees the ordering strategy         | Low  |
-| 4    | `test_device.py:180`        | Over-specified | Narrow       | None; the claimed guard is not real | Low  |
-| 5    | `test_device.py:73`         | Contract-free  | Strengthen   | None                                | Low  |
-| 6    | `test_converter.py:27-33`   | Contract-free  | Rewrite file | −99% QDMI calls in preprocessing    | High |
+| #   | Assertion                   | Class          | Remedy       | Unlock                              | Risk | Status   |
+| :-- | :-------------------------- | :------------- | :----------- | :---------------------------------- | :--- | :------- |
+| 1   | `test_converter.py:131-133` | Over-specified | Narrow       | Readable QASM output                | Low  | Applied  |
+| 2   | `test_converter.py:212`     | Contract-free  | Delete       | −16 lines, −1 QDMI call per tape    | Low  | Applied  |
+| 3   | `test_device.py:89-90`      | Contract-free  | Narrow       | Frees the ordering strategy         | Low  | Applied  |
+| 4   | `test_device.py:180`        | Over-specified | Narrow       | None; the claimed guard is not real | Low  | Narrowed |
+| 5   | `test_device.py:73`         | Contract-free  | Strengthen   | None                                | Low  | Applied  |
+| 6   | `test_converter.py:27-33`   | Contract-free  | Rewrite file | −99% QDMI calls in preprocessing    | High | Applied  |
 
 ## Verdicts
 
@@ -104,6 +116,10 @@ Exact float equality, so any real precision loss still fails.
 device becomes readable, at identical precision. Three assertions were the only
 thing preventing it.
 
+**Applied.** The three assertions now parse the emitted literals and compare
+them as exact floats, and `_format_parameter` became `repr` at its single call
+site. `IsingXX(0.1)` reaches a device as `rxx(0.1)`.
+
 ### 2. The same format rule is implemented twice, and each wording is pinned
 
 `device.py:187-202` and `converter.py:132-147` are the same rule: QASM3, then
@@ -137,6 +153,12 @@ per converted tape. `device.py:163` already caches the selected format as
 simply does not pass it, so `converter.py:413` re-derives it. Removing the
 second implementation also removes the standing risk that the two diverge —
 which, in wording, they already have.
+
+**Applied.** `converter._preferred_format` is gone, and
+`test_rejects_device_without_qasm` with it. The device passes the format it
+already selected to the converter, so the rule has one implementation and one
+wording. Applied together with verdict 6, because on its own it would have
+changed a public signature that verdict 6 removes.
 
 ### 3. Histogram expansion order is asserted but never promised
 
@@ -178,6 +200,11 @@ assert Counter(map(tuple, samples.tolist())) == {(0, 0): 4, (1, 1): 4}
 a synthesized shot order looks meaningful and is not, so pinning it in a test
 also advertises a guarantee the device does not make.
 
+**Applied.** The test now asserts
+`Counter(map(tuple, samples.tolist())) == {(0, 0): 4, (1, 1): 4}`. The `sorted`
+call at `device.py:274` was left in place: the point is that the expansion
+strategy is now free to change, not that it must.
+
 ### 4. A defence that the experiment refuted
 
 The advocate for these assertions argued that `test_device.py:180`,
@@ -215,6 +242,13 @@ Recording this verdict matters more than the lines it saves. The argument was
 careful, cited the plan and the pipeline, and was wrong, and only running it
 showed that.
 
+**Narrowed, not applied.** The assertion is now `count("ry(") == 1`. The probe
+was re-run at `3354fdaab` and reproduced: `rotations=True` still fails no test.
+No code change followed, because there is nothing here to change --
+`rotations=False` remains correct and remains protected by nothing. Anyone
+changing the preprocessing pipeline so that a diagonalizing gate survives to the
+serializer will get a wrong expectation value with no test failing.
+
 ### 5. An assertion that cannot fail for its own purpose
 
 `test_device.py:73` asserts `device.execution_time >= 0.0`. `device.py:349-353`
@@ -226,6 +260,12 @@ being `None`, or going `NaN`, and nothing else.
 accumulated value, or drop to an explicit finiteness check. `> 0.0` is not
 available: a coarse-resolution clock can return a zero delta for the stub's
 instantly-completing job.
+
+**Applied.** A new test freezes the clock over a three-job shot vector and
+asserts the exact accumulated total; `QDMIDevice` now imports `monotonic` by
+name so a test can replace this device's clock alone. Replacing the accumulation
+with `+= 0.0` fails the new test. The broad execution test keeps an explicit
+finiteness check, which is what the old assertion really did.
 
 ### 6. A public function that exists for its tests, and what it costs
 
@@ -259,6 +299,24 @@ table at construction.
 it should be a maintainer decision rather than a drive-by change. It is listed
 last for that reason, not because it is worth least.
 
+**Applied.** `test_converter.py` is rewritten against `QDMIDevice` and
+`StubDevice.submissions`, and `ProgramConverter` binds the conversion to one
+opened device session. Measured at the QDMI boundary on a 100-gate circuit over
+an 18-operation device: 101 `operations()` round trips and 1818 `name()` calls
+per preprocessing and conversion pass become 1 and 18 once, for the life of the
+device.
+
+Two branches lost their old callers when the tests moved to the device boundary:
+the OpenQASM 3 and OpenQASM 2 refusals of an unadvertised operation, which
+`decompose` now reaches first. Both tests regained them by also executing a tape
+through `Device.execute` directly, which is the path where conversion, not
+preprocessing, has to refuse. Plugin coverage is 85% before and after, with
+three fewer missed statements in absolute terms over a smaller body of code.
+
+`.agent/plans/qdmi-pennylane-device.md:385-387` still documents
+`ConvertedProgram` and `convert_program` as public. It is left as the record of
+what that task did, not corrected to match the code.
+
 ## Anchors confirmed
 
 **The endianness convention.** `device.py:300` reverses each QDMI bit string.
@@ -291,6 +349,10 @@ not cleared.
 - `test_converter.py:216-223`, the `nan`/`inf`/`-inf` matrix. The argument is
   that each value kills a different mutant of `math.isfinite`. Plausible and
   untested here.
+
+Both survived the verdict 6 rewrite unchanged in substance. After `#2147` they
+live at `test_converter.py:184-194` and `:240-254`, and both now assert against
+what the device receives rather than against a direct converter call.
 
 ## Deliberately not touched
 
@@ -332,6 +394,9 @@ credit for them; they are recorded so the reading is not wasted.
 - `converter.py:348-353` and `converter.py:392-397` construct `ConvertedProgram`
   twice with identical measurement-decoding arguments.
 
+**Applied.** All four landed in `#2147`, alongside the verdicts whose commits
+already touched the same lines.
+
 ## Progress
 
 - [x] (2026-08-15) Spec ledger built from four isolated source classes, none of
@@ -341,5 +406,8 @@ credit for them; they are recorded so the reading is not wasted.
       sight of the prosecution.
 - [x] (2026-08-15) Seven fault-injection probes executed; two overturned a
       verdict that argument alone had settled the wrong way.
-- [ ] Probe `test_converter.py:171-181` against a bumped PennyLane.
-- [ ] Reconcile against the default branch after any verdict is applied.
+- [x] (2026-08-18) All six verdicts and the four cleanups applied in `#2147`,
+      one commit pair per verdict.
+- [x] (2026-08-18) Reconciled against `3354fdaab`; every citation re-read and
+      still resolving, every verdict marked.
+- [ ] Probe the exact QASM2 payload assertion against a bumped PennyLane.
