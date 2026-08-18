@@ -13,11 +13,7 @@
 #include <llvm/ADT/StringSet.h>
 
 #include <algorithm>
-#include <complex>
-#include <cstddef>
 #include <cstdint>
-#include <limits>
-#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -68,34 +64,6 @@ uint32_t validateRegisterLayout(const std::vector<Register>& registers,
                              " bits before contiguous registers");
   }
   return loose;
-}
-
-std::vector<std::complex<double>>
-reverseQubitOrder(const std::span<const std::complex<double>> matrix,
-                  const size_t numQubits) {
-  if (numQubits >= std::numeric_limits<size_t>::digits / 2U) {
-    throw std::runtime_error("unitary matrix is too large to represent safely");
-  }
-  const auto dimension = size_t{1} << numQubits;
-  if (matrix.size() != dimension * dimension) {
-    throw std::runtime_error(
-        "unitary matrix size does not match its qubit count");
-  }
-  const auto reverseIndex = [numQubits](const size_t index) {
-    size_t reversed = 0U;
-    for (size_t bit = 0U; bit < numQubits; ++bit) {
-      reversed = (reversed << 1U) | ((index >> bit) & 1U);
-    }
-    return reversed;
-  };
-  std::vector<std::complex<double>> result(matrix.size());
-  for (size_t row = 0U; row < dimension; ++row) {
-    for (size_t column = 0U; column < dimension; ++column) {
-      result[(row * dimension) + column] =
-          matrix[(reverseIndex(row) * dimension) + reverseIndex(column)];
-    }
-  }
-  return result;
 }
 
 } // namespace mqt::bindings::qiskit

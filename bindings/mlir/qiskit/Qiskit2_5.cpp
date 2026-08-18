@@ -1259,6 +1259,8 @@ public:
                                      true),
                   "adding unitary");
     if (numControls != 0U) {
+      // The Qiskit C API can append only a bare unitary. Defer its control
+      // wrapper until finish() exposes the Python operation.
       pendingControlledUnitaries_.push_back(
           {.instructionIndex = instructionIndex,
            .numControls = numControls,
@@ -1278,37 +1280,7 @@ public:
     }
     auto pythonCircuit = nb::steal<nb::object>(result);
     try {
-      auto data = pythonAttribute(pythonCircuit, "data",
-                                  "Qiskit circuit has no instruction data");
-      const auto circuitQubits = pythonAttribute(
-          pythonCircuit, "qubits", "Qiskit circuit has no qubits");
-      const auto append = pythonAttribute(
-          pythonCircuit, "append", "Qiskit circuit cannot append operations");
-      for (const auto& pending : pendingControlledUnitaries_) {
-        if (pending.instructionIndex >= nb::len(data)) {
-          throw std::runtime_error(
-              "Qiskit controlled-unitary placeholder is missing");
-        }
-        const auto operation =
-            pythonAttribute(data[pending.instructionIndex], "operation",
-                            "Qiskit unitary placeholder has no operation");
-        const auto controlled =
-            pythonAttribute(operation, "control",
-                            "Qiskit unitary operation cannot be controlled")(
-                pending.numControls, nb::arg("annotated") = true);
-        nb::list qargs;
-        for (const auto qubit : pending.qubits) {
-          if (qubit >= nb::len(circuitQubits)) {
-            throw std::runtime_error(
-                "Qiskit controlled unitary references an invalid qubit");
-          }
-          qargs.append(circuitQubits[qubit]);
-        }
-        append(controlled, qargs);
-        const auto replacement = pythonAttribute(
-            data, "pop", "Qiskit circuit data cannot remove instructions")();
-        data[pending.instructionIndex] = replacement;
-      }
+      replacePendingControlledUnitaries(pythonCircuit);
     } catch (const nb::python_error& error) {
       throwPythonError("Qiskit failed to construct a controlled unitary",
                        error);
@@ -1322,6 +1294,41 @@ private:
     uint32_t numControls = 0U;
     std::vector<uint32_t> qubits;
   };
+
+  void replacePendingControlledUnitaries(const nb::handle pythonCircuit) const {
+    auto data = pythonAttribute(pythonCircuit, "data",
+                                "Qiskit circuit has no instruction data");
+    const auto circuitQubits = pythonAttribute(pythonCircuit, "qubits",
+                                               "Qiskit circuit has no qubits");
+    for (const auto& pending : pendingControlledUnitaries_) {
+      if (pending.instructionIndex >= nb::len(data)) {
+        throw std::runtime_error(
+            "Qiskit controlled-unitary placeholder is missing");
+      }
+      const auto placeholder =
+          nb::borrow<nb::object>(data[pending.instructionIndex]);
+      const auto operation =
+          pythonAttribute(placeholder, "operation",
+                          "Qiskit unitary placeholder has no operation");
+      const auto controlled =
+          pythonAttribute(operation, "control",
+                          "Qiskit unitary operation cannot be controlled")(
+              pending.numControls, nb::arg("annotated") = true);
+      nb::list qargs;
+      for (const auto qubit : pending.qubits) {
+        if (qubit >= nb::len(circuitQubits)) {
+          throw std::runtime_error(
+              "Qiskit controlled unitary references an invalid qubit");
+        }
+        qargs.append(circuitQubits[qubit]);
+      }
+      const auto replacement =
+          pythonAttribute(placeholder, "replace",
+                          "Qiskit unitary placeholder cannot be replaced")(
+              nb::arg("operation") = controlled, nb::arg("qubits") = qargs);
+      data[pending.instructionIndex] = replacement;
+    }
+  }
 
   QkCircuit* circuit_ = nullptr;
   std::vector<PendingControlledUnitary> pendingControlledUnitaries_;

@@ -348,9 +348,11 @@ collectUnitaryInstruction(mlir::Operation& operation,
     std::vector<std::complex<double>> values;
     values.reserve(matrix.size());
     llvm::append_range(values, matrix.getValues<std::complex<double>>());
+    auto targetQubits = mapQubits(unitary.getQubits(), qubits);
+    std::ranges::reverse(targetQubits);
     return {.kind = ExportedInstruction::Kind::Unitary,
-            .qubits = mapQubits(unitary.getQubits(), qubits),
-            .matrix = reverseQubitOrder(values, unitary.getNumQubits())};
+            .qubits = std::move(targetQubits),
+            .matrix = std::move(values)};
   }
   auto gate = llvm::dyn_cast<mlir::qc::UnitaryOpInterface>(operation);
   if (!gate || llvm::isa<mlir::qc::GPhaseOp, mlir::qc::BarrierOp>(operation)) {

@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -48,16 +47,6 @@ struct Register {
 [[nodiscard]] uint32_t
 validateRegisterLayout(const std::vector<Register>& registers, uint32_t total,
                        std::string_view kind);
-
-/**
- * Convert between Qiskit's LSB-first and QC/QCO's MSB-first operand convention.
- *
- * The permutation reverses the low @p numQubits bits of both matrix indices
- * and is therefore its own inverse.
- */
-[[nodiscard]] std::vector<std::complex<double>>
-reverseQubitOrder(std::span<const std::complex<double>> matrix,
-                  size_t numQubits);
 
 struct Parameter {
   std::optional<double> number = 0.0;

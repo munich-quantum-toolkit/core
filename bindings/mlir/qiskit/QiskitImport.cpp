@@ -60,6 +60,7 @@
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -1072,11 +1073,12 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
         operands.push_back(getQubit(qubit));
       }
       const auto arity = denseUnitaryArity(instruction);
+      auto targets = std::span{operands}.subspan(arity.controls);
+      std::ranges::reverse(targets);
       const auto dimension = int64_t{1} << arity.targets;
       const auto type = mlir::RankedTensorType::get(
           {dimension, dimension}, mlir::ComplexType::get(builder.getF64Type()));
-      const auto values =
-          reverseQubitOrder(circuit.unitary(index), arity.targets);
+      const auto values = circuit.unitary(index);
       const auto matrix = mlir::DenseElementsAttr::get(
           type, llvm::ArrayRef<std::complex<double>>(values));
       emitModifiedOperation(builder, instruction, operands, arity,

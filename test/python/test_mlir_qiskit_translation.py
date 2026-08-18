@@ -139,7 +139,7 @@ def test_dense_unitary_round_trip_preserves_qarg_mapping_and_source_data() -> No
 
 
 def test_dense_unitary_import_converts_qiskit_qubit_order() -> None:
-    """Convert Qiskit's least-significant-first matrix to QC's convention."""
+    """Convert Qiskit's qubit order by reversing the operation targets."""
     matrix = np.array([
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0j, 0.0],
@@ -155,9 +155,8 @@ def test_dense_unitary_import_converts_qiskit_qubit_order() -> None:
     matches = re.findall(r"\(([-+0-9.eE]+),([-+0-9.eE]+)\)", dense_text)
     entries = [complex(float(real), float(imaginary)) for real, imaginary in matches]
     imported = np.asarray(entries).reshape((4, 4))
-    bit_reversal = [0, 2, 1, 3]
-    expected = matrix[np.ix_(bit_reversal, bit_reversal)]
-    assert np.allclose(imported, expected)
+    assert np.allclose(imported, matrix)
+    assert "%1, %0 : !qc.qubit, !qc.qubit" in ir
 
 
 @pytest.mark.parametrize("num_qubits", [1, 2, 3])
