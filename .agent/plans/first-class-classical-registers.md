@@ -37,14 +37,15 @@ outputs.
 - [ ] Add and register the CBit dialect, its IR tests, and generated
       documentation. The standalone dialect, compiler contexts, and four initial
       IR tests compile and pass; narrative documentation remains.
-- [x] (2026-08-18 21:31Z) Replaced the QC and QCO builder-wide memref policy
+- [x] (2026-08-18 21:12Z) Replaced the QC and QCO builder-wide memref policy
       with per-allocation CBit APIs. Both focused builder suites pass six tests,
       including independent zero and undefined registers.
-- [x] (2026-08-18 21:31Z) Added `convert-cbit-to-memref`, preserved CBit through
+- [x] (2026-08-18 21:12Z) Added `convert-cbit-to-memref`, preserved CBit through
       QC-to-QCO and QCO-to-QC, and proved operation, function, call, return,
       name, initialization, and output conversion behavior.
-- [ ] Commit and publish the compiling dialect, builder, and conversion
-      foundation as a draft pull request.
+- [x] (2026-08-18 21:14Z) Committed and published the compiling dialect,
+      builder, and conversion foundation as draft pull request #2158. Commit
+      `8474dd0d5` is signed and passes `git verify-commit`.
 - [ ] Migrate Qiskit import and export to returned CBit registers and remove the
       temporary memref and UB recognizers.
 - [ ] Migrate OpenQASM import and export to CBit and remove parallel output
@@ -357,6 +358,7 @@ Initial repository evidence:
 
     origin/main ed1d6e3f9 ✨ Export OpenQASM measurements to Qiskit (#2140)
     issue #2155       ✨ Add a first-class classical-bit register dialect
+    draft PR #2158    ♻️ Replace implicit classical-register memrefs with CBit IR
 
 Initial local validation belongs to the merged compatibility pull request and
 does not count as validation of this implementation. Add concise transcripts for

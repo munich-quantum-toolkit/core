@@ -139,6 +139,9 @@ releases may include breaking changes.
 
 - ⬆️ Update QDMI to version 1.3.3 ([#2168]) ([**@denialhaag**])
 - ⬆️ Update `nanobind` to version 2.15.0 ([#2141]) ([**@denialhaag**])
+- ♻️ Replace implicit classical-register memrefs with explicit CBit registers
+  across compiler frontends, conversions, and execution, with an explicit late
+  memref lowering ([#2158]) ([**@burgholzer**])
 - 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
   logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
   ([**@simon1hofmann**])
@@ -817,6 +820,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
+[#2158]: https://github.com/munich-quantum-toolkit/core/pull/2158
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
 [#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
