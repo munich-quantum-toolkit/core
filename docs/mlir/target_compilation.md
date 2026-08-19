@@ -35,6 +35,37 @@ native:
 target = CompilerTarget(3, couplings=[(0, 1), (1, 2)])
 ```
 
+Runtime classical control is opt-in. By default, a target accepts only
+straight-line quantum programs. Declare each supported control form explicitly;
+for example, a target with measurement-conditioned forward branching uses:
+
+```python
+target = CompilerTarget(
+    3,
+    classical_control=[CompilerTarget.ClassicalControl.CONDITIONAL],
+)
+```
+
+Target compilation checks these capabilities before cleanup, mapping, or
+synthesis. An unsupported program therefore fails without partially mapping the
+circuit, and the diagnostic names both the missing capability and the operation
+that requires it. The four independent capabilities are:
+
+- {code}`CONDITIONAL` for runtime {code}`qco.if` and {code}`scf.if` operations.
+- {code}`ITERATION` for counted {code}`scf.for` loops.
+- {code}`CONDITIONAL_LOOP` for runtime {code}`scf.while` loops.
+- {code}`MULTIWAY_BRANCH` for {code}`qco.index_switch` and
+  {code}`scf.index_switch` operations.
+
+Conditional support does not imply loop or multiway-branch support. The
+preflight follows only the selected region of an {code}`if` or
+{code}`index_switch` whose selector is constant and still checks every reachable
+nested operation. The following cleanup pipeline removes a static
+{code}`qco.index_switch` before mapping. Dynamic qubit indexing, unstructured
+control flow, and qubit tensors carried through any structured control remain
+unsupported. The preflight rejects these forms before mapping even when every
+listed capability is enabled.
+
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` to apply target
 compilation to an existing QCO program. Compilation runs in place. If a pass
 fails, earlier passes may already have changed the program. Copy the program

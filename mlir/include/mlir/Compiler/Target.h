@@ -191,6 +191,24 @@ public:
   };
 
   /**
+   * @brief Runtime classical-control capabilities supported by a target.
+   *
+   * @details Capabilities are opt-in. A target that declares none supports
+   * only straight-line quantum programs.
+   */
+  enum class ClassicalControl : uint8_t {
+    /// Runtime forward branching such as `qco.if` or `scf.if`.
+    Conditional,
+    /// Structured counted iteration such as `scf.for`.
+    Iteration,
+    /// Runtime condition-terminated looping such as `scf.while`.
+    ConditionalLoop,
+    /// Runtime multiway branching such as `qco.index_switch` or
+    /// `scf.index_switch`.
+    MultiwayBranch,
+  };
+
+  /**
    * @brief Recognized native gate capability independent of synthesis code.
    */
   enum class GateKind : uint8_t {
@@ -244,6 +262,13 @@ public:
          std::optional<std::vector<Operation>> operations = std::nullopt,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
+  /// Create an unnamed dense target with explicit classical-control support.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(size_t numQubits, std::optional<std::vector<Coupling>> couplings,
+         std::optional<std::vector<Operation>> operations,
+         std::optional<DurationUnit> durationUnit,
+         std::vector<ClassicalControl> classicalControl);
+
   /**
    * @brief Create a named target with dense site IDs `0..numQubits-1`.
    */
@@ -252,6 +277,14 @@ public:
          std::optional<std::vector<Coupling>> couplings = std::nullopt,
          std::optional<std::vector<Operation>> operations = std::nullopt,
          std::optional<DurationUnit> durationUnit = std::nullopt);
+
+  /// Create a named dense target with explicit classical-control support.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(std::string name, size_t numQubits,
+         std::optional<std::vector<Coupling>> couplings,
+         std::optional<std::vector<Operation>> operations,
+         std::optional<DurationUnit> durationUnit,
+         std::vector<ClassicalControl> classicalControl);
 
   /**
    * @brief Create an unnamed target from detailed sites.
@@ -262,6 +295,14 @@ public:
          std::optional<std::vector<Operation>> operations = std::nullopt,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
+  /// Create an unnamed sparse target with explicit classical-control support.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(std::vector<Site> sites,
+         std::optional<std::vector<Coupling>> couplings,
+         std::optional<std::vector<Operation>> operations,
+         std::optional<DurationUnit> durationUnit,
+         std::vector<ClassicalControl> classicalControl);
+
   /**
    * @brief Create a named target from detailed sites.
    */
@@ -270,6 +311,14 @@ public:
          std::optional<std::vector<Coupling>> couplings = std::nullopt,
          std::optional<std::vector<Operation>> operations = std::nullopt,
          std::optional<DurationUnit> durationUnit = std::nullopt);
+
+  /// Create a named sparse target with explicit classical-control support.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(std::string name, std::vector<Site> sites,
+         std::optional<std::vector<Coupling>> couplings,
+         std::optional<std::vector<Operation>> operations,
+         std::optional<DurationUnit> durationUnit,
+         std::vector<ClassicalControl> classicalControl);
 
   /// Copying shares immutable storage; rvalues copy and keep the source valid.
   CompilerTarget(const CompilerTarget&) noexcept = default;
@@ -329,6 +378,14 @@ public:
   /// Return operation capabilities in reported order.
   [[nodiscard]] llvm::ArrayRef<Operation> operations() const noexcept;
 
+  /// Return the sorted classical-control capabilities supported by the target.
+  [[nodiscard]] llvm::ArrayRef<ClassicalControl>
+  classicalControl() const noexcept;
+
+  /// Return whether the target supports a classical-control capability.
+  [[nodiscard]] bool
+  supportsClassicalControl(ClassicalControl capability) const noexcept;
+
   /**
    * @brief Return whether an operation capability is supported by the target.
    */
@@ -357,7 +414,8 @@ private:
   createImpl(std::optional<std::string> name, std::vector<Site> sites,
              std::optional<std::vector<Coupling>> couplings,
              std::optional<std::vector<Operation>> operations,
-             std::optional<DurationUnit> durationUnit);
+             std::optional<DurationUnit> durationUnit,
+             std::vector<ClassicalControl> classicalControl);
 
   [[nodiscard]] llvm::ArrayRef<size_t> explicitNeighbours(size_t vertex) const;
 

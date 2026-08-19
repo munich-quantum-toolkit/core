@@ -473,6 +473,24 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     assert duration_unit.unit == "ns"
 
 
+def test_compiler_target_classical_control_is_explicit_and_canonical() -> None:
+    """Keep runtime classical control opt-in and queryable."""
+    capability = CompilerTarget.ClassicalControl
+    target = CompilerTarget(
+        2,
+        classical_control=[
+            capability.MULTIWAY_BRANCH,
+            capability.CONDITIONAL,
+            capability.MULTIWAY_BRANCH,
+        ],
+    )
+
+    assert target.classical_control == [capability.CONDITIONAL, capability.MULTIWAY_BRANCH]
+    assert target.supports_classical_control(capability.CONDITIONAL)
+    assert not target.supports_classical_control(capability.ITERATION)
+    assert CompilerTarget(2).classical_control == []
+
+
 def test_compiler_target_construction_preserves_validation_errors() -> None:
     """Translate explicit C++ construction errors to Python ``ValueError``."""
     for _ in range(2):

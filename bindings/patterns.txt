@@ -97,6 +97,7 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
     ) -> None: ...
     @overload
     def __init__(
@@ -107,6 +108,7 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
     ) -> None: ...
     @overload
     def __init__(
@@ -116,6 +118,7 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
     ) -> None: ...
     @overload
     def __init__(
@@ -126,6 +129,7 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
     ) -> None: ...
 
 mqt\.core\.mlir\.CompilerTarget\.from_device$:

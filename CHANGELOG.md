@@ -33,6 +33,9 @@ releases may include breaking changes.
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
   compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
   [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
+- ✨ Add explicit runtime classical-control capabilities to compiler targets and
+  reject undeclared structured control before target compilation ([#2162])
+  ([**@simon1hofmann**])
 
 #### Import and export
 
@@ -874,6 +877,7 @@ for previous changelogs._
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
 [#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
+[#2162]: https://github.com/munich-quantum-toolkit/core/pull/2162
 [#2158]: https://github.com/munich-quantum-toolkit/core/pull/2158
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
