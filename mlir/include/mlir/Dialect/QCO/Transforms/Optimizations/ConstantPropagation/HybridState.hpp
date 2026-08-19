@@ -16,9 +16,14 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <complex>
 #include <memory>
+#include <ostream>
+#include <span>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace mlir::qco {
