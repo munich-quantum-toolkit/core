@@ -17,7 +17,9 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: keep (Passes.h.inc)
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
@@ -340,6 +342,38 @@ static void tryAuxiliaryQubitHoisting(func::FuncOp funcOp,
  *
  * @param moduleOp The module to transform.
  */
+/**
+ * @brief Order the hoisting candidates so that callees come before callers.
+ *
+ * @details
+ * Recursive functions are not candidates, so the graph is acyclic here. The
+ * traversal starts at the external caller node, leaving out functions no entry
+ * point reaches; those have no call sites to hoist into anyway.
+ *
+ * @param cg The call graph of the surrounding module.
+ * @param candidates The functions to order.
+ * @return The candidates, callees first.
+ */
+static SmallVector<func::FuncOp>
+orderCalleesFirst(const CallGraph& cg,
+                  const SmallVector<func::FuncOp>& candidates) {
+  llvm::DenseMap<CallGraphNode*, func::FuncOp> candidateNodes;
+  for (auto func : candidates) {
+    if (auto* node = cg.lookupNode(func.getCallableRegion())) {
+      candidateNodes.try_emplace(node, func);
+    }
+  }
+
+  SmallVector<func::FuncOp> ordered;
+  ordered.reserve(candidates.size());
+  for (auto* node : llvm::post_order(&cg)) {
+    if (const auto it = candidateNodes.find(node); it != candidateNodes.end()) {
+      ordered.emplace_back(it->second);
+    }
+  }
+  return ordered;
+}
+
 void runAuxiliaryQubitHoisting(ModuleOp moduleOp) {
   SmallVector<func::FuncOp> hoistingCandidates;
   CallGraph callGraph(moduleOp);
@@ -356,7 +390,11 @@ void runAuxiliaryQubitHoisting(ModuleOp moduleOp) {
     hoistingCandidates.push_back(func);
   });
 
-  for (auto& func : hoistingCandidates) {
+  // Hoisting out of a callee puts an allocation into each of its callers, which
+  // may itself be hoistable. Visiting callees first lets such an allocation
+  // travel all the way up in a single run instead of stopping wherever the
+  // module happens to declare the functions.
+  for (auto func : orderCalleesFirst(callGraph, hoistingCandidates)) {
     tryAuxiliaryQubitHoisting(func, callMapping);
   }
 }

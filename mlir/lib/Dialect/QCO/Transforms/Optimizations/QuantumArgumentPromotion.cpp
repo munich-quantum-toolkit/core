@@ -155,6 +155,11 @@ static SmallVector<PromotedSlot> canPromoteArgument(BlockArgument arg) {
   // Walk the chain of the threaded tensor and collect the accesses on it.
   SmallVector<qtensor::ExtractOp> extracts;
   DenseSet<Operation*> insertsOnChain;
+  // Where each slot is read and written along the chain. The rewrite reorders
+  // the accesses, so their relative order has to be checked below.
+  DenseMap<int64_t, unsigned> extractPositions;
+  DenseMap<int64_t, unsigned> insertPositions;
+  unsigned position = 0;
   Value currentTensor = arg;
   auto reachesReturn = false;
 
@@ -166,7 +171,13 @@ static SmallVector<PromotedSlot> canPromoteArgument(BlockArgument arg) {
     auto* user = *currentTensor.getUsers().begin();
 
     if (auto extractOp = dyn_cast<qtensor::ExtractOp>(user)) {
-      if (!getConstantIntValue(extractOp.getIndex())) {
+      const auto index = getConstantIntValue(extractOp.getIndex());
+      if (!index) {
+        return {};
+      }
+      // Reading one slot twice would take a qubit out of a slot the first read
+      // already emptied, because the call site extracts from a single tensor.
+      if (!extractPositions.try_emplace(*index, position++).second) {
         return {};
       }
       extracts.emplace_back(extractOp);
@@ -174,8 +185,13 @@ static SmallVector<PromotedSlot> canPromoteArgument(BlockArgument arg) {
       continue;
     }
     if (auto insertOp = dyn_cast<qtensor::InsertOp>(user)) {
-      if (insertOp.getDest() != currentTensor ||
-          !getConstantIntValue(insertOp.getIndex())) {
+      const auto index = getConstantIntValue(insertOp.getIndex());
+      if (insertOp.getDest() != currentTensor || !index) {
+        return {};
+      }
+      // Two writes to one slot only differ in their order, which the rewrite
+      // does not preserve.
+      if (!insertPositions.try_emplace(*index, position++).second) {
         return {};
       }
       insertsOnChain.insert(insertOp);
@@ -197,6 +213,18 @@ static SmallVector<PromotedSlot> canPromoteArgument(BlockArgument arg) {
     return {};
   }
 
+  // The rewrite takes every promoted qubit out of the caller's tensor before
+  // the call and puts them all back afterwards. A slot that the callee writes
+  // before it reads it would then be read from the caller's original tensor
+  // instead of from the value written to it, so reject that ordering.
+  for (const auto& [index, insertPosition] : insertPositions) {
+    const auto extractPosition = extractPositions.find(index);
+    if (extractPosition != extractPositions.end() &&
+        extractPosition->second > insertPosition) {
+      return {};
+    }
+  }
+
   // Every extracted qubit has to find its way back into the same chain.
   SmallVector<PromotedSlot> slots;
   for (auto extractOp : extracts) {
@@ -209,6 +237,17 @@ static SmallVector<PromotedSlot> canPromoteArgument(BlockArgument arg) {
                      .insert = insertOp,
                      .extractIndex = *getConstantIntValue(extractOp.getIndex()),
                      .insertIndex = *getConstantIntValue(insertOp.getIndex())});
+  }
+
+  // Every insertion has to belong to one of the promoted slots. One that does
+  // not is left behind by the rewrite and keeps using the tensor argument that
+  // is erased right after, which trips MLIR's `use_empty()` assertion.
+  DenseSet<Operation*> matchedInserts;
+  for (const auto& slot : slots) {
+    matchedInserts.insert(slot.insert);
+  }
+  if (matchedInserts.size() != insertsOnChain.size()) {
+    return {};
   }
 
   return slots;

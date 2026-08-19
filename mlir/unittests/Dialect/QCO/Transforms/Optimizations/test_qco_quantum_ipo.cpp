@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
@@ -19,9 +20,11 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -88,6 +91,47 @@ protected:
 
     EXPECT_TRUE(
         areModulesEquivalentWithPermutations(moduleOp.get(), reference.get()));
+  }
+
+  /**
+   * @brief Parses a module from MLIR source.
+   *
+   * @details
+   * Used by the few cases describing IR `QCOProgramBuilder` cannot build.
+   *
+   * @param source The MLIR source to parse.
+   * @return The parsed module.
+   */
+  OwningOpRef<ModuleOp> parseModule(const char* source) {
+    return parseSourceString<ModuleOp>(source, &context);
+  }
+
+  /**
+   * @brief Runs one stage on a module without comparing against a reference.
+   *
+   * @param module The module to transform.
+   * @param stage The stage to schedule.
+   */
+  static LogicalResult runStage(ModuleOp module, std::unique_ptr<Pass> stage) {
+    PassManager pm(module.getContext());
+    pm.addPass(std::move(stage));
+    return pm.run(module);
+  }
+
+  /**
+   * @brief Counts the qubit allocations inside a named function.
+   *
+   * @param module The module to look in.
+   * @param name The name of the function to count in.
+   */
+  static unsigned countAllocsIn(ModuleOp module, StringRef name) {
+    unsigned count = 0;
+    module.walk([&](func::FuncOp func) {
+      if (func.getName() == name) {
+        func.walk([&](AllocOp) { ++count; });
+      }
+    });
+    return count;
   }
 
   /**
@@ -398,6 +442,42 @@ TEST_F(QCOQuantumIPOTest, noZeroSpecializationForZRotation) {
   reference = referenceBuilder.finalize();
 
   expectModuleMatchesReference();
+}
+
+/**
+ * @brief A specialization of a public callee is private.
+ *
+ * @details
+ * Cloning carries visibility over, so this used to export the generated symbol
+ * and, since orphan cleanup skips public functions, never reclaim it.
+ */
+TEST_F(QCOQuantumIPOTest, specializationOfPublicCalleeIsPrivate) {
+  auto module = parseModule(R"mlir(
+func.func @callee(%q: !qco.qubit) -> !qco.qubit {
+  %0 = qco.z %q : !qco.qubit -> !qco.qubit
+  return %0 : !qco.qubit
+}
+func.func @main() {
+  %q = qco.alloc : !qco.qubit
+  %r = func.call @callee(%q) : (!qco.qubit) -> !qco.qubit
+  qco.sink %r : !qco.qubit
+  return
+}
+)mlir");
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runStage(module.get(), createContextSensitiveSpecialization())
+                  .succeeded());
+
+  auto specializations = 0;
+  module->walk([&](func::FuncOp func) {
+    if (func.getName() == "callee" || func.getName() == "main") {
+      return;
+    }
+    ++specializations;
+    EXPECT_TRUE(func.isPrivate())
+        << "specialization " << func.getName().str() << " must not be exported";
+  });
+  EXPECT_EQ(specializations, 1) << "the public callee should be specialized";
 }
 
 // ==========================================================================
@@ -1134,6 +1214,75 @@ TEST_F(QCOQuantumIPOTest, noPromotionWhenTensorIsNotFirstResult) {
   expectModuleMatchesReference();
 }
 
+/**
+ * @brief A slot the callee writes before reading again must not be promoted.
+ *
+ * @details
+ * Extractions move in front of the call and insertions behind it, so such a
+ * read would be served from the caller's original tensor. Here the callee
+ * computes `x(h(slot 0))`, which promotion would turn into `x(slot 1)`.
+ */
+TEST_F(QCOQuantumIPOTest, noPromotionWhenSlotIsWrittenBeforeItIsRead) {
+  auto module = parseModule(R"mlir(
+func.func private @callee(%t: tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit> {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %t1, %q0 = qtensor.extract %t[%c0] : tensor<2x!qco.qubit>
+  %q0h = qco.h %q0 : !qco.qubit -> !qco.qubit
+  %t2 = qtensor.insert %q0h into %t1[%c1] : tensor<2x!qco.qubit>
+  %t3, %q1 = qtensor.extract %t2[%c1] : tensor<2x!qco.qubit>
+  %q1x = qco.x %q1 : !qco.qubit -> !qco.qubit
+  %t4 = qtensor.insert %q1x into %t3[%c0] : tensor<2x!qco.qubit>
+  return %t4 : tensor<2x!qco.qubit>
+}
+func.func @main(%t: tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit> {
+  %r = func.call @callee(%t) : (tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit>
+  return %r : tensor<2x!qco.qubit>
+}
+)mlir");
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(
+      runStage(module.get(), createQuantumArgumentPromotion()).succeeded());
+
+  auto callee = module->lookupSymbol<func::FuncOp>("callee");
+  ASSERT_TRUE(callee);
+  EXPECT_TRUE(isa<RankedTensorType>(callee.getArgumentTypes()[0]))
+      << "the tensor argument must survive, the accesses depend on each other";
+}
+
+/**
+ * @brief An insertion that does not belong to a promoted slot blocks promotion.
+ *
+ * @details
+ * It survives the rewrite still using the tensor argument that is erased right
+ * afterwards, which used to abort on MLIR's `use_empty()` assertion.
+ */
+TEST_F(QCOQuantumIPOTest, noPromotionForUnmatchedInsertOnChain) {
+  auto module = parseModule(R"mlir(
+func.func private @callee(%t: tensor<2x!qco.qubit>, %extra: !qco.qubit) -> tensor<2x!qco.qubit> {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %t1, %q0 = qtensor.extract %t[%c0] : tensor<2x!qco.qubit>
+  %q0h = qco.h %q0 : !qco.qubit -> !qco.qubit
+  %t2 = qtensor.insert %q0h into %t1[%c0] : tensor<2x!qco.qubit>
+  %t3 = qtensor.insert %extra into %t2[%c1] : tensor<2x!qco.qubit>
+  return %t3 : tensor<2x!qco.qubit>
+}
+func.func @main(%t: tensor<2x!qco.qubit>, %e: !qco.qubit) -> tensor<2x!qco.qubit> {
+  %r = func.call @callee(%t, %e) : (tensor<2x!qco.qubit>, !qco.qubit) -> tensor<2x!qco.qubit>
+  return %r : tensor<2x!qco.qubit>
+}
+)mlir");
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(
+      runStage(module.get(), createQuantumArgumentPromotion()).succeeded());
+
+  auto callee = module->lookupSymbol<func::FuncOp>("callee");
+  ASSERT_TRUE(callee);
+  EXPECT_TRUE(isa<RankedTensorType>(callee.getArgumentTypes()[0]))
+      << "the tensor argument must survive, one insertion is unmatched";
+}
+
 // ==========================================================================
 // Auxiliary qubit hoisting.
 // ==========================================================================
@@ -1682,6 +1831,62 @@ TEST_F(QCOQuantumIPOTest, noHoistingWhenCalleeKeepsAuxiliaryQubit) {
   reference = referenceBuilder.finalize();
 
   expectModuleMatchesReference();
+}
+
+/**
+ * @brief Hoisting reaches the outermost caller regardless of declaration order.
+ *
+ * @details
+ * An allocation hoisted into a caller may be hoistable again. Processing in
+ * module order used to strand it wherever the declarations happened to sit.
+ */
+TEST_F(QCOQuantumIPOTest, hoistingIsIndependentOfDeclarationOrder) {
+  const auto qubitType = programBuilder.getQubitType();
+
+  // Builds `main -> mid -> leaf`, where `leaf` owns an auxiliary qubit.
+  const auto build = [&](QCOProgramBuilder& builder) {
+    builder.initialize();
+    auto leafArgs = builder.startFunction("leaf", {qubitType}, {qubitType});
+    auto aux = builder.allocQubit();
+    auto target = leafArgs[0];
+    std::tie(aux, target) = builder.cx(aux, target);
+    builder.sink(aux);
+    builder.endFunction({target});
+
+    auto midArgs = builder.startFunction("mid", {qubitType}, {qubitType});
+    auto midResults = builder.call("leaf", {midArgs[0]});
+    builder.endFunction({midResults[0]});
+
+    auto q = builder.allocQubit();
+    auto results = builder.call("mid", {q});
+    builder.sink(results[0]);
+    return builder.finalize();
+  };
+
+  moduleOp = build(programBuilder);
+  reference = build(referenceBuilder);
+
+  // The builder has to declare a callee before the call, so the second module
+  // is reordered afterwards. Both now describe the same call graph and differ
+  // only in the order the module walk visits the two callees.
+  auto refLeaf = reference->lookupSymbol<func::FuncOp>("leaf");
+  auto refMid = reference->lookupSymbol<func::FuncOp>("mid");
+  ASSERT_TRUE(refLeaf);
+  ASSERT_TRUE(refMid);
+  refLeaf->moveAfter(refMid.getOperation());
+
+  ASSERT_TRUE(
+      runStage(moduleOp.get(), createAuxiliaryQubitHoisting()).succeeded());
+  ASSERT_TRUE(
+      runStage(reference.get(), createAuxiliaryQubitHoisting()).succeeded());
+
+  // The auxiliary allocation belongs in the entry function either way: one
+  // allocation for the qubit passed in and one for the hoisted auxiliary.
+  for (auto* module : {&moduleOp, &reference}) {
+    EXPECT_EQ(countAllocsIn(module->get(), "leaf"), 0U);
+    EXPECT_EQ(countAllocsIn(module->get(), "mid"), 0U);
+    EXPECT_EQ(countAllocsIn(module->get(), "main"), 2U);
+  }
 }
 
 // ==========================================================================

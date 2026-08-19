@@ -1920,19 +1920,11 @@ public:
    * operands are validated and consumed; results of those types are added to
    * the tracking.
    *
-   * The i-th qubit operand is paired with the i-th qubit result, and likewise
-   * for tensors, so a function that threads its linear values through keeps
-   * the register association intact. Surplus operands are treated as consumed
-   * and surplus results as freshly created.
-   *
-   * This pairing is positional and is only used for the builder's own
-   * bookkeeping. The analysis utilities do not rely on it: `CallQubitMapping`
-   * in `mlir/Dialect/QCO/Utils/WireIterator.h` derives the mapping from the
-   * callee body and falls back to position only for external or recursive
-   * callees. Building a callee that hands its qubits back in a different order
-   * than it takes them therefore yields register bookkeeping that disagrees
-   * with the traversal, which affects the automatic clean-up in `finalize()`
-   * but not the operations that were emitted.
+   * Each linear operand is paired with the result that continues it, derived
+   * from the callee by `CallQubitMapping` and `CallTensorMapping` rather than
+   * by position, so a callee that reorders its qubits or tensors is tracked
+   * correctly. An operand the callee keeps counts as consumed, and a result no
+   * operand flows into as freshly created.
    *
    * @param callee The name of the function to call
    * @param operands The operands to pass to the call

@@ -13,8 +13,10 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -1569,30 +1571,48 @@ SmallVector<Value> QCOProgramBuilder::call(StringRef callee,
     }
   }
 
-  // Thread the i-th linear operand into the i-th linear result of the same
-  // kind. Any operand without a matching result is consumed by the call, any
-  // result without a matching operand is newly created by it.
-  const auto pairedQubits = std::min(qubitOperands.size(), qubitResults.size());
-  for (size_t i = 0; i < pairedQubits; ++i) {
-    updateQubitTracking(qubitOperands[i], qubitResults[i]);
+  // Thread each qubit operand into the result that continues its wire. The
+  // correspondence is derived from the callee body instead of assumed to be
+  // positional, so a callee that hands its qubits back in a different order
+  // than it takes them is tracked the way it actually behaves.
+  CallQubitMapping qubitMapping;
+  DenseSet<Value> continuedResults;
+  for (const auto operand : qubitOperands) {
+    const auto result = qubitMapping.getResultForOperand(callOp, operand);
+    if (!result) {
+      // The callee keeps this qubit.
+      validQubits.erase(operand);
+      continue;
+    }
+    updateQubitTracking(operand, result);
+    continuedResults.insert(result);
   }
-  for (size_t i = pairedQubits; i < qubitOperands.size(); ++i) {
-    validQubits.erase(qubitOperands[i]);
-  }
-  for (size_t i = pairedQubits; i < qubitResults.size(); ++i) {
-    validQubits.insert(qubitResults[i]);
+  for (const auto result : qubitResults) {
+    if (!continuedResults.contains(result)) {
+      // No operand flows here, so the call created this qubit.
+      validQubits.insert(result);
+    }
   }
 
-  const auto pairedTensors =
-      std::min(tensorOperands.size(), tensorResults.size());
-  for (size_t i = 0; i < pairedTensors; ++i) {
-    updateTensorTracking(tensorOperands[i], tensorResults[i]);
+  // Qubit tensors are threaded the same way, using the tensor counterpart of
+  // the mapping above.
+  qtensor::CallTensorMapping tensorMapping;
+  DenseSet<Value> continuedTensorResults;
+  for (const auto operand : tensorOperands) {
+    const auto result = tensorMapping.getResultForOperand(callOp, operand);
+    if (!result) {
+      // The callee keeps this tensor.
+      validTensors.erase(operand);
+      continue;
+    }
+    updateTensorTracking(operand, result);
+    continuedTensorResults.insert(result);
   }
-  for (size_t i = pairedTensors; i < tensorOperands.size(); ++i) {
-    validTensors.erase(tensorOperands[i]);
-  }
-  for (size_t i = pairedTensors; i < tensorResults.size(); ++i) {
-    validTensors.insert(Tensor{tensorResults[i], tensorCounter++});
+  for (const auto result : tensorResults) {
+    if (!continuedTensorResults.contains(result)) {
+      // No operand flows here, so the call created this tensor.
+      validTensors.insert(Tensor{result, tensorCounter++});
+    }
   }
 
   return SmallVector<Value>(callOp.getResults());

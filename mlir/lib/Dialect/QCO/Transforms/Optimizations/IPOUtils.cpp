@@ -23,6 +23,10 @@ namespace mlir::qco {
 func::FuncOp copyFunction(func::FuncOp funcOp, StringRef newName) {
   auto newFunc = funcOp.clone();
   newFunc.setName(newName.str());
+  // Cloning carries the original's visibility over. A specialization is
+  // internal to the stage that made it, and orphan cleanup only erases private
+  // functions, so a public copy would be exported and never reclaimed.
+  newFunc.setPrivate();
   return newFunc;
 }
 

@@ -102,13 +102,17 @@ SmallVector<int64_t> CallQubitMapping::computeMapping(func::FuncOp callee) {
     return positionalMapping(callee);
   }
 
-  // Threading follows a single straight-line body. A callee whose control flow
-  // ends somewhere other than one `func.return` cannot be threaded, and
-  // claiming that it keeps every qubit would be worse than admitting that only
-  // the positional contract is known.
+  // Threading follows a single straight-line body; anything else falls back to
+  // the positional contract. The terminator has to be checked for before it is
+  // asked for, because a body still under construction does not have one yet.
+  if (!callee.getBody().hasOneBlock() ||
+      !callee.getBody().front().mightHaveTerminator()) {
+    inProgress.erase(callee.getOperation());
+    return positionalMapping(callee);
+  }
   auto returnOp =
       dyn_cast<func::ReturnOp>(callee.getBody().front().getTerminator());
-  if (!callee.getBody().hasOneBlock() || !returnOp) {
+  if (!returnOp) {
     inProgress.erase(callee.getOperation());
     return positionalMapping(callee);
   }
@@ -201,8 +205,10 @@ Value CallQubitMapping::getOperandForResult(func::CallOp callOp, Value result) {
 }
 
 bool WireIterator::isSinkLikeOperation(Operation* op) {
-  return isa<SinkOp, YieldOp, qtensor::InsertOp, scf::ConditionOp, scf::YieldOp,
-             func::ReturnOp>(op);
+  // `qtensor.from_elements` takes qubits into a tensor just like
+  // `qtensor.insert` does, so a wire reaching either of them ends there.
+  return isa<SinkOp, YieldOp, qtensor::InsertOp, qtensor::FromElementsOp,
+             scf::ConditionOp, scf::YieldOp, func::ReturnOp>(op);
 }
 
 bool WireIterator::isSourceLikeOperation(Operation* op) {

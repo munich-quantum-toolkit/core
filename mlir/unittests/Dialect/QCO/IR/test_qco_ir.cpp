@@ -371,6 +371,47 @@ TEST_F(QCOTest, BuilderRejectsUsingOuterTensorInsideFunction) {
       "Invalid tensor value used");
 }
 
+/**
+ * @brief A callee that swaps its tensors is tracked without leaking a register.
+ *
+ * @details
+ * Note this does not discriminate derived from positional pairing: register ids
+ * are internal labels and a qubit inherits the id of the tensor it came from,
+ * so either assignment restores it to the same place. It locks in that a
+ * reordering callee is accepted and that `finalize()` completes every register.
+ */
+TEST_F(QCOTest, BuilderTracksACalleeThatSwapsItsTensors) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto tensorType = builder.getQubitTensorType(2);
+  const auto args = builder.startFunction("swap", {tensorType, tensorType},
+                                          {tensorType, tensorType});
+  builder.endFunction({args[1], args[0]});
+
+  const auto first = builder.qtensorAlloc(2);
+  const auto second = builder.qtensorAlloc(2);
+  const auto results = builder.call("swap", {first, second});
+  // Take a qubit out of the tensor the call returns first, which holds what
+  // was passed in second. `finalize()` puts it back on its own.
+  const auto [rest, qubit] = builder.qtensorExtract(results[0], 0);
+  auto module = builder.finalize();
+
+  qtensor::ExtractOp extract;
+  qtensor::InsertOp insert;
+  module->walk([&](Operation* op) {
+    if (auto extractOp = dyn_cast<qtensor::ExtractOp>(op)) {
+      extract = extractOp;
+    }
+    if (auto insertOp = dyn_cast<qtensor::InsertOp>(op)) {
+      insert = insertOp;
+    }
+  });
+  ASSERT_TRUE(extract);
+  ASSERT_TRUE(insert);
+  EXPECT_EQ(insert.getDest(), extract.getOutTensor())
+      << "the qubit must go back into the tensor it was taken from";
+}
+
 TEST_F(QCOTest, BuilderRejectsLinearValuesLeakingOutOfFunctions) {
   EXPECT_DEATH(
       {
