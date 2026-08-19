@@ -1033,6 +1033,33 @@ h q;
   EXPECT_FALSE(qcoFromString->runPassPipeline("not-a-pass"));
   EXPECT_FALSE(qcoFromString->str().empty());
 
+  auto entry = qcoFromString->entryFunc();
+  ASSERT_TRUE(entry);
+  EXPECT_EQ(entry->getSymName(), "main");
+
+  auto firstFuncOnly = QCOProgram::fromMLIRString(R"mlir(
+module {
+  func.func @only() {
+    %q = qco.static 0 : !qco.qubit
+    qco.sink %q : !qco.qubit
+    return
+  }
+}
+)mlir");
+  ASSERT_TRUE(firstFuncOnly);
+  auto first = firstFuncOnly->entryFunc();
+  ASSERT_TRUE(first);
+  EXPECT_EQ(first->getSymName(), "only");
+
+  auto noFunc = QCOProgram::fromMLIRString(R"mlir(
+module {
+  %theta = arith.constant 0.0 : f64
+  qco.gphase(%theta)
+}
+)mlir");
+  ASSERT_TRUE(noFunc);
+  EXPECT_FALSE(noFunc->entryFunc());
+
   auto baseInput = QCProgram::fromQASMString(qasm);
   auto adaptiveInput = QCProgram::fromQASMString(qasm);
   ASSERT_TRUE(baseInput);
