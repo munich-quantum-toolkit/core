@@ -12,7 +12,6 @@
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -37,22 +36,10 @@ SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& b,
   resetRegister(b, q.value, size);
   b.scfFor(0, size, 1, [&](Value iv) { b.h(b.loadQubit(q.value, iv)); });
 
-  auto one = b.indexConstant(1);
-  auto last = b.indexConstant(size - 1);
-
   // Adding a classical constant in the Fourier basis needs no controls. Each
   // qubit takes one phase that depends only on the constant, so the whole
   // addition is a single layer of phase gates between the two transforms.
-  b.scfFor(0, size, 1, [&](Value i) {
-    auto lower = arith::AddIOp::create(b, i, one);
-    auto upper = b.indexConstant(size);
-    scfForWithAngle(b, lower, upper, std::numbers::pi / 2.0, 0.5,
-                    [&](Value angle, Value j) {
-                      b.cp(angle, b.loadQubit(q.value, j),
-                           b.loadQubit(q.value, i));
-                    });
-    b.h(b.loadQubit(q.value, i));
-  });
+  fourierTransform(b, q.value, size, 1.0);
 
   for (int64_t i = 0; i < size; ++i) {
     const auto angle = std::numbers::pi * static_cast<double>(ADDEND) /
@@ -60,18 +47,7 @@ SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& b,
     b.p(angle, q[size - 1 - i]);
   }
 
-  b.scfFor(0, size, 1, [&](Value step) {
-    auto i = arith::SubIOp::create(b, last, step);
-    b.h(b.loadQubit(q.value, i));
-
-    auto lower = arith::AddIOp::create(b, i, one);
-    auto upper = b.indexConstant(size);
-    scfForWithAngle(b, lower, upper, -std::numbers::pi / 2.0, 0.5,
-                    [&](Value angle, Value j) {
-                      b.cp(angle, b.loadQubit(q.value, j),
-                           b.loadQubit(q.value, i));
-                    });
-  });
+  fourierTransform(b, q.value, size, -1.0);
 
   measureRegister(b, q.value, size, c);
 

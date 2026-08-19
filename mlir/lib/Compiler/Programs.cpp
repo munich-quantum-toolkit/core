@@ -80,7 +80,7 @@
 
 namespace mlir {
 
-[[nodiscard]] static std::shared_ptr<MLIRContext> createCompilerContext() {
+std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
   registry
       .insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,

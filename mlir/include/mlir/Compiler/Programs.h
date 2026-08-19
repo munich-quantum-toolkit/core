@@ -313,6 +313,14 @@ private:
   QIRProfile profile_;
 };
 
+/**
+ * @brief Creates a context that holds every dialect the pipelines need.
+ *
+ * @details Callers that build a module themselves need a context with the same
+ * dialects that the conversions and the backends create operations from.
+ */
+[[nodiscard]] std::shared_ptr<MLIRContext> createCompilerContext();
+
 /// Valid input variants for the default compiler pipeline.
 using CompilerInput =
     std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram>;
