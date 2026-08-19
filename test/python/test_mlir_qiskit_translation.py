@@ -529,6 +529,47 @@ measure q[0] -> c[1];
     assert restored.count_ops() == {"measure": 2, "x": 1}
 
 
+def test_sparse_target_measurement_store_after_quantum_work_exports() -> None:
+    """Fuse a delayed destination without moving its measurement past later gates."""
+    target = CompilerTarget(
+        "line",
+        [CompilerTarget.Site(index) for index in range(3)],
+        couplings=[(0, 1), (1, 2)],
+        operations=[
+            CompilerTarget.Operation("x", 1, 0),
+            CompilerTarget.Operation("sx", 1, 0),
+            CompilerTarget.Operation("rz", 1, 1),
+            CompilerTarget.Operation("cz", 2, 0),
+            CompilerTarget.Operation("measure", 1, 0),
+        ],
+    )
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+creg c[3];
+h q[0];
+cu1(pi/2) q[1],q[0];
+h q[1];
+cu1(pi/4) q[2],q[0];
+cu1(pi/2) q[2],q[1];
+h q[2];
+measure q -> c;
+"""
+    )
+    source = program.ir
+    mapped = program.to_qco(copy=True)
+
+    mapped.compile_for_target(target)
+    restored = mapped.to_qc(copy=True).to_qiskit(target=target)
+
+    names = [instruction.operation.name for instruction in restored.data]
+    first_measurement = names.index("measure")
+    assert any(name != "measure" for name in names[first_measurement + 1 :])
+    assert names.count("measure") == 3
+    assert program.ir == source
+
+
 def test_openqasm3_measurement_export_ignores_unused_poison() -> None:
     """Ignore the unused poison value that initializes an OpenQASM 3 output."""
     program = QCProgram.from_qasm_str(
@@ -1101,6 +1142,34 @@ def test_result_bearing_control_flow_rejection_preserves_source() -> None:
     with pytest.raises(RuntimeError, match="does not support SSA results"):
         program.to_qiskit()
 
+    assert program.ir == source
+
+
+def test_measurement_store_after_quantum_operations_round_trips() -> None:
+    """Write the destination early when only quantum operations intervene."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> memref<1xi1> attributes {passthrough = ["entry_point"]} {
+    %false = arith.constant false
+    %zero = arith.constant 0 : index
+    %q = qc.alloc : !qc.qubit
+    %classical = memref.alloc() {mqt.classical_register_name = "c"} : memref<1xi1>
+    memref.store %false, %classical[%zero] : memref<1xi1>
+    %measured = qc.measure %q : !qc.qubit -> i1
+    qc.x %q : !qc.qubit
+    memref.store %measured, %classical[%zero] : memref<1xi1>
+    qc.dealloc %q : !qc.qubit
+    return %classical : memref<1xi1>
+  }
+}
+"""
+    )
+    source = program.ir
+
+    restored = program.to_qiskit()
+
+    assert [instruction.operation.name for instruction in restored.data] == ["measure", "x"]
+    assert restored.find_bit(restored.data[0].clbits[0]).index == 0
     assert program.ir == source
 
 

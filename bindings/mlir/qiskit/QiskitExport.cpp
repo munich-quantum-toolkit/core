@@ -1454,8 +1454,13 @@ isImplicitClassicalZeroInitialization(mlir::memref::StoreOp store,
   }
   for (auto* operation = measure->getNextNode(); operation != store;
        operation = operation->getNextNode()) {
+    // A Qiskit measurement writes its destination immediately. Fusing this
+    // delayed store is equivalent only while no intervening operation can
+    // observe or change classical state. Keep memory access, classical
+    // expressions, and structured control fail-closed.
     if (operation == nullptr ||
-        !llvm::isa<mlir::arith::ConstantOp>(operation)) {
+        !llvm::isa<mlir::arith::ConstantOp, mlir::qc::ResetOp,
+                   mlir::qc::UnitaryOpInterface>(operation)) {
       return false;
     }
   }
