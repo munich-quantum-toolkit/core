@@ -194,7 +194,68 @@ TEST_F(HybridStateTest, ApplyTwoTimesClassicalControlledGate) {
                                      testing::HasSubstr("integerValue1 = 1")));
 }
 
-TEST_F(HybridStateTest, handleErrorIfTwoManyAmplitudesAreNonzero) {
+TEST_F(HybridStateTest, ApplyClassicalDoubleControlledGateThatsFalse) {
+  auto hState = HybridState(fourQubits, 4);
+  std::vector ctrl = {v1};
+  hState.addDoubleValue(v1, 0.0);
+  hState.propagateGate(xOp.getOperation(), vectorThree);
+  hState.propagateGate(hOp.getOperation(), vectorOne);
+  hState.propagateGate(xOp.getOperation(), vectorThree, vectorOne, ctrl);
+
+  EXPECT_THAT(
+      hState.toString(),
+      testing::HasSubstr(
+          "{|1000> -> 0.71, |1010> -> 0.71}: doubleValue0 = 0.00; p = 1.00"));
+}
+
+TEST_F(HybridStateTest, ApplyClassicalDoubleControlledGateThatsTrue) {
+  auto hState = HybridState(fourQubits, 4);
+  std::vector ctrl = {v1};
+  hState.addDoubleValue(v1, 1.1);
+  hState.propagateGate(xOp.getOperation(), vectorThree);
+  hState.propagateGate(hOp.getOperation(), vectorOne);
+  hState.propagateGate(xOp.getOperation(), vectorThree, vectorOne, ctrl);
+
+  EXPECT_THAT(
+      hState.toString(),
+      testing::HasSubstr(
+          "{|0010> -> 0.71, |1000> -> 0.71}: doubleValue0 = 1.10; p = 1.00"));
+}
+
+TEST_F(HybridStateTest, ApplyNegClassicalDoubleControlledGateThatsFalse) {
+  auto hState = HybridState(fourQubits, 4);
+  constexpr auto v1 = mlir::Value();
+  std::vector ctrl = {v1};
+  hState.addDoubleValue(v1, 0.0);
+  hState.propagateGate(xOp.getOperation(), vectorThree);
+  hState.propagateGate(hOp.getOperation(), vectorOne);
+  hState.propagateGate(xOp.getOperation(), vectorThree, vectorOne, {}, ctrl);
+
+  EXPECT_THAT(
+      hState.toString(),
+      testing::HasSubstr(
+          "{|0010> -> 0.71, |1000> -> 0.71}: doubleValue0 = 0.00; p = 1.00"));
+}
+
+TEST_F(HybridStateTest, ApplyTwoTimesClassicalDoubleControlledGate) {
+  auto hState = HybridState(fourQubits, 4);
+  std::vector ctrls = {v1, v2};
+  hState.addDoubleValue(v1, 1.2);
+  hState.addDoubleValue(v2, 3.2);
+  hState.propagateGate(xOp.getOperation(), vectorThree);
+  hState.propagateGate(hOp.getOperation(), vectorOne);
+  hState.propagateGate(xOp.getOperation(), vectorThree, vectorOne, ctrls);
+
+  const auto resStr = hState.toString();
+  EXPECT_THAT(resStr, testing::HasSubstr("{|0010> -> 0.71, |1000> -> 0.71}: "));
+  EXPECT_THAT(resStr, testing::HasSubstr("; p = 1.00"));
+  EXPECT_THAT(resStr, testing::AnyOf(testing::HasSubstr("doubleValue0 = 3.20"),
+                                     testing::HasSubstr("doubleValue1 = 3.20")));
+  EXPECT_THAT(resStr, testing::AnyOf(testing::HasSubstr("doubleValue0 = 1.20"),
+                                     testing::HasSubstr("doubleValue1 = 1.20")));
+}
+
+TEST_F(HybridStateTest, handleErrorIfTooManyAmplitudesAreNonzero) {
   auto hState = HybridState(fourQubits, 2);
   hState.propagateGate(hOp.getOperation(), vectorThree);
   hState.propagateGate(xOp.getOperation(), vectorTwo, vectorThree);
