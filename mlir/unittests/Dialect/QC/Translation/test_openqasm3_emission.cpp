@@ -118,6 +118,31 @@ TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
       << *emitted;
 }
 
+TEST(OpenQASM3EmissionTest, CanonicalizesFixedAnglesToPortableFloats) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+angle[8] theta = angle[8](pi / 2);
+qubit q;
+rx(theta) q;
+output bit result;
+result = measure q;
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_EQ(emitted->find("angle"), std::string::npos);
+  EXPECT_EQ(emitted->find("mqt.openqasm"), std::string::npos);
+  EXPECT_NE(emitted->find("rx(1.5707963267948966)"), std::string::npos)
+      << *emitted;
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
+}
+
 TEST(OpenQASM3EmissionTest, UsesCanonicalOutputTypesWithoutResultMetadata) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";

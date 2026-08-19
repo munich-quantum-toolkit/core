@@ -40,7 +40,7 @@ struct Version {
   uint32_t minor = 0;
 };
 
-enum class ScalarKind : uint8_t { Bool, Int, Uint, Float };
+enum class ScalarKind : uint8_t { Bool, Int, Uint, Float, Angle };
 
 /**
  * @defgroup ParseVocabulary Transient parse vocabulary
@@ -66,6 +66,7 @@ struct Expr {
     Float,
     Bool,
     Identifier,
+    AngleCast,
     Index,
     Neg,
     Not,
@@ -211,7 +212,7 @@ concept QASMSink =
       s.error(loc, str);
       s.version(loc, version);
       s.include(loc, str);
-      s.scalarDecl(loc, ScalarKind::Int, str, &expr, flag, flag);
+      s.scalarDecl(loc, ScalarKind::Int, str, &expr, &expr, flag, flag);
       s.assignment(loc, reference, expr);
       s.qubitRegister(loc, str, &expr);
       s.classicalRegister(loc, str, &expr, &expr, flag);
@@ -333,12 +334,11 @@ private:
     case TokenKind::Int:
     case TokenKind::Uint:
     case TokenKind::Float:
-      return parseScalarDeclaration(/*isOutput=*/false);
     case TokenKind::Angle:
+      return parseScalarDeclaration(/*isOutput=*/false);
     case TokenKind::Duration:
       return sink.error(current().loc,
-                        "'angle' and 'duration' declarations are not supported "
-                        "yet");
+                        "'duration' declarations are not supported yet");
     case TokenKind::Qubit:
       return parseQuantumDecl();
     case TokenKind::Qreg:
@@ -508,7 +508,7 @@ private:
 
   //===--- Declarations -------------------------------------------------===//
 
-  /// Parse `[const] (int|uint|float|bool) <id> [= <initializer>];`.
+  /// Parse `[const] (int|uint|float|bool|angle) <id> [= <initializer>];`.
   [[nodiscard]] LogicalResult parseScalarDeclaration(const bool isOutput) {
     const auto loc = current().loc;
 
@@ -524,12 +524,11 @@ private:
     case TokenKind::Int:
     case TokenKind::Uint:
     case TokenKind::Float:
-      break;
     case TokenKind::Angle:
+      break;
     case TokenKind::Duration:
       return sink.error(current().loc,
-                        "'angle' and 'duration' declarations are not supported "
-                        "yet");
+                        "'duration' declarations are not supported yet");
     case TokenKind::UnsupportedKeyword:
       return unsupportedKeyword();
     default:
@@ -537,6 +536,14 @@ private:
     }
     advance(); // type
 
+    const Expr* size = nullptr;
+    if (kind == TokenKind::Angle && current().kind == TokenKind::LBracket) {
+      auto designator = parseDesignator();
+      if (failed(designator)) {
+        return failure();
+      }
+      size = *designator;
+    }
     if ((kind == TokenKind::Int || kind == TokenKind::Uint) &&
         current().kind == TokenKind::LBracket) {
       return sink.error(current().loc,
@@ -592,8 +599,10 @@ private:
       scalarKind = ScalarKind::Int;
     } else if (kind == TokenKind::Uint) {
       scalarKind = ScalarKind::Uint;
+    } else if (kind == TokenKind::Angle) {
+      scalarKind = ScalarKind::Angle;
     }
-    if (failed(sink.scalarDecl(loc, scalarKind, id, initializer, isConst,
+    if (failed(sink.scalarDecl(loc, scalarKind, id, size, initializer, isConst,
                                isOutput))) {
       return failure();
     }
@@ -1595,6 +1604,28 @@ private:
       }
       advance();
       return expr;
+    case TokenKind::Angle: {
+      advance(); // angle
+      const Expr* size = nullptr;
+      if (current().kind == TokenKind::LBracket) {
+        auto designator = parseDesignator();
+        if (failed(designator)) {
+          return failure();
+        }
+        size = *designator;
+      }
+      if (failed(expect(TokenKind::LParen))) {
+        return failure();
+      }
+      auto operand = parseExpression();
+      if (failed(operand) || failed(expect(TokenKind::RParen))) {
+        return failure();
+      }
+      expr->kind = Expr::Kind::AngleCast;
+      expr->lhs = size;
+      expr->rhs = *operand;
+      return expr;
+    }
     case TokenKind::Identifier: {
       if (peek().kind == TokenKind::LParen) {
         const auto kind = getMathFunctionKind(current().identifier);
