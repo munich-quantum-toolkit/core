@@ -129,6 +129,47 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
                                  const DDBindings& bindings = DDBindings());
 
 /**
+ * @brief Construct the density operator @f$|\psi\rangle\langle\psi|@f$.
+ *
+ * @param state Pure input state; its reference is retained by the caller
+ * @param numQubits Number of active qubits represented by @p state
+ * @param dd The DD package to use
+ * @return A referenced matrix DD representing the pure-state density operator
+ * @throws std::invalid_argument If @p numQubits does not cover the highest DD
+ *         level in @p state or exceeds the capacity of @p dd
+ */
+dd::MatrixDD makeDensityMatrix(const dd::VectorDD& state, size_t numQubits,
+                               dd::Package& dd);
+
+/**
+ * @brief Simulate a QCO function using a density-matrix DD.
+ *
+ * @details Unitary operations evolve the state as @f$U\rho U^\dagger@f$.
+ * Qubit and qtensor deallocation performs a physical partial trace, including
+ * for entangled qubits. The RNG overload additionally supports collapsing
+ * measurement and reset. Consumes one reference to @p in regardless of
+ * success or failure.
+ *
+ * @param func The QCO function to simulate
+ * @param in Input density matrix; one reference is consumed
+ * @param dd The DD package to use
+ * @param bindings Concrete values for symbolic function arguments
+ * @return The output density-matrix DD on success, or failure for unsupported
+ *         programs
+ */
+FailureOr<dd::MatrixDD>
+simulateDensity(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
+                const DDBindings& bindings = DDBindings());
+
+/// @copydoc simulateDensity(func::FuncOp, const dd::MatrixDD&, dd::Package&,
+/// const DDBindings&)
+/// Uses @p rng for collapsing measurement and reset.
+FailureOr<dd::MatrixDD>
+simulateDensity(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
+                std::mt19937_64& rng,
+                const DDBindings& bindings = DDBindings());
+
+/**
  * @brief Sample measurement outcomes from a QCO `func.func`.
  *
  * @details Starts from the all-zero state and draws @p shots bitstrings via
@@ -170,6 +211,19 @@ sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd, size_t shots,
        std::mt19937_64& rng, const DDBindings& bindings = DDBindings());
+
+/**
+ * @brief Sample a QCO function from an input density-matrix DD.
+ *
+ * @details Supports mixed states and entangled qubit deallocation. Each final
+ * sample collapses a referenced copy of the simulated density state. Programs
+ * with mid-circuit measurement or reset are re-simulated per shot. Consumes
+ * one reference to @p in regardless of success, failure, or @p shots.
+ */
+FailureOr<std::map<std::string, size_t>>
+sampleDensity(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
+              size_t shots, std::mt19937_64& rng,
+              const DDBindings& bindings = DDBindings());
 
 /// Histograms produced by @ref sampleWithClassics.
 struct SampleResult {

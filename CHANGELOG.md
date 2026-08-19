@@ -77,8 +77,9 @@ releases may include breaking changes.
   parameters, classical integer, floating-point, and common math operations,
   dynamic quantum allocation and separable deallocation, qtensors, dense `k>3`
   wire embedding, Python input bindings, optional sampling input states, and
-  multi-shot `sample` and `sampleWithClassics` ([#1915], [#1973], [#2077],
-  [#2078], [#2079]) ([**@simon1hofmann**])
+  statevector and density-matrix simulation and sampling with physical partial
+  trace, including Python bindings ([#1915], [#1973], [#2077], [#2078], [#2079],
+  [#2080]) ([**@simon1hofmann**])
 - ✨ Add target-independent two-qubit gate fusion, target-native post-routing
   synthesis, and operation-capability and static-site conformance ([#1865],
   [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -844,6 +845,7 @@ for previous changelogs._
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
+[#2080]: https://github.com/munich-quantum-toolkit/core/pull/2080
 [#2079]: https://github.com/munich-quantum-toolkit/core/pull/2079
 [#2078]: https://github.com/munich-quantum-toolkit/core/pull/2078
 [#2077]: https://github.com/munich-quantum-toolkit/core/pull/2077

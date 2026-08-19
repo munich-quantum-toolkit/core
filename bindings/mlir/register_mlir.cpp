@@ -189,19 +189,22 @@ makeQCODDBindings(mlir::func::FuncOp func,
   return bindings;
 }
 
-void requireLiveReference(const dd::VectorDD& state, dd::Package& ddPackage) {
-  if (!dd::VectorDD::trackingRequired(state)) {
+template <class Node>
+void requireLiveReference(const dd::Edge<Node>& state, dd::Package& ddPackage,
+                          const char* argumentName = "initial_state") {
+  if (!dd::Edge<Node>::trackingRequired(state)) {
     return;
   }
-  const bool tracked = std::ranges::any_of(
-      ddPackage.getRootSet<dd::vNode>(), [&](const auto& root) {
+  const bool tracked =
+      std::ranges::any_of(ddPackage.getRootSet<Node>(), [&](const auto& root) {
         const auto& candidate = root.first;
         return candidate.p == state.p && candidate.w.r == state.w.r &&
                candidate.w.i == state.w.i;
       });
   if (!tracked) {
-    throw nb::value_error(
-        "initial_state must have a live reference in dd_package");
+    std::string message(argumentName);
+    message.append(" must have a live reference in dd_package");
+    throw nb::value_error(message.c_str());
   }
 }
 
@@ -1112,6 +1115,74 @@ Raises:
         or the program is unsupported for simulation.)pb");
 
   m.def(
+      "make_density_matrix",
+      [](const dd::VectorDD& state, const size_t numQubits,
+         dd::Package& ddPackage) {
+        requireLiveReference(state, ddPackage, "state");
+        return mlir::qco::makeDensityMatrix(state, numQubits, ddPackage);
+      },
+      "state"_a, "num_qubits"_a, "dd_package"_a, nb::keep_alive<0, 3>(),
+      R"pb(Construct ``|psi><psi|`` from a pure DD state.
+
+The input vector reference remains owned by the caller. The returned matrix DD
+has a live reference in ``dd_package``.
+
+Args:
+    state: Pure state with a live reference in ``dd_package``.
+    num_qubits: Number of active qubits represented by ``state``.
+    dd_package: DD package that owns ``state`` and has enough qubits.
+
+Returns:
+    Density-matrix DD for the pure state.
+
+Raises:
+    ValueError: When ``state`` has no live reference in ``dd_package`` or
+        ``num_qubits`` does not cover the state or exceeds the DD package
+        capacity.)pb");
+
+  m.def(
+      "simulate_density",
+      [](const mlir::QCOProgram& program, const dd::MatrixDD& initialState,
+         dd::Package& ddPackage, const std::optional<uint64_t> seed,
+         const QCODDBindingMap& pythonBindings) {
+        requireLiveReference(initialState, ddPackage);
+        auto func = entryFunc(program);
+        const auto bindings = makeQCODDBindings(func, pythonBindings);
+        if (!seed.has_value()) {
+          return takeFailureOr(func.getContext(),
+                               "cannot density-simulate this QCO program", [&] {
+                                 return mlir::qco::simulateDensity(
+                                     func, initialState, ddPackage, bindings);
+                               });
+        }
+        auto rng = makeRng(seed);
+        return takeFailureOr(
+            func.getContext(), "cannot density-simulate this QCO program", [&] {
+              return mlir::qco::simulateDensity(func, initialState, ddPackage,
+                                                rng, bindings);
+            });
+      },
+      "program"_a, "initial_state"_a, "dd_package"_a, "seed"_a = nb::none(),
+      nb::kw_only(), "bindings"_a = QCODDBindingMap{}, nb::keep_alive<0, 3>(),
+      R"pb(Simulate a QCO program on a density-matrix DD.
+
+Args:
+    program: A QCO program whose entry ``func.func`` is simulated.
+    initial_state: Input density-matrix DD with a live reference in
+        ``dd_package``. A valid input reference is consumed.
+    dd_package: DD package with enough qubits for the program.
+    seed: If ``None``, rejects mid-circuit measure/reset. Otherwise seeds the
+        RNG used for collapsing measurements and resets (``0`` = nondeterministic).
+    bindings: Concrete entry-argument values keyed by zero-based argument index.
+
+Returns:
+    Output density-matrix DD.
+
+Raises:
+    ValueError: When ``initial_state`` has no live reference in ``dd_package``
+        or the program is unsupported for simulation.)pb");
+
+  m.def(
       "sample",
       [](const mlir::QCOProgram& program, dd::Package& ddPackage,
          const size_t shots, const std::optional<uint64_t> seed,
@@ -1142,6 +1213,42 @@ Args:
     seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
     initial_state: Optional input state with a live reference in ``dd_package``.
         A valid input reference is consumed.
+    bindings: Concrete entry-argument values keyed by zero-based argument index.
+
+Returns:
+    Histogram of final ``measureAll`` bitstrings.
+
+Raises:
+    ValueError: When ``initial_state`` has no live reference in ``dd_package``
+        or the program is unsupported for sampling.)pb");
+
+  m.def(
+      "sample_density",
+      [](const mlir::QCOProgram& program, const dd::MatrixDD& initialState,
+         dd::Package& ddPackage, const size_t shots,
+         const std::optional<uint64_t> seed,
+         const QCODDBindingMap& pythonBindings) {
+        requireLiveReference(initialState, ddPackage);
+        auto func = entryFunc(program);
+        const auto bindings = makeQCODDBindings(func, pythonBindings);
+        auto rng = makeRng(seed);
+        return takeFailureOr(
+            func.getContext(), "cannot density-sample this QCO program", [&] {
+              return mlir::qco::sampleDensity(func, initialState, ddPackage,
+                                              shots, rng, bindings);
+            });
+      },
+      "program"_a, "initial_state"_a, "dd_package"_a, "shots"_a = 1024U,
+      "seed"_a = nb::none(), nb::kw_only(), "bindings"_a = QCODDBindingMap{},
+      R"pb(Sample final computational-basis outcomes from a density-matrix DD.
+
+Args:
+    program: A QCO program whose entry ``func.func`` is sampled.
+    initial_state: Input density-matrix DD with a live reference in
+        ``dd_package``. A valid input reference is consumed.
+    dd_package: DD package with enough qubits for the program.
+    shots: Number of shots (default 1024).
+    seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
     bindings: Concrete entry-argument values keyed by zero-based argument index.
 
 Returns:
