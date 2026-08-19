@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2026 Chair for Design Automation, TUM
- * Copyright (c) 2026 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -30,8 +30,8 @@ using namespace mlir;
 
 TEST(CBitToTensorTest, ConvertsInitializationLoadsAndStores) {
   MLIRContext context;
-  context.loadDialect<arith::ArithDialect, cbit::CBitDialect,
-                      func::FuncDialect, tensor::TensorDialect>();
+  context.loadDialect<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                      tensor::TensorDialect>();
   OpBuilder builder(&context);
   const auto loc = builder.getUnknownLoc();
   auto moduleOp = ModuleOp::create(builder, loc);
@@ -50,8 +50,8 @@ TEST(CBitToTensorTest, ConvertsInitializationLoadsAndStores) {
   auto value =
       arith::ConstantOp::create(builder, loc, builder.getBoolAttr(true));
   cbit::StoreOp::create(builder, loc, value, zero, index);
-  auto loaded = cbit::LoadOp::create(builder, loc, builder.getI1Type(), zero,
-                                     index);
+  auto loaded =
+      cbit::LoadOp::create(builder, loc, builder.getI1Type(), zero, index);
   func::ReturnOp::create(builder, loc, loaded.getResult());
 
   TypeConverter typeConverter;
@@ -66,8 +66,8 @@ TEST(CBitToTensorTest, ConvertsInitializationLoadsAndStores) {
   target.addLegalDialect<arith::ArithDialect, func::FuncDialect,
                          tensor::TensorDialect>();
 
-  ASSERT_TRUE(succeeded(
-      applyPartialConversion(moduleOp, target, std::move(patterns))));
+  ASSERT_TRUE(
+      succeeded(applyPartialConversion(moduleOp, target, std::move(patterns))));
 
   size_t emptyOps = 0;
   size_t insertOps = 0;

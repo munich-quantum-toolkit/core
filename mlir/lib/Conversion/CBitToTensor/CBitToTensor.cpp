@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2026 Chair for Design Automation, TUM
- * Copyright (c) 2026 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -71,8 +71,7 @@ Value CBitToTensorState::getRegisterForAlias(Value tensor) const {
   return it != registerAliases.end() ? it->second : Value{};
 }
 
-DenseMap<Value, Value>*
-CBitToTensorState::getRegionRegisters(Region* region) {
+DenseMap<Value, Value>* CBitToTensorState::getRegionRegisters(Region* region) {
   const auto it = registerTensors.find(region);
   return it != registerTensors.end() ? &it->second : nullptr;
 }
@@ -87,8 +86,7 @@ void CBitToTensorState::recordRegisterUses(Operation* root) {
   });
 }
 
-Value
-CBitToTensorState::getRecordedRegister(Operation* operation) const {
+Value CBitToTensorState::getRecordedRegister(Operation* operation) const {
   const auto it = operationRegisters.find(operation);
   return it != operationRegisters.end() ? it->second : Value{};
 }
@@ -123,17 +121,17 @@ struct ConvertAllocOp final : CBitToTensorPattern<AllocOp> {
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     const auto registerType = op.getResult().getType();
-    const auto tensorType = RankedTensorType::get(
-        {registerType.getWidth()}, rewriter.getI1Type());
-    auto tensor = tensor::EmptyOp::create(rewriter, op.getLoc(), tensorType,
-                                          ValueRange{})
-                      .getResult();
+    const auto tensorType =
+        RankedTensorType::get({registerType.getWidth()}, rewriter.getI1Type());
+    auto tensor =
+        tensor::EmptyOp::create(rewriter, op.getLoc(), tensorType, ValueRange{})
+            .getResult();
     if (op.getInitialization() == Initialization::Zero) {
-      auto zero = arith::ConstantOp::create(
-          rewriter, op.getLoc(), rewriter.getBoolAttr(false));
+      auto zero = arith::ConstantOp::create(rewriter, op.getLoc(),
+                                            rewriter.getBoolAttr(false));
       for (int64_t index = 0; index < registerType.getWidth(); ++index) {
-        auto indexValue = arith::ConstantIndexOp::create(
-            rewriter, op.getLoc(), index);
+        auto indexValue =
+            arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
         tensor = tensor::InsertOp::create(rewriter, op.getLoc(), zero, tensor,
                                           indexValue.getResult())
                      .getResult();
