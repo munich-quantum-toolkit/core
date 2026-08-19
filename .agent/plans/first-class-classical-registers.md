@@ -79,9 +79,13 @@ outputs.
       exporter metadata, and recursive CBit rejection in QC and QCO modifiers.
       The release build, all 4,290 native tests, 167 focused Python tests,
       generated stubs, MLIR documentation, and repository lint pass.
-- [ ] Publish and validate the signed final head. Pull request #2165 fixes the
-      unrelated external DOI, Qiskit policy, and old Read the Docs link-check
-      failures and is queued for automatic merge.
+- [x] (2026-08-19 12:37Z) Published the signed review batch. Replied to and
+      resolved all 13 inline discussions and posted the modifier resolution for
+      Simon Hofmann's review. Replaced an unsigned pre-commit bot correction
+      with a signed commit that has the same tree.
+- [ ] Validate all remote checks on the exact submitted head. Pull request #2165
+      fixed the unrelated external DOI, Qiskit policy, and old Read the Docs
+      link-check failures on `main`.
 
 ## Surprises & Discoveries
 
@@ -162,6 +166,9 @@ outputs.
   adapted register values stable. Evidence: the shared state and type layer
   passes all 142 jeff tests, while the independent generic operation patterns
   pass their focused CBit-to-tensor test.
+- Observation: pre-commit.ci corrected license ranges and formatting after the
+  first review push. Evidence: the bot added an unsigned formatting commit whose
+  tree differed only in the five new CBit-to-tensor files.
 
 ## Decision Log
 
@@ -205,6 +212,10 @@ outputs.
   this separates the CBit model from jeff without destabilizing values adapted
   inside the same dialect-conversion pass. Date/Author: 2026-08-19 / Daniel Haag
   and Codex.
+- Decision: Preserve the exact pre-commit.ci tree in a signed human commit and
+  replace only the unsigned bot commit with an exact force-with-lease guard.
+  Rationale: the corrections are valid, but every pull-request commit must have
+  a verifiable signature. Date/Author: 2026-08-19 / Lukas Burgholzer and Codex.
 
 ## Outcomes & Retrospective
 
@@ -215,8 +226,9 @@ lowering, all planned producer and consumer migrations, and the accepted review
 refinements. The focused suites, the complete 4,290-test native suite, the
 required Python tests, all supported Python-version matrices, generated stubs,
 and documentation build pass. Pull request #2165 addresses the unrelated
-external link-check failures. Publishing and remote validation of the signed
-review head remain.
+external link-check failures. The signed review head is published, all inline
+review discussions have concise resolution replies, and all addressed threads
+are resolved. Remote validation of the exact submitted head remains.
 
 ## Context and Orientation
 
