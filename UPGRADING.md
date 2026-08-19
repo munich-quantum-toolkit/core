@@ -6,7 +6,7 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### Program serializers for the Qiskit backend
+### Program serialization for QDMI Qiskit backends
 
 The Qiskit backend no longer decides in its own code how to turn a circuit into
 a program. It takes every program format from a registered _program serializer_,
@@ -58,8 +58,6 @@ class MyBackend(QDMIBackend):
     _EXTRA_GATES = {"move": MoveGate()}
 ```
 
-### IQM JSON serialization moved to QDMI-on-IQM
-
 MQT Core no longer provides `qiskit_to_iqm_json` or `MoveGate`.
 [QDMI-on-IQM](https://github.com/iqm-finland/QDMI-on-IQM) owns both. Import them
 from `iqm.qdmi` instead:
@@ -73,12 +71,16 @@ Installing `iqm-qdmi` is enough to keep submitting IQM JSON. The package
 advertises its serializer through the entry point group described above, so a
 backend over an IQM device needs no code change.
 
-### Removal of DD approximation support
+### Removal of DD approximation and density-matrix support
 
 MQT Core no longer provides the decision-diagram approximation algorithm. The
 algorithm had no production owner in the MQT ecosystem. Remove uses of the
 `dd/Approximation.hpp` header, the `dd::ApproximationMetadata` type, and the
 `dd::approximate` function. MQT Core does not provide a replacement.
+
+MQT Core also no longer provides density-matrix decision diagrams or the noise
+operations that depended on them. Consumers must provide this functionality or
+use another implementation.
 
 ### Private `nlohmann_json` dependency
 
@@ -124,6 +126,35 @@ MQT Core removed the following names:
   `aod_activate`, `aod_deactivate`, and `aod_move`.
 - The bundled `mqt.na.default` QDMI device.
 
+### Removal of FoMaC compatibility APIs
+
+MQT Core 4 removes the deprecated FoMaC names that MQT Core 3.9 kept as
+compatibility aliases. Replace Python imports of QDMI entities from
+`mqt.core.fomac` with imports from `mqt.core.qdmi`. Import registry functions
+and `DeviceDefinition` from `mqt.core.qdmi.driver`.
+
+MQT Core 4 also removes `mqt.core.qdmi.driver.Session`. Use
+`registered_device_ids()` to discover devices and `open_device()` to open a
+fresh device session. Pass provider configuration overrides to `open_device()`
+when a device needs per-open configuration.
+
+Apply these replacements to C++ and MLIR code:
+
+- `fomac::` becomes `qdmi::`.
+- `fomac/FoMaC.hpp` becomes `qdmi/Client.hpp`.
+- `fomac/Slurm.hpp` becomes `qdmi/Slurm.hpp`.
+- `MQT::CoreFoMaC` becomes `MQT::CoreQDMI`.
+- `mlir/Compiler/FoMaCAdapter.h` and `MQTCompilerFoMaCAdapter` become
+  `mlir/Compiler/QDMIAdapter.h` and `MQTCompilerQDMIAdapter`.
+
+The class and function names do not change. For example:
+
+```cpp
+#include "qdmi/Client.hpp"
+
+auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+```
+
 ### CoreIR API cleanup
 
 The CoreIR API cleanup requires the following migrations:
@@ -141,6 +172,12 @@ The CoreIR API cleanup requires the following migrations:
 The register lookup helpers `getQubitRegister()`, `getPhysicalQubitIndex()`, and
 `physicalQubitIsAncillary()` are now private implementation details.
 
+`QuantumComputation` no longer stores a random-number generator or seed. Remove
+the third `seed` argument from C++ and Python constructor calls. C++ callers
+that used `QuantumComputation::getGenerator()` must create and own a
+random-number generator instead. Randomized circuit generators continue to
+accept a seed and now own a separate generator for each call.
+
 ### Removal of the legacy circuit-to-MLIR translator
 
 The compiler no longer accepts `qc::QuantumComputation` or
@@ -153,14 +190,6 @@ Python code can convert a legacy circuit to OpenQASM 3 before compilation:
 ```python
 program = compile_program(computation.qasm3_str())
 ```
-
-### QuantumComputation random-number generator
-
-`QuantumComputation` no longer stores a random-number generator or seed. Remove
-the third `seed` argument from C++ and Python constructor calls. C++ callers
-that used `QuantumComputation::getGenerator()` must create and own a
-random-number generator instead. Randomized circuit generators continue to
-accept a seed and now own a separate generator for each call.
 
 ### Removal of the ZX-calculus library
 
@@ -175,21 +204,19 @@ The `MQT::Multiprecision` target and the `USE_SYSTEM_BOOST`,
 removed. MQT Core no longer discovers, fetches, or exports configuration for
 Boost.Multiprecision or GMP.
 
-### QIR runner
+### QIR execution
 
-The QIR runner now invokes a selected QIR entry point as a parameterless `i64`
-function instead of assuming an `int main(int, char**)`. Use `--entry-point` to
-select among multiple entry points, `--shots` for repeated execution, and
-`--seed` for deterministic sampling.
+The standalone QIR runner now invokes a selected QIR entry point as a
+parameterless `i64` function instead of assuming an `int main(int, char**)`. Use
+`--entry-point` to select among multiple entry points, `--shots` for repeated
+execution, and `--seed` for deterministic sampling.
 
 Dynamic QIR inputs must use the current QIR 2.1 resource-management interface.
 Legacy qir-runner allocator and output overloads are no longer accepted.
 
-### DDSIM QDMI device
-
-DDSIM now isolates the runtime, simulator state, random-number generator, and
-output sink of every QIR job, so concurrently submitted jobs no longer share
-execution state or write QIR records to process stdout.
+The DDSIM QDMI device now isolates the runtime, simulator state, random-number
+generator, and output sink of every QIR job. Concurrently submitted jobs no
+longer share execution state or write QIR records to process stdout.
 
 QIR statevector extraction is supported only for Base-format jobs. The input
 must mark its first measurement boundary as `irreversible`, and no quantum work
@@ -226,30 +253,11 @@ Known limitations:
 - AppleClang 17+ is required to build MQT Core due to some C++20 features that
   are not yet properly supported by older versions.
 
-### Removal of the density matrix support from the DD package
-
-The density matrix support within the DD package has been removed. This change
-was made to reduce the maintenance burden of the package. Any libraries that
-depend on the density matrix functionality, such as [MQT DDSIM], need to
-implement it on their own or use an alternative solution. In a related fashion,
-this PR also removes the noise operations from the MQT Core IR as they no longer
-serve a purpose.
-
 ### Removal of the `datastructures` (sub)library
 
-The `datastructures` (sub)library has been removed from the MQT Core repository.
-Its functionality has only ever been used in [MQT QMAP] since its inception. As
-a consequence, the code shall be moved to [MQT QMAP] once QMAP adopts an MQT
-Core version that includes this change.
-
-### Dev container
-
-A [dev container](https://containers.dev/) configuration is available to provide
-a consistent local development environment. Common IDEs like
-[CLion](https://www.jetbrains.com/help/clion/dev-containers-starting-page.html)
-and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
-open the repository directly inside the container. If you are on Windows, we
-recommend using Docker Desktop with the WSL 2 backend.
+MQT Core no longer provides the `datastructures` (`ds`) sublibrary. MQT QMAP was
+its only consumer. Downstream users must depend on MQT QMAP or provide the
+required data structures directly.
 
 ## [3.9.0]
 
