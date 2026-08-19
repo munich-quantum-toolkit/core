@@ -6,18 +6,29 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### QDMI updated to version 1.3.3
+## [3.9.0]
 
-While not a breaking change, this release updates the QDMI dependency to version
-1.3.3.
+### Shared-library ABI version
+
+The shared-library ABI version (`SOVERSION`) changes from `3.8` to `3.9`.
+Rebuild downstream C++ libraries against MQT Core 3.9.0. In `cibuildwheel`
+configurations that exclude bundled MQT Core libraries from wheel repair,
+replace each `libmqt-core-*.so.3.8` entry with the corresponding
+`libmqt-core-*.so.3.9` entry.
 
 ### `nanobind` updated to version 2.15.0
 
-This release updates the `nanobind` dependency to version 2.15.0, which includes
-an ABI bump. Any existing code that uses the `mqt-core` Python bindings will
-need to be recompiled with the new `nanobind` version.
+`nanobind` 2.15.0 changes the `nanobind` ABI. Rebuild downstream native Python
+extensions that use MQT Core's `nanobind`-bound C++ types. Pure Python consumers
+do not need to recompile anything.
 
-### Calibration runs and batch jobs
+### QDMI updated to version 1.3.3
+
+The minimum supported QDMI version changes from 1.3.2 to 1.3.3. CMake builds
+that use a system installation of QDMI must provide version 1.3.3 or newer.
+Builds that let MQT Core fetch QDMI need no change.
+
+### QDMI calibration runs and batch jobs
 
 `Device::submitJob` used to reject `CALIBRATION` and `BATCH_JOB` together, which
 left MQT Core reporting that a device needs calibration through
@@ -37,10 +48,9 @@ In C++, use `Device::submitCalibrationJob`. A calibration run executes no
 circuit, so neither form takes a shot count.
 
 Batch jobs are explicitly unsupported. A batch job's program is a list of job
-handles rather than a byte payload, which `submitJob` cannot express, so MQT
-Core says so rather than describing it as a missing payload. Passing
-`ProgramFormat.BATCH_JOB` to `submit_job` raises a `ValueError` that names the
-limitation. Support can return once a device implements the feature.
+handles rather than a byte payload, which `submitJob` cannot express. Passing
+`ProgramFormat.BATCH_JOB` to `submit_job` raises `ValueError` in Python and
+`std::invalid_argument` in C++.
 
 ### Removal of QDMI configuration through `pyproject.toml`
 
@@ -79,28 +89,6 @@ resolve against the file that declares them. `MQT_CORE_QDMI_CONFIG_FILE`,
 `MQT_CORE_QDMI_CONFIG_JSON`, the system and user files, and the packaged
 `*.qdmi.json` fragments do not change.
 
-### Python binding CMake helper
-
-The `add_mqt_python_binding_nanobind` function is now called
-`add_mqt_python_binding`. Rename the calls in downstream `CMakeLists.txt` files:
-
-```cmake
-add_mqt_python_binding(
-  MYPACKAGE
-  py_mypackage
-  ${SOURCES}
-  MODULE_NAME
-  _core
-  INSTALL_DIR
-  .
-  LINK_LIBS
-  MQT::Core)
-```
-
-The former `add_mqt_python_binding` function built modules with `pybind11`. All
-MQT projects have switched from `pybind11` to `nanobind`, so no build used that
-function. MQT Core no longer provides it.
-
 ### QDMI Qiskit primitive options
 
 `QDMISampler` and `QDMIEstimator` no longer accept the MQT-specific `options`
@@ -138,16 +126,6 @@ At runtime, use the registry `session.device-config` field or Python
 `device_config` and `device_config_file` arguments. Direct low-level QDMI
 clients pass inline JSON through CUSTOM1 or a file path through CUSTOM2.
 
-### Bundled QDMI devices in embedded builds
-
-The bundled QDMI devices now have individual CMake options:
-`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`, `BUILD_MQT_CORE_QDMI_NA_DEVICE`, and
-`BUILD_MQT_CORE_QDMI_SC_DEVICE`. All three remain enabled by default in a
-standalone MQT Core build. They default to disabled when MQT Core is consumed
-through CMake's `FetchContent` or `add_subdirectory`; embedded consumers can
-enable only the devices they need before making MQT Core available. The QDMI
-driver and FoMaC libraries remain available independently.
-
 ### QDMI Python namespace
 
 The native Python module has moved from `mqt.core.fomac` to `mqt.core.qdmi`.
@@ -174,6 +152,28 @@ will be removed in MQT Core 4.0.
 
 The C++ FoMaC namespace, headers, library, and `MQT::CoreFoMaC` target do not
 change.
+
+### Python binding CMake helper
+
+The `add_mqt_python_binding_nanobind` function is now called
+`add_mqt_python_binding`. Rename the calls in downstream `CMakeLists.txt` files:
+
+```cmake
+add_mqt_python_binding(
+  MYPACKAGE
+  py_mypackage
+  ${SOURCES}
+  MODULE_NAME
+  _core
+  INSTALL_DIR
+  .
+  LINK_LIBS
+  MQT::Core)
+```
+
+The old `add_mqt_python_binding` function built modules with `pybind11` and has
+been removed. MQT Core now uses that name for its `nanobind` helper. The
+arguments to the renamed helper do not change.
 
 ## [3.8.0]
 
@@ -590,7 +590,9 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...HEAD
+[3.9.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...v3.9.0
+[3.8.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...v3.5.1
