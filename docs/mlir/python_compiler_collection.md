@@ -229,13 +229,20 @@ An undefined public CBit may be read only after an unconditional top-level
 measurement write to that bit, and every bit of an undefined returned register
 must be written unconditionally. Branch-local writes do not establish definite
 initialization. A captured classical snapshot must not cross a later CBit write
-or a nested write to the same register.
+that targets or may dynamically target the same bit, directly or in nested
+control flow.
 
 Each exported measurement must write to one static public CBit in the same
-block, and destinations must be unique. Its destination store must follow the
-measurement directly, apart from constant operations. A conditional or otherwise
-delayed destination store is rejected because Qiskit cannot preserve it as one
-measurement instruction.
+block, and destinations must be unique. Constants, measurements, and
+quantum-only reset or unitary operations may appear between a measurement and
+its destination store. Another measurement destination store may also appear
+when its static register bit is distinct from the delayed destination. Dynamic
+or aliasing stores and other classical operations remain unsupported in this
+gap. The measurement result may feed supported classical expressions after its
+store; the exporter represents those uses by the destination CBit and rejects a
+later or nested write that would make the CBit a stale replacement for the SSA
+result. A conditional before the store is rejected because Qiskit cannot
+preserve it as one measurement instruction.
 
 Dense numeric unitaries remain explicit matrix operations during import and
 export. Target compilation synthesizes supported one- and two-qubit matrices to
