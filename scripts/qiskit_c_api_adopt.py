@@ -10,7 +10,7 @@
 # /// script
 # requires-python = ">=3.14"
 # dependencies = [
-#   "nanobind>=2.15.0",
+#   "nanobind~=2.15.0",
 #   "packaging>=24",
 #   "pytest>=9.0.1",
 #   "pytest-xdist>=3.8.0",
