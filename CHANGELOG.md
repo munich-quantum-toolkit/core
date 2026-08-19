@@ -49,7 +49,8 @@ releases may include breaking changes.
   [#2030], [#2066]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
 - ✨ Add OpenQASM import and export to the MQT Compiler Collection ([#1910],
-  [#1987], [#1994], [#2003], [#2026]) ([**@burgholzer**], [**@denialhaag**])
+  [#1987], [#1994], [#2003], [#2026], [#2169]) ([**@burgholzer**],
+  [**@denialhaag**])
 
 #### Passes and transformations
 
@@ -786,6 +787,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
 [#2158]: https://github.com/munich-quantum-toolkit/core/pull/2158
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157

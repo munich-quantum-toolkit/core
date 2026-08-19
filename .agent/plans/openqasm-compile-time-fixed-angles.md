@@ -37,6 +37,10 @@ OpenQASM-specific metadata to MLIR.
       completed release, non-unity, test, documentation, and lint validation.
 - [x] (2026-08-19 12:17Z) Reviewed the final nine-file change and recorded the
       outcome. No remote state was changed.
+- [x] (2026-08-19 12:37Z) Rebased the signed implementation on current `main`,
+      including a non-overlapping workflow update that landed during
+      publication. Opened draft pull request #2169 and folded its reference into
+      the existing unreleased OpenQASM changelog entry.
 
 ## Surprises & Discoveries
 
@@ -94,12 +98,13 @@ OpenQASM-specific metadata to MLIR.
 
 ## Outcomes & Retrospective
 
-The implementation is complete in the local worktree. The product, test, and
-documentation diff changes eight files with 577 insertions and 65 deletions. The
-ExecPlan is the ninth file. The old pull-request stack changed 30 files with
-about 6,000 insertions. The smaller design needs no public frontend change, no
-MLIR dialect or operation, no format-specific attribute, no exporter
-reconstruction, and no Python or generated-file change.
+The implementation is published as draft pull request #2169. The source, test,
+and feature-documentation diff changes eight files with 577 insertions and 65
+deletions. The changelog and ExecPlan bring the pull request to ten files. The
+old pull-request stack changed 30 files with about 6,000 insertions. The smaller
+design needs no public frontend change, no MLIR dialect or operation, no
+format-specific attribute, no exporter reconstruction, and no Python or
+generated-file change.
 
 The release build passed. CTest passed all 4,104 tests; one device query test
 was skipped by its fixture. The complete OpenQASM target and QC translation
@@ -110,9 +115,9 @@ errors documentation build passed. `git diff --check` passed.
 The first ordinary documentation run failed only because DNS resolution could
 not download the QDMI 1.3.2 tag file. The successful retry used the identical
 cached tag file from another current MQT Core worktree through Sphinx's normal
-configuration override. A changelog entry still needs the number and author
-metadata of the pull request that will carry this replacement; adding a guessed
-reference now would violate the repository's changelog format.
+configuration override. The existing unreleased staged-OpenQASM changelog entry
+now references pull request #2169. The entry already credits the contributing
+authors.
 
 ## Context and Orientation
 
