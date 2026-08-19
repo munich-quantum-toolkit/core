@@ -48,9 +48,50 @@ struct Register {
 validateRegisterLayout(const std::vector<Register>& registers, uint32_t total,
                        std::string_view kind);
 
+inline constexpr size_t MAX_PARAMETER_EXPRESSION_DEPTH = 64U;
+inline constexpr size_t MAX_PARAMETER_EXPRESSION_NODES = 4096U;
+inline constexpr uint64_t MAX_PARAMETER_GROUP_SIZE = 65'536U;
+
+enum class ParameterKind : uint8_t {
+  Number,
+  Symbol,
+  Add,
+  Subtract,
+  Multiply,
+  Divide,
+  Power,
+  Negate,
+  Sin,
+  Cos,
+  Tan,
+  ArcSin,
+  ArcCos,
+  ArcTan,
+  Exp,
+  Log,
+  Abs,
+  Conjugate,
+};
+
+/** Optional source-level grouping for one scalar program input. */
+struct ParameterGroup {
+  std::string identity;
+  std::string name;
+  uint64_t index = 0U;
+  uint64_t size = 0U;
+
+  [[nodiscard]] bool operator==(const ParameterGroup&) const = default;
+};
+
+/** One normalized scalar parameter-expression tree. */
 struct Parameter {
-  std::optional<double> number = 0.0;
+  ParameterKind kind = ParameterKind::Number;
+  double number = 0.0;
   std::string text;
+  std::string identity;
+  std::optional<ParameterGroup> group;
+  std::shared_ptr<const Parameter> left;
+  std::shared_ptr<const Parameter> right;
 };
 
 enum class GateModifierKind : uint8_t {
@@ -169,7 +210,7 @@ struct Loop {
   int64_t stop = 0;
   int64_t step = 1;
   std::vector<int64_t> values;
-  std::optional<std::string> parameter;
+  std::optional<Parameter> parameter;
 };
 
 struct SwitchCase {
@@ -196,6 +237,8 @@ public:
   [[nodiscard]] virtual bool hasClassicalVariables() const = 0;
   [[nodiscard]] virtual Register quantumRegister(size_t index) const = 0;
   [[nodiscard]] virtual Register classicalRegister(size_t index) const = 0;
+  /** Return the circuit's free scalar parameters in a stable order. */
+  [[nodiscard]] virtual std::vector<Parameter> parameters() const = 0;
   [[nodiscard]] virtual Parameter globalPhase() const = 0;
   [[nodiscard]] virtual Instruction instruction(size_t index) const = 0;
   [[nodiscard]] virtual std::vector<std::complex<double>>
@@ -239,10 +282,10 @@ public:
 
   virtual void addQuantumRegister(std::string_view name, uint32_t size) = 0;
   virtual void addClassicalRegister(std::string_view name, uint32_t size) = 0;
-  virtual void setGlobalPhase(double phase) = 0;
+  virtual void setGlobalPhase(const Parameter& phase) = 0;
   virtual void addGate(StandardGateMapping gate,
                        const std::vector<uint32_t>& qubits,
-                       const std::vector<double>& parameters) = 0;
+                       const std::vector<Parameter>& parameters) = 0;
   virtual void addMeasure(uint32_t qubit, uint32_t clbit) = 0;
   virtual void addReset(uint32_t qubit) = 0;
   virtual void addBarrier(const std::vector<uint32_t>& qubits) = 0;

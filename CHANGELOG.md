@@ -35,7 +35,7 @@ releases may include breaking changes.
 - ✨ Add an `unroll-modifiers` pass for unrolling multi-operation modifiers
   ([#2015]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add Qiskit circuit import and export to the compiler collection ([#2031],
-  [#2133], [#2136], [#2140]) ([**@burgholzer**], [**@simon1hofmann**])
+  [#2133], [#2136], [#2140], [#2150]) ([**@burgholzer**], [**@simon1hofmann**])
 - ✨ Add generic C++ and Python FoMaC support for custom device properties that
   contain operation handles ([#2042]) ([**@burgholzer**])
 - ✨ Support retrieving existing jobs by ID through the QDMI client API and C++
@@ -814,6 +814,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2150]: https://github.com/munich-quantum-toolkit/core/pull/2150
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
 [#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
