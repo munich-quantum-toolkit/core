@@ -8,21 +8,25 @@ of changes including minor and patch releases, please refer to the
 
 ## [3.9.0]
 
-The shared library ABI version (`SOVERSION`) is increased from `3.8` to `3.9`.
-Thus, consuming libraries need to update their wheel repair configuration for
-`cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the
-wheel repair step.
+### Shared-library ABI version
+
+The shared-library ABI version (`SOVERSION`) changes from `3.8` to `3.9`.
+Rebuild downstream C++ libraries against MQT Core 3.9.0. In `cibuildwheel`
+configurations that exclude bundled MQT Core libraries from wheel repair,
+replace each `libmqt-core-*.so.3.8` entry with the corresponding
+`libmqt-core-*.so.3.9` entry.
 
 ### `nanobind` updated to version 2.15.0
 
-This release updates the `nanobind` dependency to version 2.15.0, which includes
-an ABI bump. Any existing code that uses the `mqt-core` Python bindings will
-need to be recompiled with the new `nanobind` version.
+`nanobind` 2.15.0 changes the `nanobind` ABI. Rebuild downstream native Python
+extensions that use MQT Core's `nanobind`-bound C++ types. Pure Python consumers
+do not need to recompile anything.
 
 ### QDMI updated to version 1.3.3
 
-While not a breaking change, this release updates the QDMI dependency to version
-1.3.3.
+The minimum supported QDMI version changes from 1.3.2 to 1.3.3. CMake builds
+that use a system installation of QDMI must provide version 1.3.3 or newer.
+Builds that let MQT Core fetch QDMI need no change.
 
 ### QDMI calibration runs and batch jobs
 
@@ -44,10 +48,9 @@ In C++, use `Device::submitCalibrationJob`. A calibration run executes no
 circuit, so neither form takes a shot count.
 
 Batch jobs are explicitly unsupported. A batch job's program is a list of job
-handles rather than a byte payload, which `submitJob` cannot express, so MQT
-Core says so rather than describing it as a missing payload. Passing
-`ProgramFormat.BATCH_JOB` to `submit_job` raises a `ValueError` that names the
-limitation. Support can return once a device implements the feature.
+handles rather than a byte payload, which `submitJob` cannot express. Passing
+`ProgramFormat.BATCH_JOB` to `submit_job` raises `ValueError` in Python and
+`std::invalid_argument` in C++.
 
 ### Removal of QDMI configuration through `pyproject.toml`
 
@@ -168,9 +171,9 @@ add_mqt_python_binding(
   MQT::Core)
 ```
 
-The former `add_mqt_python_binding` function built modules with `pybind11`. All
-MQT projects have switched from `pybind11` to `nanobind`, so no build used that
-function. MQT Core no longer provides it.
+The old `add_mqt_python_binding` function built modules with `pybind11` and has
+been removed. MQT Core now uses that name for its `nanobind` helper. The
+arguments to the renamed helper do not change.
 
 ## [3.8.0]
 
