@@ -269,6 +269,48 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   expectEquivalent("Final output", actualIR, expected.get());
 }
 
+TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
+  DialectRegistry registry;
+  registry.insert<QCDialect, arith::ArithDialect, func::FuncDialect,
+                  memref::MemRefDialect>();
+  auto context = std::make_shared<MLIRContext>(registry);
+  context->loadAllAvailableDialects();
+
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto qubit = builder.allocQubit();
+  builder.h(qubit);
+  auto moduleOp = builder.finalize();
+  const auto borrowed = *moduleOp;
+
+  auto program = QCProgram::fromModule(context, std::move(moduleOp));
+
+  ASSERT_TRUE(program);
+  EXPECT_EQ(program->module(), borrowed);
+  EXPECT_TRUE(program->isValid());
+
+  EXPECT_FALSE(QCProgram::fromModule(context, {}));
+
+  QCProgramBuilder contextlessBuilder(context.get());
+  contextlessBuilder.initialize();
+  contextlessBuilder.h(contextlessBuilder.allocQubit());
+  auto contextlessModule = contextlessBuilder.finalize();
+  EXPECT_FALSE(QCProgram::fromModule({}, std::move(contextlessModule)));
+
+  QCProgramBuilder emptyBuilder(context.get());
+  emptyBuilder.initialize();
+  auto emptyModule = emptyBuilder.finalize();
+  EXPECT_FALSE(QCProgram::fromModule(context, std::move(emptyModule)));
+
+  QCProgramBuilder mismatchedBuilder(context.get());
+  mismatchedBuilder.initialize();
+  mismatchedBuilder.h(mismatchedBuilder.allocQubit());
+  auto mismatchedModule = mismatchedBuilder.finalize();
+  auto otherContext = std::make_shared<MLIRContext>(registry);
+  EXPECT_FALSE(
+      QCProgram::fromModule(otherContext, std::move(mismatchedModule)));
+}
+
 TEST(CompilerPipelineRegressionTest,
      ZeroInitializedRegisterConditionsReachAdaptiveQIR) {
   MLIRContext context;

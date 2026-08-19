@@ -129,13 +129,81 @@ def minimums(session: nox.Session) -> None:
 
 @nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
 def qiskit(session: nox.Session) -> None:
-    """Tests against the latest version of Qiskit."""
+    """Test against Qiskit main with its exact extension headers."""
+    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
     with preserve_lockfile():
-        _run_tests(
-            session,
-            extra_command=["uv", "pip", "install", "qiskit[qasm3-import] @ git+https://github.com/Qiskit/qiskit.git"],
+        if shutil.which("cmake") is None and shutil.which("cmake3") is None:
+            session.install("cmake")
+        if shutil.which("ninja") is None:
+            session.install("ninja")
+        session.run(
+            "uv",
+            "sync",
+            "--inexact",
+            "--only-group",
+            "build",
+            "--only-group",
+            "test",
+            env=env,
         )
-        env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+        session.run(
+            "uv",
+            "pip",
+            "install",
+            "--reinstall",
+            "qiskit[qasm3-import] @ git+https://github.com/Qiskit/qiskit.git",
+            env=env,
+        )
+        details = session.run(
+            "uv",
+            "run",
+            "--no-sync",
+            "python",
+            "-c",
+            ("import qiskit; from qiskit import capi; print(qiskit.__version__); print(capi.get_include())"),
+            env=env,
+            silent=True,
+        )
+        if details is None:
+            session.error("failed to inspect the installed Qiskit build")
+        detail_lines = details.strip().splitlines()
+        if len(detail_lines) < 2:
+            session.error("installed Qiskit did not report its version and C API include directory")
+        version, include = detail_lines[-2:]
+        include_path = Path(include).resolve(strict=True)
+        cmake_args = [
+            argument
+            for argument in os.environ.get("SKBUILD_CMAKE_ARGS", "").split(";")
+            if argument
+            and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE=")
+            and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_VERSION=")
+        ]
+        cmake_args.extend([
+            f"-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE={include_path}",
+            f"-DMQT_QISKIT_CAPI_CANDIDATE_VERSION={version}",
+        ])
+        env["SKBUILD_CMAKE_ARGS"] = ";".join(cmake_args)
+        env["MQT_QISKIT_TEST_CANDIDATE_VERSION"] = version
+        session.run(
+            "uv",
+            "sync",
+            "--inexact",
+            "--no-dev",
+            "--no-build-isolation-package",
+            "mqt-core",
+            "--no-install-package",
+            "qiskit",
+            env=env,
+        )
+        session.run(
+            "uv",
+            "run",
+            "--no-sync",
+            "pytest",
+            *session.posargs,
+            "--cov-config=pyproject.toml",
+            env=env,
+        )
         session.run("uv", "pip", "show", "qiskit", env=env)
 
 
@@ -159,16 +227,10 @@ def docs(session: nox.Session) -> None:
         "SKBUILD_CMAKE_BUILD_TYPE": "MinSizeRel",
         # Let scikit-build-core generate the MLIR reference pages while it
         # builds the extension used to execute the documentation examples.
-        # The docs exercise only the DDSIM provider. Unity builds reduce the
-        # repeated parsing cost of the LLVM-heavy sources on constrained RTD
-        # workers. Header-set verification and IPO remain enabled elsewhere.
+        # The docs exercise only the DDSIM provider. The common Python package
+        # configuration enables unity builds.
         "SKBUILD_CMAKE_ARGS": (
-            "-DBUILD_MQT_CORE_DOCUMENTATION=ON;"
-            "-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;"
-            "-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF;"
-            "-DCMAKE_UNITY_BUILD=ON;"
-            "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;"
-            "-DENABLE_IPO=OFF"
+            "-DBUILD_MQT_CORE_DOCUMENTATION=ON;-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF"
         ),
     }
 
@@ -210,13 +272,7 @@ def stubs(session: nox.Session) -> None:
         # favors compilation speed over optimized code. The settings match the
         # documentation build, which lets both sessions share a build tree.
         "SKBUILD_CMAKE_BUILD_TYPE": "MinSizeRel",
-        "SKBUILD_CMAKE_ARGS": (
-            "-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;"
-            "-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF;"
-            "-DCMAKE_UNITY_BUILD=ON;"
-            "-DCMAKE_VERIFY_INTERFACE_HEADER_SETS=OFF;"
-            "-DENABLE_IPO=OFF"
-        ),
+        "SKBUILD_CMAKE_ARGS": ("-DBUILD_MQT_CORE_QDMI_NA_DEVICE=OFF;-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF"),
     }
 
     session.run("uv", "sync", "--inexact", "--only-group", "build", env=env)
@@ -246,7 +302,7 @@ def stubs(session: nox.Session) -> None:
         "--module",
         "mqt.core.dd",
         "--module",
-        "mqt.core.fomac",
+        "mqt.core.qdmi",
         "--module",
         "mqt.core.mlir",
         "--module",

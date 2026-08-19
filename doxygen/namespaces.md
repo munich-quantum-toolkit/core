@@ -47,7 +47,3 @@ Superconducting-device helpers.
 @namespace sym
 
 Symbolic expression support for quantum operations.
-
-@namespace zx
-
-ZX-calculus data structures and simplification rules.

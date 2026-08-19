@@ -21,7 +21,7 @@ readme = "README.md"
 authors = [
     { name = "Lukas Burgholzer", email = "burgholzer@me.com" }
 ]
-keywords = ["MQT", "quantum-computing", "design-automation", "decision-diagrams", "zx-calculus"]
+keywords = ["MQT", "quantum-computing", "design-automation", "decision-diagrams"]
 license = "MIT"
 license-files = ["LICENSE"]
 
@@ -128,6 +128,7 @@ git-only = [
 BUILD_MQT_CORE_BINDINGS = "ON"
 BUILD_MQT_CORE_TESTS = "OFF"
 BUILD_MQT_CORE_SHARED_LIBS = "ON"
+CMAKE_UNITY_BUILD = "ON"
 
 [[tool.scikit-build.overrides]]
 if.python-version = ">=3.13"
@@ -201,6 +202,9 @@ unsafe-fixes = true
 show-fixes = true
 src = ["python"]
 
+[tool.ruff.per-file-target-version]
+"scripts/qiskit_c_api_adopt.py" = "py314"
+
 [tool.ruff.format]
 preview = true
 docstring-code-format = true
@@ -223,6 +227,7 @@ known-first-party = ["mqt.core"]
 
 [tool.ruff.lint.per-file-ignores]
 "test/python/**" = ["T20", "INP001"]
+"test/slurm/**" = ["DOC201", "DOC501", "INP001"]
 "docs/**" = ["T20", "INP001"]
 "noxfile.py" = ["T20", "TID251", "PLC0415"]
 "mlir/unittests/**/*.py" = ["INP001", "T201"]

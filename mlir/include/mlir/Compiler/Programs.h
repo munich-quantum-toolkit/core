@@ -92,6 +92,14 @@ public:
   /// Return the program as textual MLIR.
   [[nodiscard]] std::string str() const;
 
+  /**
+   * @brief Borrow the owned MLIR module.
+   *
+   * @details The returned operation remains valid while this program owns its
+   * module. Consuming or destroying the program invalidates the operation.
+   */
+  [[nodiscard]] ModuleOp module() const;
+
 protected:
   struct Storage {
     std::shared_ptr<MLIRContext> context;
@@ -159,6 +167,17 @@ public:
   /// Translate an MQT `QuantumComputation` to QC.
   [[nodiscard]] static std::optional<QCProgram>
   fromQuantumComputation(const ::qc::QuantumComputation& computation);
+
+  /**
+   * @brief Take ownership of an MLIR module that contains a QC program.
+   *
+   * @details The context must own every dialect referenced by the module and
+   * must remain the module's context. The factory verifies the module and
+   * requires at least one operation from the QC dialect.
+   */
+  [[nodiscard]] static std::optional<QCProgram>
+  fromModule(std::shared_ptr<MLIRContext> context,
+             OwningOpRef<ModuleOp> moduleOp);
 
   /// Create an independent QC program copy.
   [[nodiscard]] QCProgram copy() const;

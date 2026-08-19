@@ -48,34 +48,36 @@ tested.
 
 ## Python Bindings
 
-The QDMI Driver is implemented in C++ and exposed to Python via
-[{code}`nanobind`](https://nanobind.readthedocs.io/). Direct binding of the QDMI
-Client interface functions is not feasible due to technical limitations.
-Instead, a FoMaC (Figure of Merits and Constraints) library defines wrapper
-classes ({cpp-api:class}`~fomac::Session`, {cpp-api:class}`~fomac::Device`,
-{cpp-api:class}`~fomac::Site`, {cpp-api:class}`~fomac::Operation`,
-{cpp-api:class}`~fomac::Job`) for the QDMI entities. These classes together with
-their methods are then exposed to Python, see
-{py:class}`~mqt.core.fomac.Session`, {py:class}`~mqt.core.fomac.Device`,
-{py:class}`~mqt.core.fomac.Device.Site`,
-{py:class}`~mqt.core.fomac.Device.Operation`, {py:class}`~mqt.core.fomac.Job`.
+The QDMI interface is the low-level contract implemented by a QDMI device. The
+MQT Core QDMI driver loads device libraries and implements the QDMI client
+interface. The C++ FoMaC library adds owning wrappers for QDMI devices, sites,
+operations, and jobs. The Python module exposes these QDMI entities through
+{py:mod}`mqt.core.qdmi`. Its {py:mod}`mqt.core.qdmi.driver` submodule provides
+device discovery, registration, and opening.
+
+MQT Core v3 exposes device registration, discovery, and opening through module
+functions. The legacy {py:class}`~mqt.core.qdmi.driver.Session` class remains
+for v3 source compatibility. It is deprecated and will be removed in MQT Core
+4.0.
 
 ## Usage
 
-The following example shows how to create a session and get devices from the
-QDMI driver.
+The following example opens each registered device by its stable ID.
 
 ```{code-cell} ipython3
-from mqt.core.fomac import Session
+from mqt.core.qdmi.driver import open_device, registered_device_ids
 
-# Create a session to interact with QDMI devices
-session = Session()
-
-# Get a list of all available devices
-available_devices = session.get_devices()
-
-# Print the name of every device
-for device in available_devices:
+for device_id in registered_device_ids():
+    device = open_device(device_id)
     print(device.name())
-
 ```
+
+The former module remains available in MQT Core v3:
+
+```python
+from mqt.core import fomac
+```
+
+Importing `mqt.core.fomac` emits a `DeprecationWarning`. Its public objects are
+the same objects as those in {py:mod}`mqt.core.qdmi` and
+{py:mod}`mqt.core.qdmi.driver`.

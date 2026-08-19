@@ -53,6 +53,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/FileUtilities.h>
@@ -194,6 +195,8 @@ ModuleOp Program::mod() const {
   return *storage_.mod;
 }
 
+ModuleOp Program::module() const { return mod(); }
+
 std::string Program::str() const {
   std::string result;
   llvm::raw_string_ostream stream(result);
@@ -294,6 +297,36 @@ QCProgram::fromQuantumComputation(const ::qc::QuantumComputation& computation) {
     return std::nullopt;
   }
   return QCProgram({.context = std::move(context), .mod = std::move(mod)});
+}
+
+std::optional<QCProgram>
+QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
+                      OwningOpRef<ModuleOp> moduleOp) {
+  if (!moduleOp) {
+    if (context) {
+      emitError(UnknownLoc::get(context.get()),
+                "cannot construct a QC program from a null module");
+    }
+    return std::nullopt;
+  }
+  if (!context) {
+    moduleOp->emitError(
+        "cannot construct a QC program without its owning context");
+    return std::nullopt;
+  }
+  if (moduleOp->getContext() != context.get()) {
+    moduleOp->emitError(
+        "cannot construct a QC program with a different MLIR context");
+    return std::nullopt;
+  }
+  if (failed(verify(*moduleOp))) {
+    return std::nullopt;
+  }
+  if (!moduleUsesDialect(*moduleOp, "qc")) {
+    moduleOp->emitError("expected a module using the 'qc' dialect");
+    return std::nullopt;
+  }
+  return QCProgram({.context = std::move(context), .mod = std::move(moduleOp)});
 }
 
 QCProgram QCProgram::copy() const { return QCProgram(cloneStorage()); }

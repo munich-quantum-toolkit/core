@@ -6,6 +6,46 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Removal of the ZX-calculus library
+
+MQT Core no longer provides the `mqt-core-zx` library, the `MQT::CoreZX` CMake
+target, the `mqt-core/zx` headers, or the global `zx` namespace. Remove these
+from downstream includes and link dependencies. Equivalence-checking users
+should use [MQT QCEC]; QCEC's ZX implementation is internal and is not a
+replacement public API.
+
+The `MQT::Multiprecision` target and the `USE_SYSTEM_BOOST`,
+`MQT_CORE_WITH_GMP`, and `MQT_CORE_ZX_SYSTEM_BOOST` CMake options have also been
+removed. MQT Core no longer discovers, fetches, or exports configuration for
+Boost.Multiprecision or GMP.
+
+### QDMI Python namespace
+
+The native Python module has moved from `mqt.core.fomac` to `mqt.core.qdmi`.
+QDMI entities such as `Device`, `Job`, and `ProgramFormat` are in
+`mqt.core.qdmi`. Import functions and classes from `mqt.core.qdmi.driver` for
+device discovery, registration, and opening:
+
+```python
+from mqt.core.qdmi.driver import open_device
+
+device = open_device("mqt.ddsim.default")
+```
+
+`mqt.core.fomac` remains available in MQT Core v3 and re-exports the same
+objects. Importing that module emits a `DeprecationWarning`. It will be removed
+in MQT Core 4.0. The legacy `driver.Session` class also emits a
+`DeprecationWarning` when constructed and will be removed in 4.0. Replace
+session-based discovery with `registered_device_ids()` and `open_device()` from
+`mqt.core.qdmi.driver`.
+
+The neutral-atom specialization has moved from `mqt.core.na.fomac` to
+`mqt.core.na.qdmi`. The former submodule remains a v3 compatibility alias and
+will be removed in MQT Core 4.0.
+
+The C++ FoMaC namespace, headers, library, and `MQT::CoreFoMaC` target do not
+change.
+
 ### QIR runner
 
 The QIR runner now invokes a selected QIR entry point as a parameterless `i64`

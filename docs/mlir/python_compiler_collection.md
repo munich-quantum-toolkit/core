@@ -124,6 +124,74 @@ indices. Dynamic indexing, dynamic ranges, surviving runtime assertions,
 checked-index machinery, and live poison values fail with an MLIR diagnostic.
 See {doc}`OpenQASM` for the complete support table.
 
+## Use Qiskit circuits directly
+
+Install the optional Qiskit integration with {code}`mqt-core[qiskit]`. Qiskit
+2.5.x circuits can be translated directly between
+{py:class}`~qiskit.circuit.QuantumCircuit` and
+{py:class}`~mqt.core.mlir.QCProgram`:
+
+```{code-cell} ipython3
+from qiskit import QuantumCircuit
+
+qiskit_bell = QuantumCircuit(2, 2)
+qiskit_bell.h(0)
+qiskit_bell.cx(0, 1)
+qiskit_bell.measure(range(2), range(2))
+
+direct = QCProgram.from_qiskit(qiskit_bell)
+restored = direct.to_qiskit()
+compiled_qiskit = compile_program(qiskit_bell)
+
+assert direct.is_valid  # Export does not consume the QC program.
+assert restored.count_ops() == qiskit_bell.count_ops()
+assert compiled_qiskit.is_valid
+```
+
+This compiler route does not construct an intermediate
+{py:class}`~mqt.core.ir.QuantumComputation`. The existing
+{py:func}`~mqt.core.plugins.qiskit.qiskit_to_mqt`,
+{py:func}`~mqt.core.plugins.qiskit.mqt_to_qiskit`, and {py:func}`mqt.core.load`
+interfaces remain independent and retain their existing version range and
+behavior.
+
+Import and export have different contracts because Qiskit 2.5 can inspect more
+program structures than its C API can construct.
+
+| Circuit feature                                                   | Import               | Export         |
+| ----------------------------------------------------------------- | -------------------- | -------------- |
+| Standard gates, constructible numeric modifiers, and global phase | Supported            | Supported      |
+| Other finite numeric modifiers                                    | Supported            | Rejected       |
+| Measurement, reset, and barrier                                   | Supported            | Supported      |
+| Canonical named registers and leading loose bits                  | Supported            | Supported      |
+| Custom instructions with finite, acyclic definitions              | Recursively expanded | Not applicable |
+| Nested `if`/`else`, `for`, `while`, and `switch`                  | Supported            | Rejected       |
+| Classical-bit and register conditions                             | Supported            | Rejected       |
+| Constant Boolean, `Uint` up to 64 bits, and `Float` expressions   | Supported            | Rejected       |
+| Standalone classical variables or variable expressions            | Rejected             | Rejected       |
+| Free symbolic parameters                                          | Rejected             | Rejected       |
+| Arbitrary unitaries                                               | Rejected             | Rejected       |
+| Register aliases or interleaved membership                        | Rejected             | Rejected       |
+| Transpiler layout metadata                                        | Accepted and ignored | Not emitted    |
+
+Lexically bound {code}`for`-loop induction parameters are supported. Numeric
+parameters passed to a custom instruction are bound before its definition is
+expanded. Definition expansion rejects missing definitions, cycles, operand
+arity mismatches, nesting beyond 64 levels, and more than 10 million expanded
+operations.
+
+A circuit remains valid when {code}`circ.layout` is present. The importer
+translates the circuit operations and deliberately does not preserve physical or
+virtual layout metadata.
+
+Input validation finishes before an MLIR module is created. Output validation
+finishes before a Qiskit circuit is allocated. Unsupported programs therefore
+fail without modifying the source object or exposing a partial result.
+
+The binding imports Qiskit only when circuit translation is requested. It
+accepts versions in the registered {code}`>=2.5.0,<2.6.0` range and verifies the
+native API version before reading a circuit.
+
 ## Run passes explicitly
 
 {code}`QCProgram`, {code}`QCOProgram`, {code}`JeffProgram`, and
