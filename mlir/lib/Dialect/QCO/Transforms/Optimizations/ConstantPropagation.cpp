@@ -297,44 +297,47 @@ static bool addsOnlyGlobalPhase(UnionTable* ut, UnitaryOpInterface* op,
 static Operation*
 createOperationFromUnitaryOperation(Operation* op, PatternRewriter& rewriter,
                                     const std::span<Value> qubitsIn) {
-  auto* const newOp =
-      mlir::TypeSwitch<Operation*, Operation*>(op)
-          .Case<U2Op>([&](U2Op gate) {
-            return U2Op::create(rewriter, gate.getLoc(), qubitsIn[0],
-                                gate.getPhi(), gate.getLambda());
-          }) CREATE_OP_CASE_NO_PARAMS(IdOp) CREATE_OP_CASE_NO_PARAMS(HOp)
-              CREATE_OP_CASE_NO_PARAMS(XOp) CREATE_OP_CASE_NO_PARAMS(
-                  YOp) CREATE_OP_CASE_NO_PARAMS(ZOp) CREATE_OP_CASE_NO_PARAMS(SOp)
-                  CREATE_OP_CASE_NO_PARAMS(SdgOp) CREATE_OP_CASE_NO_PARAMS(
-                      TOp) CREATE_OP_CASE_NO_PARAMS(TdgOp)
-                      CREATE_OP_CASE_NO_PARAMS(SXOp) CREATE_OP_CASE_NO_PARAMS(
-                          SXdgOp) CREATE_OP_CASE_ONE_PARAM(RXOp)
-                          CREATE_OP_CASE_ONE_PARAM(RYOp) CREATE_OP_CASE_ONE_PARAM(
-                              RZOp) CREATE_OP_CASE_ONE_PARAM(POp)
-                              CREATE_OP_CASE_TWO_PARAMS(ROp) CREATE_OP_CASE_THREE_PARAMS(
-                                  UOp) CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(SWAPOp)
-                                  CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(
-                                      iSWAPOp) CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(DCXOp)
-                                      CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(
-                                          ECROp) CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(RXXOp)
-                                          CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(
-                                              RYYOp)
-                                              CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(
-                                                  RZXOp)
-                                                  CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(
-                                                      RZZOp)
-                                                      CREATE_OP_CASE_PLUS_MINUS_OPS(
-                                                          XXPlusYYOp)
-                                                          CREATE_OP_CASE_PLUS_MINUS_OPS(
-                                                              XXMinusYYOp)
-          .Default([&](auto) -> Operation* {
-            llvm::report_fatal_error("Unsu"
-                                     "ppor"
-                                     "ted "
-                                     "oper"
-                                     "atio"
-                                     "n");
-          });
+  // clang-format off
+  Operation *newOp = mlir::TypeSwitch<Operation *, Operation *>(op)
+      .Case<U2Op>([&](U2Op gate) {
+        return U2Op::create(rewriter, gate.getLoc(), qubitsIn[0],
+                            gate.getPhi(), gate.getLambda());
+      })
+      CREATE_OP_CASE_NO_PARAMS(IdOp)
+      CREATE_OP_CASE_NO_PARAMS(HOp)
+      CREATE_OP_CASE_NO_PARAMS(XOp)
+      CREATE_OP_CASE_NO_PARAMS(YOp)
+      CREATE_OP_CASE_NO_PARAMS(ZOp)
+      CREATE_OP_CASE_NO_PARAMS(SOp)
+      CREATE_OP_CASE_NO_PARAMS(SdgOp)
+      CREATE_OP_CASE_NO_PARAMS(TOp)
+      CREATE_OP_CASE_NO_PARAMS(TdgOp)
+      CREATE_OP_CASE_NO_PARAMS(SXOp)
+      CREATE_OP_CASE_NO_PARAMS(SXdgOp)
+      CREATE_OP_CASE_ONE_PARAM(RXOp)
+      CREATE_OP_CASE_ONE_PARAM(RYOp)
+      CREATE_OP_CASE_ONE_PARAM(RZOp)
+      CREATE_OP_CASE_ONE_PARAM(POp)
+      CREATE_OP_CASE_TWO_PARAMS(ROp)
+      CREATE_OP_CASE_THREE_PARAMS(UOp)
+      CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(SWAPOp)
+      CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(iSWAPOp)
+      CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(DCXOp)
+      CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(ECROp)
+      CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(RXXOp)
+      CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(RYYOp)
+      CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(RZXOp)
+      CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(RZZOp)
+      CREATE_OP_CASE_PLUS_MINUS_OPS(XXPlusYYOp)
+      CREATE_OP_CASE_PLUS_MINUS_OPS(XXMinusYYOp)
+      .Default([&](Operation *unsupported) -> Operation * {
+        llvm::report_fatal_error(
+            ("Unsupported operation: " + unsupported->getName()
+                                          .getStringRef()
+                                          .str())
+                .c_str());
+      });
+  // clang-format on
 
   return newOp;
 }
@@ -690,7 +693,8 @@ putOperationIntoBranch(UnionTable* ut, UnitaryOpInterface op,
     }
   }
 
-  const bool createThenBranch = !ctrlsToMod.classicalPosCtrlsToAdd.empty();
+  const bool createThenBranch =
+      numberOfNewConditions > 1 || !ctrlsToMod.classicalPosCtrlsToAdd.empty();
   ValueRange insertedQubits = op.getInputQubits();
   const SmallVector locs(insertedQubits.size(), op->getLoc());
   auto newIfOp =
