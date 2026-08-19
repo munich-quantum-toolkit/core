@@ -181,7 +181,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 //===----------------------------------------------------------------------===//
 
 def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect"];
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
   let summary =
       "This pass applies constant propagation to a circuit. It "
       "assumes that all input qubits are |0>. It propagates the "
@@ -227,11 +228,11 @@ def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
      phase gate is removed and replaced by a global phase gate instead.
 
   }];
-  let options = [Option<"maximumNonzeroAmplitudes", "maximumNonzeroAmplitudes",
+  let options = [Option<"maximumNonzeroAmplitudes", "maximum-nonzero-amplitudes",
                         "std::size_t", "4",
                         "The maximum number of non-zero amplitudes in the "
                         "tracted quantum states before reaching top.">,
-                 Option<"maximumHybridStates", "maximumHybridStates",
+                 Option<"maximumHybridStates", "maximum-hybrid-states",
                         "std::size_t", "4",
                         "The maximum number of hybrid states which have a "
                         "non-zero probability.">];
