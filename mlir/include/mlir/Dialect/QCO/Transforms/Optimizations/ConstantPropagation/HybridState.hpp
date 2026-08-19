@@ -16,9 +16,9 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
 
+#include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <complex>
 #include <memory>
 #include <ostream>
 #include <span>
