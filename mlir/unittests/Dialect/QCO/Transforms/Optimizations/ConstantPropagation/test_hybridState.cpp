@@ -249,10 +249,12 @@ TEST_F(HybridStateTest, ApplyTwoTimesClassicalDoubleControlledGate) {
   const auto resStr = hState.toString();
   EXPECT_THAT(resStr, testing::HasSubstr("{|0010> -> 0.71, |1000> -> 0.71}: "));
   EXPECT_THAT(resStr, testing::HasSubstr("; p = 1.00"));
-  EXPECT_THAT(resStr, testing::AnyOf(testing::HasSubstr("doubleValue0 = 3.20"),
-                                     testing::HasSubstr("doubleValue1 = 3.20")));
-  EXPECT_THAT(resStr, testing::AnyOf(testing::HasSubstr("doubleValue0 = 1.20"),
-                                     testing::HasSubstr("doubleValue1 = 1.20")));
+  EXPECT_THAT(resStr,
+              testing::AnyOf(testing::HasSubstr("doubleValue0 = 3.20"),
+                             testing::HasSubstr("doubleValue1 = 3.20")));
+  EXPECT_THAT(resStr,
+              testing::AnyOf(testing::HasSubstr("doubleValue0 = 1.20"),
+                             testing::HasSubstr("doubleValue1 = 1.20")));
 }
 
 TEST_F(HybridStateTest, handleErrorIfTooManyAmplitudesAreNonzero) {
