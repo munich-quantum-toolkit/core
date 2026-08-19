@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "gtest/gtest.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"

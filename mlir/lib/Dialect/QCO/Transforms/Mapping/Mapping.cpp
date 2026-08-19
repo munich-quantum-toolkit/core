@@ -814,7 +814,7 @@ private:
           return it == std::default_sentinel;
         }));
 
-        for_each(t.bundle.wires, [](auto& it) { std::advance(it, -1); });
+        for_each(t.bundle.wires, [](auto& it) { std::ranges::advance(it, -1); });
 
         const auto bwRouteRes = route<WireDirection::Backward>(t.bundle);
         if (failed(bwRouteRes)) {
@@ -825,7 +825,7 @@ private:
           return it == std::default_sentinel;
         }));
 
-        for_each(t.bundle.wires, [](auto& it) { std::advance(it, 1); });
+        for_each(t.bundle.wires, [](auto& it) { std::ranges::advance(it, 1); });
 
         t.stats = *bwRouteRes;
       }
@@ -1192,8 +1192,8 @@ private:
 
         infos.swap(prog0, prog1);
 
-        std::advance(w0, 1); // Move to SWAP.
-        std::advance(w1, 1);
+        std::ranges::advance(w0, 1); // Move to SWAP.
+        std::ranges::advance(w1, 1);
       }
 
       layout.swap(hw0, hw1);
@@ -1471,7 +1471,7 @@ private:
       totalStats.merge(*stats);
 
       if constexpr (Mode == RoutingMode::Hot) {
-        for_each(child.wires, [](auto& it) { std::advance(it, -2); });
+        for_each(child.wires, [](auto& it) { std::ranges::advance(it, -2); });
       }
     }
 
@@ -1506,7 +1506,7 @@ private:
       totalStats.merge(*stats);
 
       if constexpr (Mode == RoutingMode::Hot) {
-        for_each(children[1].wires, [](auto& it) { std::advance(it, -2); });
+        for_each(children[1].wires, [](auto& it) { std::ranges::advance(it, -2); });
       }
     }
 
@@ -1643,7 +1643,7 @@ private:
           // respective wires.
 
           for_each(composite.indices, [&](size_t i) {
-            std::advance(wires[i], WireTraversalTraits<Direction>::stride());
+            std::ranges::advance(wires[i], WireTraversalTraits<Direction>::stride());
           });
         }
       }
@@ -1670,12 +1670,12 @@ private:
         bool comparable = true;
         for (WireIterator it : wires) {
           if (it == std::default_sentinel) {
-            std::advance(it, -2);
+            std::ranges::advance(it, -2);
             while (isa_and_nonnull<MeasureOp>(it.operation())) {
-              std::advance(it, -1);
+              std::ranges::advance(it, -1);
             }
           } else {
-            std::advance(it, -1);
+            std::ranges::advance(it, -1);
           }
 
           Operation* operation = it.operation();
@@ -1697,11 +1697,11 @@ private:
         // a classical use of its result.
         for (auto& it : wires) {
           if (it != std::default_sentinel) {
-            std::advance(it, -1);
+            std::ranges::advance(it, -1);
             continue;
           }
 
-          std::advance(it, -2);
+          std::ranges::advance(it, -2);
           if (!comparable) {
             continue;
           }
@@ -1718,7 +1718,7 @@ private:
                              })) {
               break;
             }
-            std::advance(it, -1);
+            std::ranges::advance(it, -1);
           }
         }
       }
@@ -1734,7 +1734,7 @@ private:
         // insertion. Otherwise, an increment will move the iterator to the
         // multi-qubit op of the current or subsequent layer or to a sink.
 
-        for_each(wires, [](auto& it) { std::advance(it, 1); });
+        for_each(wires, [](auto& it) { std::ranges::advance(it, 1); });
       }
     }
 
