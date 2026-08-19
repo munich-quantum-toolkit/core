@@ -8,8 +8,6 @@
  * Licensed under the MIT License
  */
 
-#ifndef MQT_CORE_HYBRIDSTATE
-#define MQT_CORE_HYBRIDSTATE
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/HybridState.hpp"
 
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/ClassicalArithOperation.h"
@@ -326,5 +324,3 @@ HybridState::getValueThatIsEquivalentToQubit(const unsigned int qubit) const {
 }
 
 } // namespace mlir::qco
-
-#endif // MQT_CORE_HYBRIDSTATE
