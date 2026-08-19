@@ -322,9 +322,7 @@ namespace {
 /// Converts a jeff zero-initialized i1 array to a CBit register.
 struct ConvertJeffIntArrayZeroOpToCBit final
     : OpConversionPattern<jeff::IntArrayZeroOp> {
-  ConvertJeffIntArrayZeroOpToCBit(TypeConverter& typeConverter,
-                                  MLIRContext* context)
-      : OpConversionPattern(typeConverter, context, PatternBenefit(2)) {}
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::IntArrayZeroOp op, OpAdaptor adaptor,
@@ -347,22 +345,20 @@ struct ConvertJeffIntArrayZeroOpToCBit final
 /// Converts a jeff i1-array update to a CBit store.
 struct ConvertJeffIntArraySetIndexOpToCBit final
     : OpConversionPattern<jeff::IntArraySetIndexOp> {
-  ConvertJeffIntArraySetIndexOpToCBit(TypeConverter& typeConverter,
-                                      MLIRContext* context)
-      : OpConversionPattern(typeConverter, context, PatternBenefit(2)) {}
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::IntArraySetIndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto operands = adaptor.getOperands();
-    if (!isa<cbit::RegisterType>(operands[0].getType())) {
+    const auto reg = adaptor.getInArray();
+    if (!isa<cbit::RegisterType>(reg.getType())) {
       return failure();
     }
     auto index = arith::IndexCastOp::create(
-        rewriter, op.getLoc(), rewriter.getIndexType(), operands[1]);
-    cbit::StoreOp::create(rewriter, op.getLoc(), operands[2], operands[0],
+        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
+    cbit::StoreOp::create(rewriter, op.getLoc(), adaptor.getValue(), reg,
                           index);
-    rewriter.replaceOp(op, operands[0]);
+    rewriter.replaceOp(op, reg);
     return success();
   }
 };
@@ -370,21 +366,18 @@ struct ConvertJeffIntArraySetIndexOpToCBit final
 /// Converts a jeff i1-array access to a CBit load.
 struct ConvertJeffIntArrayGetIndexOpToCBit final
     : OpConversionPattern<jeff::IntArrayGetIndexOp> {
-  ConvertJeffIntArrayGetIndexOpToCBit(TypeConverter& typeConverter,
-                                      MLIRContext* context)
-      : OpConversionPattern(typeConverter, context, PatternBenefit(2)) {}
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::IntArrayGetIndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto operands = adaptor.getOperands();
-    if (!isa<cbit::RegisterType>(operands[0].getType())) {
+    const auto reg = adaptor.getInArray();
+    if (!isa<cbit::RegisterType>(reg.getType())) {
       return failure();
     }
     auto index = arith::IndexCastOp::create(
-        rewriter, op.getLoc(), rewriter.getIndexType(), operands[1]);
-    rewriter.replaceOpWithNewOp<cbit::LoadOp>(op, op.getType(), operands[0],
-                                              index);
+        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
+    rewriter.replaceOpWithNewOp<cbit::LoadOp>(op, op.getType(), reg, index);
     return success();
   }
 };
@@ -1202,8 +1195,7 @@ struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
  * ```
  */
 struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
-  ConvertJeffMainToQCO(TypeConverter& typeConverter, MLIRContext* context)
-      : OpConversionPattern(typeConverter, context, PatternBenefit(2)) {}
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
@@ -1323,14 +1315,17 @@ protected:
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
         patterns, typeConverter);
     populateReturnOpTypeConversionPattern(patterns, typeConverter);
+    patterns.add<ConvertJeffIntArrayZeroOpToCBit,
+                 ConvertJeffIntArraySetIndexOpToCBit,
+                 ConvertJeffIntArrayGetIndexOpToCBit, ConvertJeffMainToQCO>(
+        typeConverter, context, PatternBenefit(2));
     patterns.add<
-        ConvertJeffIntArrayZeroOpToCBit, ConvertJeffIntArraySetIndexOpToCBit,
-        ConvertJeffIntArrayGetIndexOpToCBit, ConvertJeffQuregAllocOpToQCO,
-        ConvertJeffQuregExtractIndexOpToQCO, ConvertJeffQuregInsertIndexOpToQCO,
-        ConvertJeffQuregFreeZeroOpToQCO, ConvertJeffQubitAllocOpToQCO,
-        ConvertJeffQubitFreeOpToQCO, ConvertJeffQubitFreeZeroOpToQCO,
-        ConvertJeffQubitMeasureOpToQCO, ConvertJeffQubitMeasureNDOpToQCO,
-        ConvertJeffQubitResetOpToQCO, ConvertJeffGPhaseOpToQCO,
+        ConvertJeffQuregAllocOpToQCO, ConvertJeffQuregExtractIndexOpToQCO,
+        ConvertJeffQuregInsertIndexOpToQCO, ConvertJeffQuregFreeZeroOpToQCO,
+        ConvertJeffQubitAllocOpToQCO, ConvertJeffQubitFreeOpToQCO,
+        ConvertJeffQubitFreeZeroOpToQCO, ConvertJeffQubitMeasureOpToQCO,
+        ConvertJeffQubitMeasureNDOpToQCO, ConvertJeffQubitResetOpToQCO,
+        ConvertJeffGPhaseOpToQCO,
         ConvertJeffOneTargetZeroParameterToQCO<jeff::IOp, IdOp>,
         ConvertJeffOneTargetZeroParameterToQCO<jeff::XOp, XOp>,
         ConvertJeffOneTargetZeroParameterToQCO<jeff::YOp, YOp>,
@@ -1344,8 +1339,8 @@ protected:
         ConvertJeffOneTargetOneParameterToQCO<jeff::R1Op, POp>,
         ConvertJeffUOpToQCO, ConvertJeffSwapOpToQCO, ConvertJeffCustomOpToQCO,
         ConvertJeffPPROpToQCO, ConvertJeffSwitchOpToQCO, ConvertJeffForOpToQCO,
-        ConvertJeffWhileOpToQCO, ConvertJeffYieldOpToQCO, ConvertJeffMainToQCO>(
-        typeConverter, context);
+        ConvertJeffWhileOpToQCO, ConvertJeffYieldOpToQCO>(typeConverter,
+                                                          context);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {

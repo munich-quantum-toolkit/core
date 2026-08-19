@@ -16,7 +16,6 @@ add_mlir_conversion_library(
   LINK_LIBS
   MLIRDialect
   MLIRCBitDialect
-  MLIRCBitToTensor
   MLIRJeff
   MLIRNativeToJeff
   MLIRMQTTransforms

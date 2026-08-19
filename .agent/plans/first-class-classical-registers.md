@@ -97,6 +97,12 @@ outputs.
       now state their classical-register contract at the jeff boundary. Exact
       Clang-Tidy checks, repository lint, all 143 jeff tests, and both neutral
       CBit-to-tensor tests pass.
+- [x] (2026-08-19 15:21Z) Removed the unused public CBit-to-tensor conversion
+      layer after the direct jeff conversion made its operation patterns and
+      return helper test-only. Localized the remaining mutable-register-to-SSA
+      state in QCO-to-jeff and simplified the reverse pattern registration. The
+      full release build and all 143 jeff round-trip tests pass with 404 fewer
+      production and test lines.
 - [ ] Validate all remote checks on the exact submitted head. Pull request #2165
       fixed the unrelated external DOI, Qiskit policy, and old Read the Docs
       link-check failures on `main`.
@@ -192,7 +198,8 @@ outputs.
   jeff function returned the updated register value. The reverse conversion
   reconstructed CBit stores even when jeff returned the initial array. Evidence:
   an assertion on the intermediate jeff return exposed the stale value, and the
-  shared conversion now replaces returned aliases with the latest tensor value.
+  QCO-to-jeff return pattern now replaces returned aliases with the latest jeff
+  array value.
 - Observation: The generic native-to-jeff conversion cannot lower a static
   `tensor.empty`, so the staged QCO-to-jeff path still needed a jeff-specific
   allocation pattern and declared temporary `arith` and `tensor` dialect
@@ -203,6 +210,12 @@ outputs.
   `scf.for` operations after conversion. Evidence: converting jeff i1 array
   operations directly removes the post-pass scan and preserves structured
   control-flow round trips across all 143 jeff tests.
+- Observation: After direct CBit-to-jeff patterns replaced the tensor stage,
+  `populateCBitToTensorConversionPatterns` and `updateRegisterReturns` had no
+  production callers. Only QCO-to-jeff used the public library, and it used only
+  the state tracker and the trivial register type conversion. Evidence:
+  localizing those two pieces removes the library, header, and standalone test
+  target while all 143 jeff tests still pass.
 
 ## Decision Log
 
@@ -255,7 +268,15 @@ outputs.
   Rationale: both directions now identify classical registers from source
   dialect operations, QCO-to-jeff declares only the dialect that it creates, and
   jeff-to-QCO no longer recognizes arbitrary tensor programs. Date/Author:
-  2026-08-19 / Lukas Burgholzer and Codex.
+  2026-08-19 / Lukas Burgholzer and Codex. Refined on 2026-08-19 by the
+  localization decision below.
+- Decision: Keep the mutable-register-to-SSA tracker private to QCO-to-jeff and
+  remove the public CBit-to-tensor conversion library. Rationale: direct jeff
+  lowering is its only production consumer, so a public operation-lowering API
+  and independent target duplicate behavior without providing reuse. The jeff
+  round-trip suite exercises allocation, loads, stores, returns, and structured
+  control flow through the localized tracker. Date/Author: 2026-08-19 / Lukas
+  Burgholzer and Codex.
 - Decision: Keep static register-index validation in the CBit dialect instead of
   a generic type template in dialect utilities. Rationale: every caller uses
   `cbit::RegisterType`, so the template adds an unused abstraction and obscures
@@ -277,8 +298,10 @@ and documentation build pass. Pull request #2165 addresses the unrelated
 external link-check failures. The signed review head is published, all inline
 review discussions have concise resolution replies, and all addressed threads
 are resolved. The final jeff refinement maps CBit and jeff arrays directly in
-both directions; all 143 jeff round-trip tests pass without a generic tensor
-register recognizer. Remote validation of the exact submitted head remains.
+both directions and keeps its SSA state private to QCO-to-jeff. The unused
+CBit-to-tensor library is gone; all 143 jeff round-trip tests pass without a
+generic tensor register recognizer. Remote validation of the exact submitted
+head remains.
 
 ## Context and Orientation
 
