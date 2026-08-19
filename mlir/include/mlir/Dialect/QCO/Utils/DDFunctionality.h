@@ -53,13 +53,19 @@ namespace mlir::qco {
 FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
 
 /**
- * @brief Simulate a static unitary QCO `func.func` on a given input state.
+ * @brief Simulate a QCO `func.func` on a given input state without stochastic
+ * collapse.
  *
- * @details Same supported unitary op set as @ref buildFunctionality.
- * `qco.if` / `qco.index_switch` are executed when the selector is a concrete
- * classical value. Mid-circuit measurements and resets require the RNG
- * overload below. Consumes one reference to @p in regardless of whether
- * simulation succeeds or fails.
+ * @details Same supported unitary op set as @ref buildFunctionality, plus
+ * concrete classical control-flow (`qco.if` / `qco.index_switch` with
+ * compile-time or previously recorded classical selectors) and CBit registers
+ * (`cbit.alloc` / `cbit.store` / `cbit.load`). Mid-circuit `measure` /
+ * `reset` require the RNG overload below. Concrete-bound `scf.for` loops and
+ * non-recursive single-block `func.call` are supported independently of RNG.
+ * Only qubit-typed linear values are supported (no qtensors). Nested regions
+ * are walked; `scf.while` and multi-block function bodies remain unsupported.
+ * Consumes one reference to @p in regardless of whether simulation succeeds or
+ * fails.
  *
  * @param func The QCO function to simulate
  * @param in The input state, represented as a vector DD; one reference is
@@ -79,9 +85,14 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * `qco.measure` / `qco.reset` (collapsing via @p rng) and `qco.if` /
  * `qco.index_switch` when the branch selector is a concrete classical SSA value
  * (`arith.constant` `i1`/`index`, a prior measurement, a `cbit.load`,
- * `arith.index_castui`, or simple `andi`/`ori`/`xori`/`shli` on those values).
- * The simulation tracks CBit initialization, loads, and stores. Nested regions
- * are walked; loops and multi-block function bodies remain unsupported.
+ * `arith.index_castui` from `i1` to `index`, `arith.cmpi`, `arith.select`,
+ * `arith.addi` / `subi` / `muli`, or `andi` / `ori` / `xori` / `shli` /
+ * `shrui` on those values). The simulation tracks CBit initialization, loads,
+ * and stores. Deterministic control-flow without measure/reset also works on
+ * the non-RNG overload. Only qubit-typed linear values are supported (no
+ * qtensors). Nested regions are walked; `scf.for` with a concrete positive
+ * step and at most 10000 trips and non-recursive single-block `func.call` are
+ * supported; `scf.while` and multi-block function bodies remain unsupported.
  * Consumes one reference to @p in regardless of whether simulation succeeds or
  * fails.
  *
@@ -99,10 +110,11 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * @brief Sample measurement outcomes from a QCO `func.func`.
  *
  * @details Starts from the all-zero state and draws @p shots bitstrings via
- * `Package::measureAll` (qubit `n-1` … `0`, same as @ref dd::sample). Purely
- * unitary programs are simulated once and sampled without collapsing. Programs
- * with `measure` / `reset` / control-flow are re-simulated per shot with @p
- * rng.
+ * `Package::measureAll` (qubit `n-1` … `0`, same as @ref dd::sample). Programs
+ * without `measure` / `reset` are simulated once and sampled without
+ * collapsing (including deterministic control-flow). Programs with mid-circuit
+ * `measure` / `reset` are re-simulated per shot with @p rng. Histograms are
+ * final computational-basis bitstrings, not classical mid-circuit records.
  *
  * @param func The QCO function to sample
  * @param dd The DD package to use
@@ -133,5 +145,32 @@ FailureOr<std::map<std::string, size_t>> sample(func::FuncOp func,
                                                 const dd::VectorDD& in,
                                                 dd::Package& dd, size_t shots,
                                                 std::mt19937_64& rng);
+
+/// Histograms produced by @ref sampleWithClassics.
+struct SampleResult {
+  /// Final computational-basis outcome histogram.
+  std::map<std::string, size_t> shots;
+  /// Mid-circuit measurement-bit histogram (encounter order).
+  std::map<std::string, size_t> classical;
+};
+
+/**
+ * @brief Sample final and mid-circuit classical outcomes from a QCO
+ * `func.func`.
+ *
+ * @details Like @ref sample, but also histograms collapsing mid-circuit
+ * measurement bits in encounter order into @c SampleResult::classical.
+ * Programs without mid-circuit measures leave @c classical empty.
+ */
+FailureOr<SampleResult> sampleWithClassics(func::FuncOp func, dd::Package& dd,
+                                           size_t shots, std::mt19937_64& rng);
+
+/// @copydoc sampleWithClassics(func::FuncOp, dd::Package&, size_t,
+/// std::mt19937_64&)
+/// Starts from @p in; one reference is consumed.
+FailureOr<SampleResult> sampleWithClassics(func::FuncOp func,
+                                           const dd::VectorDD& in,
+                                           dd::Package& dd, size_t shots,
+                                           std::mt19937_64& rng);
 
 } // namespace mlir::qco

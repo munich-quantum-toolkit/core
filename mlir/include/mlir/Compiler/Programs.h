@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -294,6 +295,9 @@ public:
 
   /// Consume this program and convert it to `jeff` MLIR.
   [[nodiscard]] std::optional<JeffProgram> intoJeff() &&;
+
+  /// Return the entry `func.func` (`main` if present, else the first function).
+  [[nodiscard]] std::optional<func::FuncOp> entryFunc() const;
 
 private:
   friend class QCProgram;

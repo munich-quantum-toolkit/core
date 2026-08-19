@@ -15,6 +15,7 @@ from typing import Literal, Unpack, overload
 
 import qiskit.circuit
 
+import mqt.core.dd
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
 
@@ -421,6 +422,10 @@ class QCOProgram(Program):
     def from_mlir_file(path: str | os.PathLike) -> QCOProgram:
         """Parse QCO MLIR from a file."""
 
+    @property
+    def entry_func(self) -> str:
+        """The textual MLIR representation of the entry func.func operation."""
+
     def copy(self) -> QCOProgram:
         """Return an independent copy of this program."""
 
@@ -540,6 +545,88 @@ class QIRProgram(Program):
 
     def write_bitcode(self, path: str | os.PathLike) -> None:
         """Write this program as LLVM bitcode."""
+
+class SampleResult:
+    """Histograms from QCO DD sampling."""
+
+    @property
+    def shots(self) -> dict[str, int]:
+        """Final computational-basis outcome histogram."""
+
+    @property
+    def classical(self) -> dict[str, int]:
+        """Mid-circuit measure-bit histogram (encounter order)."""
+
+def build_functionality(program: QCOProgram, dd_package: mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD:
+    """Build a matrix DD for a static unitary QCO program.
+
+    Args:
+        program: A QCO program whose entry ``func.func`` is used to build a matrix DD.
+        dd_package: DD package with enough qubits for the program.
+
+    Returns:
+        Matrix DD of the program functionality.
+
+    Raises:
+        ValueError: When the program is unsupported for functionality construction.
+    """
+
+def simulate(
+    program: QCOProgram, initial_state: mqt.core.dd.VectorDD, dd_package: mqt.core.dd.DDPackage, seed: int | None = None
+) -> mqt.core.dd.VectorDD:
+    """Simulate a QCO program on a DD state.
+
+    Args:
+        program: A QCO program whose entry ``func.func`` is simulated.
+        initial_state: Input state DD with a live reference in ``dd_package``. A
+            valid input reference is consumed.
+        dd_package: DD package with enough qubits for the program.
+        seed: If ``None``, rejects mid-circuit measure/reset. Otherwise seeds the
+            RNG used for collapsing measurements and resets (``0`` = nondeterministic).
+
+    Returns:
+        Output state DD.
+
+    Raises:
+        ValueError: When ``initial_state`` has no live reference in ``dd_package``
+            or the program is unsupported for simulation.
+    """
+
+def sample(
+    program: QCOProgram, dd_package: mqt.core.dd.DDPackage, shots: int = 1024, seed: int | None = None
+) -> dict[str, int]:
+    """Sample final computational-basis outcomes from a QCO program.
+
+    Args:
+        program: A QCO program whose entry ``func.func`` is sampled.
+        dd_package: DD package with enough qubits for the program.
+        shots: Number of shots (default 1024).
+        seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
+
+    Returns:
+        Histogram of final ``measureAll`` bitstrings.
+
+    Raises:
+        ValueError: When the program is unsupported for sampling.
+    """
+
+def sample_with_classics(
+    program: QCOProgram, dd_package: mqt.core.dd.DDPackage, shots: int = 1024, seed: int | None = None
+) -> SampleResult:
+    """Sample final and mid-circuit classical outcomes from a QCO program.
+
+    Args:
+        program: A QCO program whose entry ``func.func`` is sampled.
+        dd_package: DD package with enough qubits for the program.
+        shots: Number of shots (default 1024).
+        seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
+
+    Returns:
+        A :class:`SampleResult` with ``shots`` and ``classical`` histograms.
+
+    Raises:
+        ValueError: When the program is unsupported for sampling.
+    """
 
 @overload
 def compile_program(

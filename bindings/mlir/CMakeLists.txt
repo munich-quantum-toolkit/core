@@ -84,7 +84,8 @@ if(NOT TARGET ${TARGET_NAME})
     MQTCompilerPipeline
     MLIRMQTDialect
     MLIRMQTUtils
-    MLIRQCTranslationSupport)
+    MLIRQCTranslationSupport
+    MLIRQCODDFunctionality)
 
   if(MQT_QISKIT_CAPI_CANDIDATE_VERSION)
     target_compile_definitions(
