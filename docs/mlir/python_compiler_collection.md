@@ -172,12 +172,18 @@ program structures than its C API can construct.
 | Nested `if`/`else`, `for`, `while`, and `switch`                  | Supported            | Rejected       |
 | Classical-bit and register conditions                             | Supported            | Rejected       |
 | Constant Boolean, `Uint` up to 64 bits, and `Float` expressions   | Supported            | Rejected       |
-| Standalone classical variables or variable expressions            | Rejected             | Rejected       |
+| Clbit and ClassicalRegister expression variables                  | Supported            | Rejected       |
+| Standalone classical runtime variables                            | Rejected             | Rejected       |
 | Free symbols and supported real parameter expressions             | Supported            | Supported      |
 | Parameter-vector elements                                         | Rejected             | Not emitted    |
 | Dense numeric unitaries up to eight qubits                        | Supported            | Supported      |
 | Register aliases or interleaved membership                        | Rejected             | Rejected       |
 | Transpiler layout metadata                                        | Accepted and ignored | Not emitted    |
+
+Classical-expression variables may refer to Clbits or ClassicalRegisters in the
+containing circuit. This includes values used only by the condition or switch
+target and not by a control-flow block. Standalone runtime variables remain
+unsupported.
 
 Free standalone symbols become named {code}`f64` program inputs.
 Parameter-vector elements are rejected because converting them to standalone
