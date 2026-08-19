@@ -83,6 +83,9 @@ outputs.
       resolved all 13 inline discussions and posted the modifier resolution for
       Simon Hofmann's review. Replaced an unsigned pre-commit bot correction
       with a signed commit that has the same tree.
+- [x] (2026-08-19 13:51Z) Fixed all 14 branch-related Clang-Tidy 22.1.8
+      diagnostics from the C++ lint job. Exact focused Clang-Tidy checks, ten
+      non-unity targets, and their 1,176 tests pass locally.
 - [ ] Validate all remote checks on the exact submitted head. Pull request #2165
       fixed the unrelated external DOI, Qiskit policy, and old Read the Docs
       link-check failures on `main`.
@@ -169,6 +172,11 @@ outputs.
 - Observation: pre-commit.ci corrected license ranges and formatting after the
   first review push. Evidence: the bot added an unsigned formatting commit whose
   tree differed only in the five new CBit-to-tensor files.
+- Observation: Clang-Tidy's include cleaner requires the header that declares a
+  generated CBit enum or type and the MLIR header that imports LLVM casting
+  functions. Evidence: `CBitAttributes.h`, `CBitDialect.h`, and
+  `mlir/Support/LLVM.h` remove the diagnostics for `Initialization`,
+  `RegisterType`, and `mlir::isa`; the exact focused checks pass.
 
 ## Decision Log
 

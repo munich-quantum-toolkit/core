@@ -11,6 +11,7 @@
 #include "mlir/Conversion/CBitToTensor/CBitToTensor.h"
 
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -19,6 +20,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 

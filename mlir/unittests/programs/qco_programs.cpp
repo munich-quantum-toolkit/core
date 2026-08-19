@@ -10,7 +10,6 @@
 
 #include "qco_programs.h"
 
-#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
 #include <llvm/ADT/STLExtras.h>

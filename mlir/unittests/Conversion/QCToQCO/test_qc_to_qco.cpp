@@ -10,6 +10,8 @@
 
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
@@ -1072,6 +1074,8 @@ TEST_F(QCToQCORegressionTest,
   }
 }
 
+namespace {
+
 enum class CBitModifierBodyOp : std::uint8_t { Alloc, Load, Store };
 
 static StringRef cbitOperationName(const CBitModifierBodyOp operation) {
@@ -1128,6 +1132,8 @@ buildInvalidCBitModifierProgram(MLIRContext* context,
   }
   return builder.finalize();
 }
+
+} // namespace
 
 TEST_F(QCToQCORegressionTest,
        PreflightRejectsEveryCBitOperationInEveryModifier) {

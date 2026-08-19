@@ -10,7 +10,6 @@
 
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
-#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"

@@ -14,7 +14,6 @@
 #include "QiskitVersion.h"
 #include "jeff/IR/JeffDialect.h"
 #include "mlir/Compiler/Programs.h"
-#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
