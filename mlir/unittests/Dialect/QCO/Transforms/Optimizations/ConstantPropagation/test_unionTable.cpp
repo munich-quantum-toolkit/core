@@ -123,7 +123,6 @@ protected:
     ut.propagateQubitAlloc(v3);
   }
 
-  void TearDown() override {}
 };
 
 TEST_F(UnionTableTest, ApplyHGate) {
@@ -436,7 +435,6 @@ protected:
                                          programBuilder.getLoc(), iAttr);
   }
 
-  void TearDown() override {}
 };
 
 TEST_F(UnionTableWithoutSetupAllocationsTest, propagateQubitAlloc) {
@@ -680,7 +678,6 @@ protected:
     ut.propagateIntAlloc(i0, 0);
   }
 
-  void TearDown() override {}
 };
 
 TEST_F(UnionTablePropertiesTest, alwaysZeroOneAreFalse) {
@@ -1250,7 +1247,6 @@ protected:
     ut.propagateMeasurement(v15, v16, i3); // classical value 3 = true
   }
 
-  void TearDown() override {}
 };
 
 TEST_F(UnionTableSuperfluousTest, oneSuperfluousEach) {

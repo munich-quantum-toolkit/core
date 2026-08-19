@@ -82,7 +82,6 @@ protected:
     v4 = q[3];
   }
 
-  void TearDown() override {}
 };
 
 TEST_F(HybridStateTest, ApplyHGate) {
