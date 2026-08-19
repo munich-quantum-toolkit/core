@@ -499,6 +499,18 @@ std::optional<JeffProgram> QCOProgram::intoJeff() && {
   return JeffProgram(std::move(*this).releaseStorage());
 }
 
+std::optional<func::FuncOp> QCOProgram::entryFunc() const {
+  ModuleOp module = mod();
+  if (auto main = module.lookupSymbol<func::FuncOp>("main")) {
+    return main;
+  }
+  auto funcs = module.getOps<func::FuncOp>();
+  if (funcs.empty()) {
+    return std::nullopt;
+  }
+  return *funcs.begin();
+}
+
 //===----------------------------------------------------------------------===//
 // JeffProgram
 //===----------------------------------------------------------------------===//
