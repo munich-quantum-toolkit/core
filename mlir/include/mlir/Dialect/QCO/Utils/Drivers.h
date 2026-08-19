@@ -105,11 +105,12 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
     for (size_t i : curr) {
       auto& it = wires[i];
 
-      if (it.operation() == nullptr) { // isa<BlockArgument>
-        std::ranges::advance(it, Traits::stride());
-      }
-
       while (it != std::default_sentinel) {
+        if (it.operation() == nullptr) { // isa<BlockArgument>
+          std::ranges::advance(it, Traits::stride());
+          continue;
+        }
+
         if (const auto mapIt = pending.find(it.operation());
             mapIt != pending.end()) {
           PendingItem& item = mapIt->second;

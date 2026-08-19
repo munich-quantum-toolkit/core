@@ -765,10 +765,14 @@ private:
           return;
         }
 
+        for_each(t.bundle.wires, [](WireIterator& it) { --it; });
+
         const auto bwRouteRes = route<WireDirection::Backward>(t.bundle);
         if (failed(bwRouteRes)) {
           return;
         }
+
+        for_each(t.bundle.wires, [](WireIterator& it) { ++it; });
 
         t.stats = *bwRouteRes;
       }
@@ -1021,11 +1025,16 @@ private:
     // Otherwise, stop.
 
     std::array block{it0, it1};
+
+    // Move past the initial two-qubit op.
+    assert(it0.operation() == it1.operation());
+    std::ranges::advance(block[0], Traits::stride());
+    std::ranges::advance(block[1], Traits::stride());
+
     while (true) {
       for (auto& it : block) {
-        while (Traits::isActive(it)) {
-          std::ranges::advance(it, Traits::stride());
-
+        for (; it != std::default_sentinel;
+             std::ranges::advance(it, Traits::stride())) {
           if (it.operation() == nullptr) { // isa<Blockargument>
             return;
           }
@@ -1052,6 +1061,9 @@ private:
 
       it0 = block[0];
       it1 = block[1];
+
+      std::ranges::advance(block[0], Traits::stride());
+      std::ranges::advance(block[1], Traits::stride());
     }
   }
 
@@ -1617,8 +1629,7 @@ private:
         // case, incrementing the wire iterator will undo the previous
         // decrement, leaving it at the same position as before the SWAP
         // insertion. Otherwise, an increment will move the iterator to the
-        // multi-qubit op of the current or subsequent layer or to a sink (and
-        // thus std::default_sentinel).
+        // multi-qubit op of the current or subsequent layer or to a sink.
 
         for_each(wires, [](auto& it) { std::advance(it, 1); });
       }
