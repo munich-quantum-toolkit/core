@@ -765,14 +765,22 @@ private:
           return;
         }
 
-        for_each(t.bundle.wires, [](WireIterator& it) { --it; });
+        assert(all_of(t.bundle.wires, [](const auto& it) {
+          return it == std::default_sentinel;
+        }));
+
+        for_each(t.bundle.wires, [](auto& it) { std::advance(it, 1); });
 
         const auto bwRouteRes = route<WireDirection::Backward>(t.bundle);
         if (failed(bwRouteRes)) {
           return;
         }
 
-        for_each(t.bundle.wires, [](WireIterator& it) { ++it; });
+        assert(all_of(t.bundle.wires, [](const auto& it) {
+          return it == std::default_sentinel;
+        }));
+
+        for_each(t.bundle.wires, [](auto& it) { std::advance(it, -1); });
 
         t.stats = *bwRouteRes;
       }
@@ -1028,13 +1036,13 @@ private:
 
     // Move past the initial two-qubit op.
     assert(it0.operation() == it1.operation());
-    std::ranges::advance(block[0], Traits::stride());
-    std::ranges::advance(block[1], Traits::stride());
+    std::advance(block[0], Traits::stride());
+    std::advance(block[1], Traits::stride());
 
     while (true) {
       for (auto& it : block) {
         for (; it != std::default_sentinel;
-             std::ranges::advance(it, Traits::stride())) {
+             std::advance(it, Traits::stride())) {
           if (it.operation() == nullptr) { // isa<Blockargument>
             return;
           }
@@ -1062,8 +1070,8 @@ private:
       it0 = block[0];
       it1 = block[1];
 
-      std::ranges::advance(block[0], Traits::stride());
-      std::ranges::advance(block[1], Traits::stride());
+      std::advance(block[0], Traits::stride());
+      std::advance(block[1], Traits::stride());
     }
   }
 

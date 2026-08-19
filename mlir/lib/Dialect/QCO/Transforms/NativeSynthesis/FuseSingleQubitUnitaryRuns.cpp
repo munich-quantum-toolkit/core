@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: keep (Passes.h.inc)
 #include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <llvm/ADT/TypeSwitch.h>

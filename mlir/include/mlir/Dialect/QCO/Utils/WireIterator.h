@@ -13,6 +13,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 
@@ -106,16 +107,14 @@ private:
 /// Categorizes the current traversal direction.
 enum class WireDirection : bool { Forward, Backward };
 
-template <WireDirection Direction> struct WireTraversalTraits {};
-
-template <> struct WireTraversalTraits<WireDirection::Forward> {
-  /// Return the forward increment stride size.
-  static constexpr std::ptrdiff_t stride() { return 1; }
-};
-
-template <> struct WireTraversalTraits<WireDirection::Backward> {
-  /// Return the backward increment stride size.
-  static constexpr std::ptrdiff_t stride() { return -1; }
+template <WireDirection Direction> struct WireTraversalTraits {
+  /// Return the increment stride size.
+  static constexpr std::ptrdiff_t stride() {
+    if constexpr (Direction == WireDirection::Forward) {
+      return 1;
+    }
+    return -1;
+  }
 };
 
 /**
