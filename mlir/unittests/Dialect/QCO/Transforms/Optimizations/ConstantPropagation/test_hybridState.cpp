@@ -81,7 +81,6 @@ protected:
     v3 = q[2];
     v4 = q[3];
   }
-
 };
 
 TEST_F(HybridStateTest, ApplyHGate) {

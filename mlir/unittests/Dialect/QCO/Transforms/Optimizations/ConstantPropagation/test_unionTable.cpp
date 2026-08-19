@@ -122,7 +122,6 @@ protected:
     ut.propagateQubitAlloc(v2);
     ut.propagateQubitAlloc(v3);
   }
-
 };
 
 TEST_F(UnionTableTest, ApplyHGate) {
@@ -434,7 +433,6 @@ protected:
     i1 = mlir::arith::ConstantOp::create(programBuilder,
                                          programBuilder.getLoc(), iAttr);
   }
-
 };
 
 TEST_F(UnionTableWithoutSetupAllocationsTest, propagateQubitAlloc) {
@@ -677,7 +675,6 @@ protected:
     ut.propagateQubitAlloc(v2);
     ut.propagateIntAlloc(i0, 0);
   }
-
 };
 
 TEST_F(UnionTablePropertiesTest, alwaysZeroOneAreFalse) {
@@ -1258,7 +1255,6 @@ protected:
     ut.propagateGate(hOp, q14, q15);
     ut.propagateMeasurement(v15, v16, i3); // classical value 3 = true
   }
-
 };
 
 TEST_F(UnionTableSuperfluousTest, oneSuperfluousEach) {
