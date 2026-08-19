@@ -46,6 +46,7 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
@@ -85,8 +86,8 @@ namespace mlir {
   DialectRegistry registry;
   registry.insert<cbit::CBitDialect, qc::QCDialect, qco::QCODialect,
                   qtensor::QTensorDialect, arith::ArithDialect,
-                  cf::ControlFlowDialect, func::FuncDialect, scf::SCFDialect,
-                  LLVM::LLVMDialect, memref::MemRefDialect,
+                  cf::ControlFlowDialect, func::FuncDialect, math::MathDialect,
+                  scf::SCFDialect, LLVM::LLVMDialect, memref::MemRefDialect,
                   tensor::TensorDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);

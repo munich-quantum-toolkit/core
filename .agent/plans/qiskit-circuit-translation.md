@@ -12,13 +12,13 @@ translation does not create a `QuantumComputation`. The existing
 `mqt.core.load`, `qiskit_to_mqt`, and `mqt_to_qiskit` APIs remain independent
 and retain their wider Qiskit compatibility.
 
-The direct translation supports Qiskit `>=2.5.0,<2.6.0`. Import covers numeric
-standard gates and modifiers, global phase, canonical registers, measurement,
-reset, barrier, recursive custom definitions, and structured control flow with
-classical-bit and register conditions and supported constant expressions.
-Standalone classical variables are rejected. Export covers the flat
-constructible subset. Validation completes before the destination program is
-created.
+The direct translation supports Qiskit `>=2.5.0,<2.6.0`. Import covers standard
+gates and modifiers with supported numeric or symbolic parameters, global phase,
+canonical registers, measurement, reset, barrier, recursive custom definitions,
+and structured control flow with classical-bit and register conditions and
+supported expressions. Standalone classical variables are rejected. Export
+covers the flat constructible subset. Validation completes before the
+destination program is created.
 
 ## Progress
 
@@ -43,10 +43,10 @@ created.
 - Qiskit's header function tables and `qk_import()` state are local to one
   translation unit. All `Qk*` types, functions, and table access therefore stay
   in `Qiskit2_5.cpp`.
-- A custom instruction's definition can still contain its original parameter
-  object after the call site receives a numeric value. The version-specific
-  reader binds call parameters to definition parameters before the generic
-  importer reads the definition.
+- A custom instruction's definition exposes the symbols and expressions bound at
+  its call site. The symbolic-parameter translation validates those values
+  against the current global and lexical identities; it needs no separate
+  formal-parameter substitution scheme.
 - Qiskit 2.5 provides native inspection for structured control flow and
   classical expressions but does not provide the corresponding constructors.
   Import can represent these structures in SCF and Arith. Export must reject
@@ -69,10 +69,12 @@ created.
   extension. Rationale: nanobind owns Python object lifetimes and stable-ABI
   configuration, while source properties keep Qiskit's private headers and
   extension macro local. Date/Author: 2026-08-12 / Codex.
-- Decision: Reject free compile-time parameters and arbitrary unitaries.
-  Rationale: neither has a complete compiler representation and round-trip
-  contract in this change. Lexically bound loop parameters remain local values.
-  Date/Author: 2026-08-12 / Codex.
+- Decision: Reject free compile-time parameters and arbitrary unitaries in the
+  original change. Rationale: neither had a complete compiler representation and
+  round-trip contract at that time. The free-parameter decision is superseded by
+  `.agent/plans/qiskit-symbolic-parameters.md`; the arbitrary-unitary decision
+  is unchanged here. Date/Author: 2026-08-12, partially superseded 2026-08-18 /
+  Codex.
 - Decision: Expand unknown instructions through their definitions. Rationale:
   recursive expansion supports composite gates without adding custom-operation
   semantics to QC. Expansion is bounded by a depth of 64 and 10 million
@@ -160,11 +162,11 @@ the final diff must all pass.
 
 The importer opens the source circuit through the selected version reader. It
 then validates the full reachable instruction graph. Validation checks numeric
-parameters, gate and modifier arity, canonical registers, classical expression
-types, control-flow mappings, custom-definition cycles, definition arity,
-definition depth, and the operation budget. Arbitrary unitaries and unsupported
-operations fail during this pass. Only then does the importer allocate an MLIR
-context and module.
+and supported symbolic parameters, gate and modifier arity, canonical registers,
+classical expression types, control-flow mappings, custom-definition cycles,
+definition arity, definition depth, and the operation budget. Arbitrary
+unitaries, unsupported expressions, and other unsupported operations fail during
+this pass. Only then does the importer allocate an MLIR context and module.
 
 The importer creates leading anonymous allocations for loose resources and one
 named allocation for each canonical register. Classical bit references map each
@@ -175,7 +177,8 @@ classical-expression trees contain constants but no variables. Loop induction
 parameters remain lexically bound values.
 
 The exporter borrows the program module, checks the single entry function,
-rejects function inputs and structured or runtime classical execution, and
+accepts named `f64` inputs and supported Arith and Math expression graphs,
+rejects other input types and structured or runtime classical execution, and
 collects flat operations and allocation attributes. It validates the recovered
 register layout before it selects a Qiskit writer or allocates a circuit.
 
@@ -226,19 +229,20 @@ Acceptance requires:
 
 - C++ tests for borrowed module access, checked ownership transfer, shared gate
   descriptors, and existing OpenQASM translation.
-- Table-driven Qiskit gate import and export with constructible numeric
-  modifiers, global phase, canonical registers, measurement, reset, and barrier;
-  import also accepts other finite numeric modifiers.
-- Recursive numeric custom definitions plus missing, cyclic, mismatched, and
-  overly deep definitions.
+- Table-driven Qiskit gate import and export with finite numeric modifiers,
+  global phase, canonical registers, measurement, reset, and barrier.
+- Recursive parameterized custom definitions plus missing, cyclic, mismatched,
+  and overly deep definitions.
 - Nested structured control flow, loop-bound parameters, and representative
   Boolean, unsigned integer, and floating-point expressions.
-- Early rejection of free symbols, arbitrary unitaries, aliases, and interleaved
-  registers and standalone classical variables without source mutation.
+- Supported free symbols and parameter expressions, plus early rejection of
+  unsupported expressions, arbitrary unitaries, aliases, interleaved registers,
+  and standalone classical variables without source mutation.
 - Successful import of a circuit with `circ.layout`, with layout metadata absent
   from the compiler program.
-- Flat export rejection for structured programs and runtime inputs, unsupported
-  version dispatch, lazy Qiskit import, and unchanged existing converter tests.
+- Flat export rejection for structured programs and unsupported runtime input
+  types or expression graphs, unsupported version dispatch, lazy Qiskit import,
+  and unchanged existing converter tests.
 - Python 3.10 regular-ABI and Python 3.12 or newer stable-ABI builds where those
   interpreters are available, generated stubs, documentation, repository lint,
   and `git diff --check`.
@@ -265,7 +269,8 @@ The vendored Qiskit 2.5.0 snapshot includes its Apache-2.0 license,
 `PROVENANCE.json`, `API_SURFACE.json`, and per-header SHA-256 hashes. It is a
 private build input and is not installed as an MQT C++ interface.
 
-The focused validation produced these final summaries:
+The original #2031 validation produced these final summaries. The symbolic
+parameter ExecPlan records the later symbolic validation:
 
     [  PASSED  ] 234 tests.  # compiler program and pipeline tests
     [  PASSED  ] 291 tests.  # QC and OpenQASM translation tests
