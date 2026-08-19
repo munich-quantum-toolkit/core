@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add a `constant propagation` pass for reducing superfluous quantum
+  resources by propagating the quantum machine state ([#1845]) ([**@lirem101**])
 - ✨ Let a package register a program serializer for a program format through
   the `mqt.core.qiskit.program_serializers` entry point group ([#2114])
   ([**@marcelwa**])
@@ -71,8 +73,10 @@ releases may include breaking changes.
   [#1979], [#2007], [#2026], [#2030], [#2066]) ([**@burgholzer**],
   [**@denialhaag**], [**@simon1hofmann**], [**@li-mingbao**], [**@DRovara**],
   [**@MatthiasReumann**])
-- ✨ Add decision diagram-based construction and simulation of static unitary
-  QCO functions ([#1915]) ([**@simon1hofmann**])
+- ✨ Add decision diagram-based construction, simulation, and sampling of QCO
+  functions, including static unitaries, mid-circuit `measure`/`reset`, concrete
+  `if`/`index_switch`, initial classical SSA evaluation, dense `k>3` wire
+  embedding, and multi-shot `sample` ([#1915], [#1973]) ([**@simon1hofmann**])
 - ✨ Add target-independent two-qubit gate fusion, target-native post-routing
   synthesis, and operation-capability and static-site conformance ([#1865],
   [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -163,8 +167,22 @@ releases may include breaking changes.
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**],
   [**@denialhaag**])
 
+### Fixed
+
+- 🐛 Distinguish scalar OpenQASM qubits from one-element qubit registers and
+  reject indexing scalar qubits ([#2157]) ([**@DRovara**], [**@burgholzer**])
+- 🐛 Preserve the original OpenQASM type error when an assignment's right-hand
+  expression cannot be typed ([#2156]) ([**@DRovara**], [**@burgholzer**])
+
 ### Removed
 
+- 💥 Remove batch job submission from the QDMI client. `Device::submitJob` now
+  states that MQT Core does not support batch jobs ([#2148]) ([**@marcelwa**])
+- 💥 Remove the IQM JSON converter `qiskit_to_iqm_json` and the `MoveGate` from
+  the Qiskit plugin, which [QDMI-on-IQM] now owns ([#2114]) ([**@marcelwa**])
+- 💥 Remove the unused decision-diagram approximation algorithm, including the
+  `dd/Approximation.hpp` header, `dd::ApproximationMetadata`, and
+  `dd::approximate`. No replacement is provided ([#2154]) ([**@burgholzer**])
 - 💥 Remove `nlohmann_json` from the public package contract. MQT Core no longer
   installs or exports the library, no installed header exposes a `nlohmann`
   type, and the decision-diagram statistics report through strings and streams
@@ -798,34 +816,27 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
+
+[#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
+
+[#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
-
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
-
 [#2140]: https://github.com/munich-quantum-toolkit/core/pull/2140
-
 [#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
-
 [#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
-
 [#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136
-
 [#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
-
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
-
 [#2118]: https://github.com/munich-quantum-toolkit/core/pull/2118
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
-
 [#2115]: https://github.com/munich-quantum-toolkit/core/pull/2115
-
 [#2114]: https://github.com/munich-quantum-toolkit/core/pull/2114
 [#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
-
 [#2111]: https://github.com/munich-quantum-toolkit/core/pull/2111
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
-
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
@@ -878,6 +889,8 @@ for previous changelogs._
 [#1978]: https://github.com/munich-quantum-toolkit/core/pull/1978
 [#1976]: https://github.com/munich-quantum-toolkit/core/pull/1976
 [#1975]: https://github.com/munich-quantum-toolkit/core/pull/1975
+
+[#1973]: https://github.com/munich-quantum-toolkit/core/pull/1973
 [#1972]: https://github.com/munich-quantum-toolkit/core/pull/1972
 [#1967]: https://github.com/munich-quantum-toolkit/core/pull/1967
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965
@@ -915,6 +928,7 @@ for previous changelogs._
 [#1850]: https://github.com/munich-quantum-toolkit/core/pull/1850
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
+
 [#1845]: https://github.com/munich-quantum-toolkit/core/pull/1845
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
 [#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
@@ -1208,6 +1222,8 @@ for previous changelogs._
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Common Changelog]: https://common-changelog.org
+
+[QDMI-on-IQM]: https://github.com/iqm-finland/QDMI-on-IQM
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
 [munich-quantum-toolkit]: https://github.com/munich-quantum-toolkit
 [PEP 639]: https://peps.python.org/pep-0639/
