@@ -100,6 +100,18 @@ constexpr size_t MAX_EXPANDED_OPERATIONS = 10'000'000U;
       std::to_string(MAX_PARAMETER_EXPRESSION_DEPTH) + "-level nesting depth");
 }
 
+[[noreturn]] void throwImportedParameterGroupSizeError() {
+  throw std::runtime_error("Qiskit parameter vectors support at most " +
+                           std::to_string(MAX_PARAMETER_GROUP_SIZE) +
+                           " elements");
+}
+
+[[noreturn]] void throwImportedParameterGroupTotalSizeError() {
+  throw std::runtime_error("Qiskit circuit import supports at most " +
+                           std::to_string(MAX_PARAMETER_GROUP_SIZE) +
+                           " elements across all distinct parameter vectors");
+}
+
 [[nodiscard]] std::shared_ptr<mlir::MLIRContext> createContext() {
   mlir::DialectRegistry registry;
   registry.insert<mlir::cbit::CBitDialect, mlir::qc::QCDialect,
@@ -160,7 +172,8 @@ void validateParameterImpl(const Parameter& parameter,
     }
     if (const auto local = localParameters.find(parameter.identity);
         local != localParameters.end()) {
-      if (parameter.text != local->second.text) {
+      if (parameter.text != local->second.text ||
+          parameter.group != local->second.group) {
         throw std::runtime_error("Qiskit parameter symbol '" + parameter.text +
                                  "' aliases local symbol '" +
                                  local->second.text +
@@ -170,7 +183,8 @@ void validateParameterImpl(const Parameter& parameter,
     }
     if (const auto free = freeParameters.find(parameter.identity);
         free != freeParameters.end()) {
-      if (parameter.text != free->second.text) {
+      if (parameter.text != free->second.text ||
+          parameter.group != free->second.group) {
         throw std::runtime_error("Qiskit parameter symbol '" + parameter.text +
                                  "' aliases free symbol '" + free->second.text +
                                  "' with inconsistent metadata");
@@ -1823,6 +1837,8 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   const auto freeParameters = view->parameters();
   ValidationParameters freeParameterSymbols;
   llvm::StringSet<> freeParameterNames;
+  llvm::StringMap<ParameterGroup> freeParameterGroups;
+  uint64_t totalParameterGroupSize = 0U;
   for (const auto& parameter : freeParameters) {
     if (parameter.kind != ParameterKind::Symbol || parameter.text.empty() ||
         parameter.identity.empty()) {
@@ -1837,6 +1853,43 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
     if (!freeParameterNames.insert(parameter.text).second) {
       throw std::runtime_error(
           "Qiskit circuit contains distinct parameters with the same name");
+    }
+    if (!parameter.group) {
+      continue;
+    }
+    if (parameter.group->size > MAX_PARAMETER_GROUP_SIZE) {
+      throwImportedParameterGroupSizeError();
+    }
+    if (parameter.group->identity.empty() ||
+        parameter.group->identity.find('\0') != std::string::npos ||
+        parameter.group->name.find('\0') != std::string::npos ||
+        parameter.group->index >
+            static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ||
+        parameter.group->size >
+            static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+      throw std::runtime_error(
+          "Qiskit circuit returned invalid parameter input-group metadata");
+    }
+    const auto expectedName = parameter.group->name + "[" +
+                              std::to_string(parameter.group->index) + "]";
+    if (parameter.text != expectedName) {
+      throw std::runtime_error(
+          "Qiskit parameter name does not match its input group");
+    }
+    const auto [group, inserted] = freeParameterGroups.try_emplace(
+        parameter.group->identity, *parameter.group);
+    if (inserted) {
+      if (parameter.group->size >
+          MAX_PARAMETER_GROUP_SIZE - totalParameterGroupSize) {
+        throwImportedParameterGroupTotalSizeError();
+      }
+      totalParameterGroupSize += parameter.group->size;
+    } else {
+      if (group->second.name != parameter.group->name ||
+          group->second.size != parameter.group->size) {
+        throw std::runtime_error(
+            "Qiskit parameter input group has conflicting metadata");
+      }
     }
   }
 
@@ -1871,9 +1924,25 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
       builder.getInsertionBlock()->getParentOp());
   GlobalParameters globalParameters;
   for (const auto& parameter : freeParameters) {
-    const llvm::SmallVector<mlir::NamedAttribute> argumentAttributes{
+    llvm::SmallVector<mlir::NamedAttribute> argumentAttributes{
         builder.getNamedAttr(mlir::utils::INPUT_NAME_ATTR,
                              builder.getStringAttr(parameter.text))};
+    if (parameter.group) {
+      argumentAttributes.push_back(builder.getNamedAttr(
+          mlir::utils::INPUT_GROUP_ATTR,
+          builder.getStringAttr(parameter.group->identity)));
+      argumentAttributes.push_back(
+          builder.getNamedAttr(mlir::utils::INPUT_GROUP_NAME_ATTR,
+                               builder.getStringAttr(parameter.group->name)));
+      argumentAttributes.push_back(
+          builder.getNamedAttr(mlir::utils::INPUT_GROUP_INDEX_ATTR,
+                               builder.getI64IntegerAttr(static_cast<int64_t>(
+                                   parameter.group->index))));
+      argumentAttributes.push_back(
+          builder.getNamedAttr(mlir::utils::INPUT_GROUP_SIZE_ATTR,
+                               builder.getI64IntegerAttr(static_cast<int64_t>(
+                                   parameter.group->size))));
+    }
     const auto index = function.getNumArguments();
     // MLIR types are handles. Converting FloatType to Type keeps the same
     // storage and does not slice object state.

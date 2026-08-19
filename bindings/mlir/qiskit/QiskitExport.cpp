@@ -123,6 +123,18 @@ struct ExportScope {
                            "-level nesting depth");
 }
 
+[[noreturn]] void throwExportedParameterGroupSizeError() {
+  throw std::runtime_error("Qiskit parameter vectors support at most " +
+                           std::to_string(MAX_PARAMETER_GROUP_SIZE) +
+                           " elements");
+}
+
+[[noreturn]] void throwExportedParameterGroupTotalSizeError() {
+  throw std::runtime_error("Qiskit circuit export supports at most " +
+                           std::to_string(MAX_PARAMETER_GROUP_SIZE) +
+                           " elements across all distinct parameter vectors");
+}
+
 [[nodiscard]] Parameter numberParameter(const double value) {
   return {.kind = ParameterKind::Number, .number = value};
 }
@@ -138,6 +150,11 @@ struct ExportScope {
   return {.kind = kind,
           .left = std::make_shared<const Parameter>(std::move(left)),
           .right = std::make_shared<const Parameter>(std::move(right))};
+}
+
+[[nodiscard]] std::string
+parameterGroupElementName(const ParameterGroup& group) {
+  return group.name + "[" + std::to_string(group.index) + "]";
 }
 
 [[nodiscard]] Parameter exportParameterImpl(mlir::Value value,
@@ -271,6 +288,10 @@ void validateExportParameterImpl(const Parameter& parameter, const size_t depth,
   switch (parameter.kind) {
   case ParameterKind::Number:
     requireLeaf();
+    if (parameter.group) {
+      throw std::runtime_error(
+          "numeric QC parameter has unexpected input-group metadata");
+    }
     if (!std::isfinite(parameter.number)) {
       throw std::runtime_error("cannot export a non-finite QC parameter");
     }
@@ -285,6 +306,21 @@ void validateExportParameterImpl(const Parameter& parameter, const size_t depth,
         parameter.identity.find('\0') != std::string::npos) {
       throw std::runtime_error(
           "QC parameter symbol metadata contains a null character");
+    }
+    if (parameter.group && parameter.group->size > MAX_PARAMETER_GROUP_SIZE) {
+      throwExportedParameterGroupSizeError();
+    }
+    if (parameter.group &&
+        (parameter.group->identity.empty() ||
+         parameter.group->identity.find('\0') != std::string::npos ||
+         parameter.group->name.find('\0') != std::string::npos ||
+         parameter.group->index >=
+             static_cast<uint64_t>(std::numeric_limits<size_t>::max()) ||
+         parameter.group->size >
+             static_cast<uint64_t>(std::numeric_limits<size_t>::max()) ||
+         parameter.text != parameterGroupElementName(*parameter.group))) {
+      throw std::runtime_error(
+          "QC parameter symbol has invalid input-group metadata");
     }
     return;
   case ParameterKind::Add:
@@ -442,6 +478,8 @@ void validateExportParameters(const ExportedCircuit& circuit,
 }
 
 void collectParameters(mlir::func::FuncOp function, ExportState& state) {
+  llvm::StringMap<ParameterGroup> groups;
+  uint64_t totalParameterGroupSize = 0U;
   for (const auto [index, argument] :
        llvm::enumerate(function.getArguments())) {
     const auto name = function.getArgAttrOfType<mlir::StringAttr>(
@@ -459,10 +497,78 @@ void collectParameters(mlir::func::FuncOp function, ExportState& state) {
       throw std::runtime_error(
           "Qiskit circuit export requires unique parameter names");
     }
+    const auto groupIdentityAttribute =
+        function.getArgAttr(index, mlir::utils::INPUT_GROUP_ATTR);
+    const auto groupNameAttribute =
+        function.getArgAttr(index, mlir::utils::INPUT_GROUP_NAME_ATTR);
+    const auto groupIndexAttribute =
+        function.getArgAttr(index, mlir::utils::INPUT_GROUP_INDEX_ATTR);
+    const auto groupSizeAttribute =
+        function.getArgAttr(index, mlir::utils::INPUT_GROUP_SIZE_ATTR);
+    const auto hasGroup = static_cast<bool>(groupIdentityAttribute) ||
+                          static_cast<bool>(groupNameAttribute) ||
+                          static_cast<bool>(groupIndexAttribute) ||
+                          static_cast<bool>(groupSizeAttribute);
+    std::optional<ParameterGroup> group;
+    if (hasGroup) {
+      const auto groupIdentity =
+          llvm::dyn_cast_if_present<mlir::StringAttr>(groupIdentityAttribute);
+      const auto groupName =
+          llvm::dyn_cast_if_present<mlir::StringAttr>(groupNameAttribute);
+      const auto groupIndex =
+          llvm::dyn_cast_if_present<mlir::IntegerAttr>(groupIndexAttribute);
+      const auto groupSize =
+          llvm::dyn_cast_if_present<mlir::IntegerAttr>(groupSizeAttribute);
+      if (!groupIdentity || groupIdentity.getValue().empty() || !groupName ||
+          !groupIndex || !groupIndex.getType().isInteger(64) ||
+          groupIndex.getInt() < 0 || !groupSize ||
+          !groupSize.getType().isInteger(64) || groupSize.getInt() < 0 ||
+          groupIdentity.getValue().contains('\0') ||
+          groupName.getValue().contains('\0')) {
+        throw std::runtime_error(
+            "Qiskit circuit export requires complete and valid input-group "
+            "metadata");
+      }
+      group =
+          ParameterGroup{.identity = groupIdentity.str(),
+                         .name = groupName.str(),
+                         .index = static_cast<uint64_t>(groupIndex.getInt()),
+                         .size = static_cast<uint64_t>(groupSize.getInt())};
+      if (group->size > MAX_PARAMETER_GROUP_SIZE) {
+        throwExportedParameterGroupSizeError();
+      }
+      if (group->size >
+          static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+        throw std::runtime_error(
+            "Qiskit circuit export input-group size cannot be represented by "
+            "the Python runtime");
+      }
+      if (name.getValue() != parameterGroupElementName(*group)) {
+        throw std::runtime_error(
+            "Qiskit circuit export requires an input-group element name that "
+            "matches its group and index");
+      }
+      const auto [knownGroup, inserted] =
+          groups.try_emplace(group->identity, *group);
+      if (inserted) {
+        if (group->size > MAX_PARAMETER_GROUP_SIZE - totalParameterGroupSize) {
+          throwExportedParameterGroupTotalSizeError();
+        }
+        totalParameterGroupSize += group->size;
+      } else {
+        if (knownGroup->second.name != group->name ||
+            knownGroup->second.size != group->size) {
+          throw std::runtime_error(
+              "Qiskit circuit export found conflicting metadata for one "
+              "input group");
+        }
+      }
+    }
     Parameter parameter{
         .kind = ParameterKind::Symbol,
         .text = name.str(),
         .identity = "input:" + std::to_string(index),
+        .group = std::move(group),
     };
     state.parameters[argument] = parameter;
     state.inputParameters.push_back(std::move(parameter));

@@ -50,6 +50,7 @@ validateRegisterLayout(const std::vector<Register>& registers, uint32_t total,
 
 inline constexpr size_t MAX_PARAMETER_EXPRESSION_DEPTH = 64U;
 inline constexpr size_t MAX_PARAMETER_EXPRESSION_NODES = 4096U;
+inline constexpr uint64_t MAX_PARAMETER_GROUP_SIZE = 65'536U;
 
 enum class ParameterKind : uint8_t {
   Number,
@@ -72,12 +73,23 @@ enum class ParameterKind : uint8_t {
   Conjugate,
 };
 
+/** Optional source-level grouping for one scalar program input. */
+struct ParameterGroup {
+  std::string identity;
+  std::string name;
+  uint64_t index = 0U;
+  uint64_t size = 0U;
+
+  [[nodiscard]] bool operator==(const ParameterGroup&) const = default;
+};
+
 /** One normalized scalar parameter-expression tree. */
 struct Parameter {
   ParameterKind kind = ParameterKind::Number;
   double number = 0.0;
   std::string text;
   std::string identity;
+  std::optional<ParameterGroup> group;
   std::shared_ptr<const Parameter> left;
   std::shared_ptr<const Parameter> right;
 };

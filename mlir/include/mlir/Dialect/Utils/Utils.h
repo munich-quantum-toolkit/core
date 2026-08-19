@@ -49,6 +49,21 @@ inline constexpr llvm::StringLiteral QUBIT_REGISTER_NAME_ATTR =
 /// Attribute used to retain the source-level name of a scalar program input.
 inline constexpr llvm::StringLiteral INPUT_NAME_ATTR = "mqt.input_name";
 
+/// Attribute used to retain the stable identity of a source-level input group.
+inline constexpr llvm::StringLiteral INPUT_GROUP_ATTR = "mqt.input_group";
+
+/// Attribute used to retain the source-level name of an input group.
+inline constexpr llvm::StringLiteral INPUT_GROUP_NAME_ATTR =
+    "mqt.input_group_name";
+
+/// Attribute used to retain a scalar input's position in an input group.
+inline constexpr llvm::StringLiteral INPUT_GROUP_INDEX_ATTR =
+    "mqt.input_group_index";
+
+/// Attribute used to retain the source-level size of an input group.
+inline constexpr llvm::StringLiteral INPUT_GROUP_SIZE_ATTR =
+    "mqt.input_group_size";
+
 /// Check if a floating-point value is an integer.
 [[nodiscard]] inline bool isIntegerExponent(double r) {
   return r == std::floor(r) && std::isfinite(r);
