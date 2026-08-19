@@ -117,4 +117,26 @@ SmallVector<Value> mlqae(qc::QCProgramBuilder& b, uint64_t n);
 /// multiplication on a control qubit that every round reuses.
 SmallVector<Value> shor(qc::QCProgramBuilder& b, uint64_t n);
 
+/// A gadget that repeats until its ancilla reports success. The program has a
+/// fixed size, so @p n is ignored.
+SmallVector<Value> repeatUntilSuccess(qc::QCProgramBuilder& b, uint64_t n);
+
+/// Magic state distillation on @p n qubits: n-1 noisy states and one check
+/// qubit, repeated until a round is accepted.
+SmallVector<Value> magicStateDistillation(qc::QCProgramBuilder& b, uint64_t n);
+
+/// Preparation of a logical state on @p n qubits: an encoded block of n-1
+/// qubits and one check qubit, repeated until the check passes.
+SmallVector<Value> logicalStatePreparation(qc::QCProgramBuilder& b, uint64_t n);
+
+/// Rounds of stabilizer measurement and correction on @p n qubits: an encoded
+/// block of n-1 qubits and one syndrome qubit.
+SmallVector<Value> syndromeMeasurement(qc::QCProgramBuilder& b, uint64_t n);
+
+/// Measurement-based computation on a cluster chain, where every outcome
+/// selects the next measurement angle. The program has a fixed size, so @p n
+/// is ignored.
+SmallVector<Value> measurementBasedComputation(qc::QCProgramBuilder& b,
+                                               uint64_t n);
+
 } // namespace mqt::benchmark
