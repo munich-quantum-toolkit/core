@@ -1950,8 +1950,8 @@ provides-extras = ["pennylane", "qiskit"]
 [package.metadata.requires-dev]
 build = [
     { name = "nanobind", specifier = "~=2.15.0" },
-    { name = "scikit-build-core", specifier = "~=1.0.3" },
-    { name = "vcs-versioning", specifier = "~=2.3.0" },
+    { name = "scikit-build-core", specifier = ">=1.0.3" },
+    { name = "vcs-versioning", specifier = ">=2.3.0" },
 ]
 dev = [
     { name = "lit", specifier = ">=18.1.8" },
@@ -1967,8 +1967,8 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "qirrunner", specifier = "~=0.9.6" },
     { name = "qiskit", extras = ["qasm3-import"], specifier = ">=1.1.0" },
-    { name = "scikit-build-core", specifier = "~=1.0.3" },
-    { name = "vcs-versioning", specifier = "~=2.3.0" },
+    { name = "scikit-build-core", specifier = ">=1.0.3" },
+    { name = "vcs-versioning", specifier = ">=2.3.0" },
 ]
 docs = [
     { name = "furo", specifier = ">=2025.9.25" },
