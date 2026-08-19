@@ -346,6 +346,45 @@ TEST(DDPackageTest, PartialIdentityTrace) {
   EXPECT_EQ(RealNumber::val(mul.w.r), 1.);
 }
 
+TEST(DDPackageTest, PartialTraceSkippedIdentityAboveRoot) {
+  auto dd = std::make_unique<Package>(2);
+  const auto input = getDD(qc::StandardOperation(0, qc::X), *dd);
+
+  ASSERT_FALSE(input.isTerminal());
+  ASSERT_EQ(input.p->v, 0);
+
+  const auto reduced = dd->partialTrace(input, {false, true});
+
+  EXPECT_EQ(reduced, input);
+}
+
+TEST(DDPackageTest, PartialTraceSkippedIdentityInsideDiagram) {
+  auto dd = std::make_unique<Package>(4);
+  const auto input = getDD(qc::StandardOperation(3_pc, 1, qc::X), *dd);
+  const auto expected = getDD(qc::StandardOperation(2_pc, 1, qc::X), *dd);
+
+  ASSERT_FALSE(input.isTerminal());
+  ASSERT_EQ(input.p->v, 3);
+  ASSERT_FALSE(input.p->e[3].isTerminal());
+  ASSERT_EQ(input.p->e[3].p->v, 1);
+
+  const auto reduced = dd->partialTrace(input, {false, false, true, false});
+
+  EXPECT_EQ(reduced, expected);
+}
+
+TEST(DDPackageTest, PartialTraceRenumbersDiagonalBlockSum) {
+  auto dd = std::make_unique<Package>(3);
+  const auto input = getDD(qc::StandardOperation(2_pc, 1, qc::X), *dd);
+  const auto x = getDD(qc::StandardOperation(0, qc::X), *dd);
+  auto expected = dd->add(Package::makeIdent(), x);
+  expected.w = dd->cn.lookup(static_cast<ComplexValue>(expected.w) / 2.0);
+
+  const auto reduced = dd->partialTrace(input, {true, false, true});
+
+  EXPECT_EQ(reduced, expected);
+}
+
 TEST(DDPackageTest, PartialSWapMatTrace) {
   auto dd = std::make_unique<Package>(2);
   auto swapGate =

@@ -515,6 +515,34 @@ class QCOProgram(Program):
                 has too few qubits, or the program is unsupported for simulation.
         """
 
+    def simulate_density(
+        self,
+        initial_state: mqt.core.dd.MatrixDD,
+        dd_package: mqt.core.dd.DDPackage,
+        seed: int = 0,
+        *,
+        bindings: Mapping[int, bool | int | float] = {},
+    ) -> mqt.core.dd.MatrixDD:
+        """Simulate a QCO program on a density-matrix DD.
+
+        Args:
+            initial_state: Input density-matrix DD with a live reference in
+                ``dd_package``. It represents exactly the program's inferred initial
+                quantum register; skipped DD levels denote identity factors within
+                that register. A valid input reference is consumed.
+            dd_package: DD package with enough qubits for the program.
+            seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+                value produces reproducible measurement and reset results.
+            bindings: Concrete entry-argument values keyed by zero-based argument index.
+
+        Returns:
+            Output density-matrix DD.
+
+        Raises:
+            ValueError: When ``initial_state`` has no live reference in ``dd_package``
+                or the program is unsupported for simulation.
+        """
+
     def sample(
         self,
         dd_package: mqt.core.dd.DDPackage,
@@ -533,6 +561,37 @@ class QCOProgram(Program):
                 value produces reproducible results.
             initial_state: Optional input state with a live reference in ``dd_package``.
                 A valid input reference is consumed.
+            bindings: Concrete entry-argument values keyed by zero-based argument index.
+
+        Returns:
+            Histogram of returned CBit registers in return order, each MSB first. If
+            no CBit result exists, final ``measureAll`` bitstrings instead.
+
+        Raises:
+            ValueError: When ``initial_state`` has no live reference in ``dd_package``
+                or the program is unsupported for sampling.
+        """
+
+    def sample_density(
+        self,
+        initial_state: mqt.core.dd.MatrixDD,
+        dd_package: mqt.core.dd.DDPackage,
+        shots: int = 1024,
+        seed: int = 0,
+        *,
+        bindings: Mapping[int, bool | int | float] = {},
+    ) -> dict[str, int]:
+        """Sample the declared outputs of a QCO program from a density-matrix DD.
+
+        Args:
+            initial_state: Input density-matrix DD with a live reference in
+                ``dd_package``. It represents exactly the program's inferred initial
+                quantum register; skipped DD levels denote identity factors within
+                that register. A valid input reference is consumed.
+            dd_package: DD package with enough qubits for the program.
+            shots: Number of shots (default 1024).
+            seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+                value produces reproducible results.
             bindings: Concrete entry-argument values keyed by zero-based argument index.
 
         Returns:
@@ -613,6 +672,28 @@ class QIRProgram(Program):
 
     def write_bitcode(self, path: str | os.PathLike) -> None:
         """Write this program as LLVM bitcode."""
+
+def make_density_matrix(
+    state: mqt.core.dd.VectorDD, num_qubits: int, dd_package: mqt.core.dd.DDPackage
+) -> mqt.core.dd.MatrixDD:
+    """Construct ``|psi><psi|`` from a pure DD state.
+
+    The input vector reference remains owned by the caller. The returned matrix DD
+    has a live reference in ``dd_package``.
+
+    Args:
+        state: Pure state with a live reference in ``dd_package``.
+        num_qubits: Number of active qubits represented by ``state``.
+        dd_package: DD package that owns ``state`` and has enough qubits.
+
+    Returns:
+        Density-matrix DD for the pure state.
+
+    Raises:
+        ValueError: When ``state`` has no live reference in ``dd_package`` or
+            ``num_qubits`` does not cover the state or exceeds the DD package
+            capacity.
+    """
 
 @overload
 def compile_program(

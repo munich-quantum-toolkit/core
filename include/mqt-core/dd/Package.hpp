@@ -1463,7 +1463,7 @@ private:
    * mapped to the interval [0,1] (as opposed to the interval [0,2^N]).
    */
   mCachedEdge trace(const mEdge& a, const std::vector<bool>& eliminate,
-                    std::size_t level, std::size_t alreadyEliminated = 0);
+                    const std::vector<std::size_t>& keptBefore);
 
   /**
    * @brief Recursively checks if a given matrix is close to the identity
