@@ -37,7 +37,9 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -52,9 +54,11 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -111,6 +115,21 @@ struct QubitMap {
     }
     return out;
   }
+
+  void releaseWire(const qc::Qubit released) {
+    SmallVector<Value> aliases;
+    for (auto& [value, wire] : qubits) {
+      if (wire == released) {
+        aliases.push_back(value);
+      } else if (wire > released) {
+        --wire;
+      }
+    }
+    for (Value alias : aliases) {
+      qubits.erase(alias);
+    }
+    --numQubits;
+  }
 };
 
 /// Physical wires stored at each tensor index; extracted positions are empty.
@@ -129,6 +148,22 @@ struct TensorMap {
   }
 
   void erase(Value value) { tensors.erase(value); }
+
+  void releaseWire(const qc::Qubit released) {
+    for (auto& [value, slots] : tensors) {
+      (void)value;
+      for (auto& wire : slots) {
+        if (!wire) {
+          continue;
+        }
+        if (*wire == released) {
+          wire.reset();
+        } else if (*wire > released) {
+          --*wire;
+        }
+      }
+    }
+  }
 };
 
 [[nodiscard]] bool isQTensorType(Type type) {
@@ -712,6 +747,17 @@ static LogicalResult applyBinaryFloat(OpTy op, ClassicalEnv& classical,
   return success();
 }
 
+template <typename OpTy, typename Apply>
+static LogicalResult applyUnaryFloat(OpTy op, ClassicalEnv& classical,
+                                     Apply apply) {
+  auto value = lookupFloat(op.getOperand(), classical, op);
+  if (failed(value)) {
+    return failure();
+  }
+  classical.values[op.getResult()] = apply(*value);
+  return success();
+}
+
 template <typename OpTy, typename Combine>
 static LogicalResult applyDivision(OpTy op, ClassicalEnv& classical,
                                    Combine combine) {
@@ -812,6 +858,26 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
         return applyDivision(value, classical,
                              [](auto lhs, auto rhs) { return lhs.srem(rhs); });
       })
+      .Case<arith::MaxSIOp>([&](auto value) {
+        return applyBinaryInteger(value, classical, [](auto lhs, auto rhs) {
+          return lhs.sgt(rhs) ? lhs : rhs;
+        });
+      })
+      .Case<arith::MinSIOp>([&](auto value) {
+        return applyBinaryInteger(value, classical, [](auto lhs, auto rhs) {
+          return lhs.slt(rhs) ? lhs : rhs;
+        });
+      })
+      .Case<arith::MaxUIOp>([&](auto value) {
+        return applyBinaryInteger(value, classical, [](auto lhs, auto rhs) {
+          return lhs.ugt(rhs) ? lhs : rhs;
+        });
+      })
+      .Case<arith::MinUIOp>([&](auto value) {
+        return applyBinaryInteger(value, classical, [](auto lhs, auto rhs) {
+          return lhs.ult(rhs) ? lhs : rhs;
+        });
+      })
       .Case<arith::ShLIOp>([&](auto value) {
         return applyShift(value, classical,
                           [](auto lhs, uint64_t rhs) { return lhs.shl(rhs); });
@@ -884,6 +950,32 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
           return std::fmod(lhs, rhs);
         });
       })
+      .Case<arith::MaximumFOp>([&](auto value) {
+        return applyBinaryFloat(value, classical, [](double lhs, double rhs) {
+          if (std::isnan(lhs) || std::isnan(rhs)) {
+            return std::numeric_limits<double>::quiet_NaN();
+          }
+          return std::fmax(lhs, rhs);
+        });
+      })
+      .Case<arith::MinimumFOp>([&](auto value) {
+        return applyBinaryFloat(value, classical, [](double lhs, double rhs) {
+          if (std::isnan(lhs) || std::isnan(rhs)) {
+            return std::numeric_limits<double>::quiet_NaN();
+          }
+          return std::fmin(lhs, rhs);
+        });
+      })
+      .Case<arith::MaxNumFOp>([&](auto value) {
+        return applyBinaryFloat(value, classical, [](double lhs, double rhs) {
+          return std::fmax(lhs, rhs);
+        });
+      })
+      .Case<arith::MinNumFOp>([&](auto value) {
+        return applyBinaryFloat(value, classical, [](double lhs, double rhs) {
+          return std::fmin(lhs, rhs);
+        });
+      })
       .Case<arith::NegFOp>([&](arith::NegFOp neg) -> LogicalResult {
         auto value = lookupFloat(neg.getOperand(), classical, neg);
         if (failed(value)) {
@@ -933,6 +1025,50 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
             }
             return bindInteger(out, result, classical);
           })
+      .Case<math::AbsFOp>([&](auto value) {
+        return applyUnaryFloat(
+            value, classical, [](double operand) { return std::abs(operand); });
+      })
+      .Case<math::CeilOp>([&](auto value) {
+        return applyUnaryFloat(value, classical, [](double operand) {
+          return std::ceil(operand);
+        });
+      })
+      .Case<math::CosOp>([&](auto value) {
+        return applyUnaryFloat(
+            value, classical, [](double operand) { return std::cos(operand); });
+      })
+      .Case<math::ExpOp>([&](auto value) {
+        return applyUnaryFloat(
+            value, classical, [](double operand) { return std::exp(operand); });
+      })
+      .Case<math::FloorOp>([&](auto value) {
+        return applyUnaryFloat(value, classical, [](double operand) {
+          return std::floor(operand);
+        });
+      })
+      .Case<math::LogOp>([&](auto value) {
+        return applyUnaryFloat(
+            value, classical, [](double operand) { return std::log(operand); });
+      })
+      .Case<math::SinOp>([&](auto value) {
+        return applyUnaryFloat(
+            value, classical, [](double operand) { return std::sin(operand); });
+      })
+      .Case<math::SqrtOp>([&](auto value) {
+        return applyUnaryFloat(value, classical, [](double operand) {
+          return std::sqrt(operand);
+        });
+      })
+      .Case<math::TanOp>([&](auto value) {
+        return applyUnaryFloat(
+            value, classical, [](double operand) { return std::tan(operand); });
+      })
+      .Case<math::PowFOp>([&](auto value) {
+        return applyBinaryFloat(value, classical, [](double lhs, double rhs) {
+          return std::pow(lhs, rhs);
+        });
+      })
       .Default([](Operation* unsupported) {
         return unsupported->emitError()
                << "unsupported classical op for QCO DD simulation: "
@@ -1021,6 +1157,10 @@ template <typename StateDD>
 static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state);
 
 template <typename StateDD>
+static FailureOr<func::ReturnOp>
+walkFunctionBody(func::FuncOp func, WalkState& walk, StateDD& state);
+
+template <typename StateDD>
 static LogicalResult walkBlock(Block& block, WalkState& walk, StateDD& state) {
   for (Operation& op : block.without_terminator()) {
     if (failed(applyOp(op, walk, state))) {
@@ -1028,6 +1168,75 @@ static LogicalResult walkBlock(Block& block, WalkState& walk, StateDD& state) {
     }
   }
   return success();
+}
+
+template <typename StateDD>
+static FailureOr<Operation*>
+walkConcreteCFG(Block& entry, WalkState& walk, StateDD& state,
+                function_ref<bool(Operation*)> isExit, StringRef scope) {
+  Block* block = &entry;
+  int64_t transitions = 0;
+  while (true) {
+    if (failed(walkBlock(*block, walk, state))) {
+      return failure();
+    }
+    Operation* terminator = block->getTerminator();
+    if (isExit(terminator)) {
+      return terminator;
+    }
+
+    Block* successor = nullptr;
+    ValueRange successorOperands;
+    if (auto branch = dyn_cast<cf::BranchOp>(terminator)) {
+      successor = branch.getDest();
+      successorOperands = branch.getDestOperands();
+    } else if (auto branch = dyn_cast<cf::CondBranchOp>(terminator)) {
+      auto condition =
+          lookupBool(branch.getCondition(), *walk.classical, branch);
+      if (failed(condition)) {
+        return failure();
+      }
+      successor = *condition ? branch.getTrueDest() : branch.getFalseDest();
+      successorOperands = *condition ? branch.getTrueDestOperands()
+                                     : branch.getFalseDestOperands();
+    } else if (auto switchOp = dyn_cast<cf::SwitchOp>(terminator)) {
+      auto flag = lookupInteger(switchOp.getFlag(), *walk.classical, switchOp);
+      if (failed(flag)) {
+        return failure();
+      }
+      successor = switchOp.getDefaultDestination();
+      successorOperands = switchOp.getDefaultOperands();
+      if (const auto caseValues = switchOp.getCaseValues()) {
+        for (auto [caseValue, destination, operands] : llvm::zip_equal(
+                 caseValues->getValues<llvm::APInt>(),
+                 switchOp.getCaseDestinations(), switchOp.getCaseOperands())) {
+          if (*flag == caseValue) {
+            successor = destination;
+            successorOperands = operands;
+            break;
+          }
+        }
+      }
+    } else {
+      return terminator->emitError() << "unsupported " << scope
+                                     << " CFG terminator for QCO DD simulation";
+    }
+    if (successorOperands.size() != successor->getNumArguments()) {
+      return terminator->emitError()
+             << scope
+             << " CFG successor operand count does not match block arguments";
+    }
+    if (failed(bindValuePairs(successorOperands, successor->getArguments(),
+                              walk, terminator))) {
+      return failure();
+    }
+    if (transitions++ == MAX_CONTROL_FLOW_TRIPS) {
+      return terminator->emitError()
+             << scope << " CFG transition count exceeds QCO DD simulation "
+             << "limit of " << MAX_CONTROL_FLOW_TRIPS;
+    }
+    block = successor;
+  }
 }
 
 template <typename StateDD>
@@ -1049,15 +1258,16 @@ template <typename StateDD>
 static LogicalResult applyScfRegion(Region& region, ValueRange results,
                                     WalkState& walk, StateDD& state,
                                     Operation* parent) {
-  if (!region.hasOneBlock()) {
-    return parent->emitError()
-           << "SCF region must contain exactly one block for QCO DD simulation";
+  if (region.empty()) {
+    return parent->emitError() << "SCF region is empty";
   }
-  Block& block = region.front();
-  if (failed(walkBlock(block, walk, state))) {
+  auto terminator = walkConcreteCFG(
+      region.front(), walk, state,
+      [](Operation* op) { return isa<scf::YieldOp>(op); }, "SCF region");
+  if (failed(terminator)) {
     return failure();
   }
-  auto yield = dyn_cast<scf::YieldOp>(block.getTerminator());
+  auto yield = dyn_cast<scf::YieldOp>(*terminator);
   if (!yield || yield.getNumOperands() != results.size()) {
     return parent->emitError()
            << "SCF region must yield one value for each result";
@@ -1093,6 +1303,71 @@ static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
   }
   walk.qubits->numQubits += count;
   return slots;
+}
+
+/// Project @p wire onto one basis state and remove its DD level.
+static dd::VectorDD projectAndRemoveWire(const dd::VectorDD& root,
+                                         const qc::Qubit wire,
+                                         const bool projectOne,
+                                         dd::Package& dd) {
+  DenseMap<dd::vNode*, dd::VectorDD> projectedNodes;
+  const auto project = [&](const auto& self,
+                           const dd::VectorDD& edge) -> dd::VectorDD {
+    if (edge.isZeroTerminal()) {
+      return edge;
+    }
+    // A skipped vector-DD level represents a qubit fixed to zero.
+    if (edge.isTerminal() || edge.p->v < wire) {
+      return projectOne ? dd::VectorDD::zero() : edge;
+    }
+
+    dd::VectorDD projected;
+    if (const auto cached = projectedNodes.find(edge.p);
+        cached != projectedNodes.end()) {
+      projected = cached->second;
+    } else if (edge.p->v == wire) {
+      projected = edge.p->e[projectOne ? 1U : 0U];
+    } else {
+      std::array<dd::VectorDD, dd::RADIX> edges{self(self, edge.p->e[0]),
+                                                self(self, edge.p->e[1])};
+      projected = dd.makeDDNode<dd::vNode, dd::Edge>(
+          static_cast<qc::Qubit>(edge.p->v - 1U), edges);
+    }
+    projectedNodes.try_emplace(edge.p, projected);
+    projected.w = dd.cn.lookup(projected.w * edge.w);
+    return projected;
+  };
+  return project(project, root);
+}
+
+static LogicalResult deallocateWire(const qc::Qubit wire, WalkState& walk,
+                                    dd::VectorDD& state, Operation* op) {
+  if (wire >= walk.qubits->numQubits) {
+    return op->emitError()
+           << "deallocated wire is outside the simulated register";
+  }
+  const auto zero = projectAndRemoveWire(state, wire, false, *walk.dd);
+  const auto one = projectAndRemoveWire(state, wire, true, *walk.dd);
+  if (zero.isZeroTerminal() && one.isZeroTerminal()) {
+    return op->emitError() << "cannot deallocate a zero-norm quantum state";
+  }
+  if (!zero.isZeroTerminal() && !one.isZeroTerminal() && zero.p != one.p) {
+    return op->emitError()
+           << "deallocating an entangled qubit is not supported by "
+              "statevector QCO DD simulation";
+  }
+
+  const auto zeroWeight = static_cast<dd::ComplexValue>(zero.w);
+  const auto oneWeight = static_cast<dd::ComplexValue>(one.w);
+  const auto norm = std::sqrt(zeroWeight.mag2() + oneWeight.mag2());
+  auto reduced = dd::VectorDD{.p = zero.isZeroTerminal() ? one.p : zero.p,
+                              .w = walk.dd->cn.lookup(norm)};
+  walk.dd->incRef(reduced);
+  walk.dd->decRef(state);
+  state = reduced;
+  walk.qubits->releaseWire(wire);
+  walk.tensors->releaseWire(wire);
+  return success();
 }
 
 template <typename StateDD>
@@ -1204,11 +1479,29 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           })
       .template Case<qtensor::DeallocOp>(
           [&](qtensor::DeallocOp dealloc) -> LogicalResult {
-            if (walk.tensors->lookup(dealloc.getTensor()) == nullptr) {
+            const auto* tracked = walk.tensors->lookup(dealloc.getTensor());
+            if (tracked == nullptr) {
               return dealloc.emitError()
                      << "qtensor is not mapped for QCO DD simulation";
             }
+            TensorSlots slots = *tracked;
             walk.tensors->erase(dealloc.getTensor());
+            if constexpr (std::is_same_v<StateDD, dd::VectorDD>) {
+              SmallVector<qc::Qubit> wires;
+              for (const auto wire : slots) {
+                if (wire) {
+                  wires.push_back(*wire);
+                }
+              }
+              llvm::sort(wires, [](qc::Qubit lhs, qc::Qubit rhs) {
+                return lhs > rhs;
+              });
+              for (const qc::Qubit wire : wires) {
+                if (failed(deallocateWire(wire, walk, state, dealloc))) {
+                  return failure();
+                }
+              }
+            }
             return success();
           })
       .template Case<memref::AllocOp>([&](memref::AllocOp alloc) {
@@ -1224,12 +1517,16 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<
           arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::AddIOp,
           arith::SubIOp, arith::MulIOp, arith::DivUIOp, arith::DivSIOp,
-          arith::RemUIOp, arith::RemSIOp, arith::ShLIOp, arith::ShRUIOp,
+          arith::RemUIOp, arith::RemSIOp, arith::MaxSIOp, arith::MinSIOp,
+          arith::MaxUIOp, arith::MinUIOp, arith::ShLIOp, arith::ShRUIOp,
           arith::ShRSIOp, arith::CmpIOp, arith::SelectOp, arith::ExtUIOp,
           arith::ExtSIOp, arith::IndexCastUIOp, arith::IndexCastOp,
           arith::TruncIOp, arith::AddFOp, arith::SubFOp, arith::MulFOp,
-          arith::DivFOp, arith::RemFOp, arith::NegFOp, arith::CmpFOp,
-          arith::SIToFPOp, arith::UIToFPOp, arith::FPToSIOp, arith::FPToUIOp>(
+          arith::DivFOp, arith::RemFOp, arith::MaximumFOp, arith::MinimumFOp,
+          arith::MaxNumFOp, arith::MinNumFOp, arith::NegFOp, arith::CmpFOp,
+          arith::SIToFPOp, arith::UIToFPOp, arith::FPToSIOp, arith::FPToUIOp,
+          math::AbsFOp, math::CeilOp, math::CosOp, math::ExpOp, math::FloorOp,
+          math::LogOp, math::SinOp, math::SqrtOp, math::TanOp, math::PowFOp>(
           [&](Operation* classicalOp) {
             return applyClassicalOp(*classicalOp, *walk.classical);
           })
@@ -1472,9 +1769,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return call.emitError() << "func.call callee '" << call.getCallee()
                                   << "' could not be resolved";
         }
-        if (!callee.getBody().hasOneBlock()) {
-          return call.emitError()
-                 << "func.call callee must have a single-block body";
+        if (callee.isDeclaration()) {
+          return call.emitError() << "func.call callee must have a body";
         }
         Operation* calleeOp = callee.getOperation();
         if (!walk.activeCalls.insert(calleeOp).second) {
@@ -1490,16 +1786,13 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return failure();
         }
 
-        // Walk the callee body without its terminator so entry-function-only
-        // `validateReturn` (canonical wire order) is not applied to callees.
-        if (failed(walkBlock(callee.getBody().front(), walk, state))) {
+        auto returnOp = walkFunctionBody(callee, walk, state);
+        if (failed(returnOp)) {
           return failure();
         }
 
         // Map callee return operands onto call results via the return op.
-        auto returnOp =
-            cast<func::ReturnOp>(callee.getBody().front().getTerminator());
-        return bindValuePairs(returnOp.getOperands(), call.getResults(), walk,
+        return bindValuePairs(returnOp->getOperands(), call.getResults(), walk,
                               call);
       })
       .template Case<CtrlOp>([&](CtrlOp ctrlOp) -> LogicalResult {
@@ -1544,16 +1837,25 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
 }
 
 template <typename StateDD>
-static LogicalResult walkFunction(func::FuncOp func, WalkState& walkState,
-                                  StateDD& state) {
-  // Function bodies include `func.return` as terminator; region walks skip
-  // `qco.yield` and bind it separately.
-  for (Operation& op : func.getBody().front()) {
-    if (failed(applyOp(op, walkState, state))) {
-      return failure();
-    }
+static FailureOr<func::ReturnOp>
+walkFunctionBody(func::FuncOp func, WalkState& walk, StateDD& state) {
+  auto terminator = walkConcreteCFG(
+      func.getBody().front(), walk, state,
+      [](Operation* op) { return isa<func::ReturnOp>(op); }, "function");
+  if (failed(terminator)) {
+    return failure();
   }
-  return success();
+  return cast<func::ReturnOp>(*terminator);
+}
+
+template <typename StateDD>
+static LogicalResult walkFunction(func::FuncOp func, WalkState& walk,
+                                  StateDD& state) {
+  auto returnOp = walkFunctionBody(func, walk, state);
+  if (failed(returnOp)) {
+    return failure();
+  }
+  return validateReturn(*returnOp, *walk.qubits, *walk.tensors);
 }
 
 namespace {
@@ -1565,17 +1867,18 @@ struct PreparedState {
 
 static FailureOr<PreparedState>
 prepare(func::FuncOp func, const dd::Package& dd, const DDBindings& bindings) {
-  if (!func.getBody().hasOneBlock()) {
-    return func.emitError()
-           << "QCO DD construction expects a single-block function body";
+  if (func.isDeclaration()) {
+    return func.emitError() << "QCO DD construction requires a function body";
   }
 
   PreparedState prepared;
   QubitMap& qubits = prepared.qubits;
-  for (StaticOp staticOp : func.getBody().front().getOps<StaticOp>()) {
-    const auto q = static_cast<qc::Qubit>(staticOp.getIndex());
-    qubits.bind(staticOp.getQubit(), q);
-    qubits.numQubits = std::max(qubits.numQubits, static_cast<size_t>(q) + 1);
+  for (Block& block : func.getBody()) {
+    for (StaticOp staticOp : block.getOps<StaticOp>()) {
+      const auto q = static_cast<qc::Qubit>(staticOp.getIndex());
+      qubits.bind(staticOp.getQubit(), q);
+      qubits.numQubits = std::max(qubits.numQubits, static_cast<size_t>(q) + 1);
+    }
   }
   // No `qco.static`: treat qubit-typed block arguments as wires `0..n-1`.
   if (qubits.numQubits == 0) {
@@ -1732,7 +2035,7 @@ getSamplingRequirements(func::FuncOp func, const bool recordClassics,
     if (auto call = dyn_cast<func::CallOp>(op)) {
       auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
           call, call.getCalleeAttr());
-      if (!callee || !callee.getBody().hasOneBlock()) {
+      if (!callee) {
         return WalkResult::interrupt();
       }
       const auto calleeRequirements =

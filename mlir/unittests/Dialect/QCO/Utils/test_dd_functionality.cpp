@@ -24,7 +24,9 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -63,7 +65,8 @@ protected:
     DialectRegistry registry;
     registry
         .insert<QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
-                func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
+                cf::ControlFlowDialect, func::FuncDialect, math::MathDialect,
+                memref::MemRefDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -1051,8 +1054,8 @@ TEST_F(QCODDFunctionalityTest, RejectsInvalidClassicalOperations) {
            R"mlir(module {
              func.func @main() {
                %q = qco.static 0 : !qco.qubit
-               %one = arith.constant 1 : i64
-               %bad = arith.maxsi %one, %one : i64
+               %one = arith.constant 1.0 : f64
+               %bad = math.erf %one : f64
                qco.sink %q : !qco.qubit
                return
              }
@@ -1256,8 +1259,8 @@ TEST_F(QCODDFunctionalityTest, RejectsInvalidLinearRegionValues) {
                %q = qco.static 0 : !qco.qubit
                %true = arith.constant true
                %out = qco.if %true args(%arg = %q) -> (!qco.qubit) {
-                 %one = arith.constant 1 : i64
-                 %unsupported = arith.maxsi %one, %one : i64
+                 %one = arith.constant 1.0 : f64
+                 %unsupported = math.erf %one : f64
                  qco.yield %arg : !qco.qubit
                } else args(%arg = %q) {
                  qco.yield %arg : !qco.qubit
@@ -1430,19 +1433,6 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
       }
     }
   )mlir");
-
-  OwningOpRef<ModuleOp> multi =
-      ModuleOp::create(UnknownLoc::get(context.get()));
-  OpBuilder builder(context.get());
-  builder.setInsertionPointToStart(multi->getBody());
-  auto func = func::FuncOp::create(builder, multi->getLoc(), "main",
-                                   builder.getFunctionType({}, {}));
-  auto* entry = func.addEntryBlock();
-  func.addBlock();
-  builder.setInsertionPointToStart(entry);
-  func::ReturnOp::create(builder, func.getLoc());
-  auto dd = std::make_unique<dd::Package>(0);
-  EXPECT_TRUE(failed(buildFunctionality(func, *dd)));
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateScfForAndFuncCallWithClassicalValues) {
@@ -1482,6 +1472,92 @@ TEST_F(QCODDFunctionalityTest, SimulateScfForAndFuncCallWithClassicalValues) {
                                          context.get());
   ASSERT_TRUE(mod);
   expectSimulatesFromZero(mainFunc(*mod), true);
+}
+
+TEST_F(QCODDFunctionalityTest, InterpretsMultiBlockConcreteCFG) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @flip(%q: !qco.qubit, %condition: i1) -> !qco.qubit {
+        cf.cond_br %condition, ^then(%q : !qco.qubit),
+                    ^else(%q : !qco.qubit)
+      ^then(%arg: !qco.qubit):
+        %x = qco.x %arg : !qco.qubit -> !qco.qubit
+        cf.br ^merge(%x : !qco.qubit)
+      ^else(%else_arg: !qco.qubit):
+        cf.br ^merge(%else_arg : !qco.qubit)
+      ^merge(%result: !qco.qubit):
+        return %result : !qco.qubit
+      }
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %true = arith.constant true
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c3 = arith.constant 3 : index
+        cf.br ^loop(%q, %c0 : !qco.qubit, index)
+      ^loop(%carried: !qco.qubit, %i: index):
+        %continue = arith.cmpi slt, %i, %c3 : index
+        cf.cond_br %continue,
+                    ^body(%carried, %i : !qco.qubit, index),
+                    ^run(%carried, %true : !qco.qubit, i1)
+      ^body(%body_arg: !qco.qubit, %body_i: index):
+        %loop_x = qco.x %body_arg : !qco.qubit -> !qco.qubit
+        %next = arith.addi %body_i, %c1 : index
+        cf.br ^loop(%loop_x, %next : !qco.qubit, index)
+      ^run(%arg: !qco.qubit, %condition: i1):
+        %called = func.call @flip(%arg, %condition)
+            : (!qco.qubit, i1) -> !qco.qubit
+        %result = scf.execute_region -> !qco.qubit {
+          %selected = arith.constant 2 : i32
+          %missing = arith.constant 7 : i32
+          cf.switch %selected : i32, [
+            default: ^unexpected(%called : !qco.qubit),
+            2: ^matched(%called : !qco.qubit)
+          ]
+        ^matched(%matched_arg: !qco.qubit):
+          cf.switch %missing : i32, [
+            default: ^done(%matched_arg : !qco.qubit),
+            1: ^unexpected(%matched_arg : !qco.qubit)
+          ]
+        ^unexpected(%unexpected_arg: !qco.qubit):
+          scf.yield %unexpected_arg : !qco.qubit
+        ^done(%done_arg: !qco.qubit):
+          %done_x = qco.x %done_arg : !qco.qubit -> !qco.qubit
+          scf.yield %done_x : !qco.qubit
+        }
+        qco.sink %result : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  qc::QuantumComputation qc(1);
+  qc.x(0);
+  qc.x(0);
+  qc.x(0);
+  qc.x(0);
+  qc.x(0);
+  expectEqualToQc(mainFunc(*mod), qc);
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUnboundedConcreteCFG) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        cf.br ^loop
+      ^loop:
+        cf.br ^loop
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(0);
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
+  EXPECT_TRUE(failed(simulate(mainFunc(*mod), dd::VectorDD::one(), *dd)));
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsInvalidFuncCalls) {
@@ -1634,6 +1710,77 @@ TEST_F(QCODDFunctionalityTest, SimulateRicherClassicalArithmetic) {
   });
   ASSERT_TRUE(mod);
   expectSimulatesFromZero(mainFunc(*mod), true);
+}
+
+TEST_F(QCODDFunctionalityTest, InterpretsMinMaxAndCommonMathOperations) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(0);
+    const Value minusOne = arith::ConstantIntOp::create(b, -1, 8);
+    const Value two = arith::ConstantIntOp::create(b, 2, 8);
+    const Value three = arith::ConstantIntOp::create(b, 3, 8);
+    SmallVector<Value> checks{
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq,
+                              arith::MaxSIOp::create(b, minusOne, three),
+                              three),
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq,
+                              arith::MinSIOp::create(b, minusOne, three),
+                              minusOne),
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq,
+                              arith::MaxUIOp::create(b, minusOne, two),
+                              minusOne),
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq,
+                              arith::MinUIOp::create(b, minusOne, two), two)};
+
+    const auto f64 = b.getF64Type();
+    const auto constant = [&](const double value) -> Value {
+      return arith::ConstantFloatOp::create(b, f64, llvm::APFloat(value));
+    };
+    const Value fm2 = constant(-2.0);
+    const Value f0 = constant(0.0);
+    const Value f1 = constant(1.0);
+    const Value f12 = constant(1.2);
+    const Value f18 = constant(1.8);
+    const Value f2 = constant(2.0);
+    const Value f4 = constant(4.0);
+    const Value nan = constant(std::numeric_limits<double>::quiet_NaN());
+    const auto checkFloat = [&](Value actual, Value expected) {
+      checks.emplace_back(arith::CmpFOp::create(b, arith::CmpFPredicate::OEQ,
+                                                actual, expected));
+    };
+    checkFloat(arith::MaxNumFOp::create(b, nan, f2), f2);
+    checkFloat(arith::MinNumFOp::create(b, nan, f2), f2);
+    const Value maximum = arith::MaximumFOp::create(b, nan, f2);
+    const Value minimum = arith::MinimumFOp::create(b, nan, f2);
+    checks.emplace_back(
+        arith::CmpFOp::create(b, arith::CmpFPredicate::UNO, maximum, maximum));
+    checks.emplace_back(
+        arith::CmpFOp::create(b, arith::CmpFPredicate::UNO, minimum, minimum));
+    checkFloat(math::AbsFOp::create(b, fm2), f2);
+    checkFloat(math::CeilOp::create(b, f12), f2);
+    checkFloat(math::CosOp::create(b, f0), f1);
+    checkFloat(math::ExpOp::create(b, f0), f1);
+    checkFloat(math::FloorOp::create(b, f18), f1);
+    checkFloat(math::LogOp::create(b, f1), f0);
+    checkFloat(math::SinOp::create(b, f0), f0);
+    checkFloat(math::SqrtOp::create(b, f4), f2);
+    checkFloat(math::TanOp::create(b, f0), f0);
+    checkFloat(math::PowFOp::create(b, f2, f2), f4);
+
+    Value all = checks.front();
+    for (Value check : ArrayRef(checks).drop_front()) {
+      all = arith::AndIOp::create(b, all, check);
+    }
+    q = b.qcoIf(
+        all, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  qc::QuantumComputation qc(1);
+  qc.x(0);
+  expectEqualToQc(mainFunc(*mod), qc);
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateAllClassicalComparisons) {
@@ -1858,7 +2005,9 @@ TEST_F(QCODDFunctionalityTest,
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @measure(%q: !qco.qubit) -> !qco.qubit {
-        %q1, %bit = qco.measure %q : !qco.qubit
+        cf.br ^measure(%q : !qco.qubit)
+      ^measure(%arg: !qco.qubit):
+        %q1, %bit = qco.measure %arg : !qco.qubit
         return %q1 : !qco.qubit
       }
       func.func @main() {
@@ -2028,6 +2177,62 @@ TEST_F(QCODDFunctionalityTest, StandardScfRegionsAndWhileCarryValues) {
   expectEqualToQc(mainFunc(*mod), qc);
 }
 
+TEST_F(QCODDFunctionalityTest, DeallocationRemovesSeparableQTensorWires) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%live: !qco.qubit) -> !qco.qubit {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c40 = arith.constant 40 : index
+        %tensor = qtensor.alloc(%c40) : tensor<40x!qco.qubit>
+        %remaining0, %q0 = qtensor.extract %tensor[%c0]
+            : tensor<40x!qco.qubit>
+        %remaining1, %q1 = qtensor.extract %remaining0[%c1]
+            : tensor<40x!qco.qubit>
+        %plus = qco.h %q0 : !qco.qubit -> !qco.qubit
+        %one = qco.x %q1 : !qco.qubit -> !qco.qubit
+        %restored0 = qtensor.insert %plus into %remaining1[%c0]
+            : tensor<40x!qco.qubit>
+        %restored1 = qtensor.insert %one into %restored0[%c1]
+            : tensor<40x!qco.qubit>
+        qtensor.dealloc %restored1 : tensor<40x!qco.qubit>
+        %result = qco.x %live : !qco.qubit -> !qco.qubit
+        return %result : !qco.qubit
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  // Expanding this 41-qubit statevector would require 2^41 amplitudes.
+  auto dd = std::make_unique<dd::Package>(41);
+  std::mt19937_64 rng(3);
+  const auto histogram = sample(mainFunc(*mod), *dd, 4, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 4}}));
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsEntangledQTensorDeallocation) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto tensor = b.qtensorAlloc(2);
+    Value q0;
+    Value q1;
+    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    q0 = b.h(q0);
+    std::tie(q0, q1) = b.cx(q0, q1);
+    tensor = b.qtensorInsert(q0, tensor, 0);
+    tensor = b.qtensorInsert(q1, tensor, 1);
+    b.qtensorDealloc(tensor);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  std::mt19937_64 rng(3);
+  EXPECT_TRUE(failed(sample(mainFunc(*mod), *dd, 1, rng)));
+}
+
 TEST_F(QCODDFunctionalityTest, DynamicAllocationsAndQTensorBookkeeping) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q0 = b.x(b.allocQubit());
@@ -2038,7 +2243,11 @@ TEST_F(QCODDFunctionalityTest, DynamicAllocationsAndQTensorBookkeeping) {
     std::tie(remaining, q1) = b.qtensorExtract(tensor, 0);
     auto output = b.qtensorFromElements({q0, b.x(q1)});
     b.qtensorDealloc(remaining);
+    std::tie(output, q0) = b.qtensorExtract(output, 0);
+    std::tie(output, q1) = b.qtensorExtract(output, 1);
     b.qtensorDealloc(output);
+    b.sink(q0);
+    b.sink(q1);
     return b.intConstant(0);
   });
   ASSERT_TRUE(mod);
@@ -2128,7 +2337,10 @@ TEST_F(QCODDFunctionalityTest, QTensorFlowsThroughLoopAndCall) {
               : (tensor<1x!qco.qubit>) -> tensor<1x!qco.qubit>
           scf.yield %next : tensor<1x!qco.qubit>
         }
-        qtensor.dealloc %result : tensor<1x!qco.qubit>
+        %remaining, %q = qtensor.extract %result[%zero]
+            : tensor<1x!qco.qubit>
+        qtensor.dealloc %remaining : tensor<1x!qco.qubit>
+        qco.sink %q : !qco.qubit
         return
       }
     }
