@@ -294,7 +294,7 @@ void UnionTable::propagateQubitAlloc(const Value qubit) {
   unsigned int maxIndex = 0;
   if (!qubitsToGlobalIndices.empty()) {
     auto it = qubitsToGlobalIndices.begin();
-    maxIndex = it->second;                     // first index present
+    maxIndex = it->second; // first index present
 
     ++it;
     for (; it != qubitsToGlobalIndices.end(); ++it) {
