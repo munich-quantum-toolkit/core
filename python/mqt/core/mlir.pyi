@@ -575,6 +575,55 @@ def simulate(
             or the program is unsupported for simulation.
     """
 
+def make_density_matrix(
+    state: mqt.core.dd.VectorDD, num_qubits: int, dd_package: mqt.core.dd.DDPackage
+) -> mqt.core.dd.MatrixDD:
+    """Construct ``|psi><psi|`` from a pure DD state.
+
+    The input vector reference remains owned by the caller. The returned matrix DD
+    has a live reference in ``dd_package``.
+
+    Args:
+        state: Pure state with a live reference in ``dd_package``.
+        num_qubits: Number of active qubits represented by ``state``.
+        dd_package: DD package that owns ``state`` and has enough qubits.
+
+    Returns:
+        Density-matrix DD for the pure state.
+
+    Raises:
+        ValueError: When ``state`` has no live reference in ``dd_package`` or
+            ``num_qubits`` does not cover the state or exceeds the DD package
+            capacity.
+    """
+
+def simulate_density(
+    program: QCOProgram,
+    initial_state: mqt.core.dd.MatrixDD,
+    dd_package: mqt.core.dd.DDPackage,
+    seed: int | None = None,
+    *,
+    bindings: Mapping[int, bool | int | float] = {},
+) -> mqt.core.dd.MatrixDD:
+    """Simulate a QCO program on a density-matrix DD.
+
+    Args:
+        program: A QCO program whose entry ``func.func`` is simulated.
+        initial_state: Input density-matrix DD with a live reference in
+            ``dd_package``. A valid input reference is consumed.
+        dd_package: DD package with enough qubits for the program.
+        seed: If ``None``, rejects mid-circuit measure/reset. Otherwise seeds the
+            RNG used for collapsing measurements and resets (``0`` = nondeterministic).
+        bindings: Concrete entry-argument values keyed by zero-based argument index.
+
+    Returns:
+        Output density-matrix DD.
+
+    Raises:
+        ValueError: When ``initial_state`` has no live reference in ``dd_package``
+            or the program is unsupported for simulation.
+    """
+
 def sample(
     program: QCOProgram,
     dd_package: mqt.core.dd.DDPackage,
@@ -593,6 +642,34 @@ def sample(
         seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
         initial_state: Optional input state with a live reference in ``dd_package``.
             A valid input reference is consumed.
+        bindings: Concrete entry-argument values keyed by zero-based argument index.
+
+    Returns:
+        Histogram of final ``measureAll`` bitstrings.
+
+    Raises:
+        ValueError: When ``initial_state`` has no live reference in ``dd_package``
+            or the program is unsupported for sampling.
+    """
+
+def sample_density(
+    program: QCOProgram,
+    initial_state: mqt.core.dd.MatrixDD,
+    dd_package: mqt.core.dd.DDPackage,
+    shots: int = 1024,
+    seed: int | None = None,
+    *,
+    bindings: Mapping[int, bool | int | float] = {},
+) -> dict[str, int]:
+    """Sample final computational-basis outcomes from a density-matrix DD.
+
+    Args:
+        program: A QCO program whose entry ``func.func`` is sampled.
+        initial_state: Input density-matrix DD with a live reference in
+            ``dd_package``. A valid input reference is consumed.
+        dd_package: DD package with enough qubits for the program.
+        shots: Number of shots (default 1024).
+        seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
         bindings: Concrete entry-argument values keyed by zero-based argument index.
 
     Returns:

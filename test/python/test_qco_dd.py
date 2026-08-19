@@ -144,6 +144,8 @@ def test_dd_apis_reject_state_from_different_package_without_consuming_it() -> N
             mlir.simulate(program, zero, target_package, seed=seed)
 
     with pytest.raises(ValueError, match=r"live reference in dd_package"):
+        mlir.make_density_matrix(zero, 1, target_package)
+    with pytest.raises(ValueError, match=r"live reference in dd_package"):
         mlir.sample(program, target_package, initial_state=zero)
     with pytest.raises(ValueError, match=r"live reference in dd_package"):
         mlir.sample_with_classics(program, target_package, initial_state=zero)
@@ -190,9 +192,22 @@ def test_symbolic_bindings_across_dd_apis() -> None:
     expected = package.computational_basis_state(2, [False, True])
     assert np.allclose(np.abs(out.get_vector()), np.abs(expected.get_vector()))
     package.dec_ref_vec(out)
+
+    zero = package.zero_state(2)
+    density = mlir.make_density_matrix(zero, 2, package)
+    package.dec_ref_vec(zero)
+    density_out = mlir.simulate_density(program, density, package, bindings=bindings)
+    expected_density = mlir.make_density_matrix(expected, 2, package)
+    assert np.allclose(density_out.get_matrix(2), expected_density.get_matrix(2))
+    package.dec_ref_mat(density_out)
+    package.dec_ref_mat(expected_density)
     package.dec_ref_vec(expected)
 
     assert mlir.sample(program, package, shots=8, seed=4, bindings=bindings) == {"10": 8}
+    zero = package.zero_state(2)
+    density = mlir.make_density_matrix(zero, 2, package)
+    package.dec_ref_vec(zero)
+    assert mlir.sample_density(program, density, package, shots=8, seed=4, bindings=bindings) == {"10": 8}
     result = mlir.sample_with_classics(program, package, shots=8, seed=5, bindings=bindings)
     assert result.shots == {"10": 8}
     assert result.classical == {}
@@ -227,3 +242,75 @@ def test_sample_from_supplied_initial_state() -> None:
     result = mlir.sample_with_classics(program, package, shots=8, seed=7, initial_state=one)
     assert result.shots == {"0": 8}
     assert result.classical == {}
+
+
+def test_density_simulation_and_sampling() -> None:
+    """Construct, simulate, and sample pure-state density matrices."""
+    package = dd.DDPackage(1)
+
+    zero = package.zero_state(1)
+    density = mlir.make_density_matrix(zero, 1, package)
+    package.dec_ref_vec(zero)
+    out = mlir.simulate_density(_x_program(), density, package)
+    assert np.allclose(out.get_matrix(1), np.asarray([[0.0, 0.0], [0.0, 1.0]]))
+    package.dec_ref_mat(out)
+
+    zero = package.zero_state(1)
+    density = mlir.make_density_matrix(zero, 1, package)
+    package.dec_ref_vec(zero)
+    out = mlir.simulate_density(_measure_program(), density, package, seed=3)
+    assert np.allclose(out.get_matrix(1), np.asarray([[1.0, 0.0], [0.0, 0.0]]))
+    package.dec_ref_mat(out)
+
+    zero = package.zero_state(1)
+    density = mlir.make_density_matrix(zero, 1, package)
+    package.dec_ref_vec(zero)
+    assert mlir.sample_density(_x_program(), density, package, shots=16, seed=8) == {"1": 16}
+
+
+def test_make_density_matrix_rejects_invalid_input() -> None:
+    """Density construction requires a live state and sufficient capacity."""
+    package = dd.DDPackage(1)
+    zero = package.zero_state(1)
+    with pytest.raises(ValueError, match=r"does not cover"):
+        mlir.make_density_matrix(zero, 0, package)
+    with pytest.raises(ValueError, match=r"exceeds the capacity"):
+        mlir.make_density_matrix(zero, 2, package)
+    density = mlir.make_density_matrix(zero, 1, package)
+    package.dec_ref_mat(density)
+    package.dec_ref_vec(zero)
+
+    unrooted = package.zero_state(1)
+    package.dec_ref_vec(unrooted)
+    with pytest.raises(ValueError, match=r"live reference in dd_package"):
+        mlir.make_density_matrix(unrooted, 1, package)
+
+
+def test_density_apis_reject_foreign_or_unrooted_state_without_consuming_it() -> None:
+    """Density execution checks matrix ownership before consuming a reference."""
+    program = _x_program()
+    source_package = dd.DDPackage(1)
+    target_package = dd.DDPackage(1)
+    zero = source_package.zero_state(1)
+    density = mlir.make_density_matrix(zero, 1, source_package)
+    source_package.dec_ref_vec(zero)
+
+    for call in (
+        lambda: mlir.simulate_density(program, density, target_package),
+        lambda: mlir.simulate_density(program, density, target_package, seed=7),
+        lambda: mlir.sample_density(program, density, target_package, shots=1, seed=7),
+    ):
+        with pytest.raises(ValueError, match=r"live reference in dd_package"):
+            call()
+
+    out = mlir.simulate_density(program, density, source_package)
+    source_package.dec_ref_mat(out)
+
+    zero = source_package.zero_state(1)
+    unrooted = mlir.make_density_matrix(zero, 1, source_package)
+    source_package.dec_ref_vec(zero)
+    source_package.dec_ref_mat(unrooted)
+    with pytest.raises(ValueError, match=r"live reference in dd_package"):
+        mlir.simulate_density(program, unrooted, source_package)
+    with pytest.raises(ValueError, match=r"live reference in dd_package"):
+        mlir.sample_density(program, unrooted, source_package, shots=1)
