@@ -1075,8 +1075,8 @@ TEST_F(QCToQCORegressionTest,
 }
 
 namespace {
-
 enum class CBitModifierBodyOp : std::uint8_t { Alloc, Load, Store };
+} // namespace
 
 static StringRef cbitOperationName(const CBitModifierBodyOp operation) {
   switch (operation) {
@@ -1132,8 +1132,6 @@ buildInvalidCBitModifierProgram(MLIRContext* context,
   }
   return builder.finalize();
 }
-
-} // namespace
 
 TEST_F(QCToQCORegressionTest,
        PreflightRejectsEveryCBitOperationInEveryModifier) {
