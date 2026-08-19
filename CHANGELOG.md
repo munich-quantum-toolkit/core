@@ -73,11 +73,12 @@ releases may include breaking changes.
   [**@MatthiasReumann**])
 - ✨ Add decision diagram-based construction, simulation, and sampling of QCO
   functions, including static unitaries, mid-circuit `measure`/`reset`, concrete
-  QCO and SCF control flow, non-recursive calls, bound parameters, classical
-  integer and floating-point SSA and memrefs, dynamic quantum allocation and
-  qtensors, dense `k>3` wire embedding, and multi-shot `sample` and
-  `sampleWithClassics` ([#1915], [#1973], [#2077], [#2078])
-  ([**@simon1hofmann**])
+  QCO, SCF, and multi-block CFG control flow, non-recursive calls, bound
+  parameters, classical integer, floating-point, and common math operations,
+  dynamic quantum allocation and separable deallocation, qtensors, dense `k>3`
+  wire embedding, Python input bindings, optional sampling input states, and
+  multi-shot `sample` and `sampleWithClassics` ([#1915], [#1973], [#2077],
+  [#2078], [#2079]) ([**@simon1hofmann**])
 - ✨ Add target-independent two-qubit gate fusion, target-native post-routing
   synthesis, and operation-capability and static-site conformance ([#1865],
   [#1961], [#1998]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -839,6 +840,7 @@ for previous changelogs._
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
+[#2079]: https://github.com/munich-quantum-toolkit/core/pull/2079
 [#2078]: https://github.com/munich-quantum-toolkit/core/pull/2078
 [#2077]: https://github.com/munich-quantum-toolkit/core/pull/2077
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074

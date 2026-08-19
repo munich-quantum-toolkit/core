@@ -37,10 +37,10 @@ using DDBindings = DenseMap<Value, Attribute>;
 /**
  * @brief Sequentially build a matrix DD for a static unitary QCO `func.func`.
  *
- * @details Walks the entry block of @p func, maps `qco.static` SSA values to
- * wire indices (or, if none are present, qubit-typed function arguments as
- * wires `0..n-1`), and applies unitary operations via decision-diagram
- * multiplication.
+ * @details Walks the concrete control-flow path through @p func, maps
+ * `qco.static` SSA values to wire indices (or, if none are present,
+ * qubit-typed function arguments as wires `0..n-1`), and applies unitary
+ * operations via decision-diagram multiplication.
  *
  * Supported programs:
  * - Standard single-, two-, and three-qubit gates with constant or bound
@@ -49,9 +49,10 @@ using DDBindings = DenseMap<Value, Attribute>;
  * - Other `UnitaryOpInterface` ops with a compile-time known matrix (`inv`,
  *   compound `ctrl`, ...), including `gphase` and `barrier`
  * - QTensor bookkeeping over existing input wires
- * - Concrete QCO and SCF control flow and non-recursive single-block calls
- * - Concrete integer, index, and floating-point arithmetic and one-dimensional
- *   memrefs of those scalar types
+ * - Concrete QCO and SCF control flow, multi-block ControlFlow CFGs, and
+ *   non-recursive calls
+ * - Concrete integer, index, floating-point, and common Math operations and
+ *   one-dimensional memrefs of those scalar types
  * - `qco.static` establishes the wire map (or qubit-typed `func` args if none);
  *   `sink` is ignored; returned qubits and qtensors must preserve canonical
  *   wire order
@@ -80,14 +81,15 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
  * dynamic-shape one-dimensional memrefs of integer, index, or floating-point
  * values. `qco.alloc` and `qtensor.alloc` append zero-state wires. QTensor
  * extraction, insertion, deallocation, and transport through regions are
- * tracked with linear value semantics. QTensor sizes and indices must be
- * concrete; dynamic qtensor arguments require an extent in @p bindings.
+ * tracked with linear value semantics. Deallocating a separable QTensor
+ * removes its wires from vector DDs; deallocating an entangled wire is
+ * rejected. QTensor sizes and indices must be concrete; dynamic qtensor
+ * arguments require an extent in @p bindings.
  * Mid-circuit `measure` / `reset` require the RNG overload below. Concrete-
- * bound `scf.for` and `scf.while` loops and non-recursive single-block
- * `func.call` are supported independently of RNG. Loops are limited to 10000
- * trips. Multi-block function bodies remain unsupported. Allocated wires stay
- * in the returned state after deallocation. Consumes one reference to @p in
- * regardless of success or failure.
+ * bound `scf.for` and `scf.while` loops, multi-block `scf.execute_region`, and
+ * non-recursive multi-block `func.call` are supported independently of RNG.
+ * Loops and concrete CFG walks are limited to 10000 trips or transitions.
+ * Consumes one reference to @p in regardless of success or failure.
  *
  * @param func The QCO function to simulate
  * @param in The input state, represented as a vector DD; one reference is
@@ -111,7 +113,7 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * (`arith.constant`, a prior measurement, integer and floating-point
  * arithmetic, comparisons, casts, shifts, and `arith.select`). Dynamic quantum
  * allocation, qtensors, memrefs, loops, regions, and calls are supported as in
- * the non-RNG overload. Multi-block function bodies remain unsupported.
+ * the non-RNG overload.
  * Consumes one reference to @p in regardless of success or failure.
  *
  * @param func The QCO function to simulate
@@ -135,7 +137,7 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * collapsing (including deterministic control-flow). Programs with mid-circuit
  * `measure` / `reset` are re-simulated per shot with @p rng. Histograms are
  * final computational-basis bitstrings, not classical mid-circuit records.
- * Dynamically allocated wires are included even after deallocation.
+ * Deallocated separable QTensor wires are omitted from the sampled bitstrings.
  *
  * @param func The QCO function to sample
  * @param dd The DD package to use

@@ -60,6 +60,33 @@ module {
 """)
 
 
+def _bound_qtensor_program() -> mlir.QCOProgram:
+    """Construct a bound RX program over a dynamic QTensor argument.
+
+    Returns:
+        The constructed QCO program.
+    """
+    return mlir.QCOProgram.from_mlir_str("""
+module {
+  func.func @main(%apply: i1, %theta: f64,
+                  %input: tensor<?x!qco.qubit>) -> tensor<?x!qco.qubit> {
+    %c1 = arith.constant 1 : index
+    %remaining, %q = qtensor.extract %input[%c1]
+        : tensor<?x!qco.qubit>
+    %q1 = qco.if %apply args(%q_in = %q) -> (!qco.qubit) {
+      %rotated = qco.rx(%theta) %q_in : !qco.qubit -> !qco.qubit
+      qco.yield %rotated : !qco.qubit
+    } else args(%q_in = %q) {
+      qco.yield %q_in : !qco.qubit
+    }
+    %result = qtensor.insert %q1 into %remaining[%c1]
+        : tensor<?x!qco.qubit>
+    return %result : tensor<?x!qco.qubit>
+  }
+}
+""")
+
+
 def test_unitary_x_build_simulate_and_sample() -> None:
     """X on |0>: unitary matrix, simulation to |1>, deterministic sampling."""
     program = _x_program()
@@ -104,8 +131,8 @@ def test_simulate_measure_requires_seed() -> None:
     package.dec_ref_vec(expected)
 
 
-def test_simulate_rejects_state_from_different_package() -> None:
-    """Simulation rejects a state owned by a different DD package."""
+def test_dd_apis_reject_state_from_different_package_without_consuming_it() -> None:
+    """DD APIs reject a foreign state without consuming its live reference."""
     program = _x_program()
     source_package = dd.DDPackage(1)
     target_package = dd.DDPackage(1)
@@ -116,7 +143,13 @@ def test_simulate_rejects_state_from_different_package() -> None:
         with pytest.raises(ValueError, match=r"live reference in dd_package"):
             mlir.simulate(program, zero, target_package, seed=seed)
 
-    source_package.dec_ref_vec(zero)
+    with pytest.raises(ValueError, match=r"live reference in dd_package"):
+        mlir.sample(program, target_package, initial_state=zero)
+    with pytest.raises(ValueError, match=r"live reference in dd_package"):
+        mlir.sample_with_classics(program, target_package, initial_state=zero)
+
+    out = mlir.simulate(program, zero, source_package)
+    source_package.dec_ref_vec(out)
     target_package.dec_ref_vec(target_zero)
 
 
@@ -141,3 +174,56 @@ def test_sample_with_classics_records_midcircuit_measure() -> None:
     result = mlir.sample_with_classics(program, package, shots=20, seed=3)
     assert result.shots == {"0": 20}
     assert result.classical == {"1": 20}
+
+
+def test_symbolic_bindings_across_dd_apis() -> None:
+    """All DD APIs accept concrete scalar and dynamic QTensor bindings."""
+    program = _bound_qtensor_program()
+    package = dd.DDPackage(2)
+    bindings = {0: True, 1: float(np.pi), 2: 2}
+
+    matrix = mlir.build_functionality(program, package, bindings=bindings)
+    package.dec_ref_mat(matrix)
+
+    zero = package.zero_state(2)
+    out = mlir.simulate(program, zero, package, bindings=bindings)
+    expected = package.computational_basis_state(2, [False, True])
+    assert np.allclose(np.abs(out.get_vector()), np.abs(expected.get_vector()))
+    package.dec_ref_vec(out)
+    package.dec_ref_vec(expected)
+
+    assert mlir.sample(program, package, shots=8, seed=4, bindings=bindings) == {"10": 8}
+    result = mlir.sample_with_classics(program, package, shots=8, seed=5, bindings=bindings)
+    assert result.shots == {"10": 8}
+    assert result.classical == {}
+
+
+@pytest.mark.parametrize(
+    "bindings",
+    [
+        pytest.param({3: 0}, id="argument-index"),
+        pytest.param({0: 1}, id="boolean-type"),
+        pytest.param({1: 1}, id="float-type"),
+        pytest.param({2: -1}, id="negative-extent"),
+    ],
+)
+def test_python_dd_bindings_reject_invalid_values(bindings: dict[int, bool | int | float]) -> None:
+    """Binding indices and values must match entry argument types."""
+    program = _bound_qtensor_program()
+    package = dd.DDPackage(2)
+    with pytest.raises(ValueError, match=r"out of range|does not match"):
+        mlir.build_functionality(program, package, bindings=bindings)
+
+
+def test_sample_from_supplied_initial_state() -> None:
+    """Both sampling APIs consume a valid caller-supplied input state."""
+    program = _x_program()
+    package = dd.DDPackage(1)
+
+    one = package.computational_basis_state(1, [True])
+    assert mlir.sample(program, package, shots=8, seed=6, initial_state=one) == {"0": 8}
+
+    one = package.computational_basis_state(1, [True])
+    result = mlir.sample_with_classics(program, package, shots=8, seed=7, initial_state=one)
+    assert result.shots == {"0": 8}
+    assert result.classical == {}
