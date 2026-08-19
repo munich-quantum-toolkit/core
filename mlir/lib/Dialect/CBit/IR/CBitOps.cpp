@@ -15,6 +15,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Diagnostics.h>
@@ -25,6 +26,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <variant>
 
 using namespace mlir;
 using namespace mlir::cbit;
@@ -67,6 +69,25 @@ RegisterType::verify(const function_ref<InFlightDiagnostic()> emitError,
     return emitError() << "register width must be positive";
   }
   return success();
+}
+
+void mlir::cbit::validateStaticRegisterIndex(
+    const Value reg, const std::variant<int64_t, Value>& index) {
+  const auto type = dyn_cast<RegisterType>(reg.getType());
+  if (!type) {
+    llvm::reportFatalUsageError("Expected a CBit register");
+  }
+
+  const auto* constant = std::get_if<int64_t>(&index);
+  if (constant == nullptr) {
+    return;
+  }
+  if (*constant < 0) {
+    llvm::reportFatalUsageError("Register index must be non-negative");
+  }
+  if (*constant >= type.getWidth()) {
+    llvm::reportFatalUsageError("Register index is out of bounds");
+  }
 }
 
 static LogicalResult verifyIndex(Operation* operation,

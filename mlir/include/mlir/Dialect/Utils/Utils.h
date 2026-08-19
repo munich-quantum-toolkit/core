@@ -133,32 +133,6 @@ variantToValue(OpBuilder& builder, Location loc,
   return constantFromScalar(builder, loc, std::get<T>(parameter));
 }
 
-inline void
-validateStaticRegisterIndex(const int64_t size,
-                            const std::variant<int64_t, Value>& index) {
-  const auto* constant = std::get_if<int64_t>(&index);
-  if (constant == nullptr) {
-    return;
-  }
-  if (*constant < 0) {
-    llvm::reportFatalUsageError("Register index must be non-negative");
-  }
-  if (*constant >= size) {
-    llvm::reportFatalUsageError("Register index is out of bounds");
-  }
-}
-
-template <typename RegisterType>
-inline void
-validateStaticRegisterIndex(const Value reg,
-                            const std::variant<int64_t, Value>& index) {
-  const auto type = dyn_cast<RegisterType>(reg.getType());
-  if (!type) {
-    llvm::reportFatalUsageError("Expected a static register");
-  }
-  validateStaticRegisterIndex(type.getWidth(), index);
-}
-
 [[nodiscard]] inline std::optional<double> attributeToDouble(Attribute attr) {
   if (auto floatAttr = dyn_cast<FloatAttr>(attr)) {
     return floatAttr.getValueAsDouble();

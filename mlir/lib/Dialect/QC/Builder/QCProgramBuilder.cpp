@@ -177,7 +177,7 @@ Value QCProgramBuilder::allocClassicalBitRegister(
 Value QCProgramBuilder::loadClassicalBit(
     Value reg, const std::variant<int64_t, Value>& index) {
   checkFinalized();
-  validateStaticRegisterIndex<cbit::RegisterType>(reg, index);
+  cbit::validateStaticRegisterIndex(reg, index);
   const auto indexValue = variantToValue(*this, getLoc(), index);
   return cbit::LoadOp::create(*this, getI1Type(), reg, indexValue).getResult();
 }
@@ -185,7 +185,7 @@ Value QCProgramBuilder::loadClassicalBit(
 void QCProgramBuilder::storeClassicalBit(
     Value value, Value reg, const std::variant<int64_t, Value>& index) {
   checkFinalized();
-  validateStaticRegisterIndex<cbit::RegisterType>(reg, index);
+  cbit::validateStaticRegisterIndex(reg, index);
   const auto indexValue = variantToValue(*this, getLoc(), index);
   cbit::StoreOp::create(*this, value, reg, indexValue);
 }

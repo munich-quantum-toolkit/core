@@ -28,6 +28,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -131,8 +132,10 @@ class StatefulOpConversionPattern : public OpConversionPattern<OpType> {
 
 public:
   StatefulOpConversionPattern(TypeConverter& typeConverter,
-                              MLIRContext* context, LoweringState* state)
-      : OpConversionPattern<OpType>(typeConverter, context), state_(state) {}
+                              MLIRContext* context, LoweringState* state,
+                              const PatternBenefit benefit = 1)
+      : OpConversionPattern<OpType>(typeConverter, context, benefit),
+        state_(state) {}
 
   /// Returns the shared lowering state object
   [[nodiscard]] LoweringState& getState() const { return *state_; }
@@ -476,9 +479,19 @@ static LogicalResult moveRegion(Region& source, Region& dest,
 
 namespace {
 
+/**
+ * @brief Converts a CBit allocation to a jeff zero-initialized integer array.
+ *
+ * @details The higher pattern benefit preserves the jeff allocation form that
+ * the reverse conversion recognizes as a CBit register. The shared
+ * CBit-to-tensor patterns handle all register loads and stores.
+ */
 struct ConvertCBitAllocOpToJeff final
     : StatefulOpConversionPattern<cbit::AllocOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+  ConvertCBitAllocOpToJeff(TypeConverter& typeConverter, MLIRContext* context,
+                           LoweringState* state)
+      : StatefulOpConversionPattern(typeConverter, context, state,
+                                    PatternBenefit(2)) {}
 
   LogicalResult
   matchAndRewrite(cbit::AllocOp op, OpAdaptor /*adaptor*/,
@@ -500,48 +513,6 @@ struct ConvertCBitAllocOpToJeff final
     state.setCurrentRegister(op.getResult(), tensor, op);
     state.addRegisterAlias(tensor, op.getResult());
     rewriter.replaceOp(op, tensor);
-    return success();
-  }
-};
-
-struct ConvertCBitStoreOpToJeff final
-    : StatefulOpConversionPattern<cbit::StoreOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(cbit::StoreOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState().cbitState;
-    const auto reg = state.resolveRegister(adaptor.getOperands()[1]);
-    const auto tensor = state.getCurrentRegister(reg, op);
-    if (!tensor) {
-      return rewriter.notifyMatchFailure(op, "unknown classical register");
-    }
-    auto updated = jeff::IntArraySetIndexOp::create(
-                       rewriter, op.getLoc(), tensor.getType(), tensor,
-                       adaptor.getIndex(), adaptor.getValue())
-                       .getResult();
-    state.setCurrentRegister(reg, updated, op);
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-struct ConvertCBitLoadOpToJeff final
-    : StatefulOpConversionPattern<cbit::LoadOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(cbit::LoadOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState().cbitState;
-    const auto reg = state.resolveRegister(adaptor.getOperands()[0]);
-    const auto tensor = state.getCurrentRegister(reg, op);
-    if (!tensor) {
-      return rewriter.notifyMatchFailure(op, "unknown classical register");
-    }
-    rewriter.replaceOpWithNewOp<jeff::IntArrayGetIndexOp>(
-        op, op.getType(), tensor, adaptor.getIndex());
     return success();
   }
 };
@@ -1617,30 +1588,6 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
 };
 
 /**
- * @brief Updates `func.return` by replacing CBit registers with their latest
- * tensor value.
- */
-struct ConvertFuncReturnOpToJeff final
-    : StatefulOpConversionPattern<func::ReturnOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    SmallVector<Value> returnValues;
-    returnValues.reserve(op.getNumOperands());
-    for (const auto& [operand, adapted] :
-         llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
-      auto creg = state.cbitState.getCurrentRegister(operand, op);
-      returnValues.emplace_back(creg ? creg : adapted);
-    }
-    rewriter.replaceOpWithNewOp<func::ReturnOp>(op, returnValues);
-    return success();
-  }
-};
-
-/**
  * @brief Type converter for QCO-to-jeff conversion
  */
 class QCOToJeffTypeConverter final : public TypeConverter {
@@ -1663,7 +1610,6 @@ public:
       }
       return type;
     });
-    cbit::addCBitToTensorTypeConversion(*this);
   }
 };
 
@@ -1781,6 +1727,36 @@ protected:
     QCOToJeffTypeConverter typeConverter(context);
 
     LoweringState state;
+    state.cbitState.recordRegisterUses(moduleOp);
+
+    /// Lower CBit accesses before the native and QCO-to-jeff conversion.
+    TypeConverter cbitTypeConverter;
+    cbitTypeConverter.addConversion([](Type type) { return type; });
+    cbit::addCBitToTensorTypeConversion(cbitTypeConverter);
+    ConversionTarget cbitTarget(*context);
+    cbitTarget.addIllegalOp<cbit::AllocOp, cbit::LoadOp, cbit::StoreOp>();
+    cbitTarget.markUnknownOpDynamicallyLegal(
+        [](Operation* /*operation*/) { return true; });
+    cbitTarget.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+      return cbitTypeConverter.isSignatureLegal(op.getFunctionType()) &&
+             cbitTypeConverter.isLegal(&op.getBody());
+    });
+    cbitTarget.addDynamicallyLegalOp<func::ReturnOp>(
+        [&](func::ReturnOp op) { return cbitTypeConverter.isLegal(op); });
+    RewritePatternSet cbitPatterns(context);
+    cbit::populateCBitToTensorConversionPatterns(cbitTypeConverter,
+                                                 cbitPatterns, state.cbitState);
+    cbitPatterns.add<ConvertCBitAllocOpToJeff>(cbitTypeConverter, context,
+                                               &state);
+    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
+        cbitPatterns, cbitTypeConverter);
+    populateReturnOpTypeConversionPattern(cbitPatterns, cbitTypeConverter);
+    if (failed(applyPartialConversion(moduleOp, cbitTarget,
+                                      std::move(cbitPatterns)))) {
+      signalPassFailure();
+      return;
+    }
+    state.cbitState.updateRegisterReturns(moduleOp);
 
     // Configure conversion target
     target.addIllegalDialect<cbit::CBitDialect, QCODialect,
@@ -1799,13 +1775,12 @@ protected:
 
     // Register operation conversion patterns
     jeff::populateNativeToJeffConversionPatterns(patterns);
-    patterns.add<ConvertCBitAllocOpToJeff, ConvertCBitStoreOpToJeff,
-                 ConvertCBitLoadOpToJeff, ConvertQTensorAllocOp,
-                 ConvertQTensorExtractOp, ConvertQTensorInsertOp,
-                 ConvertQTensorDeallocOp, ConvertQCOAllocOpToJeff,
-                 ConvertQCOStaticOpToJeff, ConvertQCOSinkOpToJeff,
-                 ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
-                 ConvertQCOGPhaseOpToJeff>(typeConverter, context, &state);
+    patterns.add<ConvertQTensorAllocOp, ConvertQTensorExtractOp,
+                 ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
+                 ConvertQCOAllocOpToJeff, ConvertQCOStaticOpToJeff,
+                 ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
+                 ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff>(
+        typeConverter, context, &state);
 
     using JK = JeffKind;
     using PP = PPRPaulis;
@@ -1873,8 +1848,7 @@ protected:
                  ConvertQCOInvOpToJeff, ConvertQCOPowOpToJeff,
                  ConvertQCOYieldOpToJeff, ConvertQCOIfOpToJeff,
                  ConvertSCFForOpToJeff, ConvertSCFWhileOpToJeff,
-                 ConvertQCOMainToJeff, ConvertFuncReturnOpToJeff>(
-        typeConverter, context, &state);
+                 ConvertQCOMainToJeff>(typeConverter, context, &state);
 
     // Apply the conversion
     if (applyPartialConversion(moduleOp, target, std::move(patterns))

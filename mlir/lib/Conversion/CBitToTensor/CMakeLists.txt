@@ -12,6 +12,7 @@ add_mlir_conversion_library(
   LINK_LIBS
   MLIRArithDialect
   MLIRCBitDialect
+  MLIRFuncDialect
   MLIRTensorDialect
   MLIRTransforms)
 

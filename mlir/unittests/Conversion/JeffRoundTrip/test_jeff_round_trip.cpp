@@ -22,6 +22,7 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
+#include <jeff/IR/JeffOps.h>
 #include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
 #include <llvm/ADT/STLExtras.h>
@@ -407,6 +408,14 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
       &context, MQT_NAMED_BUILDER(qco::singleMeasurementToSingleBit));
   ASSERT_TRUE(program);
   ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+  auto jeffMain = program->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(jeffMain);
+  auto jeffReturn =
+      cast<func::ReturnOp>(jeffMain.getBody().front().getTerminator());
+  ASSERT_EQ(jeffReturn.getNumOperands(), 1);
+  EXPECT_TRUE(
+      jeffReturn.getOperand(0).getDefiningOp<jeff::IntArraySetIndexOp>());
+
   ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
   auto main = program->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(main);

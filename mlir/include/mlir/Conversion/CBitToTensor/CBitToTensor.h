@@ -21,7 +21,7 @@ class TypeConverter;
 
 namespace cbit {
 
-/** Tracks the current tensor value for each CBit register during conversion. */
+/// Tracks the current tensor value for each CBit register during conversion.
 class CBitToTensorState {
 public:
   /// Resolves a tensor alias to its source CBit register.
@@ -53,6 +53,9 @@ public:
 
   /// Returns the source register recorded for @p operation, if any.
   [[nodiscard]] Value getRecordedRegister(Operation* operation) const;
+
+  /// Replaces returned register aliases with their current tensor values.
+  void updateRegisterReturns(Operation* root) const;
 
 private:
   DenseMap<Region*, DenseMap<Value, Value>> registerTensors;

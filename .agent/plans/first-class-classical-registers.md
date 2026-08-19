@@ -86,6 +86,11 @@ outputs.
 - [x] (2026-08-19 13:51Z) Fixed all 14 branch-related Clang-Tidy 22.1.8
       diagnostics from the C++ lint job. Exact focused Clang-Tidy checks, ten
       non-unity targets, and their 1,176 tests pass locally.
+- [x] (2026-08-19 14:26Z) Applied Daniel Haag's follow-up review. QCO-to-jeff
+      now runs shared CBit-to-tensor lowering before native-to-jeff lowering,
+      CBit owns its static-index validation, and all new single-line comments
+      use `///`. Exact Clang-Tidy checks, repository lint, and 965 focused tests
+      pass.
 - [ ] Validate all remote checks on the exact submitted head. Pull request #2165
       fixed the unrelated external DOI, Qiskit policy, and old Read the Docs
       link-check failures on `main`.
@@ -177,6 +182,11 @@ outputs.
   functions. Evidence: `CBitAttributes.h`, `CBitDialect.h`, and
   `mlir/Support/LLVM.h` remove the diagnostics for `Initialization`,
   `RegisterType`, and `mlir::isa`; the exact focused checks pass.
+- Observation: A successful QCO-to-jeff-to-QCO round trip did not prove that the
+  jeff function returned the updated register value. The reverse conversion
+  reconstructed CBit stores even when jeff returned the initial array. Evidence:
+  an assertion on the intermediate jeff return exposed the stale value, and the
+  shared conversion now replaces returned aliases with the latest tensor value.
 
 ## Decision Log
 
@@ -215,11 +225,16 @@ outputs.
   unitary transformations; classical state access makes a modifier body
   non-unitary. Date/Author: 2026-08-19 / Simon Hofmann and Codex.
 - Decision: Put reusable CBit register state, type conversion, and
-  CBit-to-tensor patterns in a neutral conversion library. Let QCO-to-jeff reuse
-  the state and type layer while it creates jeff operations directly. Rationale:
-  this separates the CBit model from jeff without destabilizing values adapted
-  inside the same dialect-conversion pass. Date/Author: 2026-08-19 / Daniel Haag
-  and Codex.
+  CBit-to-tensor patterns in a neutral conversion library. Run that conversion
+  before native-to-jeff lowering. Keep only CBit allocation jeff-specific so
+  jeff-to-QCO can recover register identity from the established array form.
+  Rationale: the two stages remove duplicate load and store patterns while
+  preserving the bidirectional jeff contract. Date/Author: 2026-08-19 / Daniel
+  Haag and Codex.
+- Decision: Keep static register-index validation in the CBit dialect instead of
+  a generic type template in dialect utilities. Rationale: every caller uses
+  `cbit::RegisterType`, so the template adds an unused abstraction and obscures
+  ownership. Date/Author: 2026-08-19 / Daniel Haag and Codex.
 - Decision: Preserve the exact pre-commit.ci tree in a signed human commit and
   replace only the unsigned bot commit with an exact force-with-lease guard.
   Rationale: the corrections are valid, but every pull-request commit must have

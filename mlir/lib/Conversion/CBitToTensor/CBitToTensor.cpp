@@ -15,6 +15,7 @@
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Operation.h>
@@ -91,6 +92,22 @@ void CBitToTensorState::recordRegisterUses(Operation* root) {
 Value CBitToTensorState::getRecordedRegister(Operation* operation) const {
   const auto it = operationRegisters.find(operation);
   return it != operationRegisters.end() ? it->second : Value{};
+}
+
+void CBitToTensorState::updateRegisterReturns(Operation* root) const {
+  root->walk([&](func::ReturnOp returnOp) {
+    for (auto& operand : returnOp->getOpOperands()) {
+      auto reg = getRegisterForAlias(operand.get());
+      if (!reg) {
+        reg = findRegister(operand.get());
+      }
+      if (reg) {
+        if (const auto current = getCurrentRegister(reg, returnOp)) {
+          operand.set(current);
+        }
+      }
+    }
+  });
 }
 
 void addCBitToTensorTypeConversion(TypeConverter& typeConverter) {
