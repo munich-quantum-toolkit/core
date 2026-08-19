@@ -12,6 +12,7 @@
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -428,6 +429,43 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
   ASSERT_EQ(returnOp.getNumOperands(), 1);
   EXPECT_EQ(returnOp.getOperand(0).getType(), cregType);
+}
+
+TEST(JeffRoundTripRegressionTest, ConvertsJeffBitArraysDirectlyToCBit) {
+  DialectRegistry registry;
+  registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                  jeff::JeffDialect, qco::QCODialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  auto program =
+      ::mqt::test::buildMLIRProgram(&context, MQT_NAMED_BUILDER(whileWithRead));
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+
+  auto data = serialize(*program);
+  program = deserialize(&context, data);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+  ASSERT_TRUE(succeeded(verify(*program)));
+
+  size_t allocations = 0;
+  size_t loads = 0;
+  size_t stores = 0;
+  bool hasI1Tensor = false;
+  program->walk([&](Operation* op) {
+    allocations += isa<cbit::AllocOp>(op);
+    loads += isa<cbit::LoadOp>(op);
+    stores += isa<cbit::StoreOp>(op);
+    hasI1Tensor |= llvm::any_of(op->getResultTypes(), [](Type type) {
+      const auto tensorType = dyn_cast<RankedTensorType>(type);
+      return tensorType && tensorType.getElementType().isInteger(1);
+    });
+  });
+
+  EXPECT_EQ(allocations, 1);
+  EXPECT_GE(loads, 1);
+  EXPECT_GE(stores, 1);
+  EXPECT_FALSE(hasI1Tensor);
 }
 
 TEST(JeffRoundTripRegressionTest, RejectsClassicalIfResultsPrecisely) {

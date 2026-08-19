@@ -23,10 +23,10 @@
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
@@ -41,15 +41,11 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
-#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cstddef>
-#include <cstdint>
-#include <optional>
 #include <utility>
 
 namespace mlir {
@@ -235,140 +231,6 @@ static StringRef getEntryPointName(Operation* op) {
 }
 
 /**
- * @brief Converts tensors representing classical registers to CBit registers.
- */
-static LogicalResult rewriteClassicalRegisterTensorsToCBit(Operation* module) {
-  OpBuilder builder(module->getContext());
-  const auto result = module->walk([&](func::FuncOp funcOp) -> WalkResult {
-    DenseMap<Value, Value> registers;
-    SmallVector<Operation*> toErase;
-    bool failedToRewrite = false;
-    funcOp.walk<WalkOrder::PreOrder>([&](Operation* op) {
-      TypeSwitch<Operation*>(op)
-          .Case<tensor::EmptyOp>([&](auto emptyOp) {
-            auto tensorType = emptyOp.getType();
-            if (tensorType.getRank() != 1 ||
-                !tensorType.getElementType().isInteger(1)) {
-              return;
-            }
-            builder.setInsertionPoint(emptyOp);
-            auto loc = emptyOp.getLoc();
-            auto dynamicSizes = emptyOp.getDynamicSizes();
-            std::optional<int64_t> size;
-            if (dynamicSizes.empty()) {
-              size = tensorType.getShape()[0];
-            } else if (auto castOp =
-                           dynamicSizes[0]
-                               .template getDefiningOp<arith::IndexCastOp>()) {
-              size = getConstantIntValue(castOp.getIn());
-            } else {
-              size = getConstantIntValue(dynamicSizes[0]);
-            }
-            if (!size) {
-              emptyOp.emitError(
-                  "jeff classical register size must be constant for CBit");
-              failedToRewrite = true;
-              return;
-            }
-            if (*size <= 0) {
-              emptyOp.emitError("CBit register width must be positive");
-              failedToRewrite = true;
-              return;
-            }
-            auto registerType =
-                cbit::RegisterType::get(builder.getContext(), *size);
-            auto reg =
-                cbit::AllocOp::create(builder, loc, registerType,
-                                      cbit::Initialization::Zero, StringAttr{})
-                    .getResult();
-            registers[emptyOp.getResult()] = reg;
-            toErase.emplace_back(emptyOp);
-          })
-          .Case<tensor::InsertOp>([&](auto insertOp) {
-            auto it = registers.find(insertOp.getDest());
-            if (it == registers.end()) {
-              return;
-            }
-            auto reg = it->second;
-            builder.setInsertionPoint(insertOp);
-            cbit::StoreOp::create(builder, insertOp.getLoc(),
-                                  insertOp.getScalar(), reg,
-                                  insertOp.getIndices().front());
-            registers[insertOp.getResult()] = reg;
-            toErase.emplace_back(insertOp);
-          })
-          .Case<tensor::ExtractOp>([&](auto extractOp) {
-            auto it = registers.find(extractOp.getTensor());
-            if (it == registers.end()) {
-              return;
-            }
-            builder.setInsertionPoint(extractOp);
-            auto newResult =
-                cbit::LoadOp::create(builder, extractOp.getLoc(),
-                                     extractOp.getType(), it->second,
-                                     extractOp.getIndices().front())
-                    .getResult();
-            extractOp.getResult().replaceAllUsesWith(newResult);
-            toErase.emplace_back(extractOp);
-          })
-          .Case<scf::ForOp>([&](auto forOp) {
-            for (auto [i, init] : llvm::enumerate(forOp.getInitArgs())) {
-              auto it = registers.find(init);
-              if (it == registers.end()) {
-                continue;
-              }
-              auto reg = it->second;
-              registers[forOp.getRegionIterArg(i)] = reg;
-              registers[forOp.getResult(i)] = reg;
-            }
-          });
-    });
-
-    if (failedToRewrite) {
-      return WalkResult::interrupt();
-    }
-
-    funcOp.walk([&](scf::ForOp forOp) {
-      auto* yield = forOp.getBody()->getTerminator();
-      for (auto [i, init] : llvm::enumerate(forOp.getInitArgs())) {
-        auto it = registers.find(init);
-        if (it == registers.end()) {
-          continue;
-        }
-        auto reg = it->second;
-        forOp.getInitArgsMutable()[i].set(reg);
-        forOp.getRegionIterArg(i).setType(reg.getType());
-        forOp.getResult(i).setType(reg.getType());
-        yield->getOpOperand(i).set(it->second);
-      }
-    });
-
-    // Update terminator operands
-    auto* terminator = funcOp.getBlocks().front().getTerminator();
-    for (auto& operand : terminator->getOpOperands()) {
-      auto it = registers.find(operand.get());
-      if (it == registers.end()) {
-        continue;
-      }
-      operand.set(it->second);
-    }
-
-    // Update function signature
-    if (!registers.empty()) {
-      funcOp.setType(builder.getFunctionType(funcOp.getArgumentTypes(),
-                                             terminator->getOperandTypes()));
-    }
-
-    for (Operation* op : llvm::reverse(toErase)) {
-      op->erase();
-    }
-
-    return WalkResult::advance();
-  });
-  return result.wasInterrupted() ? failure() : success();
-}
-
-/**
  * @brief Cleans up the module after conversion
  *
  * @param op The module operation to clean up
@@ -397,6 +259,17 @@ static LogicalResult cleanUp(Operation* op) {
  */
 static bool isLinearType(Type t) {
   return isa<jeff::QubitType, jeff::QuregType>(t);
+}
+
+/// Returns the CBit type represented by a static one-dimensional i1 tensor.
+static cbit::RegisterType getCBitType(Type type) {
+  const auto tensorType = dyn_cast<RankedTensorType>(type);
+  if (!tensorType || tensorType.getRank() != 1 || tensorType.isDynamicDim(0) ||
+      tensorType.getShape()[0] <= 0 ||
+      !tensorType.getElementType().isInteger(1)) {
+    return {};
+  }
+  return cbit::RegisterType::get(type.getContext(), tensorType.getShape()[0]);
 }
 
 /**
@@ -445,6 +318,76 @@ moveRegion(Region& source, Region& dest, ConversionPatternRewriter& rewriter,
 }
 
 namespace {
+
+/// Converts a jeff zero-initialized i1 array to a CBit register.
+struct ConvertJeffIntArrayZeroOpToCBit final
+    : OpConversionPattern<jeff::IntArrayZeroOp> {
+  ConvertJeffIntArrayZeroOpToCBit(TypeConverter& typeConverter,
+                                  MLIRContext* context)
+      : OpConversionPattern(typeConverter, context, PatternBenefit(2)) {}
+
+  LogicalResult
+  matchAndRewrite(jeff::IntArrayZeroOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto registerType = getCBitType(op.getType());
+    if (!registerType) {
+      return failure();
+    }
+    const auto length = getConstantIntValue(adaptor.getLength());
+    if (!length || *length != registerType.getWidth()) {
+      return rewriter.notifyMatchFailure(
+          op, "CBit array length must match its static result width");
+    }
+    rewriter.replaceOpWithNewOp<cbit::AllocOp>(
+        op, registerType, cbit::Initialization::Zero, StringAttr{});
+    return success();
+  }
+};
+
+/// Converts a jeff i1-array update to a CBit store.
+struct ConvertJeffIntArraySetIndexOpToCBit final
+    : OpConversionPattern<jeff::IntArraySetIndexOp> {
+  ConvertJeffIntArraySetIndexOpToCBit(TypeConverter& typeConverter,
+                                      MLIRContext* context)
+      : OpConversionPattern(typeConverter, context, PatternBenefit(2)) {}
+
+  LogicalResult
+  matchAndRewrite(jeff::IntArraySetIndexOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto operands = adaptor.getOperands();
+    if (!isa<cbit::RegisterType>(operands[0].getType())) {
+      return failure();
+    }
+    auto index = arith::IndexCastOp::create(
+        rewriter, op.getLoc(), rewriter.getIndexType(), operands[1]);
+    cbit::StoreOp::create(rewriter, op.getLoc(), operands[2], operands[0],
+                          index);
+    rewriter.replaceOp(op, operands[0]);
+    return success();
+  }
+};
+
+/// Converts a jeff i1-array access to a CBit load.
+struct ConvertJeffIntArrayGetIndexOpToCBit final
+    : OpConversionPattern<jeff::IntArrayGetIndexOp> {
+  ConvertJeffIntArrayGetIndexOpToCBit(TypeConverter& typeConverter,
+                                      MLIRContext* context)
+      : OpConversionPattern(typeConverter, context, PatternBenefit(2)) {}
+
+  LogicalResult
+  matchAndRewrite(jeff::IntArrayGetIndexOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto operands = adaptor.getOperands();
+    if (!isa<cbit::RegisterType>(operands[0].getType())) {
+      return failure();
+    }
+    auto index = arith::IndexCastOp::create(
+        rewriter, op.getLoc(), rewriter.getIndexType(), operands[1]);
+    rewriter.replaceOpWithNewOp<cbit::LoadOp>(op, op.getType(), operands[0],
+                                              index);
+    return success();
+  }
+};
 
 /**
  * @brief Converts jeff.qureg_alloc to qtensor.alloc
@@ -1259,7 +1202,8 @@ struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
  * ```
  */
 struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
-  using OpConversionPattern::OpConversionPattern;
+  ConvertJeffMainToQCO(TypeConverter& typeConverter, MLIRContext* context)
+      : OpConversionPattern(typeConverter, context, PatternBenefit(2)) {}
 
   LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
@@ -1278,15 +1222,27 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
       return failure();
     }
 
-    // Restore the compiler entry-point marker. Jeff functions may retain
-    // observable classical results, so only synthesize the legacy i64 status
-    // result for a result-less entry point.
-    const bool needsStatusResult = op.getFunctionType().getResults().empty();
+    SmallVector<Type> inputTypes;
+    SmallVector<Type> resultTypes;
+    if (failed(getTypeConverter()->convertTypes(op.getArgumentTypes(),
+                                                inputTypes)) ||
+        failed(getTypeConverter()->convertTypes(op.getResultTypes(),
+                                                resultTypes))) {
+      return failure();
+    }
+
+    /// A result-less jeff entry point uses the compiler's legacy status result.
+    const bool needsStatusResult = resultTypes.empty();
+    if (needsStatusResult) {
+      resultTypes.push_back(rewriter.getI64Type());
+    }
     rewriter.modifyOpInPlace(op, [&] {
       op->setAttr("passthrough", rewriter.getArrayAttr(
                                      {rewriter.getStringAttr("entry_point")}));
-      if (needsStatusResult) {
-        op.setType(rewriter.getFunctionType({}, {rewriter.getI64Type()}));
+      op.setType(rewriter.getFunctionType(inputTypes, resultTypes));
+      for (const auto& [argument, type] :
+           llvm::zip_equal(block->getArguments(), inputTypes)) {
+        argument.setType(type);
       }
     });
 
@@ -1321,6 +1277,13 @@ public:
     addConversion([ctx](jeff::QuregType type) -> Type {
       return RankedTensorType::get({type.getLength()}, QubitType::get(ctx));
     });
+
+    addConversion([](RankedTensorType type) -> Type {
+      if (const auto registerType = getCBitType(type)) {
+        return registerType;
+      }
+      return type;
+    });
   }
 };
 
@@ -1337,7 +1300,7 @@ protected:
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
-    const JeffToQCOTypeConverter typeConverter(context);
+    JeffToQCOTypeConverter typeConverter(context);
 
     // Configure conversion target
     target.addIllegalDialect<jeff::JeffDialect>();
@@ -1347,20 +1310,27 @@ protected:
                          tensor::TensorDialect, scf::SCFDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return op.getSymName() != getEntryPointName(module) ||
-             op->hasAttr("passthrough");
+      return (op.getSymName() != getEntryPointName(module) ||
+              op->hasAttr("passthrough")) &&
+             typeConverter.isSignatureLegal(op.getFunctionType()) &&
+             typeConverter.isLegal(&op.getBody());
     });
-    target.addLegalOp<func::ReturnOp>();
+    target.addDynamicallyLegalOp<func::ReturnOp>(
+        [&](func::ReturnOp op) { return typeConverter.isLegal(op); });
 
     // Register operation conversion patterns
     jeff::populateJeffToNativeConversionPatterns(patterns);
+    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
+        patterns, typeConverter);
+    populateReturnOpTypeConversionPattern(patterns, typeConverter);
     patterns.add<
-        ConvertJeffQuregAllocOpToQCO, ConvertJeffQuregExtractIndexOpToQCO,
-        ConvertJeffQuregInsertIndexOpToQCO, ConvertJeffQuregFreeZeroOpToQCO,
-        ConvertJeffQubitAllocOpToQCO, ConvertJeffQubitFreeOpToQCO,
-        ConvertJeffQubitFreeZeroOpToQCO, ConvertJeffQubitMeasureOpToQCO,
-        ConvertJeffQubitMeasureNDOpToQCO, ConvertJeffQubitResetOpToQCO,
-        ConvertJeffGPhaseOpToQCO,
+        ConvertJeffIntArrayZeroOpToCBit, ConvertJeffIntArraySetIndexOpToCBit,
+        ConvertJeffIntArrayGetIndexOpToCBit, ConvertJeffQuregAllocOpToQCO,
+        ConvertJeffQuregExtractIndexOpToQCO, ConvertJeffQuregInsertIndexOpToQCO,
+        ConvertJeffQuregFreeZeroOpToQCO, ConvertJeffQubitAllocOpToQCO,
+        ConvertJeffQubitFreeOpToQCO, ConvertJeffQubitFreeZeroOpToQCO,
+        ConvertJeffQubitMeasureOpToQCO, ConvertJeffQubitMeasureNDOpToQCO,
+        ConvertJeffQubitResetOpToQCO, ConvertJeffGPhaseOpToQCO,
         ConvertJeffOneTargetZeroParameterToQCO<jeff::IOp, IdOp>,
         ConvertJeffOneTargetZeroParameterToQCO<jeff::XOp, XOp>,
         ConvertJeffOneTargetZeroParameterToQCO<jeff::YOp, YOp>,
@@ -1379,11 +1349,6 @@ protected:
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
-      signalPassFailure();
-      return;
-    }
-
-    if (rewriteClassicalRegisterTensorsToCBit(module).failed()) {
       signalPassFailure();
       return;
     }

@@ -91,6 +91,12 @@ outputs.
       CBit owns its static-index validation, and all new single-line comments
       use `///`. Exact Clang-Tidy checks, repository lint, and 965 focused tests
       pass.
+- [x] (2026-08-19 14:57Z) Replaced the staged CBit-to-tensor jeff path with
+      direct CBit-to-jeff array patterns and replaced the reverse generic tensor
+      recognizer with direct jeff-array-to-CBit patterns. Both conversion passes
+      now state their classical-register contract at the jeff boundary. Exact
+      Clang-Tidy checks, repository lint, all 143 jeff tests, and both neutral
+      CBit-to-tensor tests pass.
 - [ ] Validate all remote checks on the exact submitted head. Pull request #2165
       fixed the unrelated external DOI, Qiskit policy, and old Read the Docs
       link-check failures on `main`.
@@ -187,6 +193,16 @@ outputs.
   reconstructed CBit stores even when jeff returned the initial array. Evidence:
   an assertion on the intermediate jeff return exposed the stale value, and the
   shared conversion now replaces returned aliases with the latest tensor value.
+- Observation: The generic native-to-jeff conversion cannot lower a static
+  `tensor.empty`, so the staged QCO-to-jeff path still needed a jeff-specific
+  allocation pattern and declared temporary `arith` and `tensor` dialect
+  dependencies. Evidence: direct `cbit.alloc`, `cbit.load`, and `cbit.store`
+  patterns remove both temporary dialect dependencies from the pass.
+- Observation: The old jeff-to-QCO reconstruction inferred classical registers
+  by scanning generic `tensor.empty`, `tensor.insert`, `tensor.extract`, and
+  `scf.for` operations after conversion. Evidence: converting jeff i1 array
+  operations directly removes the post-pass scan and preserves structured
+  control-flow round trips across all 143 jeff tests.
 
 ## Decision Log
 
@@ -230,7 +246,16 @@ outputs.
   jeff-to-QCO can recover register identity from the established array form.
   Rationale: the two stages remove duplicate load and store patterns while
   preserving the bidirectional jeff contract. Date/Author: 2026-08-19 / Daniel
-  Haag and Codex.
+  Haag and Codex. Superseded on 2026-08-19 by the direct conversion decision
+  below after the remaining asymmetry became clear.
+- Decision: Convert CBit operations directly to jeff integer-array operations
+  and convert static one-dimensional jeff i1 arrays directly to CBit. Keep the
+  neutral state and type helpers for structured SSA threading, but do not expose
+  temporary native tensor operations as either conversion's register contract.
+  Rationale: both directions now identify classical registers from source
+  dialect operations, QCO-to-jeff declares only the dialect that it creates, and
+  jeff-to-QCO no longer recognizes arbitrary tensor programs. Date/Author:
+  2026-08-19 / Lukas Burgholzer and Codex.
 - Decision: Keep static register-index validation in the CBit dialect instead of
   a generic type template in dialect utilities. Rationale: every caller uses
   `cbit::RegisterType`, so the template adds an unused abstraction and obscures
@@ -251,7 +276,9 @@ required Python tests, all supported Python-version matrices, generated stubs,
 and documentation build pass. Pull request #2165 addresses the unrelated
 external link-check failures. The signed review head is published, all inline
 review discussions have concise resolution replies, and all addressed threads
-are resolved. Remote validation of the exact submitted head remains.
+are resolved. The final jeff refinement maps CBit and jeff arrays directly in
+both directions; all 143 jeff round-trip tests pass without a generic tensor
+register recognizer. Remote validation of the exact submitted head remains.
 
 ## Context and Orientation
 
