@@ -6,10 +6,12 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### QDMI updated to version 1.3.3
+## [3.9.0]
 
-While not a breaking change, this release updates the QDMI dependency to version
-1.3.3.
+The shared library ABI version (`SOVERSION`) is increased from `3.8` to `3.9`.
+Thus, consuming libraries need to update their wheel repair configuration for
+`cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the
+wheel repair step.
 
 ### `nanobind` updated to version 2.15.0
 
@@ -17,7 +19,12 @@ This release updates the `nanobind` dependency to version 2.15.0, which includes
 an ABI bump. Any existing code that uses the `mqt-core` Python bindings will
 need to be recompiled with the new `nanobind` version.
 
-### Calibration runs and batch jobs
+### QDMI updated to version 1.3.3
+
+While not a breaking change, this release updates the QDMI dependency to version
+1.3.3.
+
+### QDMI calibration runs and batch jobs
 
 `Device::submitJob` used to reject `CALIBRATION` and `BATCH_JOB` together, which
 left MQT Core reporting that a device needs calibration through
@@ -79,28 +86,6 @@ resolve against the file that declares them. `MQT_CORE_QDMI_CONFIG_FILE`,
 `MQT_CORE_QDMI_CONFIG_JSON`, the system and user files, and the packaged
 `*.qdmi.json` fragments do not change.
 
-### Python binding CMake helper
-
-The `add_mqt_python_binding_nanobind` function is now called
-`add_mqt_python_binding`. Rename the calls in downstream `CMakeLists.txt` files:
-
-```cmake
-add_mqt_python_binding(
-  MYPACKAGE
-  py_mypackage
-  ${SOURCES}
-  MODULE_NAME
-  _core
-  INSTALL_DIR
-  .
-  LINK_LIBS
-  MQT::Core)
-```
-
-The former `add_mqt_python_binding` function built modules with `pybind11`. All
-MQT projects have switched from `pybind11` to `nanobind`, so no build used that
-function. MQT Core no longer provides it.
-
 ### QDMI Qiskit primitive options
 
 `QDMISampler` and `QDMIEstimator` no longer accept the MQT-specific `options`
@@ -138,16 +123,6 @@ At runtime, use the registry `session.device-config` field or Python
 `device_config` and `device_config_file` arguments. Direct low-level QDMI
 clients pass inline JSON through CUSTOM1 or a file path through CUSTOM2.
 
-### Bundled QDMI devices in embedded builds
-
-The bundled QDMI devices now have individual CMake options:
-`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`, `BUILD_MQT_CORE_QDMI_NA_DEVICE`, and
-`BUILD_MQT_CORE_QDMI_SC_DEVICE`. All three remain enabled by default in a
-standalone MQT Core build. They default to disabled when MQT Core is consumed
-through CMake's `FetchContent` or `add_subdirectory`; embedded consumers can
-enable only the devices they need before making MQT Core available. The QDMI
-driver and FoMaC libraries remain available independently.
-
 ### QDMI Python namespace
 
 The native Python module has moved from `mqt.core.fomac` to `mqt.core.qdmi`.
@@ -174,6 +149,28 @@ will be removed in MQT Core 4.0.
 
 The C++ FoMaC namespace, headers, library, and `MQT::CoreFoMaC` target do not
 change.
+
+### Python binding CMake helper
+
+The `add_mqt_python_binding_nanobind` function is now called
+`add_mqt_python_binding`. Rename the calls in downstream `CMakeLists.txt` files:
+
+```cmake
+add_mqt_python_binding(
+  MYPACKAGE
+  py_mypackage
+  ${SOURCES}
+  MODULE_NAME
+  _core
+  INSTALL_DIR
+  .
+  LINK_LIBS
+  MQT::Core)
+```
+
+The former `add_mqt_python_binding` function built modules with `pybind11`. All
+MQT projects have switched from `pybind11` to `nanobind`, so no build used that
+function. MQT Core no longer provides it.
 
 ## [3.8.0]
 
@@ -590,7 +587,9 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...HEAD
+[3.9.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...v3.9.0
+[3.8.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...v3.5.1
