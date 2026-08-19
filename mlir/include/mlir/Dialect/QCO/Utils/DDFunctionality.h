@@ -37,10 +37,11 @@ using DDBindings = DenseMap<Value, Attribute>;
 /**
  * @brief Sequentially build a matrix DD for a static unitary QCO `func.func`.
  *
- * @details Walks the entry block of @p func, maps `qco.static` SSA values to
- * wire indices (or, if none are present, qubit-typed function arguments as
- * wires `0..n-1`), assigns entry-block `qco.alloc` operations subsequent
- * wires, and applies unitary operations via decision-diagram multiplication.
+ * @details Walks the concrete control-flow path through @p func, maps
+ * `qco.static` SSA values to wire indices (or, if none are present,
+ * qubit-typed function arguments as wires `0..n-1`), assigns entry-block
+ * `qco.alloc` operations subsequent wires, and applies unitary operations via
+ * decision-diagram multiplication.
  *
  * Supported programs:
  * - Standard single-, two-, and three-qubit gates with constant or bound
@@ -49,9 +50,10 @@ using DDBindings = DenseMap<Value, Attribute>;
  * - Other `UnitaryOpInterface` ops with a compile-time known matrix (`inv`,
  *   compound `ctrl`, ...), including `gphase` and `barrier`
  * - QTensor bookkeeping over existing input wires
- * - Concrete QCO and SCF control flow and non-recursive single-block calls
- * - Concrete integer, index, and `f64` arithmetic and one-dimensional memrefs
- *   of those scalar types
+ * - Concrete QCO and SCF control flow, multi-block ControlFlow CFGs, and
+ *   non-recursive calls
+ * - Concrete integer, index, `f64`, and common Math operations and
+ *   one-dimensional memrefs of those scalar types
  * - `qco.static` establishes the wire map (or qubit-typed `func` args if none),
  *   followed by entry-block `qco.alloc`; `sink` is ignored; returned qubits
  *   and qtensors must preserve canonical wire order
@@ -76,6 +78,42 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
                    const DDBindings& bindings = DDBindings());
 
 /**
+ * @brief Simulate a QCO `func.func` on a given input state without stochastic
+ * collapse.
+ *
+ * @details Same supported unitary op set as @ref buildFunctionality, plus
+ * concrete QCO and standard SCF control flow and static- or concrete
+ * dynamic-shape one-dimensional memrefs of integer, index, or `f64` values and
+ * CBit registers. `qco.alloc` and `qtensor.alloc` append zero-state
+ * wires. QTensor
+ * extraction, insertion, deallocation, and transport through regions are
+ * tracked with linear value semantics. Deallocating a separable QTensor
+ * removes its wires from vector DDs; deallocating an entangled wire is
+ * rejected. QTensor sizes and indices must be concrete; dynamic qtensor
+ * arguments require an extent in @p bindings.
+ * Mid-circuit `measure` / `reset` require the RNG overload below. Concrete-
+ * bound `scf.for` and `scf.while` loops, multi-block `scf.execute_region`, and
+ * non-recursive multi-block `func.call` are supported independently of RNG.
+ * A shared 10000-step budget bounds loop iterations and CFG transitions across
+ * nested regions and calls.
+ * Consumes one reference to @p in regardless of success or failure.
+ *
+ * @pre The containing module has passed MLIR verification and
+ * `qco::verifyLinearity`.
+ *
+ * @param func The QCO function to simulate
+ * @param in The input state, which must span at least the function's qubits;
+ * higher wires are preserved; one reference is consumed
+ * @param dd The DD package to use (must hold at least the function's qubits)
+ * @param bindings Concrete values for symbolic function arguments
+ * @return The output statevector DD on success, or failure for unsupported
+ *         programs
+ */
+FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
+                                 dd::Package& dd,
+                                 const DDBindings& bindings = DDBindings());
+
+/**
  * @brief Simulate a QCO `func.func` that may contain measurements, resets, and
  * concrete control-flow.
  *
@@ -85,11 +123,7 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
  * (`arith.constant`, a prior measurement, integer and `f64`
  * arithmetic, comparisons, casts, shifts, and `arith.select`). Dynamic quantum
  * allocation, qtensors, memrefs, CBit registers, loops, regions, and calls are
- * supported. QTensor sizes and indices must be concrete; dynamic qtensor
- * arguments require an extent in @p bindings. A shared 10000-step budget bounds
- * loop iterations across nested loops and calls. Multi-block function bodies
- * remain unsupported. Allocated wires stay in the returned state after
- * deallocation.
+ * supported as in the non-RNG overload.
  * Consumes one reference to @p in regardless of success or failure.
  *
  * @pre The containing module has passed MLIR verification and
@@ -119,8 +153,9 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * basis sampling via `Package::measureAll` (qubit `n-1` … `0`). Terminal entry-
  * block measurements that only produce returned CBit cells are sampled from
  * one DD evolution; resets and execution-dependent measurements are executed
- * once per shot. Dynamically allocated wires are included in fallback basis
- * outcomes even after deallocation.
+ * once per shot. Deallocated separable QTensor wires are omitted from fallback
+ * basis outcomes. Multi-block functions are executed once per shot and support
+ * fallback-basis sampling only, not CBit return values.
  *
  * @pre The containing module has passed MLIR verification and
  * `qco::verifyLinearity`.
@@ -137,4 +172,25 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
        const DDBindings& bindings = DDBindings());
+
+/**
+ * @brief Sample measurement outcomes from a QCO `func.func` on a given input.
+ *
+ * @details Same as the zero-state overload, but starts from @p in. Consumes one
+ * reference to @p in regardless of success, failure, or the number of shots.
+ * The non-dynamic path evolves the input once; the dynamic path clones it for
+ * each shot.
+ *
+ * @param func The QCO function to sample
+ * @param in Input state; one reference is consumed
+ * @param dd The DD package to use
+ * @param shots Number of shots
+ * @param rng RNG for collapsing measurements and non-collapsing sampling
+ * @param bindings Concrete values for symbolic function arguments
+ * @return Histogram of outcome strings on success, or failure for unsupported
+ *         programs
+ */
+FailureOr<std::map<std::string, size_t>>
+sample(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd, size_t shots,
+       std::mt19937_64& rng, const DDBindings& bindings = DDBindings());
 } // namespace mlir::qco

@@ -29,12 +29,14 @@ releases may include breaking changes.
   [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
   [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 - ✨ Add decision diagram-based construction, simulation, and sampling for QCO
-  programs, including mid-circuit `measure` / `reset`, concrete QCO and SCF
-  control flow, non-recursive calls, bound parameters, classical integer and
-  `f64` SSA, CBit registers, one-dimensional memrefs, dynamic quantum allocation
-  and qtensors, dense multi-wire embedding, output-aware multi-shot sampling,
-  and Python bindings ([#1915], [#1973], [#2077], [#2078])
-  ([**@simon1hofmann**], [**@burgholzer**])
+  programs, including mid-circuit `measure` / `reset`, concrete QCO, SCF, and
+  multi-block CFG control flow, non-recursive calls, bound parameters, classical
+  integer, floating-point, and common math operations, CBit registers,
+  one-dimensional memrefs, dynamic quantum allocation and separable
+  deallocation, qtensors, dense multi-wire embedding, Python input bindings,
+  optional sampling input states, output-aware multi-shot sampling, and Python
+  bindings ([#1915], [#1973], [#2077], [#2078], [#2079]) ([**@simon1hofmann**],
+  [**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
   compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
   [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
@@ -916,6 +918,7 @@ for previous changelogs._
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2082]: https://github.com/munich-quantum-toolkit/core/pull/2082
+[#2079]: https://github.com/munich-quantum-toolkit/core/pull/2079
 [#2078]: https://github.com/munich-quantum-toolkit/core/pull/2078
 [#2077]: https://github.com/munich-quantum-toolkit/core/pull/2077
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074

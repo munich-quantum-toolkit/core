@@ -60,6 +60,34 @@ module {
 """)
 
 
+def _bound_qtensor_program() -> QCOProgram:
+    """Construct a bound RX program over a dynamic QTensor argument.
+
+    Returns:
+        The constructed QCO program.
+    """
+    return QCOProgram.from_mlir_str("""
+module {
+  func.func @main(%apply: i1, %theta: f64,
+                  %input: tensor<?x!qco.qubit>) -> tensor<?x!qco.qubit>
+      attributes {mqt.entry_point} {
+    %c1 = arith.constant 1 : index
+    %remaining, %q = qtensor.extract %input[%c1]
+        : tensor<?x!qco.qubit>
+    %q1 = qco.if %apply args(%q_in = %q) -> (!qco.qubit) {
+      %rotated = qco.rx(%theta) %q_in : !qco.qubit -> !qco.qubit
+      qco.yield %rotated : !qco.qubit
+    } else args(%q_in = %q) {
+      qco.yield %q_in : !qco.qubit
+    }
+    %result = qtensor.insert %q1 into %remaining[%c1]
+        : tensor<?x!qco.qubit>
+    return %result : tensor<?x!qco.qubit>
+  }
+}
+""")
+
+
 def test_unitary_x_build_simulate_and_sample() -> None:
     """X on |0>: unitary matrix, simulation to |1>, deterministic sampling."""
     program = _x_program()
@@ -97,8 +125,8 @@ def test_simulate_measure_uses_default_or_explicit_seed() -> None:
     package.dec_ref_vec(expected)
 
 
-def test_simulate_rejects_state_from_different_package() -> None:
-    """Simulation rejects a state owned by a different DD package."""
+def test_dd_apis_reject_state_from_different_package_without_consuming_it() -> None:
+    """DD APIs reject a foreign state without consuming its live reference."""
     program = _x_program()
     source_package = DDPackage(1)
     target_package = DDPackage(1)
@@ -110,7 +138,11 @@ def test_simulate_rejects_state_from_different_package() -> None:
     with pytest.raises(ValueError, match=r"live reference in dd_package"):
         program.simulate(zero, target_package, seed=7)
 
-    source_package.dec_ref_vec(zero)
+    with pytest.raises(ValueError, match=r"live reference in dd_package"):
+        program.sample(target_package, initial_state=zero)
+
+    out = program.simulate(zero, source_package)
+    source_package.dec_ref_vec(out)
     target_package.dec_ref_vec(target_zero)
 
 
@@ -175,3 +207,48 @@ def test_compiler_to_sampler_outputs(source: str, num_qubits: int, expected: set
 
     assert set(counts) == expected
     assert sum(counts.values()) == shots
+
+
+def test_symbolic_bindings_across_dd_apis() -> None:
+    """All DD APIs accept concrete scalar and dynamic QTensor bindings."""
+    program = _bound_qtensor_program()
+    package = DDPackage(2)
+    bindings = {0: True, 1: float(np.pi), 2: 2}
+
+    matrix = program.build_functionality(package, bindings=bindings)
+    package.dec_ref_mat(matrix)
+
+    zero = package.zero_state(2)
+    out = program.simulate(zero, package, bindings=bindings)
+    expected = package.computational_basis_state(2, [False, True])
+    assert np.allclose(np.abs(out.get_vector()), np.abs(expected.get_vector()))
+    package.dec_ref_vec(out)
+    package.dec_ref_vec(expected)
+
+    assert program.sample(package, shots=8, seed=4, bindings=bindings) == {"10": 8}
+
+
+@pytest.mark.parametrize(
+    "bindings",
+    [
+        pytest.param({3: 0}, id="argument-index"),
+        pytest.param({0: 1}, id="boolean-type"),
+        pytest.param({1: 1}, id="float-type"),
+        pytest.param({2: -1}, id="negative-extent"),
+    ],
+)
+def test_python_dd_bindings_reject_invalid_values(bindings: dict[int, bool | int | float]) -> None:
+    """Binding indices and values must match entry argument types."""
+    program = _bound_qtensor_program()
+    package = DDPackage(2)
+    with pytest.raises(ValueError, match=r"out of range|does not match"):
+        program.build_functionality(package, bindings=bindings)
+
+
+def test_sample_from_supplied_initial_state() -> None:
+    """Sampling consumes a valid caller-supplied input state."""
+    program = _x_program()
+    package = DDPackage(1)
+
+    one = package.computational_basis_state(1, [True])
+    assert program.sample(package, shots=8, seed=6, initial_state=one) == {"0": 8}

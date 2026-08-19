@@ -10,7 +10,7 @@
 
 import enum
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Literal, Unpack, overload
 
 import qiskit.circuit
@@ -472,11 +472,17 @@ class QCOProgram(Program):
         Set ``copy=True`` to preserve it.
         """
 
-    def build_functionality(self, dd_package: mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD:
+    def build_functionality(
+        self,
+        dd_package: mqt.core.dd.DDPackage,
+        *,
+        bindings: Mapping[int, bool | int | float] = {},
+    ) -> mqt.core.dd.MatrixDD:
         """Build a matrix DD for a static unitary QCO program.
 
         Args:
             dd_package: DD package with enough qubits for the program.
+            bindings: Concrete entry-argument values keyed by zero-based argument index.
 
         Returns:
             Matrix DD of the program functionality.
@@ -486,7 +492,12 @@ class QCOProgram(Program):
         """
 
     def simulate(
-        self, initial_state: mqt.core.dd.VectorDD, dd_package: mqt.core.dd.DDPackage, seed: int = 0
+        self,
+        initial_state: mqt.core.dd.VectorDD,
+        dd_package: mqt.core.dd.DDPackage,
+        seed: int = 0,
+        *,
+        bindings: Mapping[int, bool | int | float] = {},
     ) -> mqt.core.dd.VectorDD:
         """Simulate a QCO program on a DD state.
 
@@ -497,6 +508,7 @@ class QCOProgram(Program):
             dd_package: DD package with enough qubits for the program.
             seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
                 value produces reproducible measurement and reset results.
+            bindings: Concrete entry-argument values keyed by zero-based argument index.
 
         Returns:
             Output state DD.
@@ -506,7 +518,15 @@ class QCOProgram(Program):
                 has too few qubits, or the program is unsupported for simulation.
         """
 
-    def sample(self, dd_package: mqt.core.dd.DDPackage, shots: int = 1024, seed: int = 0) -> dict[str, int]:
+    def sample(
+        self,
+        dd_package: mqt.core.dd.DDPackage,
+        shots: int = 1024,
+        seed: int = 0,
+        *,
+        initial_state: mqt.core.dd.VectorDD | None = None,
+        bindings: Mapping[int, bool | int | float] = {},
+    ) -> dict[str, int]:
         """Sample the declared outputs of a QCO program.
 
         Args:
@@ -514,13 +534,17 @@ class QCOProgram(Program):
             shots: Number of shots (default 1024).
             seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
                 value produces reproducible results.
+            initial_state: Optional input state with a live reference in ``dd_package``.
+                A valid input reference is consumed.
+            bindings: Concrete entry-argument values keyed by zero-based argument index.
 
         Returns:
             Histogram of returned CBit registers in return order, each MSB first. If
             no CBit result exists, final ``measureAll`` bitstrings instead.
 
         Raises:
-            ValueError: When the program is unsupported for sampling.
+            ValueError: When ``initial_state`` has no live reference in ``dd_package``
+                or the program is unsupported for sampling.
         """
 
 class JeffProgram(Program):
