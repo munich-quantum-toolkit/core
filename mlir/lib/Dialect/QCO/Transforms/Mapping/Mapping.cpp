@@ -1081,13 +1081,13 @@ private:
 
     // Move past the initial two-qubit op.
     assert(it0.operation() == it1.operation());
-    std::advance(block[0], Traits::stride());
-    std::advance(block[1], Traits::stride());
+    std::ranges::advance(block[0], Traits::stride());
+    std::ranges::advance(block[1], Traits::stride());
 
     while (true) {
       for (auto& it : block) {
         for (; it != std::default_sentinel;
-             std::advance(it, Traits::stride())) {
+             std::ranges::advance(it, Traits::stride())) {
           if (it.operation() == nullptr) { // isa<Blockargument>
             return;
           }
@@ -1115,8 +1115,8 @@ private:
       it0 = block[0];
       it1 = block[1];
 
-      std::advance(block[0], Traits::stride());
-      std::advance(block[1], Traits::stride());
+      std::ranges::advance(block[0], Traits::stride());
+      std::ranges::advance(block[1], Traits::stride());
     }
   }
 
