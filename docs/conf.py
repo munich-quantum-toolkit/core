@@ -167,6 +167,14 @@ nitpick_ignore_regex = [
     ("py:class", r"qiskit\.primitives\.containers\.(Estimator|Sampler)PubLike"),
 ]
 
+# ACM and SIAM reject automated requests after resolving their valid DOI links.
+linkcheck_ignore = [r"https://doi\.org/10\.(?:1137|1145)/.*"]
+
+# GitHub renders this valid source-document anchor outside the fetched HTML.
+linkcheck_anchors_ignore_for_url = [
+    r"https://github\.com/Qiskit/qiskit/blob/cd8701690723d3d9602fac63fe0bd7ea618799be/CONTRIBUTING\.md"
+]
+
 
 cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml")
 qdmi_api_tagfile = (
