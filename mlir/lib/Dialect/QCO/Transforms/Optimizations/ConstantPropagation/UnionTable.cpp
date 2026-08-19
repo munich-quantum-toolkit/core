@@ -136,10 +136,12 @@ void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
   const auto becameTop = unifyEntries(participatingEntries);
   if (becameTop) {
     replaceValuesGlobally(targets, newQuantumTargets);
+    replaceValuesGlobally(ctrlsQuantum, newCtrlsQuantum);
     return;
   }
   if (valuesToEntries.at(targets[0])->top) {
     replaceValuesGlobally(targets, newQuantumTargets);
+    replaceValuesGlobally(ctrlsQuantum, newCtrlsQuantum);
     return;
   }
 

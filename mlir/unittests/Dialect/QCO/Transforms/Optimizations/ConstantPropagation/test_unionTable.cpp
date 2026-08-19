@@ -1023,6 +1023,7 @@ protected:
   mlir::Value v6;
   mlir::Value v7;
   mlir::Value v8;
+  mlir::Value v9;
 
   std::vector<mlir::Value> q0;
   std::vector<mlir::Value> q1;
@@ -1033,6 +1034,7 @@ protected:
   std::vector<mlir::Value> q6;
   std::vector<mlir::Value> q7;
   std::vector<mlir::Value> q8;
+  std::vector<mlir::Value> q9;
 
   SmallUnionTableTest() : programBuilder(&context) {}
 
@@ -1045,7 +1047,7 @@ protected:
 
     programBuilder.initialize();
 
-    auto q = programBuilder.allocQubitRegister(9);
+    auto q = programBuilder.allocQubitRegister(10);
     hOp = HOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
                       q[0]);
     xOp = XOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
@@ -1060,6 +1062,7 @@ protected:
     v6 = q[6];
     v7 = q[7];
     v8 = q[8];
+    v9 = q[9];
 
     q0 = {v0};
     q1 = {v1};
@@ -1070,6 +1073,7 @@ protected:
     q6 = {v6};
     q7 = {v7};
     q8 = {v8};
+    q9 = {v9};
 
     ut.propagateQubitAlloc(v0);
     ut.propagateQubitAlloc(v1);
@@ -1092,7 +1096,7 @@ TEST_F(SmallUnionTableTest, applyGatesOnPartiallyTopQState) {
   ut.propagateGate(hOp, q2, q4);
   ut.propagateGate(hOp, q3, q5);
   ut.propagateGate(xOp, q4, q6, q5, q7); // Qubit 2 and 3 enter TOP
-  ut.propagateGate(xOp, q1, q8, q6);
+  ut.propagateGate(xOp, q1, q8, q6, q9);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 321, HybridStates: {TOP}"));
