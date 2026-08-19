@@ -7,4 +7,11 @@
 # Licensed under the MIT License
 
 add_subdirectory(programs)
+
+# Building a benchmark program as a QC program. Every backend starts from here.
+add_library(MQTBenchmarkCompile STATIC Compile.cpp)
+target_link_libraries(MQTBenchmarkCompile PUBLIC MQTBenchmarkPrograms MQTCompilerPipeline)
+mqt_mlir_target_use_project_options(MQTBenchmarkCompile)
+llvm_update_compile_flags(MQTBenchmarkCompile)
+
 add_subdirectory(jeff)

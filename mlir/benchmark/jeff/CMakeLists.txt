@@ -8,7 +8,7 @@
 
 # The lowering of a benchmark program to `jeff`
 add_library(MQTJeffBenchmarks STATIC Generate.cpp)
-target_link_libraries(MQTJeffBenchmarks PUBLIC MQTBenchmarkPrograms MQTCompilerPipeline)
+target_link_libraries(MQTJeffBenchmarks PUBLIC MQTBenchmarkCompile)
 mqt_mlir_target_use_project_options(MQTJeffBenchmarks)
 llvm_update_compile_flags(MQTJeffBenchmarks)
 
