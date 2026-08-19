@@ -6,6 +6,17 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### QDMI updated to version 1.3.3
+
+While not a breaking change, this release updates the QDMI dependency to version
+1.3.3.
+
+### `nanobind` updated to version 2.15.0
+
+This release updates the `nanobind` dependency to version 2.15.0, which includes
+an ABI bump. Any existing code that uses the `mqt-core` Python bindings will
+need to be recompiled with the new `nanobind` version.
+
 ### Calibration runs and batch jobs
 
 `Device::submitJob` used to reject `CALIBRATION` and `BATCH_JOB` together, which

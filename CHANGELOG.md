@@ -47,6 +47,22 @@ releases may include breaking changes.
 
 ### Changed
 
+<<<<<<< HEAD
+||||||| parent of a4ba0860 (⬆️ Update QDMI to version 1.3.3 (#2168))
+- 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
+  logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
+  ([**@simon1hofmann**])
+- ♻️ Simplify Python optional-dependency checks while preserving the Qiskit and
+  PennyLane availability flags ([#2108]) ([**@simon1hofmann**])
+=======
+- ⬆️ Update QDMI to version 1.3.3 ([#2168]) ([**@denialhaag**])
+- ⬆️ Update `nanobind` to version 2.15.0 ([#2141]) ([**@denialhaag**])
+- 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
+  logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
+  ([**@simon1hofmann**])
+- ♻️ Simplify Python optional-dependency checks while preserving the Qiskit and
+  PennyLane availability flags ([#2108]) ([**@simon1hofmann**])
+>>>>>>> a4ba0860 (⬆️ Update QDMI to version 1.3.3 (#2168))
 - 💥 Remove the unused `pybind11` CMake helper and rename
   `add_mqt_python_binding_nanobind` to `add_mqt_python_binding` ([#2106])
   ([**@denialhaag**])
@@ -680,10 +696,28 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
+<<<<<<< HEAD
+||||||| parent of a4ba0860 (⬆️ Update QDMI to version 1.3.3 (#2168))
+[#2140]: https://github.com/munich-quantum-toolkit/core/pull/2140
+[#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
+[#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
+[#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136
+[#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
+[#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
+=======
+[#2141]: https://github.com/munich-quantum-toolkit/core/pull/2141
+[#2140]: https://github.com/munich-quantum-toolkit/core/pull/2140
+[#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
+[#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
+[#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136
+[#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
+[#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
+>>>>>>> a4ba0860 (⬆️ Update QDMI to version 1.3.3 (#2168))
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
