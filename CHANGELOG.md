@@ -47,6 +47,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ⬆️ Update QDMI to version 1.3.3 ([#2168]) ([**@denialhaag**])
+- ⬆️ Update `nanobind` to version 2.15.0 ([#2141]) ([**@denialhaag**])
 - 💥 Remove the unused `pybind11` CMake helper and rename
   `add_mqt_python_binding_nanobind` to `add_mqt_python_binding` ([#2106])
   ([**@denialhaag**])
@@ -680,10 +682,12 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
+[#2141]: https://github.com/munich-quantum-toolkit/core/pull/2141
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
