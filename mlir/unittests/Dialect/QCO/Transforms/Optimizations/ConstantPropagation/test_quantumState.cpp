@@ -123,8 +123,6 @@ protected:
                                       q[1], q[2], q[3]);
     ;
   }
-
-  void TearDown() override {}
 };
 
 TEST_F(QuantumStateTest, applyHGate) {
