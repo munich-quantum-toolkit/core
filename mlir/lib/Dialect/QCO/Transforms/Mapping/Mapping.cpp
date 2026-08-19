@@ -842,10 +842,14 @@ private:
           return;
         }
 
+        for_each(t.bundle.wires, [](WireIterator& it) { --it; });
+
         const auto bwRouteRes = route<WireDirection::Backward>(t.bundle);
         if (failed(bwRouteRes)) {
           return;
         }
+
+        for_each(t.bundle.wires, [](WireIterator& it) { ++it; });
 
         t.stats = *bwRouteRes;
       }
