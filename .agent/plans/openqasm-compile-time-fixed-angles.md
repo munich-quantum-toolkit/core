@@ -41,6 +41,9 @@ OpenQASM-specific metadata to MLIR.
       including a non-overlapping workflow update that landed during
       publication. Opened draft pull request #2169 and folded its reference into
       the existing unreleased OpenQASM changelog entry.
+- [x] (2026-08-19 13:23Z) Resolved all four Clang-Tidy 22.1.8 findings from the
+      first CI run. The exact checks, release and non-unity builds, and both
+      affected test suites pass locally.
 
 ## Surprises & Discoveries
 
@@ -118,6 +121,13 @@ cached tag file from another current MQT Core worktree through Sphinx's normal
 configuration override. The existing unreleased staged-OpenQASM changelog entry
 now references pull request #2169. The entry already credits the contributing
 authors.
+
+The first CI lint run found four warnings in the new code: one signed/unsigned
+comparison, two nested conditional expressions, and one redundant cast. The
+follow-up uses `std::cmp_greater`, explicit branches, and the literal exponent
+type. These changes preserve behavior. The four exact checks pass with
+Clang-Tidy 22.1.8, and both affected test binaries pass in release and non-unity
+builds.
 
 ## Context and Orientation
 

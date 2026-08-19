@@ -816,8 +816,7 @@ if (a > b && a == 7.0 * pi / 8.0) { x q; }
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
 
-  const auto defaultStep =
-      std::ldexp(2.0 * std::numbers::pi, -static_cast<int>(52));
+  const auto defaultStep = std::ldexp(2.0 * std::numbers::pi, -52);
   const std::array expectedParameters{
       std::numbers::pi / 2.0,
       15.0 * std::numbers::pi / 8.0,

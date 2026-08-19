@@ -911,8 +911,7 @@ private:
       return fail(location, "angle width must be an integer expression");
     }
     const auto width = asSigned(constant);
-    if (!width || *width < 1 ||
-        *width > static_cast<int64_t>(MAX_ANGLE_WIDTH)) {
+    if (!width || *width < 1 || std::cmp_greater(*width, MAX_ANGLE_WIDTH)) {
       return fail(location, Twine("angle width must be between 1 and ") +
                                 Twine(MAX_ANGLE_WIDTH));
     }
@@ -1181,13 +1180,14 @@ private:
                           "angles can only be compared with angles or finite "
                           "float constants");
             }
-            const auto commonWidth =
-                lhs.type == ScalarType::Angle && rhs.type == ScalarType::Angle
-                    ? std::max(std::get<FixedAngle>(lhs.value).bitWidth,
-                               std::get<FixedAngle>(rhs.value).bitWidth)
-                    : (lhs.type == ScalarType::Angle
-                           ? std::get<FixedAngle>(lhs.value).bitWidth
-                           : std::get<FixedAngle>(rhs.value).bitWidth);
+            uint32_t commonWidth = 0;
+            if (lhs.type == ScalarType::Angle) {
+              commonWidth = std::get<FixedAngle>(lhs.value).bitWidth;
+            }
+            if (rhs.type == ScalarType::Angle) {
+              commonWidth = std::max(commonWidth,
+                                     std::get<FixedAngle>(rhs.value).bitWidth);
+            }
             MQT_OQ3_TRY_ASSIGN(
                 leftAngle,
                 convertToFixedAngle(lhs, commonWidth, expression.location));
@@ -1198,8 +1198,11 @@ private:
                 resizeAngle(std::get<FixedAngle>(leftAngle.value), commonWidth);
             const auto right = resizeAngle(
                 std::get<FixedAngle>(rightAngle.value), commonWidth);
-            ordering =
-                left.bits < right.bits ? -1 : (left.bits > right.bits ? 1 : 0);
+            if (left.bits < right.bits) {
+              ordering = -1;
+            } else if (left.bits > right.bits) {
+              ordering = 1;
+            }
           } else {
             ordering = compareNumericConstants(lhs, rhs);
           }
