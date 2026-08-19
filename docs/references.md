@@ -21,45 +21,7 @@ the following BibTeX entry:
 }
 ```
 
-<<<<<<< HEAD
-*MQT Core* is part of the Munich Quantum Toolkit, which is described in
-||||||| parent of 2587c122 (🔧 Maintenance round (#2160))
-For an overview of the compilation framework built on MLIR, see
-{cite:p}`MQTCompilerCollection2026`. If you want to cite the MQT Compiler
-Collection, please use the following BibTeX entry:
-
-```bibtex
-@article{MQTCompilerCollection2026,
-  title        = {The {{MQT Compiler Collection}}: {{A}} Blueprint for a Future-Proof Quantum-Classical Compilation Framework},
-  author       = {Burgholzer, Lukas and Haag, Daniel and Stade, Yannick and Rovara, Damian and Hopf, Patrick and Wille, Robert},
-  year         = {2026},
-  booktitle    = {Design, Automation and Test in Europe},
-  doi          = {10.23919/DATE69613.2026.11539504},
-  eprint       = {2604.08674},
-  eprinttype   = {arxiv},
-}
-```
-
-*MQT Core* is part of the Munich Quantum Toolkit, which is described in
-=======
-For an overview of the compilation framework built on MLIR, see
-{cite:p}`MQTCompilerCollection2026`. If you want to cite the MQT Compiler
-Collection, please use the following BibTeX entry:
-
-```bibtex
-@article{MQTCompilerCollection2026,
-  title        = {The {{MQT Compiler Collection}}: {{A}} Blueprint for a Future-Proof Quantum-Classical Compilation Framework},
-  author       = {Burgholzer, Lukas and Haag, Daniel and Stade, Yannick and Rovara, Damian and Hopf, Patrick and Wille, Robert},
-  year         = {2026},
-  booktitle    = {Design, Automation and Test in Europe},
-  doi          = {10.23919/DATE69613.2026.11539504},
-  eprint       = {2604.08674},
-  eprinttype   = {arxiv},
-}
-```
-
 MQT Core is part of the Munich Quantum Toolkit, which is described in
->>>>>>> 2587c122 (🔧 Maintenance round (#2160))
 {cite:p}`mqt`. If you want to cite the Munich Quantum Toolkit, please use the
 following BibTeX entry:
 
