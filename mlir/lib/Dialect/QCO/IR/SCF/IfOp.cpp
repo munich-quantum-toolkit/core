@@ -10,13 +10,17 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/BitVector.h>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/Sequence.h>
+#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -31,7 +35,9 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -153,19 +159,9 @@ void IfOp::getRegionInvocationBounds(
   }
 }
 
-/**
- * @brief Replace operation with the contents of a region
- *
- * @details
- * Replaces the given op with the contents of the given single-block region,
- * using the operands of the block terminator to replace operation results.
- *
- * @param rewriter The used rewriter
- * @param op The operation that is replcaed
- * @param region The region with the replacement content
- * @param blockArgs The block arguments of the region
- *
- */
+/// Replace an operation with the contents of a single-block region.
+///
+/// Use the block terminator operands to replace the operation results.
 static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
                                 Region& region, ValueRange blockArgs = {}) {
   assert(llvm::hasSingleElement(region) && "expected single-region block");
@@ -179,14 +175,7 @@ static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
 
 namespace {
 
-/**
- * @brief Remove static conditions
- *
- * @details
- * Removes a qco.if operation with a static condition and replace it with the
- * contents of the selected branch.
- *
- */
+/// Replace an if with a static condition by its selected branch.
 struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -207,22 +196,7 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   }
 };
 
-/**
- * @brief Propagate the condition into the branches
- *
- * @details
- * Allow the true region of an if to assume the condition is true
- * and vice versa. For example:
- *
- *   qco.if %cmp args(%arg0 = %q0) -> (!qco.qubit) {
- *      print(true)
- *      ...
- *   } else args(%arg = %q0) {
- *      print(false)
- *      ...
- *   }
- *
- */
+/// Let each branch use the condition value known inside that branch.
 struct ConditionPropagation : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -271,16 +245,11 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
   }
 };
 
-/**
- * @brief Forward redundant classical results
- *
- * @details
- * Replaces a classical result with a value yielded by both branches or with an
- * earlier classical result whose pair of yielded values is identical. A
- * separate pattern removes the result and its yield operands once they become
- * unused. Linear results are intentionally excluded because their explicit
- * branch threading is part of QCO's quantum dataflow.
- */
+/// Forward redundant classical results.
+///
+/// Replace a result with a value yielded by both branches or with an earlier
+/// result whose pair of yielded values is identical. A separate pattern removes
+/// unused results. Linear results retain their explicit quantum dataflow.
 struct ForwardClassicalResults : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -320,14 +289,9 @@ struct ForwardClassicalResults : public OpRewritePattern<IfOp> {
   }
 };
 
-/**
- * @brief Remove unused classical results
- *
- * @details
- * Removes unused classical results and the corresponding operands from both
- * branch terminators. The result segment property is updated on the replacement
- * operation. The linear result suffix and all quantum dataflow remain intact.
- */
+/// Remove unused classical results and their branch yield operands.
+///
+/// Update the result segments while preserving the linear result suffix.
 struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -369,12 +333,277 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
     return success();
   }
 };
+
+} // namespace
+
+namespace mlir::qco {
+
+namespace {
+
+struct QTensorAccess {
+  qtensor::ExtractOp extract;
+  qtensor::InsertOp insert;
+};
+
+struct BranchQTensorAccesses {
+  DenseMap<int64_t, QTensorAccess> accesses;
+  SmallVector<Operation*> qTensorOperations;
+};
+
+} // namespace
+
+/// Analyze a QTensor's complete lifetime in one branch.
+///
+/// Supported branches extract distinct constant-index qubits, perform
+/// QTensor-independent computation, reinsert one qubit at every extracted
+/// index, and yield the resulting QTensor. Dynamic indices, repeated accesses,
+/// and partial updates do not match.
+static std::optional<BranchQTensorAccesses>
+analyzeQTensorBranch(Block* block, size_t qTensorArgumentIndex,
+                     size_t qTensorYieldIndex) {
+  BranchQTensorAccesses result;
+  Value currentQTensor = block->getArgument(qTensorArgumentIndex);
+  bool reachedInsertPhase = false;
+
+  while (true) {
+    if (!currentQTensor.hasOneUse()) {
+      return std::nullopt;
+    }
+    Operation* user = *currentQTensor.getUsers().begin();
+    if (user->getBlock() != block) {
+      return std::nullopt;
+    }
+
+    if (auto extract = dyn_cast<qtensor::ExtractOp>(user)) {
+      auto index = getConstantIntValue(extract.getIndex());
+      if (reachedInsertPhase || !index ||
+          !result.accesses
+               .try_emplace(*index, QTensorAccess{.extract = extract})
+               .second) {
+        return std::nullopt;
+      }
+      result.qTensorOperations.push_back(user);
+      currentQTensor = extract.getOutTensor();
+      continue;
+    }
+
+    if (auto insert = dyn_cast<qtensor::InsertOp>(user)) {
+      reachedInsertPhase = true;
+      auto index = getConstantIntValue(insert.getIndex());
+      if (!index) {
+        return std::nullopt;
+      }
+      auto access = result.accesses.find(*index);
+      if (access == result.accesses.end() || access->second.insert) {
+        return std::nullopt;
+      }
+      access->second.insert = insert;
+      result.qTensorOperations.push_back(user);
+      currentQTensor = insert.getResult();
+      continue;
+    }
+
+    auto yield = dyn_cast<YieldOp>(user);
+    if (!yield || user != block->getTerminator() ||
+        qTensorYieldIndex >= yield.getTargets().size() ||
+        yield.getTargets()[qTensorYieldIndex] != currentQTensor ||
+        llvm::any_of(result.accesses, [](const auto& access) {
+          return !access.second.insert;
+        })) {
+      return std::nullopt;
+    }
+    return result;
+  }
+}
+
+/// Move a branch while replacing QTensor accesses with scalar qubits.
+static void moveScalarizedQTensorBranch(IfOp oldIf, Block* oldBlock,
+                                        Block* newBlock,
+                                        size_t qTensorArgumentIndex,
+                                        BranchQTensorAccesses& accesses,
+                                        ArrayRef<int64_t> indices,
+                                        PatternRewriter& rewriter) {
+  auto oldYield = cast<YieldOp>(oldBlock->getTerminator());
+  auto scalarArguments = newBlock->getArguments().take_back(indices.size());
+  auto carriedArguments = newBlock->getArguments().drop_back(indices.size());
+
+  SmallVector<Value> argumentReplacements;
+  argumentReplacements.reserve(oldBlock->getNumArguments());
+  size_t carriedIndex = 0;
+  for (size_t oldIndex : llvm::seq(oldBlock->getNumArguments())) {
+    argumentReplacements.push_back(oldIndex == qTensorArgumentIndex
+                                       ? oldIf.getQubits()[qTensorArgumentIndex]
+                                       : carriedArguments[carriedIndex++]);
+  }
+  assert(carriedIndex == carriedArguments.size());
+  rewriter.mergeBlocks(oldBlock, newBlock, argumentReplacements);
+
+  for (auto [indexPosition, index] : llvm::enumerate(indices)) {
+    auto access = accesses.accesses.find(index);
+    if (access != accesses.accesses.end()) {
+      rewriter.replaceAllUsesWith(access->second.extract.getResult(),
+                                  scalarArguments[indexPosition]);
+    }
+  }
+
+  SmallVector<Value> scalarYields;
+  scalarYields.reserve(indices.size());
+  for (auto [indexPosition, index] : llvm::enumerate(indices)) {
+    auto access = accesses.accesses.find(index);
+    if (access == accesses.accesses.end()) {
+      scalarYields.push_back(scalarArguments[indexPosition]);
+    } else {
+      scalarYields.push_back(access->second.insert.getScalar());
+    }
+  }
+
+  auto oldTargets = oldYield.getTargets();
+  size_t classicalResultCount = oldIf.getClassicalResults().size();
+  SmallVector<Value> newYieldValues;
+  newYieldValues.reserve(oldTargets.size() - 1 + scalarYields.size());
+  llvm::append_range(newYieldValues,
+                     oldTargets.take_front(classicalResultCount));
+  for (auto [oldIndex, value] :
+       llvm::enumerate(oldTargets.drop_front(classicalResultCount))) {
+    if (oldIndex != qTensorArgumentIndex) {
+      newYieldValues.push_back(value);
+    }
+  }
+  llvm::append_range(newYieldValues, scalarYields);
+
+  rewriter.setInsertionPoint(oldYield);
+  rewriter.replaceOpWithNewOp<YieldOp>(oldYield, newYieldValues);
+
+  for (Operation* operation : llvm::reverse(accesses.qTensorOperations)) {
+    rewriter.eraseOp(operation);
+  }
+}
+
+} // namespace mlir::qco
+
+namespace {
+
+/// Replace constant-index QTensor updates in an if with scalar threading.
+///
+/// A QTensor carried through an if hides its qubits from target mapping. This
+/// pattern extracts the union of constant indices accessed by either branch,
+/// threads those qubits through both branches, and reinserts the results.
+/// Untouched elements remain in the QTensor outside the if.
+struct ScalarizeQTensorInputs final : OpRewritePattern<IfOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IfOp op,
+                                PatternRewriter& rewriter) const override {
+    size_t classicalResultCount = op.getClassicalResults().size();
+    auto oldQubits = op.getQubits();
+
+    for (auto [qTensorIndex, qTensor] : llvm::enumerate(oldQubits)) {
+      auto qTensorType = dyn_cast<RankedTensorType>(qTensor.getType());
+      if (!qTensorType || !qTensorType.hasStaticShape()) {
+        continue;
+      }
+
+      auto thenAccesses = analyzeQTensorBranch(
+          op.thenBlock(), qTensorIndex, classicalResultCount + qTensorIndex);
+      auto elseAccesses = analyzeQTensorBranch(
+          op.elseBlock(), qTensorIndex, classicalResultCount + qTensorIndex);
+      if (!thenAccesses || !elseAccesses) {
+        continue;
+      }
+
+      SmallVector<int64_t> accessedIndices;
+      accessedIndices.reserve(thenAccesses->accesses.size() +
+                              elseAccesses->accesses.size());
+      for (int64_t index : thenAccesses->accesses.keys()) {
+        accessedIndices.push_back(index);
+      }
+      for (int64_t index : elseAccesses->accesses.keys()) {
+        if (!thenAccesses->accesses.contains(index)) {
+          accessedIndices.push_back(index);
+        }
+      }
+      llvm::sort(accessedIndices);
+      ArrayRef<int64_t> indices(accessedIndices);
+
+      rewriter.setInsertionPoint(op);
+      SmallVector<Value> indexValues;
+      SmallVector<Value> scalarInputs;
+      indexValues.reserve(indices.size());
+      scalarInputs.reserve(indices.size());
+      Value qTensorWithoutScalars = qTensor;
+      for (int64_t index : indices) {
+        auto indexValue =
+            arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
+        auto extract = qtensor::ExtractOp::create(rewriter, op.getLoc(),
+                                                  qTensorWithoutScalars,
+                                                  indexValue.getResult());
+        indexValues.push_back(indexValue.getResult());
+        scalarInputs.push_back(extract.getResult());
+        qTensorWithoutScalars = extract.getOutTensor();
+      }
+
+      SmallVector<Value> newQubits;
+      newQubits.reserve(oldQubits.size() - 1 + scalarInputs.size());
+      for (auto [oldIndex, qubit] : llvm::enumerate(oldQubits)) {
+        if (oldIndex != qTensorIndex) {
+          newQubits.push_back(qubit);
+        }
+      }
+      llvm::append_range(newQubits, scalarInputs);
+
+      auto newIf = IfOp::create(
+          rewriter, op.getLoc(), op.getClassicalResults().getTypes(),
+          ValueRange(newQubits).getTypes(), op.getCondition(), newQubits);
+      newIf->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+
+      SmallVector<Location> locations(newQubits.size(), op.getLoc());
+      Block* oldThenBlock = op.thenBlock();
+      Block* oldElseBlock = op.elseBlock();
+      Block* newThenBlock =
+          rewriter.createBlock(&newIf.getThenRegion(), {},
+                               ValueRange(newQubits).getTypes(), locations);
+      Block* newElseBlock =
+          rewriter.createBlock(&newIf.getElseRegion(), {},
+                               ValueRange(newQubits).getTypes(), locations);
+      moveScalarizedQTensorBranch(op, oldThenBlock, newThenBlock, qTensorIndex,
+                                  *thenAccesses, indices, rewriter);
+      moveScalarizedQTensorBranch(op, oldElseBlock, newElseBlock, qTensorIndex,
+                                  *elseAccesses, indices, rewriter);
+
+      rewriter.setInsertionPointAfter(newIf);
+      Value updatedQTensor = qTensorWithoutScalars;
+      auto scalarResults = newIf.getLinearResults().take_back(indices.size());
+      for (auto [scalar, indexValue] :
+           llvm::zip_equal(scalarResults, indexValues)) {
+        updatedQTensor =
+            qtensor::InsertOp::create(rewriter, op.getLoc(), scalar,
+                                      updatedQTensor, indexValue)
+                .getResult();
+      }
+
+      SmallVector<Value> replacements;
+      replacements.reserve(op.getNumResults());
+      llvm::append_range(replacements, newIf.getClassicalResults());
+      size_t newLinearIndex = 0;
+      for (size_t oldIndex : llvm::seq(oldQubits.size())) {
+        replacements.push_back(
+            oldIndex == qTensorIndex
+                ? updatedQTensor
+                : newIf.getLinearResults()[newLinearIndex++]);
+      }
+      rewriter.replaceOp(op, replacements);
+      return success();
+    }
+    return failure();
+  }
+};
 } // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<RemoveStaticCondition, ConditionPropagation,
-              ForwardClassicalResults, RemoveUnusedClassicalResults>(context);
+  results
+      .add<RemoveStaticCondition, ConditionPropagation, ForwardClassicalResults,
+           RemoveUnusedClassicalResults, ScalarizeQTensorInputs>(context);
 }
 
 LogicalResult IfOp::verify() {

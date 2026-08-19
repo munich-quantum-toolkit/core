@@ -776,6 +776,39 @@ private:
     return newWhileOp;
   }
 
+  /// Return the value whose wire edge crosses a composite in block order.
+  static Value valueBeforeBoundary(WireIterator iterator, Operation* boundary) {
+    assert(boundary != nullptr && boundary->getBlock() != nullptr);
+
+    // Independent wires can advance beyond `boundary`. Rewind to the qubit
+    // value that crosses it so extending the composite does not move later
+    // operations before the boundary.
+    if (iterator == std::default_sentinel) {
+      --iterator;
+    }
+
+    while (Operation* operation = iterator.operation()) {
+      assert(operation->getBlock() == boundary->getBlock());
+      if (operation->isBeforeInBlock(boundary)) {
+        break;
+      }
+      --iterator;
+    }
+
+    Value value = iterator.qubit();
+    assert(value && "expected a qubit value before the composite boundary");
+    assert(value.hasOneUse() && "expected linear qubit use at boundary");
+    Operation* consumer = value.use_begin()->getOwner();
+    while (consumer->getBlock() != boundary->getBlock()) {
+      consumer = consumer->getParentOp();
+      assert(consumer != nullptr && "expected consumer in boundary block");
+    }
+    assert((consumer == boundary || boundary->isBeforeInBlock(consumer) ||
+            isa<SinkOp>(consumer)) &&
+           "selected qubit value does not cross composite boundary");
+    return value;
+  }
+
   /// Execute `ntrials` many (parallel) initial layout refinement trials and
   /// return the heuristically best one.
   ///
@@ -1261,6 +1294,26 @@ private:
                  return lhs.op->isBeforeInBlock(rhs.op);
                });
 
+    // Defer a composite while another active wire points to an operation that
+    // precedes it in the traversal direction. Otherwise, dispatch would remove
+    // that operation from the routing frontier.
+    llvm::erase_if(composites, [&](const CompositeUnitary& composite) {
+      return llvm::any_of(wires, [&](const WireIterator& iterator) {
+        if (iterator == std::default_sentinel) {
+          return false;
+        }
+        Operation* operation = iterator.operation();
+        if (operation == nullptr || operation == composite.op) {
+          return false;
+        }
+        assert(operation->getBlock() == composite.op->getBlock());
+        if constexpr (Direction == WireDirection::Forward) {
+          return operation->isBeforeInBlock(composite.op);
+        }
+        return composite.op->isBeforeInBlock(operation);
+      });
+    });
+
     return composites;
   }
 
@@ -1291,10 +1344,7 @@ private:
         allIndices, [&](const size_t i) { return !included.contains(i); }));
 
     const SmallVector<Value> addons(map_range(excluded, [&](const size_t i) {
-      // Make sure the qubits point to an already processed operation.
-      const auto& it = std::prev(
-          parent.wires[i], parent.wires[i] == std::default_sentinel ? 2 : 1);
-      return it.qubit();
+      return valueBeforeBoundary(parent.wires[i], composite.op);
     }));
 
     composite = CompositeUnitary{

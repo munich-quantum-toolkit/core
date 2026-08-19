@@ -71,8 +71,8 @@ releases may include breaking changes.
 - ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
   [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
   [#1748], [#1805], [#1870], [#1904], [#1911], [#1951], [#1956], [#1997],
-  [#2016], [#2060], [#2184]) ([**@MatthiasReumann**], [**@burgholzer**],
-  [**@rturrado**])
+  [#2016], [#2060], [#2179], [#2184]) ([**@MatthiasReumann**],
+  [**@burgholzer**], [**@rturrado**], [**@simon1hofmann**])
 - ✨ Add modifier and global-phase normalization passes ([#1986], [#1995],
   [#2015]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add single-qubit optimization passes for unitary fusion, Hadamard lifting,
@@ -891,6 +891,7 @@ for previous changelogs._
 [#2214]: https://github.com/munich-quantum-toolkit/core/pull/2214
 [#2193]: https://github.com/munich-quantum-toolkit/core/pull/2193
 [#2184]: https://github.com/munich-quantum-toolkit/core/pull/2184
+[#2179]: https://github.com/munich-quantum-toolkit/core/pull/2179
 [#2178]: https://github.com/munich-quantum-toolkit/core/pull/2178
 [#2176]: https://github.com/munich-quantum-toolkit/core/pull/2176
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
