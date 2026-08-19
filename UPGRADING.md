@@ -6,42 +6,6 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### QDMI updated to version 1.3.3
-
-While not a breaking change, this release updates the QDMI dependency to version
-1.3.3.
-
-### `nanobind` updated to version 2.15.0
-
-This release updates the `nanobind` dependency to version 2.15.0, which includes
-an ABI bump. Any existing code that uses the `mqt-core` Python bindings will
-need to be recompiled with the new `nanobind` version.
-
-### Calibration runs and batch jobs
-
-`Device::submitJob` used to reject `CALIBRATION` and `BATCH_JOB` together, which
-left MQT Core reporting that a device needs calibration through
-`needs_calibration()` without any way to trigger one. The two formats are
-different cases and are now treated as such.
-
-A calibration run has its own entry point. QDMI does not require a program for
-one, so the payload is optional; when it is present, the device defines what it
-means:
-
-```python
-device.submit_calibration_job()
-device.submit_calibration_job("configuration")
-```
-
-In C++, use `Device::submitCalibrationJob`. A calibration run executes no
-circuit, so neither form takes a shot count.
-
-Batch jobs are explicitly unsupported. A batch job's program is a list of job
-handles rather than a byte payload, which `submitJob` cannot express, so MQT
-Core says so rather than describing it as a missing payload. Passing
-`ProgramFormat.BATCH_JOB` to `submit_job` raises a `ValueError` that names the
-limitation. Support can return once a device implements the feature.
-
 ### Program serializers for the Qiskit backend
 
 The Qiskit backend no longer decides in its own code how to turn a circuit into
@@ -160,65 +124,6 @@ MQT Core removed the following names:
   `aod_activate`, `aod_deactivate`, and `aod_move`.
 - The bundled `mqt.na.default` QDMI device.
 
-### Removal of QDMI configuration through `pyproject.toml`
-
-MQT Core no longer reads QDMI device definitions from a `[tool.qdmi]` table in
-`pyproject.toml`. Project discovery now looks only for `qdmi.json`. Move an
-existing table into a `qdmi.json` file beside the `pyproject.toml`. For example,
-replace this `pyproject.toml` table:
-
-```toml
-[tool.qdmi]
-devices = [
-  { id = "example.device", library = "libexample-device.so", prefix = "EXAMPLE" },
-]
-```
-
-with this `qdmi.json`:
-
-```json
-{
-  "schema-version": 1,
-  "qdmi": {
-    "devices": [
-      {
-        "id": "example.device",
-        "library": "libexample-device.so",
-        "prefix": "EXAMPLE"
-      }
-    ]
-  }
-}
-```
-
-The JSON document adds the `"schema-version": 1` key and nests the device array
-under `qdmi`. Every other key keeps its name and meaning. Relative paths still
-resolve against the file that declares them. `MQT_CORE_QDMI_CONFIG_FILE`,
-`MQT_CORE_QDMI_CONFIG_JSON`, the system and user files, and the packaged
-`*.qdmi.json` fragments do not change.
-
-### Python binding CMake helper
-
-The `add_mqt_python_binding_nanobind` function is now called
-`add_mqt_python_binding`. Rename the calls in downstream `CMakeLists.txt` files:
-
-```cmake
-add_mqt_python_binding(
-  MYPACKAGE
-  py_mypackage
-  ${SOURCES}
-  MODULE_NAME
-  _core
-  INSTALL_DIR
-  .
-  LINK_LIBS
-  MQT::Core)
-```
-
-The former `add_mqt_python_binding` function built modules with `pybind11`. All
-MQT projects have switched from `pybind11` to `nanobind`, so no build used that
-function. MQT Core no longer provides it.
-
 ### CoreIR API cleanup
 
 The CoreIR API cleanup requires the following migrations:
@@ -270,66 +175,6 @@ The `MQT::Multiprecision` target and the `USE_SYSTEM_BOOST`,
 removed. MQT Core no longer discovers, fetches, or exports configuration for
 Boost.Multiprecision or GMP.
 
-### QDMI Python namespace
-
-The Python QDMI API is available only in the QDMI namespace. Import QDMI
-entities such as `Device`, `Job`, and `ProgramFormat` from `mqt.core.qdmi`.
-Import functions and classes for device discovery, registration, and opening
-from `mqt.core.qdmi.driver`:
-
-```python
-from mqt.core.qdmi.driver import open_device
-
-device = open_device("mqt.ddsim.default")
-```
-
-MQT Core 4 removes `mqt.core.fomac`. Replace imports of QDMI entities with
-`mqt.core.qdmi`. Replace imports of registry functions and `DeviceDefinition`
-with `mqt.core.qdmi.driver`.
-
-MQT Core 4 also removes `mqt.core.qdmi.driver.Session`. Use
-`registered_device_ids()` to discover devices and `open_device()` to open a
-fresh device session. Pass provider configuration overrides to `open_device()`
-when a device needs per-open configuration.
-
-MQT Core 4 removes `mqt.core.na.fomac`. Import the neutral-atom specialization
-from `mqt.core.na.qdmi`.
-
-MQT Core 4 also removes the FoMaC name from its C++ API. Apply these
-replacements:
-
-- `fomac::` becomes `qdmi::`.
-- `fomac/FoMaC.hpp` becomes `qdmi/Client.hpp`.
-- `fomac/Slurm.hpp` becomes `qdmi/Slurm.hpp`.
-- `na/fomac/Device.hpp` becomes `na/qdmi/Device.hpp`.
-- `MQT::CoreFoMaC` becomes `MQT::CoreQDMI`.
-- `MQT::CoreNAFoMaC` becomes `MQT::CoreNAQDMI`.
-- `mlir/Compiler/FoMaCAdapter.h` and `MQTCompilerFoMaCAdapter` become
-  `mlir/Compiler/QDMIAdapter.h` and `MQTCompilerQDMIAdapter`.
-
-The class and function names do not change. For example:
-
-```cpp
-#include "qdmi/Client.hpp"
-
-auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-```
-
-### QDMI Qiskit primitive options
-
-`QDMISampler` and `QDMIEstimator` no longer accept the MQT-specific `options`
-mapping. Pass shot and precision defaults directly, preferably through the
-backend factories:
-
-```python
-sampler = backend.sampler(default_shots=2048)
-estimator = backend.estimator(default_precision=0.01, default_shots=2048)
-```
-
-Replace `QDMIEstimator(..., options={"default_shots": shots})` with
-`QDMIEstimator(..., default_shots=shots)`. The sampler ignored its former
-`options` mapping, so remove that argument without replacement.
-
 ### QIR runner
 
 The QIR runner now invokes a selected QIR entry point as a parameterless `i64`
@@ -350,38 +195,6 @@ QIR statevector extraction is supported only for Base-format jobs. The input
 must mark its first measurement boundary as `irreversible`, and no quantum work
 may follow that boundary. Adaptive-format statevector requests continue to
 return `QDMI_ERROR_NOTSUPPORTED`.
-
-### Runtime-configurable SC QDMI device
-
-The built-in superconducting QDMI provider now parses its device description
-when each session is initialized. The `mqt-core-qdmi-sc-device-gen` target,
-SC-specific generator executable, `sc::writeHeader`, `sc::writeJSONSchema`, and
-generated `DeviceMemberInitializers.hpp` file have been removed. Replace
-generator API use with `sc::Device` and the `sc::readJSON` functions declared in
-`qdmi/devices/sc/Configuration.hpp`.
-
-### Runtime-configurable neutral-atom QDMI device
-
-The built-in neutral-atom QDMI provider now parses its device description when
-each session is initialized. The `mqt-core-qdmi-na-device-gen` target,
-`mqt-core-qdmi-na-device-generator` executable, `na::writeHeader`, and generated
-`DeviceMemberInitializers.hpp` file have been removed. Replace generator API use
-with the `na::Device` configuration type and the `na::readJSON` functions in
-`qdmi/devices/na/Configuration.hpp`.
-
-At runtime, use the registry `session.device-config` field or Python
-`device_config` and `device_config_file` arguments. Direct QDMI v1 clients pass
-inline JSON through CUSTOM1 or a file path through CUSTOM2.
-
-### Bundled QDMI devices in embedded builds
-
-The bundled QDMI devices now have individual CMake options:
-`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`, `BUILD_MQT_CORE_QDMI_NA_DEVICE`, and
-`BUILD_MQT_CORE_QDMI_SC_DEVICE`. All three remain enabled by default in a
-standalone MQT Core build. They default to disabled when MQT Core is consumed
-through CMake's `FetchContent` or `add_subdirectory`; embedded consumers can
-enable only the devices they need before making MQT Core available. The QDMI
-driver and FoMaC libraries remain available independently.
 
 ### LLVM/MLIR required for all source builds
 
@@ -437,6 +250,175 @@ a consistent local development environment. Common IDEs like
 and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
 open the repository directly inside the container. If you are on Windows, we
 recommend using Docker Desktop with the WSL 2 backend.
+
+## [3.9.0]
+
+### Shared-library ABI version
+
+The shared-library ABI version (`SOVERSION`) changes from `3.8` to `3.9`.
+Rebuild downstream C++ libraries against MQT Core 3.9.0. In `cibuildwheel`
+configurations that exclude bundled MQT Core libraries from wheel repair,
+replace each `libmqt-core-*.so.3.8` entry with the corresponding
+`libmqt-core-*.so.3.9` entry.
+
+### `nanobind` updated to version 2.15.0
+
+`nanobind` 2.15.0 changes the `nanobind` ABI. Rebuild downstream native Python
+extensions that use MQT Core's `nanobind`-bound C++ types. Pure Python consumers
+do not need to recompile anything.
+
+### QDMI updated to version 1.3.3
+
+The minimum supported QDMI version changes from 1.3.2 to 1.3.3. CMake builds
+that use a system installation of QDMI must provide version 1.3.3 or newer.
+Builds that let MQT Core fetch QDMI need no change.
+
+### QDMI calibration runs and batch jobs
+
+`Device::submitJob` used to reject `CALIBRATION` and `BATCH_JOB` together, which
+left MQT Core reporting that a device needs calibration through
+`needs_calibration()` without any way to trigger one. The two formats are
+different cases and are now treated as such.
+
+A calibration run has its own entry point. QDMI does not require a program for
+one, so the payload is optional; when it is present, the device defines what it
+means:
+
+```python
+device.submit_calibration_job()
+device.submit_calibration_job("configuration")
+```
+
+In C++, use `Device::submitCalibrationJob`. A calibration run executes no
+circuit, so neither form takes a shot count.
+
+Batch jobs are explicitly unsupported. A batch job's program is a list of job
+handles rather than a byte payload, which `submitJob` cannot express. Passing
+`ProgramFormat.BATCH_JOB` to `submit_job` raises `ValueError` in Python and
+`std::invalid_argument` in C++.
+
+### Removal of QDMI configuration through `pyproject.toml`
+
+MQT Core no longer reads QDMI device definitions from a `[tool.qdmi]` table in
+`pyproject.toml`. Project discovery now looks only for `qdmi.json`. Move an
+existing table into a `qdmi.json` file beside the `pyproject.toml`. For example,
+replace this `pyproject.toml` table:
+
+```toml
+[tool.qdmi]
+devices = [
+  { id = "example.device", library = "libexample-device.so", prefix = "EXAMPLE" },
+]
+```
+
+with this `qdmi.json`:
+
+```json
+{
+  "schema-version": 1,
+  "qdmi": {
+    "devices": [
+      {
+        "id": "example.device",
+        "library": "libexample-device.so",
+        "prefix": "EXAMPLE"
+      }
+    ]
+  }
+}
+```
+
+The JSON document adds the `"schema-version": 1` key and nests the device array
+under `qdmi`. Every other key keeps its name and meaning. Relative paths still
+resolve against the file that declares them. `MQT_CORE_QDMI_CONFIG_FILE`,
+`MQT_CORE_QDMI_CONFIG_JSON`, the system and user files, and the packaged
+`*.qdmi.json` fragments do not change.
+
+### QDMI Qiskit primitive options
+
+`QDMISampler` and `QDMIEstimator` no longer accept the MQT-specific `options`
+mapping. Pass shot and precision defaults directly, preferably through the
+backend factories:
+
+```python
+sampler = backend.sampler(default_shots=2048)
+estimator = backend.estimator(default_precision=0.01, default_shots=2048)
+```
+
+Replace `QDMIEstimator(..., options={"default_shots": shots})` with
+`QDMIEstimator(..., default_shots=shots)`. The sampler ignored its former
+`options` mapping, so remove that argument without replacement.
+
+### Runtime-configurable SC QDMI device
+
+The built-in superconducting QDMI provider now parses its device description
+when each session is initialized. The `mqt-core-qdmi-sc-device-gen` target,
+SC-specific generator executable, `sc::writeHeader`, `sc::writeJSONSchema`, and
+generated `DeviceMemberInitializers.hpp` file have been removed. Replace
+generator API use with `sc::Device` and the `sc::readJSON` functions declared in
+`qdmi/devices/sc/Configuration.hpp`.
+
+### Runtime-configurable neutral-atom QDMI device
+
+The built-in neutral-atom QDMI provider now parses its device description when
+each session is initialized. The `mqt-core-qdmi-na-device-gen` target,
+`mqt-core-qdmi-na-device-generator` executable, `na::writeHeader`, and generated
+`DeviceMemberInitializers.hpp` file have been removed. Replace generator API use
+with the `na::Device` configuration type and the `na::readJSON` functions in
+`qdmi/devices/na/Configuration.hpp`.
+
+At runtime, use the registry `session.device-config` field or Python
+`device_config` and `device_config_file` arguments. Direct low-level QDMI
+clients pass inline JSON through CUSTOM1 or a file path through CUSTOM2.
+
+### QDMI Python namespace
+
+The native Python module has moved from `mqt.core.fomac` to `mqt.core.qdmi`.
+QDMI entities such as `Device`, `Job`, and `ProgramFormat` are in
+`mqt.core.qdmi`. Import functions and classes from `mqt.core.qdmi.driver` for
+device discovery, registration, and opening:
+
+```python
+from mqt.core.qdmi.driver import open_device
+
+device = open_device("mqt.ddsim.default")
+```
+
+`mqt.core.fomac` remains available in MQT Core v3 and re-exports the same
+objects. Importing that module emits a `DeprecationWarning`. It will be removed
+in MQT Core 4.0. The legacy `driver.Session` class also emits a
+`DeprecationWarning` when constructed and will be removed in 4.0. Replace
+session-based discovery with `registered_device_ids()` and `open_device()` from
+`mqt.core.qdmi.driver`.
+
+The neutral-atom specialization has moved from `mqt.core.na.fomac` to
+`mqt.core.na.qdmi`. The former submodule remains a v3 compatibility alias and
+will be removed in MQT Core 4.0.
+
+The C++ FoMaC namespace, headers, library, and `MQT::CoreFoMaC` target do not
+change.
+
+### Python binding CMake helper
+
+The `add_mqt_python_binding_nanobind` function is now called
+`add_mqt_python_binding`. Rename the calls in downstream `CMakeLists.txt` files:
+
+```cmake
+add_mqt_python_binding(
+  MYPACKAGE
+  py_mypackage
+  ${SOURCES}
+  MODULE_NAME
+  _core
+  INSTALL_DIR
+  .
+  LINK_LIBS
+  MQT::Core)
+```
+
+The old `add_mqt_python_binding` function built modules with `pybind11` and has
+been removed. MQT Core now uses that name for its `nanobind` helper. The
+arguments to the renamed helper do not change.
 
 ## [3.8.0]
 
@@ -857,7 +839,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...HEAD
+[3.9.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...v3.9.0
 [3.8.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...v3.6.0
