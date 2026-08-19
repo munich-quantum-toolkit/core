@@ -23,6 +23,7 @@
 #include <iomanip>
 #include <ios>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <ostream>
 #include <ranges>
@@ -40,12 +41,15 @@ QuantumState::QuantumState(const std::span<unsigned int> globalQubitNumber,
     : nQubits(globalQubitNumber.size()),
       maxNonzeroAmplitudes(maxNonzeroAmplitudes) {
   constexpr auto maxBitNumber = sizeof(unsigned int) * 8;
-  if (maxBitNumber < globalQubitNumber.size() ||
-      maxBitNumber < maxNonzeroAmplitudes) {
-    // Number of qubits or number of maximum nonzero amplitudes exceeds amount
-    // of qubits/amplitudes that can be managed in the union table.
+  if (maxBitNumber < globalQubitNumber.size()) {
+    // Number of qubits exceeds amount of qubits/amplitudes that can be managed
+    // in the union table.
     top = true;
     return;
+  }
+  if (maxNonzeroAmplitudes > std::numeric_limits<unsigned int>::digits) {
+    // Clamp to the largest meaningful value.
+    this->maxNonzeroAmplitudes = std::numeric_limits<unsigned int>::digits;
   }
   top = false;
   std::vector<unsigned int> qubits;
