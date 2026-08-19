@@ -1655,6 +1655,48 @@ if(c==1180591620717411303433) x q[0];
   }));
 }
 
+TEST(OpenQASMFrontendTest, AcceptsInitializedRegisterConditionInOpenQASM3) {
+  std::string source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+bit[80] c;
+)qasm";
+  for (size_t index = 0; index < 80; ++index) {
+    source += "c[" + std::to_string(index) + "] = false;\n";
+  }
+  source += R"qasm(
+c[70] = measure q;
+if(c==1180591620717411303424) { x q; }
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
+    return c.kind == oq3::frontend::ConditionKind::Bit && c.bit.index == 70;
+  }));
+}
+
+TEST(OpenQASMFrontendTest, RejectsUninitializedRegisterConditionInOpenQASM3) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+bit[2] c;
+c[0] = measure q;
+if(c==1) { x q; }
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(
+      analyzed.diagnostics.front().message.find("has not been initialized"),
+      std::string::npos);
+}
+
 TEST(OpenQASMFrontendTest,
      AcceptsWideIntegerLiteralWithDigitSeparatorsInOpenQASM2If) {
   // Same value as above, spelled with grammar-legal digit separators.

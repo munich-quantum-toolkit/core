@@ -50,6 +50,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 #include <tuple>
 #include <type_traits>
@@ -119,7 +120,8 @@ public:
         classicalRegisters(program.registers.size()),
         scalarValues(program.scalars.size()),
         expressionEmissionCosts(program.expressions.size()),
-        bitVectorExpressionEmissionCosts(program.bitVectorExpressions.size()) {
+        bitVectorExpressionEmissionCosts(program.bitVectorExpressions.size()),
+        canonicalConditions(program.conditions.size()) {
     context
         .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
                      func::FuncDialect, LLVM::LLVMDialect, math::MathDialect,
@@ -129,6 +131,7 @@ public:
     for (const auto& gate : program.gates) {
       customGateIndex.try_emplace(gate.name, &gate);
     }
+    initializeCanonicalConditions();
   }
 
   OwningOpRef<ModuleOp> emit() {
@@ -192,12 +195,83 @@ private:
   llvm::DenseMap<frontend::ScalarId, Value> provenInductionValues;
   mutable std::vector<std::optional<size_t>> expressionEmissionCosts;
   mutable std::vector<std::optional<size_t>> bitVectorExpressionEmissionCosts;
+  // Canonical IDs exist only for pure, static classical-bit condition trees.
+  // Cached values are valid only in the current region and memory snapshot.
+  std::vector<std::optional<frontend::ConditionId>> canonicalConditions;
+  DenseMap<frontend::ConditionId, Value> conditionCache;
+  uint64_t classicalStateGeneration = 0;
   DenseMap<const oq3::frontend::GateDefinition*, bool>
       structuredGateCapabilities;
   llvm::StringMap<const oq3::frontend::GateDefinition*> customGateIndex;
   bool emissionFailed = false;
 
   using StateSlot = frontend::ScalarId;
+
+  struct ConditionCacheKey {
+    frontend::ConditionKind kind = frontend::ConditionKind::Literal;
+    bool literal = false;
+    uint32_t first = 0;
+    uint32_t second = 0;
+    uint64_t index = 0;
+
+    [[nodiscard]] bool operator<(const ConditionCacheKey& other) const {
+      return std::tie(kind, literal, first, second, index) <
+             std::tie(other.kind, other.literal, other.first, other.second,
+                      other.index);
+    }
+  };
+
+  void initializeCanonicalConditions() {
+    std::map<ConditionCacheKey, frontend::ConditionId> representatives;
+    for (const auto [id, condition] : llvm::enumerate(program.conditions)) {
+      std::optional<ConditionCacheKey> key;
+      switch (condition.kind) {
+      case frontend::ConditionKind::Literal:
+        key = ConditionCacheKey{.kind = condition.kind,
+                                .literal = condition.literal};
+        break;
+      case frontend::ConditionKind::Bit:
+        if (!condition.bit.dynamicIndex) {
+          key = ConditionCacheKey{.kind = condition.kind,
+                                  .first = condition.bit.reg,
+                                  .index = condition.bit.index};
+        }
+        break;
+      case frontend::ConditionKind::Not:
+        if (canonicalConditions.at(condition.lhs)) {
+          key = ConditionCacheKey{.kind = condition.kind,
+                                  .first =
+                                      *canonicalConditions.at(condition.lhs)};
+        }
+        break;
+      case frontend::ConditionKind::And:
+      case frontend::ConditionKind::Or:
+        if (canonicalConditions.at(condition.lhs) &&
+            canonicalConditions.at(condition.rhs)) {
+          key = ConditionCacheKey{
+              .kind = condition.kind,
+              .first = *canonicalConditions.at(condition.lhs),
+              .second = *canonicalConditions.at(condition.rhs)};
+        }
+        break;
+      case frontend::ConditionKind::Scalar:
+      case frontend::ConditionKind::Measurement:
+      case frontend::ConditionKind::Comparison:
+        break;
+      }
+      if (!key) {
+        continue;
+      }
+      const auto conditionId = static_cast<frontend::ConditionId>(id);
+      const auto it = representatives.try_emplace(*key, conditionId).first;
+      canonicalConditions[conditionId] = it->second;
+    }
+  }
+
+  void invalidateConditionCache() {
+    conditionCache.clear();
+    ++classicalStateGeneration;
+  }
 
   [[nodiscard]] Location
   getLocation(const frontend::SourceLocation& source) const {
@@ -1927,9 +2001,9 @@ private:
     return arith::CmpIOp::create(builder, predicate, lhs, rhs);
   }
 
-  [[nodiscard]] Value emitCondition(const frontend::ConditionId id,
-                                    ValueRange gateParameters,
-                                    ValueRange gateQubits) {
+  [[nodiscard]] Value emitConditionUncached(const frontend::ConditionId id,
+                                            ValueRange gateParameters,
+                                            ValueRange gateQubits) {
     const auto& condition = program.conditions.at(id);
     switch (condition.kind) {
     case frontend::ConditionKind::Literal:
@@ -1944,10 +2018,12 @@ private:
           [&](Value qubit) { return builder.measure(qubit); });
     case frontend::ConditionKind::Not:
       return arith::XOrIOp::create(
-          builder, emitCondition(condition.lhs, gateParameters, gateQubits),
+          builder,
+          emitConditionUncached(condition.lhs, gateParameters, gateQubits),
           builder.boolConstant(true));
     case frontend::ConditionKind::And: {
-      auto lhs = emitCondition(condition.lhs, gateParameters, gateQubits);
+      auto lhs =
+          emitConditionUncached(condition.lhs, gateParameters, gateQubits);
       auto ifOp = scf::IfOp::create(builder, builder.getI1Type(), lhs, true);
       OpBuilder::InsertionGuard guard(builder);
       auto& thenBlock = ifOp.getThenRegion().front();
@@ -1956,7 +2032,8 @@ private:
       }
       builder.setInsertionPointToEnd(&thenBlock);
       scf::YieldOp::create(
-          builder, emitCondition(condition.rhs, gateParameters, gateQubits));
+          builder,
+          emitConditionUncached(condition.rhs, gateParameters, gateQubits));
       auto& elseBlock = ifOp.getElseRegion().front();
       if (!elseBlock.empty()) {
         elseBlock.back().erase();
@@ -1966,7 +2043,8 @@ private:
       return ifOp.getResult(0);
     }
     case frontend::ConditionKind::Or: {
-      auto lhs = emitCondition(condition.lhs, gateParameters, gateQubits);
+      auto lhs =
+          emitConditionUncached(condition.lhs, gateParameters, gateQubits);
       auto ifOp = scf::IfOp::create(builder, builder.getI1Type(), lhs, true);
       OpBuilder::InsertionGuard guard(builder);
       auto& thenBlock = ifOp.getThenRegion().front();
@@ -1981,7 +2059,8 @@ private:
       }
       builder.setInsertionPointToEnd(&elseBlock);
       scf::YieldOp::create(
-          builder, emitCondition(condition.rhs, gateParameters, gateQubits));
+          builder,
+          emitConditionUncached(condition.rhs, gateParameters, gateQubits));
       return ifOp.getResult(0);
     }
     case frontend::ConditionKind::Comparison:
@@ -1990,6 +2069,24 @@ private:
     llvm_unreachable("unknown condition kind");
   }
 
+  [[nodiscard]] Value emitCondition(const frontend::ConditionId id,
+                                    ValueRange gateParameters,
+                                    ValueRange gateQubits) {
+    // Cache only complete statement conditions. Short-circuit operands can be
+    // defined inside an scf.if region and cannot be reused in the parent block.
+    const auto canonical = canonicalConditions.at(id);
+    if (canonical) {
+      if (const auto cached = conditionCache.find(*canonical);
+          cached != conditionCache.end()) {
+        return cached->second;
+      }
+    }
+    auto value = emitConditionUncached(id, gateParameters, gateQubits);
+    if (canonical) {
+      conditionCache.try_emplace(*canonical, value);
+    }
+    return value;
+  }
   static void recordMutation(const StateSlot slot,
                              llvm::DenseSet<StateSlot>& mutationKeys,
                              SmallVectorImpl<StateSlot>& mutations) {
@@ -2147,6 +2244,7 @@ private:
     } else if (statement.conditionInitializer) {
       value = emitCondition(*statement.conditionInitializer, {}, gateQubits);
     }
+    invalidateConditionCache();
     scalarValues.at(statement.scalar) = value;
   }
 
@@ -2154,12 +2252,14 @@ private:
   emitScalarAssignment(const frontend::ScalarAssignmentStatement& statement,
                        ValueRange gateQubits) {
     if (statement.value) {
-      scalarValues.at(statement.scalar) =
-          emitExpression(builder, *statement.value, {});
+      auto value = emitExpression(builder, *statement.value, {});
+      invalidateConditionCache();
+      scalarValues.at(statement.scalar) = value;
       return;
     }
-    scalarValues.at(statement.scalar) =
-        emitCondition(*statement.condition, {}, gateQubits);
+    auto value = emitCondition(*statement.condition, {}, gateQubits);
+    invalidateConditionCache();
+    scalarValues.at(statement.scalar) = value;
   }
 
   void emitDeclaration(const frontend::DeclarationStatement& statement) {
@@ -2187,9 +2287,11 @@ private:
         static_cast<int64_t>(declaration.width), declaration.name,
         program.openQASM2 ? cbit::Initialization::Zero
                           : cbit::Initialization::Undefined);
+    invalidateConditionCache();
   }
 
   void assignBit(const frontend::BitReference& target, Value value) {
+    invalidateConditionCache();
     auto reg = classicalRegisters[target.reg];
     assert(reg && "semantic analysis must declare bit registers before use");
     if (!target.dynamicIndex) {
@@ -2215,6 +2317,7 @@ private:
       const frontend::BitVectorAssignmentStatement& assignment) {
     auto value = emitBitVectorExpression(builder, assignment.value);
     const auto bits = ensureBits(builder, value);
+    invalidateConditionCache();
     auto reg = classicalRegisters[assignment.target];
     assert(reg && "semantic analysis must declare bit registers before use");
     for (auto [index, bit] : llvm::enumerate(bits)) {
@@ -2266,6 +2369,8 @@ private:
     const auto slots = mutatedState(nestedStatements);
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
+    const auto savedConditionCache = conditionCache;
+    const auto savedClassicalStateGeneration = classicalStateGeneration;
     const auto* thenStatements = &conditional.thenStatements;
     const auto* elseStatements = &conditional.elseStatements;
     if (slots.empty() && thenStatements->empty() && !elseStatements->empty()) {
@@ -2280,6 +2385,7 @@ private:
     const auto emitBranch = [&](Block& block,
                                 ArrayRef<frontend::StatementId> statements) {
       scalarValues = savedScalars;
+      conditionCache.clear();
       if (!block.empty()) {
         block.back().erase();
       }
@@ -2295,6 +2401,11 @@ private:
     }
     scalarValues = savedScalars;
     assignState(slots, ifOp.getResults());
+    if (classicalStateGeneration == savedClassicalStateGeneration) {
+      conditionCache = savedConditionCache;
+    } else {
+      conditionCache.clear();
+    }
   }
 
   [[nodiscard]] Value extendRangeValue(Value value, Type targetType,
@@ -2360,6 +2471,8 @@ private:
     const auto slots = mutatedState(loop.body);
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
+    const auto savedConditionCache = conditionCache;
+    const auto savedClassicalStateGeneration = classicalStateGeneration;
 
     if (loop.provenPositiveRange) {
       auto start = emitProvenIndexExpression(builder, loop.start);
@@ -2377,6 +2490,7 @@ private:
         }
         builder.setInsertionPointToEnd(body);
         scalarValues = savedScalars;
+        conditionCache.clear();
         assignState(slots, forOp.getRegionIterArgs());
         provenInductionValues[loop.inductionVariable] = forOp.getInductionVar();
         scalarValues.at(loop.inductionVariable) = arith::IndexCastOp::create(
@@ -2389,6 +2503,11 @@ private:
       scalarValues = savedScalars;
       provenInductionValues.erase(loop.inductionVariable);
       assignState(slots, forOp.getResults());
+      if (classicalStateGeneration == savedClassicalStateGeneration) {
+        conditionCache = savedConditionCache;
+      } else {
+        conditionCache.clear();
+      }
       return;
     }
 
@@ -2419,6 +2538,7 @@ private:
         }
         builder.setInsertionPointToEnd(body);
         scalarValues = savedScalars;
+        conditionCache.clear();
         assignState(slots, forOp.getRegionIterArgs());
         auto counter = arith::IndexCastOp::create(builder, builder.getI64Type(),
                                                   forOp.getInductionVar());
@@ -2434,6 +2554,11 @@ private:
       }
       scalarValues = savedScalars;
       assignState(slots, forOp.getResults());
+      if (classicalStateGeneration == savedClassicalStateGeneration) {
+        conditionCache = savedConditionCache;
+      } else {
+        conditionCache.clear();
+      }
       return;
     }
 
@@ -2468,6 +2593,7 @@ private:
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
           scalarValues = savedScalars;
+          conditionCache.clear();
           assignState(slots, arguments.drop_front());
           scalarValues.at(loop.inductionVariable) = arith::TruncIOp::create(
               builder, builder.getI64Type(), arguments.front());
@@ -2481,6 +2607,11 @@ private:
         });
     scalarValues = savedScalars;
     assignState(slots, whileOp.getResults().drop_front());
+    if (classicalStateGeneration == savedClassicalStateGeneration) {
+      conditionCache = savedConditionCache;
+    } else {
+      conditionCache.clear();
+    }
   }
 
   void emitWhile(const frontend::WhileStatement& loop,
@@ -2488,6 +2619,8 @@ private:
     const auto slots = mutatedState(loop.body);
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
+    const auto savedConditionCache = conditionCache;
+    const auto savedClassicalStateGeneration = classicalStateGeneration;
     auto whileOp = scf::WhileOp::create(
         builder, ValueRange(initialValues).getTypes(), initialValues,
         [&](OpBuilder& nested, Location, ValueRange arguments) {
@@ -2495,6 +2628,7 @@ private:
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
           scalarValues = savedScalars;
+          conditionCache.clear();
           assignState(slots, arguments);
           auto condition =
               emitCondition(loop.condition, gateParameters, gateQubits);
@@ -2505,6 +2639,7 @@ private:
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
           scalarValues = savedScalars;
+          conditionCache.clear();
           assignState(slots, arguments);
           for (const auto statement : loop.body) {
             emitStatement(statement, gateParameters, gateQubits);
@@ -2513,6 +2648,11 @@ private:
         });
     scalarValues = savedScalars;
     assignState(slots, whileOp.getResults());
+    if (classicalStateGeneration == savedClassicalStateGeneration) {
+      conditionCache = savedConditionCache;
+    } else {
+      conditionCache.clear();
+    }
   }
 
   void emitSwitch(const frontend::SwitchStatement& switchStatement,
@@ -2527,6 +2667,8 @@ private:
     const auto slots = mutatedState(nestedStatements);
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
+    const auto savedConditionCache = conditionCache;
+    const auto savedClassicalStateGeneration = classicalStateGeneration;
 
     auto control = emitExpression(builder, switchStatement.control, {});
     auto selector =
@@ -2540,6 +2682,7 @@ private:
           auto& block = region.emplaceBlock();
           builder.setInsertionPointToEnd(&block);
           scalarValues = savedScalars;
+          conditionCache.clear();
           for (const auto statement : statements) {
             emitStatement(statement, gateParameters, gateQubits);
           }
@@ -2554,6 +2697,11 @@ private:
     emitBranch(switchOp.getDefaultRegion(), switchStatement.defaultStatements);
     scalarValues = savedScalars;
     assignState(slots, switchOp.getResults());
+    if (classicalStateGeneration == savedClassicalStateGeneration) {
+      conditionCache = savedConditionCache;
+    } else {
+      conditionCache.clear();
+    }
   }
 };
 
