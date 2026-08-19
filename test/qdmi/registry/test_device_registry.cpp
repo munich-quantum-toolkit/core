@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "DeviceRegistry.hpp"
+#include "qdmi/DeviceRegistry.hpp"
+#include "qdmi/SessionConfig.hpp"
 #include "qdmi/TestUtils.hpp"
-#include "qdmi/driver/Driver.hpp"
 
 #include <gtest/gtest.h>
 
@@ -73,7 +73,7 @@ private:
   std::filesystem::path previous_;
 };
 
-[[nodiscard]] auto findDefinition(const qdmi::detail::DeviceRegistry& registry,
+[[nodiscard]] auto findDefinition(const qdmi::DeviceRegistry& registry,
                                   const std::string_view id)
     -> const qdmi::DeviceDefinition* {
   const auto& definitions = registry.definitions();
@@ -101,7 +101,7 @@ TEST(DeviceRegistry, ParsesEnvironmentConfigurationWithoutLoadingLibraries) {
     }]}
   })");
 
-  const qdmi::detail::DeviceRegistry registry;
+  const qdmi::DeviceRegistry registry;
   const auto* definition = findDefinition(registry, "example.device");
   ASSERT_NE(definition, nullptr);
   EXPECT_EQ(std::filesystem::weakly_canonical(definition->library),
@@ -125,7 +125,7 @@ TEST(DeviceRegistry, RejectsDuplicateIdsAndUnsupportedKeys) {
         {"id": "duplicate", "library": "two", "prefix": "TWO"}
       ]}
     })");
-    EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
+    EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry()),
                  std::invalid_argument);
   }
   {
@@ -133,7 +133,7 @@ TEST(DeviceRegistry, RejectsDuplicateIdsAndUnsupportedKeys) {
       "schema-version": 1,
       "qdmi": {"device-config": {"model": "unused"}}
     })");
-    EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
+    EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry()),
                  std::invalid_argument);
   }
 }
@@ -156,7 +156,7 @@ TEST(DeviceRegistry, MergesEnvironmentJsonOverExplicitFile) {
     }]}
   })");
 
-  const qdmi::detail::DeviceRegistry registry;
+  const qdmi::DeviceRegistry registry;
   const auto* definition = findDefinition(registry, "environment");
   ASSERT_NE(definition, nullptr);
   EXPECT_EQ(definition->library, directory.path() / "file.so");
@@ -187,7 +187,7 @@ TEST(DeviceRegistry, DeviceConfigurationSourceReplacesAtomically) {
     }]}
   })");
 
-  const qdmi::detail::DeviceRegistry registry;
+  const qdmi::DeviceRegistry registry;
   const auto* definition = findDefinition(registry, "environment");
   ASSERT_NE(definition, nullptr);
   ASSERT_TRUE(definition->session.deviceConfiguration);
@@ -212,7 +212,7 @@ TEST(DeviceRegistry, SerializesInlineDeviceConfigurationCompactly) {
     }]}
   })");
 
-  const qdmi::detail::DeviceRegistry registry;
+  const qdmi::DeviceRegistry registry;
   const auto* definition = findDefinition(registry, "inline");
   ASSERT_NE(definition, nullptr);
   ASSERT_TRUE(definition->session.deviceConfiguration);
@@ -241,7 +241,7 @@ TEST(DeviceRegistry, RejectsInvalidDeviceConfigurationSources) {
         std::string(source) + "}}]}}";
     const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
                                                json);
-    EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
+    EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry()),
                  std::invalid_argument);
   }
 }
@@ -261,10 +261,10 @@ TEST(DeviceRegistry, DisabledEnvironmentEntryMasksExplicitDefinition) {
     "qdmi": {"devices": [{"id": "masked", "enabled": false}]}
   })");
 
-  const qdmi::detail::DeviceRegistry registry;
+  qdmi::DeviceRegistry registry;
   EXPECT_EQ(findDefinition(registry, "masked"), nullptr);
-  ASSERT_EQ(registry.disabledIds().size(), 1);
-  EXPECT_EQ(registry.disabledIds().front(), "masked");
+  EXPECT_FALSE(registry.registerDeviceIfAbsent(
+      {.id = "masked", .library = "fallback.so", .prefix = "FALLBACK"}));
 }
 
 TEST(DeviceRegistry, HigherPrecedenceDefinitionMustExplicitlyReenableDevice) {
@@ -283,10 +283,10 @@ TEST(DeviceRegistry, HigherPrecedenceDefinitionMustExplicitlyReenableDevice) {
             "id": "masked", "library": "device.so", "prefix": "DEVICE"
           }]}
         })");
-    const qdmi::detail::DeviceRegistry registry;
+    qdmi::DeviceRegistry registry;
     EXPECT_EQ(findDefinition(registry, "masked"), nullptr);
-    ASSERT_EQ(registry.disabledIds().size(), 1);
-    EXPECT_EQ(registry.disabledIds().front(), "masked");
+    EXPECT_FALSE(registry.registerDeviceIfAbsent(
+        {.id = "masked", .library = "fallback.so", .prefix = "FALLBACK"}));
   }
 
   {
@@ -297,13 +297,12 @@ TEST(DeviceRegistry, HigherPrecedenceDefinitionMustExplicitlyReenableDevice) {
             "enabled": true
           }]}
         })");
-    const qdmi::detail::DeviceRegistry registry;
+    const qdmi::DeviceRegistry registry;
     const auto* definition = findDefinition(registry, "masked");
     ASSERT_NE(definition, nullptr);
     EXPECT_EQ(definition->library,
               std::filesystem::current_path() / "device.so");
     EXPECT_EQ(definition->prefix, "DEVICE");
-    EXPECT_TRUE(registry.disabledIds().empty());
   }
 }
 
@@ -324,7 +323,7 @@ TEST(DeviceRegistry, ResolvesRelativeConfigurationPathsBeforeCwdChanges) {
     const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE",
                                                "config/device.json");
     const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
-    const qdmi::detail::DeviceRegistry registry;
+    const qdmi::DeviceRegistry registry;
     const auto* definition = findDefinition(registry, "relative");
     ASSERT_NE(definition, nullptr);
     library = definition->library;
@@ -347,16 +346,22 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
   const auto configFile = emptyConfig(directory);
   const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
 
-  const qdmi::detail::DeviceRegistry registry;
-  ASSERT_EQ(registry.definitions().size(), 4);
-  EXPECT_EQ(registry.definitions().at(0).id, "mqt.ddsim.default");
-  EXPECT_EQ(registry.definitions().at(1).id, "mqt.sc.default");
-  EXPECT_EQ(registry.definitions().at(2).id, "mqt.sc.iqm.emerald");
-  EXPECT_EQ(registry.definitions().at(3).id, "mqt.sc.iqm.garnet");
+  const qdmi::DeviceRegistry registry;
+  std::vector<std::string> expectedIds;
+#ifdef MQT_CORE_QDMI_TEST_HAS_DDSIM
+  expectedIds.emplace_back("mqt.ddsim.default");
+#endif
+#ifdef MQT_CORE_QDMI_TEST_HAS_SC
+  expectedIds.emplace_back("mqt.sc.default");
+  expectedIds.emplace_back("mqt.sc.iqm.emerald");
+  expectedIds.emplace_back("mqt.sc.iqm.garnet");
+#endif
+  EXPECT_EQ(registry.deviceIds(), expectedIds);
   for (const auto& definition : registry.definitions()) {
     EXPECT_TRUE(std::filesystem::is_regular_file(definition.library));
   }
 
+#ifdef MQT_CORE_QDMI_TEST_HAS_SC
   const auto assertPackagedModel = [&](const std::string_view id,
                                        const std::string_view filename) {
     const auto* definition = findDefinition(registry, id);
@@ -371,6 +376,7 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
   };
   assertPackagedModel("mqt.sc.iqm.garnet", "iqm-garnet.json");
   assertPackagedModel("mqt.sc.iqm.emerald", "iqm-emerald.json");
+#endif
 }
 
 TEST(DeviceRegistry, ReadsProjectConfigurationFromNearestQdmiJson) {
@@ -385,7 +391,7 @@ TEST(DeviceRegistry, ReadsProjectConfigurationFromNearestQdmiJson) {
   const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE", "");
   const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", "");
 
-  const qdmi::detail::DeviceRegistry registry;
+  const qdmi::DeviceRegistry registry;
   const auto* definition = findDefinition(registry, "json");
   ASSERT_NE(definition, nullptr);
   EXPECT_EQ(std::filesystem::weakly_canonical(definition->library),
@@ -418,7 +424,7 @@ TEST(DeviceRegistry, MergesProjectConfigurationOverUserConfiguration) {
       "XDG_CONFIG_HOME", (directory.path() / "user").string());
 #endif
 
-  const qdmi::detail::DeviceRegistry registry;
+  const qdmi::DeviceRegistry registry;
   const auto* definition = findDefinition(registry, "layered");
   ASSERT_NE(definition, nullptr);
   EXPECT_EQ(definition->library,
@@ -443,7 +449,7 @@ TEST(DeviceRegistry, ReportsInvalidDocumentsAndDefinitionTypes) {
       }) {
     const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON",
                                                document);
-    EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
+    EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry()),
                  std::invalid_argument);
   }
 }
@@ -454,14 +460,13 @@ TEST(DeviceRegistry, ReportsInvalidExplicitJson) {
     const ScopedEnvironmentVariable configFile(
         "MQT_CORE_QDMI_CONFIG_FILE",
         (directory.path() / "missing.json").string());
-    EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
-                 std::runtime_error);
+    EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry()), std::runtime_error);
   }
   {
     const auto invalid = directory.write("invalid.json", "{");
     const ScopedEnvironmentVariable configFile("MQT_CORE_QDMI_CONFIG_FILE",
                                                invalid.string());
-    EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
+    EXPECT_THROW(static_cast<void>(qdmi::DeviceRegistry()),
                  std::invalid_argument);
   }
 }

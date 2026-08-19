@@ -8,10 +8,12 @@
  * Licensed under the MIT License
  */
 
-/** @file SessionConfig.hpp
- * @brief Compatibility include for QDMI session configuration.
- */
-
 #pragma once
 
-#include "qdmi/SessionConfig.hpp"
+#include "qdmi/DeviceRegistry.hpp"
+
+namespace qdmi::detail {
+
+[[nodiscard]] DeviceRegistry snapshotDefaultDeviceRegistry();
+
+} // namespace qdmi::detail

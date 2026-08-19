@@ -11,8 +11,9 @@
 #include "mlir/Compiler/QDMIAdapter.h"
 
 #include "mlir/Compiler/Target.h"
-#include "qdmi/Client.hpp"
-#include "qdmi/driver/Driver.hpp"
+#include "qdmi/Device.hpp"
+#include "qdmi/DeviceManager.hpp"
+#include "qdmi/DeviceRegistry.hpp"
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringRef.h>
@@ -414,7 +415,7 @@ compilerTargetFromDeviceId(const std::string_view deviceId) {
   const auto action = std::string("Failed to open or query QDMI device '") +
                       std::string(deviceId) + "'";
   try {
-    return snapshotCompilerTarget(qdmi::Session::openDevice(deviceId));
+    return snapshotCompilerTarget(qdmi::openDevice(deviceId));
   } catch (...) {
     return qdmiError(action, std::current_exception());
   }
@@ -422,7 +423,7 @@ compilerTargetFromDeviceId(const std::string_view deviceId) {
 
 llvm::Expected<std::vector<std::string>> registeredQDMIDeviceIds() {
   try {
-    return qdmi::Driver::get().registeredDeviceIds();
+    return qdmi::registeredDeviceIds();
   } catch (...) {
     return qdmiError("Failed to discover registered QDMI devices",
                      std::current_exception());

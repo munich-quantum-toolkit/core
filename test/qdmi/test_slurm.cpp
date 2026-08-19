@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "qdmi/DeviceRegistry.hpp"
 #include "qdmi/Slurm.hpp"
-#include "qdmi/driver/Driver.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -72,11 +72,11 @@ private:
 
 void registerStatusDevice(const std::string& id,
                           const std::string& configuredStatus) {
-  static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent(
-      {.id = id,
-       .library = MQT_CORE_QDMI_SLURM_TEST_DEVICE,
-       .prefix = "TEST_SESSION",
-       .session = {.custom4 = configuredStatus}}));
+  static_cast<void>(
+      qdmi::registerDeviceIfAbsent({.id = id,
+                                    .library = MQT_CORE_QDMI_SLURM_TEST_DEVICE,
+                                    .prefix = "TEST_SESSION",
+                                    .session = {.custom4 = configuredStatus}}));
 }
 
 } // namespace

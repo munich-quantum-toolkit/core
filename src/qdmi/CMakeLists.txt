@@ -8,14 +8,14 @@
 
 add_subdirectory(common)
 add_subdirectory(devices)
-add_subdirectory(driver)
 
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi)
 
 if(NOT TARGET ${TARGET_NAME})
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMI)
 
-  target_sources(${TARGET_NAME} PRIVATE Client.cpp Slurm.cpp)
+  target_sources(${TARGET_NAME} PRIVATE Device.cpp DeviceApi.cpp DeviceManager.cpp
+                                        DeviceRegistry.cpp DeviceState.cpp Slurm.cpp)
 
   target_sources(
     ${TARGET_NAME}
@@ -25,12 +25,31 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}
            FILES
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Client.hpp
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Slurm.hpp)
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Device.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/DeviceManager.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/DeviceRegistry.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/SessionConfig.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Slurm.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver/SessionConfig.hpp)
 
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC qdmi::qdmi MQT::CoreQDMICommon MQT::CoreQDMIDriver
-    PRIVATE spdlog::spdlog)
+    PUBLIC qdmi::qdmi MQT::CoreQDMICommon
+    PRIVATE qdmi::qdmi_project_warnings $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>
+            spdlog::spdlog ${CMAKE_DL_LIBS})
+
+  mqt_get_qdmi_device_targets(QDMI_DEVICE_TARGETS)
+  if(QDMI_DEVICE_TARGETS)
+    if(WIN32)
+      mqt_copy_qdmi_runtime(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
+    else()
+      add_dependencies(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
+      foreach(device IN LISTS QDMI_DEVICE_TARGETS)
+        target_link_options(${TARGET_NAME} INTERFACE
+                            $<BUILD_INTERFACE:-Wl,-rpath,$<TARGET_FILE_DIR:${device}>>)
+      endforeach()
+    endif()
+  endif()
 
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()

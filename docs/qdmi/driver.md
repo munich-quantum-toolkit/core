@@ -6,55 +6,54 @@ mystnb:
   number_source_lines: true
 ---
 
-# MQT Core's QDMI Driver Implementation
+# MQT Core QDMI device management
 
 ## Objective
 
-A QDMI Driver manages the communication between QDMI devices, such as
-[MQT Core's SC QDMI Device](sc_device.md) or
-[MQT Core's DDSIM QDMI Device](ddsim_device.md), and QDMI clients, see the
-[QDMI specification](https://munich-quantum-software-stack.github.io/QDMI/).
-It is responsible for loading the device, forwarding requests from the client to
-the device, and sending back the results. MQT Core's QDMI Driver,
-{cpp-api:class}`qdmi::Driver`, comes with several preloaded devices when the
-bundled devices are enabled. Other devices can be loaded dynamically at runtime
-via {cpp-api:func}`qdmi::Driver::registerDevice` and
-{cpp-api:func}`qdmi::Driver::open`. Built-in and external devices can also be
-registered through
-[versioned QDMI device configuration](configuration.md).
+MQT Core loads QDMI devices, opens client sessions, and provides owning C++ and
+Python wrappers for devices, sites, operations, and jobs. A device definition
+contains inert metadata: a stable ID, the native library path, the QDMI symbol
+prefix, and default session configuration. Discovering or registering a
+definition does not load native code.
 
-## Building the Bundled Devices
+{cpp-api:class}`qdmi::DeviceRegistry` stores definitions.
+{cpp-api:class}`qdmi::DeviceManager` takes an immutable registry snapshot and
+opens fresh device sessions. A manager is not a singleton. A returned device or
+derived object owns the session and native-library state that it needs, so it
+can outlive its manager and parent wrappers.
+
+MQT Core also provides process-default functions for applications that need one
+shared catalog: {cpp-api:func}`qdmi::registerDevice`,
+{cpp-api:func}`qdmi::registeredDeviceIds`, and {cpp-api:func}`qdmi::openDevice`.
+These functions are the compatibility and adapter interface. Explicit registries
+and managers remain isolated from this process-default catalog.
+
+## Building the bundled devices
 
 Standalone MQT Core builds include the DDSIM and superconducting QDMI device
 libraries by default. When MQT Core is embedded in another CMake project using
 {code}`FetchContent` or {code}`add_subdirectory`, these device libraries are
 disabled by default so the consumer does not build implementations it may not
-use. They can be selected independently before making MQT Core available:
+use. Select them independently before making MQT Core available:
 
 - {code}`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`
 - {code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`
 
-For example, an embedded simulator consumer can enable only the DDSIM device,
-while CUDA-Q can enable the DDSIM and superconducting devices used by its
-integration tests.
+The QDMI object model, registry, manager, and runtime configuration work without
+the bundled devices. Device-specific integration tests run only for the
+implementations enabled in a build.
 
-The QDMI driver and QDMI libraries are available independently. Device-free
-builds can register external device libraries through
-[QDMI device configuration](configuration.md). Building MQT Core's C++ tests
-requires both bundled devices so that the complete device integration is tested.
+## Python bindings
 
-## Python Bindings
+The Python module exposes owning QDMI entities through {py:mod}`mqt.core.qdmi`.
+Its {py:mod}`mqt.core.qdmi.driver` submodule provides
+{py:class}`~mqt.core.qdmi.driver.DeviceRegistry`,
+{py:class}`~mqt.core.qdmi.driver.DeviceManager`, registration, discovery, and
+opening.
 
-The QDMI interface is the low-level contract implemented by a QDMI device. The
-MQT Core QDMI driver loads device libraries and implements the QDMI client
-interface. The C++ QDMI library adds owning wrappers for QDMI devices, sites,
-operations, and jobs. The Python module exposes these QDMI entities through
-{py:mod}`mqt.core.qdmi`. Its {py:mod}`mqt.core.qdmi.driver` submodule provides
-device discovery, registration, and opening.
+## Process-default catalog
 
-## Usage
-
-The following example opens each registered device by its stable ID.
+The shortest form opens each device registered in the process-default catalog:
 
 ```{code-cell} ipython3
 from mqt.core.qdmi.driver import open_device, registered_device_ids
@@ -63,3 +62,34 @@ for device_id in registered_device_ids():
     device = open_device(device_id)
     print(device.name())
 ```
+
+Each {py:func}`~mqt.core.qdmi.driver.open_device` call creates a fresh session.
+Registration replacement changes later opens. It does not change a live device.
+
+## Isolated registry and manager
+
+Use an explicit registry when a component must not depend on process-global
+registration:
+
+```python
+from mqt.core.qdmi.driver import DeviceDefinition, DeviceManager, DeviceRegistry
+
+registry = DeviceRegistry([
+    DeviceDefinition(
+        "example.device",
+        "/path/to/libexample-device.so",
+        "EXAMPLE",
+    )
+])
+manager = DeviceManager(registry)
+device = manager.open("example.device")
+```
+
+A manager copies the supplied registry. Later changes to the registry do not
+change the manager snapshot.
+{py:meth}`~mqt.core.qdmi.driver.DeviceManager.open_all` continues after an
+individual open fails and returns successful devices and error messages by
+stable ID.
+
+See the [QDMI device configuration guide](configuration.md) for discovery,
+precedence, typed session configuration, and relocatable manifests.

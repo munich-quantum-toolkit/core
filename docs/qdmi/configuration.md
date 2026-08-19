@@ -1,9 +1,9 @@
 # QDMI device configuration
 
 MQT Core discovers QDMI device definitions from versioned JSON configuration.
-Discovery only parses definitions. When the QDMI driver initializes a client
-session, it opens the configured native libraries. The stable-ID API opens only
-the requested device.
+Discovery only parses definitions. A manager or process-default open loads the
+requested native library and creates a fresh client session. Stable-ID opening
+does not load unrelated devices.
 
 :::{warning}
 QDMI configuration is a native-code loading trust boundary. Use configuration
@@ -63,10 +63,10 @@ or:
 The inline value must be a JSON object. A relative file path is resolved against
 the registry file that declares it. The complete source is one merge field:
 changing from `inline` to `file` at a higher-precedence layer replaces the
-inherited inline JSON. The Driver adapts inline JSON to QDMI v1 CUSTOM1 and a
-file path to CUSTOM2 when opening the native session. Consequently,
-`device-config` cannot be combined with raw `custom1` or `custom2`; CUSTOM3
-through CUSTOM5 remain available to providers.
+inherited inline JSON. MQT Core adapts inline JSON to QDMI v1 CUSTOM1 and a file
+path to CUSTOM2 when opening the native session. Consequently, `device-config`
+cannot be combined with raw `custom1` or `custom2`; CUSTOM3 through CUSTOM5
+remain available to providers.
 
 Relative library and authentication-file paths are resolved against the file
 that declared them. For `MQT_CORE_QDMI_CONFIG_JSON`, they resolve against the
@@ -75,13 +75,13 @@ current working directory.
 Unknown keys, invalid types, duplicate IDs within one source, unsupported schema
 versions, and incomplete enabled definitions are hard errors. Diagnostics name
 the source and configuration path. Credentials and session values are not
-included in Driver warnings.
+included in diagnostic warnings.
 
 ## Discovery and precedence
 
 Definitions are merged field by field by ID, from lowest to highest precedence:
 
-1. generated `*.qdmi.json` fragments packaged beside the MQT Core Driver;
+1. generated `*.qdmi.json` fragments packaged beside MQT Core's QDMI library;
 2. the system `qdmi.json`;
 3. the user or XDG `qdmi.json`;
 4. the nearest project `qdmi.json`;
@@ -103,9 +103,9 @@ retaining packaged built-ins.
 
 ## Using configured devices
 
-When the QDMI driver initializes a client session, it opens the configured
-definitions. A failure to load one definition does not hide the remaining
-devices. Stable-ID registration does not initialize device libraries.
+Stable-ID registration does not initialize device libraries. Opening one ID does
+not initialize other definitions. Use a manager's `open_all()` operation when an
+application wants per-ID successes and failures from the full snapshot.
 
 ```python
 from mqt.core.qdmi.driver import open_device, registered_device_ids
@@ -156,14 +156,18 @@ enabled stable IDs in deterministic registration order. This includes runtime
 registrations without loading native device libraries or exposing their paths,
 prefixes, or session configuration.
 
-The equivalent C++ registration operation is
-{cpp-api:func}`qdmi::Driver::registerDevice`. Duplicate IDs are rejected unless
-`replace` is true, and an opened definition cannot be replaced.
-{cpp-api:func}`qdmi::Driver::registeredDeviceIds` provides the same load-free
-enumeration, and {cpp-api:func}`qdmi::Driver::open` returns the cached device.
-{cpp-api:func}`qdmi::Session::openDevice` returns a fresh device session and
-does not add it to the QDMI client catalog. Runtime registrations and explicit
-opens are not added to that catalog.
+The equivalent process-default C++ functions are
+{cpp-api:func}`qdmi::registerDevice`, {cpp-api:func}`qdmi::registeredDeviceIds`,
+and {cpp-api:func}`qdmi::openDevice`. Duplicate IDs are rejected unless
+`replace` is true. Replacement affects future opens. Live devices retain the
+session and library state created from the prior definition.
+
+For isolated state, construct {cpp-api:class}`qdmi::DeviceRegistry`, register
+definitions on that object, and pass it to {cpp-api:class}`qdmi::DeviceManager`.
+A manager takes an immutable snapshot. Changes to the source registry or the
+process-default registry do not change that snapshot. `DeviceManager::openAll`
+continues after an individual failure and returns successes and error messages
+by stable ID.
 
 Multiple definitions may refer to the same library and prefix. MQT Core reuses
 the initialized library while creating a fresh QDMI device session, with its own
@@ -216,15 +220,15 @@ availability check, or a provider queue length.
 Built-in targets generate manifests beside their runtime libraries in both build
 and install trees. Library paths in those fragments contain only the target
 filename, so moving an installed tree or Python wheel preserves discovery.
-Automatic discovery searches relative to the MQT Core Driver, not every library
-loaded by the process. An application using a separately installed device
-implementation therefore copies its manifest beside the Driver or registers its
-definition by stable ID.
+Automatic discovery searches relative to the MQT Core QDMI library, not every
+library loaded by the process. An application using a separately installed
+device implementation therefore copies its manifest beside that library or
+registers its definition by stable ID.
 
 A fully static executable has no portable shared-module location. Place the
 fragments beside the executable, point `MQT_CORE_QDMI_CONFIG_FILE` at a complete
-configuration, or use {cpp-api:func}`qdmi::Driver::registerDevice` and
-{cpp-api:func}`qdmi::Driver::open`. No install prefix is compiled into the
+configuration, or use {cpp-api:func}`qdmi::registerDevice` and
+{cpp-api:func}`qdmi::openDevice`. No install prefix is compiled into the
 manifests.
 
 An installed MQT Core CMake package provides a helper that colocates selected

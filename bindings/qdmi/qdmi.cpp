@@ -8,9 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/Client.hpp"
-#include "qdmi/driver/Driver.hpp"
-#include "qdmi/driver/SessionConfig.hpp"
+#include "qdmi/Device.hpp"
+#include "qdmi/DeviceManager.hpp"
+#include "qdmi/DeviceRegistry.hpp"
+#include "qdmi/SessionConfig.hpp"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
@@ -674,27 +675,134 @@ Args:
       .def_ro("prefix", &qdmi::DeviceDefinition::prefix,
               R"pb(Prefix used for the QDMI device interface functions.)pb");
 
+  nb::class_<qdmi::DeviceRegistry>(
+      driver, "DeviceRegistry",
+      R"pb(Discover or explicitly register QDMI device definitions.)pb")
+      .def(
+          nb::init<>(),
+          R"pb(Discover definitions from the standard configuration sources.)pb")
+      .def(nb::init<std::vector<qdmi::DeviceDefinition>>(), "definitions"_a,
+           R"pb(Create an isolated registry from explicit definitions.)pb")
+      .def_prop_ro(
+          "definitions",
+          [](const qdmi::DeviceRegistry& self) { return self.definitions(); },
+          R"pb(Enabled definitions in stable registration order.)pb")
+      .def_prop_ro("device_ids", &qdmi::DeviceRegistry::deviceIds,
+                   R"pb(Enabled stable device IDs.)pb")
+      .def("register_device", &qdmi::DeviceRegistry::registerDevice,
+           "definition"_a, nb::kw_only(), "replace"_a = false,
+           R"pb(Register a definition, optionally replacing the same ID.)pb")
+      .def("register_device_if_absent",
+           &qdmi::DeviceRegistry::registerDeviceIfAbsent, "definition"_a,
+           R"pb(Register a fallback unless its ID exists or is disabled.)pb");
+
+  nb::class_<qdmi::OpenAllResult>(
+      driver, "OpenAllResult",
+      R"pb(Per-ID successes and failures from opening all registered devices.)pb")
+      .def_ro("devices", &qdmi::OpenAllResult::devices,
+              R"pb(Successfully opened devices keyed by stable ID.)pb")
+      .def_ro("errors", &qdmi::OpenAllResult::errors,
+              R"pb(Error messages for devices that could not be opened.)pb");
+
+  auto manager = nb::class_<qdmi::DeviceManager>(
+      driver, "DeviceManager",
+      R"pb(An immutable registry snapshot that opens fresh device sessions.)pb");
+  manager
+      .def(nb::init<>(),
+           R"pb(Snapshot the current process default registry.)pb")
+      .def(nb::init<qdmi::DeviceRegistry>(), "registry"_a,
+           R"pb(Snapshot an explicit registry.)pb")
+      .def_prop_ro(
+          "definitions",
+          [](const qdmi::DeviceManager& self) { return self.definitions(); },
+          R"pb(Definitions in this immutable snapshot.)pb")
+      .def_prop_ro("device_ids", &qdmi::DeviceManager::deviceIds,
+                   R"pb(Stable IDs in this immutable snapshot.)pb")
+      .def(
+          "open",
+          [](const qdmi::DeviceManager& self, const std::string& deviceId,
+             std::optional<std::string> baseUrl,
+             std::optional<std::string> token,
+             std::optional<std::filesystem::path> authFile,
+             std::optional<std::string> authUrl,
+             std::optional<std::string> username,
+             std::optional<std::string> password,
+             std::optional<std::string> deviceConfig,
+             std::optional<std::filesystem::path> deviceConfigFile,
+             std::optional<std::string> custom1,
+             std::optional<std::string> custom2,
+             std::optional<std::string> custom3,
+             std::optional<std::string> custom4,
+             std::optional<std::string> custom5) {
+            return self.open(
+                deviceId,
+                qdmi::makeDeviceSessionConfig(
+                    std::move(baseUrl), std::move(token), std::move(authFile),
+                    std::move(authUrl), std::move(username),
+                    std::move(password), std::move(deviceConfig),
+                    std::move(deviceConfigFile), std::move(custom1),
+                    std::move(custom2), std::move(custom3), std::move(custom4),
+                    std::move(custom5)));
+          },
+          "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
+          "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
+          "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
+          "password"_a = std::nullopt, "device_config"_a = std::nullopt,
+          "device_config_file"_a = std::nullopt, "custom1"_a = std::nullopt,
+          "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
+          "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
+          R"pb(Open a fresh session for one stable device ID.)pb")
+      .def(
+          "open_all",
+          [](const qdmi::DeviceManager& self,
+             std::optional<std::string> baseUrl,
+             std::optional<std::string> token,
+             std::optional<std::filesystem::path> authFile,
+             std::optional<std::string> authUrl,
+             std::optional<std::string> username,
+             std::optional<std::string> password,
+             std::optional<std::string> deviceConfig,
+             std::optional<std::filesystem::path> deviceConfigFile,
+             std::optional<std::string> custom1,
+             std::optional<std::string> custom2,
+             std::optional<std::string> custom3,
+             std::optional<std::string> custom4,
+             std::optional<std::string> custom5) {
+            return self.openAll(qdmi::makeDeviceSessionConfig(
+                std::move(baseUrl), std::move(token), std::move(authFile),
+                std::move(authUrl), std::move(username), std::move(password),
+                std::move(deviceConfig), std::move(deviceConfigFile),
+                std::move(custom1), std::move(custom2), std::move(custom3),
+                std::move(custom4), std::move(custom5)));
+          },
+          nb::kw_only(), "base_url"_a = std::nullopt, "token"_a = std::nullopt,
+          "auth_file"_a = std::nullopt, "auth_url"_a = std::nullopt,
+          "username"_a = std::nullopt, "password"_a = std::nullopt,
+          "device_config"_a = std::nullopt,
+          "device_config_file"_a = std::nullopt, "custom1"_a = std::nullopt,
+          "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
+          "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
+          R"pb(Open all devices and isolate failures by stable ID.)pb");
+
   driver.def(
       "register_device",
       [](qdmi::DeviceDefinition definition, const bool replace) {
-        qdmi::Driver::get().registerDevice(std::move(definition), replace);
+        qdmi::registerDevice(std::move(definition), replace);
       },
       "definition"_a, nb::kw_only(), "replace"_a = false,
       R"pb(Register a QDMI device definition without loading its library.
 
 Args:
     definition: Definition to validate and store.
-    replace: Replace an existing definition if it has not been opened.
+    replace: Replace an existing definition for future opens.
 
 Raises:
-    ValueError: If the definition is invalid or its ID is already registered.
-    RuntimeError: If replacing an already opened ID.)pb");
+    ValueError: If the definition is invalid or its ID is already registered.)pb");
 
   driver.def(
       "register_device_if_absent",
       [](qdmi::DeviceDefinition definition) {
-        return qdmi::Driver::get().registerDeviceIfAbsent(
-            std::move(definition));
+        return qdmi::registerDeviceIfAbsent(std::move(definition));
       },
       "definition"_a,
       R"pb(Register a valid QDMI device definition if its ID is absent.
@@ -712,8 +820,7 @@ Raises:
     ValueError: If the definition is invalid.)pb");
 
   driver.def(
-      "registered_device_ids",
-      [] { return qdmi::Driver::get().registeredDeviceIds(); },
+      "registered_device_ids", &qdmi::registeredDeviceIds,
       R"pb(Return registered, enabled QDMI device IDs in registration order.
 
 This includes devices registered at runtime and does not load native device
@@ -738,7 +845,7 @@ libraries or expose their definitions.)pb");
             std::move(deviceConfig), std::move(deviceConfigFile),
             std::move(custom1), std::move(custom2), std::move(custom3),
             std::move(custom4), std::move(custom5));
-        return qdmi::Session::openDevice(deviceId, overrides);
+        return qdmi::openDevice(deviceId, overrides);
       },
       "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,

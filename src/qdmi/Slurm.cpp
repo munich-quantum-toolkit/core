@@ -10,8 +10,9 @@
 
 #include "qdmi/Slurm.hpp"
 
-#include "qdmi/Client.hpp"
-#include "qdmi/driver/Driver.hpp"
+#include "qdmi/Device.hpp"
+#include "qdmi/DeviceManager.hpp"
+#include "qdmi/DeviceRegistry.hpp"
 
 #include <qdmi/constants.h>
 
@@ -126,10 +127,9 @@ Device openDeviceFromLicense() {
   const auto* const environmentValue = std::getenv("SLURM_JOB_LICENSES");
   const std::string licenseSpec =
       environmentValue == nullptr ? std::string{} : environmentValue;
-  const auto deviceId =
-      parseLicense(licenseSpec, qdmi::Driver::get().registeredDeviceIds());
+  const auto deviceId = parseLicense(licenseSpec, qdmi::registeredDeviceIds());
 
-  auto device = Session::openDevice(deviceId);
+  auto device = openDevice(deviceId);
   const auto status = device.getStatus();
   if (status != QDMI_DEVICE_STATUS_IDLE && status != QDMI_DEVICE_STATUS_BUSY) {
     throw std::runtime_error("SLURM_JOB_LICENSES names QDMI device '" +

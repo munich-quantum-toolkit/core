@@ -8,27 +8,26 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/Client.hpp"
+#include "qdmi/Device.hpp"
+#include "qdmi/DeviceManager.hpp"
+#include "qdmi/DeviceRegistry.hpp"
 #include "qdmi/common/Common.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
-#include <qdmi/client.h>
+#include <qdmi/constants.h>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
 #include <new>
 #include <numbers>
 #include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -36,25 +35,31 @@ namespace qdmi {
 
 namespace {
 
-auto queryBytes(const std::vector<std::byte>& bytes) {
-  return [&bytes](const size_t size, void* value, size_t* sizeRet) {
-    if (sizeRet != nullptr) {
-      *sizeRet = bytes.size();
-    }
-    if (value != nullptr) {
-      if (size < bytes.size()) {
-        return QDMI_ERROR_INVALIDARGUMENT;
-      }
-      std::memcpy(value, bytes.data(), bytes.size());
-    }
-    return QDMI_SUCCESS;
-  };
-}
-
 template <typename T> auto bytesOf(const T& value) {
   std::vector<std::byte> bytes(sizeof(T));
   std::memcpy(bytes.data(), &value, sizeof(T));
   return bytes;
+}
+
+DeviceManager configuredManager() {
+  return DeviceManager(DeviceRegistry({
+      {.id = "mqt.ddsim.default",
+       .library = DDSIM_DEVICE_LIBRARY,
+       .prefix = "MQT_DDSIM"},
+      {.id = "mqt.sc.default",
+       .library = SC_DEVICE_LIBRARY,
+       .prefix = "MQT_SC"},
+  }));
+}
+
+auto getDevices() -> std::vector<Device> {
+  auto manager = configuredManager();
+  std::vector<Device> devices;
+  devices.reserve(manager.definitions().size());
+  for (const auto& definition : manager.definitions()) {
+    devices.emplace_back(manager.open(definition.id));
+  }
+  return devices;
 }
 
 class DeviceTest : public testing::TestWithParam<Device> {
@@ -86,13 +91,7 @@ protected:
 
 private:
   static auto getDDSimulatorDevice() -> Device {
-    Session session;
-    for (const auto& dev : session.getDevices()) {
-      if (dev.getName() == "MQT Core DDSIM QDMI Device") {
-        return dev;
-      }
-    }
-    throw std::runtime_error("DD simulator device not found");
+    return configuredManager().open("mqt.ddsim.default");
   }
 };
 
@@ -133,145 +132,53 @@ cx q[0], q[1];
 
 } // namespace
 
-TEST(CustomPropertyTest, SelectorsMapToEveryQDMIPropertyFamily) {
-  constexpr std::array properties{
-      CustomProperty::Custom1, CustomProperty::Custom2, CustomProperty::Custom3,
-      CustomProperty::Custom4, CustomProperty::Custom5};
-  constexpr std::array deviceProperties{
-      QDMI_DEVICE_PROPERTY_CUSTOM1, QDMI_DEVICE_PROPERTY_CUSTOM2,
-      QDMI_DEVICE_PROPERTY_CUSTOM3, QDMI_DEVICE_PROPERTY_CUSTOM4,
-      QDMI_DEVICE_PROPERTY_CUSTOM5};
-  constexpr std::array siteProperties{
-      QDMI_SITE_PROPERTY_CUSTOM1, QDMI_SITE_PROPERTY_CUSTOM2,
-      QDMI_SITE_PROPERTY_CUSTOM3, QDMI_SITE_PROPERTY_CUSTOM4,
-      QDMI_SITE_PROPERTY_CUSTOM5};
-  constexpr std::array operationProperties{
-      QDMI_OPERATION_PROPERTY_CUSTOM1, QDMI_OPERATION_PROPERTY_CUSTOM2,
-      QDMI_OPERATION_PROPERTY_CUSTOM3, QDMI_OPERATION_PROPERTY_CUSTOM4,
-      QDMI_OPERATION_PROPERTY_CUSTOM5};
-  constexpr std::array jobProperties{
-      QDMI_JOB_PROPERTY_CUSTOM1, QDMI_JOB_PROPERTY_CUSTOM2,
-      QDMI_JOB_PROPERTY_CUSTOM3, QDMI_JOB_PROPERTY_CUSTOM4,
-      QDMI_JOB_PROPERTY_CUSTOM5};
-  constexpr std::array jobResults{
-      QDMI_JOB_RESULT_CUSTOM1, QDMI_JOB_RESULT_CUSTOM2, QDMI_JOB_RESULT_CUSTOM3,
-      QDMI_JOB_RESULT_CUSTOM4, QDMI_JOB_RESULT_CUSTOM5};
-
-  for (size_t i = 0; i < properties.size(); ++i) {
-    EXPECT_EQ(detail::toDeviceProperty(properties[i]), deviceProperties[i]);
-    EXPECT_EQ(detail::toSiteProperty(properties[i]), siteProperties[i]);
-    EXPECT_EQ(detail::toOperationProperty(properties[i]),
-              operationProperties[i]);
-    EXPECT_EQ(detail::toJobProperty(properties[i]), jobProperties[i]);
-    EXPECT_EQ(detail::toJobResult(properties[i]), jobResults[i]);
-  }
-}
-
-TEST(CustomPropertyTest, RejectsInvalidSelector) {
-  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
-  constexpr auto invalid = static_cast<CustomProperty>(0);
-  EXPECT_THROW(std::ignore = detail::toDeviceProperty(invalid),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = detail::toSiteProperty(invalid),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = detail::toOperationProperty(invalid),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = detail::toJobProperty(invalid),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = detail::toJobResult(invalid),
-               std::invalid_argument);
-}
-
 TEST(CustomPropertyTest, DecodesSupportedTypes) {
   const std::vector<std::byte> stringBytes{std::byte{'v'}, std::byte{'a'},
                                            std::byte{'l'}, std::byte{'u'},
                                            std::byte{'e'}, std::byte{0}};
-  EXPECT_EQ(detail::queryCustomValue<std::string>(queryBytes(stringBytes),
-                                                  "test property"),
-            "value");
+  EXPECT_EQ(
+      detail::decodeCustomValue<std::string>(stringBytes, "test property"),
+      "value");
 
   constexpr bool boolValue = true;
-  EXPECT_EQ(detail::queryCustomValue<bool>(queryBytes(bytesOf(boolValue)),
-                                           "test property"),
-            boolValue);
+  EXPECT_EQ(
+      detail::decodeCustomValue<bool>(bytesOf(boolValue), "test property"),
+      boolValue);
   constexpr int intValue = 42;
-  EXPECT_EQ(detail::queryCustomValue<int>(queryBytes(bytesOf(intValue)),
-                                          "test property"),
+  EXPECT_EQ(detail::decodeCustomValue<int>(bytesOf(intValue), "test property"),
             intValue);
   constexpr double doubleValue = 1.25;
-  EXPECT_EQ(detail::queryCustomValue<double>(queryBytes(bytesOf(doubleValue)),
-                                             "test property"),
-            doubleValue);
-  EXPECT_EQ(detail::queryCustomValue<std::vector<std::byte>>(
-                queryBytes(stringBytes), "test property"),
+  EXPECT_EQ(
+      detail::decodeCustomValue<double>(bytesOf(doubleValue), "test property"),
+      doubleValue);
+  EXPECT_EQ(detail::decodeCustomValue<std::vector<std::byte>>(stringBytes,
+                                                              "test property"),
             stringBytes);
 }
 
 TEST(CustomPropertyTest, ReturnsNulloptWhenUnsupported) {
-  const auto query = [](size_t, void*, size_t*) {
-    return QDMI_ERROR_NOTSUPPORTED;
-  };
-  EXPECT_EQ(detail::queryCustomValue<int>(query, "test property"),
+  EXPECT_EQ(detail::decodeCustomValue<int>(std::nullopt, "test property"),
             std::nullopt);
-}
-
-TEST(CustomPropertyTest, PropagatesQueryErrors) {
-  const auto failingSizeQuery = [](size_t, void*, size_t*) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  };
-  EXPECT_THROW(std::ignore = detail::queryCustomValue<int>(failingSizeQuery,
-                                                           "test property"),
-               std::invalid_argument);
-
-  const auto failingValueQuery = [](const size_t, void* value,
-                                    size_t* sizeRet) {
-    if (sizeRet != nullptr) {
-      *sizeRet = sizeof(int);
-      return QDMI_SUCCESS;
-    }
-    EXPECT_NE(value, nullptr);
-    return QDMI_ERROR_INVALIDARGUMENT;
-  };
-  EXPECT_THROW(std::ignore = detail::queryCustomValue<int>(failingValueQuery,
-                                                           "test property"),
-               std::invalid_argument);
 }
 
 TEST(CustomPropertyTest, SupportsEmptyRawValues) {
   const std::vector<std::byte> empty;
-  EXPECT_EQ(detail::queryCustomValue<std::vector<std::byte>>(queryBytes(empty),
-                                                             "test property"),
-            empty);
+  EXPECT_EQ(
+      detail::decodeCustomValue<std::vector<std::byte>>(empty, "test property"),
+      empty);
 }
 
 TEST(CustomPropertyTest, RejectsIncompatibleRepresentations) {
   const std::vector<std::byte> empty;
-  EXPECT_THROW(std::ignore = detail::queryCustomValue<std::string>(
-                   queryBytes(empty), "test property"),
+  EXPECT_THROW(std::ignore = detail::decodeCustomValue<std::string>(
+                   empty, "test property"),
                std::invalid_argument);
   const std::vector<std::byte> malformedString{std::byte{'n'}, std::byte{'o'}};
-  EXPECT_THROW(std::ignore = detail::queryCustomValue<std::string>(
-                   queryBytes(malformedString), "test property"),
+  EXPECT_THROW(std::ignore = detail::decodeCustomValue<std::string>(
+                   malformedString, "test property"),
                std::invalid_argument);
-  EXPECT_THROW(std::ignore = detail::queryCustomValue<double>(
-                   queryBytes(bytesOf(true)), "test property"),
-               std::invalid_argument);
-}
-
-TEST(QueuePositionTest, ReturnsPositionOnSuccess) {
-  EXPECT_EQ(detail::queuePositionFromResult(QDMI_SUCCESS, 3), 3);
-}
-
-TEST(QueuePositionTest, ReturnsNulloptWhenUnavailable) {
-  EXPECT_EQ(detail::queuePositionFromResult(QDMI_ERROR_NOTSUPPORTED, 0),
-            std::nullopt);
-  EXPECT_EQ(detail::queuePositionFromResult(QDMI_ERROR_BADSTATE, 0),
-            std::nullopt);
-}
-
-TEST(QueuePositionTest, PropagatesOtherQueryErrors) {
-  EXPECT_THROW(std::ignore = detail::queuePositionFromResult(
-                   QDMI_ERROR_INVALIDARGUMENT, 0),
+  EXPECT_THROW(std::ignore = detail::decodeCustomValue<double>(bytesOf(true),
+                                                               "test property"),
                std::invalid_argument);
 }
 
@@ -363,25 +270,12 @@ TEST(QDMITest, DevicePropertyToString) {
                "MIN ATOM DISTANCE");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS),
                "SUPPORTED PROGRAM FORMATS");
-  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CHILDDEVICES),
-               "CHILD DEVICES");
-  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_QUEUELENGTH),
-               "QUEUE LENGTH");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_MAX), "MAX");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM1), "CUSTOM1");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM2), "CUSTOM2");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM3), "CUSTOM3");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM4), "CUSTOM4");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_CUSTOM5), "CUSTOM5");
-}
-
-TEST(QDMITest, SessionPropertyToString) {
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PROPERTY_DEVICES), "DEVICES");
-}
-
-TEST(QDMITest, DeviceSessionParameterToString) {
-  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE),
-               "CHILD DEVICE");
 }
 
 TEST(QDMITest, ThrowIfError) {
@@ -491,10 +385,6 @@ TEST_P(DeviceTest, CouplingMap) {
 
 TEST_P(DeviceTest, NeedsCalibration) {
   EXPECT_NO_THROW(std::ignore = device.getNeedsCalibration());
-}
-
-TEST_F(DDSimulatorDeviceTest, QueueLengthIsUnavailable) {
-  EXPECT_EQ(device.getQueueLength(), std::nullopt);
 }
 
 TEST_P(DeviceTest, LengthUnit) {
@@ -948,10 +838,6 @@ c[0] = measure q[0];
   EXPECT_NE(job.getId(), job2.getId());
 }
 
-TEST_F(JobTest, QueuePositionIsUnavailable) {
-  EXPECT_EQ(job.getQueuePosition(), std::nullopt);
-}
-
 TEST_F(JobTest, UnsupportedCustomPropertyAndResultReturnNullopt) {
   EXPECT_EQ(
       job.queryCustomProperty<std::vector<std::byte>>(CustomProperty::Custom1),
@@ -1019,7 +905,8 @@ TEST_F(JobTest, GetShotsReturnsValidShots) {
     // If the device doesn't support shots, the error message should indicate so
     const std::string errorMsg(e.what());
     EXPECT_TRUE(errorMsg.find("Not supported") != std::string::npos ||
-                errorMsg.find("not supported") != std::string::npos);
+                errorMsg.find("not supported") != std::string::npos)
+        << errorMsg;
   }
 }
 
@@ -1120,224 +1007,8 @@ TEST_F(SimulatorJobTest, getSparseProbabilitiesReturnsValidProbabilities) {
   EXPECT_NEAR(it11->second, 0.5, 1e-10);
 }
 
-TEST(AuthenticationTest, SessionParameterToString) {
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_TOKEN), "TOKEN");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_AUTHFILE), "AUTH FILE");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_AUTHURL), "AUTH URL");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_USERNAME), "USERNAME");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_PASSWORD), "PASSWORD");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_PROJECTID), "PROJECT ID");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_MAX), "MAX");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM1), "CUSTOM1");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM2), "CUSTOM2");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM3), "CUSTOM3");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM4), "CUSTOM4");
-  EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM5), "CUSTOM5");
-}
-
-TEST(AuthenticationTest, SessionConstructionWithToken) {
-  // Empty token should be accepted
-  SessionConfig config1;
-  config1.token = "";
-  EXPECT_NO_THROW({ const Session session(config1); });
-
-  // Non-empty token should be accepted
-  SessionConfig config2;
-  config2.token = "test_token_123";
-  EXPECT_NO_THROW({ const Session session(config2); });
-
-  // Token with special characters should be accepted
-  SessionConfig config3;
-  config3.token = "very_long_token_with_special_characters_!@#$%^&*()";
-  EXPECT_NO_THROW({ const Session session(config3); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
-  // Valid HTTPS URL
-  SessionConfig config1;
-  config1.authUrl = "https://example.com";
-  EXPECT_NO_THROW({ const Session session(config1); });
-
-  // Valid HTTP URL with port and path
-  SessionConfig config2;
-  config2.authUrl = "http://auth.server.com:8080/api";
-  EXPECT_NO_THROW({ const Session session(config2); });
-
-  // Valid HTTPS URL with query parameters
-  SessionConfig config3;
-  config3.authUrl = "https://auth.example.com/token?param=value";
-  EXPECT_NO_THROW({ const Session session(config3); });
-
-  // Valid localhost URL
-  SessionConfig configLocalhost;
-  configLocalhost.authUrl = "http://localhost";
-  EXPECT_NO_THROW({ const Session session(configLocalhost); });
-
-  // Valid localhost URL with port
-  SessionConfig configLocalhostPort;
-  configLocalhostPort.authUrl = "http://localhost:8080";
-  EXPECT_NO_THROW({ const Session session(configLocalhostPort); });
-
-  // Valid localhost URL with port and path
-  SessionConfig configLocalhostPath;
-  configLocalhostPath.authUrl = "https://localhost:3000/auth/api";
-  EXPECT_NO_THROW({ const Session session(configLocalhostPath); });
-
-  // Valid IPv4 address URL
-  SessionConfig configIPv4;
-  configIPv4.authUrl = "http://127.0.0.1:5000/auth";
-  EXPECT_NO_THROW({ const Session session(configIPv4); });
-
-  // Valid IPv6 address URL
-  SessionConfig configIPv6;
-  configIPv6.authUrl = "https://[::1]:8080/auth";
-  EXPECT_NO_THROW({ const Session session(configIPv6); });
-
-  // Invalid URL - not a URL at all (validation fails before setting parameter)
-  SessionConfig config4;
-  config4.authUrl = "not-a-url";
-  EXPECT_THROW({ const Session session(config4); }, std::runtime_error);
-
-  // Invalid URL - unsupported protocol
-  SessionConfig config5;
-  config5.authUrl = "ftp://invalid.com";
-  EXPECT_THROW({ const Session session(config5); }, std::runtime_error);
-
-  // Invalid URL - missing protocol
-  SessionConfig config6;
-  config6.authUrl = "example.com";
-  EXPECT_THROW({ const Session session(config6); }, std::runtime_error);
-
-  // Invalid URL - empty
-  SessionConfig config7;
-  config7.authUrl = "";
-  EXPECT_THROW({ const Session session(config7); }, std::runtime_error);
-}
-
-TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
-  // Non-existent file (validation fails before setting parameter)
-  SessionConfig config1;
-  config1.authFile = "/nonexistent/path/to/file.txt";
-  EXPECT_THROW({ const Session session(config1); }, std::runtime_error);
-
-  // Existing file (should succeed even if parameter is unsupported)
-  const auto tempDir = std::filesystem::temp_directory_path();
-  auto tmpPath = tempDir / ("qdmi_test_auth_" +
-                            std::to_string(std::hash<std::thread::id>{}(
-                                std::this_thread::get_id())) +
-                            ".txt");
-  {
-    std::ofstream tmpFile(tmpPath);
-    ASSERT_TRUE(tmpFile.is_open()) << "Failed to create temporary file";
-    tmpFile << "test_token_content";
-  }
-
-  SessionConfig config2;
-  config2.authFile = tmpPath;
-  EXPECT_NO_THROW({ const Session session(config2); });
-
-  // Clean up
-  std::filesystem::remove(tmpPath);
-}
-
-TEST(AuthenticationTest, SessionConstructionWithUsernamePassword) {
-  // Username only
-  SessionConfig config1;
-  config1.username = "user123";
-  EXPECT_NO_THROW({ const Session session(config1); });
-
-  // Password only
-  SessionConfig config2;
-  config2.password = "secure_password";
-  EXPECT_NO_THROW({ const Session session(config2); });
-
-  // Both username and password
-  SessionConfig config3;
-  config3.username = "user123";
-  config3.password = "secure_password";
-  EXPECT_NO_THROW({ const Session session(config3); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithProjectId) {
-  SessionConfig config;
-  config.projectId = "project-123-abc";
-  EXPECT_NO_THROW({ const Session session(config); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithMultipleParameters) {
-  SessionConfig config;
-  config.token = "test_token";
-  config.username = "test_user";
-  config.password = "test_pass";
-  config.projectId = "test_project";
-  EXPECT_NO_THROW({ const Session session(config); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
-  // Custom parameters may not be supported by all devices, or may have specific
-  // validation requirements. This test verifies they can be passed to the
-  // Session constructor. Currently a smoke test.
-
-  // Test custom1 - may succeed or fail with validation/unsupported errors
-  SessionConfig config1;
-  config1.custom1 = "custom_value_1";
-  try {
-    Session session(config1);
-    EXPECT_NO_THROW(std::ignore = session.getDevices());
-  } catch (const std::invalid_argument&) {
-    // Validation error - parameter recognized but value invalid
-    SUCCEED();
-  } catch (const std::runtime_error&) {
-    // Not supported or other error
-    GTEST_SKIP() << "Custom parameter not supported by backend";
-  }
-
-  // Test custom2
-  SessionConfig config2;
-  config2.custom2 = "custom_value_2";
-  try {
-    Session session(config2);
-    EXPECT_NO_THROW(std::ignore = session.getDevices());
-  } catch (const std::invalid_argument&) {
-    SUCCEED();
-  } catch (const std::runtime_error&) {
-    GTEST_SKIP() << "Custom parameter not supported by backend";
-  }
-
-  // Test all custom parameters together
-  SessionConfig config3;
-  config3.custom1 = "value1";
-  config3.custom2 = "value2";
-  config3.custom3 = "value3";
-  config3.custom4 = "value4";
-  config3.custom5 = "value5";
-  try {
-    Session session(config3);
-    EXPECT_NO_THROW(std::ignore = session.getDevices());
-  } catch (const std::invalid_argument&) {
-    SUCCEED();
-  } catch (const std::runtime_error&) {
-    GTEST_SKIP() << "Custom parameter not supported by backend";
-  }
-
-  // Test mixing custom parameters with standard authentication
-  SessionConfig config4;
-  config4.token = "test_token";
-  config4.custom1 = "custom_value";
-  config4.projectId = "project_id";
-  try {
-    Session session(config4);
-    EXPECT_NO_THROW(std::ignore = session.getDevices());
-  } catch (const std::invalid_argument&) {
-    SUCCEED();
-  } catch (const std::runtime_error&) {
-    GTEST_SKIP() << "Custom parameter not supported by backend";
-  }
-}
-
-TEST(AuthenticationTest, SessionGetDevicesReturnsList) {
-  Session session;
-  auto devices = session.getDevices();
+TEST(DeviceManagerTest, DiscoversAndOpensDevices) {
+  auto devices = getDevices();
 
   EXPECT_FALSE(devices.empty());
 
@@ -1348,12 +1019,9 @@ TEST(AuthenticationTest, SessionGetDevicesReturnsList) {
   }
 }
 
-TEST(AuthenticationTest, SessionMultipleInstances) {
-  Session session1;
-  Session session2;
-
-  auto devices1 = session1.getDevices();
-  auto devices2 = session2.getDevices();
+TEST(DeviceManagerTest, MultipleInstancesOpenIndependently) {
+  auto devices1 = getDevices();
+  auto devices2 = getDevices();
 
   // Both should return devices
   EXPECT_FALSE(devices1.empty());
@@ -1363,41 +1031,17 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
   EXPECT_EQ(devices1.size(), devices2.size());
 }
 
-TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
-  const auto site = [] {
-    auto device = Session::openDevice("mqt.sc.default");
-    return device.getSites().front();
-  }();
-
-  EXPECT_EQ(site.getIndex(), 0);
+TEST(DeviceManagerTest, RejectsSitesFromAnotherDevice) {
+  auto manager = configuredManager();
+  const auto scDevice = manager.open("mqt.sc.default");
+  const auto ddDevice = manager.open("mqt.ddsim.default");
+  const auto operations = scDevice.getOperations();
+  const auto sites = ddDevice.getSites();
+  ASSERT_FALSE(operations.empty());
+  ASSERT_FALSE(sites.empty());
+  EXPECT_THROW(static_cast<void>(operations.front().getName({sites.front()})),
+               std::invalid_argument);
 }
-
-TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
-  const auto operation = [] {
-    auto device = Session::openDevice("mqt.sc.default");
-    return device.getOperations().front();
-  }();
-
-  EXPECT_FALSE(operation.getName().empty());
-}
-
-TEST(DeviceOwnershipTest, SiteFromOperationKeepsFreshSessionAlive) {
-  const auto site = [] {
-    auto device = Session::openDevice("mqt.sc.default");
-    const auto operation = device.getOperations().front();
-    return operation.getSites().value().front();
-  }();
-
-  EXPECT_FALSE(site.isZone());
-}
-
-namespace {
-// Helper function to get all devices for parameterized tests
-auto getDevices() -> std::vector<Device> {
-  Session session;
-  return session.getDevices();
-}
-} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name

@@ -10,8 +10,8 @@
 
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
-#include "qdmi/Client.hpp"
-#include "qdmi/driver/Driver.hpp"
+#include "qdmi/DeviceManager.hpp"
+#include "qdmi/SessionConfig.hpp"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/ArrayRef.h>
@@ -35,7 +35,7 @@ findOperation(const CompilerTarget& target, const llvm::StringRef name) {
 
 TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   const auto target = llvm::cantFail([] {
-    const auto device = qdmi::Session::openDevice("mqt.sc.iqm.garnet");
+    const auto device = qdmi::openDevice("mqt.sc.iqm.garnet");
     return mlir::compilerTargetFromDevice(device);
   }());
 
@@ -81,7 +81,7 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
 }
 
 TEST(CompilerQDMIAdapterTest, PreservesMissingTopologyAsAllToAll) {
-  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  const auto device = qdmi::openDevice("mqt.ddsim.default");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   EXPECT_EQ(target.numQubits(), 65535);
@@ -109,7 +109,7 @@ TEST(CompilerQDMIAdapterTest, RejectsNonhomogeneousOperationSupport) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration =
       qdmi::FileDeviceConfiguration{MQT_CORE_MLIR_HETEROGENEOUS_SC_CONFIG};
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device = qdmi::openDevice("mqt.sc.default", overrides);
   auto target = mlir::compilerTargetFromDevice(device);
   ASSERT_FALSE(target);
   const auto message = llvm::toString(target.takeError());
@@ -121,7 +121,7 @@ TEST(CompilerQDMIAdapterTest, RejectsDirectionalOperationWithoutReverseSites) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
       MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG};
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device = qdmi::openDevice("mqt.sc.default", overrides);
   auto target = mlir::compilerTargetFromDevice(device);
   ASSERT_FALSE(target);
   const auto message = llvm::toString(target.takeError());
@@ -133,7 +133,7 @@ TEST(CompilerQDMIAdapterTest,
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
       MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG};
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device = qdmi::openDevice("mqt.sc.default", overrides);
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   ASSERT_EQ(target.couplings().size(), 1);
