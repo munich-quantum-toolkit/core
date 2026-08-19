@@ -8,35 +8,35 @@
 
 set(target_name mqt-core-mlir-unittest-optimizations)
 add_executable(
-        ${target_name}
-        ConstantPropagation/test_hybridState.cpp
-        ConstantPropagation/test_quantumState.cpp
-        ConstantPropagation/test_unionTable.cpp
-        test_qco_constant_propagation.cpp
-        test_qco_hadamard_lifting.cpp
-        test_qco_measurement_lifting.cpp
-        test_qco_merge_single_qubit_rotation.cpp
-        test_qco_remove_dead_gates.cpp
-        test_qco_replace_classical_controls.cpp
-        test_qco_reuse_qubits.cpp
-        test_quantum_loop_unroll.cpp)
+  ${target_name}
+  ConstantPropagation/test_hybridState.cpp
+  ConstantPropagation/test_quantumState.cpp
+  ConstantPropagation/test_unionTable.cpp
+  test_qco_constant_propagation.cpp
+  test_qco_hadamard_lifting.cpp
+  test_qco_measurement_lifting.cpp
+  test_qco_merge_single_qubit_rotation.cpp
+  test_qco_remove_dead_gates.cpp
+  test_qco_replace_classical_controls.cpp
+  test_qco_reuse_qubits.cpp
+  test_quantum_loop_unroll.cpp)
 
 target_link_libraries(
-        ${target_name}
-        PRIVATE GTest::gtest_main
-        GTest::gmock
-        MLIRControlFlowDialect
-        MLIRQCODDFunctionality
-        MLIRQCOProgramBuilder
-        MLIRQCOPrograms
-        MLIRQCOTransforms
-        MLIRQCOUtils
-        MLIRParser
-        MLIRIR
-        MLIRPass
-        MLIRSupport
-        LLVMSupport
-        MLIRSupportMQT)
+  ${target_name}
+  PRIVATE GTest::gtest_main
+          GTest::gmock
+          MLIRControlFlowDialect
+          MLIRQCODDFunctionality
+          MLIRQCOProgramBuilder
+          MLIRQCOPrograms
+          MLIRQCOTransforms
+          MLIRQCOUtils
+          MLIRParser
+          MLIRIR
+          MLIRPass
+          MLIRSupport
+          LLVMSupport
+          MLIRSupportMQT)
 
 mqt_mlir_configure_unittest_target(${target_name} REQUIRES_EH)
 
