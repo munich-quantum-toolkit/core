@@ -9,21 +9,23 @@
  */
 
 #include "BenchmarkTestUtils.h"
-#include "mlir/Benchmark/Jeff/Generate.h"
+#include "mlir/Benchmark/Compile.h"
 #include "mlir/Benchmark/Programs.h"
+#include "mlir/Compiler/Programs.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/StringRef.h>
 
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <variant>
 
 namespace mqt::benchmark {
 
 namespace {
 
 /// The size the benchmarks are generated at.
-constexpr uint64_t SIZE = 7;
+constexpr uint64_t JEFF_SIZE = 7;
 
 class JeffBenchmarkTest : public testing::TestWithParam<Benchmark> {};
 
@@ -32,13 +34,6 @@ INSTANTIATE_TEST_SUITE_P(Benchmarks, JeffBenchmarkTest,
                          [](const testing::TestParamInfo<Benchmark>& info) {
                            return testName(info.param.name);
                          });
-
-TEST_P(JeffBenchmarkTest, LowersToJeff) {
-  const auto& benchmark = GetParam();
-  const auto program = buildJeffProgram(benchmark, SIZE);
-  ASSERT_TRUE(program.has_value());
-  EXPECT_FALSE(program->toBytes().empty());
-}
 
 /**
  * @brief The benchmarks exist to exercise structured control flow.
@@ -49,10 +44,13 @@ TEST_P(JeffBenchmarkTest, LowersToJeff) {
  */
 TEST_P(JeffBenchmarkTest, KeepsStructuredControlFlow) {
   const auto& benchmark = GetParam();
-  const auto program = buildJeffProgram(benchmark, SIZE);
+  auto program = buildQCProgram(benchmark, JEFF_SIZE);
   ASSERT_TRUE(program.has_value());
+  const auto compiled =
+      mlir::runDefaultPipeline(std::move(*program), mlir::ProgramFormat::Jeff);
+  ASSERT_TRUE(compiled.has_value());
 
-  const auto assembly = program->str();
+  const auto assembly = std::get<mlir::JeffProgram>(*compiled).str();
   EXPECT_TRUE(assembly.find("jeff.for") != std::string::npos ||
               assembly.find("jeff.while") != std::string::npos ||
               assembly.find("jeff.switch") != std::string::npos)
@@ -64,7 +62,7 @@ TEST_P(JeffBenchmarkTest, RejectsSizesBelowTheMinimum) {
   if (benchmark.minimumSize == 0) {
     GTEST_SKIP() << "the benchmark accepts every size";
   }
-  EXPECT_FALSE(buildJeffProgram(benchmark, benchmark.minimumSize - 1));
+  EXPECT_FALSE(buildQCProgram(benchmark, benchmark.minimumSize - 1));
 }
 
 } // namespace

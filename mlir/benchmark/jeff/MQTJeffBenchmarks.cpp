@@ -15,8 +15,9 @@
  * and then lowered through QCO to `jeff`.
  */
 
-#include "mlir/Benchmark/Jeff/Generate.h"
+#include "mlir/Benchmark/Compile.h"
 #include "mlir/Benchmark/Programs.h"
+#include "mlir/Compiler/Programs.h"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/CommandLine.h>
@@ -26,6 +27,8 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <utility>
+#include <variant>
 
 static llvm::cl::opt<uint64_t>
     numQubits("n", llvm::cl::desc("Size parameter of the generated programs"),
@@ -49,14 +52,21 @@ static bool generate(const mqt::benchmark::Benchmark& benchmark,
     return false;
   }
 
-  const auto program = mqt::benchmark::buildJeffProgram(benchmark, n);
-  if (!program) {
+  auto qc = mqt::benchmark::buildQCProgram(benchmark, n);
+  if (!qc) {
+    llvm::errs() << benchmark.name << ": failed to build the program\n";
+    return false;
+  }
+  auto compiled =
+      mlir::runDefaultPipeline(std::move(*qc), mlir::ProgramFormat::Jeff);
+  if (!compiled) {
     llvm::errs() << benchmark.name << ": failed to build the jeff program\n";
     return false;
   }
+  const auto& program = std::get<mlir::JeffProgram>(*compiled);
 
   const auto path = directory / (benchmark.name.str() + ".jeff");
-  if (!program->write(path)) {
+  if (!program.write(path)) {
     llvm::errs() << benchmark.name << ": failed to write " << path.string()
                  << "\n";
     return false;
