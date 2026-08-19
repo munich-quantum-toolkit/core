@@ -228,8 +228,8 @@ def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
      phase gate is removed and replaced by a global phase gate instead.
 
   }];
-  let options = [Option<"maximumNonzeroAmplitudes", "maximum-nonzero-amplitudes",
-                        "std::size_t", "4",
+  let options = [Option<"maximumNonzeroAmplitudes",
+                        "maximum-nonzero-amplitudes", "std::size_t", "4",
                         "The maximum number of non-zero amplitudes in the "
                         "tracted quantum states before reaching top.">,
                  Option<"maximumHybridStates", "maximum-hybrid-states",
