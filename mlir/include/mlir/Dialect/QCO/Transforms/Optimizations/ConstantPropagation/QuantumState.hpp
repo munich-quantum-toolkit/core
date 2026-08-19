@@ -98,9 +98,9 @@ class QuantumState {
    */
   std::unordered_map<unsigned int, std::complex<double>>
   getNewMappingFromQubitGate(
-      std::unordered_map<unsigned int,
-                         std::unordered_map<unsigned int, std::complex<double>>>
-          gateMapping,
+      const std::unordered_map<
+          unsigned int,
+          std::unordered_map<unsigned int, std::complex<double>>>& gateMapping,
       const std::span<unsigned int> positionOfTargetQubits,
       const unsigned int bitmaskForCtrls) {
     std::unordered_map<unsigned int, std::complex<double>> newValues;
@@ -137,10 +137,17 @@ class QuantumState {
         }
       }
 
-      auto mapForThisQubit = gateMapping[mapFrom];
-      for (unsigned int i = 0; i < numberOfTargetValues; i++) {
-        if (auto valueToI = mapForThisQubit[i]; abs(valueToI) > 1e-4) {
-          newValues[keysForNewValue.at(i)] += valueToI * value;
+      auto outerIt = gateMapping.find(mapFrom);
+      if (outerIt != gateMapping.end()) {
+        const auto &mapForThisQubit = outerIt->second;
+        for (unsigned int i = 0; i < numberOfTargetValues; i++) {
+          auto innerIt = mapForThisQubit.find(i);
+          if (innerIt == mapForThisQubit.end()) {
+            continue;
+          }
+          if (auto valueToI = innerIt->second; abs(valueToI) > 1e-4) {
+            newValues[keysForNewValue.at(i)] += valueToI * value;
+          }
         }
       }
     }
