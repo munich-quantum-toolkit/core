@@ -167,8 +167,9 @@ class UnionTable {
     // Check if the number of entries would be too large
     unsigned int numberOfNewEntries = 1;
     for (const auto& e : entriesToUnify) {
-      if (e.states.size() != 0 &&
-          numberOfNewEntries > maximumHybridEntries / e.states.size()) {
+      if (e.top ||
+          (!e.states.empty() &&
+           numberOfNewEntries > maximumHybridEntries / e.states.size())) {
         putEntriesToTop(entriesToUnify);
         return true;
       }
@@ -184,7 +185,7 @@ class UnionTable {
       newEntry.participatingClassicalValues.insert(classicalValues.begin(),
                                                    classicalValues.end());
       newEntry.participatingQubits.insert(qubits.begin(), qubits.end());
-      if (!newEntry.top & newEntry.states.empty()) {
+      if (!newEntry.top && newEntry.states.empty()) {
         newEntry.states = e.states;
         continue;
       }
@@ -243,8 +244,10 @@ class UnionTable {
     const auto targetOneIndex = qubitsToGlobalIndices.at(targets[0]);
     qubitsToGlobalIndices[targets[0]] = qubitsToGlobalIndices.at(targets[1]);
     qubitsToGlobalIndices[targets[1]] = targetOneIndex;
-    std::ranges::reverse(newQuantumTargets);
-    replaceValuesGlobally(targets, newQuantumTargets);
+    std::vector reversedNewTargets(newQuantumTargets.begin(),
+                                   newQuantumTargets.end());
+    std::ranges::reverse(reversedNewTargets);
+    replaceValuesGlobally(targets, reversedNewTargets);
   }
 
   /**
