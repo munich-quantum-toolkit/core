@@ -10,12 +10,10 @@
 
 #pragma once
 
-#include <mlir/IR/Operation.h>
-#ifndef MQT_CORE_GATETOMAP_H
-#define MQT_CORE_GATETOMAP_H
-
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
+
+#include <mlir/IR/Operation.h>
 
 #include <cmath>
 #include <complex>
@@ -226,5 +224,3 @@ getQubitMappingOfGates(mlir::Operation* gate, const std::span<double>& params) {
         llvm::report_fatal_error("Unsupported gate in mlir::qco::gatetomap");
       });
 }
-
-#endif // MQT_CORE_GATETOMAP_H
