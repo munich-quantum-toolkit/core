@@ -20,6 +20,8 @@ We define multiple dialects, each with its dedicated purpose:
 - The {doc}`QTensor dialect <QTensor>` adds support for one-dimensional tensors
   of qubits with linear typing and is used in the QCO dialect to represent
   collections of qubits such as registers.
+- The {doc}`CBit dialect <CBit>` represents initialized classical-bit registers
+  shared by QC and QCO.
 
 These dialects define various canonicalization and transformation passes that
 enable the compilation of quantum programs to native quantum hardware. Passes
@@ -38,6 +40,7 @@ target_compilation
 QC
 QCO
 QTensor
+CBit
 Transforms
 Conversions
 OpenQASM

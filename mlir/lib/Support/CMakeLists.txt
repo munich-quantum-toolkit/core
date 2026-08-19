@@ -21,6 +21,7 @@ add_mlir_library(
   MLIRTransforms
   MLIRControlFlowInterfaces
   MLIRTransformUtils
+  MLIRCBitToMemRef
   MLIRLLVMDialect
   MLIRFuncDialect
   MLIRArithDialect

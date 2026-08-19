@@ -10,6 +10,7 @@
 
 #include "ModifierUtils.h"
 
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
@@ -33,16 +34,16 @@ namespace mlir::qc::detail {
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   const auto hasNonUnitaryOperation =
       body.walk([](Operation* operation) {
-            return isa<AllocOp, DeallocOp, StaticOp, MeasureOp, ResetOp,
-                       memref::LoadOp, memref::StoreOp>(operation)
+            return isa<cbit::AllocOp, cbit::LoadOp, cbit::StoreOp, AllocOp,
+                       DeallocOp, StaticOp, MeasureOp, ResetOp, memref::LoadOp,
+                       memref::StoreOp>(operation)
                        ? WalkResult::interrupt()
                        : WalkResult::advance();
           })
           .wasInterrupted();
   if (hasNonUnitaryOperation) {
     return modifierOp->emitOpError(
-        "body must not contain non-unitary quantum operations or modify a "
-        "quantum register");
+        "body must not contain non-unitary operations or access registers");
   }
 
   SetVector<Value> captures;

@@ -39,6 +39,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cstddef>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -217,7 +218,7 @@ TEST(QCToQIRAdaptiveNativeTest, LowersUnreturnedClassicalControlRegister) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1);
+  auto c = builder.allocClassicalBitRegister(1);
   builder.measure(q, c, 0);
   builder.scfIf(c, 0, [&] { builder.x(q); });
   auto module = builder.finalize();
@@ -226,7 +227,7 @@ TEST(QCToQIRAdaptiveNativeTest, LowersUnreturnedClassicalControlRegister) {
   ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
 
-  EXPECT_TRUE(
+  EXPECT_FALSE(
       module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_RESULT_ARRAY_ALLOC));
   EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_READ_RESULT));
   EXPECT_FALSE(module->lookupSymbol<LLVM::LLVMFuncOp>(
@@ -242,10 +243,7 @@ TEST(QCToQIRAdaptiveNativeTest, LowersZeroInitializedClassicalControlRegister) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1);
-  auto zero = arith::ConstantIndexOp::create(builder, 0);
-  memref::StoreOp::create(builder, builder.boolConstant(false), c,
-                          zero.getResult());
+  auto c = builder.allocClassicalBitRegister(1);
   builder.scfIf(c, 0, [&] { builder.x(q); });
   auto module = builder.finalize();
   ASSERT_TRUE(module);
@@ -253,9 +251,9 @@ TEST(QCToQIRAdaptiveNativeTest, LowersZeroInitializedClassicalControlRegister) {
   ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
 
-  EXPECT_TRUE(
+  EXPECT_FALSE(
       module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_RESULT_ARRAY_ALLOC));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_READ_RESULT));
+  EXPECT_FALSE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_READ_RESULT));
 }
 
 TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleRegisterDestinations) {
@@ -267,10 +265,9 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleRegisterDestinations) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(2);
+  auto c = builder.allocClassicalBitRegister(2);
   const auto result = builder.measure(q, c, 0);
-  auto one = arith::ConstantIndexOp::create(builder, 1);
-  memref::StoreOp::create(builder, result, c, one.getResult());
+  builder.storeClassicalBit(result, c, 1);
   builder.retype(c.getType());
   auto module = builder.finalize(c);
   ASSERT_TRUE(module);
@@ -285,10 +282,10 @@ TEST(QCToQIRAdaptiveNativeTest, RecordsReturnedRegisterMeasurement) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1, "named_result");
-  const auto result = builder.measure(q, c, 0);
-  builder.retype(result.getType());
-  auto module = builder.finalize(result);
+  auto c = builder.allocClassicalBitRegister(1, "named_result");
+  builder.measure(q, c, 0);
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
@@ -304,11 +301,10 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementClassicalStore) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto c = builder.allocClassicalBitRegister(1);
-  auto zero = arith::ConstantIndexOp::create(builder, 0);
-  memref::StoreOp::create(builder, builder.boolConstant(true), c,
-                          zero.getResult());
-  auto module = builder.finalize();
+  auto c = builder.allocClassicalBitRegister(1);
+  builder.storeClassicalBit(builder.boolConstant(true), c, 0);
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
   ASSERT_TRUE(module);
 
   bool sawExpectedDiagnostic = false;
@@ -317,7 +313,7 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementClassicalStore) {
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
     sawExpectedDiagnostic |= StringRef(message).contains(
-        "only supports storing direct measurement results");
+        "does not support non-measurement stores to returned CBit registers");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
@@ -330,10 +326,7 @@ TEST(QCToQIRAdaptiveNativeTest, AcceptsZeroInitializedClassicalRegister) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto c = builder.allocClassicalBitRegister(1);
-  auto zero = arith::ConstantIndexOp::create(builder, 0);
-  memref::StoreOp::create(builder, builder.boolConstant(false), c,
-                          zero.getResult());
+  auto c = builder.allocClassicalBitRegister(1);
   builder.retype(c.getType());
   auto module = builder.finalize(c);
   ASSERT_TRUE(module);
@@ -342,19 +335,64 @@ TEST(QCToQIRAdaptiveNativeTest, AcceptsZeroInitializedClassicalRegister) {
   EXPECT_TRUE(succeeded(verify(*module)));
 }
 
-TEST(QCToQIRAdaptiveNativeTest, RejectsZeroStoreAfterMeasurement) {
+TEST(QCToQIRAdaptiveNativeTest, LowersInternalZeroInitializedRegisterStorage) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto c = builder.allocClassicalBitRegister(2);
+  const auto first = builder.loadClassicalBit(c, 0);
+  builder.storeClassicalBit(first, c, 1);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  size_t allocs = 0;
+  size_t loads = 0;
+  size_t stores = 0;
+  module->walk([&](LLVM::AllocaOp) { ++allocs; });
+  module->walk([&](LLVM::LoadOp) { ++loads; });
+  module->walk([&](LLVM::StoreOp) { ++stores; });
+  EXPECT_EQ(allocs, 1);
+  EXPECT_EQ(loads, 1);
+  EXPECT_EQ(stores, 3);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, SupportsDynamicInternalRegisterIndices) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto c = builder.allocClassicalBitRegister(2);
+  auto unknown = LLVM::UndefOp::create(builder, builder.getI64Type());
+  auto index = arith::IndexCastOp::create(builder, builder.getIndexType(),
+                                          unknown.getResult());
+  builder.storeClassicalBit(builder.boolConstant(true), c, index.getResult());
+  const auto value = builder.loadClassicalBit(c, index.getResult());
+  builder.storeClassicalBit(value, c, 0);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1);
+  auto c = builder.allocClassicalBitRegister(1);
   builder.measure(q, c, 0);
-  auto zero = arith::ConstantIndexOp::create(builder, 0);
-  memref::StoreOp::create(builder, builder.boolConstant(false), c,
-                          zero.getResult());
-  auto module = builder.finalize();
+  builder.storeClassicalBit(builder.boolConstant(false), c, 0);
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
   ASSERT_TRUE(module);
 
   bool sawExpectedDiagnostic = false;
@@ -362,8 +400,8 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsZeroStoreAfterMeasurement) {
     std::string message;
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
-    sawExpectedDiagnostic |=
-        StringRef(message).contains("leading zero initialization");
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "does not support non-measurement stores to returned CBit registers");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
@@ -387,28 +425,12 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedIntegerMemref) {
     std::string message;
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "only supports one-dimensional memrefs of i1");
+    sawExpectedDiagnostic |=
+        StringRef(message).contains("only supports generic memrefs for");
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
-}
-
-TEST(QCToQIRAdaptiveNativeTest, IgnoresClassicalRegisterDeallocation) {
-  MLIRContext context;
-  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
-                      LLVM::LLVMDialect, memref::MemRefDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  const auto q = builder.allocQubit();
-  const auto c = builder.allocClassicalBitRegister(1);
-  builder.measure(q, c, 0);
-  memref::DeallocOp::create(builder, c);
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
 }
 
 TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {

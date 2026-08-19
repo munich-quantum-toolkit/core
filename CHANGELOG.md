@@ -131,7 +131,7 @@ releases may include breaking changes.
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
   [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
   [#1976], [#2006], [#2014], [#2015], [#2017], [#2026], [#2028], [#2058],
-  [#2125]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
+  [#2125], [#2158]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
   [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**], [**@J4MMlE**])
 
@@ -817,6 +817,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
+[#2158]: https://github.com/munich-quantum-toolkit/core/pull/2158
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
 [#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154

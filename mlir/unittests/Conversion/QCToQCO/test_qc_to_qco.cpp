@@ -10,6 +10,9 @@
 
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
@@ -1058,8 +1061,8 @@ TEST_F(QCToQCORegressionTest,
     ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
       sawExpectedDiagnostic |=
           StringRef(diagnostic.str())
-              .contains("body must not contain non-unitary quantum operations "
-                        "or modify a quantum register");
+              .contains("body must not contain non-unitary operations or "
+                        "access registers");
       return success();
     });
 
@@ -1068,6 +1071,100 @@ TEST_F(QCToQCORegressionTest,
     pm.addPass(createQCToQCO());
     EXPECT_TRUE(failed(pm.run(*moduleOp)));
     EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+namespace {
+enum class CBitModifierBodyOp : std::uint8_t { Alloc, Load, Store };
+} // namespace
+
+static StringRef cbitOperationName(const CBitModifierBodyOp operation) {
+  switch (operation) {
+  case CBitModifierBodyOp::Alloc:
+    return "cbit.alloc";
+  case CBitModifierBodyOp::Load:
+    return "cbit.load";
+  case CBitModifierBodyOp::Store:
+    return "cbit.store";
+  }
+  llvm_unreachable("unknown CBit operation");
+}
+
+static OwningOpRef<ModuleOp>
+buildInvalidCBitModifierProgram(MLIRContext* context,
+                                const ModifierKind modifier,
+                                const CBitModifierBodyOp cbitOperation) {
+  qc::QCProgramBuilder builder(context);
+  builder.initialize();
+  const auto target = builder.allocQubit();
+  auto reg = builder.allocClassicalBitRegister(1);
+  auto index = arith::ConstantIndexOp::create(builder, 0);
+  const auto bit = builder.boolConstant(false);
+  const auto body = [&](const Value) {
+    builder.scfIf(true, [&] {
+      switch (cbitOperation) {
+      case CBitModifierBodyOp::Alloc:
+        cbit::AllocOp::create(builder,
+                              cbit::RegisterType::get(builder.getContext(), 1),
+                              cbit::Initialization::Zero, StringAttr{});
+        break;
+      case CBitModifierBodyOp::Load:
+        cbit::LoadOp::create(builder, builder.getI1Type(), reg,
+                             index.getResult());
+        break;
+      case CBitModifierBodyOp::Store:
+        cbit::StoreOp::create(builder, bit, reg, index.getResult());
+        break;
+      }
+    });
+  };
+
+  switch (modifier) {
+  case ModifierKind::Inv:
+    builder.inv(target, body);
+    break;
+  case ModifierKind::Ctrl:
+    builder.ctrl(builder.allocQubit(), target, body);
+    break;
+  case ModifierKind::Pow:
+    builder.pow(2.0, target, body);
+    break;
+  }
+  return builder.finalize();
+}
+
+TEST_F(QCToQCORegressionTest,
+       PreflightRejectsEveryCBitOperationInEveryModifier) {
+  constexpr std::array modifiers{ModifierKind::Inv, ModifierKind::Ctrl,
+                                 ModifierKind::Pow};
+  constexpr std::array operations{CBitModifierBodyOp::Alloc,
+                                  CBitModifierBodyOp::Load,
+                                  CBitModifierBodyOp::Store};
+
+  for (const auto modifier : modifiers) {
+    for (const auto operation : operations) {
+      SCOPED_TRACE(testing::Message()
+                   << "modifier=" << modifierName(modifier).str()
+                   << ", operation=" << cbitOperationName(operation).str());
+      auto moduleOp =
+          buildInvalidCBitModifierProgram(&context, modifier, operation);
+      ASSERT_TRUE(moduleOp);
+
+      bool sawExpectedDiagnostic = false;
+      ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str())
+                .contains("body must not contain non-unitary operations or "
+                          "access registers");
+        return success();
+      });
+
+      PassManager pm(&context);
+      pm.enableVerifier(false);
+      pm.addPass(createQCToQCO());
+      EXPECT_TRUE(failed(pm.run(*moduleOp)));
+      EXPECT_TRUE(sawExpectedDiagnostic);
+    }
   }
 }
 

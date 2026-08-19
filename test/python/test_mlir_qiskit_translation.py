@@ -440,7 +440,7 @@ def test_flat_circuit_round_trip_preserves_supported_metadata() -> None:
     restored = program.to_qiskit()
 
     assert 'mqt.qubit_register_name = "input"' in program.ir
-    assert 'mqt.classical_register_name = "output"' in program.ir
+    assert 'cbit.alloc(#cbit.init<zero>) source_name = "output"' in program.ir
     assert restored.global_phase == pytest.approx(0.125)
     assert [(reg.name, len(reg)) for reg in restored.qregs] == [("input", 2)]
     assert [(reg.name, len(reg)) for reg in restored.cregs] == [("output", 2)]
@@ -455,7 +455,7 @@ def test_flat_circuit_round_trip_preserves_supported_metadata() -> None:
 
 
 def test_openqasm2_measurements_export_with_zero_initialized_register() -> None:
-    """Ignore only the implicit classical zero initialization from OpenQASM 2."""
+    """Export an OpenQASM 2 zero-initialized result register."""
     program = QCProgram.from_qasm_str(
         """OPENQASM 2.0;
 include "qelib1.inc";
@@ -480,27 +480,27 @@ measure q[0] -> c[1];
 
 @pytest.mark.parametrize("late_value", ["false", "true"])
 def test_flat_export_rejects_classical_store_after_quantum_work(late_value: str) -> None:
-    """Do not mistake a later constant assignment for register initialization."""
+    """Reject constant CBit stores regardless of their position."""
     program = QCProgram.from_mlir_str(
         f"""module {{
-  func.func @main() attributes {{passthrough = ["entry_point"]}} {{
+  func.func @main() -> !cbit.reg<2> attributes {{passthrough = ["entry_point"]}} {{
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %initial = arith.constant false
     %late = arith.constant {late_value}
     %q = qc.alloc : !qc.qubit
-    %c = memref.alloc() : memref<2xi1>
-    memref.store %initial, %c[%c0] : memref<2xi1>
+    %c = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<2>
+    cbit.store %initial, %c[%c0] : !cbit.reg<2>
     qc.x %q : !qc.qubit
-    memref.store %late, %c[%c1] : memref<2xi1>
+    cbit.store %late, %c[%c1] : !cbit.reg<2>
     qc.dealloc %q : !qc.qubit
-    return
+    return %c : !cbit.reg<2>
   }}
 }}
 """
     )
 
-    with pytest.raises(RuntimeError, match="does not support classical execution"):
+    with pytest.raises(RuntimeError, match="does not support non-measurement classical stores"):
         program.to_qiskit()
 
 
@@ -529,8 +529,8 @@ measure q[0] -> c[1];
     assert restored.count_ops() == {"measure": 2, "x": 1}
 
 
-def test_openqasm3_measurement_export_ignores_unused_poison() -> None:
-    """Ignore the unused poison value that initializes an OpenQASM 3 output."""
+def test_openqasm3_measurement_export_uses_undefined_cbit_register() -> None:
+    """Represent OpenQASM 3 output initialization without poison values."""
     program = QCProgram.from_qasm_str(
         """OPENQASM 3.0;
 include "stdgates.inc";
@@ -543,7 +543,8 @@ c[0] = measure q[1];
 
     restored = program.to_qiskit()
 
-    assert "ub.poison" in program.ir
+    assert "ub.poison" not in program.ir
+    assert 'cbit.alloc(#cbit.init<undefined>) source_name = "c"' in program.ir
     assert [(register.name, len(register)) for register in restored.qregs] == [("q", 2)]
     assert [(register.name, len(register)) for register in restored.cregs] == [("c", 1)]
     assert [item.operation.name for item in restored.data] == ["h", "measure"]
@@ -552,24 +553,112 @@ c[0] = measure q[1];
     assert restored.find_bit(measurement.clbits[0]).index == 0
 
 
-def test_flat_export_rejects_used_poison() -> None:
-    """Reject poison when it participates in classical execution."""
+def test_flat_export_rejects_undefined_returned_bits() -> None:
+    """Reject a returned undefined register unless every bit is written."""
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
-    %c0 = arith.constant 0 : index
-    %poison = ub.poison : i1
+  func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
     %q = qc.alloc : !qc.qubit
-    %c = memref.alloc() : memref<1xi1>
-    memref.store %poison, %c[%c0] : memref<1xi1>
+    %c = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
     qc.dealloc %q : !qc.qubit
-    return
+    return %c : !cbit.reg<1>
   }
 }
 """
     )
 
-    with pytest.raises(RuntimeError, match="does not support used poison values"):
+    with pytest.raises(RuntimeError, match="cannot return undefined classical bits"):
+        program.to_qiskit()
+
+
+def test_qiskit_round_trip_preserves_anonymous_clbits() -> None:
+    """Represent loose Qiskit clbits as one anonymous public CBit register."""
+    circuit = QuantumCircuit(1)
+    circuit.add_bits([Clbit()])
+    circuit.measure(0, 0)
+
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert "cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>" in program.ir
+    assert restored.num_clbits == 1
+    assert restored.cregs == []
+    assert restored.count_ops() == {"measure": 1}
+
+
+def test_qiskit_export_excludes_internal_cbit_registers() -> None:
+    """Export only CBit registers returned by the entry function."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
+    %q = qc.alloc : !qc.qubit
+    %output = cbit.alloc(#cbit.init<zero>) source_name = "output" : !cbit.reg<1>
+    %internal = cbit.alloc(#cbit.init<zero>) source_name = "internal" : !cbit.reg<2>
+    qc.dealloc %q : !qc.qubit
+    return %output : !cbit.reg<1>
+  }
+}
+"""
+    )
+
+    restored = program.to_qiskit()
+
+    assert restored.num_clbits == 1
+    assert [(register.name, len(register)) for register in restored.cregs] == [("output", 1)]
+
+
+def test_qiskit_export_rejects_duplicate_measurement_destinations() -> None:
+    """Reject multiple measurements that write the same public bit."""
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    circuit.measure(0, 0)
+
+    with pytest.raises(RuntimeError, match="duplicate classical destinations"):
+        QCProgram.from_qiskit(circuit).to_qiskit()
+
+
+def test_qiskit_export_rejects_measurement_with_multiple_destinations() -> None:
+    """Reject one measurement result stored in more than one public bit."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<2> attributes {passthrough = ["entry_point"]} {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %q = qc.alloc : !qc.qubit
+    %c = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<2>
+    %result = qc.measure %q : !qc.qubit -> i1
+    cbit.store %result, %c[%c0] : !cbit.reg<2>
+    cbit.store %result, %c[%c1] : !cbit.reg<2>
+    qc.dealloc %q : !qc.qubit
+    return %c : !cbit.reg<2>
+  }
+}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="more than one classical destination"):
+        program.to_qiskit()
+
+
+def test_qiskit_export_rejects_dynamic_measurement_destination() -> None:
+    """Require each Qiskit measurement destination to be static."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
+    %c0 = arith.constant 0 : index
+    %index = arith.addi %c0, %c0 : index
+    %q = qc.alloc : !qc.qubit
+    %c = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
+    %result = qc.measure %q : !qc.qubit -> i1
+    cbit.store %result, %c[%index] : !cbit.reg<1>
+    qc.dealloc %q : !qc.qubit
+    return %c : !cbit.reg<1>
+  }
+}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="dynamic classical destination"):
         program.to_qiskit()
 
 
@@ -811,7 +900,7 @@ def test_nested_structured_control_and_bound_loop_parameter() -> None:
     assert "scf.if" in program.ir
     assert "scf.while" in program.ir
     assert "scf.index_switch" in program.ir
-    with pytest.raises(RuntimeError, match="cannot construct structured control flow"):
+    with pytest.raises(RuntimeError, match=r"classical loads or control flow|cannot construct structured control flow"):
         program.to_qiskit()
 
 
@@ -823,10 +912,10 @@ def test_qiskit_import_zero_initializes_clbits_before_control_flow() -> None:
 
     ir = QCProgram.from_qiskit(circuit).ir
 
-    false_constant = ir.index("arith.constant false")
-    initialization = ir.index("memref.store", false_constant)
-    condition_load = ir.index("memref.load", initialization)
-    assert false_constant < initialization < condition_load
+    initialization = ir.index("cbit.alloc(#cbit.init<zero>)")
+    condition_load = ir.index("cbit.load", initialization)
+    assert initialization < condition_load
+    assert "memref.store" not in ir
 
 
 @pytest.mark.parametrize(

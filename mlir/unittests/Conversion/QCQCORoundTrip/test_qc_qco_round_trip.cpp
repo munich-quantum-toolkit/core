@@ -10,6 +10,9 @@
 
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -42,9 +45,9 @@ protected:
 
   QCQCORoundTripTest() {
     DialectRegistry registry;
-    registry
-        .insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
-                func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
+    registry.insert<cbit::CBitDialect, qc::QCDialect, qco::QCODialect,
+                    arith::ArithDialect, func::FuncDialect,
+                    memref::MemRefDialect, scf::SCFDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
   }
@@ -67,6 +70,54 @@ protected:
 };
 
 } // namespace
+
+TEST_F(QCQCORoundTripTest, PreservesClassicalRegistersWithoutConversion) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> (!cbit.reg<2>, !cbit.reg<1>)
+      attributes {passthrough = ["entry_point"]} {
+    %c0 = arith.constant 0 : index
+    %zero = cbit.alloc(#cbit.init<zero>) source_name = "zero" : !cbit.reg<2>
+    %undefined = cbit.alloc(#cbit.init<undefined>) source_name = "undefined" : !cbit.reg<1>
+    %q = qc.alloc : !qc.qubit
+    %measurement = qc.measure %q : !qc.qubit -> i1
+    cbit.store %measurement, %zero[%c0] : !cbit.reg<2>
+    %loaded = cbit.load %zero[%c0] : !cbit.reg<2>
+    cbit.store %loaded, %undefined[%c0] : !cbit.reg<1>
+    qc.dealloc %q : !qc.qubit
+    return %zero, %undefined : !cbit.reg<2>, !cbit.reg<1>
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runRoundTrip(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  SmallVector<cbit::AllocOp> allocations;
+  SmallVector<cbit::LoadOp> loads;
+  SmallVector<cbit::StoreOp> stores;
+  moduleOp->walk([&](cbit::AllocOp op) { allocations.push_back(op); });
+  moduleOp->walk([&](cbit::LoadOp op) { loads.push_back(op); });
+  moduleOp->walk([&](cbit::StoreOp op) { stores.push_back(op); });
+  ASSERT_EQ(allocations.size(), 2);
+  ASSERT_EQ(loads.size(), 1);
+  ASSERT_EQ(stores.size(), 2);
+  EXPECT_EQ(allocations[0].getInitialization(), cbit::Initialization::Zero);
+  EXPECT_EQ(allocations[0].getSourceName(), "zero");
+  EXPECT_EQ(allocations[1].getInitialization(),
+            cbit::Initialization::Undefined);
+  EXPECT_EQ(allocations[1].getSourceName(), "undefined");
+  EXPECT_EQ(loads.front().getReg(), allocations.front().getResult());
+  EXPECT_EQ(stores.front().getReg(), allocations.front().getResult());
+  EXPECT_EQ(stores.back().getReg(), allocations.back().getResult());
+
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  EXPECT_EQ(returnOp.getOperand(0), allocations[0].getResult());
+  EXPECT_EQ(returnOp.getOperand(1), allocations[1].getResult());
+}
 
 TEST_F(QCQCORoundTripTest, PreservesClassicalIfResultWithoutScratch) {
   constexpr llvm::StringLiteral source = R"mlir(

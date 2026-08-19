@@ -10,6 +10,7 @@
 
 #include "mlir/Support/Passes.h"
 
+#include "mlir/Conversion/CBitToMemRef/CBitToMemRef.h"
 #include "mlir/Dialect/QC/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
@@ -49,6 +50,7 @@ runWithPassManager(ModuleOp mod,
 
 void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
+    registerConvertCBitToMemRef();
     qco::registerDecomposeMultiControlled();
     qco::registerFuseSingleQubitUnitaryRuns();
     qco::registerHadamardLifting();

@@ -14,6 +14,7 @@
 #include "QiskitVersion.h"
 #include "jeff/IR/JeffDialect.h"
 #include "mlir/Compiler/Programs.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
@@ -81,11 +82,12 @@ constexpr size_t MAX_EXPANDED_OPERATIONS = 10'000'000U;
 
 [[nodiscard]] std::shared_ptr<mlir::MLIRContext> createContext() {
   mlir::DialectRegistry registry;
-  registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
-                  mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
-                  mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
-                  mlir::scf::SCFDialect, mlir::LLVM::LLVMDialect,
-                  mlir::memref::MemRefDialect, mlir::jeff::JeffDialect>();
+  registry.insert<mlir::cbit::CBitDialect, mlir::qc::QCDialect,
+                  mlir::qco::QCODialect, mlir::qtensor::QTensorDialect,
+                  mlir::arith::ArithDialect, mlir::cf::ControlFlowDialect,
+                  mlir::func::FuncDialect, mlir::scf::SCFDialect,
+                  mlir::LLVM::LLVMDialect, mlir::memref::MemRefDialect,
+                  mlir::jeff::JeffDialect>();
   mlir::registerBuiltinDialectTranslation(registry);
   mlir::registerLLVMDialectTranslation(registry);
   auto context = std::make_shared<mlir::MLIRContext>(registry);
@@ -664,10 +666,7 @@ loadClassicalBit(mlir::qc::QCProgramBuilder& builder,
         "Qiskit control flow references an invalid classical bit");
   }
   const auto& bit = classicalBits[rootClbitMap[index]];
-  auto position = mlir::arith::ConstantIndexOp::create(builder, bit.index);
-  return mlir::memref::LoadOp::create(builder, bit.storage,
-                                      mlir::ValueRange{position.getResult()})
-      .getResult();
+  return builder.loadClassicalBit(bit.storage, bit.index);
 }
 
 [[nodiscard]] mlir::Value
@@ -1554,20 +1553,18 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
       classicalRegisters, view->numClbits(), "classical");
 
   auto context = createContext();
-  mlir::qc::QCProgramBuilder builder(
-      context.get(),
-      mlir::qc::QCProgramBuilder::ClassicalRegisterInitialization::Zero);
+  mlir::qc::QCProgramBuilder builder(context.get());
   llvm::SmallVector<mlir::Type> resultTypes;
   if (view->numClbits() == 0U) {
     resultTypes.push_back(builder.getI64Type());
   } else {
     if (looseClbits != 0U) {
-      resultTypes.push_back(mlir::MemRefType::get(
-          {static_cast<int64_t>(looseClbits)}, builder.getI1Type()));
+      resultTypes.push_back(mlir::cbit::RegisterType::get(
+          context.get(), static_cast<int64_t>(looseClbits)));
     }
     for (const auto& reg : classicalRegisters) {
-      resultTypes.push_back(mlir::MemRefType::get(
-          {static_cast<int64_t>(reg.bits.size())}, builder.getI1Type()));
+      resultTypes.push_back(mlir::cbit::RegisterType::get(
+          context.get(), static_cast<int64_t>(reg.bits.size())));
     }
   }
   builder.initialize(resultTypes);
