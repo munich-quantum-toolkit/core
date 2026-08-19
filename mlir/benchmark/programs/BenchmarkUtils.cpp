@@ -62,9 +62,10 @@ void fourierTransform(qc::QCProgramBuilder& b, Value reg, const int64_t size,
   auto last = b.indexConstant(size - 1);
 
   b.scfFor(0, size, 1, [&](Value step) {
-    // The inverse runs the same rotations in the opposite order.
+    // The inverse runs the same rotations in the opposite order, so it walks
+    // the register backwards and takes its Hadamard after the rotations.
     auto i = sign > 0.0 ? step : Value{arith::SubIOp::create(b, last, step)};
-    if (sign < 0.0) {
+    if (sign > 0.0) {
       b.h(b.loadQubit(reg, i));
     }
 
@@ -75,7 +76,7 @@ void fourierTransform(qc::QCProgramBuilder& b, Value reg, const int64_t size,
                       b.cp(angle, b.loadQubit(reg, j), b.loadQubit(reg, i));
                     });
 
-    if (sign > 0.0) {
+    if (sign < 0.0) {
       b.h(b.loadQubit(reg, i));
     }
   });
