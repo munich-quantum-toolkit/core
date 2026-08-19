@@ -50,6 +50,7 @@ static void expectInvalid(llvm::Expected<T> value,
 namespace {
 
 using Target = mlir::CompilerTarget;
+using ClassicalControl = Target::ClassicalControl;
 using Coupling = Target::Coupling;
 using DurationUnit = Target::DurationUnit;
 using GateKind = Target::GateKind;
@@ -131,6 +132,55 @@ TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
   target.forEachNeighbour(
       1, [&](const auto neighbour) { neighbours.emplace_back(neighbour); });
   EXPECT_EQ(neighbours, (std::vector<size_t>{0, 2}));
+}
+
+TEST(CompilerTargetTest, CanonicalizesOptInClassicalControlCapabilities) {
+  const std::vector capabilities{
+      ClassicalControl::MultiwayBranch, ClassicalControl::Conditional,
+      ClassicalControl::MultiwayBranch, ClassicalControl::Iteration};
+  const auto denseUnnamed = valid(Target::create(2, std::nullopt, std::nullopt,
+                                                 std::nullopt, capabilities));
+  const auto denseNamed = valid(Target::create(
+      "named", 2, std::nullopt, std::nullopt, std::nullopt, capabilities));
+  const auto detailedUnnamed = valid(Target::create(
+      std::vector{valid(Site::create(0)), valid(Site::create(1))}, std::nullopt,
+      std::nullopt, std::nullopt, capabilities));
+  const auto detailedNamed = valid(Target::create(
+      "named", std::vector{valid(Site::create(0)), valid(Site::create(1))},
+      std::nullopt, std::nullopt, std::nullopt, capabilities));
+
+  constexpr std::array expected{ClassicalControl::Conditional,
+                                ClassicalControl::Iteration,
+                                ClassicalControl::MultiwayBranch};
+  for (const auto& target :
+       {denseUnnamed, denseNamed, detailedUnnamed, detailedNamed}) {
+    EXPECT_EQ(target.classicalControl(), llvm::ArrayRef(expected));
+    EXPECT_TRUE(target.supportsClassicalControl(ClassicalControl::Conditional));
+    EXPECT_TRUE(target.supportsClassicalControl(ClassicalControl::Iteration));
+    EXPECT_TRUE(
+        target.supportsClassicalControl(ClassicalControl::MultiwayBranch));
+    EXPECT_FALSE(
+        target.supportsClassicalControl(ClassicalControl::ConditionalLoop));
+  }
+}
+
+TEST(CompilerTargetTest, RejectsClassicalControlByDefault) {
+  const auto target = valid(Target::create(1));
+
+  EXPECT_TRUE(target.classicalControl().empty());
+  EXPECT_FALSE(target.supportsClassicalControl(ClassicalControl::Conditional));
+  EXPECT_FALSE(target.supportsClassicalControl(ClassicalControl::Iteration));
+  EXPECT_FALSE(
+      target.supportsClassicalControl(ClassicalControl::ConditionalLoop));
+  EXPECT_FALSE(
+      target.supportsClassicalControl(ClassicalControl::MultiwayBranch));
+}
+
+TEST(CompilerTargetTest, RejectsUnknownClassicalControlCapability) {
+  expectInvalid(
+      Target::create(1, std::nullopt, std::nullopt, std::nullopt,
+                     {static_cast<ClassicalControl>(255)}),
+      "Compiler target contains an unknown classical-control capability");
 }
 
 TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {

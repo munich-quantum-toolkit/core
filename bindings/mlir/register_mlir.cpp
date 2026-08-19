@@ -450,6 +450,20 @@ means every operation is native.)pb");
       .value("ZYZ", mlir::CompilerTarget::SingleQubitBasis::ZYZ)
       .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ);
 
+  nb::enum_<mlir::CompilerTarget::ClassicalControl>(
+      compilerTarget, "ClassicalControl",
+      "Opt-in runtime classical-control capability.")
+      .value("CONDITIONAL", mlir::CompilerTarget::ClassicalControl::Conditional,
+             "Runtime forward branching.")
+      .value("ITERATION", mlir::CompilerTarget::ClassicalControl::Iteration,
+             "Structured counted iteration.")
+      .value("CONDITIONAL_LOOP",
+             mlir::CompilerTarget::ClassicalControl::ConditionalLoop,
+             "Runtime condition-terminated looping.")
+      .value("MULTIWAY_BRANCH",
+             mlir::CompilerTarget::ClassicalControl::MultiwayBranch,
+             "Runtime multiway branching.");
+
   auto synthesisBasis = nb::class_<mlir::CompilerTarget::SynthesisBasis>(
       compilerTarget, "SynthesisBasis",
       "One synthesis basis usable across the complete target.");
@@ -468,14 +482,19 @@ means every operation is native.)pb");
                  couplings,
              std::optional<std::vector<mlir::CompilerTarget::Operation>>
                  operations,
-             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit) {
+             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit,
+             std::vector<mlir::CompilerTarget::ClassicalControl>
+                 classicalControl) {
             constructFromExpected(self, mlir::CompilerTarget::create(
                                             numQubits, std::move(couplings),
                                             std::move(operations),
-                                            std::move(durationUnit)));
+                                            std::move(durationUnit),
+                                            std::move(classicalControl)));
           },
           "num_qubits"_a, nb::kw_only(), "couplings"_a = nb::none(),
-          "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+          "operations"_a = nb::none(), "duration_unit"_a = nb::none(),
+          "classical_control"_a =
+              std::vector<mlir::CompilerTarget::ClassicalControl>{})
       .def(
           "__init__",
           [](mlir::CompilerTarget& self, std::string name,
@@ -484,14 +503,19 @@ means every operation is native.)pb");
                  couplings,
              std::optional<std::vector<mlir::CompilerTarget::Operation>>
                  operations,
-             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit) {
+             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit,
+             std::vector<mlir::CompilerTarget::ClassicalControl>
+                 classicalControl) {
             constructFromExpected(
                 self, mlir::CompilerTarget::create(
                           std::move(name), numQubits, std::move(couplings),
-                          std::move(operations), std::move(durationUnit)));
+                          std::move(operations), std::move(durationUnit),
+                          std::move(classicalControl)));
           },
           "name"_a, "num_qubits"_a, nb::kw_only(), "couplings"_a = nb::none(),
-          "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+          "operations"_a = nb::none(), "duration_unit"_a = nb::none(),
+          "classical_control"_a =
+              std::vector<mlir::CompilerTarget::ClassicalControl>{})
       .def(
           "__init__",
           [](mlir::CompilerTarget& self,
@@ -500,14 +524,19 @@ means every operation is native.)pb");
                  couplings,
              std::optional<std::vector<mlir::CompilerTarget::Operation>>
                  operations,
-             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit) {
+             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit,
+             std::vector<mlir::CompilerTarget::ClassicalControl>
+                 classicalControl) {
             constructFromExpected(
                 self, mlir::CompilerTarget::create(
                           std::move(sites), std::move(couplings),
-                          std::move(operations), std::move(durationUnit)));
+                          std::move(operations), std::move(durationUnit),
+                          std::move(classicalControl)));
           },
           "sites"_a, nb::kw_only(), "couplings"_a = nb::none(),
-          "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+          "operations"_a = nb::none(), "duration_unit"_a = nb::none(),
+          "classical_control"_a =
+              std::vector<mlir::CompilerTarget::ClassicalControl>{})
       .def(
           "__init__",
           [](mlir::CompilerTarget& self, std::string name,
@@ -516,15 +545,20 @@ means every operation is native.)pb");
                  couplings,
              std::optional<std::vector<mlir::CompilerTarget::Operation>>
                  operations,
-             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit) {
+             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit,
+             std::vector<mlir::CompilerTarget::ClassicalControl>
+                 classicalControl) {
             constructFromExpected(self, mlir::CompilerTarget::create(
                                             std::move(name), std::move(sites),
                                             std::move(couplings),
                                             std::move(operations),
-                                            std::move(durationUnit)));
+                                            std::move(durationUnit),
+                                            std::move(classicalControl)));
           },
           "name"_a, "sites"_a, nb::kw_only(), "couplings"_a = nb::none(),
-          "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+          "operations"_a = nb::none(), "duration_unit"_a = nb::none(),
+          "classical_control"_a =
+              std::vector<mlir::CompilerTarget::ClassicalControl>{})
       .def_static(
           "from_device",
           [](const qdmi::Device& device) {
@@ -603,6 +637,14 @@ means every operation is native.)pb");
           },
           "Operation capabilities in reported order.")
       .def_prop_ro(
+          "classical_control",
+          [](const mlir::CompilerTarget& target) {
+            return std::vector<mlir::CompilerTarget::ClassicalControl>(
+                target.classicalControl().begin(),
+                target.classicalControl().end());
+          },
+          "Runtime classical-control capabilities in canonical order.")
+      .def_prop_ro(
           "supported_gates",
           [](const mlir::CompilerTarget& target) {
             return std::vector<mlir::CompilerTarget::GateKind>(
@@ -619,7 +661,10 @@ means every operation is native.)pb");
             return target.supportsOperation(name, numQubits, numParameters);
           },
           "name"_a, "num_qubits"_a, "num_parameters"_a = nb::none(),
-          "Whether the target supports an operation capability.");
+          "Whether the target supports an operation capability.")
+      .def("supports_classical_control",
+           &mlir::CompilerTarget::supportsClassicalControl, "capability"_a,
+           "Whether the target supports a classical-control capability.");
 
   auto program = nb::class_<mlir::Program>(
       m, "Program", R"pb(Base class for a typed MLIR compiler program.
