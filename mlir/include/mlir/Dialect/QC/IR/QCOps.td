@@ -881,6 +881,49 @@ def RCCXOp
     }];
 }
 
+def UnitaryOp : QCOp<"unitary", traits = [UnitaryOpInterface]> {
+  let summary = "Apply an explicitly represented unitary matrix";
+  let description = [{
+        Applies a dense unitary matrix to a variadic list of target qubits.
+        The matrix is stored in row-major order as a square rank-two tensor of
+        `complex<f64>` values. Its side length must be `2^n`, where `n` is the
+        number of target qubits. Operand 0 labels the most-significant basis
+        bit; the last operand labels the least-significant bit. The
+        deterministic matrix verifier supports one to eight qubits and checks
+        `U^dagger U` entry-wise with absolute tolerance `1e-10`.
+
+        Example:
+        ```mlir
+        qc.unitary dense<[[(0.0,0.0), (1.0,0.0)],
+                          [(1.0,0.0), (0.0,0.0)]]>
+            : tensor<2x2xcomplex<f64>> %q : !qc.qubit
+        ```
+    }];
+
+  let arguments = (ins ElementsAttr:$matrix,
+      Arg<Variadic<QubitType>,
+          "the target qubits", [MemRead, MemWrite]>:$qubits);
+  let assemblyFormat = "$matrix $qubits attr-dict `:` type($qubits)";
+
+  let extraClassDeclaration = [{
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubits().size(); }
+        static size_t getNumControls() { return 0; }
+        static OperandRange getControls() { return {nullptr, 0}; }
+        Value getQubit(size_t i) { return getTarget(i); }
+        Value getTarget(size_t i) { return getQubits()[i]; }
+        OperandRange getTargets() { return getQubits(); }
+        static Value getControl(size_t i) { llvm::reportFatalUsageError("UnitaryOp cannot be controlled directly"); }
+        static size_t getNumParams() { return 0; }
+        static Value getParameter(size_t i) { llvm::reportFatalUsageError("UnitaryOp does not have parameters"); }
+        static OperandRange getParameters() { return {nullptr, 0}; }
+        static StringRef getBaseSymbol() { return "unitary"; }
+    }];
+
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
 def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
   let summary = "Apply a barrier gate to a set of qubits";
   let description = [{

@@ -28,8 +28,10 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/UB/IR/UBOps.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
@@ -39,9 +41,12 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <complex>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -57,12 +62,15 @@ struct ExportedInstruction {
     Measure,
     Reset,
     Barrier,
+    Unitary,
   };
   Kind kind = Kind::Gate;
   StandardGateMapping gate;
   std::vector<uint32_t> qubits;
   std::vector<uint32_t> clbits;
   std::vector<double> parameters;
+  std::vector<std::complex<double>> matrix;
+  uint32_t unitaryControls = 0;
 };
 
 [[nodiscard]] double exportParameter(const mlir::Value value) {
@@ -185,6 +193,28 @@ modifierQubitMap(const llvm::DenseMap<mlir::Value, uint32_t>& outer,
 }
 
 void invertGate(ExportedInstruction& instruction) {
+  if (instruction.kind == ExportedInstruction::Kind::Unitary) {
+    if (instruction.unitaryControls > instruction.qubits.size()) {
+      throw std::runtime_error("QC unitary has an invalid control count");
+    }
+    const auto numTargets =
+        instruction.qubits.size() - instruction.unitaryControls;
+    if (numTargets >= std::numeric_limits<size_t>::digits / 2U) {
+      throw std::runtime_error("QC unitary matrix is too large to represent");
+    }
+    const auto dimension = size_t{1} << numTargets;
+    if (dimension * dimension != instruction.matrix.size()) {
+      throw std::runtime_error("QC unitary matrix has an invalid dimension");
+    }
+    auto source = instruction.matrix;
+    for (size_t row = 0U; row < dimension; ++row) {
+      for (size_t column = 0U; column < dimension; ++column) {
+        instruction.matrix[(row * dimension) + column] =
+            std::conj(source[(column * dimension) + row]);
+      }
+    }
+    return;
+  }
   using Gate = mlir::qc::StandardGate;
   switch (instruction.gate.gate) {
   case Gate::Id:
@@ -272,11 +302,14 @@ collectUnitaryInstruction(mlir::Operation& operation,
           "QC control export requires one standard gate in the modifier body");
     }
     auto result = collectUnitaryInstruction(*bodyOperations.front(), nestedMap);
-    if (controls.size() >
-        std::numeric_limits<uint32_t>::max() - result.gate.controls) {
+    auto& numControls = result.kind == ExportedInstruction::Kind::Unitary
+                            ? result.unitaryControls
+                            : result.gate.controls;
+    if (std::cmp_greater(controls.size(),
+                         std::numeric_limits<uint32_t>::max() - numControls)) {
       throw std::runtime_error("QC control count cannot be represented");
     }
-    result.gate.controls += static_cast<uint32_t>(controls.size());
+    numControls += static_cast<uint32_t>(controls.size());
     result.qubits.insert(result.qubits.begin(), controls.begin(),
                          controls.end());
     return result;
@@ -311,6 +344,18 @@ collectUnitaryInstruction(mlir::Operation& operation,
       invertGate(result);
     }
     return result;
+  }
+  if (auto unitary = llvm::dyn_cast<mlir::qc::UnitaryOp>(operation)) {
+    const auto matrix =
+        llvm::cast<mlir::DenseElementsAttr>(unitary.getMatrix());
+    std::vector<std::complex<double>> values;
+    values.reserve(matrix.size());
+    llvm::append_range(values, matrix.getValues<std::complex<double>>());
+    auto targetQubits = mapQubits(unitary.getQubits(), qubits);
+    std::ranges::reverse(targetQubits);
+    return {.kind = ExportedInstruction::Kind::Unitary,
+            .qubits = std::move(targetQubits),
+            .matrix = std::move(values)};
   }
   auto gate = llvm::dyn_cast<mlir::qc::UnitaryOpInterface>(operation);
   if (!gate || llvm::isa<mlir::qc::GPhaseOp, mlir::qc::BarrierOp>(operation)) {
@@ -443,14 +488,41 @@ void collectResources(mlir::func::FuncOp function, ExportState& state,
   }
 }
 
+[[nodiscard]] std::optional<uint32_t>
+initialClassicalZeroStoreIndex(mlir::memref::StoreOp store,
+                               mlir::Value registerValue,
+                               const ExportState& state) {
+  if (store.getMemref() != registerValue || store.getIndices().size() != 1U ||
+      !mlir::matchPattern(store.getValueToStore(), mlir::m_Zero())) {
+    return std::nullopt;
+  }
+
+  const auto size = state.classicalSizes.find(registerValue);
+  const auto index = mlir::getConstantIntValue(store.getIndices().front());
+  if (size == state.classicalSizes.end() || !index || *index < 0 ||
+      std::cmp_greater_equal(*index, size->second)) {
+    return std::nullopt;
+  }
+  return static_cast<uint32_t>(*index);
+}
+
 void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
+  mlir::Value initializationRegister;
+  llvm::DenseSet<uint32_t> initializedClassicalBits;
   for (auto& operation : function.getBody().front()) {
-    if (llvm::isa<mlir::arith::ConstantOp, mlir::memref::AllocOp,
-                  mlir::qc::AllocOp, mlir::qc::DeallocOp, mlir::qc::StaticOp,
-                  mlir::func::ReturnOp>(operation)) {
+    if (auto alloc = llvm::dyn_cast<mlir::memref::AllocOp>(operation)) {
+      initializationRegister = {};
+      initializedClassicalBits.clear();
+      if (state.classicalBases.contains(alloc.getResult())) {
+        initializationRegister = alloc.getResult();
+      }
+      continue;
+    }
+    if (llvm::isa<mlir::arith::ConstantOp>(operation)) {
       continue;
     }
     if (auto load = llvm::dyn_cast<mlir::memref::LoadOp>(operation)) {
+      initializationRegister = {};
       if (state.qubits.contains(load.getResult())) {
         continue;
       }
@@ -459,6 +531,7 @@ void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
           "loads");
     }
     if (auto dealloc = llvm::dyn_cast<mlir::memref::DeallocOp>(operation)) {
+      initializationRegister = {};
       if (state.quantumBases.contains(dealloc.getMemref()) ||
           state.classicalBases.contains(dealloc.getMemref())) {
         continue;
@@ -466,13 +539,37 @@ void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
       throw std::runtime_error(
           "QC to Qiskit export encountered an unsupported memory deallocation");
     }
-    if (auto store = llvm::dyn_cast<mlir::memref::StoreOp>(operation)) {
-      if (llvm::isa_and_nonnull<mlir::qc::MeasureOp>(
-              store.getValueToStore().getDefiningOp())) {
+    if (auto poison = llvm::dyn_cast<mlir::ub::PoisonOp>(operation)) {
+      initializationRegister = {};
+      if (llvm::all_of(poison->getResults(), [](const mlir::Value result) {
+            return result.use_empty();
+          })) {
         continue;
       }
       throw std::runtime_error(
+          "QC to Qiskit export does not support used poison values");
+    }
+    if (auto store = llvm::dyn_cast<mlir::memref::StoreOp>(operation)) {
+      if (llvm::isa_and_nonnull<mlir::qc::MeasureOp>(
+              store.getValueToStore().getDefiningOp())) {
+        initializationRegister = {};
+        continue;
+      }
+      if (initializationRegister) {
+        const auto index = initialClassicalZeroStoreIndex(
+            store, initializationRegister, state);
+        if (index && initializedClassicalBits.insert(*index).second) {
+          continue;
+        }
+      }
+      initializationRegister = {};
+      throw std::runtime_error(
           "QC to Qiskit export does not support classical execution");
+    }
+    initializationRegister = {};
+    if (llvm::isa<mlir::qc::AllocOp, mlir::qc::DeallocOp, mlir::qc::StaticOp,
+                  mlir::func::ReturnOp>(operation)) {
+      continue;
     }
     if (auto phase = llvm::dyn_cast<mlir::qc::GPhaseOp>(operation)) {
       state.globalPhase += exportParameter(phase.getTheta());
@@ -527,6 +624,11 @@ void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
       state.instructions.push_back(
           {.kind = ExportedInstruction::Kind::Barrier,
            .qubits = mapQubits(barrier.getQubits(), state.qubits)});
+      continue;
+    }
+    if (llvm::isa<mlir::qc::UnitaryOp>(operation)) {
+      state.instructions.push_back(
+          collectUnitaryInstruction(operation, state.qubits));
       continue;
     }
     if (llvm::isa<mlir::scf::IfOp, mlir::scf::WhileOp, mlir::scf::ForOp,
@@ -621,6 +723,10 @@ nb::object exportCircuit(const mlir::QCProgram& program,
       break;
     case ExportedInstruction::Kind::Barrier:
       writer->addBarrier(instruction.qubits);
+      break;
+    case ExportedInstruction::Kind::Unitary:
+      writer->addUnitary(instruction.matrix, instruction.qubits,
+                         instruction.unitaryControls);
       break;
     }
   }

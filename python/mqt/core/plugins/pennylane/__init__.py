@@ -28,7 +28,6 @@ else:
 __all__ = ["HAS_PENNYLANE"]
 
 if TYPE_CHECKING or (sys.version_info >= (3, 11) and HAS_PENNYLANE):
-    from .converter import ConvertedProgram, convert_program
     from .device import DDSIMDevice, QDMIDevice
     from .exceptions import (
         PennyLaneConfigurationError,
@@ -41,7 +40,6 @@ if TYPE_CHECKING or (sys.version_info >= (3, 11) and HAS_PENNYLANE):
     )
 
     __all__ += [
-        "ConvertedProgram",
         "DDSIMDevice",
         "PennyLaneConfigurationError",
         "PennyLaneExecutionError",
@@ -51,5 +49,4 @@ if TYPE_CHECKING or (sys.version_info >= (3, 11) and HAS_PENNYLANE):
         "PennyLaneValidationError",
         "QDMIDevice",
         "QDMIPluginError",
-        "convert_program",
     ]

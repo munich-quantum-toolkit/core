@@ -6,6 +6,116 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### QDMI updated to version 1.3.3
+
+While not a breaking change, this release updates the QDMI dependency to version
+1.3.3.
+
+### `nanobind` updated to version 2.15.0
+
+This release updates the `nanobind` dependency to version 2.15.0, which includes
+an ABI bump. Any existing code that uses the `mqt-core` Python bindings will
+need to be recompiled with the new `nanobind` version.
+
+### Calibration runs and batch jobs
+
+`Device::submitJob` used to reject `CALIBRATION` and `BATCH_JOB` together, which
+left MQT Core reporting that a device needs calibration through
+`needs_calibration()` without any way to trigger one. The two formats are
+different cases and are now treated as such.
+
+A calibration run has its own entry point. QDMI does not require a program for
+one, so the payload is optional; when it is present, the device defines what it
+means:
+
+```python
+device.submit_calibration_job()
+device.submit_calibration_job("configuration")
+```
+
+In C++, use `Device::submitCalibrationJob`. A calibration run executes no
+circuit, so neither form takes a shot count.
+
+Batch jobs are explicitly unsupported. A batch job's program is a list of job
+handles rather than a byte payload, which `submitJob` cannot express, so MQT
+Core says so rather than describing it as a missing payload. Passing
+`ProgramFormat.BATCH_JOB` to `submit_job` raises a `ValueError` that names the
+limitation. Support can return once a device implements the feature.
+
+### Program serializers for the Qiskit backend
+
+The Qiskit backend no longer decides in its own code how to turn a circuit into
+a program. It takes every program format from a registered _program serializer_,
+and MQT Core registers its own OpenQASM 2 and OpenQASM 3 serializers the same
+way as everyone else.
+
+A serializer takes the circuit and the backend. It returns `str` for a text
+format and `bytes` for a binary format;
+{py:func}`~mqt.core.qdmi.is_binary_program_format` states which kind a format
+carries. Register one at run time:
+
+```python
+import io
+
+from qiskit import qpy
+
+from mqt.core.plugins.qiskit import register_program_serializer
+from mqt.core.qdmi import ProgramFormat
+
+
+def my_qpy_serializer(circuit, backend) -> bytes:
+    buffer = io.BytesIO()
+    qpy.dump(circuit, buffer)
+    return buffer.getvalue()
+
+
+register_program_serializer(ProgramFormat.QPY, my_qpy_serializer)
+```
+
+A package that owns a device advertises its serializer through the
+`mqt.core.qiskit.program_serializers` entry point group instead, so MQT Core
+finds it without importing the package:
+
+```toml
+[project.entry-points."mqt.core.qiskit.program_serializers"]
+IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
+```
+
+`mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` states which
+format the backend picks when a device accepts several. Pass `replace=True` to
+`register_program_serializer` to take over a format that already has a
+serializer, including OpenQASM 2 and OpenQASM 3.
+
+A backend subclass that must represent a device-native operation outside
+Qiskit's standard gate library sets `_EXTRA_GATES`:
+
+```python
+class MyBackend(QDMIBackend):
+    _EXTRA_GATES = {"move": MoveGate()}
+```
+
+### IQM JSON serialization moved to QDMI-on-IQM
+
+MQT Core no longer provides `qiskit_to_iqm_json` or `MoveGate`.
+[QDMI-on-IQM](https://github.com/iqm-finland/QDMI-on-IQM) owns both. Import them
+from `iqm.qdmi` instead:
+
+```python
+from iqm.qdmi.serializers import qiskit_to_iqm_json
+from iqm.qdmi.gates import MoveGate
+```
+
+Installing `iqm-qdmi` is enough to keep submitting IQM JSON. The package
+advertises its serializer through the entry point group described above, so a
+backend over an IQM device needs no code change.
+
+### Removal of DD approximation support
+
+MQT Core no longer provides the decision-diagram approximation algorithm. The
+algorithm had no production owner in the MQT ecosystem. Remove uses of the
+`dd/Approximation.hpp` header, the `dd::ApproximationMetadata` type, and the
+`dd::approximate` function. MQT Core does not provide a replacement.
+
 ### Private `nlohmann_json` dependency
 
 MQT Core uses `nlohmann_json` only inside its implementation. It no longer
@@ -564,7 +674,7 @@ access to QDMI devices.
 Install with Qiskit support: `uv pip install "mqt-core[qiskit]"`
 
 See the
-[Qiskit Backend documentation](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qiskit_backend.html)
+[Qiskit Backend documentation](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qdmi_backend.html)
 for details.
 
 ### Argument name changes in `QuantumComputation` and `CompoundOperation` dunder methods

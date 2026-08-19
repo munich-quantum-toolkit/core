@@ -24,11 +24,15 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/Pass.h>
@@ -37,6 +41,8 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
+#include <array>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -54,11 +60,13 @@ using Site = Target::Site;
 using mlir::ModuleOp;
 using mlir::OwningOpRef;
 using mlir::Value;
+using mlir::ValueRange;
 using mlir::qco::CtrlOp;
 using mlir::qco::HOp;
 using mlir::qco::QCOProgramBuilder;
 using mlir::qco::RXXOp;
 using mlir::qco::SWAPOp;
+using mlir::qco::UnitaryOp;
 using mlir::qco::XOp;
 using mlir::qco::ZOp;
 
@@ -146,6 +154,41 @@ makeUCxTarget(std::optional<std::vector<Site>> sites = std::nullopt) {
   return valid(
       Target::create(std::move(*sites), std::nullopt, std::move(operations)));
 }
+
+[[nodiscard]] static mlir::DenseElementsAttr
+denseMatrix(QCOProgramBuilder& builder, const int64_t dimension,
+            const llvm::ArrayRef<std::complex<double>> values) {
+  const auto type = mlir::RankedTensorType::get(
+      {dimension, dimension}, mlir::ComplexType::get(builder.getF64Type()));
+  return mlir::DenseElementsAttr::get(type, values);
+}
+
+constexpr std::array<std::complex<double>, 4> X_MATRIX{{
+    {0.0, 0.0},
+    {1.0, 0.0},
+    {1.0, 0.0},
+    {0.0, 0.0},
+}};
+
+// CX with operand 0 as the most-significant (control) qubit.
+constexpr std::array<std::complex<double>, 16> CX_MATRIX{{
+    {1.0, 0.0},
+    {0.0, 0.0},
+    {0.0, 0.0},
+    {0.0, 0.0},
+    {0.0, 0.0},
+    {1.0, 0.0},
+    {0.0, 0.0},
+    {0.0, 0.0},
+    {0.0, 0.0},
+    {0.0, 0.0},
+    {0.0, 0.0},
+    {1.0, 0.0},
+    {0.0, 0.0},
+    {0.0, 0.0},
+    {1.0, 0.0},
+    {0.0, 0.0},
+}};
 
 namespace {
 
@@ -347,6 +390,72 @@ TEST_F(TargetSynthesisTest,
   ASSERT_TRUE(mlir::succeeded(
       runPass(*synthesized, mlir::qco::createVerifyTargetConformance(target))));
   expectEquivalent(expected, synthesized);
+}
+
+TEST_F(TargetSynthesisTest, DenseUnitaryHasAsymmetricTwoQubitDDSemantics) {
+  const auto denseCx = [](QCOProgramBuilder& builder) {
+    auto q0 = builder.staticQubit(0);
+    auto q1 = builder.staticQubit(1);
+    builder.unitary(ValueRange{q0, q1}, denseMatrix(builder, 4, CX_MATRIX));
+    return builder.intConstant(0);
+  };
+  const auto cxReference = [](QCOProgramBuilder& builder) {
+    auto q0 = builder.staticQubit(0);
+    auto q1 = builder.staticQubit(1);
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    return builder.intConstant(0);
+  };
+  auto expected = build(cxReference);
+  auto actual = build(denseCx);
+
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*actual)));
+  expectEquivalent(expected, actual);
+}
+
+TEST_F(TargetSynthesisTest,
+       TargetNativeSynthesisLowersDenseOneAndTwoQubitMatrices) {
+  const auto denseX = [](QCOProgramBuilder& builder) {
+    const auto qubit = builder.staticQubit(0);
+    builder.unitary(ValueRange{qubit}, denseMatrix(builder, 2, X_MATRIX));
+    return builder.intConstant(0);
+  };
+  const auto xReference = [](QCOProgramBuilder& builder) {
+    auto qubit = builder.staticQubit(0);
+    qubit = builder.x(qubit);
+    return builder.intConstant(0);
+  };
+  auto expectedX = build(xReference);
+  auto synthesizedX = build(denseX);
+  const auto target = makeUCxTarget();
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*synthesizedX, mlir::qco::createTargetNativeSynthesis(target))));
+  EXPECT_EQ(countOps<UnitaryOp>(*synthesizedX), 0U);
+  ASSERT_TRUE(mlir::succeeded(runPass(
+      *synthesizedX, mlir::qco::createVerifyTargetConformance(target))));
+  expectEquivalent(expectedX, synthesizedX);
+
+  const auto denseCx = [](QCOProgramBuilder& builder) {
+    auto q0 = builder.staticQubit(0);
+    auto q1 = builder.staticQubit(1);
+    builder.unitary(ValueRange{q0, q1}, denseMatrix(builder, 4, CX_MATRIX));
+    return builder.intConstant(0);
+  };
+  const auto cxReference = [](QCOProgramBuilder& builder) {
+    auto q0 = builder.staticQubit(0);
+    auto q1 = builder.staticQubit(1);
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    return builder.intConstant(0);
+  };
+  auto expectedCx = build(cxReference);
+  auto synthesizedCx = build(denseCx);
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*synthesizedCx, mlir::qco::createTargetNativeSynthesis(target))));
+  EXPECT_EQ(countOps<UnitaryOp>(*synthesizedCx), 0U);
+  ASSERT_TRUE(mlir::succeeded(runPass(
+      *synthesizedCx, mlir::qco::createVerifyTargetConformance(target))));
+  expectEquivalent(expectedCx, synthesizedCx);
 }
 
 TEST_F(TargetSynthesisTest, TargetNativeSynthesisPreservesNativeSwap) {

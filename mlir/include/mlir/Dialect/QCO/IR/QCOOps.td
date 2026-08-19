@@ -1027,6 +1027,65 @@ def RCCXOp : QCOOp<"rccx", traits = [UnitaryOpInterface,
   let hasCanonicalizer = 1;
 }
 
+def UnitaryOp : QCOOp<"unitary", traits = [UnitaryOpInterface, Pure]> {
+  let summary = "Apply an explicitly represented unitary matrix";
+  let description = [{
+        Applies a dense unitary matrix and returns the transformed qubits. The
+        matrix is stored in row-major order as a square rank-two tensor of
+        `complex<f64>` values. Its side length must be `2^n`, where `n` is the
+        number of input qubits. Operand 0 labels the most-significant basis bit;
+        the last operand labels the least-significant bit. The deterministic
+        matrix verifier supports one to eight qubits and checks `U^dagger U`
+        entry-wise with absolute tolerance `1e-10`.
+
+        Example:
+        ```mlir
+        %q_out = qco.unitary dense<[[(0.0,0.0), (1.0,0.0)],
+                                    [(1.0,0.0), (0.0,0.0)]]>
+            : tensor<2x2xcomplex<f64>> %q_in
+            : !qco.qubit -> !qco.qubit
+        ```
+    }];
+
+  let arguments = (ins ElementsAttr:$matrix,
+      Arg<Variadic<QubitType>, "the input qubits">:$qubits_in);
+  let results = (outs Variadic<QubitType>:$qubits_out);
+  let assemblyFormat = "$matrix $qubits_in attr-dict `:` type($qubits_in)"
+                       " `->` type($qubits_out)";
+
+  let extraClassDeclaration = [{
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubitsIn().size(); }
+        static size_t getNumControls() { return 0; }
+        Value getInputQubit(size_t i) { return getInputTarget(i); }
+        OperandRange getInputQubits() { return getQubitsIn(); }
+        OperandRange getInputTargets() { return getInputQubits(); }
+        Value getOutputQubit(size_t i) { return getOutputTarget(i); }
+        ResultRange getOutputQubits() { return getQubitsOut(); }
+        Value getInputTarget(size_t i) { return getQubitsIn()[i]; }
+        Value getOutputTarget(size_t i) { return getQubitsOut()[i]; }
+        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("UnitaryOp cannot be controlled directly"); }
+        static OperandRange getInputControls() { return {nullptr, 0}; }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("UnitaryOp cannot be controlled directly"); }
+        static ResultRange getOutputControls() { return {nullptr, 0}; }
+        ResultRange getOutputTargets() { return getOutputQubits(); }
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+        static size_t getNumParams() { return 0; }
+        static Value getParameter(size_t i) { llvm::reportFatalUsageError("UnitaryOp has no parameters"); }
+        static OperandRange getParameters() { return {nullptr, 0}; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "unitary"; }
+        [[nodiscard]] static bool hasCompileTimeKnownUnitaryMatrix() { return true; }
+        [[nodiscard]] DynamicMatrix getUnitaryMatrix();
+    }];
+
+  let builders = [OpBuilder<(ins "ValueRange":$qubits,
+      "ElementsAttr":$matrix)>];
+
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
 def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
   let summary = "Apply a barrier gate to a set of qubits";
   let description = [{

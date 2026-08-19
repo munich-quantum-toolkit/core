@@ -23,6 +23,8 @@ from mqt.core.qdmi import ProgramFormat
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
+    import pytest
+
 
 def _site(index: int) -> QDMIDevice.Site:
     """Return a site mock with one stable index."""
@@ -176,4 +178,12 @@ def stub_device(
         qubits=qubits,
         result_factory=result_factory,
         expose_shots=expose_shots,
+    )
+
+
+def patch_open_device(monkeypatch: pytest.MonkeyPatch, device: StubDevice) -> None:
+    """Route fresh stable-ID opens to a test double."""
+    monkeypatch.setattr(
+        "mqt.core.plugins.pennylane.device.open_device",
+        lambda *_args, **_kwargs: cast("QDMIDevice", device),
     )

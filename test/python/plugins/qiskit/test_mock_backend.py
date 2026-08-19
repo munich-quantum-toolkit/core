@@ -10,32 +10,32 @@
 
 from __future__ import annotations
 
-import json
 import re
 import secrets
 import string
 import warnings
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING, ClassVar, NoReturn
 
-import numpy as np
 import pytest
 from qiskit import qasm2, qasm3
-from qiskit.circuit import Clbit, Parameter, QuantumCircuit
+from qiskit.circuit import Gate, Parameter, QuantumCircuit
 
 from mqt.core.plugins.qiskit import (
-    MoveGate,
     QDMIBackend,
     QDMIProvider,
     TranslationError,
     UnsupportedFormatError,
-    UnsupportedOperationError,
-    qiskit_to_iqm_json,
+    program_serializer,
+    register_program_serializer,
+    unregister_program_serializer,
 )
 from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterator, Sequence
+
+    from qiskit.circuit import Instruction
 
 
 class MockQDMIDevice:
@@ -92,7 +92,7 @@ class MockQDMIDevice:
             elif name in {"ry", "rz", "rx", "p", "phase"}:
                 self._qubits = 1
                 self._params = 1
-            elif name in {"cz", "cx", "cnot", "cy", "ch", "swap", "iswap", "move"}:
+            elif name in {"cz", "cx", "cnot", "cy", "ch", "swap", "iswap", "hop"}:
                 self._qubits = 2
                 self._params = 0
             elif name in {"rxx", "ryy", "rzz", "rzx"}:
@@ -359,23 +359,6 @@ def test_backend_warns_on_unmappable_operation(
         ), f"Expected warning about custom_unmappable_gate, got: {warning_messages}"
 
 
-def test_backend_exposes_move_operation(
-    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
-) -> None:
-    """Backend target should expose MOVE when the device reports it."""
-    mock_device = mock_qdmi_device_factory(
-        name="Test Device",
-        num_qubits=2,
-        operations=["move", "measure"],
-    )
-    _patch_registered_devices(monkeypatch, [mock_device])
-
-    provider = QDMIProvider()
-    backend = provider.get_backend("Test Device")
-
-    assert "move" in backend.target.operation_names
-
-
 def test_backend_warns_on_missing_measurement_operation(
     monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
 ) -> None:
@@ -405,29 +388,72 @@ def test_backend_warns_on_missing_measurement_operation(
         )
 
 
-def test_backend_exposes_move_gate(
-    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
-) -> None:
-    """Backend exposes a device's 'move' operation as an opaque MoveGate in the Target."""
+def test_backend_warns_on_device_native_operation(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+    """Backend skips a device operation that no Qiskit gate represents."""
     mock_device = mock_qdmi_device_factory(
-        name="Test Device with MOVE",
+        name="Test Device with a device-native operation",
         num_qubits=2,
-        operations=["move", "cz", "measure"],
+        operations=["hop", "cz", "measure"],
     )
 
-    _patch_registered_devices(monkeypatch, [mock_device])
+    with pytest.warns(UserWarning, match="'hop' cannot be mapped to a Qiskit gate"):
+        backend = QDMIBackend(device=mock_device)  # ty: ignore[invalid-argument-type]
 
-    provider = QDMIProvider()
-    backend = provider.get_backend("Test Device with MOVE")
-
-    assert "move" in backend.target.operation_names
-    move_instruction = backend.target.operation_from_name("move")
-    assert isinstance(move_instruction, MoveGate)
-    assert move_instruction.num_qubits == 2
+    assert "hop" not in backend.target.operation_names
 
 
-def test_backend_qasm_conversion_no_supported_formats(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Backend should raise UnsupportedFormatError when no supported program formats exist."""
+def test_subclass_extra_gates_appear_in_target(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+    """A subclass represents a device-native operation through _EXTRA_GATES."""
+
+    class HopGate(Gate):
+        """An opaque two-qubit gate outside Qiskit's standard library."""
+
+        def __init__(self) -> None:
+            super().__init__("hop", 2, [])
+
+    class HoppingBackend(QDMIBackend):
+        """Backend for a device whose native gate set includes 'hop'."""
+
+        _EXTRA_GATES: ClassVar[dict[str, Instruction | type[Instruction]]] = {"hop": HopGate()}
+
+    mock_device = mock_qdmi_device_factory(
+        name="Test Device with a device-native operation",
+        num_qubits=2,
+        operations=["hop", "cz", "measure"],
+    )
+
+    backend = HoppingBackend(device=mock_device)  # ty: ignore[invalid-argument-type]
+
+    assert "hop" in backend.target.operation_names
+    hop_instruction = backend.target.operation_from_name("hop")
+    assert isinstance(hop_instruction, HopGate)
+    assert hop_instruction.num_qubits == 2
+
+    # The base class keeps its own mappings
+    assert QDMIBackend._map_operation_to_gate("hop") is None  # ruff:ignore[private-member-access]
+
+
+def _record_submissions(device: MockQDMIDevice) -> list[tuple[str | bytes, ProgramFormat]]:
+    """Make a mock device record every submission instead of parsing the program.
+
+    Args:
+        device: The mock device to change.
+
+    Returns:
+        The list the device appends each (program, format) pair to.
+    """
+    submissions: list[tuple[str | bytes, ProgramFormat]] = []
+
+    def submit_job(program: str | bytes, program_format: ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:
+        submissions.append((program, program_format))
+        return device.MockJob(num_clbits=2, shots=num_shots)
+
+    device.submit_job = submit_job  # ty: ignore[invalid-assignment]
+    return submissions
+
+
+def test_backend_serialization_without_supported_formats(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+    """Backend should raise UnsupportedFormatError when the device reports no program format."""
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
     qc.measure_all()
@@ -435,12 +461,12 @@ def test_backend_qasm_conversion_no_supported_formats(mock_qdmi_device_factory: 
     device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
-    with pytest.raises(UnsupportedFormatError, match="No supported program formats found"):
-        backend._convert_circuit(qc, [])  # ruff:ignore[private-member-access]
+    with pytest.raises(UnsupportedFormatError, match="reports no supported program formats"):
+        backend._serialize_circuit(qc, [])  # ruff:ignore[private-member-access]
 
 
-def test_backend_qasm3_conversion_success(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Backend should successfully convert circuit to QASM3."""
+def test_backend_qasm3_serialization_success(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+    """Backend should successfully serialize a circuit into OpenQASM 3."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.cx(0, 1)
@@ -449,16 +475,17 @@ def test_backend_qasm3_conversion_success(mock_qdmi_device_factory: type[MockQDM
     device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cx", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
-    program, fmt = backend._convert_circuit(qc, [ProgramFormat.QASM3])  # ruff:ignore[private-member-access]
+    program, fmt = backend._serialize_circuit(qc, [ProgramFormat.QASM3])  # ruff:ignore[private-member-access]
 
     assert fmt == ProgramFormat.QASM3
+    assert isinstance(program, str)
     assert "OPENQASM 3" in program
     assert "h q[0]" in program
     assert "cx q[0], q[1]" in program
 
 
-def test_backend_qasm2_conversion_success(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Backend should successfully convert circuit to QASM2."""
+def test_backend_qasm2_serialization_success(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+    """Backend should successfully serialize a circuit into OpenQASM 2."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.cx(0, 1)
@@ -467,16 +494,147 @@ def test_backend_qasm2_conversion_success(mock_qdmi_device_factory: type[MockQDM
     device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cx", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
-    program, fmt = backend._convert_circuit(qc, [ProgramFormat.QASM2])  # ruff:ignore[private-member-access]
+    program, fmt = backend._serialize_circuit(qc, [ProgramFormat.QASM2])  # ruff:ignore[private-member-access]
 
     assert fmt == ProgramFormat.QASM2
+    assert isinstance(program, str)
     assert "OPENQASM 2.0" in program
     assert "h q[0]" in program
     assert "cx q[0],q[1]" in program
 
 
-def test_backend_qasm3_preferred_over_qasm2(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Backend should prefer QASM3 over QASM2 when both are available."""
+def test_backend_respects_format_preference(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+    """The preference order decides the format, not the order the device reports."""
+    qc = QuantumCircuit(2)
+    qc.h(0)
+    qc.measure_all()
+
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "measure"])
+    # The device reports OpenQASM 2 first, but OpenQASM 3 outranks it.
+    device.supported_program_formats = lambda: [ProgramFormat.QASM2, ProgramFormat.QASM3]  # ty: ignore[invalid-assignment]
+    submissions = _record_submissions(device)
+
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
+    backend.run(qc, shots=100)
+
+    assert len(submissions) == 1
+    program, fmt = submissions[0]
+    assert fmt == ProgramFormat.QASM3
+    assert isinstance(program, str)
+    assert "OPENQASM 3" in program
+
+
+@pytest.fixture
+def registered_serializer() -> Iterator[ProgramFormat]:
+    """Register a text program serializer for CUSTOM1 and remove it after the test.
+
+    Yields:
+        The program format the serializer is registered for.
+    """
+
+    def serializer(circuit: QuantumCircuit, backend: QDMIBackend) -> str:  # ruff:ignore[unused-function-argument]
+        return f"CUSTOM1 program for {circuit.name}"
+
+    register_program_serializer(ProgramFormat.CUSTOM1, serializer)
+    yield ProgramFormat.CUSTOM1
+    unregister_program_serializer(ProgramFormat.CUSTOM1)
+
+
+def test_backend_uses_registered_serializer(
+    mock_qdmi_device_factory: type[MockQDMIDevice], registered_serializer: ProgramFormat
+) -> None:
+    """Backend serializes through a registered serializer when the device supports its format."""
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["r", "cz", "measure"])
+    device.supported_program_formats = lambda: [registered_serializer, ProgramFormat.QASM3]  # ty: ignore[invalid-assignment]
+    submissions = _record_submissions(device)
+
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
+    qc = QuantumCircuit(2, name="bell")
+    qc.r(1.5708, 0.0, 0)
+    qc.cz(0, 1)
+
+    backend.run(qc, shots=100)
+
+    assert submissions == [("CUSTOM1 program for bell", registered_serializer)]
+
+
+def test_backend_prefers_registered_serializer_over_qasm(
+    mock_qdmi_device_factory: type[MockQDMIDevice], registered_serializer: ProgramFormat
+) -> None:
+    """A registered serializer takes priority over the built-in OpenQASM serializers."""
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["r", "cz", "measure"])
+    device.supported_program_formats = lambda: [ProgramFormat.QASM2, ProgramFormat.QASM3, registered_serializer]  # ty: ignore[invalid-assignment]
+    submissions = _record_submissions(device)
+
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
+    qc = QuantumCircuit(2, name="bell")
+    qc.r(1.5708, 0.0, 0)
+    qc.cz(0, 1)
+    qc.measure_all()
+
+    backend.run(qc, shots=100)
+
+    assert submissions == [("CUSTOM1 program for bell", registered_serializer)]
+
+
+@pytest.fixture
+def registered_binary_serializer() -> Iterator[tuple[ProgramFormat, bytes]]:
+    """Register a binary program serializer for QPY and remove it after the test.
+
+    Yields:
+        The program format the serializer is registered for and the payload it
+        returns.
+    """
+    payload = b"QPY\x00\x01binary program"
+
+    def serializer(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes:  # ruff:ignore[unused-function-argument]
+        return payload
+
+    register_program_serializer(ProgramFormat.QPY, serializer)
+    yield ProgramFormat.QPY, payload
+    unregister_program_serializer(ProgramFormat.QPY)
+
+
+def test_backend_submits_binary_payload(
+    mock_qdmi_device_factory: type[MockQDMIDevice], registered_binary_serializer: tuple[ProgramFormat, bytes]
+) -> None:
+    """A binary format reaches the device as the exact bytes the serializer returned."""
+    fmt, payload = registered_binary_serializer
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cz", "measure"])
+    device.supported_program_formats = lambda: [fmt, ProgramFormat.QASM3]  # ty: ignore[invalid-assignment]
+    submissions = _record_submissions(device)
+
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
+    qc = QuantumCircuit(2)
+    qc.h(0)
+    qc.cz(0, 1)
+    qc.measure_all()
+
+    backend.run(qc, shots=100)
+
+    assert submissions == [(payload, fmt)]
+
+
+@pytest.fixture
+def mistyped_serializer() -> Iterator[ProgramFormat]:
+    """Register a serializer that returns bytes for a text format.
+
+    Yields:
+        The text program format the serializer is registered for.
+    """
+
+    def serializer(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes:  # ruff:ignore[unused-function-argument]
+        return b"not a string"
+
+    register_program_serializer(ProgramFormat.CUSTOM2, serializer)
+    yield ProgramFormat.CUSTOM2
+    unregister_program_serializer(ProgramFormat.CUSTOM2)
+
+
+def test_backend_rejects_wrong_payload_type(
+    mock_qdmi_device_factory: type[MockQDMIDevice], mistyped_serializer: ProgramFormat
+) -> None:
+    """A serializer that returns the wrong payload type for its format fails."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.measure_all()
@@ -484,67 +642,57 @@ def test_backend_qasm3_preferred_over_qasm2(mock_qdmi_device_factory: type[MockQ
     device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
-    # When both formats are available, QASM3 should be chosen
-    program, fmt = backend._convert_circuit(qc, [ProgramFormat.QASM2, ProgramFormat.QASM3])  # ruff:ignore[private-member-access]
-
-    assert fmt == ProgramFormat.QASM3
-    assert "OPENQASM 3" in program
+    with pytest.raises(TranslationError, match="returned bytes, but CUSTOM2 requires str"):
+        backend._serialize_circuit(qc, [mistyped_serializer])  # ruff:ignore[private-member-access]
 
 
-def test_backend_uses_iqm_json_when_supported(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that backend uses IQM JSON format when supported."""
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["r", "cz", "measure"])
+@pytest.fixture
+def replaced_qasm3_serializer() -> Iterator[str]:
+    """Replace the built-in OpenQASM 3 serializer and restore it after the test.
 
-    submitted_format: ProgramFormat | None = None
+    Yields:
+        The program the replacement returns.
+    """
+    program = "OPENQASM 3.0; // replaced"
+    original = program_serializer(ProgramFormat.QASM3)
+    assert original is not None
 
-    def mock_supported_formats() -> list[ProgramFormat]:
-        return [ProgramFormat.IQM_JSON, ProgramFormat.QASM3]
+    def serializer(circuit: QuantumCircuit, backend: QDMIBackend) -> str:  # ruff:ignore[unused-function-argument]
+        return program
 
-    def mock_submit_job(program: str, program_format: ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:  # ruff:ignore[unused-function-argument]
-        nonlocal submitted_format
-        submitted_format = program_format
-        return device.MockJob(num_clbits=2, shots=num_shots)
+    register_program_serializer(ProgramFormat.QASM3, serializer, replace=True)
+    yield program
+    register_program_serializer(ProgramFormat.QASM3, original, replace=True)
 
-    device.supported_program_formats = mock_supported_formats  # ty: ignore[invalid-assignment]
-    device.submit_job = mock_submit_job  # ty: ignore[invalid-assignment]
+
+def test_backend_uses_replaced_qasm3_serializer(
+    mock_qdmi_device_factory: type[MockQDMIDevice], replaced_qasm3_serializer: str
+) -> None:
+    """Replacing the built-in OpenQASM 3 serializer changes what the backend submits."""
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "measure"])
+    submissions = _record_submissions(device)
 
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
     qc = QuantumCircuit(2)
-    qc.r(1.5708, 0.0, 0)
-    qc.cz(0, 1)
+    qc.h(0)
     qc.measure_all()
 
     backend.run(qc, shots=100)
 
-    assert submitted_format == ProgramFormat.IQM_JSON
+    assert submissions == [(replaced_qasm3_serializer, ProgramFormat.QASM3)]
 
 
-def test_backend_iqm_json_preferred_over_qasm(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that IQM JSON takes priority over QASM formats."""
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["r", "cz", "measure"])
-
-    submitted_format: ProgramFormat | None = None
-
-    def mock_supported_formats() -> list[ProgramFormat]:
-        return [ProgramFormat.QASM2, ProgramFormat.QASM3, ProgramFormat.IQM_JSON]
-
-    def mock_submit_job(program: str, program_format: ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:  # ruff:ignore[unused-function-argument]
-        nonlocal submitted_format
-        submitted_format = program_format
-        return device.MockJob(num_clbits=2, shots=num_shots)
-
-    device.supported_program_formats = mock_supported_formats  # ty: ignore[invalid-assignment]
-    device.submit_job = mock_submit_job  # ty: ignore[invalid-assignment]
-
-    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
+def test_backend_rejects_device_without_program_payload(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+    """A device that only accepts CALIBRATION has no format a circuit can go into."""
     qc = QuantumCircuit(2)
-    qc.r(1.5708, 0.0, 0)
-    qc.cz(0, 1)
+    qc.h(0)
     qc.measure_all()
 
-    backend.run(qc, shots=100)
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "measure"])
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
-    assert submitted_format == ProgramFormat.IQM_JSON
+    with pytest.raises(UnsupportedFormatError, match="No program serializer for any format the device supports"):
+        backend._serialize_circuit(qc, [ProgramFormat.CALIBRATION])  # ruff:ignore[private-member-access]
 
 
 @pytest.mark.parametrize(
@@ -554,13 +702,13 @@ def test_backend_iqm_json_preferred_over_qasm(mock_qdmi_device_factory: type[Moc
         ("qasm2", ProgramFormat.QASM2),
     ],
 )
-def test_backend_qasm_conversion_failure(
+def test_backend_qasm_serialization_failure(
     monkeypatch: pytest.MonkeyPatch,
     qasm_module_name: str,
     program_format: ProgramFormat,
     mock_qdmi_device_factory: type[MockQDMIDevice],
 ) -> None:
-    """Backend should raise TranslationError when QASM conversion fails."""
+    """Backend should raise TranslationError when OpenQASM serialization fails."""
     qasm_module = qasm3 if qasm_module_name == "qasm3" else qasm2
 
     # Monkeypatch qasm dumps to raise an exception
@@ -577,12 +725,12 @@ def test_backend_qasm_conversion_failure(
     device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
-    with pytest.raises(TranslationError, match=f"Failed to convert circuit to {qasm_module_name.upper()}"):
-        backend._convert_circuit(qc, [program_format])  # ruff:ignore[private-member-access]
+    with pytest.raises(TranslationError, match=f"Failed to serialize the circuit to {qasm_module_name.upper()}"):
+        backend._serialize_circuit(qc, [program_format])  # ruff:ignore[private-member-access]
 
 
 def test_backend_unsupported_format_error(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Backend should raise UnsupportedFormatError when only unsupported formats available."""
+    """Backend should raise UnsupportedFormatError when no supported format has a serializer."""
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
     qc.measure_all()
@@ -590,11 +738,9 @@ def test_backend_unsupported_format_error(mock_qdmi_device_factory: type[MockQDM
     device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
-    # Test with QPY format which is not supported for conversion from Qiskit
-    with pytest.raises(
-        UnsupportedFormatError, match="No conversion from Qiskit to any of the supported program formats"
-    ):
-        backend._convert_circuit(qc, [ProgramFormat.QPY])  # ruff:ignore[private-member-access]
+    # MQT Core ships no QPY serializer, and no package registered one
+    with pytest.raises(UnsupportedFormatError, match="No program serializer for any format the device supports"):
+        backend._serialize_circuit(qc, [ProgramFormat.QPY])  # ruff:ignore[private-member-access]
 
 
 def test_map_operation_returns_none_for_unknown() -> None:
@@ -602,14 +748,6 @@ def test_map_operation_returns_none_for_unknown() -> None:
     assert QDMIBackend._map_operation_to_gate("unknown_gate") is None  # ruff:ignore[private-member-access]
     assert QDMIBackend._map_operation_to_gate("custom_op") is None  # ruff:ignore[private-member-access]
     assert QDMIBackend._map_operation_to_gate("") is None  # ruff:ignore[private-member-access]
-
-
-def test_map_operation_to_move_gate() -> None:
-    """MOVE operations map to an opaque 2-qubit gate."""
-    gate = QDMIBackend._map_operation_to_gate("move")  # ruff:ignore[private-member-access]
-    assert gate is not None
-    assert gate.name == "move"
-    assert gate.num_qubits == 2
 
 
 def test_map_qiskit_gate_to_operation_names() -> None:
@@ -628,7 +766,7 @@ def test_map_qiskit_gate_to_operation_names() -> None:
     assert cx_names == {"cx", "cnot"}
     assert QDMIBackend._map_qiskit_gate_to_operation_names("cnot") == cx_names  # ruff:ignore[private-member-access]
 
-    # Device-specific aliases: bidirectional consistency for R/PRX (IQM naming)
+    # Device-specific aliases: bidirectional consistency for R/PRX
     r_names = QDMIBackend._map_qiskit_gate_to_operation_names("r")  # ruff:ignore[private-member-access]
     assert r_names == {"r", "prx"}
     assert QDMIBackend._map_qiskit_gate_to_operation_names("prx") == r_names  # ruff:ignore[private-member-access]
@@ -641,9 +779,9 @@ def test_map_qiskit_gate_to_operation_names() -> None:
     assert QDMIBackend._map_qiskit_gate_to_operation_names("X") == {"x"}  # ruff:ignore[private-member-access]
     assert QDMIBackend._map_qiskit_gate_to_operation_names("CX") == {"cx", "cnot"}  # ruff:ignore[private-member-access]
 
-    # MOVE operation is represented as a real gate for IQM devices
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("move") == {"move"}  # ruff:ignore[private-member-access]
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("MOVE") == {"move"}  # ruff:ignore[private-member-access]
+    # An operation without a Qiskit gate maps to itself
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("hop") == {"hop"}  # ruff:ignore[private-member-access]
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("HOP") == {"hop"}  # ruff:ignore[private-member-access]
 
     # Fallback for unknown gates (returns lowercase name)
     assert QDMIBackend._map_qiskit_gate_to_operation_names("unknown") == {"unknown"}  # ruff:ignore[private-member-access]
@@ -682,248 +820,3 @@ def test_backend_validation_uses_inverse_mapping(
     # knows that Qiskit's 'r' can map to device's 'prx'
     job = backend.run(qc_bound, shots=100)
     assert job is not None
-
-
-def test_qiskit_to_iqm_json_simple_circuit(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test conversion of a simple circuit to IQM JSON."""
-    device = mock_qdmi_device_factory(
-        name="IQM Device",
-        num_qubits=2,
-        operations=["r", "cz", "measure", "barrier"],
-    )
-
-    qc = QuantumCircuit(2, 2)
-    qc.r(1.5708, 0.0, 0)
-    qc.cz(0, 1)
-    qc.measure_all()
-
-    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
-    program = json.loads(json_str)
-
-    assert "name" in program
-    assert "metadata" in program
-    assert "instructions" in program
-    assert isinstance(program["instructions"], list)
-    assert len(program["instructions"]) == 5  # r, cz, barrier, measure, measure
-    instr_names = [instr["name"] for instr in program["instructions"]]
-    assert instr_names == ["prx", "cz", "barrier", "measure", "measure"]
-
-
-def test_qiskit_to_iqm_json_prx_parameters(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that R gates are converted to PRX with correct parameters."""
-    device = mock_qdmi_device_factory(num_qubits=1, operations=["r", "measure"])
-
-    angle = np.pi / 2
-    phase = np.pi / 4
-    qc = QuantumCircuit(1, 1)
-    qc.r(angle, phase, 0)
-    qc.measure_all()
-
-    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
-    program = json.loads(json_str)
-
-    prx_instr = program["instructions"][0]
-    assert prx_instr["name"] == "prx"
-    assert "args" in prx_instr
-    assert "angle_t" in prx_instr["args"]
-    assert "phase_t" in prx_instr["args"]
-
-    expected_angle_t = angle / (2 * np.pi)
-    expected_phase_t = phase / (2 * np.pi)
-    assert abs(prx_instr["args"]["angle_t"] - expected_angle_t) < 1e-10
-    assert abs(prx_instr["args"]["phase_t"] - expected_phase_t) < 1e-10
-
-
-def test_qiskit_to_iqm_json_barrier(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that barriers are correctly converted."""
-    device = mock_qdmi_device_factory(num_qubits=3, operations=["barrier"])
-
-    qc = QuantumCircuit(3)
-    qc.barrier([0, 1, 2])
-
-    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
-    program = json.loads(json_str)
-
-    barrier_instr = program["instructions"][0]
-    assert barrier_instr["name"] == "barrier"
-    assert len(barrier_instr["locus"]) == 3
-    assert barrier_instr["args"] == {}
-
-
-def test_qiskit_to_iqm_json_cz_gate(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that CZ gates are correctly converted."""
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["cz"])
-
-    qc = QuantumCircuit(2)
-    qc.cz(0, 1)
-
-    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
-    program = json.loads(json_str)
-
-    cz_instr = program["instructions"][0]
-    assert cz_instr["name"] == "cz"
-    assert len(cz_instr["locus"]) == 2
-    assert cz_instr["args"] == {}
-
-
-def test_qiskit_to_iqm_json_move_gate(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that MOVE gates are correctly converted to IQM JSON."""
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["move"])
-
-    qc = QuantumCircuit(2)
-    qc.append(MoveGate(), [0, 1])
-
-    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
-    program = json.loads(json_str)
-
-    move_instr = program["instructions"][0]
-    assert move_instr["name"] == "move"
-    assert move_instr["locus"] == ["site_0", "site_1"]
-    assert move_instr["args"] == {}
-
-
-def test_qiskit_to_iqm_json_measure_keys(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that measurements generate correct keys."""
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["measure"])
-
-    qc = QuantumCircuit(2, 2)
-    qc.measure_all()
-
-    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
-    program = json.loads(json_str)
-
-    barr = program["instructions"][0]
-    meas0 = program["instructions"][1]
-    meas1 = program["instructions"][2]
-
-    assert barr["name"] == "barrier"
-    assert barr["args"] == {}
-    assert meas0["name"] == "measure"
-    assert "key" in meas0["args"]
-    assert meas1["name"] == "measure"
-    assert "key" in meas1["args"]
-    assert meas0["args"]["key"] != meas1["args"]["key"]
-
-
-def test_qiskit_to_iqm_json_unsupported_operation(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that unsupported operations raise UnsupportedOperationError."""
-    device = mock_qdmi_device_factory(num_qubits=1, operations=[])
-
-    qc = QuantumCircuit(1)
-    qc.h(0)
-
-    with pytest.raises(UnsupportedOperationError, match="not supported in IQM JSON format"):
-        qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
-
-
-def test_qiskit_to_iqm_json_circuit_name(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that circuit name is preserved in IQM JSON."""
-    device = mock_qdmi_device_factory(num_qubits=1, operations=["measure"])
-
-    qc = QuantumCircuit(1, 1, name="my_test_circuit")
-    qc.measure_all()
-
-    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
-    program = json.loads(json_str)
-
-    assert program["name"] == "my_test_circuit"
-
-
-def test_qiskit_to_iqm_json_unbound_parameters(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that circuits with unbound parameters raise UnsupportedOperationError."""
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["r", "cz", "measure"])
-
-    # Create circuit with unbound parameters
-    theta = Parameter("theta")
-    phi = Parameter("phi")
-    qc = QuantumCircuit(2, 2)
-    qc.r(theta, phi, 0)
-    qc.cz(0, 1)
-    qc.measure_all()
-
-    # Should raise UnsupportedOperationError with clear message
-    with pytest.raises(UnsupportedOperationError) as exc_info:
-        qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
-
-    error_msg = str(exc_info.value)
-    assert "unbound parameters" in error_msg.lower()
-    assert "phi" in error_msg
-    assert "theta" in error_msg
-    assert "assign_parameters" in error_msg
-
-
-def test_qiskit_to_iqm_json_bound_parameters(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that circuits with bound parameters work correctly."""
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["r", "cz", "measure"])
-
-    # Create circuit with parameters
-    theta = Parameter("theta")
-    phi = Parameter("phi")
-    qc = QuantumCircuit(2, 2)
-    qc.r(theta, phi, 0)
-    qc.cz(0, 1)
-    qc.measure_all()
-
-    # Bind parameters
-    qc_bound = qc.assign_parameters({theta: np.pi / 2, phi: 0.0})
-
-    # Should convert successfully
-    json_str = qiskit_to_iqm_json(qc_bound, device)  # ty: ignore[invalid-argument-type]
-    program = json.loads(json_str)
-
-    assert "instructions" in program
-    # r, cz, barrier (from measure_all), measure, measure
-    assert len(program["instructions"]) == 5
-
-    # Check PRX instruction has correct parameters
-    prx_instr = program["instructions"][0]
-    assert prx_instr["name"] == "prx"
-    expected_angle_t = (np.pi / 2) / (2 * np.pi)
-    expected_phase_t = 0.0 / (2 * np.pi)
-    assert abs(prx_instr["args"]["angle_t"] - expected_angle_t) < 1e-10
-    assert abs(prx_instr["args"]["phase_t"] - expected_phase_t) < 1e-10
-
-
-def test_qiskit_to_iqm_json_unregistered_classical_bit(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that measurements to unregistered classical bits raise TranslationError."""
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
-
-    # Create circuit with unregistered classical bit
-    qc = QuantumCircuit(2)
-    standalone_clbit = Clbit()
-    qc.add_bits([standalone_clbit])
-    qc.cz(0, 1)
-    qc.measure(0, standalone_clbit)
-
-    # Should raise TranslationError with clear message
-    with pytest.raises(TranslationError) as exc_info:
-        qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
-
-    error_msg = str(exc_info.value)
-    assert "unregistered classical bit" in error_msg.lower()
-    assert "ClassicalRegister" in error_msg
-
-
-def test_qiskit_to_iqm_json_registered_classical_bit(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """Test that measurements to registered classical bits work correctly."""
-    device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
-
-    # Create circuit with registered classical bits (standard approach)
-    qc = QuantumCircuit(2, 2)
-    qc.cz(0, 1)
-    qc.measure(0, 0)
-    qc.measure(1, 1)
-
-    # Should convert successfully
-    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
-    program = json.loads(json_str)
-
-    assert "instructions" in program
-    assert len(program["instructions"]) == 3  # cz, measure, measure
-
-    # Check measurements have keys
-    measure_instrs = [instr for instr in program["instructions"] if instr["name"] == "measure"]
-    assert len(measure_instrs) == 2
-    assert "key" in measure_instrs[0]["args"]
-    assert "key" in measure_instrs[1]["args"]
-    assert measure_instrs[0]["args"]["key"] != measure_instrs[1]["args"]["key"]

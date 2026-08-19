@@ -1879,7 +1879,7 @@ qiskit = [
 build = [
     { name = "nanobind" },
     { name = "scikit-build-core" },
-    { name = "setuptools-scm" },
+    { name = "vcs-versioning" },
 ]
 dev = [
     { name = "lit" },
@@ -1895,7 +1895,7 @@ dev = [
     { name = "qirrunner" },
     { name = "qiskit", extra = ["qasm3-import"] },
     { name = "scikit-build-core" },
-    { name = "setuptools-scm" },
+    { name = "vcs-versioning" },
 ]
 docs = [
     { name = "furo" },
@@ -1906,7 +1906,6 @@ docs = [
     { name = "pennylane", marker = "python_full_version >= '3.11'" },
     { name = "qirrunner" },
     { name = "qiskit", extra = ["visualization"] },
-    { name = "setuptools-scm" },
     { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -1950,13 +1949,13 @@ provides-extras = ["pennylane", "qiskit"]
 
 [package.metadata.requires-dev]
 build = [
-    { name = "nanobind", specifier = "~=2.14.0" },
-    { name = "scikit-build-core", specifier = "~=1.0.3" },
-    { name = "setuptools-scm", specifier = ">=9.2.2" },
+    { name = "nanobind", specifier = "~=2.15.0" },
+    { name = "scikit-build-core", specifier = ">=1.0.3" },
+    { name = "vcs-versioning", specifier = ">=2.3.0" },
 ]
 dev = [
     { name = "lit", specifier = ">=18.1.8" },
-    { name = "nanobind", specifier = "~=2.14.0" },
+    { name = "nanobind", specifier = "~=2.15.0" },
     { name = "nox", specifier = ">=2025.11.12" },
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1" },
     { name = "numpy", marker = "python_full_version >= '3.14'", specifier = ">=2.3.2" },
@@ -1968,8 +1967,8 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "qirrunner", specifier = "~=0.9.6" },
     { name = "qiskit", extras = ["qasm3-import"], specifier = ">=1.1.0" },
-    { name = "scikit-build-core", specifier = "~=1.0.3" },
-    { name = "setuptools-scm", specifier = ">=9.2.2" },
+    { name = "scikit-build-core", specifier = ">=1.0.3" },
+    { name = "vcs-versioning", specifier = ">=2.3.0" },
 ]
 docs = [
     { name = "furo", specifier = ">=2025.9.25" },
@@ -1980,7 +1979,6 @@ docs = [
     { name = "pennylane", marker = "python_full_version >= '3.11'", specifier = ">=0.45.1,<0.46" },
     { name = "qirrunner", specifier = "~=0.9.6" },
     { name = "qiskit", extras = ["visualization"], specifier = ">=1.1.0" },
-    { name = "setuptools-scm", specifier = ">=9.2.2" },
     { name = "sphinx", marker = "python_full_version < '3.11'", specifier = ">=8.1.3" },
     { name = "sphinx", marker = "python_full_version >= '3.11'", specifier = ">=9.0" },
     { name = "sphinx-autoapi", specifier = ">=3.6.1" },
@@ -2096,11 +2094,11 @@ wheels = [
 
 [[package]]
 name = "nanobind"
-version = "2.14.0"
+version = "2.15.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/1f/23/a6fdf94de7bf760da93a115593cc1756a7b3d408c12681df9e4c63bf11e3/nanobind-2.14.0.tar.gz", hash = "sha256:0cf1477d8b1697abc1454028b6469e7113d9aa6ba3ced8b102cc569affbacb13", size = 1053642, upload-time = "2026-08-07T06:07:51.605Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0d/08/cef3343279d2bde0baa57aadaacf7196ee336f12449c50c27f799c45b3f7/nanobind-2.15.0.tar.gz", hash = "sha256:3eace37a3b8cdadd531fcc6145263985b29821467161d34ff722b0644cf445b5", size = 1060056, upload-time = "2026-08-15T19:01:04.369Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/94/17/fba47a85a7b0bfb9ab5a5100e8a26b361b881089c7d8cad9a95f895f1546/nanobind-2.14.0-py3-none-any.whl", hash = "sha256:a57cd4fe613db78410ca13ba007a3ffaf3125b831d8be46ec7f4351e8cf6e513", size = 269917, upload-time = "2026-08-07T06:07:50.045Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/72/16a606cbea58be568475f450ece121b3fd62cffb390fd0f8eb8b410904f5/nanobind-2.15.0-py3-none-any.whl", hash = "sha256:91dae9305c6242cf63ab11a5c41594e234e7a22fd9fcc2c5c4ba80724abc1787", size = 271648, upload-time = "2026-08-15T19:01:02.477Z" },
 ]
 
 [[package]]
@@ -3808,31 +3806,6 @@ wheels = [
 ]
 
 [[package]]
-name = "setuptools"
-version = "84.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6d/44/f5da03a8ef95d369145c5bb53050e7877c9f3d312e128605fd9504829143/setuptools-84.0.0.tar.gz", hash = "sha256:f4695c21257f0d9b537ec2692c941d02ee143b7cc1276941349a546573b2ef73", size = 1168449, upload-time = "2026-08-08T18:27:58.365Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/9c/c510029fc6ef33a6275cd2c5d3cecd6613dfd6aa401d57c54f1c18852ccf/setuptools-84.0.0-py3-none-any.whl", hash = "sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670", size = 818216, upload-time = "2026-08-08T18:27:56.719Z" },
-]
-
-[[package]]
-name = "setuptools-scm"
-version = "10.2.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-    { name = "setuptools" },
-    { name = "tomli", marker = "python_full_version < '3.11'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
-    { name = "vcs-versioning" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5d/b1/d0b97ffd2856a7d19c63024a89fb84813cb9d2ed7fa8fdbedf9e2f13a9ab/setuptools_scm-10.2.1.tar.gz", hash = "sha256:4fa7dd82cf8c800df59c9a288c90299b1657ff1ecfc3f5cc00287c5dbf5e27a9", size = 154237, upload-time = "2026-07-21T08:08:04.553Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c3/b4/02ac1d9833b882c87b3a4e82703e70eac4ab33d0d15fb123e60bb01f3bc1/setuptools_scm-10.2.1-py3-none-any.whl", hash = "sha256:b7c82f4102d389ee57dc66ccdb4f9b4bca3c40ba83b43f1f63d68ccd72db2580", size = 29078, upload-time = "2026-07-21T08:08:03.293Z" },
-]
-
-[[package]]
 name = "six"
 version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4422,16 +4395,16 @@ wheels = [
 
 [[package]]
 name = "vcs-versioning"
-version = "2.2.4"
+version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "packaging" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3c/92/14277e46f415b6a01b6e94960cd6bc3acdc366e990d43ad71d63fef83d1b/vcs_versioning-2.2.4.tar.gz", hash = "sha256:ed718fdee42170e128a8add6f23f53aa64dc7d9ab2de87d3083a691df881a809", size = 145243, upload-time = "2026-08-07T20:20:42.517Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/e2/524f400d99549c40075b8c53740dfefe607e107615168dc046fc182f7d04/vcs_versioning-2.3.0.tar.gz", hash = "sha256:eb7f5aa2ff5d0c9f8c108ec0bb9476e2ddbe708f08a5e41df4c7977062484cf7", size = 155949, upload-time = "2026-08-18T12:57:08.284Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7a/26/7d2b738d2b7e177e729932dbdf1ebfa57c98846777a87a864130cc1e196b/vcs_versioning-2.2.4-py3-none-any.whl", hash = "sha256:48ffea8a6a175c37a718c7ee2e5f508d0e500c2cf3371791f7948bccb2b44628", size = 109066, upload-time = "2026-08-07T20:20:40.963Z" },
+    { url = "https://files.pythonhosted.org/packages/41/ef/0298fdb2b86e6c734caf4048c4e28822173d0968f4a271ad70e4b427d1a8/vcs_versioning-2.3.0-py3-none-any.whl", hash = "sha256:1b8e76156e50961a29fa9a1bd25c38145a2df86bf47611e134ffbff7852bc801", size = 114548, upload-time = "2026-08-18T12:57:06.804Z" },
 ]
 
 [[package]]

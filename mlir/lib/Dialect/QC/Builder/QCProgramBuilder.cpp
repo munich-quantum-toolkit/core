@@ -514,6 +514,13 @@ QCProgramBuilder& QCProgramBuilder::barrier(ValueRange qubits) {
   return *this;
 }
 
+QCProgramBuilder& QCProgramBuilder::unitary(ValueRange qubits,
+                                            DenseElementsAttr matrix) {
+  checkFinalized();
+  UnitaryOp::create(*this, matrix, qubits);
+  return *this;
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

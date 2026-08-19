@@ -11,12 +11,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   change-detection:
     name: 🔍 Change
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       additional-python-files: "mlir/**"
+    permissions:
+      contents: read
 
   cpp-tests-ubuntu:
     name: 🇨 Test 🐧
@@ -32,13 +36,15 @@ jobs:
           - runs-on: ubuntu-24.04-arm
             compiler: gcc
             preset: release
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
       llvm-version: 22.1.8
       preset-name: ${{ matrix.preset }}
+    permissions:
+      contents: read
 
   cpp-tests-macos:
     name: 🇨 Test 🍎
@@ -54,13 +60,15 @@ jobs:
           - runs-on: macos-26-intel
             compiler: clang
             preset: release
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
       llvm-version: 22.1.8
       preset-name: ${{ matrix.preset }}
+    permissions:
+      contents: read
 
   cpp-tests-windows:
     name: 🇨 Test 🏁
@@ -76,7 +84,7 @@ jobs:
           - runs-on: windows-11-arm
             compiler: msvc
             preset: release-windows
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
@@ -84,12 +92,14 @@ jobs:
       llvm-version: 22.1.8
       mlir-debug: ${{ matrix.preset == 'debug-windows' }}
       preset-name: ${{ matrix.preset }}
+    permissions:
+      contents: read
 
   cpp-coverage:
     name: 🇨 Coverage
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       setup-mlir: true
       llvm-version: 22.1.8
@@ -101,19 +111,22 @@ jobs:
     name: 🇨 Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-linter)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       clang-version: 22
       build-project: true
       files-changed-only: true
       setup-python: true
-      install-pkgs: "nanobind==2.14.0"
+      install-pkgs: "nanobind==2.15.0"
       cpp-linter-extra-args: "-std=c++20 -Wunused-template"
       # Vendored third-party headers are checked upstream and are not maintained
       # according to MQT Core's clang-tidy configuration.
       cpp-linter-ignore-extra: "vendor/**"
       setup-mlir: true
       llvm-version: 22.1.8
+    permissions:
+      contents: read
+      pull-requests: write # Needed to post review comments
 
   python-tests:
     name: 🐍 Test
@@ -130,17 +143,19 @@ jobs:
             macos-26-intel,
             windows-2025,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
       llvm-version: 22.1.8
+    permissions:
+      contents: read
 
   python-coverage:
     name: 🐍 Coverage
     needs: [change-detection, python-tests]
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     permissions:
       contents: read
       id-token: write
@@ -149,19 +164,23 @@ jobs:
     name: 🐍 Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-linter)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       check-stubs: true
       enable-ty: true
       enable-mypy: false
       setup-mlir: true
       llvm-version: 22.1.8
+    permissions:
+      contents: read
 
   build-sdist:
     name: 🚀 CD
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cd)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
+    permissions:
+      contents: read
 
   build-wheel:
     name: 🚀 CD
@@ -179,11 +198,13 @@ jobs:
             windows-2025,
             windows-11-arm,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@b9706e7471ef7d1f2e552749cf62c56603a3887f # main
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
       llvm-version: 22.1.8
+    permissions:
+      contents: read
 
   # this job does nothing and is only used for branch protection
   required-checks-pass:

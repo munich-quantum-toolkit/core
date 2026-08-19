@@ -30,6 +30,7 @@
 #include <span>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt {
@@ -223,6 +224,21 @@ when the custom slot is unsupported.)pb");
       .value("CUSTOM4", QDMI_PROGRAM_FORMAT_CUSTOM4)
       .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5);
 
+  qdmiModule.def("is_binary_program_format", &qdmi::isBinaryProgramFormat,
+                 "program_format"_a,
+                 R"pb(Returns whether a program format carries a binary payload.
+
+``QIR_BASE_MODULE``, ``QIR_ADAPTIVE_MODULE``, and ``QPY`` hold bitcode or
+another serialized object. Such a payload may contain a null byte and is not
+text, so the device must receive it as exact bytes. Pass ``bytes`` to
+:meth:`Device.submit_job` for these formats and ``str`` for the others.
+
+Args:
+    program_format: The program format to classify.
+
+Returns:
+    True if the format requires exact-byte submission.)pb");
+
   nb::enum_<qdmi::CustomProperty>(
       qdmiModule, "CustomProperty",
       "An implementation-defined custom property or result slot.")
@@ -373,6 +389,41 @@ when the custom slot is unsupported.)pb");
       "custom3"_a = nb::none(), "custom4"_a = nb::none(),
       "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
       "Submits an exact byte payload to the device.");
+
+  device.def(
+      "submit_calibration_job",
+      [](const qdmi::Device& self,
+         const std::optional<std::variant<std::string, nb::bytes>>& program,
+         const std::optional<qdmi::CustomJobParameter>& custom1,
+         const std::optional<qdmi::CustomJobParameter>& custom2,
+         const std::optional<qdmi::CustomJobParameter>& custom3,
+         const std::optional<qdmi::CustomJobParameter>& custom4,
+         const std::optional<qdmi::CustomJobParameter>& custom5) {
+        if (!program.has_value()) {
+          return self.submitCalibrationJob(std::nullopt, custom1, custom2,
+                                           custom3, custom4, custom5);
+        }
+        if (const auto* text = std::get_if<std::string>(&*program);
+            text != nullptr) {
+          return self.submitCalibrationJob(*text, custom1, custom2, custom3,
+                                           custom4, custom5);
+        }
+        const auto& payload = std::get<nb::bytes>(*program);
+        const auto bytes = std::span{
+            static_cast<const std::byte*>(payload.data()), payload.size()};
+        return self.submitCalibrationJob(bytes, custom1, custom2, custom3,
+                                         custom4, custom5);
+      },
+      "program"_a = nb::none(), nb::kw_only(), "custom1"_a = nb::none(),
+      "custom2"_a = nb::none(), "custom3"_a = nb::none(),
+      "custom4"_a = nb::none(), "custom5"_a = nb::none(),
+      nb::rv_policy::reference_internal,
+      R"pb(Triggers a calibration run on the device.
+
+QDMI does not require a program for a calibration run, so ``program`` is
+optional and may be a string or bytes. When it is given, the device defines
+what it means, which is usually a configuration for the run. A calibration run
+executes no circuit, so it takes no shot count.)pb");
 
   device.def(
       "retrieve_job_by_id",
