@@ -10,6 +10,8 @@
 
 #include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -34,6 +36,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/PatternMatch.h>
@@ -295,7 +298,8 @@ class MappingPassFixture : public testing::Test {
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<mqt::MQTDialect, QCODialect, qtensor::QTensorDialect,
+    registry.insert<cbit::CBitDialect, mqt::MQTDialect, QCODialect,
+                    qtensor::QTensorDialect,
                     scf::SCFDialect, arith::ArithDialect, func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
@@ -322,6 +326,122 @@ class MappingPassTest : public MappingPassFixture,
                         public testing::WithParamInterface<CompilerTarget> {};
 
 }; // namespace
+
+static SmallVector<Operation*> operationsWithoutTerminator(Block& block) {
+  SmallVector<Operation*> operations;
+  for (Operation& operation : block.without_terminator()) {
+    operations.push_back(&operation);
+  }
+  return operations;
+}
+
+TEST_F(MappingPassFixture,
+       TopologicalSortDeduplicatesNestedUsesAndPreemptsStably) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %first = arith.constant true
+        %producer = arith.constant true
+        %user = scf.if %first -> (i1) {
+          %twice = arith.xori %producer, %producer : i1
+          scf.yield %twice : i1
+        } else {
+          %twice = arith.xori %producer, %producer : i1
+          scf.yield %twice : i1
+        }
+        %later = arith.constant false
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  Block& block = getEntryPoint(module.get()).getBody().front();
+  const SmallVector<Operation*> original = operationsWithoutTerminator(block);
+  ASSERT_EQ(original.size(), 4U);
+  Operation* const first = original[0];
+  Operation* const producer = original[1];
+  Operation* const user = original[2];
+  Operation* const later = original[3];
+  user->moveBefore(first);
+
+  ASSERT_TRUE(
+      mlir::qco::detail::sortTopologicallyPreservingClassicalMemoryOrder(
+          &block));
+  const SmallVector<Operation*> expected{first, producer, user, later};
+  EXPECT_EQ(operationsWithoutTerminator(block), expected);
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST_F(MappingPassFixture,
+       TopologicalSortDeduplicatesSSAAndClassicalMemoryEdges) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %index = arith.constant 0 : index
+        %value = arith.constant true
+        %register = cbit.alloc(#cbit.init<zero>) source_name = "c"
+            : !cbit.reg<1>
+        %loaded = cbit.load %register[%index] : !cbit.reg<1>
+        cbit.store %value, %register[%index] : !cbit.reg<1>
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  Block& block = getEntryPoint(module.get()).getBody().front();
+  const SmallVector<Operation*> original = operationsWithoutTerminator(block);
+  ASSERT_EQ(original.size(), 5U);
+  Operation* const index = original[0];
+  Operation* const value = original[1];
+  Operation* const allocation = original[2];
+  Operation* const load = original[3];
+  Operation* const store = original[4];
+  value->moveAfter(store);
+
+  ASSERT_TRUE(
+      mlir::qco::detail::sortTopologicallyPreservingClassicalMemoryOrder(
+          &block));
+  const SmallVector<Operation*> expected{index, allocation, load, value, store};
+  EXPECT_EQ(operationsWithoutTerminator(block), expected);
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST_F(MappingPassFixture, TopologicalSortLeavesCyclesUnchanged) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %constant = arith.constant true
+        %first = arith.xori %constant, %constant : i1
+        %second = arith.xori %first, %constant : i1
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  Block& block = getEntryPoint(module.get()).getBody().front();
+  const SmallVector<Operation*> original = operationsWithoutTerminator(block);
+  ASSERT_EQ(original.size(), 3U);
+  auto first = cast<arith::XOrIOp>(original[1]);
+  auto second = cast<arith::XOrIOp>(original[2]);
+  first->setOperand(0, second.getResult());
+
+  EXPECT_FALSE(
+      mlir::qco::detail::sortTopologicallyPreservingClassicalMemoryOrder(
+          &block));
+  EXPECT_EQ(operationsWithoutTerminator(block), original);
+}
 
 TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   constexpr int64_t size = 3;
@@ -517,6 +637,361 @@ TEST_P(MappingPassTest, MapScalarAllocation) {
   m->walk([&](StaticOp) { ++numStatics; });
   EXPECT_EQ(numAllocations, 0);
   EXPECT_EQ(numStatics, 1);
+}
+
+/**
+ * @brief Test: even a unary conditional is a global routing boundary.
+ *
+ * An independent wire may be traversed eagerly through a later measurement,
+ * but that measurement result must not be threaded backwards through the
+ * conditional as an additional operand.
+ */
+TEST_F(MappingPassFixture, MapUnaryIfBeforeIndependentMeasurement) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%condition: i1) -> i1
+          attributes {passthrough = ["entry_point"]} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q2 = qco.alloc : !qco.qubit
+        %next0 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+          %then0 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %then0 : !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        %next1, %bit = qco.measure %q1 : !qco.qubit
+        qco.sink %next0 : !qco.qubit
+        qco.sink %next1 : !qco.qubit
+        qco.sink %q2 : !qco.qubit
+        return %bit : i1
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}}));
+  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+
+  IfOp conditional;
+  MeasureOp measurement;
+  module->walk([&](IfOp candidate) { conditional = candidate; });
+  module->walk([&](MeasureOp candidate) { measurement = candidate; });
+  ASSERT_TRUE(conditional);
+  ASSERT_TRUE(measurement);
+  EXPECT_EQ(conditional.getQubits().size(), 1U);
+  EXPECT_TRUE(conditional->isBeforeInBlock(measurement));
+}
+
+/**
+ * @brief Test: mapping preserves CBit access order around a conditional.
+ *
+ * The measurement result reaches the condition through a register store and
+ * load. These accesses have memory effects but no SSA edge between them.
+ */
+TEST_F(MappingPassFixture, PreserveCBitOrderAroundConditional) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> !cbit.reg<3> attributes {passthrough = ["entry_point"]} {
+        %false = arith.constant false
+        %true = arith.constant true
+        %c2 = arith.constant 2 : index
+        %c1 = arith.constant 1 : index
+        %c0 = arith.constant 0 : index
+        %c3 = arith.constant 3 : index
+        %0 = qtensor.alloc(%c3) {mqt.qubit_register_name = "q"} : tensor<3x!qco.qubit>
+        %1 = cbit.alloc(#cbit.init<zero>) source_name = "c" : !cbit.reg<3>
+        %out_tensor, %result = qtensor.extract %0[%c0] : tensor<3x!qco.qubit>
+        %out_tensor_0, %result_1 = qtensor.extract %out_tensor[%c1] : tensor<3x!qco.qubit>
+        %controls_out, %targets_out = qco.ctrl(%result) targets (%arg0 = %result_1) {
+          %8 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %8 : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+        %out_tensor_2, %result_3 = qtensor.extract %out_tensor_0[%c2] : tensor<3x!qco.qubit>
+        %controls_out_4, %targets_out_5 = qco.ctrl(%targets_out) targets (%arg0 = %result_3) {
+          %8 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %8 : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+        %qubit_out, %result_6 = qco.measure %controls_out : !qco.qubit
+        cbit.store %result_6, %1[%c2] : !cbit.reg<3>
+        %2 = cbit.load %1[%c0] : !cbit.reg<3>
+        %3 = scf.if %2 -> (i1) {
+          scf.yield %false : i1
+        } else {
+          %8 = cbit.load %1[%c1] : !cbit.reg<3>
+          %9 = arith.xori %8, %true : i1
+          %10 = arith.xori %9, %true : i1
+          scf.yield %10 : i1
+        }
+        %4 = scf.if %3 -> (i1) {
+          %8 = cbit.load %1[%c2] : !cbit.reg<3>
+          scf.yield %8 : i1
+        } else {
+          scf.yield %false : i1
+        }
+        %5 = qtensor.insert %controls_out_4 into %out_tensor_2[%c1] : tensor<3x!qco.qubit>
+        %linearResults:2 = qco.if %4 args(%arg0 = %qubit_out, %arg1 = %targets_out_5) -> (!qco.qubit, !qco.qubit) {
+          %controls_out_7, %targets_out_8 = qco.ctrl(%arg0) targets (%arg2 = %arg1) {
+            %8 = qco.x %arg2 : !qco.qubit -> !qco.qubit
+            qco.yield %8 : !qco.qubit
+          } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+          qco.yield %controls_out_7, %targets_out_8 : !qco.qubit, !qco.qubit
+        } else args(%arg0 = %qubit_out, %arg1 = %targets_out_5) {
+          qco.yield %arg0, %arg1 : !qco.qubit, !qco.qubit
+        }
+        %6 = qtensor.insert %linearResults#0 into %5[%c0] : tensor<3x!qco.qubit>
+        %7 = qtensor.insert %linearResults#1 into %6[%c2] : tensor<3x!qco.qubit>
+        qtensor.dealloc %7 : tensor<3x!qco.qubit>
+        return %1 : !cbit.reg<3>
+      }
+    }
+  )mlir";
+
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}}));
+  for (size_t seed = 0; seed < 32; ++seed) {
+    SCOPED_TRACE(seed);
+    auto module = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    ASSERT_TRUE(runPass(module.get(), target,
+                        MappingPassOptions{.ntrials = 1, .seed = seed})
+                    .succeeded());
+    ASSERT_TRUE(succeeded(verify(*module)));
+    EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+
+    cbit::AllocOp allocation;
+    MeasureOp measurement;
+    cbit::StoreOp store;
+    IfOp conditional;
+    SmallVector<scf::IfOp> classicalConditions;
+    module->walk([&](cbit::AllocOp candidate) { allocation = candidate; });
+    module->walk([&](MeasureOp candidate) { measurement = candidate; });
+    module->walk([&](cbit::StoreOp candidate) { store = candidate; });
+    module->walk([&](IfOp candidate) { conditional = candidate; });
+    module->walk([&](scf::IfOp candidate) {
+      if (!candidate->getParentOfType<scf::IfOp>()) {
+        classicalConditions.push_back(candidate);
+      }
+    });
+    ASSERT_TRUE(allocation);
+    ASSERT_TRUE(measurement);
+    ASSERT_TRUE(store);
+    ASSERT_TRUE(conditional);
+    ASSERT_EQ(classicalConditions.size(), 2U);
+    Operation* condition = conditional.getCondition().getDefiningOp();
+    ASSERT_TRUE(condition);
+    ASSERT_EQ(condition, classicalConditions.back().getOperation());
+    size_t conditionLoads = 0;
+    condition->walk([&](cbit::LoadOp) { ++conditionLoads; });
+    ASSERT_EQ(conditionLoads, 1U);
+    ASSERT_EQ(allocation->getBlock(), store->getBlock());
+    ASSERT_EQ(measurement->getBlock(), store->getBlock());
+    ASSERT_EQ(store->getBlock(), condition->getBlock());
+    ASSERT_EQ(condition->getBlock(), conditional->getBlock());
+    EXPECT_TRUE(allocation->isBeforeInBlock(store));
+    EXPECT_TRUE(measurement->isBeforeInBlock(store));
+    EXPECT_TRUE(store->isBeforeInBlock(classicalConditions.front()));
+    EXPECT_TRUE(classicalConditions.front()->isBeforeInBlock(condition));
+    EXPECT_TRUE(condition->isBeforeInBlock(conditional));
+
+    const DominanceInfo dominance(module.get());
+    EXPECT_TRUE(dominance.properlyDominates(condition, conditional));
+  }
+}
+
+/**
+ * @brief Test: complete targets do not pad sparse conditionals with idle wires.
+ */
+TEST_F(MappingPassFixture, KeepUnaryIfSparseOnAllToAllTarget) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%condition: i1)
+          attributes {passthrough = ["entry_point"]} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q2 = qco.alloc : !qco.qubit
+        %next0 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+          %then0 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %then0 : !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        qco.sink %next0 : !qco.qubit
+        qco.sink %q1 : !qco.qubit
+        qco.sink %q2 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {0, 2}, {1, 2}}));
+  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  IfOp conditional;
+  module->walk([&](IfOp candidate) { conditional = candidate; });
+  ASSERT_TRUE(conditional);
+  EXPECT_EQ(conditional.getQubits().size(), 1U);
+}
+
+/**
+ * @brief Test: an inactive tensor carrier does not defer a ready conditional.
+ *
+ * Extracting one element advances its scalar wire to the conditional while the
+ * other tensor element remains on the extract operation. The inactive tensor
+ * iterator must not block the routing frontier.
+ */
+TEST_F(MappingPassFixture, IgnoreInactiveTensorCarrierAtUnaryIfFrontier) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%condition: i1)
+          attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%c0]
+            : tensor<2x!qco.qubit>
+        %next0 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+          %then0 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %then0 : !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        %tensor2 = qtensor.insert %next0 into %tensor1[%c0]
+            : tensor<2x!qco.qubit>
+        qtensor.dealloc %tensor2 : tensor<2x!qco.qubit>
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, std::vector<CompilerTarget::Coupling>{{0, 1}}));
+  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+
+  IfOp conditional;
+  module->walk([&](IfOp candidate) { conditional = candidate; });
+  ASSERT_TRUE(conditional);
+  EXPECT_EQ(conditional.getQubits().size(), 1U);
+}
+
+/**
+ * @brief Test: an already executable two-qubit branch stays sparse.
+ */
+TEST_F(MappingPassFixture, KeepAdjacentTwoQubitIfSparseOnLineTarget) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%condition: i1)
+          attributes {passthrough = ["entry_point"]} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q2 = qco.alloc : !qco.qubit
+        %next0, %next1 = qco.if %condition
+            args(%arg0 = %q0, %arg1 = %q1)
+            -> (!qco.qubit, !qco.qubit) {
+          %then0, %then1 = qco.swap %arg0, %arg1
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %then0, %then1 : !qco.qubit, !qco.qubit
+        } else args(%arg0 = %q0, %arg1 = %q1) {
+          qco.yield %arg0, %arg1 : !qco.qubit, !qco.qubit
+        }
+        qco.sink %next0 : !qco.qubit
+        qco.sink %next1 : !qco.qubit
+        qco.sink %q2 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}}));
+  bool exercisedZeroSwapPreview = false;
+  for (size_t seed = 0; seed < 16 && !exercisedZeroSwapPreview; ++seed) {
+    auto module = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    ASSERT_TRUE(runPass(module.get(), target,
+                        MappingPassOptions{.ntrials = 1, .seed = seed})
+                    .succeeded());
+    ASSERT_TRUE(succeeded(verify(*module)));
+    EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+
+    IfOp conditional;
+    module->walk([&](IfOp candidate) { conditional = candidate; });
+    ASSERT_TRUE(conditional);
+    exercisedZeroSwapPreview = conditional.getQubits().size() == 2U;
+  }
+  EXPECT_TRUE(exercisedZeroSwapPreview);
+}
+
+/**
+ * @brief Test: a routed two-qubit branch receives its workspace wire.
+ */
+TEST_F(MappingPassFixture, ExpandNonAdjacentTwoQubitIfOnLineTarget) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%condition: i1)
+          attributes {passthrough = ["entry_point"]} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q2 = qco.alloc : !qco.qubit
+        %a0, %a1 = qco.swap %q0, %q1
+            : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %b1, %b2 = qco.swap %a1, %q2
+            : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %next0, %next2 = qco.if %condition
+            args(%arg0 = %a0, %arg2 = %b2)
+            -> (!qco.qubit, !qco.qubit) {
+          %then0, %then2 = qco.swap %arg0, %arg2
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %then0, %then2 : !qco.qubit, !qco.qubit
+        } else args(%arg0 = %a0, %arg2 = %b2) {
+          qco.yield %arg0, %arg2 : !qco.qubit, !qco.qubit
+        }
+        qco.sink %next0 : !qco.qubit
+        qco.sink %b1 : !qco.qubit
+        qco.sink %next2 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}}));
+  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+
+  IfOp conditional;
+  module->walk([&](IfOp candidate) { conditional = candidate; });
+  ASSERT_TRUE(conditional);
+  EXPECT_EQ(conditional.getQubits().size(), 3U);
 }
 
 TEST_P(MappingPassTest, MapMixedScalarAndTensorAllocations) {

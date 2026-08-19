@@ -1976,25 +1976,6 @@ TEST_F(CompilerPipelineTest,
 
   expectRejected(R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
-        %true = arith.constant true
-        %c2 = arith.constant 2 : index
-        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
-        %tensor1 = qco.if %true
-            args(%arg0 = %tensor0) -> (tensor<2x!qco.qubit>) {
-          qco.yield %arg0 : tensor<2x!qco.qubit>
-        } else args(%arg0 = %tensor0) {
-          qco.yield %arg0 : tensor<2x!qco.qubit>
-        }
-        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
-        return
-      }
-    }
-  )mlir",
-                 CompilerTarget::ClassicalControl::Conditional, "qco.if");
-
-  expectRejected(R"mlir(
-    module {
       func.func @main(%condition: i1)
           attributes {passthrough = ["entry_point"]} {
         %c0 = arith.constant 0 : index
@@ -2087,6 +2068,44 @@ TEST_F(CompilerPipelineTest,
   )mlir",
                  CompilerTarget::ClassicalControl::MultiwayBranch,
                  "scf.index_switch");
+}
+
+/**
+ * @brief Test: an untouched static tensor is forwarded around qco.if.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationForwardsUntouchedTensorAroundConditional) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%condition: i1)
+          attributes {passthrough = ["entry_point"]} {
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %q0 = qco.alloc : !qco.qubit
+        %tensor1, %q1 = qco.if %condition
+            args(%tensor = %tensor0, %q = %q0)
+            -> (tensor<2x!qco.qubit>, !qco.qubit) {
+          %q2 = qco.h %q : !qco.qubit -> !qco.qubit
+          qco.yield %tensor, %q2 : tensor<2x!qco.qubit>, !qco.qubit
+        } else args(%tensor = %tensor0, %q = %q0) {
+          qco.yield %tensor, %q : tensor<2x!qco.qubit>, !qco.qubit
+        }
+        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, std::nullopt, std::nullopt, std::nullopt,
+                             {CompilerTarget::ClassicalControl::Conditional}));
+  ASSERT_TRUE(program->compileForTarget(target));
+  EXPECT_EQ(program->str().find("tensor<"), std::string::npos);
+  EXPECT_NE(program->str().find("qco.if"), std::string::npos);
+  EXPECT_NE(program->str().find("qco.static"), std::string::npos);
 }
 
 /**

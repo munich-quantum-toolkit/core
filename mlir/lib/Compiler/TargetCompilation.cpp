@@ -13,6 +13,7 @@
 #include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
@@ -135,8 +136,11 @@ requiredClassicalControl(Operation* operation) {
 }
 
 [[nodiscard]] static bool hasUnsupportedQubitTensorState(Operation* operation) {
-  if (!llvm::isa<qco::IfOp, scf::IfOp, scf::ForOp, scf::WhileOp,
-                 qco::IndexSwitchOp, scf::IndexSwitchOp>(operation)) {
+  if (const auto ifOp = llvm::dyn_cast<qco::IfOp>(operation)) {
+    return !qco::hasOnlyScalarizableTensorInputs(ifOp);
+  }
+  if (!llvm::isa<scf::IfOp, scf::ForOp, scf::WhileOp, qco::IndexSwitchOp,
+                 scf::IndexSwitchOp>(operation)) {
     return false;
   }
 

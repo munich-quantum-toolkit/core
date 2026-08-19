@@ -12,6 +12,7 @@
 
 #include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -28,12 +29,12 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Dominance.h>
 #include <mlir/IR/Location.h>
@@ -50,9 +51,13 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <queue>
 #include <random>
 #include <ranges>
 #include <tuple>
@@ -67,6 +72,150 @@ using namespace mlir::qtensor;
 
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+
+namespace detail {
+namespace {
+
+/** Return whether an operation or its children access classical storage. */
+bool containsClassicalMemoryAccess(Operation* operation) {
+  bool containsAccess = false;
+  operation->walk([&](Operation* nested) {
+    const auto isClassicalStorage = [](Value value) {
+      const Type type = value.getType();
+      return isa<cbit::RegisterType>(type) || isa<BaseMemRefType>(type);
+    };
+    if (llvm::any_of(nested->getOperands(), isClassicalStorage) ||
+        llvm::any_of(nested->getResults(), isClassicalStorage)) {
+      containsAccess = true;
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return containsAccess;
+}
+
+} // namespace
+
+bool sortTopologicallyPreservingClassicalMemoryOrder(Block* block) {
+  using SortIndex = uint32_t;
+
+  SmallVector<Operation*> operations;
+  operations.reserve(block->getOperations().size());
+  for (Operation& operation : block->without_terminator()) {
+    operations.push_back(&operation);
+  }
+  if (operations.size() > std::numeric_limits<SortIndex>::max()) {
+    return false;
+  }
+
+  DenseMap<Operation*, SortIndex> positions;
+  positions.reserve(operations.size());
+  for (const auto [index, operation] : llvm::enumerate(operations)) {
+    positions.try_emplace(operation, static_cast<SortIndex>(index));
+  }
+
+  SmallVector<SortIndex> incomingCounts(operations.size(), 0);
+  const auto unseen = static_cast<SortIndex>(operations.size());
+  SmallVector<SortIndex> seen(operations.size(), unseen);
+  DenseMap<Operation*, SortIndex> nextClassicalMemoryAccess;
+  Operation* previousClassicalMemoryAccess = nullptr;
+  for (const auto [targetIndexValue, operation] : llvm::enumerate(operations)) {
+    const auto targetIndex = static_cast<SortIndex>(targetIndexValue);
+    operation->walk([&](Operation* nested) {
+      for (Value operand : nested->getOperands()) {
+        Operation* definition = operand.getDefiningOp();
+        while (definition != nullptr && definition->getBlock() != block) {
+          definition = definition->getParentOp();
+        }
+        if (definition == nullptr || definition == operation) {
+          continue;
+        }
+        const auto source = positions.find(definition);
+        if (source != positions.end() && seen[source->second] != targetIndex) {
+          seen[source->second] = targetIndex;
+          ++incomingCounts[targetIndex];
+        }
+      }
+    });
+
+    if (containsClassicalMemoryAccess(operation)) {
+      if (previousClassicalMemoryAccess != nullptr) {
+        const SortIndex previousIndex =
+            positions.lookup(previousClassicalMemoryAccess);
+        nextClassicalMemoryAccess.try_emplace(previousClassicalMemoryAccess,
+                                              targetIndex);
+        if (seen[previousIndex] != targetIndex) {
+          seen[previousIndex] = targetIndex;
+          ++incomingCounts[targetIndex];
+        }
+      }
+      previousClassicalMemoryAccess = operation;
+    }
+  }
+
+  std::fill(seen.begin(), seen.end(), unseen);
+  std::priority_queue<SortIndex, std::vector<SortIndex>, std::greater<>> ready;
+  for (const auto [indexValue, incoming] : llvm::enumerate(incomingCounts)) {
+    if (incoming == 0) {
+      ready.push(static_cast<SortIndex>(indexValue));
+    }
+  }
+
+  const auto release = [&](const SortIndex index) {
+    assert(incomingCounts[index] > 0);
+    if (--incomingCounts[index] == 0) {
+      ready.push(index);
+    }
+  };
+
+  SmallVector<SortIndex> order;
+  order.reserve(operations.size());
+  while (!ready.empty()) {
+    const SortIndex sourceIndex = ready.top();
+    ready.pop();
+    Operation* const operation = operations[sourceIndex];
+    order.push_back(sourceIndex);
+
+    operation->walk([&](Operation* nested) {
+      for (Value result : nested->getResults()) {
+        for (Operation* user : result.getUsers()) {
+          while (user != nullptr && user->getBlock() != block) {
+            user = user->getParentOp();
+          }
+          if (user == nullptr || user == operation) {
+            continue;
+          }
+          const auto target = positions.find(user);
+          if (target != positions.end() &&
+              seen[target->second] != sourceIndex) {
+            seen[target->second] = sourceIndex;
+            release(target->second);
+          }
+        }
+      }
+    });
+
+    if (const auto successor = nextClassicalMemoryAccess.find(operation);
+        successor != nextClassicalMemoryAccess.end() &&
+        seen[successor->second] != sourceIndex) {
+      seen[successor->second] = sourceIndex;
+      release(successor->second);
+    }
+  }
+
+  // A cycle can include both SSA edges and the classical-access chain.
+  if (order.size() != operations.size()) {
+    return false;
+  }
+
+  Operation* const terminator = block->getTerminator();
+  for (const SortIndex index : order) {
+    operations[index]->moveBefore(terminator);
+  }
+  return true;
+}
+
+} // namespace detail
 
 namespace {
 
@@ -408,11 +557,41 @@ protected:
     const auto stats = *routeRes;
     numSwaps += stats.nswaps;
 
-    // Fix SSA Dominance issues.
-    llvm::for_each(body.getBlocks(), [](Block& b) { sortTopologically(&b); });
+    // Fix SSA dominance without changing classical memory order.
+    if (llvm::any_of(body.getBlocks(), [](Block& block) {
+          return !detail::sortTopologicallyPreservingClassicalMemoryOrder(
+              &block);
+        })) {
+      func.emitError()
+          << "failed to restore SSA dominance while preserving classical "
+             "memory order";
+      signalPassFailure();
+    }
   }
 
 private:
+  /** Return whether every pair of target sites is directly connected. */
+  [[nodiscard]] bool hasAllToAllConnectivity() const {
+    assert(target);
+    const size_t numQubits = target->numQubits();
+    return !target->hasExplicitTopology() || numQubits < 2 ||
+           target->couplings().size() == numQubits * (numQubits - 1) / 2;
+  }
+
+  /** Return whether a composite may need workspace wires for routing. */
+  static bool requiresRoutingWorkspace(Operation* operation) {
+    bool required = false;
+    operation->walk([&](Operation* nested) {
+      auto unitary = dyn_cast<UnitaryOpInterface>(nested);
+      if (unitary && !isa<BarrierOp>(nested) && unitary.getNumQubits() > 1) {
+        required = true;
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+    return required;
+  }
+
   /// Return the qubit values in `values`, preserving their relative order.
   static SmallVector<Value> getQubitValues(ValueRange values) {
     return to_vector(llvm::make_filter_range(
@@ -549,6 +728,47 @@ private:
     }
 
     return newWhileOp;
+  }
+
+  /** Return the value whose wire edge crosses a composite in block order. */
+  static Value valueBeforeBoundary(WireIterator iterator, Operation* boundary) {
+    assert(boundary != nullptr && boundary->getBlock() != nullptr);
+
+    // Independent wires may have advanced through unary operations occurring
+    // after the composite. Threading their latest processed value backwards
+    // through the composite would move those operations (in particular a
+    // measurement) before the classical-control boundary. Rewind to the last
+    // value defined before the boundary instead. `advance` defers the
+    // composite while an unreleased multi-qubit operation preceding it is at
+    // any frontier, and it synchronizes even unary control-flow operations, so
+    // this value is the unique edge crossing the boundary.
+    if (iterator == std::default_sentinel) {
+      --iterator;
+    }
+    if (!iterator.qubit()) {
+      --iterator;
+    }
+
+    while (Operation* operation = iterator.operation()) {
+      assert(operation->getBlock() == boundary->getBlock());
+      if (operation->isBeforeInBlock(boundary)) {
+        break;
+      }
+      --iterator;
+    }
+
+    Value value = iterator.qubit();
+    assert(value && "expected a qubit value before the composite boundary");
+    assert(value.hasOneUse() && "expected linear qubit use at boundary");
+    Operation* consumer = value.use_begin()->getOwner();
+    while (consumer->getBlock() != boundary->getBlock()) {
+      consumer = consumer->getParentOp();
+      assert(consumer != nullptr && "expected consumer in boundary block");
+    }
+    assert((consumer == boundary || boundary->isBeforeInBlock(consumer) ||
+            isa<SinkOp>(consumer)) &&
+           "selected qubit value does not cross composite boundary");
+    return value;
   }
 
   /// Return the wires of a dynamic computation.
@@ -1195,6 +1415,33 @@ private:
                  return lhs.op->isBeforeInBlock(rhs.op);
                });
 
+    // A ready composite on one set of wires must not make a still-pending
+    // operation on an independent wire disappear from the routing frontier.
+    // This matters when that operation occurs before the composite in the
+    // traversal direction (for example, a non-adjacent two-qubit gate before
+    // an if). Dispatch the composite only after those operations have been
+    // released. Independent composites are consequently handled one at a
+    // time in block order as well.
+    llvm::erase_if(composites, [&](const CompositeUnitary& composite) {
+      return llvm::any_of(wires, [&](const WireIterator& iterator) {
+        if (iterator == std::default_sentinel) {
+          return false;
+        }
+        if (!WireTraversalTraits<Direction>::isActive(iterator)) {
+          return false;
+        }
+        Operation* operation = iterator.operation();
+        if (operation == nullptr || operation == composite.op) {
+          return false;
+        }
+        assert(operation->getBlock() == composite.op->getBlock());
+        if constexpr (Direction == WireDirection::Forward) {
+          return operation->isBeforeInBlock(composite.op);
+        }
+        return composite.op->isBeforeInBlock(operation);
+      });
+    });
+
     return composites;
   }
 
@@ -1225,10 +1472,7 @@ private:
         allIndices, [&](const size_t i) { return !included.contains(i); }));
 
     const SmallVector<Value> addons(map_range(excluded, [&](const size_t i) {
-      // Make sure the qubits point to an already processed operation.
-      const auto& it = std::prev(
-          parent.wires[i], parent.wires[i] == std::default_sentinel ? 2 : 1);
-      return it.qubit();
+      return valueBeforeBoundary(parent.wires[i], composite.op);
     }));
 
     composite = CompositeUnitary{
@@ -1514,7 +1758,12 @@ private:
 
         // Sort topologically to fix any occurring SSA dominance errors.
 
-        sortTopologically(block);
+        if (!detail::sortTopologicallyPreservingClassicalMemoryOrder(block)) {
+          op->emitError()
+              << "failed to restore SSA dominance while preserving classical "
+                 "memory order";
+          return failure();
+        }
       }
     }
 
@@ -1561,8 +1810,29 @@ private:
 
         for (auto& composite : composites) {
           if constexpr (Mode == RoutingMode::Hot) {
-            auto patch = place(composite, bundle, *rewriter);
-            bundle.applyPatch(std::move(patch));
+            // A complete topology cannot require routing SWAPs. Likewise, a
+            // composite containing only unary operations cannot change its
+            // child layouts on any topology. In both cases excluded wires need
+            // not be threaded through the operation, avoiding a quadratic IR
+            // expansion for large collections of sparse conditionals.
+            bool needsWorkspace = !hasAllToAllConnectivity() &&
+                                  requiresRoutingWorkspace(composite.op);
+            if (needsWorkspace) {
+              // Preview routing without mutating the IR. A zero-SWAP preview
+              // proves that neither child routing nor branch convergence
+              // touches an excluded wire, so the sparse composite is already
+              // sufficient for the hot dispatch.
+              auto preview =
+                  dispatch<Direction, RoutingMode::Cold>(composite, bundle);
+              if (failed(preview)) {
+                return failure();
+              }
+              needsWorkspace = preview->second.nswaps != 0;
+            }
+            if (needsWorkspace) {
+              auto patch = place(composite, bundle, *rewriter);
+              bundle.applyPatch(std::move(patch));
+            }
           }
 
           auto res = dispatch<Direction, Mode>(composite, bundle, rewriter);

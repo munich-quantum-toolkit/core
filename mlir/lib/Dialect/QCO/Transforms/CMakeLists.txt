@@ -15,6 +15,7 @@ add_mlir_library(
   PUBLIC
   MQTCompilerTarget
   PRIVATE
+  MLIRCBitDialect
   MLIRQCODialect
   MLIRQCOUtils
   MLIRQTensorUtils

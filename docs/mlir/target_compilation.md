@@ -62,9 +62,12 @@ preflight follows only the selected region of an {code}`if` or
 {code}`index_switch` whose selector is constant and still checks every reachable
 nested operation. The following cleanup pipeline removes a static
 {code}`qco.index_switch` before mapping. Dynamic qubit indexing, unstructured
-control flow, and qubit tensors carried through any structured control remain
-unsupported. The preflight rejects these forms before mapping even when every
-listed capability is enabled.
+control flow, and qubit tensors carried through generic structured control
+remain unsupported. A {code}`qco.if` may carry statically shaped, rank-one qubit
+tensors only when cleanup can scalarize every constant-index branch access;
+dynamic, partial, or repeated tensor access remains unsupported. The preflight
+rejects unsupported forms before mapping even when every listed capability is
+enabled.
 
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` to apply target
 compilation to an existing QCO program. Compilation runs in place. If a pass
