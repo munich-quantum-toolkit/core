@@ -1101,6 +1101,18 @@ TEST_F(SmallUnionTableTest, applyGatesOnPartiallyTopQState) {
               testing::HasSubstr("Qubits: 321, HybridStates: {TOP}"));
 }
 
+TEST_F(SmallUnionTableTest, nonSuperfluousBecauseStatesAreTop) {
+  ut.propagateGate(hOp, q2, q4);
+  ut.propagateGate(hOp, q3, q5);
+  ut.propagateGate(xOp, q4, q6, q5, q7); // Qubit 2 and 3 enter TOP
+  std::vector quantumCtrl = {v7};
+  auto [completelySuperfluous, superfluousQubits, superfluousClassicalValues] =
+      ut.getSuperfluousControls(quantumCtrl);
+
+  EXPECT_FALSE(completelySuperfluous);
+  EXPECT_TRUE(superfluousQubits.empty());
+}
+
 class UnionTableSuperfluousTest : public testing::Test {
 protected:
   mlir::MLIRContext context;

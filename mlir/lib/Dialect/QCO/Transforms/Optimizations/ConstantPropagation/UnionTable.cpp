@@ -572,6 +572,10 @@ UnionTable::getSuperfluousControls(const std::span<Value> qubitCtrls,
     const auto qIndex = qubitsToGlobalIndices.at(qCtrl);
     bool alwaysOne = true;
     bool alwaysZero = true;
+    if (valuesToEntries.at(qCtrl)->top) {
+      alwaysOne = false;
+      alwaysZero = false;
+    }
     for (const auto& hs : valuesToEntries.at(qCtrl)->states) {
       if (hs.isHybridStateTop()) {
         alwaysOne = false;
