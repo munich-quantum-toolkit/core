@@ -293,7 +293,7 @@ public:
    * @param classicalValues The classical values to check.
    * @returns True if the amplitude is always zero, false otherwise.
    */
-  [[nodiscard("HybridState::hasAlwaysZeroAmplitude called but ignored")]] bool
+  [[nodiscard("HybridState::hasAlwaysZeroProbability called but ignored")]] bool
   hasAlwaysZeroProbability(
       const std::unordered_map<unsigned int, bool>& qubitValues,
       const llvm::DenseMap<Value, bool>& classicalValues) const;
