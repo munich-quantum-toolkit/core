@@ -516,14 +516,18 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     if (resThen.failed()) {
       return WalkResult::interrupt();
     }
+    op->thenBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+      const auto input = innerOp->getOperands();
+      const auto output = innerOp->getResults();
+      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
+        std::ranges::replace(thenArgs, input[i], output[i]);
+      }
+    });
+  } else {
+    const auto thenYieldOperands = op->thenYield()->getOperands();
+    thenArgs = {thenYieldOperands.begin(), thenYieldOperands.end()};
   }
-  op->thenBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
-    const auto input = innerOp->getOperands();
-    const auto output = innerOp->getResults();
-    for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
-      std::ranges::replace(thenArgs, input[i], output[i]);
-    }
-  });
+
   if (!elseEmpty) {
     for (const Value arg : elseBlock->getArguments()) {
       elseArgs.push_back(arg);
@@ -540,16 +544,19 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     if (resElse.failed()) {
       return WalkResult::interrupt();
     }
+    op->elseBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+      // Propagating values in order to assign the right values to the right
+      // result values
+      const auto input = innerOp->getOperands();
+      const auto output = innerOp->getResults();
+      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
+        std::ranges::replace(elseArgs, input[i], output[i]);
+      }
+    });
+  } else {
+    const auto elseYieldOperands = op->elseYield()->getOperands();
+    elseArgs = {elseYieldOperands.begin(), elseYieldOperands.end()};
   }
-  op->elseBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
-    // Propagating values in order to assign the right values to the right
-    // result values
-    const auto input = innerOp->getOperands();
-    const auto output = innerOp->getResults();
-    for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
-      std::ranges::replace(elseArgs, input[i], output[i]);
-    }
-  });
 
   const auto resultQubits = op->getResults();
   std::vector<Value> results = {resultQubits.begin(), resultQubits.end()};
@@ -604,7 +611,7 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
                               inputQubitVec);
     rewriter.eraseOp(*op);
   } else {
-    ut->replaceValuesGlobally(elseArgs.empty() ? thenArgs : elseArgs, results);
+    ut->replaceValuesGlobally(elseEmpty ? thenArgs : elseArgs, results);
   }
 
   return WalkResult::advance();
