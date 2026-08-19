@@ -205,12 +205,14 @@ TEST_F(DriversTest, ProgramGraphWalk) {
       });
 
   ASSERT_TRUE(res.succeeded());
-  ASSERT_GE(readyPerLayer.size(), 4);
+  ASSERT_GE(readyPerLayer.size(), 6);
   ASSERT_TRUE(readyPerLayer[0].contains(q02.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[0].contains(q21.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[1].contains(q12.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[2].contains(q04.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[3].contains(forResults[0].getDefiningOp()));
+  ASSERT_TRUE(readyPerLayer[4].contains(q05.getDefiningOp()));
+  ASSERT_TRUE(readyPerLayer[5].contains(q06.getDefiningOp()));
 
   // Backward pass.
   readyPerLayer.clear();
@@ -226,12 +228,14 @@ TEST_F(DriversTest, ProgramGraphWalk) {
       });
 
   ASSERT_TRUE(res.succeeded());
-  ASSERT_GE(readyPerLayer.size(), 4);
-  ASSERT_TRUE(readyPerLayer[0].contains(forResults[0].getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[1].contains(q04.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[2].contains(q12.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[3].contains(q02.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[3].contains(q21.getDefiningOp()));
+  ASSERT_GE(readyPerLayer.size(), 6);
+  ASSERT_TRUE(readyPerLayer[0].contains(q06.getDefiningOp()));
+  ASSERT_TRUE(readyPerLayer[1].contains(q05.getDefiningOp()));
+  ASSERT_TRUE(readyPerLayer[2].contains(forResults[0].getDefiningOp()));
+  ASSERT_TRUE(readyPerLayer[3].contains(q04.getDefiningOp()));
+  ASSERT_TRUE(readyPerLayer[4].contains(q12.getDefiningOp()));
+  ASSERT_TRUE(readyPerLayer[5].contains(q02.getDefiningOp()));
+  ASSERT_TRUE(readyPerLayer[5].contains(q21.getDefiningOp()));
 
   // Forward, but instead of releasing all, we use ::skip().
   readyPerLayer.clear();
@@ -246,12 +250,14 @@ TEST_F(DriversTest, ProgramGraphWalk) {
       });
 
   ASSERT_TRUE(res.succeeded());
-  ASSERT_GE(readyPerLayer.size(), 4);
+  ASSERT_GE(readyPerLayer.size(), 6);
   ASSERT_TRUE(readyPerLayer[0].contains(q02.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[0].contains(q21.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[1].contains(q12.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[2].contains(q04.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[3].contains(forResults[0].getDefiningOp()));
+  ASSERT_TRUE(readyPerLayer[4].contains(q05.getDefiningOp()));
+  ASSERT_TRUE(readyPerLayer[5].contains(q06.getDefiningOp()));
 
   // Backward, but stop after first layer.
   readyPerLayer.clear();
@@ -268,7 +274,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
 
   ASSERT_TRUE(res.failed());
   ASSERT_EQ(readyPerLayer.size(), 1);
-  ASSERT_TRUE(readyPerLayer[0].contains(forResults[0].getDefiningOp()));
+  ASSERT_TRUE(readyPerLayer[0].contains(q06.getDefiningOp()));
 
   // Forward, but start at block arguments.
   wires.clear();

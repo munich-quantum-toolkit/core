@@ -44,17 +44,18 @@ using WalkProgramGraphFn =
  * @details
  * Depending on the template parameter, the function collects the
  * layers in forward or backward direction, respectively. Towards that end,
- * the function traverses the def-use chain of each qubit until a multi-qubit
- * gate (including barriers) is found. If each input qubit of a multi-qubit gate
- * is visited, it is considered ready. This process is repeated until no more
- * multi-qubit gates are found anymore.
+ * the function traverses the def-use chain of each qubit until a routing
+ * boundary is found. Routing boundaries include multi-qubit gates, barriers,
+ * and structured control-flow operations even when they carry only one qubit.
+ * A boundary is ready once each required input wire has visited it. This
+ * process is repeated until no more routing boundaries are found.
  *
  * The signature of the callback function is:
  *
  *     (const ReadyMap& ready, ReleasedOps& released) -> WalkResult
  *
  * The operations inserted into the parameter "released" determine which
- * multi-qubit gates are released in next iteration.
+ * routing boundaries are released in the next iteration.
  * If the callback returns WalkResult::skip(), all ready operations will be
  * released.
  *
@@ -159,7 +160,10 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
                     return IterationStep{false, 0};
                   });
 
-          if (skip || nqubits == 1) {
+          const bool isControlFlowBoundary =
+              isa<scf::ForOp, scf::WhileOp, qco::IfOp, qco::IndexSwitchOp>(
+                  it.operation());
+          if (skip || (nqubits == 1 && !isControlFlowBoundary)) {
             std::ranges::advance(it, Traits::stride());
             continue;
           }
@@ -175,7 +179,12 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
           // The caller decides if this op should be released.
           PendingItem item(nqubits);
           item.indices_.emplace_back(i);
-          pending.try_emplace(it.operation(), std::move(item));
+          auto [pendingIt, inserted] =
+              pending.try_emplace(it.operation(), std::move(item));
+          assert(inserted);
+          if (pendingIt->second.ready()) {
+            ready.try_emplace(it.operation(), pendingIt->second.indices_);
+          }
         }
 
         break; // Stop at multi-qubit unitary.
