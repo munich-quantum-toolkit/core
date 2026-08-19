@@ -162,7 +162,6 @@ nitpick_ignore_regex = [
 breathe_projects = {"mqt.core": "_build/doxygen/xml"}
 breathe_default_project = "mqt.core"
 
-<<<<<<< HEAD
 read_the_docs_build = os.environ.get("READTHEDOCS", None) == "True"
 if read_the_docs_build:
     subprocess.call("mkdir -p _build/doxygen && doxygen", shell=True)  # ruff:ignore[subprocess-popen-with-shell-equals-true, start-process-with-partial-path]
@@ -170,31 +169,6 @@ if read_the_docs_build:
         "mkdir -p api/cpp && breathe-apidoc -o api/cpp -m -f -g namespace _build/doxygen/xml/",  # ruff:ignore[start-process-with-partial-path]
         shell=True,
     )
-||||||| parent of a4ba0860 (⬆️ Update QDMI to version 1.3.3 (#2168))
-# GitHub renders this valid source-document anchor outside the fetched HTML.
-linkcheck_anchors_ignore_for_url = [
-    r"https://github\.com/Qiskit/qiskit/blob/cd8701690723d3d9602fac63fe0bd7ea618799be/CONTRIBUTING\.md"
-]
-
-
-cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml")
-qdmi_api_tagfile = (
-    "_build/qdmi.tag",
-    "https://munich-quantum-software-stack.github.io/QDMI/v1.3.2/",
-)
-=======
-# GitHub renders this valid source-document anchor outside the fetched HTML.
-linkcheck_anchors_ignore_for_url = [
-    r"https://github\.com/Qiskit/qiskit/blob/cd8701690723d3d9602fac63fe0bd7ea618799be/CONTRIBUTING\.md"
-]
-
-
-cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml")
-qdmi_api_tagfile = (
-    "_build/qdmi.tag",
-    "https://munich-quantum-software-stack.github.io/QDMI/v1.3.3/",
-)
->>>>>>> a4ba0860 (⬆️ Update QDMI to version 1.3.3 (#2168))
 
 # -- Options for HTML output -------------------------------------------------
 
