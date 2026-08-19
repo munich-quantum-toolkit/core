@@ -144,7 +144,10 @@ static void moveMeasurementsToFront(ModuleOp module, MLIRContext* ctx) {
     module.walk([&](MeasureOp op) {
       Operation* previousInstruction = op.getQubitIn().getDefiningOp();
       Operation* previousNode = op->getPrevNode();
-      while (isa<MeasureOp>(previousNode) &&
+      if (previousInstruction == nullptr) {
+        return;
+      }
+      while (previousNode != nullptr && isa<MeasureOp>(previousNode) &&
              previousInstruction != previousNode) {
         previousNode = previousNode->getPrevNode();
       }
