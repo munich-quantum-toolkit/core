@@ -16,6 +16,8 @@
 #include "dd/StateGeneration.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
@@ -57,7 +59,8 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<cbit::CBitDialect, QCODialect, arith::ArithDialect,
+                    func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -682,6 +685,74 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIf) {
   EXPECT_EQ(out->getVector(), one.getVector());
   dd->decRef(*out);
   dd->decRef(one);
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateCBitConditionAndMeasurementUpdate) {
+  auto zeroCondition = buildModule([](QCOProgramBuilder& b) {
+    auto reg = b.allocClassicalBitRegister(1, "c");
+    auto q = b.staticQubit(0);
+    q = b.qcoIf(
+        b.loadClassicalBit(reg, 0), q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  auto measurementCondition = buildModule([](QCOProgramBuilder& b) {
+    auto reg =
+        b.allocClassicalBitRegister(1, "c", cbit::Initialization::Undefined);
+    auto q = b.x(b.staticQubit(0));
+    Value bit;
+    std::tie(q, bit) = b.measure(q);
+    b.storeClassicalBit(bit, reg, 0);
+    q = b.qcoIf(
+        b.loadClassicalBit(reg, 0), q, [&](Value arg) { return arg; },
+        [&](Value arg) { return b.x(arg); });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(zeroCondition);
+  ASSERT_TRUE(measurementCondition);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(99);
+  auto zero = dd::makeZeroState(1, *dd);
+  auto one = dd->applyOperation(
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+      dd::makeZeroState(1, *dd));
+
+  const auto zeroOut =
+      simulate(mainFunc(*zeroCondition), dd::makeZeroState(1, *dd), *dd, rng);
+  ASSERT_TRUE(succeeded(zeroOut));
+  EXPECT_EQ(zeroOut->getVector(), zero.getVector());
+
+  const auto measurementOut = simulate(mainFunc(*measurementCondition),
+                                       dd::makeZeroState(1, *dd), *dd, rng);
+  ASSERT_TRUE(succeeded(measurementOut));
+  EXPECT_EQ(measurementOut->getVector(), one.getVector());
+
+  dd->decRef(*zeroOut);
+  dd->decRef(*measurementOut);
+  dd->decRef(zero);
+  dd->decRef(one);
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitLoad) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto reg =
+        b.allocClassicalBitRegister(1, "c", cbit::Initialization::Undefined);
+    auto q = b.staticQubit(0);
+    q = b.qcoIf(
+        b.loadClassicalBit(reg, 0), q, [&](Value arg) { return arg; },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(1);
+  EXPECT_TRUE(
+      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIndexSwitch) {

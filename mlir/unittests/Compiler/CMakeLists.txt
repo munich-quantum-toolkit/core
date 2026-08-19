@@ -15,6 +15,7 @@ target_link_libraries(
           MQTCompilerQDMIAdapter
           MQTCompilerTarget
           MQTCompilerPipeline
+          MLIRCBitDialect
           MLIRQCOpenQASMTranslation
           MLIRQASMPrograms
           MLIRQCProgramBuilder

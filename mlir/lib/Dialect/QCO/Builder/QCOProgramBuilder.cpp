@@ -10,6 +10,9 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
@@ -26,7 +29,6 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
@@ -49,12 +51,11 @@
 using namespace mlir::utils;
 
 namespace mlir::qco {
-
 QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qco-program-builder>", 1, 1), context),
       ctx(context), module(ModuleOp::create(*this)) {
-  ctx->loadDialect<QCODialect, qtensor::QTensorDialect>();
+  ctx->loadDialect<cbit::CBitDialect, QCODialect, qtensor::QTensorDialect>();
 }
 
 void QCOProgramBuilder::initialize() { initialize({getI64Type()}); }
@@ -163,20 +164,35 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size,
   return {.value = qtensor, .qubits = std::move(qubits)};
 }
 
-Value QCOProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                                   const StringRef name) {
+Value QCOProgramBuilder::allocClassicalBitRegister(
+    const int64_t size, const StringRef name,
+    const cbit::Initialization initialization) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  auto memrefType = MemRefType::get({size}, getI1Type());
-  auto alloc = memref::AllocOp::create(*this, memrefType);
-  if (!name.empty()) {
-    alloc->setAttr(CLASSICAL_REGISTER_NAME_ATTR, getStringAttr(name));
-  }
-  return alloc.getResult();
+  const auto type = cbit::RegisterType::get(ctx, size);
+  const auto nameAttr = name.empty() ? StringAttr{} : getStringAttr(name);
+  return cbit::AllocOp::create(*this, type, initialization, nameAttr)
+      .getResult();
+}
+
+Value QCOProgramBuilder::loadClassicalBit(
+    Value reg, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  cbit::validateStaticRegisterIndex(reg, index);
+  const auto indexValue = variantToValue(*this, getLoc(), index);
+  return cbit::LoadOp::create(*this, getI1Type(), reg, indexValue).getResult();
+}
+
+void QCOProgramBuilder::storeClassicalBit(
+    Value value, Value reg, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  cbit::validateStaticRegisterIndex(reg, index);
+  const auto indexValue = variantToValue(*this, getLoc(), index);
+  cbit::StoreOp::create(*this, value, reg, indexValue);
 }
 
 //===----------------------------------------------------------------------===//
@@ -436,7 +452,6 @@ std::pair<Value, Value>
 QCOProgramBuilder::measure(Value qubit, Value reg,
                            const std::variant<int64_t, Value>& index) {
   checkFinalized();
-  validateMemRefIndex(reg, index);
 
   auto measureOp = MeasureOp::create(*this, qubit);
   auto qubitOut = measureOp.getQubitOut();
@@ -445,8 +460,7 @@ QCOProgramBuilder::measure(Value qubit, Value reg,
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
 
-  auto indexValue = variantToValue(*this, getLoc(), index);
-  memref::StoreOp::create(*this, result, reg, indexValue);
+  storeClassicalBit(result, reg, index);
 
   return {qubitOut, result};
 }
@@ -1366,9 +1380,7 @@ ValueRange QCOProgramBuilder::qcoIf(
     function_ref<SmallVector<Value>(ValueRange)> thenBody,
     function_ref<SmallVector<Value>(ValueRange)> elseBody) {
   checkFinalized();
-  validateMemRefIndex(reg, index);
-  auto indexValue = variantToValue(*this, getLoc(), index);
-  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
+  auto condition = loadClassicalBit(reg, index);
   return qcoIf(condition, initArgs, thenBody, elseBody);
 }
 
@@ -1396,9 +1408,7 @@ QCOProgramBuilder::scfCondition(Value reg,
                                 const std::variant<int64_t, Value>& index,
                                 ValueRange yieldedValues) {
   checkFinalized();
-  validateMemRefIndex(reg, index);
-  auto indexValue = variantToValue(*this, getLoc(), index);
-  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
+  auto condition = loadClassicalBit(reg, index);
   return scfCondition(condition, yieldedValues);
 }
 

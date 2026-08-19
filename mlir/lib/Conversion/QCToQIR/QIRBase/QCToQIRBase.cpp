@@ -11,6 +11,8 @@
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 
 #include "mlir/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
@@ -85,18 +87,17 @@ static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
 namespace {
 
 /**
- * @brief Converts a classical-bit-register `memref.alloc` to static result
+ * @brief Converts `cbit.alloc` to static result
  * pointers represented by `llvm.inttoptr` operations
  *
  * @details
  * Static qubit pointers are allocated during by `ConvertMemRefLoadOp`.
  */
-struct ConvertMemRefAllocOp final
-    : StatefulOpConversionPattern<memref::AllocOp> {
+struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(cbit::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     const auto it = state.cregIndices.find(op.getOperation());
@@ -124,6 +125,29 @@ struct ConvertMemRefAllocOp final
           index, qir::StaticResult{.pointer = result, .record = false});
     }
 
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct RejectCBitLoadOp final : OpConversionPattern<cbit::LoadOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::LoadOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& /*rewriter*/) const override {
+    return op.emitError(
+        "QIR Base Profile does not support classical-register loads");
+  }
+};
+
+struct ConvertMemRefAllocOp final
+    : StatefulOpConversionPattern<memref::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
     rewriter.eraseOp(op);
     return success();
   }
@@ -158,10 +182,6 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     if (shape.size() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
-    }
-    if (isClassicalBitRegister(op.getMemref().getType())) {
-      return rewriter.notifyMatchFailure(
-          op, "QIR Base Profile does not support classical-result loads");
     }
     // Save current insertion point
     const OpBuilder::InsertionGuard guard(rewriter);
@@ -311,10 +331,10 @@ static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
                                         MLIRContext* ctx,
                                         LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
-  patterns
-      .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
-           ConvertQCAllocOp, ConvertQCMeasureOp, ConvertQCDeallocOp>(
-          typeConverter, ctx, &state);
+  patterns.add<ConvertCBitAllocOp, ConvertMemRefAllocOp, ConvertMemRefLoadOp,
+               ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCMeasureOp,
+               ConvertQCDeallocOp>(typeConverter, ctx, &state);
+  patterns.add<RejectCBitLoadOp>(typeConverter, ctx);
 }
 
 namespace {
@@ -488,7 +508,8 @@ protected:
     // Stage 4: Convert QC dialect to LLVM (QIR calls)
     {
       RewritePatternSet patterns(ctx);
-      target.addIllegalDialect<QCDialect, memref::MemRefDialect>();
+      target.addIllegalDialect<cbit::CBitDialect, QCDialect,
+                               memref::MemRefDialect>();
 
       populateQCToQIRBasePatterns(patterns, typeConverter, ctx, state);
 

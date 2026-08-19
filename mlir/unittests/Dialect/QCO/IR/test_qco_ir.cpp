@@ -9,6 +9,9 @@
  */
 
 #include "TestCaseUtils.h"
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -89,8 +92,8 @@ protected:
 void QCOTest::SetUp() {
   // Register all necessary dialects
   DialectRegistry registry;
-  registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                  memref::MemRefDialect, scf::SCFDialect,
+  registry.insert<cbit::CBitDialect, QCODialect, arith::ArithDialect,
+                  func::FuncDialect, memref::MemRefDialect, scf::SCFDialect,
                   qtensor::QTensorDialect>();
   context = std::make_unique<MLIRContext>();
   context->appendDialectRegistry(registry);
@@ -251,7 +254,7 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
         const auto q = builder.allocQubit();
-        const auto c = builder.allocClassicalBitRegister(1);
+        auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, -1);
       },
       "Register index must be non-negative");
@@ -261,7 +264,7 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
         const auto q = builder.allocQubit();
-        const auto c = builder.allocClassicalBitRegister(1);
+        auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, 1);
       },
       "Register index is out of bounds");
@@ -270,7 +273,7 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
-        const auto c = builder.allocClassicalBitRegister(1);
+        auto c = builder.allocClassicalBitRegister(1);
         builder.qcoIf(c, -1, ValueRange{},
                       [](ValueRange) { return SmallVector<Value>{}; });
       },
@@ -280,10 +283,31 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
-        const auto c = builder.allocClassicalBitRegister(1);
+        auto c = builder.allocClassicalBitRegister(1);
         builder.scfCondition(c, 1, ValueRange{});
       },
       "Register index is out of bounds");
+}
+
+TEST_F(QCOTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto zero = builder.allocClassicalBitRegister(3);
+  auto undefined = builder.allocClassicalBitRegister(
+      2, "undefined", cbit::Initialization::Undefined);
+  builder.retype({zero.getType(), undefined.getType()});
+  auto moduleOp = builder.finalize({zero, undefined});
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+
+  SmallVector<cbit::AllocOp> allocations;
+  moduleOp->walk([&](cbit::AllocOp op) { allocations.push_back(op); });
+  ASSERT_EQ(allocations.size(), 2);
+  EXPECT_EQ(allocations[0].getInitialization(), cbit::Initialization::Zero);
+  EXPECT_FALSE(allocations[0].getSourceNameAttr());
+  EXPECT_EQ(allocations[1].getInitialization(),
+            cbit::Initialization::Undefined);
+  EXPECT_EQ(allocations[1].getSourceName(), "undefined");
 }
 
 TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
@@ -312,6 +336,12 @@ TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
 namespace {
 
 enum class VerifierModifierKind : uint8_t { Inv, Ctrl, Pow };
+enum class ForbiddenModifierBodyOp : uint8_t {
+  Measure,
+  CBitAlloc,
+  CBitLoad,
+  CBitStore
+};
 
 } // namespace
 
@@ -325,6 +355,20 @@ static StringRef modifierName(const VerifierModifierKind kind) {
     return "pow";
   }
   llvm_unreachable("unknown modifier");
+}
+
+static StringRef forbiddenOperationName(const ForbiddenModifierBodyOp kind) {
+  switch (kind) {
+  case ForbiddenModifierBodyOp::Measure:
+    return "measure";
+  case ForbiddenModifierBodyOp::CBitAlloc:
+    return "cbit.alloc";
+  case ForbiddenModifierBodyOp::CBitLoad:
+    return "cbit.load";
+  case ForbiddenModifierBodyOp::CBitStore:
+    return "cbit.store";
+  }
+  llvm_unreachable("unknown forbidden modifier operation");
 }
 
 static Operation*
@@ -360,17 +404,36 @@ buildInvalidModifierCapture(QCOProgramBuilder& builder,
   llvm_unreachable("unknown modifier");
 }
 
-static Operation*
-buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
-                               const VerifierModifierKind modifier) {
+static Operation* buildInvalidNestedModifierBody(
+    QCOProgramBuilder& builder, const VerifierModifierKind modifier,
+    const ForbiddenModifierBodyOp forbiddenOperation) {
   builder.initialize();
   const auto target = builder.allocQubit();
   const auto control = builder.allocQubit();
   const auto condition = builder.boolConstant(true);
+  auto cbitReg = builder.allocClassicalBitRegister(1);
+  auto index = arith::ConstantIndexOp::create(builder, 0);
   const auto modifierBody = [&](const Value argument) -> Value {
     auto ifOp = IfOp::create(
         builder, condition, argument, [&](const Value nestedArgument) -> Value {
-          return MeasureOp::create(builder, nestedArgument).getQubitOut();
+          switch (forbiddenOperation) {
+          case ForbiddenModifierBodyOp::Measure:
+            return MeasureOp::create(builder, nestedArgument).getQubitOut();
+          case ForbiddenModifierBodyOp::CBitAlloc:
+            cbit::AllocOp::create(
+                builder, cbit::RegisterType::get(builder.getContext(), 1),
+                cbit::Initialization::Zero, StringAttr{});
+            break;
+          case ForbiddenModifierBodyOp::CBitLoad:
+            cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg,
+                                 index.getResult());
+            break;
+          case ForbiddenModifierBodyOp::CBitStore:
+            cbit::StoreOp::create(builder, condition, cbitReg,
+                                  index.getResult());
+            break;
+          }
+          return nestedArgument;
         });
     return ifOp.getResult(0);
   };
@@ -391,23 +454,32 @@ TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
   constexpr std::array modifiers{VerifierModifierKind::Inv,
                                  VerifierModifierKind::Ctrl,
                                  VerifierModifierKind::Pow};
+  constexpr std::array forbiddenOperations{
+      ForbiddenModifierBodyOp::Measure, ForbiddenModifierBodyOp::CBitAlloc,
+      ForbiddenModifierBodyOp::CBitLoad, ForbiddenModifierBodyOp::CBitStore};
 
   for (const auto modifier : modifiers) {
-    SCOPED_TRACE(testing::Message()
-                 << "modifier=" << modifierName(modifier).str());
-    QCOProgramBuilder builder(context.get());
-    auto* modifierOp = buildInvalidNestedModifierBody(builder, modifier);
+    for (const auto forbiddenOperation : forbiddenOperations) {
+      SCOPED_TRACE(testing::Message()
+                   << "modifier=" << modifierName(modifier).str()
+                   << ", operation="
+                   << forbiddenOperationName(forbiddenOperation).str());
+      QCOProgramBuilder builder(context.get());
+      auto* modifierOp =
+          buildInvalidNestedModifierBody(builder, modifier, forbiddenOperation);
 
-    bool sawExpectedDiagnostic = false;
-    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      sawExpectedDiagnostic |=
-          StringRef(diagnostic.str())
-              .contains("body must not contain non-unitary quantum operations "
-                        "or modify a quantum register");
-      return success();
-    });
-    EXPECT_TRUE(failed(verify(modifierOp)));
-    EXPECT_TRUE(sawExpectedDiagnostic);
+      bool sawExpectedDiagnostic = false;
+      ScopedDiagnosticHandler handler(
+          context.get(), [&](Diagnostic& diagnostic) {
+            sawExpectedDiagnostic |=
+                StringRef(diagnostic.str())
+                    .contains("body must not contain non-unitary operations or "
+                              "access registers");
+            return success();
+          });
+      EXPECT_TRUE(failed(verify(modifierOp)));
+      EXPECT_TRUE(sawExpectedDiagnostic);
+    }
   }
 }
 
@@ -441,8 +513,8 @@ TEST_F(QCOTest, ModifiersRejectDirectAndNestedQubitCaptures) {
 
 TEST_F(QCOTest, DirectIfBuilder) {
   QCOProgramBuilder builder(context.get());
-  auto memrefType = MemRefType::get({1}, builder.getI1Type());
-  builder.initialize({memrefType, memrefType});
+  auto cbitType = cbit::RegisterType::get(context.get(), 1);
+  builder.initialize({cbitType, cbitType});
   auto zero = arith::ConstantIndexOp::create(builder, 0);
   auto one = arith::ConstantIndexOp::create(builder, 1);
   auto r0 = qtensor::AllocOp::create(builder, one);
@@ -451,16 +523,15 @@ TEST_F(QCOTest, DirectIfBuilder) {
   auto c0 = builder.allocClassicalBitRegister(1);
   auto c1 = builder.allocClassicalBitRegister(1);
   auto measureOp = MeasureOp::create(builder, q1);
-  memref::StoreOp::create(builder, measureOp.getResult(), c0, ValueRange{zero});
-  auto condition = memref::LoadOp::create(builder, c0, ValueRange{zero});
+  builder.storeClassicalBit(measureOp.getResult(), c0, 0);
+  auto condition = builder.loadClassicalBit(c0, 0);
   auto ifOp = IfOp::create(builder, condition, measureOp.getQubitOut(),
                            [&](ValueRange qubits) -> SmallVector<Value> {
                              auto innerQubit = XOp::create(builder, qubits[0]);
                              return SmallVector<Value>{innerQubit};
                            });
   auto finalMeasureOp = MeasureOp::create(builder, ifOp.getResult(0));
-  memref::StoreOp::create(builder, finalMeasureOp.getResult(), c1,
-                          ValueRange{zero});
+  builder.storeClassicalBit(finalMeasureOp.getResult(), c1, 0);
   auto r2 = qtensor::InsertOp::create(builder, finalMeasureOp.getQubitOut(),
                                       extractOp.getOutTensor(), zero);
   qtensor::DeallocOp::create(builder, r2);
@@ -858,12 +929,12 @@ TEST_F(QCOTest, IndexSwitchParser) {
   // Test IndexSwitch parser
   const char* mlirCode = R"(
       module {
-        func.func @main() -> memref<3xi1> attributes {passthrough = ["entry_point"]} {
+        func.func @main() -> !cbit.reg<3> attributes {passthrough = ["entry_point"]} {
             %c2 = arith.constant 2 : index
             %c1 = arith.constant 1 : index
             %c0 = arith.constant 0 : index
             %c3 = arith.constant 3 : index
-            %c = memref.alloc() : memref<3xi1>
+            %c = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<3>
             %0 = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
             %1 = scf.for %arg0 = %c0 to %c3 step %c1 iter_args(%arg1 = %0) -> (tensor<3x!qco.qubit>) {
             %5 = arith.remui %arg0, %c3 : index
@@ -890,18 +961,18 @@ TEST_F(QCOTest, IndexSwitchParser) {
             }
             %out_tensor, %result = qtensor.extract %1[%c0] : tensor<3x!qco.qubit>
             %qubit_out, %result_0 = qco.measure %result : !qco.qubit
-            memref.store %result_0, %c[%c0] : memref<3xi1>
+            cbit.store %result_0, %c[%c0] : !cbit.reg<3>
             %2 = qtensor.insert %qubit_out into %out_tensor[%c0] : tensor<3x!qco.qubit>
             %out_tensor_1, %result_2 = qtensor.extract %2[%c1] : tensor<3x!qco.qubit>
             %qubit_out_3, %result_4 = qco.measure %result_2 : !qco.qubit
-            memref.store %result_4, %c[%c1] : memref<3xi1>
+            cbit.store %result_4, %c[%c1] : !cbit.reg<3>
             %3 = qtensor.insert %qubit_out_3 into %out_tensor_1[%c1] : tensor<3x!qco.qubit>
             %out_tensor_5, %result_6 = qtensor.extract %3[%c2] : tensor<3x!qco.qubit>
             %qubit_out_7, %result_8 = qco.measure %result_6 : !qco.qubit
-            memref.store %result_8, %c[%c2] : memref<3xi1>
+            cbit.store %result_8, %c[%c2] : !cbit.reg<3>
             %4 = qtensor.insert %qubit_out_7 into %out_tensor_5[%c2] : tensor<3x!qco.qubit>
             qtensor.dealloc %4 : tensor<3x!qco.qubit>
-            return %c : memref<3xi1>
+            return %c : !cbit.reg<3>
         }
     })";
 

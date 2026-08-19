@@ -10,6 +10,9 @@
 
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
@@ -40,19 +43,11 @@
 using namespace mlir::utils;
 
 namespace mlir::qc {
-
 QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
-    : QCProgramBuilder(context,
-                       ClassicalRegisterInitialization::Uninitialized) {}
-
-QCProgramBuilder::QCProgramBuilder(
-    MLIRContext* context,
-    const ClassicalRegisterInitialization registerInitialization)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qc-program-builder>", 1, 1), context),
-      ctx(context), module(ModuleOp::create(*this)),
-      classicalRegisterInitialization(registerInitialization) {
-  ctx->loadDialect<QCDialect>();
+      ctx(context), module(ModuleOp::create(*this)) {
+  ctx->loadDialect<cbit::CBitDialect, QCDialect>();
 }
 
 void QCProgramBuilder::initialize() { initialize({getI64Type()}); }
@@ -174,29 +169,35 @@ Value QCProgramBuilder::loadQubit(Value memref, Value index) {
   return memref::LoadOp::create(*this, memref, index).getResult();
 }
 
-Value QCProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                                  const StringRef name) {
+Value QCProgramBuilder::allocClassicalBitRegister(
+    const int64_t size, const StringRef name,
+    const cbit::Initialization initialization) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  auto memrefType = MemRefType::get({size}, getI1Type());
-  auto alloc = memref::AllocOp::create(*this, memrefType);
-  if (!name.empty()) {
-    alloc->setAttr(CLASSICAL_REGISTER_NAME_ATTR, getStringAttr(name));
-  }
-  const auto memref = alloc.getResult();
-  if (classicalRegisterInitialization ==
-      ClassicalRegisterInitialization::Zero) {
-    const auto zero = boolConstant(false);
-    for (int64_t bit = 0; bit < size; ++bit) {
-      auto index = arith::ConstantIndexOp::create(*this, bit);
-      memref::StoreOp::create(*this, zero, memref, index.getResult());
-    }
-  }
-  return memref;
+  const auto type = cbit::RegisterType::get(ctx, size);
+  const auto nameAttr = name.empty() ? StringAttr{} : getStringAttr(name);
+  return cbit::AllocOp::create(*this, type, initialization, nameAttr)
+      .getResult();
+}
+
+Value QCProgramBuilder::loadClassicalBit(
+    Value reg, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  cbit::validateStaticRegisterIndex(reg, index);
+  const auto indexValue = variantToValue(*this, getLoc(), index);
+  return cbit::LoadOp::create(*this, getI1Type(), reg, indexValue).getResult();
+}
+
+void QCProgramBuilder::storeClassicalBit(
+    Value value, Value reg, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  cbit::validateStaticRegisterIndex(reg, index);
+  const auto indexValue = variantToValue(*this, getLoc(), index);
+  cbit::StoreOp::create(*this, value, reg, indexValue);
 }
 
 //===----------------------------------------------------------------------===//
@@ -212,11 +213,9 @@ Value QCProgramBuilder::measure(Value qubit) {
 Value QCProgramBuilder::measure(Value qubit, Value reg,
                                 const std::variant<int64_t, Value>& index) {
   checkFinalized();
-  validateMemRefIndex(reg, index);
   auto measureOp = MeasureOp::create(*this, qubit);
   auto result = measureOp.getResult();
-  auto indexValue = variantToValue(*this, getLoc(), index);
-  memref::StoreOp::create(*this, result, reg, indexValue);
+  storeClassicalBit(result, reg, index);
   return result;
 }
 
@@ -658,9 +657,7 @@ QCProgramBuilder::scfIf(Value reg, const std::variant<int64_t, Value>& index,
                         const function_ref<void()>& thenBody,
                         const function_ref<void()>& elseBody) {
   checkFinalized();
-  validateMemRefIndex(reg, index);
-  auto indexValue = variantToValue(*this, getLoc(), index);
-  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
+  auto condition = loadClassicalBit(reg, index);
   return scfIf(condition, thenBody, elseBody);
 }
 
@@ -708,9 +705,7 @@ QCProgramBuilder&
 QCProgramBuilder::scfCondition(Value reg,
                                const std::variant<int64_t, Value>& index) {
   checkFinalized();
-  validateMemRefIndex(reg, index);
-  auto indexValue = variantToValue(*this, getLoc(), index);
-  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
+  auto condition = loadClassicalBit(reg, index);
   return scfCondition(condition);
 }
 
@@ -821,15 +816,7 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
 OwningOpRef<ModuleOp> QCProgramBuilder::build(
     MLIRContext* context,
     const function_ref<SmallVector<Value>(QCProgramBuilder&)>& buildFunc) {
-  return build(context, buildFunc,
-               ClassicalRegisterInitialization::Uninitialized);
-}
-
-OwningOpRef<ModuleOp> QCProgramBuilder::build(
-    MLIRContext* context,
-    const function_ref<SmallVector<Value>(QCProgramBuilder&)>& buildFunc,
-    const ClassicalRegisterInitialization registerInitialization) {
-  QCProgramBuilder builder(context, registerInitialization);
+  QCProgramBuilder builder(context);
   builder.initialize();
   auto result = buildFunc(builder);
   builder.retype(ValueRange(result).getTypes());
@@ -839,15 +826,7 @@ OwningOpRef<ModuleOp> QCProgramBuilder::build(
 OwningOpRef<ModuleOp> QCProgramBuilder::build(
     MLIRContext* context,
     const function_ref<Value(QCProgramBuilder&)>& buildFunc) {
-  return build(context, buildFunc,
-               ClassicalRegisterInitialization::Uninitialized);
-}
-
-OwningOpRef<ModuleOp> QCProgramBuilder::build(
-    MLIRContext* context,
-    const function_ref<Value(QCProgramBuilder&)>& buildFunc,
-    const ClassicalRegisterInitialization registerInitialization) {
-  QCProgramBuilder builder(context, registerInitialization);
+  QCProgramBuilder builder(context);
   builder.initialize();
   auto result = buildFunc(builder);
   builder.retype(result.getType());

@@ -78,10 +78,12 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * @details Supports the unitary op set of @ref buildFunctionality, plus
  * `qco.measure` / `qco.reset` (collapsing via @p rng) and `qco.if` /
  * `qco.index_switch` when the branch selector is a concrete classical SSA value
- * (`arith.constant` `i1`/`index`, a prior measurement, `arith.index_castui`, or
- * simple `andi`/`ori`/`xori`/`shli` on those values). Nested regions are
- * walked; loops and multi-block function bodies remain unsupported. Consumes
- * one reference to @p in regardless of whether simulation succeeds or fails.
+ * (`arith.constant` `i1`/`index`, a prior measurement, a `cbit.load`,
+ * `arith.index_castui`, or simple `andi`/`ori`/`xori`/`shli` on those values).
+ * The simulation tracks CBit initialization, loads, and stores. Nested regions
+ * are walked; loops and multi-block function bodies remain unsupported.
+ * Consumes one reference to @p in regardless of whether simulation succeeds or
+ * fails.
  *
  * @param func The QCO function to simulate
  * @param in The input state; one reference is consumed

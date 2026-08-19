@@ -6,6 +6,7 @@
 #
 # Licensed under the MIT License
 
+add_subdirectory(CBit)
 add_subdirectory(QC)
 add_subdirectory(QCO)
 add_subdirectory(QIR)

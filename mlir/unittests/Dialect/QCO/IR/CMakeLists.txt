@@ -11,6 +11,7 @@ add_executable(${qco_ir_target} test_qco_ir.cpp test_qco_ir_matrix.cpp)
 target_link_libraries(
   ${qco_ir_target}
   PRIVATE MLIRParser
+          MLIRCBitDialect
           MLIRSupportMQT
           GTest::gtest_main
           MLIRQCOProgramBuilder

@@ -15,7 +15,6 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -4323,8 +4322,7 @@ SmallVector<Value> nestedTrueIf(QCOProgramBuilder& b) {
   auto q0 = b.h(q[0]);
   auto measuredQubit = b.measure(q0, c0, 0).first;
   auto index = arith::ConstantIndexOp::create(b, 0);
-  auto condition =
-      memref::LoadOp::create(b, c0, ValueRange{index.getResult()}).getResult();
+  auto condition = b.loadClassicalBit(c0, index.getResult());
   auto ifRes = b.qcoIf(condition, measuredQubit, [&](ValueRange outerArgs) {
     auto innerResult = b.qcoIf(condition, outerArgs, [&](ValueRange innerArgs) {
       auto innerQubit = b.x(innerArgs[0]);
@@ -4343,8 +4341,7 @@ SmallVector<Value> nestedFalseIf(QCOProgramBuilder& b) {
   auto q0 = b.h(q[0]);
   auto measuredQubit = b.measure(q0, c0, 0).first;
   auto index = arith::ConstantIndexOp::create(b, 0);
-  auto condition =
-      memref::LoadOp::create(b, c0, ValueRange{index.getResult()}).getResult();
+  auto condition = b.loadClassicalBit(c0, index.getResult());
   auto ifRes = b.qcoIf(
       condition, measuredQubit,
       [&](ValueRange args) {
