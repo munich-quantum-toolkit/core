@@ -34,7 +34,11 @@ repos:
   - repo: https://github.com/python-jsonschema/check-jsonschema
     rev: 0.38.0
     hooks:
+      - id: check-codecov
+        priority: 0
       - id: check-github-workflows
+        priority: 0
+      - id: check-mergify
         priority: 0
       - id: check-readthedocs
         priority: 0
