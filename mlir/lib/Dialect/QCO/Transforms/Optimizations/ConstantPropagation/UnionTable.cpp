@@ -282,7 +282,6 @@ void UnionTable::propagateReset(const Value quantumTarget,
     vecOfNewStates.insert(vecOfNewStates.end(), newStates.begin(),
                           newStates.end());
   }
-  ute->states = vecOfNewStates;
   if (vecOfNewStates.size() > maximumHybridEntries) {
     putEntriesToTop({*ute});
   } else {
@@ -294,7 +293,14 @@ void UnionTable::propagateReset(const Value quantumTarget,
 void UnionTable::propagateQubitAlloc(const Value qubit) {
   unsigned int maxIndex = 0;
   if (!qubitsToGlobalIndices.empty()) {
-    maxIndex = std::ranges::max(qubitsToGlobalIndices.values()) + 1;
+    auto it = qubitsToGlobalIndices.begin();
+    maxIndex = it->second;                     // first index present
+
+    ++it;
+    for (; it != qubitsToGlobalIndices.end(); ++it) {
+      maxIndex = std::max(maxIndex, it->second);
+    }
+    ++maxIndex;
   }
   std::vector globalQubitIndex = {maxIndex};
   const auto hs = HybridState(globalQubitIndex, maxNonzeroAmplitudes);
@@ -503,6 +509,9 @@ UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
   bool highestStateReachable = alwaysOne;
   bool highestStateAlwaysReached = alwaysOne;
   for (const auto& ute : participatingEntries) {
+    if (ute.top) {
+      return {};
+    }
     std::unordered_map<unsigned int, bool> qubitCtrlThisEntry;
     llvm::DenseMap<Value, bool> classicalCtrlThisEntry;
     for (const auto q : ctrlsQuantum) {
@@ -564,6 +573,11 @@ UnionTable::getSuperfluousControls(const std::span<Value> qubitCtrls,
     bool alwaysOne = true;
     bool alwaysZero = true;
     for (const auto& hs : valuesToEntries.at(qCtrl)->states) {
+      if (hs.isHybridStateTop()) {
+        alwaysOne = false;
+        alwaysZero = false;
+        break;
+      }
       if (alwaysZero && !hs.isQubitAlwaysZero(qIndex)) {
         alwaysZero = false;
       }
