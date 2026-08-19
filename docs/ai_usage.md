@@ -174,7 +174,7 @@ of
 with the help of Gemini 3 Pro (Preview). The links above serve as attribution.
 
 [Astral]: https://github.com/astral-sh/uv/blob/c89a78ec085077f6344b0439ddf07fdad7336310/CONTRIBUTING.md
-[Qiskit]: https://github.com/Qiskit/qiskit/blob/cd8701690723d3d9602fac63fe0bd7ea618799be/CONTRIBUTING.md
+[Qiskit]: https://github.com/Qiskit/qiskit/blob/cd8701690723d3d9602fac63fe0bd7ea618799be/CONTRIBUTING.md#use-of-ai-tools
 [LLVM]: https://github.com/llvm/llvm-project/blob/9b6391f9c439c9926e8587b7b940e9a1e98a7819/llvm/docs/AIToolPolicy.md
 [fedora]: https://communityblog.fedoraproject.org/council-policy-proposal-policy-on-ai-assisted-contributions/
 [cca]: https://creativecommons.org/licenses/by/4.0/
