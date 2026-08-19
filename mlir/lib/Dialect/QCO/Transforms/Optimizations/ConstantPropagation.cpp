@@ -516,19 +516,19 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     if (resThen.failed()) {
       return WalkResult::interrupt();
     }
-    op->thenBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
-      const auto input = innerOp->getOperands();
-      const auto output = innerOp->getResults();
-      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
-        std::ranges::replace(thenArgs, input[i], output[i]);
-      }
-    });
   }
+  op->thenBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+    const auto input = innerOp->getOperands();
+    const auto output = innerOp->getResults();
+    for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
+      std::ranges::replace(thenArgs, input[i], output[i]);
+    }
+  });
   if (!elseEmpty) {
     for (const Value arg : elseBlock->getArguments()) {
       elseArgs.push_back(arg);
     }
-    ut->replaceValuesGlobally(thenArgs.empty() ? targets : thenArgs, elseArgs);
+    ut->replaceValuesGlobally(thenEmpty ? targets : thenArgs, elseArgs);
 
     std::span wl(newElseWorklist.data(), newElseWorklist.size());
     std::vector<Value> newNegClassicalCtrls = {negClassicalCtrls.begin(),
@@ -540,16 +540,17 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     if (resElse.failed()) {
       return WalkResult::interrupt();
     }
-    op->elseBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
-      // Propagating values in order to assign the right values to the right
-      // result values
-      const auto input = innerOp->getOperands();
-      const auto output = innerOp->getResults();
-      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
-        std::ranges::replace(elseArgs, input[i], output[i]);
-      }
-    });
   }
+  op->elseBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+    // Propagating values in order to assign the right values to the right
+    // result values
+    const auto input = innerOp->getOperands();
+    const auto output = innerOp->getResults();
+    for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
+      std::ranges::replace(elseArgs, input[i], output[i]);
+    }
+  });
+
   const auto resultQubits = op->getResults();
   std::vector<Value> results = {resultQubits.begin(), resultQubits.end()};
 
