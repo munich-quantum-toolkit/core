@@ -44,6 +44,14 @@ OpenQASM-specific metadata to MLIR.
 - [x] (2026-08-19 13:23Z) Resolved all four Clang-Tidy 22.1.8 findings from the
       first CI run. The exact checks, release and non-unity builds, and both
       affected test suites pass locally.
+- [x] (2026-08-19 20:24Z) Rebased the branch on `cb5cf0103`, retained the CBit
+      representation from #2158 while resolving adjacent conflicts, and kept
+      #2169 in the current unreleased OpenQASM changelog entry.
+- [x] (2026-08-19 20:24Z) Added small coverage cases for direct angle casts,
+      both comparison orderings, runtime casts, unsupported outputs, and mixed
+      angle arithmetic. The focused OpenQASM and QC translation suites pass.
+- [x] (2026-08-19 20:24Z) Created #2174 for the format-independent runtime and
+      target-aware work that remains after #2169 closes #1128.
 
 ## Surprises & Discoveries
 
@@ -71,6 +79,10 @@ OpenQASM-specific metadata to MLIR.
 - Observation: The normal documentation build needs a QDMI 1.3.2 tag file from
   GitHub Pages. The first build failed during a temporary DNS outage. Reusing
   the identical cached 1.3.2 tag file made the warnings-as-errors build pass.
+- Observation: Current `main` replaces implicit classical-register memrefs with
+  CBit IR. The rebase conflicts were adjacent rather than semantic. The resolved
+  documentation and end-to-end test retain CBit and the compile-time angle
+  boundary.
 
 ## Decision Log
 
@@ -98,6 +110,11 @@ OpenQASM-specific metadata to MLIR.
   quantization. Rationale: other quantum formats use continuous floating-point
   parameters, and unconditional modulo reduction is unsafe for phase-sensitive
   or controlled operations. Date/Author: 2026-08-19 / Codex.
+- Decision: Let #2169 close #1128 and track the remaining runtime storage and
+  target-aware quantization work in #2174. Rationale: #2169 satisfies the
+  issue's stated design and parser or lowering acceptance criterion. The
+  remaining work needs a format-independent compiler contract and is not part of
+  compile-time OpenQASM input support. Date/Author: 2026-08-19 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -109,11 +126,12 @@ design needs no public frontend change, no MLIR dialect or operation, no
 format-specific attribute, no exporter reconstruction, and no Python or
 generated-file change.
 
-The release build passed. CTest passed all 4,104 tests; one device query test
-was skipped by its fixture. The complete OpenQASM target and QC translation
-binaries passed 168 and 173 tests. The same two targets built without unity and
-their test binaries passed. The repository lint session and the warnings-as-
-errors documentation build passed. `git diff --check` passed.
+The release build passed after the latest rebase. CTest passed all 4,295 tests;
+one device query test was skipped by its fixture. The complete OpenQASM target
+and QC translation binaries passed 168 and 175 tests. The same two targets also
+built without unity before the rebase and their test binaries passed. The
+repository lint session, diff-scoped Clang-Tidy with warnings as errors, and the
+warnings-as-errors documentation build passed. `git diff --check` passed.
 
 The first ordinary documentation run failed only because DNS resolution could
 not download the QDMI 1.3.2 tag file. The successful retry used the identical
@@ -128,6 +146,11 @@ follow-up uses `std::cmp_greater`, explicit branches, and the literal exponent
 type. These changes preserve behavior. The four exact checks pass with
 Clang-Tidy 22.1.8, and both affected test binaries pass in release and non-unity
 builds.
+
+The branch was later rebased on `cb5cf0103`, after the v3.9.0 release and the
+CBit migration. The conflict resolution retains the current unreleased changelog
+structure and CBit semantics. Follow-up issue #2174 owns the separate,
+format-independent runtime fixed-angle and target-aware quantization contract.
 
 ## Context and Orientation
 

@@ -810,7 +810,8 @@ rx(smallest_default) q;
 rx(huge) q;
 rx(subnormal) q;
 rx(sin(a)) q;
-if (a > b && a == 7.0 * pi / 8.0) { x q; }
+rx(sin(angle[4](pi / 8.0))) q;
+if (a > b && b < a && a == 7.0 * pi / 8.0) { x q; }
 )qasm";
 
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
@@ -835,6 +836,7 @@ if (a > b && a == 7.0 * pi / 8.0) { x q; }
       3985068968215732.0 * defaultStep,
       0.0,
       std::sin(7.0 * std::numbers::pi / 8.0),
+      std::sin(std::numbers::pi / 8.0),
   };
   size_t parameterIndex = 0;
   bool sawTrueCondition = false;
@@ -882,6 +884,11 @@ TEST(OpenQASMFrontendTest, RejectsUnsupportedFixedAnglePrograms) {
       "a;",
       "OPENQASM 3.1; const angle[8] a = angle[8](pi); const angle[8] b = a * "
       "256;",
+      "OPENQASM 3.1; output angle[8] result;",
+      "OPENQASM 3.1; float theta = pi; qubit q; rx(angle[8](theta)) q;",
+      "OPENQASM 3.1; const angle[8] a = angle[8](pi); const bool bad = a == 1;",
+      "OPENQASM 3.1; const angle[8] a = angle[8](pi); const angle[8] bad = a + "
+      "pi;",
   });
 
   for (const auto source : sources) {

@@ -1605,7 +1605,7 @@ private:
       advance();
       return expr;
     case TokenKind::Angle: {
-      advance(); // angle
+      advance();
       const Expr* size = nullptr;
       if (current().kind == TokenKind::LBracket) {
         auto designator = parseDesignator();

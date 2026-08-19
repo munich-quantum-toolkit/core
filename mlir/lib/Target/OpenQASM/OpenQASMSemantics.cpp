@@ -143,8 +143,8 @@ quantizeAngleMagnitude(const uint64_t significand, const int32_t binaryExponent,
           magnitude.shl(static_cast<unsigned>(scaledExponent)), modulus);
     } else {
       const auto denominatorShift = static_cast<unsigned>(-scaledExponent);
-      // The numerator has at most 53 bits and the odd denominator has 50.
-      // Five more denominator bits put even the largest numerator below half.
+      /// The numerator has at most 53 bits and the odd denominator has 50.
+      /// Five more denominator bits put even the largest numerator below half.
       if (denominatorShift >= 5U) {
         return 0;
       }
@@ -171,7 +171,7 @@ quantizeAngle(const double radians, const uint32_t bitWidth) {
 
   const auto significand =
       exponent == 0 ? fraction : fraction | (uint64_t{1} << 52U);
-  // The binary64 value of 2*pi is TWO_PI_ODD_SIGNIFICAND * 2^-47.
+  /// The binary64 value of 2*pi is TWO_PI_ODD_SIGNIFICAND * 2^-47.
   const auto binaryExponent =
       exponent == 0 ? -1027 : static_cast<int32_t>(exponent) - 1028;
   auto result = quantizeAngleMagnitude(significand, binaryExponent, bitWidth);
