@@ -109,7 +109,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
         std::ranges::advance(it, Traits::stride());
       }
 
-      while (Traits::isActive(it)) {
+      while (it != std::default_sentinel) {
         if (const auto mapIt = pending.find(it.operation());
             mapIt != pending.end()) {
           PendingItem& item = mapIt->second;
