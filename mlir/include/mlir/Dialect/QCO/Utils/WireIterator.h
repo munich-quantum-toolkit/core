@@ -10,9 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 
