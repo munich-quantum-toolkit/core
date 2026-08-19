@@ -55,7 +55,7 @@ protected:
   }
 
   /**
-   * @brief Adds the hadamardLiftingPass to the current context and runs it.
+   * @brief Adds the ConstantPropagation pass to the pass manager and runs it.
    */
   static LogicalResult runConstantPropagationPass(ModuleOp module) {
     PassManager pm(module.getContext());
@@ -378,7 +378,8 @@ TEST_F(QCOConstantPropagationTest, testRemoveClassicalConditionals) {
       arith::ConstantOp::create(referenceBuilder,
                                 referenceBuilder.getBoolAttr(false))
           .getResult();
-  arith::OrIOp::create(referenceBuilder, bTrue.getType(), bTrueRef, bFalseRef)
+  arith::OrIOp::create(referenceBuilder, bTrueRef.getType(), bTrueRef,
+                       bFalseRef)
       .getResult();
   qRef[0] = referenceBuilder.h(qRef[0]);
   qRef[0] = referenceBuilder.u2(1.4, 2.7, qRef[0]);
