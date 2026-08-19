@@ -6,7 +6,8 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-unittests-benchmark test_benchmark_jeff.cpp)
+add_executable(mqt-core-mlir-unittests-benchmark test_benchmark_jeff.cpp
+                                                 test_benchmark_pipeline.cpp)
 
 target_link_libraries(mqt-core-mlir-unittests-benchmark PRIVATE GTest::gtest_main MQTJeffBenchmarks)
 

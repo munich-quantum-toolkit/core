@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "BenchmarkTestUtils.h"
 #include "mlir/Benchmark/Jeff/Generate.h"
 #include "mlir/Benchmark/Programs.h"
 
@@ -18,17 +19,6 @@
 #include <string>
 
 namespace mqt::benchmark {
-
-/// Replaces the characters that a test name cannot contain.
-static std::string testName(llvm::StringRef name) {
-  auto sanitized = name.str();
-  for (auto& character : sanitized) {
-    if (character == '-') {
-      character = '_';
-    }
-  }
-  return sanitized;
-}
 
 namespace {
 

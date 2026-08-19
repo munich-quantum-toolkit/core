@@ -1,0 +1,76 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "BenchmarkTestUtils.h"
+#include "mlir/Benchmark/Compile.h"
+#include "mlir/Benchmark/Programs.h"
+#include "mlir/Compiler/Programs.h"
+
+#include <gtest/gtest.h>
+
+#include <cstdint>
+#include <utility>
+
+namespace mqt::benchmark {
+
+namespace {
+
+/// The size the benchmarks are generated at.
+constexpr uint64_t PIPELINE_SIZE = 7;
+
+class PipelineBenchmarkTest : public testing::TestWithParam<Benchmark> {};
+
+INSTANTIATE_TEST_SUITE_P(Benchmarks, PipelineBenchmarkTest,
+                         testing::ValuesIn(benchmarks()),
+                         [](const testing::TestParamInfo<Benchmark>& info) {
+                           return testName(info.param.name);
+                         });
+
+/**
+ * @brief Runs one benchmark through the default pipeline to @p format.
+ *
+ * @details The formats the benchmarks reach are QCO, QC, `jeff`, and QIR for
+ * the Adaptive Profile. OpenQASM 3 and the QIR Base Profile are left out: the
+ * OpenQASM emitter needs constant qubit indices, and the Base Profile allows
+ * neither control flow nor a classical register that is read at runtime, so
+ * every program that indexes a register in a loop is outside both of them.
+ */
+static bool reaches(const Benchmark& benchmark,
+                    const mlir::ProgramFormat format) {
+  auto program = buildQCProgram(benchmark, PIPELINE_SIZE);
+  if (!program) {
+    return false;
+  }
+  return mlir::runDefaultPipeline(std::move(*program), format).has_value();
+}
+
+TEST_P(PipelineBenchmarkTest, ReachesQCO) {
+  EXPECT_TRUE(reaches(GetParam(), mlir::ProgramFormat::QCO));
+}
+
+TEST_P(PipelineBenchmarkTest, ReachesOptimizedQCO) {
+  EXPECT_TRUE(reaches(GetParam(), mlir::ProgramFormat::QCOOptimized));
+}
+
+TEST_P(PipelineBenchmarkTest, ReachesQC) {
+  EXPECT_TRUE(reaches(GetParam(), mlir::ProgramFormat::QC));
+}
+
+TEST_P(PipelineBenchmarkTest, ReachesJeff) {
+  EXPECT_TRUE(reaches(GetParam(), mlir::ProgramFormat::Jeff));
+}
+
+TEST_P(PipelineBenchmarkTest, ReachesQIRAdaptive) {
+  EXPECT_TRUE(reaches(GetParam(), mlir::ProgramFormat::QIRAdaptive));
+}
+
+} // namespace
+
+} // namespace mqt::benchmark
