@@ -104,8 +104,19 @@ inline int64_t getArithIntegerOpResult(mlir::Operation* operation,
 
         return result ? int64_t{1} : int64_t{0};
       })
-      .Case<mlir::arith::DivSIOp>(
-          [&](auto) { return a.sdiv(b).getSExtValue(); })
+      .Case<mlir::arith::DivSIOp>([&](auto) {
+        if (a.isZero()) {
+          llvm::report_fatal_error(
+              "Handling of division by zero in mlir::arith::DivSIOp is not "
+              "supported by constant propagation.");
+        }
+        if (a.isAllOnes() && b.isMinSignedValue()) {
+          llvm::report_fatal_error(
+              "Handling of INT_MIN / -1 in mlir::arith::DivSIOp is not "
+              "supported by constant propagation.");
+        }
+        return a.sdiv(b).getSExtValue();
+      })
       .Case<mlir::arith::MaxSIOp>([&](auto) {
         return a.getSExtValue() > b.getSExtValue() ? a.getSExtValue()
                                                    : b.getSExtValue();
@@ -220,12 +231,14 @@ inline double getArithDoubleOpResult(mlir::Operation* operation,
                              "mlir::qco::classicalarithoperation");
   }
 
-  const double folded = result.convertToDouble();
-
-  if (!llvm::APFloat(folded).bitwiseIsEqual(result)) {
+  llvm::APFloat resultInDouble = result;
+  bool loseInfoResult = false;
+  result.convert(llvm::APFloat::IEEEdouble(), rm, &loseInfoResult);
+  if (loseInfoResult) {
     llvm::report_fatal_error(
         "Floating-point fold result cannot be represented safely as double.");
   }
+  const double folded = result.convertToDouble();
 
   return folded;
 }
