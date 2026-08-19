@@ -95,8 +95,7 @@ protected:
 } // namespace
 
 static Value measureToRegister(qc::QCProgramBuilder& b, ValueRange qubits) {
-  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()), {},
-                                       mlir::cbit::Initialization::Undefined);
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
   for (auto [i, q] : llvm::enumerate(qubits)) {
     b.measure(q, c, static_cast<int64_t>(i));
   }
@@ -601,25 +600,21 @@ static Value ifNot(qc::QCProgramBuilder& b) {
   auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
-  auto condition =
-      b.allocClassicalBitRegister(1, {}, cbit::Initialization::Undefined);
+  auto condition = b.allocClassicalBitRegister(1);
   b.measure(q[0], condition, 0);
   auto cond =
       arith::XOrIOp::create(b, b.loadClassicalBit(condition, 0), trueValue)
           .getResult();
   b.scfIf(cond, [&] { b.x(q[0]); });
-  auto out =
-      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto out = b.allocClassicalBitRegister(1);
   b.measure(q[0], out, 0);
   return out;
 }
 
 static SmallVector<Value> ifWithMeasurement(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto c =
-      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
-  auto measurement =
-      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto c = b.allocClassicalBitRegister(1);
+  auto measurement = b.allocClassicalBitRegister(1);
   b.h(q[0]);
   b.measure(q[0], c, 0);
   b.scfIf(
@@ -826,8 +821,7 @@ static SmallVector<Value> conditionLiteral(qc::QCProgramBuilder& b) {
 static SmallVector<Value> conditionMeasurement(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.h(q[0]);
-  auto enabled =
-      b.allocClassicalBitRegister(1, {}, mlir::cbit::Initialization::Undefined);
+  auto enabled = b.allocClassicalBitRegister(1);
   b.measure(q[0], enabled, 0);
   b.scfIf(loadBit(b, enabled), [&] { b.x(q[1]); });
   auto c = measureToRegister(b, {q[1]});
@@ -896,8 +890,7 @@ static SmallVector<Value> conditionIndexedBit(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.h(q[0]);
   b.h(q[1]);
-  auto c =
-      b.allocClassicalBitRegister(2, {}, mlir::cbit::Initialization::Undefined);
+  auto c = b.allocClassicalBitRegister(2);
   b.measure(q[0], c, 0);
   b.measure(q[1], c, 1);
   b.scfIf(loadBit(b, c, 1), [&] { b.x(q[2]); });

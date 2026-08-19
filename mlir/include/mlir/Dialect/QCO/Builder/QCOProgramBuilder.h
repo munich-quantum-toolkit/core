@@ -341,21 +341,22 @@ public:
    * and independent of every other register built by this builder.
    *
    * @param size Number of bits (must be positive)
-   * @param name Optional source-level register name
-   * @param initialization Initial value of the register elements
+   * @param name Optional source-level register name; defaults to no name
+   * @param initialization Initial value of the register elements; defaults to
+   * zero
    * @return The CBit register value
    *
    * @par Example:
    * ```c++
-   * auto c = builder.allocClassicalBitRegister(
-   *     3, "c", cbit::Initialization::Zero);
+   * auto c = builder.allocClassicalBitRegister(3, "c");
    * ```
    * ```mlir
    * %c = cbit.alloc(#cbit.init<zero>) source_name = "c" : !cbit.reg<3>
    * ```
    */
-  Value allocClassicalBitRegister(int64_t size, StringRef name,
-                                  cbit::Initialization initialization);
+  Value allocClassicalBitRegister(
+      int64_t size, StringRef name = {},
+      cbit::Initialization initialization = cbit::Initialization::Zero);
 
   /** Load one value from a classical-bit register. */
   Value loadClassicalBit(Value reg, const std::variant<int64_t, Value>& index);

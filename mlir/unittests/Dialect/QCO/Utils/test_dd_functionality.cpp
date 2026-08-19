@@ -689,7 +689,7 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIf) {
 
 TEST_F(QCODDFunctionalityTest, SimulateCBitConditionAndMeasurementUpdate) {
   auto zeroCondition = buildModule([](QCOProgramBuilder& b) {
-    auto reg = b.allocClassicalBitRegister(1, "c", cbit::Initialization::Zero);
+    auto reg = b.allocClassicalBitRegister(1, "c");
     auto q = b.staticQubit(0);
     q = b.qcoIf(
         b.loadClassicalBit(reg, 0), q, [&](Value arg) { return b.x(arg); },

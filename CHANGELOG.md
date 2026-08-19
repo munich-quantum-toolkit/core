@@ -131,7 +131,7 @@ releases may include breaking changes.
   [#1782], [#1806], [#1807], [#1815], [#1808], [#1824], [#1869], [#1872],
   [#1886], [#1914], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
   [#1976], [#2006], [#2014], [#2015], [#2017], [#2026], [#2028], [#2058],
-  [#2125]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
+  [#2125], [#2158]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
   [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**], [**@J4MMlE**])
 
@@ -139,9 +139,6 @@ releases may include breaking changes.
 
 - ⬆️ Update QDMI to version 1.3.3 ([#2168]) ([**@denialhaag**])
 - ⬆️ Update `nanobind` to version 2.15.0 ([#2141]) ([**@denialhaag**])
-- ♻️ Replace implicit classical-register memrefs with explicit CBit registers
-  across compiler frontends, conversions, and execution, with an explicit late
-  memref lowering ([#2158]) ([**@burgholzer**])
 - 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
   logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
   ([**@simon1hofmann**])

@@ -68,10 +68,14 @@ outputs.
       `56c65d078` reduced the result to three test-context include diagnostics.
       Fixed each reported include and reran the three affected test binaries and
       repository lint successfully.
-- [ ] Publish and validate the signed final head. Keep the pull request in draft
-      until link checking passes: the required link-check session currently
-      fails only on unrelated external DOI, Qiskit policy, and old Read the Docs
-      links.
+- [x] (2026-08-19 09:52Z) Gave both CBit builder allocation methods concise
+      zero-initialized, unnamed defaults and folded #2158 into the existing MLIR
+      infrastructure changelog entry. Rebased all seven signed commits onto
+      `2587c1223`; the release build, all 4,288 native tests, 167 focused Python
+      tests, and repository lint pass on the rebased head.
+- [ ] Publish and validate the signed final head. Pull request #2165 fixes the
+      unrelated external DOI, Qiskit policy, and old Read the Docs link-check
+      failures and is queued for automatic merge.
 
 ## Surprises & Discoveries
 
@@ -158,6 +162,11 @@ outputs.
   Rationale: Qiskit and OpenQASM 2 require zero, OpenQASM 3 permits undefined
   bits, and a builder-wide policy cannot represent both in one program.
   Date/Author: 2026-08-18 / Codex, based on the approved design.
+- Decision: Default builder allocations to an unnamed, zero-initialized register
+  while keeping initialization explicit on `cbit.alloc`. Rationale: zero is the
+  common circuit-builder behavior and preserves concise existing call sites;
+  OpenQASM 3 and tests of undefined behavior still request `Undefined` per
+  allocation. Date/Author: 2026-08-19 / Lukas Burgholzer and Codex.
 - Decision: Define public result registers only by return values of the entry
   function. Rationale: Allocation and a source name are insufficient to
   distinguish user-visible output from internal state. Date/Author: 2026-08-18 /
@@ -211,8 +220,8 @@ QC owns a builder-wide `ClassicalRegisterInitialization` enum. Both builders
 must instead expose the same per-register operations:
 
     Value allocClassicalBitRegister(
-        int64_t size, StringRef name,
-        cbit::Initialization initialization);
+        int64_t size, StringRef name = {},
+        cbit::Initialization initialization = cbit::Initialization::Zero);
     Value loadClassicalBit(Value reg,
                            const std::variant<int64_t, Value>& index);
     void storeClassicalBit(Value value, Value reg,
@@ -278,9 +287,8 @@ Register CBit in compiler programs, the `mqt-cc` tool, Python bindings, and all
 test contexts that parse or build programs containing it. Update
 `docs/mlir/CBit.md`, `docs/mlir/index.md`, `docs/mlir/Conversions.md`, and
 `docs/mlir/OpenQASM.md`. Generate the dialect reference through CMake rather
-than editing generated output. Add an unreleased `CHANGELOG.md` entry after the
-draft pull request number exists, with every contributing author and the PR link
-definition.
+than editing generated output. Add the draft pull request number to the existing
+unreleased MLIR infrastructure changelog entry and keep its link definition.
 
 ## Plan of Work
 
@@ -291,10 +299,11 @@ registries. A textual module containing one zero-initialized register, a store,
 a load, and a returned register must parse, print, and verify.
 
 Second, migrate QCProgramBuilder and QCOProgramBuilder to the per-allocation
-API. Replace every in-tree builder call so each allocation states zero or
-undefined. Add builder tests with two registers that use different
-initialization in the same module. At this point no builder-global policy or
-generic classical-register-name memref attribute remains.
+API. Use the unnamed, zero-initialized builder defaults for the common case and
+request undefined initialization explicitly where semantics require it. Add
+builder tests with two registers that use different initialization in the same
+module. At this point no builder-global policy or generic
+classical-register-name memref attribute remains.
 
 Third, add the late CBit-to-memref conversion and mark CBit legal in both QC and
 QCO conversions. Test type, signature, return, initialization, load, store,
@@ -424,6 +433,7 @@ Final local validation evidence:
     uvx nox -s minimums                                          passed on Python 3.10-3.14
     uvx nox -s docs                                              passed
     uvx nox -s docs -- -b linkcheck                              failed on unrelated external links
+                                                                  fixed separately by #2165
 
 The focused CBit, CBit-to-memref, QC-to-QCO, QCO-to-QC, QC/QCO round-trip, QIR
 Base, QIR Adaptive, QCO utility, jeff, QC translation, compiler, QCO IR, and

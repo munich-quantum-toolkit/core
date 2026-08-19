@@ -101,8 +101,7 @@ void QCOTest::SetUp() {
 }
 
 static Value measureRegister(QCOProgramBuilder& b, ValueRange qubits) {
-  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()), {},
-                                       mlir::cbit::Initialization::Undefined);
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
   for (auto [i, qubit] : llvm::enumerate(qubits)) {
     b.measure(qubit, c, static_cast<int64_t>(i));
   }
@@ -255,8 +254,7 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
         const auto q = builder.allocQubit();
-        const auto c = builder.allocClassicalBitRegister(
-            1, {}, mlir::cbit::Initialization::Undefined);
+        const auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, -1);
       },
       "Register index must be non-negative");
@@ -266,8 +264,7 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
         const auto q = builder.allocQubit();
-        const auto c = builder.allocClassicalBitRegister(
-            1, {}, mlir::cbit::Initialization::Undefined);
+        const auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, 1);
       },
       "Register index is out of bounds");
@@ -276,8 +273,7 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
-        const auto c = builder.allocClassicalBitRegister(
-            1, {}, mlir::cbit::Initialization::Undefined);
+        const auto c = builder.allocClassicalBitRegister(1);
         builder.qcoIf(c, -1, ValueRange{},
                       [](ValueRange) { return SmallVector<Value>{}; });
       },
@@ -287,8 +283,7 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
-        const auto c = builder.allocClassicalBitRegister(
-            1, {}, mlir::cbit::Initialization::Undefined);
+        const auto c = builder.allocClassicalBitRegister(1);
         builder.scfCondition(c, 1, ValueRange{});
       },
       "Register index is out of bounds");
@@ -297,8 +292,7 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
 TEST_F(QCOTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
-  const auto zero =
-      builder.allocClassicalBitRegister(3, "zero", cbit::Initialization::Zero);
+  const auto zero = builder.allocClassicalBitRegister(3);
   const auto undefined = builder.allocClassicalBitRegister(
       2, "undefined", cbit::Initialization::Undefined);
   builder.retype({zero.getType(), undefined.getType()});
@@ -310,7 +304,7 @@ TEST_F(QCOTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
   moduleOp->walk([&](cbit::AllocOp op) { allocations.push_back(op); });
   ASSERT_EQ(allocations.size(), 2);
   EXPECT_EQ(allocations[0].getInitialization(), cbit::Initialization::Zero);
-  EXPECT_EQ(allocations[0].getSourceName(), "zero");
+  EXPECT_FALSE(allocations[0].getSourceNameAttr());
   EXPECT_EQ(allocations[1].getInitialization(),
             cbit::Initialization::Undefined);
   EXPECT_EQ(allocations[1].getSourceName(), "undefined");
@@ -478,10 +472,8 @@ TEST_F(QCOTest, DirectIfBuilder) {
   auto r0 = qtensor::AllocOp::create(builder, one);
   auto extractOp = qtensor::ExtractOp::create(builder, r0, zero);
   auto q1 = HOp::create(builder, extractOp.getResult());
-  auto c0 = builder.allocClassicalBitRegister(
-      1, {}, mlir::cbit::Initialization::Undefined);
-  auto c1 = builder.allocClassicalBitRegister(
-      1, {}, mlir::cbit::Initialization::Undefined);
+  auto c0 = builder.allocClassicalBitRegister(1);
+  auto c1 = builder.allocClassicalBitRegister(1);
   auto measureOp = MeasureOp::create(builder, q1);
   builder.storeClassicalBit(measureOp.getResult(), c0, 0);
   auto condition = builder.loadClassicalBit(c0, 0);

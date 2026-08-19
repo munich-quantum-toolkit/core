@@ -1588,8 +1588,8 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   classicalBits.reserve(view->numClbits());
   const auto allocateClassical = [&](const uint32_t size,
                                      const std::string_view name) {
-    const auto storage = builder.allocClassicalBitRegister(
-        static_cast<int64_t>(size), name, mlir::cbit::Initialization::Zero);
+    const auto storage =
+        builder.allocClassicalBitRegister(static_cast<int64_t>(size), name);
     classicalStorage.push_back(storage);
     for (uint32_t index = 0U; index < size; ++index) {
       classicalBits.push_back(
