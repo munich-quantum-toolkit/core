@@ -254,7 +254,7 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
         const auto q = builder.allocQubit();
-        const auto c = builder.allocClassicalBitRegister(1);
+        auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, -1);
       },
       "Register index must be non-negative");
@@ -264,7 +264,7 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
         const auto q = builder.allocQubit();
-        const auto c = builder.allocClassicalBitRegister(1);
+        auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, 1);
       },
       "Register index is out of bounds");
@@ -273,7 +273,7 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
-        const auto c = builder.allocClassicalBitRegister(1);
+        auto c = builder.allocClassicalBitRegister(1);
         builder.qcoIf(c, -1, ValueRange{},
                       [](ValueRange) { return SmallVector<Value>{}; });
       },
@@ -283,7 +283,7 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
-        const auto c = builder.allocClassicalBitRegister(1);
+        auto c = builder.allocClassicalBitRegister(1);
         builder.scfCondition(c, 1, ValueRange{});
       },
       "Register index is out of bounds");
@@ -292,8 +292,8 @@ TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
 TEST_F(QCOTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
-  const auto zero = builder.allocClassicalBitRegister(3);
-  const auto undefined = builder.allocClassicalBitRegister(
+  auto zero = builder.allocClassicalBitRegister(3);
+  auto undefined = builder.allocClassicalBitRegister(
       2, "undefined", cbit::Initialization::Undefined);
   builder.retype({zero.getType(), undefined.getType()});
   auto moduleOp = builder.finalize({zero, undefined});
@@ -336,6 +336,12 @@ TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
 namespace {
 
 enum class VerifierModifierKind : uint8_t { Inv, Ctrl, Pow };
+enum class ForbiddenModifierBodyOp : uint8_t {
+  Measure,
+  CBitAlloc,
+  CBitLoad,
+  CBitStore
+};
 
 } // namespace
 
@@ -349,6 +355,20 @@ static StringRef modifierName(const VerifierModifierKind kind) {
     return "pow";
   }
   llvm_unreachable("unknown modifier");
+}
+
+static StringRef forbiddenOperationName(const ForbiddenModifierBodyOp kind) {
+  switch (kind) {
+  case ForbiddenModifierBodyOp::Measure:
+    return "measure";
+  case ForbiddenModifierBodyOp::CBitAlloc:
+    return "cbit.alloc";
+  case ForbiddenModifierBodyOp::CBitLoad:
+    return "cbit.load";
+  case ForbiddenModifierBodyOp::CBitStore:
+    return "cbit.store";
+  }
+  llvm_unreachable("unknown forbidden modifier operation");
 }
 
 static Operation*
@@ -384,17 +404,36 @@ buildInvalidModifierCapture(QCOProgramBuilder& builder,
   llvm_unreachable("unknown modifier");
 }
 
-static Operation*
-buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
-                               const VerifierModifierKind modifier) {
+static Operation* buildInvalidNestedModifierBody(
+    QCOProgramBuilder& builder, const VerifierModifierKind modifier,
+    const ForbiddenModifierBodyOp forbiddenOperation) {
   builder.initialize();
   const auto target = builder.allocQubit();
   const auto control = builder.allocQubit();
   const auto condition = builder.boolConstant(true);
+  auto cbitReg = builder.allocClassicalBitRegister(1);
+  auto index = arith::ConstantIndexOp::create(builder, 0);
   const auto modifierBody = [&](const Value argument) -> Value {
     auto ifOp = IfOp::create(
         builder, condition, argument, [&](const Value nestedArgument) -> Value {
-          return MeasureOp::create(builder, nestedArgument).getQubitOut();
+          switch (forbiddenOperation) {
+          case ForbiddenModifierBodyOp::Measure:
+            return MeasureOp::create(builder, nestedArgument).getQubitOut();
+          case ForbiddenModifierBodyOp::CBitAlloc:
+            cbit::AllocOp::create(
+                builder, cbit::RegisterType::get(builder.getContext(), 1),
+                cbit::Initialization::Zero, StringAttr{});
+            break;
+          case ForbiddenModifierBodyOp::CBitLoad:
+            cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg,
+                                 index.getResult());
+            break;
+          case ForbiddenModifierBodyOp::CBitStore:
+            cbit::StoreOp::create(builder, condition, cbitReg,
+                                  index.getResult());
+            break;
+          }
+          return nestedArgument;
         });
     return ifOp.getResult(0);
   };
@@ -415,23 +454,32 @@ TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
   constexpr std::array modifiers{VerifierModifierKind::Inv,
                                  VerifierModifierKind::Ctrl,
                                  VerifierModifierKind::Pow};
+  constexpr std::array forbiddenOperations{
+      ForbiddenModifierBodyOp::Measure, ForbiddenModifierBodyOp::CBitAlloc,
+      ForbiddenModifierBodyOp::CBitLoad, ForbiddenModifierBodyOp::CBitStore};
 
   for (const auto modifier : modifiers) {
-    SCOPED_TRACE(testing::Message()
-                 << "modifier=" << modifierName(modifier).str());
-    QCOProgramBuilder builder(context.get());
-    auto* modifierOp = buildInvalidNestedModifierBody(builder, modifier);
+    for (const auto forbiddenOperation : forbiddenOperations) {
+      SCOPED_TRACE(testing::Message()
+                   << "modifier=" << modifierName(modifier).str()
+                   << ", operation="
+                   << forbiddenOperationName(forbiddenOperation).str());
+      QCOProgramBuilder builder(context.get());
+      auto* modifierOp =
+          buildInvalidNestedModifierBody(builder, modifier, forbiddenOperation);
 
-    bool sawExpectedDiagnostic = false;
-    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      sawExpectedDiagnostic |=
-          StringRef(diagnostic.str())
-              .contains("body must not contain non-unitary quantum operations "
-                        "or modify a quantum register");
-      return success();
-    });
-    EXPECT_TRUE(failed(verify(modifierOp)));
-    EXPECT_TRUE(sawExpectedDiagnostic);
+      bool sawExpectedDiagnostic = false;
+      ScopedDiagnosticHandler handler(
+          context.get(), [&](Diagnostic& diagnostic) {
+            sawExpectedDiagnostic |=
+                StringRef(diagnostic.str())
+                    .contains("body must not contain non-unitary operations or "
+                              "access registers");
+            return success();
+          });
+      EXPECT_TRUE(failed(verify(modifierOp)));
+      EXPECT_TRUE(sawExpectedDiagnostic);
+    }
   }
 }
 

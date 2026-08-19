@@ -133,8 +133,9 @@ variantToValue(OpBuilder& builder, Location loc,
   return constantFromScalar(builder, loc, std::get<T>(parameter));
 }
 
-inline void validateMemRefIndex(Value memref,
-                                const std::variant<int64_t, Value>& index) {
+inline void
+validateStaticRegisterIndex(const int64_t size,
+                            const std::variant<int64_t, Value>& index) {
   const auto* constant = std::get_if<int64_t>(&index);
   if (constant == nullptr) {
     return;
@@ -142,11 +143,20 @@ inline void validateMemRefIndex(Value memref,
   if (*constant < 0) {
     llvm::reportFatalUsageError("Register index must be non-negative");
   }
-  const auto type = dyn_cast<MemRefType>(memref.getType());
-  if (type && type.getRank() == 1 && !type.isDynamicDim(0) &&
-      *constant >= type.getDimSize(0)) {
+  if (*constant >= size) {
     llvm::reportFatalUsageError("Register index is out of bounds");
   }
+}
+
+template <typename RegisterType>
+inline void
+validateStaticRegisterIndex(const Value reg,
+                            const std::variant<int64_t, Value>& index) {
+  const auto type = dyn_cast<RegisterType>(reg.getType());
+  if (!type) {
+    llvm::reportFatalUsageError("Expected a static register");
+  }
+  validateStaticRegisterIndex(type.getWidth(), index);
 }
 
 [[nodiscard]] inline std::optional<double> attributeToDouble(Attribute attr) {

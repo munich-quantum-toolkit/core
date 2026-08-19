@@ -43,23 +43,6 @@
 using namespace mlir::utils;
 
 namespace mlir::qc {
-static void
-validateClassicalBitIndex(const Value reg,
-                          const std::variant<int64_t, Value>& index) {
-  const auto type = dyn_cast<cbit::RegisterType>(reg.getType());
-  if (!type) {
-    llvm::reportFatalUsageError("Expected a CBit register");
-  }
-  if (const auto* constant = std::get_if<int64_t>(&index)) {
-    if (*constant < 0) {
-      llvm::reportFatalUsageError("Register index must be non-negative");
-    }
-    if (*constant >= type.getWidth()) {
-      llvm::reportFatalUsageError("Register index is out of bounds");
-    }
-  }
-}
-
 QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qc-program-builder>", 1, 1), context),
@@ -194,7 +177,7 @@ Value QCProgramBuilder::allocClassicalBitRegister(
 Value QCProgramBuilder::loadClassicalBit(
     Value reg, const std::variant<int64_t, Value>& index) {
   checkFinalized();
-  validateClassicalBitIndex(reg, index);
+  validateStaticRegisterIndex<cbit::RegisterType>(reg, index);
   const auto indexValue = variantToValue(*this, getLoc(), index);
   return cbit::LoadOp::create(*this, getI1Type(), reg, indexValue).getResult();
 }
@@ -202,7 +185,7 @@ Value QCProgramBuilder::loadClassicalBit(
 void QCProgramBuilder::storeClassicalBit(
     Value value, Value reg, const std::variant<int64_t, Value>& index) {
   checkFinalized();
-  validateClassicalBitIndex(reg, index);
+  validateStaticRegisterIndex<cbit::RegisterType>(reg, index);
   const auto indexValue = variantToValue(*this, getLoc(), index);
   cbit::StoreOp::create(*this, value, reg, indexValue);
 }

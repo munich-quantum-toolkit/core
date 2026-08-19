@@ -77,68 +77,6 @@ static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
 }
 
 /**
- * @brief Converts `cbit.alloc` to `llvm.alloca`
- */
-static LogicalResult convertCBitAllocOp(cbit::AllocOp op, LoweringState& state,
-                                        ConversionPatternRewriter& rewriter) {
-  const auto it = state.cregIndices.find(op.getOperation());
-  if (it == state.cregIndices.end()) {
-    rewriter.eraseOp(op);
-    return success();
-  }
-  auto& reg = state.cregs[it->second];
-
-  auto loc = op.getLoc();
-  auto* ctx = op.getContext();
-  auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  auto voidType = LLVM::LLVMVoidType::get(ctx);
-
-  const OpBuilder::InsertionGuard guard(rewriter);
-  rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-
-  auto size = LLVM::ConstantOp::create(rewriter, loc, rewriter.getI64Type(),
-                                       op.getResult().getType().getWidth())
-                  .getResult();
-
-  if (!reg.record) {
-    auto i1Type = rewriter.getI1Type();
-    auto storage = LLVM::AllocaOp::create(rewriter, loc, ptrType, i1Type, size)
-                       .getResult();
-    if (op.getInitialization() == cbit::Initialization::Zero) {
-      auto zero = LLVM::ConstantOp::create(rewriter, loc, i1Type,
-                                           rewriter.getBoolAttr(false));
-      for (int64_t index = 0; index < op.getResult().getType().getWidth();
-           ++index) {
-        auto indexValue = LLVM::ConstantOp::create(
-            rewriter, loc, rewriter.getI64Type(), index);
-        auto element =
-            LLVM::GEPOp::create(rewriter, loc, ptrType, i1Type, storage,
-                                ValueRange{indexValue.getResult()});
-        LLVM::StoreOp::create(rewriter, loc, zero, element);
-      }
-    }
-    rewriter.replaceOp(op, storage);
-    return success();
-  }
-
-  auto fnSig = LLVM::LLVMFunctionType::get(
-      voidType, {rewriter.getI64Type(), ptrType, ptrType});
-  auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
-                                              QIR_RESULT_ARRAY_ALLOC, fnSig);
-
-  auto array =
-      LLVM::AllocaOp::create(rewriter, loc, ptrType, ptrType, size).getResult();
-  auto zero = LLVM::ZeroOp::create(rewriter, loc, ptrType).getResult();
-  LLVM::CallOp::create(rewriter, loc, fnDec, ValueRange{size, array, zero});
-
-  state.resultArrays.insert(array);
-  reg.array = array;
-
-  rewriter.replaceOp(op, array);
-  return success();
-}
-
-/**
  * @brief Converts qubit-register `memref.alloc` to `llvm.alloca`
  */
 static LogicalResult
@@ -187,7 +125,63 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
   LogicalResult
   matchAndRewrite(cbit::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    return convertCBitAllocOp(op, getState(), rewriter);
+    auto& state = getState();
+    const auto it = state.cregIndices.find(op.getOperation());
+    if (it == state.cregIndices.end()) {
+      rewriter.eraseOp(op);
+      return success();
+    }
+    auto& reg = state.cregs[it->second];
+
+    auto loc = op.getLoc();
+    auto* ctx = op.getContext();
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    auto voidType = LLVM::LLVMVoidType::get(ctx);
+
+    const OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+
+    auto size = LLVM::ConstantOp::create(rewriter, loc, rewriter.getI64Type(),
+                                         op.getResult().getType().getWidth())
+                    .getResult();
+
+    if (!reg.record) {
+      auto i1Type = rewriter.getI1Type();
+      auto storage =
+          LLVM::AllocaOp::create(rewriter, loc, ptrType, i1Type, size)
+              .getResult();
+      if (op.getInitialization() == cbit::Initialization::Zero) {
+        auto zero = LLVM::ConstantOp::create(rewriter, loc, i1Type,
+                                             rewriter.getBoolAttr(false));
+        for (int64_t index = 0; index < op.getResult().getType().getWidth();
+             ++index) {
+          auto indexValue = LLVM::ConstantOp::create(
+              rewriter, loc, rewriter.getI64Type(), index);
+          auto element =
+              LLVM::GEPOp::create(rewriter, loc, ptrType, i1Type, storage,
+                                  ValueRange{indexValue.getResult()});
+          LLVM::StoreOp::create(rewriter, loc, zero, element);
+        }
+      }
+      rewriter.replaceOp(op, storage);
+      return success();
+    }
+
+    auto fnSig = LLVM::LLVMFunctionType::get(
+        voidType, {rewriter.getI64Type(), ptrType, ptrType});
+    auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
+                                                QIR_RESULT_ARRAY_ALLOC, fnSig);
+
+    auto array = LLVM::AllocaOp::create(rewriter, loc, ptrType, ptrType, size)
+                     .getResult();
+    auto zero = LLVM::ZeroOp::create(rewriter, loc, ptrType).getResult();
+    LLVM::CallOp::create(rewriter, loc, fnDec, ValueRange{size, array, zero});
+
+    state.resultArrays.insert(array);
+    reg.array = array;
+
+    rewriter.replaceOp(op, array);
+    return success();
   }
 };
 

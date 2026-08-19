@@ -165,7 +165,7 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         QCProgramBuilder builder(context.get());
         builder.initialize();
         const auto q = builder.allocQubit();
-        const auto c = builder.allocClassicalBitRegister(1);
+        auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, -1);
       },
       "Register index must be non-negative");
@@ -175,7 +175,7 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
         QCProgramBuilder builder(context.get());
         builder.initialize();
         const auto q = builder.allocQubit();
-        const auto c = builder.allocClassicalBitRegister(1);
+        auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, 1);
       },
       "Register index is out of bounds");
@@ -184,7 +184,7 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QCProgramBuilder builder(context.get());
         builder.initialize();
-        const auto c = builder.allocClassicalBitRegister(1);
+        auto c = builder.allocClassicalBitRegister(1);
         builder.scfIf(c, -1, [] {});
       },
       "Register index must be non-negative");
@@ -193,7 +193,7 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QCProgramBuilder builder(context.get());
         builder.initialize();
-        const auto c = builder.allocClassicalBitRegister(1);
+        auto c = builder.allocClassicalBitRegister(1);
         builder.scfCondition(c, 1);
       },
       "Register index is out of bounds");
@@ -202,8 +202,8 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
 TEST_F(QCTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
-  const auto zero = builder.allocClassicalBitRegister(3);
-  const auto undefined = builder.allocClassicalBitRegister(
+  auto zero = builder.allocClassicalBitRegister(3);
+  auto undefined = builder.allocClassicalBitRegister(
       2, "undefined", cbit::Initialization::Undefined);
   builder.retype({zero.getType(), undefined.getType()});
   auto moduleOp = builder.finalize({zero, undefined});
@@ -481,8 +481,11 @@ enum class ForbiddenModifierBodyOp : std::uint8_t {
   Dealloc,
   Measure,
   Reset,
-  Load,
-  Store
+  QubitRegisterLoad,
+  QubitRegisterStore,
+  CBitAlloc,
+  CBitLoad,
+  CBitStore
 };
 
 } // namespace
@@ -509,17 +512,24 @@ static StringRef forbiddenOperationName(const ForbiddenModifierBodyOp kind) {
     return "measure";
   case ForbiddenModifierBodyOp::Reset:
     return "reset";
-  case ForbiddenModifierBodyOp::Load:
-    return "load";
-  case ForbiddenModifierBodyOp::Store:
-    return "store";
+  case ForbiddenModifierBodyOp::QubitRegisterLoad:
+    return "qubit-register-load";
+  case ForbiddenModifierBodyOp::QubitRegisterStore:
+    return "qubit-register-store";
+  case ForbiddenModifierBodyOp::CBitAlloc:
+    return "cbit.alloc";
+  case ForbiddenModifierBodyOp::CBitLoad:
+    return "cbit.load";
+  case ForbiddenModifierBodyOp::CBitStore:
+    return "cbit.store";
   }
   llvm_unreachable("unknown forbidden modifier operation");
 }
 
 static void emitForbiddenModifierBodyOperation(
     QCProgramBuilder& builder, const ForbiddenModifierBodyOp kind,
-    const Value argument, const Value reg, const Value index) {
+    const Value argument, const Value qubitReg, const Value cbitReg,
+    const Value index, const Value bit) {
   switch (kind) {
   case ForbiddenModifierBodyOp::Alloc:
     AllocOp::create(builder);
@@ -533,11 +543,22 @@ static void emitForbiddenModifierBodyOperation(
   case ForbiddenModifierBodyOp::Reset:
     ResetOp::create(builder, argument);
     return;
-  case ForbiddenModifierBodyOp::Load:
-    memref::LoadOp::create(builder, reg, index);
+  case ForbiddenModifierBodyOp::QubitRegisterLoad:
+    memref::LoadOp::create(builder, qubitReg, index);
     return;
-  case ForbiddenModifierBodyOp::Store:
-    memref::StoreOp::create(builder, argument, reg, index);
+  case ForbiddenModifierBodyOp::QubitRegisterStore:
+    memref::StoreOp::create(builder, argument, qubitReg, index);
+    return;
+  case ForbiddenModifierBodyOp::CBitAlloc:
+    cbit::AllocOp::create(builder,
+                          cbit::RegisterType::get(builder.getContext(), 1),
+                          cbit::Initialization::Zero, StringAttr{});
+    return;
+  case ForbiddenModifierBodyOp::CBitLoad:
+    cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg, index);
+    return;
+  case ForbiddenModifierBodyOp::CBitStore:
+    cbit::StoreOp::create(builder, bit, cbitReg, index);
     return;
   }
   llvm_unreachable("unknown forbidden modifier operation");
@@ -550,12 +571,15 @@ static OwningOpRef<ModuleOp> buildInvalidNestedModifierProgram(
   builder.initialize();
   const auto target = builder.allocQubit();
   const auto control = builder.allocQubit();
-  const auto reg = builder.allocQubitRegisterStorage(1);
+  const auto qubitReg = builder.allocQubitRegisterStorage(1);
+  auto cbitReg = builder.allocClassicalBitRegister(1);
+  const auto bit = builder.boolConstant(false);
   auto index = arith::ConstantIndexOp::create(builder, 0);
   const auto modifierBody = [&](const Value argument) {
     builder.scfIf(true, [&] {
       emitForbiddenModifierBodyOperation(builder, forbiddenOperation, argument,
-                                         reg, index.getResult());
+                                         qubitReg, cbitReg, index.getResult(),
+                                         bit);
     });
   };
 
@@ -578,9 +602,15 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
                                  VerifierModifierKind::Ctrl,
                                  VerifierModifierKind::Pow};
   constexpr std::array forbiddenOperations{
-      ForbiddenModifierBodyOp::Alloc,   ForbiddenModifierBodyOp::Dealloc,
-      ForbiddenModifierBodyOp::Measure, ForbiddenModifierBodyOp::Reset,
-      ForbiddenModifierBodyOp::Load,    ForbiddenModifierBodyOp::Store};
+      ForbiddenModifierBodyOp::Alloc,
+      ForbiddenModifierBodyOp::Dealloc,
+      ForbiddenModifierBodyOp::Measure,
+      ForbiddenModifierBodyOp::Reset,
+      ForbiddenModifierBodyOp::QubitRegisterLoad,
+      ForbiddenModifierBodyOp::QubitRegisterStore,
+      ForbiddenModifierBodyOp::CBitAlloc,
+      ForbiddenModifierBodyOp::CBitLoad,
+      ForbiddenModifierBodyOp::CBitStore};
 
   for (auto modifier : modifiers) {
     for (const auto forbiddenOperation : forbiddenOperations) {
@@ -597,8 +627,8 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
           context.get(), [&](Diagnostic& diagnostic) {
             sawExpectedDiagnostic |=
                 StringRef(diagnostic.str())
-                    .contains("body must not contain non-unitary quantum "
-                              "operations or modify a quantum register");
+                    .contains("body must not contain non-unitary operations or "
+                              "access registers");
             return success();
           });
       EXPECT_TRUE(failed(verify(*moduleOp)));

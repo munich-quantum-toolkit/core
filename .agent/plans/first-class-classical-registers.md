@@ -73,6 +73,12 @@ outputs.
       infrastructure changelog entry. Rebased all seven signed commits onto
       `2587c1223`; the release build, all 4,288 native tests, 167 focused Python
       tests, and repository lint pass on the rebased head.
+- [x] (2026-08-19 12:15Z) Incorporated Daniel Haag's review refinements and
+      Simon Hofmann's modifier-unitarity correction. Added reusable
+      CBit-to-tensor conversion support, shared builder validation, simpler
+      exporter metadata, and recursive CBit rejection in QC and QCO modifiers.
+      The release build, all 4,290 native tests, 167 focused Python tests,
+      generated stubs, MLIR documentation, and repository lint pass.
 - [ ] Publish and validate the signed final head. Pull request #2165 fixes the
       unrelated external DOI, Qiskit policy, and old Read the Docs link-check
       failures and is queued for automatic merge.
@@ -146,6 +152,16 @@ outputs.
   found 87 diagnostics on the published head even though the release build and
   local lint session passed. Direct includes and explicit helper linkage remove
   the branch-related diagnostics, and all focused binaries still pass.
+- Observation: The QC and QCO modifier verifiers rejected quantum-register and
+  generic memref access but did not know about CBit. Evidence: CBit allocation,
+  load, and store operations nested under `inv`, `ctrl`, or `pow` passed the old
+  checks even though modifier regions must remain unitary.
+- Observation: QCO-to-jeff can share CBit register state and type conversion
+  with a neutral CBit-to-tensor layer. Its same-pass operation materialization
+  must still create jeff arrays directly so that dialect conversion keeps
+  adapted register values stable. Evidence: the shared state and type layer
+  passes all 142 jeff tests, while the independent generic operation patterns
+  pass their focused CBit-to-tensor test.
 
 ## Decision Log
 
@@ -179,18 +195,28 @@ outputs.
   Qiskit, OpenQASM, builder, and classical-register interfaces were added after
   v3.8.0 and are not part of a released compatibility contract. Date/Author:
   2026-08-18 / Codex, based on the approved design.
+- Decision: Reject CBit allocation, load, and store recursively in QC and QCO
+  modifier regions and during QC-to-QCO preflight. Rationale: modifiers model
+  unitary transformations; classical state access makes a modifier body
+  non-unitary. Date/Author: 2026-08-19 / Simon Hofmann and Codex.
+- Decision: Put reusable CBit register state, type conversion, and
+  CBit-to-tensor patterns in a neutral conversion library. Let QCO-to-jeff reuse
+  the state and type layer while it creates jeff operations directly. Rationale:
+  this separates the CBit model from jeff without destabilizing values adapted
+  inside the same dialect-conversion pass. Date/Author: 2026-08-19 / Daniel Haag
+  and Codex.
 
 ## Outcomes & Retrospective
 
 The compatibility fix is merged and issue #2155 records the replacement
 contract. Draft pull request #2158 contains the neutral dialect, per-allocation
 builder APIs, identity preservation across QC and QCO, the explicit late memref
-lowering, and all planned producer and consumer migrations. The focused suites,
-the complete 4,288-test native suite, the required Python tests, all supported
-Python-version matrices, generated stubs, and documentation build pass. The
-link-check session fails on pre-existing external links that this change does
-not touch. The pull request remains a draft until that required check passes.
-Publishing and remote validation of the signed final head remain.
+lowering, all planned producer and consumer migrations, and the accepted review
+refinements. The focused suites, the complete 4,290-test native suite, the
+required Python tests, all supported Python-version matrices, generated stubs,
+and documentation build pass. Pull request #2165 addresses the unrelated
+external link-check failures. Publishing and remote validation of the signed
+review head remain.
 
 ## Context and Orientation
 

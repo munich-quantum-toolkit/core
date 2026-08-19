@@ -52,7 +52,7 @@ def CBit_RegisterType : TypeDef<CBitDialect, "Register"> {
 class CBitOp<string mnemonic, list<Trait> traits = []>
     : Op<CBitDialect, mnemonic, traits>;
 
-def CBit_AllocOp : CBitOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
+def AllocOp : CBitOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
   let summary = "Allocate a classical-bit register";
   let description = [{
     Allocates a static classical-bit register. `zero` initialization defines
@@ -76,7 +76,7 @@ def CBit_AllocOp : CBitOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
   }];
 }
 
-def CBit_LoadOp : CBitOp<"load"> {
+def LoadOp : CBitOp<"load"> {
   let summary = "Load a classical bit";
   let description = [{
     Reads one `i1` value from a classical-bit register. A constant index must
@@ -98,7 +98,7 @@ def CBit_LoadOp : CBitOp<"load"> {
   let hasVerifier = 1;
 }
 
-def CBit_StoreOp : CBitOp<"store"> {
+def StoreOp : CBitOp<"store"> {
   let summary = "Store a classical bit";
   let description = [{
     Writes one `i1` value to a classical-bit register. A constant index must be

@@ -23,6 +23,7 @@ add_mlir_dialect_library(
   MLIRQCInterfacesIncGen
   LINK_LIBS
   PRIVATE
+  MLIRCBitDialect
   MLIRIR
   MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces

@@ -358,10 +358,10 @@ public:
       int64_t size, StringRef name = {},
       cbit::Initialization initialization = cbit::Initialization::Zero);
 
-  /** Load one value from a classical-bit register. */
+  /// Load one value from a classical-bit register.
   Value loadClassicalBit(Value reg, const std::variant<int64_t, Value>& index);
 
-  /** Store one value in a classical-bit register. */
+  /// Store one value in a classical-bit register.
   void storeClassicalBit(Value value, Value reg,
                          const std::variant<int64_t, Value>& index);
 

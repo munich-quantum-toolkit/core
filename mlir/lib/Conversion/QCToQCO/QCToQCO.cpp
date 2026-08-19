@@ -12,6 +12,7 @@
 
 #include "mlir/Conversion/ConversionUtils.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -635,8 +636,9 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       }
     }
 
-    if (!isa<qc::AllocOp, qc::DeallocOp, qc::MeasureOp, qc::ResetOp,
-             memref::LoadOp, memref::StoreOp>(operation)) {
+    if (!isa<cbit::AllocOp, cbit::LoadOp, cbit::StoreOp, qc::AllocOp,
+             qc::DeallocOp, qc::MeasureOp, qc::ResetOp, memref::LoadOp,
+             memref::StoreOp>(operation)) {
       return WalkResult::advance();
     }
 
@@ -646,8 +648,7 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
         continue;
       }
       parent->emitOpError(
-          "body must not contain non-unitary quantum operations or modify a "
-          "quantum register");
+          "body must not contain non-unitary operations or access registers");
       return WalkResult::interrupt();
     }
     return WalkResult::advance();

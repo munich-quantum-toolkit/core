@@ -89,9 +89,8 @@ struct ConvertStoreOp final : OpConversionPattern<cbit::StoreOp> {
   LogicalResult
   matchAndRewrite(cbit::StoreOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    memref::StoreOp::create(rewriter, op.getLoc(), adaptor.getValue(),
-                            adaptor.getReg(), adaptor.getIndex());
-    rewriter.eraseOp(op);
+    rewriter.replaceOpWithNewOp<memref::StoreOp>(
+        op, adaptor.getValue(), adaptor.getReg(), adaptor.getIndex());
     return success();
   }
 };
