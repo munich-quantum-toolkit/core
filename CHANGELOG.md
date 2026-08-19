@@ -12,8 +12,6 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add a `constant propagation` pass for reducing superfluous quantum resources by propagating the quantum
-  machine state ([#1845]) ([**@lirem101**])
 - ✨ Let a package register a program serializer for a program format through
   the `mqt.core.qiskit.program_serializers` entry point group ([#2114])
   ([**@marcelwa**])
@@ -801,21 +799,33 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
+
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
+
 [#2140]: https://github.com/munich-quantum-toolkit/core/pull/2140
+
 [#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
+
 [#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
+
 [#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136
+
 [#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
+
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
+
 [#2118]: https://github.com/munich-quantum-toolkit/core/pull/2118
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
+
 [#2115]: https://github.com/munich-quantum-toolkit/core/pull/2115
+
 [#2114]: https://github.com/munich-quantum-toolkit/core/pull/2114
 [#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
+
 [#2111]: https://github.com/munich-quantum-toolkit/core/pull/2111
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
+
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
