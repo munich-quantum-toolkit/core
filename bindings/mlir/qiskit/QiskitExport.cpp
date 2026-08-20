@@ -245,14 +245,12 @@ void validateExportParameterImpl(const Parameter& parameter, const size_t depth,
     return;
   case ParameterKind::Symbol:
     requireLeaf();
-    if (parameter.text.empty() || parameter.identity.empty()) {
-      throw std::runtime_error(
-          "QC parameter symbol has invalid identity metadata");
+    if (parameter.text.empty()) {
+      throw std::runtime_error("QC parameter symbol has an invalid name");
     }
-    if (parameter.text.find('\0') != std::string::npos ||
-        parameter.identity.find('\0') != std::string::npos) {
+    if (parameter.text.find('\0') != std::string::npos) {
       throw std::runtime_error(
-          "QC parameter symbol metadata contains a null character");
+          "QC parameter symbol name contains a null character");
     }
     return;
   case ParameterKind::Add:
@@ -353,25 +351,25 @@ struct ExportState {
   uint32_t numClbits = 0;
 };
 
-void collectParameterIdentities(const Parameter& parameter,
-                                llvm::StringSet<>& identities) {
+void collectParameterNames(const Parameter& parameter,
+                           llvm::StringSet<>& names) {
   if (parameter.kind == ParameterKind::Symbol) {
-    identities.insert(parameter.identity);
+    names.insert(parameter.text);
     return;
   }
   if (parameter.left) {
-    collectParameterIdentities(*parameter.left, identities);
+    collectParameterNames(*parameter.left, names);
   }
   if (parameter.right) {
-    collectParameterIdentities(*parameter.right, identities);
+    collectParameterNames(*parameter.right, names);
   }
 }
 
 void validateExportParameters(const ExportState& state) {
-  llvm::StringSet<> usedIdentities;
+  llvm::StringSet<> usedNames;
   const auto validate = [&](const Parameter& parameter) {
     validateExportParameter(parameter);
-    collectParameterIdentities(parameter, usedIdentities);
+    collectParameterNames(parameter, usedNames);
   };
   validate(state.globalPhase);
   for (const auto& instruction : state.instructions) {
@@ -380,7 +378,7 @@ void validateExportParameters(const ExportState& state) {
     }
   }
   for (const auto& input : state.inputParameters) {
-    if (!usedIdentities.contains(input.identity)) {
+    if (!usedNames.contains(input.text)) {
       throw std::runtime_error(
           "Qiskit circuit export cannot preserve unused named f64 program "
           "input '" +
@@ -390,28 +388,17 @@ void validateExportParameters(const ExportState& state) {
 }
 
 void collectParameters(mlir::func::FuncOp function, ExportState& state) {
-  llvm::StringSet<> names;
   for (const auto [index, argument] :
        llvm::enumerate(function.getArguments())) {
     const auto name = function.getArgAttrOfType<mlir::StringAttr>(
         index, mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr());
-    if (!argument.getType().isF64() || !name || name.getValue().empty()) {
+    if (!argument.getType().isF64() || !name) {
       throw std::runtime_error(
           "Qiskit circuit export requires named f64 program inputs");
-    }
-    if (name.getValue().contains('\0')) {
-      throw std::runtime_error(
-          "Qiskit circuit export does not support parameter names with null "
-          "characters");
-    }
-    if (!names.insert(name.getValue()).second) {
-      throw std::runtime_error(
-          "Qiskit circuit export requires unique parameter names");
     }
     Parameter parameter{
         .kind = ParameterKind::Symbol,
         .text = name.str(),
-        .identity = "input:" + std::to_string(index),
     };
     state.parameters[argument] = parameter;
     state.inputParameters.push_back(std::move(parameter));

@@ -15,7 +15,6 @@ import re
 import subprocess
 import sys
 from typing import TYPE_CHECKING
-from uuid import uuid4
 
 import numpy as np
 import pytest
@@ -1197,7 +1196,7 @@ def test_symbolic_unary_function_round_trip(
 
 
 def test_partially_bound_symbolic_expression_round_trip() -> None:
-    """Keep the unbound identity after partially binding an expression."""
+    """Keep the unbound parameter after partially binding an expression."""
     theta = Parameter("theta")
     phi = Parameter("phi")
     angle = (theta * phi + phi.sin()).bind({theta: 0.5})
@@ -1359,8 +1358,8 @@ def test_unsupported_scalar_operation_fails_export_without_mutation() -> None:
     assert program.ir == source_ir
 
 
-def test_same_name_global_and_loop_parameters_use_identity_not_name() -> None:
-    """Do not capture a same-name global symbol as a loop induction value."""
+def test_same_name_free_and_bound_parameters_are_rejected() -> None:
+    """Require free and lexically bound parameters to have unique names."""
     global_parameter = Parameter("theta")
     loop_parameter = Parameter("theta")
     body = QuantumCircuit(1)
@@ -1370,54 +1369,31 @@ def test_same_name_global_and_loop_parameters_use_identity_not_name() -> None:
         circuit.for_loop(range(2), loop_parameter, body, [0], [], label=None)
     source_data = list(circuit.data)
 
-    program = QCProgram.from_qiskit(circuit)
-
-    input_match = re.search(r"func\.func @main\((%[^: ]+): f64 \{[^}]*mqt\.input_name = \"theta\"[^}]*\}", program.ir)
-    assert input_match is not None
-    assert f"qc.ry({input_match.group(1)})" in program.ir
-    assert list(circuit.data) == source_data
-    assert circuit.parameters == {global_parameter}
-
-
-def test_conflicting_free_parameter_uuid_alias_fails_without_mutation() -> None:
-    """Reject differently named free symbols that share one stable identity."""
-    identity = uuid4()
-    canonical = Parameter("canonical", uuid=identity)
-    alias = Parameter("alias", uuid=identity)
-    circuit = QuantumCircuit(1)
-    circuit.rx(canonical, 0)
-    circuit.rz(alias, 0)
-    source_data = list(circuit.data)
-
-    with pytest.raises(
-        RuntimeError,
-        match="parameter symbol 'alias' aliases free symbol 'canonical' with inconsistent metadata",
-    ):
-        QCProgram.from_qiskit(circuit)
-
-    assert list(circuit.data) == source_data
-    assert circuit.parameters == {canonical}
-
-
-def test_conflicting_local_parameter_uuid_alias_fails_without_mutation() -> None:
-    """Resolve a shared identity against the active lexical loop binding."""
-    identity = uuid4()
-    global_parameter = Parameter("global", uuid=identity)
-    loop_parameter = Parameter("local", uuid=identity)
-    body = QuantumCircuit(1)
-    body.ry(global_parameter, 0)
-    circuit = QuantumCircuit(1)
-    circuit.for_loop(range(2), loop_parameter, body, [0], [], label=None)
-    source_data = list(circuit.data)
-
-    with pytest.raises(
-        RuntimeError,
-        match="parameter symbol 'global' aliases local symbol 'local' with inconsistent metadata",
-    ):
+    with pytest.raises(RuntimeError, match="distinct parameters with the same name"):
         QCProgram.from_qiskit(circuit)
 
     assert list(circuit.data) == source_data
     assert circuit.parameters == {global_parameter}
+
+
+def test_bound_parameter_names_are_unique_across_scopes() -> None:
+    """Reject same-name binders in separate lexical scopes."""
+    first = Parameter("index")
+    first_body = QuantumCircuit(1)
+    first_body.rx(first, 0)
+    second = Parameter("index")
+    second_body = QuantumCircuit(1)
+    second_body.ry(second, 0)
+    circuit = QuantumCircuit(1)
+    circuit.for_loop(range(2), first, first_body, [0], [], label=None)
+    circuit.for_loop(range(2), second, second_body, [0], [], label=None)
+    source_data = list(circuit.data)
+
+    with pytest.raises(RuntimeError, match="distinct parameters with the same name"):
+        QCProgram.from_qiskit(circuit)
+
+    assert list(circuit.data) == source_data
+    assert not circuit.parameters
 
 
 def test_duplicate_named_symbolic_inputs_are_invalid_qc_ir() -> None:

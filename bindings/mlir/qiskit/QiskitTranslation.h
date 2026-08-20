@@ -77,7 +77,6 @@ struct Parameter {
   ParameterKind kind = ParameterKind::Number;
   double number = 0.0;
   std::string text;
-  std::string identity;
   std::shared_ptr<const Parameter> left;
   std::shared_ptr<const Parameter> right;
 };

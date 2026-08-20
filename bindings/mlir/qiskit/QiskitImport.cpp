@@ -156,27 +156,14 @@ void validateParameterImpl(const Parameter& parameter,
       throw std::runtime_error(
           "Qiskit parameter-expression leaf has unexpected operands");
     }
-    if (parameter.identity.empty() || parameter.text.empty()) {
+    if (parameter.text.empty()) {
       throw std::runtime_error(
           "Qiskit returned a parameter with invalid symbol metadata");
     }
-    if (const auto local = localParameters.find(parameter.identity);
-        local != localParameters.end()) {
-      if (parameter.text != local->second.text) {
-        throw std::runtime_error("Qiskit parameter symbol '" + parameter.text +
-                                 "' aliases local symbol '" +
-                                 local->second.text +
-                                 "' with inconsistent metadata");
-      }
+    if (localParameters.contains(parameter.text)) {
       return;
     }
-    if (const auto free = freeParameters.find(parameter.identity);
-        free != freeParameters.end()) {
-      if (parameter.text != free->second.text) {
-        throw std::runtime_error("Qiskit parameter symbol '" + parameter.text +
-                                 "' aliases free symbol '" + free->second.text +
-                                 "' with inconsistent metadata");
-      }
+    if (freeParameters.contains(parameter.text)) {
       return;
     }
     throw std::runtime_error("Qiskit parameter symbol '" + parameter.text +
@@ -261,15 +248,13 @@ parameterValueImpl(mlir::qc::QCProgramBuilder& builder,
     }
     return parameter.number;
   case ParameterKind::Symbol:
-    if (!parameter.identity.empty()) {
-      if (const auto local = localParameters.find(parameter.identity);
-          local != localParameters.end()) {
-        return local->second;
-      }
-      if (const auto global = globalParameters.find(parameter.identity);
-          global != globalParameters.end()) {
-        return global->second;
-      }
+    if (const auto local = localParameters.find(parameter.text);
+        local != localParameters.end()) {
+      return local->second;
+    }
+    if (const auto global = globalParameters.find(parameter.text);
+        global != globalParameters.end()) {
+      return global->second;
     }
     throw std::runtime_error("Qiskit parameter symbol '" + parameter.text +
                              "' is not defined in this circuit scope");
@@ -1114,7 +1099,7 @@ void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
         auto parameters = localParameters;
         if (loop.parameter) {
           requireExactLoopParameter(value);
-          parameters[loop.parameter->identity] =
+          parameters[loop.parameter->text] =
               floatConstant(builder, static_cast<double>(value));
         }
         translateBlock(*body, parameters);
@@ -1129,7 +1114,7 @@ void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
     builder.scfFor(0, count, 1, [&](const mlir::Value iteration) {
       auto parameters = localParameters;
       if (loop.parameter) {
-        parameters[loop.parameter->identity] =
+        parameters[loop.parameter->text] =
             loopParameterValue(builder, iteration, loop);
       }
       translateBlock(*body, parameters);
@@ -1445,8 +1430,9 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
 void validateCircuit(const CircuitReader& circuit,
                      const ValidationParameters& localParameters,
                      const ValidationParameters& freeParameters,
-                     uint32_t rootQubits, uint32_t rootClbits,
-                     size_t definitionDepth, size_t controlFlowDepth);
+                     llvm::StringSet<>& parameterNames, uint32_t rootQubits,
+                     uint32_t rootClbits, size_t definitionDepth,
+                     size_t controlFlowDepth);
 
 void validateExpression(const Expression& expression) {
   if (expression.type == ClassicalType::Uint &&
@@ -1509,6 +1495,7 @@ void validateTarget(const ClassicalTarget& target, const uint32_t rootClbits) {
 void validateControlFlow(const ControlFlowReader& controlFlow,
                          ValidationParameters localParameters,
                          const ValidationParameters& freeParameters,
+                         llvm::StringSet<>& parameterNames,
                          const uint32_t rootQubits, const uint32_t rootClbits,
                          const size_t definitionDepth,
                          const size_t controlFlowDepth) {
@@ -1569,11 +1556,15 @@ void validateControlFlow(const ControlFlowReader& controlFlow,
     }
     if (loop.parameter) {
       if (loop.parameter->kind != ParameterKind::Symbol ||
-          loop.parameter->identity.empty() || loop.parameter->text.empty()) {
+          loop.parameter->text.empty()) {
         throw std::runtime_error(
             "Qiskit for-loop parameter has invalid symbol metadata");
       }
-      localParameters[loop.parameter->identity] = *loop.parameter;
+      if (!parameterNames.insert(loop.parameter->text).second) {
+        throw std::runtime_error(
+            "Qiskit circuit contains distinct parameters with the same name");
+      }
+      localParameters[loop.parameter->text] = *loop.parameter;
     }
     break;
   }
@@ -1628,14 +1619,16 @@ void validateControlFlow(const ControlFlowReader& controlFlow,
       throw std::runtime_error(
           "Qiskit control-flow block operands do not match its bit mapping");
     }
-    validateCircuit(*block, localParameters, freeParameters, rootQubits,
-                    rootClbits, definitionDepth, controlFlowDepth + 1U);
+    validateCircuit(*block, localParameters, freeParameters, parameterNames,
+                    rootQubits, rootClbits, definitionDepth,
+                    controlFlowDepth + 1U);
   }
 }
 
 void validateDefinition(const CircuitReader& circuit, const size_t index,
                         const ValidationParameters& localParameters,
                         const ValidationParameters& freeParameters,
+                        llvm::StringSet<>& parameterNames,
                         const size_t definitionDepth,
                         const size_t controlFlowDepth) {
   if (definitionDepth >= MAX_DEFINITION_DEPTH) {
@@ -1643,7 +1636,7 @@ void validateDefinition(const CircuitReader& circuit, const size_t index,
         "Qiskit instruction definitions exceed the nesting limit of 64");
   }
   const auto definition = circuit.definition(index);
-  validateCircuit(*definition, localParameters, freeParameters,
+  validateCircuit(*definition, localParameters, freeParameters, parameterNames,
                   definition->numQubits(), definition->numClbits(),
                   definitionDepth + 1U, controlFlowDepth);
 }
@@ -1651,6 +1644,7 @@ void validateDefinition(const CircuitReader& circuit, const size_t index,
 void validateCircuit(const CircuitReader& circuit,
                      const ValidationParameters& localParameters,
                      const ValidationParameters& freeParameters,
+                     llvm::StringSet<>& parameterNames,
                      const uint32_t rootQubits, const uint32_t rootClbits,
                      const size_t definitionDepth,
                      const size_t controlFlowDepth) {
@@ -1714,7 +1708,7 @@ void validateCircuit(const CircuitReader& circuit,
             "instructions");
       }
       validateDefinition(circuit, index, localParameters, freeParameters,
-                         definitionDepth, controlFlowDepth);
+                         parameterNames, definitionDepth, controlFlowDepth);
       break;
     case OperationKind::Unknown:
       if (!instruction.modifiers.empty()) {
@@ -1723,7 +1717,7 @@ void validateCircuit(const CircuitReader& circuit,
             "instructions");
       }
       validateDefinition(circuit, index, localParameters, freeParameters,
-                         definitionDepth, controlFlowDepth);
+                         parameterNames, definitionDepth, controlFlowDepth);
       break;
     case OperationKind::Barrier:
       if (!instruction.parameters.empty() || !instruction.clbits.empty()) {
@@ -1749,8 +1743,8 @@ void validateCircuit(const CircuitReader& circuit,
     case OperationKind::ControlFlow: {
       const auto controlFlow = circuit.controlFlow(index);
       validateControlFlow(*controlFlow, localParameters, freeParameters,
-                          rootQubits, rootClbits, definitionDepth,
-                          controlFlowDepth);
+                          parameterNames, rootQubits, rootClbits,
+                          definitionDepth, controlFlowDepth);
       break;
     }
     case OperationKind::Delay:
@@ -1766,28 +1760,23 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   auto view = translation->openCircuit(circuit);
   const auto freeParameters = view->parameters();
   ValidationParameters freeParameterSymbols;
-  llvm::StringSet<> freeParameterNames;
+  llvm::StringSet<> parameterNames;
   for (const auto& parameter : freeParameters) {
-    if (parameter.kind != ParameterKind::Symbol || parameter.text.empty() ||
-        parameter.identity.empty()) {
+    if (parameter.kind != ParameterKind::Symbol || parameter.text.empty()) {
       throw std::runtime_error(
           "Qiskit circuit returned an invalid free parameter");
     }
-    if (!freeParameterSymbols.try_emplace(parameter.identity, parameter)
-             .second) {
-      throw std::runtime_error(
-          "Qiskit circuit returned a duplicate parameter identity");
-    }
-    if (!freeParameterNames.insert(parameter.text).second) {
+    if (!parameterNames.insert(parameter.text).second) {
       throw std::runtime_error(
           "Qiskit circuit contains distinct parameters with the same name");
     }
+    freeParameterSymbols.try_emplace(parameter.text, parameter);
   }
 
   ExpansionCountState expansion;
   static_cast<void>(expansionSummary(*view, expansion));
-  validateCircuit(*view, {}, freeParameterSymbols, view->numQubits(),
-                  view->numClbits(), 0U, 0U);
+  validateCircuit(*view, {}, freeParameterSymbols, parameterNames,
+                  view->numQubits(), view->numClbits(), 0U, 0U);
   const auto quantumRegisters = circuitRegisters(*view, true);
   const auto classicalRegisters = circuitRegisters(*view, false);
   const auto looseQubits =
@@ -1830,7 +1819,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
       throw std::runtime_error(
           "failed to create a compiler input for a Qiskit parameter");
     }
-    globalParameters[parameter.identity] = function.getArgument(index);
+    globalParameters[parameter.text] = function.getArgument(index);
   }
 
   llvm::SmallVector<mlir::Value> qubits;

@@ -35,13 +35,12 @@ partially constructed output circuit after a failure. Exact
   expressions into one bounded, frontend-neutral C++ tree in the
   version-specific translation.
 - [x] (2026-08-18 14:45Z) Materialize normalized expressions as `f64` Arith and
-      Math SSA values on import, with symbol lookup by identity rather than
-      name.
+      Math SSA values on import, with symbol lookup by name.
 - [x] (2026-08-18 14:45Z) Reconstruct normalized expressions from supported
   compiler SSA on export and materialize shared Qiskit parameter objects
   through the Qiskit C API.
 - [x] (2026-08-18 14:45Z) Permit parameterized custom definitions when all
-      symbols resolve, and preserve lexical identity through nested control
+      symbols resolve, and preserve lexical bindings through nested control
       flow.
 - [x] (2026-08-19 13:40Z) Split exact `ParameterVectorElement` provenance into a
       follow-up and reject vector elements explicitly in this scalar-symbol
@@ -70,9 +69,9 @@ partially constructed output circuit after a failure. Exact
 - [x] (2026-08-20 11:31Z) Replace raw `mqt.*` string constants with generated
       dialect helpers and preserve compatible metadata through QC/QCO
       conversions and allocation rewrites.
-- [ ] Replace Qiskit UUID-based parameter identity with the supported
-      unique-name contract and reject all free/bound name collisions before
-      module creation.
+- [x] (2026-08-20 11:36Z) Replace Qiskit UUID-based parameter identity with the
+      supported unique-name contract and reject all free/bound name collisions
+      before module creation.
 - [ ] Replace the nullable parameter-expression node with a closed variant so
       malformed node states cannot be constructed.
 - [ ] Reject non-finite constant gate parameters in the shared QC and QCO gate
@@ -92,12 +91,13 @@ partially constructed output circuit after a failure. Exact
   parameter to share a name. Evidence: the existing name-keyed local map
   incorrectly captured the free parameter in such a loop body.
 - Observation: Qiskit can construct parameter objects that share a UUID but
-  disagree on their name. The importer must compare canonical scalar symbol
-  metadata and reject such aliases before creating a module.
+  disagree on their name. Such objects are outside Qiskit's intended contract.
+  The importer does not inspect UUIDs; it validates the supported unique-name
+  contract instead.
 - Observation: a custom gate's definition already contains the actual symbols or
   expressions supplied at its call site. The importer does not need a separate
   formal-parameter substitution scheme. It must validate the definition against
-  the current global and lexical identities.
+  the current global and lexical bindings.
 - Observation: an expression can convert to a number while still tracking free
   parameters. The version-specific reader must inspect `parameters` before it
   treats a value as a numeric constant.
@@ -135,13 +135,12 @@ partially constructed output circuit after a failure. Exact
 - Decision: Require unique names across all free and lexically bound Qiskit
   parameters, then key import state by name. Continue to key compiler export by
   SSA value and use `mqt.input_name` for the public name. Rationale: Qiskit
-  programs that reuse a parameter name for another identity are ambiguous and
-  outside the supported source contract; UUID/name mismatch objects are also
-  invalid input rather than an IR requirement. Date/Author: 2026-08-20 / Codex.
-- Decision: Preserve symbol sharing but do not preserve Qiskit's original UUID
-  across a round trip. Rationale: the compiler input is the frontend-neutral
-  identity. The writer creates exactly one Qiskit symbol for each input and
-  reuses it throughout gates and global phase. Date/Author: 2026-08-18 / Codex.
+  programs that reuse a parameter name for a distinct parameter are ambiguous
+  and outside the supported source contract. Date/Author: 2026-08-20 / Codex.
+- Decision: Use the source name as parameter identity and do not inspect or
+  preserve Qiskit's UUID across a round trip. Rationale: the writer creates
+  exactly one Qiskit symbol for each named compiler input and reuses it
+  throughout gates and global phase. Date/Author: 2026-08-20 / Codex.
 - Decision: Bound normalized expression depth and node count before compiler or
   circuit construction. Rationale: the existing definition and control-flow
   readers are bounded, and parameter replay must have the same fail-closed
@@ -151,11 +150,10 @@ partially constructed output circuit after a failure. Exact
   issue #2067, while vector identity, allocation bounds, sparse indices, and
   vector-level binding form an independently reviewable contract. Date/Author:
   2026-08-19 / Codex.
-- Decision: Require every named `f64` input identity to occur in the normalized
-  parameter trees that will be emitted. Rationale: Qiskit circuits cannot
-  declare an otherwise unused parameter, so failing before writer allocation
-  avoids silently changing the public parameter set. Date/Author: 2026-08-19 /
-  Codex.
+- Decision: Require every named `f64` input to occur in the normalized parameter
+  trees that will be emitted. Rationale: Qiskit circuits cannot declare an
+  otherwise unused parameter, so failing before writer allocation avoids
+  silently changing the public parameter set. Date/Author: 2026-08-19 / Codex.
 - Decision: Define `mqt.input_name` and `mqt.qubit_register_name` as typed
   discardable attributes in an operation-free `mqt` dialect. Verify them with
   the dialect's operation and region-argument hooks. Rationale: MLIR assigns the
@@ -174,10 +172,10 @@ partially constructed output circuit after a failure. Exact
 ## Outcomes & Retrospective
 
 The scalar implementation is complete. Shared direct symbols, bounded real
-expression trees, parameterized definitions, identity-safe loop bindings, and
-global phase passed the original focused validation. Unused named inputs now
-fail before writer allocation rather than disappearing. The split branch builds
-and passes all 158 Qiskit translation tests after #2158 merged.
+expression trees, parameterized definitions, name-safe loop bindings, and global
+phase passed the original focused validation. Unused named inputs now fail
+before writer allocation rather than disappearing. The split branch builds and
+passes all 158 Qiskit translation tests after #2158 merged.
 
 ## Context and Orientation
 
@@ -211,8 +209,8 @@ or direct symbol immediately. For a parameter expression, replay `_qpy_replay`
 into a bounded stack. Normalize reverse binary opcodes by swapping their
 operands. Reject malformed stacks, non-finite constants, unsupported functions,
 excessive depth, and excessive node count before returning to generic import.
-Read a `for` parameter through the public control-flow operation so its UUID is
-preserved.
+Read a `for` parameter through the public control-flow operation and cross-check
+its name against the native control-flow metadata.
 
 Next, change `QiskitImport.cpp` to validate every tree leaf by name and to emit
 each supported node as an `f64` Arith or Math value. Register the Math dialect
@@ -229,7 +227,7 @@ Represent inverse angles through expression negation and combine all global
 phase contributions through expression addition. Complete this preflight before
 the writer allocates a destination circuit. In `Qiskit2_5.cpp`, recursively
 construct `QkParam` values and reuse one cached Qiskit symbol for each compiler
-input identity.
+input name.
 
 Finally, add focused Python regressions for direct and shared symbols, nested
 binary and unary expressions, reverse operators, partial binding, global phase,
@@ -322,12 +320,11 @@ validation.
 ## Interfaces and Dependencies
 
 `Parameter` in `QiskitTranslation.h` is a copyable immutable tree with a kind,
-finite numeric value or symbol name and identity, and zero, one, or two child
-pointers. `Loop::parameter` is `std::optional<Parameter>` and must contain a
-symbol when present. `CircuitReader` returns normalized trees for instruction
-parameters and global phase. `CircuitWriter` accepts the same tree and
-reconstructs Qiskit parameters with the version-specific C and public Python
-APIs.
+finite numeric value or symbol name, and zero, one, or two child pointers.
+`Loop::parameter` is `std::optional<Parameter>` and must contain a symbol when
+present. `CircuitReader` returns normalized trees for instruction parameters and
+global phase. `CircuitWriter` accepts the same tree and reconstructs Qiskit
+parameters with the version-specific C and public Python APIs.
 
 No SymPy dependency is added. No Qiskit object or expression string is stored in
 MLIR. The supported compiler operations remain frontend-neutral Arith and Math

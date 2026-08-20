@@ -208,16 +208,12 @@ normalizePythonParameterLeaf(const nb::handle parameter) {
     return {.kind = ParameterKind::Number, .number = complexNumber.real()};
   }
 
-  if (!nb::hasattr(parameter, "name") || !nb::hasattr(parameter, "uuid")) {
+  if (!nb::hasattr(parameter, "name")) {
     throw std::runtime_error(
         "Qiskit parameter expression contains an unsupported operand");
   }
   auto name = pythonStringAttribute(
       parameter, "name", "Qiskit parameter has an invalid symbol name");
-  auto identity =
-      pythonText(pythonAttribute(parameter, "uuid",
-                                 "Qiskit parameter has no stable identity"),
-                 "Qiskit parameter has an invalid stable identity");
   if (name.empty()) {
     throw std::runtime_error("Qiskit parameter has an empty symbol name");
   }
@@ -225,16 +221,7 @@ normalizePythonParameterLeaf(const nb::handle parameter) {
     throw std::runtime_error(
         "Qiskit parameter names cannot contain null characters");
   }
-  if (identity.empty()) {
-    throw std::runtime_error("Qiskit parameter has an empty stable identity");
-  }
-  if (identity.find('\0') != std::string::npos) {
-    throw std::runtime_error(
-        "Qiskit parameter identities cannot contain null characters");
-  }
-  Parameter result{.kind = ParameterKind::Symbol,
-                   .text = std::move(name),
-                   .identity = std::move(identity)};
+  Parameter result{.kind = ParameterKind::Symbol, .text = std::move(name)};
   const auto vectorElement =
       nb::module_::import_("qiskit.circuit").attr("ParameterVectorElement");
   if (nb::isinstance(parameter, vectorElement)) {
@@ -374,7 +361,7 @@ takeParameterExpressionOperand(const nb::handle operand,
 }
 
 [[nodiscard]] Parameter normalizePythonParameter(const nb::handle parameter) {
-  if (nb::hasattr(parameter, "name") && nb::hasattr(parameter, "uuid")) {
+  if (nb::hasattr(parameter, "name")) {
     return normalizePythonParameterLeaf(parameter);
   }
 
@@ -1689,29 +1676,18 @@ private:
         throw std::runtime_error(
             "symbolic parameter expression node has operands");
       }
-      if (parameter.identity.empty()) {
-        throw std::runtime_error(
-            "cannot export a symbolic parameter without a stable identity");
-      }
       if (parameter.text.empty()) {
         throw std::runtime_error(
             "cannot export a symbolic parameter without a name");
       }
-      const auto found = symbols_.find(parameter.identity);
+      const auto found = symbols_.find(parameter.text);
       if (found != symbols_.end()) {
-        if (found->second.name != parameter.text) {
-          throw std::runtime_error(
-              "one symbolic parameter identity has conflicting metadata");
-        }
-        return found->second.parameter->get();
+        return found->second->get();
       }
-      auto [inserted, success] =
-          symbols_.emplace(parameter.identity,
-                           Symbol{.name = parameter.text,
-                                  .parameter = std::make_unique<OwnedParameter>(
-                                      parameter.text)});
+      auto [inserted, success] = symbols_.emplace(
+          parameter.text, std::make_unique<OwnedParameter>(parameter.text));
       static_cast<void>(success);
-      return inserted->second.parameter->get();
+      return inserted->second->get();
     }
 
     const auto unary = parameter.kind == ParameterKind::Negate ||
@@ -1797,14 +1773,9 @@ private:
     return value;
   }
 
-  struct Symbol {
-    std::string name;
-    std::unique_ptr<OwnedParameter> parameter;
-  };
-
   QkCircuit* circuit_ = nullptr;
   std::vector<PendingControlledUnitary> pendingControlledUnitaries_;
-  std::unordered_map<std::string, Symbol> symbols_;
+  std::unordered_map<std::string, std::unique_ptr<OwnedParameter>> symbols_;
 };
 
 class NativeTranslation final : public VersionedTranslation {
