@@ -31,6 +31,9 @@ std::optional<QCProgram> buildQCProgram(const Benchmark& benchmark,
   if (n < benchmark.minimumSize) {
     return std::nullopt;
   }
+  if (benchmark.maximumSize != 0 && n > benchmark.maximumSize) {
+    return std::nullopt;
+  }
 
   auto context = createCompilerContext();
 

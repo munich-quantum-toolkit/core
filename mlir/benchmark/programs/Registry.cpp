@@ -56,7 +56,12 @@ SmallVector<Benchmark> benchmarks() {
       {.name = "grover", .build = &grover, .minimumSize = 2},
       {.name = "iqft", .build = &iqft, .minimumSize = 1},
       {.name = "iqpe", .build = &iqpe, .minimumSize = 1},
-      {.name = "multiplexer", .build = &multiplexer, .minimumSize = 2},
+      // Every control state applies its own rotation, so the program emits
+      // 2^(n-1) of them. Beyond this size the emission exhausts memory.
+      {.name = "multiplexer",
+       .build = &multiplexer,
+       .minimumSize = 2,
+       .maximumSize = 20},
       {.name = "qft", .build = &qft, .minimumSize = 1},
       {.name = "qpe", .build = &qpe, .minimumSize = 2},
       {.name = "teleportation", .build = &teleportation, .minimumSize = 1},

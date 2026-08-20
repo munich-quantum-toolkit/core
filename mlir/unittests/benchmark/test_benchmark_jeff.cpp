@@ -64,6 +64,14 @@ TEST_P(JeffBenchmarkTest, RejectsSizesBelowTheMinimum) {
   EXPECT_FALSE(buildQCProgram(benchmark, benchmark.minimumSize - 1));
 }
 
+TEST_P(JeffBenchmarkTest, RejectsSizesAboveTheMaximum) {
+  const auto& benchmark = GetParam();
+  if (benchmark.maximumSize == 0) {
+    GTEST_SKIP() << "the benchmark has no upper size limit";
+  }
+  EXPECT_FALSE(buildQCProgram(benchmark, benchmark.maximumSize + 1));
+}
+
 } // namespace
 
 } // namespace mqt::benchmark

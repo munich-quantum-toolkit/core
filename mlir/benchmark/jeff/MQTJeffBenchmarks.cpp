@@ -50,6 +50,11 @@ static bool generate(const mqt::benchmark::Benchmark& benchmark,
                  << benchmark.minimumSize << ", skipping\n";
     return false;
   }
+  if (benchmark.maximumSize != 0 && n > benchmark.maximumSize) {
+    llvm::errs() << benchmark.name << ": needs n of at most "
+                 << benchmark.maximumSize << ", skipping\n";
+    return false;
+  }
 
   auto qc = mqt::benchmark::buildQCProgram(benchmark, n);
   if (!qc) {
