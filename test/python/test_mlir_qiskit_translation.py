@@ -1420,10 +1420,11 @@ def test_conflicting_local_parameter_uuid_alias_fails_without_mutation() -> None
     assert circuit.parameters == {global_parameter}
 
 
-def test_duplicate_named_symbolic_inputs_fail_closed_without_mutation() -> None:
-    """Reject ambiguous Qiskit parameter names before changing the source IR."""
-    program = QCProgram.from_mlir_str(
-        """module {
+def test_duplicate_named_symbolic_inputs_are_invalid_qc_ir() -> None:
+    """Reject duplicate program input names when parsing QC IR."""
+    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+        QCProgram.from_mlir_str(
+            """module {
   func.func @main(
       %first: f64 {mqt.input_name = "theta"},
       %second: f64 {mqt.input_name = "theta"}
@@ -1436,13 +1437,7 @@ def test_duplicate_named_symbolic_inputs_fail_closed_without_mutation() -> None:
   }
 }
 """
-    )
-    source_ir = program.ir
-
-    with pytest.raises(RuntimeError, match="requires unique parameter names"):
-        program.to_qiskit()
-
-    assert program.ir == source_ir
+        )
 
 
 def test_parameter_names_with_null_characters_fail_closed() -> None:
@@ -1457,8 +1452,9 @@ def test_parameter_names_with_null_characters_fail_closed() -> None:
 
     assert list(circuit.data) == source_data
 
-    program = QCProgram.from_mlir_str(
-        r"""module {
+    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+        QCProgram.from_mlir_str(
+            r"""module {
   func.func @main(%theta: f64 {mqt.input_name = "before\00after"}) attributes {passthrough = ["entry_point"]} {
     %q = qc.alloc : !qc.qubit
     qc.rz(%theta) %q : !qc.qubit
@@ -1467,13 +1463,7 @@ def test_parameter_names_with_null_characters_fail_closed() -> None:
   }
 }
 """
-    )
-    source_ir = program.ir
-
-    with pytest.raises(RuntimeError, match="names with null characters"):
-        program.to_qiskit()
-
-    assert program.ir == source_ir
+        )
 
 
 def test_named_symbolic_input_exports_to_qiskit() -> None:

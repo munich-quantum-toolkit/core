@@ -15,6 +15,7 @@
 #include "jeff/IR/JeffDialect.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
@@ -102,12 +103,13 @@ constexpr size_t MAX_EXPANDED_OPERATIONS = 10'000'000U;
 
 [[nodiscard]] std::shared_ptr<mlir::MLIRContext> createContext() {
   mlir::DialectRegistry registry;
-  registry.insert<mlir::cbit::CBitDialect, mlir::qc::QCDialect,
-                  mlir::qco::QCODialect, mlir::qtensor::QTensorDialect,
-                  mlir::arith::ArithDialect, mlir::cf::ControlFlowDialect,
-                  mlir::func::FuncDialect, mlir::math::MathDialect,
-                  mlir::scf::SCFDialect, mlir::LLVM::LLVMDialect,
-                  mlir::memref::MemRefDialect, mlir::jeff::JeffDialect>();
+  registry.insert<mlir::cbit::CBitDialect, mlir::mqt::MQTDialect,
+                  mlir::qc::QCDialect, mlir::qco::QCODialect,
+                  mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
+                  mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
+                  mlir::math::MathDialect, mlir::scf::SCFDialect,
+                  mlir::LLVM::LLVMDialect, mlir::memref::MemRefDialect,
+                  mlir::jeff::JeffDialect>();
   mlir::registerBuiltinDialectTranslation(registry);
   mlir::registerLLVMDialectTranslation(registry);
   auto context = std::make_shared<mlir::MLIRContext>(registry);
@@ -1814,8 +1816,9 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   GlobalParameters globalParameters;
   for (const auto& parameter : freeParameters) {
     const llvm::SmallVector<mlir::NamedAttribute> argumentAttributes{
-        builder.getNamedAttr(mlir::utils::INPUT_NAME_ATTR,
-                             builder.getStringAttr(parameter.text))};
+        builder.getNamedAttr(
+            mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr(),
+            builder.getStringAttr(parameter.text))};
     const auto index = function.getNumArguments();
     // MLIR types are handles. Converting FloatType to Type keeps the same
     // storage and does not slice object state.

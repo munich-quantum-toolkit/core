@@ -13,6 +13,7 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
@@ -66,8 +67,8 @@ namespace {
 
 struct QCToQCOTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
   bool expectsCompleteTensorState = false;
   bool skipReferenceComparison = false;
 
@@ -77,10 +78,10 @@ struct QCToQCOTestCase {
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const QCToQCOTestCase& info) {
-  return os << "QCToQCO{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "QCToQCO{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QCToQCOTest : public testing::TestWithParam<QCToQCOTestCase> {
@@ -90,9 +91,10 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                    arith::ArithDialect, func::FuncDialect,
-                    memref::MemRefDialect, scf::SCFDialect>();
+    registry
+        .insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                qtensor::QTensorDialect, arith::ArithDialect, func::FuncDialect,
+                memref::MemRefDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -115,9 +117,10 @@ protected:
 
   QCToQCORegressionTest() {
     DialectRegistry registry;
-    registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                    arith::ArithDialect, func::FuncDialect,
-                    memref::MemRefDialect, scf::SCFDialect>();
+    registry
+        .insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                qtensor::QTensorDialect, arith::ArithDialect, func::FuncDialect,
+                memref::MemRefDialect, scf::SCFDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
   }
@@ -601,8 +604,8 @@ TEST_F(QCToQCORegressionTest, RetainsQubitRegisterName) {
   qtensor::AllocOp allocation;
   moduleOp->walk([&](qtensor::AllocOp op) { allocation = op; });
   ASSERT_TRUE(allocation);
-  const auto name =
-      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  const auto name = allocation->getAttrOfType<StringAttr>(
+      mlir::mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
@@ -627,8 +630,8 @@ module {
   ASSERT_TRUE(allocation);
   EXPECT_TRUE(allocation.getResult().getType().isDynamicDim(0));
   EXPECT_EQ(allocation.getSize(), allocation->getBlock()->getArgument(0));
-  const auto name =
-      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  const auto name = allocation->getAttrOfType<StringAttr>(
+      mlir::mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
@@ -1442,9 +1445,9 @@ TEST_P(QCToQCOTest, ProgramConversion) {
   const auto& [_, programBuilder, referenceBuilder, expectsCompleteTensorState,
                skipReferenceComparison] = GetParam();
   const auto name = " (" + GetParam().name + ")";
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
-  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
+  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -1468,7 +1471,7 @@ TEST_P(QCToQCOTest, ProgramConversion) {
 
   if (!skipReferenceComparison) {
     auto reference =
-        mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+        ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
     ASSERT_TRUE(reference);
     printer.record(reference.get(), "Reference QCO IR" + name);
     EXPECT_TRUE(verify(*reference).succeeded());

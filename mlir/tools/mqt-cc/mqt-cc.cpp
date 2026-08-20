@@ -17,6 +17,7 @@
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
@@ -451,11 +452,12 @@ static int runCompiler(int argc, char** argv) {
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, cbit::CBitDialect,
-                  cf::ControlFlowDialect, func::FuncDialect, LLVM::LLVMDialect,
-                  math::MathDialect, memref::MemRefDialect, qc::QCDialect,
-                  qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect,
-                  tensor::TensorDialect, jeff::JeffDialect>();
+  registry
+      .insert<arith::ArithDialect, cbit::CBitDialect, cf::ControlFlowDialect,
+              func::FuncDialect, LLVM::LLVMDialect, math::MathDialect,
+              memref::MemRefDialect, mlir::mqt::MQTDialect, qc::QCDialect,
+              qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect,
+              tensor::TensorDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
 

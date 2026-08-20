@@ -17,6 +17,7 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -393,7 +394,7 @@ void collectParameters(mlir::func::FuncOp function, ExportState& state) {
   for (const auto [index, argument] :
        llvm::enumerate(function.getArguments())) {
     const auto name = function.getArgAttrOfType<mlir::StringAttr>(
-        index, mlir::utils::INPUT_NAME_ATTR);
+        index, mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr());
     if (!argument.getType().isF64() || !name || name.getValue().empty()) {
       throw std::runtime_error(
           "Qiskit circuit export requires named f64 program inputs");
@@ -753,7 +754,8 @@ void collectResources(mlir::func::FuncOp function, ExportState& state,
       state.quantumBases[alloc.getResult()] = state.numQubits;
       state.quantumSizes[alloc.getResult()] = size;
       if (const auto name = operation.getAttrOfType<mlir::StringAttr>(
-              mlir::utils::QUBIT_REGISTER_NAME_ATTR)) {
+              mlir::mqt::MQTDialect::QubitRegisterNameAttrHelper::
+                  getNameStr())) {
         Register reg{.name = name.str()};
         reg.bits.resize(size);
         std::iota(reg.bits.begin(), reg.bits.end(), state.numQubits);

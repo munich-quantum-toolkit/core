@@ -13,9 +13,11 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include <gtest/gtest.h>
 #include <llvm/Support/raw_ostream.h>
@@ -45,9 +47,10 @@ protected:
 
   QCQCORoundTripTest() {
     DialectRegistry registry;
-    registry.insert<cbit::CBitDialect, qc::QCDialect, qco::QCODialect,
-                    arith::ArithDialect, func::FuncDialect,
-                    memref::MemRefDialect, scf::SCFDialect>();
+    registry
+        .insert<cbit::CBitDialect, mlir::mqt::MQTDialect, qc::QCDialect,
+                qco::QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
+                func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
   }
@@ -70,6 +73,40 @@ protected:
 };
 
 } // namespace
+
+TEST_F(QCQCORoundTripTest, PreservesSharedMQTMetadata) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%theta: f64 {mqt.input_name = "theta"})
+      attributes {passthrough = ["entry_point"]} {
+    %reg = memref.alloc() {mqt.qubit_register_name = "q"}
+        : memref<2x!qc.qubit>
+    memref.dealloc %reg : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runRoundTrip(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(function);
+  const auto inputName = function.getArgAttrOfType<StringAttr>(
+      0, mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr());
+  ASSERT_TRUE(inputName);
+  EXPECT_EQ(inputName.getValue(), "theta");
+
+  memref::AllocOp allocation;
+  moduleOp->walk([&](memref::AllocOp op) { allocation = op; });
+  ASSERT_TRUE(allocation);
+  const auto registerName = allocation->getAttrOfType<StringAttr>(
+      mlir::mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr());
+  ASSERT_TRUE(registerName);
+  EXPECT_EQ(registerName.getValue(), "q");
+}
 
 TEST_F(QCQCORoundTripTest, PreservesClassicalRegistersWithoutConversion) {
   constexpr llvm::StringLiteral source = R"mlir(

@@ -76,6 +76,7 @@ add_mlir_library(
   MLIRBuiltinToLLVMIRTranslation
   MLIRLLVMToLLVMIRTranslation
   MLIRMathDialect
+  MLIRMQTDialect
   MQTCompilerTarget
   MQT::MLIRSupport)
 

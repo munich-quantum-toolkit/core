@@ -42,13 +42,6 @@
 
 namespace mlir::utils {
 
-/// Attribute used to retain a source-level qubit-register name.
-inline constexpr llvm::StringLiteral QUBIT_REGISTER_NAME_ATTR =
-    "mqt.qubit_register_name";
-
-/// Attribute used to retain the source-level name of a scalar program input.
-inline constexpr llvm::StringLiteral INPUT_NAME_ATTR = "mqt.input_name";
-
 /// Check if a floating-point value is an integer.
 [[nodiscard]] inline bool isIntegerExponent(double r) {
   return r == std::floor(r) && std::isfinite(r);

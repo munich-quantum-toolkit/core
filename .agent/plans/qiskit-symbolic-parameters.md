@@ -65,13 +65,14 @@ partially constructed output circuit after a failure. Exact
   exported parameter tree, add the source-unchanged regression, rebuild, and
   pass all 158 Qiskit translation tests.
 - [x] (2026-08-20 11:12Z) Register the `mqt` metadata dialect, declare its
-      discardable attributes, and enforce their placement, value, and
-      uniqueness contracts. All seven focused dialect tests pass.
-- [ ] Replace raw `mqt.*` string constants with generated dialect helpers and
-      preserve compatible metadata through QC/QCO conversions and allocation
-      rewrites.
-- [ ] Replace Qiskit UUID-based parameter identity with the supported unique-name
-      contract and reject all free/bound name collisions before module creation.
+      discardable attributes, and enforce their placement, value, and uniqueness
+      contracts. All seven focused dialect tests pass.
+- [x] (2026-08-20 11:31Z) Replace raw `mqt.*` string constants with generated
+      dialect helpers and preserve compatible metadata through QC/QCO
+      conversions and allocation rewrites.
+- [ ] Replace Qiskit UUID-based parameter identity with the supported
+      unique-name contract and reject all free/bound name collisions before
+      module creation.
 - [ ] Replace the nullable parameter-expression node with a closed variant so
       malformed node states cannot be constructed.
 - [ ] Reject non-finite constant gate parameters in the shared QC and QCO gate
@@ -113,6 +114,11 @@ partially constructed output circuit after a failure. Exact
 - Observation: QC/QCO conversion copies only `mqt.qubit_register_name`, and the
   QC and QTensor register-shrinking rewrites drop it when they replace an
   allocation. Compatible discardable metadata must be transferred as a group.
+- Observation: The project namespace `::mqt` and the existing MLIR utility
+  namespace `::mlir::mqt` require explicit qualification in translation units
+  that import both namespaces. The metadata dialect belongs in the existing
+  `::mlir::mqt` namespace; changing its C++ namespace would split related MQT
+  MLIR APIs to avoid a local lookup issue.
 
 ## Decision Log
 
@@ -152,18 +158,18 @@ partially constructed output circuit after a failure. Exact
   Codex.
 - Decision: Define `mqt.input_name` and `mqt.qubit_register_name` as typed
   discardable attributes in an operation-free `mqt` dialect. Verify them with
-  the dialect's operation and region-argument hooks. Rationale: MLIR assigns
-  the semantics of a dialect-prefixed discardable attribute to that dialect;
-  this provides one frontend-neutral owner and generated type-safe helpers.
+  the dialect's operation and region-argument hooks. Rationale: MLIR assigns the
+  semantics of a dialect-prefixed discardable attribute to that dialect; this
+  provides one frontend-neutral owner and generated type-safe helpers.
   Date/Author: 2026-08-20 / Codex.
 - Decision: Keep `mqt.input_name` independent of the argument type. Rationale:
   the name is shared program metadata, while Qiskit and future OpenQASM
-  exporters decide which input types they can represent. Date/Author:
-  2026-08-20 / Codex.
+  exporters decide which input types they can represent. Date/Author: 2026-08-20
+  / Codex.
 - Decision: Copy compatible discardable attributes when a conversion or rewrite
   replaces their owner. Rationale: this preserves current and future shared
-  metadata without source-format-specific key handling. Date/Author:
-  2026-08-20 / Codex.
+  metadata without source-format-specific key handling. Date/Author: 2026-08-20
+  / Codex.
 
 ## Outcomes & Retrospective
 
@@ -208,14 +214,13 @@ excessive depth, and excessive node count before returning to generic import.
 Read a `for` parameter through the public control-flow operation so its UUID is
 preserved.
 
-Next, change `QiskitImport.cpp` to validate every tree leaf by name and to
-emit each supported node as an `f64` Arith or Math value. Register the Math
-dialect in the import context. Reject duplicate free names and all collisions
-between free and lexically bound names before constructing a module. Key both
-local and global parameter maps by name. Remove the numeric-only
-custom-definition check in the version adapter; the existing recursive
-definition preflight then validates its actual symbols and expressions against
-the same maps.
+Next, change `QiskitImport.cpp` to validate every tree leaf by name and to emit
+each supported node as an `f64` Arith or Math value. Register the Math dialect
+in the import context. Reject duplicate free names and all collisions between
+free and lexically bound names before constructing a module. Key both local and
+global parameter maps by name. Remove the numeric-only custom-definition check
+in the version adapter; the existing recursive definition preflight then
+validates its actual symbols and expressions against the same maps.
 
 Then change `QiskitExport.cpp` to recognize compiler inputs, finite constants,
 and the supported Arith and Math operations recursively. Cache each SSA result
@@ -269,9 +274,9 @@ Export it, bind the parameters, and compare its numeric operator and global
 phase with the source circuit.
 
 Import partially bound expressions and a parameterized custom gate. Both must
-resolve the remaining symbols without source mutation. Reject a `for` loop
-whose binder has the same displayed name as a distinct free symbol before
-module construction.
+resolve the remaining symbols without source mutation. Reject a `for` loop whose
+binder has the same displayed name as a distinct free symbol before module
+construction.
 
 Export hand-written QC with supported `f64` Arith and Math expressions. The
 result must contain shared Qiskit parameters and bind to the same numeric

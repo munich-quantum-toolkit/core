@@ -13,6 +13,7 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -324,7 +325,7 @@ private:
       }
       StringRef requested;
       if (const auto attr = alloc->getAttrOfType<StringAttr>(
-              utils::QUBIT_REGISTER_NAME_ATTR)) {
+              mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr())) {
         requested = attr.getValue();
       }
       Resource resource{.kind = ResourceKind::Qubit,

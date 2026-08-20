@@ -13,6 +13,7 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
@@ -47,7 +48,7 @@ QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qc-program-builder>", 1, 1), context),
       ctx(context), module(ModuleOp::create(*this)) {
-  ctx->loadDialect<cbit::CBitDialect, QCDialect>();
+  ctx->loadDialect<cbit::CBitDialect, mqt::MQTDialect, QCDialect>();
 }
 
 void QCProgramBuilder::initialize() { initialize({getI64Type()}); }
@@ -147,7 +148,9 @@ Value QCProgramBuilder::allocQubitRegisterStorage(const int64_t size,
   auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
   auto alloc = memref::AllocOp::create(*this, memrefType);
   if (!name.empty()) {
-    alloc->setAttr(QUBIT_REGISTER_NAME_ATTR, getStringAttr(name));
+    ctx->getLoadedDialect<mqt::MQTDialect>()
+        ->getQubitRegisterNameAttrHelper()
+        .setAttr(alloc, getStringAttr(name));
   }
   auto memref = alloc.getResult();
   allocatedQregs.insert(memref);

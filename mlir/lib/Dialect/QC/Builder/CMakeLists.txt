@@ -15,6 +15,7 @@ add_mlir_library(
   MLIRCBitDialect
   MLIRFuncDialect
   MLIRMemRefDialect
+  MLIRMQTDialect
   MLIRSCFDialect
   MLIRQCDialect)
 
