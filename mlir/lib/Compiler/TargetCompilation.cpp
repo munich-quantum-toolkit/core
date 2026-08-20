@@ -88,7 +88,7 @@ requiredClassicalControl(Operation* operation) {
   return false;
 }
 
-[[nodiscard]] static bool isQubitTensor(const Type type) {
+[[nodiscard]] static bool isQubitTensor(Type type) {
   const auto tensor = llvm::dyn_cast<RankedTensorType>(type);
   return tensor && llvm::isa<qco::QubitType>(tensor.getElementType());
 }
@@ -224,8 +224,8 @@ private:
 
     if (hasDynamicQubitIndex(operation)) {
       operation->emitError()
-          << "target compilation cannot lower classical-control construct '"
-          << operation->getName() << "' with a dynamic qubit index";
+          << "target compilation cannot lower '" << operation->getName()
+          << "' with a dynamic qubit index";
       return failure();
     }
 

@@ -267,7 +267,7 @@ changes cannot replace an early, precise failure with a mapping error.
 ## Interfaces and Dependencies
 
 `mlir::CompilerTarget::ClassicalControl` is a four-value public enum with
-`Conditional`, `Loop`, `ConditionalLoop`, and `Switch` values.
+`Conditional`, `Iteration`, `ConditionalLoop`, and `MultiwayBranch` values.
 `CompilerTarget::getClassicalControl()` returns the canonical capability list,
 and `CompilerTarget::supportsClassicalControl(ClassicalControl)` tests one
 value. Existing constructors and factories retain source compatibility through
