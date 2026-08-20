@@ -238,10 +238,41 @@ normalizePythonParameterLeaf(const nb::handle parameter) {
                    .identity = std::move(identity)};
   const auto vectorElement =
       nb::module_::import_("qiskit.circuit").attr("ParameterVectorElement");
-  if (nb::isinstance(parameter, vectorElement)) {
-    throw std::runtime_error(
-        "Qiskit parameter-vector elements are not supported");
+  if (!nb::isinstance(parameter, vectorElement)) {
+    return result;
   }
+
+  const auto vector = pythonAttribute(
+      parameter, "vector", "Qiskit parameter-vector element has no vector");
+  auto groupName = pythonStringAttribute(
+      vector, "name", "Qiskit parameter vector has an invalid name");
+  auto groupIdentity =
+      pythonText(pythonAttribute(vector, "uuid",
+                                 "Qiskit parameter vector has no identity"),
+                 "Qiskit parameter vector has an invalid identity");
+  const auto groupIndex = pythonUnsignedAttribute(
+      parameter, "index",
+      "Qiskit parameter-vector element has an invalid index");
+  size_t groupSize = 0U;
+  try {
+    groupSize = nb::len(vector);
+  } catch (const nb::python_error& error) {
+    throwPythonError("Qiskit parameter vector has an invalid size", error);
+  }
+  if (groupName.find('\0') != std::string::npos || groupIdentity.empty() ||
+      groupIdentity.find('\0') != std::string::npos) {
+    throw std::runtime_error(
+        "Qiskit parameter vector has invalid group metadata");
+  }
+  const auto expectedName = groupName + "[" + std::to_string(groupIndex) + "]";
+  if (result.text != expectedName) {
+    throw std::runtime_error(
+        "Qiskit parameter-vector element name does not match its vector");
+  }
+  result.group = ParameterGroup{.identity = std::move(groupIdentity),
+                                .name = std::move(groupName),
+                                .index = groupIndex,
+                                .size = groupSize};
   return result;
 }
 
@@ -1420,13 +1451,13 @@ public:
       break;
     case QkLoopParamKind_Parameter: {
       auto symbol = qk_control_flow_loop_symbol_info(controlFlow_);
-      if (symbol.ty != QkSymbolType_Standalone) {
+      if (symbol.ty != QkSymbolType_Standalone &&
+          symbol.ty != QkSymbolType_Element) {
         if (symbol.name != nullptr) {
           qk_str_free(symbol.name);
         }
         throw std::runtime_error(
-            "Qiskit indexed parameter-vector loop variables are not "
-            "supported");
+            "Qiskit for-loop parameter has an unknown symbol type");
       }
       if (symbol.name == nullptr) {
         throwPythonError("Qiskit failed to read a loop-parameter name");
@@ -1445,9 +1476,17 @@ public:
         if (parameter.kind != ParameterKind::Symbol) {
           throw std::runtime_error("Qiskit for-loop parameter is not a symbol");
         }
-        if (parameter.text != nativeName) {
+        const auto nativeIsElement = symbol.ty == QkSymbolType_Element;
+        if (!nativeIsElement &&
+            (parameter.group || parameter.text != nativeName)) {
           throw std::runtime_error(
               "Qiskit Python and native loop-parameter names do not match");
+        }
+        if (nativeIsElement &&
+            (!parameter.group || parameter.group->name != nativeName ||
+             parameter.group->index != symbol.index)) {
+          throw std::runtime_error(
+              "Qiskit Python and native loop-parameter groups do not match");
         }
         result.parameter = std::move(parameter);
       } catch (const nb::python_error& error) {
@@ -2315,16 +2354,28 @@ public:
   }
 
   [[nodiscard]] nb::object finish() override {
-    return finishImpl(false, nb::none(), nb::none());
+    return finishImpl(false, nb::none(), nb::none(), true);
   }
 
 private:
+  struct OutputSymbol {
+    std::string name;
+    std::optional<ParameterGroup> group;
+  };
+
+  using OutputSymbols = std::unordered_map<std::string, OutputSymbol>;
+
   [[nodiscard]] nb::object finishImpl(const bool rebase,
                                       const nb::handle exactQubits,
-                                      const nb::handle exactClbits) {
+                                      const nb::handle exactClbits,
+                                      const bool restoreGroups) {
     if (circuit_ == nullptr) {
       throw std::runtime_error(
           "Qiskit circuit writer has already been finalized");
+    }
+    OutputSymbols outputSymbols;
+    if (restoreGroups) {
+      collectOutputSymbols(outputSymbols);
     }
     auto* result = qk_circuit_to_python_full(circuit_);
     circuit_ = nullptr;
@@ -2349,7 +2400,10 @@ private:
       throwPythonError("Qiskit failed to construct deferred instructions",
                        error);
     }
-    return pythonCircuit;
+    if (!restoreGroups) {
+      return pythonCircuit;
+    }
+    return restoreParameterGroups(std::move(pythonCircuit), outputSymbols);
   }
 
   struct PendingControlledUnitary {
@@ -2629,7 +2683,7 @@ private:
             throw std::runtime_error(
                 "Qiskit control-flow blocks use an incompatible writer");
           }
-          blocks.emplace_back(writer->finishImpl(true, qargs, cargs));
+          blocks.emplace_back(writer->finishImpl(true, qargs, cargs, false));
         } catch (const std::exception& error) {
           throw std::runtime_error(
               "Qiskit failed to finalize control-flow block " +
@@ -2876,7 +2930,8 @@ private:
       }
       const auto found = symbols_.find(parameter.identity);
       if (found != symbols_.end()) {
-        if (found->second.name != parameter.text) {
+        if (found->second.name != parameter.text ||
+            found->second.group != parameter.group) {
           throw std::runtime_error(
               "one symbolic parameter identity has conflicting metadata");
         }
@@ -2885,6 +2940,7 @@ private:
       auto [inserted, success] =
           symbols_.emplace(parameter.identity,
                            Symbol{.name = parameter.text,
+                                  .group = parameter.group,
                                   .parameter = std::make_unique<OwnedParameter>(
                                       parameter.text)});
       static_cast<void>(success);
@@ -2976,8 +3032,122 @@ private:
 
   struct Symbol {
     std::string name;
+    std::optional<ParameterGroup> group;
     std::unique_ptr<OwnedParameter> parameter;
   };
+
+  struct OutputGroup {
+    std::string name;
+    uint64_t size = 0U;
+    nb::object vector;
+  };
+
+  void collectOutputSymbols(OutputSymbols& output) const {
+    for (const auto& [identity, symbol] : symbols_) {
+      const auto [known, inserted] = output.try_emplace(
+          identity, OutputSymbol{.name = symbol.name, .group = symbol.group});
+      if (!inserted && (known->second.name != symbol.name ||
+                        known->second.group != symbol.group)) {
+        throw std::runtime_error(
+            "one symbolic parameter identity has conflicting metadata");
+      }
+    }
+    for (const auto& pending : pendingControlFlow_) {
+      for (const auto& block : pending.blockWriters) {
+        const auto* const writer =
+            dynamic_cast<const NativeCircuitWriter*>(block.get());
+        if (writer == nullptr) {
+          throw std::runtime_error(
+              "Qiskit control-flow blocks use an incompatible writer");
+        }
+        writer->collectOutputSymbols(output);
+      }
+    }
+  }
+
+  [[nodiscard]] nb::object
+  restoreParameterGroups(nb::object pythonCircuit,
+                         const OutputSymbols& outputSymbols) const {
+    std::unordered_map<std::string, OutputGroup> groups;
+    uint64_t totalParameterGroupSize = 0U;
+    for (const auto& [identity, symbol] : outputSymbols) {
+      if (!symbol.group) {
+        continue;
+      }
+      const auto [entry, inserted] = groups.try_emplace(
+          symbol.group->identity,
+          OutputGroup{.name = symbol.group->name, .size = symbol.group->size});
+      if (inserted) {
+        if (symbol.group->size > MAX_PARAMETER_GROUP_SIZE) {
+          throw std::runtime_error("Qiskit parameter vectors support at most " +
+                                   std::to_string(MAX_PARAMETER_GROUP_SIZE) +
+                                   " elements");
+        }
+        if (symbol.group->size >
+            MAX_PARAMETER_GROUP_SIZE - totalParameterGroupSize) {
+          throw std::runtime_error(
+              "Qiskit circuit export supports at most " +
+              std::to_string(MAX_PARAMETER_GROUP_SIZE) +
+              " elements across all distinct parameter vectors");
+        }
+        totalParameterGroupSize += symbol.group->size;
+      } else {
+        if (entry->second.name != symbol.group->name ||
+            entry->second.size != symbol.group->size) {
+          throw std::runtime_error(
+              "one parameter input group has conflicting metadata");
+        }
+      }
+    }
+    if (groups.empty()) {
+      return pythonCircuit;
+    }
+
+    try {
+      const auto parameterVector =
+          nb::module_::import_("qiskit.circuit").attr("ParameterVector");
+      const auto parameterVectorElement =
+          nb::module_::import_("qiskit.circuit").attr("ParameterVectorElement");
+      for (auto& [identity, group] : groups) {
+        static_cast<void>(identity);
+        if (group.size > MAX_PARAMETER_GROUP_SIZE) {
+          throw std::runtime_error("Qiskit parameter vectors support at most " +
+                                   std::to_string(MAX_PARAMETER_GROUP_SIZE) +
+                                   " elements");
+        }
+        if (group.size >
+            static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+          throw std::runtime_error("Qiskit parameter-vector size is too large");
+        }
+        group.vector =
+            parameterVector(group.name, static_cast<size_t>(group.size));
+      }
+
+      nb::dict replacements;
+      const auto getParameter =
+          pythonAttribute(pythonCircuit, "get_parameter",
+                          "Qiskit circuit cannot retrieve an output parameter");
+      for (const auto& [identity, symbol] : outputSymbols) {
+        static_cast<void>(identity);
+        if (!symbol.group) {
+          continue;
+        }
+        const auto group = groups.find(symbol.group->identity);
+        if (group == groups.end()) {
+          throw std::runtime_error("Qiskit output parameter group is missing");
+        }
+        replacements[getParameter(symbol.name)] =
+            parameterVectorElement(group->second.vector, symbol.group->index);
+      }
+      return pythonAttribute(pythonCircuit, "assign_parameters",
+                             "Qiskit circuit cannot replace output parameters")(
+          replacements, nb::arg("inplace") = false,
+          nb::arg("flat_input") = true);
+    } catch (const nb::python_error& error) {
+      throwPythonError("Qiskit failed to restore parameter-vector elements",
+                       error);
+    }
+  }
 
   QkCircuit* circuit_ = nullptr;
   std::vector<PendingControlledUnitary> pendingControlledUnitaries_;
