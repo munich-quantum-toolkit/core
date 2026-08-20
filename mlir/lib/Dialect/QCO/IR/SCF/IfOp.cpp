@@ -9,18 +9,23 @@
  */
 
 #include "RegionBranchCompat.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/BitVector.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/Sequence.h>
+#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Matchers.h>
@@ -32,7 +37,9 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -378,12 +385,335 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
     return success();
   }
 };
+
 } // namespace
+
+namespace mlir::qco {
+
+namespace {
+
+struct TensorAccess {
+  int64_t index;
+  Value inputQubit;
+  Value outputQubit;
+};
+
+struct BranchTensorAccesses {
+  SmallVector<TensorAccess> accesses;
+  llvm::SmallPtrSet<Operation*, 8> tensorOperations;
+};
+
+} // namespace
+
+/**
+ * @brief Analyze a tensor's complete life chain in one branch.
+ *
+ * @details The supported shape extracts a set of distinct constant indices,
+ * performs arbitrary tensor-independent computation, reinserts exactly one
+ * qubit at every extracted index, and yields the resulting tensor. Keeping the
+ * analysis deliberately narrow makes the rewrite below safe to use as a
+ * canonicalization: dynamic indices, repeated accesses, and partial tensor
+ * updates are simply left unchanged.
+ */
+static std::optional<BranchTensorAccesses>
+analyzeTensorBranch(Block* block, const size_t tensorArgumentIndex,
+                    const size_t tensorYieldIndex) {
+  BranchTensorAccesses result;
+  Value currentTensor = block->getArgument(tensorArgumentIndex);
+  bool reachedInsertPhase = false;
+
+  while (true) {
+    if (!currentTensor.hasOneUse()) {
+      return std::nullopt;
+    }
+    Operation* user = *currentTensor.getUsers().begin();
+    if (user->getBlock() != block) {
+      return std::nullopt;
+    }
+
+    if (auto extract = dyn_cast<qtensor::ExtractOp>(user)) {
+      const auto index = getConstantIntValue(extract.getIndex());
+      if (reachedInsertPhase || !index ||
+          llvm::any_of(result.accesses, [&](const TensorAccess& access) {
+            return access.index == *index;
+          })) {
+        return std::nullopt;
+      }
+      result.accesses.push_back(
+          TensorAccess{.index = *index, .inputQubit = extract.getResult()});
+      result.tensorOperations.insert(user);
+      currentTensor = extract.getOutTensor();
+      continue;
+    }
+
+    if (auto insert = dyn_cast<qtensor::InsertOp>(user)) {
+      reachedInsertPhase = true;
+      const auto index = getConstantIntValue(insert.getIndex());
+      if (!index) {
+        return std::nullopt;
+      }
+      auto* access =
+          llvm::find_if(result.accesses, [&](const TensorAccess& it) {
+            return it.index == *index;
+          });
+      if (access == result.accesses.end() || access->outputQubit) {
+        return std::nullopt;
+      }
+      access->outputQubit = insert.getScalar();
+      result.tensorOperations.insert(user);
+      currentTensor = insert.getResult();
+      continue;
+    }
+
+    auto yield = dyn_cast<YieldOp>(user);
+    if (!yield || user != block->getTerminator() ||
+        tensorYieldIndex >= yield.getTargets().size() ||
+        yield.getTargets()[tensorYieldIndex] != currentTensor ||
+        llvm::any_of(result.accesses, [](const TensorAccess& access) {
+          return !access.outputQubit;
+        })) {
+      return std::nullopt;
+    }
+    return result;
+  }
+}
+
+/** Return the access for `index`, if the branch touches that tensor element. */
+static const TensorAccess*
+findTensorAccess(const BranchTensorAccesses& accesses, const int64_t index) {
+  const auto* const access =
+      llvm::find_if(accesses.accesses, [&](const TensorAccess& candidate) {
+        return candidate.index == index;
+      });
+  return access == accesses.accesses.end() ? nullptr : &*access;
+}
+
+/**
+ * @brief Clone one branch while replacing tensor accesses with scalar qubits.
+ */
+static void cloneScalarizedBranch(IfOp oldIf, Block* oldBlock, Block* newBlock,
+                                  const size_t tensorArgumentIndex,
+                                  const BranchTensorAccesses& accesses,
+                                  const ArrayRef<int64_t> indices,
+                                  PatternRewriter& rewriter) {
+  IRMapping mapping;
+  size_t newArgumentIndex = 0;
+  for (const auto [oldIndex, oldArgument] :
+       llvm::enumerate(oldBlock->getArguments())) {
+    if (oldIndex == tensorArgumentIndex) {
+      continue;
+    }
+    mapping.map(oldArgument, newBlock->getArgument(newArgumentIndex++));
+  }
+
+  const auto scalarArguments =
+      newBlock->getArguments().take_back(indices.size());
+  for (const auto [indexPosition, index] : llvm::enumerate(indices)) {
+    if (const auto* access = findTensorAccess(accesses, index)) {
+      mapping.map(access->inputQubit, scalarArguments[indexPosition]);
+    }
+  }
+
+  rewriter.setInsertionPointToEnd(newBlock);
+  for (Operation& operation : oldBlock->without_terminator()) {
+    if (!accesses.tensorOperations.contains(&operation)) {
+      rewriter.clone(operation, mapping);
+    }
+  }
+
+  auto oldYield = cast<YieldOp>(oldBlock->getTerminator());
+  SmallVector<Value> newYieldValues;
+  newYieldValues.reserve(oldYield.getNumOperands() - 1 + indices.size());
+  llvm::append_range(
+      newYieldValues,
+      llvm::map_range(
+          oldYield.getTargets().take_front(oldIf.getClassicalResults().size()),
+          [&](Value value) { return mapping.lookupOrDefault(value); }));
+
+  const auto oldLinearYields =
+      oldYield.getTargets().drop_front(oldIf.getClassicalResults().size());
+  for (const auto [oldIndex, value] : llvm::enumerate(oldLinearYields)) {
+    if (oldIndex != tensorArgumentIndex) {
+      newYieldValues.push_back(mapping.lookupOrDefault(value));
+    }
+  }
+
+  for (const auto [indexPosition, index] : llvm::enumerate(indices)) {
+    const auto* access = findTensorAccess(accesses, index);
+    newYieldValues.push_back(access != nullptr
+                                 ? mapping.lookupOrDefault(access->outputQubit)
+                                 : scalarArguments[indexPosition]);
+  }
+  YieldOp::create(rewriter, oldYield.getLoc(), newYieldValues);
+}
+
+} // namespace mlir::qco
+
+namespace {
+
+/**
+ * @brief Replace constant-index tensor updates in an if with scalar threading.
+ *
+ * @details A tensor carried through an if prevents target mapping from seeing
+ * the accessed qubits as ordinary scalar wires. This pattern extracts the
+ * union of the constant indices accessed by either branch before the if,
+ * threads only those elements as scalar qubits through both branches, and
+ * inserts the results afterwards. A tensor untouched in both branches is
+ * forwarded around the if without extracting any element. Keeping untouched
+ * elements out of the scalar operand list is important for large registers:
+ * target mapping establishes the required sequencing for the remaining
+ * physical wires when it expands the composite operation.
+ */
+struct ScalarizeTensorInputs final : OpRewritePattern<IfOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IfOp op,
+                                PatternRewriter& rewriter) const override {
+    const auto classicalResultCount = op.getClassicalResults().size();
+    const auto oldQubits = op.getQubits();
+
+    for (const auto [tensorIndex, tensor] : llvm::enumerate(oldQubits)) {
+      const auto tensorType = dyn_cast<RankedTensorType>(tensor.getType());
+      if (!tensorType || !tensorType.hasStaticShape() ||
+          tensorType.getRank() != 1) {
+        continue;
+      }
+
+      auto thenAccesses = analyzeTensorBranch(
+          op.thenBlock(), tensorIndex, classicalResultCount + tensorIndex);
+      auto elseAccesses = analyzeTensorBranch(
+          op.elseBlock(), tensorIndex, classicalResultCount + tensorIndex);
+      if (!thenAccesses || !elseAccesses) {
+        continue;
+      }
+
+      SmallVector<int64_t> accessedIndices;
+      for (const auto& access : thenAccesses->accesses) {
+        accessedIndices.push_back(access.index);
+      }
+      for (const auto& access : elseAccesses->accesses) {
+        if (!llvm::is_contained(accessedIndices, access.index)) {
+          accessedIndices.push_back(access.index);
+        }
+      }
+      if (llvm::any_of(accessedIndices, [&](const int64_t index) {
+            return index < 0 || index >= tensorType.getDimSize(0);
+          })) {
+        continue;
+      }
+
+      llvm::sort(accessedIndices);
+      const ArrayRef<int64_t> indices(accessedIndices);
+
+      rewriter.setInsertionPoint(op);
+      SmallVector<Value> indexValues;
+      SmallVector<Value> scalarInputs;
+      indexValues.reserve(indices.size());
+      scalarInputs.reserve(indices.size());
+      Value tensorWithoutScalars = tensor;
+      for (const int64_t index : indices) {
+        auto indexValue =
+            arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
+        auto extract = qtensor::ExtractOp::create(rewriter, op.getLoc(),
+                                                  tensorWithoutScalars,
+                                                  indexValue.getResult());
+        indexValues.push_back(indexValue.getResult());
+        scalarInputs.push_back(extract.getResult());
+        tensorWithoutScalars = extract.getOutTensor();
+      }
+
+      SmallVector<Value> newQubits;
+      newQubits.reserve(oldQubits.size() - 1 + scalarInputs.size());
+      for (const auto [oldIndex, qubit] : llvm::enumerate(oldQubits)) {
+        if (oldIndex != tensorIndex) {
+          newQubits.push_back(qubit);
+        }
+      }
+      llvm::append_range(newQubits, scalarInputs);
+
+      auto newIf = IfOp::create(
+          rewriter, op.getLoc(), op.getClassicalResults().getTypes(),
+          ValueRange(newQubits).getTypes(), op.getCondition(), newQubits);
+      newIf->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+      const SmallVector locations(newQubits.size(), op.getLoc());
+      auto* newThenBlock =
+          rewriter.createBlock(&newIf.getThenRegion(), {},
+                               ValueRange(newQubits).getTypes(), locations);
+      auto* newElseBlock =
+          rewriter.createBlock(&newIf.getElseRegion(), {},
+                               ValueRange(newQubits).getTypes(), locations);
+      cloneScalarizedBranch(op, op.thenBlock(), newThenBlock, tensorIndex,
+                            *thenAccesses, indices, rewriter);
+      cloneScalarizedBranch(op, op.elseBlock(), newElseBlock, tensorIndex,
+                            *elseAccesses, indices, rewriter);
+
+      rewriter.setInsertionPointAfter(newIf);
+      Value updatedTensor = tensorWithoutScalars;
+      const auto scalarResults =
+          newIf.getLinearResults().take_back(indices.size());
+      for (const auto [scalar, indexValue] :
+           llvm::zip_equal(scalarResults, indexValues)) {
+        updatedTensor = qtensor::InsertOp::create(rewriter, op.getLoc(), scalar,
+                                                  updatedTensor, indexValue)
+                            .getResult();
+      }
+
+      SmallVector<Value> replacements;
+      replacements.reserve(op.getNumResults());
+      llvm::append_range(replacements, newIf.getClassicalResults());
+      size_t newLinearIndex = 0;
+      for (const auto oldIndex : llvm::seq(oldQubits.size())) {
+        replacements.push_back(
+            oldIndex == tensorIndex
+                ? updatedTensor
+                : newIf.getLinearResults()[newLinearIndex++]);
+      }
+      rewriter.replaceOp(op, replacements);
+      return success();
+    }
+    return failure();
+  }
+};
+} // namespace
+
+bool mlir::qco::hasOnlyScalarizableTensorInputs(IfOp op) {
+  const size_t classicalResultCount = op.getClassicalResults().size();
+  for (const auto [tensorIndex, value] : llvm::enumerate(op.getQubits())) {
+    if (isa<QubitType>(value.getType())) {
+      continue;
+    }
+
+    const auto tensorType = dyn_cast<RankedTensorType>(value.getType());
+    if (!tensorType || tensorType.getRank() != 1 ||
+        !tensorType.hasStaticShape() ||
+        !isa<QubitType>(tensorType.getElementType())) {
+      return false;
+    }
+
+    const auto thenAccesses = analyzeTensorBranch(
+        op.thenBlock(), tensorIndex, classicalResultCount + tensorIndex);
+    const auto elseAccesses = analyzeTensorBranch(
+        op.elseBlock(), tensorIndex, classicalResultCount + tensorIndex);
+    if (!thenAccesses || !elseAccesses) {
+      return false;
+    }
+
+    const auto isOutOfBounds = [&](const TensorAccess& access) {
+      return access.index < 0 || access.index >= tensorType.getDimSize(0);
+    };
+    if (llvm::any_of(thenAccesses->accesses, isOutOfBounds) ||
+        llvm::any_of(elseAccesses->accesses, isOutOfBounds)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<RemoveStaticCondition, ConditionPropagation,
-              ForwardClassicalResults, RemoveUnusedClassicalResults>(context);
+  results
+      .add<RemoveStaticCondition, ConditionPropagation, ForwardClassicalResults,
+           RemoveUnusedClassicalResults, ScalarizeTensorInputs>(context);
 }
 
 LogicalResult IfOp::verify() {

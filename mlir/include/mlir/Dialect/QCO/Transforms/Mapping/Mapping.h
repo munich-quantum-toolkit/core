@@ -18,9 +18,24 @@
 
 namespace mlir {
 
+class Block;
 class CompilerTarget;
 
 namespace qco {
+
+namespace detail {
+
+/**
+ * Sort a block by SSA dependencies without changing classical-memory order.
+ *
+ * Return false and leave the block unchanged if sorting is impossible. This
+ * includes a cycle in the combined dependency graph or more operations than a
+ * 32-bit sort index can represent.
+ */
+[[nodiscard]] bool
+sortTopologicallyPreservingClassicalMemoryOrder(Block* block);
+
+} // namespace detail
 
 /**
  * @brief Create a mapping pass instance for a compiler target.
