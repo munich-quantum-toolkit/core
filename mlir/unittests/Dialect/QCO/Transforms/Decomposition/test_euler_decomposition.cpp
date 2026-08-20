@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/Math.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -376,7 +376,8 @@ INSTANTIATE_TEST_SUITE_P(
                          1, 0, 0},
         ZSXXShortcutCase{"ZYZNearZeroTheta",
                          [](MLIRContext*) -> Matrix2x2 {
-                           constexpr double tol = 0.5 * mlir::mqt::TOLERANCE;
+                           constexpr double tol =
+                               0.5 * mlir::mqt::PARAMETER_COMPARISON_TOLERANCE;
                            return RZOp::unitaryMatrix(0.4) *
                                   RYOp::unitaryMatrix(tol) *
                                   RZOp::unitaryMatrix(0.3);
@@ -388,26 +389,29 @@ INSTANTIATE_TEST_SUITE_P(
                                                        std::numbers::pi / 2.0);
                          },
                          2, 1, 0},
-        ZSXXShortcutCase{"RYNearHalfPi",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(
-                               ctx, (std::numbers::pi / 2.0) +
-                                        (0.5 * mlir::mqt::TOLERANCE));
-                         },
-                         2, 1, 0},
+        ZSXXShortcutCase{
+            "RYNearHalfPi",
+            [](MLIRContext* ctx) -> Matrix2x2 {
+              return rotationMatrix<RYOp>(
+                  ctx, (std::numbers::pi / 2.0) +
+                           (0.5 * mlir::mqt::PARAMETER_COMPARISON_TOLERANCE));
+            },
+            2, 1, 0},
         ZSXXShortcutCase{"RYNearZero",
                          [](MLIRContext* ctx) -> Matrix2x2 {
                            return rotationMatrix<RYOp>(
-                               ctx, 0.5 * mlir::mqt::TOLERANCE);
+                               ctx,
+                               0.5 * mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
                          },
                          0, 0, 0},
-        ZSXXShortcutCase{"RYNearPi",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(
-                               ctx,
-                               std::numbers::pi - (0.5 * mlir::mqt::TOLERANCE));
-                         },
-                         1, 0, 1}),
+        ZSXXShortcutCase{
+            "RYNearPi",
+            [](MLIRContext* ctx) -> Matrix2x2 {
+              return rotationMatrix<RYOp>(
+                  ctx, std::numbers::pi -
+                           (0.5 * mlir::mqt::PARAMETER_COMPARISON_TOLERANCE));
+            },
+            1, 0, 1}),
     [](const testing::TestParamInfo<ZSXXShortcutCase>& info) {
       return std::string(info.param.label);
     });
@@ -469,7 +473,7 @@ TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
 TEST(EulerAnglesCoverageTest, ParamsZYZUsesOffDiagonal01When10IsNearZero) {
   Matrix2x2 matrix = RXOp::unitaryMatrix(0.4);
   matrix(1, 0) = Complex{0.0, 0.0};
-  ASSERT_GT(std::abs(matrix(0, 1)), mlir::mqt::TOLERANCE);
+  ASSERT_GT(std::abs(matrix(0, 1)), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
   const EulerAngles angles = anglesFromUnitary(matrix, ZYZ);
   EXPECT_TRUE(std::isfinite(angles.theta));
   EXPECT_TRUE(std::isfinite(angles.phi));
@@ -483,9 +487,9 @@ TEST(EulerAnglesCoverageTest, PhaseOnlyDecompositionSkipsRotationGates) {
   const Matrix2x2 matrix = Matrix2x2::fromElements(scale, 0, 0, scale);
   ASSERT_FALSE(matrix.isApprox(Matrix2x2::identity()));
   const EulerAngles angles = anglesFromUnitary(matrix, ZYZ);
-  EXPECT_LE(std::abs(angles.theta), mlir::mqt::TOLERANCE);
-  EXPECT_LE(std::abs(angles.phi), mlir::mqt::TOLERANCE);
-  EXPECT_LE(std::abs(angles.lambda), mlir::mqt::TOLERANCE);
+  EXPECT_LE(std::abs(angles.theta), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
+  EXPECT_LE(std::abs(angles.phi), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
+  EXPECT_LE(std::abs(angles.lambda), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
   const auto circuit = synthesizeMatrix(fx.ctx(), matrix, ZYZ);
   ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)));
   EXPECT_EQ(countZYZGates(circuit.func), 0U);
@@ -507,7 +511,7 @@ TEST(EulerAnglesCoverageTest, UBasisNonzeroThetaEmitsSingleUGate) {
   fx.setUp();
   const Matrix2x2 matrix = RYOp::unitaryMatrix(1.2);
   const EulerAngles angles = anglesFromUnitary(matrix, U);
-  ASSERT_GT(std::abs(angles.theta), mlir::mqt::TOLERANCE);
+  ASSERT_GT(std::abs(angles.theta), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
   expectSynthesizedMatrix(fx.ctx(), matrix, U,
                           [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
                             EXPECT_EQ(countOps<UOp>(funcOp), 1U);
@@ -520,7 +524,7 @@ TEST(EulerAnglesCoverageTest, RBasisNonzeroThetaEmitsThreeRGates) {
   fx.setUp();
   const Matrix2x2 matrix = HOp::getUnitaryMatrix();
   const EulerAngles angles = anglesFromUnitary(matrix, R);
-  ASSERT_GT(std::abs(angles.theta), mlir::mqt::TOLERANCE);
+  ASSERT_GT(std::abs(angles.theta), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
   expectSynthesizedMatrix(fx.ctx(), matrix, R,
                           [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
                             EXPECT_EQ(countOps<ROp>(funcOp), 3U);
@@ -530,7 +534,7 @@ TEST(EulerAnglesCoverageTest, RBasisNonzeroThetaEmitsThreeRGates) {
 TEST(EulerAnglesCoverageTest, Mod2PiMapsPiBoundaryThroughSynthesis) {
   TestFixture fx;
   fx.setUp();
-  constexpr double eps = 0.5 * mlir::mqt::TOLERANCE;
+  constexpr double eps = 0.5 * mlir::mqt::PARAMETER_COMPARISON_TOLERANCE;
   const Complex global = std::polar(1.0, std::numbers::pi - eps);
   const Matrix2x2 matrix = Matrix2x2::fromElements(global, 0, 0, global);
   expectSynthesizedMatrix(fx.ctx(), matrix, U,

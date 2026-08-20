@@ -25,7 +25,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cassert>
 #include <cstddef>
 #include <iterator>
 
@@ -80,37 +79,11 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
 }
 
 /// Print a modifier's block arguments and aliased qubit operands.
-inline void printTargetAliasing(OpAsmPrinter& printer, Region& region,
-                                OperandRange targetsIn) {
-  printer << "(";
-  if (region.empty()) {
-    printer << ") ";
-    printer.printRegion(region, false);
-    return;
-  }
-  auto& entryBlock = region.front();
-
-  for (unsigned i = 0; i < targetsIn.size(); ++i) {
-    if (i > 0) {
-      printer << ", ";
-    }
-    printer.printOperand(entryBlock.getArgument(i));
-    printer << " = ";
-    printer.printOperand(targetsIn[i]);
-  }
-  printer << ") ";
-  printer.printRegion(region, false);
-}
+void printTargetAliasing(OpAsmPrinter& printer, Region& region,
+                         OperandRange targetsIn);
 
 /// Resolve a modifier block argument to the corresponding outer value.
-inline Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
-  if (auto blockArg = dyn_cast<BlockArgument>(qubit)) {
-    assert(blockArg.getArgNumber() < qubits.size() &&
-           "block argument index must be within qubits range");
-    return qubits[blockArg.getArgNumber()];
-  }
-  return qubit;
-}
+[[nodiscard]] Value getValueFromBlockArgument(Value qubit, ValueRange qubits);
 
 /// Return the number of operations implementing @p UnitaryInterface.
 template <typename UnitaryInterface>
@@ -149,40 +122,17 @@ template <typename UnitaryInterface>
 }
 
 /// Move a modifier body's support operations before @p target.
-inline void hoistSupportingOpsBefore(Block& body, Operation* keep,
-                                     Operation* target,
-                                     RewriterBase& rewriter) {
-  for (auto& bodyOp : llvm::make_early_inc_range(body)) {
-    if (&bodyOp != keep && !bodyOp.hasTrait<OpTrait::IsTerminator>()) {
-      rewriter.moveOpBefore(&bodyOp, target);
-    }
-  }
-}
+void hoistSupportingOpsBefore(Block& body, Operation* keep, Operation* target,
+                              RewriterBase& rewriter);
 
 /// Inline a modifier body and replace the modifier with the yielded values.
-inline void inlineModifierBody(Operation* operation, Block& body,
-                               ValueRange blockArgReplacements,
-                               RewriterBase& rewriter) {
-  auto* terminator = body.getTerminator();
-  const auto results =
-      llvm::map_to_vector(terminator->getOperands(), [&](Value yielded) {
-        return getValueFromBlockArgument(yielded, blockArgReplacements);
-      });
-  rewriter.inlineBlockBefore(&body, operation, blockArgReplacements);
-  rewriter.eraseOp(terminator);
-  rewriter.replaceOp(operation, results);
-}
+void inlineModifierBody(Operation* operation, Block& body,
+                        ValueRange blockArgReplacements,
+                        RewriterBase& rewriter);
 
 /// Inline @p source into the current block and return its yielded values.
-inline SmallVector<Value>
+[[nodiscard]] SmallVector<Value>
 inlineBodyReturningYields(Block& source, ValueRange blockArgReplacements,
-                          RewriterBase& rewriter) {
-  auto* destination = rewriter.getInsertionBlock();
-  rewriter.inlineBlockBefore(&source, destination, destination->begin(),
-                             blockArgReplacements);
-  auto yielded = llvm::to_vector(destination->back().getOperands());
-  rewriter.eraseOp(&destination->back());
-  return yielded;
-}
+                          RewriterBase& rewriter);
 
 } // namespace mlir::mqt

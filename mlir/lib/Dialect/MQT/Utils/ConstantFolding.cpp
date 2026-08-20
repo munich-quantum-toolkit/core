@@ -8,16 +8,14 @@
  * Licensed under the MIT License
  */
 
-#pragma once
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 
-#include <llvm/ADT/APFloat.h>
-#include <llvm/ADT/APInt.h>
-#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Matchers.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
@@ -28,8 +26,7 @@
 
 namespace mlir::mqt {
 
-/// Convert a floating-point or integer attribute to a double.
-[[nodiscard]] inline std::optional<double> attributeToDouble(Attribute attr) {
+std::optional<double> attributeToDouble(Attribute attr) {
   if (auto floatAttr = dyn_cast<FloatAttr>(attr)) {
     return floatAttr.getValueAsDouble();
   }
@@ -43,8 +40,7 @@ namespace mlir::mqt {
   return std::nullopt;
 }
 
-/// Convert a direct arithmetic constant to a double.
-[[nodiscard]] inline std::optional<double> valueToDouble(Value value) {
+std::optional<double> valueToDouble(Value value) {
   auto constantOp = value.getDefiningOp<arith::ConstantOp>();
   if (!constantOp) {
     return std::nullopt;
@@ -52,17 +48,7 @@ namespace mlir::mqt {
   return attributeToDouble(constantOp.getValue());
 }
 
-/**
- * Recursively constant-fold a pure SSA expression DAG to an attribute.
- *
- * The cache memoizes successful and failed evaluations so shared operands are
- * resolved once. Identity-style folds can return an existing SSA value, which
- * this function resolves through the same cache.
- *
- * @param value SSA value to evaluate.
- * @param cache Evaluation results indexed by SSA value.
- */
-[[nodiscard]] inline std::optional<Attribute>
+std::optional<Attribute>
 valueToConstantAttr(Value value,
                     DenseMap<Value, std::optional<Attribute>>& cache) {
   if (const auto it = cache.find(value); it != cache.end()) {
@@ -98,19 +84,18 @@ valueToConstantAttr(Value value,
   if (auto resultAttr = dyn_cast_if_present<Attribute>(results.front())) {
     folded = resultAttr;
   } else if (auto resultValue = dyn_cast_if_present<Value>(results.front())) {
+    /* Identity-style folds can return an existing SSA value. */
     folded = valueToConstantAttr(resultValue, cache);
   }
   return cache[value] = folded;
 }
 
-/// Recursively constant-fold a pure SSA expression DAG to an attribute.
-[[nodiscard]] inline std::optional<Attribute> valueToConstantAttr(Value value) {
+std::optional<Attribute> valueToConstantAttr(Value value) {
   DenseMap<Value, std::optional<Attribute>> cache;
   return valueToConstantAttr(value, cache);
 }
 
-/// Recursively constant-fold a pure SSA expression DAG to a double.
-[[nodiscard]] inline std::optional<double> valueToConstantDouble(Value value) {
+std::optional<double> valueToConstantDouble(Value value) {
   if (const auto attr = valueToConstantAttr(value)) {
     return attributeToDouble(*attr);
   }

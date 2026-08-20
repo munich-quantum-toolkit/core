@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Support/MQT/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>

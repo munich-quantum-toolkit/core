@@ -8,12 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/Math.h"
-#include "mlir/Dialect/MQT/Utils/Parameter.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -44,7 +43,7 @@ struct ReplaceRWithRX final : OpRewritePattern<ROp> {
   LogicalResult matchAndRewrite(ROp op,
                                 PatternRewriter& rewriter) const override {
     if (const auto phi = valueToDouble(op.getPhi());
-        !phi || std::abs(*phi) > TOLERANCE) {
+        !phi || std::abs(*phi) > PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
     rewriter.replaceOpWithNewOp<RXOp>(op, op.getInputQubit(0), op.getTheta());
@@ -61,7 +60,8 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
   LogicalResult matchAndRewrite(ROp op,
                                 PatternRewriter& rewriter) const override {
     if (const auto phi = valueToDouble(op.getPhi());
-        !phi || std::abs(*phi - (std::numbers::pi / 2.0)) > TOLERANCE) {
+        !phi || std::abs(*phi - (std::numbers::pi / 2.0)) >
+                    PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
     rewriter.replaceOpWithNewOp<RYOp>(op, op.getInputQubit(0), op.getTheta());

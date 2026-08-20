@@ -11,7 +11,7 @@
 #include "ModifierUtils.h"
 
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
-#include "mlir/Dialect/MQT/Utils/Modifier.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 

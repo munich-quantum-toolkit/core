@@ -9,8 +9,8 @@
  */
 
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
-#include "mlir/Dialect/MQT/Utils/Math.h"
-#include "mlir/Dialect/MQT/Utils/Modifier.h"
+#include "mlir/Dialect/MQT/Utils/GatePowering.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"

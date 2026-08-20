@@ -8,12 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/Math.h"
-#include "mlir/Dialect/MQT/Utils/Modifier.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
@@ -1355,7 +1355,8 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
     // multi-controlled-Z path (elementary at 3–4 qubits, relative-phase / Vale
     // at 5–6 qubits, else HP24).
     if (gate == ControlledTarget::Phase && spec->theta &&
-        std::abs(std::abs(*spec->theta) - K_PI) <= mqt::TOLERANCE) {
+        std::abs(std::abs(*spec->theta) - K_PI) <=
+            mqt::PARAMETER_COMPARISON_TOLERANCE) {
       gate = ControlledTarget::Z;
     }
 

@@ -8,12 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/Math.h"
-#include "mlir/Dialect/MQT/Utils/Parameter.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -56,7 +55,7 @@ void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
 
 OpFoldResult RZOp::fold(FoldAdaptor /*adaptor*/) {
   if (const auto theta = valueToDouble(getTheta());
-      theta && std::abs(*theta) <= TOLERANCE) {
+      theta && std::abs(*theta) <= PARAMETER_COMPARISON_TOLERANCE) {
     return getInputQubit(0);
   }
   return {};

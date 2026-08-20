@@ -6,5 +6,6 @@
 #
 # Licensed under the MIT License
 
+add_subdirectory(Utils)
 add_subdirectory(IR)
 add_subdirectory(Transforms)

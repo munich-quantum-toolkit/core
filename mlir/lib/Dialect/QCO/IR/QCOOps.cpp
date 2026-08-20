@@ -10,8 +10,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include "mlir/Dialect/MQT/Utils/Modifier.h"
-#include "mlir/Dialect/MQT/Utils/Parameter.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
 
 #include <llvm/ADT/STLExtras.h>

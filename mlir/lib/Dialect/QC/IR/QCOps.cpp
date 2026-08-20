@@ -10,8 +10,8 @@
 
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
-#include "mlir/Dialect/MQT/Utils/Modifier.h"
-#include "mlir/Dialect/MQT/Utils/Parameter.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h" // IWYU pragma: associated
 
 #include <mlir/IR/OpImplementation.h>

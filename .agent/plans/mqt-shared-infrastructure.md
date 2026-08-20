@@ -12,10 +12,11 @@ repository root.
 The compiler collection currently stores MQT-owned passes and quantum-specific
 helpers below the broad path `mlir/Dialect/Utils`. That path overlaps MLIR's own
 shared dialect utilities and obscures which code owns each semantic contract.
-After this change, MQT-owned cross-dialect transformations and quantum semantics
-live below `mlir/Dialect/MQT`, MQT-owned constant-folding helpers live below
-`mlir/Support/MQT`, and the quantum-aware module equivalence checker is built
-only for tests. Existing pass command names and behavior remain unchanged.
+After this change, MQT-owned cross-dialect transformations and IR-aware quantum
+helpers live below `mlir/Dialect/MQT`, and the quantum-aware module equivalence
+checker is built only for tests. The utility implementations form one leaf
+`MLIRMQTUtils` library. Existing pass command names and behavior remain
+unchanged.
 
 The result is observable by building the same compiler and tests with no source
 file below the project-owned `mlir/Dialect/Utils` directory. The generated MQT
@@ -44,6 +45,12 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
       `mlir/Support/MQT` and address all review comments.
 - [x] (2026-08-20 19:30Z) Repeat the release and non-unity builds, focused and
       full tests, repository lint, and the full pull request Clang-Tidy diff.
+- [x] (2026-08-20 21:45Z) Replace the installed support header and header-only
+      utility set with a cohesive `Dialect/MQT/Utils` package and leaf library.
+- [x] (2026-08-20 22:20Z) Format the utility package, pass focused Clang-Tidy,
+      build the full release tree, and pass all 4,303 configured tests.
+- [x] (2026-08-20 22:22Z) Inspect the final diff and prepare a signed local
+      commit for the utility package revision.
 
 ## Surprises & Discoveries
 
@@ -72,6 +79,14 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
   strict Sphinx build found stale Qiskit import and export includes after the
   utility split. The corrected binding target and the full Sphinx build now
   pass.
+- Observation: Current upstream MLIR keeps `mlir/Support` independent of IR,
+  dialect, and interface libraries. IR-aware shared helpers instead use
+  dedicated utility libraries, such as `MLIRDialectUtils`, below the IR or
+  dialect hierarchy.
+- Observation: `add_mlir_dialect_library` appends its target to
+  `MLIR_DIALECT_LIBS`. `MLIRMQTUtils` is not a dialect registration target and
+  must remain below the MQT, QC, and QCO dialect libraries, so
+  `add_mlir_library` describes its role and dependencies more accurately.
 
 ## Decision Log
 
@@ -100,11 +115,23 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
   are part of the unreleased general launch, and the requested cleanup should
   remove the ambiguous project-owned include surface. Date/Author: 2026-08-20 /
   Codex.
-- Decision: Put the dialect-independent constant-folding helpers below
-  `mlir/Support/MQT` in `mlir::mqt`. Rationale: the include path describes the
-  dependency layer, while the namespace records that MQT Core owns these
-  helpers. Root-qualified `::mqt::test` references avoid ambiguity with the
-  repository's separate top-level namespace. Date/Author: 2026-08-20 / Codex.
+- Decision: Put all IR-aware shared helpers below `mlir/Dialect/MQT/Utils` in
+  `mlir::mqt`, including constant folding. Rationale: the helpers depend on MLIR
+  IR, dialects, or interfaces, so `mlir/Support` is the wrong dependency layer.
+  A named owner and a dedicated library match current MLIR organization without
+  creating loose headers or an umbrella include. Date/Author: 2026-08-20 /
+  Codex.
+- Decision: Split the utility surface into `Angles`, `ConstantFolding`,
+  `DenseUnitary`, `GatePowering`, `Modifiers`, and `Parameters`. Rationale: each
+  header has one semantic responsibility and enough related declarations to
+  justify the file. `Math.h` and an umbrella `Utils.h` would hide those
+  contracts. Non-template implementations belong in matching source files.
+  Date/Author: 2026-08-20 / Codex.
+- Decision: Build the helper package with `add_mlir_library(MLIRMQTUtils)` and
+  link only `MLIRArithDialect`, `MLIRIR`, and `MLIRSideEffectInterfaces`.
+  Rationale: the target is an IR-aware leaf library, not a dialect registration
+  library. It must not link the MQT, QC, or QCO dialects because those dialects
+  consume it. Date/Author: 2026-08-20 / Codex.
 - Decision: Build the module equivalence checker in one concrete test-support
   library and expose that library through `MLIRTestCaseUtils`. Rationale: every
   caller is a unit test, while a single target avoids repeating its quantum
@@ -113,9 +140,9 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
 ## Outcomes & Retrospective
 
 The follow-up now has explicit ownership boundaries. MQT owns the cross-dialect
-passes, quantum semantics, and project-specific constant-folding support. Unit
-test support owns the module equivalence checker. The implementation does not
-add a shared QC/QCO unitary interface.
+passes, IR-aware quantum semantics, and project-specific constant folding in a
+dedicated utility library. Unit test support owns the module equivalence
+checker. The implementation does not add a shared QC/QCO unitary interface.
 
 After pull request #2150 merged, the follow-up commits were rebased onto its
 squash commit. The final review update passed the release build and the
@@ -126,6 +153,13 @@ full pull request Clang-Tidy diff passed. Generated MLIR documentation and the
 strict Sphinx documentation build passed before the final review update, which
 does not change generated documentation or Sphinx inputs. The signed commits are
 ready for review.
+
+The utility package revision builds all six implementation files separately in
+the non-unity lint configuration and builds the complete release tree. Focused
+Clang-Tidy reports no project diagnostics across the six implementations and two
+utility test files. The utility binary passes 20 tests. CTest reports 100%
+success across all 4,303 configured tests; one QDMI test is skipped by its own
+condition. Repository lint and the final diff check pass.
 
 ## Context and Orientation
 
@@ -141,12 +175,11 @@ preserving modifier semantics. Modifier unrolling splits multi-operation QC and
 QCO control, inverse, and power regions. Their library is already named
 `MLIRMQTTransforms`.
 
-The header `mlir/include/mlir/Dialect/Utils/Utils.h` mixes numeric helpers,
-constant builders and folders, parameter validation, assembly parsing, and
-modifier-region rewrites. `DenseUnitary.h` verifies the common dense-matrix
-contract of QC and QCO unitary operations. `UGateUtils.h` implements shared
-binary64 U-gate powering. These are project files in a path also owned by
-upstream MLIR.
+The MQT utility headers define angle and global-phase contracts, constant
+folding, dense-unitary validation, gate powering, parameter handling, and
+modifier-region rewrites. QC, QCO, builders, transforms, conversions, and the
+Qiskit binding consume different subsets of those contracts. They need a shared
+leaf target that does not depend on any consuming dialect.
 
 The function `areModulesEquivalentWithPermutations` is declared in
 `mlir/include/mlir/Support/IRVerification.h`, implemented in
@@ -163,20 +196,13 @@ all includes and parent CMake files. Move the global-phase normalization test to
 `mlir/unittests/Dialect/MQT/Transforms`. Leave QC- and QCO-specific modifier
 tests with their respective dialect tests.
 
-Create small headers below `mlir/include/mlir/Dialect/MQT/Utils`. A math header
-will own angle normalization, exponent checks, and the shared numeric tolerance.
-A global-phase header will own the supported angle range and one verifier used
-by both QC and QCO `GPhaseOp` implementations. A parameter header will own
-constant construction, variant-to-value conversion, and finite parameter
-validation. A modifier header will own common modifier parsing, printing,
-building, and region-rewrite helpers. Dense-unitary verification and U-gate
-powering will move into focused MQT utility headers without creating a shared
-unitary operation interface.
-
-Create `mlir/include/mlir/Support/MQT/ConstantFolding.h` for the generic
-attribute and SSA constant-folding helpers. Move the corresponding tests to
-`mlir/unittests/Support`. Keep the helpers in `mlir::mqt` to record project
-ownership without placing dialect-independent code in a dialect library.
+Create cohesive headers below `mlir/include/mlir/Dialect/MQT/Utils`: `Angles`,
+`ConstantFolding`, `DenseUnitary`, `GatePowering`, `Modifiers`, and
+`Parameters`. Do not add `Math.h` or an umbrella header. Put non-template
+implementations in matching source files below `mlir/lib/Dialect/MQT/Utils`.
+Build them as the leaf `MLIRMQTUtils` target and link direct consumers to it.
+Keep the constant-folding tests with the utility package below
+`mlir/unittests/Dialect/MQT/Utils`.
 
 Move the quantum module equivalence header and implementation below
 `mlir/unittests/Support`. Build them in a test-only `MLIRTestSupport` target and
@@ -231,8 +257,12 @@ The textual pass names `normalize-global-phases` and `unroll-modifiers` still
 parse and run. Their focused QC and QCO tests pass with unchanged semantic
 expectations. QC and QCO reject the same invalid global-phase values through one
 shared helper, and both unitary interfaces apply one shared finite-parameter
-validator. Dense unitary and U-gate power tests pass from their new include
-locations. Constant-folding tests pass from the support test suite.
+validator. Dense-unitary and gate-power tests pass from their new include
+locations. Constant-folding tests pass from the MQT utility test suite.
+
+`MLIRMQTUtils` builds as an ordinary MLIR library. It links only MLIR Arith, IR,
+and side-effect interfaces. It does not register as a dialect library and does
+not link MQT, QC, or QCO. All direct consumers declare the utility target.
 
 The production `MLIRSupportMQT` target no longer compiles or installs the
 quantum module equivalence checker. All existing tests that compare modules

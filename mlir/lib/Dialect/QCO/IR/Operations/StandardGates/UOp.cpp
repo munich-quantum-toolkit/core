@@ -8,11 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/Math.h"
-#include "mlir/Dialect/MQT/Utils/Parameter.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -42,8 +41,8 @@ struct ReplaceUWithP final : OpRewritePattern<UOp> {
                                 PatternRewriter& rewriter) const override {
     const auto theta = valueToDouble(op.getTheta());
     const auto phi = valueToDouble(op.getPhi());
-    if (!theta || std::abs(*theta) > TOLERANCE || !phi ||
-        std::abs(*phi) > TOLERANCE) {
+    if (!theta || std::abs(*theta) > PARAMETER_COMPARISON_TOLERANCE || !phi ||
+        std::abs(*phi) > PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
     rewriter.replaceOpWithNewOp<POp>(op, op.getInputQubit(0), op.getLambda());
@@ -61,8 +60,12 @@ struct ReplaceUWithRX final : OpRewritePattern<UOp> {
                                 PatternRewriter& rewriter) const override {
     const auto phi = valueToDouble(op.getPhi());
     const auto lambda = valueToDouble(op.getLambda());
-    if (!phi || std::abs(*phi + (std::numbers::pi / 2.0)) > TOLERANCE ||
-        !lambda || std::abs(*lambda - (std::numbers::pi / 2.0)) > TOLERANCE) {
+    if (!phi ||
+        std::abs(*phi + (std::numbers::pi / 2.0)) >
+            PARAMETER_COMPARISON_TOLERANCE ||
+        !lambda ||
+        std::abs(*lambda - (std::numbers::pi / 2.0)) >
+            PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
     rewriter.replaceOpWithNewOp<RXOp>(op, op.getInputQubit(0), op.getTheta());
@@ -80,8 +83,8 @@ struct ReplaceUWithRY final : OpRewritePattern<UOp> {
                                 PatternRewriter& rewriter) const override {
     const auto phi = valueToDouble(op.getPhi());
     const auto lambda = valueToDouble(op.getLambda());
-    if (!phi || std::abs(*phi) > TOLERANCE || !lambda ||
-        std::abs(*lambda) > TOLERANCE) {
+    if (!phi || std::abs(*phi) > PARAMETER_COMPARISON_TOLERANCE || !lambda ||
+        std::abs(*lambda) > PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
     rewriter.replaceOpWithNewOp<RYOp>(op, op.getInputQubit(0), op.getTheta());
@@ -98,7 +101,8 @@ struct ReplaceUWithU2 final : OpRewritePattern<UOp> {
   LogicalResult matchAndRewrite(UOp op,
                                 PatternRewriter& rewriter) const override {
     const auto theta = valueToDouble(op.getTheta());
-    if (!theta || std::abs(*theta - (std::numbers::pi / 2.0)) > TOLERANCE) {
+    if (!theta || std::abs(*theta - (std::numbers::pi / 2.0)) >
+                      PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
     rewriter.replaceOpWithNewOp<U2Op>(op, op.getInputQubit(0), op.getPhi(),

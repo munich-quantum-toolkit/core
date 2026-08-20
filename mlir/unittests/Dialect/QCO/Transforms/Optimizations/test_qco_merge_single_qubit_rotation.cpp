@@ -9,13 +9,12 @@
  */
 
 #include "ExactUnitaryTest.h"
-#include "mlir/Dialect/MQT/Utils/GlobalPhase.h"
-#include "mlir/Dialect/MQT/Utils/Math.h"
+#include "mlir/Dialect/MQT/Utils/Angles.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>

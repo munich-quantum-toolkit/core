@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "mlir/Support/MQT/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/BuiltinOps.h>

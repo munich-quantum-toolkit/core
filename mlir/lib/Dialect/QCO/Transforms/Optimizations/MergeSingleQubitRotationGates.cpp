@@ -9,13 +9,12 @@
  */
 
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/MQT/Utils/Math.h"
-#include "mlir/Dialect/MQT/Utils/Parameter.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
-#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -738,7 +737,7 @@ struct MergeSingleQubitRotationGatesPattern final
     for (auto chainOp : llvm::drop_begin(chain)) {
       rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
     }
-    if (std::abs(correction.v) > mqt::TOLERANCE) {
+    if (std::abs(correction.v) > mqt::PARAMETER_COMPARISON_TOLERANCE) {
       GPhaseOp::create(rewriter, loc,
                        mqt::constantFromScalar(rewriter, loc, correction.v));
     }

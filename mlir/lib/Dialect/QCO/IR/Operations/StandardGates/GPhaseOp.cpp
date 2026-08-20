@@ -8,12 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/GlobalPhase.h"
-#include "mlir/Dialect/MQT/Utils/Math.h"
-#include "mlir/Dialect/MQT/Utils/Parameter.h"
+#include "mlir/Dialect/MQT/Utils/Angles.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -41,7 +40,7 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
   LogicalResult matchAndRewrite(GPhaseOp op,
                                 PatternRewriter& rewriter) const override {
     if (const auto theta = valueToDouble(op.getTheta());
-        !theta || std::abs(*theta) > TOLERANCE) {
+        !theta || std::abs(*theta) > PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
 

@@ -16,6 +16,7 @@ add_mlir_library(
   PRIVATE
   MLIRArithDialect
   MLIRIR
+  MLIRMQTUtils
   MLIRPass
   MLIRQCDialect
   MLIRQCODialect

@@ -9,16 +9,16 @@
  */
 
 #include "ModifierUtils.h"
-#include "mlir/Dialect/MQT/Utils/Math.h"
-#include "mlir/Dialect/MQT/Utils/Modifier.h"
-#include "mlir/Dialect/MQT/Utils/Parameter.h"
-#include "mlir/Dialect/MQT/Utils/UGate.h"
+#include "mlir/Dialect/MQT/Utils/Angles.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/GatePowering.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -103,28 +103,28 @@ static LogicalResult tryReplacePOpWithNamedGate(double angle, PowOp op,
   const double norm = normalizeAngle(angle);
   const double pi = std::numbers::pi;
 
-  if (std::abs(norm) < TOLERANCE) {
+  if (std::abs(norm) < PARAMETER_COMPARISON_TOLERANCE) {
     // pow(r) folds to the identity: thread the input qubits to the results.
     rewriter.replaceOp(op, op.getQubitsIn());
     return success();
   }
-  if (std::abs(std::abs(norm) - pi) < TOLERANCE) {
+  if (std::abs(std::abs(norm) - pi) < PARAMETER_COMPARISON_TOLERANCE) {
     rewriter.replaceOpWithNewOp<ZOp>(op, target);
     return success();
   }
-  if (std::abs(norm - (pi / 2.0)) < TOLERANCE) {
+  if (std::abs(norm - (pi / 2.0)) < PARAMETER_COMPARISON_TOLERANCE) {
     rewriter.replaceOpWithNewOp<SOp>(op, target);
     return success();
   }
-  if (std::abs(norm + (pi / 2.0)) < TOLERANCE) {
+  if (std::abs(norm + (pi / 2.0)) < PARAMETER_COMPARISON_TOLERANCE) {
     rewriter.replaceOpWithNewOp<SdgOp>(op, target);
     return success();
   }
-  if (std::abs(norm - (pi / 4.0)) < TOLERANCE) {
+  if (std::abs(norm - (pi / 4.0)) < PARAMETER_COMPARISON_TOLERANCE) {
     rewriter.replaceOpWithNewOp<TOp>(op, target);
     return success();
   }
-  if (std::abs(norm + (pi / 4.0)) < TOLERANCE) {
+  if (std::abs(norm + (pi / 4.0)) < PARAMETER_COMPARISON_TOLERANCE) {
     rewriter.replaceOpWithNewOp<TdgOp>(op, target);
     return success();
   }
@@ -144,7 +144,8 @@ struct InlinePow1 final : OpRewritePattern<PowOp> {
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     const auto exponent = op.getExponentValue();
-    if (!exponent || std::abs(*exponent - 1.0) > TOLERANCE) {
+    if (!exponent ||
+        std::abs(*exponent - 1.0) > PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
 
@@ -160,7 +161,7 @@ struct ErasePow0 final : OpRewritePattern<PowOp> {
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     const auto exponent = op.getExponentValue();
-    if (!exponent || std::abs(*exponent) > TOLERANCE) {
+    if (!exponent || std::abs(*exponent) > PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
 
@@ -454,7 +455,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(n) { u(theta, phi, lambda) } =>
             // gphase(delta); u(theta', phi', lambda')
             .Case<UOp>([&](auto) {
-              if (std::abs(normalizeAngle(uPower->phase)) > TOLERANCE) {
+              if (std::abs(normalizeAngle(uPower->phase)) >
+                  PARAMETER_COMPARISON_TOLERANCE) {
                 GPhaseOp::create(rewriter, loc, uPower->phase);
               }
               rewriter.replaceOpWithNewOp<UOp>(op, op.getInputTarget(0),
@@ -467,13 +469,13 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(1/2) x => sx      (X^(1/2) = SX exactly)
             // pow(-1/2) x => sxdg   (X^(-1/2) = SXdg exactly)
             .Case<XOp>([&](auto gate) {
-              if (std::abs(r - 0.5) < TOLERANCE) {
+              if (std::abs(r - 0.5) < PARAMETER_COMPARISON_TOLERANCE) {
                 rewriter.replaceOpWithNewOp<SXOp>(
                     op, mqt::getValueFromBlockArgument(gate.getInputTarget(0),
                                                        op.getQubitsIn()));
                 return success();
               }
-              if (std::abs(r + 0.5) < TOLERANCE) {
+              if (std::abs(r + 0.5) < PARAMETER_COMPARISON_TOLERANCE) {
                 rewriter.replaceOpWithNewOp<SXdgOp>(
                     op, mqt::getValueFromBlockArgument(gate.getInputTarget(0),
                                                        op.getQubitsIn()));
@@ -601,7 +603,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { sx } => gphase(r*π/4); rx(r*π/2)
             // pow(±2) sx => x
             .Case<SXOp>([&](auto gate) {
-              if (std::abs(std::abs(r) - 2.0) < TOLERANCE) {
+              if (std::abs(std::abs(r) - 2.0) <
+                  PARAMETER_COMPARISON_TOLERANCE) {
                 rewriter.replaceOpWithNewOp<XOp>(
                     op, mqt::getValueFromBlockArgument(gate.getInputTarget(0),
                                                        op.getQubitsIn()));
@@ -622,7 +625,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { sxdg } => gphase(-r*π/4); rx(-r*π/2)
             // pow(±2) sxdg => x
             .Case<SXdgOp>([&](auto gate) {
-              if (std::abs(std::abs(r) - 2.0) < TOLERANCE) {
+              if (std::abs(std::abs(r) - 2.0) <
+                  PARAMETER_COMPARISON_TOLERANCE) {
                 rewriter.replaceOpWithNewOp<XOp>(
                     op, mqt::getValueFromBlockArgument(gate.getInputTarget(0),
                                                        op.getQubitsIn()));
@@ -911,12 +915,12 @@ std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
   const auto raiseToPow =
       [p](const DynamicMatrix& u) -> std::optional<DynamicMatrix> {
     // U^1 = U (no computation needed)
-    if (std::abs(p - 1.0) < TOLERANCE) {
+    if (std::abs(p - 1.0) < PARAMETER_COMPARISON_TOLERANCE) {
       return u;
     }
 
     // U^0 = I
-    if (std::abs(p) < TOLERANCE) {
+    if (std::abs(p) < PARAMETER_COMPARISON_TOLERANCE) {
       return DynamicMatrix::identity(u.cols());
     }
 

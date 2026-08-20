@@ -11,15 +11,14 @@
 #include "ExactUnitaryTest.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/MQT/Utils/GlobalPhase.h"
-#include "mlir/Dialect/MQT/Utils/Math.h"
-#include "mlir/Dialect/MQT/Utils/Parameter.h"
+#include "mlir/Dialect/MQT/Utils/Angles.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
@@ -77,7 +76,7 @@ protected:
     ASSERT_TRUE(value.has_value());
     EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*value));
     EXPECT_NEAR(mlir::mqt::normalizeAngle(*value - expectedAngle), 0.0,
-                mlir::mqt::TOLERANCE);
+                mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
   }
 
   static void expectNormalizedUnitary(OwningOpRef<ModuleOp>& moduleOp,

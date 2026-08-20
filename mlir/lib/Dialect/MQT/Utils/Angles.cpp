@@ -8,29 +8,36 @@
  * Licensed under the MIT License
  */
 
-#pragma once
+#include "mlir/Dialect/MQT/Utils/Angles.h"
 
-#include "mlir/Support/MQT/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
+#include <numbers>
 
 namespace mlir::mqt {
 
-/// Largest supported magnitude of a global-phase angle in radians.
-inline constexpr double MAX_GLOBAL_PHASE_ANGLE = 1.0e4;
+double normalizeAngle(double theta) {
+  const double twoPi = 2.0 * std::numbers::pi;
+  theta = std::fmod(theta, twoPi);
+  if (theta > std::numbers::pi) {
+    theta -= twoPi;
+  }
+  if (theta <= -std::numbers::pi) {
+    theta += twoPi;
+  }
+  return theta;
+}
 
-/// Check the compiler-wide global-phase angle contract.
-[[nodiscard]] inline bool isValidGlobalPhaseAngle(const double theta) {
+bool isValidGlobalPhaseAngle(const double theta) {
   return std::isfinite(theta) && std::abs(theta) <= MAX_GLOBAL_PHASE_ANGLE;
 }
 
-/// Verify the compiler-wide global-phase angle contract.
-[[nodiscard]] inline LogicalResult verifyGlobalPhaseAngle(Operation* operation,
-                                                          Value angle) {
+LogicalResult verifyGlobalPhaseAngle(Operation* operation, Value angle) {
   const auto constant = valueToConstantDouble(angle);
   if (!constant || !std::isfinite(*constant)) {
     return success();

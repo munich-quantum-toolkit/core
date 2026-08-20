@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/GlobalPhase.h"
-#include "mlir/Dialect/MQT/Utils/Parameter.h"
+#include "mlir/Dialect/MQT/Utils/Angles.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
 #include <mlir/IR/Builders.h>
