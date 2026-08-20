@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
@@ -22,7 +23,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
 #include "qco_programs.h"

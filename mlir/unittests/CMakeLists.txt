@@ -8,8 +8,27 @@
 
 set(MQT_MLIR_UNITTESTS_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
+add_library(MLIRTestSupport STATIC Support/IRVerification.cpp)
+target_include_directories(MLIRTestSupport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(
+  MLIRTestSupport
+  PUBLIC MLIRAnalysis
+         MLIRIR
+         MLIRLLVMDialect
+         MLIRQCDialect
+         MLIRQCODialect
+         MLIRQTensorDialect
+         MLIRQTensorUtils
+         MLIRSCFDialect
+         MLIRSupport
+         LLVMSupport)
+target_sources(MLIRTestSupport PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} FILES
+                                      Support/IRVerification.h)
+mqt_mlir_target_use_project_options(MLIRTestSupport)
+
 add_library(MLIRTestCaseUtils INTERFACE)
-target_link_libraries(MLIRTestCaseUtils INTERFACE GTest::gtest MLIRIR MLIRSupportMQT)
+target_link_libraries(MLIRTestCaseUtils INTERFACE GTest::gtest MLIRIR MLIRSupportMQT
+                                                  MLIRTestSupport)
 target_sources(MLIRTestCaseUtils INTERFACE FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
                                            FILES TestCaseUtils.h)
 

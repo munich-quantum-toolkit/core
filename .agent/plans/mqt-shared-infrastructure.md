@@ -12,10 +12,10 @@ repository root.
 The compiler collection currently stores MQT-owned passes and quantum-specific
 helpers below the broad path `mlir/Dialect/Utils`. That path overlaps MLIR's own
 shared dialect utilities and obscures which code owns each semantic contract.
-After this change, MQT-owned cross-dialect transformations and quantum
-semantics live below `mlir/Dialect/MQT`, generic constant-folding helpers live
-below `mlir/Support`, and the quantum-aware module equivalence checker is built
-only for tests. Existing pass command names and behavior remain unchanged.
+After this change, MQT-owned cross-dialect transformations and quantum semantics
+live below `mlir/Dialect/MQT`, generic constant-folding helpers live below
+`mlir/Support`, and the quantum-aware module equivalence checker is built only
+for tests. Existing pass command names and behavior remain unchanged.
 
 The result is observable by building the same compiler and tests with no source
 file below the project-owned `mlir/Dialect/Utils` directory. The generated MQT
@@ -29,12 +29,17 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
       and build dependencies.
 - [x] (2026-08-20 15:53Z) Move the existing MQT transform package and its
       normalization tests.
-- [x] (2026-08-20 15:53Z) Split quantum semantics and generic folding helpers
-      by owner.
-- [ ] Move the module equivalence checker into test support.
-- [ ] Update all includes, namespaces, CMake targets, and documentation.
-- [ ] Run focused tests, the release build, the documentation build, and lint.
-- [ ] Inspect the final diff and create signed, scoped local commits.
+- [x] (2026-08-20 15:53Z) Split quantum semantics and generic folding helpers by
+      owner.
+- [x] (2026-08-20 15:53Z) Move the module equivalence checker into test support.
+- [x] (2026-08-20 15:53Z) Update all includes, namespaces, CMake targets, and
+      documentation.
+- [x] (2026-08-20 15:53Z) Run focused tests, the release build, the
+      documentation build, and lint.
+- [x] (2026-08-20 15:53Z) Inspect the final diff and prepare signed, scoped
+      local commits.
+- [x] (2026-08-20 17:30Z) Rebase the two follow-up commits onto the merged
+      symbolic Qiskit parameter change and repeat the publication checks.
 
 ## Surprises & Discoveries
 
@@ -53,19 +58,23 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
   generic production verifier.
 - Observation: Generic support helpers in `mlir::mqt` caused ambiguous lookup
   with the repository's top-level `mqt::test` namespace when a dialect header
-  exposed the helpers. Evidence: the full release build failed in compiler
-  tests until `ConstantFolding.h` used the owning `mlir` namespace.
+  exposed the helpers. Evidence: the full release build failed in compiler tests
+  until `ConstantFolding.h` used the owning `mlir` namespace.
 - Observation: Pull request #2189 merged while this work was in progress and
   expanded the global-phase tests. The follow-up branch was rebased onto the
   updated pull request #2150 head, which already includes #2189. The moved test
   retains those semantic checks.
+- Observation: The release preset does not build the Python MLIR bindings. The
+  strict Sphinx build found stale Qiskit import and export includes after the
+  utility split. The corrected binding target and the full Sphinx build now
+  pass.
 
 ## Decision Log
 
 - Decision: Keep `MLIRMQTDialect` and `MLIRMQTTransforms` as separate targets.
   Rationale: an IR dialect library must not pull pass infrastructure and
-  cross-dialect rewrite dependencies into every metadata consumer.
-  Date/Author: 2026-08-20 / Codex.
+  cross-dialect rewrite dependencies into every metadata consumer. Date/Author:
+  2026-08-20 / Codex.
 - Decision: Move both `NormalizeGlobalPhases` and `UnrollModifiers` as one
   transform package. Rationale: both passes already share the MQT namespace,
   generated pass group, target, and QC/QCO ownership. Moving only one would
@@ -77,28 +86,39 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
   Date/Author: 2026-08-20 / Codex.
 - Decision: Do not introduce a shared QC/QCO unitary operation interface.
   Rationale: QC has reference semantics and QCO has value semantics. The user
-  explicitly excluded that abstraction from this refactor.
-  Date/Author: 2026-08-20 / Codex.
+  explicitly excluded that abstraction from this refactor. Date/Author:
+  2026-08-20 / Codex.
 - Decision: Split the former `Utils.h` by semantic responsibility instead of
   renaming the monolith. Rationale: a path move alone would preserve unclear
-  ownership and excessive include dependencies. Date/Author: 2026-08-20 /
-  Codex.
+  ownership and excessive include dependencies. Date/Author: 2026-08-20 / Codex.
 - Decision: Do not preserve forwarding headers below the old project-owned
   `mlir/Dialect/Utils` path. Rationale: the compiler collection and these APIs
   are part of the unreleased general launch, and the requested cleanup should
   remove the ambiguous project-owned include surface. Date/Author: 2026-08-20 /
   Codex.
 - Decision: Put generic constant-folding helpers in `mlir`, not `mlir::mqt`.
-  Rationale: the helpers are dialect-independent support infrastructure, and
-  the narrower namespace leaked an unrelated dialect name through public QC
-  and QCO headers. Date/Author: 2026-08-20 / Codex.
+  Rationale: the helpers are dialect-independent support infrastructure, and the
+  narrower namespace leaked an unrelated dialect name through public QC and QCO
+  headers. Date/Author: 2026-08-20 / Codex.
+- Decision: Build the module equivalence checker in one concrete test-support
+  library and expose that library through `MLIRTestCaseUtils`. Rationale: every
+  caller is a unit test, while a single target avoids repeating its quantum
+  dialect dependencies across test directories. Date/Author: 2026-08-20 / Codex.
 
 ## Outcomes & Retrospective
 
-The source split and transform relocation build successfully. Focused support,
-MQT transform, QC IR, and QCO IR suites passed 865 tests in total. The complete
-release build and repository lint suite also passed. Documentation, full CTest,
-the test-support move, and final commit validation remain.
+The follow-up now has explicit ownership boundaries. MQT owns the cross-dialect
+passes and quantum semantics. MLIR support owns generic constant folding. Unit
+test support owns the module equivalence checker. The implementation does not
+add a shared QC/QCO unitary interface.
+
+The focused support, MQT transform, QC IR, and QCO IR suites passed 865 tests in
+total. The release build and the Python MLIR binding target passed. After pull
+request #2150 merged, the two follow-up commits were rebased onto its squash
+commit. The rebased release build passed. CTest reported 100% success across
+4,301 configured tests; one QDMI test was skipped by its own condition.
+Generated MLIR documentation, the strict Sphinx documentation build, and the
+repository lint suite passed. The signed commits are ready for review.
 
 ## Context and Orientation
 
@@ -154,8 +174,8 @@ their contract is independent of any dialect.
 Move the quantum module equivalence header and implementation below
 `mlir/unittests/Support`. Build them in a test-only `MLIRTestSupport` target and
 make `MLIRTestCaseUtils` expose that target to configured test executables.
-Remove the implementation and its test-only dependencies from
-`MLIRSupportMQT`. Update every test include.
+Remove the implementation and its test-only dependencies from `MLIRSupportMQT`.
+Update every test include.
 
 Remove the now-empty project-owned `Dialect/Utils` CMake subdirectories and
 parent `add_subdirectory(Utils)` entries. Continue using upstream includes such
@@ -189,9 +209,10 @@ Finish with:
     ctest --preset release
     uvx nox -s lint
 
-Before each commit, inspect `git diff --check`, the staged diff, and the complete
-commit message. Sign each commit and verify it with `git verify-commit HEAD`.
-Do not push or create a pull request without separate authorization.
+Before each commit, inspect `git diff --check`, the staged diff, and the
+complete commit message. Sign each commit and verify it with
+`git verify-commit HEAD`. Do not push or create a pull request without separate
+authorization.
 
 ## Validation and Acceptance
 
@@ -212,13 +233,14 @@ still link and pass through `MLIRTestSupport`.
 
 The release build, configured CTest suite, generated MLIR documentation, full
 Sphinx documentation, and repository lint suite complete successfully. The
-worktree is clean after signed local commits, and no remote state changes.
+worktree is clean after signed local commits, and no remote state changes are
+made for this follow-up branch.
 
 ## Idempotence and Recovery
 
 The include replacements, formatting, builds, and tests are repeatable. CMake
 may retain stale generated include paths after the move; rerun
-`cmake --preset release` before diagnosing missing generated files. If a move
-is interrupted, use `git status --short` to identify source and destination
-files, then complete the move without deleting unrelated work. Never reset the
-worktree or discard changes from another task.
+`cmake --preset release` before diagnosing missing generated files. If a move is
+interrupted, use `git status --short` to identify source and destination files,
+then complete the move without deleting unrelated work. Never reset the worktree
+or discard changes from another task.

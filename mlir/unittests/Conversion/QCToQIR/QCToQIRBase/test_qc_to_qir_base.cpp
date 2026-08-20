@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
@@ -15,7 +16,6 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
-#include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
 #include "qir_programs.h"

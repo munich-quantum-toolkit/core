@@ -8,10 +8,10 @@
  * Licensed under the MIT License
  */
 
+#include "Support/IRVerification.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Support/IRVerification.h"
 
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
