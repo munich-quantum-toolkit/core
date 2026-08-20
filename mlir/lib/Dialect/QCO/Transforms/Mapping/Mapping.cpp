@@ -1101,7 +1101,7 @@ private:
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
-  Window getWindow(Wires wires, const WireInfos& infos) {
+  Window getWindow(Wires wires, const WireInfos& infos) { // NOLINT
     Window window;
     window.reserve(1 + nlookahead);
 
@@ -1115,6 +1115,7 @@ private:
             return WalkResult::advance();
           }
 
+          bool skipped = false;
           for (const auto& [op, indices] : ready) {
             if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
               const auto i0 = indices[0];
