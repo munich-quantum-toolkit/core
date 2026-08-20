@@ -1021,64 +1021,18 @@ private:
     return curr;
   }
 
-  /// Skip to the end of the two-qubit block for both wire iterators, where
-  /// initially both must point at the same two-qubit operation.
-  template <WireDirection Direction>
-  static void skipQubitPairBlock(WireIterator& it0, WireIterator& it1) {
-    using Traits = WireTraversalTraits<Direction>;
-
-    // Traverses the pair of wire iterators in tandem until a two-qubit
-    // operation is found. If the two-qubit operation is equivalent, continue.
-    // Otherwise, stop.
-
-    std::array block{it0, it1};
-
-    // Move past the initial two-qubit op.
-    assert(it0.operation() == it1.operation());
-    std::advance(block[0], Traits::stride());
-    std::advance(block[1], Traits::stride());
-
-    while (true) {
-      for (auto& it : block) {
-        for (; it != std::default_sentinel;
-             std::advance(it, Traits::stride())) {
-          if (it.operation() == nullptr) { // isa<Blockargument>
-            return;
-          }
-
-          if (auto u = dyn_cast<UnitaryOpInterface>(it.operation());
-              u && u.getNumQubits() > 1) {
-            // Handle two-qubit barrier edge case explicitly.
-            if (isa<BarrierOp>(u) && u.getNumQubits() != 2) {
-              return;
-            }
-            // Otherwise stop for subsequent two-qubit unitary comparison.
-            break;
-          }
-        }
-
-        if (it == std::default_sentinel) {
-          return;
-        }
-      }
-
-      if (block[0].operation() != block[1].operation()) {
-        return;
-      }
-
-      it0 = block[0];
-      it1 = block[1];
-
-      std::advance(block[0], Traits::stride());
-      std::advance(block[1], Traits::stride());
-    }
-  }
-
   /// Return a window of layers with a maximum size of `1 + nlookahead`.
+  /// The function skips qubit-pair blocks.
   template <WireDirection Direction>
-  Window getWindow(Wires wires, const WireInfos& infos) {
+  Window getWindow(Wires wires, const WireInfos& infos) { // NOLINT
     Window window;
     window.reserve(1 + nlookahead);
+
+    SmallVector<IndexPairType> layer;
+    layer.reserve(nlookahead);
+
+    enum class WalkMode : bool { Collect, SkipBlock };
+    WalkMode mode = WalkMode::Collect;
 
     walkProgramGraph<Direction>(
         wires, [&](const ReadyMap& ready, ReleasedOps& released) {
@@ -1086,25 +1040,48 @@ private:
             return WalkResult::advance();
           }
 
+          bool skipped = false;
           for (const auto& [op, indices] : ready) {
-            if (isa<UnitaryOpInterface>(op)) {
+            if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
               const auto i0 = indices[0];
               const auto i1 = indices[1];
               const auto prog0 = infos.lookupProgram(i0);
               const auto prog1 = infos.lookupProgram(i1);
+              const auto gate = std::minmax(prog0, prog1);
 
-              window.emplace_back(prog0, prog1);
-              if (window.size() == 1 + nlookahead) {
-                return WalkResult::interrupt();
+              if (mode == WalkMode::Collect) {
+
+                // Collect gates in window and fill current layer vector.
+
+                window.emplace_back(gate);
+                if (window.size() == 1 + nlookahead) {
+                  return WalkResult::interrupt();
+                }
+
+                layer.emplace_back(gate);
+              } else {
+
+                // Skip qubit-pair block: If the gate is contained in the
+                // current layer release it. Otherwise, continue with the next
+                // ready operation.
+
+                if (is_contained(layer, gate)) {
+                  released.emplace_back(op);
+                  skipped = true;
+                }
+
+                continue;
               }
-
-              skipQubitPairBlock<Direction>(wires[i0], wires[i1]);
-              released.emplace_back(op);
-              return WalkResult::advance();
             }
 
             released.emplace_back(op);
-            return WalkResult::advance();
+          }
+
+          if (mode == WalkMode::Collect) {
+            mode = WalkMode::SkipBlock;
+          } else if (mode == WalkMode::SkipBlock && !skipped) {
+            mode = WalkMode::Collect;
+            layer.clear();
           }
 
           return WalkResult::advance();
