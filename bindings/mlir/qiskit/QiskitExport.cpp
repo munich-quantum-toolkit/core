@@ -92,20 +92,17 @@ using ExportedParameters = llvm::DenseMap<mlir::Value, Parameter>;
 }
 
 [[nodiscard]] Parameter numberParameter(const double value) {
-  return {.kind = ParameterKind::Number, .number = value};
+  return Parameter::number(value);
 }
 
-[[nodiscard]] Parameter unaryParameter(const ParameterKind kind,
+[[nodiscard]] Parameter unaryParameter(const UnaryParameterKind kind,
                                        Parameter operand) {
-  return {.kind = kind,
-          .left = std::make_shared<const Parameter>(std::move(operand))};
+  return Parameter::unary(kind, std::move(operand));
 }
 
-[[nodiscard]] Parameter binaryParameter(const ParameterKind kind,
+[[nodiscard]] Parameter binaryParameter(const BinaryParameterKind kind,
                                         Parameter left, Parameter right) {
-  return {.kind = kind,
-          .left = std::make_shared<const Parameter>(std::move(left)),
-          .right = std::make_shared<const Parameter>(std::move(right))};
+  return Parameter::binary(kind, std::move(left), std::move(right));
 }
 
 [[nodiscard]] Parameter exportParameterImpl(mlir::Value value,
@@ -138,7 +135,7 @@ using ExportedParameters = llvm::DenseMap<mlir::Value, Parameter>;
     throw std::runtime_error(
         "Qiskit circuit export cannot resolve an unnamed scalar parameter");
   }
-  const auto unary = [&](const ParameterKind kind) {
+  const auto unary = [&](const UnaryParameterKind kind) {
     if (operation->getNumOperands() != 1U) {
       throw std::runtime_error("QC parameter operation '" +
                                operation->getName().getStringRef().str() +
@@ -148,7 +145,7 @@ using ExportedParameters = llvm::DenseMap<mlir::Value, Parameter>;
                           exportParameterImpl(operation->getOperand(0),
                                               parameters, depth + 1U, nodes));
   };
-  const auto binary = [&](const ParameterKind kind) {
+  const auto binary = [&](const BinaryParameterKind kind) {
     if (operation->getNumOperands() != 2U) {
       throw std::runtime_error("QC parameter operation '" +
                                operation->getName().getStringRef().str() +
@@ -163,35 +160,35 @@ using ExportedParameters = llvm::DenseMap<mlir::Value, Parameter>;
 
   Parameter result;
   if (llvm::isa<mlir::arith::AddFOp>(*operation)) {
-    result = binary(ParameterKind::Add);
+    result = binary(BinaryParameterKind::Add);
   } else if (llvm::isa<mlir::arith::SubFOp>(*operation)) {
-    result = binary(ParameterKind::Subtract);
+    result = binary(BinaryParameterKind::Subtract);
   } else if (llvm::isa<mlir::arith::MulFOp>(*operation)) {
-    result = binary(ParameterKind::Multiply);
+    result = binary(BinaryParameterKind::Multiply);
   } else if (llvm::isa<mlir::arith::DivFOp>(*operation)) {
-    result = binary(ParameterKind::Divide);
+    result = binary(BinaryParameterKind::Divide);
   } else if (llvm::isa<mlir::math::PowFOp>(*operation)) {
-    result = binary(ParameterKind::Power);
+    result = binary(BinaryParameterKind::Power);
   } else if (llvm::isa<mlir::arith::NegFOp>(*operation)) {
-    result = unary(ParameterKind::Negate);
+    result = unary(UnaryParameterKind::Negate);
   } else if (llvm::isa<mlir::math::SinOp>(*operation)) {
-    result = unary(ParameterKind::Sin);
+    result = unary(UnaryParameterKind::Sin);
   } else if (llvm::isa<mlir::math::CosOp>(*operation)) {
-    result = unary(ParameterKind::Cos);
+    result = unary(UnaryParameterKind::Cos);
   } else if (llvm::isa<mlir::math::TanOp>(*operation)) {
-    result = unary(ParameterKind::Tan);
+    result = unary(UnaryParameterKind::Tan);
   } else if (llvm::isa<mlir::math::AsinOp>(*operation)) {
-    result = unary(ParameterKind::ArcSin);
+    result = unary(UnaryParameterKind::ArcSin);
   } else if (llvm::isa<mlir::math::AcosOp>(*operation)) {
-    result = unary(ParameterKind::ArcCos);
+    result = unary(UnaryParameterKind::ArcCos);
   } else if (llvm::isa<mlir::math::AtanOp>(*operation)) {
-    result = unary(ParameterKind::ArcTan);
+    result = unary(UnaryParameterKind::ArcTan);
   } else if (llvm::isa<mlir::math::ExpOp>(*operation)) {
-    result = unary(ParameterKind::Exp);
+    result = unary(UnaryParameterKind::Exp);
   } else if (llvm::isa<mlir::math::LogOp>(*operation)) {
-    result = unary(ParameterKind::Log);
+    result = unary(UnaryParameterKind::Log);
   } else if (llvm::isa<mlir::math::AbsFOp>(*operation)) {
-    result = unary(ParameterKind::Abs);
+    result = unary(UnaryParameterKind::Abs);
   } else {
     throw std::runtime_error(
         "Qiskit circuit export does not support scalar parameter operation '" +
@@ -215,66 +212,32 @@ void validateExportParameterImpl(const Parameter& parameter, const size_t depth,
   if (++nodes > MAX_PARAMETER_EXPRESSION_NODES) {
     throwExportedParameterExpressionSizeError();
   }
-  const auto requireLeaf = [&] {
-    if (parameter.left || parameter.right) {
-      throw std::runtime_error(
-          "QC parameter-expression leaf has unexpected operands");
-    }
-  };
-  const auto requireUnary = [&] {
-    if (!parameter.left || parameter.right) {
-      throw std::runtime_error(
-          "QC unary parameter expression has invalid operands");
-    }
-    validateExportParameterImpl(*parameter.left, depth + 1U, nodes);
-  };
-  const auto requireBinary = [&] {
-    if (!parameter.left || !parameter.right) {
-      throw std::runtime_error(
-          "QC binary parameter expression has missing operands");
-    }
-    validateExportParameterImpl(*parameter.left, depth + 1U, nodes);
-    validateExportParameterImpl(*parameter.right, depth + 1U, nodes);
-  };
-  switch (parameter.kind) {
-  case ParameterKind::Number:
-    requireLeaf();
-    if (!std::isfinite(parameter.number)) {
+  if (const auto* number = parameter.getNumber()) {
+    if (!std::isfinite(number->value)) {
       throw std::runtime_error("cannot export a non-finite QC parameter");
     }
     return;
-  case ParameterKind::Symbol:
-    requireLeaf();
-    if (parameter.text.empty()) {
+  }
+  if (const auto* symbol = parameter.getSymbol()) {
+    if (symbol->name.empty()) {
       throw std::runtime_error("QC parameter symbol has an invalid name");
     }
-    if (parameter.text.find('\0') != std::string::npos) {
+    if (symbol->name.find('\0') != std::string::npos) {
       throw std::runtime_error(
           "QC parameter symbol name contains a null character");
     }
     return;
-  case ParameterKind::Add:
-  case ParameterKind::Subtract:
-  case ParameterKind::Multiply:
-  case ParameterKind::Divide:
-  case ParameterKind::Power:
-    requireBinary();
-    return;
-  case ParameterKind::Negate:
-  case ParameterKind::Sin:
-  case ParameterKind::Cos:
-  case ParameterKind::Tan:
-  case ParameterKind::ArcSin:
-  case ParameterKind::ArcCos:
-  case ParameterKind::ArcTan:
-  case ParameterKind::Exp:
-  case ParameterKind::Log:
-  case ParameterKind::Abs:
-  case ParameterKind::Conjugate:
-    requireUnary();
+  }
+  if (const auto* unary = parameter.getUnary()) {
+    validateExportParameterImpl(*unary->operand, depth + 1U, nodes);
     return;
   }
-  throw std::runtime_error("unknown QC parameter expression kind");
+  if (const auto* binary = parameter.getBinary()) {
+    validateExportParameterImpl(*binary->left, depth + 1U, nodes);
+    validateExportParameterImpl(*binary->right, depth + 1U, nodes);
+    return;
+  }
+  throw std::runtime_error("unknown QC parameter expression");
 }
 
 void validateExportParameter(const Parameter& parameter) {
@@ -346,22 +309,24 @@ struct ExportState {
   std::vector<Register> classicalRegisters;
   ExportedParameters parameters;
   std::vector<Parameter> inputParameters;
-  Parameter globalPhase{.kind = ParameterKind::Number, .number = 0.0};
+  Parameter globalPhase;
   uint32_t numQubits = 0;
   uint32_t numClbits = 0;
 };
 
 void collectParameterNames(const Parameter& parameter,
                            llvm::StringSet<>& names) {
-  if (parameter.kind == ParameterKind::Symbol) {
-    names.insert(parameter.text);
+  if (const auto* symbol = parameter.getSymbol()) {
+    names.insert(symbol->name);
     return;
   }
-  if (parameter.left) {
-    collectParameterNames(*parameter.left, names);
+  if (const auto* unary = parameter.getUnary()) {
+    collectParameterNames(*unary->operand, names);
+    return;
   }
-  if (parameter.right) {
-    collectParameterNames(*parameter.right, names);
+  if (const auto* binary = parameter.getBinary()) {
+    collectParameterNames(*binary->left, names);
+    collectParameterNames(*binary->right, names);
   }
 }
 
@@ -378,11 +343,15 @@ void validateExportParameters(const ExportState& state) {
     }
   }
   for (const auto& input : state.inputParameters) {
-    if (!usedNames.contains(input.text)) {
+    const auto* symbol = input.getSymbol();
+    if (symbol == nullptr) {
+      throw std::runtime_error("QC program input is not a parameter symbol");
+    }
+    if (!usedNames.contains(symbol->name)) {
       throw std::runtime_error(
           "Qiskit circuit export cannot preserve unused named f64 program "
           "input '" +
-          input.text + "'");
+          symbol->name + "'");
     }
   }
 }
@@ -396,39 +365,38 @@ void collectParameters(mlir::func::FuncOp function, ExportState& state) {
       throw std::runtime_error(
           "Qiskit circuit export requires named f64 program inputs");
     }
-    Parameter parameter{
-        .kind = ParameterKind::Symbol,
-        .text = name.str(),
-    };
+    auto parameter = Parameter::symbol(name.str());
     state.parameters[argument] = parameter;
     state.inputParameters.push_back(std::move(parameter));
   }
 }
 
 void addGlobalPhase(ExportState& state, const Parameter& phase) {
-  if (phase.kind == ParameterKind::Number) {
-    if (!std::isfinite(phase.number)) {
+  if (const auto* number = phase.getNumber()) {
+    if (!std::isfinite(number->value)) {
       throw std::runtime_error(
           "QC global phase cannot be represented by Qiskit");
     }
-    if (state.globalPhase.kind == ParameterKind::Number) {
-      state.globalPhase.number += phase.number;
-      if (!std::isfinite(state.globalPhase.number)) {
+    if (const auto* globalNumber = state.globalPhase.getNumber()) {
+      const auto sum = globalNumber->value + number->value;
+      if (!std::isfinite(sum)) {
         throw std::runtime_error(
             "QC global phase cannot be represented by Qiskit");
       }
+      state.globalPhase = Parameter::number(sum);
       return;
     }
-    if (std::abs(phase.number) <= mlir::utils::TOLERANCE) {
+    if (std::abs(number->value) <= mlir::utils::TOLERANCE) {
       return;
     }
-  } else if (state.globalPhase.kind == ParameterKind::Number &&
-             std::abs(state.globalPhase.number) <= mlir::utils::TOLERANCE) {
+  } else if (const auto* globalNumber = state.globalPhase.getNumber();
+             globalNumber != nullptr &&
+             std::abs(globalNumber->value) <= mlir::utils::TOLERANCE) {
     state.globalPhase = phase;
     return;
   }
-  state.globalPhase =
-      binaryParameter(ParameterKind::Add, std::move(state.globalPhase), phase);
+  state.globalPhase = binaryParameter(BinaryParameterKind::Add,
+                                      std::move(state.globalPhase), phase);
 }
 
 [[nodiscard]] std::vector<uint32_t>
@@ -553,16 +521,16 @@ void invertGate(ExportedInstruction& instruction) {
       throw std::runtime_error("QC inverse modifier has invalid arity");
     }
     instruction.parameters.front() = unaryParameter(
-        ParameterKind::Negate, std::move(instruction.parameters.front()));
+        UnaryParameterKind::Negate, std::move(instruction.parameters.front()));
     return;
   }
   if (instruction.gate.gate == Gate::U3 &&
       instruction.parameters.size() == 3U) {
     auto parameters = std::move(instruction.parameters);
     instruction.parameters = {
-        unaryParameter(ParameterKind::Negate, std::move(parameters[0])),
-        unaryParameter(ParameterKind::Negate, std::move(parameters[2])),
-        unaryParameter(ParameterKind::Negate, std::move(parameters[1]))};
+        unaryParameter(UnaryParameterKind::Negate, std::move(parameters[0])),
+        unaryParameter(UnaryParameterKind::Negate, std::move(parameters[2])),
+        unaryParameter(UnaryParameterKind::Negate, std::move(parameters[1]))};
     return;
   }
   throw std::runtime_error(
@@ -635,8 +603,8 @@ collectUnitaryInstruction(mlir::Operation& operation,
           "QC power export requires one standard gate in the modifier body");
     }
     const auto exponent = exportParameter(power.getExponent(), parameters);
-    if (exponent.kind != ParameterKind::Number ||
-        (exponent.number != 1.0 && exponent.number != -1.0)) {
+    const auto* number = exponent.getNumber();
+    if (number == nullptr || (number->value != 1.0 && number->value != -1.0)) {
       throw std::runtime_error(
           "QC power export supports only constant exponents 1 and -1");
     }
@@ -644,7 +612,7 @@ collectUnitaryInstruction(mlir::Operation& operation,
         modifierQubitMap(qubits, power.getRegion().front(), power.getQubits());
     auto result = collectUnitaryInstruction(*bodyOperations.front(), nestedMap,
                                             parameters);
-    if (exponent.number == -1.0) {
+    if (number->value == -1.0) {
       invertGate(result);
     }
     return result;

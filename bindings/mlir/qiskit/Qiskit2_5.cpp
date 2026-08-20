@@ -176,7 +176,7 @@ QkExitCode addParameterizedGate(QkCircuit* circuit, const QkGate gate,
     const auto isNumber = qk_param_equal(parameter, numeric);
     qk_param_free(numeric);
     if (isNumber) {
-      return {.kind = ParameterKind::Number, .number = number};
+      return Parameter::number(number);
     }
   }
   throw std::runtime_error(
@@ -191,7 +191,7 @@ normalizePythonParameterLeaf(const nb::handle parameter) {
     if (!std::isfinite(number)) {
       throw std::runtime_error("Qiskit returned a non-finite parameter");
     }
-    return {.kind = ParameterKind::Number, .number = number};
+    return Parameter::number(number);
   }
 
   std::complex<double> complexNumber;
@@ -205,7 +205,7 @@ normalizePythonParameterLeaf(const nb::handle parameter) {
           "Qiskit parameter expressions with complex values are not "
           "supported");
     }
-    return {.kind = ParameterKind::Number, .number = complexNumber.real()};
+    return Parameter::number(complexNumber.real());
   }
 
   if (!nb::hasattr(parameter, "name")) {
@@ -221,7 +221,7 @@ normalizePythonParameterLeaf(const nb::handle parameter) {
     throw std::runtime_error(
         "Qiskit parameter names cannot contain null characters");
   }
-  Parameter result{.kind = ParameterKind::Symbol, .text = std::move(name)};
+  auto result = Parameter::symbol(std::move(name));
   const auto vectorElement =
       nb::module_::import_("qiskit.circuit").attr("ParameterVectorElement");
   if (nb::isinstance(parameter, vectorElement)) {
@@ -272,17 +272,14 @@ takeParameterExpressionOperand(const nb::handle operand,
   return {.value = normalizePythonParameterLeaf(operand)};
 }
 
-[[nodiscard]] Parameter makeUnaryParameter(const ParameterKind kind,
+[[nodiscard]] Parameter makeUnaryParameter(const UnaryParameterKind kind,
                                            Parameter operand) {
-  return {.kind = kind,
-          .left = std::make_shared<const Parameter>(std::move(operand))};
+  return Parameter::unary(kind, std::move(operand));
 }
 
-[[nodiscard]] Parameter makeBinaryParameter(const ParameterKind kind,
+[[nodiscard]] Parameter makeBinaryParameter(const BinaryParameterKind kind,
                                             Parameter lhs, Parameter rhs) {
-  return {.kind = kind,
-          .left = std::make_shared<const Parameter>(std::move(lhs)),
-          .right = std::make_shared<const Parameter>(std::move(rhs))};
+  return Parameter::binary(kind, std::move(lhs), std::move(rhs));
 }
 
 [[nodiscard]] std::string parameterOpcode(const nb::handle replayEntry) {
@@ -304,38 +301,39 @@ takeParameterExpressionOperand(const nb::handle operand,
          opcode == "ABS" || opcode == "CONJ" || opcode == "CONJUGATE";
 }
 
-[[nodiscard]] ParameterKind unaryParameterKind(const std::string_view opcode) {
+[[nodiscard]] UnaryParameterKind
+unaryParameterKind(const std::string_view opcode) {
   if (opcode == "NEG") {
-    return ParameterKind::Negate;
+    return UnaryParameterKind::Negate;
   }
   if (opcode == "SIN") {
-    return ParameterKind::Sin;
+    return UnaryParameterKind::Sin;
   }
   if (opcode == "COS") {
-    return ParameterKind::Cos;
+    return UnaryParameterKind::Cos;
   }
   if (opcode == "TAN") {
-    return ParameterKind::Tan;
+    return UnaryParameterKind::Tan;
   }
   if (opcode == "ASIN") {
-    return ParameterKind::ArcSin;
+    return UnaryParameterKind::ArcSin;
   }
   if (opcode == "ACOS") {
-    return ParameterKind::ArcCos;
+    return UnaryParameterKind::ArcCos;
   }
   if (opcode == "ATAN") {
-    return ParameterKind::ArcTan;
+    return UnaryParameterKind::ArcTan;
   }
   if (opcode == "EXP") {
-    return ParameterKind::Exp;
+    return UnaryParameterKind::Exp;
   }
   if (opcode == "LOG") {
-    return ParameterKind::Log;
+    return UnaryParameterKind::Log;
   }
   if (opcode == "ABS") {
-    return ParameterKind::Abs;
+    return UnaryParameterKind::Abs;
   }
-  return ParameterKind::Conjugate;
+  return UnaryParameterKind::Conjugate;
 }
 
 [[nodiscard]] bool isBinaryParameterOpcode(const std::string_view opcode) {
@@ -344,20 +342,21 @@ takeParameterExpressionOperand(const nb::handle operand,
          opcode == "RDIV" || opcode == "RPOW";
 }
 
-[[nodiscard]] ParameterKind binaryParameterKind(const std::string_view opcode) {
+[[nodiscard]] BinaryParameterKind
+binaryParameterKind(const std::string_view opcode) {
   if (opcode == "ADD") {
-    return ParameterKind::Add;
+    return BinaryParameterKind::Add;
   }
   if (opcode == "SUB" || opcode == "RSUB") {
-    return ParameterKind::Subtract;
+    return BinaryParameterKind::Subtract;
   }
   if (opcode == "MUL") {
-    return ParameterKind::Multiply;
+    return BinaryParameterKind::Multiply;
   }
   if (opcode == "DIV" || opcode == "RDIV") {
-    return ParameterKind::Divide;
+    return BinaryParameterKind::Divide;
   }
-  return ParameterKind::Power;
+  return BinaryParameterKind::Power;
 }
 
 [[nodiscard]] Parameter normalizePythonParameter(const nb::handle parameter) {
@@ -1383,10 +1382,11 @@ public:
               "Qiskit for-loop operation has no loop parameter");
         }
         auto parameter = normalizePythonParameter(parameters[1]);
-        if (parameter.kind != ParameterKind::Symbol) {
+        const auto* parameterSymbol = parameter.getSymbol();
+        if (parameterSymbol == nullptr) {
           throw std::runtime_error("Qiskit for-loop parameter is not a symbol");
         }
-        if (parameter.text != nativeName) {
+        if (parameterSymbol->name != nativeName) {
           throw std::runtime_error(
               "Qiskit Python and native loop-parameter names do not match");
         }
@@ -1662,110 +1662,90 @@ private:
     if (depth > MAX_PARAMETER_EXPRESSION_DEPTH) {
       throwParameterExpressionDepthError();
     }
-    if (parameter.kind == ParameterKind::Number) {
-      if (parameter.left != nullptr || parameter.right != nullptr) {
-        throw std::runtime_error(
-            "numeric parameter expression node has operands");
-      }
+    if (const auto* number = parameter.getNumber()) {
       ownedParameters.emplace_back(
-          std::make_unique<OwnedParameter>(parameter.number));
+          std::make_unique<OwnedParameter>(number->value));
       return ownedParameters.back()->get();
     }
-    if (parameter.kind == ParameterKind::Symbol) {
-      if (parameter.left != nullptr || parameter.right != nullptr) {
-        throw std::runtime_error(
-            "symbolic parameter expression node has operands");
-      }
-      if (parameter.text.empty()) {
+    if (const auto* symbol = parameter.getSymbol()) {
+      if (symbol->name.empty()) {
         throw std::runtime_error(
             "cannot export a symbolic parameter without a name");
       }
-      const auto found = symbols_.find(parameter.text);
+      const auto found = symbols_.find(symbol->name);
       if (found != symbols_.end()) {
         return found->second->get();
       }
       auto [inserted, success] = symbols_.emplace(
-          parameter.text, std::make_unique<OwnedParameter>(parameter.text));
+          symbol->name, std::make_unique<OwnedParameter>(symbol->name));
       static_cast<void>(success);
       return inserted->second->get();
     }
 
-    const auto unary = parameter.kind == ParameterKind::Negate ||
-                       parameter.kind == ParameterKind::Sin ||
-                       parameter.kind == ParameterKind::Cos ||
-                       parameter.kind == ParameterKind::Tan ||
-                       parameter.kind == ParameterKind::ArcSin ||
-                       parameter.kind == ParameterKind::ArcCos ||
-                       parameter.kind == ParameterKind::ArcTan ||
-                       parameter.kind == ParameterKind::Exp ||
-                       parameter.kind == ParameterKind::Log ||
-                       parameter.kind == ParameterKind::Abs ||
-                       parameter.kind == ParameterKind::Conjugate;
-    if (parameter.left == nullptr || (unary && parameter.right != nullptr) ||
-        (!unary && parameter.right == nullptr)) {
-      throw std::runtime_error("parameter expression has invalid operands");
-    }
-    const auto* left = nativeParameter(*parameter.left, ownedParameters,
-                                       nodeCount, depth + 1U);
-    const QkParam* right = nullptr;
-    if (!unary) {
-      right = nativeParameter(*parameter.right, ownedParameters, nodeCount,
-                              depth + 1U);
-    }
     auto output = std::make_unique<OwnedParameter>();
     QkExitCode result = QkExitCode_Success;
-    switch (parameter.kind) {
-    case ParameterKind::Number:
-    case ParameterKind::Symbol:
-      throw std::runtime_error("invalid parameter expression node");
-    case ParameterKind::Add:
-      result = qk_param_add(output->getMutable(), left, right);
-      break;
-    case ParameterKind::Subtract:
-      result = qk_param_sub(output->getMutable(), left, right);
-      break;
-    case ParameterKind::Multiply:
-      result = qk_param_mul(output->getMutable(), left, right);
-      break;
-    case ParameterKind::Divide:
-      result = qk_param_div(output->getMutable(), left, right);
-      break;
-    case ParameterKind::Power:
-      result = qk_param_pow(output->getMutable(), left, right);
-      break;
-    case ParameterKind::Negate:
-      result = qk_param_neg(output->getMutable(), left);
-      break;
-    case ParameterKind::Sin:
-      result = qk_param_sin(output->getMutable(), left);
-      break;
-    case ParameterKind::Cos:
-      result = qk_param_cos(output->getMutable(), left);
-      break;
-    case ParameterKind::Tan:
-      result = qk_param_tan(output->getMutable(), left);
-      break;
-    case ParameterKind::ArcSin:
-      result = qk_param_asin(output->getMutable(), left);
-      break;
-    case ParameterKind::ArcCos:
-      result = qk_param_acos(output->getMutable(), left);
-      break;
-    case ParameterKind::ArcTan:
-      result = qk_param_atan(output->getMutable(), left);
-      break;
-    case ParameterKind::Exp:
-      result = qk_param_exp(output->getMutable(), left);
-      break;
-    case ParameterKind::Log:
-      result = qk_param_log(output->getMutable(), left);
-      break;
-    case ParameterKind::Abs:
-      result = qk_param_abs(output->getMutable(), left);
-      break;
-    case ParameterKind::Conjugate:
-      result = qk_param_conjugate(output->getMutable(), left);
-      break;
+    if (const auto* unary = parameter.getUnary()) {
+      const auto* operand = nativeParameter(*unary->operand, ownedParameters,
+                                            nodeCount, depth + 1U);
+      switch (unary->operation) {
+      case UnaryParameterKind::Negate:
+        result = qk_param_neg(output->getMutable(), operand);
+        break;
+      case UnaryParameterKind::Sin:
+        result = qk_param_sin(output->getMutable(), operand);
+        break;
+      case UnaryParameterKind::Cos:
+        result = qk_param_cos(output->getMutable(), operand);
+        break;
+      case UnaryParameterKind::Tan:
+        result = qk_param_tan(output->getMutable(), operand);
+        break;
+      case UnaryParameterKind::ArcSin:
+        result = qk_param_asin(output->getMutable(), operand);
+        break;
+      case UnaryParameterKind::ArcCos:
+        result = qk_param_acos(output->getMutable(), operand);
+        break;
+      case UnaryParameterKind::ArcTan:
+        result = qk_param_atan(output->getMutable(), operand);
+        break;
+      case UnaryParameterKind::Exp:
+        result = qk_param_exp(output->getMutable(), operand);
+        break;
+      case UnaryParameterKind::Log:
+        result = qk_param_log(output->getMutable(), operand);
+        break;
+      case UnaryParameterKind::Abs:
+        result = qk_param_abs(output->getMutable(), operand);
+        break;
+      case UnaryParameterKind::Conjugate:
+        result = qk_param_conjugate(output->getMutable(), operand);
+        break;
+      }
+    } else if (const auto* binary = parameter.getBinary()) {
+      const auto* left = nativeParameter(*binary->left, ownedParameters,
+                                         nodeCount, depth + 1U);
+      const auto* right = nativeParameter(*binary->right, ownedParameters,
+                                          nodeCount, depth + 1U);
+      switch (binary->operation) {
+      case BinaryParameterKind::Add:
+        result = qk_param_add(output->getMutable(), left, right);
+        break;
+      case BinaryParameterKind::Subtract:
+        result = qk_param_sub(output->getMutable(), left, right);
+        break;
+      case BinaryParameterKind::Multiply:
+        result = qk_param_mul(output->getMutable(), left, right);
+        break;
+      case BinaryParameterKind::Divide:
+        result = qk_param_div(output->getMutable(), left, right);
+        break;
+      case BinaryParameterKind::Power:
+        result = qk_param_pow(output->getMutable(), left, right);
+        break;
+      }
+    } else {
+      throw std::runtime_error("unknown normalized parameter expression");
     }
     checkExitCode(result, "constructing a parameter expression");
     const auto* value = output->get();

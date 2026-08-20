@@ -72,8 +72,8 @@ partially constructed output circuit after a failure. Exact
 - [x] (2026-08-20 11:36Z) Replace Qiskit UUID-based parameter identity with the
       supported unique-name contract and reject all free/bound name collisions
       before module creation.
-- [ ] Replace the nullable parameter-expression node with a closed variant so
-      malformed node states cannot be constructed.
+- [x] (2026-08-20 11:44Z) Replace the nullable parameter-expression node with a
+      closed variant so malformed node states cannot be constructed.
 - [ ] Reject non-finite constant gate parameters in the shared QC and QCO gate
       verifier rather than in individual import/export paths.
 - [ ] Run focused dialect, conversion, compiler, Qiskit, documentation, stub,
@@ -168,6 +168,11 @@ partially constructed output circuit after a failure. Exact
   replaces their owner. Rationale: this preserves current and future shared
   metadata without source-format-specific key handling. Date/Author: 2026-08-20
   / Codex.
+- Decision: Represent normalized parameters as a private variant of number,
+  symbol, unary, and binary nodes. Use separate unary and binary operation enums
+  and factory methods that always allocate the required operands. Rationale:
+  consumers no longer validate redundant kind and pointer combinations because
+  malformed tree shapes are not representable. Date/Author: 2026-08-20 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -319,12 +324,13 @@ validation.
 
 ## Interfaces and Dependencies
 
-`Parameter` in `QiskitTranslation.h` is a copyable immutable tree with a kind,
-finite numeric value or symbol name, and zero, one, or two child pointers.
-`Loop::parameter` is `std::optional<Parameter>` and must contain a symbol when
-present. `CircuitReader` returns normalized trees for instruction parameters and
-global phase. `CircuitWriter` accepts the same tree and reconstructs Qiskit
-parameters with the version-specific C and public Python APIs.
+`Parameter` in `QiskitTranslation.h` is a copyable immutable tree. Its private
+variant contains a number, a symbol, a unary node, or a binary node. Factory
+methods create all nodes and allocate every required child. `Loop::parameter` is
+`std::optional<Parameter>` and must contain a symbol when present.
+`CircuitReader` returns normalized trees for instruction parameters and global
+phase. `CircuitWriter` accepts the same tree and reconstructs Qiskit parameters
+with the version-specific C and public Python APIs.
 
 No SymPy dependency is added. No Qiskit object or expression string is stored in
 MLIR. The supported compiler operations remain frontend-neutral Arith and Math

@@ -127,73 +127,35 @@ void validateParameterImpl(const Parameter& parameter,
   if (++nodes > MAX_PARAMETER_EXPRESSION_NODES) {
     throwImportedParameterExpressionSizeError();
   }
-  const auto requireLeft = [&]() -> const Parameter& {
-    if (!parameter.left) {
-      throw std::runtime_error(
-          "Qiskit parameter expression has a missing operand");
-    }
-    return *parameter.left;
-  };
-  const auto requireRight = [&]() -> const Parameter& {
-    if (!parameter.right) {
-      throw std::runtime_error(
-          "Qiskit parameter expression has a missing operand");
-    }
-    return *parameter.right;
-  };
-  switch (parameter.kind) {
-  case ParameterKind::Number:
-    if (parameter.left || parameter.right) {
-      throw std::runtime_error(
-          "Qiskit parameter-expression leaf has unexpected operands");
-    }
-    if (!std::isfinite(parameter.number)) {
+  if (const auto* number = parameter.getNumber()) {
+    if (!std::isfinite(number->value)) {
       throw std::runtime_error("Qiskit returned a non-finite parameter");
     }
     return;
-  case ParameterKind::Symbol:
-    if (parameter.left || parameter.right) {
-      throw std::runtime_error(
-          "Qiskit parameter-expression leaf has unexpected operands");
-    }
-    if (parameter.text.empty()) {
+  }
+  if (const auto* symbol = parameter.getSymbol()) {
+    if (symbol->name.empty()) {
       throw std::runtime_error(
           "Qiskit returned a parameter with invalid symbol metadata");
     }
-    if (localParameters.contains(parameter.text)) {
+    if (localParameters.contains(symbol->name)) {
       return;
     }
-    if (freeParameters.contains(parameter.text)) {
+    if (freeParameters.contains(symbol->name)) {
       return;
     }
-    throw std::runtime_error("Qiskit parameter symbol '" + parameter.text +
+    throw std::runtime_error("Qiskit parameter symbol '" + symbol->name +
                              "' is not defined in this circuit scope");
-  case ParameterKind::Add:
-  case ParameterKind::Subtract:
-  case ParameterKind::Multiply:
-  case ParameterKind::Divide:
-  case ParameterKind::Power:
-    validateParameterImpl(requireLeft(), localParameters, freeParameters,
-                          depth + 1U, nodes);
-    validateParameterImpl(requireRight(), localParameters, freeParameters,
+  }
+  if (const auto* unary = parameter.getUnary()) {
+    validateParameterImpl(*unary->operand, localParameters, freeParameters,
                           depth + 1U, nodes);
     return;
-  case ParameterKind::Negate:
-  case ParameterKind::Sin:
-  case ParameterKind::Cos:
-  case ParameterKind::Tan:
-  case ParameterKind::ArcSin:
-  case ParameterKind::ArcCos:
-  case ParameterKind::ArcTan:
-  case ParameterKind::Exp:
-  case ParameterKind::Log:
-  case ParameterKind::Abs:
-  case ParameterKind::Conjugate:
-    if (parameter.right) {
-      throw std::runtime_error(
-          "Qiskit unary parameter expression has invalid operands");
-    }
-    validateParameterImpl(requireLeft(), localParameters, freeParameters,
+  }
+  if (const auto* binary = parameter.getBinary()) {
+    validateParameterImpl(*binary->left, localParameters, freeParameters,
+                          depth + 1U, nodes);
+    validateParameterImpl(*binary->right, localParameters, freeParameters,
                           depth + 1U, nodes);
     return;
   }
@@ -227,89 +189,79 @@ parameterValueImpl(mlir::qc::QCProgramBuilder& builder,
   if (++nodes > MAX_PARAMETER_EXPRESSION_NODES) {
     throwImportedParameterExpressionSizeError();
   }
-  const auto requireLeft = [&]() -> const Parameter& {
-    if (!parameter.left) {
-      throw std::runtime_error(
-          "Qiskit parameter expression has a missing operand");
-    }
-    return *parameter.left;
-  };
-  const auto requireRight = [&]() -> const Parameter& {
-    if (!parameter.right) {
-      throw std::runtime_error(
-          "Qiskit parameter expression has a missing operand");
-    }
-    return *parameter.right;
-  };
-  switch (parameter.kind) {
-  case ParameterKind::Number:
-    if (!std::isfinite(parameter.number)) {
+  if (const auto* number = parameter.getNumber()) {
+    if (!std::isfinite(number->value)) {
       throw std::runtime_error("Qiskit returned a non-finite parameter");
     }
-    return parameter.number;
-  case ParameterKind::Symbol:
-    if (const auto local = localParameters.find(parameter.text);
+    return number->value;
+  }
+  if (const auto* symbol = parameter.getSymbol()) {
+    if (const auto local = localParameters.find(symbol->name);
         local != localParameters.end()) {
       return local->second;
     }
-    if (const auto global = globalParameters.find(parameter.text);
+    if (const auto global = globalParameters.find(symbol->name);
         global != globalParameters.end()) {
       return global->second;
     }
-    throw std::runtime_error("Qiskit parameter symbol '" + parameter.text +
+    throw std::runtime_error("Qiskit parameter symbol '" + symbol->name +
                              "' is not defined in this circuit scope");
-  case ParameterKind::Conjugate:
-    // QC scalar parameters are real-valued, so conjugation is the identity.
-    return parameterValueImpl(builder, requireLeft(), localParameters,
-                              globalParameters, depth + 1U, nodes);
-  default:
-    break;
   }
 
-  const auto left = materializeParameterValue(
-      builder, parameterValueImpl(builder, requireLeft(), localParameters,
-                                  globalParameters, depth + 1U, nodes));
-  switch (parameter.kind) {
-  case ParameterKind::Negate:
-    return mlir::arith::NegFOp::create(builder, left).getResult();
-  case ParameterKind::Sin:
-    return mlir::math::SinOp::create(builder, left).getResult();
-  case ParameterKind::Cos:
-    return mlir::math::CosOp::create(builder, left).getResult();
-  case ParameterKind::Tan:
-    return mlir::math::TanOp::create(builder, left).getResult();
-  case ParameterKind::ArcSin:
-    return mlir::math::AsinOp::create(builder, left).getResult();
-  case ParameterKind::ArcCos:
-    return mlir::math::AcosOp::create(builder, left).getResult();
-  case ParameterKind::ArcTan:
-    return mlir::math::AtanOp::create(builder, left).getResult();
-  case ParameterKind::Exp:
-    return mlir::math::ExpOp::create(builder, left).getResult();
-  case ParameterKind::Log:
-    return mlir::math::LogOp::create(builder, left).getResult();
-  case ParameterKind::Abs:
-    return mlir::math::AbsFOp::create(builder, left).getResult();
-  default:
-    break;
+  if (const auto* unary = parameter.getUnary()) {
+    if (unary->operation == UnaryParameterKind::Conjugate) {
+      /// QC scalar parameters are real-valued, so conjugation is the identity.
+      return parameterValueImpl(builder, *unary->operand, localParameters,
+                                globalParameters, depth + 1U, nodes);
+    }
+    const auto operand = materializeParameterValue(
+        builder, parameterValueImpl(builder, *unary->operand, localParameters,
+                                    globalParameters, depth + 1U, nodes));
+    switch (unary->operation) {
+    case UnaryParameterKind::Negate:
+      return mlir::arith::NegFOp::create(builder, operand).getResult();
+    case UnaryParameterKind::Sin:
+      return mlir::math::SinOp::create(builder, operand).getResult();
+    case UnaryParameterKind::Cos:
+      return mlir::math::CosOp::create(builder, operand).getResult();
+    case UnaryParameterKind::Tan:
+      return mlir::math::TanOp::create(builder, operand).getResult();
+    case UnaryParameterKind::ArcSin:
+      return mlir::math::AsinOp::create(builder, operand).getResult();
+    case UnaryParameterKind::ArcCos:
+      return mlir::math::AcosOp::create(builder, operand).getResult();
+    case UnaryParameterKind::ArcTan:
+      return mlir::math::AtanOp::create(builder, operand).getResult();
+    case UnaryParameterKind::Exp:
+      return mlir::math::ExpOp::create(builder, operand).getResult();
+    case UnaryParameterKind::Log:
+      return mlir::math::LogOp::create(builder, operand).getResult();
+    case UnaryParameterKind::Abs:
+      return mlir::math::AbsFOp::create(builder, operand).getResult();
+    case UnaryParameterKind::Conjugate:
+      break;
+    }
   }
 
-  const auto right = materializeParameterValue(
-      builder, parameterValueImpl(builder, requireRight(), localParameters,
-                                  globalParameters, depth + 1U, nodes));
-  switch (parameter.kind) {
-  case ParameterKind::Add:
-    return mlir::arith::AddFOp::create(builder, left, right).getResult();
-  case ParameterKind::Subtract:
-    return mlir::arith::SubFOp::create(builder, left, right).getResult();
-  case ParameterKind::Multiply:
-    return mlir::arith::MulFOp::create(builder, left, right).getResult();
-  case ParameterKind::Divide:
-    return mlir::arith::DivFOp::create(builder, left, right).getResult();
-  case ParameterKind::Power:
-    return mlir::math::PowFOp::create(builder, left, right).getResult();
-  default:
-    break;
+  if (const auto* binary = parameter.getBinary()) {
+    const auto left = materializeParameterValue(
+        builder, parameterValueImpl(builder, *binary->left, localParameters,
+                                    globalParameters, depth + 1U, nodes));
+    const auto right = materializeParameterValue(
+        builder, parameterValueImpl(builder, *binary->right, localParameters,
+                                    globalParameters, depth + 1U, nodes));
+    switch (binary->operation) {
+    case BinaryParameterKind::Add:
+      return mlir::arith::AddFOp::create(builder, left, right).getResult();
+    case BinaryParameterKind::Subtract:
+      return mlir::arith::SubFOp::create(builder, left, right).getResult();
+    case BinaryParameterKind::Multiply:
+      return mlir::arith::MulFOp::create(builder, left, right).getResult();
+    case BinaryParameterKind::Divide:
+      return mlir::arith::DivFOp::create(builder, left, right).getResult();
+    case BinaryParameterKind::Power:
+      return mlir::math::PowFOp::create(builder, left, right).getResult();
+    }
   }
   throw std::runtime_error("unknown normalized Qiskit parameter expression");
 }
@@ -1099,7 +1051,12 @@ void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
         auto parameters = localParameters;
         if (loop.parameter) {
           requireExactLoopParameter(value);
-          parameters[loop.parameter->text] =
+          const auto* symbol = loop.parameter->getSymbol();
+          if (symbol == nullptr) {
+            throw std::runtime_error(
+                "Qiskit for-loop parameter is not a symbol");
+          }
+          parameters[symbol->name] =
               floatConstant(builder, static_cast<double>(value));
         }
         translateBlock(*body, parameters);
@@ -1114,8 +1071,11 @@ void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
     builder.scfFor(0, count, 1, [&](const mlir::Value iteration) {
       auto parameters = localParameters;
       if (loop.parameter) {
-        parameters[loop.parameter->text] =
-            loopParameterValue(builder, iteration, loop);
+        const auto* symbol = loop.parameter->getSymbol();
+        if (symbol == nullptr) {
+          throw std::runtime_error("Qiskit for-loop parameter is not a symbol");
+        }
+        parameters[symbol->name] = loopParameterValue(builder, iteration, loop);
       }
       translateBlock(*body, parameters);
     });
@@ -1555,16 +1515,16 @@ void validateControlFlow(const ControlFlowReader& controlFlow,
       }
     }
     if (loop.parameter) {
-      if (loop.parameter->kind != ParameterKind::Symbol ||
-          loop.parameter->text.empty()) {
+      const auto* symbol = loop.parameter->getSymbol();
+      if (symbol == nullptr || symbol->name.empty()) {
         throw std::runtime_error(
             "Qiskit for-loop parameter has invalid symbol metadata");
       }
-      if (!parameterNames.insert(loop.parameter->text).second) {
+      if (!parameterNames.insert(symbol->name).second) {
         throw std::runtime_error(
             "Qiskit circuit contains distinct parameters with the same name");
       }
-      localParameters[loop.parameter->text] = *loop.parameter;
+      localParameters[symbol->name] = *loop.parameter;
     }
     break;
   }
@@ -1762,15 +1722,16 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   ValidationParameters freeParameterSymbols;
   llvm::StringSet<> parameterNames;
   for (const auto& parameter : freeParameters) {
-    if (parameter.kind != ParameterKind::Symbol || parameter.text.empty()) {
+    const auto* symbol = parameter.getSymbol();
+    if (symbol == nullptr || symbol->name.empty()) {
       throw std::runtime_error(
           "Qiskit circuit returned an invalid free parameter");
     }
-    if (!parameterNames.insert(parameter.text).second) {
+    if (!parameterNames.insert(symbol->name).second) {
       throw std::runtime_error(
           "Qiskit circuit contains distinct parameters with the same name");
     }
-    freeParameterSymbols.try_emplace(parameter.text, parameter);
+    freeParameterSymbols.try_emplace(symbol->name, parameter);
   }
 
   ExpansionCountState expansion;
@@ -1804,10 +1765,15 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
       builder.getInsertionBlock()->getParentOp());
   GlobalParameters globalParameters;
   for (const auto& parameter : freeParameters) {
+    const auto* symbol = parameter.getSymbol();
+    if (symbol == nullptr) {
+      throw std::runtime_error(
+          "Qiskit circuit returned an invalid free parameter");
+    }
     const llvm::SmallVector<mlir::NamedAttribute> argumentAttributes{
         builder.getNamedAttr(
             mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr(),
-            builder.getStringAttr(parameter.text))};
+            builder.getStringAttr(symbol->name))};
     const auto index = function.getNumArguments();
     // MLIR types are handles. Converting FloatType to Type keeps the same
     // storage and does not slice object state.
@@ -1819,7 +1785,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
       throw std::runtime_error(
           "failed to create a compiler input for a Qiskit parameter");
     }
-    globalParameters[parameter.text] = function.getArgument(index);
+    globalParameters[symbol->name] = function.getArgument(index);
   }
 
   llvm::SmallVector<mlir::Value> qubits;
