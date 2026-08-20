@@ -522,8 +522,9 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       }
     });
   } else {
-    const auto linearThenResults = op->getLinearResults();
-    thenArgs = {linearThenResults.begin(), linearThenResults.end()};
+    const auto linearThenValues = op->thenYield().getTargets().drop_front(
+        op->getClassicalResults().size());
+    thenArgs = {linearThenValues.begin(), linearThenValues.end()};
   }
 
   if (!elseEmpty) {
@@ -554,8 +555,9 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       }
     });
   } else {
-    const auto linearElseResults = op->getLinearResults();
-    elseArgs = {linearElseResults.begin(), linearElseResults.end()};
+    const auto linearElseValues = op->elseYield().getTargets().drop_front(
+        op->getClassicalResults().size());
+    elseArgs = {linearElseValues.begin(), linearElseValues.end()};
   }
 
   const auto resultQubits = op->getResults();
