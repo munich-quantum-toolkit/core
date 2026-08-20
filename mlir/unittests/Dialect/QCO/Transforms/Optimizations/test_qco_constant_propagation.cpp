@@ -112,7 +112,7 @@ TEST_F(QCOConstantPropagationTest, reducePosCtrls) {
  * @brief Test: This test checks that CNOTs are not changed if the control is
  * not in |0> or |1>.
  */
-TEST_F(QCOConstantPropagationTest, testDontRemoveIfTargetInSuperposition) {
+TEST_F(QCOConstantPropagationTest, testDontRemoveIfControlInSuperposition) {
   auto q = programBuilder.allocQubitRegister(2);
   q[0] = programBuilder.h(q[0]);
   programBuilder.cx(q[0], q[1]);
