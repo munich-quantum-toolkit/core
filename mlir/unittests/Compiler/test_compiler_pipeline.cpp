@@ -46,6 +46,7 @@
 #include <mlir/Dialect/UB/IR/UBOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -1143,6 +1144,759 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   auto unsupportedQCO = std::move(*unsupportedQC).intoQCO();
   ASSERT_TRUE(unsupportedQCO);
   EXPECT_FALSE(unsupportedQCO->compileForTarget(makeSparseUCZTarget(false)));
+}
+
+/**
+ * @brief Test: target compilation checks runtime classical control before
+ * mapping.
+ */
+TEST_F(CompilerPipelineTest, TargetCompilationRequiresConditionalCapability) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1, %measurement = qco.measure %q0 : !qco.qubit
+        %condition = scf.if %measurement -> (i1) {
+          %true = arith.constant true
+          scf.yield %true : i1
+        } else {
+          %false = arith.constant false
+          scf.yield %false : i1
+        }
+        %q2 = qco.if %condition args(%arg0 = %q1) -> (!qco.qubit) {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %q2 : !qco.qubit
+        } else args(%arg0 = %q1) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        qco.sink %q2 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto unsupported = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(unsupported);
+  const auto before = unsupported->str();
+  std::string diagnostics;
+  const ScopedDiagnosticHandler handler(unsupported->module().getContext(),
+                                        [&](Diagnostic& diagnostic) {
+                                          diagnostics += diagnostic.str();
+                                          diagnostics += '\n';
+                                          return success();
+                                        });
+
+  EXPECT_FALSE(
+      unsupported->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(unsupported->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("classical-control capability 'conditional' "
+                            "required by 'scf.if'"))
+      << diagnostics;
+
+  auto supported = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(supported);
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, std::nullopt, std::nullopt, std::nullopt,
+                             {CompilerTarget::ClassicalControl::Conditional}));
+  ASSERT_TRUE(supported->compileForTarget(target));
+  EXPECT_NE(supported->str().find("qco.if"), std::string::npos);
+  EXPECT_NE(supported->str().find("qco.static"), std::string::npos);
+}
+
+/** @brief Test: each structured-control form needs its own capability. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsNestedMissingClassicalCapability) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%condition: i1, %selector: index)
+          attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+          scf.for %index = %c0 to %c1 step %c1 {
+          }
+          qco.yield %arg0 : !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        %q2 = scf.while (%arg0 = %q1) : (!qco.qubit) -> !qco.qubit {
+          scf.condition(%condition) %arg0 : !qco.qubit
+        } do {
+        ^bb0(%arg0: !qco.qubit):
+          scf.yield %arg0 : !qco.qubit
+        }
+        %q3 = qco.index_switch %selector -> (!qco.qubit)
+        case 0 args(%arg0 = %q2) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        default args(%arg0 = %q2) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        qco.sink %q3 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  using ClassicalControl = CompilerTarget::ClassicalControl;
+  const auto expectRejected = [&](std::vector<ClassicalControl> capabilities,
+                                  const StringRef expectedDiagnostic) {
+    auto program = QCOProgram::fromMLIRString(source.str());
+    ASSERT_TRUE(program);
+    const auto before = program->str();
+    std::string diagnostics;
+    const ScopedDiagnosticHandler handler(program->module().getContext(),
+                                          [&](Diagnostic& diagnostic) {
+                                            diagnostics += diagnostic.str();
+                                            diagnostics += '\n';
+                                            return success();
+                                          });
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        1, std::nullopt, std::nullopt, std::nullopt, std::move(capabilities)));
+
+    EXPECT_FALSE(program->compileForTarget(target));
+    EXPECT_EQ(program->str(), before);
+    EXPECT_TRUE(StringRef(diagnostics).contains(expectedDiagnostic))
+        << diagnostics;
+  };
+
+  expectRejected({ClassicalControl::Conditional},
+                 "capability 'iteration' required by 'scf.for'");
+  expectRejected({ClassicalControl::Conditional, ClassicalControl::Iteration},
+                 "capability 'conditional-loop' required by 'scf.while'");
+  expectRejected({ClassicalControl::Conditional, ClassicalControl::Iteration,
+                  ClassicalControl::ConditionalLoop},
+                 "capability 'multiway-branch' required by "
+                 "'qco.index_switch'");
+
+  auto supported = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(supported);
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      1, std::nullopt, std::nullopt, std::nullopt,
+      {ClassicalControl::Conditional, ClassicalControl::Iteration,
+       ClassicalControl::ConditionalLoop, ClassicalControl::MultiwayBranch}));
+  ASSERT_TRUE(supported->compileForTarget(target));
+  const auto compiled = supported->str();
+  EXPECT_NE(compiled.find("qco.static"), std::string::npos);
+}
+
+/**
+ * @brief Test: compile-time dead control does not require a target capability.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationIgnoresUnreachableStaticControlBranches) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %false = arith.constant false
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.if %false args(%arg0 = %q0) -> (!qco.qubit) {
+          scf.for %index = %c0 to %c1 step %c1 {
+          }
+          qco.yield %arg0 : !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        %q2 = qco.index_switch %c0 -> (!qco.qubit)
+        case 0 args(%arg0 = %q1) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        default args(%arg0 = %q1) {
+          scf.for %index = %c0 to %c1 step %c1 {
+          }
+          qco.yield %arg0 : !qco.qubit
+        }
+        qco.sink %q2 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("qco.if"), std::string::npos);
+  EXPECT_EQ(program->str().find("qco.index_switch"), std::string::npos);
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/**
+ * @brief Test: constant QCO index-switch can skip unmatched case regions.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationIgnoresStaticQCOIndexSwitchDefaultRegion) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.index_switch %c1 -> (!qco.qubit)
+        case 0 args(%arg0 = %q0) {
+          scf.for %index = %c0 to %c1 step %c1 {
+          }
+          qco.yield %arg0 : !qco.qubit
+        }
+        default args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("qco.index_switch"), std::string::npos);
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/**
+ * @brief Test: constant SCF conditionals pick the selected branch first.
+ */
+TEST_F(CompilerPipelineTest, TargetCompilationIgnoresStaticScfIfThenBranch) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %true = arith.constant true
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.if %true -> !qco.qubit {
+          scf.yield %q0 : !qco.qubit
+        } else {
+          scf.for %index = %c0 to %c1 step %c1 {
+          }
+          scf.yield %q0 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.if"), std::string::npos);
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/**
+ * @brief Test: constant SCF index-switch can skip unmatched case regions.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationIgnoresStaticScfIndexSwitchDefaultRegion) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.index_switch %c1 -> !qco.qubit
+        case 0 {
+          scf.for %index = %c0 to %c1 step %c1 {
+          }
+          scf.yield %q0 : !qco.qubit
+        }
+        default {
+          scf.yield %q0 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.index_switch"), std::string::npos);
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/**
+ * @brief Test: unsupported region control fails before mapping.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsUnsupportedRegionControlFlow) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %q0 = qco.alloc : !qco.qubit
+        scf.execute_region {
+          scf.yield
+        }
+        qco.sink %q0 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  std::string diagnostics;
+  const ScopedDiagnosticHandler handler(program->module().getContext(),
+                                        [&](Diagnostic& diagnostic) {
+                                          diagnostics += diagnostic.str();
+                                          return success();
+                                        });
+
+  EXPECT_FALSE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("cannot lower classical-control construct "
+                            "'scf.execute_region'"))
+      << diagnostics;
+}
+
+/**
+ * @brief Test: branch interfaces from other dialects fail closed as well.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsUnsupportedLLVMBranchControlFlow) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return
+      }
+      llvm.func @helper(%condition: i1) {
+        llvm.cond_br %condition, ^yes, ^no
+      ^yes:
+        llvm.return
+      ^no:
+        llvm.return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  const ScopedDiagnosticHandler handler(program->module().getContext(),
+                                        [&](Diagnostic& diagnostic) {
+                                          diagnostics += diagnostic.str();
+                                          return success();
+                                        });
+
+  EXPECT_FALSE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("cannot lower classical-control construct "
+                            "'llvm.cond_br'"))
+      << diagnostics;
+}
+
+/**
+ * @brief Test: structured control cannot capture linear quantum state.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsQuantumStateCapturedByStructuredControl) {
+  const auto expectRejected =
+      [&](const StringRef source,
+          const CompilerTarget::ClassicalControl capability,
+          const StringRef operation) {
+        SCOPED_TRACE(operation.str());
+        auto program = QCOProgram::fromMLIRString(source.str());
+        ASSERT_TRUE(program);
+        const auto before = program->str();
+        std::string diagnostics;
+        const ScopedDiagnosticHandler handler(program->module().getContext(),
+                                              [&](Diagnostic& diagnostic) {
+                                                diagnostics += diagnostic.str();
+                                                return success();
+                                              });
+        const auto target = llvm::cantFail(CompilerTarget::create(
+            1, std::nullopt, std::nullopt, std::nullopt, {capability}));
+
+        EXPECT_FALSE(program->compileForTarget(target));
+        EXPECT_EQ(program->str(), before);
+        const std::string expected =
+            "quantum state captured by classical-control construct '" +
+            operation.str() + "'";
+        EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
+      };
+
+  expectRejected(R"mlir(
+    module {
+      func.func @main(%condition: i1)
+          attributes {passthrough = ["entry_point"]} {
+        %q0 = qco.alloc : !qco.qubit
+        scf.if %condition {
+          %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
+          qco.sink %q1 : !qco.qubit
+        }
+        return
+      }
+    }
+  )mlir",
+                 CompilerTarget::ClassicalControl::Conditional, "scf.if");
+
+  expectRejected(R"mlir(
+    module {
+      func.func @main(%selector: index)
+          attributes {passthrough = ["entry_point"]} {
+        %q0 = qco.alloc : !qco.qubit
+        scf.index_switch %selector
+        case 0 {
+          %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
+          qco.sink %q1 : !qco.qubit
+          scf.yield
+        }
+        default {
+          scf.yield
+        }
+        return
+      }
+    }
+  )mlir",
+                 CompilerTarget::ClassicalControl::MultiwayBranch,
+                 "scf.index_switch");
+}
+
+/**
+ * @brief Test: generic SCF conditionals cannot produce quantum state.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsQuantumStateNestedInGenericSCFControl) {
+  const auto expectRejected =
+      [&](const StringRef source,
+          const CompilerTarget::ClassicalControl capability,
+          const StringRef operation) {
+        SCOPED_TRACE(operation.str());
+        auto program = QCOProgram::fromMLIRString(source.str());
+        ASSERT_TRUE(program);
+        const auto before = program->str();
+        std::string diagnostics;
+        const ScopedDiagnosticHandler handler(program->module().getContext(),
+                                              [&](Diagnostic& diagnostic) {
+                                                diagnostics += diagnostic.str();
+                                                return success();
+                                              });
+        const auto target = llvm::cantFail(CompilerTarget::create(
+            1, std::nullopt, std::nullopt, std::nullopt, {capability}));
+
+        EXPECT_FALSE(program->compileForTarget(target));
+        EXPECT_EQ(program->str(), before);
+        const std::string expected =
+            "quantum state nested in generic classical-control construct '" +
+            operation.str() + "'";
+        EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
+      };
+
+  expectRejected(R"mlir(
+    module {
+      func.func @main(%condition: i1)
+          attributes {passthrough = ["entry_point"]} {
+        %q = scf.if %condition -> !qco.qubit {
+          %then = qco.alloc : !qco.qubit
+          scf.yield %then : !qco.qubit
+        } else {
+          %else = qco.alloc : !qco.qubit
+          scf.yield %else : !qco.qubit
+        }
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                 CompilerTarget::ClassicalControl::Conditional, "scf.if");
+
+  expectRejected(R"mlir(
+    module {
+      func.func @main(%selector: index)
+          attributes {passthrough = ["entry_point"]} {
+        %q = scf.index_switch %selector -> !qco.qubit
+        case 0 {
+          %case = qco.alloc : !qco.qubit
+          scf.yield %case : !qco.qubit
+        }
+        default {
+          %default = qco.alloc : !qco.qubit
+          scf.yield %default : !qco.qubit
+        }
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                 CompilerTarget::ClassicalControl::MultiwayBranch,
+                 "scf.index_switch");
+}
+
+/**
+ * @brief Test: dynamic qubit indexing remains an explicit unsupported form.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsDynamicQubitIndexingBeforeMapping) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%index: index)
+          attributes {passthrough = ["entry_point"]} {
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%index]
+            : tensor<2x!qco.qubit>
+        %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
+        %tensor2 = qtensor.insert %q1 into %tensor1[%index]
+            : tensor<2x!qco.qubit>
+        qtensor.dealloc %tensor2 : tensor<2x!qco.qubit>
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  std::string diagnostics;
+  const ScopedDiagnosticHandler handler(program->module().getContext(),
+                                        [&](Diagnostic& diagnostic) {
+                                          diagnostics += diagnostic.str();
+                                          return success();
+                                        });
+
+  EXPECT_FALSE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(2))));
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("'qtensor.extract' with a dynamic qubit index"))
+      << diagnostics;
+}
+
+/**
+ * @brief Test: frontend loops over qubit registers fail before mapping.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsLoopCarriedQubitRegisterBeforeMapping) {
+  constexpr StringLiteral source = R"qasm(OPENQASM 3.0;
+qubit[2] q;
+for int i in [0:1] {
+  h q[0];
+}
+)qasm";
+
+  auto qc = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(program);
+  ASSERT_NE(program->str().find("scf.for"), std::string::npos);
+  ASSERT_NE(program->str().find("tensor<2x!qco.qubit>"), std::string::npos);
+  const auto before = program->str();
+
+  std::string diagnostics;
+  const ScopedDiagnosticHandler handler(program->module().getContext(),
+                                        [&](Diagnostic& diagnostic) {
+                                          diagnostics += diagnostic.str();
+                                          return success();
+                                        });
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, std::nullopt, std::nullopt, std::nullopt,
+                             {CompilerTarget::ClassicalControl::Iteration}));
+
+  EXPECT_FALSE(program->compileForTarget(target));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("cannot lower quantum tensor state carried through "
+                            "classical-control construct 'scf.for'"))
+      << diagnostics;
+}
+
+/**
+ * @brief Test: unsupported quantum tensor state has a stable diagnostic.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsQuantumTensorStructuredControlState) {
+  const auto expectRejected =
+      [&](const StringRef source,
+          const CompilerTarget::ClassicalControl control,
+          const StringRef operation) {
+        SCOPED_TRACE(operation.str());
+        auto program = QCOProgram::fromMLIRString(source.str());
+        ASSERT_TRUE(program);
+        const auto before = program->str();
+        std::string diagnostics;
+        const ScopedDiagnosticHandler handler(program->module().getContext(),
+                                              [&](Diagnostic& diagnostic) {
+                                                diagnostics += diagnostic.str();
+                                                return success();
+                                              });
+        const auto target = llvm::cantFail(CompilerTarget::create(
+            2, std::nullopt, std::nullopt, std::nullopt, {control}));
+
+        EXPECT_FALSE(program->compileForTarget(target));
+        EXPECT_EQ(program->str(), before);
+        const StringRef message(diagnostics);
+        EXPECT_TRUE(
+            message.contains("cannot lower quantum tensor state carried "
+                             "through classical-control construct"))
+            << diagnostics;
+        EXPECT_TRUE(message.contains(operation)) << diagnostics;
+      };
+
+  expectRejected(R"mlir(
+    module {
+      func.func @main(%condition: i1)
+          attributes {passthrough = ["entry_point"]} {
+        %q = qco.alloc : !qco.qubit
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1 = scf.if %condition -> tensor<2x!qco.qubit> {
+          scf.yield %tensor0 : tensor<2x!qco.qubit>
+        } else {
+          scf.yield %tensor0 : tensor<2x!qco.qubit>
+        }
+        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                 CompilerTarget::ClassicalControl::Conditional, "scf.if");
+
+  expectRejected(R"mlir(
+    module {
+      func.func @main(%condition: i1, %size: index)
+          attributes {passthrough = ["entry_point"]} {
+        %tensor0 = qtensor.alloc(%size) : tensor<?x!qco.qubit>
+        %tensor1 = qco.if %condition
+            args(%arg0 = %tensor0) -> (tensor<?x!qco.qubit>) {
+          qco.yield %arg0 : tensor<?x!qco.qubit>
+        } else args(%arg0 = %tensor0) {
+          qco.yield %arg0 : tensor<?x!qco.qubit>
+        }
+        qtensor.dealloc %tensor1 : tensor<?x!qco.qubit>
+        return
+      }
+    }
+  )mlir",
+                 CompilerTarget::ClassicalControl::Conditional, "qco.if");
+
+  expectRejected(R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %true = arith.constant true
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1 = qco.if %true
+            args(%arg0 = %tensor0) -> (tensor<2x!qco.qubit>) {
+          qco.yield %arg0 : tensor<2x!qco.qubit>
+        } else args(%arg0 = %tensor0) {
+          qco.yield %arg0 : tensor<2x!qco.qubit>
+        }
+        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
+        return
+      }
+    }
+  )mlir",
+                 CompilerTarget::ClassicalControl::Conditional, "qco.if");
+
+  expectRejected(R"mlir(
+    module {
+      func.func @main(%condition: i1)
+          attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1 = qco.if %condition
+            args(%arg0 = %tensor0) -> (tensor<2x!qco.qubit>) {
+          %tensor2, %q0 = qtensor.extract %arg0[%c0]
+              : tensor<2x!qco.qubit>
+          %tensor3 = qtensor.insert %q0 into %tensor2[%c0]
+              : tensor<2x!qco.qubit>
+          %tensor4, %q1 = qtensor.extract %tensor3[%c0]
+              : tensor<2x!qco.qubit>
+          %tensor5 = qtensor.insert %q1 into %tensor4[%c0]
+              : tensor<2x!qco.qubit>
+          qco.yield %tensor5 : tensor<2x!qco.qubit>
+        } else args(%arg0 = %tensor0) {
+          qco.yield %arg0 : tensor<2x!qco.qubit>
+        }
+        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
+        return
+      }
+    }
+  )mlir",
+                 CompilerTarget::ClassicalControl::Conditional, "qco.if");
+
+  expectRejected(R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %q = qco.alloc : !qco.qubit
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %true = arith.constant true
+        %tensor1 = scf.while (%arg0 = %tensor0)
+            : (tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit> {
+          scf.condition(%true) %arg0 : tensor<2x!qco.qubit>
+        } do {
+        ^bb0(%arg0: tensor<2x!qco.qubit>):
+          scf.yield %arg0 : tensor<2x!qco.qubit>
+        }
+        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                 CompilerTarget::ClassicalControl::ConditionalLoop,
+                 "scf.while");
+
+  expectRejected(R"mlir(
+    module {
+      func.func @main(%selector: index)
+          attributes {passthrough = ["entry_point"]} {
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1 = qco.index_switch %selector -> (tensor<2x!qco.qubit>)
+        case 0 args(%arg0 = %tensor0) {
+          qco.yield %arg0 : tensor<2x!qco.qubit>
+        }
+        default args(%arg0 = %tensor0) {
+          qco.yield %arg0 : tensor<2x!qco.qubit>
+        }
+        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
+        return
+      }
+    }
+  )mlir",
+                 CompilerTarget::ClassicalControl::MultiwayBranch,
+                 "qco.index_switch");
+
+  expectRejected(R"mlir(
+    module {
+      func.func @main(%selector: index)
+          attributes {passthrough = ["entry_point"]} {
+        %q = qco.alloc : !qco.qubit
+        %c2 = arith.constant 2 : index
+        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %tensor1 = scf.index_switch %selector -> tensor<2x!qco.qubit>
+        case 0 {
+          scf.yield %tensor0 : tensor<2x!qco.qubit>
+        }
+        default {
+          scf.yield %tensor0 : tensor<2x!qco.qubit>
+        }
+        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                 CompilerTarget::ClassicalControl::MultiwayBranch,
+                 "scf.index_switch");
 }
 
 /**

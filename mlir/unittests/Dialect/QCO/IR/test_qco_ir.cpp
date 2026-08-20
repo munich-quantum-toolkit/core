@@ -1377,6 +1377,151 @@ TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
   EXPECT_TRUE(switchOp.verify().failed());
 }
 
+TEST_F(QCOTest, CanonicalizesConstantIndexSwitchToSelectedCaseOrDefault) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @selected_case() -> (i64, i1) {
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %number, %flag, %first, %second =
+            qco.index_switch %c1 -> (i64, i1, !qco.qubit, !qco.qubit)
+        case 0 args(%arg0 = %q0, %arg1 = %q1) {
+          %firstCase = qco.y %arg0 : !qco.qubit -> !qco.qubit
+          %secondCase = qco.y %arg1 : !qco.qubit -> !qco.qubit
+          %caseNumber = arith.constant 10 : i64
+          %caseFlag = arith.constant false
+          qco.yield %caseNumber, %caseFlag, %firstCase, %secondCase
+              : i64, i1, !qco.qubit, !qco.qubit
+        }
+        case 1 args(%arg0 = %q0, %arg1 = %q1) {
+          %firstCase = qco.h %arg0 : !qco.qubit -> !qco.qubit
+          %secondCase = qco.x %arg1 : !qco.qubit -> !qco.qubit
+          %caseNumber = arith.constant 11 : i64
+          %caseFlag = arith.constant true
+          qco.yield %caseNumber, %caseFlag, %firstCase, %secondCase
+              : i64, i1, !qco.qubit, !qco.qubit
+        }
+        default args(%arg0 = %q0, %arg1 = %q1) {
+          %firstDefault = qco.z %arg0 : !qco.qubit -> !qco.qubit
+          %secondDefault = qco.z %arg1 : !qco.qubit -> !qco.qubit
+          %defaultNumber = arith.constant 12 : i64
+          %defaultFlag = arith.constant false
+          qco.yield %defaultNumber, %defaultFlag, %firstDefault, %secondDefault
+              : i64, i1, !qco.qubit, !qco.qubit
+        }
+        %firstOut = qco.s %first : !qco.qubit -> !qco.qubit
+        %secondOut = qco.t %second : !qco.qubit -> !qco.qubit
+        qco.sink %firstOut : !qco.qubit
+        qco.sink %secondOut : !qco.qubit
+        return %number, %flag : i64, i1
+      }
+
+      func.func @selected_default() -> (i64, i1) {
+        %c7 = arith.constant 7 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %number, %flag, %first, %second =
+            qco.index_switch %c7 -> (i64, i1, !qco.qubit, !qco.qubit)
+        case 0 args(%arg0 = %q0, %arg1 = %q1) {
+          %firstCase = qco.h %arg0 : !qco.qubit -> !qco.qubit
+          %secondCase = qco.h %arg1 : !qco.qubit -> !qco.qubit
+          %caseNumber = arith.constant 20 : i64
+          %caseFlag = arith.constant true
+          qco.yield %caseNumber, %caseFlag, %firstCase, %secondCase
+              : i64, i1, !qco.qubit, !qco.qubit
+        }
+        case 1 args(%arg0 = %q0, %arg1 = %q1) {
+          %firstCase = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          %secondCase = qco.x %arg1 : !qco.qubit -> !qco.qubit
+          %caseNumber = arith.constant 21 : i64
+          %caseFlag = arith.constant true
+          qco.yield %caseNumber, %caseFlag, %firstCase, %secondCase
+              : i64, i1, !qco.qubit, !qco.qubit
+        }
+        default args(%arg0 = %q0, %arg1 = %q1) {
+          %firstDefault = qco.y %arg0 : !qco.qubit -> !qco.qubit
+          %secondDefault = qco.z %arg1 : !qco.qubit -> !qco.qubit
+          %defaultNumber = arith.constant 22 : i64
+          %defaultFlag = arith.constant false
+          qco.yield %defaultNumber, %defaultFlag, %firstDefault, %secondDefault
+              : i64, i1, !qco.qubit, !qco.qubit
+        }
+        %firstOut = qco.s %first : !qco.qubit -> !qco.qubit
+        %secondOut = qco.t %second : !qco.qubit -> !qco.qubit
+        qco.sink %firstOut : !qco.qubit
+        qco.sink %secondOut : !qco.qubit
+        return %number, %flag : i64, i1
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(module.get())));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool containsSwitch = false;
+  module->walk([&](IndexSwitchOp) { containsSwitch = true; });
+  EXPECT_FALSE(containsSwitch);
+
+  const auto checkSelectedRegion = [&](const StringRef functionName,
+                                       const int64_t expectedNumber,
+                                       const bool expectedFlag,
+                                       const StringRef expectedFirstGate,
+                                       const StringRef expectedSecondGate,
+                                       const StringRef forbiddenGate0,
+                                       const StringRef forbiddenGate1) {
+    auto func = module->lookupSymbol<func::FuncOp>(functionName);
+    ASSERT_TRUE(func);
+
+    SOp firstConsumer;
+    TOp secondConsumer;
+    size_t forbiddenGates = 0;
+    func->walk([&](Operation* operation) {
+      if (auto candidate = dyn_cast<SOp>(operation)) {
+        firstConsumer = candidate;
+      } else if (auto candidate = dyn_cast<TOp>(operation)) {
+        secondConsumer = candidate;
+      }
+      const auto name = operation->getName().getStringRef();
+      forbiddenGates += name == forbiddenGate0 || name == forbiddenGate1;
+    });
+    ASSERT_TRUE(firstConsumer);
+    ASSERT_TRUE(secondConsumer);
+    EXPECT_EQ(forbiddenGates, 0);
+
+    const auto firstInput =
+        cast<UnitaryOpInterface>(firstConsumer.getOperation())
+            .getInputQubits()
+            .front();
+    const auto secondInput =
+        cast<UnitaryOpInterface>(secondConsumer.getOperation())
+            .getInputQubits()
+            .front();
+    ASSERT_TRUE(firstInput.getDefiningOp());
+    ASSERT_TRUE(secondInput.getDefiningOp());
+    EXPECT_EQ(firstInput.getDefiningOp()->getName().getStringRef(),
+              expectedFirstGate);
+    EXPECT_EQ(secondInput.getDefiningOp()->getName().getStringRef(),
+              expectedSecondGate);
+
+    auto returnOp = cast<func::ReturnOp>(func.getBody().back().back());
+    APInt number;
+    APInt flag;
+    ASSERT_TRUE(matchPattern(returnOp.getOperand(0), m_ConstantInt(&number)));
+    ASSERT_TRUE(matchPattern(returnOp.getOperand(1), m_ConstantInt(&flag)));
+    EXPECT_EQ(number.getSExtValue(), expectedNumber);
+    EXPECT_EQ(flag.isOne(), expectedFlag);
+  };
+
+  checkSelectedRegion("selected_case", 11, true, "qco.h", "qco.x", "qco.y",
+                      "qco.z");
+  checkSelectedRegion("selected_default", 22, false, "qco.y", "qco.z", "qco.h",
+                      "qco.x");
+}
+
 /// \name QCO/SCF/IfOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
