@@ -19,12 +19,17 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
+#include <optional>
+#include <utility>
 
 namespace mlir::qtensor {
 TypedValue<RankedTensorType> TensorIterator::tensor() const {
@@ -228,4 +233,161 @@ void TensorIterator::backward() {
 static_assert(std::bidirectional_iterator<TensorIterator>);
 static_assert(std::sentinel_for<std::default_sentinel_t, TensorIterator>,
               "std::default_sentinel_t must be a sentinel for TensorIterator.");
+
+/// @returns whether @p type is a tensor of qubits.
+static bool isQubitTensor(Type type) {
+  const auto tensorType = dyn_cast<RankedTensorType>(type);
+  return tensorType && isa<qco::QubitType>(tensorType.getElementType());
+}
+
+/// @returns the position of @p value among the qubit tensors in @p range.
+static std::optional<size_t> tensorPositionIn(ValueRange range, Value value) {
+  size_t position = 0;
+  for (const Value candidate : range) {
+    if (!isQubitTensor(candidate.getType())) {
+      continue;
+    }
+    if (candidate == value) {
+      return position;
+    }
+    ++position;
+  }
+  return std::nullopt;
+}
+
+SmallVector<int64_t> CallTensorMapping::positionalMapping(func::FuncOp callee) {
+  SmallVector<int64_t> tensorResults;
+  for (const auto& [index, type] : llvm::enumerate(callee.getResultTypes())) {
+    if (isQubitTensor(type)) {
+      tensorResults.emplace_back(static_cast<int64_t>(index));
+    }
+  }
+
+  SmallVector<int64_t> mapping;
+  size_t seen = 0;
+  for (const Type type : callee.getArgumentTypes()) {
+    if (!isQubitTensor(type)) {
+      continue;
+    }
+    mapping.emplace_back(seen < tensorResults.size() ? tensorResults[seen]
+                                                     : KEPT);
+    ++seen;
+  }
+  return mapping;
+}
+
+int64_t CallTensorMapping::threadToResult(Value arg, func::ReturnOp returnOp) {
+  Value current = arg;
+  while (true) {
+    // Follow the chain to its end. `tensor()` is null on the operations that
+    // consume a tensor without producing one, so the last non-null value is
+    // the one the terminating operation takes.
+    Value last = current;
+    Operation* lastOp = nullptr;
+    for (TensorIterator it(cast<TypedValue<RankedTensorType>>(current));
+         it != std::default_sentinel; ++it) {
+      if (const Value currentTensor = it.tensor()) {
+        last = currentTensor;
+      }
+      lastOp = it.operation();
+    }
+
+    if (isa_and_nonnull<func::ReturnOp>(lastOp)) {
+      for (const auto& [index, operand] :
+           llvm::enumerate(returnOp.getOperands())) {
+        if (operand == last) {
+          return static_cast<int64_t>(index);
+        }
+      }
+      return KEPT;
+    }
+
+    // The chain stops at a nested call. Step over it to the result that
+    // continues the tensor and keep following from there. Each hop moves
+    // forward along the def-use chain, so this terminates.
+    auto callOp = dyn_cast_or_null<func::CallOp>(lastOp);
+    if (!callOp) {
+      return KEPT;
+    }
+    const Value next = getResultForOperand(callOp, last);
+    if (!next) {
+      return KEPT;
+    }
+    current = next;
+  }
+}
+
+SmallVector<int64_t> CallTensorMapping::computeMapping(func::FuncOp callee) {
+  // Without a body there is nothing to thread, so the positional pairing is
+  // the only contract available.
+  if (callee.isExternal()) {
+    return positionalMapping(callee);
+  }
+
+  // Threading a callee that is already being threaded would not terminate.
+  if (!inProgress.insert(callee.getOperation()).second) {
+    return positionalMapping(callee);
+  }
+
+  // Threading follows a single straight-line body. The terminator is checked
+  // for before it is asked for: a body under construction does not have one.
+  if (!callee.getBody().hasOneBlock() ||
+      !callee.getBody().front().mightHaveTerminator()) {
+    inProgress.erase(callee.getOperation());
+    return positionalMapping(callee);
+  }
+  auto returnOp =
+      dyn_cast<func::ReturnOp>(callee.getBody().front().getTerminator());
+  if (!returnOp) {
+    inProgress.erase(callee.getOperation());
+    return positionalMapping(callee);
+  }
+
+  SmallVector<int64_t> mapping;
+  for (const BlockArgument arg : callee.getArguments()) {
+    if (!isQubitTensor(arg.getType())) {
+      continue;
+    }
+    mapping.emplace_back(threadToResult(arg, returnOp));
+  }
+
+  inProgress.erase(callee.getOperation());
+  return mapping;
+}
+
+ArrayRef<int64_t> CallTensorMapping::mappingFor(func::CallOp callOp) {
+  auto callee = dyn_cast_or_null<func::FuncOp>(
+      SymbolTable::lookupNearestSymbolFrom(callOp, callOp.getCalleeAttr()));
+  if (!callee) {
+    return {};
+  }
+
+  auto* const key = callee.getOperation();
+  if (const auto it = cache.find(key); it != cache.end()) {
+    return it->second;
+  }
+  // Compute first: the recursion below may insert into the cache itself.
+  auto mapping = computeMapping(callee);
+  return cache.insert_or_assign(key, std::move(mapping)).first->second;
+}
+
+Value CallTensorMapping::getResultForOperand(func::CallOp callOp,
+                                             Value operand) {
+  const auto position = tensorPositionIn(callOp.getOperands(), operand);
+  if (!position) {
+    return nullptr;
+  }
+  const auto mapping = mappingFor(callOp);
+  if (*position >= mapping.size()) {
+    return nullptr;
+  }
+  const auto resultIndex = mapping[*position];
+  if (resultIndex == KEPT) {
+    return nullptr;
+  }
+  return callOp.getResult(static_cast<unsigned>(resultIndex));
+}
+
+void CallTensorMapping::invalidate() { cache.clear(); }
+
 } // namespace mlir::qtensor
