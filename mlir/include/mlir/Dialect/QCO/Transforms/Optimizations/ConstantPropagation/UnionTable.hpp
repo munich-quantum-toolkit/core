@@ -8,8 +8,7 @@
  * Licensed under the MIT License
  */
 
-#ifndef MQT_CORE_UNIONTABLE_H
-#define MQT_CORE_UNIONTABLE_H
+#pragma once
 #include "HybridState.hpp"
 
 #include <llvm/ADT/DenseMap.h>
@@ -17,6 +16,7 @@
 #include <mlir/IR/Value.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -61,8 +61,8 @@ struct UnionTableEntry {
 
 private:
   static std::uint64_t nextId() {
-    static unsigned int counter = 0;
-    return ++counter;
+    static std::atomic<std::uint64_t> counter{0};
+    return counter.fetch_add(1, std::memory_order_relaxed) + 1;
   }
 };
 
@@ -542,5 +542,3 @@ public:
                       std::span<Value> classicalNegative) const;
 };
 } // namespace mlir::qco
-
-#endif // MQT_CORE_UNIONTABLE_H
