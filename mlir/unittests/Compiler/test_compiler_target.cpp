@@ -182,8 +182,7 @@ TEST(CompilerTargetTest, RejectsUnknownClassicalControlCapability) {
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto unknown = static_cast<ClassicalControl>(255);
   expectInvalid(
-      Target::create(1, std::nullopt, std::nullopt, std::nullopt,
-                     {unknown}),
+      Target::create(1, std::nullopt, std::nullopt, std::nullopt, {unknown}),
       "Compiler target contains an unknown classical-control capability");
 }
 
