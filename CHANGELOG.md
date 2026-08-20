@@ -82,6 +82,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Require semantic proof for nonconstant OpenQASM quantum-register indices
+  and lower proven affine loops without runtime quantum-index guards ([#2203])
+  ([**@burgholzer**], [**@denialhaag**])
 - 💥 Prune dead and misleading CoreIR APIs and remove random-number generator
   state from `QuantumComputation` ([#2111], [#2112]) ([**@simon1hofmann**])
 - 💥 Update QIR execution for QIR 2.1, isolated runtimes, reproducible
@@ -787,6 +790,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2203]: https://github.com/munich-quantum-toolkit/core/pull/2203
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
 [#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168

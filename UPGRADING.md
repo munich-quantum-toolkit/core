@@ -6,6 +6,19 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### OpenQASM quantum-register indices
+
+The OpenQASM importer no longer wraps negative qubit indices or emits runtime
+bounds and distinctness assertions for nonconstant qubit indices. It accepts a
+nonconstant qubit index only when semantic analysis proves its bounds and, for
+multi-qubit gates and explicit barriers, proves that all operands are distinct.
+
+Use positive constant-step `for` loops and affine index expressions over their
+induction variables. Constants and unmodified scalar aliases are also supported.
+Move data-dependent indexing to classical bit registers or rewrite the program
+if a qubit index depends on a measurement, mutation, branch fact, nonlinear
+expression, or unsupported range step.
+
 ### Program serialization for QDMI Qiskit backends
 
 The Qiskit backend no longer decides in its own code how to turn a circuit into
