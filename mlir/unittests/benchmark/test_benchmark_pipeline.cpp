@@ -21,17 +21,9 @@
 namespace mqt::benchmark {
 
 namespace {
-
 /// The size the benchmarks are generated at.
 constexpr uint64_t PIPELINE_SIZE = 7;
-
-class PipelineBenchmarkTest : public testing::TestWithParam<Benchmark> {};
-
-INSTANTIATE_TEST_SUITE_P(Benchmarks, PipelineBenchmarkTest,
-                         testing::ValuesIn(benchmarks()),
-                         [](const testing::TestParamInfo<Benchmark>& info) {
-                           return testName(info.param.name);
-                         });
+} // namespace
 
 /**
  * @brief Runs one benchmark through the default pipeline to @p format.
@@ -50,6 +42,16 @@ static bool reaches(const Benchmark& benchmark,
   }
   return mlir::runDefaultPipeline(std::move(*program), format).has_value();
 }
+
+namespace {
+
+class PipelineBenchmarkTest : public testing::TestWithParam<Benchmark> {};
+
+INSTANTIATE_TEST_SUITE_P(Benchmarks, PipelineBenchmarkTest,
+                         testing::ValuesIn(benchmarks()),
+                         [](const testing::TestParamInfo<Benchmark>& info) {
+                           return testName(info.param.name);
+                         });
 
 TEST_P(PipelineBenchmarkTest, ReachesQCO) {
   EXPECT_TRUE(reaches(GetParam(), mlir::ProgramFormat::QCO));

@@ -28,7 +28,6 @@
 #include <string>
 #include <system_error>
 #include <utility>
-#include <variant>
 
 static llvm::cl::opt<uint64_t>
     numQubits("n", llvm::cl::desc("Size parameter of the generated programs"),
