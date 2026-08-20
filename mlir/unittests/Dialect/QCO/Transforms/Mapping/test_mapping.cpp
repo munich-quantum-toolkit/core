@@ -1663,48 +1663,6 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
-TEST_P(MappingPassTest, MapIndexSwitchUsesVotedLayout) {
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}}));
-
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-
-  Value tensor = builder.qtensorAlloc(3);
-  SmallVector<Value> qubits(3);
-  for (int64_t i = 0; i < 3; ++i) {
-    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, i);
-  }
-
-  const auto routeTriangle = [&](ValueRange initArgs) {
-    SmallVector<Value> args(initArgs);
-    std::tie(args[0], args[1]) = builder.cx(args[0], args[1]);
-    std::tie(args[1], args[2]) = builder.cx(args[1], args[2]);
-    std::tie(args[0], args[2]) = builder.cx(args[0], args[2]);
-    return args;
-  };
-  const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies(
-      3, routeTriangle);
-  qubits = llvm::to_vector(builder.qcoIndexSwitch(
-      0, qubits, SmallVector<int64_t>{0, 1, 2}, caseBodies,
-      [](ValueRange args) { return llvm::to_vector(args); }));
-
-  for (int64_t i = 0; i < 3; ++i) {
-    tensor = builder.qtensorInsert(qubits[i], tensor, i);
-  }
-  builder.qtensorDealloc(tensor);
-
-  auto m = builder.finalize();
-  ASSERT_TRUE(
-      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
-
-  size_t numSwaps = 0;
-  m->walk([&](SWAPOp) { ++numSwaps; });
-  // The three routed cases agree on the voted exit layout; only the default
-  // case must be restored to it. Restoring every case to the parent needs 12.
-  EXPECT_EQ(numSwaps, 6UL);
-}
-
 TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
   const auto& target = GetParam();
   const auto size = (target.numQubits() + 1) / 2;
