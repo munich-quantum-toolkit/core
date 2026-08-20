@@ -41,17 +41,25 @@ SmallVector<Value> vqe(qc::QCProgramBuilder& b, const uint64_t n) {
   auto q = b.allocQubitRegister(size, "q");
   auto c = b.allocClassicalBitRegister(size, "c");
 
+  auto zero = b.indexConstant(0);
   auto one = b.indexConstant(1);
+  auto pairs = b.indexConstant(size - 1);
   auto initial = b.floatConstant(VQE_INITIAL_ANGLE);
   auto decay = b.floatConstant(VQE_DECAY);
+  // The chain has at most `size - 1` disagreeing pairs, so the first round
+  // improves on this value whatever it measures.
+  auto worst = b.intConstant(size);
 
-  // One round evaluates the ansatz at the current angle and reads one qubit.
-  // The optimizer shrinks the angle and repeats until a round reports that the
-  // energy no longer improves, so the round count is only known at runtime.
+  // A round prepares the ansatz at the current angle, reads the register, and
+  // estimates the energy of an Ising chain from the measured bits. The
+  // optimizer shrinks the angle and runs another round only while the energy
+  // improves on the round before it, so the rounds follow from the
+  // measurements.
   scf::WhileOp::create(
-      b, TypeRange{b.getF64Type()}, ValueRange{initial},
+      b, TypeRange{b.getF64Type(), b.getI64Type()}, ValueRange{initial, worst},
       [&](OpBuilder&, Location, ValueRange args) {
         auto angle = args[0];
+        auto previous = args[1];
         resetRegister(b, q.value, size);
         b.scfFor(0, VQE_LAYERS, 1, [&](Value) {
           b.scfFor(0, size, 1,
@@ -61,12 +69,32 @@ SmallVector<Value> vqe(qc::QCProgramBuilder& b, const uint64_t n) {
             b.cx(b.loadQubit(q.value, i), b.loadQubit(q.value, next));
           });
         });
-        auto improved = b.measure(q[0]);
-        scf::ConditionOp::create(b, improved, ValueRange{angle});
+        measureRegister(b, q.value, size, c);
+
+        // The energy of the chain counts the neighbouring pairs that disagree.
+        auto sum = scf::ForOp::create(b, zero, pairs, one,
+                                      ValueRange{b.intConstant(0)});
+        {
+          const OpBuilder::InsertionGuard guard(b);
+          b.setInsertionPointToStart(sum.getBody());
+          auto accumulated = sum.getRegionIterArg(0);
+          auto i = sum.getInductionVar();
+          auto next = arith::AddIOp::create(b, i, one);
+          auto differs = arith::XOrIOp::create(
+              b, b.loadClassicalBit(c, i), b.loadClassicalBit(c, Value{next}));
+          auto term = arith::ExtUIOp::create(b, b.getI64Type(), differs);
+          scf::YieldOp::create(
+              b, ValueRange{arith::AddIOp::create(b, accumulated, term)});
+        }
+        auto energy = sum.getResult(0);
+
+        auto improved = arith::CmpIOp::create(b, arith::CmpIPredicate::slt,
+                                              energy, previous);
+        scf::ConditionOp::create(b, improved, ValueRange{angle, energy});
       },
       [&](OpBuilder&, Location, ValueRange args) {
         auto next = arith::MulFOp::create(b, args[0], decay);
-        scf::YieldOp::create(b, ValueRange{next});
+        scf::YieldOp::create(b, ValueRange{next, args[1]});
       });
 
   measureRegister(b, q.value, size, c);

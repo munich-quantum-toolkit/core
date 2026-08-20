@@ -16,7 +16,6 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
-#include <numbers>
 
 namespace mqt::benchmark {
 
@@ -25,76 +24,36 @@ using namespace mlir;
 namespace {
 /// The multiplier of the modular multiplication.
 constexpr int64_t MULTIPLIER = 3;
-/// The modulus of the modular multiplication.
+/// The modulus of the modular multiplication. It is coprime to the multiplier
+/// and fits in the width that the minimum size guarantees.
 constexpr int64_t MODULUS = 5;
-
 } // namespace
 
 SmallVector<Value> controlledMultiplyModN(qc::QCProgramBuilder& b,
                                           const uint64_t n) {
-  const auto total = static_cast<int64_t>(n) - 2;
-  const auto factor = total / 2;
-  const auto size = total - factor;
+  // The register layout follows Beauregard: one control qubit, the multiplier,
+  // an accumulator that carries one extra qubit for the overflow, and one
+  // ancilla.
+  const auto bits = (static_cast<int64_t>(n) - 3) / 2;
+  const auto width = bits + 1;
   auto ctrl = b.allocQubit();
-  auto x = b.allocQubitRegister(factor, "x");
-  auto acc = b.allocQubitRegister(size, "acc");
+  auto x = b.allocQubitRegister(bits, "x");
+  auto acc = b.allocQubitRegister(width, "acc");
   auto anc = b.allocQubit();
-  auto c = b.allocClassicalBitRegister(size, "c");
+  auto c = b.allocClassicalBitRegister(width, "c");
 
   b.reset(ctrl);
-  resetRegister(b, x.value, factor);
-  resetRegister(b, acc.value, size);
+  resetRegister(b, x.value, bits);
+  resetRegister(b, acc.value, width);
   b.reset(anc);
 
   b.h(ctrl);
-  b.scfFor(0, factor, 1, [&](Value i) { b.h(b.loadQubit(x.value, i)); });
+  b.scfFor(0, bits, 1, [&](Value i) { b.h(b.loadQubit(x.value, i)); });
 
-  fourierTransform(b, acc.value, size, 1.0);
+  modularMultiply(b, ctrl, x.value, acc.value, anc, bits,
+                  b.intConstant(MULTIPLIER % MODULUS), MODULUS, 1.0);
 
-  auto zero = b.indexConstant(0);
-  auto factors = b.indexConstant(factor);
-  auto width = b.indexConstant(size);
-
-  // Each multiplier qubit adds a shifted copy of the multiplier into the
-  // accumulator, and every addition is a layer of phases in the Fourier basis.
-  // The shift doubles the phase from one multiplier qubit to the next, and the
-  // phase halves down the accumulator, so both angles come from the loops.
-  scfForWithAngle(
-      b, zero, factors, std::numbers::pi * static_cast<double>(MULTIPLIER), 2.0,
-      [&](Value shifted, Value i) {
-        const SmallVector<Value> controls{ctrl, b.loadQubit(x.value, i)};
-        scfForWithAngle(b, zero, width, shifted, 0.5,
-                        [&](Value angle, Value j) {
-                          b.mcp(angle, controls, b.loadQubit(acc.value, j));
-                        });
-      });
-
-  // The product is reduced modulo the modulus. Each round tests the top qubit
-  // of the accumulator and subtracts the modulus once when it is set, so the
-  // number of rounds depends on the product.
-  b.scfWhile(
-      [&] {
-        // The top qubit only carries the overflow in the computational basis,
-        // so the accumulator leaves and re-enters the Fourier basis around the
-        // copy onto the ancilla.
-        fourierTransform(b, acc.value, size, -1.0);
-        b.reset(anc);
-        b.cx(acc[size - 1], anc);
-        fourierTransform(b, acc.value, size, 1.0);
-        auto overflow = b.measure(anc);
-        b.scfCondition(overflow);
-      },
-      [&] {
-        scfForWithAngle(b, zero, width,
-                        -std::numbers::pi * static_cast<double>(MODULUS), 0.5,
-                        [&](Value angle, Value i) {
-                          b.p(angle, b.loadQubit(acc.value, i));
-                        });
-      });
-
-  fourierTransform(b, acc.value, size, -1.0);
-
-  measureRegister(b, acc.value, size, c);
+  measureRegister(b, acc.value, width, c);
 
   return {c};
 }

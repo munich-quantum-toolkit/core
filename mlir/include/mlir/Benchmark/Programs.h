@@ -43,6 +43,9 @@ struct Benchmark {
   /// size. A program sets this when it grows so fast that a larger size
   /// exhausts memory before it produces a module.
   uint64_t maximumSize = 0;
+  /// Whether the program converts to `jeff`. A program clears this when a
+  /// faithful implementation needs something that `jeff` cannot express.
+  bool lowersToJeff = true;
 };
 
 /// Returns every benchmark program.

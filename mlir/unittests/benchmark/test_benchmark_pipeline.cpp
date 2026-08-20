@@ -15,13 +15,15 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <utility>
 
 namespace mqt::benchmark {
 
 namespace {
-/// The size the benchmarks are generated at.
+/// The size the benchmarks are generated at. A program that needs more
+/// qubits than this is generated at its own minimum.
 constexpr uint64_t PIPELINE_SIZE = 7;
 } // namespace
 
@@ -36,7 +38,8 @@ constexpr uint64_t PIPELINE_SIZE = 7;
  */
 static bool reaches(const Benchmark& benchmark,
                     const mlir::ProgramFormat format) {
-  auto program = buildQCProgram(benchmark, PIPELINE_SIZE);
+  auto program =
+      buildQCProgram(benchmark, std::max(PIPELINE_SIZE, benchmark.minimumSize));
   if (!program) {
     return false;
   }
@@ -66,6 +69,9 @@ TEST_P(PipelineBenchmarkTest, ReachesQC) {
 }
 
 TEST_P(PipelineBenchmarkTest, ReachesJeff) {
+  if (!GetParam().lowersToJeff) {
+    GTEST_SKIP() << "the program does not convert to jeff";
+  }
   EXPECT_TRUE(reaches(GetParam(), mlir::ProgramFormat::Jeff));
 }
 

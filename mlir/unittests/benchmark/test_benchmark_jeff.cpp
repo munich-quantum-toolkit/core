@@ -15,6 +15,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -23,7 +24,8 @@ namespace mqt::benchmark {
 
 namespace {
 
-/// The size the benchmarks are generated at.
+/// The size the benchmarks are generated at. A program that needs more
+/// qubits than this is generated at its own minimum.
 constexpr uint64_t JEFF_SIZE = 7;
 
 class JeffBenchmarkTest : public testing::TestWithParam<Benchmark> {};
@@ -43,7 +45,11 @@ INSTANTIATE_TEST_SUITE_P(Benchmarks, JeffBenchmarkTest,
  */
 TEST_P(JeffBenchmarkTest, KeepsStructuredControlFlow) {
   const auto& benchmark = GetParam();
-  auto program = buildQCProgram(benchmark, JEFF_SIZE);
+  if (!benchmark.lowersToJeff) {
+    GTEST_SKIP() << "the program does not convert to jeff";
+  }
+  auto program =
+      buildQCProgram(benchmark, std::max(JEFF_SIZE, benchmark.minimumSize));
   ASSERT_TRUE(program.has_value());
   const auto compiled =
       mlir::runDefaultPipeline(std::move(*program), mlir::ProgramFormat::Jeff);

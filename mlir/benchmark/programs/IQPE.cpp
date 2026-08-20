@@ -55,9 +55,9 @@ SmallVector<Value> iqpe(qc::QCProgramBuilder& b, const uint64_t n) {
     b.h(q);
     b.cp(power, q, anc);
 
-    // Correct against the bits that were already measured.
+    // Remove the phase that the bits measured so far contribute.
     auto innerLower = arith::AddIOp::create(b, index, one);
-    scfForWithAngle(b, innerLower, upper, std::numbers::pi / 2.0, 0.5,
+    scfForWithAngle(b, innerLower, upper, -std::numbers::pi / 2.0, 0.5,
                     [&](Value angle, Value bit) {
                       b.scfIf(res, bit, [&] { b.p(angle, q); });
                     });

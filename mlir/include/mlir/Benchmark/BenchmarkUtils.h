@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/ADT/ArrayRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -43,6 +44,40 @@ void measureRegister(qc::QCProgramBuilder& b, Value reg, int64_t size,
 void scfForWithAngle(qc::QCProgramBuilder& b, Value lower, Value upper,
                      const std::variant<double, Value>& start, double factor,
                      const function_ref<void(Value, Value)>& body);
+
+/**
+ * @brief Adds a classical value to @p reg in the Fourier basis
+ *
+ * @details The value enters through @p base, which carries pi times the value.
+ * Every qubit takes half the angle of the one before it, so the addition is a
+ * single layer of phase gates. An empty @p controls adds unconditionally.
+ */
+void phaseAdd(qc::QCProgramBuilder& b, Value reg, int64_t size, Value base,
+              ArrayRef<Value> controls);
+
+/**
+ * @brief Adds a classical value to @p acc modulo a modulus
+ *
+ * @details Follows Beauregard's construction. The adder subtracts the modulus,
+ * reads the top qubit to learn whether the sum underflowed, and adds the
+ * modulus back when it did. The second half compares the result against the
+ * added value so that @p anc returns to zero, which is what lets the adder sit
+ * inside a larger circuit.
+ */
+void modularAdd(qc::QCProgramBuilder& b, Value acc, int64_t size, Value addend,
+                Value modulus, ArrayRef<Value> controls, Value anc);
+
+/**
+ * @brief Multiplies the register @p x into @p acc modulo a modulus
+ *
+ * @details Follows Beauregard's construction. Multiplier bit `i` adds
+ * `(2^i * a) mod N`, so the round carries that value and doubles it modulo
+ * @p modulus for the next one. A negative @p sign subtracts the product, which
+ * is how the accumulator is returned to zero.
+ */
+void modularMultiply(qc::QCProgramBuilder& b, Value ctrl, Value x, Value acc,
+                     Value anc, int64_t bits, Value first, int64_t modulus,
+                     double sign);
 
 /**
  * @brief Applies a quantum Fourier transform to @p reg
