@@ -522,11 +522,8 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       }
     });
   } else {
-    for (Value original : op->thenYield()->getOperands()) {
-      if (mlir::isa<QubitType>(original.getType())) {
-        thenArgs.push_back(original);
-      }
-    }
+    const auto linearThenResults = op->getLinearResults();
+    thenArgs = {linearThenResults.begin(), linearThenResults.end()};
   }
 
   if (!elseEmpty) {
@@ -557,11 +554,8 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       }
     });
   } else {
-    for (Value original : op->elseYield()->getOperands()) {
-      if (mlir::isa<QubitType>(original.getType())) {
-        elseArgs.push_back(original);
-      }
-    }
+    const auto linearElseResults = op->getLinearResults();
+    elseArgs = {linearElseResults.begin(), linearElseResults.end()};
   }
 
   const auto resultQubits = op->getResults();
