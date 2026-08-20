@@ -157,7 +157,7 @@ void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
   }
 
   const auto ute = valuesToEntries.at(participatingValue);
-  for (auto hs : ute->states) {
+  for (auto& hs : ute->states) {
     hs.propagateGate(gate, targetQubitIndices, ctrlQubitIndices,
                      posCtrlsClassical, negCtrlsClassical, params);
     if (hs.isHybridStateTop()) {
