@@ -21,6 +21,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -58,6 +59,7 @@ protected:
    * @brief Adds the ConstantPropagation pass to the pass manager and runs it.
    */
   static LogicalResult runConstantPropagationPass(ModuleOp module) {
+    verify(module);
     PassManager pm(module.getContext());
     pm.addPass(createConstantPropagation());
     return pm.run(module);
@@ -107,8 +109,8 @@ TEST_F(QCOConstantPropagationTest, reducePosCtrls) {
 }
 
 /**
- * @brief Test: This test checks that CNOTs are not changed if the target is not
- * in |0> or |1>.
+ * @brief Test: This test checks that CNOTs are not changed if the control is
+ * not in |0> or |1>.
  */
 TEST_F(QCOConstantPropagationTest, testDontRemoveIfTargetInSuperposition) {
   auto q = programBuilder.allocQubitRegister(2);
