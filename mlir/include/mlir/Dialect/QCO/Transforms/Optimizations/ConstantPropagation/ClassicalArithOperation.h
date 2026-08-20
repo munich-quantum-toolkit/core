@@ -105,12 +105,12 @@ inline int64_t getArithIntegerOpResult(mlir::Operation* operation,
         return result ? int64_t{1} : int64_t{0};
       })
       .Case<mlir::arith::DivSIOp>([&](auto) {
-        if (a.isZero()) {
+        if (b.isZero()) {
           llvm::report_fatal_error(
               "Handling of division by zero in mlir::arith::DivSIOp is not "
               "supported by constant propagation.");
         }
-        if (a.isAllOnes() && b.isMinSignedValue()) {
+        if (b.isAllOnes() && a.isMinSignedValue()) {
           llvm::report_fatal_error(
               "Handling of INT_MIN / -1 in mlir::arith::DivSIOp is not "
               "supported by constant propagation.");
@@ -217,7 +217,7 @@ inline double getArithDoubleOpResult(mlir::Operation* operation,
           })
           .Case<mlir::arith::RemFOp>([&](auto) {
             result = lhs;
-            auto status = result.remainder(rhs);
+            const auto status = result.mod(rhs);
             return (status & llvm::APFloat::opInvalidOp) == 0;
           })
           .Case<mlir::arith::SubFOp>([&](auto) {
@@ -231,7 +231,6 @@ inline double getArithDoubleOpResult(mlir::Operation* operation,
                              "mlir::qco::classicalarithoperation");
   }
 
-  llvm::APFloat resultInDouble = result;
   bool loseInfoResult = false;
   result.convert(llvm::APFloat::IEEEdouble(), rm, &loseInfoResult);
   if (loseInfoResult) {
