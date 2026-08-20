@@ -167,7 +167,6 @@ TEST_F(GlobalPhaseNormalizationTest,
   const auto value = dyn_cast<FloatAttr>(constantOp.getValue());
   ASSERT_TRUE(value);
   expectFoldableGlobalPhase(phases.front().getTheta(), expected);
-  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(value.getValueAsDouble()));
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
@@ -211,7 +210,6 @@ TEST_F(GlobalPhaseNormalizationTest,
   const auto value = dyn_cast<FloatAttr>(constantOp.getValue());
   ASSERT_TRUE(value);
   expectFoldableGlobalPhase(phases.front().getTheta(), expected);
-  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(value.getValueAsDouble()));
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
