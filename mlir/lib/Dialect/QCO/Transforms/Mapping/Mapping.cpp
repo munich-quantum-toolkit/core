@@ -1110,7 +1110,7 @@ private:
 
     walkProgramGraph<Direction>(
         MutableArrayRef(wires.data(), wires.size()),
-        [&](const ReadyMap& ready, ReleasedOps& released) {
+        [&](const Frontier& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
@@ -1201,13 +1201,13 @@ private:
     // Advance wires past all executable gates and push composite unitaries and
     // the respective wire indices of their inputs onto the vector.
 
-    walkProgramGraph<Direction>(wires, [&](const ReadyMap& ready,
+    walkProgramGraph<Direction>(wires, [&](const Frontier& frontier,
                                            ReleasedOps& released) {
-      if (ready.empty()) {
+      if (frontier.empty()) {
         return WalkResult::advance();
       }
 
-      for (const auto& [op, indices] : ready) {
+      for (const auto& [op, indices] : frontier) {
         if (isa<BarrierOp>(op)) {
           released.emplace_back(op);
           continue;
