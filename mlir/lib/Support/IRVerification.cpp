@@ -11,7 +11,6 @@
 #include "mlir/Support/IRVerification.h"
 
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
@@ -61,6 +60,19 @@ struct TensorMapping {
     const auto i = lhsEquivGroups.at(lhs);
     return equivGroupMapping.at(i) == rhsEquivGroups.at(rhs);
   }
+
+  /// Return true if the given lhs value takes part in the equivalence
+  /// tracking. Only tensors reachable from a `qtensor` allocation are tracked;
+  /// builtin tensors of qubits are compared through the regular SSA mapping.
+  [[nodiscard]] bool tracksLhs(Value lhs) const {
+    return lhsEquivGroups.contains(lhs);
+  }
+
+  /// Return true if the given rhs value takes part in the equivalence
+  /// tracking.
+  [[nodiscard]] bool tracksRhs(Value rhs) const {
+    return rhsEquivGroups.contains(rhs);
+  }
 };
 } // namespace
 
@@ -68,16 +80,6 @@ static bool compareRegions(Region& lhs, Region& rhs,
                            SetVector<Operation*>& lhsClosed,
                            SetVector<Operation*>& rhsClosed, IRMapping& m,
                            TensorMapping& tm);
-
-/// Return true, if the given value has the type `tensor<qco.qubit>`.
-static bool hasTypeQubitTensor(Value v) {
-  auto tensor = dyn_cast<RankedTensorType>(v.getType());
-  if (!tensor) {
-    return false;
-  }
-
-  return isa<qco::QubitType>(tensor.getElementType());
-}
 
 /// Recursively initialize the equivalence group for a tensor value.
 static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
@@ -206,10 +208,10 @@ getPermutation(const LhsRange& lhs, const RhsRange& rhs, const IRMapping& m,
                const TensorMapping& tm) {
   SmallVector<size_t> permutation(lhs.size());
   for (const auto& [i, lhsValue] : llvm::enumerate(lhs)) {
-    const auto it = hasTypeQubitTensor(lhsValue)
+    const auto it = tm.tracksLhs(lhsValue)
                         ? llvm::find_if(rhs,
                                         [&](const auto rhsValue) {
-                                          if (!hasTypeQubitTensor(rhsValue)) {
+                                          if (!tm.tracksRhs(rhsValue)) {
                                             return false;
                                           }
                                           return tm.equals(lhsValue, rhsValue);
@@ -233,9 +235,9 @@ static bool compareValueLists(const LhsRange& lhs, const RhsRange& rhs,
 
   for (const auto lhsValue : lhs) {
     Value mapped;
-    if (hasTypeQubitTensor(lhsValue)) {
+    if (tm.tracksLhs(lhsValue)) {
       const auto it = llvm::find_if(rhs, [&](const auto rhsValue) {
-        return hasTypeQubitTensor(rhsValue) && tm.equals(lhsValue, rhsValue);
+        return tm.tracksRhs(rhsValue) && tm.equals(lhsValue, rhsValue);
       });
       if (it == rhs.end()) {
         return false;
@@ -478,8 +480,10 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
   } else {
     for (const auto& [lhsOperand, rhsOperand] :
          llvm::zip_equal(lhs->getOperands(), rhs->getOperands())) {
-      if (hasTypeQubitTensor(lhsOperand)) {
-        assert(hasTypeQubitTensor(rhsOperand));
+      if (tm.tracksLhs(lhsOperand)) {
+        if (!tm.tracksRhs(rhsOperand)) {
+          return false;
+        }
 
         if (!tm.equals(lhsOperand, rhsOperand)) {
           return false;
@@ -745,6 +749,9 @@ static bool compareBlocks(Block& lhs, Block& rhs,
             auto lhsExtract = cast<qtensor::ExtractOp>(lhsOp);
             auto rhsExtract = cast<qtensor::ExtractOp>(rhsOp);
             m.map(lhsExtract.getResult(), rhsExtract.getResult());
+            // The threaded tensor is only covered by the equivalence groups
+            // when it descends from an allocation, so map it here as well.
+            m.map(lhsExtract.getOutTensor(), rhsExtract.getOutTensor());
           } else {
             SmallVector<size_t> permutation(lhsOp->getNumResults());
             std::iota(permutation.begin(), permutation.end(), 0);

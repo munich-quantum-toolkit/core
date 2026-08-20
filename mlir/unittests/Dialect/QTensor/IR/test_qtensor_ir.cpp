@@ -38,6 +38,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/Passes.h>
@@ -512,6 +513,126 @@ TEST_F(QTensorTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
 
   EXPECT_FALSE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+/**
+ * @brief Qubit tensors that do not descend from an allocation are compared
+ * through the regular SSA mapping.
+ *
+ * @details
+ * A tensor arriving as a function argument has no equivalence group, and the
+ * threaded tensor an extraction hands back is only covered once it is mapped
+ * explicitly. Both used to abort inside the comparison instead of reporting a
+ * result.
+ *
+ * The two equivalent programs are written differently and converge under the
+ * cleanup pipeline, so the comparison is reached from distinct sources. Note
+ * that it cannot be reached from distinct *results*: the permutation matching
+ * is keyed off the equivalence groups seeded by `qtensor.alloc`, which a
+ * function argument never joins, so on this path the comparison is structural.
+ * The negative cases below pin down how little it takes to break it.
+ */
+TEST_F(QTensorTest, ComparesQubitTensorsThatDoNotDescendFromAnAllocation) {
+  const auto parse = [&](const char* body) {
+    const std::string source = std::string(R"mlir(
+func.func @f(%t: tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit> {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+)mlir") + body + R"mlir(
+}
+)mlir";
+    auto module = parseSourceString<ModuleOp>(source, context.get());
+    if (module && runQCOCleanupPipeline(module.get()).failed()) {
+      return OwningOpRef<ModuleOp>{};
+    }
+    return module;
+  };
+
+  // Takes element 0 out, applies a gate, and puts it back.
+  auto program = parse(R"mlir(
+  %out, %q = qtensor.extract %t[%c0] : tensor<2x!qco.qubit>
+  %g = qco.h %q : !qco.qubit -> !qco.qubit
+  %r = qtensor.insert %g into %out[%c0] : tensor<2x!qco.qubit>
+  return %r : tensor<2x!qco.qubit>)mlir");
+
+  // The same, preceded by a round-trip on element 1 that folds away.
+  auto reference = parse(R"mlir(
+  %spare, %idle = qtensor.extract %t[%c1] : tensor<2x!qco.qubit>
+  %restored = qtensor.insert %idle into %spare[%c1] : tensor<2x!qco.qubit>
+  %out, %q = qtensor.extract %restored[%c0] : tensor<2x!qco.qubit>
+  %g = qco.h %q : !qco.qubit -> !qco.qubit
+  %r = qtensor.insert %g into %out[%c0] : tensor<2x!qco.qubit>
+  return %r : tensor<2x!qco.qubit>)mlir");
+
+  // A different gate on the same element.
+  auto otherGate = parse(R"mlir(
+  %out, %q = qtensor.extract %t[%c0] : tensor<2x!qco.qubit>
+  %g = qco.x %q : !qco.qubit -> !qco.qubit
+  %r = qtensor.insert %g into %out[%c0] : tensor<2x!qco.qubit>
+  return %r : tensor<2x!qco.qubit>)mlir");
+
+  // The same gate on the other element.
+  auto otherElement = parse(R"mlir(
+  %out, %q = qtensor.extract %t[%c1] : tensor<2x!qco.qubit>
+  %g = qco.h %q : !qco.qubit -> !qco.qubit
+  %r = qtensor.insert %g into %out[%c1] : tensor<2x!qco.qubit>
+  return %r : tensor<2x!qco.qubit>)mlir");
+
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(reference);
+  ASSERT_TRUE(otherGate);
+  ASSERT_TRUE(otherElement);
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+  EXPECT_FALSE(
+      areModulesEquivalentWithPermutations(program.get(), otherGate.get()));
+  EXPECT_FALSE(
+      areModulesEquivalentWithPermutations(program.get(), otherElement.get()));
+}
+
+/**
+ * @brief A tracked tensor is never matched against an untracked one.
+ *
+ * @details
+ * Only tensors descending from a `qtensor.alloc` join an equivalence group. The
+ * `rhs` guard is what stops a tracked left-hand tensor from being compared
+ * against a right-hand one that has no group, which would look the group up on
+ * a missing key. It is only reachable once the left-hand side is tracked, so it
+ * needs a case where the two sides disagree about that.
+ */
+TEST_F(QTensorTest, DoesNotMatchATrackedTensorAgainstAnUntrackedOne) {
+  const auto parse = [&](const char* worked, const char* released) {
+    const std::string source = std::string(R"mlir(
+func.func @f(%arg: tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit> {
+  %c0 = arith.constant 0 : index
+  %c2 = arith.constant 2 : index
+  %own = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+  %out, %q = qtensor.extract %)mlir") +
+                               worked + R"mlir([%c0] : tensor<2x!qco.qubit>
+  %g = qco.h %q : !qco.qubit -> !qco.qubit
+  %back = qtensor.insert %g into %out[%c0] : tensor<2x!qco.qubit>
+  qtensor.dealloc %)mlir" + released +
+                               R"mlir( : tensor<2x!qco.qubit>
+  return %back : tensor<2x!qco.qubit>
+}
+)mlir";
+    return parseSourceString<ModuleOp>(source, context.get());
+  };
+
+  // The same shape either way, with the two tensors swapping roles. The one
+  // that is worked on descends from the allocation in the first module and is
+  // the function argument in the second, so it is tracked in one and not in
+  // the other.
+  auto allocated = parse("own", "arg");
+  auto argument = parse("arg", "own");
+  ASSERT_TRUE(allocated);
+  ASSERT_TRUE(argument);
+
+  EXPECT_FALSE(
+      areModulesEquivalentWithPermutations(allocated.get(), argument.get()));
+  EXPECT_FALSE(
+      areModulesEquivalentWithPermutations(argument.get(), allocated.get()));
 }
 
 // ============================================================================
