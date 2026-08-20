@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -358,7 +359,7 @@ protected:
     IRRewriter rewriter(&getContext());
 
     auto mod = getOperation();
-    auto func = getEntryPoint(mod);
+    auto func = mqt::getEntryPoint(mod);
     if (!func) {
       mod.emitError() << "does not contain an entry point function";
       signalPassFailure();
@@ -410,7 +411,7 @@ protected:
     numSwaps += stats.nswaps;
 
     // Fix SSA Dominance issues.
-    for_each(body.getBlocks(), [](Block& b) { sortTopologically(&b); });
+    llvm::for_each(body.getBlocks(), [](Block& b) { sortTopologically(&b); });
   }
 
 private:

@@ -10,7 +10,9 @@
 
 #pragma once
 
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Dialect.h>
 #include <mlir/IR/Operation.h>
 
@@ -19,3 +21,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "mlir/Dialect/MQT/IR/MQTDialect.h.inc" // IWYU pragma: export
+
+namespace mlir::mqt {
+/// Return the program entry point, or null if the module has none.
+[[nodiscard]] func::FuncOp getEntryPoint(ModuleOp moduleOp);
+} // namespace mlir::mqt

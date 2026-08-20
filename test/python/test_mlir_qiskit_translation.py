@@ -230,7 +230,7 @@ def test_controlled_dense_unitary_export_preserves_operation_order() -> None:
     """Export a controlled dense matrix with a Qiskit control annotation."""
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %control = qc.alloc : !qc.qubit
     %target = qc.alloc : !qc.qubit
     qc.x %control : !qc.qubit
@@ -489,7 +489,7 @@ def test_flat_export_rejects_classical_store_after_quantum_work(late_value: str)
     """Reject constant CBit stores regardless of their position."""
     program = QCProgram.from_mlir_str(
         f"""module {{
-  func.func @main() -> !cbit.reg<2> attributes {{passthrough = ["entry_point"]}} {{
+  func.func @main() -> !cbit.reg<2> attributes {{mqt.entry_point}} {{
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %initial = arith.constant false
@@ -563,7 +563,7 @@ def test_flat_export_rejects_undefined_returned_bits() -> None:
     """Reject a returned undefined register unless every bit is written."""
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     %c = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
     qc.dealloc %q : !qc.qubit
@@ -596,7 +596,7 @@ def test_qiskit_export_excludes_internal_cbit_registers() -> None:
     """Export only CBit registers returned by the entry function."""
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     %output = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "output"} : !cbit.reg<1>
     %internal = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "internal"} : !cbit.reg<2>
@@ -627,7 +627,7 @@ def test_qiskit_export_rejects_measurement_with_multiple_destinations() -> None:
     """Reject one measurement result stored in more than one public bit."""
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main() -> !cbit.reg<2> attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %q = qc.alloc : !qc.qubit
@@ -650,7 +650,7 @@ def test_qiskit_export_rejects_dynamic_measurement_destination() -> None:
     """Require each Qiskit measurement destination to be static."""
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
     %c0 = arith.constant 0 : index
     %index = arith.addi %c0, %c0 : index
     %q = qc.alloc : !qc.qubit
@@ -1259,7 +1259,7 @@ def test_manual_arith_and_math_parameter_expression_exports_to_qiskit() -> None:
     """Reconstruct an expression from generic Arith and Math operations."""
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {passthrough = ["entry_point"]} {
+  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     %offset = arith.constant 5.000000e-01 : f64
     %sum = arith.addf %theta, %offset : f64
@@ -1287,7 +1287,7 @@ def _wide_parameter_expression_program(term_count: int) -> QCProgram:
     """
     lines = [
         "module {",
-        '  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {passthrough = ["entry_point"]} {',
+        '  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {',
         "    %q = qc.alloc : !qc.qubit",
     ]
     values = []
@@ -1337,7 +1337,7 @@ def test_unsupported_scalar_operation_fails_export_without_mutation() -> None:
     """Reject an unsupported f64 producer before changing the source program."""
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {passthrough = ["entry_point"]} {
+  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     %angle = math.sqrt %theta : f64
     qc.rz(%angle) %q : !qc.qubit
@@ -1404,7 +1404,7 @@ def test_duplicate_named_symbolic_inputs_are_invalid_qc_ir() -> None:
   func.func @main(
       %first: f64 {mqt.input_name = "theta"},
       %second: f64 {mqt.input_name = "theta"}
-  ) attributes {passthrough = ["entry_point"]} {
+  ) attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     qc.rx(%first) %q : !qc.qubit
     qc.rz(%second) %q : !qc.qubit
@@ -1432,7 +1432,7 @@ def test_parameter_and_register_names_must_be_unique() -> None:
     with pytest.raises(RuntimeError, match="MLIR operation failed"):
         QCProgram.from_mlir_str(
             """module {
-  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {passthrough = ["entry_point"]} {
+  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
     %q = memref.alloc() {mqt.register_name = "theta"} : memref<1x!qc.qubit>
     memref.dealloc %q : memref<1x!qc.qubit>
     return
@@ -1457,7 +1457,7 @@ def test_parameter_names_with_null_characters_fail_closed() -> None:
     with pytest.raises(RuntimeError, match="MLIR operation failed"):
         QCProgram.from_mlir_str(
             r"""module {
-  func.func @main(%theta: f64 {mqt.input_name = "before\00after"}) attributes {passthrough = ["entry_point"]} {
+  func.func @main(%theta: f64 {mqt.input_name = "before\00after"}) attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     qc.rz(%theta) %q : !qc.qubit
     qc.dealloc %q : !qc.qubit
@@ -1472,7 +1472,7 @@ def test_named_symbolic_input_exports_to_qiskit() -> None:
     """Reconstruct a direct Qiskit parameter from a named f64 input."""
     symbolic = QCProgram.from_mlir_str(
         """module {
-  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {passthrough = ["entry_point"]} {
+  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     qc.rx(%theta) %q : !qc.qubit
     qc.dealloc %q : !qc.qubit
@@ -1491,7 +1491,7 @@ def test_unused_named_symbolic_input_fails_export_without_mutation() -> None:
     """Reject a compiler input that would disappear from the Qiskit circuit."""
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {passthrough = ["entry_point"]} {
+  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     qc.x %q : !qc.qubit
     qc.dealloc %q : !qc.qubit
@@ -1512,7 +1512,7 @@ def test_unnamed_runtime_input_is_rejected_on_export() -> None:
     """Do not infer source semantics for arbitrary runtime inputs."""
     runtime = QCProgram.from_mlir_str(
         """module {
-  func.func @main(%theta: f64) attributes {passthrough = ["entry_point"]} {
+  func.func @main(%theta: f64) attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     qc.rx(%theta) %q : !qc.qubit
     qc.dealloc %q : !qc.qubit
@@ -1530,7 +1530,7 @@ def test_named_non_f64_runtime_input_is_rejected_on_export() -> None:
     """Reject a named compiler input whose type cannot represent a parameter."""
     runtime = QCProgram.from_mlir_str(
         """module {
-  func.func @main(%count: i64 {mqt.input_name = "count"}) attributes {passthrough = ["entry_point"]} {
+  func.func @main(%count: i64 {mqt.input_name = "count"}) attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     qc.x %q : !qc.qubit
     qc.dealloc %q : !qc.qubit
@@ -1555,7 +1555,7 @@ def test_target_aware_qiskit_export_maps_sparse_site_ids() -> None:
     )
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %q = qc.static 4294967296 : !qc.qubit
     qc.x %q : !qc.qubit
     return
@@ -1581,7 +1581,7 @@ def test_target_aware_qiskit_export_rejects_unknown_site() -> None:
     )
     program = QCProgram.from_mlir_str(
         """module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %q = qc.static 30 : !qc.qubit
     qc.x %q : !qc.qubit
     return
@@ -1613,7 +1613,7 @@ def test_target_aware_qiskit_export_rejects_dynamic_qubits(allocation: str) -> N
     target = CompilerTarget(2)
     program = QCProgram.from_mlir_str(
         f"""module {{
-  func.func @main() attributes {{passthrough = ["entry_point"]}} {{
+  func.func @main() attributes {{mqt.entry_point}} {{
     {allocation}
     return
   }}

@@ -19,7 +19,7 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive"> {
     Requirements:
 
     - Input is a valid module in the QC dialect.
-    - The entry function must be marked with the `entry_point` attribute.
+    - The entry function must be marked with `mqt.entry_point`.
 
     Behavior:
 
@@ -35,5 +35,5 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive"> {
     - Non-quantum dialects are lowered via MLIR's built-in conversions.
   }];
 
-  let dependentDialects = ["mlir::LLVM::LLVMDialect"];
+  let dependentDialects = ["mlir::LLVM::LLVMDialect", "mlir::mqt::MQTDialect"];
 }

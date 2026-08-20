@@ -24,10 +24,12 @@ def MQTDialect : Dialect {
     `mqt.register_name` records the source-level name of a quantum or classical
     register allocation. Input and register names share one function-wide
     namespace.
+    `mqt.entry_point` marks the single defined program entry function in a
+    module.
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
-      "::mlir::StringAttr":$register_name);
+      "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point);
 
   let hasOperationAttrVerify = 1;
   let hasRegionArgAttrVerify = 1;

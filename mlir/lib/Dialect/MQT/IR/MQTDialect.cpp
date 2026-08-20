@@ -32,6 +32,34 @@ using namespace mlir::mqt;
 void MQTDialect::initialize() {}
 
 namespace {
+[[nodiscard]] LogicalResult verifyEntryPoint(Operation* operation,
+                                             const NamedAttribute attribute) {
+  if (!isa<UnitAttr>(attribute.getValue())) {
+    return operation->emitError()
+           << "attribute '" << attribute.getName().getValue()
+           << "' must be a unit attribute";
+  }
+
+  auto function = dyn_cast<FunctionOpInterface>(operation);
+  auto moduleOp = operation->getParentOfType<ModuleOp>();
+  if (!function || !moduleOp ||
+      operation->getParentOp() != moduleOp.getOperation() ||
+      function.getFunctionBody().empty()) {
+    return operation->emitError()
+           << "attribute '" << attribute.getName().getValue()
+           << "' requires a defined module-level function";
+  }
+
+  for (Operation& candidate : moduleOp.getBody()->getOperations()) {
+    if (&candidate != operation &&
+        candidate.hasAttr(MQTDialect::EntryPointAttrHelper::getNameStr())) {
+      return operation->emitError()
+             << "module must contain at most one program entry point";
+    }
+  }
+  return success();
+}
+
 [[nodiscard]] LogicalResult verifyName(Operation* operation,
                                        const NamedAttribute attribute) {
   const auto name = dyn_cast<StringAttr>(attribute.getValue());
@@ -113,6 +141,9 @@ namespace {
 LogicalResult
 MQTDialect::verifyOperationAttribute(Operation* operation,
                                      const NamedAttribute attribute) {
+  if (attribute.getName() == EntryPointAttrHelper::getNameStr()) {
+    return verifyEntryPoint(operation, attribute);
+  }
   if (attribute.getName() == RegisterNameAttrHelper::getNameStr()) {
     return verifyRegisterName(operation, attribute);
   }
@@ -173,4 +204,13 @@ LogicalResult MQTDialect::verifyRegionResultAttribute(
   return operation->emitError()
          << "attribute '" << attribute.getName().getValue()
          << "' is not valid on a region result";
+}
+
+func::FuncOp mlir::mqt::getEntryPoint(ModuleOp moduleOp) {
+  for (auto function : moduleOp.getOps<func::FuncOp>()) {
+    if (function->hasAttr(MQTDialect::EntryPointAttrHelper::getNameStr())) {
+      return function;
+    }
+  }
+  return nullptr;
 }

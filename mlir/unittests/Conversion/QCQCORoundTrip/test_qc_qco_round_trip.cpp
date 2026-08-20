@@ -78,7 +78,7 @@ TEST_F(QCQCORoundTripTest, PreservesSharedMQTMetadata) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%theta: f64 {mqt.input_name = "theta"})
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %reg = memref.alloc() {mqt.register_name = "q"}
         : memref<2x!qc.qubit>
     memref.dealloc %reg : memref<2x!qc.qubit>
@@ -94,6 +94,8 @@ module {
 
   auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(function);
+  EXPECT_TRUE(function->hasAttr(
+      mlir::mqt::MQTDialect::EntryPointAttrHelper::getNameStr()));
   const auto inputName = function.getArgAttrOfType<StringAttr>(
       0, mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr());
   ASSERT_TRUE(inputName);
@@ -112,7 +114,7 @@ TEST_F(QCQCORoundTripTest, PreservesClassicalRegistersWithoutConversion) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main() -> (!cbit.reg<2>, !cbit.reg<1>)
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %c0 = arith.constant 0 : index
     %zero = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "zero"} : !cbit.reg<2>
     %undefined = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "undefined"} : !cbit.reg<1>
@@ -170,7 +172,7 @@ TEST_F(QCQCORoundTripTest, PreservesClassicalIfResultWithoutScratch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%condition: i1) -> i64
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     %result = scf.if %condition -> i64 {
       qc.h %q : !qc.qubit
@@ -209,7 +211,7 @@ TEST_F(QCQCORoundTripTest, PreservesClassicalIndexSwitchResultWithoutScratch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%index: index) -> i64
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     %result = scf.index_switch %index -> i64
     case 0 {
@@ -249,7 +251,7 @@ module {
 TEST_F(QCQCORoundTripTest, PreservesDenseUnitaryMatrixAndQubitArity) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %q0 = qc.alloc : !qc.qubit
     %q1 = qc.alloc : !qc.qubit
     qc.unitary dense<[

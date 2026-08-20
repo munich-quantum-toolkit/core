@@ -87,7 +87,7 @@ public:
    * a default return type of i64.
    *
    * @details
-   * Creates a main function with an entry_point attribute. Must be called
+   * Creates a main function with an `mqt.entry_point` attribute. Must be called
    * before adding operations.
    */
   void initialize();
@@ -98,7 +98,7 @@ public:
    * @param returnTypes The return types for the main function
    *
    * @details
-   * Creates a main function with an entry_point attribute. Must be called
+   * Creates a main function with an `mqt.entry_point` attribute. Must be called
    * before adding operations.
    */
   void initialize(TypeRange returnTypes);

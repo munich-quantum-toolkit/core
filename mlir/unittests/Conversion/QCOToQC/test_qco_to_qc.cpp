@@ -124,7 +124,7 @@ TEST(QCOToQCRegressionTest, RetainsDynamicQubitRegisterName) {
 
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main(%size: index) attributes {passthrough = ["entry_point"]} {
+  func.func @main(%size: index) attributes {mqt.entry_point} {
     %reg = qtensor.alloc(%size) {mqt.register_name = "named_qubits"} : tensor<?x!qco.qubit>
     qtensor.dealloc %reg : tensor<?x!qco.qubit>
     return
@@ -176,7 +176,7 @@ TEST(QCOToQCRegressionTest, PreservesClassicalIfResult) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%condition: i1) -> i64
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %q0 = qco.alloc : !qco.qubit
     %then = arith.constant 1 : i64
     %else = arith.constant 2 : i64
@@ -230,7 +230,7 @@ TEST(QCOToQCRegressionTest, PreservesClassicalIndexSwitchResult) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%index: index) -> i64
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %q0 = qco.alloc : !qco.qubit
     %result, %q1 = qco.index_switch %index -> (i64, !qco.qubit)
     case 0 args(%arg0 = %q0) {
@@ -285,7 +285,7 @@ TEST(QCOToQCRegressionTest, PreservesClassicalForLoopState) {
 
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> i64 attributes {mqt.entry_point} {
     %q0 = qco.alloc : !qco.qubit
     %lb = arith.constant 0 : index
     %ub = arith.constant 2 : index
@@ -332,7 +332,7 @@ TEST(QCOToQCRegressionTest, PreservesTypeChangingClassicalWhileState) {
 
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> i64 attributes {mqt.entry_point} {
     %q0 = qco.alloc : !qco.qubit
     %initial = arith.constant 1.0 : f32
     %result, %q1 = scf.while (%input = %initial, %q = %q0)

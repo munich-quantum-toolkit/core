@@ -83,6 +83,15 @@ partially constructed output circuit after a failure. Exact
 - [x] (2026-08-20 12:50Z) Replace quantum and classical source-name fields with
       one `mqt.register_name` contract, preserve it through CBit lowering, and
       reject collisions with named program inputs.
+- [x] (2026-08-20 13:09Z) Replace the high-level LLVM passthrough convention
+      with a verified `mqt.entry_point` marker, preserve the marker through
+      QC/QCO conversion, and lower it to QIR passthrough metadata only at the
+      LLVM/QIR boundary.
+- [x] (2026-08-20 13:19Z) Build the complete Release tree and pass all 4,301
+      configured CTests, 206 focused Python MLIR tests, MLIR documentation, stub
+      generation, and the repository lint suite. The Sphinx build could not
+      fetch the external QDMI tag file because DNS resolution failed on both
+      attempts.
 
 ## Surprises & Discoveries
 
@@ -134,6 +143,10 @@ partially constructed output circuit after a failure. Exact
 - Observation: `cbit.alloc` modeled its non-semantic `source_name` as an
   inherent operation field. The name has the same cross-frontend contract as
   quantum register names and belongs in the shared discardable metadata.
+- Observation: QC, QCO, and jeff used LLVM dialect `passthrough` metadata to
+  identify the program entry point before LLVM lowering. The string array had no
+  high-level owner or verifier and mixed the program model with a target
+  encoding.
 
 ## Decision Log
 
@@ -180,6 +193,12 @@ partially constructed output circuit after a failure. Exact
   a source library happens to accept some cross-kind collisions. Rejecting them
   in MQT metadata keeps import and export contracts deterministic. Date/Author:
   2026-08-20 / Codex.
+- Decision: Mark the single defined module-level program function with the unit
+  attribute `mqt.entry_point`. Preserve it as discardable metadata through
+  high-level conversions. Materialize LLVM `passthrough = ["entry_point", ...]`
+  only when QIR metadata is attached, then remove the MQT marker. Rationale: the
+  MQT dialect owns the frontend-neutral program contract, while LLVM passthrough
+  attributes remain a QIR target detail. Date/Author: 2026-08-20 / Codex.
 - Decision: Keep `mqt.input_name` independent of the argument type. Rationale:
   the name is shared program metadata, while Qiskit and future OpenQASM
   exporters decide which input types they can represent. Date/Author: 2026-08-20
@@ -204,16 +223,17 @@ partially constructed output circuit after a failure. Exact
 ## Outcomes & Retrospective
 
 The scalar implementation is complete. The shared MQT metadata dialect owns
-input and qubit-register names, and QC/QCO conversions preserve all compatible
-discardable metadata without duplicate dialect-specific attributes. The Qiskit
-boundary uses unique names instead of UUID edge cases and a closed normalized
-expression variant. QC and QCO reject non-finite statically known unitary
-parameters through their shared interface contract.
+input names, register names, and the program entry point. QC/QCO conversions
+preserve all compatible discardable metadata without duplicate dialect-specific
+attributes. The Qiskit boundary uses unique names instead of UUID edge cases and
+a closed normalized expression variant. QC and QCO reject non-finite statically
+known unitary parameters through their shared interface contract.
 
-The final Release build and all 4,128 configured tests pass; one QDMI test is
-skipped by its environment guard. All 157 Qiskit translation tests pass after a
-fresh extension build. MLIR and Sphinx documentation, stub generation, and the
-repository lint suite also pass.
+The final Release build and all 4,301 configured tests pass; one QDMI test is
+skipped by its environment guard. All 206 focused Python MLIR tests pass after a
+fresh extension build. MLIR documentation, stub generation, and the repository
+lint suite also pass. The Sphinx build remains unverified because both attempts
+failed to resolve the host for its external QDMI tag file.
 
 ## Context and Orientation
 
@@ -231,12 +251,12 @@ expressions, and only then asks a version-specific writer to allocate a Qiskit
 circuit.
 
 The importer uses `mqt.input_name` for the stable public name of each compiler
-input. `mlir/include/mlir/Dialect/MQT/IR/MQTDialect.td` declares this metadata
-and `mqt.qubit_register_name`; the operation-free `mqt` dialect owns their
-contracts. The compiler representation uses `arith.addf`, `arith.subf`,
-`arith.mulf`, `arith.divf`, and `arith.negf`, plus matching real-valued Math
-dialect operations. A local `for` induction parameter is a temporary SSA value
-keyed by its unique source name. It is not a function input.
+input. `mlir/include/mlir/Dialect/MQT/IR/MQTDialect.td` declares this metadata,
+`mqt.register_name`, and `mqt.entry_point`; the operation-free `mqt` dialect
+owns their contracts. The compiler representation uses `arith.addf`,
+`arith.subf`, `arith.mulf`, `arith.divf`, and `arith.negf`, plus matching
+real-valued Math dialect operations. A local `for` induction parameter is a
+temporary SSA value keyed by its unique source name. It is not a function input.
 
 ## Plan of Work
 

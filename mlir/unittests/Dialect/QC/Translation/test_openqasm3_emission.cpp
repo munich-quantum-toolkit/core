@@ -85,7 +85,7 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
 TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main() -> !cbit.reg<1>
-        attributes {passthrough = ["entry_point"]} {
+        attributes {mqt.entry_point} {
       %zero = arith.constant 0 : index
       %qubit = qc.alloc : !qc.qubit
       %bits = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "c"}
@@ -243,7 +243,7 @@ switch (selector) {
 TEST(OpenQASM3EmissionTest, EmitsNativeIndexSwitch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %qubit = qc.alloc : !qc.qubit
     %index = arith.constant 1 : index
     scf.index_switch %index
@@ -372,7 +372,7 @@ TEST(OpenQASM3EmissionTest, EmitsSignedBooleanAndFloatingExpressions) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main() -> (i64, i1, f64, f64, i1)
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %one = arith.constant 1 : i64
     %two = arith.constant 2 : i64
     %sum = arith.addi %one, %two : i64

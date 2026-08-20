@@ -704,7 +704,7 @@ TEST_F(QCOTest, IfOpParser) {
   // Test IfOp parser
   const char* mlirCode = R"(
       module {
-        func.func @main() -> i1 attributes {passthrough = ["entry_point"]} {
+        func.func @main() -> i1 attributes {mqt.entry_point} {
             %c0 = arith.constant 0 : index
             %c1 = arith.constant 1 : index
             %q0_0 = qco.alloc : !qco.qubit
@@ -967,7 +967,7 @@ TEST_F(QCOTest, IndexSwitchParser) {
   // Test IndexSwitch parser
   const char* mlirCode = R"(
       module {
-        func.func @main() -> !cbit.reg<3> attributes {passthrough = ["entry_point"]} {
+        func.func @main() -> !cbit.reg<3> attributes {mqt.entry_point} {
             %c2 = arith.constant 2 : index
             %c1 = arith.constant 1 : index
             %c0 = arith.constant 0 : index

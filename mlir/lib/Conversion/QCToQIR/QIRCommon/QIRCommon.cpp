@@ -436,16 +436,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
   bool hasInvalidMemory = false;
   SmallVector<cbit::StoreOp> consumedStores;
   moduleOp->walk([&](func::FuncOp funcOp) {
-    // Check whether the given function is the main entrypoint
-    auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
-    bool isEntryPoint = false;
-    if (passthrough) {
-      isEntryPoint = llvm::any_of(passthrough, [](Attribute attr) {
-        auto strAttr = dyn_cast<StringAttr>(attr);
-        return strAttr && strAttr.getValue() == "entry_point";
-      });
-    }
-    if (!isEntryPoint) {
+    if (!funcOp->hasAttr(mqt::MQTDialect::EntryPointAttrHelper::getNameStr())) {
       return;
     }
 

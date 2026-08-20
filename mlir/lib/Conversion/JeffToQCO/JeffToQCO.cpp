@@ -13,6 +13,7 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -1188,7 +1189,7 @@ struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
  * ```
  * is converted to
  * ```mlir
- * func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+ * func.func @main() -> i64 attributes {mqt.entry_point} {
  *   %0 = arith.constant 0 : i64
  *   return %0
  * }
@@ -1229,8 +1230,8 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
       resultTypes.push_back(rewriter.getI64Type());
     }
     rewriter.modifyOpInPlace(op, [&] {
-      op->setAttr("passthrough", rewriter.getArrayAttr(
-                                     {rewriter.getStringAttr("entry_point")}));
+      op->setAttr(mqt::MQTDialect::EntryPointAttrHelper::getNameStr(),
+                  rewriter.getUnitAttr());
       op.setType(rewriter.getFunctionType(inputTypes, resultTypes));
       for (const auto& [argument, type] :
            llvm::zip_equal(block->getArguments(), inputTypes)) {
@@ -1303,7 +1304,8 @@ protected:
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
       return (op.getSymName() != getEntryPointName(module) ||
-              op->hasAttr("passthrough")) &&
+              op->hasAttr(
+                  mqt::MQTDialect::EntryPointAttrHelper::getNameStr())) &&
              typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
     });

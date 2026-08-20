@@ -80,6 +80,45 @@ TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
   )mlir"));
 }
 
+TEST_F(MQTIRTest, AcceptsAndFindsEntryPoint) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @helper() { return }
+      func.func @main() attributes {mqt.entry_point} { return }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_EQ(mqt::getEntryPoint(*moduleOp).getSymName(), "main");
+}
+
+TEST_F(MQTIRTest, RejectsInvalidEntryPoints) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point = "yes"} { return }
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func private @main() attributes {mqt.entry_point}
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @first() attributes {mqt.entry_point} { return }
+      func.func @second() attributes {mqt.entry_point} { return }
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %c0 = "arith.constant"() {mqt.entry_point, value = 0 : i64}
+            : () -> i64
+        return
+      }
+    }
+  )mlir"));
+}
+
 TEST_F(MQTIRTest, RejectsInvalidInputNames) {
   EXPECT_FALSE(parse(R"mlir(
     module {

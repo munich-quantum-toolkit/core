@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -1644,7 +1645,7 @@ struct ConvertSCFWhileOpToJeff final
  *
  * @par Example:
  * ```mlir
- * func.func @main() -> i64 attributes {passthrough = ["entry_point"]} { ... }
+ * func.func @main() -> i64 attributes {mqt.entry_point} { ... }
  * ```
  * is converted to
  * ```mlir
@@ -1657,15 +1658,7 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
   LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto passthrough = op->getAttrOfType<ArrayAttr>("passthrough");
-    if (!passthrough) {
-      return failure();
-    }
-
-    if (!llvm::any_of(passthrough, [](Attribute attr) {
-          const auto strAttr = dyn_cast<StringAttr>(attr);
-          return strAttr && strAttr.getValue() == "entry_point";
-        })) {
+    if (!op->hasAttr(mqt::MQTDialect::EntryPointAttrHelper::getNameStr())) {
       return failure();
     }
 
@@ -1699,7 +1692,7 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
          llvm::zip_equal(block->getArguments(), newInputs)) {
       argument.setType(type);
     }
-    op->removeAttr("passthrough");
+    op->removeAttr(mqt::MQTDialect::EntryPointAttrHelper::getNameStr());
     rewriter.finalizeOpModification(op);
 
     return success();
@@ -1882,8 +1875,9 @@ protected:
                              scf::SCFDialect, memref::MemRefDialect>();
     target.addLegalDialect<jeff::JeffDialect>();
 
-    target.addDynamicallyLegalOp<func::FuncOp>(
-        [](func::FuncOp op) { return !op->hasAttr("passthrough"); });
+    target.addDynamicallyLegalOp<func::FuncOp>([](func::FuncOp op) {
+      return !op->hasAttr(mqt::MQTDialect::EntryPointAttrHelper::getNameStr());
+    });
     target.addDynamicallyLegalOp<func::ReturnOp>([](func::ReturnOp op) {
       return llvm::none_of(op.getOperandTypes(), [](Type type) {
         return isa<cbit::RegisterType>(type);

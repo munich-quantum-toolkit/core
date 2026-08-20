@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -61,6 +62,7 @@
 using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::utils;
+using mlir::mqt::getEntryPoint;
 
 static SmallVector<Value> getQubitValues(ValueRange values) {
   return to_vector(llvm::make_filter_range(
@@ -296,8 +298,8 @@ class MappingPassFixture : public testing::Test {
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<QCODialect, qtensor::QTensorDialect, scf::SCFDialect,
-                    arith::ArithDialect, func::FuncDialect>();
+    registry.insert<mqt::MQTDialect, QCODialect, qtensor::QTensorDialect,
+                    scf::SCFDialect, arith::ArithDialect, func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -597,7 +599,7 @@ TEST_P(MappingPassTest, FailNestedScalarAllocation) {
   const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %condition = arith.constant true
         %q0 = qco.alloc : !qco.qubit
         %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
@@ -635,7 +637,7 @@ TEST_P(MappingPassTest, FailNestedTensorAllocation) {
   const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %condition = arith.constant true
         %c1 = arith.constant 1 : index
         %q0 = qco.alloc : !qco.qubit
@@ -983,7 +985,7 @@ TEST_P(MappingPassTest, MapParallelLoopsWithClassicalDependencies) {
   const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %q0 = qco.alloc : !qco.qubit
@@ -1048,7 +1050,7 @@ TEST_P(MappingPassTest, MapForWithClassicalIterArg) {
   const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+      func.func @main() -> i64 attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %c2 = arith.constant 2 : index
@@ -1092,7 +1094,7 @@ TEST_P(MappingPassTest, MapTypeChangingWhileWithClassicalState) {
   const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+      func.func @main() -> i64 attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %c2 = arith.constant 2 : index
@@ -1143,7 +1145,7 @@ TEST_P(MappingPassTest, MapIfWithClassicalResult) {
   const auto& target = GetParam();
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+      func.func @main() -> i64 attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %c2 = arith.constant 2 : index
@@ -1202,7 +1204,7 @@ TEST_P(MappingPassTest, MapIndexSwitchWithClassicalResult) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%selector: index) -> i64
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %c2 = arith.constant 2 : index
@@ -1268,7 +1270,7 @@ TEST_P(MappingPassTest, MapIndexSwitchRegions) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%selector: index)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %c2 = arith.constant 2 : index
@@ -1330,7 +1332,7 @@ TEST_P(MappingPassTest, MapNestedOperationOnceWhileIndependentWiresAdvance) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%selector: index)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %c2 = arith.constant 2 : index
