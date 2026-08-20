@@ -239,6 +239,12 @@ TEST(QPEConstruction, SupportsMoreThan32Qubits) {
   EXPECT_NO_THROW({ static_cast<void>(qc::createQPE(precision, true, 0U)); });
   EXPECT_NO_THROW(
       { static_cast<void>(qc::createIterativeQPE(precision, true, 0U)); });
+
+  const auto lambda = std::ldexp(1.0, 1 - static_cast<int>(precision));
+  constexpr auto shots = 8U;
+  constexpr auto seed = 1U;
+  EXPECT_EQ(dd::sample(qc::createQPE(lambda, precision), shots, seed),
+            dd::sample(qc::createIterativeQPE(lambda, precision), shots, seed));
 }
 
 TEST(QPEConstruction, GeneratedInexactPhaseHasMultipleEstimates) {
