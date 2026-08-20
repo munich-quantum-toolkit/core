@@ -268,10 +268,10 @@ changes cannot replace an early, precise failure with a mapping error.
 
 `mlir::CompilerTarget::ClassicalControl` is a four-value public enum with
 `Conditional`, `Iteration`, `ConditionalLoop`, and `MultiwayBranch` values.
-`CompilerTarget::getClassicalControl()` returns the canonical capability list,
-and `CompilerTarget::supportsClassicalControl(ClassicalControl)` tests one
-value. Existing constructors and factories retain source compatibility through
-an empty default list.
+`CompilerTarget::classicalControl()` returns the canonical capability list, and
+`CompilerTarget::supportsClassicalControl(ClassicalControl)` tests one value.
+Existing constructors and factories retain source compatibility through an empty
+default list.
 
 The Python binding exposes the enum as `CompilerTarget.ClassicalControl`, the
 constructor keyword as `classical_control`, the read-only property as
