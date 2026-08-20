@@ -12,6 +12,7 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
@@ -150,17 +151,6 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
-TEST_F(QCTest, BuilderRejectsDuplicateNonEmptyQubitRegisterNames) {
-  EXPECT_DEATH(
-      {
-        QCProgramBuilder builder(context.get());
-        builder.initialize();
-        std::ignore = builder.allocQubitRegisterStorage(1, "q");
-        std::ignore = builder.allocQubitRegisterStorage(1, "q");
-      },
-      "Qubit register names must be unique");
-}
-
 TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
   EXPECT_DEATH(
       {
@@ -216,10 +206,16 @@ TEST_F(QCTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
   moduleOp->walk([&](cbit::AllocOp op) { allocations.push_back(op); });
   ASSERT_EQ(allocations.size(), 2);
   EXPECT_EQ(allocations[0].getInitialization(), cbit::Initialization::Zero);
-  EXPECT_FALSE(allocations[0].getSourceNameAttr());
+  EXPECT_FALSE(allocations[0]->getAttr(
+      ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr()));
   EXPECT_EQ(allocations[1].getInitialization(),
             cbit::Initialization::Undefined);
-  EXPECT_EQ(allocations[1].getSourceName(), "undefined");
+  EXPECT_EQ(
+      allocations[1]
+          ->getAttrOfType<StringAttr>(
+              ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
+          .getValue(),
+      "undefined");
 }
 
 TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {
@@ -596,7 +592,7 @@ static void emitForbiddenModifierBodyOperation(
   case ForbiddenModifierBodyOp::CBitAlloc:
     cbit::AllocOp::create(builder,
                           cbit::RegisterType::get(builder.getContext(), 1),
-                          cbit::Initialization::Zero, StringAttr{});
+                          cbit::Initialization::Zero);
     return;
   case ForbiddenModifierBodyOp::CBitLoad:
     cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg, index);

@@ -145,14 +145,10 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size,
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
-  if (!name.empty() && !qubitRegisterNames.insert(name).second) {
-    llvm::reportFatalUsageError("Qubit register names must be unique");
-  }
-
   auto qtensor = qtensorAlloc(size);
   if (!name.empty()) {
     ctx->getLoadedDialect<mqt::MQTDialect>()
-        ->getQubitRegisterNameAttrHelper()
+        ->getRegisterNameAttrHelper()
         .setAttr(qtensor.getDefiningOp(), getStringAttr(name));
   }
 
@@ -177,9 +173,13 @@ Value QCOProgramBuilder::allocClassicalBitRegister(
   }
 
   const auto type = cbit::RegisterType::get(ctx, size);
-  const auto nameAttr = name.empty() ? StringAttr{} : getStringAttr(name);
-  return cbit::AllocOp::create(*this, type, initialization, nameAttr)
-      .getResult();
+  auto alloc = cbit::AllocOp::create(*this, type, initialization);
+  if (!name.empty()) {
+    ctx->getLoadedDialect<mqt::MQTDialect>()
+        ->getRegisterNameAttrHelper()
+        .setAttr(alloc, getStringAttr(name));
+  }
+  return alloc.getResult();
 }
 
 Value QCOProgramBuilder::loadClassicalBit(

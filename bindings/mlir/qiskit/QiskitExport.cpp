@@ -699,8 +699,7 @@ void collectResources(mlir::func::FuncOp function, ExportState& state,
       state.quantumBases[alloc.getResult()] = state.numQubits;
       state.quantumSizes[alloc.getResult()] = size;
       if (const auto name = operation.getAttrOfType<mlir::StringAttr>(
-              mlir::mqt::MQTDialect::QubitRegisterNameAttrHelper::
-                  getNameStr())) {
+              mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
         Register reg{.name = name.str()};
         reg.bits.resize(size);
         std::iota(reg.bits.begin(), reg.bits.end(), state.numQubits);
@@ -764,7 +763,8 @@ void collectResources(mlir::func::FuncOp function, ExportState& state,
                                            .size = size,
                                            .initialization =
                                                alloc.getInitialization()};
-    if (const auto name = alloc.getSourceNameAttr()) {
+    if (const auto name = alloc->getAttrOfType<mlir::StringAttr>(
+            mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
       Register reg{.name = name.str()};
       reg.bits.resize(size);
       std::iota(reg.bits.begin(), reg.bits.end(), state.numClbits);

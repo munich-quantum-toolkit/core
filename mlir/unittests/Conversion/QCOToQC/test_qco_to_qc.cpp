@@ -109,7 +109,7 @@ TEST(QCOToQCRegressionTest, RetainsQubitRegisterName) {
   });
   ASSERT_TRUE(allocation);
   const auto name = allocation->getAttrOfType<StringAttr>(
-      mlir::mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr());
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
@@ -125,7 +125,7 @@ TEST(QCOToQCRegressionTest, RetainsDynamicQubitRegisterName) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%size: index) attributes {passthrough = ["entry_point"]} {
-    %reg = qtensor.alloc(%size) {mqt.qubit_register_name = "named_qubits"} : tensor<?x!qco.qubit>
+    %reg = qtensor.alloc(%size) {mqt.register_name = "named_qubits"} : tensor<?x!qco.qubit>
     qtensor.dealloc %reg : tensor<?x!qco.qubit>
     return
   }
@@ -144,7 +144,7 @@ module {
   EXPECT_EQ(allocation.getDynamicSizes().front(),
             allocation->getBlock()->getArgument(0));
   const auto name = allocation->getAttrOfType<StringAttr>(
-      mlir::mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr());
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }

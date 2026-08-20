@@ -46,7 +46,7 @@ TEST(QCTransformsTest, ShrinkQubitRegistersPreservesMetadata) {
     module {
       func.func @main() {
         %c1 = arith.constant 1 : index
-        %reg = memref.alloc() {mqt.qubit_register_name = "q"}
+        %reg = memref.alloc() {mqt.register_name = "q"}
             : memref<3x!qc.qubit>
         %qubit = memref.load %reg[%c1] : memref<3x!qc.qubit>
         qc.x %qubit : !qc.qubit
@@ -68,7 +68,7 @@ TEST(QCTransformsTest, ShrinkQubitRegistersPreservesMetadata) {
   ASSERT_TRUE(allocation);
   EXPECT_EQ(allocation.getType().getShape(), ArrayRef<int64_t>{1});
   EXPECT_EQ(allocation->getAttrOfType<StringAttr>(
-                mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr()),
+                mqt::MQTDialect::RegisterNameAttrHelper::getNameStr()),
             StringAttr::get(&context, "q"));
 }
 } // namespace

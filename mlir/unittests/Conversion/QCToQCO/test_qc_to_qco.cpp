@@ -605,7 +605,7 @@ TEST_F(QCToQCORegressionTest, RetainsQubitRegisterName) {
   moduleOp->walk([&](qtensor::AllocOp op) { allocation = op; });
   ASSERT_TRUE(allocation);
   const auto name = allocation->getAttrOfType<StringAttr>(
-      mlir::mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr());
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
@@ -614,7 +614,7 @@ TEST_F(QCToQCORegressionTest, RetainsDynamicQubitRegisterName) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%size: index) attributes {passthrough = ["entry_point"]} {
-    %reg = memref.alloc(%size) {mqt.qubit_register_name = "named_qubits"} : memref<?x!qc.qubit>
+    %reg = memref.alloc(%size) {mqt.register_name = "named_qubits"} : memref<?x!qc.qubit>
     memref.dealloc %reg : memref<?x!qc.qubit>
     return
   }
@@ -631,7 +631,7 @@ module {
   EXPECT_TRUE(allocation.getResult().getType().isDynamicDim(0));
   EXPECT_EQ(allocation.getSize(), allocation->getBlock()->getArgument(0));
   const auto name = allocation->getAttrOfType<StringAttr>(
-      mlir::mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr());
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
@@ -1109,7 +1109,7 @@ buildInvalidCBitModifierProgram(MLIRContext* context,
       case CBitModifierBodyOp::Alloc:
         cbit::AllocOp::create(builder,
                               cbit::RegisterType::get(builder.getContext(), 1),
-                              cbit::Initialization::Zero, StringAttr{});
+                              cbit::Initialization::Zero);
         break;
       case CBitModifierBodyOp::Load:
         cbit::LoadOp::create(builder, builder.getI1Type(), reg,

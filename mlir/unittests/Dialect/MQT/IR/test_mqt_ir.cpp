@@ -13,6 +13,7 @@
  * @brief Unit tests for the MQT metadata dialect.
  */
 
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -40,7 +41,7 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<arith::ArithDialect, func::FuncDialect,
+    registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
                     memref::MemRefDialect, mqt::MQTDialect, qc::QCDialect,
                     qco::QCODialect, qtensor::QTensorDialect>();
     context = std::make_unique<MLIRContext>(registry);
@@ -52,18 +53,27 @@ protected:
   }
 };
 
-TEST_F(MQTIRTest, AcceptsProgramInputAndQubitRegisterNames) {
+TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
   EXPECT_TRUE(parse(R"mlir(
     module {
       func.func @qc(%theta: f64 {mqt.input_name = "theta"}) {
-        %reg = memref.alloc() {mqt.qubit_register_name = "q"}
+        %reg = memref.alloc() {mqt.register_name = "q"}
             : memref<2x!qc.qubit>
         return
       }
       func.func @qco(%enabled: i1 {mqt.input_name = "enabled"}) {
         %c2 = arith.constant 2 : index
-        %reg = qtensor.alloc(%c2) {mqt.qubit_register_name = "r"}
+        %reg = qtensor.alloc(%c2) {mqt.register_name = "r"}
             : tensor<2x!qco.qubit>
+        return
+      }
+      func.func @cbit() {
+        %reg = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
+            : !cbit.reg<2>
+        return
+      }
+      func.func @lowered_cbit() {
+        %reg = memref.alloc() {mqt.register_name = "lowered"} : memref<2xi1>
         return
       }
     }
@@ -111,33 +121,51 @@ TEST_F(MQTIRTest, RejectsInputNameOnOperation) {
   )mlir"));
 }
 
-TEST_F(MQTIRTest, RejectsInvalidQubitRegisterOwners) {
+TEST_F(MQTIRTest, RejectsInvalidRegisterNamesAndOwners) {
   EXPECT_FALSE(parse(R"mlir(
     module {
-      func.func @main() {
-        %reg = memref.alloc() {mqt.qubit_register_name = "bits"}
-            : memref<2xi1>
+      func.func @empty() {
+        %reg = cbit.alloc(#cbit.init<zero>) {mqt.register_name = ""}
+            : !cbit.reg<2>
         return
       }
     }
   )mlir"));
   EXPECT_FALSE(parse(R"mlir(
     module {
-      func.func @main(%arg: f64 {mqt.qubit_register_name = "q"}) {
+      func.func @main() {
+        %reg = memref.alloc() {mqt.register_name = "values"}
+            : memref<2xf64>
+        return
+      }
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main(%arg: f64 {mqt.register_name = "q"}) {
         return
       }
     }
   )mlir"));
 }
 
-TEST_F(MQTIRTest, RejectsDuplicateQubitRegisterNames) {
+TEST_F(MQTIRTest, RejectsDuplicateProgramNames) {
   EXPECT_FALSE(parse(R"mlir(
     module {
       func.func @main() {
-        %lhs = memref.alloc() {mqt.qubit_register_name = "q"}
+        %lhs = memref.alloc() {mqt.register_name = "state"}
             : memref<1x!qc.qubit>
-        %rhs = memref.alloc() {mqt.qubit_register_name = "q"}
-            : memref<2x!qc.qubit>
+        %rhs = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "state"}
+            : !cbit.reg<2>
+        return
+      }
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main(%arg: f64 {mqt.input_name = "state"}) {
+        %reg = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "state"}
+            : !cbit.reg<2>
         return
       }
     }

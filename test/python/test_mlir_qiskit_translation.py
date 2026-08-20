@@ -445,8 +445,8 @@ def test_flat_circuit_round_trip_preserves_supported_metadata() -> None:
     program = QCProgram.from_qiskit(circuit)
     restored = program.to_qiskit()
 
-    assert 'mqt.qubit_register_name = "input"' in program.ir
-    assert 'cbit.alloc(#cbit.init<zero>) source_name = "output"' in program.ir
+    assert 'mqt.register_name = "input"' in program.ir
+    assert 'cbit.alloc(#cbit.init<zero>) {mqt.register_name = "output"}' in program.ir
     assert restored.global_phase == pytest.approx(0.125)
     assert [(reg.name, len(reg)) for reg in restored.qregs] == [("input", 2)]
     assert [(reg.name, len(reg)) for reg in restored.cregs] == [("output", 2)]
@@ -550,7 +550,7 @@ c[0] = measure q[1];
     restored = program.to_qiskit()
 
     assert "ub.poison" not in program.ir
-    assert 'cbit.alloc(#cbit.init<undefined>) source_name = "c"' in program.ir
+    assert 'cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "c"}' in program.ir
     assert [(register.name, len(register)) for register in restored.qregs] == [("q", 2)]
     assert [(register.name, len(register)) for register in restored.cregs] == [("c", 1)]
     assert [item.operation.name for item in restored.data] == ["h", "measure"]
@@ -598,8 +598,8 @@ def test_qiskit_export_excludes_internal_cbit_registers() -> None:
         """module {
   func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
     %q = qc.alloc : !qc.qubit
-    %output = cbit.alloc(#cbit.init<zero>) source_name = "output" : !cbit.reg<1>
-    %internal = cbit.alloc(#cbit.init<zero>) source_name = "internal" : !cbit.reg<2>
+    %output = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "output"} : !cbit.reg<1>
+    %internal = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "internal"} : !cbit.reg<2>
     qc.dealloc %q : !qc.qubit
     return %output : !cbit.reg<1>
   }
@@ -1409,6 +1409,32 @@ def test_duplicate_named_symbolic_inputs_are_invalid_qc_ir() -> None:
     qc.rx(%first) %q : !qc.qubit
     qc.rz(%second) %q : !qc.qubit
     qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+"""
+        )
+
+
+def test_parameter_and_register_names_must_be_unique() -> None:
+    """Reject a parameter and register that share one program name."""
+    theta = Parameter("theta")
+    register = QuantumRegister(1, "theta")
+    circuit = QuantumCircuit(register)
+    circuit.rx(theta, register[0])
+    source_data = list(circuit.data)
+
+    with pytest.raises(RuntimeError, match="unique parameter and register names"):
+        QCProgram.from_qiskit(circuit)
+
+    assert list(circuit.data) == source_data
+
+    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+        QCProgram.from_mlir_str(
+            """module {
+  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {passthrough = ["entry_point"]} {
+    %q = memref.alloc() {mqt.register_name = "theta"} : memref<1x!qc.qubit>
+    memref.dealloc %q : memref<1x!qc.qubit>
     return
   }
 }

@@ -336,8 +336,8 @@ struct ConvertJeffIntArrayZeroOpToCBit final
       return rewriter.notifyMatchFailure(
           op, "CBit array length must match its static result width");
     }
-    rewriter.replaceOpWithNewOp<cbit::AllocOp>(
-        op, registerType, cbit::Initialization::Zero, StringAttr{});
+    rewriter.replaceOpWithNewOp<cbit::AllocOp>(op, registerType,
+                                               cbit::Initialization::Zero);
     return success();
   }
 };

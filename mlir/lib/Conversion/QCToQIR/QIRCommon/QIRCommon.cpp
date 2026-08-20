@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
@@ -467,7 +468,8 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       }
       auto& reg = state.cregs[it->second];
       reg.record = false;
-      if (const auto name = allocOp.getSourceNameAttr()) {
+      if (const auto name = allocOp->getAttrOfType<StringAttr>(
+              ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
         reg.label = name.str();
       }
       const auto size = allocOp.getResult().getType().getWidth();

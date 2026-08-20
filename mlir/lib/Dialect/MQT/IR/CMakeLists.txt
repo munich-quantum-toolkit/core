@@ -15,6 +15,7 @@ add_mlir_dialect_library(
   MLIRMQTDialectIncGen
   LINK_LIBS
   PRIVATE
+  MLIRCBitDialect
   MLIRFuncDialect
   MLIRIR
   MLIRMemRefDialect

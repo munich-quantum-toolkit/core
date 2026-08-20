@@ -1737,6 +1737,13 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
                   view->numQubits(), view->numClbits(), 0U, 0U);
   const auto quantumRegisters = circuitRegisters(*view, true);
   const auto classicalRegisters = circuitRegisters(*view, false);
+  for (const auto& reg :
+       llvm::concat<const Register>(quantumRegisters, classicalRegisters)) {
+    if (!parameterNames.insert(reg.name).second) {
+      throw std::runtime_error(
+          "Qiskit circuit requires unique parameter and register names");
+    }
+  }
   const auto looseQubits =
       validateRegisterLayout(quantumRegisters, view->numQubits(), "quantum");
   const auto looseClbits = validateRegisterLayout(

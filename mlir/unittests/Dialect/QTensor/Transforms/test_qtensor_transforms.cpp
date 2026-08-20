@@ -48,7 +48,7 @@ TEST(QTensorTransformsTest, ShrinkToFitPreservesMetadata) {
       func.func @main() {
         %c1 = arith.constant 1 : index
         %c3 = arith.constant 3 : index
-        %reg = qtensor.alloc(%c3) {mqt.qubit_register_name = "q"}
+        %reg = qtensor.alloc(%c3) {mqt.register_name = "q"}
             : tensor<3x!qco.qubit>
         %rest, %qubit = qtensor.extract %reg[%c1] : tensor<3x!qco.qubit>
         %rotated = qco.x %qubit : !qco.qubit -> !qco.qubit
@@ -73,7 +73,7 @@ TEST(QTensorTransformsTest, ShrinkToFitPreservesMetadata) {
   EXPECT_EQ(cast<RankedTensorType>(allocation.getType()).getShape(),
             ArrayRef<int64_t>{1});
   EXPECT_EQ(allocation->getAttrOfType<StringAttr>(
-                mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr()),
+                mqt::MQTDialect::RegisterNameAttrHelper::getNameStr()),
             StringAttr::get(&context, "q"));
 }
 } // namespace

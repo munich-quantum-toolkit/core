@@ -297,9 +297,9 @@ private:
       if (auto alloc = dyn_cast<cbit::AllocOp>(&operation)) {
         const auto type = alloc.getResult().getType();
         const bool isOutput = returnedRegisters.contains(alloc.getResult());
-        const auto requested = alloc.getSourceNameAttr()
-                                   ? alloc.getSourceNameAttr().getValue()
-                                   : StringRef{};
+        const auto name = alloc->getAttrOfType<StringAttr>(
+            mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
+        const auto requested = name ? name.getValue() : StringRef{};
         Resource resource{.kind = ResourceKind::Bit,
                           .name = isOutput ? outputName(requested)
                                            : uniqueName("c", nextBit),
@@ -325,7 +325,7 @@ private:
       }
       StringRef requested;
       if (const auto attr = alloc->getAttrOfType<StringAttr>(
-              mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr())) {
+              mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
         requested = attr.getValue();
       }
       Resource resource{.kind = ResourceKind::Qubit,

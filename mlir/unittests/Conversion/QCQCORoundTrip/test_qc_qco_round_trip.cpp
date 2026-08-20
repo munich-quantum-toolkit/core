@@ -79,7 +79,7 @@ TEST_F(QCQCORoundTripTest, PreservesSharedMQTMetadata) {
 module {
   func.func @main(%theta: f64 {mqt.input_name = "theta"})
       attributes {passthrough = ["entry_point"]} {
-    %reg = memref.alloc() {mqt.qubit_register_name = "q"}
+    %reg = memref.alloc() {mqt.register_name = "q"}
         : memref<2x!qc.qubit>
     memref.dealloc %reg : memref<2x!qc.qubit>
     return
@@ -103,7 +103,7 @@ module {
   moduleOp->walk([&](memref::AllocOp op) { allocation = op; });
   ASSERT_TRUE(allocation);
   const auto registerName = allocation->getAttrOfType<StringAttr>(
-      mlir::mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr());
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(registerName);
   EXPECT_EQ(registerName.getValue(), "q");
 }
@@ -114,8 +114,8 @@ module {
   func.func @main() -> (!cbit.reg<2>, !cbit.reg<1>)
       attributes {passthrough = ["entry_point"]} {
     %c0 = arith.constant 0 : index
-    %zero = cbit.alloc(#cbit.init<zero>) source_name = "zero" : !cbit.reg<2>
-    %undefined = cbit.alloc(#cbit.init<undefined>) source_name = "undefined" : !cbit.reg<1>
+    %zero = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "zero"} : !cbit.reg<2>
+    %undefined = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "undefined"} : !cbit.reg<1>
     %q = qc.alloc : !qc.qubit
     %measurement = qc.measure %q : !qc.qubit -> i1
     cbit.store %measurement, %zero[%c0] : !cbit.reg<2>
@@ -142,10 +142,20 @@ module {
   ASSERT_EQ(loads.size(), 1);
   ASSERT_EQ(stores.size(), 2);
   EXPECT_EQ(allocations[0].getInitialization(), cbit::Initialization::Zero);
-  EXPECT_EQ(allocations[0].getSourceName(), "zero");
+  EXPECT_EQ(
+      allocations[0]
+          ->getAttrOfType<StringAttr>(
+              ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
+          .getValue(),
+      "zero");
   EXPECT_EQ(allocations[1].getInitialization(),
             cbit::Initialization::Undefined);
-  EXPECT_EQ(allocations[1].getSourceName(), "undefined");
+  EXPECT_EQ(
+      allocations[1]
+          ->getAttrOfType<StringAttr>(
+              ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
+          .getValue(),
+      "undefined");
   EXPECT_EQ(loads.front().getReg(), allocations.front().getResult());
   EXPECT_EQ(stores.front().getReg(), allocations.front().getResult());
   EXPECT_EQ(stores.back().getReg(), allocations.back().getResult());

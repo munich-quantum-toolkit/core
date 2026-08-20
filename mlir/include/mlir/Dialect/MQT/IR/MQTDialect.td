@@ -21,12 +21,13 @@ def MQTDialect : Dialect {
     across quantum dialect conversions. It defines no operations or types.
 
     `mqt.input_name` records the source-level name of a function input.
-    `mqt.qubit_register_name` records the source-level name of a rank-one qubit
-    register allocation.
+    `mqt.register_name` records the source-level name of a quantum or classical
+    register allocation. Input and register names share one function-wide
+    namespace.
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
-      "::mlir::StringAttr":$qubit_register_name);
+      "::mlir::StringAttr":$register_name);
 
   let hasOperationAttrVerify = 1;
   let hasRegionArgAttrVerify = 1;

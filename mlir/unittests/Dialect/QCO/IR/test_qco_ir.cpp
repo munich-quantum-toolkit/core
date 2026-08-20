@@ -12,6 +12,7 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -237,17 +238,6 @@ TEST_F(QCOTest, BuilderRejectsUntrackedTensorInitArg) {
       "Invalid tensor value used");
 }
 
-TEST_F(QCOTest, BuilderRejectsDuplicateNonEmptyQubitRegisterNames) {
-  EXPECT_DEATH(
-      {
-        QCOProgramBuilder builder(context.get());
-        builder.initialize();
-        std::ignore = builder.allocQubitRegister(1, "q");
-        std::ignore = builder.allocQubitRegister(1, "q");
-      },
-      "Qubit register names must be unique");
-}
-
 TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
   EXPECT_DEATH(
       {
@@ -304,10 +294,16 @@ TEST_F(QCOTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
   moduleOp->walk([&](cbit::AllocOp op) { allocations.push_back(op); });
   ASSERT_EQ(allocations.size(), 2);
   EXPECT_EQ(allocations[0].getInitialization(), cbit::Initialization::Zero);
-  EXPECT_FALSE(allocations[0].getSourceNameAttr());
+  EXPECT_FALSE(allocations[0]->getAttr(
+      ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr()));
   EXPECT_EQ(allocations[1].getInitialization(),
             cbit::Initialization::Undefined);
-  EXPECT_EQ(allocations[1].getSourceName(), "undefined");
+  EXPECT_EQ(
+      allocations[1]
+          ->getAttrOfType<StringAttr>(
+              ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
+          .getValue(),
+      "undefined");
 }
 
 TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
@@ -464,7 +460,7 @@ static Operation* buildInvalidNestedModifierBody(
           case ForbiddenModifierBodyOp::CBitAlloc:
             cbit::AllocOp::create(
                 builder, cbit::RegisterType::get(builder.getContext(), 1),
-                cbit::Initialization::Zero, StringAttr{});
+                cbit::Initialization::Zero);
             break;
           case ForbiddenModifierBodyOp::CBitLoad:
             cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg,

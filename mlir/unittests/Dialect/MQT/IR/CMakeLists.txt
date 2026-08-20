@@ -12,6 +12,7 @@ target_link_libraries(
   ${mqt_ir_target}
   PRIVATE GTest::gtest_main
           MLIRArithDialect
+          MLIRCBitDialect
           MLIRFuncDialect
           MLIRMemRefDialect
           MLIRMQTDialect

@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
@@ -52,10 +53,14 @@ namespace {
   return success();
 }
 
-[[nodiscard]] bool isQubitRegisterAllocation(Operation* operation) {
+[[nodiscard]] bool isRegisterAllocation(Operation* operation) {
+  if (isa<cbit::AllocOp>(operation)) {
+    return true;
+  }
   if (auto alloc = dyn_cast<memref::AllocOp>(operation)) {
     const auto type = alloc.getType();
-    return type.getRank() == 1 && isa<qc::QubitType>(type.getElementType());
+    return type.getRank() == 1 && (isa<qc::QubitType>(type.getElementType()) ||
+                                   type.getElementType().isInteger(1));
   }
   if (auto alloc = dyn_cast<qtensor::AllocOp>(operation)) {
     const auto type = cast<RankedTensorType>(alloc.getType());
@@ -64,15 +69,15 @@ namespace {
   return false;
 }
 
-[[nodiscard]] LogicalResult
-verifyQubitRegisterName(Operation* operation, const NamedAttribute attribute) {
+[[nodiscard]] LogicalResult verifyRegisterName(Operation* operation,
+                                               const NamedAttribute attribute) {
   if (failed(verifyName(operation, attribute))) {
     return failure();
   }
-  if (!isQubitRegisterAllocation(operation)) {
+  if (!isRegisterAllocation(operation)) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
-           << "' requires a rank-one qubit register allocation";
+           << "' requires a rank-one quantum or classical register allocation";
   }
 
   auto function = operation->getParentOfType<FunctionOpInterface>();
@@ -84,13 +89,21 @@ verifyQubitRegisterName(Operation* operation, const NamedAttribute attribute) {
   }
 
   const auto name = cast<StringAttr>(attribute.getValue());
+  for (unsigned index = 0; index < function.getNumArguments(); ++index) {
+    if (function.getArgAttrOfType<StringAttr>(
+            index, MQTDialect::InputNameAttrHelper::getNameStr()) == name) {
+      return operation->emitError()
+             << "duplicate program name '" << name.getValue() << "'";
+    }
+  }
   for (Operation& candidate : function.getFunctionBody().front()) {
     if (&candidate == operation) {
       continue;
     }
-    if (candidate.getAttrOfType<StringAttr>(attribute.getName()) == name) {
+    if (candidate.getAttrOfType<StringAttr>(
+            MQTDialect::RegisterNameAttrHelper::getNameStr()) == name) {
       return operation->emitError()
-             << "duplicate qubit register name '" << name.getValue() << "'";
+             << "duplicate program name '" << name.getValue() << "'";
     }
   }
   return success();
@@ -100,8 +113,8 @@ verifyQubitRegisterName(Operation* operation, const NamedAttribute attribute) {
 LogicalResult
 MQTDialect::verifyOperationAttribute(Operation* operation,
                                      const NamedAttribute attribute) {
-  if (attribute.getName() == QubitRegisterNameAttrHelper::getNameStr()) {
-    return verifyQubitRegisterName(operation, attribute);
+  if (attribute.getName() == RegisterNameAttrHelper::getNameStr()) {
+    return verifyRegisterName(operation, attribute);
   }
   if (attribute.getName() == InputNameAttrHelper::getNameStr()) {
     return operation->emitError()
@@ -139,7 +152,16 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
     if (function.getArgAttrOfType<StringAttr>(index, attribute.getName()) ==
         name) {
       return operation->emitError()
-             << "duplicate input name '" << name.getValue() << "'";
+             << "duplicate program name '" << name.getValue() << "'";
+    }
+  }
+  if (!function.getFunctionBody().empty()) {
+    for (Operation& candidate : function.getFunctionBody().front()) {
+      if (candidate.getAttrOfType<StringAttr>(
+              RegisterNameAttrHelper::getNameStr()) == name) {
+        return operation->emitError()
+               << "duplicate program name '" << name.getValue() << "'";
+      }
     }
   }
   return success();

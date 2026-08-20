@@ -14,7 +14,6 @@
 
 #include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/StringSet.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -351,7 +350,8 @@ public:
    * auto c = builder.allocClassicalBitRegister(3, "c");
    * ```
    * ```mlir
-   * %c = cbit.alloc(#cbit.init<zero>) source_name = "c" : !cbit.reg<3>
+   * %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
+   *     : !cbit.reg<3>
    * ```
    */
   Value allocClassicalBitRegister(
@@ -1949,9 +1949,6 @@ private:
 
   MLIRContext* ctx{};
   Operation* module;
-
-  /// Track non-empty source-level qubit register names.
-  llvm::StringSet<> qubitRegisterNames;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;

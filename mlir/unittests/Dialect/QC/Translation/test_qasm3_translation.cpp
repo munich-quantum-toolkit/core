@@ -1007,7 +1007,8 @@ named_result = measure q;
   cbit::AllocOp classicalRegister;
   translated->walk([&](cbit::AllocOp op) { classicalRegister = op; });
   ASSERT_TRUE(classicalRegister);
-  const auto name = classicalRegister.getSourceNameAttr();
+  const auto name = classicalRegister->getAttrOfType<StringAttr>(
+      ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_result");
 }
@@ -1059,7 +1060,7 @@ qubit[2] named_qubits;
   });
   ASSERT_TRUE(qubitRegister);
   const auto name = qubitRegister->getAttrOfType<StringAttr>(
-      mlir::mqt::MQTDialect::QubitRegisterNameAttrHelper::getNameStr());
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }

@@ -80,6 +80,9 @@ partially constructed output circuit after a failure. Exact
 - [x] (2026-08-20 12:10Z) Run focused dialect, conversion, compiler, Qiskit,
       documentation, stub, and lint validation; inspect every signed commit and
       the final diff.
+- [x] (2026-08-20 12:50Z) Replace quantum and classical source-name fields with
+      one `mqt.register_name` contract, preserve it through CBit lowering, and
+      reject collisions with named program inputs.
 
 ## Surprises & Discoveries
 
@@ -128,6 +131,9 @@ partially constructed output circuit after a failure. Exact
 - Observation: MLIR's dialect documentation generator requires `OpBase.td` even
   for an operation-free dialect. `DialectBase.td` declares the dialect but does
   not make the `Op` base class visible to the documentation backend.
+- Observation: `cbit.alloc` modeled its non-semantic `source_name` as an
+  inherent operation field. The name has the same cross-frontend contract as
+  quantum register names and belongs in the shared discardable metadata.
 
 ## Decision Log
 
@@ -163,12 +169,17 @@ partially constructed output circuit after a failure. Exact
   trees that will be emitted. Rationale: Qiskit circuits cannot declare an
   otherwise unused parameter, so failing before writer allocation avoids
   silently changing the public parameter set. Date/Author: 2026-08-19 / Codex.
-- Decision: Define `mqt.input_name` and `mqt.qubit_register_name` as typed
-  discardable attributes in an operation-free `mqt` dialect. Verify them with
-  the dialect's operation and region-argument hooks. Rationale: MLIR assigns the
-  semantics of a dialect-prefixed discardable attribute to that dialect; this
-  provides one frontend-neutral owner and generated type-safe helpers.
-  Date/Author: 2026-08-20 / Codex.
+- Decision: Define `mqt.input_name` and `mqt.register_name` as typed discardable
+  attributes in an operation-free `mqt` dialect. Verify them with the dialect's
+  operation and region-argument hooks. Rationale: MLIR assigns the semantics of
+  a dialect-prefixed discardable attribute to that dialect; this provides one
+  frontend-neutral owner and generated type-safe helpers. Date/Author:
+  2026-08-20 / Codex.
+- Decision: Use one function-wide namespace for named inputs and quantum or
+  classical registers. Rationale: duplicate public names are ambiguous even when
+  a source library happens to accept some cross-kind collisions. Rejecting them
+  in MQT metadata keeps import and export contracts deterministic. Date/Author:
+  2026-08-20 / Codex.
 - Decision: Keep `mqt.input_name` independent of the argument type. Rationale:
   the name is shared program metadata, while Qiskit and future OpenQASM
   exporters decide which input types they can represent. Date/Author: 2026-08-20
