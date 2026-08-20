@@ -512,20 +512,10 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     if (resThen.failed()) {
       return WalkResult::interrupt();
     }
-    op->thenBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
-      const auto input = innerOp->getOperands();
-      const auto output = innerOp->getResults();
-      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
-        if (mlir::isa<QubitType>(input[i].getType())) {
-          std::ranges::replace(thenArgs, input[i], output[i]);
-        }
-      }
-    });
-  } else {
-    const auto linearThenValues = op->thenYield().getTargets().drop_front(
-        op->getClassicalResults().size());
-    thenArgs = {linearThenValues.begin(), linearThenValues.end()};
   }
+  const auto linearThenValues =
+      op->thenYield().getTargets().drop_front(op->getClassicalResults().size());
+  thenArgs = {linearThenValues.begin(), linearThenValues.end()};
 
   if (!elseEmpty) {
     for (const Value arg : elseBlock->getArguments()) {
@@ -543,22 +533,10 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     if (resElse.failed()) {
       return WalkResult::interrupt();
     }
-    op->elseBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
-      // Propagating values in order to assign the right values to the right
-      // result values
-      const auto input = innerOp->getOperands();
-      const auto output = innerOp->getResults();
-      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
-        if (mlir::isa<QubitType>(input[i].getType())) {
-          std::ranges::replace(elseArgs, input[i], output[i]);
-        }
-      }
-    });
-  } else {
-    const auto linearElseValues = op->elseYield().getTargets().drop_front(
-        op->getClassicalResults().size());
-    elseArgs = {linearElseValues.begin(), linearElseValues.end()};
   }
+  const auto linearElseValues =
+      op->elseYield().getTargets().drop_front(op->getClassicalResults().size());
+  elseArgs = {linearElseValues.begin(), linearElseValues.end()};
 
   const auto resultQubits = op->getResults();
   std::vector<Value> results = {resultQubits.begin(), resultQubits.end()};
