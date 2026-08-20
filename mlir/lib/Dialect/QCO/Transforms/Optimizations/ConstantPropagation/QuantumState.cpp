@@ -8,8 +8,7 @@
  * Licensed under the MIT License
  */
 
-#ifndef MQT_CORE_QUANTUMSTATE
-#define MQT_CORE_QUANTUMSTATE
+#pragma once
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/QuantumState.hpp"
 
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/GateToMap.h"
@@ -307,5 +306,3 @@ bool QuantumState::hasAlwaysZeroAmplitude(
 }
 
 } // namespace mlir::qco
-
-#endif // MQT_CORE_QUANTUMSTATE
