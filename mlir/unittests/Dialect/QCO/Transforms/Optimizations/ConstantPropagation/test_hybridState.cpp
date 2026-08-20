@@ -161,7 +161,7 @@ TEST_F(HybridStateTest, ApplyClassicalControlledGateThatsTrue) {
 
 TEST_F(HybridStateTest, ApplyNegClassicalControlledGateThatsFalse) {
   auto hState = HybridState(fourQubits, 4);
-  constexpr auto v1 = mlir::Value();
+  v1 = mlir::Value();
   std::vector ctrl = {v1};
   hState.addIntegerValue(v1, 0);
   hState.propagateGate(xOp.getOperation(), vectorThree);
