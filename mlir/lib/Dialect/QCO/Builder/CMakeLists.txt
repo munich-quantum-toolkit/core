@@ -12,6 +12,7 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   MLIRArithDialect
+  MLIRCBitDialect
   MLIRFuncDialect
   MLIRSCFDialect
   MLIRQCODialect

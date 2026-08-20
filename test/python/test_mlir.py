@@ -90,7 +90,9 @@ def _assert_bell_program(program: QCProgram, *, measured: bool = False) -> None:
         assert "qc.measure" not in ir
         return
 
-    assert "func.func @main() -> memref<2xi1>" in ir or "func.func @main() -> (memref<2xi1>" in ir
+    assert "func.func @main() -> !cbit.reg<2>" in ir or "func.func @main() -> (!cbit.reg<2>" in ir
+    assert "cbit.alloc" in ir
+    assert ir.count("cbit.store") == 2
     assert ir.count("qc.measure") == 2
 
 

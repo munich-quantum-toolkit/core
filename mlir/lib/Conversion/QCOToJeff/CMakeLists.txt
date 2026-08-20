@@ -15,6 +15,7 @@ add_mlir_conversion_library(
   QCOToJeffIncGen
   LINK_LIBS
   MLIRDialect
+  MLIRCBitDialect
   MLIRJeff
   MLIRNativeToJeff
   MLIRMQTTransforms

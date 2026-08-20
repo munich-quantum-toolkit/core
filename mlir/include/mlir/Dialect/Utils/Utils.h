@@ -42,10 +42,6 @@
 
 namespace mlir::utils {
 
-/// Attribute used to retain a source-level classical-register name.
-inline constexpr llvm::StringLiteral CLASSICAL_REGISTER_NAME_ATTR =
-    "mqt.classical_register_name";
-
 /// Attribute used to retain a source-level qubit-register name.
 inline constexpr llvm::StringLiteral QUBIT_REGISTER_NAME_ATTR =
     "mqt.qubit_register_name";
@@ -135,22 +131,6 @@ variantToValue(OpBuilder& builder, Location loc,
     return *value;
   }
   return constantFromScalar(builder, loc, std::get<T>(parameter));
-}
-
-inline void validateMemRefIndex(Value memref,
-                                const std::variant<int64_t, Value>& index) {
-  const auto* constant = std::get_if<int64_t>(&index);
-  if (constant == nullptr) {
-    return;
-  }
-  if (*constant < 0) {
-    llvm::reportFatalUsageError("Register index must be non-negative");
-  }
-  const auto type = dyn_cast<MemRefType>(memref.getType());
-  if (type && type.getRank() == 1 && !type.isDynamicDim(0) &&
-      *constant >= type.getDimSize(0)) {
-    llvm::reportFatalUsageError("Register index is out of bounds");
-  }
 }
 
 [[nodiscard]] inline std::optional<double> attributeToDouble(Attribute attr) {

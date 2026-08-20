@@ -14,6 +14,9 @@
 #include "QiskitVersion.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -28,10 +31,8 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/UB/IR/UBOps.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
@@ -124,11 +125,16 @@ checkedTargetSiteId(const uint64_t index) {
 }
 
 struct ExportState {
+  struct ClassicalRegisterInfo {
+    uint32_t base;
+    uint32_t size;
+    mlir::cbit::Initialization initialization;
+  };
+
   llvm::DenseMap<mlir::Value, uint32_t> qubits;
   llvm::DenseMap<mlir::Value, uint32_t> quantumBases;
   llvm::DenseMap<mlir::Value, uint32_t> quantumSizes;
-  llvm::DenseMap<mlir::Value, uint32_t> classicalBases;
-  llvm::DenseMap<mlir::Value, uint32_t> classicalSizes;
+  llvm::DenseMap<mlir::Value, ClassicalRegisterInfo> classicalRegisterInfo;
   std::vector<ExportedInstruction> instructions;
   std::vector<Register> quantumRegisters;
   std::vector<Register> classicalRegisters;
@@ -444,19 +450,6 @@ void collectResources(mlir::func::FuncOp function, ExportState& state,
         state.quantumRegisters.push_back(std::move(reg));
       }
       state.numQubits = checkedAdd(state.numQubits, size, "qubit");
-    } else if (type.getElementType().isInteger(1)) {
-      const auto size =
-          checkedIndex(type.getShape()[0], "classical-register size");
-      state.classicalBases[alloc.getResult()] = state.numClbits;
-      state.classicalSizes[alloc.getResult()] = size;
-      if (const auto name = operation.getAttrOfType<mlir::StringAttr>(
-              mlir::utils::CLASSICAL_REGISTER_NAME_ATTR)) {
-        Register reg{.name = name.str()};
-        reg.bits.resize(size);
-        std::iota(reg.bits.begin(), reg.bits.end(), state.numClbits);
-        state.classicalRegisters.push_back(std::move(reg));
-      }
-      state.numClbits = checkedAdd(state.numClbits, size, "classical-bit");
     } else {
       throw std::runtime_error(
           "QC to Qiskit export encountered an unsupported memory allocation");
@@ -486,43 +479,98 @@ void collectResources(mlir::func::FuncOp function, ExportState& state,
     }
     state.qubits[load.getResult()] = checkedAdd(base->second, checked, "qubit");
   }
-}
 
-[[nodiscard]] std::optional<uint32_t>
-initialClassicalZeroStoreIndex(mlir::memref::StoreOp store,
-                               mlir::Value registerValue,
-                               const ExportState& state) {
-  if (store.getMemref() != registerValue || store.getIndices().size() != 1U ||
-      !mlir::matchPattern(store.getValueToStore(), mlir::m_Zero())) {
-    return std::nullopt;
+  auto returnOp =
+      llvm::dyn_cast<mlir::func::ReturnOp>(function.getBody().front().back());
+  if (!returnOp) {
+    throw std::runtime_error(
+        "QC to Qiskit export requires an entry-function return");
   }
-
-  const auto size = state.classicalSizes.find(registerValue);
-  const auto index = mlir::getConstantIntValue(store.getIndices().front());
-  if (size == state.classicalSizes.end() || !index || *index < 0 ||
-      std::cmp_greater_equal(*index, size->second)) {
-    return std::nullopt;
+  llvm::DenseSet<mlir::Value> returnedRegisters;
+  for (const auto result : returnOp.getOperands()) {
+    const auto type =
+        llvm::dyn_cast<mlir::cbit::RegisterType>(result.getType());
+    if (!type) {
+      continue;
+    }
+    if (!returnedRegisters.insert(result).second) {
+      throw std::runtime_error(
+          "QC to Qiskit export does not support duplicate result registers");
+    }
+    auto alloc = result.getDefiningOp<mlir::cbit::AllocOp>();
+    if (!alloc || alloc->getBlock() != &function.getBody().front()) {
+      throw std::runtime_error(
+          "QC to Qiskit export requires direct result-register allocations");
+    }
+    const auto size = checkedIndex(type.getWidth(), "classical-register size");
+    state.classicalRegisterInfo[result] = {.base = state.numClbits,
+                                           .size = size,
+                                           .initialization =
+                                               alloc.getInitialization()};
+    if (const auto name = alloc.getSourceNameAttr()) {
+      Register reg{.name = name.str()};
+      reg.bits.resize(size);
+      std::iota(reg.bits.begin(), reg.bits.end(), state.numClbits);
+      state.classicalRegisters.push_back(std::move(reg));
+    }
+    state.numClbits = checkedAdd(state.numClbits, size, "classical-bit");
   }
-  return static_cast<uint32_t>(*index);
 }
 
 void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
-  mlir::Value initializationRegister;
-  llvm::DenseSet<uint32_t> initializedClassicalBits;
+  llvm::DenseMap<mlir::Value, llvm::DenseSet<uint32_t>> writtenBits;
+  llvm::DenseMap<mlir::Operation*, mlir::cbit::StoreOp> measurementDestinations;
+
+  for (auto store : function.getBody().front().getOps<mlir::cbit::StoreOp>()) {
+    auto measure = store.getValue().getDefiningOp<mlir::qc::MeasureOp>();
+    if (!measure) {
+      throw std::runtime_error(
+          "QC to Qiskit export does not support non-measurement classical "
+          "stores");
+    }
+    const auto info = state.classicalRegisterInfo.find(store.getReg());
+    const auto index = mlir::getConstantIntValue(store.getIndex());
+    if (info == state.classicalRegisterInfo.end()) {
+      throw std::runtime_error(
+          "QC measurement stores to a classical register that is not "
+          "returned");
+    }
+    if (!index) {
+      throw std::runtime_error(
+          "QC measurement uses a dynamic classical destination");
+    }
+    const auto checked = checkedIndex(*index, "classical-bit");
+    if (checked >= info->second.size) {
+      throw std::runtime_error(
+          "QC measurement uses an out-of-bounds classical destination");
+    }
+    if (!writtenBits[store.getReg()].insert(checked).second) {
+      throw std::runtime_error(
+          "QC to Qiskit export does not support duplicate classical "
+          "destinations");
+    }
+    if (!measurementDestinations.try_emplace(measure.getOperation(), store)
+             .second) {
+      throw std::runtime_error(
+          "QC measurement has more than one classical destination");
+    }
+  }
+
   for (auto& operation : function.getBody().front()) {
-    if (auto alloc = llvm::dyn_cast<mlir::memref::AllocOp>(operation)) {
-      initializationRegister = {};
-      initializedClassicalBits.clear();
-      if (state.classicalBases.contains(alloc.getResult())) {
-        initializationRegister = alloc.getResult();
-      }
+    if (llvm::isa<mlir::cbit::AllocOp>(operation)) {
       continue;
+    }
+    if (auto alloc = llvm::dyn_cast<mlir::memref::AllocOp>(operation)) {
+      if (state.quantumBases.contains(alloc.getResult())) {
+        continue;
+      }
+      throw std::runtime_error(
+          "QC to Qiskit export encountered an unsupported memory allocation");
     }
     if (llvm::isa<mlir::arith::ConstantOp>(operation)) {
       continue;
     }
     if (auto load = llvm::dyn_cast<mlir::memref::LoadOp>(operation)) {
-      initializationRegister = {};
       if (state.qubits.contains(load.getResult())) {
         continue;
       }
@@ -531,42 +579,20 @@ void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
           "loads");
     }
     if (auto dealloc = llvm::dyn_cast<mlir::memref::DeallocOp>(operation)) {
-      initializationRegister = {};
-      if (state.quantumBases.contains(dealloc.getMemref()) ||
-          state.classicalBases.contains(dealloc.getMemref())) {
+      if (state.quantumBases.contains(dealloc.getMemref())) {
         continue;
       }
       throw std::runtime_error(
           "QC to Qiskit export encountered an unsupported memory deallocation");
     }
-    if (auto poison = llvm::dyn_cast<mlir::ub::PoisonOp>(operation)) {
-      initializationRegister = {};
-      if (llvm::all_of(poison->getResults(), [](const mlir::Value result) {
-            return result.use_empty();
-          })) {
-        continue;
-      }
+    if (llvm::isa<mlir::cbit::LoadOp>(operation)) {
       throw std::runtime_error(
-          "QC to Qiskit export does not support used poison values");
+          "QC to Qiskit export does not support classical loads or control "
+          "flow");
     }
-    if (auto store = llvm::dyn_cast<mlir::memref::StoreOp>(operation)) {
-      if (llvm::isa_and_nonnull<mlir::qc::MeasureOp>(
-              store.getValueToStore().getDefiningOp())) {
-        initializationRegister = {};
-        continue;
-      }
-      if (initializationRegister) {
-        const auto index = initialClassicalZeroStoreIndex(
-            store, initializationRegister, state);
-        if (index && initializedClassicalBits.insert(*index).second) {
-          continue;
-        }
-      }
-      initializationRegister = {};
-      throw std::runtime_error(
-          "QC to Qiskit export does not support classical execution");
+    if (llvm::isa<mlir::cbit::StoreOp>(operation)) {
+      continue;
     }
-    initializationRegister = {};
     if (llvm::isa<mlir::qc::AllocOp, mlir::qc::DeallocOp, mlir::qc::StaticOp,
                   mlir::func::ReturnOp>(operation)) {
       continue;
@@ -580,38 +606,29 @@ void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
       continue;
     }
     if (auto measure = llvm::dyn_cast<mlir::qc::MeasureOp>(operation)) {
-      mlir::memref::StoreOp destination;
-      for (auto& use : measure.getResult().getUses()) {
-        if (const auto store =
-                llvm::dyn_cast<mlir::memref::StoreOp>(use.getOwner())) {
-          if (destination) {
-            throw std::runtime_error(
-                "QC measurement has more than one classical destination");
-          }
-          destination = store;
-        }
-      }
-      if (!destination || destination.getIndices().size() != 1U) {
+      const auto destination =
+          measurementDestinations.find(measure.getOperation());
+      if (destination == measurementDestinations.end()) {
         throw std::runtime_error(
             "QC measurement is missing a static classical destination");
       }
-      const auto base = state.classicalBases.find(destination.getMemref());
-      const auto index =
-          mlir::getConstantIntValue(destination.getIndices().front());
-      if (base == state.classicalBases.end() || !index) {
+      auto store = destination->second;
+      const auto info = state.classicalRegisterInfo.find(store.getReg());
+      const auto index = mlir::getConstantIntValue(store.getIndex());
+      if (info == state.classicalRegisterInfo.end() || !index) {
         throw std::runtime_error(
             "QC measurement uses an unsupported classical destination");
       }
-      const auto size = state.classicalSizes.find(destination.getMemref());
       const auto checked = checkedIndex(*index, "classical-bit");
-      if (size == state.classicalSizes.end() || checked >= size->second) {
+      if (checked >= info->second.size) {
         throw std::runtime_error(
             "QC measurement uses an out-of-bounds classical destination");
       }
       state.instructions.push_back(
           {.kind = ExportedInstruction::Kind::Measure,
            .qubits = mapQubits(measure.getQubit(), state.qubits),
-           .clbits = {checkedAdd(base->second, checked, "classical-bit")}});
+           .clbits = {
+               checkedAdd(info->second.base, checked, "classical-bit")}});
       continue;
     }
     if (auto reset = llvm::dyn_cast<mlir::qc::ResetOp>(operation)) {
@@ -644,6 +661,16 @@ void collectFlatInstructions(mlir::func::FuncOp function, ExportState& state) {
     }
     throw std::runtime_error("unsupported QC operation in Qiskit export: " +
                              operation.getName().getStringRef().str());
+  }
+
+  for (const auto& [reg, info] : state.classicalRegisterInfo) {
+    if (info.initialization == mlir::cbit::Initialization::Zero) {
+      continue;
+    }
+    if (writtenBits[reg].size() != info.size) {
+      throw std::runtime_error(
+          "QC to Qiskit export cannot return undefined classical bits");
+    }
   }
 }
 

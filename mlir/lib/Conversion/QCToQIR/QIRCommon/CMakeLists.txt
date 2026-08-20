@@ -27,6 +27,7 @@ add_mlir_library(
   MLIRFuncDialect
   MLIRControlFlowDialect
   MLIRArithDialect
+  MLIRCBitDialect
   MLIRQCDialect
   MLIRQIRUtils)
 
