@@ -422,8 +422,7 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
   auto main = program->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(main);
-  EXPECT_TRUE(
-      main->hasAttr(mlir::mqt::MQTDialect::EntryPointAttrHelper::getNameStr()));
+  EXPECT_TRUE(mlir::mqt::isEntryPoint(main));
   auto cregType = cbit::RegisterType::get(&context, 1);
   ASSERT_EQ(main.getFunctionType().getNumResults(), 1);
   EXPECT_EQ(main.getFunctionType().getResult(0), cregType);

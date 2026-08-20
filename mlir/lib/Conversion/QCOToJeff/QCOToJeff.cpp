@@ -1658,7 +1658,7 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
   LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!op->hasAttr(mqt::MQTDialect::EntryPointAttrHelper::getNameStr())) {
+    if (!mqt::isEntryPoint(op)) {
       return failure();
     }
 
@@ -1692,7 +1692,7 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
          llvm::zip_equal(block->getArguments(), newInputs)) {
       argument.setType(type);
     }
-    op->removeAttr(mqt::MQTDialect::EntryPointAttrHelper::getNameStr());
+    mqt::removeEntryPoint(op);
     rewriter.finalizeOpModification(op);
 
     return success();
@@ -1856,7 +1856,7 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* moduleOp = getOperation();
-    if (failed(mlir::mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
+    if (failed(mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
       signalPassFailure();
       return;
     }
@@ -1875,9 +1875,8 @@ protected:
                              scf::SCFDialect, memref::MemRefDialect>();
     target.addLegalDialect<jeff::JeffDialect>();
 
-    target.addDynamicallyLegalOp<func::FuncOp>([](func::FuncOp op) {
-      return !op->hasAttr(mqt::MQTDialect::EntryPointAttrHelper::getNameStr());
-    });
+    target.addDynamicallyLegalOp<func::FuncOp>(
+        [](func::FuncOp op) { return !mqt::isEntryPoint(op); });
     target.addDynamicallyLegalOp<func::ReturnOp>([](func::ReturnOp op) {
       return llvm::none_of(op.getOperandTypes(), [](Type type) {
         return isa<cbit::RegisterType>(type);

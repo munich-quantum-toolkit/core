@@ -35,5 +35,5 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive"> {
     - Non-quantum dialects are lowered via MLIR's built-in conversions.
   }];
 
-  let dependentDialects = ["mlir::LLVM::LLVMDialect", "mlir::mqt::MQTDialect"];
+  let dependentDialects = ["mlir::LLVM::LLVMDialect"];
 }

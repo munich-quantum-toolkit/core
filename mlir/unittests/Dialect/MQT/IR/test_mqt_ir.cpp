@@ -80,7 +80,7 @@ TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
   )mlir"));
 }
 
-TEST_F(MQTIRTest, AcceptsAndFindsEntryPoint) {
+TEST_F(MQTIRTest, ManagesAndFindsEntryPoint) {
   auto moduleOp = parse(R"mlir(
     module {
       func.func @helper() { return }
@@ -88,7 +88,20 @@ TEST_F(MQTIRTest, AcceptsAndFindsEntryPoint) {
     }
   )mlir");
   ASSERT_TRUE(moduleOp);
-  EXPECT_EQ(mqt::getEntryPoint(*moduleOp).getSymName(), "main");
+  auto main = mqt::getEntryPoint(*moduleOp);
+  ASSERT_TRUE(main);
+  EXPECT_EQ(main.getSymName(), "main");
+  EXPECT_TRUE(mqt::isEntryPoint(main));
+
+  mqt::removeEntryPoint(main);
+  EXPECT_FALSE(mqt::isEntryPoint(main));
+  EXPECT_FALSE(mqt::getEntryPoint(*moduleOp));
+
+  auto helper = moduleOp->lookupSymbol<func::FuncOp>("helper");
+  ASSERT_TRUE(helper);
+  mqt::setEntryPoint(helper);
+  EXPECT_TRUE(mqt::isEntryPoint(helper));
+  EXPECT_EQ(mqt::getEntryPoint(*moduleOp), helper);
 }
 
 TEST_F(MQTIRTest, RejectsInvalidEntryPoints) {

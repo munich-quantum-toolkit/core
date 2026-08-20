@@ -48,7 +48,7 @@ protected:
   QCQCORoundTripTest() {
     DialectRegistry registry;
     registry
-        .insert<cbit::CBitDialect, mlir::mqt::MQTDialect, qc::QCDialect,
+        .insert<cbit::CBitDialect, mqt::MQTDialect, qc::QCDialect,
                 qco::QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
                 func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
     context.appendDialectRegistry(registry);
@@ -75,7 +75,7 @@ protected:
 } // namespace
 
 TEST_F(QCQCORoundTripTest, PreservesSharedMQTMetadata) {
-  constexpr llvm::StringLiteral source = R"mlir(
+  constexpr StringLiteral source = R"mlir(
 module {
   func.func @main(%theta: f64 {mqt.input_name = "theta"})
       attributes {mqt.entry_point} {
@@ -94,10 +94,9 @@ module {
 
   auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(function);
-  EXPECT_TRUE(function->hasAttr(
-      mlir::mqt::MQTDialect::EntryPointAttrHelper::getNameStr()));
+  EXPECT_TRUE(mqt::isEntryPoint(function));
   const auto inputName = function.getArgAttrOfType<StringAttr>(
-      0, mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr());
+      0, mqt::MQTDialect::InputNameAttrHelper::getNameStr());
   ASSERT_TRUE(inputName);
   EXPECT_EQ(inputName.getValue(), "theta");
 
@@ -105,7 +104,7 @@ module {
   moduleOp->walk([&](memref::AllocOp op) { allocation = op; });
   ASSERT_TRUE(allocation);
   const auto registerName = allocation->getAttrOfType<StringAttr>(
-      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
+      mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(registerName);
   EXPECT_EQ(registerName.getValue(), "q");
 }
@@ -144,20 +143,18 @@ module {
   ASSERT_EQ(loads.size(), 1);
   ASSERT_EQ(stores.size(), 2);
   EXPECT_EQ(allocations[0].getInitialization(), cbit::Initialization::Zero);
-  EXPECT_EQ(
-      allocations[0]
-          ->getAttrOfType<StringAttr>(
-              ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
-          .getValue(),
-      "zero");
+  EXPECT_EQ(allocations[0]
+                ->getAttrOfType<StringAttr>(
+                    mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
+                .getValue(),
+            "zero");
   EXPECT_EQ(allocations[1].getInitialization(),
             cbit::Initialization::Undefined);
-  EXPECT_EQ(
-      allocations[1]
-          ->getAttrOfType<StringAttr>(
-              ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
-          .getValue(),
-      "undefined");
+  EXPECT_EQ(allocations[1]
+                ->getAttrOfType<StringAttr>(
+                    mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
+                .getValue(),
+            "undefined");
   EXPECT_EQ(loads.front().getReg(), allocations.front().getResult());
   EXPECT_EQ(stores.front().getReg(), allocations.front().getResult());
   EXPECT_EQ(stores.back().getReg(), allocations.back().getResult());

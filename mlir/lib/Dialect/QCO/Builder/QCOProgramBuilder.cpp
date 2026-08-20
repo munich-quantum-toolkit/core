@@ -64,14 +64,13 @@ void QCOProgramBuilder::initialize() { initialize({getI64Type()}); }
 
 void QCOProgramBuilder::initialize(TypeRange returnTypes) {
   // Set insertion point to the module body
-  setInsertionPointToStart(mlir::cast<ModuleOp>(module).getBody());
+  setInsertionPointToStart(cast<ModuleOp>(module).getBody());
 
   // Create main function as entry point
   auto funcType = getFunctionType({}, returnTypes);
   auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
-  ctx->getLoadedDialect<mqt::MQTDialect>()->getEntryPointAttrHelper().setAttr(
-      mainFunc, getUnitAttr());
+  mqt::setEntryPoint(mainFunc);
 
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
@@ -79,7 +78,7 @@ void QCOProgramBuilder::initialize(TypeRange returnTypes) {
 }
 
 void QCOProgramBuilder::retype(TypeRange returnTypes) {
-  auto mainFunc = mqt::getEntryPoint(mlir::cast<ModuleOp>(module));
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(module));
   if (!mainFunc) {
     llvm::reportFatalUsageError("Main function not found for retyping");
   }

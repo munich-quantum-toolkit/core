@@ -335,7 +335,7 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
   }
 
   for (const auto funcOp : moduleOp.getOps<LLVM::LLVMFuncOp>()) {
-    if (funcOp->hasAttr(mqt::MQTDialect::EntryPointAttrHelper::getNameStr())) {
+    if (mqt::isEntryPoint(funcOp)) {
       return funcOp;
     }
     auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");

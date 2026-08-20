@@ -436,7 +436,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
   bool hasInvalidMemory = false;
   SmallVector<cbit::StoreOp> consumedStores;
   moduleOp->walk([&](func::FuncOp funcOp) {
-    if (!funcOp->hasAttr(mqt::MQTDialect::EntryPointAttrHelper::getNameStr())) {
+    if (!mqt::isEntryPoint(funcOp)) {
       return;
     }
 
@@ -460,7 +460,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       auto& reg = state.cregs[it->second];
       reg.record = false;
       if (const auto name = allocOp->getAttrOfType<StringAttr>(
-              ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
+              mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
         reg.label = name.str();
       }
       const auto size = allocOp.getResult().getType().getWidth();

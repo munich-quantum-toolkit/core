@@ -120,7 +120,7 @@ private:
             {"required_num_results", std::to_string(metadata.numResults)})};
 
     main->setAttr("passthrough", rewriter.getArrayAttr(attributes));
-    main->removeAttr(mqt::MQTDialect::EntryPointAttrHelper::getNameStr());
+    mqt::removeEntryPoint(main);
 
     rewriter.setInsertionPointToEnd(m.getBody());
 

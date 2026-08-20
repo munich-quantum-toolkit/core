@@ -1230,8 +1230,7 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
       resultTypes.push_back(rewriter.getI64Type());
     }
     rewriter.modifyOpInPlace(op, [&] {
-      op->setAttr(mqt::MQTDialect::EntryPointAttrHelper::getNameStr(),
-                  rewriter.getUnitAttr());
+      mqt::setEntryPoint(op);
       op.setType(rewriter.getFunctionType(inputTypes, resultTypes));
       for (const auto& [argument, type] :
            llvm::zip_equal(block->getArguments(), inputTypes)) {
@@ -1304,8 +1303,7 @@ protected:
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
       return (op.getSymName() != getEntryPointName(module) ||
-              op->hasAttr(
-                  mqt::MQTDialect::EntryPointAttrHelper::getNameStr())) &&
+              mqt::isEntryPoint(op)) &&
              typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
     });

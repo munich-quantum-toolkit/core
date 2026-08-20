@@ -166,7 +166,7 @@ variantToValue(OpBuilder& builder, Location loc,
 /// operands are resolved once (linear in the expression DAG).
 [[nodiscard]] inline std::optional<Attribute>
 valueToConstantAttr(Value value,
-                    llvm::DenseMap<Value, std::optional<Attribute>>& cache) {
+                    DenseMap<Value, std::optional<Attribute>>& cache) {
   if (const auto it = cache.find(value); it != cache.end()) {
     return it->second;
   }
@@ -196,11 +196,10 @@ valueToConstantAttr(Value value,
     return cache[value] = std::nullopt;
   }
   std::optional<Attribute> folded;
-  if (const auto resultAttr =
-          llvm::dyn_cast_if_present<Attribute>(results.front())) {
+  if (const auto resultAttr = dyn_cast_if_present<Attribute>(results.front())) {
     folded = resultAttr;
   } else if (const auto resultValue =
-                 llvm::dyn_cast_if_present<Value>(results.front())) {
+                 dyn_cast_if_present<Value>(results.front())) {
     // Identity-style folds may return an existing SSA value (e.g. `addf x,
     // -0`).
     folded = valueToConstantAttr(resultValue, cache);
@@ -210,7 +209,7 @@ valueToConstantAttr(Value value,
 
 /// Recursively constant-fold a pure SSA expression DAG to an attribute.
 [[nodiscard]] inline std::optional<Attribute> valueToConstantAttr(Value value) {
-  llvm::DenseMap<Value, std::optional<Attribute>> cache;
+  DenseMap<Value, std::optional<Attribute>> cache;
   return valueToConstantAttr(value, cache);
 }
 
@@ -230,8 +229,8 @@ valueToConstantAttr(Value value,
 /// expression is finite.
 [[nodiscard]] inline LogicalResult
 verifyFiniteConstantParameters(Operation* op, const ValueRange parameters) {
-  llvm::DenseMap<Value, std::optional<Attribute>> constantCache;
-  llvm::DenseSet<Value> visited;
+  DenseMap<Value, std::optional<Attribute>> constantCache;
+  DenseSet<Value> visited;
   for (const auto [index, parameter] : llvm::enumerate(parameters)) {
     SmallVector<Value> worklist{parameter};
     while (!worklist.empty()) {

@@ -328,7 +328,7 @@ bool QCProgram::cleanup() {
 }
 
 bool QCProgram::normalizeGlobalPhases() {
-  return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
+  return succeeded(mqt::normalizeGlobalPhases(mod()));
 }
 
 std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
@@ -399,7 +399,7 @@ bool QCOProgram::cleanup() {
 }
 
 bool QCOProgram::normalizeGlobalPhases() {
-  return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
+  return succeeded(mqt::normalizeGlobalPhases(mod()));
 }
 
 bool QCOProgram::runPassPipeline(const std::string_view pipeline,

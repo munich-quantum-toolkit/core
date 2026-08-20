@@ -92,6 +92,12 @@ partially constructed output circuit after a failure. Exact
       generation, and the repository lint suite. The Sphinx build could not
       fetch the external QDMI tag file because DNS resolution failed on both
       attempts.
+- [x] (2026-08-20 14:36Z) Centralize entry-point metadata access in the MQT
+      dialect, restrict pass dependencies to dialects the passes produce, remove
+      redundant namespace qualifiers, and add #2150 to the compiler collection
+      launch entry.
+- [x] (2026-08-20 14:43Z) Add the MQT dialect reference to the published
+      compiler collection documentation.
 
 ## Surprises & Discoveries
 
@@ -199,6 +205,11 @@ partially constructed output circuit after a failure. Exact
   only when QIR metadata is attached, then remove the MQT marker. Rationale: the
   MQT dialect owns the frontend-neutral program contract, while LLVM passthrough
   attributes remain a QIR target detail. Date/Author: 2026-08-20 / Codex.
+- Decision: Query, set, and remove `mqt.entry_point` through MQT dialect helper
+  functions. Declare the MQT dialect as a pass dependency only when the pass
+  creates MQT metadata. Rationale: this keeps the attribute key private to its
+  owner and follows the MLIR pass contract for dependent dialects. Date/Author:
+  2026-08-20 / Codex.
 - Decision: Keep `mqt.input_name` independent of the argument type. Rationale:
   the name is shared program metadata, while Qiskit and future OpenQASM
   exporters decide which input types they can represent. Date/Author: 2026-08-20
