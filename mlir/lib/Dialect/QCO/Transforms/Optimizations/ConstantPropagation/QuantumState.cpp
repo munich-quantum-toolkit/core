@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#pragma once
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/QuantumState.hpp"
 
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/GateToMap.h"
