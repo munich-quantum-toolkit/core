@@ -15,15 +15,16 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
+#include "dd/Simulation.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
 #include <gtest/gtest.h>
 
-#include <bitset>
+#include <algorithm>
 #include <chrono>
-#include <cstdlib>
-#include <fstream>
+#include <cmath>
+#include <cstddef>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -34,15 +35,11 @@ namespace {
 class DynamicCircuitEvalExactQPE : public testing::TestWithParam<qc::Qubit> {
 protected:
   qc::Qubit precision{};
-  qc::fp theta{};
-  std::size_t expectedResult{};
-  std::string expectedResultRepresentation;
   qc::QuantumComputation qpe;
   qc::QuantumComputation iqpe;
   std::size_t qpeNgates{};
   std::size_t iqpeNgates{};
   std::unique_ptr<dd::Package> dd;
-  std::ofstream ofs;
 
   void TearDown() override {}
   void SetUp() override {
@@ -50,55 +47,17 @@ protected:
 
     dd = std::make_unique<dd::Package>(precision + 1);
 
-    qpe = qc::createQPE(precision);
+    const auto lambda = std::ldexp(1., 1 - static_cast<int>(precision));
+    qpe = qc::createQPE(lambda, precision);
     // remove final measurements so that the functionality is unitary
     qc::CircuitOptimizer::removeFinalMeasurements(qpe);
     qpeNgates = qpe.getNindividualOps();
-
-    // extract lambda from QPE global phase
-    const auto lambda = qpe.getGlobalPhase();
 
     iqpe = qc::createIterativeQPE(lambda, precision);
     iqpeNgates = iqpe.getNindividualOps();
 
     std::cout << "Estimating lambda = " << lambda << "π up to " << precision
               << "-bit precision.\n";
-
-    theta = lambda / 2;
-
-    std::cout << "Expected theta=" << theta << "\n";
-    std::bitset<64> binaryExpansion{};
-    dd::fp expansion = theta * 2;
-    std::size_t index = 0;
-    while (std::abs(expansion) > 1e-8) {
-      if (expansion >= 1.) {
-        binaryExpansion.set(index);
-        expansion -= 1.0;
-      }
-      index++;
-      expansion *= 2;
-    }
-
-    expectedResult = 0ULL;
-    for (std::size_t i = 0; i < precision; ++i) {
-      if (binaryExpansion.test(i)) {
-        expectedResult |= (1ULL << (precision - 1 - i));
-      }
-    }
-    std::stringstream ss{};
-    for (auto i = static_cast<int>(precision - 1); i >= 0; --i) {
-      if ((expectedResult & (1ULL << static_cast<std::size_t>(i))) != 0) {
-        ss << 1;
-      } else {
-        ss << 0;
-      }
-    }
-    expectedResultRepresentation = ss.str();
-
-    std::cout << "Theta is exactly representable using " << precision
-              << " bits.\n";
-    std::cout << "The expected output state is |"
-              << expectedResultRepresentation << ">.\n";
   }
 };
 
@@ -193,17 +152,11 @@ namespace {
 class DynamicCircuitEvalInexactQPE : public testing::TestWithParam<qc::Qubit> {
 protected:
   qc::Qubit precision{};
-  dd::fp theta{};
-  std::size_t expectedResult{};
-  std::string expectedResultRepresentation;
-  std::size_t secondExpectedResult{};
-  std::string secondExpectedResultRepresentation;
   qc::QuantumComputation qpe;
   qc::QuantumComputation iqpe;
   std::size_t qpeNgates{};
   std::size_t iqpeNgates{};
   std::unique_ptr<dd::Package> dd;
-  std::ofstream ofs;
 
   void TearDown() override {}
   void SetUp() override {
@@ -211,67 +164,17 @@ protected:
 
     dd = std::make_unique<dd::Package>(precision + 1);
 
-    qpe = qc::createQPE(precision, false);
+    const auto lambda = std::ldexp(3., -static_cast<int>(precision));
+    qpe = qc::createQPE(lambda, precision);
     // remove final measurements so that the functionality is unitary
     qc::CircuitOptimizer::removeFinalMeasurements(qpe);
     qpeNgates = qpe.getNindividualOps();
-
-    // extract lambda from QPE global phase
-    const auto lambda = qpe.getGlobalPhase();
 
     iqpe = qc::createIterativeQPE(lambda, precision);
     iqpeNgates = iqpe.getNindividualOps();
 
     std::cout << "Estimating lambda = " << lambda << "π up to " << precision
               << "-bit precision.\n";
-
-    theta = lambda / 2;
-
-    std::cout << "Expected theta=" << theta << "\n";
-    std::bitset<64> binaryExpansion{};
-    dd::fp expansion = theta * 2;
-    std::size_t index = 0;
-    while (std::abs(expansion) > 1e-8) {
-      if (expansion >= 1.) {
-        binaryExpansion.set(index);
-        expansion -= 1.0;
-      }
-      index++;
-      expansion *= 2;
-    }
-
-    expectedResult = 0ULL;
-    for (std::size_t i = 0; i < precision; ++i) {
-      if (binaryExpansion.test(i)) {
-        expectedResult |= (1ULL << (precision - 1 - i));
-      }
-    }
-    std::stringstream ss{};
-    for (auto i = precision; i > 0; --i) {
-      if ((expectedResult & (1ULL << (i - 1))) != 0) {
-        ss << 1;
-      } else {
-        ss << 0;
-      }
-    }
-    expectedResultRepresentation = ss.str();
-
-    secondExpectedResult = expectedResult + 1;
-    ss.str("");
-    for (auto i = precision; i > 0; --i) {
-      if ((secondExpectedResult & (1ULL << (i - 1))) != 0) {
-        ss << 1;
-      } else {
-        ss << 0;
-      }
-    }
-    secondExpectedResultRepresentation = ss.str();
-
-    std::cout << "Theta is not exactly representable using " << precision
-              << " bits.\n";
-    std::cout << "Most probable output states are |"
-              << expectedResultRepresentation << "> and |"
-              << secondExpectedResultRepresentation << ">.\n";
   }
 };
 
@@ -363,31 +266,33 @@ TEST_P(DynamicCircuitEvalInexactQPE, UnitaryTransformation) {
 
 namespace {
 
+[[nodiscard]] auto makePalindromicBitString(const qc::Qubit width)
+    -> std::string {
+  std::string bitString(width, '0');
+  for (std::size_t i = 0; i < (width + 1U) / 2U; ++i) {
+    if (i % 3U == 1U) {
+      continue;
+    }
+    bitString[i] = '1';
+    bitString[width - 1U - i] = '1';
+  }
+  return bitString;
+}
+
 class DynamicCircuitEvalBV : public testing::TestWithParam<qc::Qubit> {
 protected:
   qc::Qubit bitwidth{};
   qc::QuantumComputation bv;
   qc::QuantumComputation dbv;
-  std::size_t bvNgates{};
-  std::size_t dbvNgates{};
-  std::unique_ptr<dd::Package> dd;
-  std::ofstream ofs;
+  std::string expected;
 
   void TearDown() override {}
   void SetUp() override {
     bitwidth = GetParam();
-
-    dd = std::make_unique<dd::Package>(bitwidth + 1);
-
-    bv = qc::createBernsteinVazirani(bitwidth);
-    // remove final measurements so that the functionality is unitary
-    qc::CircuitOptimizer::removeFinalMeasurements(bv);
-    bvNgates = bv.getNindividualOps();
-
-    const auto expected = bv.getName().substr(3);
-    dbv = qc::createIterativeBernsteinVazirani(qc::BVBitString(expected),
-                                               bitwidth);
-    dbvNgates = dbv.getNindividualOps();
+    expected = makePalindromicBitString(bitwidth);
+    const auto hiddenString = qc::BVBitString(expected);
+    bv = qc::createBernsteinVazirani(hiddenString, bitwidth);
+    dbv = qc::createIterativeBernsteinVazirani(hiddenString, bitwidth);
     std::cout << "Hidden bitstring: " << expected << " (" << bitwidth
               << " qubits)\n";
   }
@@ -409,73 +314,18 @@ INSTANTIATE_TEST_SUITE_P(
       return ss.str();
     });
 
-TEST_P(DynamicCircuitEvalBV, UnitaryTransformation) {
-  bv.reorderOperations();
-  const auto start = std::chrono::steady_clock::now();
+TEST_P(DynamicCircuitEvalBV, ObservableResult) {
   // transform dynamic circuit to unitary circuit by first eliminating reset
   // operations and afterwards deferring measurements to the end of the circuit
   qc::CircuitOptimizer::eliminateResets(dbv);
   qc::CircuitOptimizer::deferMeasurements(dbv);
 
-  // remove final measurements in order to just obtain the unitary functionality
-  qc::CircuitOptimizer::removeFinalMeasurements(dbv);
-  dbv.reorderOperations();
-  const auto finishedTransformation = std::chrono::steady_clock::now();
+  constexpr std::size_t shots = 128U;
+  constexpr std::size_t seed = 7U;
+  const auto ordinaryMeasurements = dd::sample(bv, shots, seed);
+  const auto iterativeMeasurements = dd::sample(dbv, shots, seed);
 
-  dd::MatrixDD e = dd::Package::makeIdent();
-  dd->incRef(e);
-
-  auto leftIt = bv.begin();
-  auto rightIt = dbv.begin();
-
-  while (leftIt != bv.end() && rightIt != dbv.end()) {
-    auto multLeft = dd->multiply(getDD(**leftIt, *dd), e);
-    auto multRight = dd->multiply(multLeft, getInverseDD(**rightIt, *dd));
-    dd->incRef(multRight);
-    dd->decRef(e);
-    e = multRight;
-
-    dd->garbageCollect();
-
-    ++leftIt;
-    ++rightIt;
-  }
-
-  while (leftIt != bv.end()) {
-    auto multLeft = dd->multiply(getDD(**leftIt, *dd), e);
-    dd->incRef(multLeft);
-    dd->decRef(e);
-    e = multLeft;
-
-    dd->garbageCollect();
-
-    ++leftIt;
-  }
-
-  while (rightIt != dbv.end()) {
-    auto multRight = dd->multiply(e, getInverseDD(**rightIt, *dd));
-    dd->incRef(multRight);
-    dd->decRef(e);
-    e = multRight;
-
-    dd->garbageCollect();
-
-    ++rightIt;
-  }
-  const auto finishedEC = std::chrono::steady_clock::now();
-
-  const auto preprocessing =
-      std::chrono::duration<double>(finishedTransformation - start).count();
-  const auto verification =
-      std::chrono::duration<double>(finishedEC - finishedTransformation)
-          .count();
-
-  std::stringstream ss{};
-  ss << "bv,transformation," << bv.getNqubits() << "," << bvNgates << ",2,"
-     << dbvNgates << "," << preprocessing << "," << verification;
-  std::cout << ss.str() << "\n";
-
-  EXPECT_TRUE(e.isIdentity());
+  EXPECT_EQ(ordinaryMeasurements, iterativeMeasurements);
 }
 
 namespace {
@@ -485,24 +335,12 @@ protected:
   qc::Qubit precision{};
   qc::QuantumComputation qft;
   qc::QuantumComputation dqft;
-  std::size_t qftNgates{};
-  std::size_t dqftNgates{};
-  std::unique_ptr<dd::Package> dd;
-  std::ofstream ofs;
 
   void TearDown() override {}
   void SetUp() override {
     precision = GetParam();
-
-    dd = std::make_unique<dd::Package>(precision);
-
     qft = qc::createQFT(precision);
-    // remove final measurements so that the functionality is unitary
-    qc::CircuitOptimizer::removeFinalMeasurements(qft);
-    qftNgates = qft.getNindividualOps();
-
     dqft = qc::createIterativeQFT(precision);
-    dqftNgates = dqft.getNindividualOps();
   }
 };
 
@@ -522,71 +360,24 @@ INSTANTIATE_TEST_SUITE_P(
       return ss.str();
     });
 
-TEST_P(DynamicCircuitEvalQFT, UnitaryTransformation) {
-  qft.reorderOperations();
-  const auto start = std::chrono::steady_clock::now();
+TEST_P(DynamicCircuitEvalQFT, ObservableDistribution) {
   // transform dynamic circuit to unitary circuit by first eliminating reset
   // operations and afterwards deferring measurements to the end of the circuit
   qc::CircuitOptimizer::eliminateResets(dqft);
   qc::CircuitOptimizer::deferMeasurements(dqft);
 
-  // remove final measurements in order to just obtain the unitary functionality
-  qc::CircuitOptimizer::removeFinalMeasurements(dqft);
-  dqft.reorderOperations();
-  const auto finishedTransformation = std::chrono::steady_clock::now();
+  constexpr std::size_t shots = 256U;
+  constexpr std::size_t seed = 7U;
+  const auto ordinaryMeasurements = dd::sample(qft, shots, seed);
+  const auto iterativeMeasurements = dd::sample(dqft, shots, seed);
+  const auto maxUnique = std::min<std::size_t>(1ULL << precision, shots);
 
-  dd::MatrixDD e = dd::Package::makeIdent();
-  dd->incRef(e);
+  const auto ordinaryRatio = static_cast<double>(ordinaryMeasurements.size()) /
+                             static_cast<double>(maxUnique);
+  const auto iterativeRatio =
+      static_cast<double>(iterativeMeasurements.size()) /
+      static_cast<double>(maxUnique);
 
-  auto leftIt = qft.begin();
-  auto rightIt = dqft.begin();
-
-  while (leftIt != qft.end() && rightIt != dqft.end()) {
-    auto multLeft = dd->multiply(getDD(**leftIt, *dd), e);
-    auto multRight = dd->multiply(multLeft, getInverseDD(**rightIt, *dd));
-    dd->incRef(multRight);
-    dd->decRef(e);
-    e = multRight;
-
-    dd->garbageCollect();
-
-    ++leftIt;
-    ++rightIt;
-  }
-
-  while (leftIt != qft.end()) {
-    auto multLeft = dd->multiply(getDD(**leftIt, *dd), e);
-    dd->incRef(multLeft);
-    dd->decRef(e);
-    e = multLeft;
-
-    dd->garbageCollect();
-
-    ++leftIt;
-  }
-
-  while (rightIt != dqft.end()) {
-    auto multRight = dd->multiply(e, getInverseDD(**rightIt, *dd));
-    dd->incRef(multRight);
-    dd->decRef(e);
-    e = multRight;
-
-    dd->garbageCollect();
-
-    ++rightIt;
-  }
-  const auto finishedEC = std::chrono::steady_clock::now();
-
-  const auto preprocessing =
-      std::chrono::duration<double>(finishedTransformation - start).count();
-  const auto verification =
-      std::chrono::duration<double>(finishedEC - finishedTransformation)
-          .count();
-
-  std::stringstream ss{};
-  ss << "qft,transformation," << qft.getNqubits() << "," << qftNgates << ",1,"
-     << dqftNgates << "," << preprocessing << "," << verification;
-  std::cout << ss.str() << "\n";
-
-  EXPECT_TRUE(e.isIdentity());
+  EXPECT_GE(ordinaryRatio, 0.7);
+  EXPECT_GE(iterativeRatio, 0.7);
 }
