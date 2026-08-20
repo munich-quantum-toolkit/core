@@ -194,12 +194,13 @@ TEST_F(UnionTableTest, ApplyClassicalControlledGPhase) {
   ut.propagateIntAlloc(i0, 1);
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
+
+  const auto stateBeforeGPhase = ut.toString();
+
   ut.propagateGate(gPhaseOp, {}, {}, {}, {}, classicalControl0);
   ut.propagateGate(gPhaseOp, {}, {}, {}, {}, {}, classicalControl1);
 
-  EXPECT_THAT(ut.toString(),
-              testing::HasSubstr("Qubits: 1, HybridStates: {{|0> "
-                                 "-> 0.71, |1> -> 0.71}"));
+  EXPECT_EQ(stateBeforeGPhase, ut.toString());
 }
 
 TEST_F(UnionTableTest, ApplyNegClassicalControlledGateThatsTrue) {
