@@ -520,8 +520,8 @@ TEST_F(QTensorTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
 
 struct QTensorIntegrationTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<QCOProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QTensorIntegrationTestCase& info);
@@ -551,9 +551,9 @@ protected:
 TEST_P(QTensorIntegrationTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
-  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
+  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QTensor IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -562,7 +562,8 @@ TEST_P(QTensorIntegrationTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QTensor IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  auto reference =
+      ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QTensor IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

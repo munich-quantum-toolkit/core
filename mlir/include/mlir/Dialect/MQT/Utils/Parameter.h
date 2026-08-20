@@ -61,19 +61,18 @@ variantToValue(OpBuilder& builder, Location loc,
 
 /// Verify that each statically known floating-point parameter is finite.
 [[nodiscard]] inline LogicalResult
-verifyFiniteConstantParameters(Operation* operation,
-                               const ValueRange parameters) {
+verifyFiniteConstantParameters(Operation* operation, ValueRange parameters) {
   DenseMap<Value, std::optional<Attribute>> constantCache;
   DenseSet<Value> visited;
   for (const auto [index, parameter] : llvm::enumerate(parameters)) {
     SmallVector<Value> worklist{parameter};
     while (!worklist.empty()) {
-      const Value value = worklist.pop_back_val();
+      auto value = worklist.pop_back_val();
       if (!visited.insert(value).second) {
         continue;
       }
       if (const auto constant = valueToConstantAttr(value, constantCache)) {
-        if (const auto floating = dyn_cast<FloatAttr>(*constant);
+        if (auto floating = dyn_cast<FloatAttr>(*constant);
             floating && !floating.getValue().isFinite()) {
           return operation->emitOpError()
                  << "constant parameter expression at index " << index

@@ -38,7 +38,7 @@ buildModifierBody(OpBuilder& builder, OperationState& state,
                   const size_t numBlockArgs,
                   const function_ref<void(OpBuilder&, Block&)>& emitBody) {
   auto& block = state.regions.front()->emplaceBlock();
-  const auto qubitType = QubitType::get(builder.getContext());
+  auto qubitType = QubitType::get(builder.getContext());
   for (size_t i = 0; i < numBlockArgs; ++i) {
     block.addArgument(qubitType, state.location);
   }
@@ -104,7 +104,7 @@ inline void printTargetAliasing(OpAsmPrinter& printer, Region& region,
 
 /// Resolve a modifier block argument to the corresponding outer value.
 inline Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
-  if (const auto blockArg = dyn_cast<BlockArgument>(qubit)) {
+  if (auto blockArg = dyn_cast<BlockArgument>(qubit)) {
     assert(blockArg.getArgNumber() < qubits.size() &&
            "block argument index must be within qubits range");
     return qubits[blockArg.getArgNumber()];

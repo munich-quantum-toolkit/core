@@ -1007,7 +1007,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   EXPECT_FALSE(mlir::mqt::valueToConstantDouble(uOp.getPhi()).has_value());
   EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(0)));
   EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(1)));
-  EXPECT_FALSE(mlir::mqt::valueToConstantDouble(gOp.getParameter(0)).has_value());
+  EXPECT_FALSE(
+      mlir::mqt::valueToConstantDouble(gOp.getParameter(0)).has_value());
   EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(0)));
   EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(1)));
 

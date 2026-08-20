@@ -30,10 +30,10 @@ namespace mlir::mqt {
 
 /// Convert a floating-point or integer attribute to a double.
 [[nodiscard]] inline std::optional<double> attributeToDouble(Attribute attr) {
-  if (const auto floatAttr = dyn_cast<FloatAttr>(attr)) {
+  if (auto floatAttr = dyn_cast<FloatAttr>(attr)) {
     return floatAttr.getValueAsDouble();
   }
-  if (const auto intAttr = dyn_cast<IntegerAttr>(attr)) {
+  if (auto intAttr = dyn_cast<IntegerAttr>(attr)) {
     const bool isSigned = !intAttr.getType().isUnsignedInteger();
     APFloat value(APFloat::IEEEdouble(), APInt::getZero(64));
     value.convertFromAPInt(intAttr.getValue(), isSigned,
@@ -52,10 +52,16 @@ namespace mlir::mqt {
   return attributeToDouble(constantOp.getValue());
 }
 
-/// Recursively constant-fold a pure SSA expression DAG to an attribute.
-///
-/// @p cache memoizes successful and failed evaluations so shared operands are
-/// resolved once.
+/**
+ * Recursively constant-fold a pure SSA expression DAG to an attribute.
+ *
+ * The cache memoizes successful and failed evaluations so shared operands are
+ * resolved once. Identity-style folds can return an existing SSA value, which
+ * this function resolves through the same cache.
+ *
+ * @param value SSA value to evaluate.
+ * @param cache Evaluation results indexed by SSA value.
+ */
 [[nodiscard]] inline std::optional<Attribute>
 valueToConstantAttr(Value value,
                     DenseMap<Value, std::optional<Attribute>>& cache) {
@@ -76,7 +82,7 @@ valueToConstantAttr(Value value,
 
   SmallVector<Attribute> operands;
   operands.reserve(operation->getNumOperands());
-  for (const Value operand : operation->getOperands()) {
+  for (Value operand : operation->getOperands()) {
     const auto folded = valueToConstantAttr(operand, cache);
     if (!folded) {
       return cache[value] = std::nullopt;
@@ -89,11 +95,9 @@ valueToConstantAttr(Value value,
     return cache[value] = std::nullopt;
   }
   std::optional<Attribute> folded;
-  if (const auto resultAttr = dyn_cast_if_present<Attribute>(results.front())) {
+  if (auto resultAttr = dyn_cast_if_present<Attribute>(results.front())) {
     folded = resultAttr;
-  } else if (const auto resultValue =
-                 dyn_cast_if_present<Value>(results.front())) {
-    /// Identity-style folds can return an existing SSA value.
+  } else if (auto resultValue = dyn_cast_if_present<Value>(results.front())) {
     folded = valueToConstantAttr(resultValue, cache);
   }
   return cache[value] = folded;

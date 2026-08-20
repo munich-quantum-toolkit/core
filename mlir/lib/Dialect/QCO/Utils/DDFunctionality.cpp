@@ -200,7 +200,8 @@ decodeStandardGate(UnitaryOpInterface unitary) {
 
   DecodedGate decoded{.type = type, .params = {}};
   for (Value param : unitary.getParameters()) {
-    decoded.params.push_back(static_cast<dd::fp>(*mlir::mqt::valueToDouble(param)));
+    decoded.params.push_back(
+        static_cast<dd::fp>(*mlir::mqt::valueToDouble(param)));
   }
   return std::optional{std::move(decoded)};
 }

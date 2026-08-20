@@ -40,6 +40,10 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
       local commits.
 - [x] (2026-08-20 17:30Z) Rebase the two follow-up commits onto the merged
       symbolic Qiskit parameter change and repeat the publication checks.
+- [x] (2026-08-20 19:30Z) Place MQT-owned folding support in `mlir::mqt` below
+      `mlir/Support/MQT` and address all review comments.
+- [x] (2026-08-20 19:30Z) Repeat the release and non-unity builds, focused and
+      full tests, repository lint, and the full pull request Clang-Tidy diff.
 
 ## Surprises & Discoveries
 
@@ -56,10 +60,10 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
   caller is a unit test. The implementation directly depends on QC, QCO,
   QTensor, SCF, and LLVM IR details, so it is test infrastructure rather than a
   generic production verifier.
-- Observation: Exposing support helpers through `mlir::mqt` revealed
-  unqualified references to the repository's top-level `mqt::test` namespace
-  in compiler tests. Root-qualifying those references as `::mqt::test` removes
-  the ambiguity and keeps the support helpers in their owning namespace.
+- Observation: Exposing support helpers through `mlir::mqt` revealed unqualified
+  references to the repository's top-level `mqt::test` namespace in unit tests.
+  Root-qualifying those references as `::mqt::test` removes the ambiguity and
+  keeps the support helpers in their owning namespace.
 - Observation: Pull request #2189 merged while this work was in progress and
   expanded the global-phase tests. The follow-up branch was rebased onto the
   updated pull request #2150 head, which already includes #2189. The moved test
@@ -113,13 +117,15 @@ passes, quantum semantics, and project-specific constant-folding support. Unit
 test support owns the module equivalence checker. The implementation does not
 add a shared QC/QCO unitary interface.
 
-The focused support, MQT transform, QC IR, and QCO IR suites passed 865 tests in
-total. The release build and the Python MLIR binding target passed. After pull
-request #2150 merged, the two follow-up commits were rebased onto its squash
-commit. The rebased release build passed. CTest reported 100% success across
-4,301 configured tests; one QDMI test was skipped by its own condition.
-Generated MLIR documentation, the strict Sphinx documentation build, and the
-repository lint suite passed. The signed commits are ready for review.
+After pull request #2150 merged, the follow-up commits were rebased onto its
+squash commit. The final review update passed the release build and the
+non-unity debug build, including the Python MLIR binding. Five focused binaries
+passed 322 tests. CTest reported 100% success across 4,301 configured tests; one
+QDMI test was skipped by its own condition. The repository lint suite and the
+full pull request Clang-Tidy diff passed. Generated MLIR documentation and the
+strict Sphinx documentation build passed before the final review update, which
+does not change generated documentation or Sphinx inputs. The signed commits are
+ready for review.
 
 ## Context and Orientation
 

@@ -41,8 +41,8 @@ inline constexpr size_t MAX_DENSE_UNITARY_QUBITS = 8;
 
 /** Verify the common dense-matrix contract of QC and QCO unitary operations. */
 [[nodiscard]] inline LogicalResult
-verifyDenseUnitaryMatrix(Operation* operation, const ElementsAttr matrixAttr,
-                         const ValueRange qubits) {
+verifyDenseUnitaryMatrix(Operation* operation, ElementsAttr matrixAttr,
+                         ValueRange qubits) {
   const auto numQubits = qubits.size();
   if (numQubits == 0U) {
     return operation->emitOpError("requires at least one qubit");
@@ -52,21 +52,21 @@ verifyDenseUnitaryMatrix(Operation* operation, const ElementsAttr matrixAttr,
            << "supports at most " << MAX_DENSE_UNITARY_QUBITS << " qubits";
   }
   llvm::SmallDenseSet<Value, 8> uniqueQubits;
-  for (const auto qubit : qubits) {
+  for (auto qubit : qubits) {
     if (!uniqueQubits.insert(qubit).second) {
       return operation->emitOpError("duplicate qubit operand");
     }
   }
-  const auto matrix = dyn_cast<DenseElementsAttr>(matrixAttr);
+  auto matrix = dyn_cast<DenseElementsAttr>(matrixAttr);
   if (!matrix) {
     return operation->emitOpError("matrix must use dense element storage");
   }
-  const auto type = dyn_cast<RankedTensorType>(matrix.getType());
+  auto type = dyn_cast<RankedTensorType>(matrix.getType());
   if (!type || type.getRank() != 2 ||
       type.getShape()[0] != type.getShape()[1]) {
     return operation->emitOpError("matrix must be a square rank-two tensor");
   }
-  const auto complexType = dyn_cast<ComplexType>(type.getElementType());
+  auto complexType = dyn_cast<ComplexType>(type.getElementType());
   if (!complexType || !complexType.getElementType().isF64()) {
     return operation->emitOpError(
         "matrix elements must have type complex<f64>");
@@ -110,17 +110,17 @@ verifyDenseUnitaryMatrix(Operation* operation, const ElementsAttr matrixAttr,
 }
 
 /** Return whether a dense square matrix is exactly the identity. */
-[[nodiscard]] inline bool isExactIdentityMatrix(const ElementsAttr matrixAttr) {
-  const auto matrix = dyn_cast<DenseElementsAttr>(matrixAttr);
+[[nodiscard]] inline bool isExactIdentityMatrix(ElementsAttr matrixAttr) {
+  auto matrix = dyn_cast<DenseElementsAttr>(matrixAttr);
   if (!matrix) {
     return false;
   }
-  const auto type = dyn_cast<RankedTensorType>(matrix.getType());
+  auto type = dyn_cast<RankedTensorType>(matrix.getType());
   if (!type || type.getRank() != 2 ||
       type.getShape()[0] != type.getShape()[1] || type.getShape()[0] <= 0) {
     return false;
   }
-  const auto complexType = dyn_cast<ComplexType>(type.getElementType());
+  auto complexType = dyn_cast<ComplexType>(type.getElementType());
   if (!complexType || !complexType.getElementType().isF64()) {
     return false;
   }

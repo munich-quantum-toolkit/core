@@ -30,7 +30,7 @@ inline constexpr double MAX_GLOBAL_PHASE_ANGLE = 1.0e4;
 
 /// Verify the compiler-wide global-phase angle contract.
 [[nodiscard]] inline LogicalResult verifyGlobalPhaseAngle(Operation* operation,
-                                                          const Value angle) {
+                                                          Value angle) {
   const auto constant = valueToConstantDouble(angle);
   if (!constant || !std::isfinite(*constant)) {
     return success();
