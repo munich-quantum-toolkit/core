@@ -543,6 +543,8 @@ TEST_F(GlobalPhaseNormalizationTest, ReorderedQCOControlsThreadCorrectResults) {
     }
   )mlir");
   ASSERT_TRUE(moduleOp);
+  const auto cloned = cast<ModuleOp>((*moduleOp)->clone());
+  OwningOpRef<ModuleOp> expected(cloned);
   ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
   ASSERT_TRUE(verify(*moduleOp).succeeded());
 
@@ -550,9 +552,7 @@ TEST_F(GlobalPhaseNormalizationTest, ReorderedQCOControlsThreadCorrectResults) {
   auto controls = llvm::to_vector(func.getBody().getOps<qco::CtrlOp>());
   ASSERT_EQ(controls.size(), 2);
   auto returnOp = cast<func::ReturnOp>(func.getBody().front().getTerminator());
-  EXPECT_EQ(returnOp.getOperand(0), controls[1].getOutputControl(1));
-  EXPECT_EQ(returnOp.getOperand(1), controls[1].getOutputTarget(0));
-  EXPECT_EQ(returnOp.getOperand(2), controls[1].getOutputControl(0));
+  ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 4);
   EXPECT_EQ(returnOp.getOperand(3), controls[0].getOutputTarget(0));
 }
 
