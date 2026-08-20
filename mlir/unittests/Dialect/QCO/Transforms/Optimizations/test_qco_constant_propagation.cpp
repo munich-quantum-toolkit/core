@@ -779,6 +779,55 @@ TEST_F(QCOConstantPropagationTest, testPropagatingThroughClassicalBranching) {
 }
 
 /**
+ * @brief Test: This test checks if propagation through classical branching is
+ * done correctly if yield yields the values in a different order than the input
+ * order.
+ */
+TEST_F(QCOConstantPropagationTest,
+       testPropagatingThroughClassicalBranchingWithSwappedYieldedValues) {
+  auto q = programBuilder.allocQubitRegister(2);
+  q[0] = programBuilder.h(q[0]);
+  q[1] = programBuilder.x(q[1]);
+  auto [q0, q1] = programBuilder.cx(q[0], q[1]);
+  auto [q01, b0] = programBuilder.measure(q0);
+  const auto qRange = programBuilder.qcoIf(
+      b0, {q01, q1},
+      [&](const ValueRange args) {
+        const auto qubit = programBuilder.x(args[1]);
+        return SmallVector{qubit, args[0]};
+      },
+      [&](const ValueRange args) {
+        const auto qubit = programBuilder.x(args[0]);
+        return SmallVector{args[1], qubit};
+      });
+  programBuilder.cx(qRange[0], qRange[1]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(2);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[1] = referenceBuilder.x(qRef[1]);
+  auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
+  auto [qRef01, bRef0] = referenceBuilder.measure(qRef0);
+  const auto qRangeRef = referenceBuilder.qcoIf(
+      bRef0, {qRef01, qRef1},
+      [&](const ValueRange args) {
+        const auto qubit = referenceBuilder.x(args[1]);
+        return SmallVector{qubit, args[0]};
+      },
+      [&](const ValueRange args) {
+        const auto qubit = referenceBuilder.x(args[0]);
+        return SmallVector{args[1], qubit};
+      });
+  referenceBuilder.x(qRangeRef[1]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
  * @brief Test: This test checks if a phase gate is removed if it only adds a
  * global phase = 1.
  */

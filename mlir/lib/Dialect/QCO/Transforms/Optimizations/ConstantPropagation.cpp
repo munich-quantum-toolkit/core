@@ -509,13 +509,24 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     const auto resThen = iterateThroughWorklist(
         rewriter, ut, wl, newPosClassicalCtrls, negClassicalCtrls);
 
+    op->thenBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+      const auto input = innerOp->getOperands();
+      const auto output = innerOp->getResults();
+      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
+        if (mlir::isa<QubitType>(input[i].getType())) {
+          std::ranges::replace(thenArgs, input[i], output[i]);
+        }
+      }
+    });
+
     if (resThen.failed()) {
       return WalkResult::interrupt();
     }
+  } else {
+    const auto linearThenValues = op->thenYield().getTargets().drop_front(
+        op->getClassicalResults().size());
+    thenArgs = {linearThenValues.begin(), linearThenValues.end()};
   }
-  const auto linearThenValues =
-      op->thenYield().getTargets().drop_front(op->getClassicalResults().size());
-  thenArgs = {linearThenValues.begin(), linearThenValues.end()};
 
   if (!elseEmpty) {
     for (const Value arg : elseBlock->getArguments()) {
