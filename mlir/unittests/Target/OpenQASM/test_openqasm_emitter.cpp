@@ -1263,6 +1263,44 @@ if (c == 1) x q[0];
   EXPECT_EQ(conditionals, 2);
 }
 
+TEST(OpenQASMTargetTest,
+     SharesOpenQASM2RegisterConditionsUntilClassicalMutation) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+measure q[0] -> c[0];
+if (c == 1) x q[1];
+if (c == 1) h q[1];
+measure q[1] -> c[1];
+if (c == 1) z q[0];
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  SmallVector<Value> branchConditions;
+  size_t expressionConditionals = 0;
+  size_t classicalLoads = 0;
+  moduleOp->walk([&](scf::IfOp conditional) {
+    if (conditional.getNumResults() == 0) {
+      branchConditions.push_back(conditional.getCondition());
+    } else {
+      ++expressionConditionals;
+    }
+  });
+  moduleOp->walk([&](cbit::LoadOp) { ++classicalLoads; });
+
+  ASSERT_EQ(branchConditions.size(), 3);
+  EXPECT_EQ(branchConditions[0], branchConditions[1]);
+  EXPECT_NE(branchConditions[1], branchConditions[2]);
+  EXPECT_EQ(expressionConditionals, 4);
+  EXPECT_EQ(classicalLoads, 4);
+}
+
 TEST(OpenQASMTargetTest, ZeroInitializesUnmeasuredOpenQASM2Registers) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 2.0;

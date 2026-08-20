@@ -21,6 +21,7 @@
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
@@ -86,6 +87,26 @@ struct GateCall {
   std::string symbol;
   SmallVector<std::string> parameters;
   SmallVector<std::string> qubits;
+};
+
+struct RegisterBitConstraint {
+  Value reg;
+  int64_t index;
+  bool expected;
+  Operation* observation;
+};
+
+struct RegisterEquality {
+  Value reg;
+  APInt expected;
+  SmallVector<Operation*> expressionIfs;
+  SmallVector<Operation*> expressionOperations;
+};
+
+struct RegisterEqualityCandidate {
+  SmallVector<RegisterBitConstraint> constraints;
+  SmallVector<Operation*> expressionIfs;
+  DenseSet<Operation*> expressionOperations;
 };
 
 } // namespace
@@ -171,6 +192,11 @@ private:
   SmallVector<Value> resourceOrder;
   DenseMap<Value, std::string> valueNames;
   DenseSet<Value> returnedRegisters;
+  DenseMap<Operation*, RegisterEquality> registerEqualities;
+  DenseSet<Operation*> foldedConditionIfs;
+  DenseSet<Operation*> foldedRegisterExpressionOperations;
+  DenseMap<Operation*, Operation*> fusedMeasurementStores;
+  DenseSet<Operation*> foldedMeasurementStores;
   SmallVector<ScalarOutput> scalarOutputs;
   llvm::StringSet<> usedNames;
   llvm::StringSet<> fixedHelpers;
@@ -340,6 +366,7 @@ private:
                               "allocations");
       }
     }
+    collectCompatibilityPatterns();
     return success();
   }
 
@@ -366,6 +393,513 @@ private:
       return "float";
     }
     return {};
+  }
+
+  [[nodiscard]] static std::optional<bool>
+  getBooleanConstant(const Value value, RegisterEqualityCandidate& candidate) {
+    auto constant = value.getDefiningOp<arith::ConstantOp>();
+    auto integer =
+        constant ? dyn_cast<IntegerAttr>(constant.getValue()) : IntegerAttr{};
+    if (!integer || !integer.getType().isInteger(1)) {
+      return std::nullopt;
+    }
+    candidate.expressionOperations.insert(constant);
+    return !integer.getValue().isZero();
+  }
+
+  [[nodiscard]] bool
+  matchRegisterConjunction(const Value value, const bool positive,
+                           RegisterEqualityCandidate& candidate) const {
+    if (const auto constant = getBooleanConstant(value, candidate)) {
+      return *constant == positive;
+    }
+
+    if (auto xorOp = value.getDefiningOp<arith::XOrIOp>()) {
+      if (const auto lhs = getBooleanConstant(xorOp.getLhs(), candidate)) {
+        candidate.expressionOperations.insert(xorOp);
+        return matchRegisterConjunction(xorOp.getRhs(), positive != *lhs,
+                                        candidate);
+      }
+      if (const auto rhs = getBooleanConstant(xorOp.getRhs(), candidate)) {
+        candidate.expressionOperations.insert(xorOp);
+        return matchRegisterConjunction(xorOp.getLhs(), positive != *rhs,
+                                        candidate);
+      }
+      return false;
+    }
+
+    if (auto load = value.getDefiningOp<cbit::LoadOp>()) {
+      const auto index = getConstantInteger(load.getIndex());
+      if (!index) {
+        return false;
+      }
+      candidate.expressionOperations.insert(load);
+      candidate.constraints.push_back({.reg = load.getReg(),
+                                       .index = *index,
+                                       .expected = positive,
+                                       .observation = load});
+      return true;
+    }
+
+    // QC cleanup may forward a static CBit load to the value written by its
+    // latest store. Recover the register provenance only through one
+    // unambiguous store; snapshot validation below still proves its ordering.
+    cbit::StoreOp storedBit;
+    for (Operation* user : value.getUsers()) {
+      auto store = dyn_cast<cbit::StoreOp>(user);
+      if (!store || store.getValue() != value) {
+        continue;
+      }
+      if (storedBit) {
+        return false;
+      }
+      storedBit = store;
+    }
+    if (storedBit) {
+      const auto index = getConstantInteger(storedBit.getIndex());
+      auto* definition = value.getDefiningOp();
+      if (!index || definition == nullptr) {
+        return false;
+      }
+      candidate.expressionOperations.insert(definition);
+      candidate.constraints.push_back({.reg = storedBit.getReg(),
+                                       .index = *index,
+                                       .expected = positive,
+                                       .observation = storedBit});
+      return true;
+    }
+
+    if (!positive) {
+      return false;
+    }
+    auto ifOp = value.getDefiningOp<scf::IfOp>();
+    if (!ifOp || ifOp.getNumResults() != 1 ||
+        !ifOp.getResult(0).getType().isInteger(1) ||
+        ifOp.getElseRegion().empty()) {
+      return false;
+    }
+    auto thenYield =
+        dyn_cast<scf::YieldOp>(ifOp.getThenRegion().front().getTerminator());
+    auto elseYield =
+        dyn_cast<scf::YieldOp>(ifOp.getElseRegion().front().getTerminator());
+    if (!thenYield || !elseYield || thenYield.getNumOperands() != 1 ||
+        elseYield.getNumOperands() != 1) {
+      return false;
+    }
+
+    const auto thenConstant =
+        getBooleanConstant(thenYield.getOperand(0), candidate);
+    const auto elseConstant =
+        getBooleanConstant(elseYield.getOperand(0), candidate);
+    candidate.expressionOperations.insert(ifOp);
+    candidate.expressionIfs.push_back(ifOp);
+    if (elseConstant && !*elseConstant) {
+      return matchRegisterConjunction(ifOp.getCondition(), true, candidate) &&
+             matchRegisterConjunction(thenYield.getOperand(0), true, candidate);
+    }
+    if (thenConstant && !*thenConstant) {
+      return matchRegisterConjunction(ifOp.getCondition(), false, candidate) &&
+             matchRegisterConjunction(elseYield.getOperand(0), true, candidate);
+    }
+    return false;
+  }
+
+  [[nodiscard]] static bool containsOnlyMatchedExpressionOperations(
+      const RegisterEqualityCandidate& candidate) {
+    return llvm::all_of(candidate.expressionIfs, [&](Operation* operation) {
+      auto ifOp = cast<scf::IfOp>(operation);
+      return llvm::all_of(ifOp.getThenRegion().front().without_terminator(),
+                          [&](Operation& nested) {
+                            return candidate.expressionOperations.contains(
+                                &nested);
+                          }) &&
+             llvm::all_of(ifOp.getElseRegion().front().without_terminator(),
+                          [&](Operation& nested) {
+                            return candidate.expressionOperations.contains(
+                                &nested);
+                          });
+    });
+  }
+
+  [[nodiscard]] static Operation* getTopLevelObservation(Operation* operation,
+                                                         Block* consumerBlock) {
+    while (operation != nullptr && operation->getBlock() != consumerBlock) {
+      operation = operation->getParentOp();
+    }
+    return operation;
+  }
+
+  [[nodiscard]] static bool
+  hasOnlyRepresentedRegisterWrites(scf::IfOp consumer,
+                                   const RegisterEqualityCandidate& candidate,
+                                   const Value reg) {
+    auto alloc = reg.getDefiningOp<cbit::AllocOp>();
+    auto* consumerBlock = consumer->getBlock();
+    if (!alloc || alloc->getBlock() != consumerBlock ||
+        !alloc->isBeforeInBlock(consumer)) {
+      return false;
+    }
+
+    // Zero-initialized bits may be omitted from the reconstructed equality,
+    // but every explicit write before the consumer must be observed by one of
+    // its matched constraints. Otherwise an omitted bit could be stale.
+    for (Operation* operation = alloc->getNextNode();
+         operation != consumer.getOperation();
+         operation = operation->getNextNode()) {
+      if (operation == nullptr) {
+        return false;
+      }
+      if (auto store = dyn_cast<cbit::StoreOp>(operation);
+          store && store.getReg() == reg) {
+        const auto index = getConstantInteger(store.getIndex());
+        if (!index ||
+            !llvm::any_of(candidate.constraints, [&](const auto& constraint) {
+              if (constraint.reg != reg || constraint.index != *index) {
+                return false;
+              }
+              auto* observation =
+                  getTopLevelObservation(constraint.observation, consumerBlock);
+              return observation == operation ||
+                     (observation != nullptr &&
+                      operation->isBeforeInBlock(observation));
+            })) {
+          return false;
+        }
+        continue;
+      }
+
+      const auto effects = getEffectsRecursively(operation);
+      if (!effects) {
+        if (referencesValueRecursively(operation, reg)) {
+          return false;
+        }
+        continue;
+      }
+      if (llvm::any_of(*effects, [&](const auto& effect) {
+            if (!isa<MemoryEffects::Write, MemoryEffects::Free>(
+                    effect.getEffect())) {
+              return false;
+            }
+            const auto affected = effect.getValue();
+            return affected == reg ||
+                   (!affected && referencesValueRecursively(operation, reg));
+          })) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  [[nodiscard]] std::optional<RegisterEquality>
+  matchRegisterEquality(scf::IfOp consumer) const {
+    RegisterEqualityCandidate candidate;
+    if (!matchRegisterConjunction(consumer.getCondition(), true, candidate) ||
+        candidate.constraints.empty() ||
+        !containsOnlyMatchedExpressionOperations(candidate)) {
+      return std::nullopt;
+    }
+
+    const auto reg = candidate.constraints.front().reg;
+    const auto resource = resources.find(reg);
+    if (resource == resources.end() ||
+        resource->second.kind != ResourceKind::Bit ||
+        !std::in_range<unsigned>(resource->second.width) ||
+        candidate.constraints.size() >
+            static_cast<size_t>(resource->second.width)) {
+      return std::nullopt;
+    }
+    SmallVector<std::optional<bool>> expectedBits(
+        static_cast<size_t>(resource->second.width));
+    if (resource->second.initialization == cbit::Initialization::Zero) {
+      llvm::fill(expectedBits, false);
+    }
+    SmallVector<bool> constrained(expectedBits.size(), false);
+    for (const auto& constraint : candidate.constraints) {
+      if (constraint.reg != reg || constraint.index < 0 ||
+          constraint.index >= resource->second.width) {
+        return std::nullopt;
+      }
+      const auto index = static_cast<size_t>(constraint.index);
+      if (constrained[index]) {
+        return std::nullopt;
+      }
+      constrained[index] = true;
+      expectedBits[index] = constraint.expected;
+    }
+    if (llvm::any_of(expectedBits,
+                     [](const auto& value) { return !value.has_value(); })) {
+      return std::nullopt;
+    }
+    if (resource->second.initialization == cbit::Initialization::Zero &&
+        candidate.constraints.size() < expectedBits.size() &&
+        !hasOnlyRepresentedRegisterWrites(consumer, candidate, reg)) {
+      return std::nullopt;
+    }
+    if (!preservesRegisterSnapshot(consumer, candidate, reg)) {
+      return std::nullopt;
+    }
+
+    APInt expected(static_cast<unsigned>(resource->second.width), 0);
+    for (const auto [index, bit] : llvm::enumerate(expectedBits)) {
+      if (*bit) {
+        expected.setBit(static_cast<unsigned>(index));
+      }
+    }
+    return RegisterEquality{.reg = reg,
+                            .expected = std::move(expected),
+                            .expressionIfs = std::move(candidate.expressionIfs),
+                            .expressionOperations = SmallVector<Operation*>(
+                                candidate.expressionOperations.begin(),
+                                candidate.expressionOperations.end())};
+  }
+
+  [[nodiscard]] bool
+  isDeadRegisterExpression(const RegisterEqualityCandidate& candidate) const {
+    if (candidate.constraints.empty() ||
+        !containsOnlyMatchedExpressionOperations(candidate)) {
+      return false;
+    }
+    return llvm::all_of(candidate.constraints, [&](const auto& constraint) {
+      const auto resource = resources.find(constraint.reg);
+      return resource != resources.end() &&
+             resource->second.kind == ResourceKind::Bit &&
+             constraint.index >= 0 && constraint.index < resource->second.width;
+    });
+  }
+
+  [[nodiscard]] static bool
+  hasExternalExpressionUse(const ArrayRef<Operation*> expressionIfs,
+                           const DenseSet<Operation*>& matchedOperations) {
+    return llvm::any_of(expressionIfs, [&](Operation* expressionIf) {
+      return llvm::any_of(expressionIf->getResults(), [&](Value result) {
+        return llvm::any_of(result.getUsers(), [&](Operation* user) {
+          return !matchedOperations.contains(user);
+        });
+      });
+    });
+  }
+
+  [[nodiscard]] static Operation*
+  getTopLevelEvaluationOperation(Operation* operation, Block* consumerBlock,
+                                 const RegisterEqualityCandidate& candidate) {
+    while (operation->getBlock() != consumerBlock) {
+      operation = operation->getParentOp();
+      if (operation == nullptr ||
+          !candidate.expressionOperations.contains(operation)) {
+        return nullptr;
+      }
+    }
+    if (candidate.expressionOperations.contains(operation) ||
+        llvm::any_of(candidate.constraints, [&](const auto& constraint) {
+          return constraint.observation == operation;
+        })) {
+      return operation;
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] static bool referencesValueRecursively(Operation* operation,
+                                                       const Value value) {
+    bool referencesValue = false;
+    operation->walk([&](Operation* nested) {
+      if (!llvm::is_contained(nested->getOperands(), value)) {
+        return WalkResult::advance();
+      }
+      referencesValue = true;
+      return WalkResult::interrupt();
+    });
+    return referencesValue;
+  }
+
+  [[nodiscard]] static bool
+  preservesRegisterSnapshot(scf::IfOp consumer,
+                            const RegisterEqualityCandidate& candidate,
+                            const Value reg) {
+    auto* conditionOperation = consumer.getCondition().getDefiningOp();
+    auto* consumerBlock = consumer->getBlock();
+    if (conditionOperation == nullptr ||
+        conditionOperation->getBlock() != consumerBlock ||
+        !candidate.expressionOperations.contains(conditionOperation)) {
+      return false;
+    }
+
+    Operation* earliestEvaluation = conditionOperation;
+    for (const auto& constraint : candidate.constraints) {
+      auto* evaluation = getTopLevelEvaluationOperation(
+          constraint.observation, consumerBlock, candidate);
+      if (evaluation == nullptr || !evaluation->isBeforeInBlock(consumer)) {
+        return false;
+      }
+      if (evaluation != earliestEvaluation &&
+          evaluation->isBeforeInBlock(earliestEvaluation)) {
+        earliestEvaluation = evaluation;
+      }
+    }
+
+    for (Operation* operation = earliestEvaluation;
+         operation != consumer.getOperation();
+         operation = operation->getNextNode()) {
+      if (operation == nullptr) {
+        return false;
+      }
+      if (candidate.expressionOperations.contains(operation)) {
+        continue;
+      }
+      if (llvm::any_of(candidate.constraints, [&](const auto& constraint) {
+            return constraint.observation == operation;
+          })) {
+        continue;
+      }
+      const auto effects = getEffectsRecursively(operation);
+      if (!effects) {
+        if (referencesValueRecursively(operation, reg)) {
+          return false;
+        }
+        continue;
+      }
+      if (llvm::any_of(*effects, [&](const auto& effect) {
+            if (!isa<MemoryEffects::Write, MemoryEffects::Free>(
+                    effect.getEffect())) {
+              return false;
+            }
+            const auto affected = effect.getValue();
+            return affected == reg ||
+                   (!affected && referencesValueRecursively(operation, reg));
+          })) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void collectCompatibilityPatterns() {
+    SmallVector<std::pair<scf::IfOp, RegisterEquality>> candidates;
+    function.walk([&](scf::IfOp ifOp) {
+      if (ifOp.getNumResults() != 0) {
+        return;
+      }
+      auto equality = matchRegisterEquality(ifOp);
+      if (!equality) {
+        return;
+      }
+      candidates.emplace_back(ifOp, std::move(*equality));
+    });
+
+    SmallVector<RegisterEqualityCandidate> deadExpressionCandidates;
+    function.walk([&](scf::IfOp ifOp) {
+      if (ifOp.getNumResults() != 1 || !ifOp.getResult(0).use_empty()) {
+        return;
+      }
+      RegisterEqualityCandidate candidate;
+      if (matchRegisterConjunction(ifOp.getResult(0), true, candidate) &&
+          isDeadRegisterExpression(candidate)) {
+        deadExpressionCandidates.push_back(std::move(candidate));
+      }
+    });
+
+    SmallVector<bool> active(candidates.size(), true);
+    SmallVector<bool> activeDead(deadExpressionCandidates.size(), true);
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      DenseSet<Operation*> matchedOperations;
+      for (const auto [index, candidate] : llvm::enumerate(candidates)) {
+        if (!active[index]) {
+          continue;
+        }
+        matchedOperations.insert(candidate.first.getOperation());
+        matchedOperations.insert(candidate.second.expressionOperations.begin(),
+                                 candidate.second.expressionOperations.end());
+      }
+      for (const auto [index, candidate] :
+           llvm::enumerate(deadExpressionCandidates)) {
+        if (activeDead[index]) {
+          matchedOperations.insert(candidate.expressionOperations.begin(),
+                                   candidate.expressionOperations.end());
+        }
+      }
+      for (const auto [index, candidate] : llvm::enumerate(candidates)) {
+        if (!active[index]) {
+          continue;
+        }
+        if (hasExternalExpressionUse(candidate.second.expressionIfs,
+                                     matchedOperations)) {
+          active[index] = false;
+          changed = true;
+        }
+      }
+      for (const auto [index, candidate] :
+           llvm::enumerate(deadExpressionCandidates)) {
+        if (activeDead[index] &&
+            hasExternalExpressionUse(candidate.expressionIfs,
+                                     matchedOperations)) {
+          activeDead[index] = false;
+          changed = true;
+        }
+      }
+    }
+
+    for (auto [index, candidate] : llvm::enumerate(candidates)) {
+      if (!active[index]) {
+        continue;
+      }
+      for (auto* expressionIf : candidate.second.expressionIfs) {
+        foldedConditionIfs.insert(expressionIf);
+      }
+      foldedRegisterExpressionOperations.insert(
+          candidate.second.expressionOperations.begin(),
+          candidate.second.expressionOperations.end());
+      registerEqualities.try_emplace(candidate.first.getOperation(),
+                                     std::move(candidate.second));
+    }
+    for (const auto [index, candidate] :
+         llvm::enumerate(deadExpressionCandidates)) {
+      if (!activeDead[index]) {
+        continue;
+      }
+      foldedConditionIfs.insert(candidate.expressionIfs.begin(),
+                                candidate.expressionIfs.end());
+    }
+
+    function.walk([&](qc::MeasureOp measurement) {
+      cbit::StoreOp store;
+      for (Operation* user : measurement.getResult().getUsers()) {
+        if (auto candidateStore = dyn_cast<cbit::StoreOp>(user);
+            candidateStore &&
+            candidateStore.getValue() == measurement.getResult()) {
+          if (store) {
+            return;
+          }
+          store = candidateStore;
+          continue;
+        }
+        auto consumer = dyn_cast<scf::IfOp>(user);
+        if (!foldedRegisterExpressionOperations.contains(user) &&
+            (!consumer ||
+             !registerEqualities.contains(consumer.getOperation()))) {
+          return;
+        }
+      }
+      if (!store || store->getBlock() != measurement->getBlock()) {
+        return;
+      }
+      for (Operation* operation = measurement->getNextNode();
+           operation != store.getOperation();
+           operation = operation->getNextNode()) {
+        if (operation == nullptr || !isa<arith::ConstantOp>(operation)) {
+          return;
+        }
+      }
+      fusedMeasurementStores.try_emplace(measurement, store);
+      foldedMeasurementStores.insert(store);
+    });
+  }
+
+  [[nodiscard]] std::string
+  emitRegisterEquality(const RegisterEquality& equality) const {
+    llvm::SmallString<64> expected;
+    equality.expected.toString(expected, 10, false);
+    return (Twine(resources.at(equality.reg).name) + " == " + expected).str();
   }
 
   [[nodiscard]] LogicalResult emitDeclarations() {
@@ -444,6 +978,10 @@ private:
       return success();
     }
     if (auto ifOp = dyn_cast<scf::IfOp>(&operation)) {
+      if (ifOp.getNumResults() != 0 &&
+          foldedConditionIfs.contains(&operation)) {
+        return success();
+      }
       return emitIf(ifOp);
     }
     if (auto forOp = dyn_cast<scf::ForOp>(&operation)) {
@@ -786,6 +1324,9 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitStore(cbit::StoreOp store) {
+    if (foldedMeasurementStores.contains(store)) {
+      return success();
+    }
     auto target = emitBitReference(store.getReg(), store.getIndex());
     if (failed(target)) {
       return failure();
@@ -809,16 +1350,20 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitMeasurement(qc::MeasureOp measurement) {
-    if (measurement.getResult().hasOneUse()) {
-      if (auto store = dyn_cast<cbit::StoreOp>(
-              *measurement.getResult().getUsers().begin());
-          store && measurement->getNextNode() == store.getOperation()) {
-        return success();
-      }
-    }
     auto qubit = emitQubit(measurement.getQubit());
     if (failed(qubit)) {
       return failure();
+    }
+    if (const auto found =
+            fusedMeasurementStores.find(measurement.getOperation());
+        found != fusedMeasurementStores.end()) {
+      auto store = cast<cbit::StoreOp>(found->second);
+      auto target = emitBitReference(store.getReg(), store.getIndex());
+      if (failed(target)) {
+        return failure();
+      }
+      *output << *target << " = measure " << *qubit << ";\n";
+      return success();
     }
     const auto name = uniqueName("b", nextBit);
     valueNames.try_emplace(measurement.getResult(), name);
@@ -830,11 +1375,18 @@ private:
     if (ifOp.getNumResults() != 0) {
       return fail(ifOp, "scf.if results are not supported");
     }
-    auto condition = emitExpression(ifOp.getCondition());
-    if (failed(condition)) {
-      return failure();
+    std::string condition;
+    if (const auto found = registerEqualities.find(ifOp.getOperation());
+        found != registerEqualities.end()) {
+      condition = emitRegisterEquality(found->second);
+    } else {
+      auto expression = emitExpression(ifOp.getCondition());
+      if (failed(expression)) {
+        return failure();
+      }
+      condition = std::move(*expression);
     }
-    *output << "if (" << *condition << ") {\n";
+    *output << "if (" << condition << ") {\n";
     output->indent();
     if (failed(emitBlock(ifOp.getThenRegion().front()))) {
       return failure();
