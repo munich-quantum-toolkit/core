@@ -134,7 +134,16 @@ if(TARGET MQT::CoreQDMIDriver)
     mqt-core-qdmi-runtime-file-install
     PROPERTIES FIXTURES_REQUIRED mqt-core-qdmi-runtime-file-build FIXTURES_SETUP
                mqt-core-qdmi-runtime-file-install)
+  add_test(
+    NAME mqt-core-qdmi-runtime-file-manifest-verify
+    COMMAND
+      ${CMAKE_COMMAND}
+      "-DMANIFEST=${runtime_file_device_install_dir}/${runtime_file_device_artifact_dir}/mqt-core-qdmi-runtime-file-device.qdmi.json"
+      "-DEXPECTED=\"id\": \"test.runtime-file.variant\"|\"file\": \"metadata-runtime.json\"|\"id\": \"test.runtime-file.session\"|\"base-url\": \"https://device.example\"|\"custom3\": \"session\""
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/verify_generated_manifest.cmake")
   set_tests_properties(mqt-core-qdmi-runtime-file-install-verify
+                       PROPERTIES FIXTURES_REQUIRED mqt-core-qdmi-runtime-file-install)
+  set_tests_properties(mqt-core-qdmi-runtime-file-manifest-verify
                        PROPERTIES FIXTURES_REQUIRED mqt-core-qdmi-runtime-file-install)
 
   function(add_qdmi_configuration_rejection_test name invalid_configuration)
@@ -160,4 +169,13 @@ if(TARGET MQT::CoreQDMIDriver)
   add_qdmi_configuration_rejection_test(empty-file empty-file)
   add_qdmi_configuration_rejection_test(duplicate-base-id duplicate-base-id)
   add_qdmi_configuration_rejection_test(duplicate-configured-id duplicate-configured-id)
+  add_qdmi_configuration_rejection_test(missing-session-parameter missing-session-parameter)
+  add_qdmi_configuration_rejection_test(malformed-session-parameter malformed-session-parameter)
+  add_qdmi_configuration_rejection_test(empty-session-value empty-session-value)
+  add_qdmi_configuration_rejection_test(unknown-session-parameter unknown-session-parameter)
+  add_qdmi_configuration_rejection_test(credential-session-parameter credential-session-parameter)
+  add_qdmi_configuration_rejection_test(repeated-session-parameter repeated-session-parameter)
+  add_qdmi_configuration_rejection_test(unknown-session-runtime-file unknown-session-runtime-file)
+  add_qdmi_configuration_rejection_test(reserved-session-parameter reserved-session-parameter)
+  add_qdmi_configuration_rejection_test(duplicate-session-id duplicate-session-id)
 endif()
