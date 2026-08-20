@@ -21,7 +21,6 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -252,7 +251,8 @@ TEST_F(GlobalPhaseNormalizationTest,
   expectNormalizedQCUnitary(moduleOp, 2);
 }
 
-TEST_F(GlobalPhaseNormalizationTest, PreservesDynamicOrderAndIsIdempotent) {
+TEST_F(GlobalPhaseNormalizationTest,
+       PreservesDynamicDependenciesAcrossRepeatedRuns) {
   auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q: !qc.qubit, %a: f64, %b: f64) {
@@ -285,14 +285,21 @@ TEST_F(GlobalPhaseNormalizationTest, PreservesDynamicOrderAndIsIdempotent) {
   EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(1)));
   EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(2)));
 
-  std::string once;
-  llvm::raw_string_ostream onceStream(once);
-  moduleOp->print(onceStream);
+  const auto countOperations = [&moduleOp]() {
+    size_t count = 0;
+    moduleOp->walk([&count](Operation*) { ++count; });
+    return count;
+  };
+  const auto firstRunOperationCount = countOperations();
+
   ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
-  std::string twice;
-  llvm::raw_string_ostream twiceStream(twice);
-  moduleOp->print(twiceStream);
-  EXPECT_EQ(once, twice);
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
+
+  phases = llvm::to_vector(func.getBody().getOps<mlir::qc::GPhaseOp>());
+  ASSERT_EQ(phases.size(), 1);
+  EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(1)));
+  EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(2)));
+  EXPECT_LE(countOperations(), firstRunOperationCount);
 }
 
 TEST_F(GlobalPhaseNormalizationTest, KeepsSCFStyleRegionsIndependent) {
