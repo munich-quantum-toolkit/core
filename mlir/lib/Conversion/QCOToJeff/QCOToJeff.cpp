@@ -13,12 +13,12 @@
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/MQT/Utils/GatePowering.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <jeff/Conversion/NativeToJeff/NativeToJeff.h>
 #include <jeff/IR/JeffDialect.h>
@@ -1284,7 +1284,7 @@ struct ConvertQCOPowOpToJeff final : StatefulOpConversionPattern<PowOp> {
 
     // jeff only supports compile-time integer exponents between 0 and 255
     const auto exponent = op.getExponentValue();
-    if (!exponent || !utils::isIntegerExponent(*exponent) || *exponent < 0.0 ||
+    if (!exponent || !mqt::isIntegerExponent(*exponent) || *exponent < 0.0 ||
         *exponent > std::numeric_limits<uint8_t>::max()) {
       return rewriter.notifyMatchFailure(
           op, "Only compile-time integer exponents between 0 and 255 are "

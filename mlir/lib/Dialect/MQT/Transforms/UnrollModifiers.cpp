@@ -8,12 +8,13 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Transforms/Passes.h"
+#include "mlir/Dialect/MQT/Utils/GatePowering.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/Utils/Transforms/Passes.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
@@ -39,7 +40,7 @@
 namespace mlir::mqt {
 
 #define GEN_PASS_DEF_UNROLLMODIFIERS
-#include "mlir/Dialect/Utils/Transforms/Passes.h.inc"
+#include "mlir/Dialect/MQT/Transforms/Passes.h.inc"
 
 /**
  *@brief Move the classical operations of @p body in front of @p modifier.
@@ -73,7 +74,7 @@ static LogicalResult hoistClassicalOps(Block& body, Operation* modifier,
 /// Check whether the exponent of @p op is a compile-time known integer.
 template <typename PowOp> static bool hasIntegerExponent(PowOp op) {
   const auto exponent = op.getExponentValue();
-  return exponent && utils::isIntegerExponent(*exponent);
+  return exponent && isIntegerExponent(*exponent);
 }
 
 //===----------------------------------------------------------------------===//
@@ -103,7 +104,7 @@ static LogicalResult unrollModifier(qc::CtrlOp op, RewriterBase& rewriter) {
   rewriter.setInsertionPoint(op);
   for (auto unitary : body->getOps<qc::UnitaryOpInterface>()) {
     const auto targets = llvm::map_to_vector(unitary.getQubits(), [&](Value q) {
-      return utils::getValueFromBlockArgument(q, op.getTargets());
+      return getValueFromBlockArgument(q, op.getTargets());
     });
     qc::CtrlOp::create(
         rewriter, op.getLoc(), op.getControls(), targets,
@@ -128,7 +129,7 @@ static LogicalResult unrollModifier(qc::InvOp op, RewriterBase& rewriter) {
   // (a b)^-1 = b^-1 a^-1, so the operations are inverted in reverse order.
   for (auto unitary : llvm::reverse(body->getOps<qc::UnitaryOpInterface>())) {
     const auto qubits = llvm::map_to_vector(unitary.getQubits(), [&](Value q) {
-      return utils::getValueFromBlockArgument(q, op.getQubits());
+      return getValueFromBlockArgument(q, op.getQubits());
     });
     qc::InvOp::create(rewriter, op.getLoc(), qubits, [&](ValueRange args) {
       cloneIntoBody(unitary, args, rewriter);
@@ -168,7 +169,7 @@ static LogicalResult unrollModifier(qc::PowOp op, RewriterBase& rewriter) {
   rewriter.setInsertionPoint(op);
   for (auto unitary : body->getOps<qc::UnitaryOpInterface>()) {
     const auto qubits = llvm::map_to_vector(unitary.getQubits(), [&](Value q) {
-      return utils::getValueFromBlockArgument(q, op.getQubits());
+      return getValueFromBlockArgument(q, op.getQubits());
     });
     qc::PowOp::create(
         rewriter, op.getLoc(), op.getExponent(), qubits,

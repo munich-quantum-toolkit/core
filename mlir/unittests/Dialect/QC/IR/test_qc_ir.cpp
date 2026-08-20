@@ -8,18 +8,18 @@
  * Licensed under the MIT License
  */
 
+#include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Transforms/Passes.h"
+#include "mlir/Dialect/MQT/Utils/DenseUnitary.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/DenseUnitary.h"
-#include "mlir/Dialect/Utils/Transforms/Passes.h"
-#include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
 
@@ -448,11 +448,11 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsUnsupportedArityAndAttributes) {
   EXPECT_TRUE(failed(sparseUnitary.verify()));
   EXPECT_TRUE(failed(realUnitary.verify()));
 
-  EXPECT_FALSE(utils::isExactIdentityMatrix(sparseMatrix));
+  EXPECT_FALSE(mlir::mqt::isExactIdentityMatrix(sparseMatrix));
   const auto rankOneMatrix = DenseElementsAttr::get(
       RankedTensorType::get({2}, complexType), std::complex<double>{0.0, 0.0});
-  EXPECT_FALSE(utils::isExactIdentityMatrix(rankOneMatrix));
-  EXPECT_FALSE(utils::isExactIdentityMatrix(realMatrix));
+  EXPECT_FALSE(mlir::mqt::isExactIdentityMatrix(rankOneMatrix));
+  EXPECT_FALSE(mlir::mqt::isExactIdentityMatrix(realMatrix));
 
   zeroQubitUnitary.erase();
   sparseUnitary.erase();

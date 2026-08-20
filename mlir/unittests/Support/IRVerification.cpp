@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Support/IRVerification.h"
+#include "Support/IRVerification.h"
 
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"

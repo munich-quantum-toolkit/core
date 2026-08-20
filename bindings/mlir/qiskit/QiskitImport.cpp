@@ -16,12 +16,12 @@
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Utils/DenseUnitary.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/Utils/DenseUnitary.h"
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
@@ -324,10 +324,10 @@ denseUnitaryArity(const Instruction& instruction) {
         "Qiskit unitary instruction has an unsupported operand arity");
   }
   const auto targets = instruction.qubits.size() - controls;
-  if (targets > mlir::utils::MAX_DENSE_UNITARY_QUBITS) {
+  if (targets > mlir::mqt::MAX_DENSE_UNITARY_QUBITS) {
     throw std::runtime_error(
         "Qiskit unitary supports at most " +
-        std::to_string(mlir::utils::MAX_DENSE_UNITARY_QUBITS) + " qubits");
+        std::to_string(mlir::mqt::MAX_DENSE_UNITARY_QUBITS) + " qubits");
   }
   return {.controls = controls, .targets = targets};
 }

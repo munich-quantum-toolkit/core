@@ -8,16 +8,17 @@
  * Licensed under the MIT License
  */
 
-#pragma once
+#include "mlir/Dialect/MQT/Utils/DenseUnitary.h"
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
+#include <mlir/IR/BuiltinAttributeInterfaces.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
@@ -25,24 +26,11 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace mlir::utils {
+namespace mlir::mqt {
 
-/**
- * Maximum absolute entry-wise deviation of U^dagger U from the identity.
- *
- * This tolerance accounts for binary64 accumulation error while remaining
- * substantially below the precision at which dense input matrices are
- * normally specified.
- */
-inline constexpr double DENSE_UNITARY_TOLERANCE = 1e-10;
-
-/** Maximum matrix arity accepted by the deterministic unitarity verifier. */
-inline constexpr size_t MAX_DENSE_UNITARY_QUBITS = 8;
-
-/** Verify the common dense-matrix contract of QC and QCO unitary operations. */
-[[nodiscard]] inline LogicalResult
-verifyDenseUnitaryMatrix(Operation* operation, const ElementsAttr matrixAttr,
-                         const ValueRange qubits) {
+LogicalResult verifyDenseUnitaryMatrix(Operation* operation,
+                                       ElementsAttr matrixAttr,
+                                       ValueRange qubits) {
   const auto numQubits = qubits.size();
   if (numQubits == 0U) {
     return operation->emitOpError("requires at least one qubit");
@@ -52,21 +40,21 @@ verifyDenseUnitaryMatrix(Operation* operation, const ElementsAttr matrixAttr,
            << "supports at most " << MAX_DENSE_UNITARY_QUBITS << " qubits";
   }
   llvm::SmallDenseSet<Value, 8> uniqueQubits;
-  for (const auto qubit : qubits) {
+  for (auto qubit : qubits) {
     if (!uniqueQubits.insert(qubit).second) {
       return operation->emitOpError("duplicate qubit operand");
     }
   }
-  const auto matrix = dyn_cast<DenseElementsAttr>(matrixAttr);
+  auto matrix = dyn_cast<DenseElementsAttr>(matrixAttr);
   if (!matrix) {
     return operation->emitOpError("matrix must use dense element storage");
   }
-  const auto type = dyn_cast<RankedTensorType>(matrix.getType());
+  auto type = dyn_cast<RankedTensorType>(matrix.getType());
   if (!type || type.getRank() != 2 ||
       type.getShape()[0] != type.getShape()[1]) {
     return operation->emitOpError("matrix must be a square rank-two tensor");
   }
-  const auto complexType = dyn_cast<ComplexType>(type.getElementType());
+  auto complexType = dyn_cast<ComplexType>(type.getElementType());
   if (!complexType || !complexType.getElementType().isF64()) {
     return operation->emitOpError(
         "matrix elements must have type complex<f64>");
@@ -109,18 +97,17 @@ verifyDenseUnitaryMatrix(Operation* operation, const ElementsAttr matrixAttr,
   return success();
 }
 
-/** Return whether a dense square matrix is exactly the identity. */
-[[nodiscard]] inline bool isExactIdentityMatrix(const ElementsAttr matrixAttr) {
-  const auto matrix = dyn_cast<DenseElementsAttr>(matrixAttr);
+bool isExactIdentityMatrix(ElementsAttr matrixAttr) {
+  auto matrix = dyn_cast<DenseElementsAttr>(matrixAttr);
   if (!matrix) {
     return false;
   }
-  const auto type = dyn_cast<RankedTensorType>(matrix.getType());
+  auto type = dyn_cast<RankedTensorType>(matrix.getType());
   if (!type || type.getRank() != 2 ||
       type.getShape()[0] != type.getShape()[1] || type.getShape()[0] <= 0) {
     return false;
   }
-  const auto complexType = dyn_cast<ComplexType>(type.getElementType());
+  auto complexType = dyn_cast<ComplexType>(type.getElementType());
   if (!complexType || !complexType.getElementType().isF64()) {
     return false;
   }
@@ -138,4 +125,4 @@ verifyDenseUnitaryMatrix(Operation* operation, const ElementsAttr matrixAttr,
   return true;
 }
 
-} // namespace mlir::utils
+} // namespace mlir::mqt

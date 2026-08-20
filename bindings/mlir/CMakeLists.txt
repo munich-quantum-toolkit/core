@@ -83,6 +83,7 @@ if(NOT TARGET ${TARGET_NAME})
     MQTCompilerQDMIAdapter
     MQTCompilerPipeline
     MLIRMQTDialect
+    MLIRMQTUtils
     MLIRQCTranslationSupport)
 
   if(MQT_QISKIT_CAPI_CANDIDATE_VERSION)

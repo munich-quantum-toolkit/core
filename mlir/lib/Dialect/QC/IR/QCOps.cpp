@@ -10,8 +10,9 @@
 
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h" // IWYU pragma: associated
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
@@ -32,12 +33,12 @@ using namespace mlir::qc;
 static ParseResult
 parseTargetAliasing(OpAsmParser& parser, Region& region,
                     SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
-  return utils::parseTargetAliasing<QubitType>(parser, region, operands);
+  return mqt::parseTargetAliasing<QubitType>(parser, region, operands);
 }
 
 static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
                                 Region& region, OperandRange targetsIn) {
-  utils::printTargetAliasing(printer, region, targetsIn);
+  mqt::printTargetAliasing(printer, region, targetsIn);
 }
 
 //===----------------------------------------------------------------------===//
@@ -73,7 +74,7 @@ void QCDialect::initialize() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult mlir::qc::verifyUnitaryOpInterface(Operation* op) {
-  return utils::verifyFiniteConstantParameters(
+  return mqt::verifyFiniteConstantParameters(
       op, cast<UnitaryOpInterface>(op).getParameters());
 }
 

@@ -20,6 +20,7 @@ add_mlir_conversion_library(
   MLIRNativeToJeff
   MLIRMQTDialect
   MLIRMQTTransforms
+  MLIRMQTUtils
   MLIRQCODialect
   MLIRTransforms)
 

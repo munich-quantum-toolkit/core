@@ -8,9 +8,7 @@
  * Licensed under the MIT License
  */
 
-#pragma once
-
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Dialect/MQT/Utils/GatePowering.h"
 
 #include <array>
 #include <cmath>
@@ -21,47 +19,22 @@
 #include <numbers>
 #include <optional>
 
-namespace mlir::utils {
+namespace mlir::mqt {
 
-/**
- * Maximum exponent considered for safe binary64 U-gate powering.
- *
- * Even with analytical SU(2) powering, uncertainty in the input angles is
- * magnified by the exponent. Candidate rewrites are additionally checked
- * against the source matrix before they are accepted.
- */
-inline constexpr uint64_t MAX_SAFE_U_POWER_EXPONENT = 1024U;
+bool isIntegerExponent(const double value) {
+  return value == std::floor(value) && std::isfinite(value);
+}
 
-/// Maximum entry-wise matrix error accepted for a powered U-gate rewrite.
-inline constexpr double U_POWER_EQUIVALENCE_TOLERANCE = 5e-13;
+bool isEvenExponent(const double value) {
+  return isIntegerExponent(value) && std::fmod(std::fabs(value), 2.0) == 0.0;
+}
 
-/**
- * @brief Parameters representing a powered U gate.
- *
- * All values are in radians. The phase satisfies
- * `U(input)^exponent = exp(i * phase) * U(theta, phi, lambda)`.
- */
-struct UPowerParameters {
-  double theta;  ///< Resulting U rotation angle.
-  double phi;    ///< Resulting U phi angle.
-  double lambda; ///< Resulting U lambda angle.
-  double phase;  ///< Remaining global phase.
-};
-
-/**
- * @brief Compute a positive integral power of a constant U gate.
- *
- * @return Parameters satisfying
- * `U(theta, phi, lambda)^exponent = exp(i*phase) * U(result)`, or
- * `std::nullopt` if @p exponent is not a positive integer no greater than
- * `MAX_SAFE_U_POWER_EXPONENT`, an input is not finite, or the binary64 result
- * cannot be reconstructed within `U_POWER_EQUIVALENCE_TOLERANCE`.
- */
-[[nodiscard]] inline std::optional<UPowerParameters>
-powerUParameters(const double theta, const double phi, const double lambda,
-                 const double exponent) {
+std::optional<UPowerParameters> powerUParameters(const double theta,
+                                                 const double phi,
+                                                 const double lambda,
+                                                 const double exponent) {
   if (!std::isfinite(theta) || !std::isfinite(phi) || !std::isfinite(lambda) ||
-      !mlir::utils::isIntegerExponent(exponent) || exponent <= 0.0 ||
+      !isIntegerExponent(exponent) || exponent <= 0.0 ||
       exponent > static_cast<double>(MAX_SAFE_U_POWER_EXPONENT)) {
     return std::nullopt;
   }
@@ -70,9 +43,9 @@ powerUParameters(const double theta, const double phi, const double lambda,
   using Complex = std::complex<double>;
   using Matrix = std::array<Complex, 4>;
 
-  // U(theta, phi, lambda) = exp(i * (phi + lambda) / 2) *
-  // RZ(phi) * RY(theta) * RZ(lambda). Represent the SU(2) factor by a unit
-  // quaternion and power it analytically by multiplying its axis angle.
+  /// U(theta, phi, lambda) = exp(i * (phi + lambda) / 2) *
+  /// RZ(phi) * RY(theta) * RZ(lambda). Represent the SU(2) factor by a unit
+  /// quaternion and power it analytically by multiplying its axis angle.
   const double halfTheta = theta / 2.0;
   const double halfPhi = phi / 2.0;
   const double halfLambda = lambda / 2.0;
@@ -154,10 +127,10 @@ powerUParameters(const double theta, const double phi, const double lambda,
       std::remainder(poweredPhase - ((resultPhi + resultLambda) / 2.0),
                      2.0 * std::numbers::pi);
 
-  // Binary64 evaluation of the source U matrix can itself deviate from an
-  // exact unitary for large angles, and powering magnifies that deviation.
-  // Reject a rewrite when the analytical unitary cannot represent the source
-  // operation closely enough for the dialect's full-matrix contract.
+  /// Binary64 evaluation of the source U matrix can itself deviate from an
+  /// exact unitary for large angles, and powering magnifies that deviation.
+  /// Reject a rewrite when the analytical unitary cannot represent the source
+  /// operation closely enough for the dialect's full-matrix contract.
   const Complex imaginary{0.0, 1.0};
   const auto uMatrix = [&](const double matrixTheta, const double matrixPhi,
                            const double matrixLambda) {
@@ -198,7 +171,10 @@ powerUParameters(const double theta, const double phi, const double lambda,
       return std::nullopt;
     }
   }
-  return UPowerParameters{resultTheta, resultPhi, resultLambda, resultPhase};
+  return UPowerParameters{.theta = resultTheta,
+                          .phi = resultPhi,
+                          .lambda = resultLambda,
+                          .phase = resultPhase};
 }
 
-} // namespace mlir::utils
+} // namespace mlir::mqt

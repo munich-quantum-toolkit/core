@@ -8,9 +8,11 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Utils/Angles.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -25,7 +27,7 @@
 
 using namespace mlir;
 using namespace mlir::qco;
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 namespace {
 
@@ -38,7 +40,7 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
   LogicalResult matchAndRewrite(GPhaseOp op,
                                 PatternRewriter& rewriter) const override {
     if (const auto theta = valueToDouble(op.getTheta());
-        !theta || std::abs(*theta) > TOLERANCE) {
+        !theta || std::abs(*theta) > PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
 
@@ -57,12 +59,7 @@ void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult GPhaseOp::verify() {
-  const auto theta = valueToConstantDouble(getTheta());
-  if (theta && std::abs(*theta) > MAX_GLOBAL_PHASE_ANGLE) {
-    return emitOpError() << "constant angle must have magnitude at most "
-                         << MAX_GLOBAL_PHASE_ANGLE << " radians";
-  }
-  return success();
+  return verifyGlobalPhaseAngle(getOperation(), getTheta());
 }
 
 void GPhaseOp::getCanonicalizationPatterns(RewritePatternSet& results,
