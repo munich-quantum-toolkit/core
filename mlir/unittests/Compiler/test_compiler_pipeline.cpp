@@ -1326,6 +1326,107 @@ TEST_F(CompilerPipelineTest,
 }
 
 /**
+ * @brief Test: constant QCO index-switch can skip unmatched case regions.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationIgnoresStaticQCOIndexSwitchDefaultRegion) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.index_switch %c1 -> (!qco.qubit) {
+          case 0 args(%arg0 = %q0) {
+            scf.for %index = %c0 to %c1 step %c1 {
+            }
+            qco.yield %arg0 : !qco.qubit
+          }
+          default args(%arg0 = %q0) {
+            qco.yield %arg0 : !qco.qubit
+          }
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("qco.index_switch"), std::string::npos);
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/**
+ * @brief Test: constant SCF conditionals pick the selected branch first.
+ */
+TEST_F(CompilerPipelineTest, TargetCompilationIgnoresStaticScfIfThenBranch) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %true = arith.constant true
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.if %true -> !qco.qubit {
+          qco.yield %q0 : !qco.qubit
+        } else {
+          scf.for %index = %c0 to %c1 step %c1 {
+          }
+          qco.yield %q0 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.if"), std::string::npos);
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/**
+ * @brief Test: constant SCF index-switch can skip unmatched case regions.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationIgnoresStaticScfIndexSwitchDefaultRegion) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {passthrough = ["entry_point"]} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.index_switch %c1 -> !qco.qubit
+        case 0 {
+          scf.for %index = %c0 to %c1 step %c1 {
+          }
+          qco.yield %q0 : !qco.qubit
+        }
+        default {
+          qco.yield %q0 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.index_switch"), std::string::npos);
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/**
  * @brief Test: unsupported region control fails before mapping.
  */
 TEST_F(CompilerPipelineTest,
