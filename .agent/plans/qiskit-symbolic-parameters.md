@@ -77,8 +77,9 @@ partially constructed output circuit after a failure. Exact
 - [x] (2026-08-20 11:55Z) Reject non-finite statically known values through the
       shared QC and QCO unitary-interface verifier, including values nested in
       parameter-expression DAGs.
-- [ ] Run focused dialect, conversion, compiler, Qiskit, documentation, stub,
-      and lint validation; inspect every signed commit and the final diff.
+- [x] (2026-08-20 12:10Z) Run focused dialect, conversion, compiler, Qiskit,
+      documentation, stub, and lint validation; inspect every signed commit and
+      the final diff.
 
 ## Surprises & Discoveries
 
@@ -124,6 +125,9 @@ partially constructed output circuit after a failure. Exact
   through `UnitaryOpInterface`. An interface verifier is the one shared MLIR
   hook that covers standard gates and modifiers without adding a verifier to
   each operation.
+- Observation: MLIR's dialect documentation generator requires `OpBase.td` even
+  for an operation-free dialect. `DialectBase.td` declares the dialect but does
+  not make the `Op` base class visible to the documentation backend.
 
 ## Decision Log
 
@@ -188,11 +192,17 @@ partially constructed output circuit after a failure. Exact
 
 ## Outcomes & Retrospective
 
-The scalar implementation is complete. Shared direct symbols, bounded real
-expression trees, parameterized definitions, name-safe loop bindings, and global
-phase passed the original focused validation. Unused named inputs now fail
-before writer allocation rather than disappearing. The split branch builds and
-passes all 158 Qiskit translation tests after #2158 merged.
+The scalar implementation is complete. The shared MQT metadata dialect owns
+input and qubit-register names, and QC/QCO conversions preserve all compatible
+discardable metadata without duplicate dialect-specific attributes. The Qiskit
+boundary uses unique names instead of UUID edge cases and a closed normalized
+expression variant. QC and QCO reject non-finite statically known unitary
+parameters through their shared interface contract.
+
+The final Release build and all 4,128 configured tests pass; one QDMI test is
+skipped by its environment guard. All 157 Qiskit translation tests pass after a
+fresh extension build. MLIR and Sphinx documentation, stub generation, and the
+repository lint suite also pass.
 
 ## Context and Orientation
 
