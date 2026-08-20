@@ -685,7 +685,7 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto* moduleOp = getOperation();
-    if (failed(mlir::mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
+    if (failed(mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
       signalPassFailure();
       return;
     }
@@ -730,7 +730,7 @@ protected:
 
     auto main = getMainFunction(moduleOp);
     if (!main) {
-      moduleOp->emitError("No main function with entry_point attribute found");
+      moduleOp->emitError("no main function with mqt.entry_point found");
       signalPassFailure();
       return;
     }

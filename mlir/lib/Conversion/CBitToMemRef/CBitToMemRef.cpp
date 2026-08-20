@@ -53,6 +53,7 @@ struct ConvertAllocOp final : OpConversionPattern<cbit::AllocOp> {
     const auto type = cast<MemRefType>(
         getTypeConverter()->convertType(op.getResult().getType()));
     auto allocation = memref::AllocOp::create(rewriter, op.getLoc(), type);
+    allocation->setDiscardableAttrs(op->getDiscardableAttrDictionary());
 
     if (op.getInitialization() == cbit::Initialization::Zero) {
       auto zero = arith::ConstantOp::create(rewriter, op.getLoc(),

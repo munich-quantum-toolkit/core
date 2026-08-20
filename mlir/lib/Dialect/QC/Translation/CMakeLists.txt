@@ -31,6 +31,7 @@ add_mlir_library(
   MLIRControlFlowDialect
   MLIRMathDialect
   MLIRMemRefDialect
+  MLIRMQTDialect
   MLIRSCFDialect
   MLIRUBDialect
   MLIRQCDialect

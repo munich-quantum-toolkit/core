@@ -12,6 +12,7 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
@@ -41,6 +42,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
@@ -53,7 +55,6 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qc;
@@ -149,17 +150,6 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
-TEST_F(QCTest, BuilderRejectsDuplicateNonEmptyQubitRegisterNames) {
-  EXPECT_DEATH(
-      {
-        QCProgramBuilder builder(context.get());
-        builder.initialize();
-        std::ignore = builder.allocQubitRegisterStorage(1, "q");
-        std::ignore = builder.allocQubitRegisterStorage(1, "q");
-      },
-      "Qubit register names must be unique");
-}
-
 TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
   EXPECT_DEATH(
       {
@@ -215,10 +205,16 @@ TEST_F(QCTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
   moduleOp->walk([&](cbit::AllocOp op) { allocations.push_back(op); });
   ASSERT_EQ(allocations.size(), 2);
   EXPECT_EQ(allocations[0].getInitialization(), cbit::Initialization::Zero);
-  EXPECT_FALSE(allocations[0].getSourceNameAttr());
+  EXPECT_FALSE(allocations[0]->getAttr(
+      ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr()));
   EXPECT_EQ(allocations[1].getInitialization(),
             cbit::Initialization::Undefined);
-  EXPECT_EQ(allocations[1].getSourceName(), "undefined");
+  EXPECT_EQ(
+      allocations[1]
+          ->getAttrOfType<StringAttr>(
+              ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
+          .getValue(),
+      "undefined");
 }
 
 TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {
@@ -290,6 +286,48 @@ TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   EXPECT_EQ(pow.getQubits().front(), qubit);
   EXPECT_EQ(pow.getBody()->getArgument(0), bodyQubit);
   EXPECT_TRUE(pow.verify().succeeded());
+}
+
+TEST_F(QCTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
+  constexpr std::array<StringLiteral, 2> invalidPrograms{
+      R"mlir(
+        module {
+          func.func @main(%input: f64) {
+            %q = qc.alloc : !qc.qubit
+            %infinity = arith.constant 0x7FF0000000000000 : f64
+            %theta = arith.addf %input, %infinity : f64
+            qc.rx(%theta) %q : !qc.qubit
+            qc.dealloc %q : !qc.qubit
+            return
+          }
+        }
+      )mlir",
+      R"mlir(
+        module {
+          func.func @main() {
+            %q = qc.alloc : !qc.qubit
+            %nan = arith.constant 0x7FF8000000000000 : f64
+            qc.pow(%nan) (%arg = %q) {
+              qc.x %arg : !qc.qubit
+              qc.yield
+            } : !qc.qubit
+            qc.dealloc %q : !qc.qubit
+            return
+          }
+        }
+      )mlir"};
+
+  for (const auto source : invalidPrograms) {
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |= StringRef(diagnostic.str())
+                                   .contains("constant parameter expression at "
+                                             "index 0 must be finite");
+      return success();
+    });
+    EXPECT_FALSE(parseSourceString<ModuleOp>(source, context.get()));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
 }
 
 TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
@@ -553,7 +591,7 @@ static void emitForbiddenModifierBodyOperation(
   case ForbiddenModifierBodyOp::CBitAlloc:
     cbit::AllocOp::create(builder,
                           cbit::RegisterType::get(builder.getContext(), 1),
-                          cbit::Initialization::Zero, StringAttr{});
+                          cbit::Initialization::Zero);
     return;
   case ForbiddenModifierBodyOp::CBitLoad:
     cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg, index);

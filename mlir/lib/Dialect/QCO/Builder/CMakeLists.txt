@@ -14,6 +14,7 @@ add_mlir_library(
   MLIRArithDialect
   MLIRCBitDialect
   MLIRFuncDialect
+  MLIRMQTDialect
   MLIRSCFDialect
   MLIRQCODialect
   MLIRQTensorDialect)

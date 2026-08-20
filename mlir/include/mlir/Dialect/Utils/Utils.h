@@ -11,13 +11,13 @@
 #pragma once
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
@@ -30,6 +30,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <cassert>
 #include <cmath>
@@ -41,10 +42,6 @@
 #include <variant>
 
 namespace mlir::utils {
-
-/// Attribute used to retain a source-level qubit-register name.
-inline constexpr llvm::StringLiteral QUBIT_REGISTER_NAME_ATTR =
-    "mqt.qubit_register_name";
 
 /// Check if a floating-point value is an integer.
 [[nodiscard]] inline bool isIntegerExponent(double r) {
@@ -169,7 +166,7 @@ variantToValue(OpBuilder& builder, Location loc,
 /// operands are resolved once (linear in the expression DAG).
 [[nodiscard]] inline std::optional<Attribute>
 valueToConstantAttr(Value value,
-                    llvm::DenseMap<Value, std::optional<Attribute>>& cache) {
+                    DenseMap<Value, std::optional<Attribute>>& cache) {
   if (const auto it = cache.find(value); it != cache.end()) {
     return it->second;
   }
@@ -199,11 +196,10 @@ valueToConstantAttr(Value value,
     return cache[value] = std::nullopt;
   }
   std::optional<Attribute> folded;
-  if (const auto resultAttr =
-          llvm::dyn_cast_if_present<Attribute>(results.front())) {
+  if (const auto resultAttr = dyn_cast_if_present<Attribute>(results.front())) {
     folded = resultAttr;
   } else if (const auto resultValue =
-                 llvm::dyn_cast_if_present<Value>(results.front())) {
+                 dyn_cast_if_present<Value>(results.front())) {
     // Identity-style folds may return an existing SSA value (e.g. `addf x,
     // -0`).
     folded = valueToConstantAttr(resultValue, cache);
@@ -213,7 +209,7 @@ valueToConstantAttr(Value value,
 
 /// Recursively constant-fold a pure SSA expression DAG to an attribute.
 [[nodiscard]] inline std::optional<Attribute> valueToConstantAttr(Value value) {
-  llvm::DenseMap<Value, std::optional<Attribute>> cache;
+  DenseMap<Value, std::optional<Attribute>> cache;
   return valueToConstantAttr(value, cache);
 }
 
@@ -227,6 +223,37 @@ valueToConstantAttr(Value value,
     return attributeToDouble(*attr);
   }
   return std::nullopt;
+}
+
+/// Verify that each statically known floating-point value in a parameter
+/// expression is finite.
+[[nodiscard]] inline LogicalResult
+verifyFiniteConstantParameters(Operation* op, const ValueRange parameters) {
+  DenseMap<Value, std::optional<Attribute>> constantCache;
+  DenseSet<Value> visited;
+  for (const auto [index, parameter] : llvm::enumerate(parameters)) {
+    SmallVector<Value> worklist{parameter};
+    while (!worklist.empty()) {
+      const Value value = worklist.pop_back_val();
+      if (!visited.insert(value).second) {
+        continue;
+      }
+      if (const auto constant = valueToConstantAttr(value, constantCache)) {
+        if (const auto floating = dyn_cast<FloatAttr>(*constant);
+            floating && !floating.getValue().isFinite()) {
+          return op->emitOpError() << "constant parameter expression at index "
+                                   << index << " must be finite";
+        }
+      }
+      Operation* definingOp = value.getDefiningOp();
+      if (definingOp == nullptr || definingOp->getNumRegions() != 0 ||
+          !isPure(definingOp)) {
+        continue;
+      }
+      llvm::append_range(worklist, definingOp->getOperands());
+    }
+  }
+  return success();
 }
 
 /**
@@ -463,37 +490,6 @@ inlineBodyReturningYields(Block& source, ValueRange blockArgReplacements,
   auto yielded = llvm::to_vector(dest->back().getOperands());
   rewriter.eraseOp(&dest->back());
   return yielded;
-}
-
-/**
- * @brief Find the entry point function with the entry_point attribute
- *
- * @details
- * Searches for the function marked with the "entry_point" attribute in
- * the passthrough attributes. If multiple functions are marked, returns the
- * first one encountered.
- *
- * @param op The module operation to search in.
- * @returns the entry point function, or nullptr if not found.
- */
-inline func::FuncOp getEntryPoint(ModuleOp op) {
-  static constexpr StringRef PASSTHROUGH_LABEL = "passthrough";
-  static constexpr StringRef ENTRY_POINT_LABEL = "entry_point";
-
-  const auto isEntry = [](Attribute attr) {
-    const auto strAttr = dyn_cast<StringAttr>(attr);
-    return strAttr && strAttr.getValue() == ENTRY_POINT_LABEL;
-  };
-
-  for (auto func : op.getOps<func::FuncOp>()) {
-    if (const auto passthrough =
-            func->getAttrOfType<ArrayAttr>(PASSTHROUGH_LABEL);
-        passthrough && llvm::any_of(passthrough, isEntry)) {
-      return func;
-    }
-  }
-
-  return nullptr;
 }
 
 } // namespace mlir::utils

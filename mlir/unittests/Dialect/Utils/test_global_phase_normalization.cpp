@@ -409,35 +409,6 @@ TEST_F(GlobalPhaseNormalizationTest, DynamicPowerRemainsBoundary) {
   EXPECT_TRUE(func.getBody().getOps<qco::GPhaseOp>().empty());
 }
 
-TEST_F(GlobalPhaseNormalizationTest, NonFinitePowerExponentsRemainBoundaries) {
-  for (const double exponent : {std::numeric_limits<double>::quiet_NaN(),
-                                std::numeric_limits<double>::infinity()}) {
-    OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
-    OpBuilder builder(context.get());
-    builder.setInsertionPointToStart(moduleOp->getBody());
-    const auto loc = moduleOp->getLoc();
-    const auto qubitType = qco::QubitType::get(context.get());
-    auto function =
-        func::FuncOp::create(builder, loc, "test",
-                             builder.getFunctionType({qubitType}, {qubitType}));
-    auto* entry = function.addEntryBlock();
-    builder.setInsertionPointToStart(entry);
-    auto pow = qco::PowOp::create(
-        builder, loc, entry->getArgument(0), exponent, [&](Value target) {
-          const auto out = qco::XOp::create(builder, loc, target).getQubitOut();
-          qco::GPhaseOp::create(builder, loc,
-                                utils::constantFromScalar(builder, loc, 0.371));
-          return out;
-        });
-    func::ReturnOp::create(builder, loc, pow.getOutputTarget(0));
-
-    ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
-    ASSERT_TRUE(verify(*moduleOp).succeeded());
-    EXPECT_EQ(llvm::range_size(pow.getBody()->getOps<qco::GPhaseOp>()), 1);
-    EXPECT_TRUE(function.getBody().getOps<qco::GPhaseOp>().empty());
-  }
-}
-
 TEST_F(GlobalPhaseNormalizationTest, FactorsControlledPhaseOntoControl) {
   auto moduleOp = parse(R"mlir(
     module {

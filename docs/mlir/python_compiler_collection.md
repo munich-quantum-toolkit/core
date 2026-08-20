@@ -173,16 +173,25 @@ program structures than its C API can construct.
 | Classical-bit and register conditions                             | Supported            | Rejected       |
 | Constant Boolean, `Uint` up to 64 bits, and `Float` expressions   | Supported            | Rejected       |
 | Standalone classical variables or variable expressions            | Rejected             | Rejected       |
-| Free symbolic parameters                                          | Rejected             | Rejected       |
+| Free symbols and supported real parameter expressions             | Supported            | Supported      |
+| Parameter-vector elements                                         | Rejected             | Not emitted    |
 | Dense numeric unitaries up to eight qubits                        | Supported            | Supported      |
 | Register aliases or interleaved membership                        | Rejected             | Rejected       |
 | Transpiler layout metadata                                        | Accepted and ignored | Not emitted    |
 
-Lexically bound {code}`for`-loop induction parameters are supported. Numeric
-parameters passed to a custom instruction are bound before its definition is
-expanded. Definition expansion rejects missing definitions, cycles, operand
-arity mismatches, nesting beyond 64 levels, and more than 10 million expanded
-operations.
+Free standalone symbols become named {code}`f64` program inputs.
+Parameter-vector elements are rejected because converting them to standalone
+parameters would change positional binding order. Standalone parameter names
+that contain brackets remain ordinary scalar names. Parameter-expression trees
+support at most 64 levels and 4,096 nodes. Import and export support real
+addition, subtraction, multiplication, division, power, negation, trigonometric
+and inverse trigonometric functions, exponential, logarithm, absolute value, and
+real conjugation. Other parameter-expression functions are rejected. Lexically
+bound {code}`for`-loop induction parameters are supported and remain distinct
+from free symbols. Parameterized custom-instruction definitions are expanded
+after their symbols and expressions are resolved. Definition expansion rejects
+missing definitions, cycles, operand arity mismatches, nesting beyond 64 levels,
+and more than 10 million expanded operations.
 
 Dense numeric unitaries remain explicit matrix operations during import and
 export. Target compilation synthesizes supported one- and two-qubit matrices to

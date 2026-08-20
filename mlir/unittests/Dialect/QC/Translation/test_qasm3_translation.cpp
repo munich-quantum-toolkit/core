@@ -13,6 +13,7 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
@@ -20,7 +21,6 @@
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qasm_programs.h"
@@ -62,7 +62,7 @@ namespace {
 struct QASM3TranslationTestCase {
   std::string name;
   std::string source;
-  mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QASM3TranslationTestCase& test);
@@ -72,7 +72,7 @@ struct QASM3TranslationTestCase {
 std::ostream& operator<<(std::ostream& os,
                          const QASM3TranslationTestCase& test) {
   return os << "QASM3Translation{" << test.name << ", reference="
-            << mqt::test::displayName(test.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(test.referenceBuilder.name) << "}";
 }
 
 class QASM3TranslationTest
@@ -82,10 +82,10 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry
-        .insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                math::MathDialect, memref::MemRefDialect, qc::QCDialect,
-                qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect>();
+    registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                    math::MathDialect, memref::MemRefDialect,
+                    mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                    qtensor::QTensorDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -908,7 +908,7 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
   const auto referenceBuilder = GetParam().referenceBuilder;
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
   auto translated = qc::translateQASM3ToQC(source, context.get());
   ASSERT_TRUE(translated);
@@ -922,7 +922,8 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto initialization = StringRef(source).contains("OPENQASM 2")
                                   ? cbit::Initialization::Zero
                                   : cbit::Initialization::Undefined;
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  auto reference =
+      ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   reference->walk(
       [&](cbit::AllocOp op) { op.setInitialization(initialization); });
@@ -1005,7 +1006,8 @@ named_result = measure q;
   cbit::AllocOp classicalRegister;
   translated->walk([&](cbit::AllocOp op) { classicalRegister = op; });
   ASSERT_TRUE(classicalRegister);
-  const auto name = classicalRegister.getSourceNameAttr();
+  const auto name = classicalRegister->getAttrOfType<StringAttr>(
+      ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_result");
 }
@@ -1056,8 +1058,8 @@ qubit[2] named_qubits;
     }
   });
   ASSERT_TRUE(qubitRegister);
-  const auto name =
-      qubitRegister->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  const auto name = qubitRegister->getAttrOfType<StringAttr>(
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }

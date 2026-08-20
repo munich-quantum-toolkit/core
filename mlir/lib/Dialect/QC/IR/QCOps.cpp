@@ -72,6 +72,11 @@ void QCDialect::initialize() {
 // Interfaces
 //===----------------------------------------------------------------------===//
 
+LogicalResult mlir::qc::verifyUnitaryOpInterface(Operation* op) {
+  return utils::verifyFiniteConstantParameters(
+      op, cast<UnitaryOpInterface>(op).getParameters());
+}
+
 #include "mlir/Dialect/QC/IR/QCInterfaces.cpp.inc"
 
 //===----------------------------------------------------------------------===//

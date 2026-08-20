@@ -13,6 +13,7 @@
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -83,9 +84,9 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                    jeff::JeffDialect, memref::MemRefDialect, qco::QCODialect,
-                    scf::SCFDialect>();
+    registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect,
+                    cbit::CBitDialect, func::FuncDialect, jeff::JeffDialect,
+                    memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -368,8 +369,9 @@ static LogicalResult convertJeffToQCO(ModuleOp module) {
 
 TEST(JeffRoundTripRegressionTest, RestoresStatusResultAtEndOfEntryPoint) {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                  jeff::JeffDialect, qco::QCODialect, scf::SCFDialect>();
+  registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
+                  func::FuncDialect, jeff::JeffDialect, qco::QCODialect,
+                  scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
   OpBuilder builder(&context);
@@ -400,9 +402,9 @@ TEST(JeffRoundTripRegressionTest, RestoresStatusResultAtEndOfEntryPoint) {
 
 TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                  jeff::JeffDialect, memref::MemRefDialect, qco::QCODialect,
-                  scf::SCFDialect>();
+  registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
+                  func::FuncDialect, jeff::JeffDialect, memref::MemRefDialect,
+                  qco::QCODialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
   auto program = ::mqt::test::buildMLIRProgram(
@@ -420,9 +422,7 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
   ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
   auto main = program->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(main);
-  EXPECT_EQ(
-      main->getAttrOfType<ArrayAttr>("passthrough"),
-      ArrayAttr::get(&context, {StringAttr::get(&context, "entry_point")}));
+  EXPECT_TRUE(mlir::mqt::isEntryPoint(main));
   auto cregType = cbit::RegisterType::get(&context, 1);
   ASSERT_EQ(main.getFunctionType().getNumResults(), 1);
   EXPECT_EQ(main.getFunctionType().getResult(0), cregType);
@@ -433,8 +433,9 @@ TEST(JeffRoundTripRegressionTest, RestoresEntryPointWithObservableResults) {
 
 TEST(JeffRoundTripRegressionTest, ConvertsJeffBitArraysDirectlyToCBit) {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                  jeff::JeffDialect, qco::QCODialect, scf::SCFDialect>();
+  registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
+                  func::FuncDialect, jeff::JeffDialect, qco::QCODialect,
+                  scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
   auto program =
@@ -470,15 +471,16 @@ TEST(JeffRoundTripRegressionTest, ConvertsJeffBitArraysDirectlyToCBit) {
 
 TEST(JeffRoundTripRegressionTest, RejectsClassicalIfResultsPrecisely) {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                  jeff::JeffDialect, qco::QCODialect, scf::SCFDialect>();
+  registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
+                  func::FuncDialect, jeff::JeffDialect, qco::QCODialect,
+                  scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%condition: i1) -> i64
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %q0 = qco.alloc : !qco.qubit
     %then = arith.constant 1 : i64
     %else = arith.constant 2 : i64
@@ -514,16 +516,16 @@ module {
 
 TEST(JeffRoundTripRegressionTest, RejectsLegacyClassicalMemref) {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                  jeff::JeffDialect, memref::MemRefDialect, qco::QCODialect,
-                  scf::SCFDialect>();
+  registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
+                  func::FuncDialect, jeff::JeffDialect, memref::MemRefDialect,
+                  qco::QCODialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%size: index) -> memref<?xi1>
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %c = memref.alloc(%size) : memref<?xi1>
     return %c : memref<?xi1>
   }

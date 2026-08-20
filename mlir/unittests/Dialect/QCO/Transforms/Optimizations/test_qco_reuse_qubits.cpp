@@ -196,7 +196,7 @@ TEST_F(QCOQubitReuseTest, preserveEffectfulUserOrder) {
     module {
       func.func private @record0(i1)
       func.func private @record1(i1)
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
         %q1 = qco.alloc : !qco.qubit
         %q1_h = qco.h %q1 : !qco.qubit -> !qco.qubit
@@ -234,7 +234,7 @@ TEST_F(QCOQubitReuseTest, preserveEffectfulUserOrder) {
 TEST_F(QCOQubitReuseTest, skipReuseAcrossBlocks) {
   module = parseSourceString<ModuleOp>(R"mlir(
     module {
-      func.func @main() -> (i1, i1) attributes {passthrough = ["entry_point"]} {
+      func.func @main() -> (i1, i1) attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
         %q1 = qco.alloc : !qco.qubit
         %q0_m, %c0 = qco.measure %q0 : !qco.qubit
