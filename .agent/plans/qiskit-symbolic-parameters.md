@@ -14,8 +14,8 @@ parameters or real-valued parameter expressions. The compiler represents each
 free parameter as a named `f64` function input and represents arithmetic with
 frontend-neutral Arith and Math dialect operations. Users can export the
 program, bind the reconstructed Qiskit parameters, and obtain the same numeric
-circuit. Lexically bound `for`-loop values remain distinct from free parameters,
-even when their displayed names match.
+circuit. Parameter names are unique across free and lexically bound Qiskit
+parameters. Import rejects circuits that violate this source contract.
 
 This work completes issue #2067. It extends the Qiskit circuit translation
 introduced by #2031 and builds on the CBit representation from #2158. It must
@@ -64,6 +64,20 @@ partially constructed output circuit after a failure. Exact
 - [x] (2026-08-19 20:01Z) Reject named `f64` inputs that do not occur in any
   exported parameter tree, add the source-unchanged regression, rebuild, and
   pass all 158 Qiskit translation tests.
+- [x] (2026-08-20 11:12Z) Register the `mqt` metadata dialect, declare its
+      discardable attributes, and enforce their placement, value, and
+      uniqueness contracts. All seven focused dialect tests pass.
+- [ ] Replace raw `mqt.*` string constants with generated dialect helpers and
+      preserve compatible metadata through QC/QCO conversions and allocation
+      rewrites.
+- [ ] Replace Qiskit UUID-based parameter identity with the supported unique-name
+      contract and reject all free/bound name collisions before module creation.
+- [ ] Replace the nullable parameter-expression node with a closed variant so
+      malformed node states cannot be constructed.
+- [ ] Reject non-finite constant gate parameters in the shared QC and QCO gate
+      verifier rather than in individual import/export paths.
+- [ ] Run focused dialect, conversion, compiler, Qiskit, documentation, stub,
+      and lint validation; inspect every signed commit and the final diff.
 
 ## Surprises & Discoveries
 
@@ -92,6 +106,13 @@ partially constructed output circuit after a failure. Exact
 - Observation: Merely collecting a named function argument does not preserve it
   in Qiskit. The writer only creates parameters reached from emitted gate or
   global-phase expression trees, so an unused input would otherwise disappear.
+- Observation: `mqt.input_name` and `mqt.qubit_register_name` are raw strings in
+  `mlir/include/mlir/Dialect/Utils/Utils.h`; no dialect owns or verifies the
+  namespace. MLIR dialect ODS can declare typed discardable attributes and
+  generate helpers for them.
+- Observation: QC/QCO conversion copies only `mqt.qubit_register_name`, and the
+  QC and QTensor register-shrinking rewrites drop it when they replace an
+  allocation. Compatible discardable metadata must be transferred as a group.
 
 ## Decision Log
 
@@ -105,10 +126,12 @@ partially constructed output circuit after a failure. Exact
   Rationale: Arith, Math, and Qiskit's 2.5 C API represent this real-valued
   subset directly. Operations without matching compiler semantics fail with a
   precise diagnostic. Date/Author: 2026-08-18 / Codex.
-- Decision: Key all parameters by their Qiskit identity during import and by
-  their compiler SSA value during export. Use `mqt.input_name` for the public
-  scalar name. Rationale: identity prevents lexical capture without storing a
-  frontend object in MLIR. Date/Author: 2026-08-18 / Codex.
+- Decision: Require unique names across all free and lexically bound Qiskit
+  parameters, then key import state by name. Continue to key compiler export by
+  SSA value and use `mqt.input_name` for the public name. Rationale: Qiskit
+  programs that reuse a parameter name for another identity are ambiguous and
+  outside the supported source contract; UUID/name mismatch objects are also
+  invalid input rather than an IR requirement. Date/Author: 2026-08-20 / Codex.
 - Decision: Preserve symbol sharing but do not preserve Qiskit's original UUID
   across a round trip. Rationale: the compiler input is the frontend-neutral
   identity. The writer creates exactly one Qiskit symbol for each input and
@@ -127,6 +150,20 @@ partially constructed output circuit after a failure. Exact
   declare an otherwise unused parameter, so failing before writer allocation
   avoids silently changing the public parameter set. Date/Author: 2026-08-19 /
   Codex.
+- Decision: Define `mqt.input_name` and `mqt.qubit_register_name` as typed
+  discardable attributes in an operation-free `mqt` dialect. Verify them with
+  the dialect's operation and region-argument hooks. Rationale: MLIR assigns
+  the semantics of a dialect-prefixed discardable attribute to that dialect;
+  this provides one frontend-neutral owner and generated type-safe helpers.
+  Date/Author: 2026-08-20 / Codex.
+- Decision: Keep `mqt.input_name` independent of the argument type. Rationale:
+  the name is shared program metadata, while Qiskit and future OpenQASM
+  exporters decide which input types they can represent. Date/Author:
+  2026-08-20 / Codex.
+- Decision: Copy compatible discardable attributes when a conversion or rewrite
+  replaces their owner. Rationale: this preserves current and future shared
+  metadata without source-format-specific key handling. Date/Author:
+  2026-08-20 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -151,12 +188,13 @@ recognizes a supported `f64` SSA expression graph, builds normalized
 expressions, and only then asks a version-specific writer to allocate a Qiskit
 circuit.
 
-The importer uses `mqt.input_name`, declared in
-`mlir/include/mlir/Dialect/Utils/Utils.h`, for the stable public name of each
-compiler input. The compiler representation uses `arith.addf`, `arith.subf`,
+The importer uses `mqt.input_name` for the stable public name of each compiler
+input. `mlir/include/mlir/Dialect/MQT/IR/MQTDialect.td` declares this metadata
+and `mqt.qubit_register_name`; the operation-free `mqt` dialect owns their
+contracts. The compiler representation uses `arith.addf`, `arith.subf`,
 `arith.mulf`, `arith.divf`, and `arith.negf`, plus matching real-valued Math
 dialect operations. A local `for` induction parameter is a temporary SSA value
-keyed by the loop parameter's Qiskit identity. It is not a function input.
+keyed by its unique source name. It is not a function input.
 
 ## Plan of Work
 
@@ -170,12 +208,14 @@ excessive depth, and excessive node count before returning to generic import.
 Read a `for` parameter through the public control-flow operation so its UUID is
 preserved.
 
-Next, change `QiskitImport.cpp` to validate every tree leaf by identity and to
+Next, change `QiskitImport.cpp` to validate every tree leaf by name and to
 emit each supported node as an `f64` Arith or Math value. Register the Math
-dialect in the import context. Key both local and global parameter maps by
-identity. Remove the numeric-only custom-definition check in the version
-adapter; the existing recursive definition preflight then validates its actual
-symbols and expressions against the same maps.
+dialect in the import context. Reject duplicate free names and all collisions
+between free and lexically bound names before constructing a module. Key both
+local and global parameter maps by name. Remove the numeric-only
+custom-definition check in the version adapter; the existing recursive
+definition preflight then validates its actual symbols and expressions against
+the same maps.
 
 Then change `QiskitExport.cpp` to recognize compiler inputs, finite constants,
 and the supported Arith and Math operations recursively. Cache each SSA result
@@ -229,9 +269,9 @@ Export it, bind the parameters, and compare its numeric operator and global
 phase with the source circuit.
 
 Import partially bound expressions and a parameterized custom gate. Both must
-resolve the remaining symbols without source mutation. Import a `for` loop whose
-binder has the same displayed name as a distinct free symbol used in its body.
-The gate must use the free function argument, not the loop induction value.
+resolve the remaining symbols without source mutation. Reject a `for` loop
+whose binder has the same displayed name as a distinct free symbol before
+module construction.
 
 Export hand-written QC with supported `f64` Arith and Math expressions. The
 result must contain shared Qiskit parameters and bind to the same numeric
@@ -290,3 +330,8 @@ dialect operations on `f64` values.
 
 Revision note (2026-08-19): Split exact vector provenance into a separate
 follow-up and aligned this plan with the scalar-symbol contract on #2158.
+
+Revision note (2026-08-20): Replaced UUID edge-case support with a unique-name
+source contract. Added the shared MQT metadata dialect, closed expression-tree,
+metadata-preservation, and finite gate-parameter milestones after architecture
+review.
