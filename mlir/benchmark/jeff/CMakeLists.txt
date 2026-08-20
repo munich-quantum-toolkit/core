@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-# The lowering of a benchmark program to `jeff` The generator executable
+# The executable that lowers the benchmark programs to `jeff`
 add_executable(mqt-jeff-benchmarks MQTJeffBenchmarks.cpp)
 target_link_libraries(mqt-jeff-benchmarks PRIVATE MQTBenchmarkCompile MLIRSupport)
 mqt_mlir_target_use_project_options(mqt-jeff-benchmarks)

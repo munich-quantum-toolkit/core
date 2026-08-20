@@ -28,9 +28,6 @@ SmallVector<Value> magicStateDistillation(qc::QCProgramBuilder& b,
   auto anc = b.allocQubit();
   auto c = b.allocClassicalBitRegister(size, "c");
 
-  resetRegister(b, q.value, size);
-  b.reset(anc);
-
   // A round prepares noisy magic states, folds their parity onto the check
   // qubit, and reads it. The distillation discards a rejected round and starts
   // over, so the number of rounds depends on the measurements.

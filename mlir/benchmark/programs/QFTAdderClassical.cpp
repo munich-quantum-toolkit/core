@@ -15,6 +15,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cmath>
 #include <cstdint>
 #include <numbers>
 
@@ -43,7 +44,7 @@ SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& b,
 
   for (int64_t i = 0; i < size; ++i) {
     const auto angle = std::numbers::pi * static_cast<double>(ADDEND) /
-                       static_cast<double>(int64_t{1} << i);
+                       std::pow(2.0, static_cast<double>(i));
     b.p(angle, q[size - 1 - i]);
   }
 

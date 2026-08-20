@@ -30,8 +30,8 @@ SmallVector<Value> toffoliHeavy(qc::QCProgramBuilder& b, const uint64_t n) {
   resetRegister(b, q.value, size);
   b.scfFor(0, size, 1, [&](Value iv) { b.h(b.loadQubit(q.value, iv)); });
 
-  // A chain of Toffoli gates. Each gate takes its two controls from the
-  // preceding qubits, so the chain carries a running AND along the register.
+  // A cascade of Toffoli gates. Each gate takes its two controls from the
+  // preceding qubits, so every gate depends on the one before it.
   auto one = b.indexConstant(1);
   auto two = b.indexConstant(2);
   b.scfFor(0, size - 2, 1, [&](Value iv) {

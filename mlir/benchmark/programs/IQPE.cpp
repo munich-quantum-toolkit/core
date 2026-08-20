@@ -47,7 +47,7 @@ SmallVector<Value> iqpe(qc::QCProgramBuilder& b, const uint64_t n) {
   auto one = b.indexConstant(1);
   auto last = b.indexConstant(precision - 1);
   const auto first =
-      std::pow(2.0, static_cast<double>(precision - 1) * IQPE_PHASE);
+      std::pow(2.0, static_cast<double>(precision - 1)) * IQPE_PHASE;
 
   scfForWithAngle(b, lower, upper, first, 0.5, [&](Value power, Value step) {
     auto index = arith::SubIOp::create(b, last, step);

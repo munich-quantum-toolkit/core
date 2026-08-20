@@ -29,9 +29,6 @@ SmallVector<Value> logicalStatePreparation(qc::QCProgramBuilder& b,
   auto anc = b.allocQubit();
   auto c = b.allocClassicalBitRegister(size, "c");
 
-  resetRegister(b, q.value, size);
-  b.reset(anc);
-
   auto one = b.indexConstant(1);
 
   // The encoding is checked before it is accepted. A failed check throws the

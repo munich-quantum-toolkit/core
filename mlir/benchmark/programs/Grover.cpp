@@ -36,8 +36,8 @@ SmallVector<Value> grover(qc::QCProgramBuilder& b, const uint64_t n) {
   b.x(flag);
 
   const auto iterations = static_cast<int64_t>(
-      std::ceil(std::numbers::pi / 4.0 *
-                std::sqrt(std::pow(2.0, static_cast<double>(search)))));
+      std::floor(std::numbers::pi / 4.0 *
+                 std::sqrt(std::pow(2.0, static_cast<double>(search)))));
 
   // The oracle marks the all-ones state. The diffusion operator reflects about
   // the uniform superposition.

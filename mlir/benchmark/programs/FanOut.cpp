@@ -35,7 +35,8 @@ SmallVector<Value> fanOut(qc::QCProgramBuilder& b, const uint64_t n) {
 
   b.scfFor(1, size, 1, [&](Value iv) { b.t(b.loadQubit(q.value, iv)); });
 
-  // The copies are uncomputed so that only the first qubit stays entangled.
+  // The copies are uncomputed, which returns every other qubit to zero and
+  // leaves the phase the parallel layer collected on the first one.
   b.scfFor(1, size, 1, [&](Value iv) { b.cx(q[0], b.loadQubit(q.value, iv)); });
 
   measureRegister(b, q.value, size, c);

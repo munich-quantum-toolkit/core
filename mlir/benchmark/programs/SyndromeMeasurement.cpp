@@ -43,8 +43,8 @@ SmallVector<Value> syndromeMeasurement(qc::QCProgramBuilder& b,
   });
 
   // A round reads one stabilizer per neighbouring pair and flips the qubits
-  // that the syndrome marks. Rounds repeat while the syndrome still reports an
-  // error, so their number depends on the measurements.
+  // that the syndrome marks. Rounds repeat while the first stabilizer still
+  // reports an error, so their number depends on the measurements.
   b.scfWhile(
       [&] {
         b.scfFor(0, size - 1, 1, [&](Value i) {
