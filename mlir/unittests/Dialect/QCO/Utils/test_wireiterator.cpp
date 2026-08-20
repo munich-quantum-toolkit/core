@@ -17,8 +17,11 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
@@ -43,6 +46,31 @@ protected:
   }
 
   std::unique_ptr<MLIRContext> context;
+
+  /// Parse a module from MLIR source.
+  ///
+  /// The call-traversal cases below are given as source rather than built with
+  /// `QCOProgramBuilder`, so that the iterator is exercised against the IR
+  /// directly and this suite stays independent of the builder.
+  [[nodiscard]] OwningOpRef<ModuleOp> parseModule(StringRef source) const {
+    return parseSourceString<ModuleOp>(source, context.get());
+  }
+
+  /// The first operation of kind @p OpT inside @p root.
+  template <typename OpT> [[nodiscard]] static OpT findOp(Operation* root) {
+    OpT found;
+    root->walk([&](OpT op) {
+      if (!found) {
+        found = op;
+      }
+    });
+    return found;
+  }
+
+  /// The body of the named function, to scope a search to one function.
+  [[nodiscard]] static Operation* funcNamed(ModuleOp module, StringRef name) {
+    return module.lookupSymbol<func::FuncOp>(name).getOperation();
+  }
 };
 } // namespace
 
@@ -268,3 +296,201 @@ INSTANTIATE_TEST_SUITE_P(DynamicAndStatic, WireIteratorTest, ::testing::Bool(),
                          [](const ::testing::TestParamInfo<bool>& info) {
                            return info.param ? "Dynamic" : "Static";
                          });
+
+/**
+ * @brief A wire runs through a call into the result that continues it, and
+ * back again.
+ *
+ * @details
+ * `@g` takes the qubit as operand 0 but hands it back as result 1, so pairing
+ * by raw index would pick the classical result instead.
+ */
+TEST_F(WireIteratorTest, TraversalThroughThreadingCall) {
+  auto module = parseModule(R"mlir(
+func.func private @g(%q: !qco.qubit, %theta: f64) -> (i1, !qco.qubit) {
+  %out, %bit = qco.measure %q : !qco.qubit
+  return %bit, %out : i1, !qco.qubit
+}
+func.func @main() {
+  %q0 = qco.alloc : !qco.qubit
+  %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+  %c = arith.constant 5.000000e-01 : f64
+  %r:2 = func.call @g(%q1, %c) : (!qco.qubit, f64) -> (i1, !qco.qubit)
+  qco.sink %r#1 : !qco.qubit
+  return
+}
+)mlir");
+  ASSERT_TRUE(module);
+  auto* main = funcNamed(module.get(), "main");
+  const Value q0 = findOp<qco::AllocOp>(main).getResult();
+  const Value q1 = findOp<qco::HOp>(main).getQubitOut();
+  const Value q2 = findOp<func::CallOp>(main).getResult(1);
+
+  qco::WireIterator it(q0);
+  ASSERT_EQ(it.qubit(), q0); // qco.alloc
+  ASSERT_TRUE(it.atWireStart());
+
+  ++it;
+  ASSERT_EQ(it.operation(), q1.getDefiningOp()); // qco.h
+  ASSERT_EQ(it.qubit(), q1);
+
+  ++it;
+  ASSERT_EQ(it.operation(), q2.getDefiningOp()); // func.call
+  ASSERT_EQ(it.qubit(), q2);
+
+  // And back again.
+  --it;
+  ASSERT_EQ(it.operation(), q1.getDefiningOp());
+  ASSERT_EQ(it.qubit(), q1);
+
+  --it;
+  ASSERT_EQ(it.operation(), q0.getDefiningOp());
+  ASSERT_EQ(it.qubit(), q0);
+  ASSERT_TRUE(it.atWireStart());
+}
+
+/**
+ * @brief A callee that keeps the qubit ends the wire at the call.
+ */
+TEST_F(WireIteratorTest, TraversalIntoConsumingCall) {
+  auto module = parseModule(R"mlir(
+func.func private @consume(%q: !qco.qubit) {
+  qco.sink %q : !qco.qubit
+  return
+}
+func.func @main() {
+  %q0 = qco.alloc : !qco.qubit
+  %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+  func.call @consume(%q1) : (!qco.qubit) -> ()
+  return
+}
+)mlir");
+  ASSERT_TRUE(module);
+  auto* main = funcNamed(module.get(), "main");
+  const Value q0 = findOp<qco::AllocOp>(main).getResult();
+  const Value q1 = findOp<qco::HOp>(main).getQubitOut();
+
+  qco::WireIterator it(q0);
+  ++it;
+  ASSERT_EQ(it.qubit(), q1); // qco.h
+
+  ++it;
+  // The call is the last operation on the wire.
+  ASSERT_TRUE(isa<func::CallOp>(it.operation()));
+
+  ++it;
+  ASSERT_EQ(it, std::default_sentinel);
+}
+
+/**
+ * @brief A wire starts at a call whose callee creates the qubit, so backward
+ * traversal stops there instead of spinning.
+ */
+TEST_F(WireIteratorTest, TraversalFromProducingCall) {
+  auto module = parseModule(R"mlir(
+func.func private @produce() -> !qco.qubit {
+  %q = qco.alloc : !qco.qubit
+  return %q : !qco.qubit
+}
+func.func @main() {
+  %r = func.call @produce() : () -> !qco.qubit
+  %q1 = qco.h %r : !qco.qubit -> !qco.qubit
+  qco.sink %q1 : !qco.qubit
+  return
+}
+)mlir");
+  ASSERT_TRUE(module);
+  auto* main = funcNamed(module.get(), "main");
+  const Value q0 = findOp<func::CallOp>(main).getResult(0);
+  const Value q1 = findOp<qco::HOp>(main).getQubitOut();
+
+  qco::WireIterator it(q1);
+  ASSERT_EQ(it.operation(), q1.getDefiningOp()); // qco.h
+  ASSERT_FALSE(it.atWireStart());
+
+  --it;
+  ASSERT_EQ(it.operation(), q0.getDefiningOp()); // func.call
+  ASSERT_EQ(it.qubit(), q0);
+  ASSERT_TRUE(it.atWireStart());
+
+  // Going further back must not move the iterator.
+  --it;
+  ASSERT_EQ(it.operation(), q0.getDefiningOp());
+  ASSERT_EQ(it.qubit(), q0);
+}
+
+/**
+ * @brief A callee may hand its qubits back in a different order than it takes
+ * them; the wire follows the qubit, not its position.
+ */
+TEST_F(WireIteratorTest, TraversalThroughReorderingCall) {
+  auto module = parseModule(R"mlir(
+func.func private @relabel(%a: !qco.qubit, %b: !qco.qubit) -> (!qco.qubit, !qco.qubit) {
+  return %b, %a : !qco.qubit, !qco.qubit
+}
+func.func @main() {
+  %q0 = qco.alloc : !qco.qubit
+  %q1 = qco.alloc : !qco.qubit
+  %r:2 = func.call @relabel(%q0, %q1) : (!qco.qubit, !qco.qubit) -> (!qco.qubit, !qco.qubit)
+  qco.sink %r#0 : !qco.qubit
+  qco.sink %r#1 : !qco.qubit
+  return
+}
+)mlir");
+  ASSERT_TRUE(module);
+  auto* main = funcNamed(module.get(), "main");
+  SmallVector<Value> allocs;
+  main->walk([&](qco::AllocOp op) { allocs.emplace_back(op.getResult()); });
+  ASSERT_EQ(allocs.size(), 2U);
+  auto call = findOp<func::CallOp>(main);
+
+  qco::CallQubitMapping mapping;
+
+  // `@relabel` returns its arguments swapped, so argument 0 leaves through
+  // result 1. Pairing by position would follow the wrong wire here.
+  qco::WireIterator it(allocs[0], &mapping);
+  ++it;
+  ASSERT_TRUE(isa<func::CallOp>(it.operation()));
+  ASSERT_EQ(it.qubit(), call.getResult(1)); // not result 0
+
+  --it;
+  ASSERT_EQ(it.qubit(), allocs[0]);
+
+  // The other argument leaves through the first result.
+  qco::WireIterator other(allocs[1], &mapping);
+  ++other;
+  ASSERT_EQ(other.qubit(), call.getResult(0));
+}
+
+/**
+ * @brief Threading a recursive callee terminates instead of descending into
+ * itself forever.
+ */
+TEST_F(WireIteratorTest, TraversalThroughRecursiveCall) {
+  auto module = parseModule(R"mlir(
+func.func private @rec(%q: !qco.qubit) -> !qco.qubit {
+  %h = qco.h %q : !qco.qubit -> !qco.qubit
+  %r = func.call @rec(%h) : (!qco.qubit) -> !qco.qubit
+  return %r : !qco.qubit
+}
+func.func @main() {
+  %q0 = qco.alloc : !qco.qubit
+  %r = func.call @rec(%q0) : (!qco.qubit) -> !qco.qubit
+  qco.sink %r : !qco.qubit
+  return
+}
+)mlir");
+  ASSERT_TRUE(module);
+  auto* main = funcNamed(module.get(), "main");
+  const Value q0 = findOp<qco::AllocOp>(main).getResult();
+  const Value result = findOp<func::CallOp>(main).getResult(0);
+
+  qco::CallQubitMapping mapping;
+  qco::WireIterator it(q0, &mapping);
+  ++it;
+  ASSERT_TRUE(isa<func::CallOp>(it.operation()));
+  ASSERT_EQ(it.qubit(), result);
+
+  ++it;
+  ASSERT_TRUE(isa<qco::SinkOp>(it.operation()));
+}
