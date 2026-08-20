@@ -537,6 +537,124 @@ measure q[0] -> c[1];
     assert restored.count_ops() == {"measure": 2, "x": 1}
 
 
+def test_cleanup_forwards_measurement_result_condition_to_qiskit() -> None:
+    """Recover a CBit condition after cleanup forwards its measurement load."""
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+measure q[0] -> c[0];
+if (c == 1) x q[1];
+"""
+    )
+    source = program.ir
+    optimized = program.to_qco(copy=True)
+
+    optimized.cleanup()
+    restored = optimized.to_qc(copy=True).to_qiskit()
+
+    assert restored.count_ops() == {"measure": 1, "if_else": 1}
+    assert restored.data[1].operation.blocks[0].count_ops() == {"x": 1}
+    assert program.ir == source
+
+
+def test_cleanup_preserves_distinct_measurement_snapshot_bits() -> None:
+    """Keep distinct static writes from invalidating measurement snapshots."""
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+creg c[2];
+measure q[0] -> c[0];
+measure q[1] -> c[1];
+if (c == 3) x q[2];
+"""
+    )
+    source = program.ir
+    optimized = program.to_qco(copy=True)
+
+    optimized.cleanup()
+    restored = optimized.to_qc(copy=True).to_qiskit()
+
+    assert restored.count_ops() == {"measure": 2, "if_else": 1}
+    assert restored.data[2].operation.blocks[0].count_ops() == {"x": 1}
+    assert program.ir == source
+
+
+@pytest.mark.skipif(
+    not hasattr(CompilerTarget, "ClassicalControl"),
+    reason="requires the classical-control target capability stack",
+)
+def test_target_compiled_measurement_result_condition_exports() -> None:
+    """Export the target-compiled form used by the Benchpress integration."""
+    control = CompilerTarget.ClassicalControl  # ty: ignore[unresolved-attribute]
+    target = CompilerTarget(  # ty: ignore[no-matching-overload]
+        2,
+        classical_control=[control.CONDITIONAL],
+    )
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+measure q[0] -> c[0];
+if (c == 1) x q[1];
+"""
+    )
+    source = program.ir
+    mapped = program.to_qco(copy=True)
+
+    mapped.compile_for_target(target)
+    restored = mapped.to_qc(copy=True).to_qiskit(target=target)
+
+    assert restored.num_qubits == 2
+    assert restored.count_ops() == {"measure": 1, "if_else": 1}
+    assert restored.data[1].operation.blocks[0].count_ops() == {"x": 1}
+    assert program.ir == source
+
+
+def test_sparse_target_measurement_store_after_quantum_work_exports() -> None:
+    """Fuse a delayed destination without moving its measurement past later gates."""
+    target = CompilerTarget(
+        "line",
+        [CompilerTarget.Site(index) for index in range(3)],
+        couplings=[(0, 1), (1, 2)],
+        operations=[
+            CompilerTarget.Operation("x", 1, 0),
+            CompilerTarget.Operation("sx", 1, 0),
+            CompilerTarget.Operation("rz", 1, 1),
+            CompilerTarget.Operation("cz", 2, 0),
+            CompilerTarget.Operation("measure", 1, 0),
+        ],
+    )
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+creg c[3];
+h q[0];
+cu1(pi/2) q[1],q[0];
+h q[1];
+cu1(pi/4) q[2],q[0];
+cu1(pi/2) q[2],q[1];
+h q[2];
+measure q -> c;
+"""
+    )
+    source = program.ir
+    mapped = program.to_qco(copy=True)
+
+    mapped.compile_for_target(target)
+    restored = mapped.to_qc(copy=True).to_qiskit(target=target)
+
+    names = [instruction.operation.name for instruction in restored.data]
+    first_measurement = names.index("measure")
+    assert any(name != "measure" for name in names[first_measurement + 1 :])
+    assert names.count("measure") == 3
+    assert program.ir == source
+
+
 def test_openqasm3_measurement_export_uses_undefined_cbit_register() -> None:
     """Represent OpenQASM 3 output initialization without poison values."""
     program = QCProgram.from_qasm_str(
@@ -1451,6 +1569,288 @@ def test_result_bearing_control_flow_rejection_preserves_source() -> None:
     assert program.ir == source
 
 
+def test_measurement_store_after_quantum_operations_round_trips() -> None:
+    """Write the destination early when only quantum operations intervene."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
+    %zero = arith.constant 0 : index
+    %q = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<undefined>) source_name = "c" : !cbit.reg<1>
+    %measured = qc.measure %q : !qc.qubit -> i1
+    qc.reset %q : !qc.qubit
+    qc.x %q : !qc.qubit
+    cbit.store %measured, %classical[%zero] : !cbit.reg<1>
+    qc.dealloc %q : !qc.qubit
+    return %classical : !cbit.reg<1>
+  }
+}
+"""
+    )
+    source = program.ir
+
+    restored = program.to_qiskit()
+
+    assert [instruction.operation.name for instruction in restored.data] == ["measure", "reset", "x"]
+    assert restored.find_bit(restored.data[0].clbits[0]).index == 0
+    assert program.ir == source
+
+
+def test_measurement_stores_in_reverse_order_round_trip() -> None:
+    """Write each measurement to its distinct static destination."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<2> attributes {passthrough = ["entry_point"]} {
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    %q = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<undefined>) source_name = "c" : !cbit.reg<2>
+    %first = qc.measure %q : !qc.qubit -> i1
+    qc.x %q : !qc.qubit
+    %second = qc.measure %q : !qc.qubit -> i1
+    cbit.store %second, %classical[%one] : !cbit.reg<2>
+    cbit.store %first, %classical[%zero] : !cbit.reg<2>
+    qc.dealloc %q : !qc.qubit
+    return %classical : !cbit.reg<2>
+  }
+}
+"""
+    )
+    source = program.ir
+
+    restored = program.to_qiskit()
+
+    assert [instruction.operation.name for instruction in restored.data] == [
+        "measure",
+        "x",
+        "measure",
+    ]
+    assert [
+        restored.find_bit(instruction.clbits[0]).index
+        for instruction in restored.data
+        if instruction.operation.name == "measure"
+    ] == [0, 1]
+    assert program.ir == source
+
+
+def test_measurement_store_rejects_intervening_same_bit_write() -> None:
+    """Do not move a destination write across a write to the same bit."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
+    %zero = arith.constant 0 : index
+    %q = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<undefined>) source_name = "c" : !cbit.reg<1>
+    %first = qc.measure %q : !qc.qubit -> i1
+    %second = qc.measure %q : !qc.qubit -> i1
+    cbit.store %second, %classical[%zero] : !cbit.reg<1>
+    cbit.store %first, %classical[%zero] : !cbit.reg<1>
+    qc.dealloc %q : !qc.qubit
+    return %classical : !cbit.reg<1>
+  }
+}
+"""
+    )
+    source = program.ir
+
+    with pytest.raises(RuntimeError, match="destination must follow the measurement"):
+        program.to_qiskit()
+
+    assert program.ir == source
+
+
+def test_measurement_store_rejects_intervening_dynamic_write() -> None:
+    """Treat a dynamic measurement destination as a possible alias."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<2> attributes {passthrough = ["entry_point"]} {
+    %zero = arith.constant 0 : index
+    %q = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<zero>) source_name = "c" : !cbit.reg<2>
+    %bit = cbit.load %classical[%zero] : !cbit.reg<2>
+    %dynamic = arith.index_castui %bit : i1 to index
+    %first = qc.measure %q : !qc.qubit -> i1
+    %second = qc.measure %q : !qc.qubit -> i1
+    cbit.store %second, %classical[%dynamic] : !cbit.reg<2>
+    cbit.store %first, %classical[%zero] : !cbit.reg<2>
+    qc.dealloc %q : !qc.qubit
+    return %classical : !cbit.reg<2>
+  }
+}
+"""
+    )
+    source = program.ir
+
+    with pytest.raises(RuntimeError, match="destination must follow the measurement"):
+        program.to_qiskit()
+
+    assert program.ir == source
+
+
+def test_measurement_result_condition_uses_destination_bit() -> None:
+    """Represent a forwarded measurement result by its unique public CBit."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
+    %zero = arith.constant 0 : index
+    %q = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<undefined>) source_name = "c" : !cbit.reg<1>
+    %measured = qc.measure %q : !qc.qubit -> i1
+    cbit.store %measured, %classical[%zero] : !cbit.reg<1>
+    scf.if %measured {
+      qc.x %q : !qc.qubit
+    }
+    qc.dealloc %q : !qc.qubit
+    return %classical : !cbit.reg<1>
+  }
+}
+"""
+    )
+    source = program.ir
+
+    restored = program.to_qiskit()
+
+    assert [instruction.operation.name for instruction in restored.data] == [
+        "measure",
+        "if_else",
+    ]
+    assert restored.data[1].operation.blocks[0].count_ops() == {"x": 1}
+    QCProgram.from_qiskit(restored)
+    assert program.ir == source
+
+
+def test_measurement_result_use_before_destination_is_rejected() -> None:
+    """Do not move a measurement write across a consumer of its SSA result."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
+    %zero = arith.constant 0 : index
+    %q = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<undefined>) source_name = "c" : !cbit.reg<1>
+    %measured = qc.measure %q : !qc.qubit -> i1
+    scf.if %measured {
+      qc.x %q : !qc.qubit
+    }
+    cbit.store %measured, %classical[%zero] : !cbit.reg<1>
+    qc.dealloc %q : !qc.qubit
+    return %classical : !cbit.reg<1>
+  }
+}
+"""
+    )
+    source = program.ir
+
+    with pytest.raises(RuntimeError, match="destination must follow the measurement"):
+        program.to_qiskit()
+
+    assert program.ir == source
+
+
+def test_measurement_result_snapshot_rejects_destination_overwrite() -> None:
+    """Reject replacing an SSA result by a destination overwritten before use."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
+    %zero = arith.constant 0 : index
+    %false = arith.constant false
+    %q = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<zero>) source_name = "c" : !cbit.reg<1>
+    %measured = qc.measure %q : !qc.qubit -> i1
+    cbit.store %measured, %classical[%zero] : !cbit.reg<1>
+    cbit.store %false, %classical[%zero] : !cbit.reg<1>
+    scf.if %measured {
+      qc.x %q : !qc.qubit
+    }
+    qc.dealloc %q : !qc.qubit
+    return %classical : !cbit.reg<1>
+  }
+}
+"""
+    )
+    source = program.ir
+
+    with pytest.raises(RuntimeError, match="stale classical snapshot"):
+        program.to_qiskit()
+
+    assert program.ir == source
+
+
+def test_measurement_result_snapshot_rejects_nested_destination_overwrite() -> None:
+    """Do not replace an SSA result by a CBit overwritten before its use."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<1> attributes {passthrough = ["entry_point"]} {
+    %zero = arith.constant 0 : index
+    %true = arith.constant true
+    %false = arith.constant false
+    %q = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<zero>) source_name = "c" : !cbit.reg<1>
+    %measured = qc.measure %q : !qc.qubit -> i1
+    cbit.store %measured, %classical[%zero] : !cbit.reg<1>
+    %condition = scf.if %true -> (i1) {
+      cbit.store %false, %classical[%zero] : !cbit.reg<1>
+      scf.yield %measured : i1
+    } else {
+      scf.yield %measured : i1
+    }
+    scf.if %condition {
+      qc.x %q : !qc.qubit
+    }
+    qc.dealloc %q : !qc.qubit
+    return %classical : !cbit.reg<1>
+  }
+}
+"""
+    )
+    source = program.ir
+
+    with pytest.raises(RuntimeError, match="snapshot across nested control flow"):
+        program.to_qiskit()
+
+    assert program.ir == source
+
+
+def test_measurement_result_snapshot_accepts_nested_different_bit_write() -> None:
+    """Keep a measurement snapshot across a nested write to another bit."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<2> attributes {passthrough = ["entry_point"]} {
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    %true = arith.constant true
+    %condition_qubit = qc.alloc : !qc.qubit
+    %nested_qubit = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<zero>) source_name = "c" : !cbit.reg<2>
+    %measured = qc.measure %condition_qubit : !qc.qubit -> i1
+    cbit.store %measured, %classical[%zero] : !cbit.reg<2>
+    scf.if %true {
+      %nested = qc.measure %nested_qubit : !qc.qubit -> i1
+      cbit.store %nested, %classical[%one] : !cbit.reg<2>
+    }
+    scf.if %measured {
+      qc.x %condition_qubit : !qc.qubit
+    }
+    qc.dealloc %condition_qubit : !qc.qubit
+    qc.dealloc %nested_qubit : !qc.qubit
+    return %classical : !cbit.reg<2>
+  }
+}
+"""
+    )
+    source = program.ir
+
+    restored = program.to_qiskit()
+
+    assert [instruction.operation.name for instruction in restored.data] == [
+        "measure",
+        "if_else",
+        "if_else",
+    ]
+    assert restored.data[1].operation.blocks[0].count_ops() == {"measure": 1}
+    assert restored.data[2].operation.blocks[0].count_ops() == {"x": 1}
+    assert program.ir == source
+
+
 def test_stale_classical_snapshot_rejection_preserves_source() -> None:
     """Reject a condition loaded before a later write to the same register."""
     program = QCProgram.from_mlir_str(
@@ -1461,6 +1861,7 @@ def test_stale_classical_snapshot_rejection_preserves_source() -> None:
     %zero = arith.constant 0 : index
     %stale = cbit.load %classical[%zero] : !cbit.reg<1>
     %measured = qc.measure %q : !qc.qubit -> i1
+    qc.x %q : !qc.qubit
     cbit.store %measured, %classical[%zero] : !cbit.reg<1>
     scf.if %stale {
       qc.x %q : !qc.qubit

@@ -377,6 +377,8 @@ struct ExportState {
   llvm::DenseMap<mlir::Value, ClassicalRegisterInfo> classicalRegisterInfo;
   llvm::DenseMap<mlir::Value, llvm::DenseSet<uint32_t>> unconditionalWrites;
   llvm::DenseMap<mlir::Value, llvm::DenseSet<uint32_t>> measurementDestinations;
+  llvm::DenseMap<mlir::Value, uint32_t> measurementResultBits;
+  llvm::DenseMap<mlir::Value, mlir::Operation*> measurementResultStores;
   llvm::DenseSet<mlir::Operation*> expressionOperations;
   std::vector<Register> quantumRegisters;
   std::vector<Register> classicalRegisters;
@@ -1105,6 +1107,12 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
 
   auto result = std::make_unique<Expression>();
   setExpressionType(*result, value.getType());
+  if (const auto measured = state.measurementResultBits.find(value);
+      measured != state.measurementResultBits.end()) {
+    result->kind = ExpressionKind::ClassicalBit;
+    result->bit = measured->second;
+    return result;
+  }
   if (result->type == ClassicalType::Uint) {
     if (auto packed = matchPackedRegister(value, state, evaluationBlock)) {
       result->kind = ExpressionKind::ClassicalRegister;
@@ -1445,12 +1453,23 @@ void acceptPackedRegister(PackedRegister& packed, ExportState& state) {
                                     packed.operations.end());
 }
 
-[[nodiscard]] bool storesToValueRecursively(mlir::Operation& operation,
-                                            const mlir::Value value) {
+[[nodiscard]] bool
+mayOverwriteClassicalSnapshot(mlir::cbit::StoreOp store, const mlir::Value reg,
+                              const std::optional<int64_t> index) {
+  if (store.getReg() != reg) {
+    return false;
+  }
+  const auto storeIndex = mlir::getConstantIntValue(store.getIndex());
+  return !index || !storeIndex || *storeIndex == *index;
+}
+
+[[nodiscard]] bool
+storesToSnapshotRecursively(mlir::Operation& operation, const mlir::Value reg,
+                            const std::optional<int64_t> index) {
   bool stores = false;
   operation.walk([&](mlir::Operation* nested) {
     if (auto store = llvm::dyn_cast<mlir::cbit::StoreOp>(nested);
-        store && store.getReg() == value) {
+        store && mayOverwriteClassicalSnapshot(store, reg, index)) {
       stores = true;
       return mlir::WalkResult::interrupt();
     }
@@ -1460,12 +1479,27 @@ void acceptPackedRegister(PackedRegister& packed, ExportState& state) {
 }
 
 void validateClassicalSnapshot(const mlir::Value expression,
-                               mlir::Operation& consumer) {
+                               mlir::Operation& consumer,
+                               const ExportState& state) {
+  struct Snapshot {
+    mlir::Operation* anchor;
+    mlir::Value reg;
+    std::optional<int64_t> index;
+  };
   llvm::DenseSet<mlir::Value> visited;
-  llvm::SmallVector<mlir::cbit::LoadOp> loads;
-  const std::function<void(mlir::Value)> collectLoads =
+  llvm::SmallVector<Snapshot> snapshots;
+  const std::function<void(mlir::Value)> collectSnapshots =
       [&](const mlir::Value value) {
         if (!visited.insert(value).second) {
+          return;
+        }
+        if (const auto measured = state.measurementResultStores.find(value);
+            measured != state.measurementResultStores.end()) {
+          auto store = llvm::cast<mlir::cbit::StoreOp>(measured->second);
+          snapshots.push_back(
+              {.anchor = store.getOperation(),
+               .reg = store.getReg(),
+               .index = mlir::getConstantIntValue(store.getIndex())});
           return;
         }
         auto* operation = value.getDefiningOp();
@@ -1473,7 +1507,10 @@ void validateClassicalSnapshot(const mlir::Value expression,
           return;
         }
         if (auto load = llvm::dyn_cast<mlir::cbit::LoadOp>(operation)) {
-          loads.push_back(load);
+          snapshots.push_back(
+              {.anchor = load.getOperation(),
+               .reg = load.getReg(),
+               .index = mlir::getConstantIntValue(load.getIndex())});
           return;
         }
         if (auto ifOp = llvm::dyn_cast<mlir::scf::IfOp>(operation);
@@ -1485,19 +1522,19 @@ void validateClassicalSnapshot(const mlir::Value expression,
             if (auto yield = llvm::dyn_cast<mlir::scf::YieldOp>(
                     region.front().getTerminator())) {
               for (const auto yielded : yield.getOperands()) {
-                collectLoads(yielded);
+                collectSnapshots(yielded);
               }
             }
           }
         }
         for (const auto operand : operation->getOperands()) {
-          collectLoads(operand);
+          collectSnapshots(operand);
         }
       };
-  collectLoads(expression);
-  for (auto load : loads) {
-    mlir::Operation* anchor = load;
-    auto* anchorBlock = load->getBlock();
+  collectSnapshots(expression);
+  for (const auto& snapshot : snapshots) {
+    auto* anchor = snapshot.anchor;
+    auto* anchorBlock = anchor->getBlock();
     while (anchorBlock != consumer.getBlock()) {
       auto* parent = anchorBlock->getParentOp();
       auto parentIf = llvm::dyn_cast_if_present<mlir::scf::IfOp>(parent);
@@ -1521,13 +1558,15 @@ void validateClassicalSnapshot(const mlir::Value expression,
             "Qiskit control-flow expression does not dominate its consumer");
       }
       if (auto store = llvm::dyn_cast<mlir::cbit::StoreOp>(operation);
-          store && store.getReg() == load.getReg()) {
+          store &&
+          mayOverwriteClassicalSnapshot(store, snapshot.reg, snapshot.index)) {
         throw std::runtime_error(
             "Qiskit control-flow export cannot preserve a stale classical "
             "snapshot");
       }
       if (operation->getNumRegions() != 0U &&
-          storesToValueRecursively(*operation, load.getReg())) {
+          storesToSnapshotRecursively(*operation, snapshot.reg,
+                                      snapshot.index)) {
         throw std::runtime_error(
             "Qiskit control-flow export cannot preserve a classical "
             "snapshot across nested control flow");
@@ -1544,7 +1583,7 @@ void validateClassicalSnapshot(const mlir::Value expression,
     throw std::runtime_error(
         "Qiskit control-flow conditions must have Boolean type");
   }
-  validateClassicalSnapshot(value, consumer);
+  validateClassicalSnapshot(value, consumer, state);
   if (auto comparison = value.getDefiningOp<mlir::arith::CmpIOp>();
       comparison &&
       comparison.getPredicate() == mlir::arith::CmpIPredicate::eq) {
@@ -1591,7 +1630,7 @@ void validateClassicalSnapshot(const mlir::Value expression,
                                                  ExportState& state,
                                                  mlir::Block& evaluationBlock,
                                                  mlir::Operation& consumer) {
-  validateClassicalSnapshot(value, consumer);
+  validateClassicalSnapshot(value, consumer, state);
   if (auto cast = value.getDefiningOp<mlir::arith::IndexCastUIOp>()) {
     state.expressionOperations.insert(cast);
     value = cast.getIn();
@@ -1735,9 +1774,22 @@ collectBlock(mlir::Block& block, ExportState& state, ExportScope scope,
 
 [[nodiscard]] bool isFusableMeasurementStore(mlir::qc::MeasureOp measure,
                                              mlir::cbit::StoreOp store) {
-  if (!measure.getResult().hasOneUse() ||
-      store.getValue() != measure.getResult() ||
+  if (store.getValue() != measure.getResult() ||
       measure->getBlock() != store->getBlock()) {
+    return false;
+  }
+  mlir::cbit::StoreOp destination;
+  for (auto& use : measure.getResult().getUses()) {
+    auto candidate = llvm::dyn_cast<mlir::cbit::StoreOp>(use.getOwner());
+    if (!candidate || candidate.getValue() != measure.getResult()) {
+      continue;
+    }
+    if (destination) {
+      return false;
+    }
+    destination = candidate;
+  }
+  if (destination != store) {
     return false;
   }
   const auto index = mlir::getConstantIntValue(store.getIndex());
@@ -1746,8 +1798,39 @@ collectBlock(mlir::Block& block, ExportState& state, ExportScope scope,
   }
   for (auto* operation = measure->getNextNode(); operation != store;
        operation = operation->getNextNode()) {
-    if (operation == nullptr ||
-        !llvm::isa<mlir::arith::ConstantOp>(operation)) {
+    // A Qiskit measurement writes its destination immediately. Fusing this
+    // delayed store is equivalent while intervening operations cannot observe
+    // its destination. A later measurement may write another static bit. Keep
+    // aliasing or dynamic stores and all other classical operations
+    // fail-closed.
+    if (operation == nullptr) {
+      return false;
+    }
+    if (llvm::isa<mlir::arith::ConstantOp, mlir::qc::MeasureOp,
+                  mlir::qc::ResetOp, mlir::qc::UnitaryOpInterface>(operation)) {
+      continue;
+    }
+    auto interveningStore = llvm::dyn_cast<mlir::cbit::StoreOp>(operation);
+    if (!interveningStore ||
+        !interveningStore.getValue().getDefiningOp<mlir::qc::MeasureOp>()) {
+      return false;
+    }
+    const auto interveningIndex =
+        mlir::getConstantIntValue(interveningStore.getIndex());
+    if (!interveningIndex || mayOverwriteClassicalSnapshot(
+                                 interveningStore, store.getReg(), index)) {
+      return false;
+    }
+  }
+  for (auto& use : measure.getResult().getUses()) {
+    auto* user = use.getOwner();
+    if (user == store.getOperation()) {
+      continue;
+    }
+    while (user != nullptr && user->getBlock() != measure->getBlock()) {
+      user = user->getParentOp();
+    }
+    if (user == nullptr || !store->isBeforeInBlock(user)) {
       return false;
     }
   }
@@ -2072,11 +2155,28 @@ collectBlock(mlir::Block& block, ExportState& state, ExportScope scope,
         throw std::runtime_error(
             "QC measurement uses an out-of-bounds classical destination");
       }
+      const auto destinationBit =
+          checkedAdd(info->second.base, checked, "classical-bit");
       circuit.instructions.push_back(
           {.kind = ExportedInstruction::Kind::Measure,
            .qubits = mapQubits(measure.getQubit(), state.qubits),
-           .clbits = {
-               checkedAdd(info->second.base, checked, "classical-bit")}});
+           .clbits = {destinationBit}});
+      state.measurementResultBits.try_emplace(measure.getResult(),
+                                              destinationBit);
+      state.measurementResultStores.try_emplace(measure.getResult(),
+                                                destination.getOperation());
+      for (auto& use : measure.getResult().getUses()) {
+        auto* user = use.getOwner();
+        if (user == destination.getOperation()) {
+          continue;
+        }
+        while (user != nullptr && user->getBlock() != measure->getBlock()) {
+          user = user->getParentOp();
+        }
+        if (user != nullptr) {
+          validateClassicalSnapshot(measure.getResult(), *user, state);
+        }
+      }
       continue;
     }
     if (auto reset = llvm::dyn_cast<mlir::qc::ResetOp>(operation)) {
