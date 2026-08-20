@@ -11,6 +11,7 @@
 #pragma once
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
@@ -30,6 +31,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <cassert>
 #include <cmath>
@@ -223,6 +225,37 @@ valueToConstantAttr(Value value,
     return attributeToDouble(*attr);
   }
   return std::nullopt;
+}
+
+/// Verify that each statically known floating-point value in a parameter
+/// expression is finite.
+[[nodiscard]] inline LogicalResult
+verifyFiniteConstantParameters(Operation* op, const ValueRange parameters) {
+  llvm::DenseMap<Value, std::optional<Attribute>> constantCache;
+  llvm::DenseSet<Value> visited;
+  for (const auto [index, parameter] : llvm::enumerate(parameters)) {
+    SmallVector<Value> worklist{parameter};
+    while (!worklist.empty()) {
+      const Value value = worklist.pop_back_val();
+      if (!visited.insert(value).second) {
+        continue;
+      }
+      if (const auto constant = valueToConstantAttr(value, constantCache)) {
+        if (const auto floating = dyn_cast<FloatAttr>(*constant);
+            floating && !floating.getValue().isFinite()) {
+          return op->emitOpError() << "constant parameter expression at index "
+                                   << index << " must be finite";
+        }
+      }
+      Operation* definingOp = value.getDefiningOp();
+      if (definingOp == nullptr || definingOp->getNumRegions() != 0 ||
+          !isPure(definingOp)) {
+        continue;
+      }
+      llvm::append_range(worklist, definingOp->getOperands());
+    }
+  }
+  return success();
 }
 
 /**

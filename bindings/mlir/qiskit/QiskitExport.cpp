@@ -118,9 +118,6 @@ using ExportedParameters = llvm::DenseMap<mlir::Value, Parameter>;
     throwExportedParameterExpressionSizeError();
   }
   if (const auto number = mlir::utils::valueToDouble(value)) {
-    if (!std::isfinite(*number)) {
-      throw std::runtime_error("cannot export a non-finite QC parameter");
-    }
     auto result = numberParameter(*number);
     parameters.try_emplace(value, result);
     return result;
@@ -212,10 +209,7 @@ void validateExportParameterImpl(const Parameter& parameter, const size_t depth,
   if (++nodes > MAX_PARAMETER_EXPRESSION_NODES) {
     throwExportedParameterExpressionSizeError();
   }
-  if (const auto* number = parameter.getNumber()) {
-    if (!std::isfinite(number->value)) {
-      throw std::runtime_error("cannot export a non-finite QC parameter");
-    }
+  if (parameter.getNumber() != nullptr) {
     return;
   }
   if (const auto* symbol = parameter.getSymbol()) {
@@ -373,10 +367,6 @@ void collectParameters(mlir::func::FuncOp function, ExportState& state) {
 
 void addGlobalPhase(ExportState& state, const Parameter& phase) {
   if (const auto* number = phase.getNumber()) {
-    if (!std::isfinite(number->value)) {
-      throw std::runtime_error(
-          "QC global phase cannot be represented by Qiskit");
-    }
     if (const auto* globalNumber = state.globalPhase.getNumber()) {
       const auto sum = globalNumber->value + number->value;
       if (!std::isfinite(sum)) {

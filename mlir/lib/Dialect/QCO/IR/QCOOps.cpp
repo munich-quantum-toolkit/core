@@ -506,6 +506,11 @@ void QCODialect::initialize() {
 // Interfaces
 //===----------------------------------------------------------------------===//
 
+LogicalResult mlir::qco::verifyUnitaryOpInterface(Operation* op) {
+  return utils::verifyFiniteConstantParameters(
+      op, cast<UnitaryOpInterface>(op).getParameters());
+}
+
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.cpp.inc"
 
 //===----------------------------------------------------------------------===//

@@ -190,9 +190,6 @@ parameterValueImpl(mlir::qc::QCProgramBuilder& builder,
     throwImportedParameterExpressionSizeError();
   }
   if (const auto* number = parameter.getNumber()) {
-    if (!std::isfinite(number->value)) {
-      throw std::runtime_error("Qiskit returned a non-finite parameter");
-    }
     return number->value;
   }
   if (const auto* symbol = parameter.getSymbol()) {

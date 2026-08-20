@@ -74,8 +74,9 @@ partially constructed output circuit after a failure. Exact
       before module creation.
 - [x] (2026-08-20 11:44Z) Replace the nullable parameter-expression node with a
       closed variant so malformed node states cannot be constructed.
-- [ ] Reject non-finite constant gate parameters in the shared QC and QCO gate
-      verifier rather than in individual import/export paths.
+- [x] (2026-08-20 11:55Z) Reject non-finite statically known values through the
+      shared QC and QCO unitary-interface verifier, including values nested in
+      parameter-expression DAGs.
 - [ ] Run focused dialect, conversion, compiler, Qiskit, documentation, stub,
       and lint validation; inspect every signed commit and the final diff.
 
@@ -119,6 +120,10 @@ partially constructed output circuit after a failure. Exact
   that import both namespaces. The metadata dialect belongs in the existing
   `::mlir::mqt` namespace; changing its C++ namespace would split related MQT
   MLIR APIs to avoid a local lookup issue.
+- Observation: Both dialects expose gate parameters, including power exponents,
+  through `UnitaryOpInterface`. An interface verifier is the one shared MLIR
+  hook that covers standard gates and modifiers without adding a verifier to
+  each operation.
 
 ## Decision Log
 
@@ -173,6 +178,13 @@ partially constructed output circuit after a failure. Exact
   and factory methods that always allocate the required operands. Rationale:
   consumers no longer validate redundant kind and pointer combinations because
   malformed tree shapes are not representable. Date/Author: 2026-08-20 / Codex.
+- Decision: Make finite statically known parameter values a `UnitaryOpInterface`
+  invariant in QC and QCO. Traverse pure expression DAGs and memoize folding so
+  a non-finite literal or folded subexpression cannot be hidden below a dynamic
+  root. Keep runtime finiteness as a precondition for dynamic values. Rationale:
+  dialect verification owns valid quantum IR, while import readers still reject
+  invalid source values before construction and exporters can assume verified
+  IR. Date/Author: 2026-08-20 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -225,12 +237,12 @@ global parameter maps by name. Remove the numeric-only custom-definition check
 in the version adapter; the existing recursive definition preflight then
 validates its actual symbols and expressions against the same maps.
 
-Then change `QiskitExport.cpp` to recognize compiler inputs, finite constants,
-and the supported Arith and Math operations recursively. Cache each SSA result
-so a shared compiler subexpression remains shared in the normalized tree.
-Represent inverse angles through expression negation and combine all global
-phase contributions through expression addition. Complete this preflight before
-the writer allocates a destination circuit. In `Qiskit2_5.cpp`, recursively
+Then change `QiskitExport.cpp` to recognize compiler inputs, constants, and the
+supported Arith and Math operations recursively. Cache each SSA result so a
+shared compiler subexpression remains shared in the normalized tree. Represent
+inverse angles through expression negation and combine all global phase
+contributions through expression addition. Complete this preflight before the
+writer allocates a destination circuit. In `Qiskit2_5.cpp`, recursively
 construct `QkParam` values and reuse one cached Qiskit symbol for each compiler
 input name.
 

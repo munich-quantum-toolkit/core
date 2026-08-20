@@ -23,6 +23,10 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
         The interface enables uniform introspection and composition capabilities
         across all unitary operations in the QC dialect.
+
+        Every statically known floating-point value in a parameter expression
+        must be finite. Dynamic parameter values have the same runtime
+        precondition.
     }];
 
   let cppNamespace = "::mlir::qc";
@@ -76,6 +80,10 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
       InterfaceMethod<"Returns the base symbol/mnemonic of the operation.",
                       "StringRef", "getBaseSymbol", (ins)>,
   ];
+
+  let verify = [{
+    return ::mlir::qc::verifyUnitaryOpInterface($_op);
+  }];
 }
 
 #endif // MLIR_DIALECT_QC_IR_QCINTERFACES_TD

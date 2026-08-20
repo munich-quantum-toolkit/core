@@ -28,11 +28,10 @@ void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult GPhaseOp::verify() {
-  const auto theta = valueToDouble(getTheta());
-  if (theta && !isValidGlobalPhaseAngle(*theta)) {
-    return emitOpError()
-           << "constant angle must be finite and have magnitude at most "
-           << MAX_GLOBAL_PHASE_ANGLE << " radians";
+  const auto theta = valueToConstantDouble(getTheta());
+  if (theta && std::abs(*theta) > MAX_GLOBAL_PHASE_ANGLE) {
+    return emitOpError() << "constant angle must have magnitude at most "
+                         << MAX_GLOBAL_PHASE_ANGLE << " radians";
   }
   return success();
 }

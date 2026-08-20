@@ -333,6 +333,48 @@ TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
   EXPECT_TRUE(pow.verify().succeeded());
 }
 
+TEST_F(QCOTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
+  constexpr std::array<StringLiteral, 2> invalidPrograms{
+      R"mlir(
+        module {
+          func.func @main(%input: f64) {
+            %q = qco.alloc : !qco.qubit
+            %infinity = arith.constant 0x7FF0000000000000 : f64
+            %theta = arith.addf %input, %infinity : f64
+            %out = qco.rx(%theta) %q : !qco.qubit -> !qco.qubit
+            qco.sink %out : !qco.qubit
+            return
+          }
+        }
+      )mlir",
+      R"mlir(
+        module {
+          func.func @main() {
+            %q = qco.alloc : !qco.qubit
+            %nan = arith.constant 0x7FF8000000000000 : f64
+            %out = qco.pow(%nan) (%arg = %q) {
+              %body = qco.x %arg : !qco.qubit -> !qco.qubit
+              qco.yield %body : !qco.qubit
+            } : {!qco.qubit} -> {!qco.qubit}
+            qco.sink %out : !qco.qubit
+            return
+          }
+        }
+      )mlir"};
+
+  for (const auto source : invalidPrograms) {
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |= StringRef(diagnostic.str())
+                                   .contains("constant parameter expression at "
+                                             "index 0 must be finite");
+      return success();
+    });
+    EXPECT_FALSE(parseSourceString<ModuleOp>(source, context.get()));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
 namespace {
 
 enum class VerifierModifierKind : uint8_t { Inv, Ctrl, Pow };

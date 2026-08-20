@@ -41,6 +41,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
@@ -290,6 +291,48 @@ TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   EXPECT_EQ(pow.getQubits().front(), qubit);
   EXPECT_EQ(pow.getBody()->getArgument(0), bodyQubit);
   EXPECT_TRUE(pow.verify().succeeded());
+}
+
+TEST_F(QCTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
+  constexpr std::array<StringLiteral, 2> invalidPrograms{
+      R"mlir(
+        module {
+          func.func @main(%input: f64) {
+            %q = qc.alloc : !qc.qubit
+            %infinity = arith.constant 0x7FF0000000000000 : f64
+            %theta = arith.addf %input, %infinity : f64
+            qc.rx(%theta) %q : !qc.qubit
+            qc.dealloc %q : !qc.qubit
+            return
+          }
+        }
+      )mlir",
+      R"mlir(
+        module {
+          func.func @main() {
+            %q = qc.alloc : !qc.qubit
+            %nan = arith.constant 0x7FF8000000000000 : f64
+            qc.pow(%nan) (%arg = %q) {
+              qc.x %arg : !qc.qubit
+              qc.yield
+            } : !qc.qubit
+            qc.dealloc %q : !qc.qubit
+            return
+          }
+        }
+      )mlir"};
+
+  for (const auto source : invalidPrograms) {
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |= StringRef(diagnostic.str())
+                                   .contains("constant parameter expression at "
+                                             "index 0 must be finite");
+      return success();
+    });
+    EXPECT_FALSE(parseSourceString<ModuleOp>(source, context.get()));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
 }
 
 TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
