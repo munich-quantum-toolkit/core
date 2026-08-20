@@ -68,9 +68,10 @@ record. The MQT Core test uses two CPUs on `node1` and `node2`.
 
 ## Register the devices
 
-MQT Core installs persistent definitions for `mqt.ddsim.default` and
-`mqt.sc.default`. You do not have to add another registry file for these two
-devices. You can verify the stable IDs before you configure Slurm:
+MQT Core installs persistent definitions for `mqt.ddsim.default`,
+`mqt.sc.default`, `mqt.sc.iqm.garnet`, and `mqt.sc.iqm.emerald`. You do not have
+to add another registry file for these four devices. You can verify the stable
+IDs before you configure Slurm:
 
 ```console
 python -c "from mqt.core.qdmi import driver; print(*driver.registered_device_ids(), sep='\n')"
@@ -112,6 +113,64 @@ The initial report must contain these values:
 LicenseName=mqt.ddsim.default Total=2 Used=0 Free=2 Remote=no
 LicenseName=mqt.sc.default Total=1 Used=0 Free=1 Remote=no
 ```
+
+(license-one-device-id-per-contended-resource)=
+
+### License one device ID per contended resource
+
+The license name selects a stable device ID. It selects nothing else. A cluster
+therefore needs one registered device ID for every resource that jobs contend
+for.
+
+One provider library can serve more than one quantum computer. Register one
+device definition for each of them. The definitions use the same `library` and
+the same `prefix`. They differ only in the `session` object that selects the
+machine. MQT Core initializes the library one time and opens one session for
+each definition. The MQT Core superconducting provider uses this model:
+`mqt.sc.iqm.garnet` and `mqt.sc.iqm.emerald` are separate stable IDs over the
+library that also provides `mqt.sc.default`.
+
+The following system registry file registers two machines of one provider:
+
+```json
+{
+  "schema-version": 1,
+  "qdmi": {
+    "devices": [
+      {
+        "id": "example.qc.alpha",
+        "library": "libexample-device.so",
+        "prefix": "EXAMPLE",
+        "enabled": true,
+        "session": {"base-url": "https://alpha.example", "custom2": "alpha"}
+      },
+      {
+        "id": "example.qc.beta",
+        "library": "libexample-device.so",
+        "prefix": "EXAMPLE",
+        "enabled": true,
+        "session": {"base-url": "https://beta.example", "custom2": "beta"}
+      }
+    ]
+  }
+}
+```
+
+Each machine then gets its own license, and Slurm regulates them separately:
+
+```ini
+Licenses=example.qc.alpha:1,example.qc.beta:1
+```
+
+A provider that generates its registry file from CMake declares the same
+definitions with the `DEVICES` argument of `mqt_configure_qdmi_device`. See
+[Device configuration](configuration.md).
+
+Do not configure a license for a device that has no target until a job supplies
+one. A provider registers such a device so that a caller can select any machine
+at run time. A job that requests it has not named a machine, so Slurm cannot
+regulate contention for one. A device that always resolves to the same resource,
+such as `mqt.sc.default`, is itself a contended resource and can have a license.
 
 ## Submit a DDSIM job
 
@@ -211,8 +270,10 @@ all nodes use the same Munge key and the same `slurm.conf`.
 If MQT Core cannot select a device, print `SLURM_JOB_LICENSES` inside the batch
 job and list the registered QDMI IDs. Use this value only to diagnose selection.
 It is not proof of the Slurm allocation. The license name and stable ID must
-match exactly. Do not add a generic device license. Do not use a Slurm OR
-license expression for device selection because the environment does not
-identify a single selected device in that case.
+match exactly. The message names every registered ID, so compare it against the
+license name. If the provider serves more machines than it registers IDs, see
+[](#license-one-device-id-per-contended-resource). Do not add a generic device
+license. Do not use a Slurm OR license expression for device selection because
+the environment does not identify a single selected device in that case.
 
 [Slurm GRES configuration]: https://slurm.schedmd.com/gres.conf.html
