@@ -69,6 +69,15 @@ protected:
     return parseSourceString<ModuleOp>(source, context.get());
   }
 
+  static void expectFoldableGlobalPhase(Value angle,
+                                        const double expectedAngle) {
+    const auto value = utils::valueToConstantDouble(angle);
+    ASSERT_TRUE(value.has_value());
+    EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*value));
+    EXPECT_NEAR(utils::normalizeAngle(*value - expectedAngle), 0.0,
+                utils::TOLERANCE);
+  }
+
   static void expectNormalizedUnitary(OwningOpRef<ModuleOp>& moduleOp,
                                       const std::size_t numQubits) {
     const auto cloned = cast<ModuleOp>((*moduleOp)->clone());
@@ -117,10 +126,7 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
   ASSERT_EQ(phases.size(), 1);
   EXPECT_EQ(phases.front()->getNextNode(),
             func.getBody().front().getTerminator());
-  const auto value = dyn_cast<FloatAttr>(
-      phases.front().getTheta().getDefiningOp<arith::ConstantOp>().getValue());
-  ASSERT_TRUE(value);
-  EXPECT_DOUBLE_EQ(value.getValueAsDouble(), 0.75);
+  expectFoldableGlobalPhase(phases.front().getTheta(), 0.75);
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
