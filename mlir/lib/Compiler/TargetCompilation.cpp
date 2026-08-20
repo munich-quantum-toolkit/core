@@ -34,7 +34,6 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createTargetNativeSynthesis(target));
   pm.addPass(createCSEPass());
-  pm.addPass(createRemoveDeadValuesPass());
   pm.addPass(qco::createVerifyTargetConformance(target));
 }
 
