@@ -306,6 +306,31 @@ def ReuseQubits : Pass<"reuse-qubits", "mlir::ModuleOp"> {
   }];
 }
 
+def ContextSensitiveSpecialization
+    : Pass<"quantum-context-sensitive-specialization", "mlir::ModuleOp"> {
+  let summary = "Specialize callees for what is known at their call sites";
+  let description = [{
+        Redirects a `func.call` to a specialized copy of its callee whenever the
+        call site pins down something the callee can exploit:
+
+        - a qubit argument known to be in the |0> state, which lets operations
+          that fix |0> be dropped;
+        - a qubit argument known to be in the |+> state, which lets an `x` be
+          dropped;
+        - a compile-time constant rotation angle from a small distinguished set,
+          which is folded into the copy.
+
+        Copies are shared between call sites with the same context. A callee
+        left without callers is erased, but only when this pass created the
+        situation; unrelated unused functions are left alone.
+    }];
+
+  let dependentDialects = ["::mlir::func::FuncDialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::qtensor::QTensorDialect",
+                           "mlir::qco::QCODialect"];
+}
+
 def RemoveDeadGates : Pass<"remove-dead-gates", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Remove quantum gates whose results cannot be observed";
