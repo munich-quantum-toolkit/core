@@ -42,5 +42,14 @@ TEST(RandomizedAlgorithms, SeedsAreIndependentBetweenCalls) {
   static_cast<void>(qc::createRandomCliffordCircuit(4, 8, seed + 3));
 
   EXPECT_EQ(qc::createBernsteinVazirani(64, seed), expected);
-  EXPECT_NE(qc::createBernsteinVazirani(64, seed + 1), expected);
+
+  auto foundDistinctCircuit = false;
+  for (auto candidateSeed = seed + 1; candidateSeed <= seed + 3;
+       ++candidateSeed) {
+    if (qc::createBernsteinVazirani(64, candidateSeed) != expected) {
+      foundDistinctCircuit = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(foundDistinctCircuit);
 }

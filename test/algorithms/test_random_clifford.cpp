@@ -51,7 +51,7 @@ TEST_P(RandomClifford, simulate) {
     const qc::QuantumComputation circuit =
         qc::createRandomCliffordCircuit(nq, static_cast<std::size_t>(nq) * nq);
     auto in = makeZeroState(nq, *dd);
-    ASSERT_NO_THROW({ dd::simulate(circuit, in, *dd); });
+    dd::simulate(circuit, in, *dd);
   }
 }
 
@@ -61,5 +61,5 @@ TEST_P(RandomClifford, buildFunctionality) {
   const auto dd = std::make_unique<dd::Package>(nq);
   const qc::QuantumComputation circuit = qc::createRandomCliffordCircuit(
       nq, static_cast<std::size_t>(nq) * nq, 12345);
-  ASSERT_NO_THROW({ dd::buildFunctionality(circuit, *dd); });
+  dd::buildFunctionality(circuit, *dd);
 }

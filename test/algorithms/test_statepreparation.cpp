@@ -71,12 +71,9 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_P(StatePreparation, StatePreparationCircuitSimulation) {
   const auto& expectedAmplitudes = GetParam();
-  qc::QuantumComputation qc;
-  ASSERT_NO_THROW({ qc = qc::createStatePreparationCircuit(amplitudes); });
+  const auto qc = qc::createStatePreparationCircuit(amplitudes);
   auto dd = std::make_unique<dd::Package>(qc.getNqubits());
-  dd::VectorDD e{};
-  ASSERT_NO_THROW(
-      { e = dd::simulate(qc, makeZeroState(qc.getNqubits(), *dd), *dd); });
+  const auto e = dd::simulate(qc, makeZeroState(qc.getNqubits(), *dd), *dd);
   auto result = e.getVector();
   for (size_t i = 0; i < expectedAmplitudes.size(); ++i) {
     ASSERT_NEAR(expectedAmplitudes[i].real(), result[i].real(), EPS);
