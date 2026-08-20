@@ -9,10 +9,10 @@
  */
 
 #include "ModifierUtils.h"
+#include "mlir/Dialect/MQT/Utils/Modifier.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
@@ -52,7 +52,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
@@ -70,18 +70,17 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     auto outerTargets = op.getTargets();
     SmallVector<Value> controls(op.getControls());
     for (auto control : innerCtrlOp.getControls()) {
-      controls.push_back(
-          utils::getValueFromBlockArgument(control, outerTargets));
+      controls.push_back(mqt::getValueFromBlockArgument(control, outerTargets));
     }
     const auto targets =
         llvm::map_to_vector(innerCtrlOp.getTargets(), [&](Value t) {
-          return utils::getValueFromBlockArgument(t, outerTargets);
+          return mqt::getValueFromBlockArgument(t, outerTargets);
         });
 
     CtrlOp::create(rewriter, op.getLoc(), controls, targets,
                    [&](ValueRange mergedTargets) {
-                     utils::inlineBodyReturningYields(*innerCtrlOp.getBody(),
-                                                      mergedTargets, rewriter);
+                     mqt::inlineBodyReturningYields(*innerCtrlOp.getBody(),
+                                                    mergedTargets, rewriter);
                    });
     rewriter.eraseOp(op);
     return success();
@@ -97,7 +96,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
@@ -105,7 +104,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
 
     // Inline ops from empty control modifiers, IdOp and BarrierOp
     if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(innerOp)) {
-      utils::inlineModifierBody(op, *op.getBody(), op.getTargets(), rewriter);
+      mqt::inlineModifierBody(op, *op.getBody(), op.getTargets(), rewriter);
       return success();
     }
 
@@ -195,23 +194,23 @@ struct DropUnusedTargets final : OpRewritePattern<CtrlOp> {
 } // namespace
 
 size_t CtrlOp::getNumBodyUnitaries() {
-  return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
+  return mqt::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
 
 UnitaryOpInterface CtrlOp::getBodyUnitary(const size_t i) {
-  return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
+  return mqt::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, ValueRange targets,
                    const function_ref<void(ValueRange)>& body) {
   build(odsBuilder, odsState, controls, targets);
-  utils::buildModifierBody<QubitType>(odsBuilder, odsState, targets.size(),
-                                      [&](OpBuilder& builder, Block& block) {
-                                        body(block.getArguments());
-                                        YieldOp::create(builder,
-                                                        odsState.location);
-                                      });
+  mqt::buildModifierBody<QubitType>(odsBuilder, odsState, targets.size(),
+                                    [&](OpBuilder& builder, Block& block) {
+                                      body(block.getArguments());
+                                      YieldOp::create(builder,
+                                                      odsState.location);
+                                    });
 }
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
@@ -224,7 +223,7 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
       odsState.getOrAddProperties<CtrlOp::Properties>()
           .operandSegmentSizes.begin());
   odsState.addRegion();
-  utils::buildModifierBody<QubitType>(
+  mqt::buildModifierBody<QubitType>(
       odsBuilder, odsState, 1, [&](OpBuilder& builder, Block& block) {
         bodyBuilder(block.getArgument(0));
         YieldOp::create(builder, odsState.location);

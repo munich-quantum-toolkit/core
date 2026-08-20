@@ -14,9 +14,9 @@
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Utils/Parameter.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -41,7 +41,7 @@
 #include <utility>
 #include <variant>
 
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 namespace mlir::qc {
 QCProgramBuilder::QCProgramBuilder(MLIRContext* context)

@@ -18,12 +18,12 @@
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
+#include "mlir/Dialect/MQT/Utils/UGate.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/UGateUtils.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
 
@@ -759,8 +759,9 @@ TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
        {std::tuple{0.1, 0.2, 0.3, 2.0}, std::tuple{1.7, -2.1, 0.4, 3.0},
         std::tuple{std::numbers::pi, 0.7, -1.2, 8.0},
         std::tuple{0.0, 0.3, 0.8, 17.0},
-        std::tuple{0.1, 0.2, 0.3,
-                   static_cast<double>(utils::MAX_SAFE_U_POWER_EXPONENT)}}) {
+        std::tuple{
+            0.1, 0.2, 0.3,
+            static_cast<double>(mlir::mqt::MAX_SAFE_U_POWER_EXPONENT)}}) {
     auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
       auto controlIn = b.staticQubit(0);
       auto targetIn = b.staticQubit(1);
@@ -787,7 +788,7 @@ TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
 
 TEST_F(QCOMatrixTest, PowUBeyondSafeExponentRemainsUnchanged) {
   constexpr double exponent =
-      static_cast<double>(utils::MAX_SAFE_U_POWER_EXPONENT) + 1.0;
+      static_cast<double>(mlir::mqt::MAX_SAFE_U_POWER_EXPONENT) + 1.0;
   auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
     auto controlIn = b.staticQubit(0);
     auto targetIn = b.staticQubit(1);

@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Utils/Parameter.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/OperationSupport.h>
@@ -18,7 +18,7 @@
 
 using namespace mlir;
 using namespace mlir::qc;
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 void RZZOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   Value qubit0In, Value qubit1In,

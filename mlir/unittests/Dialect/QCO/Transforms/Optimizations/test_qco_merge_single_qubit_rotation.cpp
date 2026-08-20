@@ -9,11 +9,13 @@
  */
 
 #include "ExactUnitaryTest.h"
+#include "mlir/Dialect/MQT/Utils/GlobalPhase.h"
+#include "mlir/Dialect/MQT/Utils/Math.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Support/ConstantFolding.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
@@ -192,7 +194,7 @@ protected:
    * parameter is equal to the expected one.
    */
   void expectGPhaseParam(double expected, double tolerance = 1e-8) {
-    expected = utils::normalizeAngle(expected);
+    expected = mlir::mqt::normalizeAngle(expected);
     auto param = getGPhaseParam();
     if (expected == 0.0) {
       EXPECT_FALSE(param.has_value());
@@ -955,8 +957,8 @@ TEST_F(MergeSingleQubitRotationGatesTest,
 
   auto phase = getGPhaseParam();
   ASSERT_TRUE(phase.has_value());
-  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*phase));
-  EXPECT_NEAR(*phase, utils::normalizeAngle(*phase), 1e-8);
+  EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*phase));
+  EXPECT_NEAR(*phase, mlir::mqt::normalizeAngle(*phase), 1e-8);
 }
 
 TEST_F(MergeSingleQubitRotationGatesTest,
@@ -1002,10 +1004,10 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   ASSERT_TRUE(gOp);
 
   // Still SSA in the angles / gphase before binding concrete values.
-  EXPECT_FALSE(utils::valueToConstantDouble(uOp.getPhi()).has_value());
+  EXPECT_FALSE(mlir::valueToConstantDouble(uOp.getPhi()).has_value());
   EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(0)));
   EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(1)));
-  EXPECT_FALSE(utils::valueToConstantDouble(gOp.getParameter(0)).has_value());
+  EXPECT_FALSE(mlir::valueToConstantDouble(gOp.getParameter(0)).has_value());
   EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(0)));
   EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(1)));
 
@@ -1019,19 +1021,19 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   // Bind controlled values and check the folded RZ(a);RZ(b) formulas:
   //   U(0, wrap(a+b), 0), gphase = normalize(-(phi+lambda)/2).
   bindLeadingArgs(funcOp, {angleA, angleB});
-  const auto theta = utils::valueToConstantDouble(uOp.getTheta());
-  const auto phi = utils::valueToConstantDouble(uOp.getPhi());
-  const auto lambda = utils::valueToConstantDouble(uOp.getLambda());
-  const auto phase = utils::valueToConstantDouble(gOp.getParameter(0));
+  const auto theta = mlir::valueToConstantDouble(uOp.getTheta());
+  const auto phi = mlir::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = mlir::valueToConstantDouble(uOp.getLambda());
+  const auto phase = mlir::valueToConstantDouble(gOp.getParameter(0));
   ASSERT_TRUE(theta.has_value());
   ASSERT_TRUE(phi.has_value());
   ASSERT_TRUE(lambda.has_value());
   ASSERT_TRUE(phase.has_value());
   EXPECT_NEAR(*theta, 0.0, 1e-6);
-  EXPECT_NEAR(*phi, utils::normalizeAngle(angleA + angleB), 1e-6);
+  EXPECT_NEAR(*phi, mlir::mqt::normalizeAngle(angleA + angleB), 1e-6);
   EXPECT_NEAR(*lambda, 0.0, 1e-6);
-  EXPECT_NEAR(*phase, utils::normalizeAngle(-(*phi + *lambda) / 2.0), 1e-6);
-  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*phase));
+  EXPECT_NEAR(*phase, mlir::mqt::normalizeAngle(-(*phi + *lambda) / 2.0), 1e-6);
+  EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*phase));
   EXPECT_FALSE(std::isnan(*theta));
   EXPECT_FALSE(std::isnan(*phi));
   EXPECT_FALSE(std::isnan(*lambda));
@@ -1069,15 +1071,15 @@ TEST_F(MergeSingleQubitRotationGatesTest,
               valueDependsOn(uOp.getLambda(), funcOp.getArgument(0)));
 
   bindLeadingArgs(funcOp, {angle});
-  const auto theta = utils::valueToConstantDouble(uOp.getTheta());
-  const auto phi = utils::valueToConstantDouble(uOp.getPhi());
-  const auto lambda = utils::valueToConstantDouble(uOp.getLambda());
+  const auto theta = mlir::valueToConstantDouble(uOp.getTheta());
+  const auto phi = mlir::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = mlir::valueToConstantDouble(uOp.getLambda());
   ASSERT_TRUE(theta.has_value());
   ASSERT_TRUE(phi.has_value());
   ASSERT_TRUE(lambda.has_value());
   double globalPhase = 0.0;
   module->walk([&](GPhaseOp op) {
-    const auto phase = utils::valueToConstantDouble(op.getParameter(0));
+    const auto phase = mlir::valueToConstantDouble(op.getParameter(0));
     ASSERT_TRUE(phase.has_value());
     globalPhase += *phase;
   });
@@ -1143,17 +1145,17 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   // P(a);P(b) → U(0, wrap(a+b), 0) with inputPhase (a+b)/2 cancelling the U
   // intrinsic phase, so gphase folds to ~0 under controlled values.
   bindLeadingArgs(funcOp, {angleA, angleB});
-  const auto theta = utils::valueToConstantDouble(uOp.getTheta());
-  const auto phi = utils::valueToConstantDouble(uOp.getPhi());
-  const auto lambda = utils::valueToConstantDouble(uOp.getLambda());
-  const auto phase = utils::valueToConstantDouble(gOp.getParameter(0));
+  const auto theta = mlir::valueToConstantDouble(uOp.getTheta());
+  const auto phi = mlir::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = mlir::valueToConstantDouble(uOp.getLambda());
+  const auto phase = mlir::valueToConstantDouble(gOp.getParameter(0));
   ASSERT_TRUE(theta.has_value());
   ASSERT_TRUE(phi.has_value());
   ASSERT_TRUE(lambda.has_value());
   ASSERT_TRUE(phase.has_value());
   EXPECT_NEAR(*theta, 0.0, 1e-6);
-  EXPECT_NEAR(*phi, utils::normalizeAngle(angleA + angleB), 1e-6);
+  EXPECT_NEAR(*phi, mlir::mqt::normalizeAngle(angleA + angleB), 1e-6);
   EXPECT_NEAR(*lambda, 0.0, 1e-6);
   EXPECT_NEAR(*phase, 0.0, 1e-6);
-  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*phase));
+  EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*phase));
 }

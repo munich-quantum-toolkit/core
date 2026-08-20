@@ -6,8 +6,8 @@
 //
 // Licensed under the MIT License
 
-#ifndef MLIR_DIALECT_UTILS_TRANSFORMS_PASSES_TD
-#define MLIR_DIALECT_UTILS_TRANSFORMS_PASSES_TD
+#ifndef MLIR_DIALECT_MQT_TRANSFORMS_PASSES_TD
+#define MLIR_DIALECT_MQT_TRANSFORMS_PASSES_TD
 
 include "mlir/Pass/PassBase.td"
 
@@ -55,4 +55,4 @@ def UnrollModifiers : Pass<"unroll-modifiers", "mlir::ModuleOp"> {
   }];
 }
 
-#endif // MLIR_DIALECT_UTILS_TRANSFORMS_PASSES_TD
+#endif // MLIR_DIALECT_MQT_TRANSFORMS_PASSES_TD

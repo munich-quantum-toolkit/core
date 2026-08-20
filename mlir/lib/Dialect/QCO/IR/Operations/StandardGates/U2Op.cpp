@@ -8,9 +8,11 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Utils/Math.h"
+#include "mlir/Dialect/MQT/Utils/Parameter.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Support/ConstantFolding.h"
 
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -26,7 +28,7 @@
 
 using namespace mlir;
 using namespace mlir::qco;
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 namespace {
 

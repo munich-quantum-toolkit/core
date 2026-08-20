@@ -8,10 +8,11 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Utils/Modifier.h"
+#include "mlir/Dialect/MQT/Utils/Parameter.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -66,8 +67,8 @@ static Value selectScaledAngle(PatternRewriter& rewriter, Location loc,
                                Value theta, Value condition,
                                const double trueScale,
                                const double falseScale) {
-  const Value trueValue = utils::constantFromScalar(rewriter, loc, trueScale);
-  const Value falseValue = utils::constantFromScalar(rewriter, loc, falseScale);
+  const Value trueValue = mqt::constantFromScalar(rewriter, loc, trueScale);
+  const Value falseValue = mqt::constantFromScalar(rewriter, loc, falseScale);
   const Value scale =
       arith::SelectOp::create(rewriter, loc, condition, trueValue, falseValue);
   return arith::MulFOp::create(rewriter, loc, theta, scale);
@@ -198,7 +199,7 @@ static LogicalResult tryReplaceMeasuredRZTarget(CtrlOp op, RZOp rzOp,
     return success();
   }
 
-  utils::hoistSupportingOpsBefore(*op.getBody(), rzOp, op, rewriter);
+  mqt::hoistSupportingOpsBefore(*op.getBody(), rzOp, op, rewriter);
   rewriter.setInsertionPoint(op);
   const Value phase = selectScaledAngle(rewriter, op.getLoc(), rzOp.getTheta(),
                                         outcome, 0.5, -0.5);
@@ -242,7 +243,7 @@ static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
     return success();
   }
 
-  utils::hoistSupportingOpsBefore(*op.getBody(), rzzOp, op, rewriter);
+  mqt::hoistSupportingOpsBefore(*op.getBody(), rzzOp, op, rewriter);
   rewriter.setInsertionPoint(op);
   SmallVector<Value> controls(op.getControlsIn());
   SmallVector<Value> targets(op.getTargetsIn());
@@ -330,7 +331,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
     rewriter.setInsertionPointAfter(ctrlOp);
 
     if (auto unitary =
-            utils::getSoleBodyUnitary<UnitaryOpInterface>(*ctrlOp.getBody());
+            mqt::getSoleBodyUnitary<UnitaryOpInterface>(*ctrlOp.getBody());
         unitary) {
       if (auto rzOp = dyn_cast<RZOp>(unitary.getOperation());
           rzOp &&

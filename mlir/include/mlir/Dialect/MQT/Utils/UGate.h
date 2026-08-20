@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Dialect/MQT/Utils/Math.h"
 
 #include <array>
 #include <cmath>
@@ -21,7 +21,7 @@
 #include <numbers>
 #include <optional>
 
-namespace mlir::utils {
+namespace mlir::mqt {
 
 /**
  * Maximum exponent considered for safe binary64 U-gate powering.
@@ -61,7 +61,7 @@ struct UPowerParameters {
 powerUParameters(const double theta, const double phi, const double lambda,
                  const double exponent) {
   if (!std::isfinite(theta) || !std::isfinite(phi) || !std::isfinite(lambda) ||
-      !mlir::utils::isIntegerExponent(exponent) || exponent <= 0.0 ||
+      !isIntegerExponent(exponent) || exponent <= 0.0 ||
       exponent > static_cast<double>(MAX_SAFE_U_POWER_EXPONENT)) {
     return std::nullopt;
   }
@@ -201,4 +201,4 @@ powerUParameters(const double theta, const double phi, const double lambda,
   return UPowerParameters{resultTheta, resultPhi, resultLambda, resultPhase};
 }
 
-} // namespace mlir::utils
+} // namespace mlir::mqt

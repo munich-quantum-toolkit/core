@@ -8,10 +8,12 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Utils/Math.h"
+#include "mlir/Dialect/MQT/Utils/Modifier.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Support/ConstantFolding.h"
 
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
@@ -1273,7 +1275,7 @@ matchControlledTarget(UnitaryOpInterface inner) {
                               .theta = std::nullopt};
   }
   if (auto pOp = dyn_cast<POp>(inner.getOperation())) {
-    if (const auto theta = utils::valueToDouble(pOp.getTheta())) {
+    if (const auto theta = mlir::valueToDouble(pOp.getTheta())) {
       return ControlledGateSpec{.gate = ControlledTarget::Phase,
                                 .theta = theta};
     }
@@ -1326,7 +1328,7 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
     }
 
     const auto numControls = op.getNumControls();
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
@@ -1353,7 +1355,7 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
     // multi-controlled-Z path (elementary at 3–4 qubits, relative-phase / Vale
     // at 5–6 qubits, else HP24).
     if (gate == ControlledTarget::Phase && spec->theta &&
-        std::abs(std::abs(*spec->theta) - K_PI) <= utils::TOLERANCE) {
+        std::abs(std::abs(*spec->theta) - K_PI) <= mqt::TOLERANCE) {
       gate = ControlledTarget::Z;
     }
 

@@ -27,6 +27,7 @@ mqt_mlir_target_use_project_options(MLIRMQTDialect)
 
 file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQT/IR/*.h")
 file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/MQT/IR/*.inc")
+file(GLOB_RECURSE UTILS_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQT/Utils/*.h")
 
 target_sources(
   MLIRMQTDialect
@@ -36,6 +37,7 @@ target_sources(
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}
          FILES
          ${IR_HEADERS_SOURCE}
+         ${UTILS_HEADERS_SOURCE}
          FILE_SET
          HEADERS
          BASE_DIRS

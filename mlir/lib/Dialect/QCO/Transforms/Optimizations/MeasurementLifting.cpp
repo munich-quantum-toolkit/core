@@ -8,10 +8,10 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Utils/Modifier.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -45,7 +45,7 @@ static bool isDiagonal(Operation* op) {
     return false;
   }
   if (isa<CtrlOp, InvOp>(op)) {
-    return isDiagonal(utils::getSoleBodyUnitary<UnitaryOpInterface>(
+    return isDiagonal(mqt::getSoleBodyUnitary<UnitaryOpInterface>(
         *op->getRegion(0).getBlocks().begin()));
   }
   return isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);

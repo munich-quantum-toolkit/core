@@ -16,9 +16,9 @@
 namespace mlir::mqt {
 
 #define GEN_PASS_DECL
-#include "mlir/Dialect/Utils/Transforms/Passes.h.inc" // IWYU pragma: export
+#include "mlir/Dialect/MQT/Transforms/Passes.h.inc" // IWYU pragma: export
 
 #define GEN_PASS_REGISTRATION
-#include "mlir/Dialect/Utils/Transforms/Passes.h.inc" // IWYU pragma: export
+#include "mlir/Dialect/MQT/Transforms/Passes.h.inc" // IWYU pragma: export
 
 } // namespace mlir::mqt

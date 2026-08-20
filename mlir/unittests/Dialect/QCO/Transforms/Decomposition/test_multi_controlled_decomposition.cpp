@@ -16,13 +16,13 @@
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
+#include "mlir/Dialect/MQT/Utils/Modifier.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -745,7 +745,8 @@ TEST_F(MultiControlledDecompositionTest,
   size_t controlledSwap = 0;
   moduleOp->walk([&](CtrlOp op) {
     if (op.getNumControls() == 1 && op.getNumTargets() == 2) {
-      auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+      auto inner =
+          mlir::mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
       if (inner && isa<SWAPOp>(inner.getOperation())) {
         ++controlledSwap;
       }
@@ -798,7 +799,8 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
   size_t controlledDcx = 0;
   moduleOp->walk([&](CtrlOp op) {
     if (op.getNumTargets() == 2) {
-      auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+      auto inner =
+          mlir::mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
       if (inner && isa<DCXOp>(inner.getOperation())) {
         ++controlledDcx;
       }

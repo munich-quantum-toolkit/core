@@ -18,11 +18,12 @@
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Utils/Math.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Support/ConstantFolding.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
@@ -117,7 +118,7 @@ using ExportedParameters = llvm::DenseMap<mlir::Value, Parameter>;
   if (++nodes > MAX_PARAMETER_EXPRESSION_NODES) {
     throwExportedParameterExpressionSizeError();
   }
-  if (const auto number = mlir::utils::valueToDouble(value)) {
+  if (const auto number = mlir::valueToDouble(value)) {
     auto result = numberParameter(*number);
     parameters.try_emplace(value, result);
     return result;
@@ -376,12 +377,12 @@ void addGlobalPhase(ExportState& state, const Parameter& phase) {
       state.globalPhase = Parameter::number(sum);
       return;
     }
-    if (std::abs(number->value) <= mlir::utils::TOLERANCE) {
+    if (std::abs(number->value) <= mlir::mqt::TOLERANCE) {
       return;
     }
   } else if (const auto* globalNumber = state.globalPhase.getNumber();
              globalNumber != nullptr &&
-             std::abs(globalNumber->value) <= mlir::utils::TOLERANCE) {
+             std::abs(globalNumber->value) <= mlir::mqt::TOLERANCE) {
     state.globalPhase = phase;
     return;
   }

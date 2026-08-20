@@ -10,13 +10,15 @@
 
 #include "ExactUnitaryTest.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
+#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/MQT/Utils/GlobalPhase.h"
+#include "mlir/Dialect/MQT/Utils/Math.h"
+#include "mlir/Dialect/MQT/Utils/Parameter.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
@@ -70,11 +72,11 @@ protected:
 
   static void expectFoldableGlobalPhase(Value angle,
                                         const double expectedAngle) {
-    const auto value = utils::valueToConstantDouble(angle);
+    const auto value = mlir::valueToConstantDouble(angle);
     ASSERT_TRUE(value.has_value());
-    EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*value));
-    EXPECT_NEAR(utils::normalizeAngle(*value - expectedAngle), 0.0,
-                utils::TOLERANCE);
+    EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*value));
+    EXPECT_NEAR(mlir::mqt::normalizeAngle(*value - expectedAngle), 0.0,
+                mlir::mqt::TOLERANCE);
   }
 
   static void expectNormalizedUnitary(OwningOpRef<ModuleOp>& moduleOp,
@@ -146,10 +148,10 @@ TEST_F(GlobalPhaseNormalizationTest,
   constexpr double half = 1.5;
   constexpr double two = 2.0;
   const double expected =
-      utils::normalizeAngle(static_cast<double>(phaseCount) * half * two);
+      mlir::mqt::normalizeAngle(static_cast<double>(phaseCount) * half * two);
   for (int i = 0; i < phaseCount; ++i) {
-    auto lhs = utils::constantFromScalar(builder, loc, half);
-    auto rhs = utils::constantFromScalar(builder, loc, two);
+    auto lhs = mlir::mqt::constantFromScalar(builder, loc, half);
+    auto rhs = mlir::mqt::constantFromScalar(builder, loc, two);
     auto angle = arith::MulFOp::create(builder, loc, lhs, rhs);
     qco::GPhaseOp::create(builder, loc, angle.getResult());
   }
@@ -185,14 +187,14 @@ TEST_F(GlobalPhaseNormalizationTest,
   constexpr int64_t intFactor = 3;
   constexpr double floatFactor = 2.0;
   const double expected =
-      utils::normalizeAngle(static_cast<double>(phaseCount) *
-                            static_cast<double>(intFactor) * floatFactor);
+      mlir::mqt::normalizeAngle(static_cast<double>(phaseCount) *
+                                static_cast<double>(intFactor) * floatFactor);
   for (int i = 0; i < phaseCount; ++i) {
     auto intConst = arith::ConstantOp::create(
         builder, loc, builder.getIntegerAttr(builder.getI64Type(), intFactor));
     auto lhs = arith::SIToFPOp::create(builder, loc, builder.getF64Type(),
                                        intConst.getResult());
-    auto rhs = utils::constantFromScalar(builder, loc, floatFactor);
+    auto rhs = mlir::mqt::constantFromScalar(builder, loc, floatFactor);
     auto angle = arith::MulFOp::create(builder, loc, lhs.getResult(), rhs);
     qco::GPhaseOp::create(builder, loc, angle.getResult());
   }
@@ -633,7 +635,7 @@ TEST_F(GlobalPhaseNormalizationTest, ZeroControlsReleaseAnUnchangedPhase) {
       builder, loc, "test", builder.getFunctionType({qubitType}, {qubitType}));
   auto* entry = function.addEntryBlock();
   builder.setInsertionPointToStart(entry);
-  const auto phase = utils::constantFromScalar(builder, loc, 0.417);
+  const auto phase = mlir::mqt::constantFromScalar(builder, loc, 0.417);
   auto ctrl = qco::CtrlOp::create(
       builder, loc, ValueRange{}, entry->getArgument(0), [&](Value target) {
         const auto out = qco::XOp::create(builder, loc, target).getQubitOut();
@@ -812,7 +814,7 @@ TEST_F(GlobalPhaseNormalizationTest,
   for (const double angle : {0.0, std::numbers::pi, -std::numbers::pi,
                              2.0 * std::numbers::pi, -2.0 * std::numbers::pi}) {
     qco::GPhaseOp::create(builder, loc,
-                          utils::constantFromScalar(builder, loc, angle));
+                          mlir::mqt::constantFromScalar(builder, loc, angle));
   }
   func::ReturnOp::create(builder, loc);
 
@@ -856,7 +858,7 @@ TEST_F(GlobalPhaseNormalizationTest, VerifiesPracticalConstantAngleRange) {
                                          builder.getFunctionType({}, {}));
     auto* entry = function.addEntryBlock();
     builder.setInsertionPointToStart(entry);
-    const auto value = utils::constantFromScalar(builder, loc, angle);
+    const auto value = mlir::mqt::constantFromScalar(builder, loc, angle);
     if (useQCO) {
       qco::GPhaseOp::create(builder, loc, value);
     } else {
@@ -868,11 +870,12 @@ TEST_F(GlobalPhaseNormalizationTest, VerifiesPracticalConstantAngleRange) {
 
   for (const bool useQCO : {false, true}) {
     SCOPED_TRACE(useQCO ? "QCO" : "QC");
-    EXPECT_TRUE(succeeded(verifyAngle(utils::MAX_GLOBAL_PHASE_ANGLE, useQCO)));
+    EXPECT_TRUE(
+        succeeded(verifyAngle(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE, useQCO)));
     for (const double angle :
-         {std::nextafter(utils::MAX_GLOBAL_PHASE_ANGLE,
+         {std::nextafter(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE,
                          std::numeric_limits<double>::infinity()),
-          -std::nextafter(utils::MAX_GLOBAL_PHASE_ANGLE,
+          -std::nextafter(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE,
                           std::numeric_limits<double>::infinity()),
           std::numeric_limits<double>::quiet_NaN(),
           std::numeric_limits<double>::infinity()}) {

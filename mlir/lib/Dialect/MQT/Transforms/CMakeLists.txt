@@ -11,7 +11,7 @@ add_mlir_library(
   NormalizeGlobalPhases.cpp
   UnrollModifiers.cpp
   ADDITIONAL_HEADER_DIRS
-  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/Utils/Transforms
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQT/Transforms
   LINK_LIBS
   PRIVATE
   MLIRArithDialect
@@ -26,9 +26,9 @@ add_mlir_library(
 mqt_mlir_target_use_project_options(MLIRMQTTransforms)
 
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/Utils/Transforms/*.h)
+     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQT/Transforms/*.h)
 file(GLOB_RECURSE PASSES_HEADERS_BUILD
-     ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/Utils/Transforms/*.inc)
+     ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/MQT/Transforms/*.inc)
 
 target_sources(
   MLIRMQTTransforms

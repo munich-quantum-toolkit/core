@@ -6,15 +6,14 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-unittests-dialect-utils test_global_phase_normalization.cpp
-                                                     test_utils.cpp)
+set(mqt_transforms_target mqt-core-mlir-unittests-mqt-transforms)
+add_executable(${mqt_transforms_target} test_global_phase_normalization.cpp)
 
 target_link_libraries(
-  mqt-core-mlir-unittests-dialect-utils
+  ${mqt_transforms_target}
   PRIVATE GTest::gtest_main
           MLIRArithDialect
           MLIRControlFlowDialect
-          MLIRDialectUtils
           MLIRFuncDialect
           MLIRIR
           MLIRMemRefDialect
@@ -32,7 +31,7 @@ target_link_libraries(
           LLVMSupport
           MQT::CoreDD)
 
-mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-dialect-utils REQUIRES_EH)
+mqt_mlir_configure_unittest_target(${mqt_transforms_target} REQUIRES_EH)
 
-gtest_discover_tests(mqt-core-mlir-unittests-dialect-utils PROPERTIES LABELS mqt-mlir-unittests
-                                                                      DISCOVERY_TIMEOUT 60)
+gtest_discover_tests(${mqt_transforms_target} PROPERTIES LABELS mqt-mlir-unittests
+                                                         DISCOVERY_TIMEOUT 60)

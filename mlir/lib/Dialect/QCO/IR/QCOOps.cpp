@@ -10,8 +10,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
+#include "mlir/Dialect/MQT/Utils/Modifier.h"
+#include "mlir/Dialect/MQT/Utils/Parameter.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/Block.h>
@@ -51,12 +52,12 @@ static bool isQCOLinearType(Type type) {
 static ParseResult
 parseTargetAliasing(OpAsmParser& parser, Region& region,
                     SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
-  return utils::parseTargetAliasing<QubitType>(parser, region, operands);
+  return mqt::parseTargetAliasing<QubitType>(parser, region, operands);
 }
 
 static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
                                 Region& region, OperandRange targetsIn) {
-  utils::printTargetAliasing(printer, region, targetsIn);
+  mqt::printTargetAliasing(printer, region, targetsIn);
 }
 
 ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
@@ -507,7 +508,7 @@ void QCODialect::initialize() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult mlir::qco::verifyUnitaryOpInterface(Operation* op) {
-  return utils::verifyFiniteConstantParameters(
+  return mqt::verifyFiniteConstantParameters(
       op, cast<UnitaryOpInterface>(op).getParameters());
 }
 

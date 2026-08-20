@@ -25,7 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace mlir::utils {
+namespace mlir::mqt {
 
 /**
  * Maximum absolute entry-wise deviation of U^dagger U from the identity.
@@ -138,4 +138,4 @@ verifyDenseUnitaryMatrix(Operation* operation, const ElementsAttr matrixAttr,
   return true;
 }
 
-} // namespace mlir::utils
+} // namespace mlir::mqt

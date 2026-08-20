@@ -8,11 +8,13 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/MQT/Transforms/Passes.h"
+#include "mlir/Dialect/MQT/Utils/Math.h"
+#include "mlir/Dialect/MQT/Utils/Parameter.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/Utils/Transforms/Passes.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Support/ConstantFolding.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
@@ -40,7 +42,7 @@
 namespace mlir::mqt {
 
 #define GEN_PASS_DEF_NORMALIZEGLOBALPHASES
-#include "mlir/Dialect/Utils/Transforms/Passes.h.inc"
+#include "mlir/Dialect/MQT/Transforms/Passes.h.inc"
 
 namespace {
 
@@ -59,8 +61,8 @@ using PhaseInstruction = std::variant<double, Value, Add, Negate, Scale>;
 class PhaseExpression final {
 public:
   explicit PhaseExpression(Value angle) {
-    if (const auto constant = utils::valueToConstantDouble(angle)) {
-      instructions.emplace_back(utils::normalizeAngle(*constant));
+    if (const auto constant = valueToConstantDouble(angle)) {
+      instructions.emplace_back(normalizeAngle(*constant));
     } else {
       instructions.emplace_back(angle);
       leaves.push_back(angle);
@@ -84,7 +86,7 @@ public:
     const auto rhs = other.getConstant();
     if (lhs && rhs) {
       instructions.clear();
-      instructions.emplace_back(utils::normalizeAngle(*lhs + *rhs));
+      instructions.emplace_back(normalizeAngle(*lhs + *rhs));
       leaves.clear();
       return;
     }
@@ -97,7 +99,7 @@ public:
 
   void negate() {
     if (const auto constant = getConstant()) {
-      instructions.front() = utils::normalizeAngle(-*constant);
+      instructions.front() = normalizeAngle(-*constant);
       return;
     }
     instructions.emplace_back(Negate{});
@@ -114,7 +116,7 @@ public:
       return;
     }
     if (const auto constant = getConstant()) {
-      instructions.front() = utils::normalizeAngle(*constant * factor);
+      instructions.front() = normalizeAngle(*constant * factor);
       return;
     }
     instructions.emplace_back(Scale{factor});
@@ -131,7 +133,7 @@ public:
     SmallVector<Value, 4> stack;
     for (const auto& instruction : instructions) {
       if (const auto* constant = std::get_if<double>(&instruction)) {
-        stack.push_back(utils::constantFromScalar(rewriter, loc, *constant));
+        stack.push_back(constantFromScalar(rewriter, loc, *constant));
         continue;
       }
       if (const auto* value = std::get_if<Value>(&instruction)) {
@@ -152,7 +154,7 @@ public:
         continue;
       }
       const auto factor = std::get<Scale>(instruction).factor;
-      const auto factorValue = utils::constantFromScalar(rewriter, loc, factor);
+      const auto factorValue = constantFromScalar(rewriter, loc, factor);
       stack.push_back(
           rewriter.createOrFold<arith::MulFOp>(loc, factorValue, operand));
     }
@@ -160,9 +162,8 @@ public:
     const Value result = stack.front();
     // Fold pure constant arith trees back to a single normalized angle so
     // merged exit phases stay within the GPhase verifier contract.
-    if (const auto constant = utils::valueToConstantDouble(result)) {
-      return utils::constantFromScalar(rewriter, loc,
-                                       utils::normalizeAngle(*constant));
+    if (const auto constant = valueToConstantDouble(result)) {
+      return constantFromScalar(rewriter, loc, normalizeAngle(*constant));
     }
     return result;
   }
@@ -297,7 +298,7 @@ private:
   template <typename PowOp>
   [[nodiscard]] std::optional<PhaseContribution> factorPower(PowOp op) {
     const auto exponent = op.getExponentValue();
-    if (!exponent || !utils::isIntegerExponent(*exponent)) {
+    if (!exponent || !isIntegerExponent(*exponent)) {
       normalizeRegion(op->getRegion(0));
       return std::nullopt;
     }
@@ -426,9 +427,9 @@ private:
           dyn_cast<qc::GPhaseOp>(directPhases.front())
               ? cast<qc::GPhaseOp>(directPhases.front()).getTheta()
               : cast<qco::GPhaseOp>(directPhases.front()).getTheta();
-      const auto constant = utils::valueToConstantDouble(angle);
+      const auto constant = valueToConstantDouble(angle);
       if (!constant ||
-          (utils::normalizeAngle(*constant) == *constant && *constant != 0.0)) {
+          (normalizeAngle(*constant) == *constant && *constant != 0.0)) {
         return std::nullopt;
       }
     }

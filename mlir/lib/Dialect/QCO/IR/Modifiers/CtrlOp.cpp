@@ -9,12 +9,12 @@
  */
 
 #include "ModifierUtils.h"
+#include "mlir/Dialect/MQT/Utils/Modifier.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
@@ -59,7 +59,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
@@ -85,17 +85,16 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
 
     SmallVector<Value> controls(op.getControlsIn());
     for (auto control : innerControls) {
-      controls.push_back(
-          utils::getValueFromBlockArgument(control, outerTargets));
+      controls.push_back(mqt::getValueFromBlockArgument(control, outerTargets));
     }
     const auto targets = llvm::map_to_vector(innerTargets, [&](Value t) {
-      return utils::getValueFromBlockArgument(t, outerTargets);
+      return mqt::getValueFromBlockArgument(t, outerTargets);
     });
 
     auto merged =
         CtrlOp::create(rewriter, op.getLoc(), controls, targets,
                        [&](ValueRange mergedTargets) -> SmallVector<Value> {
-                         return utils::inlineBodyReturningYields(
+                         return mqt::inlineBodyReturningYields(
                              *innerCtrlOp.getBody(), mergedTargets, rewriter);
                        });
 
@@ -118,7 +117,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
@@ -248,11 +247,11 @@ struct DropUnusedTargets final : OpRewritePattern<CtrlOp> {
 } // namespace
 
 size_t CtrlOp::getNumBodyUnitaries() {
-  return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
+  return mqt::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
 
 UnitaryOpInterface CtrlOp::getBodyUnitary(const size_t i) {
-  return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
+  return mqt::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
 Value CtrlOp::getInputForOutput(Value output) {
@@ -276,12 +275,12 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, ValueRange targets,
                    function_ref<SmallVector<Value>(ValueRange)> bodyBuilder) {
   build(odsBuilder, odsState, controls, targets);
-  utils::buildModifierBody<QubitType>(odsBuilder, odsState, targets.size(),
-                                      [&](OpBuilder& builder, Block& block) {
-                                        YieldOp::create(
-                                            builder, odsState.location,
-                                            bodyBuilder(block.getArguments()));
-                                      });
+  mqt::buildModifierBody<QubitType>(odsBuilder, odsState, targets.size(),
+                                    [&](OpBuilder& builder, Block& block) {
+                                      YieldOp::create(
+                                          builder, odsState.location,
+                                          bodyBuilder(block.getArguments()));
+                                    });
 }
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
@@ -289,7 +288,7 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    function_ref<Value(Value)> bodyBuilder) {
   build(odsBuilder, odsState, controls.getTypes(), target.getType(), controls,
         target);
-  utils::buildModifierBody<QubitType>(
+  mqt::buildModifierBody<QubitType>(
       odsBuilder, odsState, 1, [&](OpBuilder& builder, Block& block) {
         YieldOp::create(builder, odsState.location,
                         bodyBuilder(block.getArgument(0)));
@@ -385,7 +384,7 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
 
   // Single inner unitary (e.g. `ctrl { h }`, `ctrl { cx }`).
   if (auto bodyUnitary =
-          utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
+          mqt::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
     if (const auto targetMatrix =
             bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
       assert(targetMatrix->cols() == targetMatrix->rows());
