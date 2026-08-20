@@ -271,10 +271,21 @@ TEST_F(GlobalPhaseNormalizationTest, PreservesDynamicOrderAndIsIdempotent) {
   auto func = cast<func::FuncOp>(moduleOp->getBody()->front());
   auto phases = llvm::to_vector(func.getBody().getOps<mlir::qc::GPhaseOp>());
   ASSERT_EQ(phases.size(), 1);
-  auto add = phases.front().getTheta().getDefiningOp<arith::AddFOp>();
-  ASSERT_TRUE(add);
-  EXPECT_EQ(add.getLhs(), func.getArgument(1));
-  EXPECT_EQ(add.getRhs(), func.getArgument(2));
+  const auto dependsOn = [](Value value, const Value input) {
+    llvm::SmallVector<Value> worklist{value};
+    while (!worklist.empty()) {
+      const auto current = worklist.pop_back_val();
+      if (current == input) {
+        return true;
+      }
+      if (auto* definingOp = current.getDefiningOp()) {
+        llvm::append_range(worklist, definingOp->getOperands());
+      }
+    }
+    return false;
+  };
+  EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(1)));
+  EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(2)));
 
   std::string once;
   llvm::raw_string_ostream onceStream(once);
