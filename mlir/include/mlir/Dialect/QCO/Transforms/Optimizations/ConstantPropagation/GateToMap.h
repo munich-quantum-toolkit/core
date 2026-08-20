@@ -27,6 +27,7 @@
  * multiplied with to get the new amplitudes after a gate application.
  */
 
+namespace mlir::qco {
 using Complex = std::complex<double>;
 
 using ResultMap =
@@ -224,3 +225,4 @@ getQubitMappingOfGates(mlir::Operation* gate, const std::span<double>& params) {
         llvm::report_fatal_error("Unsupported gate in mlir::qco::gatetomap");
       });
 }
+} // namespace mlir::qco
