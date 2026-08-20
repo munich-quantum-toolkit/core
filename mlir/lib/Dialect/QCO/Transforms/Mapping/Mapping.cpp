@@ -1035,12 +1035,12 @@ private:
     SmallVector<IndexPairType> next;
 
     walkProgramGraph<Direction>(
-        wires, [&](const ReadyMap& ready, ReleasedOps& released) {
-          if (ready.empty()) {
+        wires, [&](const Frontier& frontier, ReleasedOps& released) {
+          if (frontier.empty()) {
             return WalkResult::advance();
           }
 
-          for (const auto& [op, indices] : ready) {
+          for (const auto& [op, indices] : frontier) {
             if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
               const auto i0 = indices[0];
               const auto i1 = indices[1];
@@ -1125,13 +1125,13 @@ private:
     // Advance wires past all executable gates and push composite unitaries and
     // the respective wire indices of their inputs onto the vector.
 
-    walkProgramGraph<Direction>(wires, [&](const ReadyMap& ready,
+    walkProgramGraph<Direction>(wires, [&](const Frontier& frontier,
                                            ReleasedOps& released) {
-      if (ready.empty()) {
+      if (frontier.empty()) {
         return WalkResult::advance();
       }
 
-      for (const auto& [op, indices] : ready) {
+      for (const auto& [op, indices] : frontier) {
         if (isa<BarrierOp>(op)) {
           released.emplace_back(op);
           continue;
