@@ -34,8 +34,8 @@ releases may include breaking changes.
   compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
   [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add explicit runtime classical-control capabilities to compiler targets and
-  reject undeclared structured control at the start of target compilation, before target-mutating passes ([#2162])
-  ([**@simon1hofmann**])
+  reject undeclared structured control at the start of target compilation,
+  before target-mutating passes ([#2162]) ([**@simon1hofmann**])
 
 #### Import and export
 
