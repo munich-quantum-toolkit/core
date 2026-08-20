@@ -1336,15 +1336,14 @@ TEST_F(CompilerPipelineTest,
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.index_switch %c1 -> (!qco.qubit) {
-          case 0 args(%arg0 = %q0) {
-            scf.for %index = %c0 to %c1 step %c1 {
-            }
-            qco.yield %arg0 : !qco.qubit
+        %q1 = qco.index_switch %c1 -> (!qco.qubit)
+        case 0 args(%arg0 = %q0) {
+          scf.for %index = %c0 to %c1 step %c1 {
           }
-          default args(%arg0 = %q0) {
-            qco.yield %arg0 : !qco.qubit
-          }
+          qco.yield %arg0 : !qco.qubit
+        }
+        default args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
         }
         qco.sink %q1 : !qco.qubit
         return
@@ -1372,11 +1371,11 @@ TEST_F(CompilerPipelineTest, TargetCompilationIgnoresStaticScfIfThenBranch) {
         %c1 = arith.constant 1 : index
         %q0 = qco.alloc : !qco.qubit
         %q1 = scf.if %true -> !qco.qubit {
-          qco.yield %q0 : !qco.qubit
+          scf.yield %q0 : !qco.qubit
         } else {
           scf.for %index = %c0 to %c1 step %c1 {
           }
-          qco.yield %q0 : !qco.qubit
+          scf.yield %q0 : !qco.qubit
         }
         qco.sink %q1 : !qco.qubit
         return
@@ -1407,10 +1406,10 @@ TEST_F(CompilerPipelineTest,
         case 0 {
           scf.for %index = %c0 to %c1 step %c1 {
           }
-          qco.yield %q0 : !qco.qubit
+          scf.yield %q0 : !qco.qubit
         }
         default {
-          qco.yield %q0 : !qco.qubit
+          scf.yield %q0 : !qco.qubit
         }
         qco.sink %q1 : !qco.qubit
         return
