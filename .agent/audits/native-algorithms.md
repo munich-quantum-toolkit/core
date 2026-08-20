@@ -166,6 +166,15 @@ on 2026-08-20. The repository had 47 open issues and 27 open pull requests.
   Name-independent Core tests therefore do not yet unlock removal of the
   production name encoding. QCEC must migrate first.
 
+## Human decision
+
+On 2026-08-20, the maintainer accepted the recommended resolution slate. The
+maintainer confirmed that QCEC permits observable-result equivalence for the
+dynamic algorithm tests. The resolution must preserve all 35 anchors, add the
+identified replacement coverage before removing accidental substitutes, and
+keep target removal and the CircuitOptimizer assertions deferred. The audit and
+accepted remedies will share one pull request with separate commits.
+
 ## Assertion census
 
 The audited target contains exactly 88 lexical GoogleTest assertion sites:
