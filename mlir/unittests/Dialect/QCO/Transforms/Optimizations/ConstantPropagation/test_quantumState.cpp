@@ -262,7 +262,7 @@ TEST_F(QuantumStateTest, applyControlledTwoQubitGate) {
           "|0000> -> 0.50, |0100> -> 0.50, |1000> -> 0.50, |1010> -> 0.50"));
 }
 
-TEST_F(QuantumStateTest, propagateGateCheckErrorIfTwoManyAmplitudesAreNonzero) {
+TEST_F(QuantumStateTest, propagateGateCheckErrorIfTooManyAmplitudesAreNonzero) {
   auto qState = QuantumState(fourQubits, 2);
   qState.propagateGate(hOp.getOperation(), vectorThree);
   qState.propagateGate(xOp.getOperation(), vectorTwo, vectorThree);

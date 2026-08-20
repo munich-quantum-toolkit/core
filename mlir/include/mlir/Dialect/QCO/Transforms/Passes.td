@@ -191,7 +191,7 @@ def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
       "state. It also replaces quantum control with classical control "
       "if possible and moves measurements as far to the front as possible.";
   let description = [{
-     This pass applies quantum constant propagation. This optimization routines assumes that the input qubits of the
+     This pass applies quantum constant propagation. This optimization routine assumes that the input qubits of the
      circuits are |0>. It propagates the qubit states and the state of additional classical values through the circuit.
      All quantum instructions are removed which are superfluous considering the current state. Additionally, quantum
      controls can be replaced by equivalent classical control. To do this most efficiently, the measurements are moved
@@ -206,9 +206,9 @@ def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
      The applied optimization routines are:
 
      **General Control Reduction**
-     If a controlling qubit or classical value is always true, the control is removed. Classical vales are considered
+     If a controlling qubit or classical value is always true, the control is removed. Classical values are considered
      true if they are not zero.
-     If a controlling qubit or classical value is alaways false, the complete gate is removed.
+     If a controlling qubit or classical value is always false, the complete gate is removed.
 
      **Unsatisfiable Controls**
      If a combination of controls (both quantum and classical) cannot be satisfied, the complete controlled gate is
@@ -231,7 +231,7 @@ def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
   let options = [Option<"maximumNonzeroAmplitudes",
                         "maximum-nonzero-amplitudes", "std::size_t", "4",
                         "The maximum number of non-zero amplitudes in the "
-                        "tracted quantum states before reaching top.">,
+                        "tracked quantum states before reaching top.">,
                  Option<"maximumHybridStates", "maximum-hybrid-states",
                         "std::size_t", "4",
                         "The maximum number of hybrid states which have a "

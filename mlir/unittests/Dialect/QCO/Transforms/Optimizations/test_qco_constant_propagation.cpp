@@ -129,8 +129,8 @@ TEST_F(QCOConstantPropagationTest, testDontRemoveIfTargetInSuperposition) {
 
 /**
  * @brief Test: This test checks that CNOTs are not changed if a reset is
- * between to Hadamards, i.e. the qubits are in a superposition after the second
- * Hadamard.
+ * between two Hadamards, i.e. the qubits are in a superposition after the
+ * second Hadamard.
  */
 TEST_F(QCOConstantPropagationTest, testApplyReset) {
   auto q = programBuilder.allocQubitRegister(2);
