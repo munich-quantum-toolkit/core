@@ -9,6 +9,6 @@
 set(LLVM_TARGET_DEFINITIONS MQTDialect.td)
 mlir_tablegen(MQTDialect.h.inc -gen-dialect-decls -dialect=mqt)
 mlir_tablegen(MQTDialect.cpp.inc -gen-dialect-defs -dialect=mqt)
-add_public_tablegen_target(MLIRMQTDialectIncGen)
+add_mlir_dialect_tablegen_target(MLIRMQTDialectIncGen)
 
 add_mlir_doc(MQTDialect MQTDialect Dialects/ -gen-dialect-doc -dialect=mqt)
