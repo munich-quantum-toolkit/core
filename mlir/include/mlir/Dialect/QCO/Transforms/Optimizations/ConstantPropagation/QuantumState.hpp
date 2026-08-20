@@ -264,6 +264,17 @@ public:
   void changeGlobalIndex(unsigned int target, unsigned int newIndex);
 
   /**
+   * @brief This method applies a global phase gate to the qubits.
+   *
+   * This method changes the amplitudes of a QuantumState according to the
+   * applied global phase, that can become a relative phase if it is controlled.
+   *
+   * @param ctrls A span of the global indices of the ctrl qubits.
+   * @param phase The phase of the gate.
+   */
+  void propagateGPhaseGate(std::span<unsigned int> ctrls, double phase);
+
+  /**
    * @brief This method applies a gate to the qubits.
    *
    * This method changes the amplitudes of a QuantumState according to the

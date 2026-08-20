@@ -516,12 +516,17 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       const auto input = innerOp->getOperands();
       const auto output = innerOp->getResults();
       for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
-        std::ranges::replace(thenArgs, input[i], output[i]);
+        if (mlir::isa<QubitType>(input[i].getType())) {
+          std::ranges::replace(thenArgs, input[i], output[i]);
+        }
       }
     });
   } else {
-    const auto thenYieldOperands = op->thenYield()->getOperands();
-    thenArgs = {thenYieldOperands.begin(), thenYieldOperands.end()};
+    for (Value original : op->thenYield()->getOperands()) {
+      if (mlir::isa<QubitType>(original.getType())) {
+        thenArgs.push_back(original);
+      }
+    }
   }
 
   if (!elseEmpty) {
@@ -546,12 +551,17 @@ static WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       const auto input = innerOp->getOperands();
       const auto output = innerOp->getResults();
       for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
-        std::ranges::replace(elseArgs, input[i], output[i]);
+        if (mlir::isa<QubitType>(input[i].getType())) {
+          std::ranges::replace(elseArgs, input[i], output[i]);
+        }
       }
     });
   } else {
-    const auto elseYieldOperands = op->elseYield()->getOperands();
-    elseArgs = {elseYieldOperands.begin(), elseYieldOperands.end()};
+    for (Value original : op->elseYield()->getOperands()) {
+      if (mlir::isa<QubitType>(original.getType())) {
+        elseArgs.push_back(original);
+      }
+    }
   }
 
   const auto resultQubits = op->getResults();
@@ -809,6 +819,9 @@ handleUncontrolledUnitary(UnionTable* ut, UnitaryOpInterface* op,
                           const std::span<Value> negClassicalCtrls,
                           PatternRewriter& rewriter,
                           std::span<Operation*>& worklist) {
+  if (isa<GPhaseOp>(op)) {
+    return WalkResult::advance();
+  }
   const auto targets = op->getInputTargets();
   std::vector<Value> targetVecs = {targets.begin(), targets.end()};
 

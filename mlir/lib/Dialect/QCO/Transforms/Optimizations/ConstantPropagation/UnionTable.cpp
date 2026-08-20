@@ -139,7 +139,9 @@ void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
     replaceValuesGlobally(ctrlsQuantum, newCtrlsQuantum);
     return;
   }
-  if (valuesToEntries.at(targets[0])->top) {
+  // for GPhase, targets and quantum controls do not have to be filled
+  const auto participatingValue = !targets.empty() ? targets[0] : ctrlsQuantum[0];
+  if (valuesToEntries.at(participatingValue)->top) {
     replaceValuesGlobally(targets, newQuantumTargets);
     replaceValuesGlobally(ctrlsQuantum, newCtrlsQuantum);
     return;
@@ -154,7 +156,7 @@ void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
     ctrlQubitIndices.push_back(qubitsToGlobalIndices.at(q));
   }
 
-  const auto ute = valuesToEntries.at(*targets.begin());
+  const auto ute = valuesToEntries.at(participatingValue);
   for (auto hs : ute->states) {
     hs.propagateGate(gate, targetQubitIndices, ctrlQubitIndices,
                      posCtrlsClassical, negCtrlsClassical, params);

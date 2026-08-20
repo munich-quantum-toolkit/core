@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <iomanip>
 #include <ios>
+#include <iostream>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -205,10 +206,28 @@ void QuantumState::changeGlobalIndex(const unsigned int target,
   globalToLocalQubitNumber[newIndex] = localIndex;
 }
 
+void QuantumState::propagateGPhaseGate(const std::span<unsigned int> ctrls,
+                                       const double phase) {
+  unsigned int ctrlMask = 0;
+  for (unsigned int const ctrl : ctrls) {
+    ctrlMask |= 1U << globalToLocalQubitNumber.at(ctrl);
+  }
+
+  for (auto& [key, value] : amplitudeMap) {
+    if ((ctrlMask & key) != ctrlMask) {
+      value *= exp(Complex(0, phase));
+    }
+  }
+}
+
 void QuantumState::propagateGate(Operation* gate,
                                  const std::span<unsigned int> targets,
                                  const std::span<unsigned int> ctrls,
                                  const std::span<double> params) {
+  if (isa<GPhaseOp>(gate)) {
+    propagateGPhaseGate(ctrls, *params.begin());
+    return;
+  }
   const auto gateMapping = getQubitMappingOfGates(gate, params);
 
   unsigned int ctrlMask = 0;

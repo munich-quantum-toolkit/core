@@ -128,6 +128,68 @@ TEST_F(QCOConstantPropagationTest, testDontRemoveIfTargetInSuperposition) {
 }
 
 /**
+ * @brief Test: This test checks that an uncontrolled GPhase gate does not have
+ * an effect.
+ */
+TEST_F(QCOConstantPropagationTest, testApplyUncontrolledGPhase) {
+  auto q = programBuilder.allocQubitRegister(2);
+  const auto iAttr = programBuilder.getF64FloatAttr(1.0);
+  Value i0 =
+      arith::ConstantOp::create(programBuilder, programBuilder.getLoc(), iAttr);
+  q[0] = programBuilder.h(q[0]);
+  programBuilder.gphase(i0);
+  q[0] = programBuilder.h(q[0]);
+  programBuilder.cx(q[0], q[1]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(2);
+  const auto iAttrRef = referenceBuilder.getF64FloatAttr(1.0);
+  Value i0Ref = arith::ConstantOp::create(referenceBuilder,
+                                          referenceBuilder.getLoc(), iAttrRef);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  referenceBuilder.gphase(i0Ref);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks that a controlled GPhase gate has an effect.
+ */
+TEST_F(QCOConstantPropagationTest, testApplyControlledGPhase) {
+  auto q = programBuilder.allocQubitRegister(2);
+  const auto iAttr = programBuilder.getF64FloatAttr(1.0);
+  Value i0 =
+      arith::ConstantOp::create(programBuilder, programBuilder.getLoc(), iAttr);
+  q[0] = programBuilder.h(q[0]);
+  q[1] = programBuilder.h(q[1]);
+  q[0] = programBuilder.cgphase(i0, q[0]);
+  q[0] = programBuilder.h(q[0]);
+  programBuilder.cx(q[0], q[1]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(2);
+  const auto iAttrRef = referenceBuilder.getF64FloatAttr(1.0);
+  Value i0Ref = arith::ConstantOp::create(referenceBuilder,
+                                          referenceBuilder.getLoc(), iAttrRef);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[1] = referenceBuilder.h(qRef[1]);
+  qRef[0] = referenceBuilder.cgphase(i0Ref, qRef[0]);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  referenceBuilder.cx(qRef[0], qRef[1]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
  * @brief Test: This test checks that CNOTs are not changed if a reset is
  * between two Hadamards, i.e. the qubits are in a superposition after the
  * second Hadamard.
