@@ -12,9 +12,9 @@ Scope:
 Every repository citation below was read at the pinned baseline. All audit,
 prosecution, defence, and execution worktrees were clean before their role ran.
 Every mutation ran in a disposable detached worktree. The executor restored the
-baseline after each probe and finished with all 280 Algorithms tests passing.
-No production or test change survives. This file is the audit ledger only. It
-does not apply a verdict.
+baseline after each probe and finished with all 280 Algorithms tests passing. No
+production or test change survives. This file is the audit ledger only. It does
+not apply a verdict.
 
 ## Role registry
 
@@ -66,24 +66,25 @@ between circuit simulation and `makeGHZState`.
 diffusion, iteration-count, explicit-target, and seeded factories
 (`include/mqt-core/algorithms/Grover.hpp:25-36`). The semantic promise is
 amplification of one supplied target with a suitable iteration count near
-`pi*sqrt(N)/4`. PR #22 requested arbitrary-qubit generation and tests.
+`pi*sqrt(N)/4`. `PR #22` requested arbitrary-qubit generation and tests.
 
 **S5, rungs 1 to 3.** The QFT surface contains the ordinary and iterative
 factories (`include/mqt-core/algorithms/QFT.hpp:11-25`). The ordinary factory
 implements the normalized `2^L`-point quantum Fourier transform. The iterative
 factory is the measured semiclassical replacement immediately before
-measurement. PR #22 requested the dynamic form. The mathematical source is
+measurement. `PR #22` requested the dynamic form. The mathematical source is
 [Griffiths and Niu](https://arxiv.org/abs/quant-ph/9511007).
 
 **S6, rungs 1 and 2.** QPE estimates the eigenphase of a unitary eigenvalue
 `exp(2*pi*i*phi)`. The public surface contains ordinary and iterative factories
 for a generated instance or an explicit `lambda` and precision
-(`include/mqt-core/algorithms/QPE.hpp:11-34`). PR #8 and its cited paper define
-the requested ordinary, iterative, simulation, and transformation workflows:
+(`include/mqt-core/algorithms/QPE.hpp:11-34`). `PR #8` and its cited paper
+define the requested ordinary, iterative, simulation, and transformation
+workflows:
 [PR #8](https://github.com/munich-quantum-toolkit/core/pull/8),
 [Handling non-unitary quantum operations](https://arxiv.org/abs/2106.01099).
 
-**S7, rung 3, reported defect.** PR #22 states that QPE must construct above
+**S7, rung 3, reported defect.** `PR #22` states that QPE must construct above
 the historical 32-qubit failure boundary. It does not promise an exact upper
 bound or register layout.
 
@@ -100,18 +101,19 @@ promises one random distribution, operation sequence, or exact realized depth.
 **S10, rungs 1 and 2.** `createStatePreparationCircuit` prepares the supplied
 normalized complex state
 (`include/mqt-core/algorithms/StatePreparation.hpp:23-46`). The changelog
-publishes the feature (`CHANGELOG.md:689-700`). PR #543 records a defect in the
-global phase of the simulated prepared state, so component-wise complex output
-checks are regression anchors rather than excess phase constraints.
+publishes the feature (`CHANGELOG.md:689-700`). `PR #543` records a defect in
+the global phase of the simulated prepared state, so component-wise complex
+output checks are regression anchors rather than excess phase constraints.
 
 **S11, rung 1.** State preparation requires a normalized vector whose length is
 a power of two. It throws `invalid_argument` when either condition is false
 (`include/mqt-core/algorithms/StatePreparation.hpp:37-45`).
 
 **S12, rungs 1 to 3.** `createWState` constructs a W-state circuit
-(`include/mqt-core/algorithms/WState.hpp:11-22`). The promised state is the equal
-superposition of all one-excitation basis states, up to global phase. PR #445
-requested an exact cross-check between circuit simulation and `makeWState`.
+(`include/mqt-core/algorithms/WState.hpp:11-22`). The promised state is the
+equal superposition of all one-excitation basis states, up to global phase.
+`PR #445` requested an exact cross-check between circuit simulation and
+`makeWState`.
 
 **S13, rung 2.** The current public Algorithms API uses factory functions. The
 factory shape is published. No source promises identity with a removed class
@@ -119,9 +121,9 @@ hierarchy, internal decomposition, or permanence through MQT Core v4.
 
 **S14, rung 3.** An explicit seed initializes a local generator for each BV,
 Grover, QPE, and random-Clifford call. Other factory calls cannot perturb the
-result through hidden `QuantumComputation` RNG state
-(`UPGRADING.md:175-179`). Issue #2100 and PR #2111 require reproducibility and
-seed-separation coverage:
+result through hidden `QuantumComputation` RNG state (`UPGRADING.md:175-179`).
+`Issue #2100` and `PR #2111` require reproducibility and seed-separation
+coverage:
 [issue #2100](https://github.com/munich-quantum-toolkit/core/issues/2100),
 [PR #2111](https://github.com/munich-quantum-toolkit/core/pull/2111).
 
@@ -147,20 +149,18 @@ No rung 1 to 3 source promises:
 
 ## GitHub drift and ecosystem overlap
 
-The audit refreshed open issues, open pull requests, and downstream consumers
-on 2026-08-20. The repository had 47 open issues and 27 open pull requests.
+The audit refreshed open issues, open pull requests, and downstream consumers on
+2026-08-20. The repository had 47 open issues and 27 open pull requests.
 
-- Open issue
-  [#2095](https://github.com/munich-quantum-toolkit/core/issues/2095) proposes
-  reducing or removing `MQT::CoreAlgorithms`. Its acceptance criteria require a
-  consumer census before deletion. This audit therefore treats target removal
-  as a migration question, not a test-cleanup consequence.
+- Open issue [#2095](https://github.com/munich-quantum-toolkit/core/issues/2095)
+  proposes reducing or removing `MQT::CoreAlgorithms`. Its acceptance criteria
+  require a consumer census before deletion. This audit therefore treats target
+  removal as a migration question, not a test-cleanup consequence.
 - No open pull request touched an audited Algorithms header, implementation, or
   test file at the snapshot.
-- Open issue
-  [#1115](https://github.com/munich-quantum-toolkit/core/issues/1115) and open
-  PR [#2135](https://github.com/munich-quantum-toolkit/core/pull/2135) overlap
-  only through MLIR QFT and QPE examples or benchmarks.
+- Open issue [#1115](https://github.com/munich-quantum-toolkit/core/issues/1115)
+  and open PR [#2135](https://github.com/munich-quantum-toolkit/core/pull/2135)
+  overlap only through MLIR QFT and QPE examples or benchmarks.
 - QCEC, DDSIM, QUSAT, and `ystade/eval-qir-backend` consume Algorithms
   factories. QCEC also parses the Bernstein--Vazirani circuit-name suffix.
   Name-independent Core tests therefore do not yet unlock removal of the
@@ -171,26 +171,26 @@ on 2026-08-20. The repository had 47 open issues and 27 open pull requests.
 On 2026-08-20, the maintainer accepted the recommended resolution slate. The
 maintainer confirmed that QCEC permits observable-result equivalence for the
 dynamic algorithm tests. The resolution must preserve all 35 anchors, add the
-identified replacement coverage before removing accidental substitutes, and
-keep target removal and the CircuitOptimizer assertions deferred. The audit and
+identified replacement coverage before removing accidental substitutes, and keep
+target removal and the CircuitOptimizer assertions deferred. The audit and
 accepted remedies will share one pull request with separate commits.
 
 ## Assertion census
 
 The audited target contains exactly 88 lexical GoogleTest assertion sites:
 
-| File | Sites |
-|---|---:|
-| `eval_dynamic_circuits.cpp` | 4 |
-| `test_bernsteinvazirani.cpp` | 5 |
-| `test_entanglement.cpp` | 4 |
-| `test_grover.cpp` | 9 |
-| `test_qft.cpp` | 35 |
-| `test_qpe.cpp` | 14 |
-| `test_random_clifford.cpp` | 2 |
-| `test_randomized_algorithms.cpp` | 8 |
-| `test_statepreparation.cpp` | 6 |
-| `test_wstate.cpp` | 1 |
+| File                             | Sites |
+| -------------------------------- | ----: |
+| `eval_dynamic_circuits.cpp`      |     4 |
+| `test_bernsteinvazirani.cpp`     |     5 |
+| `test_entanglement.cpp`          |     4 |
+| `test_grover.cpp`                |     9 |
+| `test_qft.cpp`                   |    35 |
+| `test_qpe.cpp`                   |    14 |
+| `test_random_clifford.cpp`       |     2 |
+| `test_randomized_algorithms.cpp` |     8 |
+| `test_statepreparation.cpp`      |     6 |
+| `test_wstate.cpp`                |     1 |
 
 Stable IDs combine the family prefix with the pinned-baseline source line. The
 complete one-to-one ID mapping appears in the summary.
@@ -221,29 +221,28 @@ Thus `35 + 31 + 20 + 2 = 88`.
 
 The exact one-to-one mapping is:
 
-- Anchored: `EDC-188`, `EDC-361`; `GHZ-56`, `GHZ-57`, `GHZ-64`; `G-38`,
-  `G-121`, `G-175`; `QFT-112`, `QFT-122`, `QFT-164`, `QFT-190`, `QFT-214`,
-  `QFT-220`, `QFT-245`; `QPE-155`, `QPE-167`, `QPE-168`, `QPE-199`,
-  `QPE-200`, `QPE-205`, `QPE-211`, `QPE-212`; `RNG-24`, `RNG-26`, `RNG-28`,
-  `RNG-29`, `RNG-30`, `RNG-32`, `RNG-44`; `SP-82`, `SP-83`, `SP-91`,
-  `SP-101`; and `W-57`.
+- Anchored: `EDC-188`, `EDC-361`; `GHZ-56`, `GHZ-57`, `GHZ-64`; `G-38`, `G-121`,
+  `G-175`; `QFT-112`, `QFT-122`, `QFT-164`, `QFT-190`, `QFT-214`, `QFT-220`,
+  `QFT-245`; `QPE-155`, `QPE-167`, `QPE-168`, `QPE-199`, `QPE-200`, `QPE-205`,
+  `QPE-211`, `QPE-212`; `RNG-24`, `RNG-26`, `RNG-28`, `RNG-29`, `RNG-30`,
+  `RNG-32`, `RNG-44`; `SP-82`, `SP-83`, `SP-91`, `SP-101`; and `W-57`.
 - Redundant: `QFT-85`, `QFT-88`, `QFT-99`, `QFT-106`, `QFT-113`, `QFT-115`,
-  `QFT-116`, `QFT-127`, `QFT-130`, `QFT-133`, `QFT-141`, `QFT-148`,
-  `QFT-154`, `QFT-155`, `QFT-157`, `QFT-158`, `QFT-169`, `QFT-172`,
-  `QFT-178`, `QFT-184`, `QFT-185`, `QFT-194`, `QFT-205`, `QFT-208`,
-  `QFT-212`; `QPE-141`, `QPE-144`; `RC-54`, `RC-64`; `SP-75`; and `SP-78`.
+  `QFT-116`, `QFT-127`, `QFT-130`, `QFT-133`, `QFT-141`, `QFT-148`, `QFT-154`,
+  `QFT-155`, `QFT-157`, `QFT-158`, `QFT-169`, `QFT-172`, `QFT-178`, `QFT-184`,
+  `QFT-185`, `QFT-194`, `QFT-205`, `QFT-208`, `QFT-212`; `QPE-141`, `QPE-144`;
+  `RC-54`, `RC-64`; `SP-75`; and `SP-78`.
 - Over-specified: `EDC-478`, `EDC-591`; `BV-66`, `BV-84`, `BV-99`, `BV-114`,
   `BV-149`; `G-118`, `G-119`, `G-172`, `G-173`, `G-183`, `G-188`; `QFT-91`,
   `QFT-200`; `QPE-140`, `QPE-175`, `QPE-247`, `QPE-277`; and `RNG-45`.
 - Contract-free: `GHZ-54` and `QFT-249`.
 
-The mapping counts a loop assertion once. It also counts `G-38` once even
-though the fixture runs it after three test templates.
+The mapping counts a loop assertion once. It also counts `G-38` once even though
+the fixture runs it after three test templates.
 
-The highest-value work is not wholesale deletion. It is to replace
-self-derived name oracles, collapse duplicate QFT matrix traversals, remove
-no-throw wrappers, narrow whole-state dynamic comparisons to observable
-semantics, and move DD resource checks to the package that owns the resource.
+The highest-value work is not wholesale deletion. It is to replace self-derived
+name oracles, collapse duplicate QFT matrix traversals, remove no-throw
+wrappers, narrow whole-state dynamic comparisons to observable semantics, and
+move DD resource checks to the package that owns the resource.
 
 ## Verdicts and remedies
 
@@ -251,8 +250,8 @@ semantics, and move DD resource checks to the package that owns the resource.
 
 The four sampled BV tests (`BV-66`, `BV-84`, `BV-99`, and `BV-114`) derive the
 expected hidden string from `QuantumComputation::getName()`. `EDC-478` also
-derives its hidden value from the generated name. The Grover fixture derives
-its target from the generated name before `G-118`, `G-119`, `G-121`, `G-172`,
+derives its hidden value from the generated name. The Grover fixture derives its
+target from the generated name before `G-118`, `G-119`, `G-121`, `G-172`,
 `G-173`, `G-175`, `G-183`, and `G-188` run.
 
 The name is not in S2 or S4. A metadata-only prefix change failed the old tests
@@ -283,10 +282,10 @@ iterative-only global phase passed the QPE dynamic checks, which confirms that
 the existing pair is inconsistent about which excess state details it pins.
 
 Remedy: compare decoded, observable distributions or deterministic classical
-results. Normalize only conventions that are explicitly supported. Retain
-small independent semantic tests for the ordinary and iterative factory, and
-retain separate transformation-owner tests for reset elimination and
-measurement deferral.
+results. Normalize only conventions that are explicitly supported. Retain small
+independent semantic tests for the ordinary and iterative factory, and retain
+separate transformation-owner tests for reset elimination and measurement
+deferral.
 
 ### 3. QFT tests mix semantics with exact DD representation
 
@@ -297,8 +296,8 @@ four paths. The full passing run executes 374,652 QFT assertions.
 
 Exact node counts (`QFT-91`, `QFT-133`), exact real-table counts (`QFT-99`,
 `QFT-141`), and root weights (`QFT-106`, `QFT-148`, `QFT-184`, `QFT-185`) expose
-the current canonical DD representation. They are not QFT surface promises.
-The first row and column are mathematical QFT values, but duplicating both
+the current canonical DD representation. They are not QFT surface promises. The
+first row and column are mathematical QFT values, but duplicating both
 components through sequential and recursive construction adds little fault
 separation. Appending or prepending one phase gate made each imaginary check
 fail together with its corresponding real check. A deleted controlled phase or
@@ -315,9 +314,9 @@ the exponential duplicate work while improving mutation sensitivity.
 ### 4. Some cleanup checks protect resources; others inspect the wrong owner
 
 `QFT-122`, `QFT-164`, and `QFT-220` detect unreleased matrix roots or recursive
-intermediates after explicit owner release. `G-38` detects the historical
-Grover real-table lifetime and immortalization defects on the functionality
-paths. PR #1020 records both classes of defect. These checks are safety anchors.
+intermediates after explicit owner release. `G-38` detects the historical Grover
+real-table lifetime and immortalization defects on the functionality paths.
+`PR #1020` records both classes of defect. These checks are safety anchors.
 
 The same lexical `G-38` runs after Grover simulation even though `dd::sample`
 owns a separate internal package. `QFT-249` also inspects an untouched fixture
@@ -340,8 +339,8 @@ factory, DD-builder, and simulator throws still failed the tests as uncaught
 exceptions.
 
 Remedy: keep every call and remove only `ASSERT_NO_THROW`. Keep all 16 random
-Clifford simulation repetitions. The audit found no evidence that reducing
-those repetitions preserves the randomized stress coverage.
+Clifford simulation repetitions. The audit found no evidence that reducing those
+repetitions preserves the randomized stress coverage.
 
 ### 6. Grover component checks pin phase beyond the probability contract
 
@@ -349,20 +348,20 @@ those repetitions preserves the randomized stress coverage.
 the target amplitude. S4 promises amplification, not a global phase. Removing
 the four component checks while keeping `G-121` and `G-175` passed all 50
 focused cases and all 280 target cases. Removing diffusion then failed all 50
-focused cases through the retained probability checks. The component checks
-are over-specified, not merely duplicate, because a legal circuit-wide phase
-makes them fail while the probability checks pass.
+focused cases through the retained probability checks. The component checks are
+over-specified, not merely duplicate, because a legal circuit-wide phase makes
+them fail while the probability checks pass.
 
 Remedy: keep a phase-insensitive target-probability check for sequential and
-recursive construction. Use an explicit target. Remove the component checks.
-For sampling, merge `G-183` into a safe lookup used by `G-188`; presence is not
-a second semantic requirement.
+recursive construction. Use an explicit target. Remove the component checks. For
+sampling, merge `G-183` into a safe lookup used by `G-188`; presence is not a
+second semantic requirement.
 
 ### 7. Fixed different-seed inequality is stronger than seed separation
 
 `RNG-45` requires seeds 23 and 24 to yield different BV circuits. S14 requires
-local deterministic RNG state and meaningful seed sensitivity. It does not
-make the seed-to-circuit map injective. A collision-tolerant replacement that
+local deterministic RNG state and meaningful seed sensitivity. It does not make
+the seed-to-circuit map injective. A collision-tolerant replacement that
 requires at least two distinct results across a small seed set passed. A fault
 that ignored the seed failed that replacement.
 
@@ -379,7 +378,7 @@ or random-engine sequence.
 `GHZ-54` requires exactly `nq` operations. S3 does not promise a decomposition
 or topology. A global `-1` phase implemented with extra gates preserved the GHZ
 state and invalidated the exact count. The exact endpoint checks and the direct
-DD equality are explicit PR #445 requirements. `GHZ-56`, `GHZ-57`, and
+DD equality are explicit `PR #445` requirements. `GHZ-56`, `GHZ-57`, and
 `GHZ-64` therefore remain anchors.
 
 Remedy: remove the exact operation count. If large-width construction needs a
@@ -399,15 +398,15 @@ one layout.
 
 ### 10. Reported defects and contract checks must remain
 
-The exact and inexact dynamic-QPE construction paths `EDC-188` and `EDC-361`
-are regression anchors, subject to replacing inferred `lambda` metadata with an
+The exact and inexact dynamic-QPE construction paths `EDC-188` and `EDC-361` are
+regression anchors, subject to replacing inferred `lambda` metadata with an
 explicit input. Historical 32-bit shifts fail the exact setup at precisions 36,
-41, and 61. The current inexact test does not detect PR #417's loop defect, so
+41, and 61. The current inexact test does not detect `PR #417`'s loop defect, so
 S8 needs a new direct generated-inexact regression.
 
-`QPE-155`, `QPE-167`, `QPE-168`, `QPE-199`, `QPE-200`, `QPE-205`, `QPE-211`,
-and `QPE-212` kill historical phase, inverse-QFT, feedback, or endianness faults.
-`SP-82` and `SP-83` kill PR #543's state-preparation global-phase defect;
+`QPE-155`, `QPE-167`, `QPE-168`, `QPE-199`, `QPE-200`, `QPE-205`, `QPE-211`, and
+`QPE-212` kill historical phase, inverse-QFT, feedback, or endianness faults.
+`SP-82` and `SP-83` kill `PR #543`'s state-preparation global-phase defect;
 fidelity alone did not. `SP-91` and `SP-101` each failed when its matching
 validation was bypassed. `W-57` protects support across all one-excitation
 outcomes. The seeded RNG checks protect S14.
@@ -429,8 +428,8 @@ The baseline result was 280 of 280 passing. Each probe used the matching
 GoogleTest filter. The executor restored and verified the pinned baseline after
 every probe. The principal probe families were:
 
-- T1 deletion or narrowing of one challenged assertion, followed by the
-  focused and full target tests;
+- T1 deletion or narrowing of one challenged assertion, followed by the focused
+  and full target tests;
 - T2 a semantics-preserving alternative that should fail only an excess oracle;
 - T2 a real fault that the replacement must kill;
 - T3 survivor comparison across small fault families where one mutation could
@@ -442,12 +441,13 @@ Executed results:
 - name-independent BV and Grover remedies passed; metadata-only renames passed;
   parity and diffusion faults failed the replacements;
 - a GHZ global phase passed a fidelity probe, while a missing entangler failed;
-  exact PR #445 checks were retained despite that narrower mathematical result;
+  exact `PR #445` checks were retained despite that narrower mathematical
+  result;
 - phase-insensitive Grover probability checks killed a missing diffusion;
 - a collision-tolerant seed check killed a seed-ignore fault;
-- the QFT matrix fault family included `H` to `X`, deleted and negated controlled
-  phases, missing output reversal, root phase, sequential-only, recursive-only,
-  iterative-only, and resource-owner faults;
+- the QFT matrix fault family included `H` to `X`, deleted and negated
+  controlled phases, missing output reversal, root phase, sequential-only,
+  recursive-only, iterative-only, and resource-owner faults;
 - QPE probes included idle ancillas, historical inverse-QFT and feedback faults,
   global phase, pre-measurement diagonal phase, historical 32-bit shifts, and
   the historical random-inexact loop condition;
@@ -467,37 +467,37 @@ worktree diffs, no untracked files, and 280 of 280 baseline tests passing.
 ## Provenance
 
 [Commit `64b590b0`](https://github.com/munich-quantum-toolkit/core/commit/64b590b0)
-from PR #8 co-introduced QPE, iterative QPE, the dynamic transformations, and
+from `PR #8` co-introduced QPE, iterative QPE, the dynamic transformations, and
 the original QPE assertions. The assertions did not first exist as a failing
 test revision. Later test-only changes altered output indexing and shot count.
 
 [Commit `8f13b506`](https://github.com/munich-quantum-toolkit/core/commit/8f13b506)
-from PR #22 co-introduced or rewrote the dynamic BV and QFT tests, the sampled
+from `PR #22` co-introduced or rewrote the dynamic BV and QFT tests, the sampled
 BV oracles, and the above-32 QPE fix. The exact-QPE dynamic range reaches 61 and
 therefore covers that defect indirectly. The inexact generated-factory defect
-fixed by PR #417 received no focused assertion.
+fixed by `PR #417` received no focused assertion.
 
 The original GHZ operation and endpoint assertions arrived with the GHZ
-implementation. PR #445 later added exact circuit-simulation versus direct-DD
-equality after a maintainer requested that expression. The same request added
-an exact W-state cross-check, but a later state-generation refactor removed the
-W cross-check and left only sampled support coverage.
+implementation. `PR #445` later added exact circuit-simulation versus direct-DD
+equality after a maintainer requested that expression. The same request added an
+exact W-state cross-check, but a later state-generation refactor removed the W
+cross-check and left only sampled support coverage.
 
 The Grover amplitude and probability checks arrived with Grover production.
 Their paths and tolerances changed with later DD migrations. The cleanup check
 predates mark-and-sweep, was disabled for a numerical garbage-collection defect,
-and was restored and changed again with DD fixes. PR #1020 introduced its
+and was restored and changed again with DD fixes. `PR #1020` introduced its
 current immortal-value form while fixing real lifetime and collection defects.
 
-The QFT matrix-shape assertions arrived with the implementation and changed
-with DD representation migrations. Exact table counts, root access, and cleanup
+The QFT matrix-shape assertions arrived with the implementation and changed with
+DD representation migrations. Exact table counts, root access, and cleanup
 counts followed DD API and garbage-collection changes. This co-evolution is
 strong provenance evidence that the representation checks belong to the DD
 owner, even where they happen to kill an Algorithms mutation.
 
-PR #543 introduced state-preparation output-component checks and then fixed a
+`PR #543` introduced state-preparation output-component checks and then fixed a
 simulation-global-phase defect that those checks exposed. Replacing them with
-fidelity would erase that regression. PR #2111 introduced the RNG-locality
+fidelity would erase that regression. `PR #2111` introduced the RNG-locality
 tests and `RNG-45` together with the local-generator implementation. That commit
 records Codex assistance. No other relevant introducing or semantic-change
 commit found by the provenance roles records AI-assistance trailers.
@@ -508,7 +508,7 @@ commit found by the provenance roles records AI-assistance trailers.
    construction check that confirms the generated phase is genuinely inexact
    without freezing its exact value or circuit.
 2. S12 has support coverage but no equal-amplitude or relative-phase oracle.
-   Restore the PR #445 circuit-versus-`makeWState` cross-check, or use an
+   Restore the `PR #445` circuit-versus-`makeWState` cross-check, or use an
    equivalent state-semantic oracle.
 3. The retained QFT row, column, and `|0>` checks do not detect controlled-phase
    or output-order faults. Replace duplicate exponential slices with one small
@@ -520,9 +520,9 @@ commit found by the provenance roles records AI-assistance trailers.
 
 ## Unlock and architecture analysis
 
-The audit does not justify removing `MQT::CoreAlgorithms` today. Issue #2095
-already owns that migration, and active consumers still exist. Test cleanup
-does unlock smaller steps:
+The audit does not justify removing `MQT::CoreAlgorithms` today. `Issue #2095`
+already owns that migration, and active consumers still exist. Test cleanup does
+unlock smaller steps:
 
 - explicit input oracles decouple tests from circuit-name metadata;
 - a small semantic QFT oracle can replace hundreds of thousands of duplicate
@@ -536,7 +536,7 @@ does unlock smaller steps:
   without reducing fault sensitivity.
 
 Production name removal remains blocked by QCEC's direct parser. Target removal
-remains blocked by the wider consumer migration required by issue #2095. No
+remains blocked by the wider consumer migration required by `issue #2095`. No
 production deletion should be bundled with a test-resolution pull request.
 
 ## Red-team revisions and residual risks
