@@ -37,6 +37,7 @@ protected:
   HOp hOp;
   XOp xOp;
   SWAPOp swapOp;
+  GPhaseOp gPhaseOp;
 
   mlir::Value v0;
   mlir::Value v1;
@@ -81,6 +82,7 @@ protected:
                       q[0]);
     xOp = XOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
                       q[0]);
+    gPhaseOp = GPhaseOp::create(programBuilder, programBuilder.getLoc(), 1.0);
     swapOp = SWAPOp::create(programBuilder, programBuilder.getLoc(),
                             {q[0].getType(), q[1].getType()}, {q[0], q[1]});
 
@@ -184,6 +186,20 @@ TEST_F(UnionTableTest, ApplyClassicalControlledGateThatsTrue) {
               testing::HasSubstr(
                   "Qubits: 31, HybridStates: {{|01> "
                   "-> 0.71, |10> -> 0.71}: integerValue0 = 1; p = 1.00;}"));
+}
+
+TEST_F(UnionTableTest, ApplyClassicalControlledGPhase) {
+  std::vector classicalControl0 = {i0};
+  std::vector classicalControl1 = {i1};
+  ut.propagateIntAlloc(i0, 1);
+  ut.propagateIntAlloc(i1, 0);
+  ut.propagateGate(hOp, q1, q5);
+  ut.propagateGate(gPhaseOp, {}, {}, {}, {}, classicalControl0);
+  ut.propagateGate(gPhaseOp, {}, {}, {}, {}, {}, classicalControl1);
+
+  EXPECT_THAT(ut.toString(),
+              testing::HasSubstr("Qubits: 1, HybridStates: {{|0> "
+                                 "-> 0.71, |1> -> 0.71}"));
 }
 
 TEST_F(UnionTableTest, ApplyNegClassicalControlledGateThatsTrue) {
