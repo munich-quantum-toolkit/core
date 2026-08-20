@@ -121,6 +121,11 @@ void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
                                const std::span<Value> posCtrlsClassical,
                                const std::span<Value> negCtrlsClassical,
                                const std::span<Value> params) {
+  // a global phase gate could only depend on classical control, but in this
+  // case only a global phase is added
+  if (targets.empty() && ctrlsQuantum.empty()) {
+    return;
+  }
   const std::set<UnionTableEntry> participatingEntries =
       collectParticipatingEntries(targets, ctrlsQuantum, posCtrlsClassical,
                                   negCtrlsClassical, params);
@@ -139,7 +144,7 @@ void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
     replaceValuesGlobally(ctrlsQuantum, newCtrlsQuantum);
     return;
   }
-  // for GPhase, targets and quantum controls do not have to be filled
+  // for GPhase, targets are not filled
   const auto participatingValue =
       !targets.empty() ? targets[0] : ctrlsQuantum[0];
   if (valuesToEntries.at(participatingValue)->top) {
