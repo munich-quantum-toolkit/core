@@ -13,7 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Support/ConstantFolding.h"
+#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
@@ -1275,7 +1275,7 @@ matchControlledTarget(UnitaryOpInterface inner) {
                               .theta = std::nullopt};
   }
   if (auto pOp = dyn_cast<POp>(inner.getOperation())) {
-    if (const auto theta = mlir::valueToDouble(pOp.getTheta())) {
+    if (const auto theta = mlir::mqt::valueToDouble(pOp.getTheta())) {
       return ControlledGateSpec{.gate = ControlledTarget::Phase,
                                 .theta = theta};
     }

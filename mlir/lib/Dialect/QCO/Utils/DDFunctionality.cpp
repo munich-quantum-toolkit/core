@@ -28,7 +28,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Support/ConstantFolding.h"
+#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
@@ -200,7 +200,7 @@ decodeStandardGate(UnitaryOpInterface unitary) {
 
   DecodedGate decoded{.type = type, .params = {}};
   for (Value param : unitary.getParameters()) {
-    decoded.params.push_back(static_cast<dd::fp>(*mlir::valueToDouble(param)));
+    decoded.params.push_back(static_cast<dd::fp>(*mlir::mqt::valueToDouble(param)));
   }
   return std::optional{std::move(decoded)};
 }
@@ -262,7 +262,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
            << "unitary must have a compile-time constant matrix";
   }
   if (auto gphase = dyn_cast<GPhaseOp>(op)) {
-    const auto theta = *mlir::valueToDouble(gphase.getTheta());
+    const auto theta = *mlir::mqt::valueToDouble(gphase.getTheta());
     auto id = dd::Package::makeIdent();
     id.w = walk.dd->cn.lookup(std::cos(theta), std::sin(theta));
     state = walk.dd->applyOperation(id, state);

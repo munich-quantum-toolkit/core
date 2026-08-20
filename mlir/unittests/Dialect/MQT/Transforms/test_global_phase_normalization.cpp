@@ -72,7 +72,7 @@ protected:
 
   static void expectFoldableGlobalPhase(Value angle,
                                         const double expectedAngle) {
-    const auto value = mlir::valueToConstantDouble(angle);
+    const auto value = mlir::mqt::valueToConstantDouble(angle);
     ASSERT_TRUE(value.has_value());
     EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*value));
     EXPECT_NEAR(mlir::mqt::normalizeAngle(*value - expectedAngle), 0.0,

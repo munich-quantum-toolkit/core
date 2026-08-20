@@ -13,7 +13,7 @@
 #include "mlir/Dialect/MQT/Utils/Math.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Support/ConstantFolding.h"
+#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -85,8 +85,8 @@ static bool valuesMatchWithinTolerance(Value lhs, Value rhs) {
   if (lhs == rhs) {
     return true;
   }
-  const auto lhsVal = mlir::valueToDouble(lhs);
-  const auto rhsVal = mlir::valueToDouble(rhs);
+  const auto lhsVal = mlir::mqt::valueToDouble(lhs);
+  const auto rhsVal = mlir::mqt::valueToDouble(rhs);
   return lhsVal && rhsVal && std::abs(*lhsVal - *rhsVal) <= mqt::TOLERANCE;
 }
 

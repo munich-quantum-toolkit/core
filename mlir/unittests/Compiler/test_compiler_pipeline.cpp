@@ -129,14 +129,14 @@ protected:
 
   [[nodiscard]] OwningOpRef<ModuleOp>
   buildQCReference(const QCProgramBuilderFn builder) const {
-    auto module = mqt::test::buildMLIRProgram(context.get(), builder);
+    auto module = ::mqt::test::buildMLIRProgram(context.get(), builder);
     EXPECT_TRUE(runQCCleanupPipeline(module.get()).succeeded());
     return module;
   }
 
   [[nodiscard]] OwningOpRef<ModuleOp>
   buildQIRReference(const QIRProgramBuilderFn builder) const {
-    auto module = mqt::test::buildMLIRProgram(
+    auto module = ::mqt::test::buildMLIRProgram(
         context.get(), builder, QIRProgramBuilder::Profile::Adaptive);
     EXPECT_TRUE(runQIRCleanupPipeline(module.get(), true).succeeded());
     return module;
@@ -212,7 +212,7 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
 
   ASSERT_TRUE(testCase.qcProgramBuilder);
   auto module =
-      mqt::test::buildMLIRProgram(context.get(), testCase.qcProgramBuilder);
+      ::mqt::test::buildMLIRProgram(context.get(), testCase.qcProgramBuilder);
   ASSERT_TRUE(module);
   printer.record(module.get(), "QC Input" + name);
   EXPECT_TRUE(verify(*module).succeeded());
@@ -1086,7 +1086,7 @@ cx q[0], q[2];
   EXPECT_NE(qco.str(), beforeFusion);
   EXPECT_TRUE(qco.runPassPipeline("mqt-qco-default", true, true));
 
-  auto loopModule = mqt::test::buildMLIRProgram(
+  auto loopModule = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(qco::simpleForLoop));
   ASSERT_TRUE(loopModule);
   std::string loopIR;
@@ -1271,7 +1271,7 @@ TEST_F(CompilerPipelineTest, QCOProgramQubitReuseAPIs) {
     return StringRef(ir).count("qco.alloc");
   };
   const auto buildQCO = [this](const QCProgramBuilderFn& builder) {
-    auto module = mqt::test::buildMLIRProgram(context.get(), builder);
+    auto module = ::mqt::test::buildMLIRProgram(context.get(), builder);
     std::string source;
     llvm::raw_string_ostream stream(source);
     module->print(stream);

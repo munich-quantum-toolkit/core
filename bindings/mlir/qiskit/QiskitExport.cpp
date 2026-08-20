@@ -23,7 +23,7 @@
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
-#include "mlir/Support/ConstantFolding.h"
+#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
@@ -118,7 +118,7 @@ using ExportedParameters = llvm::DenseMap<mlir::Value, Parameter>;
   if (++nodes > MAX_PARAMETER_EXPRESSION_NODES) {
     throwExportedParameterExpressionSizeError();
   }
-  if (const auto number = mlir::valueToDouble(value)) {
+  if (const auto number = mlir::mqt::valueToDouble(value)) {
     auto result = numberParameter(*number);
     parameters.try_emplace(value, result);
     return result;

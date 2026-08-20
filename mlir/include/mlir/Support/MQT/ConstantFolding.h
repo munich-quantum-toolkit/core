@@ -26,7 +26,7 @@
 
 #include <optional>
 
-namespace mlir {
+namespace mlir::mqt {
 
 /// Convert a floating-point or integer attribute to a double.
 [[nodiscard]] inline std::optional<double> attributeToDouble(Attribute attr) {
@@ -113,4 +113,4 @@ valueToConstantAttr(Value value,
   return std::nullopt;
 }
 
-} // namespace mlir
+} // namespace mlir::mqt

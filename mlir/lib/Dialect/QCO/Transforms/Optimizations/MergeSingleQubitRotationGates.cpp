@@ -15,7 +15,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
-#include "mlir/Support/ConstantFolding.h"
+#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -372,7 +372,7 @@ static std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
                                        Location loc) {
   Value p = op.getParameter(i);
   if constexpr (std::is_same_v<T, double>) {
-    const auto folded = mlir::valueToConstantDouble(p);
+    const auto folded = mlir::mqt::valueToConstantDouble(p);
     if (!folded) {
       return std::nullopt;
     }

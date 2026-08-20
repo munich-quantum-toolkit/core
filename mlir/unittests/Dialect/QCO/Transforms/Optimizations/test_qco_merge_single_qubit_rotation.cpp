@@ -15,7 +15,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Support/ConstantFolding.h"
+#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
@@ -1004,10 +1004,10 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   ASSERT_TRUE(gOp);
 
   // Still SSA in the angles / gphase before binding concrete values.
-  EXPECT_FALSE(mlir::valueToConstantDouble(uOp.getPhi()).has_value());
+  EXPECT_FALSE(mlir::mqt::valueToConstantDouble(uOp.getPhi()).has_value());
   EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(0)));
   EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(1)));
-  EXPECT_FALSE(mlir::valueToConstantDouble(gOp.getParameter(0)).has_value());
+  EXPECT_FALSE(mlir::mqt::valueToConstantDouble(gOp.getParameter(0)).has_value());
   EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(0)));
   EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(1)));
 
@@ -1021,10 +1021,10 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   // Bind controlled values and check the folded RZ(a);RZ(b) formulas:
   //   U(0, wrap(a+b), 0), gphase = normalize(-(phi+lambda)/2).
   bindLeadingArgs(funcOp, {angleA, angleB});
-  const auto theta = mlir::valueToConstantDouble(uOp.getTheta());
-  const auto phi = mlir::valueToConstantDouble(uOp.getPhi());
-  const auto lambda = mlir::valueToConstantDouble(uOp.getLambda());
-  const auto phase = mlir::valueToConstantDouble(gOp.getParameter(0));
+  const auto theta = mlir::mqt::valueToConstantDouble(uOp.getTheta());
+  const auto phi = mlir::mqt::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = mlir::mqt::valueToConstantDouble(uOp.getLambda());
+  const auto phase = mlir::mqt::valueToConstantDouble(gOp.getParameter(0));
   ASSERT_TRUE(theta.has_value());
   ASSERT_TRUE(phi.has_value());
   ASSERT_TRUE(lambda.has_value());
@@ -1071,15 +1071,15 @@ TEST_F(MergeSingleQubitRotationGatesTest,
               valueDependsOn(uOp.getLambda(), funcOp.getArgument(0)));
 
   bindLeadingArgs(funcOp, {angle});
-  const auto theta = mlir::valueToConstantDouble(uOp.getTheta());
-  const auto phi = mlir::valueToConstantDouble(uOp.getPhi());
-  const auto lambda = mlir::valueToConstantDouble(uOp.getLambda());
+  const auto theta = mlir::mqt::valueToConstantDouble(uOp.getTheta());
+  const auto phi = mlir::mqt::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = mlir::mqt::valueToConstantDouble(uOp.getLambda());
   ASSERT_TRUE(theta.has_value());
   ASSERT_TRUE(phi.has_value());
   ASSERT_TRUE(lambda.has_value());
   double globalPhase = 0.0;
   module->walk([&](GPhaseOp op) {
-    const auto phase = mlir::valueToConstantDouble(op.getParameter(0));
+    const auto phase = mlir::mqt::valueToConstantDouble(op.getParameter(0));
     ASSERT_TRUE(phase.has_value());
     globalPhase += *phase;
   });
@@ -1145,10 +1145,10 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   // P(a);P(b) → U(0, wrap(a+b), 0) with inputPhase (a+b)/2 cancelling the U
   // intrinsic phase, so gphase folds to ~0 under controlled values.
   bindLeadingArgs(funcOp, {angleA, angleB});
-  const auto theta = mlir::valueToConstantDouble(uOp.getTheta());
-  const auto phi = mlir::valueToConstantDouble(uOp.getPhi());
-  const auto lambda = mlir::valueToConstantDouble(uOp.getLambda());
-  const auto phase = mlir::valueToConstantDouble(gOp.getParameter(0));
+  const auto theta = mlir::mqt::valueToConstantDouble(uOp.getTheta());
+  const auto phi = mlir::mqt::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = mlir::mqt::valueToConstantDouble(uOp.getLambda());
+  const auto phase = mlir::mqt::valueToConstantDouble(gOp.getParameter(0));
   ASSERT_TRUE(theta.has_value());
   ASSERT_TRUE(phi.has_value());
   ASSERT_TRUE(lambda.has_value());

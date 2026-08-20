@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "mlir/Support/ConstantFolding.h"
+#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>

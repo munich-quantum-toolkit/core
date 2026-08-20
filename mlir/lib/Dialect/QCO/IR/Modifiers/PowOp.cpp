@@ -18,7 +18,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Support/ConstantFolding.h"
+#include "mlir/Support/MQT/ConstantFolding.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -747,7 +747,7 @@ struct DropUnusedPowQubits final : OpRewritePattern<PowOp> {
 } // namespace
 
 std::optional<double> PowOp::getExponentValue() {
-  return mlir::valueToDouble(getExponent());
+  return mlir::mqt::valueToDouble(getExponent());
 }
 
 size_t PowOp::getNumBodyUnitaries() {

@@ -13,9 +13,9 @@ The compiler collection currently stores MQT-owned passes and quantum-specific
 helpers below the broad path `mlir/Dialect/Utils`. That path overlaps MLIR's own
 shared dialect utilities and obscures which code owns each semantic contract.
 After this change, MQT-owned cross-dialect transformations and quantum semantics
-live below `mlir/Dialect/MQT`, generic constant-folding helpers live below
-`mlir/Support`, and the quantum-aware module equivalence checker is built only
-for tests. Existing pass command names and behavior remain unchanged.
+live below `mlir/Dialect/MQT`, MQT-owned constant-folding helpers live below
+`mlir/Support/MQT`, and the quantum-aware module equivalence checker is built
+only for tests. Existing pass command names and behavior remain unchanged.
 
 The result is observable by building the same compiler and tests with no source
 file below the project-owned `mlir/Dialect/Utils` directory. The generated MQT
@@ -56,10 +56,10 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
   caller is a unit test. The implementation directly depends on QC, QCO,
   QTensor, SCF, and LLVM IR details, so it is test infrastructure rather than a
   generic production verifier.
-- Observation: Generic support helpers in `mlir::mqt` caused ambiguous lookup
-  with the repository's top-level `mqt::test` namespace when a dialect header
-  exposed the helpers. Evidence: the full release build failed in compiler tests
-  until `ConstantFolding.h` used the owning `mlir` namespace.
+- Observation: Exposing support helpers through `mlir::mqt` revealed
+  unqualified references to the repository's top-level `mqt::test` namespace
+  in compiler tests. Root-qualifying those references as `::mqt::test` removes
+  the ambiguity and keeps the support helpers in their owning namespace.
 - Observation: Pull request #2189 merged while this work was in progress and
   expanded the global-phase tests. The follow-up branch was rebased onto the
   updated pull request #2150 head, which already includes #2189. The moved test
@@ -96,10 +96,11 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
   are part of the unreleased general launch, and the requested cleanup should
   remove the ambiguous project-owned include surface. Date/Author: 2026-08-20 /
   Codex.
-- Decision: Put generic constant-folding helpers in `mlir`, not `mlir::mqt`.
-  Rationale: the helpers are dialect-independent support infrastructure, and the
-  narrower namespace leaked an unrelated dialect name through public QC and QCO
-  headers. Date/Author: 2026-08-20 / Codex.
+- Decision: Put the dialect-independent constant-folding helpers below
+  `mlir/Support/MQT` in `mlir::mqt`. Rationale: the include path describes the
+  dependency layer, while the namespace records that MQT Core owns these
+  helpers. Root-qualified `::mqt::test` references avoid ambiguity with the
+  repository's separate top-level namespace. Date/Author: 2026-08-20 / Codex.
 - Decision: Build the module equivalence checker in one concrete test-support
   library and expose that library through `MLIRTestCaseUtils`. Rationale: every
   caller is a unit test, while a single target avoids repeating its quantum
@@ -108,7 +109,7 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
 ## Outcomes & Retrospective
 
 The follow-up now has explicit ownership boundaries. MQT owns the cross-dialect
-passes and quantum semantics. MLIR support owns generic constant folding. Unit
+passes, quantum semantics, and project-specific constant-folding support. Unit
 test support owns the module equivalence checker. The implementation does not
 add a shared QC/QCO unitary interface.
 
@@ -166,10 +167,10 @@ building, and region-rewrite helpers. Dense-unitary verification and U-gate
 powering will move into focused MQT utility headers without creating a shared
 unitary operation interface.
 
-Create `mlir/include/mlir/Support/ConstantFolding.h` for the generic attribute
-and SSA constant-folding helpers. Move the corresponding tests to
-`mlir/unittests/Support`. Keep these helpers in the `mlir` namespace because
-their contract is independent of any dialect.
+Create `mlir/include/mlir/Support/MQT/ConstantFolding.h` for the generic
+attribute and SSA constant-folding helpers. Move the corresponding tests to
+`mlir/unittests/Support`. Keep the helpers in `mlir::mqt` to record project
+ownership without placing dialect-independent code in a dialect library.
 
 Move the quantum module equivalence header and implementation below
 `mlir/unittests/Support`. Build them in a test-only `MLIRTestSupport` target and
