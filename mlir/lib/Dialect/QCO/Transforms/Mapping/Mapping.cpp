@@ -1021,8 +1021,11 @@ private:
     return curr;
   }
 
-  /// Return a window of layers with a maximum size of `1 + nlookahead`.
-  /// The function skips qubit-pair blocks.
+  /// Collect a routing lookahead window of up to `1 + nlookahead` ready
+  /// two-qubit gates.
+  /// In block-skipping mode, the function releases only gates belonging to the
+  /// current qubit-pair blocks and suppresses other ready gates until each
+  /// block is exhausted.
   template <WireDirection Direction>
   Window getWindow(Wires wires, const WireInfos& infos) { // NOLINT
     Window window;
@@ -1031,7 +1034,7 @@ private:
     SmallVector<IndexPairType> layer;
     layer.reserve(nlookahead);
 
-    enum class WalkMode : bool { Collect, SkipBlock };
+    enum class WalkMode : bool { Collect, BlockSkip };
     WalkMode mode = WalkMode::Collect;
 
     walkProgramGraph<Direction>(
@@ -1078,8 +1081,8 @@ private:
           }
 
           if (mode == WalkMode::Collect) {
-            mode = WalkMode::SkipBlock;
-          } else if (mode == WalkMode::SkipBlock && !skipped) {
+            mode = WalkMode::BlockSkip;
+          } else if (mode == WalkMode::BlockSkip && !skipped) {
             mode = WalkMode::Collect;
             layer.clear();
           }
