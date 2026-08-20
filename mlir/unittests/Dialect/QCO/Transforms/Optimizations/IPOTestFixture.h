@@ -26,6 +26,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
+#include "mlir/Support/Passes.h"
 
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -87,6 +88,32 @@ protected:
     ASSERT_TRUE(pm.run(moduleOp.get()).succeeded());
     ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
+    EXPECT_TRUE(
+        areModulesEquivalentWithPermutations(moduleOp.get(), reference.get()));
+  }
+
+  /**
+   * @brief Runs the whole interprocedural pipeline on a module.
+   *
+   * @details
+   * Only for the cross-stage cases. A case about one pass belongs in that
+   * pass's own suite, scheduled on the pass alone.
+   *
+   * @param moduleOp The module to transform.
+   */
+  static LogicalResult runQuantumIPOPipeline(ModuleOp moduleOp) {
+    PassManager pm(moduleOp.getContext());
+    populateQuantumIPOPipeline(pm);
+    pm.addPass(createCanonicalizerPass());
+    return pm.run(moduleOp);
+  }
+
+  /**
+   * @brief Runs the whole pipeline and compares against the reference.
+   */
+  void expectPipelineMatchesReference() {
+    ASSERT_TRUE(runQuantumIPOPipeline(moduleOp.get()).succeeded());
+    ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
     EXPECT_TRUE(
         areModulesEquivalentWithPermutations(moduleOp.get(), reference.get()));
   }
