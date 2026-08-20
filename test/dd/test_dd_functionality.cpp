@@ -611,6 +611,46 @@ TEST_F(DDFunctionality, IfElseOperationElseBranch) {
   EXPECT_EQ(key, "0");
 }
 
+TEST_F(DDFunctionality, StaticSamplingReleasesOwnedResources) {
+  constexpr std::size_t nq = 2U;
+  QuantumComputation qc(nq, nq);
+  qc.h(0U);
+  qc.cx(0U, 1U);
+  qc.measureAll(false, false);
+
+  Package dd(nq);
+  const auto input = makeZeroState(nq, dd);
+  constexpr auto shots = 16U;
+  static_cast<void>(sample(qc, input, dd, shots, 1U));
+  dd.garbageCollect(true);
+
+  const auto [vector, matrix, reals] = dd.computeActiveCounts();
+  EXPECT_EQ(vector, 0U);
+  EXPECT_EQ(matrix, 0U);
+  EXPECT_EQ(reals, 0U);
+}
+
+TEST_F(DDFunctionality, DynamicSamplingReleasesOwnedResources) {
+  QuantumComputation qc(1U, 2U);
+  qc.h(0U);
+  qc.measure(0U, 0U);
+  qc.reset(0U);
+  qc.h(0U);
+  qc.measure(0U, 1U);
+
+  Package dd(1U);
+  const auto input = makeZeroState(1U, dd);
+  constexpr auto shots = 16U;
+  static_cast<void>(sample(qc, input, dd, shots, 1U));
+  dd.decRef(input);
+  dd.garbageCollect(true);
+
+  const auto [vector, matrix, reals] = dd.computeActiveCounts();
+  EXPECT_EQ(vector, 0U);
+  EXPECT_EQ(matrix, 0U);
+  EXPECT_EQ(reals, 0U);
+}
+
 TEST_F(DDFunctionality, VectorKroneckerWithTerminal) {
   constexpr std::size_t nq = 1;
   constexpr auto root = vEdge::one();
