@@ -305,6 +305,158 @@ TEST_F(QCOTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
       "undefined");
 }
 
+TEST_F(QCOTest, BuilderRejectsMisuseOfAdditionalFunctions) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        builder.startFunction("f", {qubitType}, {qubitType});
+        builder.startFunction("g", {qubitType}, {qubitType});
+      },
+      "Cannot start a function while another one is being built");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.endFunction({});
+      },
+      "endFunction\\(\\) called without a matching startFunction\\(\\)");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.call("does_not_exist", {});
+      },
+      "Callee not found in module");
+}
+
+TEST_F(QCOTest, BuilderRejectsSignatureMismatchesOnAdditionalFunctions) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        const auto args = builder.startFunction("f", {qubitType}, {qubitType});
+        Value bit;
+        auto qubit = args[0];
+        std::tie(qubit, bit) = builder.measure(qubit);
+        builder.sink(qubit);
+        // The function promises a qubit but hands back the measurement outcome.
+        builder.endFunction({bit});
+      },
+      "Return values do not match the declared function result types");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        const auto args = builder.startFunction("f", {qubitType}, {qubitType});
+        builder.endFunction({args[0]});
+        // The callee expects a qubit, not a float.
+        builder.call("f", {builder.floatConstant(0.5)});
+      },
+      "Call operands do not match the declared function argument types");
+}
+
+TEST_F(QCOTest, BuilderRejectsUsingOuterQubitInsideFunction) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto outer = builder.allocQubit();
+        const auto qubitType = builder.getQubitType();
+        builder.startFunction("f", {qubitType}, {qubitType});
+        // `outer` belongs to `main`; a callee cannot reference it.
+        builder.h(outer);
+      },
+      "Invalid qubit value used");
+}
+
+TEST_F(QCOTest, BuilderRejectsUsingOuterTensorInsideFunction) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto outer = builder.qtensorAlloc(2);
+        const auto qubitType = builder.getQubitType();
+        builder.startFunction("f", {qubitType}, {qubitType});
+        // `outer` belongs to `main`; a callee cannot reference it.
+        builder.qtensorExtract(outer, 0);
+      },
+      "Invalid tensor value used");
+}
+
+/**
+ * @brief A callee that swaps its tensors is tracked without leaking a register.
+ *
+ * @details
+ * Note this does not discriminate derived from positional pairing: register ids
+ * are internal labels and a qubit inherits the id of the tensor it came from,
+ * so either assignment restores it to the same place. It locks in that a
+ * reordering callee is accepted and that `finalize()` completes every register.
+ */
+TEST_F(QCOTest, BuilderTracksACalleeThatSwapsItsTensors) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto tensorType = builder.getQubitTensorType(2);
+  const auto args = builder.startFunction("swap", {tensorType, tensorType},
+                                          {tensorType, tensorType});
+  builder.endFunction({args[1], args[0]});
+
+  const auto first = builder.qtensorAlloc(2);
+  const auto second = builder.qtensorAlloc(2);
+  const auto results = builder.call("swap", {first, second});
+  // Take a qubit out of the tensor the call returns first, which holds what
+  // was passed in second. `finalize()` puts it back on its own.
+  const auto [rest, qubit] = builder.qtensorExtract(results[0], 0);
+  auto module = builder.finalize();
+
+  qtensor::ExtractOp extract;
+  qtensor::InsertOp insert;
+  module->walk([&](Operation* op) {
+    if (auto extractOp = dyn_cast<qtensor::ExtractOp>(op)) {
+      extract = extractOp;
+    }
+    if (auto insertOp = dyn_cast<qtensor::InsertOp>(op)) {
+      insert = insertOp;
+    }
+  });
+  ASSERT_TRUE(extract);
+  ASSERT_TRUE(insert);
+  EXPECT_EQ(insert.getDest(), extract.getOutTensor())
+      << "the qubit must go back into the tensor it was taken from";
+}
+
+TEST_F(QCOTest, BuilderRejectsLinearValuesLeakingOutOfFunctions) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        const auto args = builder.startFunction("f", {qubitType}, {qubitType});
+        // The freshly allocated qubit is neither returned nor sunk.
+        builder.allocQubit();
+        builder.endFunction({args[0]});
+      },
+      "neither returned nor consumed");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        const auto qubitType = builder.getQubitType();
+        const auto args = builder.startFunction("f", {qubitType}, {qubitType});
+        // The freshly allocated register is neither returned nor deallocated.
+        builder.qtensorAlloc(2);
+        builder.endFunction({args[0]});
+      },
+      "neither returned nor deallocated");
+}
+
 TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
