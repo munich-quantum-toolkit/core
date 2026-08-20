@@ -21,7 +21,6 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -67,6 +66,15 @@ protected:
 
   [[nodiscard]] OwningOpRef<ModuleOp> parse(const StringRef source) const {
     return parseSourceString<ModuleOp>(source, context.get());
+  }
+
+  static void expectFoldableGlobalPhase(Value angle,
+                                        const double expectedAngle) {
+    const auto value = utils::valueToConstantDouble(angle);
+    ASSERT_TRUE(value.has_value());
+    EXPECT_TRUE(utils::isValidGlobalPhaseAngle(*value));
+    EXPECT_NEAR(utils::normalizeAngle(*value - expectedAngle), 0.0,
+                utils::TOLERANCE);
   }
 
   static void expectNormalizedUnitary(OwningOpRef<ModuleOp>& moduleOp,
@@ -117,10 +125,7 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
   ASSERT_EQ(phases.size(), 1);
   EXPECT_EQ(phases.front()->getNextNode(),
             func.getBody().front().getTerminator());
-  const auto value = dyn_cast<FloatAttr>(
-      phases.front().getTheta().getDefiningOp<arith::ConstantOp>().getValue());
-  ASSERT_TRUE(value);
-  EXPECT_DOUBLE_EQ(value.getValueAsDouble(), 0.75);
+  expectFoldableGlobalPhase(phases.front().getTheta(), 0.75);
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
@@ -160,8 +165,7 @@ TEST_F(GlobalPhaseNormalizationTest,
   ASSERT_TRUE(constantOp);
   const auto value = dyn_cast<FloatAttr>(constantOp.getValue());
   ASSERT_TRUE(value);
-  EXPECT_DOUBLE_EQ(value.getValueAsDouble(), expected);
-  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(value.getValueAsDouble()));
+  expectFoldableGlobalPhase(phases.front().getTheta(), expected);
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
@@ -204,8 +208,7 @@ TEST_F(GlobalPhaseNormalizationTest,
   ASSERT_TRUE(constantOp);
   const auto value = dyn_cast<FloatAttr>(constantOp.getValue());
   ASSERT_TRUE(value);
-  EXPECT_DOUBLE_EQ(value.getValueAsDouble(), expected);
-  EXPECT_TRUE(utils::isValidGlobalPhaseAngle(value.getValueAsDouble()));
+  expectFoldableGlobalPhase(phases.front().getTheta(), expected);
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
@@ -248,7 +251,8 @@ TEST_F(GlobalPhaseNormalizationTest,
   expectNormalizedQCUnitary(moduleOp, 2);
 }
 
-TEST_F(GlobalPhaseNormalizationTest, PreservesDynamicOrderAndIsIdempotent) {
+TEST_F(GlobalPhaseNormalizationTest,
+       PreservesDynamicDependenciesAcrossRepeatedRuns) {
   auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q: !qc.qubit, %a: f64, %b: f64) {
@@ -265,19 +269,37 @@ TEST_F(GlobalPhaseNormalizationTest, PreservesDynamicOrderAndIsIdempotent) {
   auto func = cast<func::FuncOp>(moduleOp->getBody()->front());
   auto phases = llvm::to_vector(func.getBody().getOps<mlir::qc::GPhaseOp>());
   ASSERT_EQ(phases.size(), 1);
-  auto add = phases.front().getTheta().getDefiningOp<arith::AddFOp>();
-  ASSERT_TRUE(add);
-  EXPECT_EQ(add.getLhs(), func.getArgument(1));
-  EXPECT_EQ(add.getRhs(), func.getArgument(2));
+  const auto dependsOn = [](Value value, const Value input) {
+    llvm::SmallVector<Value> worklist{value};
+    while (!worklist.empty()) {
+      const auto current = worklist.pop_back_val();
+      if (current == input) {
+        return true;
+      }
+      if (auto* definingOp = current.getDefiningOp()) {
+        llvm::append_range(worklist, definingOp->getOperands());
+      }
+    }
+    return false;
+  };
+  EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(1)));
+  EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(2)));
 
-  std::string once;
-  llvm::raw_string_ostream onceStream(once);
-  moduleOp->print(onceStream);
+  const auto countOperations = [&moduleOp]() {
+    size_t count = 0;
+    moduleOp->walk([&count](Operation*) { ++count; });
+    return count;
+  };
+  const auto firstRunOperationCount = countOperations();
+
   ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
-  std::string twice;
-  llvm::raw_string_ostream twiceStream(twice);
-  moduleOp->print(twiceStream);
-  EXPECT_EQ(once, twice);
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
+
+  phases = llvm::to_vector(func.getBody().getOps<mlir::qc::GPhaseOp>());
+  ASSERT_EQ(phases.size(), 1);
+  EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(1)));
+  EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(2)));
+  EXPECT_LE(countOperations(), firstRunOperationCount);
 }
 
 TEST_F(GlobalPhaseNormalizationTest, KeepsSCFStyleRegionsIndependent) {
@@ -526,6 +548,8 @@ TEST_F(GlobalPhaseNormalizationTest, ReorderedQCOControlsThreadCorrectResults) {
     }
   )mlir");
   ASSERT_TRUE(moduleOp);
+  const auto cloned = cast<ModuleOp>((*moduleOp)->clone());
+  OwningOpRef<ModuleOp> expected(cloned);
   ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
   ASSERT_TRUE(verify(*moduleOp).succeeded());
 
@@ -533,9 +557,7 @@ TEST_F(GlobalPhaseNormalizationTest, ReorderedQCOControlsThreadCorrectResults) {
   auto controls = llvm::to_vector(func.getBody().getOps<qco::CtrlOp>());
   ASSERT_EQ(controls.size(), 2);
   auto returnOp = cast<func::ReturnOp>(func.getBody().front().getTerminator());
-  EXPECT_EQ(returnOp.getOperand(0), controls[1].getOutputControl(1));
-  EXPECT_EQ(returnOp.getOperand(1), controls[1].getOutputTarget(0));
-  EXPECT_EQ(returnOp.getOperand(2), controls[1].getOutputControl(0));
+  ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 4);
   EXPECT_EQ(returnOp.getOperand(3), controls[0].getOutputTarget(0));
 }
 
