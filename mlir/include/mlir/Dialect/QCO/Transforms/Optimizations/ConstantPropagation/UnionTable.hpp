@@ -60,7 +60,7 @@ struct UnionTableEntry {
   UnionTableEntry() : index(nextId()) {}
 
 private:
-  static std::uint64_t nextId() {
+  static unsigned int nextId() {
     static std::atomic<std::uint64_t> counter{0};
     return counter.fetch_add(1, std::memory_order_relaxed) + 1;
   }
