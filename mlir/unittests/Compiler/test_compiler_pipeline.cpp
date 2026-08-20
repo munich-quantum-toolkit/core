@@ -56,6 +56,7 @@
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cctype>
 #include <cstddef>
@@ -1144,6 +1145,70 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   auto unsupportedQCO = std::move(*unsupportedQC).intoQCO();
   ASSERT_TRUE(unsupportedQCO);
   EXPECT_FALSE(unsupportedQCO->compileForTarget(makeSparseUCZTarget(false)));
+}
+
+/**
+ * @brief Test: target compilation leaves dead-value cleanup at a fixed point.
+ */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationLeavesDeadValueCleanupAtFixedPoint) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func private @forward(%condition: i1) -> i1 {
+        return %condition : i1
+      }
+      func.func @main(%condition: i1)
+          attributes {passthrough = ["entry_point"]} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %forwarded = func.call @forward(%condition) : (i1) -> i1
+        %q2, %q3 = qco.if %forwarded
+            args(%control = %q0, %target = %q1)
+            -> (!qco.qubit, !qco.qubit) {
+          %controlOut, %targetOut = qco.ctrl(%control)
+              targets(%targetArg = %target) {
+            %x = qco.x %targetArg : !qco.qubit -> !qco.qubit
+            qco.yield %x : !qco.qubit
+          } : ({!qco.qubit}, {!qco.qubit})
+              -> ({!qco.qubit}, {!qco.qubit})
+          %h = qco.h %controlOut : !qco.qubit -> !qco.qubit
+          qco.yield %h, %targetOut : !qco.qubit, !qco.qubit
+        } else args(%control = %q0, %target = %q1) {
+          %x0 = qco.x %control : !qco.qubit -> !qco.qubit
+          %x1 = qco.x %target : !qco.qubit -> !qco.qubit
+          qco.yield %x0, %x1 : !qco.qubit, !qco.qubit
+        }
+        qco.sink %q2 : !qco.qubit
+        qco.sink %q3 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  using TargetOperation = CompilerTarget::Operation;
+  std::vector operations{llvm::cantFail(TargetOperation::create("u", 1, 3)),
+                         llvm::cantFail(TargetOperation::create("cz", 2, 0))};
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, std::vector<CompilerTarget::Coupling>{{0, 1}}, std::move(operations),
+      std::nullopt, {CompilerTarget::ClassicalControl::Conditional}));
+
+  ASSERT_TRUE(program->compileForTarget(target));
+  const std::string before = program->str();
+  EXPECT_NE(before.find("func.func private @forward"), std::string::npos);
+  EXPECT_NE(before.find("call @forward"), std::string::npos);
+  EXPECT_NE(before.find("qco.if"), std::string::npos);
+  EXPECT_NE(before.find("qco.u"), std::string::npos);
+  EXPECT_NE(before.find("qco.ctrl"), std::string::npos);
+  EXPECT_NE(before.find("qco.z"), std::string::npos);
+  EXPECT_EQ(before.find("qco.h"), std::string::npos);
+  EXPECT_EQ(before.find("qco.x"), std::string::npos);
+
+  PassManager pm(program->module().getContext());
+  pm.addPass(createRemoveDeadValuesPass());
+  ASSERT_TRUE(pm.run(program->module()).succeeded());
+  EXPECT_EQ(program->str(), before);
 }
 
 /**

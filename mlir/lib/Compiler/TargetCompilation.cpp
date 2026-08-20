@@ -283,8 +283,10 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createMappingPass(target, qco::MappingPassOptions{}));
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createTargetNativeSynthesis(target));
+  // The second cleanup established global liveness. Native synthesis preserves
+  // value signatures and use chains; CSE removes trivially dead local
+  // operations it creates.
   pm.addPass(createCSEPass());
-  pm.addPass(createRemoveDeadValuesPass());
   pm.addPass(qco::createVerifyTargetConformance(target));
 }
 
