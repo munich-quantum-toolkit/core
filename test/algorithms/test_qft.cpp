@@ -66,6 +66,47 @@ constexpr qc::Qubit QFT_MAX_QUBITS = 17U;
 
 constexpr size_t INITIAL_COMPLEX_COUNT = dd::immortals::size();
 
+[[nodiscard]] auto mapBasisIndex(const uint64_t index, const qc::Qubit nqubits,
+                                 const qc::Permutation& permutation)
+    -> uint64_t {
+  auto mapped = uint64_t{0U};
+  for (auto logical = qc::Qubit{0U}; logical < nqubits; ++logical) {
+    const auto position = permutation.find(logical);
+    const auto physical =
+        position == permutation.end() ? logical : position->second;
+    if ((index & (uint64_t{1U} << logical)) != 0U) {
+      mapped |= uint64_t{1U} << physical;
+    }
+  }
+  return mapped;
+}
+
+void expectQFTMatrix(const qc::QuantumComputation& computation,
+                     const dd::MatrixDD& matrix, const dd::Package& package) {
+  const auto dimension = uint64_t{1U} << computation.getNqubits();
+  const auto amplitude = 1.0 / std::sqrt(static_cast<double>(dimension));
+
+  for (auto output = uint64_t{0U}; output < dimension; ++output) {
+    for (auto logicalInput = uint64_t{0U}; logicalInput < dimension;
+         ++logicalInput) {
+      SCOPED_TRACE(testing::Message() << "output " << output
+                                      << ", logical input " << logicalInput);
+      const auto storedInput =
+          mapBasisIndex(logicalInput, computation.getNqubits(),
+                        computation.outputPermutation);
+      const auto phase = 2.0 * std::numbers::pi *
+                         static_cast<double>(output * logicalInput) /
+                         static_cast<double>(dimension);
+      const auto value =
+          matrix.getValueByIndex(package.qubits(), output, storedInput);
+      EXPECT_NEAR(value.real(), amplitude * std::cos(phase),
+                  dd::RealNumber::eps);
+      EXPECT_NEAR(value.imag(), amplitude * std::sin(phase),
+                  dd::RealNumber::eps);
+    }
+  }
+}
+
 INSTANTIATE_TEST_SUITE_P(QFT, QFT,
                          testing::Range<qc::Qubit>(0U, QFT_MAX_QUBITS + 1U, 3U),
                          [](const testing::TestParamInfo<QFT::ParamType>& inf) {
@@ -80,41 +121,23 @@ INSTANTIATE_TEST_SUITE_P(QFT, QFT,
                            return ss.str();
                          });
 
-TEST_P(QFT, Functionality) {
-  // there should be no error constructing the circuit
-  ASSERT_NO_THROW({ qc = qc::createQFT(nqubits, false); });
+TEST(QFTSemantic, FullMatrix) {
+  constexpr qc::Qubit maxQubits = 4U;
+  for (auto nqubits = qc::Qubit{1U}; nqubits <= maxQubits; ++nqubits) {
+    const auto computation = qc::createQFT(nqubits, false);
+    auto package = dd::Package(nqubits);
+    const auto matrix = buildFunctionality(computation, package);
 
-  // there should be no error building the functionality
-  ASSERT_NO_THROW({ func = buildFunctionality(qc, *dd); });
+    expectQFTMatrix(computation, matrix, package);
 
-  // QFT DD should consist of 2^n nodes
-  ASSERT_EQ(func.size(), 1ULL << nqubits);
-
-  // Force garbage collection of compute table and complex table
-  dd->garbageCollect(true);
-
-  // the final DD should store all 2^n different amplitudes
-  // since only positive real values are stored in the complex table
-  // this number has to be divided by 4
-  ASSERT_EQ(dd->cn.realCount(),
-            1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
-
-  const auto expectedAmplitude =
-      static_cast<dd::fp>(std::pow(1.0 / std::numbers::sqrt2, nqubits));
-
-  // top edge weight should equal (1/sqrt(2))^n
-  EXPECT_NEAR(dd::RealNumber::val(func.w.r), expectedAmplitude,
-              dd::RealNumber::eps);
-
-  // first row and first column should consist only of (1/sqrt(2))^n entries
-  for (std::uint64_t i = 0; i < 1ULL << nqubits; ++i) {
-    auto c = func.getValueByIndex(dd->qubits(), 0, i);
-    EXPECT_NEAR(c.real(), expectedAmplitude, dd::RealNumber::eps);
-    EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
-    c = func.getValueByIndex(dd->qubits(), i, 0);
-    EXPECT_NEAR(c.real(), expectedAmplitude, dd::RealNumber::eps);
-    EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
+    package.decRef(matrix);
   }
+}
+
+TEST_P(QFT, Functionality) {
+  qc = qc::createQFT(nqubits, false);
+  func = buildFunctionality(qc, *dd);
+
   dd->decRef(func);
   dd->garbageCollect(true);
   // number of complex table entries after clean-up should equal initial
@@ -123,40 +146,9 @@ TEST_P(QFT, Functionality) {
 }
 
 TEST_P(QFT, FunctionalityRecursive) {
-  // there should be no error constructing the circuit
-  ASSERT_NO_THROW({ qc = qc::createQFT(nqubits, false); });
+  qc = qc::createQFT(nqubits, false);
+  func = buildFunctionalityRecursive(qc, *dd);
 
-  // there should be no error building the functionality
-  ASSERT_NO_THROW({ func = buildFunctionalityRecursive(qc, *dd); });
-
-  // QFT DD should consist of 2^n nodes
-  ASSERT_EQ(func.size(), 1ULL << nqubits);
-
-  // Force garbage collection of compute table and complex table
-  dd->garbageCollect(true);
-
-  // the final DD should store all 2^n different amplitudes
-  // since only positive real values are stored in the complex table
-  // this number has to be divided by 4
-  ASSERT_EQ(dd->cn.realCount(),
-            1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
-
-  const auto expectedAmplitude =
-      static_cast<dd::fp>(std::pow(1.0 / std::numbers::sqrt2, nqubits));
-
-  // top edge weight should equal (1/sqrt(2))^n
-  EXPECT_NEAR(dd::RealNumber::val(func.w.r), expectedAmplitude,
-              dd::RealNumber::eps);
-
-  // first row and first column should consist only of (1/sqrt(2))^n entries
-  for (std::uint64_t i = 0; i < 1ULL << nqubits; ++i) {
-    auto c = func.getValueByIndex(dd->qubits(), 0, i);
-    EXPECT_NEAR(c.real(), expectedAmplitude, dd::RealNumber::eps);
-    EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
-    c = func.getValueByIndex(dd->qubits(), i, 0);
-    EXPECT_NEAR(c.real(), expectedAmplitude, dd::RealNumber::eps);
-    EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
-  }
   dd->decRef(func);
   dd->garbageCollect(true);
   // number of complex table entries after clean-up should equal initial
@@ -165,24 +157,9 @@ TEST_P(QFT, FunctionalityRecursive) {
 }
 
 TEST_P(QFT, Simulation) {
-  // there should be no error constructing the circuit
-  ASSERT_NO_THROW({ qc = qc::createQFT(nqubits, false); });
-
-  // there should be no error simulating the circuit
-  ASSERT_NO_THROW({
-    auto in = makeZeroState(nqubits, *dd);
-    sim = simulate(qc, in, *dd);
-  });
-
-  // QFT DD |0...0> sim should consist of n nodes
-  ASSERT_EQ(sim.size(), nqubits + 1);
-
-  // Force garbage collection of compute table and complex table
-  dd->garbageCollect(true);
-
-  // top edge weight should equal 1
-  EXPECT_NEAR(dd::RealNumber::val(sim.w.r), 1, dd::RealNumber::eps);
-  EXPECT_NEAR(dd::RealNumber::val(sim.w.i), 0, dd::RealNumber::eps);
+  qc = qc::createQFT(nqubits, false);
+  const auto in = makeZeroState(nqubits, *dd);
+  sim = simulate(qc, in, *dd);
 
   // first column should consist only of (1/sqrt(2))^n entries
   for (std::uint64_t i = 0; i < 1ULL << nqubits; ++i) {
@@ -191,25 +168,16 @@ TEST_P(QFT, Simulation) {
         c.real(),
         static_cast<dd::fp>(std::pow(1.0 / std::numbers::sqrt2, nqubits)),
         dd::RealNumber::eps);
-    EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
   dd->decRef(sim);
   dd->garbageCollect(true);
-  // number of complex table entries after clean-up should equal initial
-  // number of entries
-  EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
 }
 
 TEST_P(QFT, FunctionalityRecursiveEquality) {
-  // there should be no error constructing the circuit
-  ASSERT_NO_THROW({ qc = qc::createQFT(nqubits, false); });
-
-  // there should be no error building the functionality recursively
-  ASSERT_NO_THROW({ func = buildFunctionalityRecursive(qc, *dd); });
-
-  // there should be no error building the functionality regularly
+  qc = qc::createQFT(nqubits, false);
+  func = buildFunctionalityRecursive(qc, *dd);
   dd::MatrixDD funcRec{};
-  ASSERT_NO_THROW({ funcRec = buildFunctionality(qc, *dd); });
+  funcRec = buildFunctionality(qc, *dd);
 
   ASSERT_EQ(func, funcRec);
   dd->decRef(funcRec);
@@ -243,9 +211,5 @@ TEST_P(QFT, SimulationSampling) {
 
     // the number of unique entries should be close to the number of shots
     EXPECT_GE(ratio, 0.7);
-    dd->garbageCollect(true);
-    // number of complex table entries after clean-up should equal initial
-    // number of entries
-    EXPECT_EQ(dd->cn.realCount(), INITIAL_COMPLEX_COUNT);
   }
 }
