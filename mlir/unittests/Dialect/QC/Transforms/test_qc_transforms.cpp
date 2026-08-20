@@ -32,6 +32,8 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
+
 using namespace mlir;
 
 namespace {

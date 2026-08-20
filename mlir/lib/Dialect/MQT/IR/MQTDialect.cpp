@@ -15,8 +15,11 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Operation.h>
@@ -31,9 +34,8 @@ using namespace mlir::mqt;
 
 void MQTDialect::initialize() {}
 
-namespace {
-[[nodiscard]] LogicalResult verifyEntryPoint(Operation* operation,
-                                             const NamedAttribute attribute) {
+[[nodiscard]] static LogicalResult
+verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
   if (!isa<UnitAttr>(attribute.getValue())) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
@@ -59,8 +61,8 @@ namespace {
   return success();
 }
 
-[[nodiscard]] LogicalResult verifyName(Operation* operation,
-                                       const NamedAttribute attribute) {
+[[nodiscard]] static LogicalResult verifyName(Operation* operation,
+                                              const NamedAttribute attribute) {
   const auto name = dyn_cast<StringAttr>(attribute.getValue());
   if (!name) {
     return operation->emitError()
@@ -80,7 +82,7 @@ namespace {
   return success();
 }
 
-[[nodiscard]] bool isRegisterAllocation(Operation* operation) {
+[[nodiscard]] static bool isRegisterAllocation(Operation* operation) {
   if (isa<cbit::AllocOp>(operation)) {
     return true;
   }
@@ -96,8 +98,8 @@ namespace {
   return false;
 }
 
-[[nodiscard]] LogicalResult verifyRegisterName(Operation* operation,
-                                               const NamedAttribute attribute) {
+[[nodiscard]] static LogicalResult
+verifyRegisterName(Operation* operation, const NamedAttribute attribute) {
   if (failed(verifyName(operation, attribute))) {
     return failure();
   }
@@ -135,7 +137,6 @@ namespace {
   }
   return success();
 }
-} // namespace
 
 LogicalResult
 MQTDialect::verifyOperationAttribute(Operation* operation,

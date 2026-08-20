@@ -22,7 +22,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/Utils/DenseUnitary.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>

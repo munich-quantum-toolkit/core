@@ -21,7 +21,6 @@
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
@@ -65,7 +64,6 @@
 namespace mlir::qco {
 
 using namespace mlir::qtensor;
-using namespace mlir::utils;
 
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"

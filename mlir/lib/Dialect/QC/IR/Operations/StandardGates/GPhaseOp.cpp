@@ -15,6 +15,7 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cmath>
 #include <variant>
 
 using namespace mlir;

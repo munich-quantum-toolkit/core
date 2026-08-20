@@ -18,7 +18,6 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Support/Passes.h"
 
 #include <gtest/gtest.h>
@@ -61,7 +60,6 @@
 
 using namespace mlir;
 using namespace mlir::qco;
-using namespace mlir::utils;
 using mlir::mqt::getEntryPoint;
 
 static SmallVector<Value> getQubitValues(ValueRange values) {

@@ -110,14 +110,16 @@ public:
   [[nodiscard]] static Parameter unary(const UnaryParameterKind operation,
                                        Parameter operand) {
     return Parameter(Unary{
-        operation, std::make_shared<const Parameter>(std::move(operand))});
+        .operation = operation,
+        .operand = std::make_shared<const Parameter>(std::move(operand))});
   }
 
   [[nodiscard]] static Parameter binary(const BinaryParameterKind operation,
                                         Parameter left, Parameter right) {
     return Parameter(
-        Binary{operation, std::make_shared<const Parameter>(std::move(left)),
-               std::make_shared<const Parameter>(std::move(right))});
+        Binary{.operation = operation,
+               .left = std::make_shared<const Parameter>(std::move(left)),
+               .right = std::make_shared<const Parameter>(std::move(right))});
   }
 
   [[nodiscard]] const Number* getNumber() const {
@@ -153,7 +155,7 @@ enum class GateModifierKind : uint8_t {
 struct GateModifier {
   GateModifierKind kind = GateModifierKind::Inverse;
   uint32_t numControls = 0;
-  Parameter exponent{};
+  Parameter exponent;
 };
 
 struct StandardGateMapping {
