@@ -1281,11 +1281,15 @@ def test_manual_arith_and_math_parameter_expression_exports_to_qiskit() -> None:
 
 
 def _wide_parameter_expression_program(term_count: int) -> QCProgram:
+    """Build a program whose gate angle sums ``term_count`` distinct math.sin terms.
+
+    Returns:
+        A QC program with a wide scalar parameter-expression graph.
+    """
     lines = [
         "module {",
         '  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {passthrough = ["entry_point"]} {',
         "    %q = qc.alloc : !qc.qubit",
-    ]
     values = []
     for index in range(term_count):
         value = f"%term{index}"
