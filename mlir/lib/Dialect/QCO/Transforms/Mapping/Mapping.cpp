@@ -1074,11 +1074,8 @@ private:
     Window window;
     window.reserve(1 + nlookahead);
 
-    SmallVector<IndexPairType> layer;
-    layer.reserve(nlookahead);
-
-    enum class WalkMode : bool { Collect, BlockSkip };
-    WalkMode mode = WalkMode::Collect;
+    SmallVector<IndexPairType> prev;
+    SmallVector<IndexPairType> next;
 
     walkProgramGraph<Direction>(
         wires, [&](const ReadyMap& ready, ReleasedOps& released) {
@@ -1094,41 +1091,20 @@ private:
               const auto prog1 = infos.lookupProgram(i1);
               const IndexPairType gate = std::minmax(prog0, prog1);
 
-              if (mode == WalkMode::Collect) {
-
-                // Collect gates in window and fill current layer vector.
-
+              if (!llvm::is_contained(prev, gate)) {
                 window.emplace_back(gate);
                 if (window.size() == 1 + nlookahead) {
                   return WalkResult::interrupt();
                 }
-
-                layer.emplace_back(gate);
-              } else {
-
-                // Skip qubit-pair block: If the gate is contained in the
-                // current layer release it. Otherwise, continue with the next
-                // ready operation.
-
-                if (is_contained(layer, gate)) {
-                  released.emplace_back(op);
-                }
-
-                continue;
               }
+              next.emplace_back(gate);
             }
 
             released.emplace_back(op);
           }
 
-          if (mode == WalkMode::Collect && !layer.empty()) {
-            mode = WalkMode::BlockSkip;
-          } else if (mode == WalkMode::BlockSkip && released.empty()) {
-            mode = WalkMode::Collect;
-            layer.clear();
-          }
-
-          return WalkResult::advance();
+          prev.swap(next);
+          next.clear();
         });
 
     return window;
