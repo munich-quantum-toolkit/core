@@ -55,7 +55,7 @@ struct Chain {
 };
 } // namespace
 
-static Chain getChain(Value q, size_t n = 1) {
+static Chain getChain(Value q, std::ptrdiff_t n = 1) {
   Chain chain;
   for (WireIterator it(q); it != std::default_sentinel; std::advance(it, n)) {
     chain.values.emplace_back(it.qubit());

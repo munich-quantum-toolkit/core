@@ -189,7 +189,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
     wires.emplace_back(op.getResult());
   }
 
-  // Unit-test supporting datastructure.
+  // Store each ready layer for test assertions.
   SmallVector<DenseSet<Operation*>> readyPerLayer;
 
   const auto callback = [&](const ReadyMap& ready, ReleasedOps& released) {
@@ -202,7 +202,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
     return WalkResult::advance();
   };
 
-  // Forward pass.
+  // Run a forward pass.
   auto res = walkProgramGraph<WireDirection::Forward>(wires, callback);
 
   ASSERT_TRUE(res.succeeded());
@@ -219,7 +219,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
 
   llvm::for_each(wires, [](WireIterator& it) { --it; });
 
-  // Backward pass.
+  // Run a backward pass.
   readyPerLayer.clear();
   res = walkProgramGraph<WireDirection::Backward>(wires, callback);
 
@@ -237,7 +237,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
 
   llvm::for_each(wires, [](WireIterator& it) { ++it; });
 
-  // Forward, but instead of releasing all, we use ::skip().
+  // Run a forward pass with WalkResult::skip().
   readyPerLayer.clear();
   res = walkProgramGraph<WireDirection::Forward>(
       wires, [&](const ReadyMap& ready, ReleasedOps&) {
@@ -259,7 +259,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
 
   llvm::for_each(wires, [](WireIterator& it) { --it; });
 
-  // Backward, but stop after first layer.
+  // Run a backward pass that stops after the first layer.
   readyPerLayer.clear();
   res = walkProgramGraph<WireDirection::Backward>(
       wires, [&](const ReadyMap& ready, ReleasedOps& released) {
@@ -276,7 +276,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   ASSERT_EQ(readyPerLayer.size(), 1);
   ASSERT_TRUE(readyPerLayer[0].contains(forResults[0].getDefiningOp()));
 
-  // Forward, but start at block arguments.
+  // Run a forward pass that starts at block arguments.
   wires.clear();
   for (Value arg : blockArgs) {
     wires.emplace_back(arg);

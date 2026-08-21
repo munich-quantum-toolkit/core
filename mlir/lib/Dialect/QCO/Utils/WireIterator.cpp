@@ -127,12 +127,10 @@ void WireIterator::backward() {
     return;
   }
 
-  // Source-like ops define the start of the qubit wire.
-  // Consequently, stop and early exit.
-  if (isHead(op_)) {
-    pos_ = Position::Head;
-    return;
-  }
+  // Head operations are always labeled as Position::Head,
+  // so they never reach this point.
+  assert((pos_ == Position::Tail || !isHead(op_)) &&
+         "expected head ops to carry Position::Head");
 
   // Tails only consume, not produce values.
   if (pos_ != Position::Tail) {
