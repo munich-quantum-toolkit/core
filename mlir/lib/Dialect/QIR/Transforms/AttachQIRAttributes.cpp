@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
@@ -119,6 +120,7 @@ private:
             {"required_num_results", std::to_string(metadata.numResults)})};
 
     main->setAttr("passthrough", rewriter.getArrayAttr(attributes));
+    mqt::removeEntryPoint(main);
 
     rewriter.setInsertionPointToEnd(m.getBody());
 

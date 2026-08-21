@@ -14,6 +14,7 @@ target_link_libraries(
           MLIRArithDialect
           MLIRCBitDialect
           MLIRFuncDialect
+          MLIRMQTDialect
           MLIRParser
           MLIRSupport
           MLIRTransforms)

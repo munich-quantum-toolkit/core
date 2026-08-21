@@ -8,15 +8,15 @@
  * Licensed under the MIT License
  */
 
+#include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/Utils/Utils.h"
-#include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
 #include "qco_programs.h"
@@ -47,8 +47,8 @@ namespace {
 
 struct QCOToQCTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCOToQCTestCase& info);
@@ -56,10 +56,10 @@ struct QCOToQCTestCase {
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const QCOToQCTestCase& info) {
-  return os << "QCOToQC{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "QCOToQC{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QCOToQCTest : public testing::TestWithParam<QCOToQCTestCase> {
@@ -88,9 +88,9 @@ static LogicalResult runQCOToQCConversion(ModuleOp module) {
 
 TEST(QCOToQCRegressionTest, RetainsQubitRegisterName) {
   DialectRegistry registry;
-  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
-                  scf::SCFDialect>();
+  registry.insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                  qtensor::QTensorDialect, arith::ArithDialect,
+                  func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
   qco::QCOProgramBuilder builder(&context);
@@ -107,24 +107,24 @@ TEST(QCOToQCRegressionTest, RetainsQubitRegisterName) {
     }
   });
   ASSERT_TRUE(allocation);
-  const auto name =
-      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  const auto name = allocation->getAttrOfType<StringAttr>(
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
 
 TEST(QCOToQCRegressionTest, RetainsDynamicQubitRegisterName) {
   DialectRegistry registry;
-  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
-                  scf::SCFDialect>();
+  registry.insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                  qtensor::QTensorDialect, arith::ArithDialect,
+                  func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main(%size: index) attributes {passthrough = ["entry_point"]} {
-    %reg = qtensor.alloc(%size) {mqt.qubit_register_name = "named_qubits"} : tensor<?x!qco.qubit>
+  func.func @main(%size: index) attributes {mqt.entry_point} {
+    %reg = qtensor.alloc(%size) {mqt.register_name = "named_qubits"} : tensor<?x!qco.qubit>
     qtensor.dealloc %reg : tensor<?x!qco.qubit>
     return
   }
@@ -142,8 +142,8 @@ module {
   ASSERT_EQ(allocation.getDynamicSizes().size(), 1);
   EXPECT_EQ(allocation.getDynamicSizes().front(),
             allocation->getBlock()->getArgument(0));
-  const auto name =
-      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  const auto name = allocation->getAttrOfType<StringAttr>(
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
@@ -175,7 +175,7 @@ TEST(QCOToQCRegressionTest, PreservesClassicalIfResult) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%condition: i1) -> i64
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %q0 = qco.alloc : !qco.qubit
     %then = arith.constant 1 : i64
     %else = arith.constant 2 : i64
@@ -229,7 +229,7 @@ TEST(QCOToQCRegressionTest, PreservesClassicalIndexSwitchResult) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%index: index) -> i64
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %q0 = qco.alloc : !qco.qubit
     %result, %q1 = qco.index_switch %index -> (i64, !qco.qubit)
     case 0 args(%arg0 = %q0) {
@@ -284,7 +284,7 @@ TEST(QCOToQCRegressionTest, PreservesClassicalForLoopState) {
 
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> i64 attributes {mqt.entry_point} {
     %q0 = qco.alloc : !qco.qubit
     %lb = arith.constant 0 : index
     %ub = arith.constant 2 : index
@@ -331,7 +331,7 @@ TEST(QCOToQCRegressionTest, PreservesTypeChangingClassicalWhileState) {
 
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> i64 attributes {mqt.entry_point} {
     %q0 = qco.alloc : !qco.qubit
     %initial = arith.constant 1.0 : f32
     %result, %q1 = scf.while (%input = %initial, %q = %q0)
@@ -377,9 +377,9 @@ module {
 TEST_P(QCOToQCTest, ProgramEquivalence) {
   const auto& [nameStr, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + nameStr + ")";
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
-  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
+  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -396,7 +396,8 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized Converted QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+  auto reference =
+      ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

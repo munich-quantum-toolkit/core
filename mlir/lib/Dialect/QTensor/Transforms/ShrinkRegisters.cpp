@@ -171,6 +171,7 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         arith::ConstantIndexOp::create(rewriter, allocOp.getLoc(), newSize);
     auto newAlloc =
         AllocOp::create(rewriter, allocOp.getLoc(), size.getResult());
+    newAlloc->setDiscardableAttrs(allocOp->getDiscardableAttrDictionary());
 
     auto oldTensor = allocOp.getResult();
     auto currentTensor = newAlloc.getResult();

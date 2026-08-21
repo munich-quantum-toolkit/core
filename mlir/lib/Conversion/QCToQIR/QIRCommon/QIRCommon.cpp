@@ -12,11 +12,11 @@
 
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
@@ -435,16 +435,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
   bool hasInvalidMemory = false;
   SmallVector<cbit::StoreOp> consumedStores;
   moduleOp->walk([&](func::FuncOp funcOp) {
-    // Check whether the given function is the main entrypoint
-    auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
-    bool isEntryPoint = false;
-    if (passthrough) {
-      isEntryPoint = llvm::any_of(passthrough, [](Attribute attr) {
-        auto strAttr = dyn_cast<StringAttr>(attr);
-        return strAttr && strAttr.getValue() == "entry_point";
-      });
-    }
-    if (!isEntryPoint) {
+    if (!mqt::isEntryPoint(funcOp)) {
       return;
     }
 
@@ -467,7 +458,8 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       }
       auto& reg = state.cregs[it->second];
       reg.record = false;
-      if (const auto name = allocOp.getSourceNameAttr()) {
+      if (const auto name = allocOp->getAttrOfType<StringAttr>(
+              mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
         reg.label = name.str();
       }
       const auto size = allocOp.getResult().getType().getWidth();

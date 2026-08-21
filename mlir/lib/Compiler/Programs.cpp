@@ -18,6 +18,9 @@
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
@@ -25,8 +28,6 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 
 #include <capnp/common.h>
@@ -46,6 +47,7 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
@@ -83,10 +85,10 @@ namespace mlir {
 
 std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
-  registry.insert<cbit::CBitDialect, qc::QCDialect, qco::QCODialect,
-                  qtensor::QTensorDialect, arith::ArithDialect,
-                  cf::ControlFlowDialect, func::FuncDialect, scf::SCFDialect,
-                  LLVM::LLVMDialect, memref::MemRefDialect,
+  registry.insert<cbit::CBitDialect, mqt::MQTDialect, qc::QCDialect,
+                  qco::QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
+                  cf::ControlFlowDialect, func::FuncDialect, math::MathDialect,
+                  scf::SCFDialect, LLVM::LLVMDialect, memref::MemRefDialect,
                   tensor::TensorDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
@@ -326,7 +328,7 @@ bool QCProgram::cleanup() {
 }
 
 bool QCProgram::normalizeGlobalPhases() {
-  return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
+  return succeeded(mqt::normalizeGlobalPhases(mod()));
 }
 
 std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
@@ -397,7 +399,7 @@ bool QCOProgram::cleanup() {
 }
 
 bool QCOProgram::normalizeGlobalPhases() {
-  return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
+  return succeeded(mqt::normalizeGlobalPhases(mod()));
 }
 
 bool QCOProgram::runPassPipeline(const std::string_view pipeline,

@@ -24,6 +24,7 @@ add_mlir_library(
   MLIRControlFlowToLLVM
   MLIRArithToLLVM
   MLIRMemRefDialect
+  MLIRMQTDialect
   MLIRFuncDialect
   MLIRControlFlowDialect
   MLIRArithDialect

@@ -20,7 +20,9 @@ add_mlir_library(
   MLIRQTensorUtils
   MLIRArithDialect
   MLIRMathDialect
+  MLIRMQTDialect
   MLIRMQTTransforms
+  MLIRMQTUtils
   MLIRSCFUtils
   DEPENDS
   MLIRQCOTransformsIncGen)

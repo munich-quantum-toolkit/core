@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Utils/DenseUnitary.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/DenseUnitary.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -36,7 +36,7 @@ struct FoldIdentityUnitary final : OpRewritePattern<UnitaryOp> {
 
   LogicalResult matchAndRewrite(UnitaryOp op,
                                 PatternRewriter& rewriter) const override {
-    if (!utils::isExactIdentityMatrix(op.getMatrix())) {
+    if (!mqt::isExactIdentityMatrix(op.getMatrix())) {
       return failure();
     }
     rewriter.replaceOp(op, op.getQubitsIn());
@@ -57,8 +57,8 @@ LogicalResult UnitaryOp::verify() {
   if (getQubitsOut().size() != getQubitsIn().size()) {
     return emitOpError("must return one qubit for every input qubit");
   }
-  return utils::verifyDenseUnitaryMatrix(getOperation(), getMatrix(),
-                                         getQubitsIn());
+  return mqt::verifyDenseUnitaryMatrix(getOperation(), getMatrix(),
+                                       getQubitsIn());
 }
 
 Value UnitaryOp::getInputForOutput(const Value output) {
