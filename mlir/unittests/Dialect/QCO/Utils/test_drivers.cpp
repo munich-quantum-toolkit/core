@@ -8,12 +8,12 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseSet.h>
@@ -181,7 +181,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   builder.measure(forResults[3]);
 
   auto mod = builder.finalize();
-  auto func = utils::getEntryPoint(*mod);
+  auto func = mqt::getEntryPoint(*mod);
 
   // Collect wires.
   SmallVector<WireIterator> wires;
