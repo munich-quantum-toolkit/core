@@ -1198,9 +1198,9 @@ private:
       for (const auto& [op, indices] : frontier) {
         const auto release =
             TypeSwitch<Operation*, bool>(op)
-                .Case<BarrierOp>([](auto) { return true; })
-                .template Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
-                  if (op.getNumQubits() == 1) {
+                .Case<BarrierOp>([](auto&) { return true; })
+                .template Case<UnitaryOpInterface>([&](auto&) {
+                  if (indices.size() == 1) {
                     return true;
                   }
 
@@ -1210,14 +1210,14 @@ private:
                       layout.getHardwareIndices(prog0, prog1);
                   return target->areAdjacent(hw0, hw1);
                 })
-                .template Case<ResetOp, MeasureOp>([](auto) { return true; })
+                .template Case<ResetOp, MeasureOp>([](auto&) { return true; })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
-                    [](auto) { return Direction == WireDirection::Forward; })
+                    [](auto&) { return Direction == WireDirection::Forward; })
                 .template Case<SinkOp, qtensor::InsertOp, YieldOp, scf::YieldOp,
                                scf::ConditionOp>(
-                    [](auto) { return Direction == WireDirection::Backward; })
+                    [](auto&) { return Direction == WireDirection::Backward; })
                 .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
-                    [&](auto) {
+                    [&](auto&) {
                       if (visited.insert(op).second) {
                         composites.emplace_back(op, indices);
                       }
@@ -1509,7 +1509,8 @@ private:
       totalStats.merge(*stats);
 
       if constexpr (Mode == RoutingMode::Hot) {
-        for_each(children[1].wires, [](auto& it) { std::ranges::advance(it, -1); });
+        for_each(children[1].wires,
+                 [](auto& it) { std::ranges::advance(it, -1); });
       }
     }
 
@@ -1735,8 +1736,8 @@ private:
         // insertion or pointing at a SWAP operation. If the former is the
         // case, incrementing the wire iterator will undo the previous
         // decrement, leaving it at the same position as before the SWAP
-        // insertion. Otherwise, an increment will move the iterator to the
-        // multi-qubit op of the current or subsequent layer or to a sink.
+        // insertion. Otherwise, an increment will move the iterator past the
+        // inserted SWAP operation.
 
         for_each(wires, [](auto& it) { std::ranges::advance(it, 1); });
       }
