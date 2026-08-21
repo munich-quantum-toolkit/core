@@ -1451,8 +1451,9 @@ TEST_P(MappingPassTest, MapSABRECircuit) {
   builder.qtensorDealloc(tensorDown);
 
   auto m = builder.finalize(bits);
-  ASSERT_TRUE(
-      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(runPass(m.get(), target,
+                      MappingPassOptions{.ntrials = 1, .nlookahead = 15})
+                  .succeeded());
   ASSERT_TRUE(succeeded(verify(*m)));
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
@@ -1685,6 +1686,36 @@ TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
   auto m = builder.finalize(bits);
   ASSERT_TRUE(
       runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+}
+
+TEST_P(MappingPassTest, MapCircuitWithQubitPairBlock) {
+  const auto& target = GetParam();
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  SmallVector<Value> qubits(5);
+  for (size_t i = 0; i < 5; ++i) {
+    qubits[i] = builder.allocQubit();
+  }
+
+  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
+  std::tie(qubits[3], qubits[4]) = builder.cx(qubits[3], qubits[4]);
+  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
+  std::tie(qubits[0], qubits[4]) = builder.cx(qubits[0], qubits[4]);
+  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
+  std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
+
+  for (size_t i = 0; i < 5; ++i) {
+    builder.sink(qubits[i]);
+  }
+
+  auto m = builder.finalize();
+  ASSERT_TRUE(runPass(m.get(), target,
+                      MappingPassOptions{.ntrials = 1, .nlookahead = 15})
+                  .succeeded());
   ASSERT_TRUE(succeeded(verify(*m)));
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
