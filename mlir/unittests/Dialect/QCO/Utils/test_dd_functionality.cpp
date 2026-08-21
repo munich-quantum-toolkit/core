@@ -967,9 +967,10 @@ TEST_F(QCODDFunctionalityTest, SampleHadamardApproximatelyBalanced) {
 TEST_F(QCODDFunctionalityTest, SampleDefersTerminalMeasurement) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q = b.x(b.staticQubit(0));
+    auto result = b.intConstant(0);
     std::tie(q, std::ignore) = b.measure(q);
     b.sink(q);
-    return b.intConstant(0);
+    return result;
   });
   ASSERT_TRUE(mod);
 
@@ -978,6 +979,7 @@ TEST_F(QCODDFunctionalityTest, SampleDefersTerminalMeasurement) {
   const auto histogram = sample(mainFunc(*mod), *dd, 16, rng);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 16}}));
+  EXPECT_EQ(dd->matrixVectorMultiplication.getStats().lookups, 1U);
 }
 
 TEST_F(QCODDFunctionalityTest, SampleRejectsUnmappedTerminalMeasurement) {
@@ -1083,6 +1085,8 @@ TEST_F(QCODDFunctionalityTest, SampleHandlesZeroShotsAndSimulationFailure) {
 
   auto tooSmall = std::make_unique<dd::Package>(0);
   EXPECT_TRUE(failed(sample(mainFunc(*unitary), *tooSmall, 1, rng)));
+  EXPECT_TRUE(
+      failed(sampleWithClassics(mainFunc(*unitary), *tooSmall, 1, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, EmbedsWideLocalMatrixWithoutRegisterLimit) {
@@ -1163,6 +1167,62 @@ TEST_F(QCODDFunctionalityTest, RejectsInvalidClassicalOperations) {
                %q = qco.static 0 : !qco.qubit
                %one = arith.constant 1 : index
                %bad = arith.ori %unmapped, %one : index
+               qco.sink %q : !qco.qubit
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%unmapped: i1) {
+               %q = qco.static 0 : !qco.qubit
+               %true = arith.constant true
+               %bad = arith.cmpi eq, %true, %unmapped : i1
+               qco.sink %q : !qco.qubit
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%unmapped: index) {
+               %q = qco.static 0 : !qco.qubit
+               %zero = arith.constant 0 : index
+               %bad = arith.cmpi eq, %zero, %unmapped : index
+               qco.sink %q : !qco.qubit
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%unmapped: index) {
+               %q = qco.static 0 : !qco.qubit
+               %one = arith.constant 1 : index
+               %bad = arith.shli %one, %unmapped : index
+               qco.sink %q : !qco.qubit
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%condition: i1) {
+               %q = qco.static 0 : !qco.qubit
+               %true = arith.constant true
+               %false = arith.constant false
+               %bad = arith.select %condition, %true, %false : i1
+               qco.sink %q : !qco.qubit
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%unmapped: i1) {
+               %q = qco.static 0 : !qco.qubit
+               %true = arith.constant true
+               %bad = arith.select %true, %unmapped, %true : i1
+               qco.sink %q : !qco.qubit
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%unmapped: index) {
+               %q = qco.static 0 : !qco.qubit
+               %true = arith.constant true
+               %zero = arith.constant 0 : index
+               %bad = arith.select %true, %unmapped, %zero : index
                qco.sink %q : !qco.qubit
                return
              }
@@ -1446,6 +1506,23 @@ TEST_F(QCODDFunctionalityTest, RejectsInvalidLinearRegionValues) {
   }
 }
 
+TEST_F(QCODDFunctionalityTest, RejectsQTensorLinearRegionArguments) {
+  expectMlirSimulationFails(0, R"mlir(
+    module {
+      func.func @main(%tensor: tensor<1x!qco.qubit>) {
+        %true = arith.constant true
+        %out = qco.if %true args(%arg = %tensor)
+            -> (tensor<1x!qco.qubit>) {
+          qco.yield %arg : tensor<1x!qco.qubit>
+        } else args(%arg = %tensor) {
+          qco.yield %arg : tensor<1x!qco.qubit>
+        }
+        return
+      }
+    }
+  )mlir");
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsUnmappedMeasurementAndResetQubits) {
   for (const StringRef source : {R"mlir(module {
            func.func @main(%unmapped: !qco.qubit) {
@@ -1602,6 +1679,30 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
     }
   )mlir");
 
+  for (const bool composed : {false, true}) {
+    auto wideModifier = buildModule([composed](QCOProgramBuilder& b) {
+      SmallVector<Value, 11> qubits;
+      for (int64_t i = 0; i < 11; ++i) {
+        qubits.push_back(b.staticQubit(i));
+      }
+      auto outputs = b.inv(qubits, [&](ValueRange args) -> SmallVector<Value> {
+        SmallVector<Value> results(args.begin(), args.end());
+        results[0] = b.x(results[0]);
+        if (composed) {
+          results[1] = b.x(results[1]);
+        }
+        return results;
+      });
+      for (Value output : outputs) {
+        b.sink(output);
+      }
+      return b.intConstant(0);
+    });
+    ASSERT_TRUE(wideModifier);
+    auto wideDD = std::make_unique<dd::Package>(11);
+    EXPECT_TRUE(failed(buildFunctionality(mainFunc(*wideModifier), *wideDD)));
+  }
+
   OwningOpRef<ModuleOp> multi =
       ModuleOp::create(UnknownLoc::get(context.get()));
   OpBuilder builder(context.get());
@@ -1710,6 +1811,49 @@ TEST_F(QCODDFunctionalityTest, RejectsInvalidFuncCalls) {
       cast<func::FuncOp>(mainFunc(*unresolved)->clone()));
   expectSimulationFails(*standalone, 1);
   EXPECT_TRUE(failed(buildFunctionality(*standalone, *dd)));
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsInvalidScfForBindings) {
+  auto unmappedRegister = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%reg: !cbit.reg<1>) {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %result = scf.for %iv = %c0 to %c1 step %c1
+            iter_args(%arg = %reg) -> (!cbit.reg<1>) {
+          scf.yield %arg : !cbit.reg<1>
+        }
+        return
+      }
+    }
+  )mlir",
+                                                      context.get());
+  ASSERT_TRUE(unmappedRegister);
+  expectSimulationFails(mainFunc(*unmappedRegister), 0);
+
+  auto unsupportedCall = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @consume(%value: f64) {
+        return
+      }
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %value = arith.constant 1.0 : f64
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        scf.for %iv = %c0 to %c1 step %c1 {
+          func.call @consume(%value) : (f64) -> ()
+        }
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                                     context.get());
+  ASSERT_TRUE(unsupportedCall);
+  auto dd = std::make_unique<dd::Package>(1);
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*unsupportedCall), *dd)));
+  expectSimulationFails(mainFunc(*unsupportedCall), 1);
 }
 
 TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {
@@ -2001,6 +2145,13 @@ TEST_F(QCODDFunctionalityTest, RejectsInvalidClassicalCBitAccesses) {
                %value = arith.constant true
                %i0 = arith.constant 0 : index
                cbit.store %value, %reg[%i0] : !cbit.reg<1>
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%index: index) {
+               %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+               %value = cbit.load %reg[%index] : !cbit.reg<1>
                return
              }
            })mlir",

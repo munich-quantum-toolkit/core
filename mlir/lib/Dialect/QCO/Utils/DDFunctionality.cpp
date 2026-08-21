@@ -439,34 +439,6 @@ lookupInteger(Value value, ClassicalEnv& classical, Operation* op) {
             "index";
 }
 
-[[nodiscard]] static bool evaluateCmp(arith::CmpIPredicate predicate,
-                                      const llvm::APInt& lhs,
-                                      const llvm::APInt& rhs) {
-  switch (predicate) {
-  case arith::CmpIPredicate::eq:
-    return lhs == rhs;
-  case arith::CmpIPredicate::ne:
-    return lhs != rhs;
-  case arith::CmpIPredicate::slt:
-    return lhs.slt(rhs);
-  case arith::CmpIPredicate::sle:
-    return lhs.sle(rhs);
-  case arith::CmpIPredicate::sgt:
-    return lhs.sgt(rhs);
-  case arith::CmpIPredicate::sge:
-    return lhs.sge(rhs);
-  case arith::CmpIPredicate::ult:
-    return lhs.ult(rhs);
-  case arith::CmpIPredicate::ule:
-    return lhs.ule(rhs);
-  case arith::CmpIPredicate::ugt:
-    return lhs.ugt(rhs);
-  case arith::CmpIPredicate::uge:
-    return lhs.uge(rhs);
-  }
-  llvm_unreachable("unknown arith.cmpi predicate");
-}
-
 /// Cast a concrete `i1` SSA value to `index` via `index_castui`.
 static LogicalResult applyI1ToIndex(Value in, Value out, Operation* op,
                                     ClassicalEnv& classical) {
@@ -659,7 +631,7 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
           return failure();
         }
         classical.bools[cmp.getResult()] =
-            evaluateCmp(cmp.getPredicate(), *lhs, *rhs);
+            arith::applyCmpPredicate(cmp.getPredicate(), *lhs, *rhs);
         return success();
       })
       .Case<arith::SelectOp>([&](arith::SelectOp select) -> LogicalResult {
