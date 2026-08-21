@@ -116,7 +116,9 @@ declaration is the new fail-closed default.
 Targets created from a QDMI device infer `Conditional` when the device
 advertises QIR Adaptive. Use the `classical_control` argument of `from_device`
 or `from_device_id` to add optional capabilities that QDMI does not expose. QASM
-3 or measurement support alone does not imply runtime branching.
+3 or measurement support alone does not imply runtime branching. Explicit
+additions are trusted caller assertions and are not checked against device
+metadata. Devices without program-format metadata infer no capabilities.
 
 ### Private `nlohmann_json` dependency
 

@@ -32,7 +32,10 @@ namespace mlir {
  * zone models and site-dependent operation support are not supported by the
  * circuit-model compiler pipeline. QIR Adaptive support implies forward
  * conditional control. The adapter adds @p additionalClassicalControl to the
- * capabilities inferred from QDMI program formats.
+ * capabilities inferred from QDMI program formats. These additions are trusted
+ * caller assertions and are not validated against device metadata. If the
+ * device does not expose its optional program-format property, no capability
+ * is inferred.
  */
 [[nodiscard]] llvm::Expected<CompilerTarget>
 compilerTargetFromDevice(const qdmi::Device& device,
@@ -45,7 +48,8 @@ compilerTargetFromDevice(const qdmi::Device& device,
  * @details This adapter contains exceptions from the QDMI C++ API and returns
  * them as LLVM errors. The returned target owns all queried metadata. The
  * adapter adds @p additionalClassicalControl to the capabilities inferred from
- * QDMI program formats.
+ * QDMI program formats. These additions are trusted caller assertions and are
+ * not validated against device metadata.
  */
 [[nodiscard]] llvm::Expected<CompilerTarget>
 compilerTargetFromDeviceId(std::string_view deviceId,

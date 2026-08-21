@@ -71,8 +71,10 @@ the three optional loop and multiway capabilities. Pass
 {code}`classical_control` to
 {py:meth}`~mqt.core.mlir.CompilerTarget.from_device` or
 {py:meth}`~mqt.core.mlir.CompilerTarget.from_device_id` to add capabilities that
-the QDMI program-format list cannot describe. QASM 3 and measurement support do
-not imply runtime branching.
+the QDMI program-format list cannot describe. These additions are trusted caller
+assertions and are not validated against device metadata. A device that does not
+expose the optional program-format property yields no inferred capability. QASM
+3 and measurement support alone do not imply runtime branching.
 
 Conditional support does not imply loop or multiway-branch support. The
 preflight follows only the selected region of an {code}`if` or

@@ -279,7 +279,7 @@ class CompilerTarget:
         *,
         classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
     ) -> CompilerTarget:
-        """Snapshot a circuit-model QDMI device. Additional classical-control capabilities augment support inferred from its program formats."""
+        """Snapshot a circuit-model QDMI device. Additional classical-control capabilities are trusted caller assertions that augment support inferred from its program formats."""
 
     @staticmethod
     def from_device_id(
@@ -288,7 +288,7 @@ class CompilerTarget:
         classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
         **session_parameters: Unpack[QDMISessionParameters],
     ) -> CompilerTarget:
-        """Open a registered device and snapshot its compiler target. Additional classical-control capabilities augment support inferred from its program formats."""
+        """Open a registered device and snapshot its compiler target. Additional classical-control capabilities are trusted caller assertions that augment support inferred from its program formats."""
 
     @property
     def name(self) -> str | None:

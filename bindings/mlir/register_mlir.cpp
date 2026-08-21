@@ -571,7 +571,8 @@ means every operation is native.)pb");
           "classical_control"_a =
               std::vector<mlir::CompilerTarget::ClassicalControl>{},
           "Snapshot a circuit-model QDMI device. Additional classical-control "
-          "capabilities augment support inferred from its program formats.")
+          "capabilities are trusted caller assertions that augment support "
+          "inferred from its program formats.")
       .def_static(
           "from_device_id",
           [](const std::string& deviceId,
@@ -611,8 +612,8 @@ means every operation is native.)pb");
           "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
           "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
           "Open a registered device and snapshot its compiler target. "
-          "Additional classical-control capabilities augment support inferred "
-          "from its program formats.")
+          "Additional classical-control capabilities are trusted caller "
+          "assertions that augment support inferred from its program formats.")
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget& target) {

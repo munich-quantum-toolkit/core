@@ -73,6 +73,11 @@ state, and qubit tensors carried through structured control.
 - [x] (2026-08-21 16:11Z) State the capability model's boundary for classical
       operations that do not direct quantum execution and pass the final full
       repository lint and diff checks.
+- [x] (2026-08-21 16:55Z) Preserve compatibility with QDMI devices that omit the
+      optional supported-program-formats property, document explicit additions
+      as trusted caller assertions, and pass all 234 QDMI, 154 compiler, and 50
+      Python MLIR tests, generated-stub checks, full repository lint, and the
+      final diff check.
 
 ## Surprises & Discoveries
 
@@ -111,6 +116,10 @@ state, and qubit tensors carried through structured control.
   Evidence: the first fold-aware preflight called the shared constant-folding
   helper on source operations, which could violate the preflight's no-mutation
   contract; the helper now folds a clone of each pure operation.
+- Observation: QDMI highly encourages but does not require devices to expose
+  their supported program formats. Evidence: the non-optional C++ getter threw
+  on `QDMI_ERROR_NOTSUPPORTED`, so querying it unconditionally from the adapter
+  could make a previously valid third-party target fail to construct.
 
 ## Decision Log
 
@@ -141,6 +150,10 @@ state, and qubit tensors carried through structured control.
   inferred list. Rationale: QDMI has no standard properties for the optional
   loop and multiway flags, and callers must not reconstruct device topology and
   calibration data to add them. Date/Author: 2026-08-21, Codex.
+- Decision: Treat an unsupported QDMI program-format property as an empty list
+  and describe explicit additions as trusted caller assertions. Rationale:
+  missing optional metadata cannot justify an inferred capability and must not
+  make otherwise usable devices fail. Date/Author: 2026-08-21, Codex.
 - Decision: Keep program requirements separate from target support in the
   preflight implementation. Rationale: One read-only analysis can classify the
   program, avoid repeated subtree walks, and preserve precise diagnostics when
@@ -187,9 +200,11 @@ the read-only preflight contract is preserved.
 QDMI snapshots infer only forward conditional support from QIR Adaptive string
 or module formats. Callers can augment that conservative inference with optional
 loop or multiway capabilities through the C++ and Python factories; the target
-constructor canonicalizes the union. The documentation now limits the four flags
-to structured control that directs quantum execution and does not claim general
-classical-computation, assertion, function, or QIR-profile support.
+constructor canonicalizes the union. Devices that omit the optional format
+property infer nothing, and explicit additions are documented as unchecked
+caller assertions. The documentation limits the four flags to structured control
+that directs quantum execution and does not claim general classical-computation,
+assertion, function, or QIR-profile support.
 
 The final release binaries passed all 154 compiler and 20 MQT utility tests. The
 generated Python extension passed all 50 tests in `test/python/test_mlir.py`;
@@ -369,6 +384,11 @@ end-to-end conditional regressions. The MQT utility binary reports 20 passing
 constant-folding tests. All 50 Python MLIR tests pass against the generated
 extension, and stub generation reproduces the checked-in interface.
 
+The QDMI client binary reports 234 passing tests, including a registered device
+whose supported-program-formats query returns `QDMI_ERROR_NOTSUPPORTED`. Its C++
+getter returns an empty vector, allowing compiler-target construction to remain
+fail-closed without rejecting the device solely for missing metadata.
+
 The depth-800 performance sample reports 3.2 ms in
 `VerifyTargetClassicalControlPass` and 12.9 ms total, compared with 29.5 ms and
 39.4 ms before the cached analysis. The remaining dominant pass in that sample
@@ -400,9 +420,11 @@ remove the same unreachable runtime control that preflight ignores.
 
 The QDMI factories accept an optional additional classical-control list. They
 infer `Conditional` only from QIR Adaptive string or module support and union
-the supplied values with that inference. `MQTCompilerPipeline` directly links
-`MLIRMQTUtils` for cached constant-expression evaluation.
+the supplied values with that inference. The additions are trusted caller
+assertions. An unsupported program-format property produces an empty list and no
+inferred capability. `MQTCompilerPipeline` directly links `MLIRMQTUtils` for
+cached constant-expression evaluation.
 
 Plan revision note: Recorded the latest-main merge, fold-aware performance
 follow-up, conservative QDMI mapping and augmentation, no-mutation correction,
-scope boundary, and final validation evidence.
+optional-property compatibility, scope boundary, and final validation evidence.

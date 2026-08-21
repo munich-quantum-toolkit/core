@@ -10,6 +10,7 @@
 
 #include "qdmi/Client.hpp"
 #include "qdmi/common/Common.hpp"
+#include "qdmi/driver/Driver.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -28,6 +29,7 @@
 #include <ranges>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <tuple>
 #include <vector>
@@ -519,6 +521,17 @@ TEST_P(DeviceTest, MinAtomDistance) {
 
 TEST_P(DeviceTest, SupportedProgramFormats) {
   EXPECT_NO_THROW(std::ignore = device.getSupportedProgramFormats());
+}
+
+TEST(DeviceProgramFormatsTest, UnsupportedPropertyIsEmpty) {
+  constexpr std::string_view deviceId = "test.unsupported-program-formats";
+  static_cast<void>(Driver::get().registerDeviceIfAbsent(
+      {.id = std::string(deviceId),
+       .library = MQT_CORE_QDMI_SESSION_TEST_DEVICE,
+       .prefix = "TEST_SESSION"}));
+
+  const auto device = Session::openDevice(deviceId);
+  EXPECT_TRUE(device.getSupportedProgramFormats().empty());
 }
 
 TEST_P(DeviceTest, ChildDevices) {

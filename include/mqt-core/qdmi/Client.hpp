@@ -539,7 +539,12 @@ public:
   /// @see QDMI_DEVICE_PROPERTY_MINATOMDISTANCE
   [[nodiscard]] std::optional<uint64_t> getMinAtomDistance() const;
 
-  /// @see QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS
+  /**
+   * @brief Return the program formats reported by the device.
+   * @return The reported formats, or an empty vector if the property is
+   * unsupported.
+   * @see QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS
+   */
   [[nodiscard]] std::vector<QDMI_Program_Format>
   getSupportedProgramFormats() const;
 

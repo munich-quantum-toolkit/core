@@ -269,7 +269,7 @@ class Device:
         """Returns the minimum atom distance on the device."""
 
     def supported_program_formats(self) -> list[ProgramFormat]:
-        """Returns the list of program formats supported by the device."""
+        """Returns the program formats reported by the device, or an empty list if the property is unsupported."""
 
     def child_devices(self) -> list[Device]:
         """Returns the direct child devices managed by this device."""
