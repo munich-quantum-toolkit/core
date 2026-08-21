@@ -1451,9 +1451,8 @@ TEST_P(MappingPassTest, MapSABRECircuit) {
   builder.qtensorDealloc(tensorDown);
 
   auto m = builder.finalize(bits);
-  ASSERT_TRUE(runPass(m.get(), target,
-                      MappingPassOptions{.ntrials = 1, .nlookahead = 15})
-                  .succeeded());
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
   ASSERT_TRUE(succeeded(verify(*m)));
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
