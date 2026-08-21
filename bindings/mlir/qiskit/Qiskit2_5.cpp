@@ -72,6 +72,7 @@ namespace nb = nanobind;
 namespace {
 
 constexpr size_t MAX_EXPRESSION_DEPTH = 64U;
+constexpr size_t MAX_EXPRESSION_NODES = 4096U;
 constexpr size_t MAX_ANNOTATED_OPERATION_DEPTH = 64U;
 
 [[nodiscard]] nb::object pythonAttribute(const nb::handle object,
@@ -1138,7 +1139,8 @@ public:
         nb::module_::import_("qiskit.circuit.classical.expr");
     if (nb::isinstance(condition, expressionModule.attr("Expr"))) {
       result.kind = ClassicalTargetKind::Expression;
-      result.expression = normalizePythonExpressionOnly(condition);
+      size_t nodeCount = 0U;
+      result.expression = normalizePythonExpressionOnly(condition, nodeCount);
       return result;
     }
 
@@ -1283,7 +1285,8 @@ public:
     if (nb::isinstance(target, expressionModule.attr("Expr"))) {
       result.kind = ClassicalTargetKind::Expression;
       // Qiskit 2.5's native switch-target accessors abort for expressions.
-      result.expression = normalizePythonExpressionOnly(target);
+      size_t nodeCount = 0U;
+      result.expression = normalizePythonExpressionOnly(target, nodeCount);
       return result;
     }
     throw std::runtime_error("Qiskit switch has an unknown target type");
@@ -1473,11 +1476,17 @@ private:
 
   [[nodiscard]] std::unique_ptr<Expression>
   normalizePythonExpressionOnly(const nb::handle pythonExpression,
+                                size_t& nodeCount,
                                 const size_t depth = 0U) const {
     if (depth >= MAX_EXPRESSION_DEPTH) {
       throw std::runtime_error(
           "Qiskit classical expressions exceed the nesting limit of 64");
     }
+    if (nodeCount >= MAX_EXPRESSION_NODES) {
+      throw std::runtime_error(
+          "Qiskit classical expressions exceed the node limit of 4096");
+    }
+    ++nodeCount;
     auto result = std::make_unique<Expression>();
     setPythonExpressionType(*result, pythonExpression);
     const auto className = pythonStringAttribute(
@@ -1529,7 +1538,7 @@ private:
       result->left = normalizePythonExpressionOnly(
           pythonAttribute(pythonExpression, "operand",
                           "Qiskit unary expression has no operand"),
-          depth + 1U);
+          nodeCount, depth + 1U);
       return result;
     }
     if (className == "Binary") {
@@ -1541,11 +1550,11 @@ private:
       result->left = normalizePythonExpressionOnly(
           pythonAttribute(pythonExpression, "left",
                           "Qiskit binary expression has no left operand"),
-          depth + 1U);
+          nodeCount, depth + 1U);
       result->right = normalizePythonExpressionOnly(
           pythonAttribute(pythonExpression, "right",
                           "Qiskit binary expression has no right operand"),
-          depth + 1U);
+          nodeCount, depth + 1U);
       return result;
     }
     if (className == "Cast") {
@@ -1553,7 +1562,7 @@ private:
       result->left = normalizePythonExpressionOnly(
           pythonAttribute(pythonExpression, "operand",
                           "Qiskit cast expression has no operand"),
-          depth + 1U);
+          nodeCount, depth + 1U);
       return result;
     }
     if (className == "Index") {
@@ -1561,11 +1570,11 @@ private:
       result->left = normalizePythonExpressionOnly(
           pythonAttribute(pythonExpression, "target",
                           "Qiskit index expression has no target"),
-          depth + 1U);
+          nodeCount, depth + 1U);
       result->right = normalizePythonExpressionOnly(
           pythonAttribute(pythonExpression, "index",
                           "Qiskit index expression has no index"),
-          depth + 1U);
+          nodeCount, depth + 1U);
       return result;
     }
     if (className == "Stretch") {
