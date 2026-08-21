@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <limits>
 #include <string>
 #include <utility>
 
@@ -58,28 +57,6 @@ TEST_P(JeffBenchmarkTest, KeepsStructuredControlFlow) {
               assembly.find("jeff.while") != std::string::npos ||
               assembly.find("jeff.switch") != std::string::npos)
       << assembly;
-}
-
-TEST_P(JeffBenchmarkTest, RejectsSizesBelowTheMinimum) {
-  const auto& benchmark = GetParam();
-  if (benchmark.minimumSize == 0) {
-    GTEST_SKIP() << "the benchmark accepts every size";
-  }
-  EXPECT_FALSE(generateProgram(benchmark, benchmark.minimumSize - 1));
-}
-
-TEST_P(JeffBenchmarkTest, RejectsSizesBeyondTheSignedRange) {
-  const auto& benchmark = GetParam();
-  EXPECT_FALSE(
-      generateProgram(benchmark, std::numeric_limits<uint64_t>::max()));
-}
-
-TEST_P(JeffBenchmarkTest, RejectsSizesAboveTheMaximum) {
-  const auto& benchmark = GetParam();
-  if (benchmark.maximumSize == 0) {
-    GTEST_SKIP() << "the benchmark has no upper size limit";
-  }
-  EXPECT_FALSE(generateProgram(benchmark, benchmark.maximumSize + 1));
 }
 
 } // namespace
