@@ -45,20 +45,8 @@ static llvm::cl::opt<std::string> programFilter(
 /// Builds one benchmark and writes it as a `jeff` file.
 static bool generate(const mqt::benchmark::Benchmark& benchmark,
                      const uint64_t n, const std::filesystem::path& directory) {
-  if (n < benchmark.minimumSize) {
-    llvm::errs() << benchmark.name << ": needs n of at least "
-                 << benchmark.minimumSize << ", skipping\n";
-    return false;
-  }
-  if (benchmark.maximumSize != 0 && n > benchmark.maximumSize) {
-    llvm::errs() << benchmark.name << ": needs n of at most "
-                 << benchmark.maximumSize << ", skipping\n";
-    return false;
-  }
-
   auto qc = mqt::benchmark::generateProgram(benchmark, n);
   if (!qc) {
-    llvm::errs() << benchmark.name << ": failed to build the program\n";
     return false;
   }
   auto compiled =
