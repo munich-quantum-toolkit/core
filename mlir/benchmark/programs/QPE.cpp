@@ -57,7 +57,11 @@ SmallVector<Value> qpe(qc::QCProgramBuilder& b, const uint64_t n) {
     b.swap(b.loadQubit(q.value, i), b.loadQubit(q.value, mirrored));
   });
 
-  b.scfFor(0, counting, 1, [&](Value i) {
+  // The transform runs the forward circuit backwards, so the qubits are walked
+  // from the last one down. Each qubit takes the phases that its later
+  // neighbours correct and only then its Hadamard.
+  b.scfFor(0, counting, 1, [&](Value step) {
+    auto i = arith::SubIOp::create(b, last, step);
     auto lower = arith::AddIOp::create(b, i, one);
     phaseRotationLoop(b, lower, upper, -std::numbers::pi / 2.0, 0.5,
                       [&](Value angle, Value j) {
