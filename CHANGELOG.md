@@ -91,6 +91,8 @@ releases may include breaking changes.
   [#1549], [#1953]) ([**@burgholzer**], [**@denialhaag**])
 - ♻️ Improve the backward traversal logic for the `WireIterator` class ([#2184])
   ([**@MatthiasReumann**])
+- :sparkles: Include one-qubit ops to the `walkProgramGraph` graph traversal
+  function ([#2205]) ([**@MatthiasReumann**])
 
 ### Removed
 
@@ -788,6 +790,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2205]: https://github.com/munich-quantum-toolkit/core/pull/2205
 [#2185]: https://github.com/munich-quantum-toolkit/core/pull/2185
 [#2184]: https://github.com/munich-quantum-toolkit/core/pull/2184
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168

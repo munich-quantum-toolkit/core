@@ -650,7 +650,6 @@ private:
 
   /// Perform placement by replacing dynamic qubits with static target sites
   /// and extending control-flow operations with target sites used for routing.
-  ///
   /// Analogously to the discoverComputation function, the i-th extract
   /// operation defines the i-th program qubit.
   std::pair<Wires, WireInfos> place(Region& body, const Layout& layout,
@@ -764,22 +763,10 @@ private:
           return;
         }
 
-        assert(all_of(t.bundle.wires, [](const auto& it) {
-          return it == std::default_sentinel;
-        }));
-
-        for_each(t.bundle.wires, [](auto& it) { std::advance(it, -1); });
-
         const auto bwRouteRes = route<WireDirection::Backward>(t.bundle);
         if (failed(bwRouteRes)) {
           return;
         }
-
-        assert(all_of(t.bundle.wires, [](const auto& it) {
-          return it == std::default_sentinel;
-        }));
-
-        for_each(t.bundle.wires, [](auto& it) { std::advance(it, 1); });
 
         t.stats = *bwRouteRes;
       }
@@ -1022,10 +1009,9 @@ private:
   }
 
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
-  /// two-qubit gates.
-  /// In block-skipping mode, the function releases only gates belonging to the
-  /// current qubit-pair blocks and suppresses other ready gates until each
-  /// block is exhausted.
+  /// two-qubit gates. In block-skipping mode, the function releases only gates
+  /// belonging to the current qubit-pair blocks and suppresses other ready
+  /// gates until each block is exhausted.
   template <WireDirection Direction>
   Window getWindow(Wires wires, const WireInfos& infos) { // NOLINT
     Window window;
@@ -1035,33 +1021,37 @@ private:
     SmallVector<IndexPairType> next;
 
     walkProgramGraph<Direction>(
-        wires, [&](const ReadyMap& ready, ReleasedOps& released) {
-          if (ready.empty()) {
-            return WalkResult::advance();
+        wires, [&](const Frontier& frontier, ReleasedOps& released) {
+          for (const auto& [op, indices] : frontier) {
+            if (indices.size() == 1) {
+              released.emplace_back(op);
+            }
           }
 
-          for (const auto& [op, indices] : ready) {
-            if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
-              const auto i0 = indices[0];
-              const auto i1 = indices[1];
-              const auto prog0 = infos.lookupProgram(i0);
-              const auto prog1 = infos.lookupProgram(i1);
-              const IndexPairType gate = std::minmax(prog0, prog1);
+          if (released.empty()) {
+            for (const auto& [op, indices] : frontier) {
+              if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
+                const auto i0 = indices[0];
+                const auto i1 = indices[1];
+                const auto prog0 = infos.lookupProgram(i0);
+                const auto prog1 = infos.lookupProgram(i1);
+                const IndexPairType gate = std::minmax(prog0, prog1);
 
-              if (!is_contained(prev, gate)) {
-                window.emplace_back(gate);
-                if (window.size() == 1 + nlookahead) {
-                  return WalkResult::interrupt();
+                if (!is_contained(prev, gate)) {
+                  window.emplace_back(gate);
+                  if (window.size() == 1 + nlookahead) {
+                    return WalkResult::interrupt();
+                  }
                 }
+                next.emplace_back(gate);
               }
-              next.emplace_back(gate);
+
+              released.emplace_back(op);
             }
 
-            released.emplace_back(op);
+            prev.swap(next);
+            next.clear();
           }
-
-          prev.swap(next);
-          next.clear();
 
           return WalkResult::advance();
         });
@@ -1114,43 +1104,53 @@ private:
 
   /// Advance past all executable gates and return operations with nested
   /// regions and the respective wire indices. Stops when no more executable
-  /// gates are found. After the function returns, the wires point at the
-  /// results of non-executable gates or operations with nested regions.
+  /// gates are found. The function positions each wire on a non-executable
+  /// two-gate or a composite unitary, if possible. The function never advances
+  /// past sink-like operation and thus, each wire will never reach the sentinel
+  /// state.
   template <WireDirection Direction>
   SmallVector<CompositeUnitary> advance(Wires& wires, const WireInfos& infos,
                                         const Layout& layout) {
     DenseSet<Operation*> visited;
     SmallVector<CompositeUnitary> composites;
 
-    // Advance wires past all executable gates and push composite unitaries and
-    // the respective wire indices of their inputs onto the vector.
+    // Advance wires past all executable gates and push composite unitaries
+    // and the respective wire indices of their inputs onto the vector.
 
-    walkProgramGraph<Direction>(wires, [&](const ReadyMap& ready,
+    walkProgramGraph<Direction>(wires, [&](const Frontier& frontier,
                                            ReleasedOps& released) {
-      if (ready.empty()) {
-        return WalkResult::advance();
-      }
+      for (const auto& [op, indices] : frontier) {
+        const auto release =
+            TypeSwitch<Operation*, bool>(op)
+                .Case<BarrierOp>([](auto&) { return true; })
+                .template Case<UnitaryOpInterface>([&](auto&) {
+                  if (indices.size() == 1) {
+                    return true;
+                  }
 
-      for (const auto& [op, indices] : ready) {
-        if (isa<BarrierOp>(op)) {
+                  const auto prog0 = infos.lookupProgram(indices[0]);
+                  const auto prog1 = infos.lookupProgram(indices[1]);
+                  const auto [hw0, hw1] =
+                      layout.getHardwareIndices(prog0, prog1);
+                  return target->areAdjacent(hw0, hw1);
+                })
+                .template Case<ResetOp, MeasureOp>([](auto&) { return true; })
+                .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
+                    [](auto&) { return Direction == WireDirection::Forward; })
+                .template Case<SinkOp, qtensor::InsertOp, YieldOp, scf::YieldOp,
+                               scf::ConditionOp>(
+                    [](auto&) { return Direction == WireDirection::Backward; })
+                .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
+                    [&](auto&) {
+                      if (visited.insert(op).second) {
+                        composites.emplace_back(op, indices);
+                      }
+                      return false;
+                    })
+                .Default([&](auto) { return false; });
+
+        if (release) {
           released.emplace_back(op);
-          continue;
-        }
-
-        if (isa<UnitaryOpInterface>(op)) {
-          const auto prog0 = infos.lookupProgram(indices[0]);
-          const auto prog1 = infos.lookupProgram(indices[1]);
-          if (const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-              target->areAdjacent(hw0, hw1)) {
-            released.emplace_back(op);
-          }
-          continue;
-        }
-
-        if (op->getNumRegions() > 0 && visited.insert(op).second) {
-          assert((isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(op)));
-          composites.emplace_back(op, indices);
-          continue;
         }
       }
 
@@ -1170,6 +1170,21 @@ private:
                  assert(lhs.op->getBlock() == rhs.op->getBlock());
                  return lhs.op->isBeforeInBlock(rhs.op);
                });
+
+    // Edge case handling: If we reach a block-argument the driver immediately
+    // releases it because op == nullptr. If we walk backward this will yield a
+    // sentinel, hence move back to the block-argument.
+
+    if constexpr (Direction == WireDirection::Backward) {
+      for (auto& it : wires) {
+        if (it == std::default_sentinel) {
+          std::advance(it, 1);
+        }
+      }
+    }
+
+    assert(all_of(wires,
+                  [](const auto& it) { return it != std::default_sentinel; }));
 
     return composites;
   }
@@ -1383,7 +1398,7 @@ private:
       totalStats.merge(*stats);
 
       if constexpr (Mode == RoutingMode::Hot) {
-        for_each(child.wires, [](auto& it) { std::advance(it, -2); });
+        for_each(child.wires, [](auto& it) { std::advance(it, -1); });
       }
     }
 
@@ -1399,8 +1414,8 @@ private:
         if constexpr (Direction == WireDirection::Forward) {
           return whileOp.getAfterArguments();
         }
-        return cast<scf::YieldOp>(whileOp.getAfterBody()->getTerminator())
-            .getResults();
+        Operation* const terminator = whileOp.getAfterBody()->getTerminator();
+        return cast<scf::YieldOp>(terminator).getResults();
       }();
 
       for (auto [i, arg] : llvm::enumerate(getQubitValues(values))) {
@@ -1418,7 +1433,7 @@ private:
       totalStats.merge(*stats);
 
       if constexpr (Mode == RoutingMode::Hot) {
-        for_each(children[1].wires, [](auto& it) { std::advance(it, -2); });
+        for_each(children[1].wires, [](auto& it) { std::advance(it, -1); });
       }
     }
 
@@ -1496,9 +1511,9 @@ private:
       }
     }
 
-    // If the operation is a scf::ForOp, where the parent.layout = child.layout,
-    // we are done. Otherwise, propagate a patch with the final layout and
-    // index-to-program mapping.
+    // If the operation is a scf::ForOp, where the parent.layout =
+    // child.layout, we are done. Otherwise, propagate a patch with the final
+    // layout and index-to-program mapping.
 
     if (isa<scf::ForOp>(op)) {
       return std::make_pair(RoutingBundle::Patch{}, totalStats);
@@ -1551,8 +1566,8 @@ private:
           bundle.applyPatch(std::move(res->first));
           stats.merge(res->second);
 
-          // Once the composite is mapped, move past this op by incrementing the
-          // respective wires.
+          // Once the composite is mapped, move past this op by incrementing
+          // the respective wires.
 
           for_each(composite.indices, [&](size_t i) {
             std::advance(wires[i], WireTraversalTraits<Direction>::stride());
@@ -1572,15 +1587,11 @@ private:
 
       if constexpr (Mode == RoutingMode::Hot) {
 
-        // At this point the wire iterators either point to
-        // std::default_sentinel or a multi-qubit gate (incl. barriers) of
-        // the current or subsequent layers. The former must be decremented
-        // twice (sentinel → sink → unitary/static). For the latter, we
-        // must ensure the insertion point is before the multi-qubit gates.
+        // After advance, the wire iterators either point to sink-like
+        // operations or two-qubit gates of the current or any subsequent layer.
+        // Decrement each iterator to point at a valid insertion point.
 
-        for (auto& it : wires) {
-          std::advance(it, it == std::default_sentinel ? -2 : -1);
-        }
+        for_each(wires, [](auto& it) { std::advance(it, -1); });
       }
 
       insertSWAPs<Mode>(*swaps, bundle, stats, rewriter);
@@ -1591,8 +1602,8 @@ private:
         // insertion or pointing at a SWAP operation. If the former is the
         // case, incrementing the wire iterator will undo the previous
         // decrement, leaving it at the same position as before the SWAP
-        // insertion. Otherwise, an increment will move the iterator to the
-        // multi-qubit op of the current or subsequent layer or to a sink.
+        // insertion. Otherwise, an increment will move the iterator past the
+        // inserted SWAP operation.
 
         for_each(wires, [](auto& it) { std::advance(it, 1); });
       }

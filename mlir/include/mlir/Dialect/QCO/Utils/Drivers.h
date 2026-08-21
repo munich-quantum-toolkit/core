@@ -30,68 +30,57 @@
 #include <cstddef>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <numeric>
 #include <utility>
 
 namespace mlir::qco {
-using ReadyMap = llvm::SmallDenseMap<Operation*, SmallVector<size_t>, 8>;
+
+using Frontier = llvm::SmallDenseMap<Operation*, SmallVector<size_t>, 8>;
 using ReleasedOps = SmallVector<Operation*, 8>;
 using WalkProgramGraphFn =
-    function_ref<WalkResult(const ReadyMap&, ReleasedOps&)>;
+    function_ref<WalkResult(const Frontier&, ReleasedOps&)>;
 
-/**
- * @brief Walk the graph-like circuit IR of QCO dialect programs.
- * @details
- * Depending on the template parameter, the function collects the
- * layers in forward or backward direction, respectively. Towards that end,
- * the function traverses the def-use chain of each qubit until a multi-qubit
- * gate (including barriers) is found. If each input qubit of a multi-qubit gate
- * is visited, it is considered ready. This process is repeated until no more
- * multi-qubit gates are found anymore.
- *
- * The signature of the callback function is:
- *
- *     (const ReadyMap& ready, ReleasedOps& released) -> WalkResult
- *
- * The operations inserted into the parameter "released" determine which
- * multi-qubit gates are released in next iteration.
- * If the callback returns WalkResult::skip(), all ready operations will be
- * released.
- *
- * @param wires A mutable array-ref of circuit wires (wire iterators).
- * @param fn The callback function.
- *
- * @returns success(), if all operations have been visited.
- */
+namespace impl {
+struct PendingItem {
+  explicit PendingItem(const size_t nrequired) : nrequired_(nrequired) {
+    indices_.reserve(nrequired);
+  }
+
+  /// Return true, if this item is ready to be released.
+  [[nodiscard]] bool ready() const { return indices_.size() == nrequired_; }
+
+  SmallVector<size_t> indices_;
+  size_t nrequired_;
+};
+} // namespace impl
+
+/// Walk the graph-like circuit IR of QCO dialect programs.
+/// Depending on the template parameter, the function walks the IR in
+/// topological order in forward or backward direction, respectively. Towards
+/// that end, the function traverses the def-use chain of each qubit until a
+/// ready operation is found. A multi-qubit gate is considered ready, if each
+/// input (backward: output) qubit has been visited.
+/// The signature of the callback function is:
+///
+///     (const Frontier& frontier, ReleasedOps& released) -> WalkResult
+///
+/// The operations inserted into the "released" vector determine which
+/// operations are released in the next iteration. The function returns if the
+/// callback does not release any operations or there are no more ready
+/// operations and thus each wire points at the default sentinel.
+/// The function modifies the given wires in-place.
 template <WireDirection Direction>
-LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
-                               WalkProgramGraphFn fn) {
+void walkProgramGraph(MutableArrayRef<WireIterator> wires,
+                      WalkProgramGraphFn fn) {
+  using namespace impl;
   using Traits = WireTraversalTraits<Direction>;
 
-  struct IterationStep {
-    bool skip;
-    size_t nqubits;
-  };
-
-  struct PendingItem {
-    explicit PendingItem(const size_t nrequired) : nrequired_(nrequired) {
-      indices_.reserve(nrequired);
-    }
-
-    /// Return true, if this item is ready to be released.
-    [[nodiscard]] bool ready() const { return indices_.size() == nrequired_; }
-
-    SmallVector<size_t> indices_;
-    size_t nrequired_;
-  };
-
-  using PendingMap = DenseMap<Operation*, PendingItem>;
-
-  PendingMap pending;
+  DenseMap<Operation*, PendingItem> pending;
   pending.reserve((wires.size() + 1) / 2);
 
-  ReadyMap ready;
-  ready.reserve((wires.size() + 1) / 2);
+  Frontier frontier;
+  frontier.reserve((wires.size() + 1) / 2);
 
   ReleasedOps released;
 
@@ -102,7 +91,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
   next.reserve(wires.size());
 
   while (!curr.empty()) {
-    for (size_t i : curr) {
+    for (const auto i : curr) {
       auto& it = wires[i];
 
       while (it != std::default_sentinel) {
@@ -117,83 +106,87 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
           item.indices_.emplace_back(i);
 
           if (item.ready()) {
-            ready.try_emplace(it.operation(), item.indices_);
+            frontier.try_emplace(it.operation(), item.indices_);
           }
         } else {
-          const auto [skip, nqubits] =
-              TypeSwitch<Operation*, IterationStep>(it.operation())
+          const auto nqubits =
+              TypeSwitch<Operation*, size_t>(it.operation())
                   .template Case<UnitaryOpInterface>(
-                      [&](UnitaryOpInterface op) {
-                        return IterationStep{false, op.getNumQubits()};
-                      })
+                      [&](UnitaryOpInterface op) { return op.getNumQubits(); })
                   .template Case<scf::ForOp, scf::WhileOp>([&](auto op) {
                     const auto nqubits = static_cast<size_t>(
                         llvm::count_if(op.getInits(), [](Value v) {
                           return isa<QubitType>(v.getType());
                         }));
-                    return IterationStep{false, nqubits};
+                    return nqubits;
                   })
                   .template Case<qco::IfOp>([&](qco::IfOp op) {
-                    const auto nqubits = static_cast<size_t>(
+                    return static_cast<size_t>(
                         llvm::count_if(op.getQubits(), [](Value v) {
                           return isa<QubitType>(v.getType());
                         }));
-                    return IterationStep{false, nqubits};
                   })
-                  .template Case<qco::IndexSwitchOp>(
-                      [&](qco::IndexSwitchOp op) {
-                        const auto nqubits = static_cast<size_t>(
-                            llvm::count_if(op.getTargets(), [](Value v) {
-                              return isa<QubitType>(v.getType());
-                            }));
-                        return IterationStep{false, nqubits};
-                      })
-                  .template Case<ResetOp, MeasureOp>(
-                      [&](auto) { return IterationStep{false, 1}; })
-                  .template Case<AllocOp, StaticOp, SinkOp, YieldOp,
-                                 qtensor::ExtractOp, qtensor::InsertOp,
-                                 scf::YieldOp, scf::ConditionOp>(
-                      [&](auto) { return IterationStep{true, 0}; })
+                  .template Case<qco::IndexSwitchOp>([](qco::IndexSwitchOp op) {
+                    return static_cast<size_t>(
+                        llvm::count_if(op.getTargets(), [](Value v) {
+                          return isa<QubitType>(v.getType());
+                        }));
+                  })
+                  .template Case<AllocOp, StaticOp, SinkOp, qtensor::ExtractOp,
+                                 qtensor::InsertOp, ResetOp, MeasureOp>(
+                      [](auto) { return 1; })
+                  .template Case<YieldOp>([](YieldOp op) {
+                    return static_cast<size_t>(
+                        llvm::count_if(op.getTargets(), [](Value v) {
+                          return isa<QubitType>(v.getType());
+                        }));
+                  })
+                  .template Case<scf::YieldOp>([](scf::YieldOp op) {
+                    return static_cast<size_t>(
+                        llvm::count_if(op.getResults(), [](Value v) {
+                          return isa<QubitType>(v.getType());
+                        }));
+                  })
+                  .template Case<scf::ConditionOp>([](scf::ConditionOp op) {
+                    return static_cast<size_t>(
+                        llvm::count_if(op.getArgs(), [](Value v) {
+                          return isa<QubitType>(v.getType());
+                        }));
+                  })
                   .Default([&](Operation* op) {
                     const auto name = op->getName().getStringRef();
                     reportFatalInternalError("unknown op: " + name);
-                    return IterationStep{false, 0};
+                    return std::numeric_limits<size_t>::max();
                   });
-
-          if (skip || nqubits == 1) {
-            std::ranges::advance(it, Traits::stride());
-            continue;
-          }
 
           // If there are fewer wires than the operation requires inputs,
           // it's impossible to release the operation. Hence, fail.
 
           if (nqubits > wires.size()) {
-            return failure();
+            llvm::reportFatalInternalError("more input qubits than wires");
+            return;
           }
 
-          // Insert the multi-qubit op to the pending map.
-          // The caller decides if this op should be released.
+          // One-qubit gates are immediately ready.
+          // Hence, add them to the frontier.
+
+          if (nqubits == 1) {
+            frontier.try_emplace(it.operation(), SmallVector{i});
+          }
+
           PendingItem item(nqubits);
           item.indices_.emplace_back(i);
           pending.try_emplace(it.operation(), std::move(item));
         }
 
-        break; // Stop at multi-qubit unitary.
+        break;
       }
     }
 
     released.clear();
-    const auto res = std::invoke(fn, ready, released);
-    if (res.wasInterrupted()) {
-      return failure();
-    }
-
-    if (res.wasSkipped()) {
-      released.clear();
-      for (Operation* op : ready.keys()) {
-        released.emplace_back(op);
-      }
+    const auto res = std::invoke(fn, frontier, released);
+    if (res.wasInterrupted() || res.wasSkipped()) {
+      return;
     }
 
     for (Operation* op : released) {
@@ -206,13 +199,11 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       }
 
       pending.erase(mapIt);
-      ready.erase(op);
+      frontier.erase(op);
     }
 
     curr.swap(next);
     next.clear();
   }
-
-  return success();
 }
 } // namespace mlir::qco
