@@ -1027,12 +1027,28 @@ def test_bool_uint_and_float_expressions(condition: expr.Expr, operation: str) -
 
 
 def _round_trip_qiskit_import(circuit: QuantumCircuit) -> str:
+    """Import a Qiskit circuit and validate its MLIR round trip.
+
+    Args:
+        circuit: Qiskit circuit to import.
+
+    Returns:
+        The imported MLIR text.
+    """
     program = QCProgram.from_qiskit(circuit)
     assert QCProgram.from_mlir_str(program.ir).ir == program.ir
     return program.ir
 
 
 def _cbit_load_indices(ir: str) -> list[int]:
+    """Extract the constant indices used by CBit loads.
+
+    Args:
+        ir: MLIR text to inspect.
+
+    Returns:
+        The CBit load indices in occurrence order.
+    """
     constants = {
         name: int(value) for name, value in re.findall(r"(?m)^\s*(%[-\w.$]+) = arith\.constant (\d+) : index$", ir)
     }
