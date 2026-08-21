@@ -31,6 +31,7 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
+#include <bit>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -54,10 +55,24 @@ constexpr uint64_t TOTAL_REGISTER_ELEMENT_LIMIT = 100'000;
 constexpr size_t EXPRESSION_DEPTH_LIMIT = 256;
 constexpr size_t GATE_DEPENDENCY_DEPTH_LIMIT = 64;
 constexpr size_t TYPED_STATEMENT_LIMIT = 1'000'000;
+constexpr uint32_t DEFAULT_ANGLE_WIDTH = 52;
+constexpr uint32_t MAX_ANGLE_WIDTH = 52;
+constexpr double TWO_PI = 2.0 * std::numbers::pi;
+constexpr uint64_t TWO_PI_BITS = 0x401921FB54442D18ULL;
+constexpr uint64_t TWO_PI_ODD_SIGNIFICAND = 0x3243F6A8885A3ULL;
+constexpr uint64_t DOUBLE_FRACTION_MASK = (uint64_t{1} << 52U) - 1U;
+constexpr uint64_t DOUBLE_EXPONENT_MASK = 0x7FFU;
+
+static_assert(std::bit_cast<uint64_t>(TWO_PI) == TWO_PI_BITS);
+
+struct FixedAngle {
+  uint64_t bits = 0;
+  uint32_t bitWidth = DEFAULT_ANGLE_WIDTH;
+};
 
 struct Constant {
   ScalarType type = ScalarType::Int;
-  std::variant<bool, int64_t, uint64_t, double> value = int64_t{0};
+  std::variant<bool, int64_t, uint64_t, double, FixedAngle> value = int64_t{0};
 };
 
 struct GateSignature {
@@ -84,6 +99,115 @@ struct Symbol {
 
 } // namespace
 
+[[nodiscard]] static uint64_t angleMask(const uint32_t bitWidth) {
+  assert(bitWidth >= 1 && bitWidth <= MAX_ANGLE_WIDTH);
+  return (uint64_t{1} << bitWidth) - 1U;
+}
+
+[[nodiscard]] static llvm::APInt
+roundUnsignedQuotient(const llvm::APInt& numerator,
+                      const llvm::APInt& denominator) {
+  const auto quotient = numerator.udiv(denominator);
+  const auto remainder = numerator.urem(denominator);
+  const auto twiceRemainder = remainder.shl(1U);
+  const auto roundUp = twiceRemainder.ugt(denominator) ||
+                       (twiceRemainder == denominator && quotient[0]);
+  return roundUp ? quotient + 1U : quotient;
+}
+
+[[nodiscard]] static uint64_t
+quantizeAngleMagnitude(const uint64_t significand, const int32_t binaryExponent,
+                       const uint32_t bitWidth) {
+  constexpr unsigned workingWidth = 128;
+  const llvm::APInt modulus(workingWidth, TWO_PI_ODD_SIGNIFICAND);
+  const llvm::APInt magnitude(workingWidth, significand);
+  llvm::APInt rounded(workingWidth, 0);
+
+  if (binaryExponent >= 0) {
+    auto power = llvm::APInt(workingWidth, 2);
+    auto factor = llvm::APInt(workingWidth, 1);
+    auto exponent = static_cast<uint32_t>(binaryExponent);
+    while (exponent != 0) {
+      if ((exponent & 1U) != 0) {
+        factor = (factor * power).urem(modulus);
+      }
+      power = (power * power).urem(modulus);
+      exponent >>= 1U;
+    }
+    const auto remainder = (magnitude.urem(modulus) * factor).urem(modulus);
+    rounded = roundUnsignedQuotient(remainder.shl(bitWidth), modulus);
+  } else {
+    const auto scaledExponent = binaryExponent + static_cast<int32_t>(bitWidth);
+    if (scaledExponent >= 0) {
+      rounded = roundUnsignedQuotient(
+          magnitude.shl(static_cast<unsigned>(scaledExponent)), modulus);
+    } else {
+      const auto denominatorShift = static_cast<unsigned>(-scaledExponent);
+      /// The numerator has at most 53 bits and the odd denominator has 50.
+      /// Five more denominator bits put even the largest numerator below half.
+      if (denominatorShift >= 5U) {
+        return 0;
+      }
+      rounded = roundUnsignedQuotient(magnitude, modulus.shl(denominatorShift));
+    }
+  }
+
+  return rounded.trunc(bitWidth).getZExtValue();
+}
+
+[[nodiscard]] static std::optional<uint64_t>
+quantizeAngle(const double radians, const uint32_t bitWidth) {
+  if (bitWidth < 1 || bitWidth > MAX_ANGLE_WIDTH || !std::isfinite(radians)) {
+    return std::nullopt;
+  }
+
+  const auto representation = std::bit_cast<uint64_t>(radians);
+  const auto exponent =
+      static_cast<uint32_t>((representation >> 52U) & DOUBLE_EXPONENT_MASK);
+  const auto fraction = representation & DOUBLE_FRACTION_MASK;
+  if (exponent == 0 && fraction == 0) {
+    return 0;
+  }
+
+  const auto significand =
+      exponent == 0 ? fraction : fraction | (uint64_t{1} << 52U);
+  /// The binary64 value of 2*pi is TWO_PI_ODD_SIGNIFICAND * 2^-47.
+  const auto binaryExponent =
+      exponent == 0 ? -1027 : static_cast<int32_t>(exponent) - 1028;
+  auto result = quantizeAngleMagnitude(significand, binaryExponent, bitWidth);
+  if ((representation >> 63U) != 0) {
+    result = (uint64_t{0} - result) & angleMask(bitWidth);
+  }
+  return result;
+}
+
+[[nodiscard]] static double angleToRadians(const FixedAngle angle) {
+  assert(angle.bitWidth >= 1 && angle.bitWidth <= MAX_ANGLE_WIDTH);
+  return static_cast<double>(angle.bits) *
+         std::ldexp(TWO_PI, -static_cast<int>(angle.bitWidth));
+}
+
+[[nodiscard]] static FixedAngle resizeAngle(const FixedAngle angle,
+                                            const uint32_t targetWidth) {
+  assert(targetWidth >= 1 && targetWidth <= MAX_ANGLE_WIDTH);
+  if (angle.bitWidth == targetWidth) {
+    return angle;
+  }
+  if (angle.bitWidth < targetWidth) {
+    return {.bits = angle.bits << (targetWidth - angle.bitWidth),
+            .bitWidth = targetWidth};
+  }
+
+  const auto discardedWidth = angle.bitWidth - targetWidth;
+  auto retained = angle.bits >> discardedWidth;
+  const auto discarded = angle.bits & ((uint64_t{1} << discardedWidth) - 1U);
+  const auto halfway = uint64_t{1} << (discardedWidth - 1U);
+  if (discarded > halfway || (discarded == halfway && (retained & 1U) != 0)) {
+    ++retained;
+  }
+  return {.bits = retained & angleMask(targetWidth), .bitWidth = targetWidth};
+}
+
 [[nodiscard]] static ScalarType scalarType(const ScalarKind kind) {
   switch (kind) {
   case ScalarKind::Bool:
@@ -94,6 +218,8 @@ struct Symbol {
     return ScalarType::Uint;
   case ScalarKind::Float:
     return ScalarType::Float;
+  case ScalarKind::Angle:
+    return ScalarType::Angle;
   }
   llvm_unreachable("unknown syntax scalar kind");
 }
@@ -130,8 +256,16 @@ belongsToStdGates(const GateAvailability availability) {
 }
 
 [[nodiscard]] static double asDouble(const Constant& constant) {
-  return std::visit([](const auto value) { return static_cast<double>(value); },
-                    constant.value);
+  return std::visit(
+      [](const auto value) {
+        using T = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, FixedAngle>) {
+          return angleToRadians(value);
+        } else {
+          return static_cast<double>(value);
+        }
+      },
+      constant.value);
 }
 
 [[nodiscard]] static std::optional<int64_t> asSigned(const Constant& constant) {
@@ -156,19 +290,17 @@ belongsToStdGates(const GateAvailability availability) {
            destination == ScalarType::Float;
   case ScalarType::Int:
     return destination == ScalarType::Float ||
-           destination == ScalarType::Angle ||
            (destination == ScalarType::Uint &&
             std::get<int64_t>(initializer.value) >= 0);
   case ScalarType::Uint:
     return destination == ScalarType::Float ||
-           destination == ScalarType::Angle ||
            (destination == ScalarType::Int &&
             std::get<uint64_t>(initializer.value) <=
                 static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
   case ScalarType::Float:
     return destination == ScalarType::Angle;
   case ScalarType::Angle:
-    return destination == ScalarType::Float;
+    return false;
   }
   llvm_unreachable("unknown scalar type");
 }
@@ -663,9 +795,24 @@ private:
   }
 
   [[nodiscard]] ExpressionId addConstant(const Constant& constant) {
-    return addExpression({.kind = ExpressionKind::Constant,
-                          .type = constant.type,
-                          .constant = constant.value});
+    if (constant.type == ScalarType::Angle) {
+      return addExpression(
+          {.kind = ExpressionKind::Constant,
+           .type = ScalarType::Angle,
+           .constant = angleToRadians(std::get<FixedAngle>(constant.value))});
+    }
+    return std::visit(
+        [&](const auto value) -> ExpressionId {
+          using T = std::remove_cvref_t<decltype(value)>;
+          if constexpr (std::is_same_v<T, FixedAngle>) {
+            llvm_unreachable("fixed angles require angle type");
+          } else {
+            return addExpression({.kind = ExpressionKind::Constant,
+                                  .type = constant.type,
+                                  .constant = value});
+          }
+        },
+        constant.value);
   }
 
   [[nodiscard]] static bool canImplicitlyConvert(const ScalarType source,
@@ -744,10 +891,64 @@ private:
       return Constant{.type = ScalarType::Float,
                       .value = asDouble(initializer)};
     case ScalarType::Angle:
-      return Constant{.type = ScalarType::Angle,
-                      .value = asDouble(initializer)};
+      llvm_unreachable("fixed angle initializers require an explicit width");
     }
     llvm_unreachable("unknown scalar type");
+  }
+
+  [[nodiscard]] FailureOr<uint32_t>
+  angleWidth(const std::optional<SyntaxExpressionId> size,
+             const SMLoc location) const {
+    if (!size) {
+      return DEFAULT_ANGLE_WIDTH;
+    }
+    if (!isConstantExpression(*size)) {
+      return fail(location,
+                  "angle width must be a constant integer expression");
+    }
+    MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(*size));
+    if (!isInteger(constant.type)) {
+      return fail(location, "angle width must be an integer expression");
+    }
+    const auto width = asSigned(constant);
+    if (!width || *width < 1 || std::cmp_greater(*width, MAX_ANGLE_WIDTH)) {
+      return fail(location, Twine("angle width must be between 1 and ") +
+                                Twine(MAX_ANGLE_WIDTH));
+    }
+    return static_cast<uint32_t>(*width);
+  }
+
+  [[nodiscard]] FailureOr<Constant>
+  convertToFixedAngle(const Constant& source, const uint32_t bitWidth,
+                      const SMLoc location) const {
+    if (source.type == ScalarType::Angle) {
+      return Constant{
+          .type = ScalarType::Angle,
+          .value = resizeAngle(std::get<FixedAngle>(source.value), bitWidth)};
+    }
+    if (source.type != ScalarType::Float) {
+      return fail(location,
+                  "angle conversion requires a float or angle operand");
+    }
+    const auto bits = quantizeAngle(std::get<double>(source.value), bitWidth);
+    if (!bits) {
+      return fail(location, "angle conversion requires a finite float value");
+    }
+    return Constant{.type = ScalarType::Angle,
+                    .value = FixedAngle{.bits = *bits, .bitWidth = bitWidth}};
+  }
+
+  [[nodiscard]] FailureOr<uint64_t>
+  angleIntegerLiteral(const SyntaxExpressionId id,
+                      const uint32_t bitWidth) const {
+    const auto& expression = syntax.expressions[id];
+    if (expression.kind != Expr::Kind::Int || !expression.wideInteger.empty() ||
+        expression.integer > angleMask(bitWidth)) {
+      return fail(expression.location,
+                  "angle multiplication and division require a nonnegative "
+                  "integer literal that fits the angle width");
+    }
+    return expression.integer;
   }
 
   [[nodiscard]] bool expressionProducesBool(const SyntaxExpressionId id) const {
@@ -813,10 +1014,10 @@ private:
   [[nodiscard]] static std::optional<Constant>
   builtinConstant(StringRef identifier) {
     if (identifier == "pi" || identifier == "π") {
-      return Constant{.type = ScalarType::Angle, .value = std::numbers::pi};
+      return Constant{.type = ScalarType::Float, .value = std::numbers::pi};
     }
     if (identifier == "tau" || identifier == "τ") {
-      return Constant{.type = ScalarType::Angle,
+      return Constant{.type = ScalarType::Float,
                       .value = 2.0 * std::numbers::pi};
     }
     if (identifier == "euler" || identifier == "ℇ") {
@@ -861,15 +1062,29 @@ private:
         }
         return *symbol->constant;
       }
+      case Expr::Kind::AngleCast: {
+        MQT_OQ3_TRY_ASSIGN(width,
+                           angleWidth(expression.lhs, expression.location));
+        MQT_OQ3_TRY_ASSIGN(operand, evaluateConstant(*expression.rhs));
+        return convertToFixedAngle(operand, width, expression.location);
+      }
       case Expr::Kind::Neg: {
         MQT_OQ3_TRY_ASSIGN(operand, evaluateConstant(*expression.lhs));
         if (operand.type == ScalarType::Bool) {
           return fail(expression.location,
                       "numeric negation requires a numeric operand");
         }
-        if (operand.type == ScalarType::Float ||
-            operand.type == ScalarType::Angle) {
-          return Constant{.type = operand.type, .value = -asDouble(operand)};
+        if (operand.type == ScalarType::Angle) {
+          const auto angle = std::get<FixedAngle>(operand.value);
+          return Constant{.type = ScalarType::Angle,
+                          .value =
+                              FixedAngle{.bits = (uint64_t{0} - angle.bits) &
+                                                 angleMask(angle.bitWidth),
+                                         .bitWidth = angle.bitWidth}};
+        }
+        if (operand.type == ScalarType::Float) {
+          return Constant{.type = ScalarType::Float,
+                          .value = -std::get<double>(operand.value)};
         }
         if (operand.type == ScalarType::Uint) {
           const auto value = std::get<uint64_t>(operand.value);
@@ -955,7 +1170,42 @@ private:
               std::get<bool>(lhs.value) == std::get<bool>(rhs.value);
           result = expression.kind == Expr::Kind::Equal ? equal : !equal;
         } else {
-          const auto ordering = compareNumericConstants(lhs, rhs);
+          auto ordering = 0;
+          if (lhs.type == ScalarType::Angle || rhs.type == ScalarType::Angle) {
+            if ((lhs.type != ScalarType::Angle &&
+                 lhs.type != ScalarType::Float) ||
+                (rhs.type != ScalarType::Angle &&
+                 rhs.type != ScalarType::Float)) {
+              return fail(expression.location,
+                          "angles can only be compared with angles or finite "
+                          "float constants");
+            }
+            uint32_t commonWidth = 0;
+            if (lhs.type == ScalarType::Angle) {
+              commonWidth = std::get<FixedAngle>(lhs.value).bitWidth;
+            }
+            if (rhs.type == ScalarType::Angle) {
+              commonWidth = std::max(commonWidth,
+                                     std::get<FixedAngle>(rhs.value).bitWidth);
+            }
+            MQT_OQ3_TRY_ASSIGN(
+                leftAngle,
+                convertToFixedAngle(lhs, commonWidth, expression.location));
+            MQT_OQ3_TRY_ASSIGN(
+                rightAngle,
+                convertToFixedAngle(rhs, commonWidth, expression.location));
+            const auto left =
+                resizeAngle(std::get<FixedAngle>(leftAngle.value), commonWidth);
+            const auto right = resizeAngle(
+                std::get<FixedAngle>(rightAngle.value), commonWidth);
+            if (left.bits < right.bits) {
+              ordering = -1;
+            } else if (left.bits > right.bits) {
+              ordering = 1;
+            }
+          } else {
+            ordering = compareNumericConstants(lhs, rhs);
+          }
           switch (expression.kind) {
           case Expr::Kind::Equal:
             result = ordering == 0;
@@ -1053,9 +1303,7 @@ private:
           return fail(expression.location,
                       "constant math expression has a non-finite result");
         }
-        return Constant{.type =
-                            inverseTrig ? ScalarType::Angle : ScalarType::Float,
-                        .value = result};
+        return Constant{.type = ScalarType::Float, .value = result};
       }
       case Expr::Kind::Add:
       case Expr::Kind::Sub:
@@ -1126,6 +1374,10 @@ private:
         }
         return symbol->constant->type;
       }
+      case Expr::Kind::AngleCast: {
+        MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(id));
+        return constant.type;
+      }
       case Expr::Kind::Neg: {
         MQT_OQ3_TRY_ASSIGN(type, constantExpressionType(*expression.lhs));
         if (type == ScalarType::Bool) {
@@ -1185,7 +1437,7 @@ private:
           return fail(expression.location,
                       "math functions require numeric operands");
         }
-        return ScalarType::Angle;
+        return ScalarType::Float;
       }
       case Expr::Kind::Ceiling:
       case Expr::Kind::Exp:
@@ -1308,30 +1560,50 @@ private:
                                    rhs.type == ScalarType::Int &&
                                    std::get<int64_t>(rhs.value) < 0;
     if (lhs.type == ScalarType::Angle || rhs.type == ScalarType::Angle) {
-      const auto left = asDouble(lhs);
-      const auto right = asDouble(rhs);
       if (expression.kind == Expr::Kind::Add ||
           expression.kind == Expr::Kind::Sub) {
+        if (lhs.type != ScalarType::Angle || rhs.type != ScalarType::Angle) {
+          return fail(expression.location,
+                      "angle addition and subtraction require angle operands");
+        }
+        const auto lhsAngle = std::get<FixedAngle>(lhs.value);
+        const auto rhsAngle = std::get<FixedAngle>(rhs.value);
+        const auto bitWidth = std::max(lhsAngle.bitWidth, rhsAngle.bitWidth);
+        const auto left = resizeAngle(lhsAngle, bitWidth).bits;
+        const auto right = resizeAngle(rhsAngle, bitWidth).bits;
+        const auto bits =
+            expression.kind == Expr::Kind::Add ? left + right : left - right;
         return Constant{.type = ScalarType::Angle,
-                        .value = expression.kind == Expr::Kind::Add
-                                     ? left + right
-                                     : left - right};
+                        .value = FixedAngle{.bits = bits & angleMask(bitWidth),
+                                            .bitWidth = bitWidth}};
       }
       if (expression.kind == Expr::Kind::Mul &&
           (lhs.type == ScalarType::Angle) != (rhs.type == ScalarType::Angle)) {
-        return Constant{.type = ScalarType::Angle, .value = left * right};
+        const auto angle = std::get<FixedAngle>(
+            lhs.type == ScalarType::Angle ? lhs.value : rhs.value);
+        const auto literalId =
+            lhs.type == ScalarType::Angle ? *expression.rhs : *expression.lhs;
+        MQT_OQ3_TRY_ASSIGN(factor,
+                           angleIntegerLiteral(literalId, angle.bitWidth));
+        return Constant{.type = ScalarType::Angle,
+                        .value = FixedAngle{.bits = (angle.bits * factor) &
+                                                    angleMask(angle.bitWidth),
+                                            .bitWidth = angle.bitWidth}};
       }
-      if (expression.kind == Expr::Kind::Div && lhs.type == ScalarType::Angle) {
-        if (right == 0.0) {
+      if (expression.kind == Expr::Kind::Div && lhs.type == ScalarType::Angle &&
+          rhs.type != ScalarType::Angle) {
+        const auto angle = std::get<FixedAngle>(lhs.value);
+        MQT_OQ3_TRY_ASSIGN(
+            divisor, angleIntegerLiteral(*expression.rhs, angle.bitWidth));
+        if (divisor == 0) {
           return fail(expression.location, "division by zero");
         }
-        return Constant{.type = rhs.type == ScalarType::Angle
-                                    ? ScalarType::Float
-                                    : ScalarType::Angle,
-                        .value = left / right};
+        return Constant{.type = ScalarType::Angle,
+                        .value = FixedAngle{.bits = angle.bits / divisor,
+                                            .bitWidth = angle.bitWidth}};
       }
       return fail(expression.location,
-                  "unsupported arithmetic operation on angle operands");
+                  "unsupported compile-time arithmetic on angle operands");
     }
     if (lhs.type == ScalarType::Float || rhs.type == ScalarType::Float ||
         builtinFloatPower) {
@@ -1657,6 +1929,9 @@ private:
 
     auto kind = ExpressionKind::Constant;
     switch (expression.kind) {
+    case Expr::Kind::AngleCast:
+      return fail(expression.location,
+                  "runtime angle conversions are not supported");
     case Expr::Kind::Neg:
       kind = ExpressionKind::Negate;
       break;
@@ -1791,9 +2066,7 @@ private:
                          expression.location));
       lhs = convertedLhs;
       return addExpression(
-          {.kind = kind,
-           .type = inverseTrig ? ScalarType::Angle : ScalarType::Float,
-           .lhs = lhs});
+          {.kind = kind, .type = ScalarType::Float, .lhs = lhs});
     }
     if (!rhs) {
       return addExpression({.kind = kind, .type = lhsType, .lhs = lhs});
@@ -2089,6 +2362,28 @@ private:
       return fail(location, "outputs must be declared at global scope");
     }
     const auto type = scalarType(declaration.kind);
+    if (type == ScalarType::Angle) {
+      if (declaration.output) {
+        return fail(location, "angle outputs are not supported");
+      }
+      if (!declaration.initializer) {
+        return fail(location,
+                    "angle declarations require a compile-time initializer");
+      }
+      if (!isConstantExpression(*declaration.initializer)) {
+        return fail(location,
+                    "angle declarations require a compile-time initializer");
+      }
+      MQT_OQ3_TRY_ASSIGN(width, angleWidth(declaration.size, location));
+      MQT_OQ3_TRY_ASSIGN(initializer,
+                         evaluateConstant(*declaration.initializer));
+      MQT_OQ3_TRY_ASSIGN(constant,
+                         convertToFixedAngle(initializer, width, location));
+      return declare(location, declaration.identifier,
+                     {.kind = SymbolKind::Constant,
+                      .type = ScalarType::Angle,
+                      .constant = constant});
+    }
     if (declaration.isConst) {
       if (!declaration.initializer ||
           !isConstantExpression(*declaration.initializer)) {
@@ -3083,6 +3378,7 @@ private:
     case Expr::Kind::Int:
     case Expr::Kind::Float:
     case Expr::Kind::Bool:
+    case Expr::Kind::AngleCast:
     case Expr::Kind::Neg:
     case Expr::Kind::BitNot:
     case Expr::Kind::Add:

@@ -20,8 +20,10 @@
 #include <llvm/Support/SourceMgr.h>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <numbers>
 #include <string>
 #include <utility>
 #include <variant>
@@ -762,6 +764,147 @@ const int integer_arithmetic =
     (1 + 2) - (3 * 1) + (8 / 2) + (5 % 2) + pow(2, 3);
 )qasm";
 
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  EXPECT_TRUE(analyzed.program->body.empty());
+}
+
+TEST(OpenQASMFrontendTest, FoldsFixedAngleConversionsAndArithmetic) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+const float two_pi = 6.283185307179586;
+angle[8] halfway = angle[8](two_pi * (127.0 / 512.0));
+const angle[4] negative = angle[4](-pi / 8.0);
+const angle[4] multi_turn = angle[4](tau + pi / 2.0);
+const angle[1] width_one = angle[1](pi);
+const angle[4] a = angle[4](7.0 * pi / 8.0);
+const angle[4] b = angle[4](pi / 8.0);
+const angle[8] widened = angle[8](b);
+const angle[8] mixed_width = widened + b;
+const angle[3] tie_even_down = angle[3](b);
+const angle[3] tie_even_up = angle[3](angle[4](3.0 * pi / 8.0));
+const angle[4] sum = a + b;
+const angle[4] difference = b - a;
+const angle[4] product = 2 * b;
+const angle[4] quotient = a / 2;
+const angle[4] negated = -b;
+angle smallest_default = angle(tau / 4503599627370496.0);
+const angle[52] huge = angle[52](1e300);
+const angle[52] subnormal = angle[52](5e-324);
+qubit q;
+rx(halfway) q;
+rx(negative) q;
+rx(multi_turn) q;
+rx(width_one) q;
+rx(widened) q;
+rx(mixed_width) q;
+rx(tie_even_down) q;
+rx(tie_even_up) q;
+rx(sum) q;
+rx(difference) q;
+rx(product) q;
+rx(quotient) q;
+rx(negated) q;
+rx(smallest_default) q;
+rx(huge) q;
+rx(subnormal) q;
+rx(sin(a)) q;
+rx(sin(angle[4](pi / 8.0))) q;
+if (a > b && b < a && a == 7.0 * pi / 8.0) { x q; }
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+
+  const auto defaultStep = std::ldexp(2.0 * std::numbers::pi, -52);
+  const std::array expectedParameters{
+      std::numbers::pi / 2.0,
+      15.0 * std::numbers::pi / 8.0,
+      std::numbers::pi / 2.0,
+      std::numbers::pi,
+      std::numbers::pi / 8.0,
+      std::numbers::pi / 4.0,
+      0.0,
+      std::numbers::pi / 2.0,
+      std::numbers::pi,
+      5.0 * std::numbers::pi / 4.0,
+      std::numbers::pi / 4.0,
+      3.0 * std::numbers::pi / 8.0,
+      15.0 * std::numbers::pi / 8.0,
+      defaultStep,
+      3985068968215732.0 * defaultStep,
+      0.0,
+      std::sin(7.0 * std::numbers::pi / 8.0),
+      std::sin(std::numbers::pi / 8.0),
+  };
+  size_t parameterIndex = 0;
+  bool sawTrueCondition = false;
+  for (const auto statement : analyzed.program->body) {
+    const auto& data = analyzed.program->statements[statement].data;
+    if (const auto* application =
+            std::get_if<oq3::frontend::GateApplication>(&data);
+        application != nullptr && application->callee == "rx") {
+      ASSERT_LT(parameterIndex, expectedParameters.size());
+      const auto& parameter =
+          analyzed.program->expressions.at(application->parameters.front());
+      ASSERT_EQ(parameter.type, oq3::frontend::ScalarType::Angle);
+      const auto& value = parameter.kind == oq3::frontend::ExpressionKind::Cast
+                              ? analyzed.program->expressions.at(parameter.lhs)
+                              : parameter;
+      ASSERT_EQ(value.kind, oq3::frontend::ExpressionKind::Constant);
+      EXPECT_DOUBLE_EQ(std::get<double>(value.constant),
+                       expectedParameters[parameterIndex]);
+      ++parameterIndex;
+    }
+    if (const auto* conditional =
+            std::get_if<oq3::frontend::IfStatement>(&data)) {
+      const auto& condition =
+          analyzed.program->conditions.at(conditional->condition);
+      sawTrueCondition =
+          condition.kind == oq3::frontend::ConditionKind::Literal &&
+          condition.literal;
+    }
+  }
+  EXPECT_EQ(parameterIndex, expectedParameters.size());
+  EXPECT_TRUE(sawTrueCondition);
+  EXPECT_TRUE(analyzed.program->scalars.empty());
+  EXPECT_TRUE(analyzed.program->outputs.empty());
+}
+
+TEST(OpenQASMFrontendTest, RejectsUnsupportedFixedAnglePrograms) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; angle[0] a = pi;",
+      "OPENQASM 3.1; angle[53] a = pi;",
+      "OPENQASM 3.1; angle a;",
+      "OPENQASM 3.1; float f = 0.5; angle[8] a = f;",
+      "OPENQASM 3.1; angle[8] a = pi; a = pi / 2;",
+      "OPENQASM 3.1; float f = 0.5; const angle[8] a = angle[8](f);",
+      "OPENQASM 3.1; const angle[8] a = angle[8](pi); const angle[8] b = a / "
+      "a;",
+      "OPENQASM 3.1; const angle[8] a = angle[8](pi); const angle[8] b = a * "
+      "256;",
+      "OPENQASM 3.1; output angle[8] result;",
+      "OPENQASM 3.1; float theta = pi; qubit q; rx(angle[8](theta)) q;",
+      "OPENQASM 3.1; const angle[8] a = angle[8](pi); const bool bad = a == 1;",
+      "OPENQASM 3.1; const angle[8] a = angle[8](pi); const angle[8] bad = a + "
+      "pi;",
+  });
+
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+  }
+}
+
+TEST(OpenQASMFrontendTest, UsesSpecificationTypesForRealConstantsAndArcTrig) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+const float circle = pi + tau;
+const float inverse = arccos(0.5) + arcsin(0.5) + arctan(0.5);
+)qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   EXPECT_TRUE(analyzed.program->body.empty());
