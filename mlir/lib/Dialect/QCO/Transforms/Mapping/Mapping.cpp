@@ -1048,7 +1048,7 @@ private:
               const auto prog1 = infos.lookupProgram(i1);
               const IndexPairType gate = std::minmax(prog0, prog1);
 
-              if (!llvm::is_contained(prev, gate)) {
+              if (!is_contained(prev, gate)) {
                 window.emplace_back(gate);
                 if (window.size() == 1 + nlookahead) {
                   return WalkResult::interrupt();
@@ -1062,6 +1062,8 @@ private:
 
           prev.swap(next);
           next.clear();
+
+          return WalkResult::advance();
         });
 
     return window;
