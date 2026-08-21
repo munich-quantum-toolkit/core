@@ -119,6 +119,7 @@ releases may include breaking changes.
   default, with one build option for source builds that omit both parts
   ([#1356], [#1549], [#1953], [#2284], [#2298]) ([**@burgholzer**],
   [**@denialhaag**], [**@simon1hofmann**])
+- ♻️ Improve the backward traversal logic for the `WireIterator` class ([#2184]) ([**@MatthiasReumann**])
 
 ### Removed
 
