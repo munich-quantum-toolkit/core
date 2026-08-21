@@ -35,7 +35,7 @@ from qiskit.circuit import (
     library,
 )
 from qiskit.circuit.classical import expr, types
-from qiskit.circuit.controlflow import CASE_DEFAULT
+from qiskit.circuit.controlflow import CASE_DEFAULT, IfElseOp
 from qiskit.quantum_info import Operator, random_unitary
 
 from mqt.core.mlir import CompilerTarget, QCProgram, compile_program
@@ -1011,6 +1011,7 @@ def test_qiskit_import_zero_initializes_clbits_before_control_flow() -> None:
             expr.greater(expr.cast(expr.lift(2, types.Uint(8)), types.Float()), 0.5),
             "arith.uitofp",
         ),
+        (expr.cast(expr.lift(0.5, types.Float()), types.Bool()), "arith.cmpf une"),
         (expr.greater(expr.negate(expr.lift(0.5, types.Float())), -1.0), "arith.negf"),
     ],
 )
@@ -1036,6 +1037,96 @@ def _cbit_load_indices(ir: str) -> list[int]:
         name: int(value) for name, value in re.findall(r"(?m)^\s*(%[-\w.$]+) = arith\.constant (\d+) : index$", ir)
     }
     return [constants[name] for name in re.findall(r"(?m)^\s*%[-\w.$]+ = cbit\.load [^\[]+\[(%[-\w.$]+)\]", ir)]
+
+
+def test_boolean_expression_literals_are_imported() -> None:
+    """Normalize Qiskit's integer-backed Boolean Value nodes."""
+    false_literal = False
+    true_literal = True
+    circuit = QuantumCircuit(1)
+    with circuit.if_test(expr.logic_or(expr.lift(false_literal), expr.lift(true_literal))):
+        circuit.x(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert "arith.constant false" in ir
+    assert "arith.constant true" in ir
+    assert "arith.ori" in ir
+
+
+def test_uint_register_cast_to_bool_tests_all_bits() -> None:
+    """Treat a Uint register as true when any bit is set."""
+    circuit = QuantumCircuit(1, 2)
+    circuit.x(0)
+    circuit.measure(0, 1)
+    with circuit.if_test(expr.cast(circuit.cregs[0], types.Bool())):
+        circuit.z(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert "arith.cmpi ne" in ir
+    assert "arith.trunci" not in ir
+
+
+def test_public_expression_condition_mutation_is_observed() -> None:
+    """Import the current public expression after condition mutation."""
+    circuit = QuantumCircuit(1, 2)
+    with circuit.if_test(expr.logic_and(circuit.clbits[0], circuit.clbits[1])):
+        circuit.x(0)
+    operation = circuit.data[0].operation
+    assert isinstance(operation, IfElseOp)
+    operation.condition = expr.logic_or(circuit.clbits[0], circuit.clbits[1])
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert "arith.ori" in ir
+    assert "arith.andi" not in ir
+
+
+def test_public_tuple_condition_mutation_is_observed() -> None:
+    """Import the current bit and value after tuple-condition mutation."""
+    body = QuantumCircuit(1)
+    body.x(0)
+    circuit = QuantumCircuit(1, 2)
+    circuit.if_test((circuit.clbits[0], False), body, circuit.qubits, [])
+    operation = circuit.data[0].operation
+    assert isinstance(operation, IfElseOp)
+    operation.condition = (circuit.clbits[1], True)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert _cbit_load_indices(ir) == [1]
+    assert "arith.constant true" in ir
+    assert "arith.constant false" not in ir
+
+
+def test_narrow_uint_switch_literal_is_rejected() -> None:
+    """Reject a Uint literal that does not fit its declared width."""
+    circuit = QuantumCircuit(1, 1)
+    with circuit.switch(expr.Value(3, types.Uint(1)), None, None, None, label=None) as case, case(0):
+        circuit.x(0)
+
+    with pytest.raises(RuntimeError, match=r"Uint literal.*does not fit"):
+        QCProgram.from_qiskit(circuit)
+
+
+def test_malformed_public_expression_type_is_rejected() -> None:
+    """Reject a public expression whose declared result type is inconsistent."""
+    invalid = expr.Binary(
+        expr.Binary.Op.ADD,
+        expr.Value(1, types.Uint(1)),
+        expr.Value(1, types.Uint(1)),
+        types.Bool(),
+    )
+    circuit = QuantumCircuit(1)
+    with circuit.if_test(expr.equal(1, 1)):
+        circuit.x(0)
+    operation = circuit.data[0].operation
+    assert isinstance(operation, IfElseOp)
+    operation.condition = invalid
+
+    with pytest.raises(RuntimeError, match="incompatible operator and operand types"):
+        QCProgram.from_qiskit(circuit)
 
 
 def test_classical_expression_clbit_captures_round_trip_on_import() -> None:
