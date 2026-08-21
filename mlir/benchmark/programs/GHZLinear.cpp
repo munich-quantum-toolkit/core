@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Benchmark/BenchmarkUtils.h"
+#include "BenchmarkUtils.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
