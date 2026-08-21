@@ -112,20 +112,8 @@ namespace {
   }
 
   if (std::ranges::find(registeredIds, deviceId) == registeredIds.end()) {
-    std::string message =
-        "Slurm license '" + deviceId + "' is not a registered QDMI device ID";
-    if (registeredIds.empty()) {
-      message += "; no QDMI device is registered";
-    } else {
-      message += "; registered IDs are: ";
-      std::string_view separator;
-      for (const auto& registeredId : registeredIds) {
-        message += separator;
-        message += registeredId;
-        separator = ", ";
-      }
-    }
-    throw std::runtime_error(message);
+    throw std::runtime_error("Slurm license '" + deviceId +
+                             "' is not a registered QDMI device ID");
   }
   return deviceId;
 }

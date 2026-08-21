@@ -135,16 +135,6 @@ TEST(SlurmAdapterTest, RejectsUnknownRemoteAndCompoundLicenses) {
   }
 }
 
-TEST(SlurmAdapterTest, ReportsRegisteredIdsForAnUnknownLicense) {
-  registerStatusDevice("test.slurm.catalog", "idle");
-  const ScopedSlurmLicenses licenses("test.slurm.absent:1");
-
-  EXPECT_THAT([] { return openDeviceFromLicense(); },
-              testing::ThrowsMessage<std::runtime_error>(
-                  testing::AllOf(testing::HasSubstr("test.slurm.absent"),
-                                 testing::HasSubstr("test.slurm.catalog"))));
-}
-
 TEST(SlurmAdapterTest, RejectsUnavailableDeviceWithIdAndStatus) {
   constexpr std::array rejectedStates{
       std::pair{"offline", "OFFLINE"},

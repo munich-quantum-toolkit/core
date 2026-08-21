@@ -73,9 +73,6 @@ releases may include breaking changes.
 
 #### Other additions
 
-- ✨ Let `mqt_configure_qdmi_device` declare session parameters for generated
-  device definitions, so a provider can register one stable ID per contended
-  quantum computer over a single library ([#2190]) ([**@marcelwa**])
 - ✨ Add extensible program serializers to QDMI Qiskit backends. [QDMI-on-IQM]
   now provides the IQM JSON serializer and `MoveGate` integration ([#2114])
   ([**@marcelwa**])
@@ -84,8 +81,6 @@ releases may include breaking changes.
 
 ### Changed
 
-- 🚸 List the registered QDMI device IDs when a Slurm license names an unknown
-  device ([#2190]) ([**@marcelwa**])
 - 💥 Prune dead and misleading CoreIR APIs and remove random-number generator
   state from `QuantumComputation` ([#2111], [#2112]) ([**@simon1hofmann**])
 - 💥 Update QIR execution for QIR 2.1, isolated runtimes, reproducible
@@ -791,7 +786,6 @@ for previous changelogs._
 
 <!-- PR links -->
 
-[#2190]: https://github.com/munich-quantum-toolkit/core/pull/2190
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
 [#2158]: https://github.com/munich-quantum-toolkit/core/pull/2158
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
