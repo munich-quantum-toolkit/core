@@ -38,10 +38,10 @@ void measureRegister(qc::QCProgramBuilder& b, Value reg, const int64_t size,
            [&](Value i) { b.measure(b.loadQubit(reg, i), bits, i); });
 }
 
-void scfForWithAngle(qc::QCProgramBuilder& b, Value lower, Value upper,
-                     const std::variant<double, Value>& start,
-                     const double factor,
-                     const function_ref<void(Value, Value)>& body) {
+void phaseRotationLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
+                       const std::variant<double, Value>& start,
+                       const double factor,
+                       const function_ref<void(Value, Value)>& body) {
   auto one = b.indexConstant(1);
   auto first = variantToValue(b, b.getLoc(), start);
   auto scale = b.floatConstant(factor);

@@ -40,11 +40,11 @@ SmallVector<Value> qft(qc::QCProgramBuilder& b, const uint64_t n) {
     b.h(b.loadQubit(q.value, i));
 
     auto lower = arith::AddIOp::create(b, i, one);
-    scfForWithAngle(b, lower, upper, std::numbers::pi / 2.0, 0.5,
-                    [&](Value angle, Value j) {
-                      b.cp(angle, b.loadQubit(q.value, j),
-                           b.loadQubit(q.value, i));
-                    });
+    phaseRotationLoop(b, lower, upper, std::numbers::pi / 2.0, 0.5,
+                      [&](Value angle, Value j) {
+                        b.cp(angle, b.loadQubit(q.value, j),
+                             b.loadQubit(q.value, i));
+                      });
   });
 
   // Reverse the bit order. The count is floor(size / 2).

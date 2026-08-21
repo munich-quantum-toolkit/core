@@ -47,7 +47,7 @@ SmallVector<Value> qpe(qc::QCProgramBuilder& b, const uint64_t n) {
 
   // Repeating a phase gate 2^i times multiplies its angle by 2^i, so each
   // controlled power is one rotation whose angle doubles.
-  scfForWithAngle(b, zero, upper, QPE_PHASE, 2.0, [&](Value angle, Value i) {
+  phaseRotationLoop(b, zero, upper, QPE_PHASE, 2.0, [&](Value angle, Value i) {
     b.cp(angle, b.loadQubit(q.value, i), anc);
   });
 
@@ -59,11 +59,11 @@ SmallVector<Value> qpe(qc::QCProgramBuilder& b, const uint64_t n) {
 
   b.scfFor(0, counting, 1, [&](Value i) {
     auto lower = arith::AddIOp::create(b, i, one);
-    scfForWithAngle(b, lower, upper, -std::numbers::pi / 2.0, 0.5,
-                    [&](Value angle, Value j) {
-                      b.cp(angle, b.loadQubit(q.value, j),
-                           b.loadQubit(q.value, i));
-                    });
+    phaseRotationLoop(b, lower, upper, -std::numbers::pi / 2.0, 0.5,
+                      [&](Value angle, Value j) {
+                        b.cp(angle, b.loadQubit(q.value, j),
+                             b.loadQubit(q.value, i));
+                      });
     b.h(b.loadQubit(q.value, i));
   });
 

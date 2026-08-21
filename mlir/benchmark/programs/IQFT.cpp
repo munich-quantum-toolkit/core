@@ -41,11 +41,11 @@ SmallVector<Value> iqft(qc::QCProgramBuilder& b, const uint64_t n) {
   b.scfFor(0, bits, 1, [&](Value i) {
     auto offset = arith::SubIOp::create(b, total, i);
 
-    scfForWithAngle(b, zero, i, std::numbers::pi / 2.0, 0.5,
-                    [&](Value angle, Value step) {
-                      auto index = arith::AddIOp::create(b, offset, step);
-                      b.scfIf(res, index, [&] { b.p(angle, q); });
-                    });
+    phaseRotationLoop(b, zero, i, std::numbers::pi / 2.0, 0.5,
+                      [&](Value angle, Value step) {
+                        auto index = arith::AddIOp::create(b, offset, step);
+                        b.scfIf(res, index, [&] { b.p(angle, q); });
+                      });
 
     b.h(q);
     auto target = arith::SubIOp::create(b, last, i);

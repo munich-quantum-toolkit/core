@@ -49,7 +49,7 @@ SmallVector<Value> iqpe(qc::QCProgramBuilder& b, const uint64_t n) {
   const auto first =
       std::pow(2.0, static_cast<double>(precision - 1)) * IQPE_PHASE;
 
-  scfForWithAngle(b, lower, upper, first, 0.5, [&](Value power, Value step) {
+  phaseRotationLoop(b, lower, upper, first, 0.5, [&](Value power, Value step) {
     auto index = arith::SubIOp::create(b, last, step);
 
     b.h(q);
@@ -57,10 +57,10 @@ SmallVector<Value> iqpe(qc::QCProgramBuilder& b, const uint64_t n) {
 
     // Remove the phase that the bits measured so far contribute.
     auto innerLower = arith::AddIOp::create(b, index, one);
-    scfForWithAngle(b, innerLower, upper, -std::numbers::pi / 2.0, 0.5,
-                    [&](Value angle, Value bit) {
-                      b.scfIf(res, bit, [&] { b.p(angle, q); });
-                    });
+    phaseRotationLoop(b, innerLower, upper, -std::numbers::pi / 2.0, 0.5,
+                      [&](Value angle, Value bit) {
+                        b.scfIf(res, bit, [&] { b.p(angle, q); });
+                      });
 
     b.h(q);
     b.measure(q, res, index);
