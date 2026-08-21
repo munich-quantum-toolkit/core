@@ -1132,56 +1132,36 @@ public:
   }
 
   [[nodiscard]] ClassicalTarget condition() const override {
-    ClassicalTarget result;
     const auto condition = pythonAttribute(
         operation_, "condition", "Qiskit control flow has no condition");
     const auto expressionModule =
         nb::module_::import_("qiskit.circuit.classical.expr");
     if (nb::isinstance(condition, expressionModule.attr("Expr"))) {
-      result.kind = ClassicalTargetKind::Expression;
-      size_t nodeCount = 0U;
-      result.expression = normalizePythonExpressionOnly(condition, nodeCount);
-      return result;
+      return normalizePythonTarget(condition);
     }
 
-    const auto tupleType = nb::module_::import_("builtins").attr("tuple");
-    if (!nb::isinstance(condition, tupleType) || nb::len(condition) != 2U) {
+    if (!nb::isinstance<nb::tuple>(condition) || nb::len(condition) != 2U) {
       throw std::runtime_error("Qiskit control-flow condition has an invalid "
                                "shape");
     }
-    const nb::handle target = condition[0];
     uint64_t expected = 0U;
     if (!nb::try_cast(condition[1], expected)) {
       throw std::runtime_error(
           "Qiskit control-flow condition has an invalid value");
     }
 
-    const auto circuitModule = nb::module_::import_("qiskit.circuit");
-    if (nb::isinstance(target, circuitModule.attr("Clbit"))) {
+    auto result = normalizePythonTarget(condition[0]);
+    if (result.kind == ClassicalTargetKind::ClassicalBit) {
       if (expected > 1U) {
         throw std::runtime_error(
             "Qiskit classical-bit condition must compare against zero or one");
       }
-      result.kind = ClassicalTargetKind::ClassicalBit;
-      result.bit = rootClbitIndex(target);
       result.expectedBit = expected != 0U;
       return result;
     }
-    if (nb::isinstance(target, circuitModule.attr("ClassicalRegister"))) {
-      const auto size = nb::len(target);
-      if (size == 0U || size > 64U) {
-        throw std::runtime_error(
-            "Qiskit register conditions require between 1 and 64 bits");
-      }
-      result.kind = ClassicalTargetKind::ClassicalRegister;
-      result.reg.name = pythonStringAttribute(
-          target, "name", "Qiskit condition register has no name");
-      result.reg.bits.reserve(size);
-      for (const nb::handle bit : nb::iter(target)) {
-        result.reg.bits.push_back(rootClbitIndex(bit));
-      }
+    if (result.kind == ClassicalTargetKind::ClassicalRegister) {
       result.width = static_cast<uint32_t>(
-          std::max<size_t>(size, std::bit_width(expected)));
+          std::max<size_t>(result.reg.bits.size(), std::bit_width(expected)));
       result.expectedRegister = expected;
       return result;
     }
@@ -1256,40 +1236,9 @@ public:
   }
 
   [[nodiscard]] ClassicalTarget switchTarget() const override {
-    ClassicalTarget result;
-    const auto target =
-        pythonAttribute(operation_, "target", "Qiskit switch has no target");
-    const auto circuitModule = nb::module_::import_("qiskit.circuit");
-    if (nb::isinstance(target, circuitModule.attr("Clbit"))) {
-      result.kind = ClassicalTargetKind::ClassicalBit;
-      result.bit = rootClbitIndex(target);
-      return result;
-    }
-    if (nb::isinstance(target, circuitModule.attr("ClassicalRegister"))) {
-      result.kind = ClassicalTargetKind::ClassicalRegister;
-      result.reg.name = pythonStringAttribute(
-          target, "name", "Qiskit switch register has no name");
-      if (nb::len(target) == 0U || nb::len(target) > 64U) {
-        throw std::runtime_error(
-            "Qiskit switch registers must contain between 1 and 64 bits");
-      }
-      result.reg.bits.reserve(nb::len(target));
-      for (const nb::handle bit : nb::iter(target)) {
-        result.reg.bits.push_back(rootClbitIndex(bit));
-      }
-      result.width = static_cast<uint32_t>(result.reg.bits.size());
-      return result;
-    }
-    const auto expressionModule =
-        nb::module_::import_("qiskit.circuit.classical.expr");
-    if (nb::isinstance(target, expressionModule.attr("Expr"))) {
-      result.kind = ClassicalTargetKind::Expression;
-      // Qiskit 2.5's native switch-target accessors abort for expressions.
-      size_t nodeCount = 0U;
-      result.expression = normalizePythonExpressionOnly(target, nodeCount);
-      return result;
-    }
-    throw std::runtime_error("Qiskit switch has an unknown target type");
+    // Qiskit 2.5's native switch-target accessors abort for expressions.
+    return normalizePythonTarget(
+        pythonAttribute(operation_, "target", "Qiskit switch has no target"));
   }
 
   [[nodiscard]] std::vector<SwitchCase> switchCases() const override {
@@ -1317,6 +1266,42 @@ public:
   }
 
 private:
+  [[nodiscard]] ClassicalTarget
+  normalizePythonTarget(const nb::handle target) const {
+    ClassicalTarget result;
+    const auto circuitModule = nb::module_::import_("qiskit.circuit");
+    if (nb::isinstance(target, circuitModule.attr("Clbit"))) {
+      result.kind = ClassicalTargetKind::ClassicalBit;
+      result.bit = rootClbitIndex(target);
+      return result;
+    }
+    if (nb::isinstance(target, circuitModule.attr("ClassicalRegister"))) {
+      const auto size = nb::len(target);
+      if (size == 0U || size > 64U) {
+        throw std::runtime_error(
+            "Qiskit classical targets require between 1 and 64 bits");
+      }
+      result.kind = ClassicalTargetKind::ClassicalRegister;
+      result.reg.name = pythonStringAttribute(
+          target, "name", "Qiskit classical target register has no name");
+      result.reg.bits.reserve(size);
+      for (const nb::handle bit : nb::iter(target)) {
+        result.reg.bits.push_back(rootClbitIndex(bit));
+      }
+      result.width = static_cast<uint32_t>(size);
+      return result;
+    }
+    const auto expressionModule =
+        nb::module_::import_("qiskit.circuit.classical.expr");
+    if (nb::isinstance(target, expressionModule.attr("Expr"))) {
+      result.kind = ClassicalTargetKind::Expression;
+      size_t nodeCount = 0U;
+      result.expression = normalizePythonExpressionOnly(target, nodeCount);
+      return result;
+    }
+    throw std::runtime_error("Qiskit classical target has an unknown type");
+  }
+
   [[nodiscard]] uint32_t rootClbitIndex(const nb::handle bit) const {
     const auto clbits = pythonAttribute(
         instruction_, "clbits",
