@@ -77,6 +77,9 @@ Qiskit control-flow operations during export.
       formatting hooks, and `git diff --check`.
 - [x] (2026-08-21 13:45Z) Inspect the final diff, create separate gitmoji
       implementation and documentation commits, and push only PR #2175.
+- [x] (2026-08-21 22:29Z) Apply the complexity review findings as five focused
+      commits, rebuild the binding, pass all 22 focused tests and all 175 Qiskit
+      translation tests, and pass the complete repository lint session.
 
 ## Surprises & Discoveries
 
@@ -155,15 +158,20 @@ Qiskit control-flow operations during export.
   typing rules. This branch must remain composable with the reviewed scalar
   slice. Date/Author: 2026-08-19 / Codex.
 
-- Decision: Retain the full Python `CircuitInstruction`, the containing Python
-  circuit, and the root Python circuit in `NativeControlFlowReader`. Resolve a
-  classical bit in the containing circuit and compose its local index with the
-  enclosing native capture map when the circuit is nested. Use the current
-  native block map only to validate the instruction structure. Apply this rule
-  to expression leaves, switch targets, and legacy tuple conditions. Rationale:
-  `CircuitInstruction.clbits` describes block operands only, native condition
-  indices can remain local, and direct root lookup is ambiguous for nested local
-  registers. Date/Author: 2026-08-19 / Codex.
+- Decision: Initially retain the full Python `CircuitInstruction`, the
+  containing Python circuit, and the root Python circuit in
+  `NativeControlFlowReader`. Rationale: `CircuitInstruction.clbits` describes
+  block operands only, native condition indices can remain local, and direct
+  root lookup is ambiguous for nested local registers. This decision was
+  superseded after the final complexity review. Date/Author: 2026-08-19 / Codex.
+
+- Decision: Retain the Python instruction and containing circuit in each
+  `NativeControlFlowReader`, but let the top-level `NativeCircuitReader` own the
+  root circuit for the synchronous traversal. Resolve a classical bit in the
+  containing circuit and compose its local index with the enclosing native map.
+  Rationale: The recursive call stack already keeps the root reader alive, so
+  copying the root Python object through every nested reader adds no lifetime
+  protection. Date/Author: 2026-08-21 / Codex.
 
 - Decision: Parse expression-valued switch targets from the public Python
   expression tree. Continue to use native metadata for cases and block maps.
@@ -214,6 +222,12 @@ repository lint session, pinned Clang and Python formatting, Rumdl, Ruff, `ty`,
 targeted Clang-Tidy 21.1.1, and `git diff --check` all pass. Export-side writer
 construction remains deliberately out of scope.
 
+The final complexity pass shared public target normalization, replaced manual
+operation lookup with `llvm::StringSwitch`, removed duplicate root ownership and
+expression callbacks, and kept one representative MLIR text round trip. The
+rebuilt binding passed all 22 focused tests, all 175 Qiskit translation tests,
+and the complete repository lint session.
+
 ## Context and Orientation
 
 `bindings/mlir/qiskit/QiskitTranslation.h` contains version-neutral normalized
@@ -231,8 +245,8 @@ in block-capture order. Its native control-flow object exposes a map from that
 local order to root-circuit Clbit indices. A condition or switch target can also
 read a bit that no block uses. The importer therefore retains the containing
 Python circuit to find the local bit and uses the enclosing native map to reach
-its root index when the circuit is nested. The retained root Python circuit owns
-the complete object hierarchy while the reader traverses nested blocks.
+its root index when the circuit is nested. The top-level reader owns the root
+Python circuit throughout the synchronous traversal.
 
 The current scalar `Parameter` tree represents numeric gate and loop
 expressions. It is unrelated to Qiskit's typed classical-expression tree and
@@ -255,13 +269,13 @@ malformed captures, duplicate or invalid types, standalone variables, and widths
 outside the existing 64-bit limit, and reject unsigned literals that do not fit
 their declared width before MLIR construction.
 
-Then update `bindings/mlir/qiskit/QiskitImport.cpp`. Pass callbacks into the
-recursive expression emitter. A bit leaf calls `loadClassicalBit`; a register
-leaf calls `packRegister` and extends it to the normalized expression width.
-Lower casts to `Bool` as nonzero comparisons instead of integer truncation or
-floating-point conversion. Extend preflight validation to check leaf types, bit
-bounds, register size, unique register bits, and expression widths before MLIR
-construction begins.
+Then update `bindings/mlir/qiskit/QiskitImport.cpp`. Pass the classical-bit
+state and root map directly into the recursive expression emitter. A bit leaf
+calls `loadClassicalBit`; a register leaf calls `packRegister` and extends it to
+the normalized expression width. Lower casts to `Bool` as nonzero comparisons
+instead of integer truncation or floating-point conversion. Extend preflight
+validation to check leaf types, bit bounds, register size, unique register bits,
+and expression widths before MLIR construction begins.
 
 Finally, add tests to `test/python/test_mlir_qiskit_translation.py`. Cover one
 captured Clbit expression, one captured register expression, nested control flow
@@ -354,11 +368,11 @@ At completion, `ExpressionKind` in `bindings/mlir/qiskit/QiskitTranslation.h`
 has `ClassicalBit` and `ClassicalRegister` cases. `Expression` has
 `uint32_t bit` and `Register reg` payloads. `NativeControlFlowReader` in
 `Qiskit2_5.cpp` owns the full Python instruction, its operation, its containing
-circuit, and the root Python circuit. Its Python-authoritative condition and
-expression normalization resolves all classical leaves and legacy Clbit or
-register conditions to root-circuit indices through the containing-circuit and
-parent-map path. `QiskitImport.cpp` accepts expression leaves only through
-callbacks backed by `loadClassicalBit` and `packRegister`.
+circuit. Its Python-authoritative condition and expression normalization
+resolves all classical leaves and legacy Clbit or register conditions to
+root-circuit indices through the containing-circuit and parent-map path.
+`QiskitImport.cpp` passes the classical-bit state and root map directly into the
+expression emitter, which calls `loadClassicalBit` and `packRegister`.
 
 This work depends only on Qiskit 2.5's existing native extension table,
 nanobind's public Python object access, MLIR's arithmetic and structured-control
@@ -374,4 +388,7 @@ nested parent-map regression. Updated it once more after the nested legacy
 Clbit-condition accessor exposed its containing-circuit index rather than a root
 index. Updated it after rebasing onto current `main` and addressing the final
 review findings to record Python-authoritative conditions, bounded unsigned
-literals, nonzero Boolean casts, and their focused regressions.
+literals, nonzero Boolean casts, and their focused regressions. Updated it after
+the complexity pass to record the shared target normalization, direct lowering
+state, root lifetime ownership, reduced round-trip coverage, and final
+validation results.
