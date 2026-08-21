@@ -45,9 +45,6 @@ INSTANTIATE_TEST_SUITE_P(Benchmarks, JeffBenchmarkTest,
  */
 TEST_P(JeffBenchmarkTest, KeepsStructuredControlFlow) {
   const auto& benchmark = GetParam();
-  if (!benchmark.lowersToJeff) {
-    GTEST_SKIP() << "the program does not convert to jeff";
-  }
   auto program =
       buildQCProgram(benchmark, std::max(JEFF_SIZE, benchmark.minimumSize));
   ASSERT_TRUE(program.has_value());

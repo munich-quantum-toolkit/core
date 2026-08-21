@@ -43,9 +43,6 @@ struct Benchmark {
   /// size. A program sets this when it grows so fast that a larger size
   /// exhausts memory before it produces a module.
   uint64_t maximumSize = 0;
-  /// Whether the program converts to `jeff`. A program clears this when a
-  /// faithful implementation needs something that `jeff` cannot express.
-  bool lowersToJeff = true;
 };
 
 /// Returns every benchmark program.
@@ -82,68 +79,5 @@ SmallVector<Value> multiplexer(qc::QCProgramBuilder& b, uint64_t n);
 
 /// Quantum teleportation. The program has a fixed size, so @p n is ignored.
 SmallVector<Value> teleportation(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Block encoding of a linear combination of unitaries on @p n qubits: two
-/// ancillas holding the weights and n-2 system qubits.
-SmallVector<Value> blockEncoding(qc::QCProgramBuilder& b, uint64_t n);
-
-/// A chain of Toffoli gates across @p n qubits.
-SmallVector<Value> toffoliHeavy(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Quantum fan-out of one qubit over @p n qubits, followed by a parallel layer.
-SmallVector<Value> fanOut(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Draper adder of two quantum registers holding @p n / 2 qubits each.
-SmallVector<Value> qftAdderQuantum(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Draper adder of a classical constant to one register of @p n qubits.
-SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Hardware-efficient VQE ansatz on @p n qubits with a fixed layer count.
-SmallVector<Value> vqeAnsatz(qc::QCProgramBuilder& b, uint64_t n);
-
-/// QAOA on a ring of @p n qubits with a fixed layer count.
-SmallVector<Value> qaoa(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Controlled multiplication modulo a constant on @p n qubits: one control, one
-/// ancilla, and the rest split between the multiplier and the accumulator.
-SmallVector<Value> controlledMultiplyModN(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Grover's search on @p n qubits that repeats until a weakly coupled probe
-/// reports the marked state.
-SmallVector<Value> groverWeakMeasurement(qc::QCProgramBuilder& b, uint64_t n);
-
-/// VQE on @p n qubits, with the optimization loop driven by the measurements.
-SmallVector<Value> vqe(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Maximum likelihood amplitude estimation on @p n qubits, with one round per
-/// power of the Grover operator.
-SmallVector<Value> mlqae(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Shor's algorithm on @p n qubits, with phase estimation over modular
-/// multiplication on a control qubit that every round reuses.
-SmallVector<Value> shor(qc::QCProgramBuilder& b, uint64_t n);
-
-/// A gadget that repeats until its ancilla reports success. The program has a
-/// fixed size, so @p n is ignored.
-SmallVector<Value> repeatUntilSuccess(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Magic state distillation on @p n qubits: n-1 noisy states and one check
-/// qubit, repeated until a round is accepted.
-SmallVector<Value> magicStateDistillation(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Preparation of a logical state on @p n qubits: an encoded block of n-1
-/// qubits and one check qubit, repeated until the check passes.
-SmallVector<Value> logicalStatePreparation(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Rounds of stabilizer measurement and correction on @p n qubits: an encoded
-/// block of n-1 qubits and one syndrome qubit.
-SmallVector<Value> syndromeMeasurement(qc::QCProgramBuilder& b, uint64_t n);
-
-/// Measurement-based computation on a cluster chain, where every outcome
-/// selects the next measurement angle. The program has a fixed size, so @p n
-/// is ignored.
-SmallVector<Value> measurementBasedComputation(qc::QCProgramBuilder& b,
-                                               uint64_t n);
 
 } // namespace mqt::benchmark

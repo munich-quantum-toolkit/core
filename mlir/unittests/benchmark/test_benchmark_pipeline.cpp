@@ -69,9 +69,6 @@ TEST_P(PipelineBenchmarkTest, ReachesQC) {
 }
 
 TEST_P(PipelineBenchmarkTest, ReachesJeff) {
-  if (!GetParam().lowersToJeff) {
-    GTEST_SKIP() << "the program does not convert to jeff";
-  }
   EXPECT_TRUE(reaches(GetParam(), mlir::ProgramFormat::Jeff));
 }
 
