@@ -1307,6 +1307,25 @@ def test_excessively_nested_classical_expression_is_rejected() -> None:
         QCProgram.from_qiskit(circuit)
 
 
+def test_oversized_classical_expression_is_rejected() -> None:
+    """Bound the total size of a balanced classical expression."""
+    level = [expr.equal(1, 1) for _ in range(1025)]
+    while len(level) > 1:
+        level = [
+            expr.logic_or(level[index], level[index + 1]) if index + 1 < len(level) else level[index]
+            for index in range(0, len(level), 2)
+        ]
+    circuit = QuantumCircuit(1)
+    with circuit.if_test(level[0]):
+        circuit.x(0)
+    source_data = list(circuit.data)
+
+    with pytest.raises(RuntimeError, match="expressions exceed the node limit of 4096"):
+        QCProgram.from_qiskit(circuit)
+
+    assert list(circuit.data) == source_data
+
+
 def test_excessively_nested_control_flow_is_rejected() -> None:
     """Bound control-flow traversal independently of definition depth."""
     body = QuantumCircuit(1, 1)
