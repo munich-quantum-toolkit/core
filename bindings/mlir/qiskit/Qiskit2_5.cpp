@@ -11,6 +11,8 @@
 #include "QiskitTranslation.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 
+#include <llvm/ADT/StringSwitch.h>
+
 // Qiskit requires its umbrella header before the extension function table.
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
@@ -1389,74 +1391,46 @@ private:
 
   [[nodiscard]] static BinaryOperation
   pythonBinaryOperation(const std::string_view name) {
-    if (name == "BIT_AND") {
-      return BinaryOperation::BitAnd;
+    const auto operation =
+        llvm::StringSwitch<std::optional<BinaryOperation>>(name)
+            .Case("BIT_AND", BinaryOperation::BitAnd)
+            .Case("BIT_OR", BinaryOperation::BitOr)
+            .Case("BIT_XOR", BinaryOperation::BitXor)
+            .Case("LOGIC_AND", BinaryOperation::LogicAnd)
+            .Case("LOGIC_OR", BinaryOperation::LogicOr)
+            .Case("EQUAL", BinaryOperation::Equal)
+            .Case("NOT_EQUAL", BinaryOperation::NotEqual)
+            .Case("LESS", BinaryOperation::Less)
+            .Case("LESS_EQUAL", BinaryOperation::LessEqual)
+            .Case("GREATER", BinaryOperation::Greater)
+            .Case("GREATER_EQUAL", BinaryOperation::GreaterEqual)
+            .Case("SHIFT_LEFT", BinaryOperation::ShiftLeft)
+            .Case("SHIFT_RIGHT", BinaryOperation::ShiftRight)
+            .Case("ADD", BinaryOperation::Add)
+            .Case("SUB", BinaryOperation::Subtract)
+            .Case("MUL", BinaryOperation::Multiply)
+            .Case("DIV", BinaryOperation::Divide)
+            .Default(std::nullopt);
+    if (!operation) {
+      throw std::runtime_error(
+          "Qiskit expression has an unknown Python binary operation");
     }
-    if (name == "BIT_OR") {
-      return BinaryOperation::BitOr;
-    }
-    if (name == "BIT_XOR") {
-      return BinaryOperation::BitXor;
-    }
-    if (name == "LOGIC_AND") {
-      return BinaryOperation::LogicAnd;
-    }
-    if (name == "LOGIC_OR") {
-      return BinaryOperation::LogicOr;
-    }
-    if (name == "EQUAL") {
-      return BinaryOperation::Equal;
-    }
-    if (name == "NOT_EQUAL") {
-      return BinaryOperation::NotEqual;
-    }
-    if (name == "LESS") {
-      return BinaryOperation::Less;
-    }
-    if (name == "LESS_EQUAL") {
-      return BinaryOperation::LessEqual;
-    }
-    if (name == "GREATER") {
-      return BinaryOperation::Greater;
-    }
-    if (name == "GREATER_EQUAL") {
-      return BinaryOperation::GreaterEqual;
-    }
-    if (name == "SHIFT_LEFT") {
-      return BinaryOperation::ShiftLeft;
-    }
-    if (name == "SHIFT_RIGHT") {
-      return BinaryOperation::ShiftRight;
-    }
-    if (name == "ADD") {
-      return BinaryOperation::Add;
-    }
-    if (name == "SUB") {
-      return BinaryOperation::Subtract;
-    }
-    if (name == "MUL") {
-      return BinaryOperation::Multiply;
-    }
-    if (name == "DIV") {
-      return BinaryOperation::Divide;
-    }
-    throw std::runtime_error(
-        "Qiskit expression has an unknown Python binary operation");
+    return *operation;
   }
 
   [[nodiscard]] static UnaryOperation
   pythonUnaryOperation(const std::string_view name) {
-    if (name == "BIT_NOT") {
-      return UnaryOperation::BitNot;
+    const auto operation =
+        llvm::StringSwitch<std::optional<UnaryOperation>>(name)
+            .Case("BIT_NOT", UnaryOperation::BitNot)
+            .Case("LOGIC_NOT", UnaryOperation::LogicNot)
+            .Case("NEGATE", UnaryOperation::Negate)
+            .Default(std::nullopt);
+    if (!operation) {
+      throw std::runtime_error(
+          "Qiskit expression has an unknown Python unary operation");
     }
-    if (name == "LOGIC_NOT") {
-      return UnaryOperation::LogicNot;
-    }
-    if (name == "NEGATE") {
-      return UnaryOperation::Negate;
-    }
-    throw std::runtime_error(
-        "Qiskit expression has an unknown Python unary operation");
+    return *operation;
   }
 
   [[nodiscard]] std::unique_ptr<Expression>
