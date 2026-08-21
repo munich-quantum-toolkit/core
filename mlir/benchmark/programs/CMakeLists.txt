@@ -6,8 +6,6 @@
 #
 # Licensed under the MIT License
 
-# The benchmark programs, one file per program. The programs build QC dialect modules and carry no
-# format-specific code, so any backend can reuse them.
 file(GLOB PROGRAM_SOURCES *.cpp)
 
 add_library(MQTBenchmarkPrograms STATIC ${PROGRAM_SOURCES})
