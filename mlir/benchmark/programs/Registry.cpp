@@ -21,12 +21,11 @@ SmallVector<Benchmark> benchmarks() {
       {.name = "grover", .build = &grover, .minimumSize = 2},
       {.name = "iqft", .build = &iqft, .minimumSize = 1},
       {.name = "iqpe", .build = &iqpe, .minimumSize = 1},
-      // The loop runs over the 2^(n-1) control states, so a larger size cannot
-      // hold that count in a signed 64-bit integer.
+      // Limit n since the loop runs over the 2^(n-1) control states
       {.name = "multiplexer",
        .build = &multiplexer,
        .minimumSize = 2,
-       .maximumSize = 63},
+       .maximumSize = 20},
       {.name = "qft", .build = &qft, .minimumSize = 1},
       {.name = "qpe", .build = &qpe, .minimumSize = 2},
       {.name = "teleportation", .build = &teleportation, .minimumSize = 1},

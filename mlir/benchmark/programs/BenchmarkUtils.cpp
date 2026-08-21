@@ -26,7 +26,6 @@
 namespace mqt::benchmark {
 
 using namespace mlir;
-using mlir::mqt::variantToValue;
 
 void resetRegister(qc::QCProgramBuilder& b, Value reg, const int64_t size) {
   b.scfFor(0, size, 1, [&](Value i) { b.reset(b.loadQubit(reg, i)); });
@@ -59,7 +58,7 @@ void phaseRotationLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
                        const std::variant<double, Value>& start,
                        const double factor,
                        const function_ref<void(Value, Value)>& body) {
-  auto first = variantToValue(b, b.getLoc(), start);
+  auto first = mlir::mqt::variantToValue(b, b.getLoc(), start);
   auto scale = b.floatConstant(factor);
 
   const auto advance = [&](Value angle) {
@@ -72,7 +71,7 @@ void uniformRotationLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
                          const std::variant<double, Value>& start,
                          const double increment,
                          const function_ref<void(Value, Value)>& body) {
-  auto first = variantToValue(b, b.getLoc(), start);
+  auto first = mlir::mqt::variantToValue(b, b.getLoc(), start);
   auto step = b.floatConstant(increment);
 
   const auto advance = [&](Value angle) {

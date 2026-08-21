@@ -53,12 +53,6 @@ TEST_P(GenerateBenchmarkTest, RejectsSizesAboveTheMaximum) {
   EXPECT_FALSE(generateProgram(benchmark, benchmark.maximumSize + 1));
 }
 
-/**
- * @brief The programs size their registers with signed dimensions.
- *
- * @details The first size that a signed dimension cannot hold must be
- * rejected, whichever limit the benchmark reaches first.
- */
 TEST_P(GenerateBenchmarkTest, RejectsSizesBeyondTheSignedRange) {
   constexpr auto FIRST_UNSIGNED =
       static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1;
