@@ -9,7 +9,9 @@
  */
 
 #include "algorithms/WState.hpp"
+#include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
+#include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
@@ -17,6 +19,7 @@
 
 #include <cstddef>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -51,6 +54,11 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(WState, FunctionTest) {
   const auto nq = GetParam();
   const qc::QuantumComputation qc = qc::createWState(nq);
+  auto dd = std::make_unique<dd::Package>(nq);
+  const auto simulated = dd::simulate(qc, makeZeroState(nq, *dd), *dd);
+  const auto expected = makeWState(nq, *dd);
+  EXPECT_EQ(simulated, expected);
+
   constexpr std::size_t shots = 4096U;
   const auto measurements = dd::sample(qc, shots);
   for (const auto& result : generateWStateStrings(nq)) {

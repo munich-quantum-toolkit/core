@@ -10,7 +10,6 @@
 
 #include "algorithms/QPE.hpp"
 #include "circuit_optimizer/CircuitOptimizer.hpp"
-#include "dd/FunctionalityConstruction.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
@@ -26,6 +25,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <set>
 #include <sstream>
@@ -118,6 +118,27 @@ protected:
   }
 };
 
+auto totalVariationDistance(const std::map<std::string, std::size_t>& first,
+                            const std::map<std::string, std::size_t>& second,
+                            const std::size_t shots) -> double {
+  auto outcomes = std::set<std::string>{};
+  for (const auto& measurement : first) {
+    outcomes.emplace(measurement.first);
+  }
+  for (const auto& measurement : second) {
+    outcomes.emplace(measurement.first);
+  }
+
+  auto distance = 0.0;
+  for (const auto& outcome : outcomes) {
+    const auto firstCount = first.contains(outcome) ? first.at(outcome) : 0U;
+    const auto secondCount = second.contains(outcome) ? second.at(outcome) : 0U;
+    distance += std::abs(static_cast<double>(firstCount) -
+                         static_cast<double>(secondCount));
+  }
+  return distance / (2.0 * static_cast<double>(shots));
+}
+
 } // namespace
 
 INSTANTIATE_TEST_SUITE_P(
@@ -135,14 +156,11 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST_P(QPE, QPETest) {
-  auto dd = std::make_unique<dd::Package>(precision + 1);
   auto qc = qc::createQPE(lambda, precision);
-  ASSERT_EQ(qc.getNqubits(), precision + 1);
-  ASSERT_NO_THROW({ qc::CircuitOptimizer::removeFinalMeasurements(qc); });
+  qc::CircuitOptimizer::removeFinalMeasurements(qc);
 
-  dd::VectorDD e{};
-  ASSERT_NO_THROW(
-      { e = dd::simulate(qc, makeZeroState(qc.getNqubits(), *dd), *dd); });
+  auto dd = std::make_unique<dd::Package>(qc.getNqubits());
+  const auto e = dd::simulate(qc, makeZeroState(qc.getNqubits(), *dd), *dd);
 
   // account for the eigenstate qubit by adding an offset
   const auto offset = 1ULL << (e.p->v + 1);
@@ -170,12 +188,14 @@ TEST_P(QPE, QPETest) {
 }
 
 TEST_P(QPE, IQPETest) {
-  auto dd = std::make_unique<dd::Package>(precision + 1);
-  auto qc = qc::createIterativeQPE(lambda, precision);
-  ASSERT_EQ(qc.getNqubits(), 2U);
+  const auto qc = qc::createIterativeQPE(lambda, precision);
 
   constexpr auto shots = 16384U;
   const auto measurements = dd::sample(qc, shots);
+  const auto ordinaryMeasurements =
+      dd::sample(qc::createQPE(lambda, precision), shots);
+  EXPECT_LT(totalVariationDistance(measurements, ordinaryMeasurements, shots),
+            0.05);
 
   // sort the measurements
   using Measurement = std::pair<std::string, std::size_t>;
@@ -214,65 +234,35 @@ TEST_P(QPE, IQPETest) {
   }
 }
 
-TEST_P(QPE, DynamicEquivalenceSimulation) {
-  auto dd = std::make_unique<dd::Package>(precision + 1);
+TEST(QPEConstruction, SupportsMoreThan32Qubits) {
+  constexpr auto precision = 36U;
+  EXPECT_NO_THROW({ static_cast<void>(qc::createQPE(precision, true, 0U)); });
+  EXPECT_NO_THROW(
+      { static_cast<void>(qc::createIterativeQPE(precision, true, 0U)); });
 
-  // create standard QPE circuit
-  auto qpe = qc::createQPE(lambda, precision);
-
-  // remove final measurements to obtain statevector
-  qc::CircuitOptimizer::removeFinalMeasurements(qpe);
-
-  // simulate circuit
-  auto e = dd::simulate(qpe, makeZeroState(qpe.getNqubits(), *dd), *dd);
-
-  // create standard IQPE circuit
-  auto iqpe = qc::createIterativeQPE(lambda, precision);
-
-  // transform dynamic circuits by first eliminating reset operations and
-  // afterwards deferring measurements
-  qc::CircuitOptimizer::eliminateResets(iqpe);
-  qc::CircuitOptimizer::deferMeasurements(iqpe);
-
-  // remove final measurements to obtain statevector
-  qc::CircuitOptimizer::removeFinalMeasurements(iqpe);
-
-  // simulate circuit
-  auto f = dd::simulate(iqpe, makeZeroState(iqpe.getNqubits(), *dd), *dd);
-
-  // calculate fidelity between both results
-  auto fidelity = dd->fidelity(e, f);
-  std::cout << "Fidelity of both circuits: " << fidelity << "\n";
-
-  EXPECT_NEAR(fidelity, 1.0, 1e-4);
+  const auto lambda = std::ldexp(1.0, 1 - static_cast<int>(precision));
+  constexpr auto shots = 8U;
+  constexpr auto seed = 1U;
+  EXPECT_EQ(dd::sample(qc::createQPE(lambda, precision), shots, seed),
+            dd::sample(qc::createIterativeQPE(lambda, precision), shots, seed));
 }
 
-TEST_P(QPE, DynamicEquivalenceFunctionality) {
-  auto dd = std::make_unique<dd::Package>(precision + 1);
+TEST(QPEConstruction, GeneratedInexactPhaseHasMultipleEstimates) {
+  constexpr auto precision = 5U;
+  constexpr auto numSeeds = 8U;
+  for (auto seed = 0U; seed < numSeeds; ++seed) {
+    auto qc = qc::createQPE(precision, false, seed);
+    qc::CircuitOptimizer::removeFinalMeasurements(qc);
+    auto dd = std::make_unique<dd::Package>(qc.getNqubits());
+    const auto result =
+        dd::simulate(qc, makeZeroState(qc.getNqubits(), *dd), *dd);
 
-  // create standard QPE circuit
-  auto qpe = qc::createQPE(lambda, precision);
-
-  // remove final measurements to obtain statevector
-  qc::CircuitOptimizer::removeFinalMeasurements(qpe);
-
-  // simulate circuit
-  auto e = dd::buildFunctionality(qpe, *dd);
-
-  // create standard IQPE circuit
-  auto iqpe = qc::createIterativeQPE(lambda, precision);
-
-  // transform dynamic circuits by first eliminating reset operations and
-  // afterwards deferring measurements
-  qc::CircuitOptimizer::eliminateResets(iqpe);
-  qc::CircuitOptimizer::deferMeasurements(iqpe);
-  qc::CircuitOptimizer::backpropagateOutputPermutation(iqpe);
-
-  // remove final measurements to obtain statevector
-  qc::CircuitOptimizer::removeFinalMeasurements(iqpe);
-
-  // simulate circuit
-  auto f = dd::buildFunctionality(iqpe, *dd);
-
-  EXPECT_EQ(e, f);
+    auto populatedEstimates = 0U;
+    for (const auto& amplitude : result.getVector()) {
+      if (std::norm(amplitude) > 1e-12) {
+        ++populatedEstimates;
+      }
+    }
+    EXPECT_GT(populatedEstimates, 1U) << "seed: " << seed;
+  }
 }

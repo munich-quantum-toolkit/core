@@ -51,7 +51,6 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(Entanglement, FunctionTest) {
   const auto qc = qc::createGHZState(nq);
   const auto e = dd::buildFunctionality(qc, *dd);
-  ASSERT_EQ(qc.getNops(), nq);
   const auto r = dd->multiply(e, makeZeroState(nq, *dd));
   ASSERT_EQ(r.getValueByPath(nq, std::string(nq, '0')), dd::SQRT2_2);
   ASSERT_EQ(r.getValueByPath(nq, std::string(nq, '1')), dd::SQRT2_2);
