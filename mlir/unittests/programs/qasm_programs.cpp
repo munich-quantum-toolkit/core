@@ -1224,7 +1224,7 @@ c[1] = measure q[k];
 const std::string expressionDynamicIntIndex = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[4] q;
-for uint i in [0:2] { int x = i + 1; h q[x]; }
+for uint i in [0:2] { h q[i + 1]; }
 bit[4] c = measure q;
 )qasm";
 
@@ -1350,10 +1350,10 @@ rx(theta) q;
 output bit result;
 result = measure q;
 )qasm";
-static const std::string resolvedDynamicIndex = R"qasm(OPENQASM 3.1;
+static const std::string constantIndex = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
-int index = 1;
+const int index = 1;
 x q[index];
 output bit[2] result;
 result = measure q;
@@ -1406,8 +1406,7 @@ llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms() {
       OpenQASMProgram{.name = "scalar-loop-state", .source = scalarLoopState},
       OpenQASMProgram{.name = "measurement-controlled-while",
                       .source = conditionWhileAnd},
-      OpenQASMProgram{.name = "resolved-dynamic-index",
-                      .source = resolvedDynamicIndex},
+      OpenQASMProgram{.name = "constant-index", .source = constantIndex},
       OpenQASMProgram{.name = "reset", .source = resetQubitAfterSingleOp},
       OpenQASMProgram{.name = "barrier", .source = barrierMultipleQubits},
       OpenQASMProgram{.name = "mixed-controls", .source = mixedControlledX},

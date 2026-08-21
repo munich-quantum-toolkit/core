@@ -706,9 +706,7 @@ OPENQASM 3.1;
 include "stdgates.inc";
 qubit[3163] q;
 qubit[3163] aux;
-int i = 0;
-  int j = 1;
-cx q[i], aux[j];
+for int i in [0:0] { cx q[i], aux[i + 1]; }
 )qasm";
 
   MLIRContext context;
@@ -790,8 +788,8 @@ TEST(OpenQASMTargetTest, DoesNotMultiplyCustomGatesByRegisterWidth) {
   source += "}\n"
             "qubit[640] q;\n"
             "qubit[640] aux;\n"
-            "int i = 0;\n"
-            "int j = 1;\n"
+            "const int i = 0;\n"
+            "const int j = 1;\n"
             "expanded q[i], aux[j];\n";
 
   MLIRContext context;
@@ -1451,23 +1449,30 @@ TEST(OpenQASMTargetTest, EmitsStructuredDiagnosticsWithIncludeStacks) {
   EXPECT_EQ(nestedLocation.getLine(), 2);
 }
 
-TEST(OpenQASMTargetTest, RejectsNegativeAndAliasingQuantumIndices) {
-  constexpr llvm::StringLiteral indexSource = R"qasm(
+TEST(OpenQASMTargetTest, NormalizesStaticAndRejectsDynamicQuantumIndices) {
+  constexpr llvm::StringLiteral staticIndexSource = R"qasm(
 OPENQASM 3.1;
 qubit[3] q;
 x q[-1];
 bit[3] c = measure q;
 if (c[-1]) { h q[-1]; }
+)qasm";
+  MLIRContext staticIndexContext;
+  auto staticIndex =
+      qc::translateQASM3ToQC(staticIndexSource, &staticIndexContext);
+  ASSERT_TRUE(staticIndex);
+  EXPECT_TRUE(succeeded(verify(*staticIndex)));
+
+  constexpr llvm::StringLiteral dynamicIndexSource = R"qasm(
+OPENQASM 3.1;
+qubit[3] q;
 int i = -1;
 x q[i];
-c[i] = measure q[i];
-if (c[i]) { x q[0]; }
-output bit[3] result;
-result = measure q;
 )qasm";
-  MLIRContext indexContext;
-  auto indexed = qc::translateQASM3ToQC(indexSource, &indexContext);
-  EXPECT_FALSE(indexed);
+  MLIRContext dynamicIndexContext;
+  auto dynamicIndex =
+      qc::translateQASM3ToQC(dynamicIndexSource, &dynamicIndexContext);
+  EXPECT_FALSE(dynamicIndex);
 
   constexpr llvm::StringLiteral aliasSource = R"qasm(
 OPENQASM 3.1;
@@ -1486,8 +1491,7 @@ TEST(OpenQASMTargetTest, LoadsDynamicQubitGatesDirectly) {
 OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
-int i = 0;
-x q[i];
+for int i in [0:0] { x q[i]; }
 )qasm";
 
   MLIRContext context;
@@ -1549,8 +1553,7 @@ TEST(OpenQASMTargetTest, LoadsDynamicQubitMeasurementsDirectly) {
 OPENQASM 3.1;
 qubit[2] q;
 bit c;
-int i = 0;
-c = measure q[i];
+for int i in [0:0] { c = measure q[i]; }
 )qasm";
 
   MLIRContext context;
@@ -1575,8 +1578,7 @@ TEST(OpenQASMTargetTest, HandlesWidthOneAndMultipleDynamicQubitLoads) {
 OPENQASM 3.1;
 include "stdgates.inc";
 qubit[1] q;
-int i = 0;
-x q[i];
+for int i in [0:0] { x q[i]; }
 )qasm";
   MLIRContext widthOneContext;
   auto widthOneModule =
@@ -1596,9 +1598,7 @@ OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] left;
 qubit[2] right;
-int i = 0;
-int j = 1;
-cx left[i], right[j];
+for int i in [0:0] { cx left[i], right[i + 1]; }
 )qasm";
   MLIRContext nestedContext;
   auto nestedModule = qc::translateQASM3ToQC(nestedSource, &nestedContext);
@@ -1622,12 +1622,13 @@ TEST(OpenQASMTargetTest, LoadsEveryDynamicQuantumStatementDirectly) {
 OPENQASM 3.1;
 include "stdgates.inc";
 qubit[4] q;
-int i = 0;
-int j = 1;
-negctrl @ x q[i], q[j];
-bit measured = measure q[i];
-reset q[j];
-barrier q[i], q[j];
+bit measured;
+for int i in [0:0] {
+  negctrl @ x q[i], q[i + 1];
+  measured = measure q[i];
+  reset q[i + 1];
+  barrier q[i], q[i + 1];
+}
 )qasm";
 
   MLIRContext context;
@@ -1663,7 +1664,8 @@ barrier q[i], q[j];
 TEST(OpenQASMTargetTest, QuantumEmissionDoesNotScaleWithRegisterWidth) {
   const auto operationCount = [](const int64_t width) {
     const auto source = "OPENQASM 3.1;\ninclude \"stdgates.inc\";\nqubit[" +
-                        std::to_string(width) + "] q;\nint i = 0;\nh q[i];\n";
+                        std::to_string(width) +
+                        "] q;\nfor int i in [0:0] { h q[i]; }\n";
     MLIRContext context;
     auto moduleOp = qc::translateQASM3ToQC(source, &context);
     EXPECT_TRUE(moduleOp);
@@ -1956,7 +1958,7 @@ TEST(OpenQASMTargetTest, LowersMultiIterationInductionIndicesAtQCTarget) {
 OPENQASM 3.1;
 include "stdgates.inc";
 qubit[4] q;
-for uint i in [0:2] { int x = i + 1; h q[x]; }
+for uint i in [0:2] { h q[i + 1]; }
 )qasm";
 
   MLIRContext context;
@@ -1972,7 +1974,7 @@ include "stdgates.inc";
 qubit[8] q;
 qubit[8] left;
 qubit[8] right;
-int last = 7;
+const int last = 7;
 for int i in [0:6] {
   cx q[i], q[i + 1];
   h q[last - i];
@@ -2129,14 +2131,13 @@ for int i in [start:step:stop] { x q; }
   EXPECT_GE(assertions, 1);
 }
 
-TEST(OpenQASMTargetTest, PreservesStaticallySelectedIndexState) {
+TEST(OpenQASMTargetTest, ElidesStaticallyFalseQuantumBranch) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 include "stdgates.inc";
-qubit[2] q;
-int i = 0;
-if (false) { i = 1; pow(2) @ x q[1]; }
-x q[i];
+qubit[1] q;
+if (false) { pow(2) @ x q[0]; }
+x q[0];
 )qasm";
 
   MLIRContext context;

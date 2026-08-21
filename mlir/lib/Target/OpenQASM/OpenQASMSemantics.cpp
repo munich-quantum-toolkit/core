@@ -380,15 +380,6 @@ private:
     llvm::DynamicAPInt constant{0};
   };
 
-  struct AffineAlias {
-    AffineForm form;
-    uint64_t generation = 0;
-  };
-
-  struct ActiveInduction {
-    unsigned position = 0;
-  };
-
   struct DynamicBitFact {
     ExpressionId expression = 0;
     std::vector<std::pair<uint64_t, uint64_t>> dependencies;
@@ -409,8 +400,7 @@ private:
   std::vector<std::shared_ptr<DynamicBitFactSet>> dynamicBitFacts;
   std::vector<bool> initializedScalars;
   std::vector<uint64_t> scalarGenerations;
-  std::vector<std::optional<AffineAlias>> affineAliases;
-  llvm::DenseMap<ScalarId, ActiveInduction> activeInductions;
+  llvm::DenseMap<ScalarId, unsigned> activeInductions;
   llvm::DenseSet<ScalarId> loopVariantScalars;
   presburger::IntegerPolyhedron affineDomain{
       presburger::PresburgerSpace::getSetSpace()};
@@ -579,19 +569,9 @@ private:
       const auto induction = activeInductions.find(value.variable);
       if (induction != activeInductions.end()) {
         result = constantAffineForm(llvm::DynamicAPInt(0));
-        result->coefficients[induction->second.position] =
-            llvm::DynamicAPInt(1);
+        result->coefficients[induction->second] = llvm::DynamicAPInt(1);
         break;
       }
-      if (value.variable >= affineAliases.size() ||
-          !affineAliases[value.variable] ||
-          affineAliases[value.variable]->generation !=
-              scalarGenerations[value.variable]) {
-        break;
-      }
-      result = affineAliases[value.variable]->form;
-      result->coefficients.resize(affineDomain.getNumDimVars(),
-                                  llvm::DynamicAPInt(0));
       break;
     }
     case ExpressionKind::Cast:
@@ -707,10 +687,6 @@ private:
     if (!lhs.provenIndex && !rhs.provenIndex) {
       return lhs.index != rhs.index;
     }
-    if (affineComparisons >= AFFINE_DISTINCTNESS_COMPARISON_LIMIT) {
-      return false;
-    }
-    ++affineComparisons;
     const auto indexForm =
         [&](const QubitReference& reference) -> std::optional<AffineForm> {
       if (reference.provenIndex) {
@@ -727,6 +703,10 @@ private:
     if (isAffineConstant(difference)) {
       return difference.constant != 0;
     }
+    if (affineComparisons >= AFFINE_DISTINCTNESS_COMPARISON_LIMIT) {
+      return false;
+    }
+    ++affineComparisons;
     return domainIsEmptyWithEquality(difference);
   }
 
@@ -2496,7 +2476,7 @@ private:
 
   [[nodiscard]] FailureOr<std::optional<uint64_t>>
   constantIndex(const SyntaxExpressionId id, const uint64_t width,
-                SMLoc location, const bool wrapNegative) const {
+                SMLoc location) const {
     if (!isConstantExpression(id)) {
       return std::optional<uint64_t>{};
     }
@@ -2509,9 +2489,6 @@ private:
       return fail(location, "unsigned value does not fit in signed i64");
     }
     if (*value < 0) {
-      if (!wrapNegative) {
-        return fail(location, "cannot prove that qubit index is in bounds");
-      }
       *value += static_cast<int64_t>(width);
     }
     if (*value < 0) {
@@ -2704,7 +2681,6 @@ private:
                                .location = getSourceLocation(location)});
     initializedScalars.push_back(false);
     scalarGenerations.push_back(0);
-    affineAliases.emplace_back();
     if (failed(declare(location, declaration.identifier,
                        {.kind = SymbolKind::Scalar, .type = type, .id = id}))) {
       return failure();
@@ -2731,10 +2707,6 @@ private:
                 initializer, type,
                 syntax.expressions[*declaration.initializer].location));
         typed.initializer = convertedInitializer;
-        if (auto form = buildAffineForm(convertedInitializer)) {
-          affineAliases[id] =
-              AffineAlias{.form = std::move(*form), .generation = 0};
-        }
       }
       initializedScalars[id] = true;
     }
@@ -3289,7 +3261,6 @@ private:
         {.type = type, .name = loop.inductionVariable.str()});
     initializedScalars.push_back(true);
     scalarGenerations.push_back(0);
-    affineAliases.emplace_back();
     if (failed(declare(location, loop.inductionVariable,
                        {.kind = insideGate ? SymbolKind::GateLocalScalar
                                            : SymbolKind::Scalar,
@@ -3315,8 +3286,7 @@ private:
           affineConstraint(addAffineForms(induction, negateAffineForm(lower))));
       affineDomain.addInequality(
           affineConstraint(addAffineForms(upper, negateAffineForm(induction))));
-      activeInductions.insert(
-          {scalar, {.position = affineDomain.getNumDimVars() - 1}});
+      activeInductions.insert({scalar, affineDomain.getNumDimVars() - 1});
     }
     const auto bodyResult =
         analyzeBody(loop.body, result.body, /*global=*/false);
@@ -4033,8 +4003,8 @@ private:
       }
       return selection;
     }
-    MQT_OQ3_TRY_ASSIGN(constant, constantIndex(*operand.index, width,
-                                               operand.location, false));
+    MQT_OQ3_TRY_ASSIGN(constant,
+                       constantIndex(*operand.index, width, operand.location));
     if (constant) {
       if (*constant >= width) {
         return fail(operand.location,
@@ -4083,8 +4053,8 @@ private:
       }
       return result;
     }
-    MQT_OQ3_TRY_ASSIGN(constant, constantIndex(*reference.index, width,
-                                               reference.location, true));
+    MQT_OQ3_TRY_ASSIGN(
+        constant, constantIndex(*reference.index, width, reference.location));
     if (constant) {
       if (*constant >= width) {
         return fail(reference.location, "classical bit index is out of bounds");

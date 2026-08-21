@@ -45,6 +45,12 @@ index before MLIR emission. A user can compile the loop from issue #2188 to
   test skipped under its own condition.
 - [x] (2026-08-20 23:15Z) Published draft pull request #2203 from the signed
   rebased branch and linked the changelog entry to the pull request.
+- [x] (2026-08-21 22:13Z) Restored compile-time normalization of constant
+  negative indices, restricted aliases to `const` values, and charged the
+  distinctness budget only for Presburger queries.
+- [x] (2026-08-21 22:27Z) Passed the 169 OpenQASM and 126 compiler tests in
+      debug and release builds, the reported Clang-Tidy check, repository lint,
+      and a second Ponytail review with no further findings.
 
 ## Surprises & Discoveries
 
@@ -73,6 +79,16 @@ index before MLIR emission. A user can compile the loop from issue #2188 to
 - Observation: Pairwise Presburger checks run before emitter resource checks.
   Wide affine barriers and broadcast gate calls therefore need their own
   semantic comparison limit.
+- Observation: Mutable scalar aliases can retain runtime `i64` arithmetic after
+  the semantic analyzer accepts the captured affine initializer. Evidence: the
+  source `int x = i + 1; h q[x];` failed `jeff` emission because
+  `jeff.int_binary_op` requires the same operand and result types.
+- Observation: The distinctness counter charged constant differences before the
+  no-solver fast path. A broadcast of one proven operand pair could exhaust the
+  budget even though each comparison was constant.
+- Observation: OpenQASM defines constant negative indices relative to the end of
+  a register. Compile-time normalization preserves that source behavior without
+  runtime guards.
 
 ## Decision Log
 
@@ -97,18 +113,19 @@ index before MLIR emission. A user can compile the loop from issue #2188 to
   loop. Rationale: generation checks alone see only the first source-order
   iteration and could accept an index that is unsafe after the back edge.
   Date/Author: 2026-08-20, Codex.
-- Decision: Store each scalar alias as the affine value captured by its
-  initializer, guarded by the alias's generation. Rationale: later changes to an
-  initializer dependency do not change the already assigned scalar value.
-  Date/Author: 2026-08-20, Codex.
+- Decision: Admit direct affine expressions and `const` aliases, but reject
+  mutable scalar aliases in quantum indices. Rationale: the emitter cannot
+  recover a mutable alias's affine initializer without more typed state, while a
+  direct expression or `const` declaration has the required compile-time form.
+  Date/Author: 2026-08-21, Codex.
 - Decision: Use direct positive-range lowering for mixed signed and unsigned
   endpoints only when every signed endpoint is proven nonnegative. Rationale:
   this condition makes unsigned promotion value-preserving; otherwise generic
   lowering retains the source semantics. Date/Author: 2026-08-20, Codex.
-- Decision: Limit each barrier or gate call to 1,024 affine distinctness
-  comparisons and resolve constant differences without a solver call. Rationale:
-  source limits permit wide operand lists, and semantic proof runs before
-  emitter budgeting. Date/Author: 2026-08-20, Codex.
+- Decision: Limit each barrier or gate call to 1,024 affine distinctness solver
+  queries and resolve constant differences without charging the limit.
+  Rationale: source limits permit wide operand lists, but repeated constant
+  proofs do not consume Presburger resources. Date/Author: 2026-08-21, Codex.
 
 ## Outcomes & Retrospective
 
@@ -117,7 +134,7 @@ domains and rejects unproved bounds or operand distinctness. The emitter is four
 lines smaller than before this work: it directly emits proven `index` arithmetic
 and no longer emits quantum bounds, wrapping, or distinctness guards. The
 semantic analyzer is larger because it owns the source-level proof, including
-exact relational domains, overflow checks, captured aliases, and loop-back-edge
+exact relational domains, overflow checks, `const` aliases, and loop-back-edge
 mutation safety. Interval bounds or source-order generation checks would not
 cover the required triangular and `j - step` benchmark shapes.
 
@@ -150,16 +167,16 @@ The semantic analyzer will prove a quantum index by showing that adding either
 `index < 0` or `index >= width` makes the active domain empty. It will prove
 same-register operands distinct by showing that adding `left == right` makes the
 domain empty. It will also prove every supported arithmetic node fits the signed
-64-bit representation emitted by this frontend. Scalar aliases remain usable
-only while their own generation matches the value captured at initialization. A
-pre-scan excludes scalars assigned anywhere in a repeating loop so that the
-proof remains valid after the loop back edge.
+64-bit representation emitted by this frontend. The analyzer folds `const`
+aliases before it builds an affine form. A pre-scan excludes scalars assigned
+anywhere in a repeating loop so that the proof remains valid after the loop back
+edge.
 
 ## Plan of Work
 
 Add a small private affine-expression representation and active-domain state to
 `OpenQASMSemantics.cpp`. Build forms for integer constants, active induction
-variables, valid immutable aliases, negation, addition, subtraction, constant
+variables, folded `const` aliases, negation, addition, subtraction, constant
 multiplication, and value-preserving integer casts. Use arbitrary-precision
 coefficients while constructing constraints. Reject unsupported forms only when
 they reach a quantum index or are needed to mark a loop as a proven range.
@@ -168,9 +185,7 @@ During `analyzeFor`, recognize positive constant steps and affine start and stop
 expressions whose direct lowering arithmetic fits signed 64-bit. Append the
 induction variable and its inclusive bounds to the active domain while analyzing
 the body, then restore the outer domain. Mark the resulting typed `ForStatement`
-as a proven positive range. Track scalar initializer expressions as captured
-affine values; assignments invalidate the corresponding fact by advancing the
-existing generation counter. Find loop-body assignments before body analysis so
+as a proven positive range. Find loop-body assignments before body analysis so
 an outer scalar cannot supply a proof that fails on a later iteration.
 
 Rename the optional expression in `QubitReference` from `dynamicIndex` to
@@ -218,12 +233,18 @@ pipeline to `jeff`. Its emitted QC must contain direct qubit loads inside
 `arith.select`. A nested QFT-shaped loop with `j` ranging from `i + 1` through
 the final register index must prove both bounds and operand distinctness. A
 QFT-adder-shaped `j - step` index and reverse `N - 1 - i` index must also pass.
+Constant negative indices must normalize relative to the register width.
 
 Programs with possibly out-of-range, possibly aliased, measurement-derived,
 mutated, nonlinear, or unsupported-step quantum indices must fail semantic
 analysis with a precise diagnostic. Dynamic classical indexing and generic
 runtime loops that do not supply quantum indices must retain their current
 behavior. All existing test suites and lint checks must pass.
+
+Revision note (2026-08-21): The review follow-up removed mutable affine aliases,
+restored constant negative-index normalization, and limited the resource counter
+to actual solver queries. Focused debug and release tests, Clang-Tidy, lint, and
+the follow-up simplicity review passed.
 
 ## Idempotence and Recovery
 

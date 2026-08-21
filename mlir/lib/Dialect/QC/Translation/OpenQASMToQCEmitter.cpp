@@ -411,15 +411,13 @@ private:
               : std::get<int64_t>(expression.constant);
       return arith::ConstantIndexOp::create(opBuilder, loc, value);
     }
-    case frontend::ExpressionKind::Variable:
-      if (const auto induction =
-              provenInductionValues.find(expression.variable);
-          induction != provenInductionValues.end()) {
-        return induction->second;
+    case frontend::ExpressionKind::Variable: {
+      const auto induction = provenInductionValues.find(expression.variable);
+      if (induction == provenInductionValues.end()) {
+        llvm_unreachable("proven index refers to an inactive induction");
       }
-      return arith::IndexCastOp::create(opBuilder, loc,
-                                        opBuilder.getIndexType(),
-                                        scalarValues.at(expression.variable));
+      return induction->second;
+    }
     case frontend::ExpressionKind::Cast:
       return emitProvenIndexExpression(opBuilder, expression.lhs);
     case frontend::ExpressionKind::Negate: {
@@ -2365,7 +2363,6 @@ private:
     const auto slots = mutatedState(loop.body);
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
-    const auto savedProvenInductions = provenInductionValues;
 
     if (loop.provenPositiveRange) {
       auto start = emitProvenIndexExpression(builder, loop.start);
@@ -2393,7 +2390,7 @@ private:
         scf::YieldOp::create(builder, stateValues(slots));
       }
       scalarValues = savedScalars;
-      provenInductionValues = savedProvenInductions;
+      provenInductionValues.erase(loop.inductionVariable);
       assignState(slots, forOp.getResults());
       return;
     }
