@@ -615,6 +615,21 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
     if (operand.getType() == resultType) {
       return operand;
     }
+    if (expression.type == ClassicalType::Bool) {
+      if (const auto source =
+              llvm::dyn_cast<mlir::IntegerType>(operand.getType())) {
+        return mlir::arith::CmpIOp::create(
+                   builder, mlir::arith::CmpIPredicate::ne, operand,
+                   integerConstant(builder, source.getWidth(), 0U))
+            .getResult();
+      }
+      if (operand.getType().isF64()) {
+        return mlir::arith::CmpFOp::create(builder,
+                                           mlir::arith::CmpFPredicate::UNE,
+                                           operand, floatConstant(builder, 0.0))
+            .getResult();
+      }
+    }
     if (const auto target = llvm::dyn_cast<mlir::IntegerType>(resultType)) {
       if (llvm::isa<mlir::IntegerType>(operand.getType())) {
         return castInteger(builder, operand, target);
@@ -1438,6 +1453,19 @@ void validateExpression(const Expression& expression,
     }
     validateExpression(*operand, rootClbits);
   };
+  const auto sameType = [](const Expression& first, const Expression& second) {
+    return first.type == second.type && first.width == second.width;
+  };
+  const auto hasType = [](const Expression& value, const ClassicalType type) {
+    return value.type == type;
+  };
+  const auto requireCompatible = [](const bool compatible) {
+    if (!compatible) {
+      throw std::runtime_error(
+          "Qiskit classical expression has incompatible operator and operand "
+          "types");
+    }
+  };
   switch (expression.kind) {
   case ExpressionKind::Value:
     return;
@@ -1464,14 +1492,85 @@ void validateExpression(const Expression& expression,
     }
     return;
   }
-  case ExpressionKind::Unary:
+  case ExpressionKind::Unary: {
+    requireOperand(expression.left);
+    const auto& operand = *expression.left;
+    switch (expression.unaryOperation) {
+    case UnaryOperation::BitNot:
+      requireCompatible((hasType(operand, ClassicalType::Bool) ||
+                         hasType(operand, ClassicalType::Uint)) &&
+                        sameType(expression, operand));
+      return;
+    case UnaryOperation::LogicNot:
+      requireCompatible(hasType(expression, ClassicalType::Bool) &&
+                        hasType(operand, ClassicalType::Bool));
+      return;
+    case UnaryOperation::Negate:
+      requireCompatible(hasType(expression, ClassicalType::Float) &&
+                        hasType(operand, ClassicalType::Float));
+      return;
+    }
+    return;
+  }
   case ExpressionKind::Cast:
     requireOperand(expression.left);
     return;
-  case ExpressionKind::Binary:
+  case ExpressionKind::Binary: {
+    requireOperand(expression.left);
+    requireOperand(expression.right);
+    const auto& left = *expression.left;
+    const auto& right = *expression.right;
+    switch (expression.binaryOperation) {
+    case BinaryOperation::BitAnd:
+    case BinaryOperation::BitOr:
+    case BinaryOperation::BitXor:
+      requireCompatible(sameType(left, right) && sameType(expression, left) &&
+                        (hasType(left, ClassicalType::Bool) ||
+                         hasType(left, ClassicalType::Uint)));
+      return;
+    case BinaryOperation::LogicAnd:
+    case BinaryOperation::LogicOr:
+      requireCompatible(hasType(expression, ClassicalType::Bool) &&
+                        hasType(left, ClassicalType::Bool) &&
+                        hasType(right, ClassicalType::Bool));
+      return;
+    case BinaryOperation::Equal:
+    case BinaryOperation::NotEqual:
+      requireCompatible(hasType(expression, ClassicalType::Bool) &&
+                        sameType(left, right));
+      return;
+    case BinaryOperation::Less:
+    case BinaryOperation::LessEqual:
+    case BinaryOperation::Greater:
+    case BinaryOperation::GreaterEqual:
+      requireCompatible(hasType(expression, ClassicalType::Bool) &&
+                        sameType(left, right) &&
+                        (hasType(left, ClassicalType::Uint) ||
+                         hasType(left, ClassicalType::Float)));
+      return;
+    case BinaryOperation::ShiftLeft:
+    case BinaryOperation::ShiftRight:
+      requireCompatible(hasType(left, ClassicalType::Uint) &&
+                        hasType(right, ClassicalType::Uint) &&
+                        sameType(expression, left));
+      return;
+    case BinaryOperation::Add:
+    case BinaryOperation::Subtract:
+    case BinaryOperation::Multiply:
+    case BinaryOperation::Divide:
+      requireCompatible(sameType(left, right) && sameType(expression, left) &&
+                        (hasType(left, ClassicalType::Uint) ||
+                         hasType(left, ClassicalType::Float)));
+      return;
+    }
+    return;
+  }
   case ExpressionKind::Index:
     requireOperand(expression.left);
     requireOperand(expression.right);
+    requireCompatible(hasType(expression, ClassicalType::Bool) &&
+                      hasType(*expression.left, ClassicalType::Uint) &&
+                      hasType(*expression.right, ClassicalType::Uint));
     return;
   }
 }
