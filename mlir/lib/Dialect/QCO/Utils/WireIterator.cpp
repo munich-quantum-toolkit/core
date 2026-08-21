@@ -18,7 +18,6 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
