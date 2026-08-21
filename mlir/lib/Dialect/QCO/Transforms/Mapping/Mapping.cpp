@@ -650,7 +650,6 @@ private:
 
   /// Perform placement by replacing dynamic qubits with static target sites
   /// and extending control-flow operations with target sites used for routing.
-  ///
   /// Analogously to the discoverComputation function, the i-th extract
   /// operation defines the i-th program qubit.
   std::pair<Wires, WireInfos> place(Region& body, const Layout& layout,
@@ -1010,10 +1009,9 @@ private:
   }
 
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
-  /// two-qubit gates.
-  /// In block-skipping mode, the function releases only gates belonging to the
-  /// current qubit-pair blocks and suppresses other ready gates until each
-  /// block is exhausted.
+  /// two-qubit gates. In block-skipping mode, the function releases only gates
+  /// belonging to the current qubit-pair blocks and suppresses other ready
+  /// gates until each block is exhausted.
   template <WireDirection Direction>
   Window getWindow(Wires wires, const WireInfos& infos) { // NOLINT
     Window window;
@@ -1124,9 +1122,9 @@ private:
       for (const auto& [op, indices] : frontier) {
         const auto release =
             TypeSwitch<Operation*, bool>(op)
-                .Case<BarrierOp>([](auto) { return true; })
-                .template Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
-                  if (op.getNumQubits() == 1) {
+                .Case<BarrierOp>([](auto&) { return true; })
+                .template Case<UnitaryOpInterface>([&](auto&) {
+                  if (indices.size() == 1) {
                     return true;
                   }
 
@@ -1136,14 +1134,14 @@ private:
                       layout.getHardwareIndices(prog0, prog1);
                   return target->areAdjacent(hw0, hw1);
                 })
-                .template Case<ResetOp, MeasureOp>([](auto) { return true; })
+                .template Case<ResetOp, MeasureOp>([](auto&) { return true; })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
-                    [](auto) { return Direction == WireDirection::Forward; })
+                    [](auto&) { return Direction == WireDirection::Forward; })
                 .template Case<SinkOp, qtensor::InsertOp, YieldOp, scf::YieldOp,
                                scf::ConditionOp>(
-                    [](auto) { return Direction == WireDirection::Backward; })
+                    [](auto&) { return Direction == WireDirection::Backward; })
                 .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
-                    [&](auto) {
+                    [&](auto&) {
                       if (visited.insert(op).second) {
                         composites.emplace_back(op, indices);
                       }
@@ -1591,7 +1589,7 @@ private:
 
         // After advance, the wire iterators either point to sink-like
         // operations or two-qubit gates of the current or any subsequent layer.
-        // TODO:
+        // Decrement each iterator to point at a valid insertion point.
 
         for_each(wires, [](auto& it) { std::advance(it, -1); });
       }
@@ -1604,8 +1602,8 @@ private:
         // insertion or pointing at a SWAP operation. If the former is the
         // case, incrementing the wire iterator will undo the previous
         // decrement, leaving it at the same position as before the SWAP
-        // insertion. Otherwise, an increment will move the iterator to the
-        // multi-qubit op of the current or subsequent layer or to a sink.
+        // insertion. Otherwise, an increment will move the iterator past the
+        // inserted SWAP operation.
 
         for_each(wires, [](auto& it) { std::advance(it, 1); });
       }

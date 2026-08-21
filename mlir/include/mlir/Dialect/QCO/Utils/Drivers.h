@@ -55,30 +55,21 @@ struct PendingItem {
 };
 } // namespace impl
 
-/**
- * @brief Walk the graph-like circuit IR of QCO dialect programs.
- * @details
- * Depending on the template parameter, the function collects the
- * layers in forward or backward direction, respectively. Towards that end,
- * the function traverses the def-use chain of each qubit until a multi-qubit
- * gate (including barriers) is found. If each input qubit of a multi-qubit gate
- * is visited, it is considered ready. This process is repeated until no more
- * multi-qubit gates are found anymore.
- *
- * The signature of the callback function is:
- *
- *     (const Frontier& frontier, ReleasedOps& released) -> WalkResult
- *
- * The operations inserted into the parameter "released" determine which
- * multi-qubit gates are released in next iteration.
- * If the callback returns WalkResult::skip(), all ready operations will be
- * released.
- *
- * @param wires A mutable array-ref of circuit wires (wire iterators).
- * @param fn The callback function.
- *
- * @returns success(), if all operations have been visited.
- */
+/// Walk the graph-like circuit IR of QCO dialect programs.
+/// Depending on the template parameter, the function walks the IR in
+/// topological order in forward or backward direction, respectively. Towards
+/// that end, the function traverses the def-use chain of each qubit until a
+/// ready operation is found. A multi-qubit gate is considered ready, if each
+/// input (backward: output) qubit has been visited.
+/// The signature of the callback function is:
+///
+///     (const Frontier& frontier, ReleasedOps& released) -> WalkResult
+///
+/// The operations inserted into the "released" vector determine which
+/// operations are released in the next iteration. The function returns if the
+/// callback does not release any operations or there are no more ready
+/// operations and thus each wire points at the default sentinel.
+/// The function modifies the given wires in-place.
 template <WireDirection Direction>
 void walkProgramGraph(MutableArrayRef<WireIterator> wires,
                       WalkProgramGraphFn fn) {
