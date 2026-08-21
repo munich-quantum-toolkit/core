@@ -10,6 +10,7 @@
 
 #include "mlir/Benchmark/BenchmarkUtils.h"
 
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -25,6 +26,7 @@
 namespace mqt::benchmark {
 
 using namespace mlir;
+using mlir::mqt::variantToValue;
 
 void resetRegister(qc::QCProgramBuilder& b, Value reg, const int64_t size) {
   b.scfFor(0, size, 1, [&](Value i) { b.reset(b.loadQubit(reg, i)); });
@@ -41,9 +43,7 @@ void scfForWithAngle(qc::QCProgramBuilder& b, Value lower, Value upper,
                      const double factor,
                      const function_ref<void(Value, Value)>& body) {
   auto one = b.indexConstant(1);
-  auto first = std::holds_alternative<Value>(start)
-                   ? std::get<Value>(start)
-                   : b.floatConstant(std::get<double>(start));
+  auto first = variantToValue(b, b.getLoc(), start);
   auto scale = b.floatConstant(factor);
 
   auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{first});
