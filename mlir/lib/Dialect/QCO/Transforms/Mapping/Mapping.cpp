@@ -1068,10 +1068,7 @@ private:
   }
 
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
-  /// two-qubit gates.
-  /// In block-skipping mode, the function releases only gates belonging to the
-  /// current qubit-pair blocks and suppresses other ready gates until each
-  /// block is exhausted.
+  /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
   Window getWindow(Wires wires, const WireInfos& infos) { // NOLINT
     Window window;
