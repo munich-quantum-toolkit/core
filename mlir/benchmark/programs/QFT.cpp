@@ -30,13 +30,16 @@ SmallVector<Value> qft(qc::QCProgramBuilder& b, const uint64_t n) {
 
   resetRegister(b, q.value, size);
 
+  auto one = b.indexConstant(1);
+  auto upper = b.indexConstant(size);
+  auto last = b.indexConstant(size - 1);
+
   // Every qubit takes a Hadamard and then a controlled phase from each qubit
   // above it. The angle halves as the distance grows.
   b.scfFor(0, size, 1, [&](Value i) {
     b.h(b.loadQubit(q.value, i));
 
-    auto lower = arith::AddIOp::create(b, i, b.indexConstant(1));
-    auto upper = b.indexConstant(size);
+    auto lower = arith::AddIOp::create(b, i, one);
     scfForWithAngle(b, lower, upper, std::numbers::pi / 2.0, 0.5,
                     [&](Value angle, Value j) {
                       b.cp(angle, b.loadQubit(q.value, j),
@@ -46,7 +49,6 @@ SmallVector<Value> qft(qc::QCProgramBuilder& b, const uint64_t n) {
 
   // Reverse the bit order. The count is floor(size / 2).
   b.scfFor(0, size / 2, 1, [&](Value i) {
-    auto last = b.indexConstant(size - 1);
     auto mirrored = arith::SubIOp::create(b, last, i);
     b.swap(b.loadQubit(q.value, i), b.loadQubit(q.value, mirrored));
   });

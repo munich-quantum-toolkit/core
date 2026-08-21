@@ -34,19 +34,20 @@ SmallVector<Value> iqft(qc::QCProgramBuilder& b, const uint64_t n) {
   // depends on the distance to an earlier bit. Walking the earlier bits from
   // the closest one outwards halves the angle on every step, which avoids
   // raising two to a loop-dependent power.
+  auto zero = b.indexConstant(0);
+  auto total = b.indexConstant(bits);
+  auto last = b.indexConstant(bits - 1);
+
   b.scfFor(0, bits, 1, [&](Value i) {
-    auto total = b.indexConstant(bits);
-    auto lower = b.indexConstant(0);
     auto offset = arith::SubIOp::create(b, total, i);
 
-    scfForWithAngle(b, lower, i, std::numbers::pi / 2.0, 0.5,
+    scfForWithAngle(b, zero, i, std::numbers::pi / 2.0, 0.5,
                     [&](Value angle, Value step) {
                       auto index = arith::AddIOp::create(b, offset, step);
                       b.scfIf(res, index, [&] { b.p(angle, q); });
                     });
 
     b.h(q);
-    auto last = b.indexConstant(bits - 1);
     auto target = arith::SubIOp::create(b, last, i);
     b.measure(q, res, target);
     b.reset(q);

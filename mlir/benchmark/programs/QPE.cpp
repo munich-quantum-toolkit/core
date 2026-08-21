@@ -40,22 +40,25 @@ SmallVector<Value> qpe(qc::QCProgramBuilder& b, const uint64_t n) {
   b.scfFor(0, counting, 1, [&](Value iv) { b.h(b.loadQubit(q.value, iv)); });
   b.x(anc);
 
+  auto zero = b.indexConstant(0);
+  auto one = b.indexConstant(1);
+  auto upper = b.indexConstant(counting);
+  auto last = b.indexConstant(counting - 1);
+
   // Repeating a phase gate 2^i times multiplies its angle by 2^i, so each
   // controlled power is one rotation whose angle doubles.
-  scfForWithAngle(
-      b, b.indexConstant(0), b.indexConstant(counting), QPE_PHASE, 2.0,
-      [&](Value angle, Value i) { b.cp(angle, b.loadQubit(q.value, i), anc); });
+  scfForWithAngle(b, zero, upper, QPE_PHASE, 2.0, [&](Value angle, Value i) {
+    b.cp(angle, b.loadQubit(q.value, i), anc);
+  });
 
   // Inverse quantum Fourier transform on the counting register.
   b.scfFor(0, counting / 2, 1, [&](Value i) {
-    auto last = b.indexConstant(counting - 1);
     auto mirrored = arith::SubIOp::create(b, last, i);
     b.swap(b.loadQubit(q.value, i), b.loadQubit(q.value, mirrored));
   });
 
   b.scfFor(0, counting, 1, [&](Value i) {
-    auto lower = arith::AddIOp::create(b, i, b.indexConstant(1));
-    auto upper = b.indexConstant(counting);
+    auto lower = arith::AddIOp::create(b, i, one);
     scfForWithAngle(b, lower, upper, -std::numbers::pi / 2.0, 0.5,
                     [&](Value angle, Value j) {
                       b.cp(angle, b.loadQubit(q.value, j),
