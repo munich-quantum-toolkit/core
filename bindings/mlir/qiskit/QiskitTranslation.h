@@ -348,6 +348,12 @@ public:
   virtual void addUnitary(const std::vector<std::complex<double>>& matrix,
                           const std::vector<uint32_t>& qubits,
                           uint32_t numControls) = 0;
+  virtual void
+  addControlFlow(ControlFlowKind kind, ClassicalTarget target, Loop loop,
+                 std::vector<SwitchCase> switchCases,
+                 std::vector<std::unique_ptr<CircuitWriter>> blocks,
+                 const std::vector<uint32_t>& qubits,
+                 const std::vector<uint32_t>& clbits) = 0;
   /** Transfer the native circuit to a new owned Python QuantumCircuit. */
   [[nodiscard]] virtual nb::object finish() = 0;
 };
