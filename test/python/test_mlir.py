@@ -546,6 +546,7 @@ def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
         "has_explicit_topology": target.has_explicit_topology,
         "couplings": target.couplings,
         "has_explicit_operations": target.has_explicit_operations,
+        "classical_control": target.classical_control,
         "operations": [
             (
                 operation.name,
@@ -571,6 +572,24 @@ def test_compiler_target_from_device_id_matches_opened_device() -> None:
     by_id = CompilerTarget.from_device_id("mqt.ddsim.default", custom1="value")
 
     assert _compiler_target_metadata(by_id) == _compiler_target_metadata(direct)
+    assert direct.classical_control == [CompilerTarget.ClassicalControl.CONDITIONAL]
+
+
+def test_compiler_target_from_device_augments_inferred_classical_control() -> None:
+    """Combine explicit QDMI target capabilities with QIR Adaptive support."""
+    capability = CompilerTarget.ClassicalControl
+    additional = [capability.MULTIWAY_BRANCH, capability.CONDITIONAL]
+    direct = CompilerTarget.from_device(
+        open_device("mqt.ddsim.default"),
+        classical_control=additional,
+    )
+    by_id = CompilerTarget.from_device_id(
+        "mqt.ddsim.default",
+        classical_control=additional,
+    )
+
+    assert direct.classical_control == [capability.CONDITIONAL, capability.MULTIWAY_BRANCH]
+    assert by_id.classical_control == direct.classical_control
 
 
 def test_compiler_target_from_device_id_preserves_open_and_conversion_errors() -> None:

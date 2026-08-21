@@ -248,7 +248,7 @@ class CompilerTarget:
         ZXZ = 6
 
     class ClassicalControl(enum.Enum):
-        """Opt-in runtime classical-control capability."""
+        """Opt-in capability for structured runtime control flow."""
 
         CONDITIONAL = 0
         """Runtime forward branching."""
@@ -274,12 +274,21 @@ class CompilerTarget:
             """The two-qubit entangler."""
 
     @staticmethod
-    def from_device(device: Device) -> CompilerTarget:
-        """Snapshot a circuit-model QDMI device."""
+    def from_device(
+        device: Device,
+        *,
+        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
+    ) -> CompilerTarget:
+        """Snapshot a circuit-model QDMI device. Additional classical-control capabilities augment support inferred from its program formats."""
 
     @staticmethod
-    def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
-        """Open a registered device and snapshot its compiler target."""
+    def from_device_id(
+        device_id: str,
+        *,
+        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
+        **session_parameters: Unpack[QDMISessionParameters],
+    ) -> CompilerTarget:
+        """Open a registered device and snapshot its compiler target. Additional classical-control capabilities augment support inferred from its program formats."""
 
     @property
     def name(self) -> str | None:

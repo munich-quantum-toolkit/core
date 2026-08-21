@@ -30,19 +30,27 @@ namespace mlir {
  * @details The returned target owns all queried metadata and remains valid
  * after the originating device and session have been destroyed. Neutral-atom
  * zone models and site-dependent operation support are not supported by the
- * circuit-model compiler pipeline.
+ * circuit-model compiler pipeline. QIR Adaptive support implies forward
+ * conditional control. The adapter adds @p additionalClassicalControl to the
+ * capabilities inferred from QDMI program formats.
  */
 [[nodiscard]] llvm::Expected<CompilerTarget>
-compilerTargetFromDevice(const qdmi::Device& device);
+compilerTargetFromDevice(const qdmi::Device& device,
+                         std::vector<CompilerTarget::ClassicalControl>
+                             additionalClassicalControl = {});
 
 /**
  * @brief Open a registered QDMI device and snapshot it as a compiler target.
  *
  * @details This adapter contains exceptions from the QDMI C++ API and returns
- * them as LLVM errors. The returned target owns all queried metadata.
+ * them as LLVM errors. The returned target owns all queried metadata. The
+ * adapter adds @p additionalClassicalControl to the capabilities inferred from
+ * QDMI program formats.
  */
 [[nodiscard]] llvm::Expected<CompilerTarget>
-compilerTargetFromDeviceId(std::string_view deviceId);
+compilerTargetFromDeviceId(std::string_view deviceId,
+                           std::vector<CompilerTarget::ClassicalControl>
+                               additionalClassicalControl = {});
 
 /**
  * @brief List the stable IDs of registered QDMI devices.

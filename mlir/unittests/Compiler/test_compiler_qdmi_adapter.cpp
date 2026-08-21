@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
 #include "qdmi/Client.hpp"
@@ -74,6 +75,7 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   EXPECT_TRUE(target.supportsOperation("cz", 2, 0));
   EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
   EXPECT_FALSE(target.supportsOperation("rx", 1, 1));
+  EXPECT_TRUE(target.classicalControl().empty());
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit,
             CompilerTarget::SingleQubitBasis::R);
@@ -90,6 +92,64 @@ TEST(CompilerQDMIAdapterTest, PreservesMissingTopologyAsAllToAll) {
   EXPECT_TRUE(target.supportsOperation("h", 1, 0));
   EXPECT_TRUE(target.supportsOperation("cx", 2, 0));
   EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
+  ASSERT_EQ(target.classicalControl().size(), 1);
+  EXPECT_TRUE(target.supportsClassicalControl(
+      CompilerTarget::ClassicalControl::Conditional));
+  EXPECT_FALSE(target.supportsClassicalControl(
+      CompilerTarget::ClassicalControl::Iteration));
+  EXPECT_FALSE(target.supportsClassicalControl(
+      CompilerTarget::ClassicalControl::ConditionalLoop));
+  EXPECT_FALSE(target.supportsClassicalControl(
+      CompilerTarget::ClassicalControl::MultiwayBranch));
+}
+
+TEST(CompilerQDMIAdapterTest, AugmentsInferredClassicalControl) {
+  constexpr auto iteration = CompilerTarget::ClassicalControl::Iteration;
+  constexpr auto conditional = CompilerTarget::ClassicalControl::Conditional;
+  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  const auto target = llvm::cantFail(
+      mlir::compilerTargetFromDevice(device, {iteration, conditional}));
+
+  ASSERT_EQ(target.classicalControl().size(), 2);
+  EXPECT_TRUE(target.supportsClassicalControl(conditional));
+  EXPECT_TRUE(target.supportsClassicalControl(iteration));
+}
+
+TEST(CompilerQDMIAdapterTest,
+     CompilesMeasurementConditionedControlForAdaptiveDevice) {
+  constexpr llvm::StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1, %condition = qco.measure %q0 : !qco.qubit
+        %q2 = qco.if %condition args(%arg0 = %q1) -> (!qco.qubit) {
+          %q3 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %q3 : !qco.qubit
+        } else args(%arg0 = %q1) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        qco.sink %q2 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  auto program = mlir::QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+
+  EXPECT_TRUE(program->compileForTarget(target));
+}
+
+TEST(CompilerQDMIAdapterTest, DeviceIdMatchesOpenedDeviceClassicalControl) {
+  constexpr auto multiway = CompilerTarget::ClassicalControl::MultiwayBranch;
+  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  const auto direct =
+      llvm::cantFail(mlir::compilerTargetFromDevice(device, {multiway}));
+  const auto byId = llvm::cantFail(
+      mlir::compilerTargetFromDeviceId("mqt.ddsim.default", {multiway}));
+
+  EXPECT_EQ(byId.classicalControl(), direct.classicalControl());
 }
 
 TEST(CompilerQDMIAdapterTest, ListsRegisteredDeviceIds) {

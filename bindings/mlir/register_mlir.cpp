@@ -452,7 +452,7 @@ means every operation is native.)pb");
 
   nb::enum_<mlir::CompilerTarget::ClassicalControl>(
       compilerTarget, "ClassicalControl",
-      "Opt-in runtime classical-control capability.")
+      "Opt-in capability for structured runtime control flow.")
       .value("CONDITIONAL", mlir::CompilerTarget::ClassicalControl::Conditional,
              "Runtime forward branching.")
       .value("ITERATION", mlir::CompilerTarget::ClassicalControl::Iteration,
@@ -561,13 +561,23 @@ means every operation is native.)pb");
               std::vector<mlir::CompilerTarget::ClassicalControl>{})
       .def_static(
           "from_device",
-          [](const qdmi::Device& device) {
-            return takeResult(mlir::compilerTargetFromDevice(device));
+          [](const qdmi::Device& device,
+             std::vector<mlir::CompilerTarget::ClassicalControl>
+                 classicalControl) {
+            return takeResult(mlir::compilerTargetFromDevice(
+                device, std::move(classicalControl)));
           },
-          "device"_a, "Snapshot a circuit-model QDMI device.")
+          "device"_a, nb::kw_only(),
+          "classical_control"_a =
+              std::vector<mlir::CompilerTarget::ClassicalControl>{},
+          "Snapshot a circuit-model QDMI device. Additional classical-control "
+          "capabilities augment support inferred from its program formats.")
       .def_static(
           "from_device_id",
-          [](const std::string& deviceId, std::optional<std::string> baseUrl,
+          [](const std::string& deviceId,
+             std::vector<mlir::CompilerTarget::ClassicalControl>
+                 classicalControl,
+             std::optional<std::string> baseUrl,
              std::optional<std::string> token,
              std::optional<std::filesystem::path> authFile,
              std::optional<std::string> authUrl,
@@ -587,16 +597,22 @@ means every operation is native.)pb");
                 std::move(custom1), std::move(custom2), std::move(custom3),
                 std::move(custom4), std::move(custom5));
             auto device = qdmi::Session::openDevice(deviceId, overrides);
-            return takeResult(mlir::compilerTargetFromDevice(device));
+            return takeResult(mlir::compilerTargetFromDevice(
+                device, std::move(classicalControl)));
           },
-          "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
-          "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
-          "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
-          "password"_a = std::nullopt, "device_config"_a = std::nullopt,
+          "device_id"_a, nb::kw_only(),
+          "classical_control"_a =
+              std::vector<mlir::CompilerTarget::ClassicalControl>{},
+          "base_url"_a = std::nullopt, "token"_a = std::nullopt,
+          "auth_file"_a = std::nullopt, "auth_url"_a = std::nullopt,
+          "username"_a = std::nullopt, "password"_a = std::nullopt,
+          "device_config"_a = std::nullopt,
           "device_config_file"_a = std::nullopt, "custom1"_a = std::nullopt,
           "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
           "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
-          "Open a registered device and snapshot its compiler target.")
+          "Open a registered device and snapshot its compiler target. "
+          "Additional classical-control capabilities augment support inferred "
+          "from its program formats.")
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget& target) {

@@ -135,14 +135,23 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
 mqt\.core\.mlir\.CompilerTarget\.from_device$:
     \from mqt.core.qdmi import Device
     @staticmethod
-    def from_device(device: Device) -> CompilerTarget:
+    def from_device(
+        device: Device,
+        *,
+        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
+    ) -> CompilerTarget:
         \doc
 
 mqt\.core\.mlir\.CompilerTarget\.from_device_id$:
     \from mqt.core._compat.typing import Unpack
     \from mqt.core.typing import QDMISessionParameters
     @staticmethod
-    def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
+    def from_device_id(
+        device_id: str,
+        *,
+        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
+        **session_parameters: Unpack[QDMISessionParameters],
+    ) -> CompilerTarget:
         \doc
 
 mqt.core.mlir.compile_program:
