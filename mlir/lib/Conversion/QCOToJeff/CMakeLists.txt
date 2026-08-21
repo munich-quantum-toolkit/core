@@ -18,7 +18,9 @@ add_mlir_conversion_library(
   MLIRCBitDialect
   MLIRJeff
   MLIRNativeToJeff
+  MLIRMQTDialect
   MLIRMQTTransforms
+  MLIRMQTUtils
   MLIRQCODialect
   MLIRTransforms)
 

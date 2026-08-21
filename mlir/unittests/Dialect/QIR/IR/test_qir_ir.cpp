@@ -8,10 +8,10 @@
  * Licensed under the MIT License
  */
 
+#include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
-#include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qir_programs.h"
 
@@ -46,18 +46,18 @@ namespace {
 
 struct QIRTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<QIRProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<QIRProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<QIRProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<QIRProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os, const QIRTestCase& info);
 };
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const QIRTestCase& info) {
-  return os << "QIR{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "QIR{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QIRTest : public testing::TestWithParam<QIRTestCase> {
@@ -78,9 +78,9 @@ protected:
 TEST_P(QIRTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
-  auto program = mqt::test::buildMLIRProgram(
+  auto program = ::mqt::test::buildMLIRProgram(
       context.get(), programBuilder, QIRProgramBuilder::Profile::Adaptive);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QIR IR" + name);
@@ -90,7 +90,7 @@ TEST_P(QIRTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = mqt::test::buildMLIRProgram(
+  auto reference = ::mqt::test::buildMLIRProgram(
       context.get(), referenceBuilder, QIRProgramBuilder::Profile::Adaptive);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QIR IR" + name);

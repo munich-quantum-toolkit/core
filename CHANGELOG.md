@@ -25,7 +25,7 @@ releases may include breaking changes.
   [#1807], [#1808], [#1815], [#1824], [#1869], [#1872], [#1914], [#1925],
   [#1927], [#1935], [#1936], [#1938], [#1975], [#1976], [#2006], [#2014],
   [#2015], [#2017], [#2026], [#2028], [#2054], [#2058], [#2125], [#2136],
-  [#2158]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
+  [#2150], [#2158]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
   [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**], [**@J4MMlE**])
 - ✨ Add decision diagram-based construction, simulation, and sampling for QCO
@@ -37,7 +37,7 @@ releases may include breaking changes.
 #### Import and export
 
 - ✨ Add Qiskit circuit import and target-aware export to the compiler
-  collection ([#2031], [#2133], [#2140]) ([**@burgholzer**],
+  collection ([#2031], [#2133], [#2140], [#2150]) ([**@burgholzer**],
   [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105])
@@ -791,6 +791,7 @@ for previous changelogs._
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
 [#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
+[#2150]: https://github.com/munich-quantum-toolkit/core/pull/2150
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
 [#2141]: https://github.com/munich-quantum-toolkit/core/pull/2141

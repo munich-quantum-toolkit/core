@@ -17,6 +17,7 @@ add_mlir_conversion_library(
   MLIRCBitDialect
   MLIRQIRUtils
   MLIRQCToQIRCommon
+  MLIRMQTDialect
   MLIRMQTTransforms
   MLIRLLVMDialect
   MLIRQCDialect

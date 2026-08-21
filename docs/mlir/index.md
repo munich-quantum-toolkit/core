@@ -12,6 +12,8 @@ technical reference for the underlying MLIR infrastructure.
 
 We define multiple dialects, each with its dedicated purpose:
 
+- The {doc}`MQT dialect <MQT>` stores frontend-neutral program metadata that
+  remains meaningful across dialect conversions.
 - The {doc}`QC dialect <QC>` uses reference semantics and is designed as a
   compatibility dialect that simplifies translations from and to existing
   languages such as Qiskit, OpenQASM, or QIR.
@@ -37,6 +39,7 @@ directly to QC and emits structured OpenQASM from QC.
 
 python_compiler_collection
 target_compilation
+MQT
 QC
 QCO
 QTensor

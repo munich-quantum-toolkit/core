@@ -11,9 +11,9 @@
 #include "ModifierUtils.h"
 
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
@@ -91,7 +91,7 @@ void inlineNarrowedBody(Block& body, ValueRange qubits, ArrayRef<size_t> used,
   for (auto [index, arg] : llvm::zip_equal(used, args)) {
     replacements[index] = arg;
   }
-  utils::inlineBodyReturningYields(body, replacements, rewriter);
+  mqt::inlineBodyReturningYields(body, replacements, rewriter);
 }
 
 } // namespace mlir::qc::detail

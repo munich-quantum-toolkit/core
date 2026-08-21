@@ -8,10 +8,11 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -26,7 +27,7 @@
 
 using namespace mlir;
 using namespace mlir::qco;
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 namespace {
 
@@ -56,7 +57,7 @@ void RXXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 LogicalResult RXXOp::fold(FoldAdaptor /*adaptor*/,
                           SmallVectorImpl<OpFoldResult>& results) {
   if (const auto theta = valueToDouble(getTheta());
-      theta && std::abs(*theta) <= TOLERANCE) {
+      theta && std::abs(*theta) <= PARAMETER_COMPARISON_TOLERANCE) {
     results.emplace_back(getInputQubit(0));
     results.emplace_back(getInputQubit(1));
     return success();

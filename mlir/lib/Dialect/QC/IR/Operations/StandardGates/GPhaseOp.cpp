@@ -8,18 +8,20 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Utils/Angles.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cmath>
 #include <variant>
 
 using namespace mlir;
 using namespace mlir::qc;
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                      const std::variant<double, Value>& theta) {
@@ -28,11 +30,5 @@ void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult GPhaseOp::verify() {
-  const auto theta = valueToDouble(getTheta());
-  if (theta && !isValidGlobalPhaseAngle(*theta)) {
-    return emitOpError()
-           << "constant angle must be finite and have magnitude at most "
-           << MAX_GLOBAL_PHASE_ANGLE << " radians";
-  }
-  return success();
+  return verifyGlobalPhaseAngle(getOperation(), getTheta());
 }

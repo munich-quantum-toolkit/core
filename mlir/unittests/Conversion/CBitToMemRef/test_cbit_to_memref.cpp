@@ -16,6 +16,7 @@
 #include "mlir/Conversion/CBitToMemRef/CBitToMemRef.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
@@ -48,7 +49,7 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                    memref::MemRefDialect, scf::SCFDialect>();
+                    memref::MemRefDialect, mqt::MQTDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>(registry);
     context->loadAllAvailableDialects();
   }
@@ -73,7 +74,8 @@ TEST_F(CBitToMemRefTest, LowersInitializationLoadsAndStores) {
       func.func @main() -> (!cbit.reg<2>, !cbit.reg<1>) {
         %c0 = arith.constant 0 : index
         %true = arith.constant true
-        %zero = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %zero = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "result"}
+            : !cbit.reg<2>
         %undefined = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
         cbit.store %true, %undefined[%c0] : !cbit.reg<1>
         %bit = cbit.load %undefined[%c0] : !cbit.reg<1>
@@ -88,14 +90,23 @@ TEST_F(CBitToMemRefTest, LowersInitializationLoadsAndStores) {
   moduleOp->walk([&](cbit::AllocOp) { containsCBit = true; });
   EXPECT_FALSE(containsCBit);
   size_t allocations = 0;
+  StringAttr registerName;
   size_t stores = 0;
   size_t loads = 0;
-  moduleOp->walk([&](memref::AllocOp) { ++allocations; });
+  moduleOp->walk([&](memref::AllocOp alloc) {
+    ++allocations;
+    if (const auto name = alloc->getAttrOfType<StringAttr>(
+            mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
+      registerName = name;
+    }
+  });
   moduleOp->walk([&](memref::StoreOp) { ++stores; });
   moduleOp->walk([&](memref::LoadOp) { ++loads; });
   EXPECT_EQ(allocations, 2);
   EXPECT_EQ(stores, 3);
   EXPECT_EQ(loads, 1);
+  ASSERT_TRUE(registerName);
+  EXPECT_EQ(registerName.getValue(), "result");
 }
 
 TEST_F(CBitToMemRefTest, ConvertsFunctionSignaturesCallsAndReturns) {

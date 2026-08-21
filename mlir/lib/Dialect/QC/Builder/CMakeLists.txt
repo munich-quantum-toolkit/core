@@ -15,8 +15,11 @@ add_mlir_library(
   MLIRCBitDialect
   MLIRFuncDialect
   MLIRMemRefDialect
+  MLIRMQTDialect
   MLIRSCFDialect
-  MLIRQCDialect)
+  MLIRQCDialect
+  PRIVATE
+  MLIRMQTUtils)
 
 mqt_mlir_target_use_project_options(MLIRQCProgramBuilder)
 
