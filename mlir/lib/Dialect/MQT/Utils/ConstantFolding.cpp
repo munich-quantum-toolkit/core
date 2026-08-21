@@ -17,6 +17,7 @@
 #include <mlir/IR/Matchers.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
@@ -76,8 +77,9 @@ valueToConstantAttr(Value value,
     operands.push_back(*folded);
   }
 
+  OwningOpRef<Operation*> clonedOperation(operation->clone());
   SmallVector<OpFoldResult, 1> results;
-  if (failed(operation->fold(operands, results)) || results.size() != 1) {
+  if (failed(clonedOperation->fold(operands, results)) || results.size() != 1) {
     return cache[value] = std::nullopt;
   }
   std::optional<Attribute> folded;

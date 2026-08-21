@@ -1326,6 +1326,79 @@ TEST_F(CompilerPipelineTest,
 }
 
 /**
+ * @brief Test: folded selectors and empty loops need no runtime capability.
+ */
+TEST_F(CompilerPipelineTest, TargetCompilationFoldsStaticControlExpressions) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %zero_i32 = arith.constant 0 : i32
+        %one_i32 = arith.constant 1 : i32
+        %condition = arith.cmpi slt, %zero_i32, %one_i32 : i32
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %index = arith.addi %c0, %c0 : index
+        %tensor0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+        %tensor1, %q0 = qtensor.extract %tensor0[%index]
+            : tensor<1x!qco.qubit>
+        %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+          qco.yield %arg0 : !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        scf.for %iteration = %c0 to %index step %c1 {
+          scf.execute_region {
+            scf.yield
+          }
+        }
+        %tensor2 = qtensor.insert %q1 into %tensor1[%index]
+            : tensor<1x!qco.qubit>
+        qtensor.dealloc %tensor2 : tensor<1x!qco.qubit>
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("qco.if"), std::string::npos);
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+  EXPECT_EQ(program->str().find("scf.execute_region"), std::string::npos);
+}
+
+/** @brief Test: preflight handles deeply nested classical control. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationHandlesDeeplyNestedClassicalControl) {
+  constexpr size_t depth = 512;
+  std::string source = R"mlir(
+    module {
+      func.func @main(%condition: i1) attributes {mqt.entry_point} {
+  )mlir";
+  for (size_t level = 0; level < depth; ++level) {
+    source += "scf.if %condition {\n";
+  }
+  for (size_t level = 0; level < depth; ++level) {
+    source += "}\n";
+  }
+  source += R"mlir(
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source);
+  ASSERT_TRUE(program);
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, std::nullopt, std::nullopt, std::nullopt,
+                             {CompilerTarget::ClassicalControl::Conditional}));
+  ASSERT_TRUE(program->compileForTarget(target));
+}
+
+/**
  * @brief Test: constant QCO index-switch can skip unmatched case regions.
  */
 TEST_F(CompilerPipelineTest,
