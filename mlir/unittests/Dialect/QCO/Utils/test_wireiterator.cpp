@@ -15,7 +15,6 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Debug.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
