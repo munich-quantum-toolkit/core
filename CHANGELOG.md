@@ -89,6 +89,8 @@ releases may include breaking changes.
 - 💥 Require LLVM/MLIR 22.1 and QIR support in every MQT Core source build,
   build MLIR by default, and remove the corresponding build options ([#1356],
   [#1549], [#1953]) ([**@burgholzer**], [**@denialhaag**])
+- ♻️ Improve the backward traversal logic for the `WireIterator` class ([#2184])
+  ([**@MatthiasReumann**])
 
 ### Removed
 
@@ -786,6 +788,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2184]: https://github.com/munich-quantum-toolkit/core/pull/2184
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
 [#2158]: https://github.com/munich-quantum-toolkit/core/pull/2158
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
