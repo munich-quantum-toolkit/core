@@ -25,7 +25,7 @@ def _x_program() -> mlir.QCOProgram:
     """
     return mlir.QCOProgram.from_mlir_str("""
 module {
-  func.func @main() {
+  func.func @main() attributes {mqt.entry_point} {
     %q = qco.static 0 : !qco.qubit
     %q1 = qco.x %q : !qco.qubit -> !qco.qubit
     qco.sink %q1 : !qco.qubit
@@ -43,7 +43,7 @@ def _measure_program() -> mlir.QCOProgram:
     """
     return mlir.QCOProgram.from_mlir_str("""
 module {
-  func.func @main() {
+  func.func @main() attributes {mqt.entry_point} {
     %q = qco.static 0 : !qco.qubit
     %q1 = qco.x %q : !qco.qubit -> !qco.qubit
     %q2, %bit = qco.measure %q1 : !qco.qubit

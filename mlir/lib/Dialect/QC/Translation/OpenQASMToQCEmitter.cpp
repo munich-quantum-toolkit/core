@@ -10,6 +10,8 @@
 
 #include "OpenQASMToQCEmitter.h"
 
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -113,15 +115,8 @@ public:
   OpenQASMToQCEmitter(const oq3::frontend::TypedProgram& typedProgram,
                       MLIRContext& mlirContext)
       : program(typedProgram), context(mlirContext), emissionBudget(context),
-        builder(&context,
-                program.openQASM2
-                    ? QCProgramBuilder::ClassicalRegisterInitialization::Zero
-                    : QCProgramBuilder::ClassicalRegisterInitialization::
-                          Uninitialized),
-        qubitValues(program.registers.size()),
+        builder(&context), qubitValues(program.registers.size()),
         classicalRegisters(program.registers.size()),
-        outputBitRegisters(program.registers.size(), false),
-        bitValues(program.registers.size()),
         scalarValues(program.scalars.size()),
         expressionEmissionCosts(program.expressions.size()),
         bitVectorExpressionEmissionCosts(program.bitVectorExpressions.size()) {
@@ -133,11 +128,6 @@ public:
     builder.initialize();
     for (const auto& gate : program.gates) {
       customGateIndex.try_emplace(gate.name, &gate);
-    }
-    for (const auto& output : program.outputs) {
-      if (output.kind == frontend::OutputKind::BitRegister) {
-        outputBitRegisters.at(output.symbol) = true;
-      }
     }
   }
 
@@ -175,15 +165,6 @@ public:
             << "' has no classical storage";
         return nullptr;
       }
-      for (const auto bit : bitValues[outputRegister]) {
-        if (!bit) {
-          emitError(getLocation(program.registers[outputRegister].location))
-              << "OpenQASM QC emission error: output register '"
-              << program.registers[outputRegister].name
-              << "' is not fully initialized";
-          return nullptr;
-        }
-      }
       results.push_back(reg);
     }
     OwningOpRef<ModuleOp> moduleOp;
@@ -209,8 +190,6 @@ private:
   qc::QCProgramBuilder builder;
   std::vector<Value> qubitValues;
   std::vector<Value> classicalRegisters;
-  std::vector<bool> outputBitRegisters;
-  std::vector<SmallVector<Value>> bitValues;
   std::vector<Value> scalarValues;
   mutable std::vector<std::optional<size_t>> expressionEmissionCosts;
   mutable std::vector<std::optional<size_t>> bitVectorExpressionEmissionCosts;
@@ -219,15 +198,7 @@ private:
   llvm::StringMap<const oq3::frontend::GateDefinition*> customGateIndex;
   bool emissionFailed = false;
 
-  enum class StateKind : uint8_t { Scalar, Bit };
-
-  struct StateSlot {
-    StateKind kind = StateKind::Scalar;
-    uint32_t first = 0;
-    uint32_t second = 0;
-
-    bool operator==(const StateSlot&) const = default;
-  };
+  using StateSlot = frontend::ScalarId;
 
   [[nodiscard]] Location
   getLocation(const frontend::SourceLocation& source) const {
@@ -436,7 +407,10 @@ private:
       return cost;
     };
     if (expression.kind == frontend::BitVectorExpressionKind::Register) {
-      return remember(0);
+      const auto width = static_cast<size_t>(expression.width);
+      return remember(width > PROJECTED_EMISSION_LIMIT / 2
+                          ? PROJECTED_EMISSION_LIMIT + 1
+                          : 2 * width);
     }
     const auto operand = bitVectorExpressionEmissionCost(expression.operand);
     if (program.expressions.at(expression.distance).kind ==
@@ -470,14 +444,11 @@ private:
                        const size_t multiplicity, size_t& projectedEmission,
                        const frontend::SourceLocation& source) const {
     if (!reference.dynamicIndex) {
-      return true;
+      return chargeScaledEmission(2, multiplicity, projectedEmission, source);
     }
-    const auto width =
-        static_cast<size_t>(program.registers.at(reference.reg).width);
     return chargeExpressionEmission(*reference.dynamicIndex, multiplicity,
                                     projectedEmission, source) &&
-           chargeScaledEmission(11 + (3 * (width - 1)), multiplicity,
-                                projectedEmission, source);
+           chargeScaledEmission(11, multiplicity, projectedEmission, source);
   }
 
   [[nodiscard]] static llvm::SmallDenseSet<frontend::RegisterId, 4>
@@ -745,7 +716,10 @@ private:
                        std::get_if<frontend::BitAssignmentStatement>(
                            &statement.data)) {
           if (!chargeConditionEmission(assignment->value, multiplicity,
-                                       projectedEmission, statement.location)) {
+                                       projectedEmission, statement.location) ||
+              (!assignment->target.dynamicIndex &&
+               !chargeScaledEmission(2, multiplicity, projectedEmission,
+                                     statement.location))) {
             return false;
           }
           if (assignment->target.dynamicIndex) {
@@ -764,23 +738,18 @@ private:
                            &statement.data)) {
           if (!chargeScaledEmission(
                   bitVectorExpressionEmissionCost(assignment->value),
+                  multiplicity, projectedEmission, statement.location) ||
+              !chargeScaledEmission(
+                  2 * static_cast<size_t>(
+                          program.registers.at(assignment->target).width),
                   multiplicity, projectedEmission, statement.location)) {
             return false;
           }
         } else if (const auto* declaration =
                        std::get_if<frontend::DeclarationStatement>(
                            &statement.data)) {
-          const auto& reg = program.registers.at(declaration->reg);
-          size_t declarationCost = 1;
-          if (reg.kind == frontend::RegisterKind::Bit &&
-              outputBitRegisters[declaration->reg]) {
-            ++declarationCost;
-            if (program.openQASM2) {
-              declarationCost += 2 * static_cast<size_t>(reg.width);
-            }
-          }
-          if (!chargeScaledEmission(declarationCost, multiplicity,
-                                    projectedEmission, statement.location)) {
+          if (!chargeScaledEmission(1, multiplicity, projectedEmission,
+                                    statement.location)) {
             return false;
           }
         } else if (const auto* measurement =
@@ -795,6 +764,11 @@ private:
             }
           }
           for (const auto& target : measurement->targets) {
+            if (!target.dynamicIndex &&
+                !chargeScaledEmission(2, multiplicity, projectedEmission,
+                                      statement.location)) {
+              return false;
+            }
             if (!target.dynamicIndex) {
               continue;
             }
@@ -1160,7 +1134,17 @@ private:
     const auto& expression = program.bitVectorExpressions.at(id);
     auto loc = UnknownLoc::get(opBuilder.getContext());
     if (expression.kind == frontend::BitVectorExpressionKind::Register) {
-      return {.width = expression.width, .bits = bitValues.at(expression.reg)};
+      SmallVector<Value> bits;
+      bits.reserve(expression.width);
+      const auto reg = classicalRegisters.at(expression.reg);
+      assert(reg && "semantic analysis must declare bit registers before use");
+      for (uint64_t bit = 0; bit < expression.width; ++bit) {
+        auto index = arith::ConstantIndexOp::create(opBuilder, loc,
+                                                    static_cast<int64_t>(bit));
+        bits.push_back(cbit::LoadOp::create(opBuilder, loc,
+                                            opBuilder.getI1Type(), reg, index));
+      }
+      return {.width = expression.width, .bits = std::move(bits)};
     }
     auto operand = emitBitVectorExpression(opBuilder, expression.operand);
     const auto& distanceExpression =
@@ -1910,32 +1894,19 @@ private:
 
   [[nodiscard]] Value readBit(const frontend::BitReference& reference) {
     const auto reg = classicalRegisters.at(reference.reg);
+    assert(reg && "semantic analysis must declare bit registers before use");
     if (!reference.dynamicIndex) {
-      if (reg) {
-        auto index = arith::ConstantIndexOp::create(
-            builder, static_cast<int64_t>(reference.index));
-        return memref::LoadOp::create(builder, reg, index.getResult());
-      }
-      return bitValues.at(reference.reg)[reference.index];
+      return builder.loadClassicalBit(reg,
+                                      static_cast<int64_t>(reference.index));
     }
 
     const auto width =
         static_cast<int64_t>(program.registers.at(reference.reg).width);
     auto index = emitCheckedIndex(*reference.dynamicIndex, width,
                                   "dynamic classical index out of bounds");
-    if (reg) {
-      auto memrefIndex =
-          arith::IndexCastOp::create(builder, builder.getIndexType(), index);
-      return memref::LoadOp::create(builder, reg, memrefIndex.getResult());
-    }
-    auto selected = bitValues.at(reference.reg).front();
-    for (int64_t bit = 1; bit < width; ++bit) {
-      auto isSelected = arith::CmpIOp::create(builder, arith::CmpIPredicate::eq,
-                                              index, builder.intConstant(bit));
-      selected = arith::SelectOp::create(
-          builder, isSelected, bitValues.at(reference.reg)[bit], selected);
-    }
-    return selected;
+    auto registerIndex =
+        arith::IndexCastOp::create(builder, builder.getIndexType(), index);
+    return builder.loadClassicalBit(reg, registerIndex.getResult());
   }
 
   [[nodiscard]] Value
@@ -2057,30 +2028,16 @@ private:
     llvm_unreachable("unknown condition kind");
   }
 
-  static constexpr uint64_t SCALAR_STATE_MASK = uint64_t{1} << 63U;
-
-  static uint64_t scalarStateKey(const frontend::ScalarId scalar) {
-    return SCALAR_STATE_MASK | scalar;
-  }
-
-  static uint64_t bitStateKey(const frontend::RegisterId reg,
-                              const uint64_t bit) {
-    return (static_cast<uint64_t>(reg) << 32U) | bit;
-  }
-
   static void recordMutation(const StateSlot slot,
-                             llvm::DenseSet<uint64_t>& mutationKeys,
+                             llvm::DenseSet<StateSlot>& mutationKeys,
                              SmallVectorImpl<StateSlot>& mutations) {
-    const auto key = slot.kind == StateKind::Scalar
-                         ? scalarStateKey(slot.first)
-                         : bitStateKey(slot.first, slot.second);
-    if (mutationKeys.insert(key).second) {
+    if (mutationKeys.insert(slot).second) {
       mutations.push_back(slot);
     }
   }
 
   void collectMutations(const frontend::StatementId id,
-                        llvm::DenseSet<uint64_t>& mutationKeys,
+                        llvm::DenseSet<StateSlot>& mutationKeys,
                         SmallVectorImpl<StateSlot>& mutations) const {
     const auto& statement = program.statements.at(id);
     std::visit(
@@ -2090,52 +2047,7 @@ private:
                                        frontend::ScalarDeclarationStatement> ||
                         std::is_same_v<T,
                                        frontend::ScalarAssignmentStatement>) {
-            recordMutation({.kind = StateKind::Scalar, .first = data.scalar},
-                           mutationKeys, mutations);
-          } else if constexpr (std::is_same_v<T,
-                                              frontend::MeasurementStatement>) {
-            for (const auto& target : data.targets) {
-              if (!target.dynamicIndex) {
-                recordMutation({.kind = StateKind::Bit,
-                                .first = target.reg,
-                                .second = static_cast<uint32_t>(target.index)},
-                               mutationKeys, mutations);
-                continue;
-              }
-              for (uint64_t bit = 0;
-                   bit < program.registers.at(target.reg).width; ++bit) {
-                recordMutation({.kind = StateKind::Bit,
-                                .first = target.reg,
-                                .second = static_cast<uint32_t>(bit)},
-                               mutationKeys, mutations);
-              }
-            }
-          } else if constexpr (std::is_same_v<
-                                   T, frontend::BitAssignmentStatement>) {
-            if (!data.target.dynamicIndex) {
-              recordMutation(
-                  {.kind = StateKind::Bit,
-                   .first = data.target.reg,
-                   .second = static_cast<uint32_t>(data.target.index)},
-                  mutationKeys, mutations);
-            } else {
-              for (uint64_t bit = 0;
-                   bit < program.registers.at(data.target.reg).width; ++bit) {
-                recordMutation({.kind = StateKind::Bit,
-                                .first = data.target.reg,
-                                .second = static_cast<uint32_t>(bit)},
-                               mutationKeys, mutations);
-              }
-            }
-          } else if constexpr (std::is_same_v<
-                                   T, frontend::BitVectorAssignmentStatement>) {
-            for (uint64_t bit = 0;
-                 bit < program.registers.at(data.target).width; ++bit) {
-              recordMutation({.kind = StateKind::Bit,
-                              .first = data.target,
-                              .second = static_cast<uint32_t>(bit)},
-                             mutationKeys, mutations);
-            }
+            recordMutation(data.scalar, mutationKeys, mutations);
           } else if constexpr (std::is_same_v<T, frontend::IfStatement>) {
             for (const auto nested : data.thenStatements) {
               collectMutations(nested, mutationKeys, mutations);
@@ -2164,24 +2076,16 @@ private:
 
   [[nodiscard]] SmallVector<StateSlot>
   mutatedState(ArrayRef<frontend::StatementId> statements) const {
-    llvm::DenseSet<uint64_t> mutationKeys;
+    llvm::DenseSet<StateSlot> mutationKeys;
     SmallVector<StateSlot> mutations;
     for (const auto statement : statements) {
       collectMutations(statement, mutationKeys, mutations);
     }
-    llvm::sort(mutations, [](const StateSlot lhs, const StateSlot rhs) {
-      if (lhs.kind != rhs.kind) {
-        return lhs.kind < rhs.kind;
-      }
-      return lhs.first != rhs.first ? lhs.first < rhs.first
-                                    : lhs.second < rhs.second;
-    });
+    llvm::sort(mutations);
     SmallVector<StateSlot> slots;
     slots.reserve(mutations.size());
     for (const auto slot : mutations) {
-      const auto value = slot.kind == StateKind::Scalar
-                             ? scalarValues.at(slot.first)
-                             : bitValues.at(slot.first)[slot.second];
+      const auto value = scalarValues.at(slot);
       if (value) {
         slots.push_back(slot);
       }
@@ -2194,20 +2098,14 @@ private:
     SmallVector<Value> values;
     values.reserve(slots.size());
     for (const auto& slot : slots) {
-      values.push_back(slot.kind == StateKind::Scalar
-                           ? scalarValues.at(slot.first)
-                           : bitValues.at(slot.first)[slot.second]);
+      values.push_back(scalarValues.at(slot));
     }
     return values;
   }
 
   void assignState(ArrayRef<StateSlot> slots, ValueRange values) {
     for (const auto [slot, value] : llvm::zip_equal(slots, values)) {
-      if (slot.kind == StateKind::Scalar) {
-        scalarValues.at(slot.first) = value;
-      } else {
-        bitValues.at(slot.first)[slot.second] = value;
-      }
+      scalarValues.at(slot) = value;
     }
   }
 
@@ -2323,58 +2221,29 @@ private:
       return;
     }
 
-    const bool hasClassicalStorage = outputBitRegisters[statement.reg];
-    size_t operationCount = 1 + static_cast<size_t>(hasClassicalStorage);
-    if (program.openQASM2 && hasClassicalStorage) {
-      operationCount += 1 + (2 * static_cast<size_t>(declaration.width));
-    }
-    if (!emissionBudget.canConstruct(operationCount)) {
+    if (!emissionBudget.canConstruct(1)) {
       return;
     }
-    if (hasClassicalStorage) {
-      classicalRegisters[statement.reg] = builder.allocClassicalBitRegister(
-          static_cast<int64_t>(declaration.width), declaration.name);
-    }
-    bitValues[statement.reg].resize(declaration.width);
-    if (program.openQASM2) {
-      auto zero = builder.boolConstant(false);
-      llvm::fill(bitValues[statement.reg], zero);
-      return;
-    }
-    auto poison =
-        ub::PoisonOp::create(builder, builder.getI1Type()).getResult();
-    llvm::fill(bitValues[statement.reg], poison);
+    classicalRegisters[statement.reg] = builder.allocClassicalBitRegister(
+        static_cast<int64_t>(declaration.width), declaration.name,
+        program.openQASM2 ? cbit::Initialization::Zero
+                          : cbit::Initialization::Undefined);
   }
 
   void assignBit(const frontend::BitReference& target, Value value) {
     const auto reg = classicalRegisters[target.reg];
+    assert(reg && "semantic analysis must declare bit registers before use");
     if (!target.dynamicIndex) {
-      bitValues[target.reg][target.index] = value;
-      if (reg) {
-        auto index = arith::ConstantIndexOp::create(
-            builder, static_cast<int64_t>(target.index));
-        memref::StoreOp::create(builder, value, reg, index.getResult());
-      }
+      builder.storeClassicalBit(value, reg, static_cast<int64_t>(target.index));
       return;
     }
     const auto width =
         static_cast<int64_t>(program.registers.at(target.reg).width);
     auto index = emitCheckedIndex(*target.dynamicIndex, width,
                                   "dynamic classical index out of bounds");
-    if (reg) {
-      auto memrefIndex =
-          arith::IndexCastOp::create(builder, builder.getIndexType(), index);
-      memref::StoreOp::create(builder, value, reg, memrefIndex.getResult());
-    }
-    if (!emissionBudget.canConstruct(3 * static_cast<size_t>(width))) {
-      return;
-    }
-    for (int64_t bit = 0; bit < width; ++bit) {
-      auto selected = arith::CmpIOp::create(builder, arith::CmpIPredicate::eq,
-                                            index, builder.intConstant(bit));
-      bitValues[target.reg][bit] = arith::SelectOp::create(
-          builder, selected, value, bitValues[target.reg][bit]);
-    }
+    auto registerIndex =
+        arith::IndexCastOp::create(builder, builder.getIndexType(), index);
+    builder.storeClassicalBit(value, reg, registerIndex.getResult());
   }
 
   void emitBitAssignment(const frontend::BitAssignmentStatement& assignment,
@@ -2387,15 +2256,10 @@ private:
       const frontend::BitVectorAssignmentStatement& assignment) {
     auto value = emitBitVectorExpression(builder, assignment.value);
     const auto bits = ensureBits(builder, value);
-    bitValues[assignment.target].assign(bits.begin(), bits.end());
     const auto reg = classicalRegisters[assignment.target];
-    if (!reg) {
-      return;
-    }
+    assert(reg && "semantic analysis must declare bit registers before use");
     for (const auto [index, bit] : llvm::enumerate(bits)) {
-      auto indexValue =
-          arith::ConstantIndexOp::create(builder, static_cast<int64_t>(index));
-      memref::StoreOp::create(builder, bit, reg, indexValue.getResult());
+      builder.storeClassicalBit(bit, reg, static_cast<int64_t>(index));
     }
   }
 
@@ -2443,7 +2307,6 @@ private:
     const auto slots = mutatedState(nestedStatements);
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
-    const auto savedBits = bitValues;
     const auto* thenStatements = &conditional.thenStatements;
     const auto* elseStatements = &conditional.elseStatements;
     if (slots.empty() && thenStatements->empty() && !elseStatements->empty()) {
@@ -2458,7 +2321,6 @@ private:
     const auto emitBranch = [&](Block& block,
                                 ArrayRef<frontend::StatementId> statements) {
       scalarValues = savedScalars;
-      bitValues = savedBits;
       if (!block.empty()) {
         block.back().erase();
       }
@@ -2473,7 +2335,6 @@ private:
       emitBranch(ifOp.getElseRegion().front(), *elseStatements);
     }
     scalarValues = savedScalars;
-    bitValues = savedBits;
     assignState(slots, ifOp.getResults());
   }
 
@@ -2540,7 +2401,6 @@ private:
     const auto slots = mutatedState(loop.body);
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
-    const auto savedBits = bitValues;
 
     auto start = emitExpression(builder, loop.start, {});
     auto step = emitExpression(builder, loop.step, {});
@@ -2569,7 +2429,6 @@ private:
         }
         builder.setInsertionPointToEnd(body);
         scalarValues = savedScalars;
-        bitValues = savedBits;
         assignState(slots, forOp.getRegionIterArgs());
         auto counter = arith::IndexCastOp::create(builder, builder.getI64Type(),
                                                   forOp.getInductionVar());
@@ -2584,7 +2443,6 @@ private:
         scf::YieldOp::create(builder, stateValues(slots));
       }
       scalarValues = savedScalars;
-      bitValues = savedBits;
       assignState(slots, forOp.getResults());
       return;
     }
@@ -2620,7 +2478,6 @@ private:
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
           scalarValues = savedScalars;
-          bitValues = savedBits;
           assignState(slots, arguments.drop_front());
           scalarValues.at(loop.inductionVariable) = arith::TruncIOp::create(
               builder, builder.getI64Type(), arguments.front());
@@ -2633,7 +2490,6 @@ private:
           scf::YieldOp::create(builder, yielded);
         });
     scalarValues = savedScalars;
-    bitValues = savedBits;
     assignState(slots, whileOp.getResults().drop_front());
   }
 
@@ -2642,7 +2498,6 @@ private:
     const auto slots = mutatedState(loop.body);
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
-    const auto savedBits = bitValues;
     auto whileOp = scf::WhileOp::create(
         builder, ValueRange(initialValues).getTypes(), initialValues,
         [&](OpBuilder& nested, Location, ValueRange arguments) {
@@ -2650,7 +2505,6 @@ private:
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
           scalarValues = savedScalars;
-          bitValues = savedBits;
           assignState(slots, arguments);
           auto condition =
               emitCondition(loop.condition, gateParameters, gateQubits);
@@ -2661,7 +2515,6 @@ private:
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
           scalarValues = savedScalars;
-          bitValues = savedBits;
           assignState(slots, arguments);
           for (const auto statement : loop.body) {
             emitStatement(statement, gateParameters, gateQubits);
@@ -2669,7 +2522,6 @@ private:
           scf::YieldOp::create(builder, stateValues(slots));
         });
     scalarValues = savedScalars;
-    bitValues = savedBits;
     assignState(slots, whileOp.getResults());
   }
 
@@ -2685,7 +2537,6 @@ private:
     const auto slots = mutatedState(nestedStatements);
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
-    const auto savedBits = bitValues;
 
     auto control = emitExpression(builder, switchStatement.control, {});
     auto selector =
@@ -2699,7 +2550,6 @@ private:
           auto& block = region.emplaceBlock();
           builder.setInsertionPointToEnd(&block);
           scalarValues = savedScalars;
-          bitValues = savedBits;
           for (const auto statement : statements) {
             emitStatement(statement, gateParameters, gateQubits);
           }
@@ -2713,7 +2563,6 @@ private:
     }
     emitBranch(switchOp.getDefaultRegion(), switchStatement.defaultStatements);
     scalarValues = savedScalars;
-    bitValues = savedBits;
     assignState(slots, switchOp.getResults());
   }
 };

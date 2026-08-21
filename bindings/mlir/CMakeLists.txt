@@ -82,6 +82,8 @@ if(NOT TARGET ${TARGET_NAME})
     LINK_LIBS
     MQTCompilerQDMIAdapter
     MQTCompilerPipeline
+    MLIRMQTDialect
+    MLIRMQTUtils
     MLIRQCTranslationSupport
     MLIRQCODDFunctionality)
 

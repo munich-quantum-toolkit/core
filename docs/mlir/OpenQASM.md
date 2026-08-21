@@ -52,9 +52,12 @@ Runtime integer preconditions and dynamic-index bounds are represented
 explicitly in QC. This safety machinery is supported by the normal compiler and
 QIR paths, but it is intentionally outside the export subset described below.
 
-Bit outputs use `memref<nxi1>` in QC, including scalar `bit` as `memref<1xi1>`.
-Other scalar outputs use builtin MLIR scalar types. A scalar `qubit` lowers to
-`qc.alloc`, while `qubit[1]` remains a one-element qubit register.
+Bit registers use `!cbit.reg<N>` in QC. OpenQASM 2 initializes each register to
+zero. OpenQASM 3 leaves each register undefined until a statement writes it.
+Explicit outputs and implicit global outputs are returned by the entry function;
+internal CBit allocations are not outputs. Other scalar outputs use builtin MLIR
+scalar types. A scalar `qubit` lowers to `qc.alloc`, while `qubit[1]` remains a
+one-element qubit register.
 
 ## Export OpenQASM
 
@@ -117,7 +120,7 @@ bypasses that QCO optimization round trip.
 
 | QC or MLIR concept        | Export support                                                                                                                                                                                                               |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Qubits and classical bits | Logical and physical qubits, scalar allocations, and static rank-one qubit or `i1` memrefs. Memory indices must resolve statically.                                                                                          |
+| Qubits and classical bits | Logical and physical qubits, scalar qubit allocations, static rank-one qubit memrefs, and CBit registers. Qubit memory indices must resolve statically. CBit indices can be dynamic.                                         |
 | Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u2` uses the standard compatibility alias. |
 | Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body with target qubits becomes a private generated gate.                                                                                                        |
 | Scalar values             | `i1`, `i64`, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, value-preserving casts, and supported math functions.                                                                |
@@ -142,7 +145,7 @@ Output types follow a deliberately small canonical mapping:
 
 | QC result                         | OpenQASM output |
 | --------------------------------- | --------------- |
-| `memref<Nxi1>`                    | `bit[N]`        |
+| Returned `!cbit.reg<N>`           | `bit[N]`        |
 | `i1` produced directly by measure | `bit`           |
 | Other `i1`                        | `bool`          |
 | `i64` or `index`                  | `int`           |
@@ -163,12 +166,13 @@ the current MQT strict round-trip subset.
 ### Export limitations
 
 Export accepts exactly one defined, argument-free function. It rejects calls,
-arbitrary CFGs, multi-block SCF regions, dynamic indices or ranges, general
-memrefs, unsupported integer widths, packed bit-vector operations, unknown
-operations, and non-unitary content inside modifier regions. SCF results,
-loop-carried values, nonempty `scf.yield`, and `arith.select` are outside the
-export subset. Multi-operation modifier bodies must have a target qubit and
-cannot capture additional qubits from an enclosing scope.
+arbitrary CFGs, multi-block SCF regions, dynamic qubit indices or ranges,
+general memrefs, unsupported integer widths, packed bit-vector operations,
+unknown operations, and non-unitary content inside modifier regions. CBit loads,
+stores, and dynamic indices are supported. SCF results, loop-carried values,
+nonempty `scf.yield`, and `arith.select` are outside the export subset.
+Multi-operation modifier bodies must have a target qubit and cannot capture
+additional qubits from an enclosing scope.
 
 The exporter does not reconstruct the runtime checks created for dynamic indices
 or checked integer arithmetic. Surviving assertions, checked-index control flow,

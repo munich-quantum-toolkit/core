@@ -45,7 +45,7 @@ requires_qiskit_translation = pytest.mark.skipif(
 )
 
 MLIR_STRING = r"""module {
-  func.func @main() -> memref<2xi1> attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> memref<2xi1> attributes {mqt.entry_point} {
     %c1 = arith.constant 1 : index
     %c0 = arith.constant 0 : index
     %alloc = memref.alloc() : memref<2x!qc.qubit>
@@ -90,7 +90,9 @@ def _assert_bell_program(program: QCProgram, *, measured: bool = False) -> None:
         assert "qc.measure" not in ir
         return
 
-    assert "func.func @main() -> memref<2xi1>" in ir or "func.func @main() -> (memref<2xi1>" in ir
+    assert "func.func @main() -> !cbit.reg<2>" in ir or "func.func @main() -> (!cbit.reg<2>" in ir
+    assert "cbit.alloc" in ir
+    assert ir.count("cbit.store") == 2
     assert ir.count("qc.measure") == 2
 
 
@@ -581,7 +583,7 @@ def test_qco_program_reuses_qubits() -> None:
     """Expose the raw and composite qubit-reuse flows."""
     independent_qubits = """
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %q0 = qco.alloc : !qco.qubit
     %q1 = qco.alloc : !qco.qubit
     %q0_h = qco.h %q0 : !qco.qubit -> !qco.qubit

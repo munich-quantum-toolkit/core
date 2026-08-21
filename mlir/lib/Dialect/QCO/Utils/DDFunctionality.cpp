@@ -20,11 +20,15 @@
 #include "ir/Definitions.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
@@ -34,7 +38,6 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -107,10 +110,15 @@ struct QubitMap {
 };
 
 struct ClassicalEnv {
+  struct RegisterState {
+    std::vector<bool> values;
+    std::vector<bool> initialized;
+  };
+
   DenseMap<Value, bool> bools;
   DenseMap<Value, int64_t> indices;
-  /// Backing storage for static-shape 1-D `memref<Nxi1>` classical registers.
-  DenseMap<Value, std::shared_ptr<SmallVector<bool>>> memrefs;
+  /// Shared storage preserves CBit register identity across `func.call`.
+  DenseMap<Value, std::shared_ptr<RegisterState>> registers;
 
   LogicalResult bindFrom(Value source, Value dest, Operation* op) {
     if (dest.getType().isInteger(1)) {
@@ -201,7 +209,8 @@ decodeStandardGate(UnitaryOpInterface unitary) {
 
   DecodedGate decoded{.type = type, .params = {}};
   for (Value param : unitary.getParameters()) {
-    decoded.params.push_back(static_cast<dd::fp>(*utils::valueToDouble(param)));
+    decoded.params.push_back(
+        static_cast<dd::fp>(*mlir::mqt::valueToDouble(param)));
   }
   return std::optional{std::move(decoded)};
 }
@@ -263,7 +272,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
            << "unitary must have a compile-time constant matrix";
   }
   if (auto gphase = dyn_cast<GPhaseOp>(op)) {
-    const auto theta = *utils::valueToDouble(gphase.getTheta());
+    const auto theta = *mlir::mqt::valueToDouble(gphase.getTheta());
     auto id = dd::Package::makeIdent();
     id.w = walk.dd->cn.lookup(std::cos(theta), std::sin(theta));
     state = walk.dd->applyOperation(id, state);
@@ -477,73 +486,67 @@ static LogicalResult applyI1ToIndex(Value in, Value out, Operation* op,
   return success();
 }
 
-[[nodiscard]] static bool isStaticI1MemRef(Type type) {
-  auto memref = dyn_cast<MemRefType>(type);
-  return memref && memref.getRank() == 1 && memref.hasStaticShape() &&
-         memref.getElementType().isInteger(1);
-}
-
-/// Resolve a static-shape 1-D `i1` memref classical register and a concrete
-/// index.
-static FailureOr<std::pair<SmallVector<bool>*, size_t>>
-lookupI1MemRefSlot(Value memref, ValueRange indices, ClassicalEnv& classical,
-                   Operation* op) {
-  if (!isStaticI1MemRef(memref.getType()) || indices.size() != 1) {
-    return op->emitError() << "QCO DD simulation only supports static-shape "
-                              "1-D memref<Nxi1> classical registers";
-  }
-  auto idx = lookupIndex(indices[0], classical, op);
-  if (failed(idx)) {
-    return failure();
-  }
-  auto it = classical.memrefs.find(memref);
-  if (it == classical.memrefs.end()) {
-    return op->emitError()
-           << "classical memref is not mapped for QCO DD simulation";
-  }
-  if (*idx < 0 || static_cast<size_t>(*idx) >= it->second->size()) {
-    return op->emitError()
-           << "classical memref index out of range for QCO DD simulation";
-  }
-  return std::pair{it->second.get(), static_cast<size_t>(*idx)};
-}
-
-static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
+static LogicalResult allocateRegister(cbit::AllocOp alloc,
                                       ClassicalEnv& classical) {
-  if (!isStaticI1MemRef(alloc.getType())) {
-    return alloc.emitError() << "QCO DD simulation only supports static-shape "
-                                "1-D memref<Nxi1> classical registers";
-  }
-  auto type = cast<MemRefType>(alloc.getType());
-  classical.memrefs[alloc.getResult()] = std::make_shared<SmallVector<bool>>(
-      static_cast<size_t>(type.getDimSize(0)), false);
+  const auto width =
+      static_cast<size_t>(alloc.getResult().getType().getWidth());
+  const bool initialized =
+      alloc.getInitialization() == cbit::Initialization::Zero;
+  classical.registers[alloc.getResult()] =
+      std::make_shared<ClassicalEnv::RegisterState>(ClassicalEnv::RegisterState{
+          .values = std::vector<bool>(width, false),
+          .initialized = std::vector<bool>(width, initialized)});
   return success();
 }
 
-static LogicalResult applyMemRefStore(memref::StoreOp store,
-                                      ClassicalEnv& classical) {
-  auto slot = lookupI1MemRefSlot(store.getMemref(), store.getIndices(),
-                                 classical, store);
-  if (failed(slot)) {
+static FailureOr<size_t> resolveRegisterIndex(Value index,
+                                              cbit::RegisterType type,
+                                              ClassicalEnv& classical,
+                                              Operation* op) {
+  auto resolved = lookupIndex(index, classical, op);
+  if (failed(resolved)) {
     return failure();
   }
-  Value value = store.getValue();
-  auto bit = lookupBool(value, classical, store);
-  if (failed(bit)) {
+  if (*resolved < 0 || *resolved >= type.getWidth()) {
+    return op->emitError() << "CBit register index " << *resolved
+                           << " is out of bounds for width " << type.getWidth();
+  }
+  return static_cast<size_t>(*resolved);
+}
+
+static LogicalResult storeRegister(cbit::StoreOp store,
+                                   ClassicalEnv& classical) {
+  const auto regIt = classical.registers.find(store.getReg());
+  if (regIt == classical.registers.end()) {
+    return store.emitError()
+           << "CBit register is not mapped for QCO DD simulation";
+  }
+  auto index = resolveRegisterIndex(store.getIndex(), store.getReg().getType(),
+                                    classical, store);
+  auto value = lookupBool(store.getValue(), classical, store);
+  if (failed(index) || failed(value)) {
     return failure();
   }
-  (*slot->first)[slot->second] = *bit;
+  regIt->second->values[*index] = *value;
+  regIt->second->initialized[*index] = true;
   return success();
 }
 
-static LogicalResult applyMemRefLoad(memref::LoadOp load,
-                                     ClassicalEnv& classical) {
-  auto slot =
-      lookupI1MemRefSlot(load.getMemref(), load.getIndices(), classical, load);
-  if (failed(slot)) {
+static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical) {
+  const auto regIt = classical.registers.find(load.getReg());
+  if (regIt == classical.registers.end()) {
+    return load.emitError()
+           << "CBit register is not mapped for QCO DD simulation";
+  }
+  auto index = resolveRegisterIndex(load.getIndex(), load.getReg().getType(),
+                                    classical, load);
+  if (failed(index)) {
     return failure();
   }
-  classical.bools[load.getResult()] = (*slot->first)[slot->second];
+  if (!regIt->second->initialized[*index]) {
+    return load.emitError() << "read from an undefined CBit register element";
+  }
+  classical.bools[load.getResult()] = regIt->second->values[*index];
   return success();
 }
 
@@ -711,7 +714,7 @@ static LogicalResult bindLinearArgs(ValueRange operands, Block& block,
 }
 
 /// Bind each source SSA onto the corresponding dest (qubits via `QubitMap`,
-/// memrefs by sharing their storage, and scalar classical values via
+/// CBit registers by sharing their storage, and scalar classical values via
 /// `ClassicalEnv::bindFrom`). Callers must ensure equal sizes.
 static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
                                     WalkState& walk, Operation* op) {
@@ -727,18 +730,18 @@ static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
                << "qubit SSA value is not mapped for QCO DD construction";
       }
       walk.qubits->bind(dest, *q);
-    } else if (isa<MemRefType>(dest.getType())) {
-      if (!isStaticI1MemRef(src.getType()) || src.getType() != dest.getType()) {
-        return op->emitError()
-               << "QCO DD simulation only supports matching static-shape "
-                  "1-D memref<Nxi1> values";
+    } else if (isa<cbit::RegisterType>(dest.getType())) {
+      if (!isa<cbit::RegisterType>(src.getType()) ||
+          src.getType() != dest.getType()) {
+        return op->emitError() << "QCO DD simulation only supports matching "
+                                  "CBit register values";
       }
-      const auto it = walk.classical->memrefs.find(src);
-      if (it == walk.classical->memrefs.end()) {
+      const auto it = walk.classical->registers.find(src);
+      if (it == walk.classical->registers.end()) {
         return op->emitError()
-               << "classical memref is not mapped for QCO DD simulation";
+               << "CBit register is not mapped for QCO DD simulation";
       }
-      walk.classical->memrefs[dest] = it->second;
+      walk.classical->registers[dest] = it->second;
     } else if (failed(walk.classical->bindFrom(src, dest, op))) {
       return failure();
     }
@@ -803,16 +806,15 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<arith::ConstantOp>([&](arith::ConstantOp constant) {
         return recordConstant(constant, *walk.classical);
       })
-      .template Case<memref::AllocOp>([&](memref::AllocOp alloc) {
-        return applyMemRefAlloc(alloc, *walk.classical);
+      .template Case<cbit::AllocOp>([&](cbit::AllocOp alloc) {
+        return allocateRegister(alloc, *walk.classical);
       })
-      .template Case<memref::StoreOp>([&](memref::StoreOp store) {
-        return applyMemRefStore(store, *walk.classical);
+      .template Case<cbit::LoadOp>([&](cbit::LoadOp load) {
+        return loadRegister(load, *walk.classical);
       })
-      .template Case<memref::LoadOp>([&](memref::LoadOp load) {
-        return applyMemRefLoad(load, *walk.classical);
+      .template Case<cbit::StoreOp>([&](cbit::StoreOp store) {
+        return storeRegister(store, *walk.classical);
       })
-      .template Case<memref::DeallocOp>([](auto) { return success(); })
       .template Case<arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::AddIOp,
                      arith::SubIOp, arith::MulIOp, arith::ShLIOp,
                      arith::ShRUIOp, arith::CmpIOp, arith::SelectOp,
@@ -1017,7 +1019,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                               call);
       })
       .template Case<CtrlOp>([&](CtrlOp ctrlOp) -> LogicalResult {
-        if (auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(
+        if (auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(
                 *ctrlOp.getBody())) {
           auto decoded = decodeStandardGate(inner);
           if (failed(decoded)) {

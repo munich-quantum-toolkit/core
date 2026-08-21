@@ -9,10 +9,10 @@
  */
 
 #include "ModifierUtils.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -44,7 +44,7 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
@@ -60,19 +60,19 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
     auto outerQubits = op.getQubits();
     const auto controls =
         llvm::map_to_vector(innerCtrlOp.getControls(), [&](Value c) {
-          return utils::getValueFromBlockArgument(c, outerQubits);
+          return mqt::getValueFromBlockArgument(c, outerQubits);
         });
     const auto targets =
         llvm::map_to_vector(innerCtrlOp.getTargets(), [&](Value t) {
-          return utils::getValueFromBlockArgument(t, outerQubits);
+          return mqt::getValueFromBlockArgument(t, outerQubits);
         });
 
     rewriter.replaceOpWithNewOp<CtrlOp>(
         op, controls, targets, [&](ValueRange targetArgs) {
           InvOp::create(rewriter, op.getLoc(), targetArgs,
                         [&](ValueRange invArgs) {
-                          utils::inlineBodyReturningYields(
-                              *innerCtrlOp.getBody(), invArgs, rewriter);
+                          mqt::inlineBodyReturningYields(*innerCtrlOp.getBody(),
+                                                         invArgs, rewriter);
                         });
         });
 
@@ -92,8 +92,7 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(InvOp invOp,
                                 PatternRewriter& rewriter) const override {
-    auto inner =
-        utils::getSoleBodyUnitary<UnitaryOpInterface>(*invOp.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*invOp.getBody());
     if (!inner) {
       return failure();
     }
@@ -104,8 +103,8 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
 
     // Move supporting ops (constants, arithmetic) out of the body so their
     // Values are accessible from outside and survive InvOp erasure.
-    utils::hoistSupportingOpsBefore(*invOp.getBody(), innerPow.getOperation(),
-                                    invOp, rewriter);
+    mqt::hoistSupportingOpsBefore(*invOp.getBody(), innerPow.getOperation(),
+                                  invOp, rewriter);
     Value negExponent =
         arith::NegFOp::create(rewriter, invOp.getLoc(), innerPow.getExponent());
     // The inner pow's operands alias the inv's block args; translate them back
@@ -113,13 +112,13 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
     // parent scope.
     auto outerQubits = invOp.getQubits();
     const auto qubits = llvm::map_to_vector(innerPow.getQubits(), [&](Value v) {
-      return utils::getValueFromBlockArgument(v, outerQubits);
+      return mqt::getValueFromBlockArgument(v, outerQubits);
     });
     rewriter.replaceOpWithNewOp<PowOp>(
         invOp, negExponent, qubits, [&](ValueRange powArgs) {
           // Inner pow body args now match the new pow's args positionally.
-          utils::inlineBodyReturningYields(*innerPow.getBody(), powArgs,
-                                           rewriter);
+          mqt::inlineBodyReturningYields(*innerPow.getBody(), powArgs,
+                                         rewriter);
         });
     return success();
   }
@@ -135,7 +134,7 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
@@ -147,7 +146,7 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
 
     // A self-adjoint gate is its own inverse, so the modifier can be dropped
     // and its body applied directly to the involved qubits.
-    utils::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
+    mqt::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
     return success();
   }
 };
@@ -163,7 +162,7 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
@@ -293,7 +292,7 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
       return failure();
     }
 
-    utils::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
+    mqt::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
     return success();
   }
 };
@@ -305,7 +304,7 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
@@ -313,7 +312,7 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
     if (!innerInvOp) {
       return failure();
     }
-    if (!utils::getSoleBodyUnitary<UnitaryOpInterface>(*innerInvOp.getBody())) {
+    if (!mqt::getSoleBodyUnitary<UnitaryOpInterface>(*innerInvOp.getBody())) {
       return failure();
     }
 
@@ -322,10 +321,9 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
     // inputs, which in turn alias the outer qubits.
     const auto replacements =
         llvm::map_to_vector(innerInvOp.getQubits(), [&](Value q) {
-          return utils::getValueFromBlockArgument(q, op.getQubits());
+          return mqt::getValueFromBlockArgument(q, op.getQubits());
         });
-    utils::inlineModifierBody(op, *innerInvOp.getBody(), replacements,
-                              rewriter);
+    mqt::inlineModifierBody(op, *innerInvOp.getBody(), replacements, rewriter);
     return success();
   }
 };
@@ -372,30 +370,30 @@ struct DropUnusedInvQubits final : OpRewritePattern<InvOp> {
 } // namespace
 
 size_t InvOp::getNumBodyUnitaries() {
-  return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
+  return mqt::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
 
 UnitaryOpInterface InvOp::getBodyUnitary(const size_t i) {
-  return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
+  return mqt::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   ValueRange qubits,
                   const function_ref<void(ValueRange)>& body) {
   build(odsBuilder, odsState, qubits);
-  utils::buildModifierBody<QubitType>(odsBuilder, odsState, qubits.size(),
-                                      [&](OpBuilder& builder, Block& block) {
-                                        body(block.getArguments());
-                                        YieldOp::create(builder,
-                                                        odsState.location);
-                                      });
+  mqt::buildModifierBody<QubitType>(odsBuilder, odsState, qubits.size(),
+                                    [&](OpBuilder& builder, Block& block) {
+                                      body(block.getArguments());
+                                      YieldOp::create(builder,
+                                                      odsState.location);
+                                    });
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
                   const function_ref<void(Value)>& bodyBuilder) {
   odsState.addOperands(qubit);
   odsState.addRegion();
-  utils::buildModifierBody<QubitType>(
+  mqt::buildModifierBody<QubitType>(
       odsBuilder, odsState, 1, [&](OpBuilder& builder, Block& block) {
         bodyBuilder(block.getArgument(0));
         YieldOp::create(builder, odsState.location);

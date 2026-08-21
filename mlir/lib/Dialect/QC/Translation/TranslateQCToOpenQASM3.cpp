@@ -10,10 +10,13 @@
 
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
 #include <llvm/ADT/APInt.h>
@@ -69,6 +72,7 @@ struct Resource {
   int64_t width = 1;
   bool scalar = false;
   bool output = false;
+  cbit::Initialization initialization = cbit::Initialization::Undefined;
 };
 
 struct ScalarOutput {
@@ -166,7 +170,7 @@ private:
   DenseMap<Value, Resource> resources;
   SmallVector<Value> resourceOrder;
   DenseMap<Value, std::string> valueNames;
-  DenseSet<Value> returnedMemrefs;
+  DenseSet<Value> returnedRegisters;
   SmallVector<ScalarOutput> scalarOutputs;
   llvm::StringSet<> usedNames;
   llvm::StringSet<> fixedHelpers;
@@ -263,8 +267,8 @@ private:
       if (returnOp.getNumOperands() == 1 && isCanonicalStatus(value, index)) {
         continue;
       }
-      if (isa<MemRefType>(value.getType())) {
-        returnedMemrefs.insert(value);
+      if (isa<cbit::RegisterType>(value.getType())) {
+        returnedRegisters.insert(value);
         continue;
       }
       auto kind = inferScalarKind(value);
@@ -289,6 +293,22 @@ private:
         valueNames.try_emplace(alloc.getResult(), name);
         continue;
       }
+      if (auto alloc = dyn_cast<cbit::AllocOp>(&operation)) {
+        const auto type = alloc.getResult().getType();
+        const bool isOutput = returnedRegisters.contains(alloc.getResult());
+        const auto name = alloc->getAttrOfType<StringAttr>(
+            mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
+        const auto requested = name ? name.getValue() : StringRef{};
+        Resource resource{.kind = ResourceKind::Bit,
+                          .name = isOutput ? outputName(requested)
+                                           : uniqueName("c", nextBit),
+                          .width = type.getWidth(),
+                          .output = isOutput,
+                          .initialization = alloc.getInitialization()};
+        resources.try_emplace(alloc.getResult(), std::move(resource));
+        resourceOrder.push_back(alloc.getResult());
+        continue;
+      }
       auto alloc = dyn_cast<memref::AllocOp>(&operation);
       if (!alloc) {
         continue;
@@ -299,43 +319,25 @@ private:
         return fail(alloc, "only non-empty static rank-one memrefs are "
                            "supported");
       }
-      Resource resource{.kind = isa<qc::QubitType>(type.getElementType())
-                                    ? ResourceKind::Qubit
-                                    : ResourceKind::Bit,
+      if (!isa<qc::QubitType>(type.getElementType())) {
+        return fail(alloc, "only qubit memrefs are supported");
+      }
+      StringRef requested;
+      if (const auto attr = alloc->getAttrOfType<StringAttr>(
+              mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
+        requested = attr.getValue();
+      }
+      Resource resource{.kind = ResourceKind::Qubit,
+                        .name = qubitRegisterName(requested),
                         .width = type.getDimSize(0)};
-      if (resource.kind == ResourceKind::Bit &&
-          !type.getElementType().isInteger(1)) {
-        return fail(alloc, "only qubit and i1 memrefs are supported");
-      }
-      if (resource.kind == ResourceKind::Qubit) {
-        StringRef requested;
-        if (const auto attr = alloc->getAttrOfType<StringAttr>(
-                utils::QUBIT_REGISTER_NAME_ATTR)) {
-          requested = attr.getValue();
-        }
-        resource.name = qubitRegisterName(requested);
-      } else {
-        resource.output = returnedMemrefs.contains(alloc.getResult());
-        StringRef requested;
-        if (const auto attr = alloc->getAttrOfType<StringAttr>(
-                utils::CLASSICAL_REGISTER_NAME_ATTR)) {
-          requested = attr.getValue();
-        }
-        resource.name =
-            resource.output ? outputName(requested) : uniqueName("c", nextBit);
-      }
       resources.try_emplace(alloc.getResult(), resource);
       resourceOrder.push_back(alloc.getResult());
     }
 
-    for (const auto value : returnedMemrefs) {
+    for (const auto value : returnedRegisters) {
       if (!resources.contains(value)) {
-        return fail(returnOp,
-                    "returned memrefs must be entry-block allocations");
-      }
-      auto& resource = resources.at(value);
-      if (resource.kind != ResourceKind::Bit) {
-        return fail(returnOp, "only classical bit memrefs may be outputs");
+        return fail(returnOp, "returned CBit registers must be entry-block "
+                              "allocations");
       }
     }
     return success();
@@ -377,6 +379,12 @@ private:
         *output << '[' << resource.width << ']';
       }
       *output << ' ' << resource.name << ";\n";
+      if (resource.kind == ResourceKind::Bit &&
+          resource.initialization == cbit::Initialization::Zero) {
+        for (int64_t bit = 0; bit < resource.width; ++bit) {
+          *output << resource.name << '[' << bit << "] = false;\n";
+        }
+      }
     }
     for (const auto& scalar : scalarOutputs) {
       *output << "output " << scalar.kind << ' ' << scalar.name << ";\n";
@@ -403,9 +411,9 @@ private:
     if (isa<arith::SelectOp>(&operation)) {
       return fail(&operation, "arith.select is not supported");
     }
-    if (isa<arith::ConstantOp, memref::LoadOp, memref::AllocOp,
-            memref::DeallocOp, qc::AllocOp, qc::DeallocOp, qc::StaticOp>(
-            &operation)) {
+    if (isa<arith::ConstantOp, cbit::LoadOp, cbit::AllocOp, memref::LoadOp,
+            memref::AllocOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
+            qc::StaticOp>(&operation)) {
       return success();
     }
     if (isInlineExpressionOperation(operation)) {
@@ -421,7 +429,7 @@ private:
     if (isa<ub::PoisonOp>(&operation)) {
       return success();
     }
-    if (auto store = dyn_cast<memref::StoreOp>(&operation)) {
+    if (auto store = dyn_cast<cbit::StoreOp>(&operation)) {
       return emitStore(store);
     }
     if (auto measurement = dyn_cast<qc::MeasureOp>(&operation)) {
@@ -523,29 +531,32 @@ private:
   }
 
   [[nodiscard]] FailureOr<std::string>
-  emitBitReference(const Value memref, const Value indexValue) {
-    const auto resource = resources.find(memref);
+  emitBitReference(const Value reg, const Value indexValue) {
+    const auto resource = resources.find(reg);
     if (resource == resources.end() ||
         resource->second.kind != ResourceKind::Bit) {
-      return failExpression(memref, "bit access refers to unsupported storage");
+      return failExpression(reg, "bit access refers to unsupported storage");
     }
     const auto index = getConstantInteger(indexValue);
-    if (!index || *index < 0 || *index >= resource->second.width) {
-      return failExpression(indexValue,
-                            "bit indices must be constant and in bounds");
+    if (index && (*index < 0 || *index >= resource->second.width)) {
+      return failExpression(indexValue, "constant bit index is out of bounds");
     }
-    return (Twine(resource->second.name) + "[" + Twine(*index) + "]").str();
+    if (index) {
+      return (Twine(resource->second.name) + "[" + Twine(*index) + "]").str();
+    }
+    auto dynamicIndex = emitExpression(indexValue);
+    if (failed(dynamicIndex)) {
+      return failure();
+    }
+    return (Twine(resource->second.name) + "[" + *dynamicIndex + "]").str();
   }
 
   [[nodiscard]] FailureOr<std::string> emitExpression(const Value value) {
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
     }
-    if (auto load = value.getDefiningOp<memref::LoadOp>()) {
-      if (load.getIndices().size() != 1) {
-        return failExpression(value, "only rank-one loads are supported");
-      }
-      return emitBitReference(load.getMemRef(), load.getIndices().front());
+    if (auto load = value.getDefiningOp<cbit::LoadOp>()) {
+      return emitBitReference(load.getReg(), load.getIndex());
     }
     auto* operation = value.getDefiningOp();
     if (operation == nullptr) {
@@ -774,14 +785,23 @@ private:
         .Default({});
   }
 
-  [[nodiscard]] LogicalResult emitStore(memref::StoreOp store) {
-    if (store.getIndices().size() != 1) {
-      return fail(store, "only rank-one stores are supported");
+  [[nodiscard]] LogicalResult emitStore(cbit::StoreOp store) {
+    auto target = emitBitReference(store.getReg(), store.getIndex());
+    if (failed(target)) {
+      return failure();
     }
-    auto target =
-        emitBitReference(store.getMemRef(), store.getIndices().front());
+    if (auto measurement = store.getValue().getDefiningOp<qc::MeasureOp>();
+        measurement && measurement.getResult().hasOneUse() &&
+        measurement->getNextNode() == store.getOperation()) {
+      auto qubit = emitQubit(measurement.getQubit());
+      if (failed(qubit)) {
+        return failure();
+      }
+      *output << *target << " = measure " << *qubit << ";\n";
+      return success();
+    }
     auto value = emitExpression(store.getValue());
-    if (failed(target) || failed(value)) {
+    if (failed(value)) {
       return failure();
     }
     *output << *target << " = " << *value << ";\n";
@@ -789,6 +809,13 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitMeasurement(qc::MeasureOp measurement) {
+    if (measurement.getResult().hasOneUse()) {
+      if (auto store = dyn_cast<cbit::StoreOp>(
+              *measurement.getResult().getUsers().begin());
+          store && measurement->getNextNode() == store.getOperation()) {
+        return success();
+      }
+    }
     auto qubit = emitQubit(measurement.getQubit());
     if (failed(qubit)) {
       return failure();
@@ -874,7 +901,7 @@ private:
       return fail(whileOp, "scf.while loop-carried values are not supported");
     }
     for (Operation& operation : before.without_terminator()) {
-      if (auto load = dyn_cast<memref::LoadOp>(operation)) {
+      if (auto load = dyn_cast<cbit::LoadOp>(operation)) {
         if (failed(emitExpression(load.getResult()))) {
           return failure();
         }
@@ -946,7 +973,7 @@ private:
       if (returnOp.getNumOperands() == 1 && isCanonicalStatus(value, index)) {
         continue;
       }
-      if (isa<MemRefType>(value.getType())) {
+      if (isa<cbit::RegisterType>(value.getType())) {
         continue;
       }
       auto expression = emitExpression(value);

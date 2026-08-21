@@ -253,7 +253,7 @@ public:
   /// Consume this program and convert it to `jeff` MLIR.
   [[nodiscard]] std::optional<JeffProgram> intoJeff() &&;
 
-  /// Return the entry `func.func` (`main` if present, else the first function).
+  /// Return the `func.func` marked with `mqt.entry_point`, if present.
   [[nodiscard]] std::optional<func::FuncOp> entryFunc() const;
 };
 

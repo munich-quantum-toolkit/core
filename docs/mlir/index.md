@@ -12,6 +12,8 @@ technical reference for the underlying MLIR infrastructure.
 
 We define multiple dialects, each with its dedicated purpose:
 
+- The {doc}`MQT dialect <MQT>` stores frontend-neutral program metadata that
+  remains meaningful across dialect conversions.
 - The {doc}`QC dialect <QC>` uses reference semantics and is designed as a
   compatibility dialect that simplifies translations from and to existing
   languages such as Qiskit, OpenQASM, or QIR.
@@ -20,6 +22,8 @@ We define multiple dialects, each with its dedicated purpose:
 - The {doc}`QTensor dialect <QTensor>` adds support for one-dimensional tensors
   of qubits with linear typing and is used in the QCO dialect to represent
   collections of qubits such as registers.
+- The {doc}`CBit dialect <CBit>` represents initialized classical-bit registers
+  shared by QC and QCO.
 
 These dialects define various canonicalization and transformation passes that
 enable the compilation of quantum programs to native quantum hardware. Passes
@@ -35,9 +39,11 @@ directly to QC and emits structured OpenQASM from QC.
 
 python_compiler_collection
 target_compilation
+MQT
 QC
 QCO
 QTensor
+CBit
 Transforms
 Conversions
 OpenQASM

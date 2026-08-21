@@ -38,7 +38,7 @@ def normalize_angle(a: float) -> float:
 
 
 def normalize_global_phase(a: float) -> float:
-    """Normalize to (-pi, pi], matching utils::normalizeAngle.
+    """Normalize to (-pi, pi], matching mqt::normalizeAngle.
 
     Returns:
         Angle in the range (-pi, pi].

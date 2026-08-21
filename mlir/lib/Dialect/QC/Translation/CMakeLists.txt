@@ -24,12 +24,14 @@ add_mlir_library(
   TranslateQCToOpenQASM3.cpp
   LINK_LIBS
   MLIRArithDialect
+  MLIRCBitDialect
   MLIRFuncDialect
   MLIRLLVMDialect
   MLIROpenQASMFrontend
   MLIRControlFlowDialect
   MLIRMathDialect
   MLIRMemRefDialect
+  MLIRMQTDialect
   MLIRSCFDialect
   MLIRUBDialect
   MLIRQCDialect

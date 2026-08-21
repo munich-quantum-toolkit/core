@@ -1,5 +1,11 @@
 # Conversions
 
+## Classical Register Conversion
+
+```{include} Conversions/CBitToMemRef.md
+
+```
+
 ## Internal Conversions
 
 ```{include} Conversions/QCToQCO.md

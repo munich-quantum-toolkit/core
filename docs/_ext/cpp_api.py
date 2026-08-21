@@ -332,10 +332,10 @@ def setup(app: Sphinx) -> ExtensionMetadata:
         Metadata declaring that the extension supports parallel builds.
     """
     app.add_config_value("cpp_api_tagfile", ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml"), "env")
-    app.add_config_value("qdmi_api_tagfile", ("_tagfiles/qdmi-1.3.2.tag", ""), "env")
+    app.add_config_value("qdmi_api_tagfile", ("_tagfiles/qdmi-1.3.3.tag", ""), "env")
     app.add_config_value(
         "qdmi_api_tagfile_url",
-        "https://munich-quantum-software-stack.github.io/QDMI/v1.3.2/qdmi.tag",
+        "https://munich-quantum-software-stack.github.io/QDMI/v1.3.3/qdmi.tag",
         "env",
     )
     app.add_domain(CppApiDomain)

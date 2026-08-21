@@ -10,12 +10,16 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
@@ -26,7 +30,6 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
@@ -46,30 +49,28 @@
 #include <utility>
 #include <variant>
 
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 namespace mlir::qco {
-
 QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qco-program-builder>", 1, 1), context),
       ctx(context), module(ModuleOp::create(*this)) {
-  ctx->loadDialect<QCODialect, qtensor::QTensorDialect>();
+  ctx->loadDialect<cbit::CBitDialect, mqt::MQTDialect, QCODialect,
+                   qtensor::QTensorDialect>();
 }
 
 void QCOProgramBuilder::initialize() { initialize({getI64Type()}); }
 
 void QCOProgramBuilder::initialize(TypeRange returnTypes) {
   // Set insertion point to the module body
-  setInsertionPointToStart(mlir::cast<ModuleOp>(module).getBody());
+  setInsertionPointToStart(cast<ModuleOp>(module).getBody());
 
   // Create main function as entry point
   auto funcType = getFunctionType({}, returnTypes);
   auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
-  // Add entry_point attribute to identify the main function
-  auto entryPointAttr = getStringAttr("entry_point");
-  mainFunc->setAttr("passthrough", getArrayAttr({entryPointAttr}));
+  mqt::setEntryPoint(mainFunc);
 
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
@@ -77,7 +78,7 @@ void QCOProgramBuilder::initialize(TypeRange returnTypes) {
 }
 
 void QCOProgramBuilder::retype(TypeRange returnTypes) {
-  auto mainFunc = getEntryPoint(mlir::cast<ModuleOp>(module));
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(module));
   if (!mainFunc) {
     llvm::reportFatalUsageError("Main function not found for retyping");
   }
@@ -142,14 +143,11 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size,
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
-  if (!name.empty() && !qubitRegisterNames.insert(name).second) {
-    llvm::reportFatalUsageError("Qubit register names must be unique");
-  }
-
   auto qtensor = qtensorAlloc(size);
   if (!name.empty()) {
-    qtensor.getDefiningOp()->setAttr(QUBIT_REGISTER_NAME_ATTR,
-                                     getStringAttr(name));
+    ctx->getLoadedDialect<mqt::MQTDialect>()
+        ->getRegisterNameAttrHelper()
+        .setAttr(qtensor.getDefiningOp(), getStringAttr(name));
   }
 
   SmallVector<Value> qubits;
@@ -163,20 +161,39 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size,
   return {.value = qtensor, .qubits = std::move(qubits)};
 }
 
-Value QCOProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                                   const StringRef name) {
+Value QCOProgramBuilder::allocClassicalBitRegister(
+    const int64_t size, const StringRef name,
+    const cbit::Initialization initialization) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  auto memrefType = MemRefType::get({size}, getI1Type());
-  auto alloc = memref::AllocOp::create(*this, memrefType);
+  const auto type = cbit::RegisterType::get(ctx, size);
+  auto alloc = cbit::AllocOp::create(*this, type, initialization);
   if (!name.empty()) {
-    alloc->setAttr(CLASSICAL_REGISTER_NAME_ATTR, getStringAttr(name));
+    ctx->getLoadedDialect<mqt::MQTDialect>()
+        ->getRegisterNameAttrHelper()
+        .setAttr(alloc, getStringAttr(name));
   }
   return alloc.getResult();
+}
+
+Value QCOProgramBuilder::loadClassicalBit(
+    Value reg, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  cbit::validateStaticRegisterIndex(reg, index);
+  const auto indexValue = variantToValue(*this, getLoc(), index);
+  return cbit::LoadOp::create(*this, getI1Type(), reg, indexValue).getResult();
+}
+
+void QCOProgramBuilder::storeClassicalBit(
+    Value value, Value reg, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  cbit::validateStaticRegisterIndex(reg, index);
+  const auto indexValue = variantToValue(*this, getLoc(), index);
+  cbit::StoreOp::create(*this, value, reg, indexValue);
 }
 
 //===----------------------------------------------------------------------===//
@@ -436,7 +453,6 @@ std::pair<Value, Value>
 QCOProgramBuilder::measure(Value qubit, Value reg,
                            const std::variant<int64_t, Value>& index) {
   checkFinalized();
-  validateMemRefIndex(reg, index);
 
   auto measureOp = MeasureOp::create(*this, qubit);
   auto qubitOut = measureOp.getQubitOut();
@@ -445,8 +461,7 @@ QCOProgramBuilder::measure(Value qubit, Value reg,
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
 
-  auto indexValue = variantToValue(*this, getLoc(), index);
-  memref::StoreOp::create(*this, result, reg, indexValue);
+  storeClassicalBit(result, reg, index);
 
   return {qubitOut, result};
 }
@@ -1366,9 +1381,7 @@ ValueRange QCOProgramBuilder::qcoIf(
     function_ref<SmallVector<Value>(ValueRange)> thenBody,
     function_ref<SmallVector<Value>(ValueRange)> elseBody) {
   checkFinalized();
-  validateMemRefIndex(reg, index);
-  auto indexValue = variantToValue(*this, getLoc(), index);
-  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
+  auto condition = loadClassicalBit(reg, index);
   return qcoIf(condition, initArgs, thenBody, elseBody);
 }
 
@@ -1396,9 +1409,7 @@ QCOProgramBuilder::scfCondition(Value reg,
                                 const std::variant<int64_t, Value>& index,
                                 ValueRange yieldedValues) {
   checkFinalized();
-  validateMemRefIndex(reg, index);
-  auto indexValue = variantToValue(*this, getLoc(), index);
-  auto condition = memref::LoadOp::create(*this, reg, indexValue).getResult();
+  auto condition = loadClassicalBit(reg, index);
   return scfCondition(condition, yieldedValues);
 }
 

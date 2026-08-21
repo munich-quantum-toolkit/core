@@ -16,6 +16,8 @@
 #include "dd/StateGeneration.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
@@ -24,7 +26,6 @@
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -60,8 +61,8 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                    memref::MemRefDialect, scf::SCFDialect>();
+    registry.insert<cbit::CBitDialect, QCODialect, arith::ArithDialect,
+                    func::FuncDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -717,6 +718,74 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIf) {
   EXPECT_EQ(out->getVector(), one.getVector());
   dd->decRef(*out);
   dd->decRef(one);
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateCBitConditionAndMeasurementUpdate) {
+  auto zeroCondition = buildModule([](QCOProgramBuilder& b) {
+    auto reg = b.allocClassicalBitRegister(1, "c");
+    auto q = b.staticQubit(0);
+    q = b.qcoIf(
+        b.loadClassicalBit(reg, 0), q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  auto measurementCondition = buildModule([](QCOProgramBuilder& b) {
+    auto reg =
+        b.allocClassicalBitRegister(1, "c", cbit::Initialization::Undefined);
+    auto q = b.x(b.staticQubit(0));
+    Value bit;
+    std::tie(q, bit) = b.measure(q);
+    b.storeClassicalBit(bit, reg, 0);
+    q = b.qcoIf(
+        b.loadClassicalBit(reg, 0), q, [&](Value arg) { return arg; },
+        [&](Value arg) { return b.x(arg); });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(zeroCondition);
+  ASSERT_TRUE(measurementCondition);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(99);
+  auto zero = dd::makeZeroState(1, *dd);
+  auto one = dd->applyOperation(
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+      dd::makeZeroState(1, *dd));
+
+  const auto zeroOut =
+      simulate(mainFunc(*zeroCondition), dd::makeZeroState(1, *dd), *dd, rng);
+  ASSERT_TRUE(succeeded(zeroOut));
+  EXPECT_EQ(zeroOut->getVector(), zero.getVector());
+
+  const auto measurementOut = simulate(mainFunc(*measurementCondition),
+                                       dd::makeZeroState(1, *dd), *dd, rng);
+  ASSERT_TRUE(succeeded(measurementOut));
+  EXPECT_EQ(measurementOut->getVector(), one.getVector());
+
+  dd->decRef(*zeroOut);
+  dd->decRef(*measurementOut);
+  dd->decRef(zero);
+  dd->decRef(one);
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitLoad) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto reg =
+        b.allocClassicalBitRegister(1, "c", cbit::Initialization::Undefined);
+    auto q = b.staticQubit(0);
+    q = b.qcoIf(
+        b.loadClassicalBit(reg, 0), q, [&](Value arg) { return arg; },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(1);
+  EXPECT_TRUE(
+      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIndexSwitch) {
@@ -1841,7 +1910,7 @@ TEST_F(QCODDFunctionalityTest, SampleWithClassics) {
             (std::map<std::string, size_t>{{"1", 8}}));
 }
 
-TEST_F(QCODDFunctionalityTest, SampleClassicalMemRefRegister) {
+TEST_F(QCODDFunctionalityTest, SampleClassicalCBitRegister) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto reg = b.allocClassicalBitRegister(2);
     auto q = b.x(b.staticQubit(0));
@@ -1850,7 +1919,6 @@ TEST_F(QCODDFunctionalityTest, SampleClassicalMemRefRegister) {
         reg, 1, ValueRange{q},
         [&](ValueRange args) { return SmallVector<Value>{b.x(args[0])}; },
         [&](ValueRange args) { return SmallVector<Value>{args[0]}; });
-    memref::DeallocOp::create(b, reg);
     b.sink(results[0]);
     return b.intConstant(0);
   });
@@ -1888,20 +1956,20 @@ TEST_F(QCODDFunctionalityTest, SampleConstantControlFlowUsesStaticPath) {
   EXPECT_EQ(dd->matrixVectorMultiplication.getStats().lookups, 1U);
 }
 
-TEST_F(QCODDFunctionalityTest, FuncCallSharesClassicalMemRefStorage) {
+TEST_F(QCODDFunctionalityTest, FuncCallSharesClassicalCBitStorage) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
-      func.func @set(%reg: memref<1xi1>) {
+      func.func @set(%reg: !cbit.reg<1>) {
         %true = arith.constant true
         %i0 = arith.constant 0 : index
-        memref.store %true, %reg[%i0] : memref<1xi1>
+        cbit.store %true, %reg[%i0] : !cbit.reg<1>
         return
       }
       func.func @main() {
-        %reg = memref.alloc() : memref<1xi1>
-        func.call @set(%reg) : (memref<1xi1>) -> ()
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        func.call @set(%reg) : (!cbit.reg<1>) -> ()
         %i0 = arith.constant 0 : index
-        %value = memref.load %reg[%i0] : memref<1xi1>
+        %value = cbit.load %reg[%i0] : !cbit.reg<1>
         %q = qco.static 0 : !qco.qubit
         %q1 = qco.if %value args(%qin = %q) -> (!qco.qubit) {
           %qx = qco.x %qin : !qco.qubit -> !qco.qubit
@@ -1909,7 +1977,6 @@ TEST_F(QCODDFunctionalityTest, FuncCallSharesClassicalMemRefStorage) {
         } else args(%qin = %q) {
           qco.yield %qin : !qco.qubit
         }
-        memref.dealloc %reg : memref<1xi1>
         qco.sink %q1 : !qco.qubit
         return
       }
@@ -1920,41 +1987,30 @@ TEST_F(QCODDFunctionalityTest, FuncCallSharesClassicalMemRefStorage) {
   expectSimulatesFromZero(mainFunc(*mod), true);
 }
 
-TEST_F(QCODDFunctionalityTest, RejectsUnsupportedClassicalMemRefs) {
+TEST_F(QCODDFunctionalityTest, RejectsInvalidClassicalCBitAccesses) {
   for (const StringRef source : {
            R"mlir(module {
-             func.func @main(%reg: memref<i1>) {
-               %value = memref.load %reg[] : memref<i1>
+             func.func @main(%reg: !cbit.reg<1>) {
+               %i0 = arith.constant 0 : index
+               %value = cbit.load %reg[%i0] : !cbit.reg<1>
                return
              }
            })mlir",
            R"mlir(module {
-             func.func @main(%reg: memref<i1>) {
+             func.func @main(%reg: !cbit.reg<1>) {
                %value = arith.constant true
-               memref.store %value, %reg[] : memref<i1>
+               %i0 = arith.constant 0 : index
+               cbit.store %value, %reg[%i0] : !cbit.reg<1>
                return
              }
            })mlir",
            R"mlir(module {
              func.func @main() {
-               %reg = memref.alloc() : memref<2xi32>
-               memref.dealloc %reg : memref<2xi32>
-               return
-             }
-           })mlir",
-           R"mlir(module {
-             func.func @main(%n: index) {
-               %reg = memref.alloc(%n) : memref<?xi1>
-               memref.dealloc %reg : memref<?xi1>
-               return
-             }
-           })mlir",
-           R"mlir(module {
-             func.func @main() {
-               %reg = memref.alloc() : memref<1xi1>
+               %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
                %value = arith.constant true
-               %i2 = arith.constant 2 : index
-               memref.store %value, %reg[%i2] : memref<1xi1>
+               %i1 = arith.constant 1 : index
+               %i2 = arith.addi %i1, %i1 : index
+               cbit.store %value, %reg[%i2] : !cbit.reg<1>
                return
              }
            })mlir"}) {

@@ -58,14 +58,14 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  *
  * @details Same supported unitary op set as @ref buildFunctionality, plus
  * concrete classical control-flow (`qco.if` / `qco.index_switch` with
- * compile-time or previously recorded classical selectors) and static-shape
- * 1-D `memref<Nxi1>` classical registers (`alloc`/`store`/`load`/`dealloc`).
- * Mid-circuit `measure` / `reset` require the RNG overload below. Concrete-
- * bound `scf.for` loops and non-recursive single-block `func.call` are
- * supported independently of RNG. Only qubit-typed linear values are supported
- * (no qtensors). Nested regions are walked; `scf.while` and multi-block
- * function bodies remain unsupported. Consumes one reference to @p in
- * regardless of whether simulation succeeds or fails.
+ * compile-time or previously recorded classical selectors) and CBit registers
+ * (`cbit.alloc` / `cbit.store` / `cbit.load`). Mid-circuit `measure` /
+ * `reset` require the RNG overload below. Concrete-bound `scf.for` loops and
+ * non-recursive single-block `func.call` are supported independently of RNG.
+ * Only qubit-typed linear values are supported (no qtensors). Nested regions
+ * are walked; `scf.while` and multi-block function bodies remain unsupported.
+ * Consumes one reference to @p in regardless of whether simulation succeeds or
+ * fails.
  *
  * @param func The QCO function to simulate
  * @param in The input state, represented as a vector DD; one reference is
@@ -84,18 +84,17 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * @details Supports the unitary op set of @ref buildFunctionality, plus
  * `qco.measure` / `qco.reset` (collapsing via @p rng) and `qco.if` /
  * `qco.index_switch` when the branch selector is a concrete classical SSA value
- * (`arith.constant` `i1`/`index`, a prior measurement,
- * `arith.index_castui` from `i1` to `index`, `arith.cmpi`,
- * `arith.select`, `arith.addi`/`subi`/`muli`,
- * `andi`/`ori`/`xori`/`shli`/`shrui` on those values). Classical registers as
- * static-shape 1-D `memref<Nxi1>` with `memref.alloc` / `store` / `load` /
- * `dealloc` are supported. Deterministic
- * control-flow without measure/reset also works on the non-RNG overload. Only
- * qubit-typed linear values are supported (no qtensors). Nested regions are
- * walked; `scf.for` with concrete positive step and at most 10000 trips and
- * non-recursive single-block `func.call` are supported; `scf.while` and
- * multi-block function bodies remain unsupported. Consumes one reference to
- * @p in regardless of whether simulation succeeds or fails.
+ * (`arith.constant` `i1`/`index`, a prior measurement, a `cbit.load`,
+ * `arith.index_castui` from `i1` to `index`, `arith.cmpi`, `arith.select`,
+ * `arith.addi` / `subi` / `muli`, or `andi` / `ori` / `xori` / `shli` /
+ * `shrui` on those values). The simulation tracks CBit initialization, loads,
+ * and stores. Deterministic control-flow without measure/reset also works on
+ * the non-RNG overload. Only qubit-typed linear values are supported (no
+ * qtensors). Nested regions are walked; `scf.for` with a concrete positive
+ * step and at most 10000 trips and non-recursive single-block `func.call` are
+ * supported; `scf.while` and multi-block function bodies remain unsupported.
+ * Consumes one reference to @p in regardless of whether simulation succeeds or
+ * fails.
  *
  * @param func The QCO function to simulate
  * @param in The input state; one reference is consumed

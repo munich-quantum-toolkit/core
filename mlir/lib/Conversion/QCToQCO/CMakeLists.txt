@@ -14,6 +14,7 @@ add_mlir_conversion_library(
   DEPENDS
   QCToQCOIncGen
   LINK_LIBS
+  MLIRCBitDialect
   MLIRQCDialect
   MLIRQCODialect
   MLIRQTensorDialect
@@ -21,6 +22,7 @@ add_mlir_conversion_library(
   MLIRFuncDialect
   MLIRSCFDialect
   MLIRMemRefDialect
+  MLIRMQTDialect
   MLIRTransforms
   MLIRFuncTransforms)
 

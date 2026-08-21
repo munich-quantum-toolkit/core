@@ -11,6 +11,8 @@
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 
 #include "mlir/Conversion/ConversionUtils.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -18,7 +20,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
@@ -634,8 +635,9 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       }
     }
 
-    if (!isa<qc::AllocOp, qc::DeallocOp, qc::MeasureOp, qc::ResetOp,
-             memref::LoadOp, memref::StoreOp>(operation)) {
+    if (!isa<cbit::AllocOp, cbit::LoadOp, cbit::StoreOp, qc::AllocOp,
+             qc::DeallocOp, qc::MeasureOp, qc::ResetOp, memref::LoadOp,
+             memref::StoreOp>(operation)) {
       return WalkResult::advance();
     }
 
@@ -645,8 +647,7 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
         continue;
       }
       parent->emitOpError(
-          "body must not contain non-unitary quantum operations or modify a "
-          "quantum register");
+          "body must not contain non-unitary operations or access registers");
       return WalkResult::interrupt();
     }
     return WalkResult::advance();
@@ -838,7 +839,6 @@ struct ConvertMemRefAllocOp final
       return failure();
     }
 
-    const auto registerName = op->getAttr(utils::QUBIT_REGISTER_NAME_ATTR);
     qtensor::AllocOp alloc;
     if (shape[0] == ShapedType::kDynamic) {
       alloc = qtensor::AllocOp::create(rewriter, op.getLoc(),
@@ -848,9 +848,7 @@ struct ConvertMemRefAllocOp final
           arith::ConstantIndexOp::create(rewriter, op.getLoc(), shape[0]);
       alloc = qtensor::AllocOp::create(rewriter, op.getLoc(), size.getResult());
     }
-    if (registerName) {
-      alloc->setAttr(utils::QUBIT_REGISTER_NAME_ATTR, registerName);
-    }
+    alloc->setDiscardableAttrs(op->getDiscardableAttrDictionary());
 
     auto& state = getState();
     auto memref = op.getResult();
@@ -1889,7 +1887,7 @@ protected:
 
     // Configure conversion target
     target.addIllegalDialect<QCDialect>();
-    target.addLegalDialect<QCODialect, arith::ArithDialect,
+    target.addLegalDialect<cbit::CBitDialect, QCODialect, arith::ArithDialect,
                            qtensor::QTensorDialect>();
 
     target.addDynamicallyLegalDialect<memref::MemRefDialect>([](Operation* op) {

@@ -27,6 +27,8 @@ add_mlir_dialect_library(
   MLIRQCOInterfacesIncGen
   LINK_LIBS
   PUBLIC
+  MLIRCBitDialect
+  MLIRMQTUtils
   MLIRQCODialect
   MLIRSCFDialect)
 
@@ -68,9 +70,10 @@ add_mlir_library(
   MLIRQCOMatrix
   MLIRArithDialect
   MLIRFuncDialect
-  MLIRMemRefDialect
   MLIRSCFDialect
-  MQT::CoreDD)
+  MQT::CoreDD
+  PRIVATE
+  MLIRMQTUtils)
 
 mqt_mlir_target_use_project_options(MLIRQCODDFunctionality)
 unset(LLVM_REQUIRES_EH)

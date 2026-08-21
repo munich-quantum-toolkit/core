@@ -14,12 +14,14 @@ add_mlir_conversion_library(
   DEPENDS
   QCOToQCIncGen
   LINK_LIBS
+  MLIRCBitDialect
   MLIRQCDialect
   MLIRQCODialect
   MLIRQTensorDialect
   MLIRArithDialect
   MLIRFuncDialect
   MLIRMemRefDialect
+  MLIRMQTDialect
   MLIRTransforms
   MLIRFuncTransforms)
 
