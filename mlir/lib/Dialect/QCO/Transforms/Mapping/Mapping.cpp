@@ -1050,7 +1050,7 @@ private:
               const auto i1 = indices[1];
               const auto prog0 = infos.lookupProgram(i0);
               const auto prog1 = infos.lookupProgram(i1);
-              const auto gate = std::minmax(prog0, prog1);
+              const IndexPairType gate = std::minmax(prog0, prog1);
 
               if (mode == WalkMode::Collect) {
 
