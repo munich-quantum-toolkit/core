@@ -28,7 +28,7 @@ INSTANTIATE_TEST_SUITE_P(Benchmarks, GenerateBenchmarkTest,
                          testing::ValuesIn(benchmarks()),
                          [](const testing::TestParamInfo<Benchmark>& info) {
                            auto name = info.param.name.str();
-                           std::replace(name.begin(), name.end(), '-', '_');
+                           std::ranges::replace(name, '-', '_');
                            return name;
                          });
 
@@ -54,9 +54,9 @@ TEST_P(GenerateBenchmarkTest, RejectsSizesAboveTheMaximum) {
 }
 
 TEST_P(GenerateBenchmarkTest, RejectsSizesBeyondTheSignedRange) {
-  constexpr auto FIRST_UNSIGNED =
+  constexpr auto firstUnsigned =
       static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1;
-  EXPECT_FALSE(generateProgram(GetParam(), FIRST_UNSIGNED));
+  EXPECT_FALSE(generateProgram(GetParam(), firstUnsigned));
 }
 
 } // namespace

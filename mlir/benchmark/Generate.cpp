@@ -33,11 +33,11 @@ std::optional<QCProgram> generateProgram(const Benchmark& benchmark,
                                          const uint64_t n) {
   // The programs size their registers with signed dimensions, so a size that
   // does not fit into them cannot build a module.
-  constexpr auto SIGNED_LIMIT =
+  constexpr auto signedLimit =
       static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
   const auto upper = benchmark.maximumSize == 0
-                         ? SIGNED_LIMIT
-                         : std::min(benchmark.maximumSize, SIGNED_LIMIT);
+                         ? signedLimit
+                         : std::min(benchmark.maximumSize, signedLimit);
 
   if (n < benchmark.minimumSize) {
     llvm::errs() << benchmark.name << ": needs a size of at least "

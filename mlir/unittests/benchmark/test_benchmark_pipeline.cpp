@@ -54,7 +54,7 @@ INSTANTIATE_TEST_SUITE_P(Benchmarks, PipelineBenchmarkTest,
                          testing::ValuesIn(benchmarks()),
                          [](const testing::TestParamInfo<Benchmark>& info) {
                            auto name = info.param.name.str();
-                           std::replace(name.begin(), name.end(), '-', '_');
+                           std::ranges::replace(name, '-', '_');
                            return name;
                          });
 

@@ -37,12 +37,11 @@ void measureRegister(qc::QCProgramBuilder& b, Value reg, const int64_t size,
            [&](Value i) { b.measure(b.loadQubit(reg, i), bits, i); });
 }
 
-namespace {
 /// Runs @p body over [@p lower, @p upper) with an angle that @p advance carries
 /// from one step to the next.
-void angleLoop(qc::QCProgramBuilder& b, Value lower, Value upper, Value first,
-               const function_ref<Value(Value)>& advance,
-               const function_ref<void(Value, Value)>& body) {
+static void angleLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
+                      Value first, const function_ref<Value(Value)>& advance,
+                      const function_ref<void(Value, Value)>& body) {
   auto one = b.indexConstant(1);
 
   auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{first});
@@ -52,7 +51,6 @@ void angleLoop(qc::QCProgramBuilder& b, Value lower, Value upper, Value first,
   body(angle, loop.getInductionVar());
   scf::YieldOp::create(b, ValueRange{advance(angle)});
 }
-} // namespace
 
 void phaseRotationLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
                        const std::variant<double, Value>& start,
