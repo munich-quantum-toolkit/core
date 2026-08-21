@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -65,6 +66,11 @@ TEST_P(JeffBenchmarkTest, RejectsSizesBelowTheMinimum) {
     GTEST_SKIP() << "the benchmark accepts every size";
   }
   EXPECT_FALSE(buildQCProgram(benchmark, benchmark.minimumSize - 1));
+}
+
+TEST_P(JeffBenchmarkTest, RejectsSizesBeyondTheSignedRange) {
+  const auto& benchmark = GetParam();
+  EXPECT_FALSE(buildQCProgram(benchmark, std::numeric_limits<uint64_t>::max()));
 }
 
 TEST_P(JeffBenchmarkTest, RejectsSizesAboveTheMaximum) {

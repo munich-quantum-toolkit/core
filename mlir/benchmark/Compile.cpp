@@ -19,6 +19,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -32,6 +33,11 @@ std::optional<QCProgram> buildQCProgram(const Benchmark& benchmark,
     return std::nullopt;
   }
   if (benchmark.maximumSize != 0 && n > benchmark.maximumSize) {
+    return std::nullopt;
+  }
+  // The programs size their registers with signed dimensions, so a size that
+  // does not fit into them cannot build a module.
+  if (n > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
     return std::nullopt;
   }
 

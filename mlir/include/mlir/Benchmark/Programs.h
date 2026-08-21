@@ -39,9 +39,10 @@ struct Benchmark {
   ProgramBuilder build;
   /// The smallest @p n the program accepts.
   uint64_t minimumSize;
-  /// The largest @p n the program accepts. Zero means that it accepts every
-  /// size. A program sets this when it grows so fast that a larger size
-  /// exhausts memory before it produces a module.
+  /// The largest @p n the program accepts. Zero means that the program sets no
+  /// limit of its own; a size that the signed register dimensions cannot hold
+  /// is still rejected. A program sets this when it grows so fast that a larger
+  /// size exhausts memory before it produces a module.
   uint64_t maximumSize = 0;
 };
 
