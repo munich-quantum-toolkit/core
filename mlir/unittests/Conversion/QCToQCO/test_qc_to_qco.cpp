@@ -8,11 +8,13 @@
  * Licensed under the MIT License
  */
 
+#include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
@@ -21,8 +23,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
-#include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
 #include "qco_programs.h"
@@ -66,8 +66,8 @@ namespace {
 
 struct QCToQCOTestCase {
   std::string name;
-  mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
-  mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
   bool expectsCompleteTensorState = false;
   bool skipReferenceComparison = false;
 
@@ -77,10 +77,10 @@ struct QCToQCOTestCase {
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const QCToQCOTestCase& info) {
-  return os << "QCToQCO{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "QCToQCO{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QCToQCOTest : public testing::TestWithParam<QCToQCOTestCase> {
@@ -90,9 +90,10 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                    arith::ArithDialect, func::FuncDialect,
-                    memref::MemRefDialect, scf::SCFDialect>();
+    registry
+        .insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                qtensor::QTensorDialect, arith::ArithDialect, func::FuncDialect,
+                memref::MemRefDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -115,9 +116,10 @@ protected:
 
   QCToQCORegressionTest() {
     DialectRegistry registry;
-    registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                    arith::ArithDialect, func::FuncDialect,
-                    memref::MemRefDialect, scf::SCFDialect>();
+    registry
+        .insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                qtensor::QTensorDialect, arith::ArithDialect, func::FuncDialect,
+                memref::MemRefDialect, scf::SCFDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
   }
@@ -222,7 +224,7 @@ public:
 TEST_F(QCToQCORegressionTest, PreservesForResultsWithQuantumState) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() -> i1 attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> i1 attributes {mqt.entry_point} {
     %qc = qc.alloc : !qc.qubit
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
@@ -262,7 +264,7 @@ module {
 TEST_F(QCToQCORegressionTest, PreservesWhileConditionArgumentsAndOrdering) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() -> i1 attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> i1 attributes {mqt.entry_point} {
     %qc = qc.alloc : !qc.qubit
     %true = arith.constant true
     %zero = arith.constant 0 : i64
@@ -317,7 +319,7 @@ TEST_F(QCToQCORegressionTest, IgnoresClassicalRegisterLoadsInWhileState) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main() -> memref<1xi1>
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %qc = qc.alloc : !qc.qubit
     %c = memref.alloc() : memref<1xi1>
     %c0 = arith.constant 0 : index
@@ -357,7 +359,7 @@ module {
 TEST_F(QCToQCORegressionTest, ConvertsTypeChangingWhileWithQuantumState) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> i64 attributes {mqt.entry_point} {
     %qc = qc.alloc : !qc.qubit
     %initial = arith.constant 1.0 : f32
     %result = scf.while (%input = %initial) : (f32) -> i64 {
@@ -405,7 +407,7 @@ module {
 TEST_F(QCToQCORegressionTest, LeavesUnrelatedSCFTerminatorsUntouched) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() -> i1 attributes {passthrough = ["entry_point"]} {
+  func.func @main() -> i1 attributes {mqt.entry_point} {
     %qc = qc.alloc : !qc.qubit
     qc.h %qc : !qc.qubit
     %result = scf.execute_region -> i1 {
@@ -434,7 +436,7 @@ TEST_F(QCToQCORegressionTest, PreservesIfClassicalResultsWithoutScratch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%condition: i1) -> i64
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %qc = qc.alloc : !qc.qubit
     %result = scf.if %condition -> i64 {
       qc.h %qc : !qc.qubit
@@ -489,7 +491,7 @@ TEST_F(QCToQCORegressionTest,
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%index: index) -> i64
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %qc = qc.alloc : !qc.qubit
     %result = scf.index_switch %index -> i64
     case 0 {
@@ -547,7 +549,7 @@ TEST_F(QCToQCORegressionTest,
        MaterializesSequentialPotentialAliasesAtEachOperation) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main(%i: index) attributes {passthrough = ["entry_point"]} {
+  func.func @main(%i: index) attributes {mqt.entry_point} {
     %reg = memref.alloc() : memref<2x!qc.qubit>
     %c0 = arith.constant 0 : index
     %q0 = memref.load %reg[%c0] : memref<2x!qc.qubit>
@@ -601,8 +603,8 @@ TEST_F(QCToQCORegressionTest, RetainsQubitRegisterName) {
   qtensor::AllocOp allocation;
   moduleOp->walk([&](qtensor::AllocOp op) { allocation = op; });
   ASSERT_TRUE(allocation);
-  const auto name =
-      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  const auto name = allocation->getAttrOfType<StringAttr>(
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
@@ -610,8 +612,8 @@ TEST_F(QCToQCORegressionTest, RetainsQubitRegisterName) {
 TEST_F(QCToQCORegressionTest, RetainsDynamicQubitRegisterName) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main(%size: index) attributes {passthrough = ["entry_point"]} {
-    %reg = memref.alloc(%size) {mqt.qubit_register_name = "named_qubits"} : memref<?x!qc.qubit>
+  func.func @main(%size: index) attributes {mqt.entry_point} {
+    %reg = memref.alloc(%size) {mqt.register_name = "named_qubits"} : memref<?x!qc.qubit>
     memref.dealloc %reg : memref<?x!qc.qubit>
     return
   }
@@ -627,8 +629,8 @@ module {
   ASSERT_TRUE(allocation);
   EXPECT_TRUE(allocation.getResult().getType().isDynamicDim(0));
   EXPECT_EQ(allocation.getSize(), allocation->getBlock()->getArgument(0));
-  const auto name =
-      allocation->getAttrOfType<StringAttr>(utils::QUBIT_REGISTER_NAME_ATTR);
+  const auto name = allocation->getAttrOfType<StringAttr>(
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(name);
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
@@ -637,7 +639,7 @@ TEST_F(QCToQCORegressionTest, RejectsRegisterBackedReferenceEscapes) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func private @escape(!qc.qubit)
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %reg = memref.alloc() : memref<1x!qc.qubit>
     %c0 = arith.constant 0 : index
     %q = memref.load %reg[%c0] : memref<1x!qc.qubit>
@@ -666,7 +668,7 @@ module {
 TEST_F(QCToQCORegressionTest, PreflightRejectsNonOneDimensionalQubitRegisters) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %reg = memref.alloc() : memref<!qc.qubit>
     %q = memref.load %reg[] : memref<!qc.qubit>
     qc.x %q : !qc.qubit
@@ -698,7 +700,7 @@ module {
 TEST_F(QCToQCORegressionTest, PreflightRejectsDerivedQubitRegisterValues) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %reg = memref.alloc() : memref<1x!qc.qubit>
     %cast = memref.cast %reg : memref<1x!qc.qubit> to memref<?x!qc.qubit>
     memref.dealloc %cast : memref<?x!qc.qubit>
@@ -732,7 +734,7 @@ TEST_F(QCToQCORegressionTest,
       R"mlir(
 module {
   func.func @main(%q: !qc.qubit)
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     qc.x %q : !qc.qubit
     return
   }
@@ -741,7 +743,7 @@ module {
       R"mlir(
 module {
   func.func @main(%reg: memref<1x!qc.qubit>)
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     return
   }
 }
@@ -749,7 +751,7 @@ module {
       R"mlir(
 module {
   func.func @main(%reg: memref<*x!qc.qubit>)
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     return
   }
 }
@@ -785,7 +787,7 @@ TEST_F(QCToQCORegressionTest,
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     scf.execute_region {
       qc.x %q : !qc.qubit
@@ -798,7 +800,7 @@ module {
 )mlir",
       R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %reg = memref.alloc() : memref<1x!qc.qubit>
     %c0 = arith.constant 0 : index
     %q = memref.load %reg[%c0] : memref<1x!qc.qubit>
@@ -839,7 +841,7 @@ module {
 TEST_F(QCToQCORegressionTest, CapturesQubitsUsedByPowInsideFor) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
@@ -1106,7 +1108,7 @@ buildInvalidCBitModifierProgram(MLIRContext* context,
       case CBitModifierBodyOp::Alloc:
         cbit::AllocOp::create(builder,
                               cbit::RegisterType::get(builder.getContext(), 1),
-                              cbit::Initialization::Zero, StringAttr{});
+                              cbit::Initialization::Zero);
         break;
       case CBitModifierBodyOp::Load:
         cbit::LoadOp::create(builder, builder.getI1Type(), reg,
@@ -1351,7 +1353,7 @@ TEST_F(QCToQCORegressionTest, DoesNotCaptureQubitsAllocatedInsideIf) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%condition: i1)
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     scf.if %condition {
       %q = qc.alloc : !qc.qubit
       qc.h %q : !qc.qubit
@@ -1382,7 +1384,7 @@ TEST_F(QCToQCORegressionTest,
        RejectsSameDynamicRegisterIndexWithinOneOperation) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main(%i: index) attributes {passthrough = ["entry_point"]} {
+  func.func @main(%i: index) attributes {mqt.entry_point} {
     %reg = memref.alloc() : memref<2x!qc.qubit>
     %q0 = memref.load %reg[%i] : memref<2x!qc.qubit>
     %q1 = memref.load %reg[%i] : memref<2x!qc.qubit>
@@ -1411,7 +1413,7 @@ TEST_F(QCToQCORegressionTest,
        RejectsEqualConstantRegisterIndicesWithinOneOperation) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %reg = memref.alloc() : memref<2x!qc.qubit>
     %lhs = arith.constant 0 : index
     %rhs = arith.constant 0 : index
@@ -1442,9 +1444,9 @@ TEST_P(QCToQCOTest, ProgramConversion) {
   const auto& [_, programBuilder, referenceBuilder, expectsCompleteTensorState,
                skipReferenceComparison] = GetParam();
   const auto name = " (" + GetParam().name + ")";
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
-  auto program = mqt::test::buildMLIRProgram(context.get(), programBuilder);
+  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -1468,7 +1470,7 @@ TEST_P(QCToQCOTest, ProgramConversion) {
 
   if (!skipReferenceComparison) {
     auto reference =
-        mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+        ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
     ASSERT_TRUE(reference);
     printer.record(reference.get(), "Reference QCO IR" + name);
     EXPECT_TRUE(verify(*reference).succeeded());

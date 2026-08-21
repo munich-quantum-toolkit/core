@@ -22,6 +22,12 @@
 #include <type_traits>
 #include <utility>
 
+namespace mlir::qco {
+
+LogicalResult verifyUnitaryOpInterface(Operation* op);
+
+}
+
 // clang-format:off
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
 // clang-format:on

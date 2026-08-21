@@ -15,6 +15,7 @@
 
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 
 #include <gtest/gtest.h>
 #include <llvm/Support/raw_ostream.h>
@@ -45,8 +46,8 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry
-        .insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect>();
+    registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                    mqt::MQTDialect>();
     context = std::make_unique<MLIRContext>(registry);
     context->loadAllAvailableDialects();
   }
@@ -62,7 +63,7 @@ TEST_F(CBitIRTest, ParsesAndPrintsRegisterOperations) {
       func.func @main() -> !cbit.reg<2> {
         %c0 = arith.constant 0 : index
         %false = arith.constant false
-        %reg = cbit.alloc(#cbit.init<zero>) source_name = "c" : !cbit.reg<2>
+        %reg = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<2>
         cbit.store %false, %reg[%c0] : !cbit.reg<2>
         %bit = cbit.load %reg[%c0] : !cbit.reg<2>
         return %reg : !cbit.reg<2>
@@ -76,8 +77,9 @@ TEST_F(CBitIRTest, ParsesAndPrintsRegisterOperations) {
   std::string printed;
   llvm::raw_string_ostream stream(printed);
   moduleOp->print(stream);
-  EXPECT_NE(printed.find("cbit.alloc(#cbit.init<zero>) source_name = \"c\""),
-            std::string::npos)
+  EXPECT_NE(
+      printed.find("cbit.alloc(#cbit.init<zero>) {mqt.register_name = \"c\"}"),
+      std::string::npos)
       << printed;
   EXPECT_NE(printed.find("!cbit.reg<2>"), std::string::npos);
   EXPECT_NE(printed.find("cbit.store"), std::string::npos);

@@ -13,12 +13,13 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
@@ -48,29 +49,28 @@
 #include <utility>
 #include <variant>
 
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 namespace mlir::qco {
 QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qco-program-builder>", 1, 1), context),
       ctx(context), module(ModuleOp::create(*this)) {
-  ctx->loadDialect<cbit::CBitDialect, QCODialect, qtensor::QTensorDialect>();
+  ctx->loadDialect<cbit::CBitDialect, mqt::MQTDialect, QCODialect,
+                   qtensor::QTensorDialect>();
 }
 
 void QCOProgramBuilder::initialize() { initialize({getI64Type()}); }
 
 void QCOProgramBuilder::initialize(TypeRange returnTypes) {
   // Set insertion point to the module body
-  setInsertionPointToStart(mlir::cast<ModuleOp>(module).getBody());
+  setInsertionPointToStart(cast<ModuleOp>(module).getBody());
 
   // Create main function as entry point
   auto funcType = getFunctionType({}, returnTypes);
   auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
-  // Add entry_point attribute to identify the main function
-  auto entryPointAttr = getStringAttr("entry_point");
-  mainFunc->setAttr("passthrough", getArrayAttr({entryPointAttr}));
+  mqt::setEntryPoint(mainFunc);
 
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
@@ -78,7 +78,7 @@ void QCOProgramBuilder::initialize(TypeRange returnTypes) {
 }
 
 void QCOProgramBuilder::retype(TypeRange returnTypes) {
-  auto mainFunc = getEntryPoint(mlir::cast<ModuleOp>(module));
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(module));
   if (!mainFunc) {
     llvm::reportFatalUsageError("Main function not found for retyping");
   }
@@ -143,14 +143,11 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size,
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
-  if (!name.empty() && !qubitRegisterNames.insert(name).second) {
-    llvm::reportFatalUsageError("Qubit register names must be unique");
-  }
-
   auto qtensor = qtensorAlloc(size);
   if (!name.empty()) {
-    qtensor.getDefiningOp()->setAttr(QUBIT_REGISTER_NAME_ATTR,
-                                     getStringAttr(name));
+    ctx->getLoadedDialect<mqt::MQTDialect>()
+        ->getRegisterNameAttrHelper()
+        .setAttr(qtensor.getDefiningOp(), getStringAttr(name));
   }
 
   SmallVector<Value> qubits;
@@ -174,9 +171,13 @@ Value QCOProgramBuilder::allocClassicalBitRegister(
   }
 
   const auto type = cbit::RegisterType::get(ctx, size);
-  const auto nameAttr = name.empty() ? StringAttr{} : getStringAttr(name);
-  return cbit::AllocOp::create(*this, type, initialization, nameAttr)
-      .getResult();
+  auto alloc = cbit::AllocOp::create(*this, type, initialization);
+  if (!name.empty()) {
+    ctx->getLoadedDialect<mqt::MQTDialect>()
+        ->getRegisterNameAttrHelper()
+        .setAttr(alloc, getStringAttr(name));
+  }
+  return alloc.getResult();
 }
 
 Value QCOProgramBuilder::loadClassicalBit(

@@ -19,7 +19,7 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive"> {
     Requirements:
 
     - Input is a valid module in the QC dialect.
-    - The entry function must be marked with the `entry_point` attribute.
+    - The entry function must be marked with `mqt.entry_point`.
 
     Behavior:
 

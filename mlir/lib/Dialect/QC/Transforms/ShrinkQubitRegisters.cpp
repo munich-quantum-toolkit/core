@@ -124,6 +124,7 @@ struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
                         memRefType.getElementType());
     auto newAlloc =
         memref::AllocOp::create(rewriter, allocOp.getLoc(), newMemRefType);
+    newAlloc->setDiscardableAttrs(allocOp->getDiscardableAttrDictionary());
 
     for (auto loadOp : loadOps) {
       if (loadOp.getResult().use_empty()) {

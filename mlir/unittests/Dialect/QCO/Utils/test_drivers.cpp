@@ -8,18 +8,17 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Debug.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -182,7 +181,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   builder.measure(forResults[3]);
 
   auto mod = builder.finalize();
-  auto func = utils::getEntryPoint(*mod);
+  auto func = mqt::getEntryPoint(*mod);
 
   // Collect wires.
   SmallVector<WireIterator> wires;
@@ -190,7 +189,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
     wires.emplace_back(op.getResult());
   }
 
-  // Unit-test supporting datastructure.
+  // Store each ready layer for test assertions.
   SmallVector<DenseSet<Operation*>> readyPerLayer;
 
   const auto callback = [&](const ReadyMap& ready, ReleasedOps& released) {
@@ -203,7 +202,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
     return WalkResult::advance();
   };
 
-  // Forward pass.
+  // Run a forward pass.
   auto res = walkProgramGraph<WireDirection::Forward>(wires, callback);
 
   ASSERT_TRUE(res.succeeded());
@@ -220,7 +219,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
 
   llvm::for_each(wires, [](WireIterator& it) { --it; });
 
-  // Backward pass.
+  // Run a backward pass.
   readyPerLayer.clear();
   res = walkProgramGraph<WireDirection::Backward>(wires, callback);
 
@@ -238,7 +237,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
 
   llvm::for_each(wires, [](WireIterator& it) { ++it; });
 
-  // Forward, but instead of releasing all, we use ::skip().
+  // Run a forward pass with WalkResult::skip().
   readyPerLayer.clear();
   res = walkProgramGraph<WireDirection::Forward>(
       wires, [&](const ReadyMap& ready, ReleasedOps&) {
@@ -260,7 +259,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
 
   llvm::for_each(wires, [](WireIterator& it) { --it; });
 
-  // Backward, but stop after first layer.
+  // Run a backward pass that stops after the first layer.
   readyPerLayer.clear();
   res = walkProgramGraph<WireDirection::Backward>(
       wires, [&](const ReadyMap& ready, ReleasedOps& released) {
@@ -277,7 +276,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   ASSERT_EQ(readyPerLayer.size(), 1);
   ASSERT_TRUE(readyPerLayer[0].contains(forResults[0].getDefiningOp()));
 
-  // Forward, but start at block arguments.
+  // Run a forward pass that starts at block arguments.
   wires.clear();
   for (Value arg : blockArgs) {
     wires.emplace_back(arg);

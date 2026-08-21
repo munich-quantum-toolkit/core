@@ -10,6 +10,8 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
+
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -332,8 +334,10 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
     return nullptr;
   }
 
-  // Search for function with entry_point attribute
   for (const auto funcOp : moduleOp.getOps<LLVM::LLVMFuncOp>()) {
+    if (mqt::isEntryPoint(funcOp)) {
+      return funcOp;
+    }
     auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
     if (!passthrough) {
       continue;

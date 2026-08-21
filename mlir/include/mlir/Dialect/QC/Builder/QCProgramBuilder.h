@@ -12,7 +12,6 @@
 
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 
-#include <llvm/ADT/StringSet.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -78,7 +77,7 @@ public:
    * a default return type of i64.
    *
    * @details
-   * Creates a main function with an entry_point attribute. Must be called
+   * Creates a main function with an `mqt.entry_point` attribute. Must be called
    * before adding operations.
    */
   void initialize();
@@ -89,7 +88,7 @@ public:
    * @param returnTypes The return types for the main function
    *
    * @details
-   * Creates a main function with an entry_point attribute. Must be called
+   * Creates a main function with an `mqt.entry_point` attribute. Must be called
    * before adding operations.
    */
   void initialize(TypeRange returnTypes);
@@ -256,7 +255,8 @@ public:
    * auto c = builder.allocClassicalBitRegister(3, "c");
    * ```
    * ```mlir
-   * %c = cbit.alloc(#cbit.init<zero>) source_name = "c" : !cbit.reg<3>
+   * %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
+   *     : !cbit.reg<3>
    * ```
    */
   Value allocClassicalBitRegister(
@@ -1404,9 +1404,6 @@ private:
 
   /// Track allocated memrefs for automatic deallocation
   DenseSet<Value> allocatedQregs;
-
-  /// Track non-empty source-level qubit register names.
-  llvm::StringSet<> qubitRegisterNames;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;
