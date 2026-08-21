@@ -846,7 +846,7 @@ private:
           return it == std::default_sentinel;
         }));
 
-        for_each(t.bundle.wires, [](auto& it) { std::advance(it, 1); });
+        for_each(t.bundle.wires, [](auto& it) { std::advance(it, -1); });
 
         const auto bwRouteRes = route<WireDirection::Backward>(t.bundle);
         if (failed(bwRouteRes)) {
@@ -857,7 +857,7 @@ private:
           return it == std::default_sentinel;
         }));
 
-        for_each(t.bundle.wires, [](auto& it) { std::advance(it, -1); });
+        for_each(t.bundle.wires, [](auto& it) { std::advance(it, 1); });
 
         t.stats = *bwRouteRes;
       }
