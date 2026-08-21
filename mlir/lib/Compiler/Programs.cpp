@@ -22,6 +22,8 @@
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -371,6 +373,30 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
     return std::nullopt;
   }
   return result;
+}
+
+size_t QCProgram::numTwoQubitGates() const {
+  size_t count = 0;
+  mod().walk([&count](qc::UnitaryOpInterface op) {
+    // Modifiers describe the gates in their region rather than a gate of their
+    // own, and barriers are not gates at all.
+    if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qc::BarrierOp>(op)) {
+      return;
+    }
+    auto numQubits = op.getNumQubits();
+    for (auto* parent = op->getParentOp(); parent != nullptr;
+         parent = parent->getParentOp()) {
+      if (auto ctrl = dyn_cast<qc::CtrlOp>(parent)) {
+        numQubits += ctrl.getNumControls();
+      } else if (!isa<qc::InvOp, qc::PowOp>(parent)) {
+        break;
+      }
+    }
+    if (numQubits == 2) {
+      ++count;
+    }
+  });
+  return count;
 }
 
 //===----------------------------------------------------------------------===//
