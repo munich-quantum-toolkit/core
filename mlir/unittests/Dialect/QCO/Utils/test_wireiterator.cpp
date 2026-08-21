@@ -15,7 +15,6 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Debug.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -24,6 +23,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <memory>
@@ -53,8 +53,9 @@ struct Chain {
   SmallVector<Value> values;
   SmallVector<Operation*> ops;
 };
+} // namespace
 
-Chain getChain(Value q, size_t n = 1) {
+static Chain getChain(Value q, size_t n = 1) {
   Chain chain;
   for (WireIterator it(q); it != std::default_sentinel; std::advance(it, n)) {
     chain.values.emplace_back(it.qubit());
@@ -62,7 +63,6 @@ Chain getChain(Value q, size_t n = 1) {
   }
   return chain;
 }
-} // namespace
 
 TEST_F(WireIteratorFixture, TraversalRespectsStraightLineSemantics) {
   QCOProgramBuilder builder(context.get());

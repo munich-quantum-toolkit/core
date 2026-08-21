@@ -16,7 +16,6 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -55,7 +54,7 @@ Value WireIterator::qubit() const {
 }
 
 void WireIterator::forward() {
-  // If the iterator is a sentinel already, there is nothing to do.
+  // If the iterator is a tail-sentinel already, there is nothing to do.
   if (pos_ == Position::PastTail) {
     return;
   }
@@ -63,6 +62,12 @@ void WireIterator::forward() {
   // After the final operation comes the sentinel.
   if (pos_ == Position::Tail) {
     pos_ = Position::PastTail;
+    return;
+  }
+
+  // If the iterator is a head-sentinel, reactivate the iterator.
+  if (pos_ == Position::BeforeHead) {
+    pos_ = Position::Head;
     return;
   }
 
@@ -105,7 +110,12 @@ void WireIterator::forward() {
 }
 
 void WireIterator::backward() {
-  // If the iterator is a sentinel, reactivate the iterator.
+  // If the iterator is a head-sentinel already, there is nothing to do.
+  if (pos_ == Position::BeforeHead) {
+    return;
+  }
+
+  // If the iterator is a tail-sentinel, reactivate the iterator.
   if (pos_ == Position::PastTail) {
     pos_ = Position::Tail;
     return;
