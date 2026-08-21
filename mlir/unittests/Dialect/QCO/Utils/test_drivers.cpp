@@ -271,12 +271,31 @@ TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
 }
 
 TEST_F(DriversFixture, ProgramWalkRetainsUnreleasedReadyOperations) {
-  [[maybe_unused]] auto mod = getTestProgram(context.get());
+  QCOProgramBuilder builder(context.get());
+  builder.initialize(SmallVector<Type>(3, builder.getI1Type()));
+
+  SmallVector<Value> alloc(3);
+  SmallVector<Value> qubits(3);
+  SmallVector<Value> bits(3);
+
+  for (size_t i = 0; i < 3; ++i) {
+    qubits[i] = builder.allocQubit();
+    alloc[i] = qubits[i];
+  }
+
+  qubits[0] = builder.h(qubits[0]);
+  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
+
+  for (size_t i = 0; i < 3; ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+  }
+
+  [[maybe_unused]] auto mod = builder.finalize(bits);
 
   auto func = mlir::mqt::getEntryPoint(*mod);
   SmallVector<WireIterator> wires;
-  for (AllocOp op : func.getOps<AllocOp>()) {
-    wires.emplace_back(op.getResult());
+  for (auto q : alloc) {
+    wires.emplace_back(q);
   }
 
   size_t iteration = 0;
@@ -302,5 +321,5 @@ TEST_F(DriversFixture, ProgramWalkRetainsUnreleasedReadyOperations) {
 
   EXPECT_GE(curr.size(), prev.size());
   EXPECT_TRUE(
-      llvm::all_of(curr, [&](Operation* op) { return prev.contains(op); }));
+      llvm::all_of(prev, [&](Operation* op) { return curr.contains(op); }));
 }
