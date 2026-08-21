@@ -725,7 +725,6 @@ public:
         data_(pythonAttribute(
             circuit, "_data",
             "expected a Qiskit QuantumCircuit with native CircuitData")),
-        rootPythonCircuit_(pythonCircuit_),
         circuit_(qk_circuit_borrow_from_python(data_.ptr())) {
     if (circuit_ == nullptr) {
       throwPythonError("Qiskit rejected QuantumCircuit._data");
@@ -735,14 +734,12 @@ public:
 
   NativeCircuitReader(nb::object pythonCircuit, const QkCircuit* circuit,
                       const QkCircuit* rootCircuit,
-                      nb::object rootPythonCircuit,
                       const QkControlFlowInstruction* parent)
       : pythonCircuit_(std::move(pythonCircuit)),
         data_(pythonAttribute(
             pythonCircuit_, "_data",
             "Qiskit control-flow block has no native CircuitData")),
-        rootPythonCircuit_(std::move(rootPythonCircuit)), circuit_(circuit),
-        rootCircuit_(rootCircuit), parent_(parent) {}
+        circuit_(circuit), rootCircuit_(rootCircuit), parent_(parent) {}
 
   [[nodiscard]] uint32_t numQubits() const override {
     return qk_circuit_num_qubits(circuit_);
@@ -1035,7 +1032,6 @@ private:
 
   nb::object pythonCircuit_;
   nb::object data_;
-  nb::object rootPythonCircuit_;
   const QkCircuit* circuit_ = nullptr;
   const QkCircuit* rootCircuit_ = circuit_;
   const QkControlFlowInstruction* parent_ = nullptr;
@@ -1047,15 +1043,13 @@ public:
                           const QkCircuit* circuit, const size_t index,
                           const QkControlFlowInstruction* parent,
                           nb::object instruction,
-                          nb::object containingPythonCircuit,
-                          nb::object rootPythonCircuit)
+                          nb::object containingPythonCircuit)
       : rootCircuit_(rootCircuit), circuit_(circuit), parent_(parent),
         instruction_(std::move(instruction)),
         operation_(pythonAttribute(
             instruction_, "operation",
             "Qiskit circuit instruction has no control-flow operation")),
         containingPythonCircuit_(std::move(containingPythonCircuit)),
-        rootPythonCircuit_(std::move(rootPythonCircuit)),
         controlFlow_(
             qk_circuit_get_control_flow_instruction(circuit, index, parent)) {
     if (controlFlow_ == nullptr) {
@@ -1102,7 +1096,7 @@ public:
     const auto block = nb::borrow<nb::object>(blocks[index]);
     return std::make_unique<NativeCircuitReader>(
         block, qk_control_flow_block_circuit(controlFlow_, index), rootCircuit_,
-        rootPythonCircuit_, controlFlow_);
+        controlFlow_);
   }
 
   [[nodiscard]] std::vector<uint32_t> qubitMap() const override {
@@ -1583,7 +1577,6 @@ private:
   nb::object instruction_;
   nb::object operation_;
   nb::object containingPythonCircuit_;
-  nb::object rootPythonCircuit_;
   QkControlFlowInstruction* controlFlow_ = nullptr;
 };
 
@@ -1591,7 +1584,7 @@ std::unique_ptr<ControlFlowReader>
 NativeCircuitReader::controlFlow(const size_t index) const {
   return std::make_unique<NativeControlFlowReader>(
       rootCircuit_, circuit_, index, parent_,
-      nb::borrow<nb::object>(data_[index]), pythonCircuit_, rootPythonCircuit_);
+      nb::borrow<nb::object>(data_[index]), pythonCircuit_);
 }
 
 class NativeCircuitWriter final : public CircuitWriter {
