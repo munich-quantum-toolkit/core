@@ -12,6 +12,7 @@ target_link_libraries(
   ${qco_ir_target}
   PRIVATE MLIRParser
           MLIRCBitDialect
+          MLIRMQTDialect
           MLIRSupportMQT
           GTest::gtest_main
           MLIRQCOProgramBuilder

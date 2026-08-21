@@ -57,22 +57,20 @@ def AllocOp : CBitOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
   let description = [{
     Allocates a static classical-bit register. `zero` initialization defines
     every element as false. Reading an element of an `undefined` register
-    before a store is undefined behavior. The optional source name records the
-    spelling used by an input format and does not make the register public.
+    before a store is undefined behavior. The optional `mqt.register_name`
+    discardable attribute records the source-level name.
 
     Example:
     ```mlir
-    %c = cbit.alloc(#cbit.init<zero>) source_name = "c" : !cbit.reg<2>
+    %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
+        : !cbit.reg<2>
     ```
   }];
 
-  let arguments = (ins CBit_InitializationAttr:$initialization,
-      OptionalAttr<StrAttr>:$source_name);
+  let arguments = (ins CBit_InitializationAttr:$initialization);
   let results = (outs CBit_RegisterType:$result);
   let assemblyFormat = [{
-    `(` qualified($initialization) `)`
-    (`source_name` `=` $source_name^)? attr-dict
-    `:` qualified(type($result))
+    `(` qualified($initialization) `)` attr-dict `:` qualified(type($result))
   }];
 }
 

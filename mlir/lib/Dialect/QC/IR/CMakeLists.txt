@@ -26,6 +26,7 @@ add_mlir_dialect_library(
   MLIRCBitDialect
   MLIRIR
   MLIRInferTypeOpInterface
+  MLIRMQTUtils
   MLIRSideEffectInterfaces
   MLIRTransformUtils)
 

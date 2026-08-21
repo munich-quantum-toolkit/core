@@ -15,6 +15,12 @@
 
 #include <cstddef>
 
+namespace mlir::qc {
+
+LogicalResult verifyUnitaryOpInterface(Operation* op);
+
+}
+
 // clang-format:off
 #include "mlir/Dialect/QC/IR/QCInterfaces.h.inc" // IWYU pragma: export
 // clang-format:on

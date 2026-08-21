@@ -13,9 +13,10 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -40,14 +41,14 @@
 #include <utility>
 #include <variant>
 
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 namespace mlir::qc {
 QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qc-program-builder>", 1, 1), context),
       ctx(context), module(ModuleOp::create(*this)) {
-  ctx->loadDialect<cbit::CBitDialect, QCDialect>();
+  ctx->loadDialect<cbit::CBitDialect, mqt::MQTDialect, QCDialect>();
 }
 
 void QCProgramBuilder::initialize() { initialize({getI64Type()}); }
@@ -60,9 +61,7 @@ void QCProgramBuilder::initialize(TypeRange returnTypes) {
   auto funcType = getFunctionType({}, returnTypes);
   auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
-  // Add entry_point attribute to identify the main function
-  auto entryPointAttr = getStringAttr("entry_point");
-  mainFunc->setAttr("passthrough", getArrayAttr({entryPointAttr}));
+  mqt::setEntryPoint(mainFunc);
 
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
@@ -70,7 +69,7 @@ void QCProgramBuilder::initialize(TypeRange returnTypes) {
 }
 
 void QCProgramBuilder::retype(TypeRange returnTypes) {
-  auto mainFunc = getEntryPoint(mlir::cast<ModuleOp>(module));
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(module));
   if (!mainFunc) {
     llvm::reportFatalUsageError("Main function not found for retyping");
   }
@@ -140,14 +139,12 @@ Value QCProgramBuilder::allocQubitRegisterStorage(const int64_t size,
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
-  if (!name.empty() && !qubitRegisterNames.insert(name).second) {
-    llvm::reportFatalUsageError("Qubit register names must be unique");
-  }
-
   auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
   auto alloc = memref::AllocOp::create(*this, memrefType);
   if (!name.empty()) {
-    alloc->setAttr(QUBIT_REGISTER_NAME_ATTR, getStringAttr(name));
+    ctx->getLoadedDialect<mqt::MQTDialect>()
+        ->getRegisterNameAttrHelper()
+        .setAttr(alloc, getStringAttr(name));
   }
   auto memref = alloc.getResult();
   allocatedQregs.insert(memref);
@@ -169,9 +166,13 @@ Value QCProgramBuilder::allocClassicalBitRegister(
   }
 
   const auto type = cbit::RegisterType::get(ctx, size);
-  const auto nameAttr = name.empty() ? StringAttr{} : getStringAttr(name);
-  return cbit::AllocOp::create(*this, type, initialization, nameAttr)
-      .getResult();
+  auto alloc = cbit::AllocOp::create(*this, type, initialization);
+  if (!name.empty()) {
+    ctx->getLoadedDialect<mqt::MQTDialect>()
+        ->getRegisterNameAttrHelper()
+        .setAttr(alloc, getStringAttr(name));
+  }
+  return alloc.getResult();
 }
 
 Value QCProgramBuilder::loadClassicalBit(

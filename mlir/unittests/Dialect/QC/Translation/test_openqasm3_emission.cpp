@@ -85,10 +85,10 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
 TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main() -> !cbit.reg<1>
-        attributes {passthrough = ["entry_point"]} {
+        attributes {mqt.entry_point} {
       %zero = arith.constant 0 : index
       %qubit = qc.alloc : !qc.qubit
-      %bits = cbit.alloc(#cbit.init<undefined>) source_name = "c"
+      %bits = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "c"}
           : !cbit.reg<1>
       %measured = qc.measure %qubit : !qc.qubit -> i1
       qc.x %qubit : !qc.qubit
@@ -179,7 +179,7 @@ r = measure q;
 TEST(OpenQASM3EmissionTest, RenamesOutputsThatCollideWithStandardGates) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main() -> !cbit.reg<1> {
-      %bits = cbit.alloc(#cbit.init<zero>) source_name = "x"
+      %bits = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "x"}
           : !cbit.reg<1>
       return %bits : !cbit.reg<1>
     }
@@ -243,7 +243,7 @@ switch (selector) {
 TEST(OpenQASM3EmissionTest, EmitsNativeIndexSwitch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %qubit = qc.alloc : !qc.qubit
     %index = arith.constant 1 : index
     scf.index_switch %index
@@ -372,7 +372,7 @@ TEST(OpenQASM3EmissionTest, EmitsSignedBooleanAndFloatingExpressions) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main() -> (i64, i1, f64, f64, i1)
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %one = arith.constant 1 : i64
     %two = arith.constant 2 : i64
     %sum = arith.addi %one, %two : i64
@@ -538,9 +538,9 @@ TEST(OpenQASM3EmissionTest, ReusesClassicalRegisterNamesForOutputs) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main() -> (!cbit.reg<1>, !cbit.reg<2>, i1) {
-    %single = cbit.alloc(#cbit.init<undefined>) source_name = "single"
+    %single = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "single"}
         : !cbit.reg<1>
-    %bits = cbit.alloc(#cbit.init<undefined>) source_name = "bits"
+    %bits = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "bits"}
         : !cbit.reg<2>
     %qubit = qc.alloc : !qc.qubit
     %measured = qc.measure %qubit : !qc.qubit -> i1

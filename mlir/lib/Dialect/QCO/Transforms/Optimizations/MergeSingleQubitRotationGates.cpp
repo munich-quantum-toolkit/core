@@ -8,12 +8,13 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
-#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -65,7 +66,7 @@ template <typename T> struct Val {
     if constexpr (std::is_same_v<T, double>) {
       return {x, &rewriter, loc};
     } else {
-      return {utils::constantFromScalar(rewriter, loc, x), &rewriter, loc};
+      return {mqt::constantFromScalar(rewriter, loc, x), &rewriter, loc};
     }
   }
 
@@ -370,7 +371,7 @@ static std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
                                        Location loc) {
   Value p = op.getParameter(i);
   if constexpr (std::is_same_v<T, double>) {
-    const auto folded = utils::valueToConstantDouble(p);
+    const auto folded = mlir::mqt::valueToConstantDouble(p);
     if (!folded) {
       return std::nullopt;
     }
@@ -736,15 +737,15 @@ struct MergeSingleQubitRotationGatesPattern final
     for (auto chainOp : llvm::drop_begin(chain)) {
       rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
     }
-    if (std::abs(correction.v) > utils::TOLERANCE) {
+    if (std::abs(correction.v) > mqt::PARAMETER_COMPARISON_TOLERANCE) {
       GPhaseOp::create(rewriter, loc,
-                       utils::constantFromScalar(rewriter, loc, correction.v));
+                       mqt::constantFromScalar(rewriter, loc, correction.v));
     }
     rewriter.replaceOpWithNewOp<UOp>(
         chain.front(), chain.front().getInputQubit(0),
-        utils::constantFromScalar(rewriter, loc, theta.v),
-        utils::constantFromScalar(rewriter, loc, phi.v),
-        utils::constantFromScalar(rewriter, loc, lambda.v));
+        mqt::constantFromScalar(rewriter, loc, theta.v),
+        mqt::constantFromScalar(rewriter, loc, phi.v),
+        mqt::constantFromScalar(rewriter, loc, lambda.v));
     return success();
   }
 
