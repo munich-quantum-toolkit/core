@@ -1714,7 +1714,7 @@ TEST_P(MappingPassTest, MapCircuitWithQubitPairBlock) {
 
   auto m = builder.finalize();
   ASSERT_TRUE(runPass(m.get(), target,
-                      MappingPassOptions{.ntrials = 1, .nlookahead = 15})
+                      MappingPassOptions{.nlookahead = 15, .ntrials = 1})
                   .succeeded());
   ASSERT_TRUE(succeeded(verify(*m)));
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
