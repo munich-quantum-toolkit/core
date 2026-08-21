@@ -1153,7 +1153,7 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
 TEST_F(CompilerPipelineTest, TargetCompilationRequiresConditionalCapability) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
         %q1, %measurement = qco.measure %q0 : !qco.qubit
         %condition = scf.if %measurement -> (i1) {
@@ -1210,7 +1210,7 @@ TEST_F(CompilerPipelineTest,
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%condition: i1, %selector: index)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %q0 = qco.alloc : !qco.qubit
@@ -1289,7 +1289,7 @@ TEST_F(CompilerPipelineTest,
        TargetCompilationIgnoresUnreachableStaticControlBranches) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %false = arith.constant false
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
@@ -1332,7 +1332,7 @@ TEST_F(CompilerPipelineTest,
        TargetCompilationIgnoresStaticQCOIndexSwitchDefaultRegion) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %q0 = qco.alloc : !qco.qubit
@@ -1365,7 +1365,7 @@ TEST_F(CompilerPipelineTest,
 TEST_F(CompilerPipelineTest, TargetCompilationIgnoresStaticScfIfThenBranch) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %true = arith.constant true
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
@@ -1398,7 +1398,7 @@ TEST_F(CompilerPipelineTest,
        TargetCompilationIgnoresStaticScfIndexSwitchDefaultRegion) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %q0 = qco.alloc : !qco.qubit
@@ -1432,7 +1432,7 @@ TEST_F(CompilerPipelineTest,
        TargetCompilationRejectsUnsupportedRegionControlFlow) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
         scf.execute_region {
           scf.yield
@@ -1467,7 +1467,7 @@ TEST_F(CompilerPipelineTest,
        TargetCompilationRejectsUnsupportedLLVMBranchControlFlow) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
         qco.sink %q0 : !qco.qubit
         return
@@ -1534,7 +1534,7 @@ TEST_F(CompilerPipelineTest,
   expectRejected(R"mlir(
     module {
       func.func @main(%condition: i1)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
         scf.if %condition {
           %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
@@ -1549,7 +1549,7 @@ TEST_F(CompilerPipelineTest,
   expectRejected(R"mlir(
     module {
       func.func @main(%selector: index)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
         scf.index_switch %selector
         case 0 {
@@ -1601,7 +1601,7 @@ TEST_F(CompilerPipelineTest,
   expectRejected(R"mlir(
     module {
       func.func @main(%condition: i1)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %q = scf.if %condition -> !qco.qubit {
           %then = qco.alloc : !qco.qubit
           scf.yield %then : !qco.qubit
@@ -1619,7 +1619,7 @@ TEST_F(CompilerPipelineTest,
   expectRejected(R"mlir(
     module {
       func.func @main(%selector: index)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %q = scf.index_switch %selector -> !qco.qubit
         case 0 {
           %case = qco.alloc : !qco.qubit
@@ -1646,7 +1646,7 @@ TEST_F(CompilerPipelineTest,
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%index: index)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %c2 = arith.constant 2 : index
         %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
         %tensor1, %q0 = qtensor.extract %tensor0[%index]
@@ -1749,7 +1749,7 @@ TEST_F(CompilerPipelineTest,
   expectRejected(R"mlir(
     module {
       func.func @main(%condition: i1)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %q = qco.alloc : !qco.qubit
         %c2 = arith.constant 2 : index
         %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
@@ -1769,7 +1769,7 @@ TEST_F(CompilerPipelineTest,
   expectRejected(R"mlir(
     module {
       func.func @main(%condition: i1, %size: index)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %tensor0 = qtensor.alloc(%size) : tensor<?x!qco.qubit>
         %tensor1 = qco.if %condition
             args(%arg0 = %tensor0) -> (tensor<?x!qco.qubit>) {
@@ -1786,7 +1786,7 @@ TEST_F(CompilerPipelineTest,
 
   expectRejected(R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %true = arith.constant true
         %c2 = arith.constant 2 : index
         %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
@@ -1806,7 +1806,7 @@ TEST_F(CompilerPipelineTest,
   expectRejected(R"mlir(
     module {
       func.func @main(%condition: i1)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c2 = arith.constant 2 : index
         %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
@@ -1833,7 +1833,7 @@ TEST_F(CompilerPipelineTest,
 
   expectRejected(R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %q = qco.alloc : !qco.qubit
         %c2 = arith.constant 2 : index
         %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
@@ -1857,7 +1857,7 @@ TEST_F(CompilerPipelineTest,
   expectRejected(R"mlir(
     module {
       func.func @main(%selector: index)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %c2 = arith.constant 2 : index
         %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
         %tensor1 = qco.index_switch %selector -> (tensor<2x!qco.qubit>)
@@ -1878,7 +1878,7 @@ TEST_F(CompilerPipelineTest,
   expectRejected(R"mlir(
     module {
       func.func @main(%selector: index)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %q = qco.alloc : !qco.qubit
         %c2 = arith.constant 2 : index
         %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>

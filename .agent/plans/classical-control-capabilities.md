@@ -51,6 +51,16 @@ state, and qubit tensors carried through structured control.
   compiler tests, all 487 QCO IR tests, and the focused Python test.
 - [x] (2026-08-19 19:47Z) Pass the final post-rebase Markdown and full
   repository lint checks and `git diff --check`.
+- [x] (2026-08-21 15:25Z) Merge the latest `origin/main`, audit its entry-point,
+      CBit metadata, mapping, and verification-helper changes, and migrate all
+      20 branch-added MLIR fixtures from the legacy passthrough marker to
+      `mqt.entry_point`.
+- [x] (2026-08-21 15:25Z) Regenerate unchanged Python stubs and pass 24 focused
+      compiler tests, all 149 compiler tests, the focused and all 487 QCO IR
+      tests, 12 structured-control mapping regressions, and the focused Python
+      capability test.
+- [x] (2026-08-21 15:26Z) Pass the final post-merge Markdown and full repository
+      lint checks and `git diff --check`.
 
 ## Surprises & Discoveries
 
@@ -68,6 +78,11 @@ state, and qubit tensors carried through structured control.
   release device and its generated registry fragment. Evidence: the first run
   passed 47 tests and reported two unknown `mqt.sc.iqm.garnet` fixture errors;
   the rerun with the release fragment and library passed all 49 tests.
+- Observation: Main now resolves programs through `mqt::getEntryPoint`, which
+  does not recognize the former `passthrough = ["entry_point"]` fixture marker.
+  Evidence: the branch added 20 such fixtures; converting them to
+  `mqt.entry_point` keeps them aligned with the current public entry-point
+  convention without changing the production implementation.
 
 ## Decision Log
 
@@ -106,6 +121,14 @@ this API without changing its contract.
 The post-#2158 rebase preserved the implementation without a semantic conflict.
 The rebuilt focused and complete C++ suites passed with the same counts, the
 focused Python capability test passed, and stub generation produced no diff.
+
+The latest-main merge also preserved the complete production scope. Main's
+entry-point migration required only a mechanical update of the 20 branch-added
+MLIR fixtures; its CBit metadata, mapping, and verification-helper changes do
+not otherwise intersect this feature. The post-merge release build passed 24
+focused and all 149 compiler tests, the focused and all 487 QCO IR tests, 12
+relevant structured-control mapping regressions, and the focused Python
+capability test. Stub generation again produced no diff.
 
 ## Context and Orientation
 
@@ -253,12 +276,13 @@ all unrelated changes from the base.
 
 ## Artifacts and Notes
 
-The focused post-rebase compiler run reports 21 passing tests from
+The focused latest-main compiler run reports 24 passing tests from
 `CompilerTargetTest` and the target-compilation subset of
 `CompilerPipelineTest`. The focused QCO IR run reports one passing constant
-`qco.index_switch` canonicalization test. The complete binaries report 146
-compiler tests and 487 QCO IR tests. Stub generation completes successfully and
-leaves the generated files unchanged.
+`qco.index_switch` canonicalization test. The complete binaries report 149
+compiler tests and 487 QCO IR tests. Twelve structured-control mapping
+regressions and the focused Python capability test also pass. Stub generation
+completes successfully and leaves the generated files unchanged.
 
 The target preflight diagnostics are part of the observable contract. Tests
 check both the rejected operation and the missing capability so later pipeline
@@ -285,5 +309,5 @@ SCF, Arith, and LLVM dialect operations that it classifies. The
 remove the same unreachable runtime control that preflight ignores.
 
 Plan revision note: Added the missing artifact and interface sections, recorded
-the post-#2158 rebase, and refreshed the validation evidence before stacking the
-mapping follow-up.
+the post-#2158 rebase and latest-main merge, and refreshed the validation
+evidence before stacking the mapping follow-up.
