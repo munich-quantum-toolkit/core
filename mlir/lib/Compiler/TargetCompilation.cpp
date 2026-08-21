@@ -103,7 +103,7 @@ requiredClassicalControl(Operation* operation) {
 
 namespace {
 
-constexpr unsigned noQuantumDefinition = std::numeric_limits<unsigned>::max();
+constexpr unsigned NO_QUANTUM_DEFINITION = std::numeric_limits<unsigned>::max();
 
 struct OperationSummary {
   bool containsQuantumState = false;
@@ -111,7 +111,7 @@ struct OperationSummary {
   bool hasDynamicQubitIndex = false;
   bool hasZeroTripCount = false;
   std::optional<int64_t> staticSelector;
-  unsigned minimumQuantumDefinitionDepth = noQuantumDefinition;
+  unsigned minimumQuantumDefinitionDepth = NO_QUANTUM_DEFINITION;
 };
 
 class TargetControlAnalysis {
@@ -254,7 +254,7 @@ private:
   template <class SwitchOp, class Callback>
   static void analyzeSelectedSwitchRegion(SwitchOp operation,
                                           const int64_t selector,
-                                          Callback&& callback) {
+                                          Callback& callback) {
     for (const auto [caseIndex, caseValue] :
          llvm::enumerate(operation.getCases())) {
       if (caseValue == selector) {

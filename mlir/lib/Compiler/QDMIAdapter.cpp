@@ -20,6 +20,7 @@
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/CheckedArithmetic.h>
 #include <llvm/Support/Error.h>
+#include <qdmi/constants.h>
 
 #include <algorithm>
 #include <cstddef>
