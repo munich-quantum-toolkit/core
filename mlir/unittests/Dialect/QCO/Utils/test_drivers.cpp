@@ -28,16 +28,20 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <memory>
 #include <tuple>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -292,7 +296,6 @@ TEST_F(DriversFixture, ProgramWalkRetainsUnreleasedReadyOperations) {
 
   [[maybe_unused]] auto mod = builder.finalize(bits);
 
-  auto func = mlir::mqt::getEntryPoint(*mod);
   SmallVector<WireIterator> wires;
   for (auto q : alloc) {
     wires.emplace_back(q);
