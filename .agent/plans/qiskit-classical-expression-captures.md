@@ -60,6 +60,23 @@ Qiskit control-flow operations during export.
 - [x] (2026-08-19 20:08Z) Restack onto the audited scalar parent, update the
       recorded parent identity, rebuild the release binding, and pass all 167
       Qiskit translation tests.
+- [x] (2026-08-21 12:30Z) Rebase the capture-only change onto current `main`
+      after symbolic Qiskit parameter support merged, dropping the superseded
+      parent commit while preserving the focused six-file feature delta.
+- [x] (2026-08-21 13:05Z) Reproduce three review findings: stale native
+      condition operators after public Python mutation, an aborting out-of-range
+      `Uint` switch literal, and low-bit truncation for `Uint`-to-`Bool` casts.
+- [x] (2026-08-21 13:25Z) Make conditions Python-authoritative, validate literal
+      widths, lower Boolean casts as nonzero comparisons, remove the dead hybrid
+      native-expression walker, normalize integer-backed Boolean values, and
+      preflight operator/type compatibility.
+- [x] (2026-08-21 13:35Z) Rebuild and refresh the editable MLIR binding, pass
+      all 21 focused capture and corrective cases, and pass all 174 Qiskit
+      translation tests against the updated extension.
+- [x] (2026-08-21 13:40Z) Pass the complete repository lint session, pinned
+      formatting hooks, and `git diff --check`.
+- [x] (2026-08-21 13:45Z) Inspect the final diff, create separate gitmoji
+      implementation and documentation commits, and push only PR #2175.
 
 ## Surprises & Discoveries
 
@@ -100,6 +117,32 @@ Qiskit control-flow operations during export.
   zero; resolving the Python condition bit through the enclosing map emits index
   one.
 
+- Observation: Qiskit's public control-flow condition setter updates the Python
+  operation while the native control-flow view can retain the tree recorded at
+  insertion time. Evidence: mutating a public condition from logical AND to OR
+  leaves the native operator as AND, so combining native operators with Python
+  leaves silently imports a mixed, stale expression.
+
+- Observation: Qiskit accepts a public `expr.Value(3, Uint(1))` switch target,
+  so the importer must reject a value that does not fit its declared width
+  before constructing an LLVM `APInt`. Without the preflight, LLVM aborts the
+  Python process instead of reporting a recoverable import error.
+
+- Observation: Public Qiskit Boolean `Value` nodes expose their value as Python
+  integer zero or one. A strict nanobind conversion to C++ `bool` rejects both,
+  so normalization must accept only the integer range `[0, 1]` and convert it
+  explicitly.
+
+- Observation: A Qiskit cast to `Bool` tests whether the complete source value
+  is nonzero. Truncating a packed register to `i1` inspects only its least
+  significant bit; for example, `0b10` must be true rather than false.
+
+- Observation: Qiskit's low-level public expression constructors and public
+  condition setter permit a node whose declared result type conflicts with its
+  operator and operands. The Python-authoritative path therefore needs its own
+  recursive type preflight rather than relying on constructor helpers having
+  produced every tree.
+
 ## Decision Log
 
 - Decision: Add `ClassicalBit` and `ClassicalRegister` to `ExpressionKind`, with
@@ -107,7 +150,7 @@ Qiskit control-flow operations during export.
   Rationale: The normalized tree then owns stable capture identity and stays
   independent of Python object lifetimes. Date/Author: 2026-08-19 / Codex.
 
-- Decision: Keep `ParameterKind`, `Parameter`, and `Loop::parameter` unchanged.
+- Decision: Keep the scalar `Parameter` model and `Loop::parameter` unchanged.
   Rationale: Scalar symbols and classical captures have different identity and
   typing rules. This branch must remain composable with the reviewed scalar
   slice. Date/Author: 2026-08-19 / Codex.
@@ -128,6 +171,24 @@ Qiskit control-flow operations during export.
   established native control-flow reader for supported metadata. Date/Author:
   2026-08-19 / Codex.
 
+- Decision: Parse the complete public Python condition for expressions, Clbits,
+  registers, and comparison values; retain native metadata only for blocks,
+  capture maps, loops, and switch cases. Rationale: one authoritative tree
+  prevents stale native operators or values from being combined with current
+  Python capture identities. Date/Author: 2026-08-21 / Codex.
+
+- Decision: Range-check every unsigned literal against its normalized width and
+  lower casts to `Bool` with integer or unordered floating-point comparisons
+  against zero. Rationale: malformed public inputs must raise a runtime error,
+  and Boolean conversion must inspect the whole value, including NaN for Qiskit
+  floating-point expressions. Date/Author: 2026-08-21 / Codex.
+
+- Decision: Validate operator, operand, and result-type compatibility on the
+  normalized expression before emitting MLIR. Rationale: malformed public trees
+  must fail deterministically during preflight instead of producing ill-typed
+  semantics or partially constructing a program. Date/Author: 2026-08-21 /
+  Codex.
+
 - Decision: Document circuit Clbit and ClassicalRegister expression variables
   separately from standalone runtime variables. Rationale: circuit-owned bits
   resolve to existing CBit state whether or not a block captures them; the
@@ -145,12 +206,13 @@ work when their classical bits are absent from every block operand. The public
 support table distinguishes these supported circuit values from rejected
 standalone runtime inputs.
 
-The release MLIR binding built successfully. The complete Qiskit translation
-test file passed with 167 tests against that local extension, including the
-subprocess isolation test, the condition-only regressions, and the nested legacy
-Clbit condition. `uvx nox -s lint`, `git diff --check`, Clang format, Ruff,
-Rumdl, Prettier, and `ty` all passed. Export-side writer construction remains
-deliberately out of scope.
+After rebasing onto current `main`, the corrective review pass rebuilt and
+refreshed the MLIR binding, passed 21 focused cases covering current public
+conditions, bounded literals, Boolean casts, and malformed expression typing,
+and passed all 174 tests in the complete Qiskit translation file. The complete
+repository lint session, pinned Clang and Python formatting, Rumdl, Ruff, `ty`,
+targeted Clang-Tidy 21.1.1, and `git diff --check` all pass. Export-side writer
+construction remains deliberately out of scope.
 
 ## Context and Orientation
 
@@ -182,22 +244,24 @@ First, extend `ExpressionKind` and `Expression` in
 `bindings/mlir/qiskit/QiskitTranslation.h` with bit and register leaves. Keep
 all scalar parameter declarations byte-for-byte unchanged.
 
-Next, update `bindings/mlir/qiskit/Qiskit2_5.cpp`. Make the native expression
-normalizer walk the matching public Python expression node beside each native
-node. Resolve a `Var` leaf by inspecting its public `var` object. For a Clbit,
-find the bit in the containing Python circuit and compose the local index
-through the enclosing native capture map. Use the same resolver for a legacy
-tuple condition's Clbit instead of trusting its native local index. For a
-classical register, apply the same mapping to each member in register order.
-Reject malformed captures, duplicate or invalid types, standalone variables, and
-widths outside the existing 64-bit limit. Keep a Python-only expression walker
-for switch targets so no unsafe native switch-expression accessor is called.
+Next, update `bindings/mlir/qiskit/Qiskit2_5.cpp`. Normalize condition and
+switch expression trees entirely from the current public Python operation.
+Resolve a `Var` leaf by inspecting its public `var` object. For a Clbit, find
+the bit in the containing Python circuit and compose the local index through the
+enclosing native capture map. Use the same resolver for a legacy tuple
+condition's Clbit instead of trusting its native local index. For a classical
+register, apply the same mapping to each member in register order. Reject
+malformed captures, duplicate or invalid types, standalone variables, and widths
+outside the existing 64-bit limit, and reject unsigned literals that do not fit
+their declared width before MLIR construction.
 
 Then update `bindings/mlir/qiskit/QiskitImport.cpp`. Pass callbacks into the
 recursive expression emitter. A bit leaf calls `loadClassicalBit`; a register
 leaf calls `packRegister` and extends it to the normalized expression width.
-Extend preflight validation to check leaf types, bit bounds, register size,
-unique register bits, and expression widths before MLIR construction begins.
+Lower casts to `Bool` as nonzero comparisons instead of integer truncation or
+floating-point conversion. Extend preflight validation to check leaf types, bit
+bounds, register size, unique register bits, and expression widths before MLIR
+construction begins.
 
 Finally, add tests to `test/python/test_mlir_qiskit_translation.py`. Cover one
 captured Clbit expression, one captured register expression, nested control flow
@@ -220,16 +284,17 @@ Inspect the focused diff and formatting:
       bindings/mlir/qiskit/QiskitTranslation.h
     uvx ruff check test/python/test_mlir_qiskit_translation.py
 
-Build the Qiskit binding with the configured release tree. If the isolated
-worktree has no compatible build tree yet, configure it with the repository's
-release preset first:
+Build the Qiskit binding with the configured Python release tree. If the
+worktree has no compatible build tree yet, refresh the editable installation
+through the repository's standard `uv` workflow first:
 
-    cmake --build build/release --parallel 8
+    cmake --build build/python/Release --target mqt-core-mlir-bindings --parallel 8
+    uv sync --inexact --no-dev --no-build-isolation-package mqt-core
 
 Run the focused tests:
 
     uv run --no-sync pytest test/python/test_mlir_qiskit_translation.py \
-      -k 'classical_expression or condition_only or switch_expression'
+      -k 'classical_expression or condition_only or switch_expression or bool_uint_and_float or boolean_expression or cast_to_bool or condition_mutation or narrow_uint or malformed_public_expression'
 
 Run the complete Qiskit translation test file after the focused tests pass:
 
@@ -253,7 +318,12 @@ lists must still read condition-only and target-only bits from the containing
 circuit. A nested condition-only bit must follow the enclosing block's
 local-to-root permutation. A nested legacy tuple condition on root Clbit one
 must emit a `cbit.load` at index one even when that bit is local index zero in
-the enclosing block.
+the enclosing block. Publicly mutating either an expression or tuple condition
+must import the current Python operator, target, and comparison value. A packed
+register containing `0b10` must cast to true. An unsigned literal outside its
+declared width must raise `RuntimeError` rather than aborting the process. A
+public expression whose declared result type conflicts with its operator and
+operands must fail during preflight.
 
 Malformed block-capture lists and variables absent from the containing circuit
 must fail during validation with a clear runtime error. Existing literal
@@ -272,7 +342,7 @@ reader. Do not add a private exporter fallback.
 
 ## Artifacts and Notes
 
-The source branch begins at the focused scalar-symbol parent, which already
+The focused capture branch is based directly on current `main`, which already
 includes CBit and symbolic scalar support. Native expression nodes do not carry
 sufficient public Clbit identity by themselves. `CircuitInstruction.clbits`
 supplies identity for block operands, while the containing Python circuit
@@ -284,10 +354,11 @@ At completion, `ExpressionKind` in `bindings/mlir/qiskit/QiskitTranslation.h`
 has `ClassicalBit` and `ClassicalRegister` cases. `Expression` has
 `uint32_t bit` and `Register reg` payloads. `NativeControlFlowReader` in
 `Qiskit2_5.cpp` owns the full Python instruction, its operation, its containing
-circuit, and the root Python circuit. Its expression normalization resolves all
-classical leaves and legacy Clbit conditions to root-circuit indices through the
-containing-circuit and parent-map path. `QiskitImport.cpp` accepts expression
-leaves only through callbacks backed by `loadClassicalBit` and `packRegister`.
+circuit, and the root Python circuit. Its Python-authoritative condition and
+expression normalization resolves all classical leaves and legacy Clbit or
+register conditions to root-circuit indices through the containing-circuit and
+parent-map path. `QiskitImport.cpp` accepts expression leaves only through
+callbacks backed by `loadClassicalBit` and `packRegister`.
 
 This work depends only on Qiskit 2.5's existing native extension table,
 nanobind's public Python object access, MLIR's arithmetic and structured-control
@@ -301,4 +372,6 @@ after the final audit found valid condition-only and target-only bits outside
 the block-capture list; the plan now records the containing-circuit resolver and
 nested parent-map regression. Updated it once more after the nested legacy
 Clbit-condition accessor exposed its containing-circuit index rather than a root
-index.
+index. Updated it after rebasing onto current `main` and addressing the final
+review findings to record Python-authoritative conditions, bounded unsigned
+literals, nonzero Boolean casts, and their focused regressions.
