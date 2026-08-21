@@ -1047,14 +1047,14 @@ public:
                           nb::object containingPythonCircuit,
                           nb::object rootPythonCircuit)
       : rootCircuit_(rootCircuit), circuit_(circuit), parent_(parent),
-        controlFlow_(
-            qk_circuit_get_control_flow_instruction(circuit, index, parent)),
         instruction_(std::move(instruction)),
         operation_(pythonAttribute(
             instruction_, "operation",
             "Qiskit circuit instruction has no control-flow operation")),
         containingPythonCircuit_(std::move(containingPythonCircuit)),
-        rootPythonCircuit_(std::move(rootPythonCircuit)) {
+        rootPythonCircuit_(std::move(rootPythonCircuit)),
+        controlFlow_(
+            qk_circuit_get_control_flow_instruction(circuit, index, parent)) {
     if (controlFlow_ == nullptr) {
       throwPythonError("Qiskit failed to inspect a control-flow instruction");
     }
@@ -1612,11 +1612,11 @@ private:
   const QkCircuit* rootCircuit_ = nullptr;
   const QkCircuit* circuit_ = nullptr;
   const QkControlFlowInstruction* parent_ = nullptr;
-  QkControlFlowInstruction* controlFlow_ = nullptr;
   nb::object instruction_;
   nb::object operation_;
   nb::object containingPythonCircuit_;
   nb::object rootPythonCircuit_;
+  QkControlFlowInstruction* controlFlow_ = nullptr;
 };
 
 std::unique_ptr<ControlFlowReader>
