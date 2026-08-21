@@ -8,14 +8,15 @@
  * Licensed under the MIT License
  */
 
-#include "BenchmarkTestUtils.h"
 #include "mlir/Benchmark/Generate.h"
 #include "mlir/Benchmark/Programs.h"
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <string>
 
 namespace mqt::benchmark {
 
@@ -26,7 +27,9 @@ class GenerateBenchmarkTest : public testing::TestWithParam<Benchmark> {};
 INSTANTIATE_TEST_SUITE_P(Benchmarks, GenerateBenchmarkTest,
                          testing::ValuesIn(benchmarks()),
                          [](const testing::TestParamInfo<Benchmark>& info) {
-                           return testName(info.param.name);
+                           auto name = info.param.name.str();
+                           std::replace(name.begin(), name.end(), '-', '_');
+                           return name;
                          });
 
 TEST_P(GenerateBenchmarkTest, AcceptsTheMinimumSize) {

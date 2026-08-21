@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "BenchmarkTestUtils.h"
 #include "mlir/Benchmark/Generate.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Compiler/Programs.h"
@@ -33,7 +32,9 @@ class JeffBenchmarkTest : public testing::TestWithParam<Benchmark> {};
 INSTANTIATE_TEST_SUITE_P(Benchmarks, JeffBenchmarkTest,
                          testing::ValuesIn(benchmarks()),
                          [](const testing::TestParamInfo<Benchmark>& info) {
-                           return testName(info.param.name);
+                           auto name = info.param.name.str();
+                           std::replace(name.begin(), name.end(), '-', '_');
+                           return name;
                          });
 
 /**
