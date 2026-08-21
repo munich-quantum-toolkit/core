@@ -113,6 +113,11 @@ Declare `Iteration`, `ConditionalLoop`, and `MultiwayBranch` separately when the
 target supports counted loops, condition-terminated loops, or switches. An empty
 declaration is the new fail-closed default.
 
+Targets created from a QDMI device infer `Conditional` when the device
+advertises QIR Adaptive. Use the `classical_control` argument of `from_device`
+or `from_device_id` to add optional capabilities that QDMI does not expose. QASM
+3 or measurement support alone does not imply runtime branching.
+
 ### Private `nlohmann_json` dependency
 
 MQT Core uses `nlohmann_json` only inside its implementation. It no longer

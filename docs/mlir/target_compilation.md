@@ -35,9 +35,12 @@ native:
 target = CompilerTarget(3, couplings=[(0, 1), (1, 2)])
 ```
 
-Runtime classical control is opt-in. By default, a target accepts only
-straight-line quantum programs. Declare each supported control form explicitly;
-for example, a target with measurement-conditioned forward branching uses:
+Structured runtime classical control is opt-in. The capability list covers only
+the structured control-flow operations below. The list does not describe general
+classical computation, function calls, or side effects such as
+{code}`cf.assert`. A target that declares no capabilities supports none of the
+listed control forms. Declare each supported control form explicitly; for
+example, a target with measurement-conditioned forward branching uses:
 
 ```python
 target = CompilerTarget(
@@ -57,12 +60,27 @@ that requires it. The four independent capabilities are:
 - {code}`MULTIWAY_BRANCH` for {code}`qco.index_switch` and
   {code}`scf.index_switch` operations.
 
+These capabilities do not represent QIR metadata for integer and floating-point
+computations, functions, return points, or resource management. Model such
+target constraints separately when they become part of the compiler-target
+contract.
+
+Targets constructed from QDMI infer {code}`CONDITIONAL` when the device
+advertises a QIR Adaptive string or module format. QIR Adaptive does not imply
+the three optional loop and multiway capabilities. Pass
+{code}`classical_control` to
+{py:meth}`~mqt.core.mlir.CompilerTarget.from_device` or
+{py:meth}`~mqt.core.mlir.CompilerTarget.from_device_id` to add capabilities that
+the QDMI program-format list cannot describe. QASM 3 and measurement support do
+not imply runtime branching.
+
 Conditional support does not imply loop or multiway-branch support. The
 preflight follows only the selected region of an {code}`if` or
-{code}`index_switch` whose selector is constant and still checks every reachable
-nested operation. The following cleanup pipeline removes a static
-{code}`qco.index_switch` before mapping. Dynamic qubit indexing, unstructured
-control flow, and qubit tensors carried through any structured control remain
+{code}`index_switch` whose selector folds to a constant and still checks every
+reachable nested operation. A counted loop with a provably empty range also
+needs no runtime capability. The following cleanup pipeline removes these static
+operations before mapping. Nonconstant qubit indexing, unstructured control
+flow, and qubit tensors carried through any structured control remain
 unsupported. The preflight rejects these forms before mapping even when every
 listed capability is enabled.
 

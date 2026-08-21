@@ -61,6 +61,18 @@ state, and qubit tensors carried through structured control.
       capability test.
 - [x] (2026-08-21 15:26Z) Pass the final post-merge Markdown and full repository
       lint checks and `git diff --check`.
+- [x] (2026-08-21 15:42Z) Reproduce three review findings: foldable static
+      selectors are treated as dynamic, nested control causes repeated subtree
+      scans, and QDMI target snapshots discard QIR Adaptive control support.
+- [x] (2026-08-21 16:11Z) Replace repeated target-control subtree walks with one
+      cached read-only analysis that understands foldable selectors and dead
+      counted loops; pass all 154 compiler and 20 MQT utility tests.
+- [x] (2026-08-21 16:11Z) Derive conditional support from QDMI QIR Adaptive
+      formats, add explicit optional-capability augmentation, and pass the C++
+      and Python coverage, including all 50 Python MLIR tests.
+- [x] (2026-08-21 16:11Z) State the capability model's boundary for classical
+      operations that do not direct quantum execution and pass the final full
+      repository lint and diff checks.
 
 ## Surprises & Discoveries
 
@@ -83,6 +95,22 @@ state, and qubit tensors carried through structured control.
   Evidence: the branch added 20 such fixtures; converting them to
   `mqt.entry_point` keeps them aligned with the current public entry-point
   convention without changing the production implementation.
+- Observation: A `qco.if` selected by an `arith.cmpi` of integer constants is
+  rejected before cleanup but succeeds when the caller invokes cleanup first.
+  Evidence: direct target compilation requests `Conditional`; cleanup folds the
+  comparison and removes the control operation before target compilation.
+- Observation: The verifier scans each nested control operation's full subtree.
+  Evidence: at nesting depth 800, the verifier took 29.5 ms of a 39.4 ms release
+  compile, while 1,600 sibling conditionals compiled in about 2.8 ms.
+- Observation: The bundled DDSIM device advertises both QIR Adaptive formats,
+  but `CompilerTarget.from_device` returns no classical-control capabilities.
+  Evidence: `snapshotCompilerTarget` does not query supported formats and calls
+  the target factory without a capability list.
+- Observation: MLIR permits `Operation::fold` to modify the folded operation in
+  place even when the caller only intends to inspect a constant expression.
+  Evidence: the first fold-aware preflight called the shared constant-folding
+  helper on source operations, which could violate the preflight's no-mutation
+  contract; the helper now folds a clone of each pure operation.
 
 ## Decision Log
 
@@ -106,6 +134,25 @@ state, and qubit tensors carried through structured control.
   Rationale: The preflight's reachable-region rule must have a corresponding
   cleanup path so a constant switch cannot reach mapping. Date/Author:
   2026-08-19, Codex.
+- Decision: Infer only `ClassicalControl::Conditional` from QIR Adaptive QDMI
+  formats. Rationale: Forward branching is mandatory in that profile, while
+  backward and multiway branching are optional. Date/Author: 2026-08-21, Codex.
+- Decision: Add caller-supplied QDMI capability augmentation as a union with the
+  inferred list. Rationale: QDMI has no standard properties for the optional
+  loop and multiway flags, and callers must not reconstruct device topology and
+  calibration data to add them. Date/Author: 2026-08-21, Codex.
+- Decision: Keep program requirements separate from target support in the
+  preflight implementation. Rationale: One read-only analysis can classify the
+  program, avoid repeated subtree walks, and preserve precise diagnostics when
+  the target comparison runs. Date/Author: 2026-08-21, Codex.
+- Decision: Define the current capabilities as structured control that can
+  change quantum execution. Rationale: QIR classical types, functions, return
+  points, and assertion behavior need a broader target model than this task.
+  Date/Author: 2026-08-21, Codex.
+- Decision: Fold cloned pure operations when evaluating compile-time constants.
+  Rationale: `Operation::fold` may mutate its receiver, while target preflight
+  must remain read-only even when compilation ultimately rejects the program.
+  Date/Author: 2026-08-21, Codex.
 
 ## Outcomes & Retrospective
 
@@ -129,6 +176,25 @@ not otherwise intersect this feature. The post-merge release build passed 24
 focused and all 149 compiler tests, the focused and all 487 QCO IR tests, 12
 relevant structured-control mapping regressions, and the focused Python
 capability test. Stub generation again produced no diff.
+
+The review follow-up is complete. The target preflight now analyzes each
+operation and reachable operand expression once, caches constant folding, skips
+dead counted loops, and preserves diagnostic order without repeated descendant
+walks. At nesting depth 800, the verifier fell from 29.5 ms of a 39.4 ms compile
+to 3.2 ms of a 12.9 ms compile. Constant evaluation folds cloned operations, so
+the read-only preflight contract is preserved.
+
+QDMI snapshots infer only forward conditional support from QIR Adaptive string
+or module formats. Callers can augment that conservative inference with optional
+loop or multiway capabilities through the C++ and Python factories; the target
+constructor canonicalizes the union. The documentation now limits the four flags
+to structured control that directs quantum execution and does not claim general
+classical-computation, assertion, function, or QIR-profile support.
+
+The final release binaries passed all 154 compiler and 20 MQT utility tests. The
+generated Python extension passed all 50 tests in `test/python/test_mlir.py`;
+stub generation, full repository lint, and `git diff --check` also passed. Per
+task direction, no documentation build was required.
 
 ## Context and Orientation
 
@@ -189,6 +255,20 @@ control construct. Reject unsafe quantum captures, tensor state, and dynamic
 qubit indexing before invoking any mutating pass. Do not use or introduce the
 tensor-scalarization helper; every qubit-tensor input or result on `qco.if` must
 fail at this stage.
+
+Implement the preflight as one read-only program analysis followed by a top-down
+target comparison. Cache folded integer values so selectors made from constant
+expressions are static without mutating the module. Treat a counted loop with a
+provably empty iteration range as dead. Compute quantum-state and capture
+summaries once so nested control does not rescan descendant operations. Keep the
+existing reachability, diagnostic order, and fail-closed behavior.
+
+When adapting a QDMI device, inspect its supported program formats once. Add
+`Conditional` for QIR Adaptive string or module format. Do not infer optional
+loops or multiway branching from QASM 3, measurements, or provider-specific
+operation names. Let C++ and Python callers supply extra capabilities, merge
+them with the inferred conditional, and rely on target construction to sort and
+remove duplicates.
 
 Add an `IndexSwitchOp` canonicalization pattern that matches an integer constant
 selector, inlines the matching case or default block, replaces all classical and
@@ -256,6 +336,13 @@ interfaces and dynamic qubit indices. Constant `qco.if` and `qco.index_switch`
 operations must inspect only the selected region, and cleanup must remove the
 static switch while preserving its mixed results.
 
+A conditional selected by a folded integer comparison and a provably empty
+counted loop must compile for a target with no runtime control. A
+measurement-dependent conditional must still fail. A QDMI device that advertises
+QIR Adaptive must imply only `Conditional`; QASM support must not imply control.
+Caller-supplied optional capabilities must be merged, and direct device and
+device-ID construction must agree.
+
 The focused tests, full affected C++ binaries, Python test, generated-stub
 check, Markdown lint, full repository lint, and `git diff --check` must pass.
 Record exact commands and counts in `Progress` and `Outcomes & Retrospective`.
@@ -276,13 +363,16 @@ all unrelated changes from the base.
 
 ## Artifacts and Notes
 
-The focused latest-main compiler run reports 24 passing tests from
-`CompilerTargetTest` and the target-compilation subset of
-`CompilerPipelineTest`. The focused QCO IR run reports one passing constant
-`qco.index_switch` canonicalization test. The complete binaries report 149
-compiler tests and 487 QCO IR tests. Twelve structured-control mapping
-regressions and the focused Python capability test also pass. Stub generation
-completes successfully and leaves the generated files unchanged.
+The final compiler binary reports 154 passing tests, including the fold-aware,
+empty-loop, deep-nesting, QDMI-inference, augmentation, device-ID parity, and
+end-to-end conditional regressions. The MQT utility binary reports 20 passing
+constant-folding tests. All 50 Python MLIR tests pass against the generated
+extension, and stub generation reproduces the checked-in interface.
+
+The depth-800 performance sample reports 3.2 ms in
+`VerifyTargetClassicalControlPass` and 12.9 ms total, compared with 29.5 ms and
+39.4 ms before the cached analysis. The remaining dominant pass in that sample
+is canonicalization, not the capability verifier.
 
 The target preflight diagnostics are part of the observable contract. Tests
 check both the rejected operation and the missing capability so later pipeline
@@ -308,6 +398,11 @@ SCF, Arith, and LLVM dialect operations that it classifies. The
 `qco.index_switch` canonicalizer remains in the QCO dialect because cleanup must
 remove the same unreachable runtime control that preflight ignores.
 
-Plan revision note: Added the missing artifact and interface sections, recorded
-the post-#2158 rebase and latest-main merge, and refreshed the validation
-evidence before stacking the mapping follow-up.
+The QDMI factories accept an optional additional classical-control list. They
+infer `Conditional` only from QIR Adaptive string or module support and union
+the supplied values with that inference. `MQTCompilerPipeline` directly links
+`MLIRMQTUtils` for cached constant-expression evaluation.
+
+Plan revision note: Recorded the latest-main merge, fold-aware performance
+follow-up, conservative QDMI mapping and augmentation, no-mutation correction,
+scope boundary, and final validation evidence.

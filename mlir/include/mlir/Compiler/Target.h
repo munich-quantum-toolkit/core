@@ -191,10 +191,13 @@ public:
   };
 
   /**
-   * @brief Runtime classical-control capabilities supported by a target.
+   * @brief Structured runtime classical-control capabilities supported by a
+   * target.
    *
-   * @details Capabilities are opt-in. A target that declares none supports
-   * only straight-line quantum programs.
+   * @details Capabilities are opt-in and cover only the listed structured
+   * control-flow operations. They do not describe classical computation or
+   * side effects such as `cf.assert`. A target that declares none supports none
+   * of the listed control-flow forms.
    */
   enum class ClassicalControl : uint8_t {
     /// Runtime forward branching such as `qco.if` or `scf.if`.
@@ -378,11 +381,11 @@ public:
   /// Return operation capabilities in reported order.
   [[nodiscard]] llvm::ArrayRef<Operation> operations() const noexcept;
 
-  /// Return the sorted classical-control capabilities supported by the target.
+  /// Return the sorted structured-control capabilities supported by the target.
   [[nodiscard]] llvm::ArrayRef<ClassicalControl>
   classicalControl() const noexcept;
 
-  /// Return whether the target supports a classical-control capability.
+  /// Return whether the target supports a structured-control capability.
   [[nodiscard]] bool
   supportsClassicalControl(ClassicalControl capability) const noexcept;
 
