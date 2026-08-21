@@ -9,7 +9,7 @@
  */
 
 #include "BenchmarkTestUtils.h"
-#include "mlir/Benchmark/Compile.h"
+#include "mlir/Benchmark/Generate.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Compiler/Programs.h"
 
@@ -38,8 +38,8 @@ constexpr uint64_t PIPELINE_SIZE = 7;
  */
 static bool reaches(const Benchmark& benchmark,
                     const mlir::ProgramFormat format) {
-  auto program =
-      buildQCProgram(benchmark, std::max(PIPELINE_SIZE, benchmark.minimumSize));
+  auto program = generateProgram(
+      benchmark, std::max(PIPELINE_SIZE, benchmark.minimumSize));
   if (!program) {
     return false;
   }

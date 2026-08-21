@@ -20,7 +20,7 @@ namespace mqt::benchmark {
 struct Benchmark;
 
 /**
- * @brief Builds a benchmark as a QC program.
+ * @brief Generates a benchmark as a QC program.
  *
  * @details The program is built with the `QCProgramBuilder` for size @p n and
  * then cleaned up. Returns no program when @p n is below the benchmark's
@@ -28,6 +28,6 @@ struct Benchmark;
  * the later conversions need, so the result can enter any backend pipeline.
  */
 [[nodiscard]] std::optional<mlir::QCProgram>
-buildQCProgram(const Benchmark& benchmark, uint64_t n);
+generateProgram(const Benchmark& benchmark, uint64_t n);
 
 } // namespace mqt::benchmark

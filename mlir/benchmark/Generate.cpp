@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Benchmark/Compile.h"
+#include "mlir/Benchmark/Generate.h"
 
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Compiler/Programs.h"
@@ -27,8 +27,8 @@ namespace mqt::benchmark {
 
 using namespace mlir;
 
-std::optional<QCProgram> buildQCProgram(const Benchmark& benchmark,
-                                        const uint64_t n) {
+std::optional<QCProgram> generateProgram(const Benchmark& benchmark,
+                                         const uint64_t n) {
   if (n < benchmark.minimumSize) {
     return std::nullopt;
   }

@@ -15,7 +15,7 @@
  * and then lowered through QCO to `jeff`.
  */
 
-#include "mlir/Benchmark/Compile.h"
+#include "mlir/Benchmark/Generate.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Compiler/Programs.h"
 
@@ -56,7 +56,7 @@ static bool generate(const mqt::benchmark::Benchmark& benchmark,
     return false;
   }
 
-  auto qc = mqt::benchmark::buildQCProgram(benchmark, n);
+  auto qc = mqt::benchmark::generateProgram(benchmark, n);
   if (!qc) {
     llvm::errs() << benchmark.name << ": failed to build the program\n";
     return false;

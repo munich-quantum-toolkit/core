@@ -8,7 +8,7 @@
 
 # The executable that lowers the benchmark programs to `jeff`
 add_executable(mqt-jeff-benchmarks MQTJeffBenchmarks.cpp)
-target_link_libraries(mqt-jeff-benchmarks PRIVATE MQTBenchmarkCompile MLIRSupport)
+target_link_libraries(mqt-jeff-benchmarks PRIVATE MQTBenchmarkGenerate MLIRSupport)
 mqt_mlir_target_use_project_options(mqt-jeff-benchmarks)
 llvm_update_compile_flags(mqt-jeff-benchmarks)
 mlir_check_all_link_libraries(mqt-jeff-benchmarks)

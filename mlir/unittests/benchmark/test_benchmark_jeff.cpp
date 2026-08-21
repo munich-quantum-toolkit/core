@@ -9,7 +9,7 @@
  */
 
 #include "BenchmarkTestUtils.h"
-#include "mlir/Benchmark/Compile.h"
+#include "mlir/Benchmark/Generate.h"
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Compiler/Programs.h"
 
@@ -47,7 +47,7 @@ INSTANTIATE_TEST_SUITE_P(Benchmarks, JeffBenchmarkTest,
 TEST_P(JeffBenchmarkTest, KeepsStructuredControlFlow) {
   const auto& benchmark = GetParam();
   auto program =
-      buildQCProgram(benchmark, std::max(JEFF_SIZE, benchmark.minimumSize));
+      generateProgram(benchmark, std::max(JEFF_SIZE, benchmark.minimumSize));
   ASSERT_TRUE(program.has_value());
   const auto compiled =
       mlir::runDefaultPipeline(std::move(*program), mlir::ProgramFormat::Jeff);
@@ -65,12 +65,13 @@ TEST_P(JeffBenchmarkTest, RejectsSizesBelowTheMinimum) {
   if (benchmark.minimumSize == 0) {
     GTEST_SKIP() << "the benchmark accepts every size";
   }
-  EXPECT_FALSE(buildQCProgram(benchmark, benchmark.minimumSize - 1));
+  EXPECT_FALSE(generateProgram(benchmark, benchmark.minimumSize - 1));
 }
 
 TEST_P(JeffBenchmarkTest, RejectsSizesBeyondTheSignedRange) {
   const auto& benchmark = GetParam();
-  EXPECT_FALSE(buildQCProgram(benchmark, std::numeric_limits<uint64_t>::max()));
+  EXPECT_FALSE(
+      generateProgram(benchmark, std::numeric_limits<uint64_t>::max()));
 }
 
 TEST_P(JeffBenchmarkTest, RejectsSizesAboveTheMaximum) {
@@ -78,7 +79,7 @@ TEST_P(JeffBenchmarkTest, RejectsSizesAboveTheMaximum) {
   if (benchmark.maximumSize == 0) {
     GTEST_SKIP() << "the benchmark has no upper size limit";
   }
-  EXPECT_FALSE(buildQCProgram(benchmark, benchmark.maximumSize + 1));
+  EXPECT_FALSE(generateProgram(benchmark, benchmark.maximumSize + 1));
 }
 
 } // namespace
