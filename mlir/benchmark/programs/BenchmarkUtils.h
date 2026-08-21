@@ -31,6 +31,7 @@ void resetRegister(qc::QCProgramBuilder& b, Value reg, int64_t size);
 /// register @p bits, one qubit per bit.
 void measureRegister(qc::QCProgramBuilder& b, Value reg, int64_t size,
                      Value bits);
+
 /**
  * @brief Runs @p body over the range [@p lower, @p upper) with a scaled angle
  *
@@ -44,5 +45,19 @@ void measureRegister(qc::QCProgramBuilder& b, Value reg, int64_t size,
 void phaseRotationLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
                        const std::variant<double, Value>& start, double factor,
                        const function_ref<void(Value, Value)>& body);
+
+/**
+ * @brief Runs @p body over the range [@p lower, @p upper) with a growing angle
+ *
+ * @details A uniformly controlled rotation gives every control state its own
+ * angle, and those angles are spaced evenly. The angle starts at @p start and
+ * grows by @p increment after every step, so the loop never converts its
+ * counter to a floating-point value. @p body receives the angle of the step and
+ * the induction variable.
+ */
+void uniformRotationLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
+                         const std::variant<double, Value>& start,
+                         double increment,
+                         const function_ref<void(Value, Value)>& body);
 
 } // namespace mqt::benchmark

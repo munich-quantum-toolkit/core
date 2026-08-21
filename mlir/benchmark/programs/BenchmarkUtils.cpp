@@ -38,21 +38,47 @@ void measureRegister(qc::QCProgramBuilder& b, Value reg, const int64_t size,
            [&](Value i) { b.measure(b.loadQubit(reg, i), bits, i); });
 }
 
-void phaseRotationLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
-                       const std::variant<double, Value>& start,
-                       const double factor,
-                       const function_ref<void(Value, Value)>& body) {
+namespace {
+/// Runs @p body over [@p lower, @p upper) with an angle that @p advance carries
+/// from one step to the next.
+void angleLoop(qc::QCProgramBuilder& b, Value lower, Value upper, Value first,
+               const function_ref<Value(Value)>& advance,
+               const function_ref<void(Value, Value)>& body) {
   auto one = b.indexConstant(1);
-  auto first = variantToValue(b, b.getLoc(), start);
-  auto scale = b.floatConstant(factor);
 
   auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{first});
   OpBuilder::InsertionGuard guard(b);
   b.setInsertionPointToStart(loop.getBody());
   auto angle = loop.getRegionIterArg(0);
   body(angle, loop.getInductionVar());
-  auto next = arith::MulFOp::create(b, angle, scale);
-  scf::YieldOp::create(b, ValueRange{next});
+  scf::YieldOp::create(b, ValueRange{advance(angle)});
+}
+} // namespace
+
+void phaseRotationLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
+                       const std::variant<double, Value>& start,
+                       const double factor,
+                       const function_ref<void(Value, Value)>& body) {
+  auto first = variantToValue(b, b.getLoc(), start);
+  auto scale = b.floatConstant(factor);
+
+  const auto advance = [&](Value angle) {
+    return arith::MulFOp::create(b, angle, scale).getResult();
+  };
+  angleLoop(b, lower, upper, first, advance, body);
+}
+
+void uniformRotationLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
+                         const std::variant<double, Value>& start,
+                         const double increment,
+                         const function_ref<void(Value, Value)>& body) {
+  auto first = variantToValue(b, b.getLoc(), start);
+  auto step = b.floatConstant(increment);
+
+  const auto advance = [&](Value angle) {
+    return arith::AddFOp::create(b, angle, step).getResult();
+  };
+  angleLoop(b, lower, upper, first, advance, body);
 }
 
 } // namespace mqt::benchmark

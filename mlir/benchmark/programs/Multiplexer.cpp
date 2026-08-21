@@ -12,6 +12,7 @@
 #include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -34,26 +35,33 @@ SmallVector<Value> multiplexer(qc::QCProgramBuilder& b, const uint64_t n) {
   resetRegister(b, controls.value, numControls);
   b.reset(target);
 
-  // Each control state selects its own rotation. The controls are flipped so
-  // that the fully controlled gate fires exactly on the current state.
-  for (int64_t state = 0; state < numStates; ++state) {
-    const auto angle = static_cast<double>(state) * std::numbers::pi /
-                       static_cast<double>(numStates);
+  auto zero = b.indexConstant(0);
+  auto one = b.indexConstant(1);
+  auto states = b.indexConstant(numStates);
 
-    for (int64_t bit = 0; bit < numControls; ++bit) {
-      if (((state >> bit) & 1) == 0) {
-        b.x(controls[bit]);
-      }
-    }
+  // The fully controlled gate fires on the all-ones state, so every control
+  // that the current state holds at zero is flipped before the gate and back
+  // afterwards.
+  const auto flipZeroControls = [&](Value state) {
+    b.scfFor(0, numControls, 1, [&](Value bit) {
+      auto lowBit =
+          arith::AndIOp::create(b, arith::ShRSIOp::create(b, state, bit), one);
+      auto isZero =
+          arith::CmpIOp::create(b, arith::CmpIPredicate::eq, lowBit, zero)
+              .getResult();
+      b.scfIf(isZero, [&] { b.x(b.loadQubit(controls.value, bit)); });
+    });
+  };
 
-    b.mcry(angle, controls.qubits, target);
-
-    for (int64_t bit = 0; bit < numControls; ++bit) {
-      if (((state >> bit) & 1) == 0) {
-        b.x(controls[bit]);
-      }
-    }
-  }
+  // Each control state selects its own rotation, and the angles are spaced
+  // evenly over the states.
+  const auto increment = std::numbers::pi / static_cast<double>(numStates);
+  uniformRotationLoop(b, zero, states, 0.0, increment,
+                      [&](Value angle, Value state) {
+                        flipZeroControls(state);
+                        b.mcry(angle, controls.qubits, target);
+                        flipZeroControls(state);
+                      });
 
   measureRegister(b, controls.value, numControls, c);
   b.measure(target, outcome, 0);
