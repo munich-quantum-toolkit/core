@@ -74,8 +74,8 @@ releases may include breaking changes.
 #### Other additions
 
 - ✨ Let `mqt_configure_qdmi_device` declare session parameters for generated
-  device definitions, so that a provider can register one stable ID per
-  contended quantum computer over one library ([#2190]) ([**@marcelwa**])
+  device definitions, so a provider can register one stable ID per contended
+  quantum computer over a single library ([#2190]) ([**@marcelwa**])
 - ✨ Add extensible program serializers to QDMI Qiskit backends. [QDMI-on-IQM]
   now provides the IQM JSON serializer and `MoveGate` integration ([#2114])
   ([**@marcelwa**])
@@ -84,7 +84,7 @@ releases may include breaking changes.
 
 ### Changed
 
-- 🚸 Name the registered QDMI device IDs when a Slurm license selects an unknown
+- 🚸 List the registered QDMI device IDs when a Slurm license names an unknown
   device ([#2190]) ([**@marcelwa**])
 - 💥 Prune dead and misleading CoreIR APIs and remove random-number generator
   state from `QuantumComputation` ([#2111], [#2112]) ([**@simon1hofmann**])

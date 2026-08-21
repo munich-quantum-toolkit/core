@@ -175,8 +175,8 @@ MQT Core provides a mechanism-specific adapter for jobs that use local Slurm
 licenses for cluster-wide admission. The license name must equal one registered
 QDMI device ID. Each job must request one license. A provider whose library
 serves several machines therefore registers one definition per machine, as
-described above, and the cluster names one license after each of those IDs. See
-[Use QDMI devices with Slurm](slurm.md). For example:
+described above, and the cluster names one license after each of those IDs, as
+shown in [Use QDMI devices with Slurm](slurm.md). For example:
 
 ```bash
 sbatch --licenses=mqt.ddsim.default:1 simulation.sh
@@ -264,11 +264,12 @@ also declare `RUNTIME_FILES` through `mqt_configure_qdmi_device`; their exported
 `QDMI_RUNTIME_FILES` basenames are copied beside the provider as part of the
 same operation.
 
-`mqt_configure_qdmi_device` also generates additional device definitions over
-the same library. `CONFIGURATIONS` adds one definition per
+`mqt_configure_qdmi_device` also generates further device definitions over the
+same library. `CONFIGURATIONS` adds one definition per
 `<device-id>|<runtime-file-name>` element and points its `device-config` at that
-runtime file. `DEVICES` adds one definition per `<device-id>|<key>=<value>`
-element and accepts more than one session parameter:
+runtime file, while `DEVICES` adds one definition per
+`<device-id>|<key>=<value>` element and accepts several session parameters at
+once:
 
 ```cmake
 mqt_configure_qdmi_device(
@@ -280,9 +281,9 @@ mqt_configure_qdmi_device(
 ```
 
 A generated definition accepts `base-url`, `auth-url`, `custom1` through
-`custom5`, and `device-config-file`. It rejects `token`, `password`,
-`auth-file`, and `username`, because the generated fragment is installed with
-the package. Declare a credential or a host-specific path in a trusted registry
-file instead. It also rejects `device-config-file` next to `custom1` or
-`custom2`, which the Driver reserves for the device configuration. A parameter
-value must not contain `|`, `;`, or whitespace.
+`custom5`, and `device-config-file`. Because the generated fragment is installed
+with the package, it rejects `token`, `password`, `auth-file`, and `username`;
+declare a credential or a host-specific path in a trusted registry file instead.
+It also rejects `device-config-file` alongside `custom1` or `custom2`, which the
+Driver reserves for the device configuration. Finally, a parameter value must
+not contain `|`, `;`, or whitespace.

@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 # Check that a generated QDMI registry file contains every expected fragment. MANIFEST names the
-# file. EXPECTED holds the fragments, separated by '|' so that a fragment may contain ';'.
+# file, and EXPECTED holds the fragments, separated by '|' so that a fragment may contain ';'.
 
 if(NOT MANIFEST OR NOT EXPECTED)
   message(FATAL_ERROR "verify_generated_manifest.cmake requires MANIFEST and EXPECTED")

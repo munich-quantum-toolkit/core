@@ -22,7 +22,7 @@ endfunction()
 # Build the JSON session object of a generated QDMI device entry. Every argument after
 # runtime_file_names is one '<key>=<value>' session parameter.
 function(_mqt_qdmi_session_object result device_id runtime_file_names)
-  # A generated fragment is installed with the package and is world-readable. Credentials and
+  # A generated fragment is installed with the package and is world-readable, so credentials and
   # host-specific values belong in a trusted registry file such as /etc/mqt-core/qdmi.json.
   set(credential_keys token password auth-file username)
   set(allowed_keys
@@ -42,7 +42,7 @@ function(_mqt_qdmi_session_object result device_id runtime_file_names)
     if(separator EQUAL -1)
       message(
         FATAL_ERROR
-          "QDMI device '${device_id}' session parameter '${parameter}' must use the form '<key>=<value>'"
+          "QDMI device '${device_id}' declares '${parameter}', but a session parameter must use the form '<key>=<value>'"
       )
     endif()
     string(SUBSTRING "${parameter}" 0 ${separator} key)
@@ -51,14 +51,14 @@ function(_mqt_qdmi_session_object result device_id runtime_file_names)
     if(key STREQUAL "" OR value STREQUAL "")
       message(
         FATAL_ERROR
-          "QDMI device '${device_id}' session parameter '${parameter}' must use a non-empty key and value"
+          "QDMI device '${device_id}' declares '${parameter}', but a session parameter must have a non-empty key and value"
       )
     endif()
     list(FIND credential_keys "${key}" credential_index)
     if(NOT credential_index EQUAL -1)
       message(
         FATAL_ERROR
-          "QDMI device '${device_id}' must not declare the session parameter '${key}' in a generated fragment. Declare it in a trusted registry file such as /etc/mqt-core/qdmi.json"
+          "QDMI device '${device_id}' must not declare the session parameter '${key}' in a generated fragment; declare it in a trusted registry file such as /etc/mqt-core/qdmi.json"
       )
     endif()
     list(FIND allowed_keys "${key}" key_index)
@@ -66,7 +66,7 @@ function(_mqt_qdmi_session_object result device_id runtime_file_names)
       string(REPLACE ";" ", " allowed_text "${allowed_keys}")
       message(
         FATAL_ERROR
-          "QDMI device '${device_id}' uses the unknown session parameter '${key}'. Supported parameters are ${allowed_text}"
+          "QDMI device '${device_id}' uses the unknown session parameter '${key}'; the supported parameters are ${allowed_text}"
       )
     endif()
     list(FIND seen_keys "${key}" seen_index)
@@ -77,7 +77,8 @@ function(_mqt_qdmi_session_object result device_id runtime_file_names)
     if(key STREQUAL "device-config-file")
       list(FIND runtime_file_names "${value}" runtime_file_index)
       if(runtime_file_index EQUAL -1)
-        message(FATAL_ERROR "QDMI device '${device_id}' refers to unknown runtime file '${value}'")
+        message(
+          FATAL_ERROR "QDMI device '${device_id}' refers to the unknown runtime file '${value}'")
       endif()
       set(configuration_file "${value}")
     else()
@@ -111,8 +112,8 @@ endfunction()
 # Configure and register a relocatable built-in QDMI device. The generated fragment is emitted
 # beside the runtime library in both build and install trees.
 #
-# CONFIGURATIONS adds one device entry per '<device-id>|<runtime-file-name>' element. DEVICES adds
-# one device entry per '<device-id>|<key>=<value>' element and accepts more than one parameter, for
+# CONFIGURATIONS adds one device entry per '<device-id>|<runtime-file-name>' element, while DEVICES
+# adds one entry per '<device-id>|<key>=<value>' element and accepts several parameters at once, for
 # example 'example.qc.alpha|base-url=https://alpha.example|custom2=alpha'. A parameter value must
 # not contain '|', ';', or whitespace.
 function(mqt_configure_qdmi_device target)

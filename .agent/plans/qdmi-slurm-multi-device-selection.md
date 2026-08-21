@@ -14,11 +14,10 @@ of a device definition in a QDMI registry file, for example `mqt.ddsim.default`.
 A "provider" is a shared library that implements the QDMI device interface for
 one vendor.
 
-A provider can front several quantum computers through one shared library. It
-then has more contended machines than it has libraries. Such a provider must
-still get one Slurm license per machine, because a license is how a cluster
-regulates contention. Before this change, three things made that impossible to
-discover.
+A provider can serve several quantum computers through one shared library, so it
+has more contended machines than libraries. It still needs one Slurm license per
+machine, because a license is how a cluster regulates contention. Before this
+change, three things hid that from a reader.
 
 The first is documentation. `docs/qdmi/slurm.md` never states that a provider
 may register several device IDs over one library, so a reader concludes that the
@@ -26,7 +25,7 @@ library is the unit of registration and that a per-machine license can never
 match a device ID.
 
 The second is the failure message. When the license name is not a registered ID,
-`open_device_from_license()` says so and stops. It does not say which IDs are
+`open_device_from_license()` says so and stops without naming the IDs that are
 registered, so the reader cannot see how far off the name is.
 
 The third is the CMake helper `mqt_configure_qdmi_device` in
@@ -61,7 +60,7 @@ IDs that would have worked.
   test `DiscoversGeneratedBuildTreeManifests`, asserts that a clean registry
   holds exactly those four definitions.
 - Observation: `docs/qdmi/slurm.md` claims that MQT Core installs persistent
-  definitions for two devices. It installs four. Evidence:
+  definitions for two devices, but it installs four. Evidence:
   `registered_device_ids()` reports `mqt.ddsim.default`, `mqt.sc.default`,
   `mqt.sc.iqm.emerald`, and `mqt.sc.iqm.garnet`.
 - Observation: rewriting the `CONFIGURATIONS` shorthand into the new form
@@ -97,8 +96,8 @@ The purpose is met. A provider with more machines than libraries can now
 generate its catalogue with `mqt_configure_qdmi_device`, the documentation
 states the rule and shows the registry file and the license line, and a wrong
 license name reports what would have worked. The registry itself needed no
-change, which confirms that the existing model was sufficient and only its
-surface was missing.
+change, which confirms that the existing model was already sufficient and only
+its surface was missing.
 
 Remaining: nothing in this repository. A provider that ships its own SPANK
 plugin still has to name its licenses after the stable IDs it registers.
@@ -144,7 +143,7 @@ In `src/qdmi/Slurm.cpp`, extend the unknown-ID error so it lists the registered
 IDs, or states that no device is registered.
 
 In `docs/qdmi/slurm.md`, correct the list of installed definitions and add a
-section that explains one device ID per contended resource. In
+section that explains why each contended resource needs its own device ID. In
 `docs/qdmi/configuration.md`, connect the existing sentence about several
 definitions over one library to license naming, and document `DEVICES`.
 
@@ -157,8 +156,8 @@ From the repository root, edit the files named above, then build and test:
     ctest --preset release -R qdmi
 
 The CMake rejection tests configure a small sub-project and expect the configure
-step to fail. A passing run reports them as passed because they carry the
-`WILL_FAIL` property.
+step to fail, so a passing run reports them as passed through the `WILL_FAIL`
+property.
 
 ## Validation and Acceptance
 
