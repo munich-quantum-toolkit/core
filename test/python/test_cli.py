@@ -52,6 +52,16 @@ def test_cli_version(script_runner: ScriptRunner) -> None:
     assert mqt_core_version in ret.stdout
 
 
+@pytest.mark.script_launch_mode("subprocess")
+def test_benchmark_cli(script_runner: ScriptRunner) -> None:
+    """Run the bundled benchmark driver through its console script."""
+    ret = script_runner.run(["mqt-core-bench", "list"])
+    assert ret.success
+    assert '"ghz"' in ret.stdout
+    assert '"grover"' in ret.stdout
+    assert '"qpe"' in ret.stdout
+
+
 def test_cli_include_dir(script_runner: ScriptRunner) -> None:
     """Test running the CLI with the --include_dir argument."""
     ret = script_runner.run(["mqt-core-cli", "--include_dir"])

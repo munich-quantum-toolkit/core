@@ -22,12 +22,7 @@ unset(LLVM_REQUIRES_EH)
 mlir_check_all_link_libraries(mqt-core-bench)
 
 if(MQT_CORE_INSTALL)
-  if(SKBUILD)
-    set(mqt_core_bench_install_dir "${SKBUILD_SCRIPTS_DIR}")
-  else()
-    include(GNUInstallDirs)
-    set(mqt_core_bench_install_dir "${CMAKE_INSTALL_BINDIR}")
-  endif()
-  install(TARGETS mqt-core-bench RUNTIME DESTINATION "${mqt_core_bench_install_dir}"
+  include(GNUInstallDirs)
+  install(TARGETS mqt-core-bench RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
                                          COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
 endif()
