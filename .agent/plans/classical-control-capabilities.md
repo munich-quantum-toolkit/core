@@ -45,7 +45,11 @@ when the exact payload selected at device construction supports it.
 - [x] (2026-08-22 20:20Z) Ran focused and complete C++ and Python tests,
       generated stubs, built executable documentation, and passed lint. The link
       checker reaches one pre-existing unreleased documentation URL that returns
-      404. Hosted validation starts after publication.
+      404.
+- [x] (2026-08-22 20:40Z) Published signed commits to both existing pull
+      requests, updated their descriptions and metadata, and fixed QDMI's hosted
+      Doxygen and Clang-Tidy findings. QDMI's final required jobs pass; Core's
+      platform matrix is running on the final dependency revision.
 
 ## Surprises & Discoveries
 
@@ -107,8 +111,9 @@ branches, and failed compilation remains transactional. The QDMI branch has been
 pushed with signed commits. Core passed 4,326 CTest cases, 148 compiler tests,
 344 focused Python tests, 42 PennyLane tests, generated-stub checks, executable
 documentation, and all lint hooks. The link checker found only the existing
-unreleased Qiskit-backend documentation URL. Core publication and hosted
-validation remain.
+unreleased Qiskit-backend documentation URL. Both existing pull requests now
+contain the implementation and describe the final contract. QDMI's hosted matrix
+passes. Core's hosted matrix is the only remaining external validation.
 
 ## Context and Orientation
 
