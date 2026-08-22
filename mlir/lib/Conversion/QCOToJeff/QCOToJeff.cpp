@@ -12,12 +12,13 @@
 
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/MQT/Utils/GatePowering.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <jeff/Conversion/NativeToJeff/NativeToJeff.h>
 #include <jeff/IR/JeffDialect.h>
@@ -25,7 +26,6 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
@@ -1284,7 +1284,7 @@ struct ConvertQCOPowOpToJeff final : StatefulOpConversionPattern<PowOp> {
 
     // jeff only supports compile-time integer exponents between 0 and 255
     const auto exponent = op.getExponentValue();
-    if (!exponent || !utils::isIntegerExponent(*exponent) || *exponent < 0.0 ||
+    if (!exponent || !mqt::isIntegerExponent(*exponent) || *exponent < 0.0 ||
         *exponent > std::numeric_limits<uint8_t>::max()) {
       return rewriter.notifyMatchFailure(
           op, "Only compile-time integer exponents between 0 and 255 are "
@@ -1644,7 +1644,7 @@ struct ConvertSCFWhileOpToJeff final
  *
  * @par Example:
  * ```mlir
- * func.func @main() -> i64 attributes {passthrough = ["entry_point"]} { ... }
+ * func.func @main() -> i64 attributes {mqt.entry_point} { ... }
  * ```
  * is converted to
  * ```mlir
@@ -1657,15 +1657,7 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
   LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto passthrough = op->getAttrOfType<ArrayAttr>("passthrough");
-    if (!passthrough) {
-      return failure();
-    }
-
-    if (!llvm::any_of(passthrough, [](Attribute attr) {
-          const auto strAttr = dyn_cast<StringAttr>(attr);
-          return strAttr && strAttr.getValue() == "entry_point";
-        })) {
+    if (!mqt::isEntryPoint(op)) {
       return failure();
     }
 
@@ -1699,7 +1691,7 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
          llvm::zip_equal(block->getArguments(), newInputs)) {
       argument.setType(type);
     }
-    op->removeAttr("passthrough");
+    mqt::removeEntryPoint(op);
     rewriter.finalizeOpModification(op);
 
     return success();
@@ -1863,7 +1855,7 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* moduleOp = getOperation();
-    if (failed(mlir::mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
+    if (failed(mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
       signalPassFailure();
       return;
     }
@@ -1883,7 +1875,7 @@ protected:
     target.addLegalDialect<jeff::JeffDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>(
-        [](func::FuncOp op) { return !op->hasAttr("passthrough"); });
+        [](func::FuncOp op) { return !mqt::isEntryPoint(op); });
     target.addDynamicallyLegalOp<func::ReturnOp>([](func::ReturnOp op) {
       return llvm::none_of(op.getOperandTypes(), [](Type type) {
         return isa<cbit::RegisterType>(type);

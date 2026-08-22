@@ -23,11 +23,12 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
@@ -199,7 +200,8 @@ decodeStandardGate(UnitaryOpInterface unitary) {
 
   DecodedGate decoded{.type = type, .params = {}};
   for (Value param : unitary.getParameters()) {
-    decoded.params.push_back(static_cast<dd::fp>(*utils::valueToDouble(param)));
+    decoded.params.push_back(
+        static_cast<dd::fp>(*mlir::mqt::valueToDouble(param)));
   }
   return std::optional{std::move(decoded)};
 }
@@ -261,7 +263,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
            << "unitary must have a compile-time constant matrix";
   }
   if (auto gphase = dyn_cast<GPhaseOp>(op)) {
-    const auto theta = *utils::valueToDouble(gphase.getTheta());
+    const auto theta = *mlir::mqt::valueToDouble(gphase.getTheta());
     auto id = dd::Package::makeIdent();
     id.w = walk.dd->cn.lookup(std::cos(theta), std::sin(theta));
     state = walk.dd->applyOperation(id, state);
@@ -757,7 +759,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             }
           })
       .template Case<CtrlOp>([&](CtrlOp ctrlOp) -> LogicalResult {
-        if (auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(
+        if (auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(
                 *ctrlOp.getBody())) {
           auto decoded = decodeStandardGate(inner);
           if (failed(decoded)) {

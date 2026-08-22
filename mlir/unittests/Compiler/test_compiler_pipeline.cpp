@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
@@ -22,7 +23,6 @@
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qasm_programs.h"
 #include "qc_programs.h"
@@ -129,14 +129,14 @@ protected:
 
   [[nodiscard]] OwningOpRef<ModuleOp>
   buildQCReference(const QCProgramBuilderFn builder) const {
-    auto module = mqt::test::buildMLIRProgram(context.get(), builder);
+    auto module = ::mqt::test::buildMLIRProgram(context.get(), builder);
     EXPECT_TRUE(runQCCleanupPipeline(module.get()).succeeded());
     return module;
   }
 
   [[nodiscard]] OwningOpRef<ModuleOp>
   buildQIRReference(const QIRProgramBuilderFn builder) const {
-    auto module = mqt::test::buildMLIRProgram(
+    auto module = ::mqt::test::buildMLIRProgram(
         context.get(), builder, QIRProgramBuilder::Profile::Adaptive);
     EXPECT_TRUE(runQIRCleanupPipeline(module.get(), true).succeeded());
     return module;
@@ -212,7 +212,7 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
 
   ASSERT_TRUE(testCase.qcProgramBuilder);
   auto module =
-      mqt::test::buildMLIRProgram(context.get(), testCase.qcProgramBuilder);
+      ::mqt::test::buildMLIRProgram(context.get(), testCase.qcProgramBuilder);
   ASSERT_TRUE(module);
   printer.record(module.get(), "QC Input" + name);
   EXPECT_TRUE(verify(*module).succeeded());
@@ -559,6 +559,39 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
 }
 
 namespace {
+
+TEST(OpenQASMCompilerOutputTest, LowersAffineQuantumLoopsToJeff) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[4] q;
+bit[4] c;
+for int i in [0:3] {
+  h q[i];
+}
+for int i in [0:2] {
+  cx q[i], q[i + 1];
+}
+c = measure q;
+)qasm";
+
+  auto qc = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(qc);
+  const auto imported = qc->str();
+  EXPECT_EQ(imported.find("i128"), std::string::npos);
+  EXPECT_EQ(imported.find("arith.select"), std::string::npos);
+  EXPECT_EQ(imported.find("cf.assert"), std::string::npos);
+
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  ASSERT_TRUE(qco->runPassPipeline("mqt-qco-default"));
+  ASSERT_TRUE(qco->cleanup());
+  const auto optimized = qco->str();
+  auto jeff = std::move(*qco).intoJeff();
+  ASSERT_TRUE(jeff) << optimized;
+  EXPECT_TRUE(jeff->cleanup());
+}
 
 TEST(OpenQASMCompilerOutputTest,
      CanonicalizesMixedScalarAndRegisterResultsThroughQCO) {
@@ -1086,7 +1119,7 @@ cx q[0], q[2];
   EXPECT_NE(qco.str(), beforeFusion);
   EXPECT_TRUE(qco.runPassPipeline("mqt-qco-default", true, true));
 
-  auto loopModule = mqt::test::buildMLIRProgram(
+  auto loopModule = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(qco::simpleForLoop));
   ASSERT_TRUE(loopModule);
   std::string loopIR;
@@ -1271,7 +1304,7 @@ TEST_F(CompilerPipelineTest, QCOProgramQubitReuseAPIs) {
     return StringRef(ir).count("qco.alloc");
   };
   const auto buildQCO = [this](const QCProgramBuilderFn& builder) {
-    auto module = mqt::test::buildMLIRProgram(context.get(), builder);
+    auto module = ::mqt::test::buildMLIRProgram(context.get(), builder);
     std::string source;
     llvm::raw_string_ostream stream(source);
     module->print(stream);

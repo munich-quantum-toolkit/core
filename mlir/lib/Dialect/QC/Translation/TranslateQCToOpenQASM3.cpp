@@ -13,10 +13,10 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
 #include <llvm/ADT/APInt.h>
@@ -296,9 +296,9 @@ private:
       if (auto alloc = dyn_cast<cbit::AllocOp>(&operation)) {
         const auto type = alloc.getResult().getType();
         const bool isOutput = returnedRegisters.contains(alloc.getResult());
-        const auto requested = alloc.getSourceNameAttr()
-                                   ? alloc.getSourceNameAttr().getValue()
-                                   : StringRef{};
+        const auto name = alloc->getAttrOfType<StringAttr>(
+            mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
+        const auto requested = name ? name.getValue() : StringRef{};
         Resource resource{.kind = ResourceKind::Bit,
                           .name = isOutput ? outputName(requested)
                                            : uniqueName("c", nextBit),
@@ -324,7 +324,7 @@ private:
       }
       StringRef requested;
       if (const auto attr = alloc->getAttrOfType<StringAttr>(
-              utils::QUBIT_REGISTER_NAME_ATTR)) {
+              mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
         requested = attr.getValue();
       }
       Resource resource{.kind = ResourceKind::Qubit,

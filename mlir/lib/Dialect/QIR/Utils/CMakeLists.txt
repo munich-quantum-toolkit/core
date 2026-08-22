@@ -15,6 +15,7 @@ add_mlir_library(
   PUBLIC
   LLVMCore
   MLIRLLVMDialect
+  MLIRMQTDialect
   MLIRIR)
 
 mqt_mlir_target_use_project_options(MLIRQIRUtils)

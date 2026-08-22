@@ -25,7 +25,7 @@ releases may include breaking changes.
   [#1807], [#1808], [#1815], [#1824], [#1869], [#1872], [#1914], [#1925],
   [#1927], [#1935], [#1936], [#1938], [#1975], [#1976], [#2006], [#2014],
   [#2015], [#2017], [#2026], [#2028], [#2054], [#2058], [#2125], [#2136],
-  [#2158]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
+  [#2150], [#2158]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
   [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**], [**@J4MMlE**])
 - ✨ Add decision diagram-based construction, simulation, and sampling for QCO
@@ -37,7 +37,7 @@ releases may include breaking changes.
 #### Import and export
 
 - ✨ Add Qiskit circuit import and target-aware export to the compiler
-  collection ([#2031], [#2133], [#2140]) ([**@burgholzer**],
+  collection ([#2031], [#2133], [#2140], [#2150], [#2175]) ([**@burgholzer**],
   [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105])
@@ -48,8 +48,10 @@ releases may include breaking changes.
   [#1787], [#1815], [#1823], [#1933], [#1978], [#1979], [#2007], [#2026],
   [#2030], [#2066]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
-- ✨ Add OpenQASM import and export to the MQT Compiler Collection ([#1910],
-  [#1987], [#1994], [#2003], [#2026]) ([**@burgholzer**], [**@denialhaag**])
+- ✨ Add OpenQASM import and export to the MQT Compiler Collection, including
+  fixed-angle constants and proven affine quantum-register indices ([#1910],
+  [#1987], [#1994], [#2003], [#2026], [#2169], [#2203]) ([**@burgholzer**],
+  [**@denialhaag**])
 
 #### Passes and transformations
 
@@ -878,11 +880,15 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2203]: https://github.com/munich-quantum-toolkit/core/pull/2203
+[#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
+[#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
 [#2158]: https://github.com/munich-quantum-toolkit/core/pull/2158
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
 [#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
+[#2150]: https://github.com/munich-quantum-toolkit/core/pull/2150
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
 [#2141]: https://github.com/munich-quantum-toolkit/core/pull/2141
