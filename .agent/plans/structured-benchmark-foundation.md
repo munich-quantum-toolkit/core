@@ -66,8 +66,10 @@ authorization.
       packaging audits. Fixed cross-platform Grover iteration selection, exact
       JSON integer parsing, duplicate-key complexity, per-family definition
       versions, and unsafe output rollback.
-- [ ] Rerun lint after the audit fixes and create the clean local branch stack
-      without the #2077 follow-up changes.
+- [x] (2026-08-22 12:08Z) Passed the full lint session and restacked the
+      foundation without the returned-register sampler or nested-loop unroll
+      fix. Every rewritten commit is maintainer-authored and signed. Daniel's
+      exact commit objects remain unchanged below the signed merge.
 
 ## Surprises & Discoveries
 
@@ -384,6 +386,7 @@ The initial attribution boundary is:
     #2135 archive: 5e5580eb345249fd1123680994800c7dad85444d
     current main merged: 9c7a2d55a0da4bb577ec1b5bb919a2dc89abbeff
     signed merge: 00f3c8e5dc80cf1ff2829b42dbac6c82fef05088
+    pre-restack foundation archive: 93f705bf196d73d23069fde49c39e1f4954131f1
 
 `git verify-commit 00f3c8e5dc80cf1ff2829b42dbac6c82fef05088` reported a good
 signature from the configured maintainer key.
