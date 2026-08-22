@@ -19,6 +19,9 @@ from mqt.core._compat.typing import Unpack
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
 
+def _generate_benchmark(request_json: str) -> QCProgram:
+    """Generate a typed benchmark request as a QC program."""
+
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
 

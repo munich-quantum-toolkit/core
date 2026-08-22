@@ -80,6 +80,7 @@ if(NOT TARGET ${TARGET_NAME})
     INSTALL_DIR
     .
     LINK_LIBS
+    MQTBenchmarkGenerate
     MQTCompilerQDMIAdapter
     MQTCompilerPipeline
     MLIRMQTDialect

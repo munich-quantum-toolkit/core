@@ -8,6 +8,11 @@
  * Licensed under the MIT License
  */
 
+#include "benchmarks/GHZ.hpp"
+#include "benchmarks/Grover.hpp"
+#include "benchmarks/JSON.hpp"
+#include "benchmarks/QPE.hpp"
+#include "mlir/Benchmark/Generate.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
@@ -254,6 +259,24 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
                                              enableTiming, enableStatistics));
 }
 
+[[nodiscard]] mlir::QCProgram
+generateBenchmark(const std::string_view request) {
+  const auto id = benchmarks::benchmarkIdFromRequestJSON(request);
+  if (id == "ghz") {
+    return takeResult(
+        benchmark::generateProgram(benchmarks::ghzFromRequestJSON(request)));
+  }
+  if (id == "grover") {
+    return takeResult(
+        benchmark::generateProgram(benchmarks::groverFromRequestJSON(request)));
+  }
+  if (id == "qpe") {
+    return takeResult(
+        benchmark::generateProgram(benchmarks::qpeFromRequestJSON(request)));
+  }
+  throw std::invalid_argument("unsupported benchmark '" + id + "'");
+}
+
 } // namespace
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
@@ -261,6 +284,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
 
   nb::module_::import_("typing");
   nb::module_::import_("mqt.core.qdmi");
+
+  m.def("_generate_benchmark", &generateBenchmark, "request_json"_a,
+        "Generate a typed benchmark request as a QC program.");
 
   nb::enum_<mlir::QIRProfile>(m, "QIRProfile", "QIR target profiles.")
       .value("BASE", mlir::QIRProfile::Base, "The QIR Base Profile.")
