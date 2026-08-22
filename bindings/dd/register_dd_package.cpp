@@ -323,7 +323,7 @@ Returns:
       [](dd::Package& p, const dd::vEdge& v, const qc::NonUnitaryOperation& op,
          const std::vector<bool>& measurements,
          const qc::Permutation& perm = {}) {
-        static std::mt19937_64 rng(std::random_device{}());
+        static thread_local std::mt19937_64 rng(std::random_device{}());
         auto measurementsCopy = measurements;
         return std::pair{
             applyMeasurement(op, v, p, rng, measurementsCopy, perm),
@@ -351,7 +351,7 @@ Returns:
       "apply_reset",
       [](dd::Package& p, const dd::vEdge& v, const qc::NonUnitaryOperation& op,
          const qc::Permutation& perm = {}) {
-        static std::mt19937_64 rng(std::random_device{}());
+        static thread_local std::mt19937_64 rng(std::random_device{}());
         return applyReset(op, v, p, rng, perm);
       },
       "vec"_a, "operation"_a, "permutation"_a = qc::Permutation{},
@@ -399,7 +399,7 @@ Returns:
   dd.def(
       "measure_collapsing",
       [](dd::Package& p, dd::vEdge& v, const dd::Qubit q) {
-        static std::mt19937_64 rng(std::random_device{}());
+        static thread_local std::mt19937_64 rng(std::random_device{}());
         return p.measureOneCollapsing(v, q, rng);
       },
       "vec"_a, "qubit"_a, R"pb(Measure a qubit and collapse the DD.
@@ -418,7 +418,7 @@ Returns:
   dd.def(
       "measure_all",
       [](dd::Package& p, dd::vEdge& v, const bool collapse = false) {
-        static std::mt19937_64 rng(std::random_device{}());
+        static thread_local std::mt19937_64 rng(std::random_device{}());
         return p.measureAll(v, collapse, rng);
       },
       "vec"_a, "collapse"_a = false, R"pb(Measure all qubits.

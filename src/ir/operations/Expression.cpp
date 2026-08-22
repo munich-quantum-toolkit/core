@@ -10,12 +10,14 @@
 
 #include "ir/operations/Expression.hpp"
 
+#include <mutex>
 #include <ostream>
 #include <string>
 
 namespace sym {
 
 Variable::Variable(const std::string& name) {
+  const std::lock_guard lock(registryMutex);
   if (const auto it = registered.find(name); it != registered.end()) {
     id = it->second;
   } else {
@@ -26,7 +28,10 @@ Variable::Variable(const std::string& name) {
   }
 }
 
-std::string Variable::getName() const noexcept { return names[id]; }
+std::string Variable::getName() const {
+  const std::lock_guard lock(registryMutex);
+  return names.at(id);
+}
 
 std::ostream& operator<<(std::ostream& os, const Variable& var) {
   os << var.getName();
