@@ -713,7 +713,7 @@ QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
   }
 
   // Check if the qubit is in the tracking set
-  if (!allocatedQubits.erase(qubit)) {
+  if (!allocatedQubits.remove(qubit)) {
     llvm::reportFatalUsageError("Invalid qubit deallocation");
   }
 
