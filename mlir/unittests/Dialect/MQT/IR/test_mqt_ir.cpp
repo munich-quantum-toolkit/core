@@ -86,9 +86,11 @@ TEST_F(MQTIRTest, RoundTripsTargetEnvironment) {
   auto moduleOp = parse(R"mlir(
     module attributes {
       mqt.target_env = #mqt.target_env<
-          format = "qir-adaptive",
-          features = ["measurement-result-use", "forward-branching"],
-          optionalFeaturesKnown = false>
+          id = "qir", version = "2.1.0", profile = "adaptive",
+          encoding = "text",
+          capabilities = [{id = "measurement-result-use", value = 0 : i64},
+                          {id = "forward-branching", value = 0 : i64}],
+          optionalFeaturesKnown = false, target = {sites = []}>
     } {
       func.func @main() { return }
     }
@@ -98,7 +100,9 @@ TEST_F(MQTIRTest, RoundTripsTargetEnvironment) {
   const auto targetEnv = (*moduleOp)->getAttrOfType<mqt::TargetEnvAttr>(
       mqt::TargetEnvAttr::getOperationAttributeName());
   ASSERT_TRUE(targetEnv);
-  EXPECT_EQ(targetEnv.getFormat().getValue(), "qir-adaptive");
+  EXPECT_EQ(targetEnv.getId().getValue(), "qir");
+  EXPECT_EQ(targetEnv.getVersion().getValue(), "2.1.0");
+  EXPECT_EQ(targetEnv.getProfile().getValue(), "adaptive");
   EXPECT_FALSE(targetEnv.getOptionalFeaturesKnown());
   EXPECT_TRUE(targetEnv.supports("measurement-result-use"));
   EXPECT_TRUE(targetEnv.supports("forward-branching"));
@@ -117,27 +121,34 @@ TEST_F(MQTIRTest, RoundTripsTargetEnvironment) {
 TEST_F(MQTIRTest, RejectsInvalidTargetEnvironments) {
   EXPECT_FALSE(parse(R"mlir(
     module attributes {
-      mqt.target_env = #mqt.target_env<format = "", features = [],
-          optionalFeaturesKnown = true>
+      mqt.target_env = #mqt.target_env<id = "", version = "2.1.0",
+          profile = "adaptive", encoding = "text", capabilities = [],
+          optionalFeaturesKnown = true, target = {sites = []}>
     }
   )mlir"));
   EXPECT_FALSE(parse(R"mlir(
     module attributes {
-      mqt.target_env = #mqt.target_env<format = "qir-adaptive",
-          features = [""], optionalFeaturesKnown = true>
+      mqt.target_env = #mqt.target_env<id = "qir", version = "2.1.0",
+          profile = "adaptive", encoding = "text",
+          capabilities = [{id = "", value = 0 : i64}],
+          optionalFeaturesKnown = true, target = {sites = []}>
     }
   )mlir"));
   EXPECT_FALSE(parse(R"mlir(
     module attributes {
-      mqt.target_env = #mqt.target_env<format = "qir-adaptive",
-          features = [1 : i64], optionalFeaturesKnown = true>
+      mqt.target_env = #mqt.target_env<id = "qir", version = "2.1.0",
+          profile = "adaptive", encoding = "text",
+          capabilities = [1 : i64], optionalFeaturesKnown = true,
+          target = {sites = []}>
     }
   )mlir"));
   EXPECT_FALSE(parse(R"mlir(
     module attributes {
-      mqt.target_env = #mqt.target_env<format = "qir-adaptive",
-          features = ["forward-branching", "forward-branching"],
-          optionalFeaturesKnown = true>
+      mqt.target_env = #mqt.target_env<id = "qir", version = "2.1.0",
+          profile = "adaptive", encoding = "text",
+          capabilities = [{id = "forward-branching", value = 0 : i64},
+                          {id = "forward-branching", value = 0 : i64}],
+          optionalFeaturesKnown = true, target = {sites = []}>
     }
   )mlir"));
   EXPECT_FALSE(parse(R"mlir(
@@ -149,9 +160,10 @@ TEST_F(MQTIRTest, RejectsTargetEnvironmentOutsideModule) {
   EXPECT_FALSE(parse(R"mlir(
     module {
       func.func @main() attributes {
-        mqt.target_env = #mqt.target_env<format = "qir-adaptive",
-            features = ["forward-branching"],
-            optionalFeaturesKnown = false>
+        mqt.target_env = #mqt.target_env<id = "qir", version = "2.1.0",
+            profile = "adaptive", encoding = "text",
+            capabilities = [{id = "forward-branching", value = 0 : i64}],
+            optionalFeaturesKnown = false, target = {sites = []}>
       } {
         return
       }

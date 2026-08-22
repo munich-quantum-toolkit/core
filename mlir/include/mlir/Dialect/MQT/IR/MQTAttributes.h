@@ -17,5 +17,8 @@
 #include <mlir/IR/Attributes.h>
 #include <mlir/Interfaces/DataLayoutInterfaces.h>
 
+#include <cstdint>
+#include <utility>
+
 #define GET_ATTRDEF_CLASSES
 #include "mlir/Dialect/MQT/IR/MQTAttributes.h.inc" // IWYU pragma: export

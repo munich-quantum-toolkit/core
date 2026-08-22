@@ -282,6 +282,12 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
   return queryString(name, size, value, sizeRet);
 }
 
+extern "C" int TEST_SESSION_QDMI_device_session_query_program_features(
+    QDMI_Device_Session /*session*/, const QDMI_Program_Format* /*format*/,
+    size_t /*size*/, void* /*value*/, size_t* /*sizeRet*/) {
+  return QDMI_ERROR_NOTSUPPORTED;
+}
+
 extern "C" int TEST_SESSION_QDMI_device_session_query_site_property(
     QDMI_Device_Session /*session*/, QDMI_Site /*site*/,
     QDMI_Site_Property /*property*/, size_t /*size*/, void* /*value*/,

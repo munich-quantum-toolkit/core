@@ -27,6 +27,8 @@
 
 namespace mlir {
 
+class DictionaryAttr;
+class MLIRContext;
 class Operation;
 
 /**
@@ -57,27 +59,31 @@ public:
   public:
     /// Create and canonicalize a payload-specific execution profile.
     [[nodiscard]] static llvm::Expected<ExecutionProfile>
-    create(ProgramFormat format, std::vector<ProgramFeature> features = {},
+    create(PayloadDescriptor descriptor,
+           std::vector<ProgramCapability> capabilities = {},
            bool optionalFeaturesKnown = true);
 
-    /// Return the program format described by this profile.
-    [[nodiscard]] ProgramFormat format() const noexcept;
+    /// Return the exact payload described by this profile.
+    [[nodiscard]] const PayloadDescriptor& descriptor() const noexcept;
 
-    /// Return the sorted runtime features supported for the format.
-    [[nodiscard]] llvm::ArrayRef<ProgramFeature> features() const noexcept;
+    /// Return the sorted runtime capabilities supported for the payload.
+    [[nodiscard]] llvm::ArrayRef<ProgramCapability>
+    capabilities() const noexcept;
 
     /// Return whether the target reported complete optional-feature metadata.
     [[nodiscard]] bool optionalFeaturesKnown() const noexcept;
 
     /// Return whether the profile lists a runtime feature.
-    [[nodiscard]] bool supports(ProgramFeature feature) const noexcept;
+    [[nodiscard]] bool supports(ProgramFeature feature,
+                                uint64_t value = 0U) const noexcept;
 
   private:
-    ExecutionProfile(ProgramFormat format, std::vector<ProgramFeature> features,
+    ExecutionProfile(PayloadDescriptor descriptor,
+                     std::vector<ProgramCapability> capabilities,
                      bool optionalFeaturesKnown);
 
-    ProgramFormat format_;
-    std::vector<ProgramFeature> features_;
+    PayloadDescriptor descriptor_;
+    std::vector<ProgramCapability> capabilities_;
     bool optionalFeaturesKnown_;
   };
 
@@ -339,6 +345,13 @@ public:
          std::optional<DurationUnit> durationUnit,
          std::optional<std::vector<ExecutionProfile>> executionProfiles);
 
+  /// Reconstruct a target from its canonical MLIR snapshot.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(DictionaryAttr snapshot);
+
+  /// Materialize the complete target as context-owned MLIR metadata.
+  [[nodiscard]] DictionaryAttr materialize(MLIRContext* context) const;
+
   /// Copying shares immutable storage; rvalues copy and keep the source valid.
   CompilerTarget(const CompilerTarget&) noexcept = default;
   CompilerTarget& operator=(const CompilerTarget&) noexcept = default;
@@ -408,12 +421,12 @@ public:
 
   /// Return the execution profile for @p format, if reported.
   [[nodiscard]] const ExecutionProfile*
-  executionProfile(ProgramFormat format) const noexcept;
+  executionProfile(const PayloadDescriptor& descriptor) const noexcept;
 
   /// Return whether the profile for @p format lists @p feature.
-  [[nodiscard]] bool
-  supportsProgramFeature(ProgramFormat format,
-                         ProgramFeature feature) const noexcept;
+  [[nodiscard]] bool supportsProgramFeature(const PayloadDescriptor& descriptor,
+                                            ProgramFeature feature,
+                                            uint64_t value = 0U) const noexcept;
 
   /**
    * @brief Return whether an operation capability is supported by the target.

@@ -72,6 +72,17 @@ Core reports the OpenQASM 3 error rather than retrying with OpenQASM 2. A device
 that advertises only OpenQASM 2 uses PennyLane's `qp.to_openqasm` serializer
 after device preprocessing.
 
+PennyLane advertises the native `one-shot` mid-circuit measurement method only
+when the selected OpenQASM 3 descriptor reports mid-circuit measurement,
+measured-qubit reuse, measurement-result use, Boolean computation, and forward
+branching, and the device exposes measurement and reset operations. The
+preprocessing pipeline splits noncommuting measurements before applying
+`dynamic_one_shot`, so each independently submitted group carries its own
+mid-circuit outcomes. The converter emits reset and measurement-conditioned
+gates in OpenQASM 3 and reconstructs PennyLane's raw MCM samples from the same
+shot output as the terminal measurements. Missing or unknown feature metadata
+keeps PennyLane's deferred-measurement behavior.
+
 ## End-to-end use case: finite-shot MaxCut QAOA
 
 Consider MaxCut on the fixed graph with $E=\{(0,1),(0,2),(1,2),(2,3)\}$.
@@ -322,5 +333,6 @@ Toffoli, SWAP, and CSWAP; ISWAP, PSWAP, and ECR; and Ising XX, XY, YY, and ZZ
 rotations. PennyLane decomposes higher-level operations when their
 decompositions reach operations advertised by the QDMI device.
 
-The interface does not implement pulse programming, device-specific non-gate
-properties, routing, analytic execution, or parallel job submission.
+The interface does not implement Catalyst or `qjit`, pulse programming,
+device-specific non-gate properties, routing, analytic execution, or parallel
+job submission.

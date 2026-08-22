@@ -157,7 +157,7 @@ first call to a function marked `irreversible`, following the semantic boundary
 defined by the Base Profile. It rejects other profiles and Base Profile programs
 whose irreversible region is not terminal.
 
-The generic submission APIs intentionally reject QDMI calibration and batch-job
-formats. Calibration jobs do not carry a program, while batch jobs contain job
-handles rather than serialized program bytes. Their format identifiers remain
-available for capability discovery; they require dedicated typed APIs.
+QDMI returns the complete QIR output-schema document through
+`Job::getProgramOutput()` and Python's `Job.get_program_output()`. Flat bit
+outputs are also available through shots and histograms in their declared
+logical output order.

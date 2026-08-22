@@ -17,15 +17,11 @@
 #include <memory>
 
 namespace mlir {
-
 class CompilerTarget;
 
 namespace qco {
 
-/**
- * @brief Create a mapping pass instance for a compiler target.
- * @returns a pass object.
- */
+/// Create a mapping pass with an explicit target.
 std::unique_ptr<Pass> createMappingPass(const CompilerTarget& target,
                                         MappingPassOptions options);
 

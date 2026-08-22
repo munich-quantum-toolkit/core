@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
@@ -29,6 +30,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <set>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -54,6 +56,11 @@ struct Metadata {
   /// Whether the module uses backward branching (0 = none, 1 = iteration based,
   /// 2 = condition based, 3 = both)
   int backwardsBranching{0};
+  std::set<std::string> integerTypes;
+  std::set<std::string> floatingTypes;
+  bool usesIRFunctions{false};
+  bool usesMultipleTargetBranching{false};
+  bool usesMultipleReturnPoints{false};
 };
 
 /**
@@ -71,8 +78,15 @@ protected:
     if (!main) {
       return;
     }
-    setMetadata(main, useAdaptive ? getAdaptive(main) : getBase(main),
-                rewriter);
+    Metadata metadata = useAdaptive ? getAdaptive(main) : getBase(main);
+    if (useAdaptive) {
+      collectOptionalFeatures(getOperation(), main, metadata);
+      if (failed(verifyTargetEnvironment(getOperation(), metadata))) {
+        signalPassFailure();
+        return;
+      }
+    }
+    setMetadata(main, metadata, rewriter);
   }
 
 private:
@@ -139,9 +153,32 @@ private:
                                              metadata.backwardsBranching)));
       flags.emplace_back(createBoolFlag(LLVM::ModFlagBehavior::Error, "arrays",
                                         metadata.useArrays));
+      if (metadata.usesIRFunctions) {
+        flags.emplace_back(
+            createBoolFlag(LLVM::ModFlagBehavior::Error, "ir_functions", true));
+      }
+      if (metadata.usesMultipleTargetBranching) {
+        flags.emplace_back(createBoolFlag(LLVM::ModFlagBehavior::Error,
+                                          "multiple_target_branching", true));
+      }
+      if (metadata.usesMultipleReturnPoints) {
+        flags.emplace_back(createBoolFlag(LLVM::ModFlagBehavior::Error,
+                                          "multiple_return_points", true));
+      }
     }
 
     removeExistingModuleFlags(m, rewriter);
+    const auto setTypes = [&](const StringRef name,
+                              const std::set<std::string>& types) {
+      if (types.empty()) {
+        m->removeAttr(name);
+        return;
+      }
+      SmallVector<StringRef> values(types.begin(), types.end());
+      m->setAttr(name, rewriter.getStrArrayAttr(values));
+    };
+    setTypes("qir.int_computations", metadata.integerTypes);
+    setTypes("qir.float_computations", metadata.floatingTypes);
     LLVM::ModuleFlagsOp::create(rewriter, m.getLoc(),
                                 rewriter.getArrayAttr(flags));
   }
@@ -364,6 +401,93 @@ private:
     });
 
     return std::make_tuple(useDynamicQubit, useDynamicResult, useArrays);
+  }
+
+  static void collectOptionalFeatures(ModuleOp moduleOp,
+                                      LLVM::LLVMFuncOp entryPoint,
+                                      Metadata& metadata) {
+    const auto recordType = [&](const Type type) {
+      if (const auto integer = dyn_cast<IntegerType>(type);
+          integer && integer.getWidth() > 1) {
+        metadata.integerTypes.emplace("i" + std::to_string(integer.getWidth()));
+      } else if (type.isF16()) {
+        metadata.floatingTypes.emplace("half");
+      } else if (type.isF32()) {
+        metadata.floatingTypes.emplace("float");
+      } else if (type.isF64()) {
+        metadata.floatingTypes.emplace("double");
+      }
+    };
+
+    moduleOp.walk([&](LLVM::LLVMFuncOp function) {
+      if (function.isExternal()) {
+        return;
+      }
+      metadata.usesIRFunctions |= function != entryPoint;
+      if (function != entryPoint) {
+        recordType(function.getFunctionType().getReturnType());
+        llvm::for_each(function.getFunctionType().getParams(), recordType);
+      }
+      size_t returnCount = 0;
+      function.walk([&](Operation* operation) {
+        returnCount += isa<LLVM::ReturnOp>(operation);
+        metadata.usesMultipleTargetBranching |= isa<LLVM::SwitchOp>(operation);
+        llvm::for_each(operation->getResultTypes(), recordType);
+      });
+      metadata.usesMultipleReturnPoints |= returnCount > 1;
+    });
+  }
+
+  static LogicalResult verifyTargetEnvironment(ModuleOp moduleOp,
+                                               const Metadata& metadata) {
+    const auto environment = moduleOp->getAttrOfType<mqt::TargetEnvAttr>(
+        mqt::TargetEnvAttr::getOperationAttributeName());
+    if (!environment || environment.getId().getValue() != "qir") {
+      return success();
+    }
+    const auto require =
+        [&](const StringRef feature, const uint64_t value = 0U) {
+          if (environment.supports(feature, value)) {
+            return success();
+          }
+          moduleOp.emitError()
+              << "selected QIR payload does not support capability '" << feature
+              << "'";
+          return failure();
+        };
+    LogicalResult result = success();
+    for (const std::string& type : metadata.integerTypes) {
+      uint64_t width = 0;
+      const bool invalid = StringRef(type).drop_front().getAsInteger(10, width);
+      assert(!invalid && "derived integer type width must be numeric");
+      if (failed(require("integer-computation", width))) {
+        result = failure();
+      }
+    }
+    const auto floatWidth = [](const StringRef type) {
+      return type == "half" ? 16U : type == "float" ? 32U : 64U;
+    };
+    for (const std::string& type : metadata.floatingTypes) {
+      if (failed(require("float-computation", floatWidth(type)))) {
+        result = failure();
+      }
+    }
+    const auto check = [&](const bool used, const StringRef feature) {
+      if (used) {
+        if (failed(require(feature))) {
+          result = failure();
+        }
+      }
+    };
+    check(metadata.usesIRFunctions, "ir-functions");
+    check(metadata.usesMultipleTargetBranching, "multiway-branching");
+    check(metadata.usesMultipleReturnPoints, "multiple-return-points");
+    check(metadata.useDynamicQubit, "dynamic-qubit-management");
+    check(metadata.useDynamicResult, "dynamic-result-management");
+    check(metadata.useArrays, "arrays");
+    check((metadata.backwardsBranching & 1) != 0, "counted-iteration");
+    check((metadata.backwardsBranching & 2) != 0, "conditional-loop");
+    return result;
   }
 
   /// Return the metadata for a QIR base profile compliant program.

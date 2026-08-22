@@ -47,9 +47,12 @@ namespace mlir::qir {
 /// metadata and only supports array-valued flags for LLVM's own CG profile.
 /// QIR instead requires i1/i2 capability flags and metadata tuples describing
 /// the integer and floating-point widths used by Adaptive Profile classical
-/// computations. This function repairs the scalar flag widths and derives the
-/// optional Adaptive Profile flags from the translated LLVM module.
-void normalizeQIRModuleFlags(llvm::Module& moduleOp, bool useAdaptive);
+/// computations. This function repairs the scalar flag widths and serializes
+/// type metadata that the MLIR pipeline derived before translation.
+void normalizeQIRModuleFlags(
+    llvm::Module& moduleOp, bool useAdaptive,
+    llvm::ArrayRef<llvm::StringRef> integerTypes = {},
+    llvm::ArrayRef<llvm::StringRef> floatingTypes = {});
 
 // QIR function names
 

@@ -35,4 +35,12 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const CompilerTarget& target,
                                        ProgramFormat format);
 
+/**
+ * @brief Populate target compilation for an exact payload and output stage.
+ */
+void populateTargetCompilationPipeline(OpPassManager& pm,
+                                       const CompilerTarget& target,
+                                       ProgramFormat format,
+                                       const PayloadDescriptor& descriptor);
+
 } // namespace mlir

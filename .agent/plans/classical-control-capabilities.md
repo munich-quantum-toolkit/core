@@ -1,285 +1,256 @@
-# Legalize payload-scoped classical execution features
+# Implement exact payload capabilities across QDMI and MQT Core
 
-This ExecPlan is a living document. Keep `Progress`, `Surprises & Discoveries`,
-`Decision Log`, and `Outcomes & Retrospective` current while the work proceeds.
-The repository-wide conventions in `.agent/PLANS.md` apply.
+This ExecPlan is a living document. The sections `Progress`,
+`Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
+be kept up to date as work proceeds.
+
+This ExecPlan must be maintained in accordance with `.agent/PLANS.md` from the
+repository root.
 
 ## Purpose / Big Picture
 
-Target compilation must answer a payload-specific question: can the selected
-execution profile run the program that remains after ordinary compiler
-normalization and target-driven legalization? The old branch instead attached a
-flat list of MLIR control-flow shapes to the hardware target and checked the
-entire input module before canonicalization. That made QIR Adaptive support leak
-into unrelated outputs, treated syntax as execution semantics, rejected unused
-helpers, and duplicated MLIR's folding and reachability machinery.
+After this work, a QDMI device can identify an accepted payload by its format
+family, version, profile, and encoding and can report the runtime features that
+it accepts for that exact payload. MQT Core selects one such payload, stores the
+complete target environment in MLIR, applies ordinary compiler transformations,
+and rejects only the unsupported features that remain. The same metadata can
+then be projected into Qiskit and PennyLane without claiming features that their
+selected serializers cannot emit.
 
-After this change, a `CompilerTarget` contains optional metadata for one or more
-selected `ProgramFormat` profiles. Each `ExecutionProfile` lists atomic semantic
-features and records whether optional feature metadata is complete. Target
-compilation materializes the selected profile as a serializable typed
-`mqt.target_env` module attribute, normalizes first, legalizes finite counted
-loops when the profile has no native iteration, and checks only the marked entry
-point with MLIR dialect-conversion legality. A failed in-place compilation is
-transactional because all passes run on a copy.
-
-The observable result is that static/dead control and structural regions need no
-runtime feature, unused helpers do not affect a program, reachable calls fail
-closed until interprocedural execution semantics are modeled, and QDMI QIR
-Adaptive metadata authorizes only its mandatory baseline for that payload.
+The user can observe this through three end-to-end behaviors. A QIR 2.1 Base and
+Adaptive payload from one device have distinct profiles. A static loop can
+compile for a target without runtime iteration after MLIR unrolls it, while a
+residual dynamic loop fails. Qiskit and PennyLane expose dynamic behavior only
+when the exact payload selected at device construction supports it.
 
 ## Progress
 
-- [x] (2026-08-22) Re-read the requested architecture review and verify every
-  material claim against `codex/classical-control-support` at `f07024023`.
-- [x] (2026-08-22) Audit the target API, QDMI adapter/client, compiler pipeline,
-  QCO/SCF canonicalization and loop utilities, tests, and docs.
-- [x] (2026-08-22) Replace the obsolete preflight-oriented ExecPlan with this
-  payload-scoped legalization plan.
-- [x] (2026-08-22) Introduce `ProgramFeature` and immutable payload-scoped
-      `CompilerTarget::ExecutionProfile` metadata, including unknown versus
-      known empty profile metadata.
-- [x] (2026-08-22) Add the typed, serializable `mqt.target_env` attribute and
-  make target passes query it without treating execution features as a
-  data-layout spec.
-- [x] (2026-08-22) Make `QCOProgram::compileForTarget` accept the selected
-      output profile and run transactionally on a copy.
-- [x] (2026-08-22) Replace `TargetControlAnalysis` and the recursive
-      whole-module preflight with cleanup-first target legalization and
-      `ConversionTarget` legality rooted at `mqt.entry_point`.
-- [x] (2026-08-22) Restore the released QDMI vector getter, add an ABI-safe
-  optional query, remove trusted caller augmentation, and construct
-  payload-scoped profiles.
-- [x] (2026-08-22) Rewrite focused C++/Python tests and user documentation to
-  describe and validate the new contract; retain one compact constant
-  `qco.index_switch` regression.
-- [x] (2026-08-22) Build affected libraries and run focused and complete
-  relevant tests.
-- [ ] Run `uvx nox -s lint`.
+- [x] (2026-08-22 17:20Z) Refreshed both pull-request heads, preserved immutable
+      backup refs, and merged current Core `main` into PR #2162.
+- [x] (2026-08-22 18:15Z) Rewrote QDMI PR #508 around exact payload descriptors,
+      closed per-descriptor feature queries, and payload-declared results.
+- [x] (2026-08-22 18:35Z) Added Core's exact payload descriptor and adapted QDMI
+      1.4 metadata without format-based capability inference.
+- [x] (2026-08-22 19:05Z) Materialized the complete target snapshot in
+      `mqt.target_env`; the standard mapping, synthesis, and conformance
+      pipeline reads it from IR.
+- [x] (2026-08-22 19:20Z) Replaced the custom target analyzer with MLIR
+      normalization, bounded SCF unrolling, call-graph reachability, and
+      dialect-conversion legality.
+- [x] (2026-08-22 19:45Z) Moved QIR 2.1 feature derivation and validation before
+      LLVM translation; translation only serializes the derived string tuples
+      and repairs scalar widths.
+- [x] (2026-08-22 18:40Z) Projected the selected profile into Qiskit and
+      PennyLane.
+- [x] (2026-08-22 20:20Z) Ran focused and complete C++ and Python tests,
+      generated stubs, built executable documentation, and passed lint. The link
+      checker reaches one pre-existing unreleased documentation URL that returns
+      404. Hosted validation starts after publication.
 
 ## Surprises & Discoveries
 
-- `TargetControlAnalysis(getOperation())` and recursive verification start at
-  the `ModuleOp`, so an uncalled LLVM helper can reject a valid entry program.
-- The verifier runs before `populateQCOCleanupPipeline` and reimplements
-  folding, selected-region traversal, region depth, zero-trip loops, and
-  captures.
-- Existing canonicalization already removes constant `qco.if`,
-  `qco.index_switch`, `scf.if`, `scf.index_switch`, and `scf.execute_region`;
-  SCCP handles cross-operation constants.
-- The existing `qco::QuantumLoopUnroll` only selects loops with a quantum init
-  argument and fails on non-constant full unrolling. Target legalization must
-  attempt all finite entry-point `scf.for` loops and leave residual loops for
-  the legality diagnostic.
-- QDMI distinguishes a missing supported-format property from a successful empty
-  list: `TEST_SESSION` returns `QDMI_ERROR_NOTSUPPORTED`, while the SC device
-  reports success with size zero.
-- QIR Adaptive format support guarantees mid-circuit measurement, result use as
-  `i1`, and forward branching. Loops, switch-like branching, wider integer/float
-  computation, functions, and related module features are optional.
+- Observation: Core PR #2162 had diverged from current `main`, which now
+  contains overlapping OpenQASM and Qiskit work. Evidence: merging `origin/main`
+  added three completed ExecPlans and the corresponding compiler changes without
+  a conflict.
+- Observation: the current Core implementation does not consume QDMI PR #508. It
+  remains pinned to QDMI 1.3.3 and infers a QIR Adaptive profile from legacy
+  format presence.
+- Observation: MLIR 22 already provides
+  `LoopLikeOpInterface::getStaticTripCount`, `scf::loopUnrollFull`,
+  region-branch canonicalization patterns, SCCP, symbol DCE, and
+  `getUsedValuesDefinedAbove`. The custom trip-count, reachability, and
+  region-depth engines are not required.
+- Observation: MLIR 22's `LLVM::ModuleFlagAttr` accepts only integer and string
+  values for unknown keys, while QIR requires string tuples for integer and
+  floating-point computation flags. The MLIR pass therefore derives and
+  validates the type lists, stores them as QIR module attributes, and the
+  translation boundary serializes those lists without rescanning LLVM IR.
 
 ## Decision Log
 
-- Decision: replace `CompilerTarget::ClassicalControl` with atomic
-  `ProgramFeature` values stored per `ProgramFormat` in `ExecutionProfile`.
-  Rationale: execution semantics belong to a selected payload, and a generic
-  `Conditional` flag cannot express condition provenance or prerequisites. Date:
-  2026-08-22.
-- Decision: make the complete profile list optional. `nullopt` means it was not
-  reported; an engaged empty list means known empty; a present profile can mark
-  optional feature metadata incomplete. Rationale: these are different facts and
-  must survive fail-closed handling. Date: 2026-08-22.
-- Decision: materialize the selected profile as a typed `mqt.target_env`
-  attribute containing format, supported features, and completeness. Rationale:
-  passes receive serializable MLIR input rather than captured out-of-band state.
-  It may implement `DLTIQueryInterface`, but it is not a
-  `DataLayoutSpecInterface`. Date: 2026-08-22.
-- Decision: keep program requirements separate from execution-profile
-  capabilities and compiler lowering legality; do not persist a stale
-  requirements attribute. Date: 2026-08-22.
-- Decision: normalize with SCCP and QCO cleanup before checking residual
-  control, then use `ConversionTarget` with an empty rewrite set for legality.
-  Rationale: MLIR canonicalization and conversion replace bespoke evaluation.
-  Date: 2026-08-22.
-- Decision: root legality at `mqt.entry_point`; ignore uncalled helpers and
-  reject reachable `func.call` until interprocedural semantics are modeled.
-  Date: 2026-08-22.
-- Decision: if counted iteration is unavailable, fully unroll finite `scf.for`
-  loops with an exact, expansion-bounded rewrite and clean up again. A residual
-  loop is a runtime requirement. Date: 2026-08-22.
-- Decision: compile a cloned `QCOProgram` and replace the original only after
-  success. Rationale: ownership provides atomicity without a read-only
-  preflight. Date: 2026-08-22.
-- Decision: preserve the released throwing QDMI format getter and add a
-  separately named optional getter. Rationale: changing only a C++ return type
-  is ABI-unsafe. Date: 2026-08-22.
-- Decision: remove QDMI caller augmentation. Infer only mandatory QIR Adaptive
-  features for the Adaptive profile and mark optional features unknown. Date:
-  2026-08-22.
-- Decision: keep constant `qco.index_switch` canonicalization with one compact
-  regression. Date: 2026-08-22.
-- Decision: defer the QDMI specification extension and Qiskit/PennyLane SDK
-  projections to separate changes. Date: 2026-08-22.
+- Decision: Preserve both existing pull requests and Simon Hofmann's authorship.
+  Rationale: Simon implemented the originally agreed contract and supplied
+  useful operations and tests; the contract changed after ecosystem study.
+  Date/Author: 2026-08-22, Codex.
+- Decision: QDMI 1.4 uses one fixed exact descriptor and string feature records
+  instead of extending numeric enums. Rationale: exact identity avoids
+  version/profile inference and string features can grow without changing the C
+  ABI. Date/Author: 2026-08-22, Codex.
+- Decision: A descriptor-specific feature query has only two metadata states:
+  unsupported means unknown, and success returns the complete optional set,
+  which may be empty. Rationale: this removes the `NONE` sentinel and
+  contradictory per-row completeness fields. Date/Author: 2026-08-22, Codex.
+- Decision: Multi-program jobs are independent follow-up work and do not block
+  capability negotiation. Rationale: Core, Qiskit, and PennyLane can use the
+  existing one-program job path, so batching would enlarge the critical change
+  without enabling the target contract. Date/Author: 2026-08-22, Codex.
+- Decision: Core uses MLIR dialect conversion for residual legality but ordinary
+  canonicalization and SCCP for normalization. Rationale: program requirements
+  change after rewrites; a one-time preflight set is not a proof of
+  legalizability. Date/Author: 2026-08-22, Codex.
+- Decision: Keep explicit-target pass factory overloads for focused pass tests
+  and source compatibility, but make the standard and textual pass path read the
+  complete target snapshot from `mqt.target_env`. Rationale: this achieves
+  reproducible pipelines without forcing unrelated test rewrites. Date/Author:
+  2026-08-22, Codex.
 
 ## Outcomes & Retrospective
 
-The payload-scoped implementation and focused validation are complete.
-
-The target-pipeline test block now covers payload isolation,
-measurement-feedback and lifecycle prerequisites, mixed-domain arithmetic,
-measured-qubit provenance through structured results, bounded aggregate
-finite-loop legalization, bounded feedback provenance, residual-loop features,
-entry-point reachability, generic reachable-call rejection, scalar and aggregate
-math/LLVM computation, fail-closed unmodelled classical producers, CBit aliases,
-unsupported output formats, cycle-safe recursive LLVM aggregates, structural
-quantum-state limits, and transactional failure without pinning the removed
-preflight evaluator. The focused target-compilation filter and compact
-index-switch regression pass. The complete QCO IR binary passes all 487 tests,
-and the complete compiler binary passes all 193 tests. Registering the MQT
-dialect in the compiler test fixture also validates textual round-trips for
-empty-feature target environments.
+The implementation now follows the three-layer contract: QDMI reports accepted
+semantics for an exact payload; MLIR derives residual program requirements and
+legalizes supported alternatives; SDK adapters project only the selected
+producer path. The old recursive preflight analyzer and its
+implementation-specific tests were deleted. Static control is normalized,
+bounded loops are unrolled, multiway QCO branches lower to nested forward
+branches, and failed compilation remains transactional. The QDMI branch has been
+pushed with signed commits. Core passed 4,326 CTest cases, 148 compiler tests,
+344 focused Python tests, 42 PennyLane tests, generated-stub checks, executable
+documentation, and all lint hooks. The link checker found only the existing
+unreleased Qiskit-backend documentation URL. Core publication and hosted
+validation remain.
 
 ## Context and Orientation
 
-`mlir/include/mlir/Compiler/ProgramFormat.h` owns output-format and
-program-feature enums. `Target.h` and `Target.cpp` own immutable target and
-profile metadata. Target storage is already private shared state, so replacing
-the PR-only flat list does not change `CompilerTarget` object layout.
+QDMI is a C interface in a separate repository. Its `include/qdmi/constants.h`
+currently represents program formats as numeric enum values that combine a
+format, profile, and encoding. PR #508 adds another numeric enum for runtime
+features and returns relation records through a generic device property. That
+shape cannot identify QIR 2.1 independently from the existing QIR 1 contract,
+cannot report integer or floating-point widths, and can represent contradictory
+completeness states.
 
-The MQT dialect owns metadata that survives quantum dialect conversions. The
-target environment belongs there because it is the selected compilation contract
-and must serialize with the module.
+MQT Core wraps QDMI in `include/mqt-core/qdmi/Client.hpp` and
+`src/qdmi/Client.cpp`. The MLIR compiler target is declared in
+`mlir/include/mlir/Compiler/Target.h`. PR #2162 adds
+`mlir/include/mlir/Compiler/ProgramFormat.h`, a typed target attribute in
+`mlir/include/mlir/Dialect/MQT/IR/MQTDialect.td`, and target compilation in
+`mlir/lib/Compiler/TargetCompilation.cpp`. The target compilation file is more
+than two thousand lines because it reimplements constant-loop evaluation,
+reachability, classical-bit provenance, feedback provenance, type discovery, and
+quantum capture checks. The final dialect conversion has no rewrite patterns and
+therefore only verifies the custom analysis result.
 
-`Programs.cpp` owns `QCOProgram` value semantics and the default pipeline. It is
-where the final `ProgramFormat` is known. `TargetCompilation.cpp` owns
-target-driven QCO transformation, mapping, synthesis, and conformance; it uses
-the selected environment for semantic legality and `CompilerTarget` for topology
-and native operations.
+A payload descriptor is the exact tuple accepted at job submission: format ID,
+version, optional profile, and text or binary encoding. A capability is a string
+ID and a numeric value. Boolean capabilities use value zero. Integer and
+floating-point capabilities repeat the ID for each supported width. A normative
+baseline is the behavior guaranteed by one standardized descriptor. The
+effective profile is that baseline plus the complete optional list reported by
+the device. When a device cannot report the optional list, Core retains that
+fact for diagnostics and conservatively assumes only the baseline.
 
-`QDMIAdapter.cpp` snapshots devices. QDMI program formats describe accepted
-payloads; string/module variants of one QIR profile map to one Core profile.
-
-Focused tests live in `test_compiler_target.cpp`, `test_compiler_pipeline.cpp`,
-`test_compiler_qdmi_adapter.cpp`, `test/qdmi/test_client.cpp`, and the
-corresponding Python tests.
+`mqt.target_env` is a typed MLIR attribute on `module`. It must contain the
+selected exact payload and the immutable target snapshot so that passes can be
+constructed from a textual pipeline without hidden C++ objects. It implements
+`DLTIQueryInterface`, the generic MLIR query interface for target information;
+it is not a memory data-layout specification.
 
 ## Plan of Work
 
-First, move `ProgramFormat` to a shared header and add atomic `ProgramFeature`
-values. Add immutable profile construction, canonical ordering, duplicate-format
-rejection, optional profile-list metadata, and selected-format queries. Project
-the API into Python without the unreleased flat control names.
+First, revise QDMI PR #508. Replace the legacy format enum at the public job and
+device boundaries with a C11-compatible fixed descriptor containing a packed
+version, encoding, fixed format ID, and fixed profile ID. Add a fixed string
+feature record and a descriptor-specific two-call query to both client and
+device interfaces. `QDMI_ERROR_NOTSUPPORTED` means optional metadata is unknown;
+success returns a complete list. Define QIR 2.1 Base and Adaptive descriptors
+and the initial feature IDs. Clarify that SHOTS and histogram keys contain
+payload-declared flat bit outputs and add a format-native program-output result.
+Remove calibration and batch pseudo-formats from the payload enum and remove the
+calibration-need property. Update the example, device template, tests,
+changelog, and upgrade guide.
 
-Second, add generated `mqt::TargetEnvAttr` with a stable textual form and
-helpers for format, features, completeness, and feature queries. Register it and
-allow it only as `mqt.target_env` on a module.
+Second, update Core to consume the QDMI contract. Introduce one context-free
+payload descriptor and capability record. Remove `QIRProfile` and profile
+variants from `ProgramFormat`. Replace the target factory overload matrix with
+one validated description. Change the QDMI adapter to map descriptors and query
+their optional features; remove every feature inference based only on format
+presence.
 
-Third, thread `ProgramFormat` through transactional target compilation. The
-target pipeline attaches the chosen environment before transformation.
+Third, complete `mqt.target_env`. Store the selected descriptor, effective
+capabilities, metadata completeness, sites, couplings, operations, and timing
+unit. Materialize it on a compilation copy before running passes. Refactor
+mapping, native synthesis, and conformance passes to read that attribute, then
+remove target parameters from pass constructors and pipeline population
+functions.
 
-Fourth, run SCCP and cleanup. When needed, fully unroll finite entry-point loops
-and clean up again. Replace manual dispatch with `ConversionTarget` legality for
-known QCO/SCF control, QTensor indices, quantum tensors/captures, and
-measurement-derived conditions. Unknown branch interfaces and reachable calls
-are illegal; ordinary operations are legal.
+Fourth, replace `TargetCompilation.cpp`. Run symbol DCE, SCCP, QCO cleanup, and
+region-branch canonicalization first. Use `LoopLikeOpInterface` and
+`scf::loopUnrollFull` to erase constant counted loops when the payload lacks
+runtime iteration. Bound only the estimated expanded operation count. Add a
+small operation interface that returns instance-dependent capability records;
+provide external models for SCF and arithmetic operations. Use dynamic legality
+and real rewrite patterns to lower multiway branching to forward branches when
+possible and to reject unsupported residual operations. Reuse QCO's
+`WireIterator` and SSA use lists for measurement and qubit requirements. Use a
+standard MLIR dataflow analysis only if a remaining non-local case proves that
+one is necessary.
 
-Fifth, add the optional QDMI format query and construct OpenQASM 3 and QIR Base
-profiles with unknown optional-feature metadata, plus the mandatory QIR Adaptive
-baseline with optional-feature metadata unknown, without cross-profile
-promotion.
+Fifth, move QIR feature derivation into the MLIR LLVM-dialect pipeline. Derive
+integer and floating-point widths, functions, branch modes, multiple returns,
+arrays, and dynamic allocation before translation. Compare them with the
+selected QIR 2.1 profile. LLVM translation then serializes the validated module
+flags without discovering or deleting capabilities.
 
-Finally, replace implementation-pinning tests and prose. Delete the unreleased
-upgrading section, fold #2162 into the compiler-target changelog item, and
-document cleanup-first, three-layer legality.
+Finally, update the SDK plugins. Qiskit selects one exact descriptor and
+serializer at backend construction and adds its native control-flow instruction
+classes from that profile. PennyLane selects one OpenQASM 3 descriptor and
+advertises one-shot mid-circuit measurement only when both the profile and its
+converter support the path. Its transform order is split-non-commuting first,
+then dynamic-one-shot for every split tape.
 
 ## Concrete Steps
 
-Run from the clean worktree:
+From the QDMI repository root, iterate with:
 
-    cd /private/tmp/mqt-core-classical-control-redesign
-    git status --short
-    git diff --check
+    cmake --preset release
+    cmake --build --preset release -j2
+    ./build/release/test/qdmi_test --gtest_filter='*ProgramFormat*:*ProgramFeature*:*Result*'
+    uvx prek run -a
 
-Configure a disconnected release build with local dependency sources if needed.
-Build the smallest affected targets first, then compiler and unit-test aggregate
-targets. Run focused filters for target metadata, target compilation, QDMI,
-static index-switch canonicalization, and Python bindings. Then run the complete
-relevant CTest aggregate and:
+From the Core repository root, iterate with:
 
-    uvx nox -s lint
+    cmake --preset release
+    cmake --build --preset release --target mqt-core-mlir-unittests-compiler -j2
+    ./build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler --gtest_filter='CompilerTargetTest.*:CompilerPipelineTest.TargetCompilation*'
+    uv run --no-sync pytest test/python/test_mlir.py test/python/qdmi test/python/test_mlir_qiskit_translation.py
 
-Do not push unless the user separately requests it.
+After bindings change, run:
+
+    uvx nox -s stubs
+
+Before handoff, run the complete QDMI and Core suites, build both documentation
+sets, run `git diff --check`, and finish with `uvx nox -s lint` in Core and
+`uvx prek run -a` in QDMI. Record every failure that is unrelated or cannot run
+locally.
 
 ## Validation and Acceptance
 
-Acceptance requires:
+QDMI acceptance requires exact descriptors to round-trip through discovery and
+job submission. QIR Base text, QIR Base binary, QIR Adaptive text, and QIR
+Adaptive binary are four independent descriptors. An unsupported feature query
+is observable as unknown; a successful empty query is observable as baseline
+only. Width records and format-native output survive the two-call APIs.
 
-1. One target exposes different QIR Adaptive and QIR Base features; absent
-   features fail closed.
-2. Unknown profiles, known empty profiles, and unknown optional features remain
-   distinguishable in C++ and Python.
-3. `mqt.target_env` round-trips in textual MLIR.
-4. Normalized-away control requires no runtime feature.
-5. A finite loop compiles without native iteration and leaves no `scf.for`; a
-   residual dynamic loop fails without `CountedIteration`.
-6. Unsupported control in an unused helper is ignored; a reachable call fails.
-7. Forward branching requires measurement-feedback semantics and does not
-   authorize arbitrary external or wider classical computation.
-8. Failed target compilation leaves the caller's program unchanged.
-9. QDMI Adaptive features stay scoped to Adaptive and optional features remain
-   unknown.
-10. Focused/complete tests, `git diff --check`, and lint pass.
+Core acceptance requires `mqt.target_env` to round-trip through textual MLIR and
+all target passes to run without captured target objects. Static branches and
+bounded loops compile for a target without the corresponding runtime feature. A
+residual dynamic loop fails with a capability diagnostic. A multiway branch
+lowers to forward branches when supported. Failed compilation leaves the source
+program unchanged. QIR 2.1 flags are present before LLVM translation and match
+the selected descriptor.
+
+SDK acceptance requires Qiskit to expose control-flow classes only for its
+selected serializer and PennyLane to advertise one-shot only for a selected
+OpenQASM 3 path that can emit and reconstruct all required bits. Metadata from
+another accepted descriptor must never leak into either SDK target.
 
 ## Idempotence and Recovery
 
-All edits are ordinary patches; builds and tests are repeatable. Compilation is
-safe to retry because it runs on a copy. Work occurs in a separate clean
-worktree; do not use destructive Git commands. Regenerate stubs with repository
-tooling if necessary rather than modifying unrelated generated content.
-
-## Artifacts and Notes
-
-Useful work retained from the original implementation includes immutable target
-storage, QDMI snapshotting, target compilation, and constant `qco.index_switch`
-canonicalization. The abstraction and placement change; those contributions are
-not discarded.
-
-The QDMI v1.4 feature-property proposal is an external follow-up. It should use
-per-format atomic feature records and preserve unknown versus known empty. It is
-not implemented here.
-
-## Interfaces and Dependencies
-
-The intended C++ surface includes:
-
-    enum class ProgramFeature : uint8_t { ... };
-
-    class CompilerTarget::ExecutionProfile {
-    public:
-      static llvm::Expected<ExecutionProfile>
-      create(ProgramFormat, std::vector<ProgramFeature> = {},
-             bool optionalFeaturesKnown = true);
-      ProgramFormat format() const noexcept;
-      llvm::ArrayRef<ProgramFeature> features() const noexcept;
-      bool optionalFeaturesKnown() const noexcept;
-      bool supports(ProgramFeature) const noexcept;
-    };
-
-    std::optional<llvm::ArrayRef<ExecutionProfile>>
-    CompilerTarget::executionProfiles() const noexcept;
-    const ExecutionProfile*
-    CompilerTarget::executionProfile(ProgramFormat) const noexcept;
-    bool CompilerTarget::supportsProgramFeature(ProgramFormat,
-                                                 ProgramFeature) const noexcept;
-
-    bool QCOProgram::compileForTarget(const CompilerTarget&, ProgramFormat,
-                                      bool enableTiming = false,
-                                      bool enableStatistics = false);
-
-    std::optional<std::vector<QDMI_Program_Format>>
-    qdmi::Device::tryGetSupportedProgramFormats() const;
-
-Implementation uses existing SCCP/canonicalization passes, exact widened-APInt
-trip-count evaluation, an aggregate-bounded `scf.for` rewrite driven by
-`applyOpPatternsGreedily`, `ConversionTarget`, `RewritePatternSet`, and
-`applyPartialConversion`. No new third-party dependency is required.
+The reviewed heads are preserved under local backup refs before modification.
+Builds and tests write only to ignored build directories. Ordinary source edits
+are repeatable. Do not discard unrelated worktree changes. Before any remote
+update, fetch the exact remote head again, verify every new commit signature,
+and push with a normal fast-forward. If branch history must be rewritten, create
+another backup and use an exact `--force-with-lease` value; never use an
+unqualified force push.

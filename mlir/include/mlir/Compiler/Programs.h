@@ -232,6 +232,13 @@ public:
                                       bool enableTiming = false,
                                       bool enableStatistics = false);
 
+  /// Compile this program for an exact target payload and output stage.
+  [[nodiscard]] bool compileForTarget(const CompilerTarget& target,
+                                      const PayloadDescriptor& descriptor,
+                                      ProgramFormat format,
+                                      bool enableTiming = false,
+                                      bool enableStatistics = false);
+
   /// Consume this program and convert it to QC.
   [[nodiscard]] std::optional<QCProgram> intoQC() &&;
 

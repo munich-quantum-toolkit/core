@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -439,8 +440,9 @@ struct TargetNativeSynthesisPass final
     : PassWrapper<TargetNativeSynthesisPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TargetNativeSynthesisPass)
 
+  TargetNativeSynthesisPass() = default;
   explicit TargetNativeSynthesisPass(const CompilerTarget& targetIn)
-      : target(targetIn) {}
+      : explicitTarget(targetIn) {}
 
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<QCODialect, arith::ArithDialect>();
@@ -448,6 +450,27 @@ struct TargetNativeSynthesisPass final
 
 protected:
   void runOnOperation() override {
+    std::optional<CompilerTarget> parsedTarget = explicitTarget;
+    if (!parsedTarget) {
+      const auto environment =
+          getOperation()->getAttrOfType<mqt::TargetEnvAttr>(
+              mqt::TargetEnvAttr::getOperationAttributeName());
+      if (!environment) {
+        getOperation().emitError(
+            "target-native synthesis requires mqt.target_env");
+        signalPassFailure();
+        return;
+      }
+      auto parsed = CompilerTarget::create(environment.getTarget());
+      if (!parsed) {
+        getOperation().emitError() << "invalid target environment: "
+                                   << llvm::toString(parsed.takeError());
+        signalPassFailure();
+        return;
+      }
+      parsedTarget.emplace(std::move(*parsed));
+    }
+    const CompilerTarget& target = *parsedTarget;
     if (!target.hasExplicitOperations()) {
       return;
     }
@@ -489,19 +512,39 @@ protected:
     }
   }
 
-  CompilerTarget target;
+  std::optional<CompilerTarget> explicitTarget;
 };
 
 struct VerifyTargetConformancePass final
     : PassWrapper<VerifyTargetConformancePass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(VerifyTargetConformancePass)
 
+  VerifyTargetConformancePass() = default;
   explicit VerifyTargetConformancePass(const CompilerTarget& targetIn)
-      : target(targetIn) {}
+      : explicitTarget(targetIn) {}
 
 protected:
   void runOnOperation() override {
     ModuleOp moduleOp = getOperation();
+    std::optional<CompilerTarget> parsedTarget = explicitTarget;
+    if (!parsedTarget) {
+      const auto environment = moduleOp->getAttrOfType<mqt::TargetEnvAttr>(
+          mqt::TargetEnvAttr::getOperationAttributeName());
+      if (!environment) {
+        moduleOp.emitError("target conformance requires mqt.target_env");
+        signalPassFailure();
+        return;
+      }
+      auto parsed = CompilerTarget::create(environment.getTarget());
+      if (!parsed) {
+        moduleOp.emitError() << "invalid target environment: "
+                             << llvm::toString(parsed.takeError());
+        signalPassFailure();
+        return;
+      }
+      parsedTarget.emplace(std::move(*parsed));
+    }
+    const CompilerTarget& target = *parsedTarget;
     Operation* root = moduleOp;
     if (const auto entryPoint = mqt::getEntryPoint(moduleOp)) {
       root = entryPoint;
@@ -558,9 +601,9 @@ protected:
     }
   }
 
-  CompilerTarget target;
-
 private:
+  std::optional<CompilerTarget> explicitTarget;
+
   [[nodiscard]] static bool containsQuantumState(const Type type) {
     SmallVector<Type> worklist{type};
     llvm::DenseSet<Type> visited;
@@ -591,9 +634,17 @@ std::unique_ptr<Pass> createFuseTwoQubitGates() {
   return std::make_unique<FuseTwoQubitGatesPass>();
 }
 
+std::unique_ptr<Pass> createTargetNativeSynthesis() {
+  return std::make_unique<TargetNativeSynthesisPass>();
+}
+
 std::unique_ptr<Pass>
 createTargetNativeSynthesis(const CompilerTarget& target) {
   return std::make_unique<TargetNativeSynthesisPass>(target);
+}
+
+std::unique_ptr<Pass> createVerifyTargetConformance() {
+  return std::make_unique<VerifyTargetConformancePass>();
 }
 
 std::unique_ptr<Pass>

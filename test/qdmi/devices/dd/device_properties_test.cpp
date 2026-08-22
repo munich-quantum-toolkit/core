@@ -135,12 +135,9 @@ TEST(DeviceProperties, SupportedProgramFormats) {
             QDMI_SUCCESS);
 
   const std::vector<QDMI_Program_Format> expected = {
-      QDMI_PROGRAM_FORMAT_QASM2,
-      QDMI_PROGRAM_FORMAT_QASM3,
-      QDMI_PROGRAM_FORMAT_QIRBASESTRING,
-      QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
-      QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
-      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE};
+      qdmi_test::OPENQASM3,           qdmi_test::OPENQASM2,
+      qdmi_test::QIR21_BASE_TEXT,     qdmi_test::QIR21_BASE_BINARY,
+      qdmi_test::QIR21_ADAPTIVE_TEXT, qdmi_test::QIR21_ADAPTIVE_BINARY};
   EXPECT_EQ(formats, expected);
 }
 

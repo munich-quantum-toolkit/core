@@ -11,6 +11,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace mlir {
 
@@ -60,6 +61,43 @@ enum class ProgramFeature : uint8_t {
   ConditionalLoop,
   /// Runtime multiway branching.
   MultiwayBranching,
+  /// Calls to non-entry-point IR functions.
+  IRFunctions,
+  /// More than one return point in one function.
+  MultipleReturnPoints,
+  /// Runtime qubit allocation and release.
+  DynamicQubitManagement,
+  /// Runtime result allocation and release.
+  DynamicResultManagement,
+  /// Runtime array support.
+  Arrays,
+};
+
+/// Encoding of a selected target payload.
+enum class PayloadEncoding : uint8_t { Text, Binary };
+
+/**
+ * @brief Exact identity of a payload accepted by a compiler target.
+ */
+struct PayloadDescriptor {
+  std::string id;
+  std::string version;
+  std::string profile;
+  PayloadEncoding encoding = PayloadEncoding::Text;
+
+  friend bool operator==(const PayloadDescriptor&,
+                         const PayloadDescriptor&) = default;
+};
+
+/**
+ * @brief One runtime capability and its feature-specific value.
+ */
+struct ProgramCapability {
+  ProgramFeature feature;
+  uint64_t value = 0U;
+
+  friend bool operator==(const ProgramCapability&,
+                         const ProgramCapability&) = default;
 };
 
 /// Return whether @p format is a declared program format.

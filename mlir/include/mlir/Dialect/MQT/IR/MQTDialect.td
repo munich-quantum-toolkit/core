@@ -56,8 +56,9 @@ def MQT_TargetEnvAttr
     specification.
   }];
 
-  let parameters = (ins "StringAttr":$format, "ArrayAttr":$features,
-      "bool":$optionalFeaturesKnown);
+  let parameters = (ins "StringAttr":$id, "StringAttr":$version,
+      "StringAttr":$profile, "StringAttr":$encoding, "ArrayAttr":$capabilities,
+      "bool":$optionalFeaturesKnown, "DictionaryAttr":$target);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
 
@@ -67,11 +68,17 @@ def MQT_TargetEnvAttr
     }
 
     static TargetEnvAttr get(::mlir::MLIRContext* context,
-                             ::llvm::StringRef format,
-                             ::llvm::ArrayRef<::llvm::StringRef> features,
-                             bool optionalFeaturesKnown);
+                             ::llvm::StringRef id,
+                             ::llvm::StringRef version,
+                             ::llvm::StringRef profile,
+                             ::llvm::StringRef encoding,
+                             ::llvm::ArrayRef<std::pair<::llvm::StringRef,
+                                                        uint64_t>> capabilities,
+                             bool optionalFeaturesKnown,
+                             ::mlir::DictionaryAttr target);
 
-    [[nodiscard]] bool supports(::llvm::StringRef feature) const;
+    [[nodiscard]] bool supports(::llvm::StringRef feature,
+                                uint64_t value = 0U) const;
 
     ::mlir::FailureOr<::mlir::Attribute>
     query(::mlir::DataLayoutEntryKey key);

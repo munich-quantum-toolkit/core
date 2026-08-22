@@ -447,9 +447,15 @@ def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
 def test_compiler_target_constructors_preserve_python_api() -> None:
     """Construct every target metadata type and target overload."""
     feature = CompilerTarget.ProgramFeature
+    qir_adaptive = CompilerTarget.PayloadDescriptor("qir", "2.1.0", "adaptive")
+    qir_base = CompilerTarget.PayloadDescriptor("qir", "2.1.0", "base")
     adaptive = CompilerTarget.ExecutionProfile(
-        OutputFormat.QIR_ADAPTIVE,
-        [feature.FORWARD_BRANCHING, feature.MEASUREMENT_RESULT_USE, feature.FORWARD_BRANCHING],
+        qir_adaptive,
+        [
+            CompilerTarget.ProgramCapability(feature.FORWARD_BRANCHING),
+            CompilerTarget.ProgramCapability(feature.MEASUREMENT_RESULT_USE),
+            CompilerTarget.ProgramCapability(feature.FORWARD_BRANCHING),
+        ],
         optional_features_known=False,
     )
     duration_unit = CompilerTarget.DurationUnit("ns", 1.0)
@@ -486,14 +492,17 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     assert targets[0].execution_profiles is None
     assert CompilerTarget(2, execution_profiles=[]).execution_profiles == []
     assert targets[3].execution_profiles is not None
-    assert [profile.format for profile in targets[3].execution_profiles] == [OutputFormat.QIR_ADAPTIVE]
-    assert adaptive.features == [feature.MEASUREMENT_RESULT_USE, feature.FORWARD_BRANCHING]
+    assert [profile.descriptor for profile in targets[3].execution_profiles] == [qir_adaptive]
+    assert [capability.feature for capability in adaptive.capabilities] == [
+        feature.MEASUREMENT_RESULT_USE,
+        feature.FORWARD_BRANCHING,
+    ]
     assert not adaptive.optional_features_known
     assert adaptive.supports(feature.FORWARD_BRANCHING)
-    assert targets[3].execution_profile(OutputFormat.QIR_ADAPTIVE) is not None
-    assert targets[3].execution_profile(OutputFormat.QIR_BASE) is None
-    assert targets[3].supports_program_feature(OutputFormat.QIR_ADAPTIVE, feature.FORWARD_BRANCHING)
-    assert not targets[3].supports_program_feature(OutputFormat.QIR_BASE, feature.FORWARD_BRANCHING)
+    assert targets[3].execution_profile(qir_adaptive) is not None
+    assert targets[3].execution_profile(qir_base) is None
+    assert targets[3].supports_program_feature(qir_adaptive, feature.FORWARD_BRANCHING)
+    assert not targets[3].supports_program_feature(qir_base, feature.FORWARD_BRANCHING)
 
 
 def test_compiler_target_construction_preserves_validation_errors() -> None:
@@ -567,7 +576,10 @@ def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
         "execution_profiles": (
             None
             if execution_profiles is None
-            else [(profile.format, profile.features, profile.optional_features_known) for profile in execution_profiles]
+            else [
+                (profile.descriptor, profile.capabilities, profile.optional_features_known)
+                for profile in execution_profiles
+            ]
         ),
         "supported_gates": target.supported_gates,
         "synthesis_basis": (

@@ -106,6 +106,17 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   EXPECT_EQ(copy.sites().data(), target.sites().data());
   EXPECT_EQ(copy.couplings().data(), target.couplings().data());
   EXPECT_EQ(copy.operations().data(), target.operations().data());
+
+  mlir::MLIRContext context;
+  const auto restored = valid(Target::create(target.materialize(&context)));
+  EXPECT_EQ(restored.name(), target.name());
+  EXPECT_EQ(restored.siteIds(), target.siteIds());
+  EXPECT_EQ(restored.couplings(), target.couplings());
+  ASSERT_EQ(restored.operations().size(), 1);
+  EXPECT_EQ(restored.operations()[0].name(), target.operations()[0].name());
+  EXPECT_EQ(restored.operations()[0].siteTuples()[0].sites(),
+            target.operations()[0].siteTuples()[0].sites());
+  EXPECT_EQ(restored.durationUnit()->unit(), target.durationUnit()->unit());
 }
 
 TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
@@ -137,13 +148,18 @@ TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
 }
 
 TEST(CompilerTargetTest, CanonicalizesPayloadSpecificExecutionProfiles) {
-  const auto adaptive = valid(ExecutionProfile::create(
-      ProgramFormat::QIRAdaptive,
-      {ProgramFeature::MultiwayBranching, ProgramFeature::BooleanComputation,
-       ProgramFeature::MultiwayBranching},
-      false));
+  const PayloadDescriptor adaptiveDescriptor{"qir", "2.1.0", "adaptive",
+                                             PayloadEncoding::Text};
+  const PayloadDescriptor baseDescriptor{"qir", "2.1.0", "base",
+                                         PayloadEncoding::Text};
+  const auto adaptive =
+      valid(ExecutionProfile::create(adaptiveDescriptor,
+                                     {{ProgramFeature::MultiwayBranching},
+                                      {ProgramFeature::BooleanComputation},
+                                      {ProgramFeature::MultiwayBranching}},
+                                     false));
   const auto base = valid(ExecutionProfile::create(
-      ProgramFormat::QIRBase, {ProgramFeature::MidCircuitMeasurement}));
+      baseDescriptor, {{ProgramFeature::MidCircuitMeasurement}}));
   const std::optional profiles = std::vector{adaptive, base};
 
   const auto denseUnnamed = valid(
@@ -157,27 +173,29 @@ TEST(CompilerTargetTest, CanonicalizesPayloadSpecificExecutionProfiles) {
       "named", std::vector{valid(Site::create(0)), valid(Site::create(1))},
       std::nullopt, std::nullopt, std::nullopt, profiles));
 
-  constexpr std::array adaptiveFeatures{ProgramFeature::BooleanComputation,
-                                        ProgramFeature::MultiwayBranching};
+  constexpr std::array adaptiveCapabilities{
+      ProgramCapability{ProgramFeature::BooleanComputation},
+      ProgramCapability{ProgramFeature::MultiwayBranching}};
   for (const auto& target :
        {denseUnnamed, denseNamed, detailedUnnamed, detailedNamed}) {
     const auto executionProfiles = target.executionProfiles();
     ASSERT_TRUE(executionProfiles);
     ASSERT_EQ(executionProfiles->size(), 2U);
-    EXPECT_EQ((*executionProfiles)[0].format(), ProgramFormat::QIRBase);
-    EXPECT_EQ((*executionProfiles)[1].format(), ProgramFormat::QIRAdaptive);
+    EXPECT_NE(target.executionProfile(baseDescriptor), nullptr);
+    EXPECT_NE(target.executionProfile(adaptiveDescriptor), nullptr);
 
-    const auto* const profile =
-        target.executionProfile(ProgramFormat::QIRAdaptive);
+    const auto* const profile = target.executionProfile(adaptiveDescriptor);
     ASSERT_NE(profile, nullptr);
-    EXPECT_EQ(profile->features(), llvm::ArrayRef(adaptiveFeatures));
+    EXPECT_EQ(profile->capabilities(), llvm::ArrayRef(adaptiveCapabilities));
     EXPECT_FALSE(profile->optionalFeaturesKnown());
     EXPECT_TRUE(profile->supports(ProgramFeature::BooleanComputation));
     EXPECT_TRUE(target.supportsProgramFeature(
-        ProgramFormat::QIRAdaptive, ProgramFeature::MultiwayBranching));
+        adaptiveDescriptor, ProgramFeature::MultiwayBranching));
     EXPECT_FALSE(target.supportsProgramFeature(
-        ProgramFormat::QIRAdaptive, ProgramFeature::CountedIteration));
-    EXPECT_EQ(target.executionProfile(ProgramFormat::OpenQASM3), nullptr);
+        adaptiveDescriptor, ProgramFeature::CountedIteration));
+    EXPECT_EQ(target.executionProfile(PayloadDescriptor{"openqasm", "3.0.0", "",
+                                                        PayloadEncoding::Text}),
+              nullptr);
   }
 }
 
@@ -190,31 +208,30 @@ TEST(CompilerTargetTest, DistinguishesUnknownAndKnownEmptyExecutionProfiles) {
   EXPECT_FALSE(unknown.executionProfiles());
   ASSERT_TRUE(empty.executionProfiles());
   EXPECT_TRUE(empty.executionProfiles()->empty());
-  EXPECT_EQ(unknown.executionProfile(ProgramFormat::QIRAdaptive), nullptr);
+  const PayloadDescriptor adaptive{"qir", "2.1.0", "adaptive",
+                                   PayloadEncoding::Text};
+  EXPECT_EQ(unknown.executionProfile(adaptive), nullptr);
   EXPECT_FALSE(unknown.supportsProgramFeature(
-      ProgramFormat::QIRAdaptive, ProgramFeature::ForwardBranching));
+      adaptive, ProgramFeature::ForwardBranching));
 }
 
 TEST(CompilerTargetTest, RejectsInvalidAndDuplicateExecutionProfiles) {
-  // The out-of-range values are the behavior under test: profile validation
-  // must reject values outside the declared enumerators.
-  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
-  constexpr auto unknownFormat = static_cast<ProgramFormat>(255);
-  expectInvalid(
-      ExecutionProfile::create(unknownFormat),
-      "Compiler execution profile contains an unknown program format");
+  expectInvalid(ExecutionProfile::create(PayloadDescriptor{}),
+                "Compiler execution profile requires a payload ID and version");
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto unknownFeature = static_cast<ProgramFeature>(255);
   expectInvalid(
-      ExecutionProfile::create(ProgramFormat::QIRAdaptive, {unknownFeature}),
-      "Compiler execution profile contains an unknown program feature");
+      ExecutionProfile::create(
+          PayloadDescriptor{"qir", "2.1.0", "adaptive", PayloadEncoding::Text},
+          {{unknownFeature}}),
+      "Compiler execution profile contains an invalid program capability");
 
-  const auto profile =
-      valid(ExecutionProfile::create(ProgramFormat::QIRAdaptive));
+  const auto profile = valid(ExecutionProfile::create(
+      PayloadDescriptor{"qir", "2.1.0", "adaptive", PayloadEncoding::Text}));
   const std::optional duplicates = std::vector{profile, profile};
   expectInvalid(
       Target::create(1, std::nullopt, std::nullopt, std::nullopt, duplicates),
-      "Compiler target contains duplicate execution-profile formats");
+      "Compiler target contains duplicate payload profiles");
 }
 
 TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {

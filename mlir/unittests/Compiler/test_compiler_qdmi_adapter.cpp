@@ -98,40 +98,46 @@ TEST(CompilerQDMIAdapterTest, PreservesMissingTopologyAsAllToAll) {
   EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
   const auto profiles = target.executionProfiles();
   ASSERT_TRUE(profiles.has_value());
-  EXPECT_EQ(profiles->size(), 3);
+  EXPECT_EQ(profiles->size(), 6);
 
-  const auto* const openQASM =
-      target.executionProfile(mlir::ProgramFormat::OpenQASM3);
+  const mlir::PayloadDescriptor openQASMDescriptor{"openqasm", "3.0.0", "",
+                                                   mlir::PayloadEncoding::Text};
+  const auto* const openQASM = target.executionProfile(openQASMDescriptor);
   ASSERT_NE(openQASM, nullptr);
-  EXPECT_TRUE(openQASM->features().empty());
-  EXPECT_FALSE(openQASM->optionalFeaturesKnown());
+  EXPECT_EQ(openQASM->capabilities().size(), 5);
+  EXPECT_TRUE(openQASM->supports(mlir::ProgramFeature::BooleanComputation));
+  EXPECT_TRUE(openQASM->optionalFeaturesKnown());
 
-  const auto* const qirBase =
-      target.executionProfile(mlir::ProgramFormat::QIRBase);
+  const mlir::PayloadDescriptor qirBaseDescriptor{"qir", "2.1.0", "base",
+                                                  mlir::PayloadEncoding::Text};
+  const auto* const qirBase = target.executionProfile(qirBaseDescriptor);
   ASSERT_NE(qirBase, nullptr);
-  EXPECT_TRUE(qirBase->features().empty());
-  EXPECT_FALSE(qirBase->optionalFeaturesKnown());
+  EXPECT_TRUE(qirBase->capabilities().empty());
+  EXPECT_TRUE(qirBase->optionalFeaturesKnown());
 
+  const mlir::PayloadDescriptor qirAdaptiveDescriptor{
+      "qir", "2.1.0", "adaptive", mlir::PayloadEncoding::Text};
   const auto* const qirAdaptive =
-      target.executionProfile(mlir::ProgramFormat::QIRAdaptive);
+      target.executionProfile(qirAdaptiveDescriptor);
   ASSERT_NE(qirAdaptive, nullptr);
   constexpr std::array adaptiveBaseline{
-      mlir::ProgramFeature::MidCircuitMeasurement,
-      mlir::ProgramFeature::MeasuredQubitReuse,
-      mlir::ProgramFeature::MeasurementResultUse,
-      mlir::ProgramFeature::BooleanComputation,
-      mlir::ProgramFeature::ForwardBranching,
+      mlir::ProgramCapability{mlir::ProgramFeature::MidCircuitMeasurement},
+      mlir::ProgramCapability{mlir::ProgramFeature::MeasuredQubitReuse},
+      mlir::ProgramCapability{mlir::ProgramFeature::MeasurementResultUse},
+      mlir::ProgramCapability{mlir::ProgramFeature::BooleanComputation},
+      mlir::ProgramCapability{mlir::ProgramFeature::ForwardBranching},
   };
-  EXPECT_TRUE(std::ranges::equal(qirAdaptive->features(), adaptiveBaseline));
-  EXPECT_FALSE(qirAdaptive->optionalFeaturesKnown());
+  EXPECT_TRUE(
+      std::ranges::equal(qirAdaptive->capabilities(), adaptiveBaseline));
+  EXPECT_TRUE(qirAdaptive->optionalFeaturesKnown());
   EXPECT_FALSE(qirAdaptive->supports(mlir::ProgramFeature::CountedIteration));
   EXPECT_FALSE(qirAdaptive->supports(mlir::ProgramFeature::ConditionalLoop));
   EXPECT_FALSE(qirAdaptive->supports(mlir::ProgramFeature::MultiwayBranching));
 
   EXPECT_FALSE(target.supportsProgramFeature(
-      mlir::ProgramFormat::QIRBase, mlir::ProgramFeature::ForwardBranching));
-  EXPECT_FALSE(target.supportsProgramFeature(
-      mlir::ProgramFormat::OpenQASM3, mlir::ProgramFeature::ForwardBranching));
+      qirBaseDescriptor, mlir::ProgramFeature::ForwardBranching));
+  EXPECT_TRUE(target.supportsProgramFeature(
+      openQASMDescriptor, mlir::ProgramFeature::ForwardBranching));
 }
 
 TEST(CompilerQDMIAdapterTest, DeviceIdMatchesOpenedDeviceExecutionProfiles) {
@@ -146,10 +152,10 @@ TEST(CompilerQDMIAdapterTest, DeviceIdMatchesOpenedDeviceExecutionProfiles) {
   ASSERT_TRUE(byIdProfiles.has_value());
   ASSERT_EQ(byIdProfiles->size(), directProfiles->size());
   for (const auto& profile : *directProfiles) {
-    const auto* const byIdProfile = byId.executionProfile(profile.format());
+    const auto* const byIdProfile = byId.executionProfile(profile.descriptor());
     ASSERT_NE(byIdProfile, nullptr);
-    EXPECT_TRUE(
-        std::ranges::equal(byIdProfile->features(), profile.features()));
+    EXPECT_TRUE(std::ranges::equal(byIdProfile->capabilities(),
+                                   profile.capabilities()));
     EXPECT_EQ(byIdProfile->optionalFeaturesKnown(),
               profile.optionalFeaturesKnown());
   }

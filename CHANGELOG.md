@@ -32,9 +32,10 @@ releases may include breaking changes.
   programs ([#1915], [#1973]) ([**@simon1hofmann**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
   compilation through C++, Python, and `mqt-cc`, including payload-scoped
-  execution profiles and cleanup-first runtime-control legalization ([#1687],
-  [#1993], [#1999], [#2049], [#2162]) ([**@MatthiasReumann**],
-  [**@simon1hofmann**], [**@burgholzer**])
+  execution profiles, cleanup-first runtime-control legalization, and native
+  Qiskit and PennyLane capability projection ([#1687], [#1993], [#1999],
+  [#2049], [#2162]) ([**@MatthiasReumann**], [**@simon1hofmann**],
+  [**@burgholzer**])
 
 #### Import and export
 

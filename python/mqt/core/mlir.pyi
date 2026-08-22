@@ -270,29 +270,82 @@ class CompilerTarget:
 
         MULTIWAY_BRANCHING = 9
 
+        IR_FUNCTIONS = 10
+
+        MULTIPLE_RETURN_POINTS = 11
+
+        DYNAMIC_QUBIT_MANAGEMENT = 12
+
+        DYNAMIC_RESULT_MANAGEMENT = 13
+
+        ARRAYS = 14
+
+    class PayloadEncoding(enum.Enum):
+        TEXT = 0
+
+        BINARY = 1
+
+    class PayloadDescriptor:
+        def __init__(
+            self,
+            format_id: str,
+            version: str,
+            profile: str = "",
+            encoding: CompilerTarget.PayloadEncoding = ...,
+        ) -> None: ...
+        @property
+        def format_id(self) -> str: ...
+        @format_id.setter
+        def format_id(self, arg: str, /) -> None: ...
+        @property
+        def version(self) -> str: ...
+        @version.setter
+        def version(self, arg: str, /) -> None: ...
+        @property
+        def profile(self) -> str: ...
+        @profile.setter
+        def profile(self, arg: str, /) -> None: ...
+        @property
+        def encoding(self) -> CompilerTarget.PayloadEncoding: ...
+        @encoding.setter
+        def encoding(self, arg: CompilerTarget.PayloadEncoding, /) -> None: ...
+        def __eq__(self, other: object, /) -> bool: ...
+
+    class ProgramCapability:
+        def __init__(self, feature: CompilerTarget.ProgramFeature, value: int = 0) -> None: ...
+        @property
+        def feature(self) -> CompilerTarget.ProgramFeature: ...
+        @feature.setter
+        def feature(self, arg: CompilerTarget.ProgramFeature, /) -> None: ...
+        @property
+        def value(self) -> int: ...
+        @value.setter
+        def value(self, arg: int, /) -> None: ...
+        def __eq__(self, other: object, /) -> bool: ...
+
     class ExecutionProfile:
         """Runtime features supported for one program format."""
 
         def __init__(
             self,
-            format: OutputFormat,  # ruff: ignore[builtin-argument-shadowing]
-            features: Sequence[CompilerTarget.ProgramFeature] = (),
+            descriptor: CompilerTarget.PayloadDescriptor,
+            capabilities: Sequence[CompilerTarget.ProgramCapability] = [],
             optional_features_known: bool = True,
         ) -> None: ...
         @property
-        def format(self) -> OutputFormat:
-            """The program format described by this profile."""
+        def descriptor(self) -> CompilerTarget.PayloadDescriptor:
+            """The exact payload described by this profile."""
 
         @property
-        def features(self) -> list[CompilerTarget.ProgramFeature]:
-            """The supported runtime features in canonical order."""
+        def capabilities(self) -> list[CompilerTarget.ProgramCapability]:
+            """The supported runtime capabilities in canonical order."""
 
         @property
         def optional_features_known(self) -> bool:
             """Whether optional-feature metadata is complete."""
 
-        def supports(self, feature: CompilerTarget.ProgramFeature) -> bool:
-            """Whether this profile lists a runtime feature."""
+        def supports(self, feature: CompilerTarget.ProgramFeature, value: int = 0) -> bool:
+            """Whether this profile lists a runtime capability."""
 
     class SynthesisBasis:
         """One synthesis basis usable across the complete target."""
@@ -306,15 +359,17 @@ class CompilerTarget:
             """The two-qubit entangler."""
 
     @staticmethod
-    def from_device(device: Device) -> CompilerTarget:
-        """Snapshot a QDMI device and its payload-specific execution profiles."""
+    def from_device(
+        device: Device,
+    ) -> CompilerTarget:
+        """Snapshot a circuit-model QDMI device, including execution profiles derived from its program-format metadata."""
 
     @staticmethod
     def from_device_id(
         device_id: str,
         **session_parameters: Unpack[QDMISessionParameters],
     ) -> CompilerTarget:
-        """Open a registered device and snapshot its target and execution profiles."""
+        """Open a registered device and snapshot its compiler target, including execution profiles derived from its program-format metadata."""
 
     @property
     def name(self) -> str | None:
@@ -363,18 +418,11 @@ class CompilerTarget:
     def supports_operation(self, name: str, num_qubits: int, num_parameters: int | None = None) -> bool:
         """Whether the target supports an operation capability."""
 
-    def execution_profile(
-        self,
-        format: OutputFormat,  # ruff: ignore[builtin-argument-shadowing]
-    ) -> CompilerTarget.ExecutionProfile | None:
-        """The execution profile for an output format, if any."""
+    def execution_profile(self, descriptor: PayloadDescriptor) -> ExecutionProfile | None:
+        """The execution profile for an exact payload, if any."""
 
-    def supports_program_feature(
-        self,
-        format: OutputFormat,  # ruff: ignore[builtin-argument-shadowing]
-        feature: ProgramFeature,
-    ) -> bool:
-        """Whether an output profile lists a runtime feature."""
+    def supports_program_feature(self, descriptor: PayloadDescriptor, feature: ProgramFeature, value: int = 0) -> bool:
+        """Whether an output profile lists a runtime capability."""
 
 class Program:
     """Base class for a typed MLIR compiler program.
@@ -503,9 +551,10 @@ class QCOProgram(Program):
         self,
         target: CompilerTarget,
         *,
-        format: OutputFormat = OutputFormat.QCO_OPTIMIZED,  # ruff: ignore[builtin-argument-shadowing]
+        output: OutputFormat = OutputFormat.QCO_OPTIMIZED,
         enable_timing: bool = False,
         enable_statistics: bool = False,
+        payload_descriptor: CompilerTarget.PayloadDescriptor | None = None,
     ) -> None:
         """Compile this QCO program for the selected target output profile in place."""
 

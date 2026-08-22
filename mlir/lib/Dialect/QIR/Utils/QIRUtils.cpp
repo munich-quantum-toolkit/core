@@ -39,8 +39,6 @@
 #include <cstdint>
 #include <iterator>
 #include <limits>
-#include <set>
-#include <string>
 
 namespace mlir::qir {
 
@@ -65,36 +63,9 @@ static void setIntegerModuleFlag(llvm::Module& moduleOp,
       llvm::ConstantInt::get(llvm::IntegerType::get(context, bitWidth), value));
 }
 
-[[nodiscard]] static llvm::MDNode*
-stringTuple(llvm::LLVMContext& context, const std::set<std::string>& values) {
-  SmallVector<llvm::Metadata*> entries;
-  entries.reserve(values.size());
-  llvm::transform(values, std::back_inserter(entries), [&](const auto& value) {
-    return llvm::MDString::get(context, value);
-  });
-  return llvm::MDTuple::get(context, entries);
-}
-
-static void removeModuleFlags(llvm::Module& moduleOp,
-                              const ArrayRef<StringRef> keys) {
-  auto* flags = moduleOp.getModuleFlagsMetadata();
-  if (flags == nullptr) {
-    return;
-  }
-  SmallVector<llvm::MDNode*> retained;
-  for (auto* flag : flags->operands()) {
-    const auto* key = llvm::dyn_cast<llvm::MDString>(flag->getOperand(1));
-    if (key == nullptr || !llvm::is_contained(keys, key->getString())) {
-      retained.emplace_back(flag);
-    }
-  }
-  flags->clearOperands();
-  for (auto* flag : retained) {
-    flags->addOperand(flag);
-  }
-}
-
-void normalizeQIRModuleFlags(llvm::Module& moduleOp, const bool useAdaptive) {
+void normalizeQIRModuleFlags(llvm::Module& moduleOp, const bool /*useAdaptive*/,
+                             const ArrayRef<StringRef> integerTypes,
+                             const ArrayRef<StringRef> floatingTypes) {
   for (const auto* const key :
        {"dynamic_qubit_management", "dynamic_result_management", "arrays"}) {
     if (moduleOp.getModuleFlag(key) != nullptr) {
@@ -107,84 +78,21 @@ void normalizeQIRModuleFlags(llvm::Module& moduleOp, const bool useAdaptive) {
         moduleOp, llvm::Module::Error, "backwards_branching", 2,
         moduleFlagIntegerValue(moduleOp, "backwards_branching"));
   }
-  if (!useAdaptive) {
-    removeModuleFlags(moduleOp,
-                      {"int_computations", "float_computations", "ir_functions",
-                       "backwards_branching", "multiple_target_branching",
-                       "multiple_return_points", "arrays"});
-    return;
-  }
-
-  removeModuleFlags(moduleOp,
-                    {"int_computations", "float_computations", "ir_functions",
-                     "multiple_target_branching", "multiple_return_points"});
-
-  std::set<std::string> integerTypes;
-  std::set<std::string> floatingTypes;
-  bool usesIRFunctions = false;
-  bool usesMultipleTargetBranching = false;
-  bool usesMultipleReturnPoints = false;
-
-  const auto recordType = [&](const llvm::Type* type) {
-    if (const auto* integer = llvm::dyn_cast<llvm::IntegerType>(type)) {
-      if (integer->getBitWidth() > 1) {
-        integerTypes.emplace("i" + std::to_string(integer->getBitWidth()));
-      }
-    } else if (type->isHalfTy()) {
-      floatingTypes.emplace("half");
-    } else if (type->isFloatTy()) {
-      floatingTypes.emplace("float");
-    } else if (type->isDoubleTy()) {
-      floatingTypes.emplace("double");
-    }
+  const auto stringTuple = [&](const ArrayRef<StringRef> values) {
+    SmallVector<llvm::Metadata*> entries;
+    entries.reserve(values.size());
+    llvm::transform(values, std::back_inserter(entries), [&](const auto value) {
+      return llvm::MDString::get(moduleOp.getContext(), value);
+    });
+    return llvm::MDTuple::get(moduleOp.getContext(), entries);
   };
-
-  for (const auto& function : moduleOp.functions()) {
-    if (function.isDeclaration()) {
-      continue;
-    }
-    const auto isEntryPoint = function.hasFnAttribute("entry_point");
-    usesIRFunctions |= !isEntryPoint;
-    if (!isEntryPoint) {
-      recordType(function.getReturnType());
-      for (const auto& argument : function.args()) {
-        recordType(argument.getType());
-      }
-    }
-
-    size_t returnCount = 0;
-    for (const auto& block : function) {
-      for (const auto& instruction : block) {
-        if (llvm::isa<llvm::ReturnInst>(instruction)) {
-          ++returnCount;
-          continue;
-        }
-        usesMultipleTargetBranching |= llvm::isa<llvm::SwitchInst>(instruction);
-        recordType(instruction.getType());
-      }
-    }
-    usesMultipleReturnPoints |= returnCount > 1;
-  }
-
-  auto& context = moduleOp.getContext();
   if (!integerTypes.empty()) {
     moduleOp.setModuleFlag(llvm::Module::Append, "int_computations",
-                           stringTuple(context, integerTypes));
+                           stringTuple(integerTypes));
   }
   if (!floatingTypes.empty()) {
     moduleOp.setModuleFlag(llvm::Module::Append, "float_computations",
-                           stringTuple(context, floatingTypes));
-  }
-  if (usesIRFunctions) {
-    setIntegerModuleFlag(moduleOp, llvm::Module::Error, "ir_functions", 1, 1);
-  }
-  if (usesMultipleTargetBranching) {
-    setIntegerModuleFlag(moduleOp, llvm::Module::Error,
-                         "multiple_target_branching", 1, 1);
-  }
-  if (usesMultipleReturnPoints) {
-    setIntegerModuleFlag(moduleOp, llvm::Module::Error,
-                         "multiple_return_points", 1, 1);
+                           stringTuple(floatingTypes));
   }
 }
 

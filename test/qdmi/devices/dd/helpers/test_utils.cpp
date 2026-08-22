@@ -102,10 +102,7 @@ int setProgram(MQT_DDSIM_QDMI_Device_Job job, const QDMI_Program_Format fmt,
   // The `+1` is safe here because every existing call to `setProgram` with a
   // text format passes a `program` with a string literal or `std::string`, both
   // of which guarantee `'\0'` at `data()[size()]`.
-  const bool isTextProgramFormat = fmt == QDMI_PROGRAM_FORMAT_QASM2 ||
-                                   fmt == QDMI_PROGRAM_FORMAT_QASM3 ||
-                                   fmt == QDMI_PROGRAM_FORMAT_QIRBASESTRING ||
-                                   fmt == QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+  const bool isTextProgramFormat = fmt.encoding == QDMI_PROGRAM_ENCODING_TEXT;
   const auto bytesToSend =
       isTextProgramFormat ? program.size() + 1 : program.size();
   rc = MQT_DDSIM_QDMI_device_job_set_parameter(

@@ -24,7 +24,7 @@ using testing::AnyOf;
 TEST(JobLifecycle, SubmitAndWaitSampling) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 256), QDMI_SUCCESS);
@@ -34,7 +34,7 @@ TEST(JobLifecycle, SubmitAndWaitSampling) {
 TEST(JobLifecycle, SubmitAndWaitStatevector) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_BELL_STATE),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
@@ -47,7 +47,7 @@ TEST(JobLifecycle, WaitInvalidBeforeSubmitAndIdempotentAfterDone) {
   // wait before submit is invalid
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_ERROR_BADSTATE);
   // now run a quick job
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 64), QDMI_SUCCESS);
@@ -59,7 +59,7 @@ TEST(JobLifecycle, WaitInvalidBeforeSubmitAndIdempotentAfterDone) {
 TEST(JobLifecycle, WaitTimeoutPath) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   // More shots to increase runtime slightly
@@ -83,7 +83,7 @@ TEST(JobLifecycle, CancelFromCreatedAndFromRunningAndFromDone) {
   {
     const qdmi_test::SessionGuard s{};
     const qdmi_test::JobGuard j{s.session};
-    ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+    ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                     qdmi_test::QASM3_BELL_SAMPLING),
               QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::setShots(j.job, 4096), QDMI_SUCCESS);
@@ -95,7 +95,7 @@ TEST(JobLifecycle, CancelFromCreatedAndFromRunningAndFromDone) {
   {
     const qdmi_test::SessionGuard s{};
     const qdmi_test::JobGuard j{s.session};
-    ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+    ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                     qdmi_test::QASM3_BELL_SAMPLING),
               QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::setShots(j.job, 1), QDMI_SUCCESS);
@@ -110,7 +110,7 @@ TEST(JobLifecycle, FreeWhileRunningWaitsForCompletion) {
   MQT_DDSIM_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_DDSIM_QDMI_device_session_create_device_job(s.session, &job),
             QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setProgram(job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_HEAVY_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(job, 4096), QDMI_SUCCESS);

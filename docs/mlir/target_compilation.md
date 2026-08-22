@@ -41,17 +41,18 @@ example, a directly constructed target that accepts measurement-feedback QIR
 Adaptive programs can describe that payload as follows:
 
 ```python
-from mqt.core.mlir import CompilerTarget, OutputFormat
+from mqt.core.mlir import CompilerTarget
 
 Feature = CompilerTarget.ProgramFeature
+descriptor = CompilerTarget.PayloadDescriptor("qir", "2.1.0", "adaptive", CompilerTarget.PayloadEncoding.TEXT)
 adaptive = CompilerTarget.ExecutionProfile(
-    OutputFormat.QIR_ADAPTIVE,
-    features=[
-        Feature.MID_CIRCUIT_MEASUREMENT,
-        Feature.MEASURED_QUBIT_REUSE,
-        Feature.MEASUREMENT_RESULT_USE,
-        Feature.BOOLEAN_COMPUTATION,
-        Feature.FORWARD_BRANCHING,
+    descriptor,
+    capabilities=[
+        CompilerTarget.ProgramCapability(Feature.MID_CIRCUIT_MEASUREMENT),
+        CompilerTarget.ProgramCapability(Feature.MEASURED_QUBIT_REUSE),
+        CompilerTarget.ProgramCapability(Feature.MEASUREMENT_RESULT_USE),
+        CompilerTarget.ProgramCapability(Feature.BOOLEAN_COMPUTATION),
+        CompilerTarget.ProgramCapability(Feature.FORWARD_BRANCHING),
     ],
 )
 target = CompilerTarget(
@@ -65,65 +66,54 @@ mid-circuit measurement, measurement-result use, Boolean computation, forward
 branching, counted or condition-terminated iteration, and multiway branching.
 They are independent: forward branching does not imply loops, switches, or
 general integer and floating-point computation. Runtime branch conditions must
-be derived from measurements. A feature declaration therefore cannot authorize
-an arbitrary function argument or an otherwise unmodelled classical calculation
-as a condition. Returning a measurement result or storing it in a terminal
-output register is reporting, not adaptive result use; a later possibly aliasing
-load or another runtime consumer requires {code}`MEASUREMENT_RESULT_USE`.
+use computation capabilities supported by the selected payload. Returning a
+measurement result or storing it in a terminal output register is reporting, not
+adaptive result use; another runtime consumer requires
+{code}`MEASUREMENT_RESULT_USE`.
 
 Target compilation keeps three questions separate:
 
 1. The residual program has semantic requirements, such as using a measurement
    result in a forward branch.
-2. The selected {code}`ExecutionProfile` lists the device features for exactly
-   one {code}`OutputFormat`.
+2. The selected {code}`ExecutionProfile` lists the device features for one exact
+   payload descriptor: ID, version, profile, and encoding.
 3. Compiler legality determines whether the current IR can be lowered, for
    example whether quantum state is represented in a supported structural form.
 
-The compiler serializes the selected format, features, and metadata completeness
-on the module as the typed {code}`mqt.target_env` attribute. This attribute is
-compiler-owned; users normally select it through the output format passed to
-{py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` or
-{py:func}`~mqt.core.mlir.compile_program`.
+The compiler serializes the selected descriptor, features, metadata
+completeness, sites, topology, native operations, and timing data on the module
+as the typed {code}`mqt.target_env` attribute. Mapping, synthesis, and
+conformance passes read this snapshot from the IR, so textual pass pipelines do
+not depend on hidden C++ state. Pass {code}`payload_descriptor` to
+{py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` when the encoding or
+another descriptor field differs from the compiler output's default.
 
 The target pipeline normalizes before testing legality. SCCP and QCO cleanup
 remove constant branches, switches, and structural regions such as
 {code}`scf.execute_region`. If the selected profile lacks
-{code}`COUNTED_ITERATION`, supported finite {code}`scf.for` loops are fully
-unrolled and the result is cleaned again. Legalization bounds the live IR
-expansion to 4096 cloned operations across all loops and the cumulative cloning
-work to 65536 operations. An expansion beyond either budget fails
-transactionally with a diagnostic instead of growing the IR or legalization time
-without bound. Only a residual loop requires runtime counted iteration.
+{code}`COUNTED_ITERATION`, finite {code}`scf.for` loops are fully unrolled and
+the result is cleaned again. Full unrolling fails before it would create more
+than 65536 operations. Only a residual loop requires runtime counted iteration.
+A residual {code}`qco.index_switch` lowers to nested {code}`qco.if` operations
+when the payload supports forward branching but not multiway branching.
 
-Measurement-feedback provenance memoizes already verified condition roots and is
-bounded to 4096 distinct producer steps per compilation. CBit analysis indexes
-loads by register-alias component and constant index; its remaining dynamic
-reachability and provenance checks each have the same fixed budget. When a
-budget is exhausted, result-use discovery conservatively assumes a load may
-observe the measurement, while feedback provenance fails closed with a
-diagnostic. These bounds keep adversarial producer graphs and alias patterns
-from causing unbounded analysis time.
-
-Legality is checked from the operation marked {code}`mqt.entry_point`.
-Unsupported control in an unused helper therefore does not reject the program.
-Reachable call-like operations implementing MLIR's {code}`CallOpInterface`,
-including direct and indirect function calls, fail closed until interprocedural
-execution semantics are modelled. Dynamic qubit indexing, quantum tensors or
-other quantum aggregates carried through runtime control, unmodelled operations
-carrying quantum state, and quantum state captured by classical regions remain
-lowering errors regardless of the selected device features.
+Legality starts at the operation marked {code}`mqt.entry_point` and follows
+MLIR's call graph. Unsupported control in an unused helper does not reject the
+program; control and computation in reachable helpers do.
 
 Failed in-place target compilation is transactional: the pipeline runs on a copy
 and replaces the original {code}`QCOProgram` only after every pass succeeds.
 
-Targets created from QDMI preserve the distinction between unavailable
-program-format metadata and a reported empty list. QASM 3 and QIR Base profiles
-list no inferred features and mark optional-feature metadata unknown. A reported
-QIR Adaptive string or module format produces an Adaptive profile with the five
-mandatory features shown above and marks additional optional-feature metadata
-unknown. Those features apply only to QIR Adaptive; they do not authorize QCO,
-QASM 3, or QIR Base payloads. QDMI target factories do not accept
+For QIR 2.1, the MLIR LLVM-dialect pipeline derives integer and floating-point
+widths, helper functions, branch modes, return points, arrays, and dynamic
+allocation. It validates these requirements against the selected payload before
+LLVM translation. The translation boundary only serializes the derived QIR
+string tuples and repairs the scalar module-flag widths required by QIR.
+
+Targets created from QDMI preserve the distinction between unavailable feature
+metadata and a reported empty list. QIR Adaptive adds its normative baseline to
+the optional features reported for that exact descriptor. No feature leaks to
+another version, profile, or encoding. QDMI target factories do not accept
 caller-supplied feature augmentation.
 
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` to apply target

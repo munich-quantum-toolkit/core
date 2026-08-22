@@ -477,7 +477,8 @@ TEST_F(ScQDMISpecificationTest, JobSetParameter) {
 }
 
 TEST_F(ScQDMIJobSpecificationTest, JobSetParameter) {
-  QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
+  QDMI_Program_Format value{QDMI_MAKE_VERSION(2, 0, 0),
+                            QDMI_PROGRAM_ENCODING_TEXT, "openqasm", ""};
   EXPECT_THAT(MQT_SC_QDMI_device_job_set_parameter(
                   job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
                   sizeof(QDMI_Program_Format), &value),

@@ -20,6 +20,8 @@
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
 
@@ -35,6 +37,7 @@
 #include <set>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -127,6 +130,11 @@ constexpr std::array GATE_SPECIFICATIONS{
   case ProgramFeature::CountedIteration:
   case ProgramFeature::ConditionalLoop:
   case ProgramFeature::MultiwayBranching:
+  case ProgramFeature::IRFunctions:
+  case ProgramFeature::MultipleReturnPoints:
+  case ProgramFeature::DynamicQubitManagement:
+  case ProgramFeature::DynamicResultManagement:
+  case ProgramFeature::Arrays:
     return true;
   }
   return false;
@@ -176,39 +184,47 @@ makeDenseSites(const size_t numQubits) {
 }
 
 llvm::Expected<CompilerTarget::ExecutionProfile>
-CompilerTarget::ExecutionProfile::create(const ProgramFormat format,
-                                         std::vector<ProgramFeature> features,
-                                         const bool optionalFeaturesKnown) {
-  if (!isValidProgramFormat(format)) {
+CompilerTarget::ExecutionProfile::create(
+    PayloadDescriptor descriptor, std::vector<ProgramCapability> capabilities,
+    const bool optionalFeaturesKnown) {
+  if (StringRef(descriptor.id).trim().empty() ||
+      StringRef(descriptor.version).trim().empty()) {
     return invalidTarget(
-        "Compiler execution profile contains an unknown program format");
+        "Compiler execution profile requires a payload ID and version");
   }
-  if (llvm::any_of(features, [](const auto feature) {
-        return !isValidProgramFeature(feature);
+  if (llvm::any_of(capabilities, [](const auto& capability) {
+        return !isValidProgramFeature(capability.feature) ||
+               ((capability.feature == ProgramFeature::IntegerComputation ||
+                 capability.feature == ProgramFeature::FloatComputation) !=
+                (capability.value != 0U));
       })) {
     return invalidTarget(
-        "Compiler execution profile contains an unknown program feature");
+        "Compiler execution profile contains an invalid program capability");
   }
-  std::ranges::sort(features, [](const auto lhs, const auto rhs) {
-    return static_cast<uint8_t>(lhs) < static_cast<uint8_t>(rhs);
+  std::ranges::sort(capabilities, [](const auto& lhs, const auto& rhs) {
+    return std::tie(lhs.feature, lhs.value) < std::tie(rhs.feature, rhs.value);
   });
-  features.erase(std::ranges::unique(features).begin(), features.end());
-  return ExecutionProfile(format, std::move(features), optionalFeaturesKnown);
+  capabilities.erase(std::ranges::unique(capabilities).begin(),
+                     capabilities.end());
+  return ExecutionProfile(std::move(descriptor), std::move(capabilities),
+                          optionalFeaturesKnown);
 }
 
 CompilerTarget::ExecutionProfile::ExecutionProfile(
-    const ProgramFormat format, std::vector<ProgramFeature> features,
+    PayloadDescriptor descriptor, std::vector<ProgramCapability> capabilities,
     const bool optionalFeaturesKnown)
-    : format_(format), features_(std::move(features)),
+    : descriptor_(std::move(descriptor)),
+      capabilities_(std::move(capabilities)),
       optionalFeaturesKnown_(optionalFeaturesKnown) {}
 
-ProgramFormat CompilerTarget::ExecutionProfile::format() const noexcept {
-  return format_;
+const PayloadDescriptor&
+CompilerTarget::ExecutionProfile::descriptor() const noexcept {
+  return descriptor_;
 }
 
-ArrayRef<ProgramFeature>
-CompilerTarget::ExecutionProfile::features() const noexcept {
-  return features_;
+ArrayRef<ProgramCapability>
+CompilerTarget::ExecutionProfile::capabilities() const noexcept {
+  return capabilities_;
 }
 
 bool CompilerTarget::ExecutionProfile::optionalFeaturesKnown() const noexcept {
@@ -216,8 +232,8 @@ bool CompilerTarget::ExecutionProfile::optionalFeaturesKnown() const noexcept {
 }
 
 bool CompilerTarget::ExecutionProfile::supports(
-    const ProgramFeature feature) const noexcept {
-  return llvm::is_contained(features_, feature);
+    const ProgramFeature feature, const uint64_t value) const noexcept {
+  return llvm::is_contained(capabilities_, ProgramCapability{feature, value});
 }
 
 llvm::Expected<CompilerTarget::DurationUnit>
@@ -475,9 +491,9 @@ llvm::Error CompilerTarget::Storage::initialize() {
   if (executionProfiles) {
     for (auto& profile : *executionProfiles) {
       auto canonical = ExecutionProfile::create(
-          profile.format(),
-          std::vector<ProgramFeature>(profile.features().begin(),
-                                      profile.features().end()),
+          profile.descriptor(),
+          std::vector<ProgramCapability>(profile.capabilities().begin(),
+                                         profile.capabilities().end()),
           profile.optionalFeaturesKnown());
       if (!canonical) {
         return canonical.takeError();
@@ -485,15 +501,17 @@ llvm::Error CompilerTarget::Storage::initialize() {
       profile = std::move(*canonical);
     }
     std::ranges::sort(*executionProfiles, [](const auto& lhs, const auto& rhs) {
-      return static_cast<uint8_t>(lhs.format()) <
-             static_cast<uint8_t>(rhs.format());
+      const auto& l = lhs.descriptor();
+      const auto& r = rhs.descriptor();
+      return std::tie(l.id, l.version, l.profile, l.encoding) <
+             std::tie(r.id, r.version, r.profile, r.encoding);
     });
-    if (std::ranges::adjacent_find(*executionProfiles,
-                                   [](const auto& lhs, const auto& rhs) {
-                                     return lhs.format() == rhs.format();
-                                   }) != executionProfiles->end()) {
+    if (std::ranges::adjacent_find(
+            *executionProfiles, [](const auto& lhs, const auto& rhs) {
+              return lhs.descriptor() == rhs.descriptor();
+            }) != executionProfiles->end()) {
       return invalidTarget(
-          "Compiler target contains duplicate execution-profile formats");
+          "Compiler target contains duplicate payload profiles");
     }
   }
 
@@ -665,6 +683,276 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     return std::nullopt;
   }
   return SynthesisBasis{.singleQubit = *singleQubit, .entangler = *entangler};
+}
+
+DictionaryAttr CompilerTarget::materialize(MLIRContext* const context) const {
+  const auto integer = [&](const uint64_t value) -> Attribute {
+    return IntegerAttr::get(IntegerType::get(context, 64), APInt(64, value));
+  };
+  const auto named = [&](const StringRef name, const Attribute value) {
+    return NamedAttribute(StringAttr::get(context, name), value);
+  };
+  const auto dictionary = [&](const ArrayRef<NamedAttribute> values) {
+    return DictionaryAttr::get(context, values);
+  };
+
+  SmallVector<NamedAttribute> attributes;
+  if (const auto targetName = name()) {
+    attributes.emplace_back(
+        named("name", StringAttr::get(context, *targetName)));
+  }
+
+  SmallVector<Attribute> siteAttributes;
+  siteAttributes.reserve(sites().size());
+  for (const Site& site : sites()) {
+    SmallVector<NamedAttribute> values{
+        named("id", integer(static_cast<uint64_t>(site.id())))};
+    if (const auto siteName = site.name()) {
+      values.emplace_back(named("name", StringAttr::get(context, *siteName)));
+    }
+    if (const auto t1 = site.t1()) {
+      values.emplace_back(named("t1", integer(*t1)));
+    }
+    if (const auto t2 = site.t2()) {
+      values.emplace_back(named("t2", integer(*t2)));
+    }
+    siteAttributes.emplace_back(dictionary(values));
+  }
+  attributes.emplace_back(
+      named("sites", ArrayAttr::get(context, siteAttributes)));
+
+  attributes.emplace_back(
+      named("topology_known", BoolAttr::get(context, hasExplicitTopology())));
+  SmallVector<Attribute> couplingAttributes;
+  couplingAttributes.reserve(couplings().size());
+  for (const auto [source, target] : couplings()) {
+    couplingAttributes.emplace_back(
+        DenseI64ArrayAttr::get(context, {source, target}));
+  }
+  attributes.emplace_back(
+      named("couplings", ArrayAttr::get(context, couplingAttributes)));
+
+  attributes.emplace_back(named(
+      "operations_known", BoolAttr::get(context, hasExplicitOperations())));
+  SmallVector<Attribute> operationAttributes;
+  operationAttributes.reserve(operations().size());
+  for (const Operation& operation : operations()) {
+    SmallVector<NamedAttribute> values{
+        named("name", StringAttr::get(context, operation.name())),
+        named("qubits", integer(operation.numQubits())),
+        named("parameters", integer(operation.numParameters()))};
+    if (const auto duration = operation.duration()) {
+      values.emplace_back(named("duration", integer(*duration)));
+    }
+    if (const auto fidelity = operation.fidelity()) {
+      values.emplace_back(named(
+          "fidelity", FloatAttr::get(Float64Type::get(context), *fidelity)));
+    }
+    SmallVector<Attribute> tupleAttributes;
+    tupleAttributes.reserve(operation.siteTuples().size());
+    for (const SiteTuple& tuple : operation.siteTuples()) {
+      SmallVector<NamedAttribute> tupleValues{
+          named("sites", DenseI64ArrayAttr::get(context, tuple.sites()))};
+      if (const auto duration = tuple.duration()) {
+        tupleValues.emplace_back(named("duration", integer(*duration)));
+      }
+      if (const auto fidelity = tuple.fidelity()) {
+        tupleValues.emplace_back(named(
+            "fidelity", FloatAttr::get(Float64Type::get(context), *fidelity)));
+      }
+      tupleAttributes.emplace_back(dictionary(tupleValues));
+    }
+    values.emplace_back(
+        named("site_tuples", ArrayAttr::get(context, tupleAttributes)));
+    operationAttributes.emplace_back(dictionary(values));
+  }
+  attributes.emplace_back(
+      named("operations", ArrayAttr::get(context, operationAttributes)));
+
+  if (const auto& unit = durationUnit()) {
+    attributes.emplace_back(named(
+        "duration_unit",
+        dictionary({named("unit", StringAttr::get(context, unit->unit())),
+                    named("scale", FloatAttr::get(Float64Type::get(context),
+                                                  unit->scaleFactor()))})));
+  }
+  return dictionary(attributes);
+}
+
+llvm::Expected<CompilerTarget>
+CompilerTarget::create(const DictionaryAttr snapshot) {
+  const auto malformed = [](const Twine& field) -> llvm::Error {
+    return invalidTarget("Malformed target snapshot field '" + field + "'");
+  };
+  const auto getUInt =
+      [&](const DictionaryAttr dictionary,
+          const StringRef field) -> llvm::Expected<std::optional<uint64_t>> {
+    const Attribute raw = dictionary.get(field);
+    if (!raw) {
+      return std::optional<uint64_t>{};
+    }
+    const auto value = dyn_cast<IntegerAttr>(raw);
+    if (!value || !value.getType().isSignlessInteger(64)) {
+      return malformed(field);
+    }
+    return std::optional(value.getValue().getZExtValue());
+  };
+  const auto getFloat =
+      [&](const DictionaryAttr dictionary,
+          const StringRef field) -> llvm::Expected<std::optional<double>> {
+    const Attribute raw = dictionary.get(field);
+    if (!raw) {
+      return std::optional<double>{};
+    }
+    const auto value = dyn_cast<FloatAttr>(raw);
+    if (!value || !value.getType().isF64()) {
+      return malformed(field);
+    }
+    return std::optional(value.getValueAsDouble());
+  };
+
+  const auto sitesAttr = snapshot.getAs<ArrayAttr>("sites");
+  const auto topologyKnown = snapshot.getAs<BoolAttr>("topology_known");
+  const auto couplingsAttr = snapshot.getAs<ArrayAttr>("couplings");
+  const auto operationsKnown = snapshot.getAs<BoolAttr>("operations_known");
+  const auto operationsAttr = snapshot.getAs<ArrayAttr>("operations");
+  if (!sitesAttr || !topologyKnown || !couplingsAttr || !operationsKnown ||
+      !operationsAttr) {
+    return malformed("target");
+  }
+
+  std::vector<Site> targetSites;
+  targetSites.reserve(sitesAttr.size());
+  for (const Attribute raw : sitesAttr) {
+    const auto dictionary = dyn_cast<DictionaryAttr>(raw);
+    if (!dictionary) {
+      return malformed("sites");
+    }
+    auto id = getUInt(dictionary, "id");
+    auto t1 = getUInt(dictionary, "t1");
+    auto t2 = getUInt(dictionary, "t2");
+    if (!id || !*id || !t1 || !t2 ||
+        **id > static_cast<uint64_t>(std::numeric_limits<SiteId>::max())) {
+      return malformed("sites");
+    }
+    std::optional<std::string> siteName;
+    if (const Attribute rawName = dictionary.get("name")) {
+      const auto value = dyn_cast<StringAttr>(rawName);
+      if (!value) {
+        return malformed("sites.name");
+      }
+      siteName = value.getValue().str();
+    }
+    auto site =
+        Site::create(static_cast<SiteId>(**id), std::move(siteName), *t1, *t2);
+    if (!site) {
+      return site.takeError();
+    }
+    targetSites.emplace_back(std::move(*site));
+  }
+
+  std::optional<std::vector<Coupling>> targetCouplings;
+  if (topologyKnown.getValue()) {
+    targetCouplings.emplace();
+    targetCouplings->reserve(couplingsAttr.size());
+    for (const Attribute raw : couplingsAttr) {
+      const auto value = dyn_cast<DenseI64ArrayAttr>(raw);
+      if (!value || value.size() != 2) {
+        return malformed("couplings");
+      }
+      targetCouplings->emplace_back(value[0], value[1]);
+    }
+  } else if (!couplingsAttr.empty()) {
+    return malformed("couplings");
+  }
+
+  std::optional<std::vector<Operation>> targetOperations;
+  if (operationsKnown.getValue()) {
+    targetOperations.emplace();
+    targetOperations->reserve(operationsAttr.size());
+    for (const Attribute raw : operationsAttr) {
+      const auto dictionary = dyn_cast<DictionaryAttr>(raw);
+      const auto operationName =
+          dictionary ? dictionary.getAs<StringAttr>("name") : StringAttr{};
+      const auto tuples =
+          dictionary ? dictionary.getAs<ArrayAttr>("site_tuples") : ArrayAttr{};
+      if (!dictionary || !operationName || !tuples) {
+        return malformed("operations");
+      }
+      auto qubits = getUInt(dictionary, "qubits");
+      auto parameters = getUInt(dictionary, "parameters");
+      auto duration = getUInt(dictionary, "duration");
+      auto fidelity = getFloat(dictionary, "fidelity");
+      if (!qubits || !*qubits || !parameters || !*parameters || !duration ||
+          !fidelity) {
+        return malformed("operations");
+      }
+      std::vector<SiteTuple> siteTuples;
+      siteTuples.reserve(tuples.size());
+      for (const Attribute rawTuple : tuples) {
+        const auto tuple = dyn_cast<DictionaryAttr>(rawTuple);
+        const auto tupleSites = tuple ? tuple.getAs<DenseI64ArrayAttr>("sites")
+                                      : DenseI64ArrayAttr{};
+        if (!tuple || !tupleSites) {
+          return malformed("operations.site_tuples");
+        }
+        auto tupleDuration = getUInt(tuple, "duration");
+        auto tupleFidelity = getFloat(tuple, "fidelity");
+        if (!tupleDuration || !tupleFidelity) {
+          return malformed("operations.site_tuples");
+        }
+        std::vector<SiteId> tupleSiteIds(tupleSites.asArrayRef().begin(),
+                                         tupleSites.asArrayRef().end());
+        auto siteTuple = SiteTuple::create(std::move(tupleSiteIds),
+                                           *tupleDuration, *tupleFidelity);
+        if (!siteTuple) {
+          return siteTuple.takeError();
+        }
+        siteTuples.emplace_back(std::move(*siteTuple));
+      }
+      auto operation = Operation::create(
+          operationName.getValue().str(), static_cast<size_t>(**qubits),
+          static_cast<size_t>(**parameters), std::move(siteTuples), *duration,
+          *fidelity);
+      if (!operation) {
+        return operation.takeError();
+      }
+      targetOperations->emplace_back(std::move(*operation));
+    }
+  } else if (!operationsAttr.empty()) {
+    return malformed("operations");
+  }
+
+  std::optional<DurationUnit> targetDurationUnit;
+  if (const Attribute raw = snapshot.get("duration_unit")) {
+    const auto dictionary = dyn_cast<DictionaryAttr>(raw);
+    const auto unit =
+        dictionary ? dictionary.getAs<StringAttr>("unit") : StringAttr{};
+    auto scale =
+        dictionary
+            ? getFloat(dictionary, "scale")
+            : llvm::Expected<std::optional<double>>(malformed("duration_unit"));
+    if (!unit || !scale || !*scale) {
+      return malformed("duration_unit");
+    }
+    auto value = DurationUnit::create(unit.getValue().str(), **scale);
+    if (!value) {
+      return value.takeError();
+    }
+    targetDurationUnit = std::move(*value);
+  }
+
+  std::optional<std::string> targetName;
+  if (const Attribute raw = snapshot.get("name")) {
+    const auto value = dyn_cast<StringAttr>(raw);
+    if (!value) {
+      return malformed("name");
+    }
+    targetName = value.getValue().str();
+  }
+  return createImpl(std::move(targetName), std::move(targetSites),
+                    std::move(targetCouplings), std::move(targetOperations),
+                    std::move(targetDurationUnit), std::nullopt);
 }
 
 llvm::Expected<CompilerTarget>
@@ -893,24 +1181,25 @@ CompilerTarget::executionProfiles() const noexcept {
   return *storage_->executionProfiles;
 }
 
-const CompilerTarget::ExecutionProfile*
-CompilerTarget::executionProfile(const ProgramFormat format) const noexcept {
+const CompilerTarget::ExecutionProfile* CompilerTarget::executionProfile(
+    const PayloadDescriptor& descriptor) const noexcept {
   if (!storage_->executionProfiles) {
     return nullptr;
   }
-  const auto found = std::ranges::lower_bound(
-      *storage_->executionProfiles, format, {}, &ExecutionProfile::format);
-  if (found == storage_->executionProfiles->end() ||
-      found->format() != format) {
+  const auto found = std::ranges::find_if(
+      *storage_->executionProfiles,
+      [&](const auto& profile) { return profile.descriptor() == descriptor; });
+  if (found == storage_->executionProfiles->end()) {
     return nullptr;
   }
   return &*found;
 }
 
 bool CompilerTarget::supportsProgramFeature(
-    const ProgramFormat format, const ProgramFeature feature) const noexcept {
-  const auto* const profile = executionProfile(format);
-  return profile != nullptr && profile->supports(feature);
+    const PayloadDescriptor& descriptor, const ProgramFeature feature,
+    const uint64_t value) const noexcept {
+  const auto* const profile = executionProfile(descriptor);
+  return profile != nullptr && profile->supports(feature, value);
 }
 
 bool CompilerTarget::supportsOperation(

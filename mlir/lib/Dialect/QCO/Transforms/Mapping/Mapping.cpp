@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -351,7 +352,22 @@ protected:
     assert(ntrials > 0 && "expected ntrials > 0");
 
     if (!target) {
-      llvm::reportFatalUsageError("No compiler target specified!");
+      const auto environment =
+          getOperation()->getAttrOfType<mqt::TargetEnvAttr>(
+              mqt::TargetEnvAttr::getOperationAttributeName());
+      if (!environment) {
+        getOperation().emitError("mapping requires mqt.target_env");
+        signalPassFailure();
+        return;
+      }
+      auto parsed = CompilerTarget::create(environment.getTarget());
+      if (!parsed) {
+        getOperation().emitError() << "invalid target environment: "
+                                   << llvm::toString(parsed.takeError());
+        signalPassFailure();
+        return;
+      }
+      target.emplace(std::move(*parsed));
     }
 
     IRRewriter rewriter(&getContext());

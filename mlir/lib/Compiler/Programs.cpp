@@ -83,6 +83,31 @@
 
 namespace mlir {
 
+[[nodiscard]] static bool
+payloadMatchesOutput(const PayloadDescriptor& descriptor,
+                     const ProgramFormat format) {
+  switch (format) {
+  case ProgramFormat::OpenQASM3:
+    return descriptor.id == "openqasm" && descriptor.version == "3.0.0" &&
+           descriptor.profile.empty() &&
+           descriptor.encoding == PayloadEncoding::Text;
+  case ProgramFormat::QIRBase:
+    return descriptor.id == "qir" && descriptor.version == "2.1.0" &&
+           descriptor.profile == "base";
+  case ProgramFormat::QIRAdaptive:
+    return descriptor.id == "qir" && descriptor.version == "2.1.0" &&
+           descriptor.profile == "adaptive";
+  case ProgramFormat::QCOOptimized:
+  case ProgramFormat::QC:
+    return true;
+  case ProgramFormat::QCImport:
+  case ProgramFormat::QCO:
+  case ProgramFormat::Jeff:
+    return false;
+  }
+  llvm_unreachable("unknown program format");
+}
+
 [[nodiscard]] static std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
   registry.insert<cbit::CBitDialect, mqt::MQTDialect, qc::QCDialect,
@@ -499,6 +524,35 @@ bool QCOProgram::compileForTarget(const CompilerTarget& target,
   return true;
 }
 
+bool QCOProgram::compileForTarget(const CompilerTarget& target,
+                                  const PayloadDescriptor& descriptor,
+                                  const ProgramFormat format,
+                                  const bool enableTiming,
+                                  const bool enableStatistics) {
+  if (!isTargetCompilationFormat(format)) {
+    mod().emitError()
+        << "target compilation requires QCOOptimized, QC, OpenQASM3, or QIR "
+           "output";
+    return false;
+  }
+  if (!payloadMatchesOutput(descriptor, format)) {
+    mod().emitError("selected payload descriptor does not match output format");
+    return false;
+  }
+  auto compiled = copy();
+  if (failed(runPasses(
+          compiled.mod(),
+          [&target, format, &descriptor](OpPassManager& pm) {
+            populateTargetCompilationPipeline(pm, target, format, descriptor);
+          },
+          "failed to compile the QCO program for the target", enableTiming,
+          enableStatistics))) {
+    return false;
+  }
+  *this = std::move(compiled);
+  return true;
+}
+
 std::optional<QCProgram> QCOProgram::intoQC() && {
   if (failed(runPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createQCOToQC()); },
@@ -614,12 +668,25 @@ QIRProfile QIRProgram::profile() const noexcept { return profile_; }
 [[nodiscard]] static std::unique_ptr<llvm::Module>
 translateToLLVM(ModuleOp mod, llvm::LLVMContext& context,
                 const QIRProfile profile) {
+  const auto computationTypes = [&](const StringRef name) {
+    SmallVector<StringRef> types;
+    if (const auto values = mod->getAttrOfType<ArrayAttr>(name)) {
+      types.reserve(values.size());
+      for (const Attribute value : values) {
+        types.emplace_back(cast<StringAttr>(value).getValue());
+      }
+    }
+    return types;
+  };
+  const auto integerTypes = computationTypes("qir.int_computations");
+  const auto floatingTypes = computationTypes("qir.float_computations");
   auto llvmModule = translateModuleToLLVMIR(mod, context);
   if (!llvmModule) {
     mod.emitError("failed to translate QIR MLIR to LLVM IR");
     return nullptr;
   }
-  qir::normalizeQIRModuleFlags(*llvmModule, profile == QIRProfile::Adaptive);
+  qir::normalizeQIRModuleFlags(*llvmModule, profile == QIRProfile::Adaptive,
+                               integerTypes, floatingTypes);
   return llvmModule;
 }
 

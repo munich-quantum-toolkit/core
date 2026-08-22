@@ -22,7 +22,29 @@
 #include <utility>
 #include <vector>
 
+[[nodiscard]] constexpr bool
+operator==(const QDMI_Program_Format& lhs,
+           const QDMI_Program_Format& rhs) noexcept {
+  return lhs.version == rhs.version && lhs.encoding == rhs.encoding &&
+         std::string_view(lhs.id) == rhs.id &&
+         std::string_view(lhs.profile) == rhs.profile;
+}
+
 namespace qdmi_test {
+
+inline constexpr QDMI_Program_Format OPENQASM2{
+    QDMI_MAKE_VERSION(2, 0, 0), QDMI_PROGRAM_ENCODING_TEXT, "openqasm", ""};
+inline constexpr QDMI_Program_Format OPENQASM3{
+    QDMI_MAKE_VERSION(3, 0, 0), QDMI_PROGRAM_ENCODING_TEXT, "openqasm", ""};
+inline constexpr QDMI_Program_Format QIR21_BASE_TEXT{
+    QDMI_MAKE_VERSION(2, 1, 0), QDMI_PROGRAM_ENCODING_TEXT, "qir", "base"};
+inline constexpr QDMI_Program_Format QIR21_BASE_BINARY{
+    QDMI_MAKE_VERSION(2, 1, 0), QDMI_PROGRAM_ENCODING_BINARY, "qir", "base"};
+inline constexpr QDMI_Program_Format QIR21_ADAPTIVE_TEXT{
+    QDMI_MAKE_VERSION(2, 1, 0), QDMI_PROGRAM_ENCODING_TEXT, "qir", "adaptive"};
+inline constexpr QDMI_Program_Format QIR21_ADAPTIVE_BINARY{
+    QDMI_MAKE_VERSION(2, 1, 0), QDMI_PROGRAM_ENCODING_BINARY, "qir",
+    "adaptive"};
 
 struct SessionGuard {
   MQT_DDSIM_QDMI_Device_Session session{nullptr};

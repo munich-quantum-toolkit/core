@@ -372,8 +372,6 @@ constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
     return "OPERATIONS";
   case QDMI_DEVICE_PROPERTY_COUPLINGMAP:
     return "COUPLING MAP";
-  case QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION:
-    return "NEEDS CALIBRATION";
   case QDMI_DEVICE_PROPERTY_LENGTHUNIT:
     return "LENGTH UNIT";
   case QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR:

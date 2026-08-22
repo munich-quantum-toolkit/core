@@ -274,27 +274,7 @@ TEST_F(QIRTest, UsesQIR21ModuleFlagWidths) {
 TEST(QIRModuleFlagsTest, RecordsAdaptiveClassicalCapabilities) {
   llvm::LLVMContext context;
   llvm::Module moduleOp("adaptive", context);
-  auto* function = llvm::Function::Create(
-      llvm::FunctionType::get(llvm::Type::getInt64Ty(context), false),
-      llvm::Function::ExternalLinkage, "main", moduleOp);
-  function->addFnAttr("entry_point");
-  auto* entry = llvm::BasicBlock::Create(context, "entry", function);
-  llvm::IRBuilder builder(entry);
-  builder.CreateRet(builder.getInt64(0));
-
-  auto* helper = llvm::Function::Create(
-      llvm::FunctionType::get(builder.getInt8Ty(), {builder.getInt8Ty()},
-                              false),
-      llvm::Function::InternalLinkage, "helper", moduleOp);
-  auto* helperEntry = llvm::BasicBlock::Create(context, "entry", helper);
-  builder.SetInsertPoint(helperEntry);
-  auto* integer = helper->getArg(0);
-  auto* floating = builder.CreateUIToFP(integer, builder.getDoubleTy());
-  builder.CreateFAdd(floating,
-                     llvm::ConstantFP::get(builder.getDoubleTy(), 1.0));
-  builder.CreateRet(builder.CreateAdd(integer, builder.getInt8(1)));
-
-  normalizeQIRModuleFlags(moduleOp, true);
+  normalizeQIRModuleFlags(moduleOp, true, {"i8"}, {"double"});
 
   const auto* integerTypes =
       llvm::dyn_cast<llvm::MDNode>(moduleOp.getModuleFlag("int_computations"));
@@ -310,30 +290,6 @@ TEST(QIRModuleFlagsTest, RecordsAdaptiveClassicalCapabilities) {
   EXPECT_EQ(
       llvm::cast<llvm::MDString>(floatingTypes->getOperand(0))->getString(),
       "double");
-
-  std::string text;
-  llvm::raw_string_ostream(text) << moduleOp;
-  EXPECT_NE(text.find("!\"ir_functions\", i1 true"), std::string::npos);
-
-  helper->eraseFromParent();
-  normalizeQIRModuleFlags(moduleOp, true);
-  EXPECT_EQ(moduleOp.getModuleFlag("int_computations"), nullptr);
-  EXPECT_EQ(moduleOp.getModuleFlag("float_computations"), nullptr);
-  EXPECT_EQ(moduleOp.getModuleFlag("ir_functions"), nullptr);
-}
-
-TEST(QIRModuleFlagsTest, RemovesAdaptiveFlagsFromBaseModules) {
-  llvm::LLVMContext context;
-  llvm::Module moduleOp("base", context);
-  moduleOp.addModuleFlag(llvm::Module::Error, "backwards_branching", 3U);
-  moduleOp.addModuleFlag(llvm::Module::Error, "arrays", 1U);
-  moduleOp.addModuleFlag(llvm::Module::Error, "ir_functions", 1U);
-
-  normalizeQIRModuleFlags(moduleOp, false);
-
-  EXPECT_EQ(moduleOp.getModuleFlag("backwards_branching"), nullptr);
-  EXPECT_EQ(moduleOp.getModuleFlag("arrays"), nullptr);
-  EXPECT_EQ(moduleOp.getModuleFlag("ir_functions"), nullptr);
 }
 
 /// \name QIR/Operations/StandardGates/DcxOp.cpp

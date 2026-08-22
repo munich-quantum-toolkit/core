@@ -233,8 +233,6 @@ int MQT_SC_QDMI_Device_Session_impl_d::queryDeviceProperty(
                             sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum,
                             property, size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION, size_t, 0,
-                            property, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(
       QDMI_DEVICE_PROPERTY_PULSESUPPORT, QDMI_Device_Pulse_Support_Level,
       QDMI_DEVICE_PULSE_SUPPORT_LEVEL_NONE, property, size, value, sizeRet)
@@ -520,6 +518,14 @@ int MQT_SC_QDMI_device_session_query_device_property(
   return session == nullptr
              ? QDMI_ERROR_INVALIDARGUMENT
              : session->queryDeviceProperty(property, size, value, sizeRet);
+}
+int MQT_SC_QDMI_device_session_query_program_features(
+    MQT_SC_QDMI_Device_Session session, const QDMI_Program_Format* format,
+    const size_t, QDMI_Program_Feature*, size_t*) {
+  if (session == nullptr || format == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 int MQT_SC_QDMI_device_session_query_site_property(
     MQT_SC_QDMI_Device_Session session, MQT_SC_QDMI_Site site,
