@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Compiler/Programs.h"
+#include "mlir/Compiler/ProgramFormat.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
 #include "qdmi/Client.hpp"
@@ -20,6 +20,8 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
 
+#include <algorithm>
+#include <array>
 #include <cassert>
 #include <string>
 
@@ -75,7 +77,9 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   EXPECT_TRUE(target.supportsOperation("cz", 2, 0));
   EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
   EXPECT_FALSE(target.supportsOperation("rx", 1, 1));
-  EXPECT_TRUE(target.classicalControl().empty());
+  const auto executionProfiles = target.executionProfiles();
+  ASSERT_TRUE(executionProfiles.has_value());
+  EXPECT_TRUE(executionProfiles->empty());
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit,
             CompilerTarget::SingleQubitBasis::R);
@@ -92,64 +96,72 @@ TEST(CompilerQDMIAdapterTest, PreservesMissingTopologyAsAllToAll) {
   EXPECT_TRUE(target.supportsOperation("h", 1, 0));
   EXPECT_TRUE(target.supportsOperation("cx", 2, 0));
   EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
-  ASSERT_EQ(target.classicalControl().size(), 1);
-  EXPECT_TRUE(target.supportsClassicalControl(
-      CompilerTarget::ClassicalControl::Conditional));
-  EXPECT_FALSE(target.supportsClassicalControl(
-      CompilerTarget::ClassicalControl::Iteration));
-  EXPECT_FALSE(target.supportsClassicalControl(
-      CompilerTarget::ClassicalControl::ConditionalLoop));
-  EXPECT_FALSE(target.supportsClassicalControl(
-      CompilerTarget::ClassicalControl::MultiwayBranch));
+  const auto profiles = target.executionProfiles();
+  ASSERT_TRUE(profiles.has_value());
+  EXPECT_EQ(profiles->size(), 3);
+
+  const auto* const openQASM =
+      target.executionProfile(mlir::ProgramFormat::OpenQASM3);
+  ASSERT_NE(openQASM, nullptr);
+  EXPECT_TRUE(openQASM->features().empty());
+  EXPECT_FALSE(openQASM->optionalFeaturesKnown());
+
+  const auto* const qirBase =
+      target.executionProfile(mlir::ProgramFormat::QIRBase);
+  ASSERT_NE(qirBase, nullptr);
+  EXPECT_TRUE(qirBase->features().empty());
+  EXPECT_FALSE(qirBase->optionalFeaturesKnown());
+
+  const auto* const qirAdaptive =
+      target.executionProfile(mlir::ProgramFormat::QIRAdaptive);
+  ASSERT_NE(qirAdaptive, nullptr);
+  constexpr std::array adaptiveBaseline{
+      mlir::ProgramFeature::MidCircuitMeasurement,
+      mlir::ProgramFeature::MeasuredQubitReuse,
+      mlir::ProgramFeature::MeasurementResultUse,
+      mlir::ProgramFeature::BooleanComputation,
+      mlir::ProgramFeature::ForwardBranching,
+  };
+  EXPECT_TRUE(std::ranges::equal(qirAdaptive->features(), adaptiveBaseline));
+  EXPECT_FALSE(qirAdaptive->optionalFeaturesKnown());
+  EXPECT_FALSE(qirAdaptive->supports(mlir::ProgramFeature::CountedIteration));
+  EXPECT_FALSE(qirAdaptive->supports(mlir::ProgramFeature::ConditionalLoop));
+  EXPECT_FALSE(qirAdaptive->supports(mlir::ProgramFeature::MultiwayBranching));
+
+  EXPECT_FALSE(target.supportsProgramFeature(
+      mlir::ProgramFormat::QIRBase, mlir::ProgramFeature::ForwardBranching));
+  EXPECT_FALSE(target.supportsProgramFeature(
+      mlir::ProgramFormat::OpenQASM3, mlir::ProgramFeature::ForwardBranching));
 }
 
-TEST(CompilerQDMIAdapterTest, AugmentsInferredClassicalControl) {
-  constexpr auto iteration = CompilerTarget::ClassicalControl::Iteration;
-  constexpr auto conditional = CompilerTarget::ClassicalControl::Conditional;
+TEST(CompilerQDMIAdapterTest, DeviceIdMatchesOpenedDeviceExecutionProfiles) {
   const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-  const auto target = llvm::cantFail(
-      mlir::compilerTargetFromDevice(device, {iteration, conditional}));
+  const auto direct = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  const auto byId =
+      llvm::cantFail(mlir::compilerTargetFromDeviceId("mqt.ddsim.default"));
 
-  ASSERT_EQ(target.classicalControl().size(), 2);
-  EXPECT_TRUE(target.supportsClassicalControl(conditional));
-  EXPECT_TRUE(target.supportsClassicalControl(iteration));
+  const auto directProfiles = direct.executionProfiles();
+  const auto byIdProfiles = byId.executionProfiles();
+  ASSERT_TRUE(directProfiles.has_value());
+  ASSERT_TRUE(byIdProfiles.has_value());
+  ASSERT_EQ(byIdProfiles->size(), directProfiles->size());
+  for (const auto& profile : *directProfiles) {
+    const auto* const byIdProfile = byId.executionProfile(profile.format());
+    ASSERT_NE(byIdProfile, nullptr);
+    EXPECT_TRUE(
+        std::ranges::equal(byIdProfile->features(), profile.features()));
+    EXPECT_EQ(byIdProfile->optionalFeaturesKnown(),
+              profile.optionalFeaturesKnown());
+  }
 }
 
-TEST(CompilerQDMIAdapterTest,
-     CompilesMeasurementConditionedControlForAdaptiveDevice) {
-  constexpr llvm::StringLiteral source = R"mlir(
-    module {
-      func.func @main() attributes {mqt.entry_point} {
-        %q0 = qco.alloc : !qco.qubit
-        %q1, %condition = qco.measure %q0 : !qco.qubit
-        %q2 = qco.if %condition args(%arg0 = %q1) -> (!qco.qubit) {
-          %q3 = qco.x %arg0 : !qco.qubit -> !qco.qubit
-          qco.yield %q3 : !qco.qubit
-        } else args(%arg0 = %q1) {
-          qco.yield %arg0 : !qco.qubit
-        }
-        qco.sink %q2 : !qco.qubit
-        return
-      }
-    }
-  )mlir";
-  auto program = mlir::QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(program);
-  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+TEST(CompilerQDMIAdapterTest, PreservesKnownEmptyProgramFormatMetadata) {
+  const auto device = qdmi::Session::openDevice("mqt.sc.default");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
-  EXPECT_TRUE(program->compileForTarget(target));
-}
-
-TEST(CompilerQDMIAdapterTest, DeviceIdMatchesOpenedDeviceClassicalControl) {
-  constexpr auto multiway = CompilerTarget::ClassicalControl::MultiwayBranch;
-  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-  const auto direct =
-      llvm::cantFail(mlir::compilerTargetFromDevice(device, {multiway}));
-  const auto byId = llvm::cantFail(
-      mlir::compilerTargetFromDeviceId("mqt.ddsim.default", {multiway}));
-
-  EXPECT_EQ(byId.classicalControl(), direct.classicalControl());
+  const auto profiles = target.executionProfiles();
+  ASSERT_TRUE(profiles.has_value());
+  EXPECT_TRUE(profiles->empty());
 }
 
 TEST(CompilerQDMIAdapterTest, ListsRegisteredDeviceIds) {

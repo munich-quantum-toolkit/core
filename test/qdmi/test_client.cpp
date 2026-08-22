@@ -521,17 +521,34 @@ TEST_P(DeviceTest, MinAtomDistance) {
 
 TEST_P(DeviceTest, SupportedProgramFormats) {
   EXPECT_NO_THROW(std::ignore = device.getSupportedProgramFormats());
+  EXPECT_TRUE(device.tryGetSupportedProgramFormats().has_value());
 }
 
-TEST(DeviceProgramFormatsTest, UnsupportedPropertyIsEmpty) {
+TEST(DeviceProgramFormatsTest, DistinguishesUnsupportedFromKnownEmpty) {
   constexpr std::string_view deviceId = "test.unsupported-program-formats";
   static_cast<void>(Driver::get().registerDeviceIfAbsent(
       {.id = std::string(deviceId),
        .library = MQT_CORE_QDMI_SESSION_TEST_DEVICE,
        .prefix = "TEST_SESSION"}));
 
-  const auto device = Session::openDevice(deviceId);
-  EXPECT_TRUE(device.getSupportedProgramFormats().empty());
+  const auto unsupported = Session::openDevice(deviceId);
+  EXPECT_EQ(unsupported.tryGetSupportedProgramFormats(), std::nullopt);
+  EXPECT_THROW(std::ignore = unsupported.getSupportedProgramFormats(),
+               std::runtime_error);
+
+  const auto knownEmpty = Session::openDevice("mqt.sc.default");
+  const auto formats = knownEmpty.tryGetSupportedProgramFormats();
+  ASSERT_TRUE(formats.has_value());
+  EXPECT_TRUE(formats->empty());
+  EXPECT_TRUE(knownEmpty.getSupportedProgramFormats().empty());
+}
+
+TEST_F(DDSimulatorDeviceTest, SupportedProgramFormatsAreKnownAndNonempty) {
+  const auto formats = device.tryGetSupportedProgramFormats();
+  ASSERT_TRUE(formats.has_value());
+  EXPECT_FALSE(formats->empty());
+  EXPECT_NE(std::ranges::find(*formats, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING),
+            formats->end());
 }
 
 TEST_P(DeviceTest, ChildDevices) {

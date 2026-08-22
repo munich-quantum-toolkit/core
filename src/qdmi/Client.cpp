@@ -330,9 +330,14 @@ std::optional<uint64_t> Device::getMinAtomDistance() const {
 }
 
 std::vector<QDMI_Program_Format> Device::getSupportedProgramFormats() const {
+  return queryProperty<std::vector<QDMI_Program_Format>>(
+      QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS);
+}
+
+std::optional<std::vector<QDMI_Program_Format>>
+Device::tryGetSupportedProgramFormats() const {
   return queryProperty<std::optional<std::vector<QDMI_Program_Format>>>(
-             QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS)
-      .value_or(std::vector<QDMI_Program_Format>{});
+      QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS);
 }
 
 std::vector<Device> Device::getChildDevices() const {

@@ -11,10 +11,14 @@
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Attributes.h>
@@ -22,6 +26,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/DialectImplementation.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Support/LLVM.h>
@@ -32,7 +37,78 @@ using namespace mlir::mqt;
 
 #include "mlir/Dialect/MQT/IR/MQTDialect.cpp.inc"
 
-void MQTDialect::initialize() {}
+#define GET_ATTRDEF_CLASSES
+#include "mlir/Dialect/MQT/IR/MQTAttributes.cpp.inc"
+
+void MQTDialect::initialize() {
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "mlir/Dialect/MQT/IR/MQTAttributes.cpp.inc"
+      >();
+}
+
+TargetEnvAttr TargetEnvAttr::get(MLIRContext* const context,
+                                 const StringRef format,
+                                 const ArrayRef<StringRef> features,
+                                 const bool optionalFeaturesKnown) {
+  SmallVector<Attribute> featureAttrs;
+  featureAttrs.reserve(features.size());
+  for (const StringRef feature : features) {
+    featureAttrs.emplace_back(StringAttr::get(context, feature));
+  }
+  return Base::get(context, StringAttr::get(context, format),
+                   ArrayAttr::get(context, featureAttrs),
+                   optionalFeaturesKnown);
+}
+
+LogicalResult
+TargetEnvAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
+                      const StringAttr format, const ArrayAttr features,
+                      const bool /*optionalFeaturesKnown*/) {
+  if (format.getValue().empty()) {
+    return emitError() << "target environment format must not be empty";
+  }
+  llvm::SmallDenseSet<StringRef> seen;
+  seen.reserve(features.size());
+  for (const Attribute attribute : features) {
+    const auto feature = dyn_cast<StringAttr>(attribute);
+    if (!feature) {
+      return emitError() << "target environment features must be strings";
+    }
+    if (feature.getValue().empty()) {
+      return emitError() << "target environment feature must not be empty";
+    }
+    if (!seen.insert(feature.getValue()).second) {
+      return emitError() << "target environment contains duplicate feature '"
+                         << feature.getValue() << "'";
+    }
+  }
+  return success();
+}
+
+bool TargetEnvAttr::supports(const StringRef feature) const {
+  return llvm::any_of(getFeatures(), [&](const Attribute candidate) {
+    const auto string = dyn_cast<StringAttr>(candidate);
+    return string && string.getValue() == feature;
+  });
+}
+
+FailureOr<Attribute> TargetEnvAttr::query(const DataLayoutEntryKey key) {
+  const auto stringKey = key.dyn_cast<StringAttr>();
+  if (!stringKey) {
+    return failure();
+  }
+  if (stringKey.getValue() == "mqt.target_env.format") {
+    return getFormat();
+  }
+  if (stringKey.getValue() == "mqt.target_env.features") {
+    return getFeatures();
+  }
+  if (stringKey.getValue() == "mqt.target_env.optional_features_known") {
+    return BoolAttr::get(getContext(), getOptionalFeaturesKnown());
+  }
+  return failure();
+}
 
 [[nodiscard]] static LogicalResult
 verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
@@ -141,6 +217,19 @@ verifyRegisterName(Operation* operation, const NamedAttribute attribute) {
 LogicalResult
 MQTDialect::verifyOperationAttribute(Operation* operation,
                                      const NamedAttribute attribute) {
+  if (attribute.getName() == TargetEnvAttr::getOperationAttributeName()) {
+    if (!isa<ModuleOp>(operation)) {
+      return operation->emitError()
+             << "attribute '" << attribute.getName().getValue()
+             << "' is only valid on a module";
+    }
+    if (!isa<TargetEnvAttr>(attribute.getValue())) {
+      return operation->emitError()
+             << "attribute '" << attribute.getName().getValue()
+             << "' must be an mqt target environment";
+    }
+    return success();
+  }
   if (attribute.getName() == EntryPointAttrHelper::getNameStr()) {
     return verifyEntryPoint(operation, attribute);
   }

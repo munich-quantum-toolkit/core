@@ -1,10 +1,11 @@
 # Compile for a QDMI device
 
 An MLIR {code}`mlir::CompilerTarget` is an immutable snapshot of a circuit-model
-device. It contains the device sites, topology, native operations, and available
-calibration data. Compilation decomposes supported multi-qubit operations,
-optimizes and maps the program, synthesizes native gates, and verifies that the
-result conforms to the target.
+device. It contains the device sites, topology, native operations, available
+calibration data, and, when reported, payload-specific execution profiles.
+Compilation decomposes supported multi-qubit operations, optimizes and maps the
+program, synthesizes native gates, and verifies that the result conforms to the
+target.
 
 The snapshot is independent of its originating QDMI session. It can therefore be
 stored, copied cheaply, and reused for multiple compilations.
@@ -24,71 +25,111 @@ compiled = compile_program(
 )
 ```
 
-Target compilation accepts optimized QCO, QC, or QIR output and uses the
-canonical QCO pipeline; it cannot be combined with a custom `qco_pipeline`.
+Target compilation accepts optimized QCO, QC, OpenQASM 3, or QIR output and uses
+the canonical QCO pipeline; it cannot be combined with a custom `qco_pipeline`.
 
-The target can also be constructed directly. Omitting `couplings` selects
-all-to-all connectivity; omitting `operations` means that every operation is
-native:
+The target can also be constructed directly. Omitting {code}`couplings` selects
+all-to-all connectivity; omitting {code}`operations` means that every operation
+is native:
 
 ```python
 target = CompilerTarget(3, couplings=[(0, 1), (1, 2)])
 ```
 
-Structured runtime classical control is opt-in. The capability list covers only
-the structured control-flow operations below. The list does not describe general
-classical computation, function calls, or side effects such as
-{code}`cf.assert`. A target that declares no capabilities supports none of the
-listed control forms. Declare each supported control form explicitly; for
-example, a target with measurement-conditioned forward branching uses:
+Execution features belong to a program format, not to the device globally. For
+example, a directly constructed target that accepts measurement-feedback QIR
+Adaptive programs can describe that payload as follows:
 
 ```python
+from mqt.core.mlir import CompilerTarget, OutputFormat
+
+Feature = CompilerTarget.ProgramFeature
+adaptive = CompilerTarget.ExecutionProfile(
+    OutputFormat.QIR_ADAPTIVE,
+    features=[
+        Feature.MID_CIRCUIT_MEASUREMENT,
+        Feature.MEASURED_QUBIT_REUSE,
+        Feature.MEASUREMENT_RESULT_USE,
+        Feature.BOOLEAN_COMPUTATION,
+        Feature.FORWARD_BRANCHING,
+    ],
+)
 target = CompilerTarget(
     3,
-    classical_control=[CompilerTarget.ClassicalControl.CONDITIONAL],
+    execution_profiles=[adaptive],
 )
 ```
 
-Target compilation checks these capabilities before cleanup, mapping, or
-synthesis. An unsupported program therefore fails without partially mapping the
-circuit, and the diagnostic names both the missing capability and the operation
-that requires it. The four independent capabilities are:
+{code}`ProgramFeature` values describe atomic execution semantics, including
+mid-circuit measurement, measurement-result use, Boolean computation, forward
+branching, counted or condition-terminated iteration, and multiway branching.
+They are independent: forward branching does not imply loops, switches, or
+general integer and floating-point computation. Runtime branch conditions must
+be derived from measurements. A feature declaration therefore cannot authorize
+an arbitrary function argument or an otherwise unmodelled classical calculation
+as a condition. Returning a measurement result or storing it in a terminal
+output register is reporting, not adaptive result use; a later possibly aliasing
+load or another runtime consumer requires {code}`MEASUREMENT_RESULT_USE`.
 
-- {code}`CONDITIONAL` for runtime {code}`qco.if` and {code}`scf.if` operations.
-- {code}`ITERATION` for counted {code}`scf.for` loops.
-- {code}`CONDITIONAL_LOOP` for runtime {code}`scf.while` loops.
-- {code}`MULTIWAY_BRANCH` for {code}`qco.index_switch` and
-  {code}`scf.index_switch` operations.
+Target compilation keeps three questions separate:
 
-These capabilities do not represent QIR metadata for integer and floating-point
-computations, functions, return points, or resource management. Model such
-target constraints separately when they become part of the compiler-target
-contract.
+1. The residual program has semantic requirements, such as using a measurement
+   result in a forward branch.
+2. The selected {code}`ExecutionProfile` lists the device features for exactly
+   one {code}`OutputFormat`.
+3. Compiler legality determines whether the current IR can be lowered, for
+   example whether quantum state is represented in a supported structural form.
 
-Targets constructed from QDMI infer {code}`CONDITIONAL` when the device
-advertises a QIR Adaptive string or module format. QIR Adaptive does not imply
-the three optional loop and multiway capabilities. Pass
-{code}`classical_control` to
-{py:meth}`~mqt.core.mlir.CompilerTarget.from_device` or
-{py:meth}`~mqt.core.mlir.CompilerTarget.from_device_id` to add capabilities that
-the QDMI program-format list cannot describe. These additions are trusted caller
-assertions and are not validated against device metadata. A device that does not
-expose the optional program-format property yields no inferred capability. QASM
-3 and measurement support alone do not imply runtime branching.
+The compiler serializes the selected format, features, and metadata completeness
+on the module as the typed {code}`mqt.target_env` attribute. This attribute is
+compiler-owned; users normally select it through the output format passed to
+{py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` or
+{py:func}`~mqt.core.mlir.compile_program`.
 
-Conditional support does not imply loop or multiway-branch support. The
-preflight follows only the selected region of an {code}`if` or
-{code}`index_switch` whose selector folds to a constant and still checks every
-reachable nested operation. A counted loop with a provably empty range also
-needs no runtime capability. The following cleanup pipeline removes these static
-operations before mapping. Nonconstant qubit indexing, unstructured control
-flow, and qubit tensors carried through any structured control remain
-unsupported. The preflight rejects these forms before mapping even when every
-listed capability is enabled.
+The target pipeline normalizes before testing legality. SCCP and QCO cleanup
+remove constant branches, switches, and structural regions such as
+{code}`scf.execute_region`. If the selected profile lacks
+{code}`COUNTED_ITERATION`, supported finite {code}`scf.for` loops are fully
+unrolled and the result is cleaned again. Legalization bounds the live IR
+expansion to 4096 cloned operations across all loops and the cumulative cloning
+work to 65536 operations. An expansion beyond either budget fails
+transactionally with a diagnostic instead of growing the IR or legalization time
+without bound. Only a residual loop requires runtime counted iteration.
+
+Measurement-feedback provenance memoizes already verified condition roots and is
+bounded to 4096 distinct producer steps per compilation. CBit analysis indexes
+loads by register-alias component and constant index; its remaining dynamic
+reachability and provenance checks each have the same fixed budget. When a
+budget is exhausted, result-use discovery conservatively assumes a load may
+observe the measurement, while feedback provenance fails closed with a
+diagnostic. These bounds keep adversarial producer graphs and alias patterns
+from causing unbounded analysis time.
+
+Legality is checked from the operation marked {code}`mqt.entry_point`.
+Unsupported control in an unused helper therefore does not reject the program.
+Reachable call-like operations implementing MLIR's {code}`CallOpInterface`,
+including direct and indirect function calls, fail closed until interprocedural
+execution semantics are modelled. Dynamic qubit indexing, quantum tensors or
+other quantum aggregates carried through runtime control, unmodelled operations
+carrying quantum state, and quantum state captured by classical regions remain
+lowering errors regardless of the selected device features.
+
+Failed in-place target compilation is transactional: the pipeline runs on a copy
+and replaces the original {code}`QCOProgram` only after every pass succeeds.
+
+Targets created from QDMI preserve the distinction between unavailable
+program-format metadata and a reported empty list. QASM 3 and QIR Base profiles
+list no inferred features and mark optional-feature metadata unknown. A reported
+QIR Adaptive string or module format produces an Adaptive profile with the five
+mandatory features shown above and marks additional optional-feature metadata
+unknown. Those features apply only to QIR Adaptive; they do not authorize QCO,
+QASM 3, or QIR Base payloads. QDMI target factories do not accept
+caller-supplied feature augmentation.
 
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` to apply target
-compilation to an existing QCO program. For pass-level benchmarking, the C++ API
-exposes separate factories for pre-routing optimization, mapping, native
+compilation to an existing QCO program. Pass its {code}`format` argument when
+the intended payload is not optimized QCO. For pass-level benchmarking, the C++
+API exposes separate factories for pre-routing optimization, mapping, native
 synthesis, and conformance verification.
 
 Target compilation preserves quantum operations even when their final qubit
@@ -119,9 +160,9 @@ mqt-cc --qdmi-config=/path/to/qdmi.json \
   --qdmi-device=example.device input.qasm
 ```
 
-Target compilation produces optimized QCO, QC, or QIR. It cannot be combined
-with a custom `--passes` pipeline because the canonical target pipeline owns the
-required pass ordering.
+Target compilation produces optimized QCO, QC, OpenQASM 3, or QIR. It cannot be
+combined with a custom `--passes` pipeline because the canonical target pipeline
+owns the required pass ordering.
 
 ## C++ source-tree API
 

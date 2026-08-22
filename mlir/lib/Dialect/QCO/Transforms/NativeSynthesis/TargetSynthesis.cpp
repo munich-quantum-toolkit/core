@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -19,9 +20,11 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
+#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -449,7 +452,11 @@ protected:
       return;
     }
     ModuleOp moduleOp = getOperation();
-    const auto plan = planTargetSynthesis(moduleOp, target);
+    Operation* root = moduleOp;
+    if (const auto entryPoint = mqt::getEntryPoint(moduleOp)) {
+      root = entryPoint;
+    }
+    const auto plan = planTargetSynthesis(root, target);
     if (plan.firstNeed == nullptr) {
       return;
     }
@@ -494,16 +501,15 @@ struct VerifyTargetConformancePass final
 
 protected:
   void runOnOperation() override {
-    WalkResult result = getOperation()->walk([&](Operation* operation) {
+    ModuleOp moduleOp = getOperation();
+    Operation* root = moduleOp;
+    if (const auto entryPoint = mqt::getEntryPoint(moduleOp)) {
+      root = entryPoint;
+    }
+    WalkResult result = root->walk([&](Operation* operation) {
       if (auto function = dyn_cast<FunctionOpInterface>(operation);
           function &&
-          llvm::any_of(function.getArgumentTypes(), [](const auto type) {
-            if (isa<QubitType>(type)) {
-              return true;
-            }
-            const auto tensor = dyn_cast<RankedTensorType>(type);
-            return tensor && isa<QubitType>(tensor.getElementType());
-          })) {
+          llvm::any_of(function.getArgumentTypes(), containsQuantumState)) {
         function.emitError()
             << "target conformance requires quantum function inputs to be "
                "assigned to qco.static target sites";
@@ -553,6 +559,30 @@ protected:
   }
 
   CompilerTarget target;
+
+private:
+  [[nodiscard]] static bool containsQuantumState(const Type type) {
+    SmallVector<Type> worklist{type};
+    llvm::DenseSet<Type> visited;
+    while (!worklist.empty()) {
+      const Type current = worklist.pop_back_val();
+      if (isa<QubitType>(current)) {
+        return true;
+      }
+      if (!visited.insert(current).second) {
+        continue;
+      }
+      current.walkImmediateSubElements(
+          [](Attribute) {},
+          [&](const Type nested) { worklist.emplace_back(nested); });
+      // Mutable identified LLVM structs do not expose their body through
+      // generic immutable storage traversal on every supported MLIR version.
+      if (const auto structure = dyn_cast<LLVM::LLVMStructType>(current)) {
+        llvm::append_range(worklist, structure.getBody());
+      }
+    }
+    return false;
+  }
 };
 
 } // namespace

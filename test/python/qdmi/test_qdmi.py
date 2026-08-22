@@ -217,6 +217,13 @@ def test_device_min_atom_distance(device: Device) -> None:
         assert mad > 0.0
 
 
+def test_device_try_supported_program_formats(device: Device) -> None:
+    """Distinguish reported program formats from unavailable metadata."""
+    formats = device.try_supported_program_formats()
+    assert formats is not None
+    assert formats == device.supported_program_formats()
+
+
 @pytest.mark.parametrize("value_type", [str, bool, int, float, bytes])
 def test_device_custom_property_unsupported(device: Device, value_type: CustomValueType) -> None:
     """Test typed custom device queries for unsupported slots."""

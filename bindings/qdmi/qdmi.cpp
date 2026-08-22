@@ -318,8 +318,14 @@ Returns:
 
   device.def("supported_program_formats",
              &qdmi::Device::getSupportedProgramFormats,
-             "Returns the program formats reported by the device, or an empty "
-             "list if the property is unsupported.");
+             "Returns the program formats reported by the device. Raises if "
+             "the property is unsupported.");
+
+  device.def(
+      "try_supported_program_formats",
+      &qdmi::Device::tryGetSupportedProgramFormats,
+      "Returns the reported program formats, including an empty list, or "
+      "None if the property is unsupported.");
 
   device.def("child_devices", &qdmi::Device::getChildDevices,
              "Returns the direct child devices managed by this device.");

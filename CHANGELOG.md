@@ -31,11 +31,10 @@ releases may include breaking changes.
 - ✨ Add decision diagram-based construction, simulation, and sampling for QCO
   programs ([#1915], [#1973]) ([**@simon1hofmann**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
-  compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
-  [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
-- ✨ Add explicit structured runtime-control capabilities to compiler targets,
-  infer forward branching from QIR Adaptive QDMI devices, and reject undeclared
-  control before target-mutating passes ([#2162]) ([**@simon1hofmann**])
+  compilation through C++, Python, and `mqt-cc`, including payload-scoped
+  execution profiles and cleanup-first runtime-control legalization ([#1687],
+  [#1993], [#1999], [#2049], [#2162]) ([**@MatthiasReumann**],
+  [**@simon1hofmann**], [**@burgholzer**])
 
 #### Import and export
 

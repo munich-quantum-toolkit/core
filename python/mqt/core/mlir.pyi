@@ -70,7 +70,7 @@ class CompilerTarget:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
-        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -81,7 +81,7 @@ class CompilerTarget:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
-        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -91,7 +91,7 @@ class CompilerTarget:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
-        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -102,7 +102,7 @@ class CompilerTarget:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
-        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
 
     class DurationUnit:
@@ -247,20 +247,52 @@ class CompilerTarget:
 
         ZXZ = 6
 
-    class ClassicalControl(enum.Enum):
-        """Opt-in capability for structured runtime control flow."""
+    class ProgramFeature(enum.Enum):
+        """Runtime feature supported for a specific program format."""
 
-        CONDITIONAL = 0
-        """Runtime forward branching."""
+        MID_CIRCUIT_MEASUREMENT = 0
 
-        ITERATION = 1
-        """Structured counted iteration."""
+        MEASURED_QUBIT_REUSE = 1
 
-        CONDITIONAL_LOOP = 2
-        """Runtime condition-terminated looping."""
+        MEASUREMENT_RESULT_USE = 2
 
-        MULTIWAY_BRANCH = 3
-        """Runtime multiway branching."""
+        BOOLEAN_COMPUTATION = 3
+
+        INTEGER_COMPUTATION = 4
+
+        FLOAT_COMPUTATION = 5
+
+        FORWARD_BRANCHING = 6
+
+        COUNTED_ITERATION = 7
+
+        CONDITIONAL_LOOP = 8
+
+        MULTIWAY_BRANCHING = 9
+
+    class ExecutionProfile:
+        """Runtime features supported for one program format."""
+
+        def __init__(
+            self,
+            format: OutputFormat,  # ruff: ignore[builtin-argument-shadowing]
+            features: Sequence[CompilerTarget.ProgramFeature] = (),
+            optional_features_known: bool = True,
+        ) -> None: ...
+        @property
+        def format(self) -> OutputFormat:
+            """The program format described by this profile."""
+
+        @property
+        def features(self) -> list[CompilerTarget.ProgramFeature]:
+            """The supported runtime features in canonical order."""
+
+        @property
+        def optional_features_known(self) -> bool:
+            """Whether optional-feature metadata is complete."""
+
+        def supports(self, feature: CompilerTarget.ProgramFeature) -> bool:
+            """Whether this profile lists a runtime feature."""
 
     class SynthesisBasis:
         """One synthesis basis usable across the complete target."""
@@ -274,21 +306,15 @@ class CompilerTarget:
             """The two-qubit entangler."""
 
     @staticmethod
-    def from_device(
-        device: Device,
-        *,
-        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
-    ) -> CompilerTarget:
-        """Snapshot a circuit-model QDMI device. Additional classical-control capabilities are trusted caller assertions that augment support inferred from its program formats."""
+    def from_device(device: Device) -> CompilerTarget:
+        """Snapshot a QDMI device and its payload-specific execution profiles."""
 
     @staticmethod
     def from_device_id(
         device_id: str,
-        *,
-        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
         **session_parameters: Unpack[QDMISessionParameters],
     ) -> CompilerTarget:
-        """Open a registered device and snapshot its compiler target. Additional classical-control capabilities are trusted caller assertions that augment support inferred from its program formats."""
+        """Open a registered device and snapshot its target and execution profiles."""
 
     @property
     def name(self) -> str | None:
@@ -323,8 +349,8 @@ class CompilerTarget:
         """Operation capabilities in reported order."""
 
     @property
-    def classical_control(self) -> list[CompilerTarget.ClassicalControl]:
-        """Runtime classical-control capabilities in canonical order."""
+    def execution_profiles(self) -> list[CompilerTarget.ExecutionProfile] | None:
+        """Payload-specific execution profiles, if reported."""
 
     @property
     def supported_gates(self) -> list[CompilerTarget.GateKind]:
@@ -337,8 +363,18 @@ class CompilerTarget:
     def supports_operation(self, name: str, num_qubits: int, num_parameters: int | None = None) -> bool:
         """Whether the target supports an operation capability."""
 
-    def supports_classical_control(self, capability: ClassicalControl) -> bool:
-        """Whether the target supports a classical-control capability."""
+    def execution_profile(
+        self,
+        format: OutputFormat,  # ruff: ignore[builtin-argument-shadowing]
+    ) -> CompilerTarget.ExecutionProfile | None:
+        """The execution profile for an output format, if any."""
+
+    def supports_program_feature(
+        self,
+        format: OutputFormat,  # ruff: ignore[builtin-argument-shadowing]
+        feature: ProgramFeature,
+    ) -> bool:
+        """Whether an output profile lists a runtime feature."""
 
 class Program:
     """Base class for a typed MLIR compiler program.
@@ -464,9 +500,14 @@ class QCOProgram(Program):
         """Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
 
     def compile_for_target(
-        self, target: CompilerTarget, *, enable_timing: bool = False, enable_statistics: bool = False
+        self,
+        target: CompilerTarget,
+        *,
+        format: OutputFormat = OutputFormat.QCO_OPTIMIZED,  # ruff: ignore[builtin-argument-shadowing]
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
     ) -> None:
-        """Compile this QCO program for the target in place."""
+        """Compile this QCO program for the selected target output profile in place."""
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:
         """Convert this program to QC.
@@ -596,6 +637,7 @@ def compile_program(
     *,
     output: Literal[OutputFormat.OPENQASM3],
     inplace: bool = False,
+    target: CompilerTarget | None = None,
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
@@ -664,7 +706,8 @@ def compile_program(
         output: The requested output stage of the compiler pipeline.
         inplace: Whether a typed input program may be consumed.
         target: An optional compiler target for decomposition, mapping, and native
-            synthesis. A target requires optimized QCO, QC, or QIR output.
+            synthesis. A target requires optimized QCO, QC, OpenQASM 3, or QIR
+            output.
         qco_pipeline: The QCO optimization pipeline to run. A custom pipeline
             cannot be combined with a target.
         enable_timing: Whether to collect pass timing information.

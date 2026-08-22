@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Compiler/ProgramFormat.h"
+
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/StringRef.h>
@@ -43,6 +45,41 @@ class CompilerTarget {
 public:
   using SiteId = int64_t;
   using Coupling = std::pair<SiteId, SiteId>;
+
+  /**
+   * @brief Runtime features supported for one program format.
+   *
+   * @details Optional-feature metadata can be marked unknown when a target
+   * reports the format but cannot enumerate all optional features. The listed
+   * features remain authoritative regardless of that flag.
+   */
+  class ExecutionProfile {
+  public:
+    /// Create and canonicalize a payload-specific execution profile.
+    [[nodiscard]] static llvm::Expected<ExecutionProfile>
+    create(ProgramFormat format, std::vector<ProgramFeature> features = {},
+           bool optionalFeaturesKnown = true);
+
+    /// Return the program format described by this profile.
+    [[nodiscard]] ProgramFormat format() const noexcept;
+
+    /// Return the sorted runtime features supported for the format.
+    [[nodiscard]] llvm::ArrayRef<ProgramFeature> features() const noexcept;
+
+    /// Return whether the target reported complete optional-feature metadata.
+    [[nodiscard]] bool optionalFeaturesKnown() const noexcept;
+
+    /// Return whether the profile lists a runtime feature.
+    [[nodiscard]] bool supports(ProgramFeature feature) const noexcept;
+
+  private:
+    ExecutionProfile(ProgramFormat format, std::vector<ProgramFeature> features,
+                     bool optionalFeaturesKnown);
+
+    ProgramFormat format_;
+    std::vector<ProgramFeature> features_;
+    bool optionalFeaturesKnown_;
+  };
 
   /**
    * @brief Unit shared by all raw timing metadata on a target.
@@ -191,27 +228,6 @@ public:
   };
 
   /**
-   * @brief Structured runtime classical-control capabilities supported by a
-   * target.
-   *
-   * @details Capabilities are opt-in and cover only the listed structured
-   * control-flow operations. They do not describe classical computation or
-   * side effects such as `cf.assert`. A target that declares none supports none
-   * of the listed control-flow forms.
-   */
-  enum class ClassicalControl : uint8_t {
-    /// Runtime forward branching such as `qco.if` or `scf.if`.
-    Conditional,
-    /// Structured counted iteration such as `scf.for`.
-    Iteration,
-    /// Runtime condition-terminated looping such as `scf.while`.
-    ConditionalLoop,
-    /// Runtime multiway branching such as `qco.index_switch` or
-    /// `scf.index_switch`.
-    MultiwayBranch,
-  };
-
-  /**
    * @brief Recognized native gate capability independent of synthesis code.
    */
   enum class GateKind : uint8_t {
@@ -265,12 +281,12 @@ public:
          std::optional<std::vector<Operation>> operations = std::nullopt,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
-  /// Create an unnamed dense target with explicit classical-control support.
+  /// Create an unnamed dense target with payload-specific execution profiles.
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   create(size_t numQubits, std::optional<std::vector<Coupling>> couplings,
          std::optional<std::vector<Operation>> operations,
          std::optional<DurationUnit> durationUnit,
-         std::vector<ClassicalControl> classicalControl);
+         std::optional<std::vector<ExecutionProfile>> executionProfiles);
 
   /**
    * @brief Create a named target with dense site IDs `0..numQubits-1`.
@@ -281,13 +297,13 @@ public:
          std::optional<std::vector<Operation>> operations = std::nullopt,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
-  /// Create a named dense target with explicit classical-control support.
+  /// Create a named dense target with payload-specific execution profiles.
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   create(std::string name, size_t numQubits,
          std::optional<std::vector<Coupling>> couplings,
          std::optional<std::vector<Operation>> operations,
          std::optional<DurationUnit> durationUnit,
-         std::vector<ClassicalControl> classicalControl);
+         std::optional<std::vector<ExecutionProfile>> executionProfiles);
 
   /**
    * @brief Create an unnamed target from detailed sites.
@@ -298,13 +314,13 @@ public:
          std::optional<std::vector<Operation>> operations = std::nullopt,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
-  /// Create an unnamed sparse target with explicit classical-control support.
+  /// Create an unnamed sparse target with payload-specific execution profiles.
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   create(std::vector<Site> sites,
          std::optional<std::vector<Coupling>> couplings,
          std::optional<std::vector<Operation>> operations,
          std::optional<DurationUnit> durationUnit,
-         std::vector<ClassicalControl> classicalControl);
+         std::optional<std::vector<ExecutionProfile>> executionProfiles);
 
   /**
    * @brief Create a named target from detailed sites.
@@ -315,13 +331,13 @@ public:
          std::optional<std::vector<Operation>> operations = std::nullopt,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
-  /// Create a named sparse target with explicit classical-control support.
+  /// Create a named sparse target with payload-specific execution profiles.
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   create(std::string name, std::vector<Site> sites,
          std::optional<std::vector<Coupling>> couplings,
          std::optional<std::vector<Operation>> operations,
          std::optional<DurationUnit> durationUnit,
-         std::vector<ClassicalControl> classicalControl);
+         std::optional<std::vector<ExecutionProfile>> executionProfiles);
 
   /// Copying shares immutable storage; rvalues copy and keep the source valid.
   CompilerTarget(const CompilerTarget&) noexcept = default;
@@ -381,13 +397,23 @@ public:
   /// Return operation capabilities in reported order.
   [[nodiscard]] llvm::ArrayRef<Operation> operations() const noexcept;
 
-  /// Return the sorted structured-control capabilities supported by the target.
-  [[nodiscard]] llvm::ArrayRef<ClassicalControl>
-  classicalControl() const noexcept;
+  /**
+   * @brief Return payload-specific execution profiles, if reported.
+   *
+   * @details An absent value means profile metadata is unavailable. A present
+   * empty value means the target explicitly reports no supported format.
+   */
+  [[nodiscard]] std::optional<llvm::ArrayRef<ExecutionProfile>>
+  executionProfiles() const noexcept;
 
-  /// Return whether the target supports a structured-control capability.
+  /// Return the execution profile for @p format, if reported.
+  [[nodiscard]] const ExecutionProfile*
+  executionProfile(ProgramFormat format) const noexcept;
+
+  /// Return whether the profile for @p format lists @p feature.
   [[nodiscard]] bool
-  supportsClassicalControl(ClassicalControl capability) const noexcept;
+  supportsProgramFeature(ProgramFormat format,
+                         ProgramFeature feature) const noexcept;
 
   /**
    * @brief Return whether an operation capability is supported by the target.
@@ -418,7 +444,7 @@ private:
              std::optional<std::vector<Coupling>> couplings,
              std::optional<std::vector<Operation>> operations,
              std::optional<DurationUnit> durationUnit,
-             std::vector<ClassicalControl> classicalControl);
+             std::optional<std::vector<ExecutionProfile>> executionProfiles);
 
   [[nodiscard]] llvm::ArrayRef<size_t> explicitNeighbours(size_t vertex) const;
 

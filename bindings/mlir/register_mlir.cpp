@@ -450,19 +450,53 @@ means every operation is native.)pb");
       .value("ZYZ", mlir::CompilerTarget::SingleQubitBasis::ZYZ)
       .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ);
 
-  nb::enum_<mlir::CompilerTarget::ClassicalControl>(
-      compilerTarget, "ClassicalControl",
-      "Opt-in capability for structured runtime control flow.")
-      .value("CONDITIONAL", mlir::CompilerTarget::ClassicalControl::Conditional,
-             "Runtime forward branching.")
-      .value("ITERATION", mlir::CompilerTarget::ClassicalControl::Iteration,
-             "Structured counted iteration.")
-      .value("CONDITIONAL_LOOP",
-             mlir::CompilerTarget::ClassicalControl::ConditionalLoop,
-             "Runtime condition-terminated looping.")
-      .value("MULTIWAY_BRANCH",
-             mlir::CompilerTarget::ClassicalControl::MultiwayBranch,
-             "Runtime multiway branching.");
+  nb::enum_<mlir::ProgramFeature>(
+      compilerTarget, "ProgramFeature",
+      "Runtime feature supported for a specific program format.")
+      .value("MID_CIRCUIT_MEASUREMENT",
+             mlir::ProgramFeature::MidCircuitMeasurement)
+      .value("MEASURED_QUBIT_REUSE", mlir::ProgramFeature::MeasuredQubitReuse)
+      .value("MEASUREMENT_RESULT_USE",
+             mlir::ProgramFeature::MeasurementResultUse)
+      .value("BOOLEAN_COMPUTATION", mlir::ProgramFeature::BooleanComputation)
+      .value("INTEGER_COMPUTATION", mlir::ProgramFeature::IntegerComputation)
+      .value("FLOAT_COMPUTATION", mlir::ProgramFeature::FloatComputation)
+      .value("FORWARD_BRANCHING", mlir::ProgramFeature::ForwardBranching)
+      .value("COUNTED_ITERATION", mlir::ProgramFeature::CountedIteration)
+      .value("CONDITIONAL_LOOP", mlir::ProgramFeature::ConditionalLoop)
+      .value("MULTIWAY_BRANCHING", mlir::ProgramFeature::MultiwayBranching);
+
+  auto executionProfile = nb::class_<mlir::CompilerTarget::ExecutionProfile>(
+      compilerTarget, "ExecutionProfile",
+      "Runtime features supported for one program format.");
+  executionProfile
+      .def(
+          "__init__",
+          [](mlir::CompilerTarget::ExecutionProfile& self,
+             const mlir::ProgramFormat format,
+             std::vector<mlir::ProgramFeature> features,
+             const bool optionalFeaturesKnown) {
+            constructFromExpected(
+                self, mlir::CompilerTarget::ExecutionProfile::create(
+                          format, std::move(features), optionalFeaturesKnown));
+          },
+          "format"_a, "features"_a = std::vector<mlir::ProgramFeature>{},
+          "optional_features_known"_a = true)
+      .def_prop_ro("format", &mlir::CompilerTarget::ExecutionProfile::format,
+                   "The program format described by this profile.")
+      .def_prop_ro(
+          "features",
+          [](const mlir::CompilerTarget::ExecutionProfile& profile) {
+            return std::vector<mlir::ProgramFeature>(profile.features().begin(),
+                                                     profile.features().end());
+          },
+          "The supported runtime features in canonical order.")
+      .def_prop_ro(
+          "optional_features_known",
+          &mlir::CompilerTarget::ExecutionProfile::optionalFeaturesKnown,
+          "Whether optional-feature metadata is complete.")
+      .def("supports", &mlir::CompilerTarget::ExecutionProfile::supports,
+           "feature"_a, "Whether this profile lists a runtime feature.");
 
   auto synthesisBasis = nb::class_<mlir::CompilerTarget::SynthesisBasis>(
       compilerTarget, "SynthesisBasis",
@@ -483,18 +517,17 @@ means every operation is native.)pb");
              std::optional<std::vector<mlir::CompilerTarget::Operation>>
                  operations,
              std::optional<mlir::CompilerTarget::DurationUnit> durationUnit,
-             std::vector<mlir::CompilerTarget::ClassicalControl>
-                 classicalControl) {
+             std::optional<std::vector<mlir::CompilerTarget::ExecutionProfile>>
+                 executionProfiles) {
             constructFromExpected(self, mlir::CompilerTarget::create(
                                             numQubits, std::move(couplings),
                                             std::move(operations),
                                             std::move(durationUnit),
-                                            std::move(classicalControl)));
+                                            std::move(executionProfiles)));
           },
           "num_qubits"_a, nb::kw_only(), "couplings"_a = nb::none(),
           "operations"_a = nb::none(), "duration_unit"_a = nb::none(),
-          "classical_control"_a =
-              std::vector<mlir::CompilerTarget::ClassicalControl>{})
+          "execution_profiles"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget& self, std::string name,
@@ -504,18 +537,17 @@ means every operation is native.)pb");
              std::optional<std::vector<mlir::CompilerTarget::Operation>>
                  operations,
              std::optional<mlir::CompilerTarget::DurationUnit> durationUnit,
-             std::vector<mlir::CompilerTarget::ClassicalControl>
-                 classicalControl) {
+             std::optional<std::vector<mlir::CompilerTarget::ExecutionProfile>>
+                 executionProfiles) {
             constructFromExpected(
                 self, mlir::CompilerTarget::create(
                           std::move(name), numQubits, std::move(couplings),
                           std::move(operations), std::move(durationUnit),
-                          std::move(classicalControl)));
+                          std::move(executionProfiles)));
           },
           "name"_a, "num_qubits"_a, nb::kw_only(), "couplings"_a = nb::none(),
           "operations"_a = nb::none(), "duration_unit"_a = nb::none(),
-          "classical_control"_a =
-              std::vector<mlir::CompilerTarget::ClassicalControl>{})
+          "execution_profiles"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget& self,
@@ -525,18 +557,17 @@ means every operation is native.)pb");
              std::optional<std::vector<mlir::CompilerTarget::Operation>>
                  operations,
              std::optional<mlir::CompilerTarget::DurationUnit> durationUnit,
-             std::vector<mlir::CompilerTarget::ClassicalControl>
-                 classicalControl) {
+             std::optional<std::vector<mlir::CompilerTarget::ExecutionProfile>>
+                 executionProfiles) {
             constructFromExpected(
                 self, mlir::CompilerTarget::create(
                           std::move(sites), std::move(couplings),
                           std::move(operations), std::move(durationUnit),
-                          std::move(classicalControl)));
+                          std::move(executionProfiles)));
           },
           "sites"_a, nb::kw_only(), "couplings"_a = nb::none(),
           "operations"_a = nb::none(), "duration_unit"_a = nb::none(),
-          "classical_control"_a =
-              std::vector<mlir::CompilerTarget::ClassicalControl>{})
+          "execution_profiles"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget& self, std::string name,
@@ -546,39 +577,29 @@ means every operation is native.)pb");
              std::optional<std::vector<mlir::CompilerTarget::Operation>>
                  operations,
              std::optional<mlir::CompilerTarget::DurationUnit> durationUnit,
-             std::vector<mlir::CompilerTarget::ClassicalControl>
-                 classicalControl) {
+             std::optional<std::vector<mlir::CompilerTarget::ExecutionProfile>>
+                 executionProfiles) {
             constructFromExpected(self, mlir::CompilerTarget::create(
                                             std::move(name), std::move(sites),
                                             std::move(couplings),
                                             std::move(operations),
                                             std::move(durationUnit),
-                                            std::move(classicalControl)));
+                                            std::move(executionProfiles)));
           },
           "name"_a, "sites"_a, nb::kw_only(), "couplings"_a = nb::none(),
           "operations"_a = nb::none(), "duration_unit"_a = nb::none(),
-          "classical_control"_a =
-              std::vector<mlir::CompilerTarget::ClassicalControl>{})
+          "execution_profiles"_a = nb::none())
       .def_static(
           "from_device",
-          [](const qdmi::Device& device,
-             std::vector<mlir::CompilerTarget::ClassicalControl>
-                 classicalControl) {
-            return takeResult(mlir::compilerTargetFromDevice(
-                device, std::move(classicalControl)));
+          [](const qdmi::Device& device) {
+            return takeResult(mlir::compilerTargetFromDevice(device));
           },
-          "device"_a, nb::kw_only(),
-          "classical_control"_a =
-              std::vector<mlir::CompilerTarget::ClassicalControl>{},
-          "Snapshot a circuit-model QDMI device. Additional classical-control "
-          "capabilities are trusted caller assertions that augment support "
-          "inferred from its program formats.")
+          "device"_a,
+          "Snapshot a circuit-model QDMI device, including execution profiles "
+          "derived from its program-format metadata.")
       .def_static(
           "from_device_id",
-          [](const std::string& deviceId,
-             std::vector<mlir::CompilerTarget::ClassicalControl>
-                 classicalControl,
-             std::optional<std::string> baseUrl,
+          [](const std::string& deviceId, std::optional<std::string> baseUrl,
              std::optional<std::string> token,
              std::optional<std::filesystem::path> authFile,
              std::optional<std::string> authUrl,
@@ -598,22 +619,18 @@ means every operation is native.)pb");
                 std::move(custom1), std::move(custom2), std::move(custom3),
                 std::move(custom4), std::move(custom5));
             auto device = qdmi::Session::openDevice(deviceId, overrides);
-            return takeResult(mlir::compilerTargetFromDevice(
-                device, std::move(classicalControl)));
+            return takeResult(mlir::compilerTargetFromDevice(device));
           },
-          "device_id"_a, nb::kw_only(),
-          "classical_control"_a =
-              std::vector<mlir::CompilerTarget::ClassicalControl>{},
-          "base_url"_a = std::nullopt, "token"_a = std::nullopt,
-          "auth_file"_a = std::nullopt, "auth_url"_a = std::nullopt,
-          "username"_a = std::nullopt, "password"_a = std::nullopt,
-          "device_config"_a = std::nullopt,
+          "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
+          "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
+          "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
+          "password"_a = std::nullopt, "device_config"_a = std::nullopt,
           "device_config_file"_a = std::nullopt, "custom1"_a = std::nullopt,
           "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
           "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
-          "Open a registered device and snapshot its compiler target. "
-          "Additional classical-control capabilities are trusted caller "
-          "assertions that augment support inferred from its program formats.")
+          "Open a registered device and snapshot its compiler target, "
+          "including execution profiles derived from its program-format "
+          "metadata.")
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget& target) {
@@ -654,13 +671,18 @@ means every operation is native.)pb");
           },
           "Operation capabilities in reported order.")
       .def_prop_ro(
-          "classical_control",
-          [](const mlir::CompilerTarget& target) {
-            return std::vector<mlir::CompilerTarget::ClassicalControl>(
-                target.classicalControl().begin(),
-                target.classicalControl().end());
+          "execution_profiles",
+          [](const mlir::CompilerTarget& target)
+              -> std::optional<
+                  std::vector<mlir::CompilerTarget::ExecutionProfile>> {
+            const auto profiles = target.executionProfiles();
+            if (!profiles) {
+              return std::nullopt;
+            }
+            return std::vector<mlir::CompilerTarget::ExecutionProfile>(
+                profiles->begin(), profiles->end());
           },
-          "Runtime classical-control capabilities in canonical order.")
+          "Payload-specific execution profiles, if reported.")
       .def_prop_ro(
           "supported_gates",
           [](const mlir::CompilerTarget& target) {
@@ -679,9 +701,21 @@ means every operation is native.)pb");
           },
           "name"_a, "num_qubits"_a, "num_parameters"_a = nb::none(),
           "Whether the target supports an operation capability.")
-      .def("supports_classical_control",
-           &mlir::CompilerTarget::supportsClassicalControl, "capability"_a,
-           "Whether the target supports a classical-control capability.");
+      .def(
+          "execution_profile",
+          [](const mlir::CompilerTarget& target,
+             const mlir::ProgramFormat format)
+              -> std::optional<mlir::CompilerTarget::ExecutionProfile> {
+            const auto* const profile = target.executionProfile(format);
+            if (profile == nullptr) {
+              return std::nullopt;
+            }
+            return *profile;
+          },
+          "format"_a, "The execution profile for an output format, if any.")
+      .def("supports_program_feature",
+           &mlir::CompilerTarget::supportsProgramFeature, "format"_a,
+           "feature"_a, "Whether an output profile lists a runtime feature.");
 
   auto program = nb::class_<mlir::Program>(
       m, "Program", R"pb(Base class for a typed MLIR compiler program.
@@ -844,11 +878,19 @@ operations.)pb");
            "Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle "
            "phase gates that act on at least min_qubits qubits (min_qubits "
            "must be at least 3; default 3 means wider than two-qubit).")
-      .def("compile_for_target",
-           &BooleanMemberAdapter<&mlir::QCOProgram::compileForTarget>::call,
-           "target"_a, nb::kw_only(), "enable_timing"_a = false,
-           "enable_statistics"_a = false,
-           "Compile this QCO program for the target in place.")
+      .def(
+          "compile_for_target",
+          [](mlir::QCOProgram& program, const mlir::CompilerTarget& target,
+             const mlir::ProgramFormat format, const bool enableTiming,
+             const bool enableStatistics) {
+            requireSuccess(program.compileForTarget(
+                target, format, enableTiming, enableStatistics));
+          },
+          "target"_a, nb::kw_only(),
+          "format"_a = mlir::ProgramFormat::QCOOptimized,
+          "enable_timing"_a = false, "enable_statistics"_a = false,
+          "Compile this QCO program for the selected target output profile "
+          "in place.")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {
@@ -969,7 +1011,8 @@ Args:
     output: The requested output stage of the compiler pipeline.
     inplace: Whether a typed input program may be consumed.
     target: An optional compiler target for decomposition, mapping, and native
-        synthesis. A target requires optimized QCO, QC, or QIR output.
+        synthesis. A target requires optimized QCO, QC, OpenQASM 3, or QIR
+        output.
     qco_pipeline: The QCO optimization pipeline to run. A custom pipeline
         cannot be combined with a target.
     enable_timing: Whether to collect pass timing information.

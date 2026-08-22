@@ -97,7 +97,7 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
-        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -108,7 +108,7 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
-        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -118,7 +118,7 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
-        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -129,7 +129,7 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
-        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
 
 mqt\.core\.mlir\.CompilerTarget\.from_device$:
@@ -137,8 +137,6 @@ mqt\.core\.mlir\.CompilerTarget\.from_device$:
     @staticmethod
     def from_device(
         device: Device,
-        *,
-        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
     ) -> CompilerTarget:
         \doc
 
@@ -148,8 +146,6 @@ mqt\.core\.mlir\.CompilerTarget\.from_device_id$:
     @staticmethod
     def from_device_id(
         device_id: str,
-        *,
-        classical_control: Sequence[CompilerTarget.ClassicalControl] = (),
         **session_parameters: Unpack[QDMISessionParameters],
     ) -> CompilerTarget:
         \doc
@@ -202,6 +198,7 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.OPENQASM3],
         inplace: bool = False,
+        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,

@@ -541,12 +541,21 @@ public:
 
   /**
    * @brief Return the program formats reported by the device.
-   * @return The reported formats, or an empty vector if the property is
-   * unsupported.
+   * @return The reported formats.
+   * @throws std::runtime_error If the device does not support the property.
    * @see QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS
    */
   [[nodiscard]] std::vector<QDMI_Program_Format>
   getSupportedProgramFormats() const;
+
+  /**
+   * @brief Try to return the program formats reported by the device.
+   * @return The reported formats, including an empty vector when the device
+   * reports no formats, or `std::nullopt` when the property is unsupported.
+   * @see QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS
+   */
+  [[nodiscard]] std::optional<std::vector<QDMI_Program_Format>>
+  tryGetSupportedProgramFormats() const;
 
   /**
    * @brief Returns the direct child devices managed by this device.

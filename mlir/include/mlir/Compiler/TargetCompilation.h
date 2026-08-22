@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Compiler/ProgramFormat.h"
+
 namespace mlir {
 
 class CompilerTarget;
@@ -25,5 +27,12 @@ class OpPassManager;
  */
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const CompilerTarget& target);
+
+/**
+ * @brief Populate target compilation for the selected output profile.
+ */
+void populateTargetCompilationPipeline(OpPassManager& pm,
+                                       const CompilerTarget& target,
+                                       ProgramFormat format);
 
 } // namespace mlir

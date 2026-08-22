@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Compiler/ProgramFormat.h"
+
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -43,28 +45,6 @@ enum class QIRProfile : uint8_t {
   Base,
   /// The QIR Adaptive Profile.
   Adaptive,
-};
-
-/**
- * @brief Formats accepted and produced by the default compiler pipeline.
- */
-enum class ProgramFormat : uint8_t {
-  /// QC directly after frontend import, without any compiler pass.
-  QCImport,
-  /// QCO immediately after conversion, before cleanup and optimization.
-  QCO,
-  /// QCO after the default or user-supplied optimization pipeline.
-  QCOOptimized,
-  /// QC after the optimized QCO round trip.
-  QC,
-  /// Portable OpenQASM after the optimized QCO round trip.
-  OpenQASM3,
-  /// Serializable `jeff` MLIR.
-  Jeff,
-  /// QIR for the Base Profile.
-  QIRBase,
-  /// QIR for the Adaptive Profile.
-  QIRAdaptive,
 };
 
 /**
@@ -241,8 +221,14 @@ public:
   /// least 3; default 3 means wider than two-qubit).
   [[nodiscard]] bool decomposeMultiControlled(uint64_t minQubits = 3);
 
-  /// Compile this program for a target.
+  /// Compile this program for a target using the optimized-QCO profile.
   [[nodiscard]] bool compileForTarget(const CompilerTarget& target,
+                                      bool enableTiming = false,
+                                      bool enableStatistics = false);
+
+  /// Compile this program for a target and selected output profile.
+  [[nodiscard]] bool compileForTarget(const CompilerTarget& target,
+                                      ProgramFormat format,
                                       bool enableTiming = false,
                                       bool enableStatistics = false);
 

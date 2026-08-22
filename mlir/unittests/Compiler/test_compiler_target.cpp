@@ -50,11 +50,13 @@ static void expectInvalid(llvm::Expected<T> value,
 namespace {
 
 using Target = mlir::CompilerTarget;
-using ClassicalControl = Target::ClassicalControl;
 using Coupling = Target::Coupling;
 using DurationUnit = Target::DurationUnit;
+using ExecutionProfile = Target::ExecutionProfile;
 using GateKind = Target::GateKind;
 using Operation = Target::Operation;
+using ProgramFeature = mlir::ProgramFeature;
+using ProgramFormat = mlir::ProgramFormat;
 using Site = Target::Site;
 using SiteId = Target::SiteId;
 using SiteTuple = Target::SiteTuple;
@@ -134,56 +136,85 @@ TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
   EXPECT_EQ(neighbours, (std::vector<size_t>{0, 2}));
 }
 
-TEST(CompilerTargetTest, CanonicalizesOptInClassicalControlCapabilities) {
-  const std::vector capabilities{
-      ClassicalControl::MultiwayBranch, ClassicalControl::Conditional,
-      ClassicalControl::MultiwayBranch, ClassicalControl::Iteration};
-  const auto denseUnnamed = valid(Target::create(2, std::nullopt, std::nullopt,
-                                                 std::nullopt, capabilities));
+TEST(CompilerTargetTest, CanonicalizesPayloadSpecificExecutionProfiles) {
+  const auto adaptive = valid(ExecutionProfile::create(
+      ProgramFormat::QIRAdaptive,
+      {ProgramFeature::MultiwayBranching, ProgramFeature::BooleanComputation,
+       ProgramFeature::MultiwayBranching},
+      false));
+  const auto base = valid(ExecutionProfile::create(
+      ProgramFormat::QIRBase, {ProgramFeature::MidCircuitMeasurement}));
+  const std::optional profiles = std::vector{adaptive, base};
+
+  const auto denseUnnamed = valid(
+      Target::create(2, std::nullopt, std::nullopt, std::nullopt, profiles));
   const auto denseNamed = valid(Target::create(
-      "named", 2, std::nullopt, std::nullopt, std::nullopt, capabilities));
+      "named", 2, std::nullopt, std::nullopt, std::nullopt, profiles));
   const auto detailedUnnamed = valid(Target::create(
       std::vector{valid(Site::create(0)), valid(Site::create(1))}, std::nullopt,
-      std::nullopt, std::nullopt, capabilities));
+      std::nullopt, std::nullopt, profiles));
   const auto detailedNamed = valid(Target::create(
       "named", std::vector{valid(Site::create(0)), valid(Site::create(1))},
-      std::nullopt, std::nullopt, std::nullopt, capabilities));
+      std::nullopt, std::nullopt, std::nullopt, profiles));
 
-  constexpr std::array expected{ClassicalControl::Conditional,
-                                ClassicalControl::Iteration,
-                                ClassicalControl::MultiwayBranch};
+  constexpr std::array adaptiveFeatures{ProgramFeature::BooleanComputation,
+                                        ProgramFeature::MultiwayBranching};
   for (const auto& target :
        {denseUnnamed, denseNamed, detailedUnnamed, detailedNamed}) {
-    EXPECT_EQ(target.classicalControl(), llvm::ArrayRef(expected));
-    EXPECT_TRUE(target.supportsClassicalControl(ClassicalControl::Conditional));
-    EXPECT_TRUE(target.supportsClassicalControl(ClassicalControl::Iteration));
-    EXPECT_TRUE(
-        target.supportsClassicalControl(ClassicalControl::MultiwayBranch));
-    EXPECT_FALSE(
-        target.supportsClassicalControl(ClassicalControl::ConditionalLoop));
+    const auto executionProfiles = target.executionProfiles();
+    ASSERT_TRUE(executionProfiles);
+    ASSERT_EQ(executionProfiles->size(), 2U);
+    EXPECT_EQ((*executionProfiles)[0].format(), ProgramFormat::QIRBase);
+    EXPECT_EQ((*executionProfiles)[1].format(), ProgramFormat::QIRAdaptive);
+
+    const auto* const profile =
+        target.executionProfile(ProgramFormat::QIRAdaptive);
+    ASSERT_NE(profile, nullptr);
+    EXPECT_EQ(profile->features(), llvm::ArrayRef(adaptiveFeatures));
+    EXPECT_FALSE(profile->optionalFeaturesKnown());
+    EXPECT_TRUE(profile->supports(ProgramFeature::BooleanComputation));
+    EXPECT_TRUE(target.supportsProgramFeature(
+        ProgramFormat::QIRAdaptive, ProgramFeature::MultiwayBranching));
+    EXPECT_FALSE(target.supportsProgramFeature(
+        ProgramFormat::QIRAdaptive, ProgramFeature::CountedIteration));
+    EXPECT_EQ(target.executionProfile(ProgramFormat::OpenQASM3), nullptr);
   }
 }
 
-TEST(CompilerTargetTest, RejectsClassicalControlByDefault) {
-  const auto target = valid(Target::create(1));
+TEST(CompilerTargetTest, DistinguishesUnknownAndKnownEmptyExecutionProfiles) {
+  const auto unknown = valid(Target::create(1));
+  const std::optional<std::vector<ExecutionProfile>> knownEmpty{std::in_place};
+  const auto empty = valid(
+      Target::create(1, std::nullopt, std::nullopt, std::nullopt, knownEmpty));
 
-  EXPECT_TRUE(target.classicalControl().empty());
-  EXPECT_FALSE(target.supportsClassicalControl(ClassicalControl::Conditional));
-  EXPECT_FALSE(target.supportsClassicalControl(ClassicalControl::Iteration));
-  EXPECT_FALSE(
-      target.supportsClassicalControl(ClassicalControl::ConditionalLoop));
-  EXPECT_FALSE(
-      target.supportsClassicalControl(ClassicalControl::MultiwayBranch));
+  EXPECT_FALSE(unknown.executionProfiles());
+  ASSERT_TRUE(empty.executionProfiles());
+  EXPECT_TRUE(empty.executionProfiles()->empty());
+  EXPECT_EQ(unknown.executionProfile(ProgramFormat::QIRAdaptive), nullptr);
+  EXPECT_FALSE(unknown.supportsProgramFeature(
+      ProgramFormat::QIRAdaptive, ProgramFeature::ForwardBranching));
 }
 
-TEST(CompilerTargetTest, RejectsUnknownClassicalControlCapability) {
-  // The out-of-range value is the behavior under test: target validation must
-  // reject capability values outside the declared enumerators.
+TEST(CompilerTargetTest, RejectsInvalidAndDuplicateExecutionProfiles) {
+  // The out-of-range values are the behavior under test: profile validation
+  // must reject values outside the declared enumerators.
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
-  constexpr auto unknown = static_cast<ClassicalControl>(255);
+  constexpr auto unknownFormat = static_cast<ProgramFormat>(255);
   expectInvalid(
-      Target::create(1, std::nullopt, std::nullopt, std::nullopt, {unknown}),
-      "Compiler target contains an unknown classical-control capability");
+      ExecutionProfile::create(unknownFormat),
+      "Compiler execution profile contains an unknown program format");
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  constexpr auto unknownFeature = static_cast<ProgramFeature>(255);
+  expectInvalid(
+      ExecutionProfile::create(ProgramFormat::QIRAdaptive, {unknownFeature}),
+      "Compiler execution profile contains an unknown program feature");
+
+  const auto profile =
+      valid(ExecutionProfile::create(ProgramFormat::QIRAdaptive));
+  const std::optional duplicates = std::vector{profile, profile};
+  expectInvalid(
+      Target::create(1, std::nullopt, std::nullopt, std::nullopt, duplicates),
+      "Compiler target contains duplicate execution-profile formats");
 }
 
 TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {

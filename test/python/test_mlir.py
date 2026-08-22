@@ -446,6 +446,12 @@ def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
 
 def test_compiler_target_constructors_preserve_python_api() -> None:
     """Construct every target metadata type and target overload."""
+    feature = CompilerTarget.ProgramFeature
+    adaptive = CompilerTarget.ExecutionProfile(
+        OutputFormat.QIR_ADAPTIVE,
+        [feature.FORWARD_BRANCHING, feature.MEASUREMENT_RESULT_USE, feature.FORWARD_BRANCHING],
+        optional_features_known=False,
+    )
     duration_unit = CompilerTarget.DurationUnit("ns", 1.0)
     sites = [
         CompilerTarget.Site(10, "q0", 100, 200),
@@ -458,7 +464,13 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
         CompilerTarget(2, duration_unit=duration_unit),
         CompilerTarget("dense", 2, duration_unit=duration_unit),
         CompilerTarget(sites, operations=[operation], duration_unit=duration_unit),
-        CompilerTarget("sparse", sites, operations=[operation], duration_unit=duration_unit),
+        CompilerTarget(
+            "sparse",
+            sites,
+            operations=[operation],
+            duration_unit=duration_unit,
+            execution_profiles=[adaptive],
+        ),
     ]
 
     assert [target.num_qubits for target in targets] == [2, 2, 2, 2]
@@ -471,24 +483,17 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     assert len(operation.site_tuples) == 1
     assert operation.site_tuples[0].sites == [10, 20]
     assert duration_unit.unit == "ns"
-
-
-def test_compiler_target_classical_control_is_explicit_and_canonical() -> None:
-    """Keep runtime classical control opt-in and queryable."""
-    capability = CompilerTarget.ClassicalControl
-    target = CompilerTarget(
-        2,
-        classical_control=[
-            capability.MULTIWAY_BRANCH,
-            capability.CONDITIONAL,
-            capability.MULTIWAY_BRANCH,
-        ],
-    )
-
-    assert target.classical_control == [capability.CONDITIONAL, capability.MULTIWAY_BRANCH]
-    assert target.supports_classical_control(capability.CONDITIONAL)
-    assert not target.supports_classical_control(capability.ITERATION)
-    assert CompilerTarget(2).classical_control == []
+    assert targets[0].execution_profiles is None
+    assert CompilerTarget(2, execution_profiles=[]).execution_profiles == []
+    assert targets[3].execution_profiles is not None
+    assert [profile.format for profile in targets[3].execution_profiles] == [OutputFormat.QIR_ADAPTIVE]
+    assert adaptive.features == [feature.MEASUREMENT_RESULT_USE, feature.FORWARD_BRANCHING]
+    assert not adaptive.optional_features_known
+    assert adaptive.supports(feature.FORWARD_BRANCHING)
+    assert targets[3].execution_profile(OutputFormat.QIR_ADAPTIVE) is not None
+    assert targets[3].execution_profile(OutputFormat.QIR_BASE) is None
+    assert targets[3].supports_program_feature(OutputFormat.QIR_ADAPTIVE, feature.FORWARD_BRANCHING)
+    assert not targets[3].supports_program_feature(OutputFormat.QIR_BASE, feature.FORWARD_BRANCHING)
 
 
 def test_compiler_target_construction_preserves_validation_errors() -> None:
@@ -537,6 +542,7 @@ def test_compiler_target_snapshots_qdmi_device(garnet_target: CompilerTarget) ->
 def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
     """Return all metadata exposed by an immutable compiler target."""
     duration_unit = target.duration_unit
+    execution_profiles = target.execution_profiles
     synthesis_basis = target.synthesis_basis
     return {
         "name": target.name,
@@ -546,7 +552,6 @@ def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
         "has_explicit_topology": target.has_explicit_topology,
         "couplings": target.couplings,
         "has_explicit_operations": target.has_explicit_operations,
-        "classical_control": target.classical_control,
         "operations": [
             (
                 operation.name,
@@ -559,6 +564,11 @@ def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
             )
             for operation in target.operations
         ],
+        "execution_profiles": (
+            None
+            if execution_profiles is None
+            else [(profile.format, profile.features, profile.optional_features_known) for profile in execution_profiles]
+        ),
         "supported_gates": target.supported_gates,
         "synthesis_basis": (
             None if synthesis_basis is None else (synthesis_basis.single_qubit, synthesis_basis.entangler)
@@ -572,24 +582,6 @@ def test_compiler_target_from_device_id_matches_opened_device() -> None:
     by_id = CompilerTarget.from_device_id("mqt.ddsim.default", custom1="value")
 
     assert _compiler_target_metadata(by_id) == _compiler_target_metadata(direct)
-    assert direct.classical_control == [CompilerTarget.ClassicalControl.CONDITIONAL]
-
-
-def test_compiler_target_from_device_augments_inferred_classical_control() -> None:
-    """Combine explicit QDMI target capabilities with QIR Adaptive support."""
-    capability = CompilerTarget.ClassicalControl
-    additional = [capability.MULTIWAY_BRANCH, capability.CONDITIONAL]
-    direct = CompilerTarget.from_device(
-        open_device("mqt.ddsim.default"),
-        classical_control=additional,
-    )
-    by_id = CompilerTarget.from_device_id(
-        "mqt.ddsim.default",
-        classical_control=additional,
-    )
-
-    assert direct.classical_control == [capability.CONDITIONAL, capability.MULTIWAY_BRANCH]
-    assert by_id.classical_control == direct.classical_control
 
 
 def test_compiler_target_from_device_id_preserves_open_and_conversion_errors() -> None:

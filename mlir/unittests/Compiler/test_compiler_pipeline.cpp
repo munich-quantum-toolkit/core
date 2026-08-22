@@ -12,7 +12,9 @@
 #include "TestCaseUtils.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetCompilation.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
@@ -44,6 +46,7 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/UB/IR/UBOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
@@ -57,6 +60,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
@@ -118,8 +122,8 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<cbit::CBitDialect, QCDialect, QCODialect,
-                    qtensor::QTensorDialect, arith::ArithDialect,
+    registry.insert<cbit::CBitDialect, mlir::mqt::MQTDialect, QCDialect,
+                    QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
                     cf::ControlFlowDialect, func::FuncDialect,
                     memref::MemRefDialect, scf::SCFDialect, LLVM::LLVMDialect,
                     jeff::JeffDialect>();
@@ -206,6 +210,29 @@ makeSparseUCZTarget(const bool includeMeasure) {
       std::move(operations)));
 }
 
+[[nodiscard]] static CompilerTarget
+makeTargetWithProfile(const size_t numQubits, const ProgramFormat format,
+                      std::vector<ProgramFeature> features) {
+  using ExecutionProfile = CompilerTarget::ExecutionProfile;
+  std::vector profiles{
+      llvm::cantFail(ExecutionProfile::create(format, std::move(features)))};
+  return llvm::cantFail(CompilerTarget::create(
+      numQubits, std::nullopt, std::nullopt, std::nullopt,
+      std::optional<std::vector<ExecutionProfile>>(std::move(profiles))));
+}
+
+[[nodiscard]] static bool compileForTargetWithDiagnostics(
+    QCOProgram& program, const CompilerTarget& target, std::string& diagnostics,
+    const ProgramFormat format = ProgramFormat::QCOOptimized) {
+  const ScopedDiagnosticHandler handler(program.module().getContext(),
+                                        [&](Diagnostic& diagnostic) {
+                                          diagnostics += diagnostic.str();
+                                          diagnostics += '\n';
+                                          return success();
+                                        });
+  return program.compileForTarget(target, format);
+}
+
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   const auto& testCase = GetParam();
   const auto name = " (" + testCase.name + ")";
@@ -283,6 +310,33 @@ TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
   auto otherContext = std::make_shared<MLIRContext>(registry);
   EXPECT_FALSE(
       QCProgram::fromModule(otherContext, std::move(mismatchedModule)));
+}
+
+TEST(CompilerTargetCompilationPipelineTest, LoadsMQTDialectDependency) {
+  DialectRegistry registry;
+  registry.insert<cbit::CBitDialect, QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  ASSERT_EQ(context.getLoadedDialect<mlir::mqt::MQTDialect>(), nullptr);
+
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  auto moduleOp = parseSourceString<ModuleOp>(source.str(), &context);
+  ASSERT_TRUE(moduleOp);
+
+  PassManager manager(&context);
+  populateTargetCompilationPipeline(manager,
+                                    llvm::cantFail(CompilerTarget::create(1)));
+  EXPECT_TRUE(manager.run(*moduleOp).succeeded());
+  EXPECT_NE(context.getLoadedDialect<mlir::mqt::MQTDialect>(), nullptr);
 }
 /** @brief Raw QCO stops before the registered default optimization pipeline. */
 
@@ -1146,30 +1200,25 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   EXPECT_FALSE(unsupportedQCO->compileForTarget(makeSparseUCZTarget(false)));
 }
 
-/**
- * @brief Test: target compilation checks runtime classical control before
- * mapping.
- */
-TEST_F(CompilerPipelineTest, TargetCompilationRequiresConditionalCapability) {
+/** @brief Test: runtime feedback uses the selected payload profile. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationChecksMeasurementFeedbackTransactionally) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main() attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
-        %q1, %measurement = qco.measure %q0 : !qco.qubit
-        %condition = scf.if %measurement -> (i1) {
-          %true = arith.constant true
-          scf.yield %true : i1
-        } else {
-          %false = arith.constant false
-          scf.yield %false : i1
-        }
-        %q2 = qco.if %condition args(%arg0 = %q1) -> (!qco.qubit) {
-          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
-          qco.yield %q2 : !qco.qubit
-        } else args(%arg0 = %q1) {
+        %q1 = qco.alloc : !qco.qubit
+        %q2, %first = qco.measure %q0 : !qco.qubit
+        %q3, %second = qco.measure %q1 : !qco.qubit
+        %condition = arith.andi %first, %second : i1
+        %q4 = qco.if %condition args(%arg0 = %q2) -> (!qco.qubit) {
+          %q5 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %q5 : !qco.qubit
+        } else args(%arg0 = %q2) {
           qco.yield %arg0 : !qco.qubit
         }
-        qco.sink %q2 : !qco.qubit
+        qco.sink %q4 : !qco.qubit
+        qco.sink %q3 : !qco.qubit
         return
       }
     }
@@ -1179,135 +1228,1176 @@ TEST_F(CompilerPipelineTest, TargetCompilationRequiresConditionalCapability) {
   ASSERT_TRUE(unsupported);
   const auto before = unsupported->str();
   std::string diagnostics;
-  const ScopedDiagnosticHandler handler(unsupported->module().getContext(),
-                                        [&](Diagnostic& diagnostic) {
-                                          diagnostics += diagnostic.str();
-                                          diagnostics += '\n';
-                                          return success();
-                                        });
-
-  EXPECT_FALSE(
-      unsupported->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  const auto unsupportedTarget =
+      makeTargetWithProfile(2, ProgramFormat::QIRAdaptive, {});
+  EXPECT_FALSE(compileForTargetWithDiagnostics(*unsupported, unsupportedTarget,
+                                               diagnostics,
+                                               ProgramFormat::QIRAdaptive));
   EXPECT_EQ(unsupported->str(), before);
-  EXPECT_TRUE(StringRef(diagnostics)
-                  .contains("classical-control capability 'conditional' "
-                            "required by 'scf.if'"))
+  EXPECT_TRUE(
+      StringRef(diagnostics).contains("does not support program feature"))
       << diagnostics;
 
   auto supported = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(supported);
-  const auto target = llvm::cantFail(
-      CompilerTarget::create(1, std::nullopt, std::nullopt, std::nullopt,
-                             {CompilerTarget::ClassicalControl::Conditional}));
-  ASSERT_TRUE(supported->compileForTarget(target));
+  const auto target = makeTargetWithProfile(
+      2, ProgramFormat::QIRAdaptive,
+      {ProgramFeature::MidCircuitMeasurement,
+       ProgramFeature::MeasuredQubitReuse, ProgramFeature::MeasurementResultUse,
+       ProgramFeature::BooleanComputation, ProgramFeature::ForwardBranching});
+  ASSERT_TRUE(supported->compileForTarget(target, ProgramFormat::QIRAdaptive));
   EXPECT_NE(supported->str().find("qco.if"), std::string::npos);
   EXPECT_NE(supported->str().find("qco.static"), std::string::npos);
 }
 
-/** @brief Test: each structured-control form needs its own capability. */
+/** @brief Test: lifecycle semantics are explicit profile requirements. */
 TEST_F(CompilerPipelineTest,
-       TargetCompilationRejectsNestedMissingClassicalCapability) {
+       TargetCompilationRequiresMeasurementLifecycleFeatures) {
+  struct TestCase {
+    StringRef name;
+    StringRef source;
+    size_t numQubits;
+    std::vector<ProgramFeature> prerequisites;
+    ProgramFeature missingFeature;
+    StringRef diagnostic;
+  };
+  const std::vector<TestCase> testCases{
+      {"mid-circuit measurement",
+       R"mlir(
+         module {
+           func.func @main() attributes {mqt.entry_point} {
+             %q0 = qco.alloc : !qco.qubit
+             %q1 = qco.alloc : !qco.qubit
+             %q2, %measurement = qco.measure %q0 : !qco.qubit
+             %q3 = qco.x %q1 : !qco.qubit -> !qco.qubit
+             qco.sink %q2 : !qco.qubit
+             qco.sink %q3 : !qco.qubit
+             return
+           }
+         }
+       )mlir",
+       2,
+       {},
+       ProgramFeature::MidCircuitMeasurement,
+       "mid-circuit-measurement"},
+      {"measured-qubit reuse",
+       R"mlir(
+         module {
+           func.func @main() attributes {mqt.entry_point} {
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             %q2 = qco.x %q1 : !qco.qubit -> !qco.qubit
+             qco.sink %q2 : !qco.qubit
+             return
+           }
+         }
+       )mlir",
+       1,
+       {ProgramFeature::MidCircuitMeasurement},
+       ProgramFeature::MeasuredQubitReuse,
+       "measured-qubit-reuse"},
+      {"measurement-result computation",
+       R"mlir(
+         module {
+           func.func @main(%flag: i1) -> i1 attributes {mqt.entry_point} {
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             %result = arith.xori %measurement, %flag : i1
+             qco.sink %q1 : !qco.qubit
+             return %result : i1
+           }
+         }
+       )mlir",
+       1,
+       {ProgramFeature::MidCircuitMeasurement,
+        ProgramFeature::BooleanComputation},
+       ProgramFeature::MeasurementResultUse,
+       "measurement-result-use"},
+  };
+
+  for (const auto& testCase : testCases) {
+    SCOPED_TRACE(testCase.name.str());
+    auto emptyProfile = QCOProgram::fromMLIRString(testCase.source.str());
+    ASSERT_TRUE(emptyProfile);
+    const auto before = emptyProfile->str();
+    std::string emptyDiagnostics;
+    EXPECT_FALSE(compileForTargetWithDiagnostics(
+        *emptyProfile,
+        makeTargetWithProfile(testCase.numQubits, ProgramFormat::QCOOptimized,
+                              {}),
+        emptyDiagnostics));
+    EXPECT_EQ(emptyProfile->str(), before);
+    EXPECT_TRUE(StringRef(emptyDiagnostics)
+                    .contains("does not support program feature"))
+        << emptyDiagnostics;
+
+    auto missingFeature = QCOProgram::fromMLIRString(testCase.source.str());
+    ASSERT_TRUE(missingFeature);
+    const auto missingBefore = missingFeature->str();
+    std::string missingDiagnostics;
+    EXPECT_FALSE(compileForTargetWithDiagnostics(
+        *missingFeature,
+        makeTargetWithProfile(testCase.numQubits, ProgramFormat::QCOOptimized,
+                              testCase.prerequisites),
+        missingDiagnostics));
+    EXPECT_EQ(missingFeature->str(), missingBefore);
+    EXPECT_TRUE(StringRef(missingDiagnostics).contains(testCase.diagnostic))
+        << missingDiagnostics;
+
+    auto supported = QCOProgram::fromMLIRString(testCase.source.str());
+    ASSERT_TRUE(supported);
+    auto features = testCase.prerequisites;
+    features.emplace_back(testCase.missingFeature);
+    EXPECT_TRUE(supported->compileForTarget(makeTargetWithProfile(
+        testCase.numQubits, ProgramFormat::QCOOptimized, std::move(features))));
+  }
+}
+
+/** @brief Test: output forwarding stays distinct from runtime result use. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationClassifiesForwardedMeasurementResults) {
+  struct TestCase {
+    StringRef name;
+    StringRef source;
+    std::vector<ProgramFeature> prerequisites;
+    bool requiresMeasurementResultUse;
+  };
+  const std::vector<TestCase> testCases{
+      {"direct CBit output store",
+       R"mlir(
+         module {
+           func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+             %c0 = arith.constant 0 : index
+             %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             cbit.store %measurement, %reg[%c0] : !cbit.reg<1>
+             qco.sink %q1 : !qco.qubit
+             return %reg : !cbit.reg<1>
+           }
+         }
+       )mlir",
+       {},
+       false},
+      {"same-index killing CBit store",
+       R"mlir(
+         module {
+           func.func @main(%flag: i1)
+               -> (i1, !cbit.reg<1>) attributes {mqt.entry_point} {
+             %c0 = arith.constant 0 : index
+             %false = arith.constant false
+             %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             cbit.store %measurement, %reg[%c0] : !cbit.reg<1>
+             cbit.store %false, %reg[%c0] : !cbit.reg<1>
+             %loaded = cbit.load %reg[%c0] : !cbit.reg<1>
+             %result = arith.xori %loaded, %flag : i1
+             qco.sink %q1 : !qco.qubit
+             return %result, %reg : i1, !cbit.reg<1>
+           }
+         }
+       )mlir",
+       {ProgramFeature::BooleanComputation},
+       false},
+      {"output-only loop carry",
+       R"mlir(
+         module {
+           func.func @main(%upper: index) -> i1 attributes {mqt.entry_point} {
+             %c0 = arith.constant 0 : index
+             %c1 = arith.constant 1 : index
+             %false = arith.constant false
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             %result = scf.for %index = %c0 to %upper step %c1
+                 iter_args(%current = %measurement) -> i1 {
+               scf.yield %false : i1
+             }
+             qco.sink %q1 : !qco.qubit
+             return %result : i1
+           }
+         }
+       )mlir",
+       {ProgramFeature::CountedIteration},
+       false},
+      {"dominating CBit load before nested store",
+       R"mlir(
+         module {
+           func.func @main(%upper: index, %loadIndex: index, %flag: i1)
+               -> (i1, !cbit.reg<1>) attributes {mqt.entry_point} {
+             %c0 = arith.constant 0 : index
+             %c1 = arith.constant 1 : index
+             %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+             %loaded = cbit.load %reg[%loadIndex] : !cbit.reg<1>
+             %result = arith.xori %loaded, %flag : i1
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             scf.for %index = %c0 to %upper step %c1 {
+               cbit.store %measurement, %reg[%c0] : !cbit.reg<1>
+             }
+             qco.sink %q1 : !qco.qubit
+             return %result, %reg : i1, !cbit.reg<1>
+           }
+         }
+       )mlir",
+       {ProgramFeature::CountedIteration, ProgramFeature::BooleanComputation},
+       false},
+      {"nested CBit load before later store",
+       R"mlir(
+         module {
+           func.func @main(%upper: index, %flag: i1)
+               -> (i1, !cbit.reg<1>) attributes {mqt.entry_point} {
+             %c0 = arith.constant 0 : index
+             %c1 = arith.constant 1 : index
+             %false = arith.constant false
+             %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+             %result = scf.for %index = %c0 to %upper step %c1
+                 iter_args(%current = %false) -> i1 {
+               %loaded = cbit.load %reg[%c0] : !cbit.reg<1>
+               %next = arith.xori %loaded, %flag : i1
+               scf.yield %next : i1
+             }
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             cbit.store %measurement, %reg[%c0] : !cbit.reg<1>
+             qco.sink %q1 : !qco.qubit
+             return %result, %reg : i1, !cbit.reg<1>
+           }
+         }
+       )mlir",
+       {ProgramFeature::CountedIteration, ProgramFeature::BooleanComputation},
+       false},
+      {"constant-disjoint CBit load",
+       R"mlir(
+         module {
+           func.func @main(%upper: index, %flag: i1)
+               -> (i1, !cbit.reg<2>) attributes {mqt.entry_point} {
+             %c0 = arith.constant 0 : index
+             %c1 = arith.constant 1 : index
+             %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             scf.for %index = %c0 to %upper step %c1 {
+               cbit.store %measurement, %reg[%c0] : !cbit.reg<2>
+             }
+             %loaded = cbit.load %reg[%c1] : !cbit.reg<2>
+             %result = arith.xori %loaded, %flag : i1
+             qco.sink %q1 : !qco.qubit
+             return %result, %reg : i1, !cbit.reg<2>
+           }
+         }
+       )mlir",
+       {ProgramFeature::CountedIteration, ProgramFeature::BooleanComputation},
+       false},
+      {"possibly-aliasing CBit load",
+       R"mlir(
+         module {
+           func.func @main(%upper: index, %loadIndex: index, %flag: i1)
+               -> (i1, !cbit.reg<2>) attributes {mqt.entry_point} {
+             %c0 = arith.constant 0 : index
+             %c1 = arith.constant 1 : index
+             %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             scf.for %index = %c0 to %upper step %c1 {
+               cbit.store %measurement, %reg[%c0] : !cbit.reg<2>
+             }
+             %loaded = cbit.load %reg[%loadIndex] : !cbit.reg<2>
+             %result = arith.xori %loaded, %flag : i1
+             qco.sink %q1 : !qco.qubit
+             return %result, %reg : i1, !cbit.reg<2>
+           }
+         }
+       )mlir",
+       {ProgramFeature::CountedIteration, ProgramFeature::BooleanComputation,
+        ProgramFeature::MidCircuitMeasurement},
+       true},
+      {"loop-carried CBit memory",
+       R"mlir(
+         module {
+           func.func @main(%upper: index, %flag: i1)
+               -> (i1, !cbit.reg<1>) attributes {mqt.entry_point} {
+             %c0 = arith.constant 0 : index
+             %c1 = arith.constant 1 : index
+             %false = arith.constant false
+             %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             %result = scf.for %index = %c0 to %upper step %c1
+                 iter_args(%current = %false) -> i1 {
+               %loaded = cbit.load %reg[%c0] : !cbit.reg<1>
+               %next = arith.xori %loaded, %flag : i1
+               cbit.store %measurement, %reg[%c0] : !cbit.reg<1>
+               scf.yield %next : i1
+             }
+             qco.sink %q1 : !qco.qubit
+             return %result, %reg : i1, !cbit.reg<1>
+           }
+         }
+       )mlir",
+       {ProgramFeature::CountedIteration, ProgramFeature::BooleanComputation,
+        ProgramFeature::MidCircuitMeasurement},
+       true},
+      {"nested-loop-carried CBit memory",
+       R"mlir(
+         module {
+           func.func @main(%outerUpper: index, %innerUpper: index, %flag: i1)
+               -> (i1, !cbit.reg<1>) attributes {mqt.entry_point} {
+             %c0 = arith.constant 0 : index
+             %c1 = arith.constant 1 : index
+             %false = arith.constant false
+             %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             %result = scf.for %outer = %c0 to %outerUpper step %c1
+                 iter_args(%current = %false) -> i1 {
+               %loaded = cbit.load %reg[%c0] : !cbit.reg<1>
+               %next = arith.xori %loaded, %flag : i1
+               scf.for %inner = %c0 to %innerUpper step %c1 {
+                 cbit.store %measurement, %reg[%c0] : !cbit.reg<1>
+               }
+               scf.yield %next : i1
+             }
+             qco.sink %q1 : !qco.qubit
+             return %result, %reg : i1, !cbit.reg<1>
+           }
+         }
+       )mlir",
+       {ProgramFeature::CountedIteration, ProgramFeature::BooleanComputation,
+        ProgramFeature::MidCircuitMeasurement},
+       true},
+      {"CBit register SSA alias",
+       R"mlir(
+         module {
+           func.func @main(%choose: i1, %flag: i1)
+               -> (i1, !cbit.reg<1>) attributes {mqt.entry_point} {
+             %c0 = arith.constant 0 : index
+             %stored = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+             %empty = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             cbit.store %measurement, %stored[%c0] : !cbit.reg<1>
+             %selected = arith.select %choose, %stored, %empty : !cbit.reg<1>
+             %loaded = cbit.load %selected[%c0] : !cbit.reg<1>
+             %result = arith.xori %loaded, %flag : i1
+             qco.sink %q1 : !qco.qubit
+             return %result, %stored : i1, !cbit.reg<1>
+           }
+         }
+       )mlir",
+       {ProgramFeature::BooleanComputation,
+        ProgramFeature::MidCircuitMeasurement},
+       true},
+      {"CBit register loop-result alias",
+       R"mlir(
+         module {
+           func.func @main(%upper: index, %choose: i1, %flag: i1)
+               -> (i1, !cbit.reg<1>) attributes {mqt.entry_point} {
+             %c0 = arith.constant 0 : index
+             %c1 = arith.constant 1 : index
+             %stored = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+             %empty = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+             %q0 = qco.alloc : !qco.qubit
+             %q1, %measurement = qco.measure %q0 : !qco.qubit
+             cbit.store %measurement, %stored[%c0] : !cbit.reg<1>
+             %forwarded = scf.for %index = %c0 to %upper step %c1
+                 iter_args(%current = %stored) -> !cbit.reg<1> {
+               %next = arith.select %choose, %current, %empty : !cbit.reg<1>
+               scf.yield %next : !cbit.reg<1>
+             }
+             %loaded = cbit.load %forwarded[%c0] : !cbit.reg<1>
+             %result = arith.xori %loaded, %flag : i1
+             qco.sink %q1 : !qco.qubit
+             return %result, %forwarded : i1, !cbit.reg<1>
+           }
+         }
+       )mlir",
+       {ProgramFeature::CountedIteration, ProgramFeature::BooleanComputation,
+        ProgramFeature::MidCircuitMeasurement},
+       true},
+  };
+
+  for (const auto& testCase : testCases) {
+    SCOPED_TRACE(testCase.name.str());
+    auto program = QCOProgram::fromMLIRString(testCase.source.str());
+    ASSERT_TRUE(program);
+    const auto target = makeTargetWithProfile(1, ProgramFormat::QCOOptimized,
+                                              testCase.prerequisites);
+    if (!testCase.requiresMeasurementResultUse) {
+      EXPECT_TRUE(program->compileForTarget(target));
+      continue;
+    }
+
+    const auto before = program->str();
+    std::string diagnostics;
+    EXPECT_FALSE(
+        compileForTargetWithDiagnostics(*program, target, diagnostics));
+    EXPECT_EQ(program->str(), before);
+    EXPECT_TRUE(StringRef(diagnostics).contains("measurement-result-use"))
+        << diagnostics;
+
+    auto supported = QCOProgram::fromMLIRString(testCase.source.str());
+    ASSERT_TRUE(supported);
+    auto features = testCase.prerequisites;
+    features.emplace_back(ProgramFeature::MeasurementResultUse);
+    EXPECT_TRUE(supported->compileForTarget(makeTargetWithProfile(
+        1, ProgramFormat::QCOOptimized, std::move(features))));
+  }
+}
+
+/** @brief Test: unmodeled operations cannot hide CBit register aliases. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsUnmodeledCBitCarrierTransactionally) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main(%condition: i1, %selector: index)
+      func.func @main() -> i1 attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %true = arith.constant true
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %q0 = qco.alloc : !qco.qubit
+        %q1, %measurement = qco.measure %q0 : !qco.qubit
+        cbit.store %measurement, %reg[%c0] : !cbit.reg<1>
+        %alias = builtin.unrealized_conversion_cast %reg
+            : !cbit.reg<1> to !cbit.reg<2>
+        %loaded = cbit.load %alias[%c0] : !cbit.reg<2>
+        %result = arith.xori %loaded, %true : i1
+        qco.sink %q1 : !qco.qubit
+        return %result : i1
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program,
+      makeTargetWithProfile(1, ProgramFormat::QCOOptimized,
+                            {ProgramFeature::BooleanComputation}),
+      diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("classical-bit register carried through unmodeled "
+                            "operation 'builtin.unrealized_conversion_cast'"))
+      << diagnostics;
+}
+
+/** @brief Test: CBit definite-kill proofs have a fixed traversal budget. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationBoundsCBitAliasProofsTransactionally) {
+  constexpr size_t numAliases = 1024;
+  constexpr size_t numInterveningStores = 4097;
+  std::string source;
+  llvm::raw_string_ostream sourceStream(source);
+  sourceStream << R"mlir(
+    module {
+      func.func @main(%upper: index, %load_index: index,
+          %conditions: !cbit.reg<)mlir"
+               << numAliases << ">, %unrelated: !cbit.reg<"
+               << numInterveningStores << R"mlir(>) -> i1
           attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
+        %false = arith.constant false
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+  )mlir";
+  for (size_t i = 1; i <= numAliases; ++i) {
+    sourceStream << "        %condition_index" << i << " = arith.constant "
+                 << i - 1 << " : index\n"
+                 << "        %condition" << i
+                 << " = cbit.load %conditions[%condition_index" << i
+                 << "] : !cbit.reg<" << numAliases << ">\n";
+  }
+  sourceStream
+      << R"mlir(        %loop_alias = scf.for %index = %c0 to %upper step %c1
+            iter_args(%current = %reg) -> !cbit.reg<2> {
+          %next = arith.select %condition1, %current, %reg : !cbit.reg<2>
+          scf.yield %next : !cbit.reg<2>
+        }
+  )mlir";
+  for (size_t i = 1; i <= numAliases; ++i) {
+    sourceStream << "        %alias" << i << " = arith.select %condition" << i
+                 << ", ";
+    if (i == 1) {
+      sourceStream << "%loop_alias";
+    } else {
+      sourceStream << "%alias" << i - 1;
+    }
+    sourceStream << ", %reg : !cbit.reg<2>\n";
+  }
+  sourceStream << "        %q0 = qco.alloc : !qco.qubit\n"
+               << "        %q1, %measurement = qco.measure %q0 : "
+                  "!qco.qubit\n"
+               << "        cbit.store %measurement, %alias" << numAliases
+               << "[%c0] : !cbit.reg<2>\n";
+  // Keep more candidate stores than the observation budget before a definite
+  // killing store. A bounded proof must conservatively retain the
+  // measurement-result-use requirement instead of reaching that late killer.
+  for (size_t i = 0; i < numInterveningStores; ++i) {
+    sourceStream << "        %store_index" << i << " = arith.constant " << i
+                 << " : index\n"
+                 << "        cbit.store %false, %unrelated[%store_index" << i
+                 << "] : !cbit.reg<" << numInterveningStores << ">\n";
+  }
+  sourceStream << "        cbit.store %false, %reg[%c0] : !cbit.reg<2>\n"
+               << "        %loaded = cbit.load %alias" << numAliases
+               << R"mlir([%load_index] : !cbit.reg<2>
+        qco.sink %q1 : !qco.qubit
+        return %loaded : i1
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source);
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  const bool compiled = compileForTargetWithDiagnostics(
+      *program,
+      makeTargetWithProfile(1, ProgramFormat::QCOOptimized,
+                            {ProgramFeature::MidCircuitMeasurement,
+                             ProgramFeature::BooleanComputation,
+                             ProgramFeature::CountedIteration}),
+      diagnostics);
+  EXPECT_FALSE(compiled);
+  EXPECT_TRUE(program->str() == before);
+  EXPECT_TRUE(StringRef(diagnostics).contains("measurement-result-use"))
+      << diagnostics;
+}
+
+/** @brief Test: deep CBit observation ordering is analyzed linearly. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationAnalyzesDeepCBitObservationOrderingLinearly) {
+  constexpr size_t nestingDepth = 512U;
+  std::string source;
+  llvm::raw_string_ostream sourceStream(source);
+  sourceStream << R"mlir(
+    module {
+      func.func @main(%upper: index, %reg: !cbit.reg<1>,
+          %output: !cbit.reg<1>) -> !cbit.reg<1>
+          attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+  )mlir";
+  for (size_t depth = 0U; depth < nestingDepth; ++depth) {
+    sourceStream << "        scf.for %before" << depth
+                 << " = %c0 to %upper step %c1 {\n";
+  }
+  sourceStream << R"mlir(
+        %loaded = cbit.load %reg[%c0] : !cbit.reg<1>
+        cbit.store %loaded, %output[%c0] : !cbit.reg<1>
+  )mlir";
+  for (size_t depth = 0U; depth < nestingDepth; ++depth) {
+    sourceStream << "        }\n";
+  }
+  sourceStream << R"mlir(
         %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
-          scf.for %index = %c0 to %c1 step %c1 {
+        %q1, %measurement = qco.measure %q0 : !qco.qubit
+  )mlir";
+  for (size_t depth = 0U; depth < nestingDepth; ++depth) {
+    sourceStream << "        scf.for %after" << depth
+                 << " = %c0 to %upper step %c1 {\n";
+  }
+  sourceStream << R"mlir(
+        cbit.store %measurement, %reg[%c0] : !cbit.reg<1>
+  )mlir";
+  for (size_t depth = 0U; depth < nestingDepth; ++depth) {
+    sourceStream << "        }\n";
+  }
+  sourceStream << R"mlir(
+        qco.sink %q1 : !qco.qubit
+        return %output : !cbit.reg<1>
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(program->compileForTarget(makeTargetWithProfile(
+      1, ProgramFormat::QCOOptimized, {ProgramFeature::CountedIteration})));
+}
+
+/** @brief Test: CBit feedback branches require definite measurement sources. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationChecksCBitBranchConditionProvenance) {
+  struct TestCase {
+    StringRef name;
+    StringRef conditionSetup;
+    bool isMeasurementDerived;
+  };
+  const std::vector<TestCase> testCases{
+      {"direct same-index load",
+       "%condition = cbit.load %stored[%c0] : !cbit.reg<1>", true},
+      {"dynamic-index load",
+       "%condition = cbit.load %stored[%loadIndex] : !cbit.reg<1>", false},
+      {"possibly-empty register alias",
+       R"mlir(
+         %selected = arith.select %choose, %stored, %empty : !cbit.reg<1>
+         %condition = cbit.load %selected[%c0] : !cbit.reg<1>
+       )mlir",
+       false},
+      {"external-bound loop selector",
+       R"mlir(
+         %condition = scf.for %index = %c0 to %loadIndex step %c1
+             iter_args(%current = %measurement) -> i1 {
+           scf.yield %false : i1
+         }
+       )mlir",
+       false},
+      {"dynamic-loop external killing store",
+       R"mlir(
+         scf.for %index = %c0 to %loadIndex step %c1 {
+           cbit.store %choose, %stored[%c0] : !cbit.reg<1>
+         }
+         %condition = cbit.load %stored[%c0] : !cbit.reg<1>
+       )mlir",
+       false},
+  };
+  const auto target = makeTargetWithProfile(
+      1, ProgramFormat::QIRAdaptive,
+      {ProgramFeature::MidCircuitMeasurement,
+       ProgramFeature::MeasuredQubitReuse, ProgramFeature::MeasurementResultUse,
+       ProgramFeature::BooleanComputation, ProgramFeature::ForwardBranching,
+       ProgramFeature::CountedIteration});
+
+  for (const auto& testCase : testCases) {
+    SCOPED_TRACE(testCase.name.str());
+    const auto source =
+        R"mlir(
+          module {
+            func.func @main(%loadIndex: index, %choose: i1)
+                attributes {mqt.entry_point} {
+              %c0 = arith.constant 0 : index
+              %c1 = arith.constant 1 : index
+              %false = arith.constant false
+              %stored = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+              %empty = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+              %q0 = qco.alloc : !qco.qubit
+              %q1, %measurement = qco.measure %q0 : !qco.qubit
+              cbit.store %measurement, %stored[%c0] : !cbit.reg<1>
+        )mlir" +
+        testCase.conditionSetup.str() + R"mlir(
+              %q2 = qco.if %condition args(%arg = %q1) -> (!qco.qubit) {
+                %q3 = qco.x %arg : !qco.qubit -> !qco.qubit
+                qco.yield %q3 : !qco.qubit
+              } else args(%arg = %q1) {
+                qco.yield %arg : !qco.qubit
+              }
+              qco.sink %q2 : !qco.qubit
+              return
+            }
           }
-          qco.yield %arg0 : !qco.qubit
-        } else args(%arg0 = %q0) {
-          qco.yield %arg0 : !qco.qubit
+        )mlir";
+    auto program = QCOProgram::fromMLIRString(source);
+    ASSERT_TRUE(program);
+    if (testCase.isMeasurementDerived) {
+      EXPECT_TRUE(
+          program->compileForTarget(target, ProgramFormat::QIRAdaptive));
+      continue;
+    }
+
+    const auto before = program->str();
+    std::string diagnostics;
+    EXPECT_FALSE(compileForTargetWithDiagnostics(*program, target, diagnostics,
+                                                 ProgramFormat::QIRAdaptive));
+    EXPECT_EQ(program->str(), before);
+    const auto diagnostic = StringRef(diagnostics);
+    EXPECT_TRUE(
+        diagnostic.contains("derived from a measurement result") ||
+        diagnostic.contains("cannot prove measurement-feedback semantics"))
+        << diagnostics;
+  }
+}
+
+/** @brief Test: stored measurement feedback remains valid inside a loop. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationChecksStoredMeasurementFeedbackInsideDynamicLoop) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%upper: index) attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %measured = qco.alloc : !qco.qubit
+        %data = qco.alloc : !qco.qubit
+        %measured_out, %measurement = qco.measure %measured : !qco.qubit
+        cbit.store %measurement, %reg[%c0] : !cbit.reg<1>
+        %result = scf.for %index = %c0 to %upper step %c1
+            iter_args(%current = %data) -> !qco.qubit {
+          %condition = cbit.load %reg[%c0] : !cbit.reg<1>
+          %next = qco.if %condition args(%arg = %current) -> (!qco.qubit) {
+            %gated = qco.x %arg : !qco.qubit -> !qco.qubit
+            qco.yield %gated : !qco.qubit
+          } else args(%arg = %current) {
+            qco.yield %arg : !qco.qubit
+          }
+          scf.yield %next : !qco.qubit
         }
-        %q2 = scf.while (%arg0 = %q1) : (!qco.qubit) -> !qco.qubit {
-          scf.condition(%condition) %arg0 : !qco.qubit
-        } do {
-        ^bb0(%arg0: !qco.qubit):
-          scf.yield %arg0 : !qco.qubit
+        qco.sink %result : !qco.qubit
+        qco.sink %measured_out : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  const std::vector fullProfile{
+      ProgramFeature::MidCircuitMeasurement,
+      ProgramFeature::MeasurementResultUse,
+      ProgramFeature::ForwardBranching,
+      ProgramFeature::CountedIteration,
+  };
+  struct MissingFeature {
+    ProgramFeature feature;
+    StringRef diagnostic;
+  };
+  const std::vector<MissingFeature> missingFeatures{
+      {ProgramFeature::MidCircuitMeasurement, "mid-circuit-measurement"},
+      {ProgramFeature::MeasurementResultUse, "measurement-result-use"},
+      {ProgramFeature::ForwardBranching, "forward-branching"},
+      {ProgramFeature::CountedIteration, "counted-iteration"},
+  };
+
+  for (const auto& missing : missingFeatures) {
+    SCOPED_TRACE(missing.diagnostic.str());
+    std::vector<ProgramFeature> incompleteProfile;
+    for (const auto feature : fullProfile) {
+      if (feature != missing.feature) {
+        incompleteProfile.emplace_back(feature);
+      }
+    }
+    auto unsupported = QCOProgram::fromMLIRString(source.str());
+    ASSERT_TRUE(unsupported);
+    const auto before = unsupported->str();
+    std::string diagnostics;
+    EXPECT_FALSE(compileForTargetWithDiagnostics(
+        *unsupported,
+        makeTargetWithProfile(2, ProgramFormat::QIRAdaptive,
+                              std::move(incompleteProfile)),
+        diagnostics, ProgramFormat::QIRAdaptive));
+    EXPECT_EQ(unsupported->str(), before);
+    EXPECT_TRUE(StringRef(diagnostics).contains(missing.diagnostic))
+        << diagnostics;
+  }
+
+  auto supported = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(supported);
+  EXPECT_TRUE(supported->compileForTarget(
+      makeTargetWithProfile(2, ProgramFormat::QIRAdaptive, fullProfile),
+      ProgramFormat::QIRAdaptive));
+}
+
+/** @brief Test: measurement-feedback producer traversal is globally bounded. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsOversizedFeedbackProducerGraphTransactionally) {
+  constexpr size_t numProducerSteps = 4097;
+  std::string source;
+  llvm::raw_string_ostream sourceStream(source);
+  sourceStream << R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %control = qco.alloc : !qco.qubit
+        %data = qco.alloc : !qco.qubit
+        %measured0, %measurement0 = qco.measure %control : !qco.qubit
+  )mlir";
+  for (size_t i = 1; i <= numProducerSteps; ++i) {
+    sourceStream << "        %measured" << i << ", %measurement" << i
+                 << " = qco.measure %measured" << i - 1 << " : !qco.qubit\n";
+    sourceStream << "        %value" << i << " = arith.xori ";
+    if (i == 1) {
+      sourceStream << "%measurement0";
+    } else {
+      sourceStream << "%value" << i - 1;
+    }
+    sourceStream << ", %measurement" << i << " : i1\n";
+  }
+  sourceStream << "        %result = qco.if %value" << numProducerSteps
+               << R"mlir( args(%arg = %data) -> (!qco.qubit) {
+          %gated = qco.x %arg : !qco.qubit -> !qco.qubit
+          qco.yield %gated : !qco.qubit
+        } else args(%arg = %data) {
+          qco.yield %arg : !qco.qubit
         }
-        %q3 = qco.index_switch %selector -> (!qco.qubit)
-        case 0 args(%arg0 = %q2) {
-          qco.yield %arg0 : !qco.qubit
-        }
-        default args(%arg0 = %q2) {
-          qco.yield %arg0 : !qco.qubit
-        }
-        qco.sink %q3 : !qco.qubit
+        qco.sink %result : !qco.qubit
+  )mlir";
+  sourceStream << "        qco.sink %measured" << numProducerSteps
+               << R"mlir( : !qco.qubit
         return
       }
     }
   )mlir";
 
-  using ClassicalControl = CompilerTarget::ClassicalControl;
-  const auto expectRejected = [&](std::vector<ClassicalControl> capabilities,
-                                  const StringRef expectedDiagnostic) {
+  auto program = QCOProgram::fromMLIRString(source);
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  const auto target = makeTargetWithProfile(
+      2, ProgramFormat::QIRAdaptive,
+      {ProgramFeature::MidCircuitMeasurement,
+       ProgramFeature::MeasuredQubitReuse, ProgramFeature::MeasurementResultUse,
+       ProgramFeature::BooleanComputation, ProgramFeature::ForwardBranching});
+  EXPECT_FALSE(compileForTargetWithDiagnostics(*program, target, diagnostics,
+                                               ProgramFormat::QIRAdaptive));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics).contains("after 4096 producer steps"))
+      << diagnostics;
+}
+
+/** @brief Test: feedback provenance crosses a then-only conditional. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationTracksCBitFeedbackInsideThenOnlyScfIf) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %output = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %measured = qco.alloc : !qco.qubit
+        %measured_out, %measurement = qco.measure %measured : !qco.qubit
+        cbit.store %measurement, %reg[%c0] : !cbit.reg<1>
+        scf.if %measurement {
+          %condition = cbit.load %reg[%c0] : !cbit.reg<1>
+          scf.if %condition {
+            cbit.store %condition, %output[%c0] : !cbit.reg<1>
+          }
+        }
+        qco.sink %measured_out : !qco.qubit
+        return %output : !cbit.reg<1>
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(program->compileForTarget(
+      makeTargetWithProfile(1, ProgramFormat::QIRAdaptive,
+                            {ProgramFeature::MidCircuitMeasurement,
+                             ProgramFeature::MeasurementResultUse,
+                             ProgramFeature::ForwardBranching}),
+      ProgramFormat::QIRAdaptive));
+}
+
+/** @brief Test: measured-qubit provenance crosses structured results. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationTracksMeasuredQubitForwardedThroughConditional) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %data = qco.alloc : !qco.qubit
+        %control = qco.alloc : !qco.qubit
+        %measured_control, %condition = qco.measure %control : !qco.qubit
+        %merged = qco.if %condition args(%arg = %data) -> (!qco.qubit) {
+          %measured_data, %unused = qco.measure %arg : !qco.qubit
+          qco.yield %measured_data : !qco.qubit
+        } else args(%arg = %data) {
+          qco.yield %arg : !qco.qubit
+        }
+        %result = qco.x %merged : !qco.qubit -> !qco.qubit
+        qco.sink %result : !qco.qubit
+        qco.sink %measured_control : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  const std::vector prerequisites{
+      ProgramFeature::MidCircuitMeasurement,
+      ProgramFeature::MeasurementResultUse,
+      ProgramFeature::BooleanComputation,
+      ProgramFeature::ForwardBranching,
+  };
+
+  auto unsupported = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(unsupported);
+  const auto before = unsupported->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *unsupported,
+      makeTargetWithProfile(2, ProgramFormat::QIRAdaptive, prerequisites),
+      diagnostics, ProgramFormat::QIRAdaptive));
+  EXPECT_EQ(unsupported->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics).contains("measured-qubit-reuse"))
+      << diagnostics;
+
+  auto supported = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(supported);
+  auto features = prerequisites;
+  features.emplace_back(ProgramFeature::MeasuredQubitReuse);
+  EXPECT_TRUE(supported->compileForTarget(
+      makeTargetWithProfile(2, ProgramFormat::QIRAdaptive, std::move(features)),
+      ProgramFormat::QIRAdaptive));
+}
+
+/** @brief Test: residual arithmetic needs its corresponding feature. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRequiresStandaloneClassicalComputationFeatures) {
+  struct TestCase {
+    StringRef name;
+    StringRef source;
+    ProgramFeature feature;
+    StringRef diagnostic;
+  };
+  const std::vector<TestCase> testCases{
+      {"Boolean computation",
+       R"mlir(
+         module {
+           func.func @main(%lhs: i1, %rhs: i1) -> i1
+               attributes {mqt.entry_point} {
+             %result = arith.xori %lhs, %rhs : i1
+             %q0 = qco.alloc : !qco.qubit
+             qco.sink %q0 : !qco.qubit
+             return %result : i1
+           }
+         }
+       )mlir",
+       ProgramFeature::BooleanComputation, "boolean-computation"},
+      {"integer computation",
+       R"mlir(
+         module {
+           func.func @main(%lhs: i64, %rhs: i64) -> i64
+               attributes {mqt.entry_point} {
+             %result = arith.addi %lhs, %rhs : i64
+             %q0 = qco.alloc : !qco.qubit
+             qco.sink %q0 : !qco.qubit
+             return %result : i64
+           }
+         }
+       )mlir",
+       ProgramFeature::IntegerComputation, "integer-computation"},
+      {"floating-point computation",
+       R"mlir(
+         module {
+           func.func @main(%lhs: f64, %rhs: f64) -> f64
+               attributes {mqt.entry_point} {
+             %result = arith.addf %lhs, %rhs : f64
+             %q0 = qco.alloc : !qco.qubit
+             qco.sink %q0 : !qco.qubit
+             return %result : f64
+           }
+         }
+       )mlir",
+       ProgramFeature::FloatComputation, "float-computation"},
+      {"math computation",
+       R"mlir(
+         module {
+           func.func @main(%value: f64) -> f64
+               attributes {mqt.entry_point} {
+             %result = math.sin %value : f64
+             %q0 = qco.alloc : !qco.qubit
+             qco.sink %q0 : !qco.qubit
+             return %result : f64
+           }
+         }
+       )mlir",
+       ProgramFeature::FloatComputation, "float-computation"},
+      {"LLVM arithmetic",
+       R"mlir(
+         module {
+           func.func @main(%lhs: i64, %rhs: i64) -> i64
+               attributes {mqt.entry_point} {
+             %result = llvm.add %lhs, %rhs : i64
+             %q0 = qco.alloc : !qco.qubit
+             qco.sink %q0 : !qco.qubit
+             return %result : i64
+           }
+         }
+       )mlir",
+       ProgramFeature::IntegerComputation, "integer-computation"},
+  };
+
+  for (const auto& testCase : testCases) {
+    SCOPED_TRACE(testCase.name.str());
+    auto unsupported = QCOProgram::fromMLIRString(testCase.source.str());
+    ASSERT_TRUE(unsupported);
+    const auto before = unsupported->str();
+    std::string diagnostics;
+    EXPECT_FALSE(compileForTargetWithDiagnostics(
+        *unsupported, makeTargetWithProfile(1, ProgramFormat::QCOOptimized, {}),
+        diagnostics));
+    EXPECT_EQ(unsupported->str(), before);
+    EXPECT_TRUE(StringRef(diagnostics).contains(testCase.diagnostic))
+        << diagnostics;
+
+    auto supported = QCOProgram::fromMLIRString(testCase.source.str());
+    ASSERT_TRUE(supported);
+    EXPECT_TRUE(supported->compileForTarget(makeTargetWithProfile(
+        1, ProgramFormat::QCOOptimized, {testCase.feature})));
+  }
+}
+
+/** @brief Test: mixed-domain arithmetic requires every atomic feature. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRequiresIntegerAndFloatForMixedArithmetic) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%value: i64) -> f64 attributes {mqt.entry_point} {
+        %result = arith.sitofp %value : i64 to f64
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return %result : f64
+      }
+    }
+  )mlir";
+  const auto expectRejected = [&](std::vector<ProgramFeature> features,
+                                  const StringRef diagnostic) {
     auto program = QCOProgram::fromMLIRString(source.str());
     ASSERT_TRUE(program);
     const auto before = program->str();
     std::string diagnostics;
-    const ScopedDiagnosticHandler handler(program->module().getContext(),
-                                          [&](Diagnostic& diagnostic) {
-                                            diagnostics += diagnostic.str();
-                                            diagnostics += '\n';
-                                            return success();
-                                          });
-    const auto target = llvm::cantFail(CompilerTarget::create(
-        1, std::nullopt, std::nullopt, std::nullopt, std::move(capabilities)));
-
-    EXPECT_FALSE(program->compileForTarget(target));
+    EXPECT_FALSE(compileForTargetWithDiagnostics(
+        *program,
+        makeTargetWithProfile(1, ProgramFormat::QCOOptimized,
+                              std::move(features)),
+        diagnostics));
     EXPECT_EQ(program->str(), before);
-    EXPECT_TRUE(StringRef(diagnostics).contains(expectedDiagnostic))
-        << diagnostics;
+    EXPECT_TRUE(StringRef(diagnostics).contains(diagnostic)) << diagnostics;
   };
 
-  expectRejected({ClassicalControl::Conditional},
-                 "capability 'iteration' required by 'scf.for'");
-  expectRejected({ClassicalControl::Conditional, ClassicalControl::Iteration},
-                 "capability 'conditional-loop' required by 'scf.while'");
-  expectRejected({ClassicalControl::Conditional, ClassicalControl::Iteration,
-                  ClassicalControl::ConditionalLoop},
-                 "capability 'multiway-branch' required by "
-                 "'qco.index_switch'");
+  expectRejected({ProgramFeature::FloatComputation}, "integer-computation");
+  expectRejected({ProgramFeature::IntegerComputation}, "float-computation");
 
   auto supported = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(supported);
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      1, std::nullopt, std::nullopt, std::nullopt,
-      {ClassicalControl::Conditional, ClassicalControl::Iteration,
-       ClassicalControl::ConditionalLoop, ClassicalControl::MultiwayBranch}));
-  ASSERT_TRUE(supported->compileForTarget(target));
-  const auto compiled = supported->str();
-  EXPECT_NE(compiled.find("qco.static"), std::string::npos);
+  EXPECT_TRUE(supported->compileForTarget(makeTargetWithProfile(
+      1, ProgramFormat::QCOOptimized,
+      {ProgramFeature::IntegerComputation, ProgramFeature::FloatComputation})));
 }
 
-/**
- * @brief Test: compile-time dead control does not require a target capability.
- */
+/** @brief Test: LLVM aggregates expose every nested computation domain. */
 TEST_F(CompilerPipelineTest,
-       TargetCompilationIgnoresUnreachableStaticControlBranches) {
+       TargetCompilationRequiresNestedLLVMComputationFeatures) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(
+          %value: !llvm.struct<(i1, array<2 x i64>, f64)>)
+          -> !llvm.struct<(i1, array<2 x i64>, f64)>
+          attributes {mqt.entry_point} {
+        %result = llvm.freeze %value
+            : !llvm.struct<(i1, array<2 x i64>, f64)>
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return %result : !llvm.struct<(i1, array<2 x i64>, f64)>
+      }
+    }
+  )mlir";
+  struct MissingFeature {
+    std::vector<ProgramFeature> supportedFeatures;
+    StringRef diagnostic;
+  };
+  const std::vector<MissingFeature> missingFeatures{
+      {{}, "boolean-computation"},
+      {{ProgramFeature::BooleanComputation, ProgramFeature::FloatComputation},
+       "integer-computation"},
+      {{ProgramFeature::BooleanComputation, ProgramFeature::IntegerComputation},
+       "float-computation"},
+  };
+
+  for (const auto& missing : missingFeatures) {
+    SCOPED_TRACE(missing.diagnostic.str());
+    auto unsupported = QCOProgram::fromMLIRString(source.str());
+    ASSERT_TRUE(unsupported);
+    const auto before = unsupported->str();
+    std::string diagnostics;
+    EXPECT_FALSE(compileForTargetWithDiagnostics(
+        *unsupported,
+        makeTargetWithProfile(1, ProgramFormat::QCOOptimized,
+                              missing.supportedFeatures),
+        diagnostics));
+    EXPECT_EQ(unsupported->str(), before);
+    EXPECT_TRUE(StringRef(diagnostics).contains(missing.diagnostic))
+        << diagnostics;
+  }
+
+  auto supported = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(supported);
+  EXPECT_TRUE(supported->compileForTarget(makeTargetWithProfile(
+      1, ProgramFormat::QCOOptimized,
+      {ProgramFeature::BooleanComputation, ProgramFeature::IntegerComputation,
+       ProgramFeature::FloatComputation})));
+}
+
+/** @brief Test: an unmodeled classical producer fails closed. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsUnmodeledClassicalProducerTransactionally) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%buffer: memref<?xi64>, %index: index) -> i64
+          attributes {mqt.entry_point} {
+        %result = memref.load %buffer[%index] : memref<?xi64>
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return %result : i64
+      }
+    }
+  )mlir";
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program,
+      makeTargetWithProfile(1, ProgramFormat::QCOOptimized,
+                            {ProgramFeature::IntegerComputation}),
+      diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains("cannot classify runtime classical producer 'memref.load'"))
+      << diagnostics;
+}
+
+/** @brief Test: tuple results do not hide unmodeled classical producers. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsUnmodeledTupleProducerTransactionally) {
+  constexpr StringLiteral unsupportedSource = R"mlir(
+    module {
+      func.func @main(%flag: i1) -> tuple<i1> attributes {mqt.entry_point} {
+        %result = builtin.unrealized_conversion_cast %flag
+            : i1 to tuple<i1>
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return %result : tuple<i1>
+      }
+    }
+  )mlir";
+  auto unsupported = QCOProgram::fromMLIRString(unsupportedSource.str());
+  ASSERT_TRUE(unsupported);
+  const auto before = unsupported->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *unsupported, makeTargetWithProfile(1, ProgramFormat::QCOOptimized, {}),
+      diagnostics));
+  EXPECT_EQ(unsupported->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("cannot classify runtime classical producer "
+                            "'builtin.unrealized_conversion_cast'"))
+      << diagnostics;
+
+  constexpr StringLiteral terminalArgument = R"mlir(
+    module {
+      func.func @main(%input: tuple<i1>) -> tuple<i1>
+          attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return %input : tuple<i1>
+      }
+    }
+  )mlir";
+  auto supported = QCOProgram::fromMLIRString(terminalArgument.str());
+  ASSERT_TRUE(supported);
+  EXPECT_TRUE(supported->compileForTarget(
+      makeTargetWithProfile(1, ProgramFormat::QCOOptimized, {})));
+}
+
+/** @brief Test: execution features do not leak between payload profiles. */
+TEST_F(CompilerPipelineTest, TargetCompilationKeepsFeaturesPayloadScoped) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main() attributes {mqt.entry_point} {
-        %false = arith.constant false
-        %c0 = arith.constant 0 : index
-        %c1 = arith.constant 1 : index
         %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.if %false args(%arg0 = %q0) -> (!qco.qubit) {
-          scf.for %index = %c0 to %c1 step %c1 {
-          }
-          qco.yield %arg0 : !qco.qubit
-        } else args(%arg0 = %q0) {
-          qco.yield %arg0 : !qco.qubit
-        }
-        %q2 = qco.index_switch %c0 -> (!qco.qubit)
-        case 0 args(%arg0 = %q1) {
-          qco.yield %arg0 : !qco.qubit
-        }
-        default args(%arg0 = %q1) {
-          scf.for %index = %c0 to %c1 step %c1 {
-          }
+        %q1, %condition = qco.measure %q0 : !qco.qubit
+        %q2 = qco.if %condition args(%arg0 = %q1) -> (!qco.qubit) {
+          %q3 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %q3 : !qco.qubit
+        } else args(%arg0 = %q1) {
           qco.yield %arg0 : !qco.qubit
         }
         qco.sink %q2 : !qco.qubit
@@ -1318,42 +2408,37 @@ TEST_F(CompilerPipelineTest,
 
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(program);
-  ASSERT_TRUE(
-      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
-  EXPECT_EQ(program->str().find("qco.if"), std::string::npos);
-  EXPECT_EQ(program->str().find("qco.index_switch"), std::string::npos);
-  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+  const auto before = program->str();
+  std::string diagnostics;
+  const auto target = makeTargetWithProfile(
+      1, ProgramFormat::QIRAdaptive,
+      {ProgramFeature::MidCircuitMeasurement,
+       ProgramFeature::MeasuredQubitReuse, ProgramFeature::MeasurementResultUse,
+       ProgramFeature::BooleanComputation, ProgramFeature::ForwardBranching});
+
+  EXPECT_FALSE(compileForTargetWithDiagnostics(*program, target, diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(
+      StringRef(diagnostics).contains("does not support program feature"))
+      << diagnostics;
 }
 
-/**
- * @brief Test: folded selectors and empty loops need no runtime capability.
- */
-TEST_F(CompilerPipelineTest, TargetCompilationFoldsStaticControlExpressions) {
+/** @brief Test: finite counted control is legalized when not native. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationUnrollsFiniteLoopWithoutCountedIteration) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main() attributes {mqt.entry_point} {
-        %zero_i32 = arith.constant 0 : i32
-        %one_i32 = arith.constant 1 : i32
-        %condition = arith.cmpi slt, %zero_i32, %one_i32 : i32
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
-        %index = arith.addi %c0, %c0 : index
-        %tensor0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
-        %tensor1, %q0 = qtensor.extract %tensor0[%index]
-            : tensor<1x!qco.qubit>
-        %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
-          qco.yield %arg0 : !qco.qubit
-        } else args(%arg0 = %q0) {
-          qco.yield %arg0 : !qco.qubit
+        %c3 = arith.constant 3 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for %index = %c0 to %c3 step %c1
+            iter_args(%arg0 = %q0) -> (!qco.qubit) {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          scf.yield %q2 : !qco.qubit
         }
-        scf.for %iteration = %c0 to %index step %c1 {
-          scf.execute_region {
-            scf.yield
-          }
-        }
-        %tensor2 = qtensor.insert %q1 into %tensor1[%index]
-            : tensor<1x!qco.qubit>
-        qtensor.dealloc %tensor2 : tensor<1x!qco.qubit>
+        qco.sink %q1 : !qco.qubit
         return
       }
     }
@@ -1363,28 +2448,385 @@ TEST_F(CompilerPipelineTest, TargetCompilationFoldsStaticControlExpressions) {
   ASSERT_TRUE(program);
   ASSERT_TRUE(
       program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
-  EXPECT_EQ(program->str().find("qco.if"), std::string::npos);
   EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
-  EXPECT_EQ(program->str().find("scf.execute_region"), std::string::npos);
 }
 
-/** @brief Test: preflight handles deeply nested classical control. */
+/** @brief Test: constant-loop legalization is explicitly bounded. */
 TEST_F(CompilerPipelineTest,
-       TargetCompilationHandlesDeeplyNestedClassicalControl) {
-  constexpr size_t depth = 512;
-  std::string source = R"mlir(
+       TargetCompilationRejectsOversizedConstantLoopTransactionally) {
+  constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main(%condition: i1) attributes {mqt.entry_point} {
-  )mlir";
-  for (size_t level = 0; level < depth; ++level) {
-    source += "scf.if %condition {\n";
-  }
-  for (size_t level = 0; level < depth; ++level) {
-    source += "}\n";
-  }
-  source += R"mlir(
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c4097 = arith.constant 4097 : index
         %q0 = qco.alloc : !qco.qubit
-        qco.sink %q0 : !qco.qubit
+        %q1 = scf.for %index = %c0 to %c4097 step %c1
+            iter_args(%arg0 = %q0) -> (!qco.qubit) {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          scf.yield %q2 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, makeTargetWithProfile(1, ProgramFormat::QCOOptimized, {}),
+      diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(
+      StringRef(diagnostics).contains("target legalization refuses to unroll"))
+      << diagnostics;
+  EXPECT_TRUE(StringRef(diagnostics).contains("4097")) << diagnostics;
+}
+
+/** @brief Test: the loop budget counts aggregate cloned operations. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsAggregateLoopExpansionTransactionally) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2049 = arith.constant 2049 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for %index = %c0 to %c2049 step %c1
+            iter_args(%arg0 = %q0) -> (!qco.qubit) {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          %q3 = qco.h %q2 : !qco.qubit -> !qco.qubit
+          scf.yield %q3 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, makeTargetWithProfile(1, ProgramFormat::QCOOptimized, {}),
+      diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains(
+              "aggregate expansion would clone more than 4096 operations"))
+      << diagnostics;
+  EXPECT_TRUE(StringRef(diagnostics).contains("2049 iterations"))
+      << diagnostics;
+}
+
+/** @brief Test: unrolling can expose a zero-trip nested loop. */
+TEST_F(CompilerPipelineTest, TargetCompilationErasesNewlyConstantZeroTripLoop) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c4097 = arith.constant 4097 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for %outer = %c0 to %c1 step %c1
+            iter_args(%arg0 = %q0) -> (!qco.qubit) {
+          %q2 = scf.for %inner = %c0 to %outer step %c1
+              iter_args(%arg1 = %arg0) -> (!qco.qubit) {
+            %q3 = scf.for %deep = %c0 to %c4097 step %c1
+                iter_args(%arg2 = %arg1) -> (!qco.qubit) {
+              %q4 = qco.x %arg2 : !qco.qubit -> !qco.qubit
+              scf.yield %q4 : !qco.qubit
+            }
+            scf.yield %q3 : !qco.qubit
+          }
+          scf.yield %q2 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/** @brief Test: cloned constant expressions expose nested static loops. */
+TEST_F(CompilerPipelineTest, TargetCompilationFoldsClonedNestedLoopBounds) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %c3 = arith.constant 3 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for %outer = %c0 to %c2 step %c1
+            iter_args(%arg0 = %q0) -> (!qco.qubit) {
+          %upper = arith.addi %outer, %c3 : index
+          %q2 = scf.for %inner = %c0 to %upper step %c1
+              iter_args(%arg1 = %arg0) -> (!qco.qubit) {
+            %q3 = qco.x %arg1 : !qco.qubit -> !qco.qubit
+            scf.yield %q3 : !qco.qubit
+          }
+          scf.yield %q2 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/** @brief Test: cloned region-local bounds expose nested static loops. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationFoldsClonedRegionNestedLoopBounds) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %c3 = arith.constant 3 : index
+        %control = qco.alloc : !qco.qubit
+        %measured_control, %condition = qco.measure %control : !qco.qubit
+        %data = qco.alloc : !qco.qubit
+        %result = scf.for %outer = %c0 to %c2 step %c1
+            iter_args(%current = %data) -> (!qco.qubit) {
+          %next = qco.if %condition args(%arg0 = %current) -> (!qco.qubit) {
+            %upper = arith.addi %outer, %c3 : index
+            %then_result = scf.for %inner = %c0 to %upper step %c1
+                iter_args(%arg1 = %arg0) -> (!qco.qubit) {
+              %updated = qco.x %arg1 : !qco.qubit -> !qco.qubit
+              scf.yield %updated : !qco.qubit
+            }
+            qco.yield %then_result : !qco.qubit
+          } else args(%arg0 = %current) {
+            qco.yield %arg0 : !qco.qubit
+          }
+          scf.yield %next : !qco.qubit
+        }
+        qco.sink %result : !qco.qubit
+        qco.sink %measured_control : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto target = makeTargetWithProfile(
+      2, ProgramFormat::QCOOptimized,
+      {ProgramFeature::MidCircuitMeasurement,
+       ProgramFeature::MeasurementResultUse, ProgramFeature::BooleanComputation,
+       ProgramFeature::ForwardBranching});
+  EXPECT_TRUE(program->compileForTarget(target));
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/** @brief Test: folding an unrolled IV removes statically dead control. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationIgnoresNewlyStaticUntakenControlRegion) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %c4097 = arith.constant 4097 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for %outer = %c0 to %c2 step %c1
+            iter_args(%current = %q0) -> (!qco.qubit) {
+          %condition = arith.cmpi ne, %outer, %c4097 : index
+          %next = qco.if %condition args(%arg0 = %current) -> (!qco.qubit) {
+            %updated = qco.x %arg0 : !qco.qubit -> !qco.qubit
+            qco.yield %updated : !qco.qubit
+          } else args(%arg0 = %current) {
+            %dead = scf.for %inner = %c0 to %c4097 step %c1
+                iter_args(%arg1 = %arg0) -> (!qco.qubit) {
+              %updated = qco.x %arg1 : !qco.qubit -> !qco.qubit
+              scf.yield %updated : !qco.qubit
+            }
+            qco.yield %dead : !qco.qubit
+          }
+          scf.yield %next : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+  EXPECT_EQ(program->str().find("qco.if"), std::string::npos);
+}
+
+/** @brief Test: dead loop expansion does not consume the live clone budget. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationReclaimsBudgetAfterRemovingDeadControlRegion) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %c16 = arith.constant 16 : index
+        %c2040 = arith.constant 2040 : index
+        %c4097 = arith.constant 4097 : index
+        %false = arith.constant false
+        %condition, %upper = scf.for %outer = %c0 to %c2 step %c1
+            iter_args(%previous = %false, %bound = %c0) -> (i1, index) {
+          %next = arith.cmpi ne, %outer, %c4097 : index
+          scf.yield %next, %c16 : i1, index
+        }
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+          %updated = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %updated : !qco.qubit
+        } else args(%arg0 = %q0) {
+          %dead = scf.for %inner = %c0 to %c2040 step %c1
+              iter_args(%arg1 = %arg0) -> (!qco.qubit) {
+            %updated = qco.x %arg1 : !qco.qubit -> !qco.qubit
+            scf.yield %updated : !qco.qubit
+          }
+          qco.yield %dead : !qco.qubit
+        }
+        %q2 = scf.for %index = %c0 to %upper step %c1
+            iter_args(%current = %q1) -> (!qco.qubit) {
+          %updated = qco.h %current : !qco.qubit -> !qco.qubit
+          scf.yield %updated : !qco.qubit
+        }
+        qco.sink %q2 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+  EXPECT_EQ(program->str().find("qco.if"), std::string::npos);
+}
+
+/** @brief Test: an unrolled result can expose a later constant loop. */
+TEST_F(CompilerPipelineTest, TargetCompilationRevisitsLoopUsingUnrolledResult) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c3 = arith.constant 3 : index
+        %last = scf.for %index = %c0 to %c3 step %c1
+            iter_args(%value = %c0) -> (index) {
+          scf.yield %index : index
+        }
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for %index = %c0 to %last step %c1
+            iter_args(%current = %q0) -> (!qco.qubit) {
+          %updated = qco.x %current : !qco.qubit -> !qco.qubit
+          scf.yield %updated : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/** @brief Test: newly static one-trip loops safely forward block arguments. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationSafelyInlinesNewlyStaticLoopResults) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %single_trip_upper = scf.for %seed = %c0 to %c2 step %c1
+            iter_args(%value = %c0) -> (index) {
+          scf.yield %seed : index
+        }
+        %iv_result, %carried_result = scf.for %index = %c0
+            to %single_trip_upper step %c1
+            iter_args(%iv_value = %c0, %carried = %c2) -> (index, index) {
+          scf.yield %index, %carried : index, index
+        }
+        %upper = arith.addi %iv_result, %carried_result : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for %index = %c0 to %upper step %c1
+            iter_args(%current = %q0) -> (!qco.qubit) {
+          %updated = qco.x %current : !qco.qubit -> !qco.qubit
+          scf.yield %updated : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/** @brief Test: many zero-clone loops are processed without full rescans. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationProcessesManySingleTripLoopsLinearly) {
+  constexpr size_t numLoops = 512;
+  std::string source;
+  llvm::raw_string_ostream sourceStream(source);
+  sourceStream << R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %single_trip_upper = scf.for %seed = %c0 to %c2 step %c1
+            iter_args(%value = %c0) -> (index) {
+          scf.yield %seed : index
+        }
+        %q0 = qco.alloc : !qco.qubit
+  )mlir";
+  for (size_t i = 1; i <= numLoops; ++i) {
+    sourceStream << "        %q" << i << " = scf.for %index" << i
+                 << " = %c0 to %single_trip_upper step %c1\n"
+                 << "            iter_args(%arg" << i << " = %q" << i - 1
+                 << ") -> (!qco.qubit) {\n"
+                 << "          %next" << i << " = qco.x %arg" << i
+                 << " : !qco.qubit -> !qco.qubit\n"
+                 << "          scf.yield %next" << i << " : !qco.qubit\n"
+                 << "        }\n";
+  }
+  sourceStream << "        qco.sink %q" << numLoops << R"mlir( : !qco.qubit
         return
       }
     }
@@ -1392,31 +2834,162 @@ TEST_F(CompilerPipelineTest,
 
   auto program = QCOProgram::fromMLIRString(source);
   ASSERT_TRUE(program);
-  const auto target = llvm::cantFail(
-      CompilerTarget::create(1, std::nullopt, std::nullopt, std::nullopt,
-                             {CompilerTarget::ClassicalControl::Conditional}));
-  ASSERT_TRUE(program->compileForTarget(target));
+  EXPECT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
 }
 
-/**
- * @brief Test: constant QCO index-switch can skip unmatched case regions.
- */
+/** @brief Test: nested one-trip loops are inlined without recursive clones. */
 TEST_F(CompilerPipelineTest,
-       TargetCompilationIgnoresStaticQCOIndexSwitchDefaultRegion) {
-  constexpr StringLiteral source = R"mlir(
+       TargetCompilationProcessesDeepSingleTripLoopsLinearly) {
+  constexpr size_t numLoops = 1024U;
+  std::string source;
+  llvm::raw_string_ostream sourceStream(source);
+  sourceStream << R"mlir(
     module {
       func.func @main() attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
-        %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.index_switch %c1 -> (!qco.qubit)
-        case 0 args(%arg0 = %q0) {
-          scf.for %index = %c0 to %c1 step %c1 {
-          }
-          qco.yield %arg0 : !qco.qubit
+        %c2 = arith.constant 2 : index
+        %single_trip_upper = scf.for %seed = %c0 to %c2 step %c1
+            iter_args(%value = %c0) -> (index) {
+          scf.yield %seed : index
         }
-        default args(%arg0 = %q0) {
-          qco.yield %arg0 : !qco.qubit
+        %q0 = qco.alloc : !qco.qubit
+  )mlir";
+  for (size_t i = 1U; i <= numLoops; ++i) {
+    sourceStream << "        %q" << i << " = scf.for %index" << i
+                 << " = %c0 to ";
+    if (i == 1U) {
+      sourceStream << "%single_trip_upper";
+    } else {
+      sourceStream << "%upper" << i;
+    }
+    sourceStream << " step %c1\n"
+                 << "            iter_args(%arg" << i << " = ";
+    if (i == 1U) {
+      sourceStream << "%q0";
+    } else {
+      sourceStream << "%arg" << i - 1U;
+    }
+    sourceStream << ") -> (!qco.qubit) {\n";
+    if (i < numLoops) {
+      sourceStream << "          %upper" << i + 1U << " = arith.addi %index"
+                   << i << ", %c1 : index\n";
+    }
+  }
+  sourceStream << "          %deep = qco.x %arg" << numLoops
+               << " : !qco.qubit -> !qco.qubit\n"
+               << "          scf.yield %deep : !qco.qubit\n"
+               << "        }\n";
+  for (size_t i = numLoops; i > 1U; --i) {
+    sourceStream << "          scf.yield %q" << i << " : !qco.qubit\n"
+                 << "        }\n";
+  }
+  sourceStream << R"mlir(
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/** @brief Test: loop-IV folding follows changed SSA edges only. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationProcessesNestedArithmeticDependenciesLinearly) {
+  constexpr size_t numLoops = 1024U;
+  std::string source;
+  llvm::raw_string_ostream sourceStream(source);
+  sourceStream << R"mlir(
+    module {
+      func.func @main(%dynamic: index) attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %single_trip_upper = scf.for %seed = %c0 to %c2 step %c1
+            iter_args(%value = %c0) -> (index) {
+          scf.yield %seed : index
+        }
+        %q0 = qco.alloc : !qco.qubit
+  )mlir";
+  for (size_t i = 1U; i <= numLoops; ++i) {
+    sourceStream << "        %q" << i << " = scf.for %index" << i
+                 << " = %c0 to ";
+    if (i == 1U) {
+      sourceStream << "%single_trip_upper";
+    } else {
+      sourceStream << "%upper" << i;
+    }
+    sourceStream << " step %c1\n"
+                 << "            iter_args(%arg" << i << " = ";
+    if (i == 1U) {
+      sourceStream << "%q0";
+    } else {
+      sourceStream << "%arg" << i - 1U;
+    }
+    sourceStream << ") -> (!qco.qubit) {\n"
+                 << "          %x" << i << " = arith.addi ";
+    if (i == 1U) {
+      sourceStream << "%dynamic";
+    } else {
+      sourceStream << "%x" << i - 1U;
+    }
+    sourceStream << ", %index" << i << " : index\n";
+    if (i < numLoops) {
+      sourceStream << "          %upper" << i + 1U << " = arith.addi %index"
+                   << i << ", %c1 : index\n";
+    }
+  }
+  sourceStream << "          %condition = arith.cmpi eq, %x" << numLoops
+               << ", %dynamic : index\n"
+               << "          %selected = qco.if %condition args(%arg = %arg"
+               << numLoops << ") -> (!qco.qubit) {\n"
+               << "            %updated = qco.x %arg : !qco.qubit -> "
+                  "!qco.qubit\n"
+               << "            qco.yield %updated : !qco.qubit\n"
+               << "          } else args(%arg = %arg" << numLoops << ") {\n"
+               << "            qco.yield %arg : !qco.qubit\n"
+               << "          }\n"
+               << "          scf.yield %selected : !qco.qubit\n"
+               << "        }\n";
+  for (size_t i = numLoops; i > 1U; --i) {
+    sourceStream << "          scf.yield %q" << i << " : !qco.qubit\n"
+                 << "        }\n";
+  }
+  sourceStream << R"mlir(
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+}
+
+/** @brief Test: unsigned static trip counts cannot bypass the clone limit. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsStaticTripCountAboveInt64Transactionally) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : i64
+        %cmax = arith.constant -1 : i64
+        %c1 = arith.constant 1 : i64
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for unsigned %index = %c0 to %cmax step %c1
+            iter_args(%arg0 = %q0) -> (!qco.qubit) : i64 {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          scf.yield %q2 : !qco.qubit
         }
         qco.sink %q1 : !qco.qubit
         return
@@ -1426,29 +2999,83 @@ TEST_F(CompilerPipelineTest,
 
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(program);
-  ASSERT_TRUE(
-      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
-  EXPECT_EQ(program->str().find("qco.index_switch"), std::string::npos);
-  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, makeTargetWithProfile(1, ProgramFormat::QCOOptimized, {}),
+      diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(
+      StringRef(diagnostics).contains("target legalization refuses to unroll"))
+      << diagnostics;
+  EXPECT_TRUE(StringRef(diagnostics).contains("at least 4097 iterations"))
+      << diagnostics;
 }
 
-/**
- * @brief Test: constant SCF conditionals pick the selected branch first.
- */
-TEST_F(CompilerPipelineTest, TargetCompilationIgnoresStaticScfIfThenBranch) {
+/** @brief Test: integer loop unrolling does not narrow bounds to int64_t. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationSafelyUnrollsWideAndNarrowIntegerLoops) {
+  struct TestCase {
+    StringRef comparison;
+    StringRef type;
+    StringRef upper;
+    StringRef step;
+  };
+  constexpr std::array testCases{
+      TestCase{"unsigned ", "i8", "-1", "1"},
+      TestCase{"unsigned ", "i128", "2", "1"},
+      TestCase{"", "i64", "9223372036854775807", "9223372036854775806"},
+  };
+
+  for (const TestCase testCase : testCases) {
+    SCOPED_TRACE(testCase.type.str());
+    std::string source;
+    llvm::raw_string_ostream sourceStream(source);
+    sourceStream << R"mlir(
+      module {
+        func.func @main() attributes {mqt.entry_point} {
+          %lower = arith.constant 0 : )mlir"
+                 << testCase.type << "\n          %upper = arith.constant "
+                 << testCase.upper << " : " << testCase.type
+                 << "\n          %step = arith.constant " << testCase.step
+                 << " : " << testCase.type << R"mlir(
+          %q0 = qco.alloc : !qco.qubit
+          %q1 = scf.for )mlir"
+                 << testCase.comparison
+                 << R"mlir(%index = %lower to %upper step %step
+              iter_args(%arg0 = %q0) -> (!qco.qubit) : )mlir"
+                 << testCase.type << R"mlir( {
+            %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+            scf.yield %q2 : !qco.qubit
+          }
+          qco.sink %q1 : !qco.qubit
+          return
+        }
+      }
+    )mlir";
+
+    auto program = QCOProgram::fromMLIRString(source);
+    ASSERT_TRUE(program);
+    EXPECT_TRUE(
+        program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+    EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+  }
+}
+
+/** @brief Test: upstream signed trip-count overflow fails before cleanup. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsSignedTripCountOverflowTransactionally) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main() attributes {mqt.entry_point} {
-        %true = arith.constant true
-        %c0 = arith.constant 0 : index
+        %min = arith.constant -9223372036854775808 : index
+        %max = arith.constant 9223372036854775807 : index
         %c1 = arith.constant 1 : index
         %q0 = qco.alloc : !qco.qubit
-        %q1 = scf.if %true -> !qco.qubit {
-          scf.yield %q0 : !qco.qubit
-        } else {
-          scf.for %index = %c0 to %c1 step %c1 {
-          }
-          scf.yield %q0 : !qco.qubit
+        %q1 = scf.for %index = %min to %max step %c1
+            iter_args(%arg0 = %q0) -> (!qco.qubit) {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          scf.yield %q2 : !qco.qubit
         }
         qco.sink %q1 : !qco.qubit
         return
@@ -1458,51 +3085,72 @@ TEST_F(CompilerPipelineTest, TargetCompilationIgnoresStaticScfIfThenBranch) {
 
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(program);
-  ASSERT_TRUE(
-      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
-  EXPECT_EQ(program->str().find("scf.if"), std::string::npos);
-  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program,
+      makeTargetWithProfile(1, ProgramFormat::QCOOptimized,
+                            {ProgramFeature::CountedIteration}),
+      diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics).contains("overflows MLIR's analysis"))
+      << diagnostics;
 }
 
-/**
- * @brief Test: constant SCF index-switch can skip unmatched case regions.
- */
+/** @brief Test: large static loops remain potentially repeating. */
 TEST_F(CompilerPipelineTest,
-       TargetCompilationIgnoresStaticScfIndexSwitchDefaultRegion) {
+       TargetCompilationChecksNextIterationUseForLargeStaticLoop) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {mqt.entry_point} {
+      func.func @main(%reg: !cbit.reg<1>, %output: !cbit.reg<1>)
+          -> !cbit.reg<1>
+          attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
-        %c1 = arith.constant 1 : index
+        %lower = arith.constant 0 : i64
+        %upper = arith.constant -1 : i64
+        %step = arith.constant 1 : i64
         %q0 = qco.alloc : !qco.qubit
-        %q1 = scf.index_switch %c1 -> !qco.qubit
-        case 0 {
-          scf.for %index = %c0 to %c1 step %c1 {
-          }
-          scf.yield %q0 : !qco.qubit
-        }
-        default {
-          scf.yield %q0 : !qco.qubit
+        %q1 = scf.for unsigned %index = %lower to %upper step %step
+            iter_args(%arg0 = %q0) -> (!qco.qubit) : i64 {
+          %loaded = cbit.load %reg[%c0] : !cbit.reg<1>
+          cbit.store %loaded, %output[%c0] : !cbit.reg<1>
+          %q2, %measurement = qco.measure %arg0 : !qco.qubit
+          cbit.store %measurement, %reg[%c0] : !cbit.reg<1>
+          scf.yield %q2 : !qco.qubit
         }
         qco.sink %q1 : !qco.qubit
-        return
+        return %output : !cbit.reg<1>
       }
     }
   )mlir";
 
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(program);
-  ASSERT_TRUE(
-      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
-  EXPECT_EQ(program->str().find("scf.index_switch"), std::string::npos);
-  EXPECT_EQ(program->str().find("scf.for"), std::string::npos);
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program,
+      makeTargetWithProfile(1, ProgramFormat::QCOOptimized,
+                            {ProgramFeature::MidCircuitMeasurement,
+                             ProgramFeature::MeasuredQubitReuse,
+                             ProgramFeature::CountedIteration}),
+      diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics).contains("measurement-result-use"))
+      << diagnostics;
+
+  auto supported = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(supported);
+  EXPECT_TRUE(supported->compileForTarget(makeTargetWithProfile(
+      1, ProgramFormat::QCOOptimized,
+      {ProgramFeature::MidCircuitMeasurement,
+       ProgramFeature::MeasuredQubitReuse, ProgramFeature::MeasurementResultUse,
+       ProgramFeature::CountedIteration})));
 }
 
-/**
- * @brief Test: unsupported region control fails before mapping.
- */
+/** @brief Test: structural regions canonicalize before target legality. */
 TEST_F(CompilerPipelineTest,
-       TargetCompilationRejectsUnsupportedRegionControlFlow) {
+       TargetCompilationCanonicalizesExecuteRegionBeforeLegality) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main() attributes {mqt.entry_point} {
@@ -1518,39 +3166,131 @@ TEST_F(CompilerPipelineTest,
 
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(program);
-  std::string diagnostics;
-  const ScopedDiagnosticHandler handler(program->module().getContext(),
-                                        [&](Diagnostic& diagnostic) {
-                                          diagnostics += diagnostic.str();
-                                          return success();
-                                        });
-
-  EXPECT_FALSE(
+  ASSERT_TRUE(
       program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
-  EXPECT_TRUE(StringRef(diagnostics)
-                  .contains("cannot lower classical-control construct "
-                            "'scf.execute_region'"))
-      << diagnostics;
+  EXPECT_EQ(program->str().find("scf.execute_region"), std::string::npos);
 }
 
-/**
- * @brief Test: branch interfaces from other dialects fail closed as well.
- */
+/** @brief Test: residual counted control needs a selected-format feature. */
 TEST_F(CompilerPipelineTest,
-       TargetCompilationRejectsUnsupportedLLVMBranchControlFlow) {
+       TargetCompilationRequiresCountedIterationForDynamicLoop) {
   constexpr StringLiteral source = R"mlir(
     module {
+      func.func @main(%upper: index) attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for %index = %c0 to %upper step %c1
+            iter_args(%arg0 = %q0) -> (!qco.qubit) {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          scf.yield %q2 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto unsupported = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(unsupported);
+  const auto before = unsupported->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *unsupported, llvm::cantFail(CompilerTarget::create(1)), diagnostics));
+  EXPECT_EQ(unsupported->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics).contains("counted-iteration"))
+      << diagnostics;
+
+  auto supported = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(supported);
+  const auto target = makeTargetWithProfile(1, ProgramFormat::QCOOptimized,
+                                            {ProgramFeature::CountedIteration});
+  ASSERT_TRUE(supported->compileForTarget(target));
+  EXPECT_NE(supported->str().find("scf.for"), std::string::npos);
+}
+
+/** @brief Test: target legality is rooted at the program entry point. */
+TEST_F(CompilerPipelineTest, TargetCompilationIgnoresUnusedHelperControl) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @helper(%condition: i1) -> i64 {
+        %zero = arith.constant 0 : i64
+        %result = scf.while (%value = %zero) : (i64) -> i64 {
+          scf.condition(%condition) %value : i64
+        } do {
+        ^bb0(%value: i64):
+          %one = arith.constant 1 : i64
+          %next = arith.addi %value, %one : i64
+          scf.yield %next : i64
+        }
+        %min = arith.constant -9223372036854775808 : index
+        %max = arith.constant 9223372036854775807 : index
+        %step = arith.constant 1 : index
+        %loop_result = scf.for %index = %min to %max step %step
+            iter_args(%current = %result) -> i64 {
+          scf.yield %current : i64
+        }
+        return %loop_result : i64
+      }
       func.func @main() attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
         qco.sink %q0 : !qco.qubit
         return
       }
-      llvm.func @helper(%condition: i1) {
-        llvm.cond_br %condition, ^yes, ^no
-      ^yes:
-        llvm.return
-      ^no:
-        llvm.return
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(
+      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_NE(program->str().find("scf.while"), std::string::npos);
+}
+
+/** @brief Test: unused helpers do not participate in target conformance. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationIgnoresTargetInvalidUnusedHelper) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @helper() {
+        %q0 = qco.static 99 : !qco.qubit
+        %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+      func.func @main() attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  std::vector operations{
+      llvm::cantFail(CompilerTarget::Operation::create("x", 1, 0))};
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, std::nullopt, std::move(operations)));
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+
+  ASSERT_TRUE(program->compileForTarget(target));
+  EXPECT_NE(program->str().find("qco.static 99"), std::string::npos);
+  EXPECT_NE(program->str().find("qco.h"), std::string::npos);
+}
+
+/** @brief Test: calls in the entry-point subtree fail closed. */
+TEST_F(CompilerPipelineTest, TargetCompilationRejectsReachableFunctionCall) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @helper() {
+        return
+      }
+      func.func @main() attributes {mqt.entry_point} {
+        func.call @helper() : () -> ()
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return
       }
     }
   )mlir";
@@ -1559,161 +3299,202 @@ TEST_F(CompilerPipelineTest,
   ASSERT_TRUE(program);
   const auto before = program->str();
   std::string diagnostics;
-  const ScopedDiagnosticHandler handler(program->module().getContext(),
-                                        [&](Diagnostic& diagnostic) {
-                                          diagnostics += diagnostic.str();
-                                          return success();
-                                        });
-
-  EXPECT_FALSE(
-      program->compileForTarget(llvm::cantFail(CompilerTarget::create(1))));
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, llvm::cantFail(CompilerTarget::create(1)), diagnostics));
   EXPECT_EQ(program->str(), before);
-  EXPECT_TRUE(StringRef(diagnostics)
-                  .contains("cannot lower classical-control construct "
-                            "'llvm.cond_br'"))
+  EXPECT_TRUE(
+      StringRef(diagnostics).contains("reachable function call 'func.call'"))
       << diagnostics;
 }
 
-/**
- * @brief Test: structured control cannot capture linear quantum state.
- */
+/** @brief Test: all reachable call-interface operations fail closed. */
 TEST_F(CompilerPipelineTest,
-       TargetCompilationRejectsQuantumStateCapturedByStructuredControl) {
-  const auto expectRejected =
-      [&](const StringRef source,
-          const CompilerTarget::ClassicalControl capability,
-          const StringRef operation) {
-        SCOPED_TRACE(operation.str());
-        auto program = QCOProgram::fromMLIRString(source.str());
-        ASSERT_TRUE(program);
-        const auto before = program->str();
-        std::string diagnostics;
-        const ScopedDiagnosticHandler handler(program->module().getContext(),
-                                              [&](Diagnostic& diagnostic) {
-                                                diagnostics += diagnostic.str();
-                                                return success();
-                                              });
-        const auto target = llvm::cantFail(CompilerTarget::create(
-            1, std::nullopt, std::nullopt, std::nullopt, {capability}));
-
-        EXPECT_FALSE(program->compileForTarget(target));
-        EXPECT_EQ(program->str(), before);
-        const std::string expected =
-            "quantum state captured by classical-control construct '" +
-            operation.str() + "'";
-        EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
-      };
-
-  expectRejected(R"mlir(
+       TargetCompilationRejectsReachableIndirectFunctionCall) {
+  constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main(%condition: i1)
-          attributes {mqt.entry_point} {
+      func.func @main(%callee: () -> ()) attributes {mqt.entry_point} {
+        func.call_indirect %callee() : () -> ()
         %q0 = qco.alloc : !qco.qubit
-        scf.if %condition {
-          %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
-          qco.sink %q1 : !qco.qubit
-        }
+        qco.sink %q0 : !qco.qubit
         return
       }
     }
-  )mlir",
-                 CompilerTarget::ClassicalControl::Conditional, "scf.if");
+  )mlir";
 
-  expectRejected(R"mlir(
-    module {
-      func.func @main(%selector: index)
-          attributes {mqt.entry_point} {
-        %q0 = qco.alloc : !qco.qubit
-        scf.index_switch %selector
-        case 0 {
-          %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
-          qco.sink %q1 : !qco.qubit
-          scf.yield
-        }
-        default {
-          scf.yield
-        }
-        return
-      }
-    }
-  )mlir",
-                 CompilerTarget::ClassicalControl::MultiwayBranch,
-                 "scf.index_switch");
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, llvm::cantFail(CompilerTarget::create(1)), diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("reachable function call 'func.call_indirect'"))
+      << diagnostics;
 }
 
-/**
- * @brief Test: generic SCF conditionals cannot produce quantum state.
- */
-TEST_F(CompilerPipelineTest,
-       TargetCompilationRejectsQuantumStateNestedInGenericSCFControl) {
-  const auto expectRejected =
-      [&](const StringRef source,
-          const CompilerTarget::ClassicalControl capability,
-          const StringRef operation) {
-        SCOPED_TRACE(operation.str());
-        auto program = QCOProgram::fromMLIRString(source.str());
-        ASSERT_TRUE(program);
-        const auto before = program->str();
-        std::string diagnostics;
-        const ScopedDiagnosticHandler handler(program->module().getContext(),
-                                              [&](Diagnostic& diagnostic) {
-                                                diagnostics += diagnostic.str();
-                                                return success();
-                                              });
-        const auto target = llvm::cantFail(CompilerTarget::create(
-            1, std::nullopt, std::nullopt, std::nullopt, {capability}));
-
-        EXPECT_FALSE(program->compileForTarget(target));
-        EXPECT_EQ(program->str(), before);
-        const std::string expected =
-            "quantum state nested in generic classical-control construct '" +
-            operation.str() + "'";
-        EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
-      };
-
-  expectRejected(R"mlir(
+/** @brief Test: runtime branch provenance and arithmetic remain explicit. */
+TEST_F(CompilerPipelineTest, TargetCompilationChecksBranchConditionSemantics) {
+  constexpr StringLiteral externalCondition = R"mlir(
     module {
-      func.func @main(%condition: i1)
-          attributes {mqt.entry_point} {
-        %q = scf.if %condition -> !qco.qubit {
-          %then = qco.alloc : !qco.qubit
-          scf.yield %then : !qco.qubit
-        } else {
-          %else = qco.alloc : !qco.qubit
-          scf.yield %else : !qco.qubit
+      func.func @main(%condition: i1) attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %q2 : !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
         }
-        qco.sink %q : !qco.qubit
+        qco.sink %q1 : !qco.qubit
         return
       }
     }
-  )mlir",
-                 CompilerTarget::ClassicalControl::Conditional, "scf.if");
+  )mlir";
+  const std::vector baseline{
+      ProgramFeature::MidCircuitMeasurement, ProgramFeature::MeasuredQubitReuse,
+      ProgramFeature::MeasurementResultUse,  ProgramFeature::BooleanComputation,
+      ProgramFeature::ForwardBranching,
+  };
+  const auto baselineTarget =
+      makeTargetWithProfile(2, ProgramFormat::QIRAdaptive, baseline);
 
-  expectRejected(R"mlir(
+  auto external = QCOProgram::fromMLIRString(externalCondition.str());
+  ASSERT_TRUE(external);
+  const auto externalBefore = external->str();
+  std::string externalDiagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(*external, baselineTarget,
+                                               externalDiagnostics,
+                                               ProgramFormat::QIRAdaptive));
+  EXPECT_EQ(external->str(), externalBefore);
+  EXPECT_TRUE(StringRef(externalDiagnostics)
+                  .contains("derived from a measurement result"))
+      << externalDiagnostics;
+
+  constexpr StringLiteral widerArithmetic = R"mlir(
     module {
-      func.func @main(%selector: index)
-          attributes {mqt.entry_point} {
-        %q = scf.index_switch %selector -> !qco.qubit
-        case 0 {
-          %case = qco.alloc : !qco.qubit
-          scf.yield %case : !qco.qubit
+      func.func @main() attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q2, %first = qco.measure %q0 : !qco.qubit
+        %q3, %second = qco.measure %q1 : !qco.qubit
+        %first_i64 = arith.extui %first : i1 to i64
+        %second_i64 = arith.extui %second : i1 to i64
+        %sum = arith.addi %first_i64, %second_i64 : i64
+        %one = arith.constant 1 : i64
+        %condition = arith.cmpi eq, %sum, %one : i64
+        %q4 = qco.if %condition args(%arg0 = %q2) -> (!qco.qubit) {
+          %q5 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %q5 : !qco.qubit
+        } else args(%arg0 = %q2) {
+          qco.yield %arg0 : !qco.qubit
         }
-        default {
-          %default = qco.alloc : !qco.qubit
-          scf.yield %default : !qco.qubit
-        }
-        qco.sink %q : !qco.qubit
+        qco.sink %q4 : !qco.qubit
+        qco.sink %q3 : !qco.qubit
         return
       }
     }
-  )mlir",
-                 CompilerTarget::ClassicalControl::MultiwayBranch,
-                 "scf.index_switch");
+  )mlir";
+
+  auto unsupported = QCOProgram::fromMLIRString(widerArithmetic.str());
+  ASSERT_TRUE(unsupported);
+  const auto unsupportedBefore = unsupported->str();
+  std::string unsupportedDiagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(*unsupported, baselineTarget,
+                                               unsupportedDiagnostics,
+                                               ProgramFormat::QIRAdaptive));
+  EXPECT_EQ(unsupported->str(), unsupportedBefore);
+  EXPECT_TRUE(StringRef(unsupportedDiagnostics).contains("integer-computation"))
+      << unsupportedDiagnostics;
+
+  auto supported = QCOProgram::fromMLIRString(widerArithmetic.str());
+  ASSERT_TRUE(supported);
+  auto integerFeatures = baseline;
+  integerFeatures.emplace_back(ProgramFeature::IntegerComputation);
+  EXPECT_TRUE(supported->compileForTarget(
+      makeTargetWithProfile(2, ProgramFormat::QIRAdaptive,
+                            std::move(integerFeatures)),
+      ProgramFormat::QIRAdaptive));
 }
 
-/**
- * @brief Test: dynamic qubit indexing remains an explicit unsupported form.
- */
+/** @brief Test: a loop induction value retains bound provenance. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationAcceptsMeasurementDerivedLoopInductionFeedback) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1, %measurement = qco.measure %q0 : !qco.qubit
+        %measurement_index = arith.index_castui %measurement : i1 to index
+        %upper = arith.muli %measurement_index, %c2 : index
+        %last = scf.for %index = %c0 to %upper step %c1
+            iter_args(%current = %c0) -> index {
+          scf.yield %index : index
+        }
+        %condition = arith.cmpi ne, %last, %c0 : index
+        %q2 = qco.if %condition args(%arg0 = %q1) -> (!qco.qubit) {
+          %q3 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %q3 : !qco.qubit
+        } else args(%arg0 = %q1) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        qco.sink %q2 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto target = makeTargetWithProfile(
+      1, ProgramFormat::QCOOptimized,
+      {ProgramFeature::MidCircuitMeasurement,
+       ProgramFeature::MeasuredQubitReuse, ProgramFeature::MeasurementResultUse,
+       ProgramFeature::BooleanComputation, ProgramFeature::IntegerComputation,
+       ProgramFeature::ForwardBranching, ProgramFeature::CountedIteration});
+  EXPECT_TRUE(program->compileForTarget(target));
+}
+
+/** @brief Test: target compilation validates its program-format boundary. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsUnsupportedAndInvalidProgramFormats) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  const std::vector formats{
+      ProgramFormat::QCImport,
+      ProgramFormat::QCO,
+      ProgramFormat::Jeff,
+      static_cast<ProgramFormat>(255),
+  };
+  const auto target = llvm::cantFail(CompilerTarget::create(1));
+
+  for (const ProgramFormat format : formats) {
+    SCOPED_TRACE(static_cast<unsigned>(format));
+    auto program = QCOProgram::fromMLIRString(source.str());
+    ASSERT_TRUE(program);
+    const auto before = program->str();
+    std::string diagnostics;
+    EXPECT_FALSE(
+        compileForTargetWithDiagnostics(*program, target, diagnostics, format));
+    EXPECT_EQ(program->str(), before);
+    EXPECT_TRUE(StringRef(diagnostics)
+                    .contains("target compilation requires QCOOptimized, QC, "
+                              "OpenQASM3, or QIR "
+                              "output"))
+        << diagnostics;
+  }
+}
+
+/** @brief Test: dynamic qubit indexing remains an unsupported lowering form. */
 TEST_F(CompilerPipelineTest,
        TargetCompilationRejectsDynamicQubitIndexingBeforeMapping) {
   constexpr StringLiteral source = R"mlir(
@@ -1735,241 +3516,426 @@ TEST_F(CompilerPipelineTest,
 
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(program);
+  const auto before = program->str();
   std::string diagnostics;
-  const ScopedDiagnosticHandler handler(program->module().getContext(),
-                                        [&](Diagnostic& diagnostic) {
-                                          diagnostics += diagnostic.str();
-                                          return success();
-                                        });
-
-  EXPECT_FALSE(
-      program->compileForTarget(llvm::cantFail(CompilerTarget::create(2))));
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, llvm::cantFail(CompilerTarget::create(2)), diagnostics));
+  EXPECT_EQ(program->str(), before);
   EXPECT_TRUE(StringRef(diagnostics)
                   .contains("'qtensor.extract' with a dynamic qubit index"))
       << diagnostics;
 }
 
-/**
- * @brief Test: frontend loops over qubit registers fail before mapping.
- */
+/** @brief Test: unranked quantum inputs fail target conformance safely. */
 TEST_F(CompilerPipelineTest,
-       TargetCompilationRejectsLoopCarriedQubitRegisterBeforeMapping) {
-  constexpr StringLiteral source = R"qasm(OPENQASM 3.0;
-qubit[2] q;
-for int i in [0:1] {
-  h q[0];
-}
-)qasm";
+       TargetCompilationRejectsUnrankedQuantumTensorInputTransactionally) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%input: tensor<*x!qco.qubit>)
+          -> tensor<*x!qco.qubit> attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
+        qco.sink %q1 : !qco.qubit
+        return %input : tensor<*x!qco.qubit>
+      }
+    }
+  )mlir";
 
-  auto qc = QCProgram::fromQASMString(source.str());
-  ASSERT_TRUE(qc);
-  auto program = std::move(*qc).intoQCO();
+  auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(program);
-  ASSERT_NE(program->str().find("scf.for"), std::string::npos);
-  ASSERT_NE(program->str().find("tensor<2x!qco.qubit>"), std::string::npos);
   const auto before = program->str();
-
   std::string diagnostics;
-  const ScopedDiagnosticHandler handler(program->module().getContext(),
-                                        [&](Diagnostic& diagnostic) {
-                                          diagnostics += diagnostic.str();
-                                          return success();
-                                        });
-  const auto target = llvm::cantFail(
-      CompilerTarget::create(2, std::nullopt, std::nullopt, std::nullopt,
-                             {CompilerTarget::ClassicalControl::Iteration}));
-
-  EXPECT_FALSE(program->compileForTarget(target));
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, llvm::cantFail(CompilerTarget::create(1)), diagnostics));
   EXPECT_EQ(program->str(), before);
   EXPECT_TRUE(StringRef(diagnostics)
-                  .contains("cannot lower quantum tensor state carried through "
-                            "classical-control construct 'scf.for'"))
+                  .contains("target conformance requires quantum function "
+                            "inputs to be assigned to qco.static target sites"))
       << diagnostics;
 }
 
-/**
- * @brief Test: unsupported quantum tensor state has a stable diagnostic.
- */
+/** @brief Test: nested tuple quantum inputs fail target conformance safely. */
 TEST_F(CompilerPipelineTest,
-       TargetCompilationRejectsQuantumTensorStructuredControlState) {
-  const auto expectRejected =
-      [&](const StringRef source,
-          const CompilerTarget::ClassicalControl control,
-          const StringRef operation) {
-        SCOPED_TRACE(operation.str());
-        auto program = QCOProgram::fromMLIRString(source.str());
-        ASSERT_TRUE(program);
-        const auto before = program->str();
-        std::string diagnostics;
-        const ScopedDiagnosticHandler handler(program->module().getContext(),
-                                              [&](Diagnostic& diagnostic) {
-                                                diagnostics += diagnostic.str();
-                                                return success();
-                                              });
-        const auto target = llvm::cantFail(CompilerTarget::create(
-            2, std::nullopt, std::nullopt, std::nullopt, {control}));
-
-        EXPECT_FALSE(program->compileForTarget(target));
-        EXPECT_EQ(program->str(), before);
-        const StringRef message(diagnostics);
-        EXPECT_TRUE(
-            message.contains("cannot lower quantum tensor state carried "
-                             "through classical-control construct"))
-            << diagnostics;
-        EXPECT_TRUE(message.contains(operation)) << diagnostics;
-      };
-
-  expectRejected(R"mlir(
+       TargetCompilationRejectsNestedTupleQuantumInputTransactionally) {
+  constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main(%condition: i1)
-          attributes {mqt.entry_point} {
-        %q = qco.alloc : !qco.qubit
-        %c2 = arith.constant 2 : index
-        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
-        %tensor1 = scf.if %condition -> tensor<2x!qco.qubit> {
-          scf.yield %tensor0 : tensor<2x!qco.qubit>
-        } else {
-          scf.yield %tensor0 : tensor<2x!qco.qubit>
-        }
-        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
-        qco.sink %q : !qco.qubit
-        return
+      func.func @main(%input: tuple<i1, tuple<!qco.qubit>>)
+          -> tuple<i1, tuple<!qco.qubit>> attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
+        qco.sink %q1 : !qco.qubit
+        return %input : tuple<i1, tuple<!qco.qubit>>
       }
     }
-  )mlir",
-                 CompilerTarget::ClassicalControl::Conditional, "scf.if");
+  )mlir";
 
-  expectRejected(R"mlir(
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, llvm::cantFail(CompilerTarget::create(1)), diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("target conformance requires quantum function "
+                            "inputs to be assigned to qco.static target sites"))
+      << diagnostics;
+}
+
+/** @brief Test: nested LLVM quantum inputs fail target conformance safely. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsNestedLLVMQuantumInputTransactionally) {
+  constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main(%condition: i1, %size: index)
+      func.func @main(
+          %input: !llvm.struct<(i1, array<2 x !qco.qubit>)>)
+          -> !llvm.struct<(i1, array<2 x !qco.qubit>)>
           attributes {mqt.entry_point} {
-        %tensor0 = qtensor.alloc(%size) : tensor<?x!qco.qubit>
-        %tensor1 = qco.if %condition
-            args(%arg0 = %tensor0) -> (tensor<?x!qco.qubit>) {
-          qco.yield %arg0 : tensor<?x!qco.qubit>
-        } else args(%arg0 = %tensor0) {
-          qco.yield %arg0 : tensor<?x!qco.qubit>
-        }
-        qtensor.dealloc %tensor1 : tensor<?x!qco.qubit>
-        return
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return %input : !llvm.struct<(i1, array<2 x !qco.qubit>)>
       }
     }
-  )mlir",
-                 CompilerTarget::ClassicalControl::Conditional, "qco.if");
+  )mlir";
 
-  expectRejected(R"mlir(
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, llvm::cantFail(CompilerTarget::create(1)), diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("target conformance requires quantum function "
+                            "inputs to be assigned to qco.static target sites"))
+      << diagnostics;
+}
+
+/** @brief Test: recursive LLVM quantum carriers are rejected safely. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsRecursiveLLVMQuantumCarrierTransactionally) {
+  constexpr StringLiteral source = R"mlir(
+    !recursive = !llvm.struct<"recursive", (
+        !llvm.struct<"recursive">, i1, !qco.qubit)>
     module {
-      func.func @main() attributes {mqt.entry_point} {
-        %true = arith.constant true
-        %c2 = arith.constant 2 : index
-        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
-        %tensor1 = qco.if %true
-            args(%arg0 = %tensor0) -> (tensor<2x!qco.qubit>) {
-          qco.yield %arg0 : tensor<2x!qco.qubit>
-        } else args(%arg0 = %tensor0) {
-          qco.yield %arg0 : tensor<2x!qco.qubit>
-        }
-        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
-        return
+      func.func @main(%input: !recursive) -> !recursive
+          attributes {mqt.entry_point} {
+        %result = llvm.freeze %input : !recursive
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return %result : !recursive
       }
     }
-  )mlir",
-                 CompilerTarget::ClassicalControl::Conditional, "qco.if");
+  )mlir";
 
-  expectRejected(R"mlir(
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program,
+      makeTargetWithProfile(1, ProgramFormat::QCOOptimized,
+                            {ProgramFeature::BooleanComputation}),
+      diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("quantum state carried through unmodeled operation "
+                            "'llvm.freeze'"))
+      << diagnostics;
+}
+
+/** @brief Test: generic type parameters cannot hide quantum state. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsLLVMTargetExtensionQuantumCarrier) {
+  constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main(%condition: i1)
-          attributes {mqt.entry_point} {
+      func.func @main(%input: i1) -> i1 attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return %input : i1
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  MLIRContext* const programContext = program->module().getContext();
+  const Type carrier = LLVM::LLVMTargetExtType::get(
+      programContext, "mqt.test", {qco::QubitType::get(programContext)}, {});
+  func::FuncOp function = *program->module().getOps<func::FuncOp>().begin();
+  function.getArgument(0).setType(carrier);
+  function.setType(FunctionType::get(programContext, {carrier}, {carrier}));
+  func::ReturnOp returnOp = *function.getOps<func::ReturnOp>().begin();
+  OpBuilder builder(returnOp);
+  auto frozen = LLVM::FreezeOp::create(builder, returnOp.getLoc(),
+                                       function.getArgument(0));
+  returnOp.setOperand(0, frozen.getRes());
+
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, llvm::cantFail(CompilerTarget::create(1)), diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("quantum state carried through unmodeled operation "
+                            "'llvm.freeze'"))
+      << diagnostics;
+}
+
+/** @brief Test: deeply nested acyclic types use a bounded native stack. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsDeepAcyclicQuantumCarrierIteratively) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%input: i1) -> i1 attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        return %input : i1
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  MLIRContext* const programContext = program->module().getContext();
+  Type carrier = qco::QubitType::get(programContext);
+  for (size_t depth = 0U; depth < 4096U; ++depth) {
+    carrier = LLVM::LLVMArrayType::get(carrier, 1U);
+  }
+  func::FuncOp function = *program->module().getOps<func::FuncOp>().begin();
+  function.getArgument(0).setType(carrier);
+  function.setType(FunctionType::get(programContext, {carrier}, {carrier}));
+
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, llvm::cantFail(CompilerTarget::create(1)), diagnostics));
+  EXPECT_EQ(function.getArgument(0).getType(), carrier);
+  EXPECT_FALSE(program->module()->hasAttr("mqt.target_env"));
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("target conformance requires quantum function "
+                            "inputs to be assigned to qco.static target sites"))
+      << diagnostics;
+}
+
+/** @brief Test: runtime control cannot carry a qubit tensor. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsQuantumTensorCarriedByDynamicLoop) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%upper: index) attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
         %c2 = arith.constant 2 : index
         %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
-        %tensor1 = qco.if %condition
-            args(%arg0 = %tensor0) -> (tensor<2x!qco.qubit>) {
+        %tensor1 = scf.for %index = %c0 to %upper step %c1
+            iter_args(%arg0 = %tensor0) -> (tensor<2x!qco.qubit>) {
           %tensor2, %q0 = qtensor.extract %arg0[%c0]
               : tensor<2x!qco.qubit>
-          %tensor3 = qtensor.insert %q0 into %tensor2[%c0]
+          %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
+          %tensor3 = qtensor.insert %q1 into %tensor2[%c0]
               : tensor<2x!qco.qubit>
-          %tensor4, %q1 = qtensor.extract %tensor3[%c0]
-              : tensor<2x!qco.qubit>
-          %tensor5 = qtensor.insert %q1 into %tensor4[%c0]
-              : tensor<2x!qco.qubit>
-          qco.yield %tensor5 : tensor<2x!qco.qubit>
-        } else args(%arg0 = %tensor0) {
-          qco.yield %arg0 : tensor<2x!qco.qubit>
+          scf.yield %tensor3 : tensor<2x!qco.qubit>
         }
         qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
         return
       }
     }
-  )mlir",
-                 CompilerTarget::ClassicalControl::Conditional, "qco.if");
+  )mlir";
 
-  expectRejected(R"mlir(
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  const auto target = makeTargetWithProfile(2, ProgramFormat::QCOOptimized,
+                                            {ProgramFeature::CountedIteration});
+  EXPECT_FALSE(compileForTargetWithDiagnostics(*program, target, diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("quantum tensor state carried through "
+                            "classical-control construct "
+                            "'scf.for'"))
+      << diagnostics;
+}
+
+/** @brief Test: unmodeled quantum carriers fail without reaching mapping. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsUnmodeledQuantumCarrierTransactionally) {
+  constexpr StringLiteral source = R"mlir(
     module {
       func.func @main() attributes {mqt.entry_point} {
-        %q = qco.alloc : !qco.qubit
-        %c2 = arith.constant 2 : index
-        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
-        %true = arith.constant true
-        %tensor1 = scf.while (%arg0 = %tensor0)
-            : (tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit> {
-          scf.condition(%true) %arg0 : tensor<2x!qco.qubit>
-        } do {
-        ^bb0(%arg0: tensor<2x!qco.qubit>):
-          scf.yield %arg0 : tensor<2x!qco.qubit>
-        }
-        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
-        qco.sink %q : !qco.qubit
+        %control = qco.alloc : !qco.qubit
+        %lhs = qco.alloc : !qco.qubit
+        %rhs = qco.alloc : !qco.qubit
+        %measured_control, %condition = qco.measure %control : !qco.qubit
+        %selected = arith.select %condition, %lhs, %rhs : !qco.qubit
+        %result = qco.x %selected : !qco.qubit -> !qco.qubit
+        qco.sink %result : !qco.qubit
+        qco.sink %measured_control : !qco.qubit
         return
       }
     }
-  )mlir",
-                 CompilerTarget::ClassicalControl::ConditionalLoop,
-                 "scf.while");
+  )mlir";
 
-  expectRejected(R"mlir(
-    module {
-      func.func @main(%selector: index)
-          attributes {mqt.entry_point} {
-        %c2 = arith.constant 2 : index
-        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
-        %tensor1 = qco.index_switch %selector -> (tensor<2x!qco.qubit>)
-        case 0 args(%arg0 = %tensor0) {
-          qco.yield %arg0 : tensor<2x!qco.qubit>
-        }
-        default args(%arg0 = %tensor0) {
-          qco.yield %arg0 : tensor<2x!qco.qubit>
-        }
-        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
-        return
-      }
-    }
-  )mlir",
-                 CompilerTarget::ClassicalControl::MultiwayBranch,
-                 "qco.index_switch");
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  const auto target = makeTargetWithProfile(
+      3, ProgramFormat::QIRAdaptive,
+      {ProgramFeature::MidCircuitMeasurement,
+       ProgramFeature::MeasuredQubitReuse, ProgramFeature::MeasurementResultUse,
+       ProgramFeature::BooleanComputation, ProgramFeature::ForwardBranching});
+  EXPECT_FALSE(compileForTargetWithDiagnostics(*program, target, diagnostics,
+                                               ProgramFormat::QIRAdaptive));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains("cannot lower quantum state carried through unmodeled "
+                    "operation 'arith.select'"))
+      << diagnostics;
+}
 
-  expectRejected(R"mlir(
+/** @brief Test: unmodeled regions cannot hide captured quantum state. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsUnmodeledQuantumCapturingRegion) {
+  constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main(%selector: index)
-          attributes {mqt.entry_point} {
-        %q = qco.alloc : !qco.qubit
-        %c2 = arith.constant 2 : index
-        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
-        %tensor1 = scf.index_switch %selector -> tensor<2x!qco.qubit>
-        case 0 {
-          scf.yield %tensor0 : tensor<2x!qco.qubit>
-        }
-        default {
-          scf.yield %tensor0 : tensor<2x!qco.qubit>
-        }
-        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
-        qco.sink %q : !qco.qubit
+      func.func @main() attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
         return
       }
     }
-  )mlir",
-                 CompilerTarget::ClassicalControl::MultiwayBranch,
-                 "scf.index_switch");
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  MLIRContext* const programContext = program->module().getContext();
+  programContext->allowUnregisteredDialects();
+  programContext->getOrLoadDialect<ub::UBDialect>();
+  func::FuncOp function = *program->module().getOps<func::FuncOp>().begin();
+  qco::AllocOp allocation = *function.getOps<qco::AllocOp>().begin();
+  qco::SinkOp originalSink = *function.getOps<qco::SinkOp>().begin();
+  originalSink.erase();
+
+  OpBuilder builder(function.getBody().front().getTerminator());
+  OperationState state(builder.getUnknownLoc(), "test.capture");
+  state.addRegion();
+  Operation* const capture = builder.create(state);
+  Region& region = capture->getRegion(0);
+  region.push_back(new Block());
+  builder.setInsertionPointToStart(&region.front());
+  qco::SinkOp::create(builder, capture->getLoc(), allocation.getResult());
+  ub::UnreachableOp::create(builder, capture->getLoc());
+
+  const auto before = program->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, llvm::cantFail(CompilerTarget::create(1)), diagnostics));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains(
+              "cannot verify regions of unmodeled operation 'test.capture'"))
+      << diagnostics;
+}
+
+/** @brief Test: quantum-capture indexing stays linear in control nesting. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationIndexesDeepStructuredControlCaptures) {
+  constexpr size_t numNestedControls = 512;
+  const auto makeSource = [](const bool captureQuantumState) {
+    std::string source;
+    llvm::raw_string_ostream sourceStream(source);
+    sourceStream << R"mlir(
+      module {
+        func.func @main(%reg: !cbit.reg<1>) -> i1 attributes {mqt.entry_point} {
+          %c0 = arith.constant 0 : index
+          %q0 = qco.alloc : !qco.qubit
+          %q1, %condition = qco.measure %q0 : !qco.qubit
+    )mlir";
+    for (size_t i = 0; i < numNestedControls; ++i) {
+      sourceStream << "      scf.if %condition {\n";
+    }
+    if (captureQuantumState) {
+      sourceStream << R"mlir(
+        %q2 = qco.x %q1 : !qco.qubit -> !qco.qubit
+        qco.sink %q2 : !qco.qubit
+      )mlir";
+    } else {
+      sourceStream << "      cbit.store %condition, %reg[%c0] : !cbit.reg<1>\n";
+    }
+    for (size_t i = 0; i < numNestedControls; ++i) {
+      sourceStream << "      }\n";
+    }
+    if (!captureQuantumState) {
+      sourceStream << "      qco.sink %q1 : !qco.qubit\n";
+    }
+    sourceStream << R"mlir(
+          return %condition : i1
+        }
+      }
+    )mlir";
+    return source;
+  };
+
+  const auto target = makeTargetWithProfile(
+      1, ProgramFormat::QCOOptimized,
+      {ProgramFeature::MidCircuitMeasurement,
+       ProgramFeature::MeasuredQubitReuse, ProgramFeature::MeasurementResultUse,
+       ProgramFeature::BooleanComputation, ProgramFeature::ForwardBranching});
+
+  auto uncaptured = QCOProgram::fromMLIRString(makeSource(false));
+  ASSERT_TRUE(uncaptured);
+  EXPECT_TRUE(uncaptured->compileForTarget(target));
+
+  auto captured = QCOProgram::fromMLIRString(makeSource(true));
+  ASSERT_TRUE(captured);
+  const auto before = captured->str();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(*captured, target, diagnostics));
+  EXPECT_EQ(captured->str(), before);
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains(
+              "quantum state captured by classical-control construct 'scf.if'"))
+      << diagnostics;
+}
+
+/** @brief Test: runtime control cannot capture linear quantum state. */
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsQuantumStateCapturedByConditional) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1, %condition = qco.measure %q0 : !qco.qubit
+        scf.if %condition {
+          %q2 = qco.x %q1 : !qco.qubit -> !qco.qubit
+          qco.sink %q2 : !qco.qubit
+        }
+        return
+      }
+    }
+  )mlir";
+
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  const auto before = program->str();
+  std::string diagnostics;
+  const auto target = makeTargetWithProfile(
+      1, ProgramFormat::QIRAdaptive,
+      {ProgramFeature::MidCircuitMeasurement,
+       ProgramFeature::MeasuredQubitReuse, ProgramFeature::MeasurementResultUse,
+       ProgramFeature::BooleanComputation, ProgramFeature::ForwardBranching});
+  EXPECT_FALSE(compileForTargetWithDiagnostics(*program, target, diagnostics,
+                                               ProgramFormat::QIRAdaptive));
+  EXPECT_EQ(program->str(), before);
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains(
+              "quantum state captured by classical-control construct 'scf.if'"))
+      << diagnostics;
 }
 
 /**

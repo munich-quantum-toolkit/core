@@ -82,44 +82,6 @@ MQT Core also no longer provides density-matrix decision diagrams or the noise
 operations that depended on them. Consumers must provide this functionality or
 use another implementation.
 
-### Explicit target classical-control capabilities
-
-`CompilerTarget` now rejects runtime classical control unless the target
-declares each supported form. Straight-line target compilation is unchanged.
-Code that compiles runtime conditionals, loops, or multiway branches must opt in
-when it constructs the target.
-
-For example, declare measurement-conditioned branching in Python as follows:
-
-```python
-from mqt.core.mlir import CompilerTarget
-
-target = CompilerTarget(
-    3,
-    classical_control=[CompilerTarget.ClassicalControl.CONDITIONAL],
-)
-```
-
-The equivalent C++ construction is:
-
-```cpp
-using ClassicalControl = mlir::CompilerTarget::ClassicalControl;
-auto target = mlir::CompilerTarget::create(
-    3, std::nullopt, std::nullopt, std::nullopt,
-    {ClassicalControl::Conditional});
-```
-
-Declare `Iteration`, `ConditionalLoop`, and `MultiwayBranch` separately when the
-target supports counted loops, condition-terminated loops, or switches. An empty
-declaration is the new fail-closed default.
-
-Targets created from a QDMI device infer `Conditional` when the device
-advertises QIR Adaptive. Use the `classical_control` argument of `from_device`
-or `from_device_id` to add optional capabilities that QDMI does not expose. QASM
-3 or measurement support alone does not imply runtime branching. Explicit
-additions are trusted caller assertions and are not checked against device
-metadata. Devices without program-format metadata infer no capabilities.
-
 ### Private `nlohmann_json` dependency
 
 MQT Core uses `nlohmann_json` only inside its implementation. It no longer

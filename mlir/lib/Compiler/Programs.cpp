@@ -471,13 +471,32 @@ bool QCOProgram::decomposeMultiControlled(const uint64_t minQubits) {
 bool QCOProgram::compileForTarget(const CompilerTarget& target,
                                   const bool enableTiming,
                                   const bool enableStatistics) {
-  return succeeded(runPasses(
-      mod(),
-      [&target](OpPassManager& pm) {
-        populateTargetCompilationPipeline(pm, target);
-      },
-      "failed to compile the QCO program for the target", enableTiming,
-      enableStatistics));
+  return compileForTarget(target, ProgramFormat::QCOOptimized, enableTiming,
+                          enableStatistics);
+}
+
+bool QCOProgram::compileForTarget(const CompilerTarget& target,
+                                  const ProgramFormat format,
+                                  const bool enableTiming,
+                                  const bool enableStatistics) {
+  if (!isTargetCompilationFormat(format)) {
+    mod().emitError()
+        << "target compilation requires QCOOptimized, QC, OpenQASM3, or QIR "
+           "output";
+    return false;
+  }
+  auto compiled = copy();
+  if (failed(runPasses(
+          compiled.mod(),
+          [&target, format](OpPassManager& pm) {
+            populateTargetCompilationPipeline(pm, target, format);
+          },
+          "failed to compile the QCO program for the target", enableTiming,
+          enableStatistics))) {
+    return false;
+  }
+  *this = std::move(compiled);
+  return true;
 }
 
 std::optional<QCProgram> QCOProgram::intoQC() && {
@@ -664,9 +683,11 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
                    const CompilerTarget* const target,
                    const std::string_view qcoPipeline, const bool enableTiming,
                    const bool enableStatistics) {
-  if (target != nullptr &&
-      (output == ProgramFormat::QCImport || output == ProgramFormat::QCO ||
-       output == ProgramFormat::Jeff)) {
+  if (!isValidProgramFormat(output)) {
+    llvm::errs() << "unknown compiler output format.\n";
+    return std::nullopt;
+  }
+  if (target != nullptr && !isTargetCompilationFormat(output)) {
     llvm::errs()
         << "a compiler target requires QCOOptimized, QC, OpenQASM3, or QIR "
            "output.\n";
@@ -723,7 +744,8 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
   }
 
   if (target != nullptr) {
-    if (!qco->compileForTarget(*target, enableTiming, enableStatistics)) {
+    if (!qco->compileForTarget(*target, output, enableTiming,
+                               enableStatistics)) {
       return std::nullopt;
     }
   } else {

@@ -14,12 +14,14 @@
  */
 
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -74,6 +76,83 @@ TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
       }
       func.func @lowered_cbit() {
         %reg = memref.alloc() {mqt.register_name = "lowered"} : memref<2xi1>
+        return
+      }
+    }
+  )mlir"));
+}
+
+TEST_F(MQTIRTest, RoundTripsTargetEnvironment) {
+  auto moduleOp = parse(R"mlir(
+    module attributes {
+      mqt.target_env = #mqt.target_env<
+          format = "qir-adaptive",
+          features = ["measurement-result-use", "forward-branching"],
+          optionalFeaturesKnown = false>
+    } {
+      func.func @main() { return }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+
+  const auto targetEnv = (*moduleOp)->getAttrOfType<mqt::TargetEnvAttr>(
+      mqt::TargetEnvAttr::getOperationAttributeName());
+  ASSERT_TRUE(targetEnv);
+  EXPECT_EQ(targetEnv.getFormat().getValue(), "qir-adaptive");
+  EXPECT_FALSE(targetEnv.getOptionalFeaturesKnown());
+  EXPECT_TRUE(targetEnv.supports("measurement-result-use"));
+  EXPECT_TRUE(targetEnv.supports("forward-branching"));
+  EXPECT_FALSE(targetEnv.supports("counted-iteration"));
+
+  std::string printed;
+  llvm::raw_string_ostream stream(printed);
+  moduleOp->print(stream);
+  auto reparsed = parse(printed);
+  ASSERT_TRUE(reparsed);
+  EXPECT_EQ(
+      (*reparsed)->getAttr(mqt::TargetEnvAttr::getOperationAttributeName()),
+      targetEnv);
+}
+
+TEST_F(MQTIRTest, RejectsInvalidTargetEnvironments) {
+  EXPECT_FALSE(parse(R"mlir(
+    module attributes {
+      mqt.target_env = #mqt.target_env<format = "", features = [],
+          optionalFeaturesKnown = true>
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module attributes {
+      mqt.target_env = #mqt.target_env<format = "qir-adaptive",
+          features = [""], optionalFeaturesKnown = true>
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module attributes {
+      mqt.target_env = #mqt.target_env<format = "qir-adaptive",
+          features = [1 : i64], optionalFeaturesKnown = true>
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module attributes {
+      mqt.target_env = #mqt.target_env<format = "qir-adaptive",
+          features = ["forward-branching", "forward-branching"],
+          optionalFeaturesKnown = true>
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module attributes {mqt.target_env = "qir-adaptive"} {}
+  )mlir"));
+}
+
+TEST_F(MQTIRTest, RejectsTargetEnvironmentOutsideModule) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() attributes {
+        mqt.target_env = #mqt.target_env<format = "qir-adaptive",
+            features = ["forward-branching"],
+            optionalFeaturesKnown = false>
+      } {
         return
       }
     }

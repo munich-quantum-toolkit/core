@@ -20,8 +20,15 @@ add_mlir_library(
 
 mqt_mlir_target_use_project_options(MQTCompilerTarget)
 
-target_sources(MQTCompilerTarget PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-                                        FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/Target.h)
+target_sources(
+  MQTCompilerTarget
+  PUBLIC FILE_SET
+         HEADERS
+         BASE_DIRS
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+         FILES
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/ProgramFormat.h
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/Target.h)
 
 # Build the optional QDMI-to-compiler-target adapter
 set(LLVM_REQUIRES_EH ON)
@@ -58,6 +65,7 @@ add_mlir_library(
   LLVMBitWriter
   MLIRCBitDialect
   MLIRPass
+  MLIRSCFUtils
   MLIRTransforms
   MLIRTransformUtils
   MLIRMQTTransforms
@@ -75,6 +83,7 @@ add_mlir_library(
   MLIRTargetLLVMIRExport
   MLIRBuiltinToLLVMIRTranslation
   MLIRLLVMToLLVMIRTranslation
+  MLIRLLVMDialect
   MLIRMathDialect
   MLIRMQTDialect
   MLIRMQTUtils
@@ -85,7 +94,7 @@ mqt_mlir_target_use_project_options(MQTCompilerPipeline)
 
 # collect header files
 file(GLOB_RECURSE COMPILER_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/*.h")
-list(FILTER COMPILER_HEADERS_SOURCE EXCLUDE REGEX "/(QDMIAdapter|Target)\\.h$")
+list(FILTER COMPILER_HEADERS_SOURCE EXCLUDE REGEX "/(ProgramFormat|QDMIAdapter|Target)\\.h$")
 
 target_sources(MQTCompilerPipeline PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
                                           FILES ${COMPILER_HEADERS_SOURCE})

@@ -10,6 +10,7 @@
 
 #include "mlir/Compiler/QDMIAdapter.h"
 
+#include "mlir/Compiler/ProgramFormat.h"
 #include "mlir/Compiler/Target.h"
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
@@ -322,9 +323,55 @@ snapshotOperations(
   return targetOperations;
 }
 
-[[nodiscard]] static llvm::Expected<CompilerTarget> snapshotCompilerTarget(
-    const qdmi::Device& device,
-    std::vector<CompilerTarget::ClassicalControl> classicalControl) {
+[[nodiscard]] static llvm::Expected<
+    std::optional<std::vector<CompilerTarget::ExecutionProfile>>>
+snapshotExecutionProfiles(const qdmi::Device& device) {
+  const auto formats = device.tryGetSupportedProgramFormats();
+  if (!formats) {
+    return std::nullopt;
+  }
+
+  const auto hasFormat = [&formats](const QDMI_Program_Format format) {
+    return std::ranges::find(*formats, format) != formats->end();
+  };
+  std::vector<CompilerTarget::ExecutionProfile> profiles;
+  profiles.reserve(3);
+  if (hasFormat(QDMI_PROGRAM_FORMAT_QASM3)) {
+    auto profile = CompilerTarget::ExecutionProfile::create(
+        ProgramFormat::OpenQASM3, {}, false);
+    if (!profile) {
+      return profile.takeError();
+    }
+    profiles.emplace_back(std::move(*profile));
+  }
+  if (hasFormat(QDMI_PROGRAM_FORMAT_QIRBASESTRING) ||
+      hasFormat(QDMI_PROGRAM_FORMAT_QIRBASEMODULE)) {
+    auto profile = CompilerTarget::ExecutionProfile::create(
+        ProgramFormat::QIRBase, {}, false);
+    if (!profile) {
+      return profile.takeError();
+    }
+    profiles.emplace_back(std::move(*profile));
+  }
+  if (hasFormat(QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING) ||
+      hasFormat(QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)) {
+    auto profile = CompilerTarget::ExecutionProfile::create(
+        ProgramFormat::QIRAdaptive,
+        {ProgramFeature::MidCircuitMeasurement,
+         ProgramFeature::MeasuredQubitReuse,
+         ProgramFeature::MeasurementResultUse,
+         ProgramFeature::BooleanComputation, ProgramFeature::ForwardBranching},
+        false);
+    if (!profile) {
+      return profile.takeError();
+    }
+    profiles.emplace_back(std::move(*profile));
+  }
+  return std::optional(std::move(profiles));
+}
+
+[[nodiscard]] static llvm::Expected<CompilerTarget>
+snapshotCompilerTarget(const qdmi::Device& device) {
   auto deviceName = device.getName();
   const auto deviceSites = device.getSites();
   if (auto error = requireCircuitDevice(
@@ -380,18 +427,14 @@ snapshotOperations(
   if (!durationUnit) {
     return durationUnit.takeError();
   }
-  const auto programFormats = device.getSupportedProgramFormats();
-  if (std::ranges::any_of(programFormats, [](const auto format) {
-        return format == QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING ||
-               format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
-      })) {
-    classicalControl.emplace_back(
-        CompilerTarget::ClassicalControl::Conditional);
+  auto executionProfiles = snapshotExecutionProfiles(device);
+  if (!executionProfiles) {
+    return executionProfiles.takeError();
   }
   return CompilerTarget::create(std::move(deviceName), std::move(sites),
                                 std::move(couplings), std::move(*operations),
                                 std::move(*durationUnit),
-                                std::move(classicalControl));
+                                std::move(*executionProfiles));
 }
 
 [[nodiscard]] static llvm::Error qdmiError(const llvm::Twine& action,
@@ -411,25 +454,21 @@ qdmiError(const llvm::Twine& action, const std::exception_ptr& exception) {
   }
 }
 
-llvm::Expected<CompilerTarget> compilerTargetFromDevice(
-    const qdmi::Device& device,
-    std::vector<CompilerTarget::ClassicalControl> additionalClassicalControl) {
+llvm::Expected<CompilerTarget>
+compilerTargetFromDevice(const qdmi::Device& device) {
   try {
-    return snapshotCompilerTarget(device,
-                                  std::move(additionalClassicalControl));
+    return snapshotCompilerTarget(device);
   } catch (...) {
     return qdmiError("Failed to query QDMI device", std::current_exception());
   }
 }
 
-llvm::Expected<CompilerTarget> compilerTargetFromDeviceId(
-    const std::string_view deviceId,
-    std::vector<CompilerTarget::ClassicalControl> additionalClassicalControl) {
+llvm::Expected<CompilerTarget>
+compilerTargetFromDeviceId(const std::string_view deviceId) {
   const auto action = std::string("Failed to open or query QDMI device '") +
                       std::string(deviceId) + "'";
   try {
-    return snapshotCompilerTarget(qdmi::Session::openDevice(deviceId),
-                                  std::move(additionalClassicalControl));
+    return snapshotCompilerTarget(qdmi::Session::openDevice(deviceId));
   } catch (...) {
     return qdmiError(action, std::current_exception());
   }
