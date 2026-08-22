@@ -519,7 +519,6 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
        .source = "OPENQASM 3.1; qubit q; x $;"},
       {.name = "float-overflow",
        .source = "OPENQASM 3.1; float value = 1e99999;"},
-      {.name = "unsupported-angle", .source = "OPENQASM 3.1; angle theta;"},
       {.name = "unsupported-duration",
        .source = "OPENQASM 3.1; duration delay;"},
       {.name = "unsupported-opaque",
@@ -554,6 +553,18 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
     ASSERT_FALSE(parsed.diagnostics.empty());
     EXPECT_FALSE(parsed.diagnostics.front().message.empty());
   }
+}
+
+TEST(OpenQASMFrontendTest, ParsesFixedAngleDeclarationsAndCasts) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+const uint WIDTH = 8;
+const angle[WIDTH] fixed = angle[WIDTH](pi / 2);
+angle machine = angle(tau / 4);
+)qasm";
+
+  auto parsed = oq3::frontend::parseOpenQASM(source);
+  ASSERT_TRUE(parsed) << parsed.diagnostics.front().message;
 }
 
 TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {

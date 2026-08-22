@@ -191,6 +191,7 @@ private:
   std::vector<Value> qubitValues;
   std::vector<Value> classicalRegisters;
   std::vector<Value> scalarValues;
+  llvm::DenseMap<frontend::ScalarId, Value> provenInductionValues;
   mutable std::vector<std::optional<size_t>> expressionEmissionCosts;
   mutable std::vector<std::optional<size_t>> bitVectorExpressionEmissionCosts;
   DenseMap<const oq3::frontend::GateDefinition*, bool>
@@ -396,6 +397,55 @@ private:
     llvm_unreachable("unknown scalar expression kind");
   }
 
+  Value emitProvenIndexExpression(OpBuilder& opBuilder,
+                                  const frontend::ExpressionId id) {
+    const auto& expression = program.expressions.at(id);
+    auto loc = opBuilder.getInsertionPoint() == opBuilder.getBlock()->end()
+                   ? opBuilder.getUnknownLoc()
+                   : opBuilder.getInsertionPoint()->getLoc();
+    switch (expression.kind) {
+    case frontend::ExpressionKind::Constant: {
+      const auto value =
+          expression.type == frontend::ScalarType::Uint
+              ? static_cast<int64_t>(std::get<uint64_t>(expression.constant))
+              : std::get<int64_t>(expression.constant);
+      return arith::ConstantIndexOp::create(opBuilder, loc, value);
+    }
+    case frontend::ExpressionKind::Variable: {
+      const auto induction = provenInductionValues.find(expression.variable);
+      if (induction == provenInductionValues.end()) {
+        llvm_unreachable("proven index refers to an inactive induction");
+      }
+      return induction->second;
+    }
+    case frontend::ExpressionKind::Cast:
+      return emitProvenIndexExpression(opBuilder, expression.lhs);
+    case frontend::ExpressionKind::Negate: {
+      auto zero = arith::ConstantIndexOp::create(opBuilder, loc, 0);
+      auto operand = emitProvenIndexExpression(opBuilder, expression.lhs);
+      return arith::SubIOp::create(opBuilder, loc, zero, operand);
+    }
+    case frontend::ExpressionKind::Add:
+    case frontend::ExpressionKind::Subtract:
+    case frontend::ExpressionKind::Multiply: {
+      auto lhs = emitProvenIndexExpression(opBuilder, expression.lhs);
+      auto rhs = emitProvenIndexExpression(opBuilder, expression.rhs);
+      switch (expression.kind) {
+      case frontend::ExpressionKind::Add:
+        return arith::AddIOp::create(opBuilder, loc, lhs, rhs);
+      case frontend::ExpressionKind::Subtract:
+        return arith::SubIOp::create(opBuilder, loc, lhs, rhs);
+      case frontend::ExpressionKind::Multiply:
+        return arith::MulIOp::create(opBuilder, loc, lhs, rhs);
+      default:
+        llvm_unreachable("not a proven affine binary expression");
+      }
+    }
+    default:
+      llvm_unreachable("semantic analysis produced a non-affine expression");
+    }
+  }
+
   [[nodiscard]] size_t bitVectorExpressionEmissionCost(
       const frontend::BitVectorExpressionId id) const {
     if (bitVectorExpressionEmissionCosts[id]) {
@@ -451,67 +501,25 @@ private:
            chargeScaledEmission(11, multiplicity, projectedEmission, source);
   }
 
-  [[nodiscard]] static llvm::SmallDenseSet<frontend::RegisterId, 4>
-  collectDynamicallyIndexedRegisters(
-      const ArrayRef<frontend::QubitReference> references) {
-    llvm::SmallDenseSet<frontend::RegisterId, 4> registers;
-    for (const auto& reference : references) {
-      if (reference.kind == frontend::QubitReferenceKind::Register &&
-          reference.dynamicIndex) {
-        registers.insert(reference.symbol);
-      }
-    }
-    return registers;
-  }
-
   [[nodiscard]] bool
   chargeQubitAccesses(const ArrayRef<frontend::QubitReference> references,
                       const size_t multiplicity, size_t& projectedEmission,
                       const oq3::frontend::SourceLocation& source) const {
-    struct RegisterAccessCounts {
-      size_t total = 0;
-      size_t dynamic = 0;
-    };
-    const auto dynamicallyIndexedRegisters =
-        collectDynamicallyIndexedRegisters(references);
-    llvm::DenseMap<frontend::RegisterId, RegisterAccessCounts> priorAccesses;
-
     for (const auto& reference : references) {
       if (reference.kind != frontend::QubitReferenceKind::Register ||
           program.registers.at(reference.symbol).isScalar) {
         continue;
       }
 
-      if (reference.dynamicIndex &&
-          !chargeExpressionEmission(*reference.dynamicIndex, multiplicity,
+      if (reference.provenIndex &&
+          !chargeExpressionEmission(*reference.provenIndex, multiplicity,
                                     projectedEmission, source)) {
         return false;
       }
-      // A static access emits a constant index and a load. A checked dynamic
-      // access additionally normalizes signed negative indices, verifies the
-      // bounds, and casts to the MLIR index type.
-      const size_t accessCost = reference.dynamicIndex ? 12 : 2;
-      if (!chargeScaledEmission(accessCost, multiplicity, projectedEmission,
-                                source)) {
+      /// Each access emits an index value and a load. Semantic analysis has
+      /// already proved a nonconstant index's bounds and uniqueness.
+      if (!chargeScaledEmission(2, multiplicity, projectedEmission, source)) {
         return false;
-      }
-
-      if (!dynamicallyIndexedRegisters.contains(reference.symbol)) {
-        continue;
-      }
-      auto& accesses = priorAccesses[reference.symbol];
-      const auto comparisons =
-          reference.dynamicIndex ? accesses.total : accesses.dynamic;
-      if (comparisons > PROJECTED_EMISSION_LIMIT / 2) {
-        return reportProjectedEmissionLimit(source);
-      }
-      if (!chargeScaledEmission(2 * comparisons, multiplicity,
-                                projectedEmission, source)) {
-        return false;
-      }
-      ++accesses.total;
-      if (reference.dynamicIndex) {
-        ++accesses.dynamic;
       }
     }
     return true;
@@ -624,7 +632,8 @@ private:
           }
         } else if (const auto* loop = std::get_if<oq3::frontend::ForStatement>(
                        &statement.data)) {
-          if (!chargeScaledEmission(16, multiplicity, projectedEmission,
+          const size_t localCost = loop->provenPositiveRange ? 7 : 16;
+          if (!chargeScaledEmission(localCost, multiplicity, projectedEmission,
                                     statement.location) ||
               !chargeExpressionEmission(loop->start, multiplicity,
                                         projectedEmission,
@@ -1484,56 +1493,15 @@ private:
           program.registers.at(reference.symbol).isScalar) {
         continue;
       }
-      if (!reference.dynamicIndex) {
+      if (!reference.provenIndex) {
         indices[position] = arith::ConstantIndexOp::create(
             builder, static_cast<int64_t>(reference.index));
         continue;
       }
-      const auto width =
-          static_cast<int64_t>(program.registers.at(reference.symbol).width);
-      auto checked = emitCheckedIndex(*reference.dynamicIndex, width,
-                                      "dynamic qubit index out of bounds");
       indices[position] =
-          arith::IndexCastOp::create(builder, builder.getIndexType(), checked);
+          emitProvenIndexExpression(builder, *reference.provenIndex);
     }
     return indices;
-  }
-
-  void
-  emitDistinctQubitAssertions(ArrayRef<frontend::QubitReference> references,
-                              ValueRange indices, const StringRef message) {
-    const auto dynamicallyIndexedRegisters =
-        collectDynamicallyIndexedRegisters(references);
-    if (dynamicallyIndexedRegisters.empty()) {
-      return;
-    }
-
-    struct PriorRegisterAccesses {
-      SmallVector<size_t> all;
-      SmallVector<size_t> dynamic;
-    };
-    llvm::DenseMap<frontend::RegisterId, PriorRegisterAccesses> priorAccesses;
-
-    for (const auto [position, reference] : llvm::enumerate(references)) {
-      if (reference.kind != frontend::QubitReferenceKind::Register ||
-          program.registers.at(reference.symbol).isScalar ||
-          !dynamicallyIndexedRegisters.contains(reference.symbol)) {
-        continue;
-      }
-      auto& accesses = priorAccesses[reference.symbol];
-      const ArrayRef<size_t> possibleAliases =
-          reference.dynamicIndex ? accesses.all : accesses.dynamic;
-      for (const auto previousPosition : possibleAliases) {
-        auto distinct =
-            arith::CmpIOp::create(builder, arith::CmpIPredicate::ne,
-                                  indices[previousPosition], indices[position]);
-        cf::AssertOp::create(builder, distinct, message);
-      }
-      accesses.all.push_back(position);
-      if (reference.dynamicIndex) {
-        accesses.dynamic.push_back(position);
-      }
-    }
   }
 
   [[nodiscard]] SmallVector<Value>
@@ -1748,9 +1716,6 @@ private:
       parameters.push_back(parameter);
     }
     const auto qubitIndices = emitQubitIndices(application.qubits);
-    emitDistinctQubitAssertions(
-        application.qubits, qubitIndices,
-        "gate operands must not reference the same qubit");
     SmallVector<int64_t> controlCounts(application.modifiers.size(), 0);
     SmallVector<std::variant<double, Value>> modifierOperands(
         application.modifiers.size());
@@ -2147,9 +2112,6 @@ private:
             }
           } else if constexpr (std::is_same_v<T, frontend::BarrierStatement>) {
             const auto indices = emitQubitIndices(data.qubits);
-            emitDistinctQubitAssertions(
-                data.qubits, indices,
-                "barrier operands must not reference the same qubit");
             builder.barrier(resolveQubits(data.qubits, gateQubits, indices));
           } else if constexpr (std::is_same_v<T, frontend::IfStatement>) {
             emitIf(data, gateParameters, gateQubits);
@@ -2401,6 +2363,37 @@ private:
     const auto slots = mutatedState(loop.body);
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
+
+    if (loop.provenPositiveRange) {
+      auto start = emitProvenIndexExpression(builder, loop.start);
+      auto step = emitProvenIndexExpression(builder, loop.step);
+      auto stop = emitProvenIndexExpression(builder, loop.stop);
+      auto exclusiveStop = arith::AddIOp::create(
+          builder, stop, arith::ConstantIndexOp::create(builder, 1));
+      auto forOp = scf::ForOp::create(builder, start, exclusiveStop, step,
+                                      initialValues);
+      {
+        OpBuilder::InsertionGuard guard(builder);
+        auto* body = forOp.getBody();
+        if (!body->empty()) {
+          body->back().erase();
+        }
+        builder.setInsertionPointToEnd(body);
+        scalarValues = savedScalars;
+        assignState(slots, forOp.getRegionIterArgs());
+        provenInductionValues[loop.inductionVariable] = forOp.getInductionVar();
+        scalarValues.at(loop.inductionVariable) = arith::IndexCastOp::create(
+            builder, builder.getI64Type(), forOp.getInductionVar());
+        for (const auto statement : loop.body) {
+          emitStatement(statement, gateParameters, gateQubits);
+        }
+        scf::YieldOp::create(builder, stateValues(slots));
+      }
+      scalarValues = savedScalars;
+      provenInductionValues.erase(loop.inductionVariable);
+      assignState(slots, forOp.getResults());
+      return;
+    }
 
     auto start = emitExpression(builder, loop.start, {});
     auto step = emitExpression(builder, loop.step, {});

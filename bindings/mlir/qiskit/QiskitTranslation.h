@@ -191,6 +191,8 @@ enum class ExpressionKind : uint8_t {
   Cast,
   Value,
   Index,
+  ClassicalBit,
+  ClassicalRegister,
 };
 enum class BinaryOperation : uint8_t {
   BitAnd,
@@ -227,6 +229,8 @@ struct Expression {
   bool boolValue = false;
   uint64_t uintValue = 0;
   double floatValue = 0.0;
+  uint32_t bit = 0;
+  Register reg;
   std::unique_ptr<Expression> left;
   std::unique_ptr<Expression> right;
 };

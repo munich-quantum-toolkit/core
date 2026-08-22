@@ -39,7 +39,7 @@ releases may include breaking changes.
 #### Import and export
 
 - ✨ Add Qiskit circuit import and target-aware export to the compiler
-  collection ([#2031], [#2133], [#2140], [#2150]) ([**@burgholzer**],
+  collection ([#2031], [#2133], [#2140], [#2150], [#2175]) ([**@burgholzer**],
   [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105])
@@ -50,8 +50,10 @@ releases may include breaking changes.
   [#1787], [#1815], [#1823], [#1933], [#1978], [#1979], [#2007], [#2026],
   [#2030], [#2066]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
-- ✨ Add OpenQASM import and export to the MQT Compiler Collection ([#1910],
-  [#1987], [#1994], [#2003], [#2026]) ([**@burgholzer**], [**@denialhaag**])
+- ✨ Add OpenQASM import and export to the MQT Compiler Collection, including
+  fixed-angle constants and proven affine quantum-register indices ([#1910],
+  [#1987], [#1994], [#2003], [#2026], [#2169], [#2203]) ([**@burgholzer**],
+  [**@denialhaag**])
 
 #### Passes and transformations
 
@@ -788,6 +790,9 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2203]: https://github.com/munich-quantum-toolkit/core/pull/2203
+[#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
+[#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
 [#2162]: https://github.com/munich-quantum-toolkit/core/pull/2162
 [#2158]: https://github.com/munich-quantum-toolkit/core/pull/2158

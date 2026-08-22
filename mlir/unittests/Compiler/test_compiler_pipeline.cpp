@@ -615,6 +615,39 @@ roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
 
 namespace {
 
+TEST(OpenQASMCompilerOutputTest, LowersAffineQuantumLoopsToJeff) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[4] q;
+bit[4] c;
+for int i in [0:3] {
+  h q[i];
+}
+for int i in [0:2] {
+  cx q[i], q[i + 1];
+}
+c = measure q;
+)qasm";
+
+  auto qc = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(qc);
+  const auto imported = qc->str();
+  EXPECT_EQ(imported.find("i128"), std::string::npos);
+  EXPECT_EQ(imported.find("arith.select"), std::string::npos);
+  EXPECT_EQ(imported.find("cf.assert"), std::string::npos);
+
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+  ASSERT_TRUE(qco->cleanup());
+  ASSERT_TRUE(qco->runPassPipeline("mqt-qco-default"));
+  ASSERT_TRUE(qco->cleanup());
+  const auto optimized = qco->str();
+  auto jeff = std::move(*qco).intoJeff();
+  ASSERT_TRUE(jeff) << optimized;
+  EXPECT_TRUE(jeff->cleanup());
+}
+
 TEST(OpenQASMCompilerOutputTest,
      CanonicalizesMixedScalarAndRegisterResultsThroughQCO) {
   constexpr llvm::StringLiteral source = R"qasm(

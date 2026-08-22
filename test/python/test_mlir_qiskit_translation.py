@@ -35,6 +35,7 @@ from qiskit.circuit import (
     library,
 )
 from qiskit.circuit.classical import expr, types
+from qiskit.circuit.controlflow import CASE_DEFAULT, IfElseOp
 from qiskit.quantum_info import Operator, random_unitary
 
 from mqt.core.mlir import CompilerTarget, QCProgram, compile_program
@@ -1010,6 +1011,7 @@ def test_qiskit_import_zero_initializes_clbits_before_control_flow() -> None:
             expr.greater(expr.cast(expr.lift(2, types.Uint(8)), types.Float()), 0.5),
             "arith.uitofp",
         ),
+        (expr.cast(expr.lift(0.5, types.Float()), types.Bool()), "arith.cmpf une"),
         (expr.greater(expr.negate(expr.lift(0.5, types.Float())), -1.0), "arith.negf"),
     ],
 )
@@ -1024,6 +1026,262 @@ def test_bool_uint_and_float_expressions(condition: expr.Expr, operation: str) -
     assert operation in program.ir
 
 
+def _cbit_load_indices(ir: str) -> list[int]:
+    """Extract the constant indices used by CBit loads.
+
+    Args:
+        ir: MLIR text to inspect.
+
+    Returns:
+        The CBit load indices in occurrence order.
+    """
+    constants = {
+        name: int(value) for name, value in re.findall(r"(?m)^\s*(%[-\w.$]+) = arith\.constant (\d+) : index$", ir)
+    }
+    return [constants[name] for name in re.findall(r"(?m)^\s*%[-\w.$]+ = cbit\.load [^\[]+\[(%[-\w.$]+)\]", ir)]
+
+
+def test_boolean_expression_literals_are_imported() -> None:
+    """Normalize Qiskit's integer-backed Boolean Value nodes."""
+    false_literal = False
+    true_literal = True
+    circuit = QuantumCircuit(1)
+    with circuit.if_test(expr.logic_or(expr.lift(false_literal), expr.lift(true_literal))):
+        circuit.x(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert "arith.constant false" in ir
+    assert "arith.constant true" in ir
+    assert "arith.ori" in ir
+
+
+def test_uint_register_cast_to_bool_tests_all_bits() -> None:
+    """Treat a Uint register as true when any bit is set."""
+    circuit = QuantumCircuit(1, 2)
+    circuit.x(0)
+    circuit.measure(0, 1)
+    with circuit.if_test(expr.cast(circuit.cregs[0], types.Bool())):
+        circuit.z(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert "arith.cmpi ne" in ir
+    assert "arith.trunci" not in ir
+
+
+def test_public_expression_condition_mutation_is_observed() -> None:
+    """Import the current public expression after condition mutation."""
+    circuit = QuantumCircuit(1, 2)
+    with circuit.if_test(expr.logic_and(circuit.clbits[0], circuit.clbits[1])):
+        circuit.x(0)
+    operation = circuit.data[0].operation
+    assert isinstance(operation, IfElseOp)
+    operation.condition = expr.logic_or(circuit.clbits[0], circuit.clbits[1])
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert "arith.ori" in ir
+    assert "arith.andi" not in ir
+
+
+def test_public_tuple_condition_mutation_is_observed() -> None:
+    """Import the current bit and value after tuple-condition mutation."""
+    body = QuantumCircuit(1)
+    body.x(0)
+    circuit = QuantumCircuit(1, 2)
+    circuit.if_test((circuit.clbits[0], False), body, circuit.qubits, [])
+    operation = circuit.data[0].operation
+    assert isinstance(operation, IfElseOp)
+    operation.condition = (circuit.clbits[1], True)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert _cbit_load_indices(ir) == [1]
+    assert "arith.constant true" in ir
+    assert "arith.constant false" not in ir
+
+
+def test_narrow_uint_switch_literal_is_rejected() -> None:
+    """Reject a Uint literal that does not fit its declared width."""
+    circuit = QuantumCircuit(1, 1)
+    with circuit.switch(expr.Value(3, types.Uint(1)), None, None, None, label=None) as case, case(0):
+        circuit.x(0)
+
+    with pytest.raises(RuntimeError, match=r"Uint literal.*does not fit"):
+        QCProgram.from_qiskit(circuit)
+
+
+def test_malformed_public_expression_type_is_rejected() -> None:
+    """Reject a public expression whose declared result type is inconsistent."""
+    invalid = expr.Binary(
+        expr.Binary.Op.ADD,
+        expr.Value(1, types.Uint(1)),
+        expr.Value(1, types.Uint(1)),
+        types.Bool(),
+    )
+    circuit = QuantumCircuit(1)
+    with circuit.if_test(expr.equal(1, 1)):
+        circuit.x(0)
+    operation = circuit.data[0].operation
+    assert isinstance(operation, IfElseOp)
+    operation.condition = invalid
+
+    with pytest.raises(RuntimeError, match="incompatible operator and operand types"):
+        QCProgram.from_qiskit(circuit)
+
+
+def test_classical_expression_clbit_captures_import() -> None:
+    """Keep Clbit identity when an expression capture uses a nontrivial order."""
+    circuit = QuantumCircuit(1, 2)
+    condition = expr.logic_and(circuit.clbits[1], expr.logic_not(circuit.clbits[0]))
+    with circuit.if_test(condition):
+        circuit.x(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert _cbit_load_indices(ir) == [1, 0]
+    assert "arith.xori" in ir
+    assert "arith.andi" in ir
+    assert "scf.if" in ir
+
+
+def test_classical_expression_register_captures_round_trip_on_import() -> None:
+    """Pack a captured register in Qiskit's little-endian bit order."""
+    circuit = QuantumCircuit(1, 3)
+    condition = expr.equal(expr.bit_xor(circuit.cregs[0], 1), 5)
+    with circuit.if_test(condition):
+        circuit.x(0)
+
+    program = QCProgram.from_qiskit(circuit)
+    assert QCProgram.from_mlir_str(program.ir).ir == program.ir
+    ir = program.ir
+
+    assert _cbit_load_indices(ir) == [0, 1, 2]
+    assert ir.count("arith.shli") == 2
+    assert "arith.xori" in ir
+    assert "arith.cmpi eq" in ir
+
+
+def test_nested_classical_expression_captures_import() -> None:
+    """Compose nested local capture maps without changing root Clbit identity."""
+    circuit = QuantumCircuit(1, 3)
+    with circuit.if_test(expr.logic_not(circuit.clbits[2])):
+        condition = expr.logic_and(circuit.clbits[0], expr.logic_not(circuit.clbits[1]))
+        with circuit.while_loop(condition, None, None, None, label=None):
+            circuit.x(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert _cbit_load_indices(ir) == [2, 0, 1]
+    assert "scf.if" in ir
+    assert "scf.while" in ir
+
+
+def test_switch_expression_captures_import() -> None:
+    """Read an expression switch target through Qiskit's public Python tree."""
+    circuit = QuantumCircuit(1, 2)
+    with circuit.switch(expr.bit_xor(circuit.cregs[0], 1), None, None, None, label=None) as case:
+        with case(0):
+            circuit.x(0)
+        with case(case.DEFAULT):
+            circuit.h(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert _cbit_load_indices(ir) == [0, 1]
+    assert "arith.xori" in ir
+    assert "scf.index_switch" in ir
+
+
+def test_condition_only_clbit_expression_imports() -> None:
+    """Resolve a condition bit that no control-flow block uses."""
+    body = QuantumCircuit(1)
+    body.x(0)
+    circuit = QuantumCircuit(1, 1)
+    circuit.if_test(expr.logic_not(circuit.clbits[0]), body, [circuit.qubits[0]], [])
+
+    assert len(circuit.data[0].clbits) == 0
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert _cbit_load_indices(ir) == [0]
+    assert "arith.xori" in ir
+    assert "scf.if" in ir
+
+
+def test_condition_only_switch_expression_imports() -> None:
+    """Resolve a switch register that no case block uses."""
+    zero = QuantumCircuit(1)
+    zero.x(0)
+    default = QuantumCircuit(1)
+    default.h(0)
+    circuit = QuantumCircuit(1, 2)
+    # Qiskit's overload omits expression targets although its runtime accepts them.
+    circuit.switch(  # ty: ignore[no-matching-overload]
+        expr.bit_xor(circuit.cregs[0], 1),
+        [(0, zero), (CASE_DEFAULT, default)],
+        [circuit.qubits[0]],
+        [],
+    )
+
+    assert len(circuit.data[0].clbits) == 0
+    assert all(block.num_clbits == 0 for block in circuit.data[0].operation.blocks)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert _cbit_load_indices(ir) == [0, 1]
+    assert "arith.xori" in ir
+    assert "scf.index_switch" in ir
+
+
+def test_nested_condition_only_expression_uses_parent_capture_map() -> None:
+    """Map a nested condition-only bit through its enclosing block."""
+    inner_body = QuantumCircuit(1)
+    inner_body.x(0)
+    middle = QuantumCircuit(1, 2)
+    middle.if_test(expr.logic_not(middle.clbits[0]), inner_body, [middle.qubits[0]], [])
+    circuit = QuantumCircuit(1, 2)
+    circuit.if_test(
+        (circuit.clbits[0], True),
+        middle,
+        [circuit.qubits[0]],
+        [circuit.clbits[1], circuit.clbits[0]],
+    )
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert _cbit_load_indices(ir) == [0, 1]
+    assert ir.count("scf.if") == 2
+
+
+def test_nested_legacy_clbit_condition_uses_root_index() -> None:
+    """Resolve a nested tuple condition through its enclosing Clbit map."""
+    circuit = QuantumCircuit(2, 2)
+    with circuit.for_loop(range(2), None, None, None, None, label=None) as iteration:
+        circuit.rx(iteration, 0)
+        with circuit.if_test((circuit.clbits[1], True)):
+            circuit.x(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert _cbit_load_indices(ir) == [1]
+    assert "scf.for" in ir
+    assert "scf.if" in ir
+
+
+def test_classical_expression_rejects_mismatched_instruction_captures() -> None:
+    """Reject an instruction capture list that does not match its block."""
+    circuit = QuantumCircuit(1, 1)
+    with circuit.if_test(expr.logic_not(circuit.clbits[0])):
+        circuit.x(0)
+    instruction = circuit.data[0]
+    circuit._data[0] = instruction.replace(clbits=())  # ruff: ignore[private-member-access]
+
+    with pytest.raises(RuntimeError, match="incompatible classical-bit captures"):
+        QCProgram.from_qiskit(circuit)
+
+
 def test_excessively_nested_classical_expression_is_rejected() -> None:
     """Bound native normalization before recursive expression traversal."""
     condition: expr.Expr = expr.equal(1, 1)
@@ -1035,6 +1293,25 @@ def test_excessively_nested_classical_expression_is_rejected() -> None:
 
     with pytest.raises(RuntimeError, match="expressions exceed the nesting limit of 64"):
         QCProgram.from_qiskit(circuit)
+
+
+def test_oversized_classical_expression_is_rejected() -> None:
+    """Bound the total size of a balanced classical expression."""
+    level = [expr.equal(1, 1) for _ in range(1025)]
+    while len(level) > 1:
+        level = [
+            expr.logic_or(level[index], level[index + 1]) if index + 1 < len(level) else level[index]
+            for index in range(0, len(level), 2)
+        ]
+    circuit = QuantumCircuit(1)
+    with circuit.if_test(level[0]):
+        circuit.x(0)
+    source_data = list(circuit.data)
+
+    with pytest.raises(RuntimeError, match="expressions exceed the node limit of 4096"):
+        QCProgram.from_qiskit(circuit)
+
+    assert list(circuit.data) == source_data
 
 
 def test_excessively_nested_control_flow_is_rejected() -> None:
