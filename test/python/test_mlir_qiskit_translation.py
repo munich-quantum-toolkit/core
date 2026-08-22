@@ -1367,6 +1367,38 @@ def test_dead_for_loop_parameter_projection_is_ignored() -> None:
     assert loop.blocks[0].count_ops() == {"x": 1}
 
 
+def test_transitively_dead_for_loop_parameter_projection_is_ignored() -> None:
+    """Omit a loop symbol used only by a dead parameter expression."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %lower = arith.constant 0 : index
+    %upper = arith.constant 2 : index
+    %step = arith.constant 1 : index
+    scf.for %iteration = %lower to %upper step %step {
+      %integer = arith.index_cast %iteration : index to i64
+      %parameter = arith.sitofp %integer : i64 to f64
+      %unused = math.sin %parameter : f64
+      qc.x %q : !qc.qubit
+    }
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+"""
+    )
+    source = program.ir
+
+    restored = program.to_qiskit()
+
+    assert program.ir == source
+    loop = restored.data[0].operation
+    assert loop.name == "for_loop"
+    assert loop.params[1] is None
+    assert loop.blocks[0].count_ops() == {"x": 1}
+
+
 def test_switch_case_label_width_is_preflighted() -> None:
     """Reject a switch label that cannot fit its one-bit target."""
     program = QCProgram.from_mlir_str(
@@ -1444,6 +1476,63 @@ def test_shared_expression_dag_expansion_is_bounded() -> None:
     lines.extend(f"    %value{index} = arith.andi %value{index - 1}, %value{index - 1} : i1" for index in range(1, 14))
     lines.extend([
         "    scf.if %value13 {",
+        "      qc.x %q : !qc.qubit",
+        "    }",
+        "    qc.dealloc %q : !qc.qubit",
+        "    return %classical : !cbit.reg<1>",
+        "  }",
+        "}",
+    ])
+    program = QCProgram.from_mlir_str("\n".join(lines))
+    source = program.ir
+
+    with pytest.raises(RuntimeError, match="size limit of 4096 nodes"):
+        program.to_qiskit()
+
+    assert program.ir == source
+
+
+def test_shared_packed_register_candidate_expansion_is_bounded() -> None:
+    """Bound speculative packed-register matching on a shared SSA DAG."""
+    lines = [
+        "module {",
+        "  func.func @main() attributes {mqt.entry_point} {",
+        "    %q = qc.alloc : !qc.qubit",
+        "    %value0 = arith.constant 0 : i64",
+    ]
+    lines.extend(f"    %value{index} = arith.ori %value{index - 1}, %value{index - 1} : i64" for index in range(1, 31))
+    lines.extend([
+        "    %condition = arith.cmpi eq, %value30, %value0 : i64",
+        "    scf.if %condition {",
+        "      qc.x %q : !qc.qubit",
+        "    }",
+        "    qc.dealloc %q : !qc.qubit",
+        "    return",
+        "  }",
+        "}",
+    ])
+    program = QCProgram.from_mlir_str("\n".join(lines))
+    source = program.ir
+
+    with pytest.raises(RuntimeError, match="size limit of 4096 nodes"):
+        program.to_qiskit()
+
+    assert program.ir == source
+
+
+def test_classical_snapshot_walk_is_bounded() -> None:
+    """Bound snapshot discovery before recursive expression export."""
+    lines = [
+        "module {",
+        "  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {",
+        "    %q = qc.alloc : !qc.qubit",
+        '    %classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+        "    %zero = arith.constant 0 : index",
+        "    %value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
+    ]
+    lines.extend(f"    %value{index} = arith.andi %value{index - 1}, %value0 : i1" for index in range(1, 4097))
+    lines.extend([
+        "    scf.if %value4096 {",
         "      qc.x %q : !qc.qubit",
         "    }",
         "    qc.dealloc %q : !qc.qubit",

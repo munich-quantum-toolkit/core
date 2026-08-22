@@ -68,6 +68,7 @@ namespace mqt::bindings::qiskit {
 namespace {
 
 constexpr size_t MAX_EXPORT_CONTROL_FLOW_DEPTH = 64U;
+constexpr size_t MAX_EXPORT_EXPRESSION_DEPTH = 64U;
 constexpr size_t MAX_EXPORT_EXPRESSION_NODES = 4096U;
 
 struct ExportedControlFlow;
@@ -358,6 +359,44 @@ void collectParameterNames(const Parameter& parameter,
     collectParameterNames(*binary->left, names);
     collectParameterNames(*binary->right, names);
   }
+}
+
+[[nodiscard]] bool parameterUsesName(const Parameter& parameter,
+                                     const std::string_view name) {
+  if (const auto* symbol = parameter.getSymbol()) {
+    return symbol->name == name;
+  }
+  if (const auto* unary = parameter.getUnary()) {
+    return parameterUsesName(*unary->operand, name);
+  }
+  if (const auto* binary = parameter.getBinary()) {
+    return parameterUsesName(*binary->left, name) ||
+           parameterUsesName(*binary->right, name);
+  }
+  return false;
+}
+
+[[nodiscard]] bool circuitUsesParameterName(const ExportedCircuit& circuit,
+                                            const std::string_view name) {
+  if (parameterUsesName(circuit.globalPhase, name)) {
+    return true;
+  }
+  for (const auto& instruction : circuit.instructions) {
+    if (llvm::any_of(instruction.parameters, [&](const auto& parameter) {
+          return parameterUsesName(parameter, name);
+        })) {
+      return true;
+    }
+    if (!instruction.controlFlow) {
+      continue;
+    }
+    if (llvm::any_of(instruction.controlFlow->blocks, [&](const auto& block) {
+          return circuitUsesParameterName(block, name);
+        })) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void validateExportParameters(const ExportedCircuit& circuit,
@@ -1041,7 +1080,7 @@ matchPackedRegister(mlir::Value value, ExportState& state,
 exportExpressionImpl(mlir::Value value, ExportState& state,
                      mlir::Block& evaluationBlock, const size_t depth,
                      size_t& nodeCount) {
-  if (depth >= MAX_EXPORT_CONTROL_FLOW_DEPTH) {
+  if (depth >= MAX_EXPORT_EXPRESSION_DEPTH) {
     throw std::runtime_error(
         "QC classical expressions exceed the nesting limit of 64");
   }
@@ -1351,8 +1390,13 @@ matchPackedRegister(mlir::Value value, ExportState& state,
   }
   std::vector<std::optional<uint32_t>> bits(type.getWidth());
   llvm::SmallPtrSet<mlir::Operation*, 16> operations;
-  const std::function<bool(mlir::Value, uint32_t)> collect =
-      [&](const mlir::Value current, const uint32_t shift) {
+  size_t nodeCount = 0U;
+  const std::function<bool(mlir::Value, uint32_t, size_t)> collect =
+      [&](const mlir::Value current, const uint32_t shift, const size_t depth) {
+        if (depth >= MAX_EXPORT_EXPRESSION_DEPTH ||
+            ++nodeCount > MAX_EXPORT_EXPRESSION_NODES) {
+          return false;
+        }
         auto* operation = current.getDefiningOp();
         if (operation == nullptr) {
           return false;
@@ -1372,7 +1416,8 @@ matchPackedRegister(mlir::Value value, ExportState& state,
         }
         if (auto op = llvm::dyn_cast<mlir::arith::OrIOp>(operation)) {
           operations.insert(operation);
-          return collect(op.getLhs(), shift) && collect(op.getRhs(), shift);
+          return collect(op.getLhs(), shift, depth + 1U) &&
+                 collect(op.getRhs(), shift, depth + 1U);
         }
         if (auto op = llvm::dyn_cast<mlir::arith::ShLIOp>(operation)) {
           const auto amount = constantUnsignedInteger(op.getRhs());
@@ -1381,11 +1426,12 @@ matchPackedRegister(mlir::Value value, ExportState& state,
             return false;
           }
           operations.insert(operation);
-          return collect(op.getLhs(), shift + static_cast<uint32_t>(*amount));
+          return collect(op.getLhs(), shift + static_cast<uint32_t>(*amount),
+                         depth + 1U);
         }
         if (auto op = llvm::dyn_cast<mlir::arith::ExtUIOp>(operation)) {
           operations.insert(operation);
-          return collect(op.getIn(), shift);
+          return collect(op.getIn(), shift, depth + 1U);
         }
         auto load = llvm::dyn_cast<mlir::cbit::LoadOp>(operation);
         if (!load || shift >= bits.size() || bits[shift]) {
@@ -1399,7 +1445,7 @@ matchPackedRegister(mlir::Value value, ExportState& state,
         operations.insert(operation);
         return true;
       };
-  if (!collect(value, 0U) ||
+  if (!collect(value, 0U, 0U) ||
       llvm::any_of(bits, [](const auto& bit) { return !bit.has_value(); })) {
     return std::nullopt;
   }
@@ -1445,38 +1491,39 @@ void validateClassicalSnapshot(const mlir::Value expression,
                                mlir::Operation& consumer) {
   llvm::DenseSet<mlir::Value> visited;
   llvm::SmallVector<mlir::cbit::LoadOp> loads;
-  const std::function<void(mlir::Value)> collectLoads =
-      [&](const mlir::Value value) {
-        if (!visited.insert(value).second) {
-          return;
+  llvm::SmallVector<mlir::Value, 16> worklist{expression};
+  while (!worklist.empty()) {
+    const auto value = worklist.pop_back_val();
+    if (!visited.insert(value).second) {
+      continue;
+    }
+    if (visited.size() > MAX_EXPORT_EXPRESSION_NODES) {
+      throw std::runtime_error(
+          "QC classical expression exceeds the size limit of 4096 nodes");
+    }
+    auto* operation = value.getDefiningOp();
+    if (operation == nullptr) {
+      continue;
+    }
+    if (auto load = llvm::dyn_cast<mlir::cbit::LoadOp>(operation)) {
+      loads.push_back(load);
+      continue;
+    }
+    if (auto ifOp = llvm::dyn_cast<mlir::scf::IfOp>(operation);
+        ifOp && ifOp.getNumResults() != 0U) {
+      for (auto& region : ifOp->getRegions()) {
+        if (region.empty()) {
+          continue;
         }
-        auto* operation = value.getDefiningOp();
-        if (operation == nullptr) {
-          return;
+        if (auto yield = llvm::dyn_cast<mlir::scf::YieldOp>(
+                region.front().getTerminator())) {
+          worklist.append(yield.getOperands().begin(),
+                          yield.getOperands().end());
         }
-        if (auto load = llvm::dyn_cast<mlir::cbit::LoadOp>(operation)) {
-          loads.push_back(load);
-          return;
-        }
-        if (auto ifOp = llvm::dyn_cast<mlir::scf::IfOp>(operation);
-            ifOp && ifOp.getNumResults() != 0U) {
-          for (auto& region : ifOp->getRegions()) {
-            if (region.empty()) {
-              continue;
-            }
-            if (auto yield = llvm::dyn_cast<mlir::scf::YieldOp>(
-                    region.front().getTerminator())) {
-              for (const auto yielded : yield.getOperands()) {
-                collectLoads(yielded);
-              }
-            }
-          }
-        }
-        for (const auto operand : operation->getOperands()) {
-          collectLoads(operand);
-        }
-      };
-  collectLoads(expression);
+      }
+    }
+    worklist.append(operation->operand_begin(), operation->operand_end());
+  }
   for (auto load : loads) {
     mlir::Operation* anchor = load;
     auto* anchorBlock = load->getBlock();
@@ -1811,8 +1858,11 @@ collectFor(mlir::scf::ForOp loop, ExportState& state, const ExportScope& scope,
   result->loop = {
       .isRange = true, .start = *lower, .stop = *upper, .step = *step};
   auto bodyScope = scope;
+  std::optional<LoopParameterProjection> projection;
+  std::optional<Parameter> loopParameter;
+  std::string loopParameterName;
   if (!loop.getInductionVar().use_empty()) {
-    auto projection = matchLoopParameterProjection(loop);
+    projection = matchLoopParameterProjection(loop);
     if (!projection) {
       throw std::runtime_error(
           "Qiskit for-loop export supports only a loop induction value used "
@@ -1820,23 +1870,22 @@ collectFor(mlir::scf::ForOp loop, ExportState& state, const ExportScope& scope,
     }
     state.expressionOperations.insert(projection->operations.begin(),
                                       projection->operations.end());
-    if (projection->value.use_empty()) {
-      result->blocks.push_back(collectBlock(*loop.getBody(), state, bodyScope,
-                                            controlFlowDepth + 1U, false));
-      result->qubits = allIndices(state.numQubits);
-      result->clbits = allIndices(state.numClbits);
-      return result;
+    if (!projection->value.use_empty()) {
+      size_t identity = 0U;
+      do {
+        identity = state.nextLoopParameter++;
+        loopParameterName = "_mqt_loop_" + std::to_string(identity);
+      } while (state.parameterNames.contains(loopParameterName));
+      state.parameterNames.insert(loopParameterName);
+      loopParameter = Parameter::symbol(loopParameterName);
+      bodyScope.parameters[projection->value] = *loopParameter;
     }
-    std::string symbol;
-    size_t identity = 0U;
-    do {
-      identity = state.nextLoopParameter++;
-      symbol = "_mqt_loop_" + std::to_string(identity);
-    } while (state.parameterNames.contains(symbol));
-    state.parameterNames.insert(symbol);
-    const auto loopParameter = Parameter::symbol(symbol);
-    result->loop.parameter = loopParameter;
-    bodyScope.parameters[projection->value] = loopParameter;
+  }
+  auto body = collectBlock(*loop.getBody(), state, bodyScope,
+                           controlFlowDepth + 1U, false);
+  if (projection && loopParameter &&
+      circuitUsesParameterName(body, loopParameterName)) {
+    result->loop.parameter = *loopParameter;
     const auto count = rangeLength(*lower, *upper, *step);
     if (count == 0U) {
       result->loop.start = 0;
@@ -1862,8 +1911,7 @@ collectFor(mlir::scf::ForOp loop, ExportState& state, const ExportScope& scope,
                         result->loop.start, "scf.for induction stop");
     }
   }
-  result->blocks.push_back(collectBlock(*loop.getBody(), state, bodyScope,
-                                        controlFlowDepth + 1U, false));
+  result->blocks.push_back(std::move(body));
   result->qubits = allIndices(state.numQubits);
   result->clbits = allIndices(state.numClbits);
   return result;

@@ -72,6 +72,21 @@ follow-up with its own ExecPlan and branch.
 - [x] (2026-08-21 16:28Z) Restack both commits onto #2175's final
       classical-expression node-bound fix, confirm the export patches remain
       equivalent, rebuild the binding, and pass all 208 translation tests.
+- [x] (2026-08-22 06:46Z) Merge the updated `main` after #2175 landed as a
+      squash commit, retain its finalized importer and minimized tests, remove
+      the duplicated pre-squash parent coverage, rebuild the binding, and pass
+      repository lint.
+- [x] (2026-08-22 06:59Z) Bound speculative packed-register matching, replace
+      recursive classical-snapshot discovery with a bounded worklist, and omit
+      loop parameter metadata when the projected value reaches no emitted
+      parameter expression; pass the three focused regressions.
+- [x] (2026-08-22 07:01Z) Rebuild the release binding, pass all 211 Qiskit
+      translation tests against that exact build, and pass focused format and
+      static checks; repository lint reformatted the plan and is ready for its
+      final clean rerun.
+- [x] (2026-08-22 07:04Z) Pass the final clean repository lint run and an
+      independent review with no remaining actionable findings; the audit fix is
+      ready to commit and push.
 
 ## Surprises & Discoveries
 
@@ -113,6 +128,23 @@ follow-up with its own ExecPlan and branch.
   imported Qiskit index expression lowers to `arith.shrui` plus `arith.trunci`;
   exporting that truncation as a cast reverses the result for values such as
   binary `010`.
+
+- Observation: Merging a stacked branch after its parent landed as a squash can
+  retain both the old and finalized parent tests without a textual conflict.
+  Evidence: the first merged Python diff contained 1,123 changed lines instead
+  of the export commit's 803; rebuilding it from `main` plus the export-only
+  patch restored the expected delta and kept the finalized #2175 cases.
+
+- Observation: The packed-register recognizer and snapshot validator ran before
+  the bounded classical-expression exporter. Evidence: a shared zero-valued
+  `arith.ori` DAG caused exponential speculative matching, while a long SSA
+  chain entered recursive snapshot discovery before the documented 4,096-node
+  and 64-level checks.
+
+- Observation: A loop projection can have SSA uses without contributing a
+  parameter to the emitted Qiskit body. Evidence: a projected value used only by
+  a dead `math.sin` expression caused finalization to report that the loop
+  parameter was absent from its body.
 
 ## Decision Log
 
@@ -170,6 +202,19 @@ follow-up with its own ExecPlan and branch.
   valid structured selectors without treating truncation as truthiness.
   Date/Author: 2026-08-21 / Codex.
 
+- Decision: Treat the squash-merged `main` tree as authoritative for #2175 and
+  replay only the two structured-export commits while resolving the merge.
+  Rationale: this preserves the reviewed importer refactors and streamlined
+  parent coverage without changing #2176's scope. Date/Author: 2026-08-22 /
+  Codex.
+
+- Decision: Give speculative packed-register matching the same depth and node
+  budgets as expression export, use an iterative bounded snapshot walk, and add
+  loop metadata only when the generated symbol appears in an emitted body
+  parameter. Rationale: preflight must have predictable cost and must not expose
+  a Qiskit loop parameter that its body does not contain. Date/Author:
+  2026-08-22 / Codex.
+
 ## Outcomes & Retrospective
 
 Structured Qiskit control flow now exports recursively through a normalized,
@@ -179,15 +224,18 @@ switches, and loop parameter identity round-trip. Preflight rejects stale
 snapshots, unsupported expression/result forms, invalid labels, and undefined
 CBit reads or returns before allocating the Qiskit writer.
 
-The MLIR binding builds successfully after the final restack onto #2175. All 208
-tests in `test/python/test_mlir_qiskit_translation.py` pass against the
+The MLIR binding builds successfully after the final merge onto `main`. All 211
+tests in `test/python/test_mlir_qiskit_translation.py` pass against the exact
 worktree-built extension. Stub generation and repository lint also pass. The
 complete documentation build was explicitly deferred for this handoff. The
 semantic diff leaves the refreshed import reader and current name-keyed scalar
 parameter normalizer unchanged, while recursively checking that every named
 scalar input remains reachable from the emitted top-level or nested Qiskit
-parameter trees. The measurement-store relaxation remains out of scope for this
-completed plan and will receive its own branch and ExecPlan.
+parameter trees. Speculative expression recognition and snapshot validation are
+bounded before recursion can consume unbounded resources, and dead loop
+parameter expressions no longer expose invalid Qiskit metadata. The
+measurement-store relaxation remains out of scope for this completed plan and
+will receive its own branch and ExecPlan.
 
 ## Context and Orientation
 
@@ -374,4 +422,5 @@ Updated it again after #2175 changed the scalar representation and metadata
 contract; only the export-specific delta was replayed. Recorded the final
 low-bit and constant-index corrections together with the required stubs, lint,
 deferred documentation build, and 208-test validation after the last parent
-update.
+update. Recorded the squash-merge resolution and the bounded-preflight and dead
+loop-parameter fixes found during the post-merge audit.
