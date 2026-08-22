@@ -138,6 +138,34 @@ TEST_F(QuantumLoopUnrollTest, UnrollFull) {
   EXPECT_EQ(range_size(entry.getOps<qtensor::InsertOp>()), 5);
 }
 
+TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {
+  auto m = QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& b) {
+    auto tensor = b.qtensorAlloc(2);
+    auto upper = arith::ConstantIndexOp::create(b, 2).getResult();
+    auto step = arith::ConstantIndexOp::create(b, 1).getResult();
+    tensor =
+        b.scfFor(0, 2, 1, {tensor}, [&](Value outer, ValueRange outerArgs) {
+          auto lower = arith::AddIOp::create(b, outer, step).getResult();
+          return b.scfFor(
+              lower, upper, step, outerArgs, [&](Value, ValueRange innerArgs) {
+                auto tensor = innerArgs.front();
+                Value qubit;
+                std::tie(tensor, qubit) = b.qtensorExtract(tensor, 0);
+                tensor = b.qtensorInsert(b.h(qubit), tensor, 0);
+                return SmallVector{tensor};
+              });
+        })[0];
+    b.qtensorDealloc(tensor);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(m);
+
+  EXPECT_TRUE(succeeded(runPass(m, QuantumLoopUnrollOptions{})));
+  auto entry = *m->getOps<func::FuncOp>().begin();
+  EXPECT_TRUE(entry.getOps<scf::ForOp>().empty());
+  EXPECT_EQ(range_size(entry.getOps<HOp>()), 1);
+}
+
 TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
   auto m = getGHZ(context.get(), 9);
   auto entry = *(m->getOps<func::FuncOp>().begin());

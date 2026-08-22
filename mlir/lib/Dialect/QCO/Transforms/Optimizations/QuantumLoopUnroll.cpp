@@ -14,10 +14,12 @@
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/SCF/Utils/Utils.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 namespace mlir::qco {
 
@@ -87,14 +89,64 @@ protected:
 
     // If the unroll factor is -1, fully unroll all loops.
     if (unrollFactor == -1) {
-      for (auto loop : collectQuantumLoops(getOperation())) {
-        if (failed(loopUnrollFull(loop))) {
-          loop.emitError() << "failed to fully unroll";
+      while (true) {
+        auto loops = collectQuantumLoops(getOperation());
+        if (loops.empty()) {
+          return;
+        }
+
+        SmallVector<Operation*> unrolled;
+        bool changed = false;
+        for (auto loop : loops) {
+          const auto lower = getConstantIntValue(loop.getLowerBound());
+          const auto upper = getConstantIntValue(loop.getUpperBound());
+          const auto step = getConstantIntValue(loop.getStep());
+          if (!lower || !upper || !step || *step <= 0) {
+            continue;
+          }
+
+          const auto tripCount = loop.getStaticTripCount();
+          if (!tripCount) {
+            continue;
+          }
+          if (tripCount->isZero()) {
+            loop.replaceAllUsesWith(loop.getInitArgs());
+            loop.erase();
+            changed = true;
+            continue;
+          }
+
+          unrolled.emplace_back(loop.getOperation());
+          if (failed(loopUnrollFull(loop))) {
+            loop.emitError() << "failed to fully unroll";
+            signalPassFailure();
+            return;
+          }
+          changed = true;
+        }
+
+        if (!changed) {
+          loops.front().emitError() << "failed to fully unroll";
+          signalPassFailure();
+          return;
+        }
+
+        RewritePatternSet patterns(&getContext());
+        if (failed(
+                applyPatternsGreedily(getOperation(), std::move(patterns)))) {
+          signalPassFailure();
+          return;
+        }
+        auto remaining = collectQuantumLoops(getOperation());
+        const auto unchanged = llvm::find_if(remaining, [&](auto loop) {
+          return llvm::is_contained(unrolled, loop.getOperation());
+        });
+        if (unchanged != remaining.end()) {
+          unchanged->emitError() << "failed to fully unroll";
           signalPassFailure();
           return;
         }
       }
-      return;
     }
 
     for (auto loop : collectQuantumLoops(getOperation())) {
