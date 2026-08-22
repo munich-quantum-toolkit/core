@@ -27,7 +27,7 @@ def test_vector_array_ownership() -> None:
     assert vector.dtype == np.complex128
     assert vector.shape == (4,)
     assert vector.flags.c_contiguous
-    assert vector.flags.writeable
+    assert vector.flags.writeable  # spellchecker:disable-line
 
     vector[0] = 2 + 3j
     assert np.allclose(vector_dd.get_vector(), [1, 0, 0, 0])

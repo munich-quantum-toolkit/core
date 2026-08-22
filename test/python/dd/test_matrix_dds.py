@@ -29,7 +29,7 @@ def test_matrix_array_ownership() -> None:
     assert zero_qubit_matrix.dtype == np.complex128
     assert zero_qubit_matrix.shape == (1, 1)
     assert zero_qubit_matrix.flags.c_contiguous
-    assert zero_qubit_matrix.flags.writeable
+    assert zero_qubit_matrix.flags.writeable  # spellchecker:disable-line
     assert zero_qubit_matrix[0, 0] == 1
 
     expected = np.array([[0, 1], [1, 0]], dtype=np.complex128)
@@ -38,7 +38,7 @@ def test_matrix_array_ownership() -> None:
     assert matrix.dtype == np.complex128
     assert matrix.shape == (2, 2)
     assert matrix.flags.c_contiguous
-    assert matrix.flags.writeable
+    assert matrix.flags.writeable  # spellchecker:disable-line
 
     matrix[0, 0] = 2 + 3j
     assert np.allclose(matrix_dd.get_matrix(1), expected)

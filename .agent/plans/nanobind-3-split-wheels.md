@@ -10,7 +10,7 @@ repository root.
 ## Purpose / Big Picture
 
 MQT Core currently publishes separate CPython 3.10 and 3.11 wheels, followed by
-one stable-ABI wheel for CPython 3.12 and newer. Nanobind 3 split mode moves the
+one stable-ABI wheel for CPython 3.12 and newer. nanobind 3 split mode moves the
 Python-version-specific binding runtime into the small `nanobind-backend`
 package. For the next major release, MQT Core can require Python 3.11 and
 publish one `cp311-abi3` wheel per operating system and processor for every
@@ -44,10 +44,13 @@ does not publish CPython 3.13t or 3.14t wheels.
 - [x] (2026-08-22 13:12Z) Inspected the final diff and recorded the outcome.
 - [x] (2026-08-22 14:10Z) Removed the redundant dense state-vector copy and
   verified the vector and matrix array ownership paths with 18 DD tests.
+- [x] (2026-08-22 14:25Z) Preserved Daniel Haag's nanobind 3 and Python 3.11
+  commits and prepared the complete change as a rescope of pull request
+  `#2209`.
 
 ## Surprises & Discoveries
 
-- Observation: Nanobind 3.0's final documentation and implementation support
+- Observation: nanobind 3.0's final documentation and implementation support
   split mode on free-threaded CPython 3.15 through the provisional `abi3t`
   stable ABI. Earlier nanobind discussions predate that implementation.
   Evidence: the upstream split build produced `.abi3t` extensions and its pytest
@@ -119,6 +122,15 @@ does not publish CPython 3.13t or 3.14t wheels.
   `VectorDD.get_vector()`. Rationale: this removes one allocation and one
   exponential-size copy while keeping the returned NumPy array independent of
   the DD package. Date/Author: 2026-08-22 / Codex.
+- Decision: Complete the existing nanobind pull request #2209 instead of opening
+  a competing pull request. Rationale: #2209 and #2009 already contain Daniel
+  Haag's nanobind migration and Python-floor work. Keeping those commits in the
+  branch preserves authorship and gives reviewers one integration point.
+  Date/Author: 2026-08-22 / Codex.
+- Decision: Keep the current QDMI driver synchronization in a separate commit.
+  Rationale: current `main` needs the synchronization for free-threaded Python,
+  while pull request #1901 deletes this driver and can drop the bridge commit if
+  it lands first. Date/Author: 2026-08-22 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -132,7 +144,7 @@ free-threaded 3.15 with the GIL disabled.
 The final wheel passed 727 Python tests with three expected skips. The release
 C++ build passed all 4,143 configured tests with one test skipped by its own
 contract. Focused symbolic-variable and QDMI concurrency tests passed, as did a
-512-task CPython 3.15t smoke test. Nanobind's upstream split-mode suite passed
+512-task CPython 3.15t smoke test. nanobind's upstream split-mode suite passed
 457 tests with 243 skipped on the same free-threaded interpreter. Stub
 generation, `uv lock --check`, `git diff --check`, and `uvx nox -s lint` pass.
 The vector and matrix DD ownership tests pass, and both affected DD test modules
@@ -141,6 +153,11 @@ pass all 18 tests.
 Generated installation and tooling pages still describe the old wheel matrix.
 Their source templates need a separate templates-repository update; this work
 does not edit generated files.
+
+Pull request #2209 is the integration vehicle. Its branch retains Daniel Haag's
+original nanobind 3 commits and signed cherry-picks of the Python 3.11 commits
+from pull request #2009. The QDMI synchronization is isolated so that pull
+request #1901 can remove it with the legacy driver.
 
 ## Context and Orientation
 
