@@ -6,6 +6,14 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Removal of CoreAlgorithms
+
+MQT Core no longer installs `MQT::CoreAlgorithms` or the headers below
+`algorithms/`. MQT Core provides no direct replacement for the removed circuit
+factories. Move required implementations to the package that uses them. The
+`BUILD_MQT_CORE_BENCHMARKS` option and its legacy DD evaluation target were also
+removed.
+
 ### Program serialization for QDMI Qiskit backends
 
 The Qiskit backend no longer decides in its own code how to turn a circuit into
