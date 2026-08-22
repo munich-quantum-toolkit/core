@@ -133,11 +133,6 @@ if(BUILD_MQT_CORE_TESTS)
   add_subdirectory(test)
 endif()
 
-option(BUILD_MQT_CORE_BENCHMARKS "Also build benchmarks for the MQT Core project" OFF)
-if(BUILD_MQT_CORE_BENCHMARKS)
-  add_subdirectory(eval)
-endif()
-
 add_subdirectory(mlir)
 
 # Preserve the top-level `mlir-doc` behavior without modifying a target owned by an embedding
@@ -176,7 +171,6 @@ endif()
 if(BUILD_MQT_CORE_BINDINGS)
   set(MQT_CORE_WHEEL_TARGETS
       mqt-core-ir
-      mqt-core-algorithms
       mqt-core-benchmarks
       mqt-core-circuit-optimizer
       mqt-core-dd

@@ -14,6 +14,10 @@ releases may include breaking changes.
 
 #### General MQT Compiler Collection infrastructure
 
+- ✨ Add typed structured GHZ, Grover, and quantum phase-estimation benchmarks
+  with versioned requests, analytic references, deterministic manifests, and
+  C++, Python, and command-line interfaces ([#2135]) ([**@denialhaag**],
+  [**@burgholzer**])
 - ✨ Launch the MQT Compiler Collection with the QC and QCO dialects, its core
   compiler infrastructure, and C++ and Python APIs ([#1264], [#1330], [#1402],
   [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470],
@@ -94,6 +98,9 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
+  DD package evaluation. Use the new structured benchmark API and CLI for GHZ,
+  Grover, and phase estimation ([#2135]) ([**@denialhaag**], [**@burgholzer**])
 - 💥 Remove the unowned decision-diagram approximation algorithm and
   density-matrix support from MQT Core ([#1466], [#2154]) ([**@burgholzer**])
 - 💥 Make `nlohmann_json` an implementation detail and replace JSON-typed
@@ -804,6 +811,7 @@ for previous changelogs._
 [#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
 [#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
 [#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136
+[#2135]: https://github.com/munich-quantum-toolkit/core/pull/2135
 [#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124

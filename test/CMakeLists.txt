@@ -7,7 +7,6 @@
 # Licensed under the MIT License
 
 # add various subdirectories containing tests
-add_subdirectory(algorithms)
 add_subdirectory(benchmarks)
 add_subdirectory(circuit_optimizer)
 add_subdirectory(dd)
