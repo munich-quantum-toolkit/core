@@ -10,6 +10,9 @@
 
 #pragma once
 
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 
 #include <gtest/gtest.h>
@@ -20,7 +23,6 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -60,7 +62,11 @@ inline std::optional<APInt> evaluateConstantInteger(const Value value) {
   const auto operand = [&](const unsigned index) {
     return evaluateConstantInteger(operation->getOperand(index));
   };
-  const auto width = cast<IntegerType>(value.getType()).getWidth();
+  const auto integerType = dyn_cast<IntegerType>(value.getType());
+  if (!integerType && !value.getType().isIndex()) {
+    return std::nullopt;
+  }
+  const auto width = integerType ? integerType.getWidth() : 64U;
   if (isa<arith::TruncIOp, arith::IndexCastOp>(operation)) {
     auto input = operand(0);
     if (!input) {
@@ -124,7 +130,7 @@ inline std::optional<APInt> evaluateConstantInteger(const Value value) {
   return std::nullopt;
 }
 
-inline SmallVector<Value> returnedBitValues(ModuleOp moduleOp) {
+inline SmallVector<std::optional<Value>> returnedBitValues(ModuleOp moduleOp) {
   func::ReturnOp result;
   moduleOp.walk([&](func::ReturnOp operation) { result = operation; });
   if (!result) {
@@ -133,22 +139,21 @@ inline SmallVector<Value> returnedBitValues(ModuleOp moduleOp) {
     return {};
   }
 
-  SmallVector<Value> values;
+  SmallVector<std::optional<Value>> values;
   for (const auto operand : result.getOperands()) {
-    const auto memrefType = dyn_cast<MemRefType>(operand.getType());
-    if (!memrefType || memrefType.getRank() != 1 ||
-        !memrefType.getElementType().isInteger(1) ||
-        memrefType.isDynamicDim(0)) {
-      ADD_FAILURE() << "classical bit output is not a static i1 memref";
+    const auto registerType = dyn_cast<cbit::RegisterType>(operand.getType());
+    auto allocation = operand.getDefiningOp<cbit::AllocOp>();
+    if (!registerType || !allocation) {
+      ADD_FAILURE() << "classical bit output is not a direct CBit allocation";
       return {};
     }
-    SmallVector<Value> registerValues(
-        static_cast<size_t>(memrefType.getDimSize(0)));
-    moduleOp.walk([&](memref::StoreOp store) {
-      if (store.getMemRef() != operand || store.getIndices().size() != 1) {
+    SmallVector<std::optional<Value>> registerValues(
+        static_cast<size_t>(registerType.getWidth()));
+    moduleOp.walk([&](cbit::StoreOp store) {
+      if (store.getReg() != operand) {
         return;
       }
-      const auto index = evaluateConstantInteger(store.getIndices().front());
+      const auto index = evaluateConstantInteger(store.getIndex());
       if (!index || index->getActiveBits() > 63) {
         return;
       }
@@ -157,9 +162,10 @@ inline SmallVector<Value> returnedBitValues(ModuleOp moduleOp) {
         registerValues[position] = store.getValue();
       }
     });
-    if (llvm::any_of(registerValues,
-                     [](const Value value) { return !value; })) {
-      ADD_FAILURE() << "classical bit output is not fully stored";
+    if (allocation.getInitialization() == cbit::Initialization::Undefined &&
+        llvm::any_of(registerValues,
+                     [](const auto& value) { return !value.has_value(); })) {
+      ADD_FAILURE() << "undefined classical bit output is not fully stored";
       return {};
     }
     llvm::append_range(values, registerValues);
@@ -192,11 +198,15 @@ inline std::vector<bool> canonicalizedBitOutputs(const StringRef source) {
   std::vector<bool> outputs;
   outputs.reserve(returned.size());
   for (const auto operand : returned) {
-    const auto value = evaluateConstantInteger(operand);
+    if (!operand) {
+      outputs.push_back(false);
+      continue;
+    }
+    const auto value = evaluateConstantInteger(*operand);
     if (!value) {
       std::string description;
       llvm::raw_string_ostream stream(description);
-      operand.print(stream);
+      operand->print(stream);
       ADD_FAILURE() << "canonicalized output is not constant: " << description;
       return {};
     }

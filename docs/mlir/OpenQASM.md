@@ -35,26 +35,58 @@ mqt-cc --input-format=qasm program.txt
 
 ### Input support
 
-| OpenQASM concept           | Support and restrictions                                                                                                                                                                        |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Versions and includes      | Versionless input and versions 3.0 and 3.1 use the maintained OpenQASM profile. `stdgates.inc`, `qelib1.inc`, and nested textual includes are supported.                                        |
-| Classical types            | Unsized `bit`, `bool`, `int`, `uint`, and `float` declarations are supported. Width-qualified numeric types, arrays, complex values, and aliases are not yet supported.                         |
-| Outputs                    | Explicit `output` declarations are preserved in source order. Without any explicit output, global classical variables become outputs.                                                           |
-| Gates                      | Language gates, the standard libraries, custom gates, broadcasting, and `inv`, `ctrl`, `negctrl`, and `pow` modifiers are supported. Recursive custom gates are rejected.                       |
-| Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC target rejects programs that mix logical allocation with physical qubits.                                |
-| Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. `popcount`, `rotl`, and `rotr` operate on initialized bit registers. |
-| Structured control         | `if`, inclusive `for`, `while`, and `switch` lower to SCF operations. Switch controls and case labels must be integers; labels must be unique constant expressions.                             |
-| Dynamic indexing           | Dynamic qubit and bit indices are supported on input. The generated QC includes bounds checks and structured dispatch where needed.                                                             |
-| Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, input declarations, arbitrary arrays, `break`, and `continue` are diagnosed.                                                          |
+| OpenQASM concept           | Support and restrictions                                                                                                                                                                                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Versions and includes      | Versionless input and versions 3.0 and 3.1 use the maintained OpenQASM profile. `stdgates.inc`, `qelib1.inc`, and nested textual includes are supported.                                                                                              |
+| Classical types            | Unsized `bit`, `bool`, `int`, `uint`, and `float` declarations are supported. Initialized compile-time `angle[N]` values support widths 1 through 52. Other width-qualified numeric types, arrays, complex values, and aliases are not yet supported. |
+| Outputs                    | Explicit `output` declarations are preserved in source order. Without any explicit output, global classical variables become outputs.                                                                                                                 |
+| Gates                      | Language gates, the standard libraries, custom gates, broadcasting, and `inv`, `ctrl`, `negctrl`, and `pow` modifiers are supported. Recursive custom gates are rejected.                                                                             |
+| Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC target rejects programs that mix logical allocation with physical qubits.                                                                                      |
+| Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. `popcount`, `rotl`, and `rotr` operate on initialized bit registers.                                                       |
+| Structured control         | `if`, inclusive `for`, `while`, and `switch` lower to SCF operations. Switch controls and case labels must be integers; labels must be unique constant expressions.                                                                                   |
+| Dynamic indexing           | Classical bit indices can be dynamic and receive runtime bounds checks. A nonconstant qubit index must be a proven affine expression as described below.                                                                                              |
+| Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, input declarations, arbitrary arrays, `break`, and `continue` are diagnosed.                                                                                                                |
 
 Syntax and semantic diagnostics retain source locations and include stacks.
-Runtime integer preconditions and dynamic-index bounds are represented
+Runtime integer preconditions and classical-index bounds are represented
 explicitly in QC. This safety machinery is supported by the normal compiler and
 QIR paths, but it is intentionally outside the export subset described below.
 
-Bit outputs use `memref<nxi1>` in QC, including scalar `bit` as `memref<1xi1>`.
-Other scalar outputs use builtin MLIR scalar types. A scalar `qubit` lowers to
-`qc.alloc`, while `qubit[1]` remains a one-element qubit register.
+Fixed-width angles are a compile-time input feature. An omitted angle width
+resolves to 52 bits. Both `const angle[N]` and initialized `angle[N]`
+declarations are accepted as write-once values. Initializers and angle casts
+must be compile-time expressions. MQT Core supports float-to-angle conversion,
+angle resizing, unary negation, addition and subtraction, multiplication and
+division by nonnegative integer literals that fit the angle width, comparisons,
+and `sin`, `cos`, and `tan`. Mixed-width angle operands promote to the wider
+width. It uses round-to-nearest, ties-to-even for float conversion and
+narrowing. Runtime angle state, reassignment, bit-level angle operations, and
+angle inputs or outputs are not supported.
+
+The frontend accepts a nonconstant qubit index only when it proves that every
+value is in the register and that operands of one gate or explicit barrier are
+distinct. Proven expressions can contain constants, positive constant-step `for`
+induction variables, known scalar values, negation, addition, subtraction,
+multiplication by an integer constant, and value-preserving `int`/`uint` casts.
+Assignments and control-flow joins preserve a scalar value only while its affine
+form remains known. A nested loop bound can use proven induction variables from
+enclosing loops. The proof treats an inclusive range as its full interval and
+does not use the step's congruence.
+
+The frontend normalizes constant negative indices relative to the register
+width. It rejects measurement-derived values, nonconstant negative indices,
+nonlinear expressions, unsupported integer operators, and ranges whose step is
+not known to be positive when their induction variable reaches a qubit index.
+Mutations in repeating loops and unequal branch values invalidate scalar facts.
+Branch conditions do not add proof facts. Classical bit indexing and loops that
+do not index qubits keep their runtime behavior.
+
+Bit registers use `!cbit.reg<N>` in QC. OpenQASM 2 initializes each register to
+zero. OpenQASM 3 leaves each register undefined until a statement writes it.
+Explicit outputs and implicit global outputs are returned by the entry function;
+internal CBit allocations are not outputs. Other scalar outputs use builtin MLIR
+scalar types. A scalar `qubit` lowers to `qc.alloc`, while `qubit[1]` remains a
+one-element qubit register.
 
 ## Export OpenQASM
 
@@ -117,7 +149,7 @@ bypasses that QCO optimization round trip.
 
 | QC or MLIR concept        | Export support                                                                                                                                                                                                               |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Qubits and classical bits | Logical and physical qubits, scalar allocations, and static rank-one qubit or `i1` memrefs. Memory indices must resolve statically.                                                                                          |
+| Qubits and classical bits | Logical and physical qubits, scalar qubit allocations, static rank-one qubit memrefs, and CBit registers. Qubit memory indices must resolve statically. CBit indices can be dynamic.                                         |
 | Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u2` uses the standard compatibility alias. |
 | Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body with target qubits becomes a private generated gate.                                                                                                        |
 | Scalar values             | `i1`, `i64`, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, value-preserving casts, and supported math functions.                                                                |
@@ -142,17 +174,17 @@ Output types follow a deliberately small canonical mapping:
 
 | QC result                         | OpenQASM output |
 | --------------------------------- | --------------- |
-| `memref<Nxi1>`                    | `bit[N]`        |
+| Returned `!cbit.reg<N>`           | `bit[N]`        |
 | `i1` produced directly by measure | `bit`           |
 | Other `i1`                        | `bool`          |
 | `i64` or `index`                  | `int`           |
 | `f64`                             | `float`         |
 
 A lone constant-zero `i64` result is treated as the frontend's status return and
-is not emitted. Import and export do not preserve `uint`, angle spelling,
-scalar-versus-one-element bit spelling, or scalar output names. Unsigned
-constants therefore normalize to `int`. Operations whose signedness affects
-their meaning, such as unsigned division, comparison, or conversion, are
+is not emitted. Import and export do not preserve `uint`, fixed-angle spelling
+or width, scalar-versus-one-element bit spelling, or scalar output names.
+Unsigned constants therefore normalize to `int`. Operations whose signedness
+affects their meaning, such as unsigned division, comparison, or conversion, are
 rejected instead of being approximated. Integer sign extension and truncation
 are also rejected because OpenQASM scalar casts have different value semantics.
 
@@ -163,12 +195,13 @@ the current MQT strict round-trip subset.
 ### Export limitations
 
 Export accepts exactly one defined, argument-free function. It rejects calls,
-arbitrary CFGs, multi-block SCF regions, dynamic indices or ranges, general
-memrefs, unsupported integer widths, packed bit-vector operations, unknown
-operations, and non-unitary content inside modifier regions. SCF results,
-loop-carried values, nonempty `scf.yield`, and `arith.select` are outside the
-export subset. Multi-operation modifier bodies must have a target qubit and
-cannot capture additional qubits from an enclosing scope.
+arbitrary CFGs, multi-block SCF regions, dynamic qubit indices or ranges,
+general memrefs, unsupported integer widths, packed bit-vector operations,
+unknown operations, and non-unitary content inside modifier regions. CBit loads,
+stores, and dynamic indices are supported. SCF results, loop-carried values,
+nonempty `scf.yield`, and `arith.select` are outside the export subset.
+Multi-operation modifier bodies must have a target qubit and cannot capture
+additional qubits from an enclosing scope.
 
 The exporter does not reconstruct the runtime checks created for dynamic indices
 or checked integer arithmetic. Surviving assertions, checked-index control flow,

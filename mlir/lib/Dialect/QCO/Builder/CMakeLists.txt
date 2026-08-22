@@ -12,10 +12,14 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   MLIRArithDialect
+  MLIRCBitDialect
   MLIRFuncDialect
+  MLIRMQTDialect
   MLIRSCFDialect
   MLIRQCODialect
-  MLIRQTensorDialect)
+  MLIRQTensorDialect
+  PRIVATE
+  MLIRMQTUtils)
 
 mqt_mlir_target_use_project_options(MLIRQCOProgramBuilder)
 

@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Utils/DenseUnitary.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/DenseUnitary.h"
 
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
@@ -25,7 +25,7 @@ struct EraseIdentityUnitary final : OpRewritePattern<UnitaryOp> {
 
   LogicalResult matchAndRewrite(UnitaryOp op,
                                 PatternRewriter& rewriter) const override {
-    if (!utils::isExactIdentityMatrix(op.getMatrix())) {
+    if (!mqt::isExactIdentityMatrix(op.getMatrix())) {
       return failure();
     }
     rewriter.eraseOp(op);
@@ -36,8 +36,8 @@ struct EraseIdentityUnitary final : OpRewritePattern<UnitaryOp> {
 } // namespace
 
 LogicalResult UnitaryOp::verify() {
-  return utils::verifyDenseUnitaryMatrix(getOperation(), getMatrix(),
-                                         getQubits());
+  return mqt::verifyDenseUnitaryMatrix(getOperation(), getMatrix(),
+                                       getQubits());
 }
 
 void UnitaryOp::getCanonicalizationPatterns(RewritePatternSet& results,

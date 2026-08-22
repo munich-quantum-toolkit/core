@@ -30,7 +30,7 @@ public:
 
   void pop() { env.pop_back(); }
 
-  std::optional<T> find(std::string key) {
+  std::optional<T> find(std::string key) const {
     for (auto it = env.rbegin(); it != env.rend(); ++it) {
       auto found = it->find(key);
       if (found != it->end()) {

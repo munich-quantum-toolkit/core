@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -20,7 +21,6 @@
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
@@ -64,7 +64,6 @@
 namespace mlir::qco {
 
 using namespace mlir::qtensor;
-using namespace mlir::utils;
 
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
@@ -358,7 +357,7 @@ protected:
     IRRewriter rewriter(&getContext());
 
     auto mod = getOperation();
-    auto func = getEntryPoint(mod);
+    auto func = mqt::getEntryPoint(mod);
     if (!func) {
       mod.emitError() << "does not contain an entry point function";
       signalPassFailure();
@@ -410,7 +409,7 @@ protected:
     numSwaps += stats.nswaps;
 
     // Fix SSA Dominance issues.
-    for_each(body.getBlocks(), [](Block& b) { sortTopologically(&b); });
+    llvm::for_each(body.getBlocks(), [](Block& b) { sortTopologically(&b); });
   }
 
 private:

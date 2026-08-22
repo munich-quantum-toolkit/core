@@ -52,6 +52,59 @@ TEST_F(Qasm3ParserTest, ImportQasm3) {
   EXPECT_EQ(qc.getNcbits(), 3);
 }
 
+TEST_F(Qasm3ParserTest, ImportQasm3SingleQubit) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit q;\n"
+                               "x q;";
+  const auto qc = qasm3::Importer::imports(testfile);
+
+  EXPECT_EQ(qc.getNqubits(), 1);
+  ASSERT_EQ(qc.getNindividualOps(), 1);
+  EXPECT_EQ(qc.front()->getType(), qc::X);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasm3MeasureSingleQubit) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "qubit q;\n"
+                               "bit c = measure q;";
+  const auto qc = qasm3::Importer::imports(testfile);
+
+  EXPECT_EQ(qc.getNqubits(), 1);
+  EXPECT_EQ(qc.getNcbits(), 1);
+  ASSERT_EQ(qc.getNindividualOps(), 1);
+  EXPECT_EQ(qc.front()->getType(), qc::Measure);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasm3RejectsIndexingSingleQubit) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit q;\n"
+                               "x q[0];";
+  EXPECT_THROW(
+      {
+        try {
+          const auto qc = qasm3::Importer::imports(testfile);
+        } catch (const qasm3::CompilerError& e) {
+          EXPECT_EQ(e.message, "Type 'qubit' cannot be indexed.");
+          throw;
+        }
+      },
+      qasm3::CompilerError);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasm3IndexesSizedQubitRegister) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "include \"stdgates.inc\";\n"
+                               "qubit[1] q;\n"
+                               "x q[0];";
+  const auto qc = qasm3::Importer::imports(testfile);
+
+  EXPECT_EQ(qc.getNqubits(), 1);
+  ASSERT_EQ(qc.getNindividualOps(), 1);
+  EXPECT_EQ(qc.front()->getType(), qc::X);
+}
+
 TEST_F(Qasm3ParserTest, ImportQasm3OldSyntax) {
   const std::string testfile = "OPENQASM 3.0;\n"
                                "include \"stdgates.inc\";\n"
@@ -737,7 +790,7 @@ TEST_F(Qasm3ParserTest, ImportQasm3InvalidStatementInBlock) {
 }
 
 TEST_F(Qasm3ParserTest, ImportQasm3ImplicitInclude) {
-  const std::string testfile = "qubit q;\n"
+  const std::string testfile = "qubit[1] q;\n"
                                "h q[0];\n";
   const auto qc = qasm3::Importer::imports(testfile);
 
@@ -754,7 +807,7 @@ TEST_F(Qasm3ParserTest, ImportQasm3ImplicitInclude) {
 TEST_F(Qasm3ParserTest, ImportQasm3Qelib1) {
   const std::string testfile = "OPENQASM 2.0;\n"
                                "include \"qelib1.inc\";\n"
-                               "qubit q;\n"
+                               "qubit[1] q;\n"
                                "h q[0];\n";
   const auto qc = qasm3::Importer::imports(testfile);
 
@@ -1721,6 +1774,22 @@ TEST_F(Qasm3ParserTest, ImportQasmTypeMismatchAssignment) {
         } catch (const qasm3::CompilerError& e) {
           EXPECT_EQ(e.message, "Type Check Error: Type mismatch in assignment. "
                                "Expected 'bit[1]', found 'uint[32]'.");
+          throw;
+        }
+      },
+      qasm3::CompilerError);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasmAssignmentUnknownRightHandSide) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "bit x;\n"
+                               "x = y;";
+  EXPECT_THROW(
+      {
+        try {
+          const auto qc = qasm3::Importer::imports(testfile);
+        } catch (const qasm3::CompilerError& e) {
+          EXPECT_EQ(e.message, "Type Check Error: Unknown identifier 'y'.");
           throw;
         }
       },

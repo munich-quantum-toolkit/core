@@ -56,6 +56,7 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   LLVMBitWriter
+  MLIRCBitDialect
   MLIRPass
   MLIRTransforms
   MLIRTransformUtils
@@ -74,6 +75,8 @@ add_mlir_library(
   MLIRTargetLLVMIRExport
   MLIRBuiltinToLLVMIRTranslation
   MLIRLLVMToLLVMIRTranslation
+  MLIRMathDialect
+  MLIRMQTDialect
   MQTCompilerTarget
   MQT::MLIRSupport)
 

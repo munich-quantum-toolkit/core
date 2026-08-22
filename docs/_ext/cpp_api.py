@@ -302,6 +302,21 @@ def build_doxygen(app: Sphinx) -> None:
         raise ExtensionError(msg) from error
 
 
+def rewrite_doxygen_linkcheck_uri(app: Sphinx, uri: str) -> str | None:
+    """Map a C++ API URI to the generated file that linkcheck can inspect.
+
+    Returns:
+        The generated file path, or ``None`` for other URIs.
+    """
+    tagfile, base_uri = app.config.cpp_api_tagfile[:2]
+    if not uri.startswith(base_uri):
+        return None
+
+    target_uri, _, _ = uri.removeprefix(base_uri).partition("#")
+    html_dir = _path_from_config(app, tagfile).parent / "html"
+    return str(html_dir / target_uri)
+
+
 def publish_doxygen_html(app: Sphinx, exception: Exception | None) -> None:
     """Publish native Doxygen HTML alongside an HTML Sphinx build."""
     if exception is not None or app.builder.format != "html":
@@ -317,14 +332,15 @@ def setup(app: Sphinx) -> ExtensionMetadata:
         Metadata declaring that the extension supports parallel builds.
     """
     app.add_config_value("cpp_api_tagfile", ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml"), "env")
-    app.add_config_value("qdmi_api_tagfile", ("_tagfiles/qdmi-1.3.2.tag", ""), "env")
+    app.add_config_value("qdmi_api_tagfile", ("_tagfiles/qdmi-1.3.3.tag", ""), "env")
     app.add_config_value(
         "qdmi_api_tagfile_url",
-        "https://munich-quantum-software-stack.github.io/QDMI/v1.3.2/qdmi.tag",
+        "https://munich-quantum-software-stack.github.io/QDMI/v1.3.3/qdmi.tag",
         "env",
     )
     app.add_domain(CppApiDomain)
     app.add_domain(QdmiApiDomain)
     app.connect("builder-inited", build_doxygen)
+    app.connect("linkcheck-process-uri", rewrite_doxygen_linkcheck_uri)
     app.connect("build-finished", publish_doxygen_html)
     return {"parallel_read_safe": False, "parallel_write_safe": True}

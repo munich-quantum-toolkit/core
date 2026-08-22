@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
@@ -40,9 +41,9 @@ using namespace mlir;
 
 static DialectRegistry emissionDialects() {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, cf::ControlFlowDialect,
-                  func::FuncDialect, math::MathDialect, memref::MemRefDialect,
-                  qc::QCDialect, scf::SCFDialect>();
+  registry.insert<arith::ArithDialect, cbit::CBitDialect,
+                  cf::ControlFlowDialect, func::FuncDialect, math::MathDialect,
+                  memref::MemRefDialect, qc::QCDialect, scf::SCFDialect>();
   return registry;
 }
 
@@ -79,6 +80,67 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
       *source, {.gatePolicy = oq3::frontend::GatePolicy::Strict}));
   EXPECT_TRUE(qc::translateQASM3ToQC(*source, &context));
+}
+
+TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main() -> !cbit.reg<1>
+        attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %qubit = qc.alloc : !qc.qubit
+      %bits = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "c"}
+          : !cbit.reg<1>
+      %measured = qc.measure %qubit : !qc.qubit -> i1
+      qc.x %qubit : !qc.qubit
+      cbit.store %measured, %bits[%zero] : !cbit.reg<1>
+      qc.dealloc %qubit : !qc.qubit
+      return %bits : !cbit.reg<1>
+    }
+  })mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  const auto measurement = emitted->find("bit _mqt_b0 = measure _mqt_q0;");
+  const auto gate = emitted->find("x _mqt_q0;");
+  const auto store = emitted->find("c[0] = _mqt_b0;");
+  ASSERT_NE(measurement, std::string::npos) << *emitted;
+  ASSERT_NE(gate, std::string::npos) << *emitted;
+  ASSERT_NE(store, std::string::npos) << *emitted;
+  EXPECT_LT(measurement, gate);
+  EXPECT_LT(gate, store);
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
+}
+
+TEST(OpenQASM3EmissionTest, CanonicalizesFixedAnglesToPortableFloats) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+angle[8] theta = angle[8](pi / 2);
+qubit q;
+rx(theta) q;
+output bit result;
+result = measure q;
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_EQ(emitted->find("angle"), std::string::npos);
+  EXPECT_EQ(emitted->find("mqt.openqasm"), std::string::npos);
+  EXPECT_NE(emitted->find("rx(1.5707963267948966)"), std::string::npos)
+      << *emitted;
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
 }
 
 TEST(OpenQASM3EmissionTest, UsesCanonicalOutputTypesWithoutResultMetadata) {
@@ -141,13 +203,10 @@ r = measure q;
 
 TEST(OpenQASM3EmissionTest, RenamesOutputsThatCollideWithStandardGates) {
   constexpr llvm::StringLiteral source = R"mlir(module {
-    func.func @main() -> memref<1xi1> {
-      %bits = memref.alloc() {mqt.classical_register_name = "x"}
-          : memref<1xi1>
-      %index = arith.constant 0 : index
-      %value = arith.constant false
-      memref.store %value, %bits[%index] : memref<1xi1>
-      return %bits : memref<1xi1>
+    func.func @main() -> !cbit.reg<1> {
+      %bits = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "x"}
+          : !cbit.reg<1>
+      return %bits : !cbit.reg<1>
     }
   })mlir";
   DialectRegistry registry = emissionDialects();
@@ -169,7 +228,7 @@ TEST(OpenQASM3EmissionTest, EmitsStatementOnlyStructuredControl) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
 qubit q;
-bit condition = false;
+bit condition = measure q;
 int selector = 1;
 if (condition) {
   for int i in [0:2] {
@@ -209,7 +268,7 @@ switch (selector) {
 TEST(OpenQASM3EmissionTest, EmitsNativeIndexSwitch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %qubit = qc.alloc : !qc.qubit
     %index = arith.constant 1 : index
     scf.index_switch %index
@@ -338,7 +397,7 @@ TEST(OpenQASM3EmissionTest, EmitsSignedBooleanAndFloatingExpressions) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main() -> (i64, i1, f64, f64, i1)
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %one = arith.constant 1 : i64
     %two = arith.constant 2 : i64
     %sum = arith.addi %one, %two : i64
@@ -503,15 +562,15 @@ TEST(OpenQASM3EmissionTest, EmitsPhysicalQubitOperations) {
 TEST(OpenQASM3EmissionTest, ReusesClassicalRegisterNamesForOutputs) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() -> (memref<1xi1>, memref<2xi1>, i1) {
-    %single = memref.alloc() {mqt.classical_register_name = "single"}
-        : memref<1xi1>
-    %bits = memref.alloc() {mqt.classical_register_name = "bits"}
-        : memref<2xi1>
+  func.func @main() -> (!cbit.reg<1>, !cbit.reg<2>, i1) {
+    %single = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "single"}
+        : !cbit.reg<1>
+    %bits = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "bits"}
+        : !cbit.reg<2>
     %qubit = qc.alloc : !qc.qubit
     %measured = qc.measure %qubit : !qc.qubit -> i1
     qc.dealloc %qubit : !qc.qubit
-    return %single, %bits, %measured : memref<1xi1>, memref<2xi1>, i1
+    return %single, %bits, %measured : !cbit.reg<1>, !cbit.reg<2>, i1
   }
 }
 )mlir";

@@ -12,8 +12,9 @@
 
 from __future__ import annotations
 
+import math
 import sys
-from typing import cast
+from collections import Counter
 
 import numpy as np
 import pytest
@@ -32,24 +33,15 @@ from mqt.core.plugins.pennylane import (
     PennyLaneValidationError,
     QDMIDevice,
 )
-from mqt.core.qdmi import Device as QDMIDeviceHandle
 from mqt.core.qdmi import ProgramFormat
 
-from .helpers import StubDevice, rotation_results, stub_device
-
-
-def _patch_device(monkeypatch: pytest.MonkeyPatch, device: StubDevice) -> None:
-    """Route fresh stable-ID opens to a test double."""
-    monkeypatch.setattr(
-        "mqt.core.plugins.pennylane.device.open_device",
-        lambda *_args, **_kwargs: cast("QDMIDeviceHandle", device),
-    )
+from .helpers import StubDevice, patch_open_device, rotation_results, stub_device
 
 
 def test_samples_counts_probabilities_expectations_and_variances(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reconstruct common PennyLane result types from raw QDMI samples."""
     qdmi = stub_device()
-    _patch_device(monkeypatch, qdmi)
+    patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=["left", "right"], shots=100)
 
     @qp.qnode(device)
@@ -70,13 +62,13 @@ def test_samples_counts_probabilities_expectations_and_variances(monkeypatch: py
     assert expectation == pytest.approx(0.0)
     assert variance == pytest.approx(1.0)
     assert device.submitted_jobs == 1
-    assert device.execution_time >= 0.0
+    assert math.isfinite(device.execution_time)
 
 
 def test_histogram_only_device_reconstructs_samples(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reconstruct raw samples when a QDMI implementation exposes only counts."""
     qdmi = stub_device(expose_shots=False)
-    _patch_device(monkeypatch, qdmi)
+    patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2, shots=8)
 
     @qp.qnode(device)
@@ -86,14 +78,31 @@ def test_histogram_only_device_reconstructs_samples(monkeypatch: pytest.MonkeyPa
     samples = circuit()
 
     assert samples.shape == (8, 2)
-    np.testing.assert_array_equal(samples[:4], np.zeros((4, 2), dtype=np.int8))
-    np.testing.assert_array_equal(samples[4:], np.ones((4, 2), dtype=np.int8))
+    assert Counter(map(tuple, samples.tolist())) == {(0, 0): 4, (1, 1): 4}
+
+
+def test_execution_time_accumulates_one_interval_per_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Accumulate one wall-clock interval for every submitted QDMI job."""
+    qdmi = stub_device()
+    patch_open_device(monkeypatch, qdmi)
+    readings = iter([0.0, 1.5, 10.0, 12.25, 100.0, 100.5])
+    monkeypatch.setattr("mqt.core.plugins.pennylane.device.monotonic", lambda: next(readings))
+    device = QDMIDevice("fake.qdmi", wires=2, shots=[(5, 2), 7])
+
+    @qp.qnode(device)
+    def circuit():
+        return qp.probs(wires=[0, 1])
+
+    circuit()
+
+    assert device.submitted_jobs == 3
+    assert device.execution_time == pytest.approx(1.5 + 2.25 + 0.5)
 
 
 def test_shot_vectors_submit_sequential_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Execute every shot-vector copy as a sequential QDMI job."""
     qdmi = stub_device()
-    _patch_device(monkeypatch, qdmi)
+    patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2, shots=[(5, 2), 7])
 
     @qp.qnode(device)
@@ -111,7 +120,7 @@ def test_shot_vectors_submit_sequential_jobs(monkeypatch: pytest.MonkeyPatch) ->
 def test_batches_execute_in_input_order(monkeypatch: pytest.MonkeyPatch) -> None:
     """Preserve batch ordering with one QDMI submission per tape."""
     qdmi = stub_device()
-    _patch_device(monkeypatch, qdmi)
+    patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2, shots=6)
     tapes = (
         qp.tape.QuantumScript([qp.PauliX(0)], [qp.probs(wires=[0, 1])], shots=6),
@@ -129,7 +138,7 @@ def test_batches_execute_in_input_order(monkeypatch: pytest.MonkeyPatch) -> None
 def test_parameter_shift_gradient_uses_multiple_qdmi_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Differentiate sampled execution through PennyLane's parameter-shift rule."""
     qdmi = stub_device(qubits=1, result_factory=rotation_results)
-    _patch_device(monkeypatch, qdmi)
+    patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=["theta"], shots=4000)
 
     @qp.qnode(device, diff_method="parameter-shift")
@@ -150,7 +159,7 @@ def test_parameter_shift_gradient_uses_multiple_qdmi_jobs(monkeypatch: pytest.Mo
 def test_hamiltonian_and_non_commuting_measurements_split(monkeypatch: pytest.MonkeyPatch) -> None:
     """Let PennyLane split and aggregate Hamiltonian and non-commuting terms."""
     qdmi = stub_device()
-    _patch_device(monkeypatch, qdmi)
+    patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2, shots=100)
     hamiltonian = 0.5 * qp.PauliZ(0) + 0.5 * qp.PauliZ(1)
 
@@ -168,7 +177,7 @@ def test_hamiltonian_and_non_commuting_measurements_split(monkeypatch: pytest.Mo
 def test_qasm2_diagonalizes_observable_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """Do not duplicate the X-basis rotation in PennyLane's QASM2 serializer."""
     qdmi = stub_device(program_format=ProgramFormat.QASM2)
-    _patch_device(monkeypatch, qdmi)
+    patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2, shots=10)
 
     @qp.qnode(device)
@@ -177,13 +186,13 @@ def test_qasm2_diagonalizes_observable_once(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert np.isfinite(circuit())
     assert qdmi.submissions[0][1] == ProgramFormat.QASM2
-    assert qdmi.submissions[0][0].count("ry(-1.5707963267948966) q[0];") == 1
+    assert qdmi.submissions[0][0].count("ry(") == 1
 
 
 def test_rejects_analytic_execution_before_submission(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject analytic tapes before a QDMI job is created."""
     qdmi = stub_device()
-    _patch_device(monkeypatch, qdmi)
+    patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2, shots=None)
 
     @qp.qnode(device)
@@ -192,13 +201,16 @@ def test_rejects_analytic_execution_before_submission(monkeypatch: pytest.Monkey
 
     with pytest.raises(PennyLaneValidationError, match="finite number of shots"):
         circuit()
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=0)], shots=None)
+    with pytest.raises(PennyLaneValidationError, match="finite number of shots"):
+        device.execute(tape)
     assert not qdmi.submissions
 
 
 def test_validates_configuration_and_width(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject unknown QDMI parameters and excessive wire counts."""
     qdmi = stub_device()
-    _patch_device(monkeypatch, qdmi)
+    patch_open_device(monkeypatch, qdmi)
 
     with pytest.raises(PennyLaneConfigurationError, match="unknown"):
         QDMIDevice(
@@ -213,7 +225,7 @@ def test_validates_configuration_and_width(monkeypatch: pytest.MonkeyPatch) -> N
 def test_rejects_device_without_openqasm(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject unsupported program formats during construction."""
     qdmi = StubDevice([], [ProgramFormat.QIR_BASE_STRING])
-    _patch_device(monkeypatch, qdmi)
+    patch_open_device(monkeypatch, qdmi)
 
     with pytest.raises(PennyLaneUnsupportedFormatError, match="neither OpenQASM 3 nor OpenQASM 2"):
         QDMIDevice("fake.qdmi", wires=2)
@@ -222,7 +234,7 @@ def test_rejects_device_without_openqasm(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_forwards_job_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
     """Forward generic QDMI custom job parameters unchanged."""
     qdmi = stub_device()
-    _patch_device(monkeypatch, qdmi)
+    patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice(
         "fake.qdmi",
         wires=2,

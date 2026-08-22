@@ -9,11 +9,14 @@
  */
 
 #include "ModifierUtils.h"
+#include "mlir/Dialect/MQT/Utils/Angles.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/GatePowering.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/UGateUtils.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
@@ -36,7 +39,7 @@
 
 using namespace mlir;
 using namespace mlir::qc;
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 /**
  * @brief If the computed P-gate angle corresponds to a named gate, emit it
@@ -82,27 +85,27 @@ static LogicalResult tryReplacePOpWithNamedGate(double angle, PowOp op,
   const double norm = normalizeAngle(angle);
   const double pi = std::numbers::pi;
 
-  if (std::abs(norm) < TOLERANCE) {
+  if (std::abs(norm) < PARAMETER_COMPARISON_TOLERANCE) {
     rewriter.eraseOp(op);
     return success();
   }
-  if (std::abs(std::abs(norm) - pi) < TOLERANCE) {
+  if (std::abs(std::abs(norm) - pi) < PARAMETER_COMPARISON_TOLERANCE) {
     rewriter.replaceOpWithNewOp<ZOp>(op, target);
     return success();
   }
-  if (std::abs(norm - (pi / 2.0)) < TOLERANCE) {
+  if (std::abs(norm - (pi / 2.0)) < PARAMETER_COMPARISON_TOLERANCE) {
     rewriter.replaceOpWithNewOp<SOp>(op, target);
     return success();
   }
-  if (std::abs(norm + (pi / 2.0)) < TOLERANCE) {
+  if (std::abs(norm + (pi / 2.0)) < PARAMETER_COMPARISON_TOLERANCE) {
     rewriter.replaceOpWithNewOp<SdgOp>(op, target);
     return success();
   }
-  if (std::abs(norm - (pi / 4.0)) < TOLERANCE) {
+  if (std::abs(norm - (pi / 4.0)) < PARAMETER_COMPARISON_TOLERANCE) {
     rewriter.replaceOpWithNewOp<TOp>(op, target);
     return success();
   }
-  if (std::abs(norm + (pi / 4.0)) < TOLERANCE) {
+  if (std::abs(norm + (pi / 4.0)) < PARAMETER_COMPARISON_TOLERANCE) {
     rewriter.replaceOpWithNewOp<TdgOp>(op, target);
     return success();
   }
@@ -122,10 +125,11 @@ struct InlinePow1 final : OpRewritePattern<PowOp> {
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     const auto exponent = op.getExponentValue();
-    if (!exponent || std::abs(*exponent - 1.0) > TOLERANCE) {
+    if (!exponent ||
+        std::abs(*exponent - 1.0) > PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
-    utils::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
+    mqt::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
     return success();
   }
 };
@@ -136,7 +140,7 @@ struct ErasePow0 final : OpRewritePattern<PowOp> {
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     const auto exponent = op.getExponentValue();
-    if (!exponent || std::abs(*exponent) > TOLERANCE) {
+    if (!exponent || std::abs(*exponent) > PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
     rewriter.eraseOp(op);
@@ -152,8 +156,7 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
     const auto exponent = op.getExponentValue();
     // U^{-r} = (U^{-1})^r only when r is an integer: for fractional r,
     // eigenvalue -1 yields (-1)^{-r} ≠ (-1)^r (conjugated phase factors).
-    if (!exponent || *exponent >= 0.0 ||
-        !utils::isIntegerExponent(-*exponent)) {
+    if (!exponent || *exponent >= 0.0 || !mqt::isIntegerExponent(-*exponent)) {
       return failure();
     }
     const double exp = *exponent;
@@ -164,8 +167,8 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
                         [&](ValueRange invArgs) {
                           // Inline the old pow body, remapping its block args
                           // to the new inv body's block args.
-                          utils::inlineBodyReturningYields(*op.getBody(),
-                                                           invArgs, rewriter);
+                          mqt::inlineBodyReturningYields(*op.getBody(), invArgs,
+                                                         rewriter);
                         });
         });
     return success();
@@ -181,10 +184,10 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
     // Principal matrix powers do not generally satisfy (U^b)^a = U^(a*b)
     // across branch cuts. The rewrite is valid for integral outer powers,
     // where any branch phase is raised to an integer and cancels.
-    if (!outerExponent || !utils::isIntegerExponent(*outerExponent)) {
+    if (!outerExponent || !mqt::isIntegerExponent(*outerExponent)) {
       return failure();
     }
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
@@ -197,18 +200,18 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
     // so the merged pow's footprint matches the inner pow positionally.
     auto outerQubits = op.getQubits();
     const auto qubits = llvm::map_to_vector(innerPow.getQubits(), [&](Value v) {
-      return utils::getValueFromBlockArgument(v, outerQubits);
+      return mqt::getValueFromBlockArgument(v, outerQubits);
     });
     // Move supporting ops (constants, arithmetic) out of the body so their
     // Values are accessible from outside and survive PowOp erasure.
-    utils::hoistSupportingOpsBefore(*op.getBody(), innerPow.getOperation(), op,
-                                    rewriter);
+    mqt::hoistSupportingOpsBefore(*op.getBody(), innerPow.getOperation(), op,
+                                  rewriter);
     auto merged = scaleByExponent(innerPow.getExponent(), op, rewriter);
     rewriter.replaceOpWithNewOp<PowOp>(
         op, merged, qubits, [&](ValueRange powArgs) {
           // Inner pow body args now match the new pow's args positionally.
-          utils::inlineBodyReturningYields(*innerPow.getBody(), powArgs,
-                                           rewriter);
+          mqt::inlineBodyReturningYields(*innerPow.getBody(), powArgs,
+                                         rewriter);
         });
     return success();
   }
@@ -220,7 +223,7 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
 
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
@@ -236,19 +239,19 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
     auto outerQubits = op.getQubits();
     const auto controls =
         llvm::map_to_vector(innerCtrlOp.getControls(), [&](Value c) {
-          return utils::getValueFromBlockArgument(c, outerQubits);
+          return mqt::getValueFromBlockArgument(c, outerQubits);
         });
     const auto targets =
         llvm::map_to_vector(innerCtrlOp.getTargets(), [&](Value t) {
-          return utils::getValueFromBlockArgument(t, outerQubits);
+          return mqt::getValueFromBlockArgument(t, outerQubits);
         });
 
     rewriter.replaceOpWithNewOp<CtrlOp>(
         op, controls, targets, [&](ValueRange targetArgs) {
           PowOp::create(rewriter, op.getLoc(), op.getExponent(), targetArgs,
                         [&](ValueRange powArgs) {
-                          utils::inlineBodyReturningYields(
-                              *innerCtrlOp.getBody(), powArgs, rewriter);
+                          mqt::inlineBodyReturningYields(*innerCtrlOp.getBody(),
+                                                         powArgs, rewriter);
                         });
         });
 
@@ -274,7 +277,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
 
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
@@ -305,13 +308,13 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
     // principal branch. Keep arbitrary parameters inside fractional powers.
     if (isa<GPhaseOp, RXOp, RYOp, RZOp, POp, ROp, RXXOp, RYYOp, RZXOp, RZZOp,
             XXPlusYYOp, XXMinusYYOp>(innerOp) &&
-        !utils::isIntegerExponent(r)) {
+        !mqt::isIntegerExponent(r)) {
       return failure();
     }
     // HOp, ECROp, RCCXOp, and SWAPOp also only have the simple parity fold for
     // integral exponents.
     if (isa<HOp, ECROp, RCCXOp, SWAPOp>(innerOp) &&
-        !utils::isIntegerExponent(r)) {
+        !mqt::isIntegerExponent(r)) {
       return failure();
     }
     if (!isa<GPhaseOp, XOp, YOp, ZOp, SOp, SdgOp, TOp, TdgOp, SXOp, SXdgOp, HOp,
@@ -323,7 +326,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
 
     // Move supporting ops (constants, arithmetic) out of the body so their
     // Values are accessible from outside and survive PowOp erasure.
-    utils::hoistSupportingOpsBefore(*op.getBody(), innerOp, op, rewriter);
+    mqt::hoistSupportingOpsBefore(*op.getBody(), innerOp, op, rewriter);
 
     return TypeSwitch<Operation*, LogicalResult>(innerOp)
         // --- Rotation gates: multiply angle by exponent ---
@@ -338,8 +341,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
           auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
           rewriter.replaceOpWithNewOp<decltype(gate)>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
               newParam);
           return success();
         })
@@ -348,10 +350,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
           auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
           rewriter.replaceOpWithNewOp<decltype(gate)>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
-              utils::getValueFromBlockArgument(gate.getTarget(1),
-                                               op.getQubits()),
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              mqt::getValueFromBlockArgument(gate.getTarget(1), op.getQubits()),
               newParam);
           return success();
         })
@@ -360,8 +360,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
           auto mul = scaleByExponent(gate.getTheta(), op, rewriter);
           rewriter.replaceOpWithNewOp<ROp>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
               mul, gate.getPhi());
           return success();
         })
@@ -370,17 +369,16 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
           auto mul = scaleByExponent(gate.getTheta(), op, rewriter);
           rewriter.replaceOpWithNewOp<decltype(gate)>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
-              utils::getValueFromBlockArgument(gate.getTarget(1),
-                                               op.getQubits()),
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              mqt::getValueFromBlockArgument(gate.getTarget(1), op.getQubits()),
               mul, gate.getBeta());
           return success();
         })
         // pow(n) { u(theta, phi, lambda) } =>
         // gphase(delta); u(theta', phi', lambda')
         .Case<UOp>([&](auto) {
-          if (std::abs(normalizeAngle(uPower->phase)) > TOLERANCE) {
+          if (std::abs(normalizeAngle(uPower->phase)) >
+              PARAMETER_COMPARISON_TOLERANCE) {
             GPhaseOp::create(rewriter, loc, uPower->phase);
           }
           rewriter.replaceOpWithNewOp<UOp>(op, op.getTarget(0), uPower->theta,
@@ -393,59 +391,56 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
           const double angle = r * std::numbers::pi;
           if (succeeded(tryReplacePOpWithNamedGate(
                   angle, op,
-                  utils::getValueFromBlockArgument(gate.getTarget(0),
-                                                   op.getQubits()),
+                  mqt::getValueFromBlockArgument(gate.getTarget(0),
+                                                 op.getQubits()),
                   rewriter))) {
             return success();
           }
           rewriter.replaceOpWithNewOp<POp>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * std::numbers::pi));
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * std::numbers::pi));
           return success();
         })
         // pow(r) { x } => gphase(r*π/2); rx(r*π)
         // pow(1/2) x => sx      (X^(1/2) = SX exactly)
         // pow(-1/2) x => sxdg   (X^(-1/2) = SXdg exactly)
         .Case<XOp>([&](auto gate) {
-          if (std::abs(r - 0.5) < TOLERANCE) {
+          if (std::abs(r - 0.5) < PARAMETER_COMPARISON_TOLERANCE) {
             rewriter.replaceOpWithNewOp<SXOp>(
-                op, utils::getValueFromBlockArgument(gate.getTarget(0),
-                                                     op.getQubits()));
+                op, mqt::getValueFromBlockArgument(gate.getTarget(0),
+                                                   op.getQubits()));
             return success();
           }
-          if (std::abs(r + 0.5) < TOLERANCE) {
+          if (std::abs(r + 0.5) < PARAMETER_COMPARISON_TOLERANCE) {
             rewriter.replaceOpWithNewOp<SXdgOp>(
-                op, utils::getValueFromBlockArgument(gate.getTarget(0),
-                                                     op.getQubits()));
+                op, mqt::getValueFromBlockArgument(gate.getTarget(0),
+                                                   op.getQubits()));
             return success();
           }
           GPhaseOp::create(
               rewriter, loc,
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * (std::numbers::pi / 2.0)));
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * (std::numbers::pi / 2.0)));
           rewriter.replaceOpWithNewOp<RXOp>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * std::numbers::pi));
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * std::numbers::pi));
           return success();
         })
         // pow(r) { y } => gphase(r*π/2); ry(r*π)
         .Case<YOp>([&](auto gate) {
           GPhaseOp::create(
               rewriter, loc,
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * (std::numbers::pi / 2.0)));
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * (std::numbers::pi / 2.0)));
           rewriter.replaceOpWithNewOp<RYOp>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * std::numbers::pi));
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * std::numbers::pi));
           return success();
         })
         // --- Phase/diagonal gates: named gate if angle matches, else P gate
@@ -454,17 +449,16 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
           const double angle = r * std::numbers::pi / 2.0;
           if (succeeded(tryReplacePOpWithNamedGate(
                   angle, op,
-                  utils::getValueFromBlockArgument(gate.getTarget(0),
-                                                   op.getQubits()),
+                  mqt::getValueFromBlockArgument(gate.getTarget(0),
+                                                 op.getQubits()),
                   rewriter))) {
             return success();
           }
           rewriter.replaceOpWithNewOp<POp>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * (std::numbers::pi / 2.0)));
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * (std::numbers::pi / 2.0)));
           return success();
         })
         // pow(r) { sdg } => named gate if angle matches, else p(-r*π/2)
@@ -472,17 +466,16 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
           const double angle = r * -std::numbers::pi / 2.0;
           if (succeeded(tryReplacePOpWithNamedGate(
                   angle, op,
-                  utils::getValueFromBlockArgument(gate.getTarget(0),
-                                                   op.getQubits()),
+                  mqt::getValueFromBlockArgument(gate.getTarget(0),
+                                                 op.getQubits()),
                   rewriter))) {
             return success();
           }
           rewriter.replaceOpWithNewOp<POp>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * (-std::numbers::pi / 2.0)));
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * (-std::numbers::pi / 2.0)));
           return success();
         })
         // pow(r) { t } => named gate if angle matches, else p(r*π/4)
@@ -490,17 +483,16 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
           const double angle = r * std::numbers::pi / 4.0;
           if (succeeded(tryReplacePOpWithNamedGate(
                   angle, op,
-                  utils::getValueFromBlockArgument(gate.getTarget(0),
-                                                   op.getQubits()),
+                  mqt::getValueFromBlockArgument(gate.getTarget(0),
+                                                 op.getQubits()),
                   rewriter))) {
             return success();
           }
           rewriter.replaceOpWithNewOp<POp>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * (std::numbers::pi / 4.0)));
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * (std::numbers::pi / 4.0)));
           return success();
         })
         // pow(r) { tdg } => named gate if angle matches, else p(-r*π/4)
@@ -508,66 +500,63 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
           const double angle = r * -std::numbers::pi / 4.0;
           if (succeeded(tryReplacePOpWithNamedGate(
                   angle, op,
-                  utils::getValueFromBlockArgument(gate.getTarget(0),
-                                                   op.getQubits()),
+                  mqt::getValueFromBlockArgument(gate.getTarget(0),
+                                                 op.getQubits()),
                   rewriter))) {
             return success();
           }
           rewriter.replaceOpWithNewOp<POp>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * (-std::numbers::pi / 4.0)));
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * (-std::numbers::pi / 4.0)));
           return success();
         })
         // --- SX/SXdg gates: decompose to rotation + global phase ---
         // pow(r) { sx } => gphase(r*π/4); rx(r*π/2)
         // pow(±2) sx => x
         .Case<SXOp>([&](auto gate) {
-          if (std::abs(std::abs(r) - 2.0) < TOLERANCE) {
+          if (std::abs(std::abs(r) - 2.0) < PARAMETER_COMPARISON_TOLERANCE) {
             rewriter.replaceOpWithNewOp<XOp>(
-                op, utils::getValueFromBlockArgument(gate.getTarget(0),
-                                                     op.getQubits()));
+                op, mqt::getValueFromBlockArgument(gate.getTarget(0),
+                                                   op.getQubits()));
             return success();
           }
           GPhaseOp::create(
               rewriter, loc,
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * (std::numbers::pi / 4.0)));
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * (std::numbers::pi / 4.0)));
           rewriter.replaceOpWithNewOp<RXOp>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * (std::numbers::pi / 2.0)));
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * (std::numbers::pi / 2.0)));
           return success();
         })
         // pow(r) { sxdg } => gphase(-r*π/4); rx(-r*π/2)
         // pow(±2) sxdg => x
         .Case<SXdgOp>([&](auto gate) {
-          if (std::abs(std::abs(r) - 2.0) < TOLERANCE) {
+          if (std::abs(std::abs(r) - 2.0) < PARAMETER_COMPARISON_TOLERANCE) {
             rewriter.replaceOpWithNewOp<XOp>(
-                op, utils::getValueFromBlockArgument(gate.getTarget(0),
-                                                     op.getQubits()));
+                op, mqt::getValueFromBlockArgument(gate.getTarget(0),
+                                                   op.getQubits()));
             return success();
           }
           GPhaseOp::create(
               rewriter, loc,
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * (-std::numbers::pi / 4.0)));
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * (-std::numbers::pi / 4.0)));
           rewriter.replaceOpWithNewOp<RXOp>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * (-std::numbers::pi / 2.0)));
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * (-std::numbers::pi / 2.0)));
           return success();
         })
         // --- Hermitian gates (integer exponent): even => erase/id, odd => gate
         // --- pow(n) { h } => id (n even) | h (n odd)
         .Case<HOp>([&](auto) {
-          if (utils::isEvenExponent(r)) {
+          if (mqt::isEvenExponent(r)) {
             // pow(even) { h } => identity. Erase it.
             rewriter.eraseOp(op);
           } else {
@@ -575,21 +564,21 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // block args; inline the body, remapping them to the outer qubit
             // operands, instead of hoisting the gate out (which would leave it
             // referencing the erased block args).
-            utils::inlineModifierBody(op, *op.getBody(), op.getQubits(),
-                                      rewriter);
+            mqt::inlineModifierBody(op, *op.getBody(), op.getQubits(),
+                                    rewriter);
           }
           return success();
         })
         // pow(n) { ecr/rccx/swap } => erase (n even) | gate (n odd)
         .Case<ECROp, RCCXOp, SWAPOp>([&](auto) {
-          if (utils::isEvenExponent(r)) {
+          if (mqt::isEvenExponent(r)) {
             // pow(even) { ecr/rccx/swap } => identity. Erase it.
             rewriter.eraseOp(op);
           } else {
             // pow(odd) { ecr/rccx/swap } => gate. Inline the body, remapping
             // its block args to the outer qubit operands (see HOp case above).
-            utils::inlineModifierBody(op, *op.getBody(), op.getQubits(),
-                                      rewriter);
+            mqt::inlineModifierBody(op, *op.getBody(), op.getQubits(),
+                                    rewriter);
           }
           return success();
         })
@@ -598,28 +587,26 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
         .Case<iSWAPOp>([&](auto gate) {
           rewriter.replaceOpWithNewOp<XXPlusYYOp>(
               op,
-              utils::getValueFromBlockArgument(gate.getTarget(0),
-                                               op.getQubits()),
-              utils::getValueFromBlockArgument(gate.getTarget(1),
-                                               op.getQubits()),
-              utils::constantFromScalar(rewriter, op.getLoc(),
-                                        r * (-std::numbers::pi)),
-              utils::constantFromScalar(rewriter, op.getLoc(), 0.0));
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              mqt::getValueFromBlockArgument(gate.getTarget(1), op.getQubits()),
+              mqt::constantFromScalar(rewriter, op.getLoc(),
+                                      r * (-std::numbers::pi)),
+              mqt::constantFromScalar(rewriter, op.getLoc(), 0.0));
           return success();
         })
         // --- Identity and barrier: pass through unchanged ---
         // pow(r) { id } => id
         .Case<IdOp>([&](auto gate) {
           rewriter.replaceOpWithNewOp<IdOp>(
-              op, utils::getValueFromBlockArgument(gate.getTarget(0),
-                                                   op.getQubits()));
+              op, mqt::getValueFromBlockArgument(gate.getTarget(0),
+                                                 op.getQubits()));
           return success();
         })
         // pow(r) { barrier } => barrier
         .Case<BarrierOp>([&](auto gate) {
           rewriter.replaceOpWithNewOp<BarrierOp>(
               op, llvm::map_to_vector(gate.getTargets(), [&](Value qubit) {
-                return utils::getValueFromBlockArgument(qubit, op.getQubits());
+                return mqt::getValueFromBlockArgument(qubit, op.getQubits());
               }));
           return success();
         })
@@ -669,15 +656,15 @@ struct DropUnusedPowQubits final : OpRewritePattern<PowOp> {
 } // namespace
 
 std::optional<double> PowOp::getExponentValue() {
-  return utils::valueToDouble(getExponent());
+  return mlir::mqt::valueToDouble(getExponent());
 }
 
 size_t PowOp::getNumBodyUnitaries() {
-  return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
+  return mqt::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
 
 UnitaryOpInterface PowOp::getBodyUnitary(const size_t i) {
-  return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
+  return mqt::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,

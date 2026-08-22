@@ -10,9 +10,14 @@
 
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include <gtest/gtest.h>
 #include <llvm/Support/raw_ostream.h>
@@ -21,6 +26,7 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributeInterfaces.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
@@ -43,7 +49,8 @@ protected:
   QCQCORoundTripTest() {
     DialectRegistry registry;
     registry
-        .insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
+        .insert<cbit::CBitDialect, mqt::MQTDialect, qc::QCDialect,
+                qco::QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
                 func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
@@ -68,11 +75,102 @@ protected:
 
 } // namespace
 
+TEST_F(QCQCORoundTripTest, PreservesSharedMQTMetadata) {
+  constexpr StringLiteral source = R"mlir(
+module {
+  func.func @main(%theta: f64 {mqt.input_name = "theta"})
+      attributes {mqt.entry_point} {
+    %reg = memref.alloc() {mqt.register_name = "q"}
+        : memref<2x!qc.qubit>
+    memref.dealloc %reg : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runRoundTrip(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(function);
+  EXPECT_TRUE(mqt::isEntryPoint(function));
+  const auto inputName = function.getArgAttrOfType<StringAttr>(
+      0, mqt::MQTDialect::InputNameAttrHelper::getNameStr());
+  ASSERT_TRUE(inputName);
+  EXPECT_EQ(inputName.getValue(), "theta");
+
+  memref::AllocOp allocation;
+  moduleOp->walk([&](memref::AllocOp op) { allocation = op; });
+  ASSERT_TRUE(allocation);
+  const auto registerName = allocation->getAttrOfType<StringAttr>(
+      mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
+  ASSERT_TRUE(registerName);
+  EXPECT_EQ(registerName.getValue(), "q");
+}
+
+TEST_F(QCQCORoundTripTest, PreservesClassicalRegistersWithoutConversion) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> (!cbit.reg<2>, !cbit.reg<1>)
+      attributes {mqt.entry_point} {
+    %c0 = arith.constant 0 : index
+    %zero = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "zero"} : !cbit.reg<2>
+    %undefined = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "undefined"} : !cbit.reg<1>
+    %q = qc.alloc : !qc.qubit
+    %measurement = qc.measure %q : !qc.qubit -> i1
+    cbit.store %measurement, %zero[%c0] : !cbit.reg<2>
+    %loaded = cbit.load %zero[%c0] : !cbit.reg<2>
+    cbit.store %loaded, %undefined[%c0] : !cbit.reg<1>
+    qc.dealloc %q : !qc.qubit
+    return %zero, %undefined : !cbit.reg<2>, !cbit.reg<1>
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runRoundTrip(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  SmallVector<cbit::AllocOp> allocations;
+  SmallVector<cbit::LoadOp> loads;
+  SmallVector<cbit::StoreOp> stores;
+  moduleOp->walk([&](cbit::AllocOp op) { allocations.push_back(op); });
+  moduleOp->walk([&](cbit::LoadOp op) { loads.push_back(op); });
+  moduleOp->walk([&](cbit::StoreOp op) { stores.push_back(op); });
+  ASSERT_EQ(allocations.size(), 2);
+  ASSERT_EQ(loads.size(), 1);
+  ASSERT_EQ(stores.size(), 2);
+  EXPECT_EQ(allocations[0].getInitialization(), cbit::Initialization::Zero);
+  EXPECT_EQ(allocations[0]
+                ->getAttrOfType<StringAttr>(
+                    mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
+                .getValue(),
+            "zero");
+  EXPECT_EQ(allocations[1].getInitialization(),
+            cbit::Initialization::Undefined);
+  EXPECT_EQ(allocations[1]
+                ->getAttrOfType<StringAttr>(
+                    mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
+                .getValue(),
+            "undefined");
+  EXPECT_EQ(loads.front().getReg(), allocations.front().getResult());
+  EXPECT_EQ(stores.front().getReg(), allocations.front().getResult());
+  EXPECT_EQ(stores.back().getReg(), allocations.back().getResult());
+
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  EXPECT_EQ(returnOp.getOperand(0), allocations[0].getResult());
+  EXPECT_EQ(returnOp.getOperand(1), allocations[1].getResult());
+}
+
 TEST_F(QCQCORoundTripTest, PreservesClassicalIfResultWithoutScratch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%condition: i1) -> i64
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     %result = scf.if %condition -> i64 {
       qc.h %q : !qc.qubit
@@ -111,7 +209,7 @@ TEST_F(QCQCORoundTripTest, PreservesClassicalIndexSwitchResultWithoutScratch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%index: index) -> i64
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     %result = scf.index_switch %index -> i64
     case 0 {
@@ -151,7 +249,7 @@ module {
 TEST_F(QCQCORoundTripTest, PreservesDenseUnitaryMatrixAndQubitArity) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %q0 = qc.alloc : !qc.qubit
     %q1 = qc.alloc : !qc.qubit
     qc.unitary dense<[

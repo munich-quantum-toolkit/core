@@ -9,6 +9,9 @@
  */
 
 #include "OpenQASMTestUtils.h"
+#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
@@ -20,6 +23,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -606,7 +610,7 @@ x $0;
   EXPECT_NE(diagnostic.find("QC target"), std::string::npos) << diagnostic;
 }
 
-TEST(OpenQASMTargetTest, AllocatesClassicalStorageOnlyForBitOutputs) {
+TEST(OpenQASMTargetTest, AllocatesCBitStorageForAllBitRegisters) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 include "stdgates.inc";
@@ -627,23 +631,15 @@ result = measure q;
   size_t classicalAllocations = 0;
   size_t classicalLoads = 0;
   size_t classicalStores = 0;
-  moduleOp->walk([&](Operation* operation) {
-    if (auto allocation = dyn_cast<memref::AllocOp>(operation);
-        allocation && allocation.getType().getElementType().isInteger(1)) {
-      ++classicalAllocations;
-    }
-    if (auto load = dyn_cast<memref::LoadOp>(operation);
-        load && load.getMemRefType().getElementType().isInteger(1)) {
-      ++classicalLoads;
-    }
-    if (auto store = dyn_cast<memref::StoreOp>(operation);
-        store && store.getMemRefType().getElementType().isInteger(1)) {
-      ++classicalStores;
-    }
+  moduleOp->walk([&](cbit::AllocOp allocation) {
+    ++classicalAllocations;
+    EXPECT_EQ(allocation.getInitialization(), cbit::Initialization::Undefined);
   });
-  EXPECT_EQ(classicalAllocations, 1);
-  EXPECT_EQ(classicalLoads, 0);
-  EXPECT_EQ(classicalStores, 1);
+  moduleOp->walk([&](cbit::LoadOp) { ++classicalLoads; });
+  moduleOp->walk([&](cbit::StoreOp) { ++classicalStores; });
+  EXPECT_EQ(classicalAllocations, 2);
+  EXPECT_EQ(classicalLoads, 1);
+  EXPECT_EQ(classicalStores, 2);
 }
 
 TEST(OpenQASMTargetTest, PreservesOrderedScalarAndRegisterOutputs) {
@@ -681,10 +677,10 @@ float ratio = 2.0;
   ASSERT_TRUE(result);
   ASSERT_EQ(result.getNumOperands(), 3);
   EXPECT_TRUE(result.getOperand(0).getType().isInteger(64));
-  const auto bitType = dyn_cast<MemRefType>(result.getOperand(1).getType());
+  const auto bitType =
+      dyn_cast<cbit::RegisterType>(result.getOperand(1).getType());
   ASSERT_TRUE(bitType);
-  EXPECT_EQ(bitType.getShape(), ArrayRef<int64_t>{2});
-  EXPECT_TRUE(bitType.getElementType().isInteger(1));
+  EXPECT_EQ(bitType.getWidth(), 2);
   EXPECT_TRUE(result.getOperand(2).getType().isF64());
 
   constexpr llvm::StringLiteral explicitSource = R"qasm(
@@ -711,7 +707,7 @@ include "stdgates.inc";
 qubit[3163] q;
 qubit[3163] aux;
 int i = 0;
-  int j = 1;
+int j = 1;
 cx q[i], aux[j];
 )qasm";
 
@@ -931,6 +927,9 @@ if (target[0] || target[1]) { x q[0]; }
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  PassManager canonicalizer(&context);
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
 
   SmallVector<Value> measured;
   moduleOp->walk([&](qc::MeasureOp measurement) {
@@ -939,8 +938,10 @@ if (target[0] || target[1]) { x q[0]; }
   const auto returned = returnedBitValues(*moduleOp);
   ASSERT_EQ(measured.size(), 2);
   ASSERT_EQ(returned.size(), 2);
-  EXPECT_EQ(returned[0], measured[0]);
-  EXPECT_EQ(returned[1], measured[1]);
+  ASSERT_TRUE(returned[0]);
+  ASSERT_TRUE(returned[1]);
+  EXPECT_EQ(*returned[0], measured[0]);
+  EXPECT_EQ(*returned[1], measured[1]);
 }
 
 TEST(OpenQASMTargetTest, LowersTypedBitVectorBuiltins) {
@@ -1023,7 +1024,7 @@ if (count == 3) { x q; }
   EXPECT_EQ(unpackingTruncations, 0);
 }
 
-TEST(OpenQASMTargetTest, CarriesAtomicRotationsThroughControlFlow) {
+TEST(OpenQASMTargetTest, StoresAtomicRotationsThroughControlFlow) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 output bit[5] value;
@@ -1043,11 +1044,13 @@ if (condition) {
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  bool carriedWholeRegister = false;
+  bool storesWholeRegister = false;
   moduleOp->walk([&](scf::IfOp conditional) {
-    carriedWholeRegister |= conditional.getNumResults() == 5;
+    size_t stores = 0;
+    conditional.getThenRegion().walk([&](cbit::StoreOp) { ++stores; });
+    storesWholeRegister |= conditional.getNumResults() == 0 && stores == 5;
   });
-  EXPECT_TRUE(carriedWholeRegister);
+  EXPECT_TRUE(storesWholeRegister);
 }
 
 TEST(OpenQASMTargetTest, SelfRotationSnapshotsTheWholeRegister) {
@@ -1063,6 +1066,9 @@ result = rotl(result, 2);
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  PassManager canonicalizer(&context);
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
 
   SmallVector<Value> measured;
   moduleOp->walk([&](qc::MeasureOp measurement) {
@@ -1071,11 +1077,13 @@ result = rotl(result, 2);
   const auto returned = returnedBitValues(*moduleOp);
   ASSERT_EQ(measured.size(), 5);
   ASSERT_EQ(returned.size(), 5);
-  EXPECT_EQ(returned[0], measured[3]);
-  EXPECT_EQ(returned[1], measured[4]);
-  EXPECT_EQ(returned[2], measured[0]);
-  EXPECT_EQ(returned[3], measured[1]);
-  EXPECT_EQ(returned[4], measured[2]);
+  ASSERT_TRUE(llvm::all_of(
+      returned, [](const auto& value) { return value.has_value(); }));
+  EXPECT_EQ(*returned[0], measured[3]);
+  EXPECT_EQ(*returned[1], measured[4]);
+  EXPECT_EQ(*returned[2], measured[0]);
+  EXPECT_EQ(*returned[3], measured[1]);
+  EXPECT_EQ(*returned[4], measured[2]);
 }
 
 TEST(OpenQASMTargetTest, SupportsWidthOneBitVectorBuiltins) {
@@ -1275,18 +1283,15 @@ if (c == 0) x q[0];
 
   const auto returned = returnedBitValues(*moduleOp);
   ASSERT_EQ(returned.size(), 2);
-  for (const auto value : returned) {
-    const auto constant = evaluateConstantInteger(value);
-    ASSERT_TRUE(constant);
-    EXPECT_TRUE(constant->isZero());
-  }
+  EXPECT_TRUE(llvm::none_of(
+      returned, [](const auto& value) { return value.has_value(); }));
   size_t conditionals = 0;
   size_t xGates = 0;
   moduleOp->walk([&](scf::IfOp) { ++conditionals; });
   moduleOp->walk([&](qc::XOp) { ++xGates; });
-  // The register equality and source branch retain their structured form;
-  // the initialized storage provides their runtime value.
-  EXPECT_EQ(conditionals, 2);
+  // Zero initialization proves the condition true and removes both
+  // short-circuit conditionals.
+  EXPECT_EQ(conditionals, 0);
   EXPECT_EQ(xGates, 1);
 }
 
@@ -1311,9 +1316,7 @@ if (c == 1) x q[0];
 
   const auto returned = returnedBitValues(*moduleOp);
   ASSERT_EQ(returned.size(), 2);
-  const auto untouchedBit = evaluateConstantInteger(returned[1]);
-  ASSERT_TRUE(untouchedBit);
-  EXPECT_TRUE(untouchedBit->isZero());
+  EXPECT_FALSE(returned[1]);
 
   size_t conditionals = 0;
   moduleOp->walk([&](scf::IfOp) { ++conditionals; });
@@ -1448,7 +1451,8 @@ TEST(OpenQASMTargetTest, EmitsStructuredDiagnosticsWithIncludeStacks) {
   EXPECT_EQ(nestedLocation.getLine(), 2);
 }
 
-TEST(OpenQASMTargetTest, NormalizesNegativeIndicesAndChecksDynamicAliases) {
+TEST(OpenQASMTargetTest,
+     NormalizesKnownScalarIndicesAndRejectsDuplicateQubits) {
   constexpr llvm::StringLiteral indexSource = R"qasm(
 OPENQASM 3.1;
 qubit[3] q;
@@ -1465,10 +1469,7 @@ result = measure q;
   MLIRContext indexContext;
   auto indexed = qc::translateQASM3ToQC(indexSource, &indexContext);
   ASSERT_TRUE(indexed);
-  ASSERT_TRUE(succeeded(verify(*indexed)));
-  size_t indexSelections = 0;
-  indexed->walk([&](arith::SelectOp) { ++indexSelections; });
-  EXPECT_GE(indexSelections, 3);
+  EXPECT_TRUE(succeeded(verify(*indexed)));
 
   constexpr llvm::StringLiteral aliasSource = R"qasm(
 OPENQASM 3.1;
@@ -1479,11 +1480,7 @@ bit[2] result = measure q;
 )qasm";
   MLIRContext aliasContext;
   auto aliased = qc::translateQASM3ToQC(aliasSource, &aliasContext);
-  ASSERT_TRUE(aliased);
-  ASSERT_TRUE(succeeded(verify(*aliased)));
-  size_t aliasAssertions = 0;
-  aliased->walk([&](cf::AssertOp) { ++aliasAssertions; });
-  EXPECT_GE(aliasAssertions, 3);
+  EXPECT_FALSE(aliased);
 }
 
 TEST(OpenQASMTargetTest, LoadsDynamicQubitGatesDirectly) {
@@ -1645,7 +1642,6 @@ barrier q[i], q[j];
   size_t measurements = 0;
   size_t resets = 0;
   size_t barriers = 0;
-  size_t distinctnessAssertions = 0;
   moduleOp->walk([&](scf::IndexSwitchOp) { ++switches; });
   moduleOp->walk([&](memref::LoadOp load) {
     if (isa<qc::QubitType>(load.getType())) {
@@ -1656,16 +1652,14 @@ barrier q[i], q[j];
   moduleOp->walk([&](qc::MeasureOp) { ++measurements; });
   moduleOp->walk([&](qc::ResetOp) { ++resets; });
   moduleOp->walk([&](qc::BarrierOp) { ++barriers; });
-  moduleOp->walk([&](cf::AssertOp assertion) {
-    distinctnessAssertions += assertion.getMsg().ends_with(
-        "operands must not reference the same qubit");
-  });
   EXPECT_EQ(switches, 0);
   EXPECT_EQ(loads, 6);
   EXPECT_EQ(measurements, 1);
   EXPECT_EQ(resets, 1);
   EXPECT_EQ(barriers, 1);
-  EXPECT_EQ(distinctnessAssertions, 2);
+  size_t assertions = 0;
+  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
+  EXPECT_EQ(assertions, 0);
 }
 
 TEST(OpenQASMTargetTest, QuantumEmissionDoesNotScaleWithRegisterWidth) {
@@ -1776,6 +1770,32 @@ for uint i in [start:-1:stop] { x q; }
   EXPECT_EQ(xGates, 0);
 }
 
+TEST(OpenQASMTargetTest, PreservesMixedPositiveRangeEndpointPromotion) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+const uint stop = 1;
+qubit q;
+for int i in [-1:stop] { x q; }
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  PassManager canonicalizer(&context);
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
+  size_t loops = 0;
+  size_t xGates = 0;
+  moduleOp->walk([&](Operation* operation) {
+    loops += isa<scf::ForOp>(operation);
+    xGates += isa<qc::XOp>(operation);
+  });
+  EXPECT_EQ(loops, 0);
+  EXPECT_EQ(xGates, 0);
+}
+
 TEST(OpenQASMTargetTest, ThreadsGateParametersIntoWhileConditions) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
@@ -1863,7 +1883,7 @@ x q;
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
-TEST(OpenQASMTargetTest, LowersRuntimeDynamicIndicesWithBoundsChecks) {
+TEST(OpenQASMTargetTest, RejectsMutableRuntimeQuantumIndices) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 include "stdgates.inc";
@@ -1876,11 +1896,7 @@ x q[i];
 
   MLIRContext context;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  size_t assertions = 0;
-  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
-  EXPECT_GE(assertions, 1);
+  EXPECT_FALSE(moduleOp);
 }
 
 TEST(OpenQASMTargetTest, LowersRuntimeIndicesAcrossStatementKinds) {
@@ -1899,10 +1915,6 @@ if (c[i]) { x q[0]; })qasm",
       "OPENQASM 3.1; qubit[2] q; bit[2] c = measure q; int i = 0; "
       "bit choose = measure q[0]; if (choose) { i = 1; } "
       "c[i] = measure q[0];",
-      "OPENQASM 3.1; qubit[2] q; int i = 0; "
-      "bit choose = measure q[0]; if (choose) { i = 1; } reset q[i];",
-      "OPENQASM 3.1; qubit[2] q; int i = 0; "
-      "bit choose = measure q[0]; if (choose) { i = 1; } barrier q[i];",
   });
 
   for (const auto source : sources) {
@@ -1912,9 +1924,21 @@ if (c[i]) { x q[0]; })qasm",
     ASSERT_TRUE(moduleOp);
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
   }
+
+  constexpr auto rejectedQuantumSources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; qubit[2] q; int i = 0; "
+      "bit choose = measure q[0]; if (choose) { i = 1; } reset q[i];",
+      "OPENQASM 3.1; qubit[2] q; int i = 0; "
+      "bit choose = measure q[0]; if (choose) { i = 1; } barrier q[i];",
+  });
+  for (const auto source : rejectedQuantumSources) {
+    SCOPED_TRACE(source.str());
+    MLIRContext context;
+    EXPECT_FALSE(qc::translateQASM3ToQC(source, &context));
+  }
 }
 
-TEST(OpenQASMTargetTest, LowersLoopVariantDynamicIndicesAtQCTarget) {
+TEST(OpenQASMTargetTest, RejectsLoopVariantQuantumIndicesAtQCTarget) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 include "stdgates.inc";
@@ -1926,8 +1950,7 @@ while (repeat) { x q[i]; i = 1; repeat = measure q[0]; }
 
   MLIRContext context;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_FALSE(moduleOp);
 }
 
 TEST(OpenQASMTargetTest, LowersMultiIterationInductionIndicesAtQCTarget) {
@@ -1942,6 +1965,50 @@ for uint i in [0:2] { int x = i + 1; h q[x]; }
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST(OpenQASMTargetTest, LowersProvenAffineIndicesWithoutRuntimeGuards) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit[8] q;
+qubit[8] left;
+qubit[8] right;
+int last = 7;
+for int i in [0:6] {
+  cx q[i], q[i + 1];
+  h q[last - i];
+  for int j in [i + 1:last] {
+    cx q[j], q[i];
+    for int step in [0:j] {
+      cx left[j - step], right[j];
+    }
+  }
+}
+int stride = 2;
+for int i in [0:stride:6] { x q[i]; }
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t forLoops = 0;
+  size_t whileLoops = 0;
+  size_t assertions = 0;
+  size_t selections = 0;
+  moduleOp->walk([&](scf::ForOp) { ++forLoops; });
+  moduleOp->walk([&](scf::WhileOp) { ++whileLoops; });
+  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
+  moduleOp->walk([&](arith::SelectOp) { ++selections; });
+  EXPECT_EQ(forLoops, 4);
+  EXPECT_EQ(whileLoops, 0);
+  EXPECT_EQ(assertions, 0);
+  EXPECT_EQ(selections, 0);
+  std::string text;
+  llvm::raw_string_ostream stream(text);
+  moduleOp->print(stream);
+  EXPECT_EQ(text.find("i128"), std::string::npos);
 }
 
 TEST(OpenQASMTargetTest, LowersCheckedIntegerArithmeticAtQCTarget) {
@@ -2204,10 +2271,12 @@ bit result = measure q;
   EXPECT_EQ(forLoop.getInitArgs().size(), 1);
   EXPECT_EQ(forLoop.getNumResults(), 1);
   EXPECT_EQ(forLoop.getBody()->getTerminator()->getNumOperands(), 1);
-  EXPECT_EQ(whileLoop.getInits().size(), 2);
-  EXPECT_EQ(whileLoop.getNumResults(), 2);
-  EXPECT_EQ(whileLoop.getBeforeBody()->getTerminator()->getNumOperands(), 3);
-  EXPECT_EQ(whileLoop.getAfterBody()->getTerminator()->getNumOperands(), 2);
+  EXPECT_EQ(whileLoop.getInits().size(), 1);
+  EXPECT_EQ(whileLoop.getNumResults(), 1);
+  EXPECT_EQ(whileLoop.getBeforeBody()->getTerminator()->getNumOperands(), 2);
+  EXPECT_EQ(whileLoop.getAfterBody()->getTerminator()->getNumOperands(), 1);
+  EXPECT_FALSE(whileLoop.getBeforeBody()->getOps<cbit::LoadOp>().empty());
+  EXPECT_FALSE(whileLoop.getAfterBody()->getOps<cbit::StoreOp>().empty());
   PassManager canonicalizer(&context);
   canonicalizer.addPass(createCanonicalizerPass());
   ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
@@ -2227,7 +2296,7 @@ bit result = measure q;
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
-TEST(OpenQASMTargetTest, PreservesBranchAndWhileCarriedClassicalBits) {
+TEST(OpenQASMTargetTest, UsesCBitAcrossBranchesAndWhileLoops) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 include "stdgates.inc";
@@ -2252,44 +2321,39 @@ result = measure q;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  size_t resultBearingConditionals = 0;
-  size_t resultBearingWhiles = 0;
+  bool branchStoresBit = false;
+  bool whileLoadsAndStoresBit = false;
   moduleOp->walk([&](Operation* operation) {
     if (auto conditional = dyn_cast<scf::IfOp>(operation)) {
-      resultBearingConditionals += conditional.getNumResults() != 0;
+      size_t thenStores = 0;
+      size_t elseStores = 0;
+      conditional.getThenRegion().walk([&](cbit::StoreOp) { ++thenStores; });
+      conditional.getElseRegion().walk([&](cbit::StoreOp) { ++elseStores; });
+      branchStoresBit |= conditional.getNumResults() == 0 && thenStores == 1 &&
+                         elseStores == 1;
     }
     if (auto loop = dyn_cast<scf::WhileOp>(operation)) {
-      resultBearingWhiles += loop.getNumResults() != 0;
+      size_t loads = 0;
+      size_t stores = 0;
+      loop.getBefore().walk([&](cbit::LoadOp) { ++loads; });
+      loop.getAfter().walk([&](cbit::StoreOp) { ++stores; });
+      whileLoadsAndStoresBit |=
+          loop.getNumResults() == 0 && loads != 0 && stores != 0;
     }
   });
-  EXPECT_EQ(resultBearingConditionals, 1);
-  EXPECT_EQ(resultBearingWhiles, 1);
-  moduleOp->walk([&](scf::IfOp conditional) {
-    if (conditional.getNumResults() == 0) {
-      return;
-    }
-    EXPECT_EQ(conditional.getNumResults(), 1);
-    EXPECT_TRUE(conditional.getResult(0).getType().isInteger(1));
-    EXPECT_EQ(
-        conditional.getThenRegion().front().getTerminator()->getNumOperands(),
-        1);
-    EXPECT_EQ(
-        conditional.getElseRegion().front().getTerminator()->getNumOperands(),
-        1);
-  });
-  moduleOp->walk([&](scf::WhileOp loop) {
-    EXPECT_EQ(loop.getInits().size(), 1);
-    EXPECT_EQ(loop.getNumResults(), 1);
-    EXPECT_EQ(loop.getBeforeBody()->getTerminator()->getNumOperands(), 2);
-    EXPECT_EQ(loop.getAfterBody()->getTerminator()->getNumOperands(), 1);
-  });
+  EXPECT_TRUE(branchStoresBit);
+  EXPECT_TRUE(whileLoadsAndStoresBit);
 }
 
-TEST(OpenQASMTargetTest, CarriesEveryPotentiallyMutatedDynamicBit) {
+TEST(OpenQASMTargetTest, StoresDynamicBitsWithoutLoopCarriedState) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 qubit q;
 uint index = 0;
+bit selector = measure q;
+if (selector) {
+  index = 1;
+}
 bit[2] state;
 state[0] = false;
 state[1] = false;
@@ -2309,17 +2373,25 @@ if (state[0]) { x q; }
 
   scf::IfOp stateUpdate;
   moduleOp->walk([&](scf::IfOp conditional) {
-    if (conditional.getNumResults() == 2) {
+    size_t thenStores = 0;
+    size_t elseStores = 0;
+    conditional.getThenRegion().walk([&](cbit::StoreOp) { ++thenStores; });
+    conditional.getElseRegion().walk([&](cbit::StoreOp) { ++elseStores; });
+    if (thenStores == 1 && elseStores == 1) {
       stateUpdate = conditional;
     }
   });
   ASSERT_TRUE(stateUpdate);
-  EXPECT_TRUE(llvm::all_of(stateUpdate.getResultTypes(),
-                           [](Type type) { return type.isInteger(1); }));
+  EXPECT_EQ(stateUpdate.getNumResults(), 0);
   EXPECT_EQ(
-      stateUpdate.getThenRegion().front().getTerminator()->getNumOperands(), 2);
+      stateUpdate.getThenRegion().front().getTerminator()->getNumOperands(), 0);
   EXPECT_EQ(
-      stateUpdate.getElseRegion().front().getTerminator()->getNumOperands(), 2);
+      stateUpdate.getElseRegion().front().getTerminator()->getNumOperands(), 0);
+  size_t dynamicStores = 0;
+  stateUpdate->walk([&](cbit::StoreOp store) {
+    dynamicStores += !evaluateConstantInteger(store.getIndex()).has_value();
+  });
+  EXPECT_EQ(dynamicStores, 2);
 }
 
 TEST(OpenQASMTargetTest, HandlesTheMaximumUnsignedSingletonRange) {

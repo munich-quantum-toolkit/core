@@ -35,13 +35,6 @@ enum class AllocationMode : std::uint8_t {
   Dynamic //!< The module uses dynamic qubit allocation.
 };
 
-/// Returns whether @p type represents a classical result register.
-[[nodiscard]] inline bool isClassicalBitRegister(const Type type) {
-  const auto memrefType = dyn_cast<MemRefType>(type);
-  return memrefType && memrefType.getRank() == 1 &&
-         memrefType.getElementType().isInteger(1);
-}
-
 /// State object for tracking lowering information during QIR conversion
 struct LoweringState {
   /// Result-array pointers to be deallocated at the end of the program
@@ -56,7 +49,7 @@ struct LoweringState {
   /// Classical registers owned by the lowering state.
   SmallVector<qir::ClassicalRegister> cregs;
 
-  /// Map from `memref::AllocOp` to its index in `cregs`.
+  /// Map from `cbit::AllocOp` to its index in `cregs`.
   DenseMap<Operation*, size_t> cregIndices;
 
   /// Returned classical-register indices in function-result order.
@@ -180,12 +173,12 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
  * can replace them.
  *
  * A direct measurement-result store is consumed because the QIR measurement
- * call writes to the corresponding result slot. A leading false store is
- * consumed because Base and Adaptive QIR result storage starts at false.
- * Other classical-register stores are rejected.
+ * call writes to the corresponding result slot. Other classical-register
+ * stores are rejected. Register initialization comes from `cbit.alloc` and
+ * needs no operation-order recognition.
  *
  * This must be called **before** func-to-LLVM conversion, while
- * `func::ReturnOp`, `qc::MeasureOp`, and `memref::StoreOp` are still in the IR.
+ * `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` are still in the IR.
  *
  * @param moduleOp The top-level module operation to walk
  * @param state The lowering state populated for profile-specific conversion

@@ -17,7 +17,13 @@ from typing import cast
 import pytest
 
 from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
-from mqt.core.qdmi import CustomProperty, Device, Job, ProgramFormat
+from mqt.core.qdmi import (
+    CustomProperty,
+    Device,
+    Job,
+    ProgramFormat,
+    is_binary_program_format,
+)
 from mqt.core.qdmi.driver import (
     DeviceDefinition,
     open_device,
@@ -491,6 +497,13 @@ def test_program_format_includes_batch_job() -> None:
     assert ProgramFormat.BATCH_JOB.value == 9
 
 
+def test_is_binary_program_format() -> None:
+    """Classify the program formats that require exact-byte submission."""
+    binary = {ProgramFormat.QIR_BASE_MODULE, ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QPY}
+    for fmt in ProgramFormat:
+        assert is_binary_program_format(fmt) == (fmt in binary), fmt.name
+
+
 @pytest.mark.parametrize("program", [b"OPENQASM 3.0;", b"OPENQASM 3.0;\0garbage\0", "OPENQASM 3.0;\0garbage"])
 def test_device_rejects_invalid_text_payloads(ddsim_device: Device, program: str | bytes) -> None:
     """Reject payloads that do not satisfy QDMI's text contract."""
@@ -504,11 +517,28 @@ def test_device_rejects_text_for_binary_format(ddsim_device: Device) -> None:
         ddsim_device.submit_job("not bitcode", ProgramFormat.QIR_BASE_MODULE, num_shots=1)
 
 
-@pytest.mark.parametrize("program_format", [ProgramFormat.CALIBRATION, ProgramFormat.BATCH_JOB])
-def test_device_rejects_formats_without_generic_payload(ddsim_device: Device, program_format: ProgramFormat) -> None:
-    """Keep specialized QDMI formats out of the generic program API."""
-    with pytest.raises(ValueError, match="do not use a generic program payload"):
-        ddsim_device.submit_job(b"", program_format, num_shots=1)
+def test_device_rejects_batch_jobs(ddsim_device: Device) -> None:
+    """State that MQT Core does not support batch jobs."""
+    with pytest.raises(ValueError, match="does not support batch jobs"):
+        ddsim_device.submit_job(b"", ProgramFormat.BATCH_JOB, num_shots=1)
+
+
+def test_device_sends_calibration_runs_elsewhere(ddsim_device: Device) -> None:
+    """Point a calibration run at its own entry point."""
+    with pytest.raises(ValueError, match="submit_calibration_job"):
+        ddsim_device.submit_job(b"", ProgramFormat.CALIBRATION, num_shots=1)
+
+
+@pytest.mark.parametrize("program", [None, "configuration", b"", b"\x01\x02"])
+def test_calibration_job_reaches_the_device(ddsim_device: Device, program: str | bytes | None) -> None:
+    """Let the device decide about a calibration run, with or without a payload.
+
+    The DD simulator needs no calibration and declines the format itself. What
+    matters is that the client no longer refuses before asking, so the failure
+    is a device error rather than a `ValueError` about the argument.
+    """
+    with pytest.raises(RuntimeError, match="Setting program format"):
+        ddsim_device.submit_calibration_job(program)
 
 
 def test_device_executes_qir_program(ddsim_device: Device) -> None:

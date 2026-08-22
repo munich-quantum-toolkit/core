@@ -410,6 +410,57 @@ TEST(QDMITest, ThrowIfError) {
                std::runtime_error);
 }
 
+TEST(QDMITest, BinaryProgramFormatClassification) {
+  // The switch below states the expected classification of every program
+  // format. It has no default case, so a format added to QDMI later produces
+  // an unhandled-enumerator warning instead of an unnoticed classification.
+  constexpr auto expected = [](const QDMI_Program_Format format) -> bool {
+    switch (format) {
+    case QDMI_PROGRAM_FORMAT_QIRBASEMODULE:
+    case QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE:
+    case QDMI_PROGRAM_FORMAT_QPY:
+      return true;
+    case QDMI_PROGRAM_FORMAT_QASM2:
+    case QDMI_PROGRAM_FORMAT_QASM3:
+    case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
+    case QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING:
+    case QDMI_PROGRAM_FORMAT_CALIBRATION:
+    case QDMI_PROGRAM_FORMAT_IQMJSON:
+    case QDMI_PROGRAM_FORMAT_BATCHJOB:
+    case QDMI_PROGRAM_FORMAT_CUSTOM1:
+    case QDMI_PROGRAM_FORMAT_CUSTOM2:
+    case QDMI_PROGRAM_FORMAT_CUSTOM3:
+    case QDMI_PROGRAM_FORMAT_CUSTOM4:
+    case QDMI_PROGRAM_FORMAT_CUSTOM5:
+      return false;
+    }
+    return false;
+  };
+
+  // Every program format QDMI defines. A format added to QDMI must be added
+  // here as well so that the loop below covers it.
+  constexpr std::array formats{QDMI_PROGRAM_FORMAT_QASM2,
+                               QDMI_PROGRAM_FORMAT_QASM3,
+                               QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+                               QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+                               QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+                               QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+                               QDMI_PROGRAM_FORMAT_CALIBRATION,
+                               QDMI_PROGRAM_FORMAT_QPY,
+                               QDMI_PROGRAM_FORMAT_IQMJSON,
+                               QDMI_PROGRAM_FORMAT_BATCHJOB,
+                               QDMI_PROGRAM_FORMAT_CUSTOM1,
+                               QDMI_PROGRAM_FORMAT_CUSTOM2,
+                               QDMI_PROGRAM_FORMAT_CUSTOM3,
+                               QDMI_PROGRAM_FORMAT_CUSTOM4,
+                               QDMI_PROGRAM_FORMAT_CUSTOM5};
+
+  for (const auto format : formats) {
+    EXPECT_EQ(qdmi::isBinaryProgramFormat(format), expected(format))
+        << "program format " << static_cast<int>(format);
+  }
+}
+
 TEST_P(DeviceTest, Name) {
   EXPECT_NO_THROW(EXPECT_FALSE(device.getName().empty()));
 }
@@ -764,17 +815,60 @@ c = measure q;)";
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
   const std::string textProgram = "OPENQASM 3.0;";
-  constexpr std::array bytes{std::byte{0}};
 
   EXPECT_THROW(std::ignore = device.submitJob(
                    textProgram, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0),
                std::invalid_argument);
-  EXPECT_THROW(std::ignore = device.submitJob(
-                   textProgram, QDMI_PROGRAM_FORMAT_CALIBRATION, 0),
-               std::invalid_argument);
+}
+
+TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsBatchJobs) {
+  // A batch job's program is a list of job handles, which the byte-span API
+  // cannot express, so MQT Core states that it does not support them.
+  constexpr std::array bytes{std::byte{0}};
+
   EXPECT_THROW(std::ignore =
                    device.submitJob(bytes, QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
                std::invalid_argument);
+  EXPECT_THROW(std::ignore = device.submitJob(std::string{},
+                                              QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
+               std::invalid_argument);
+}
+
+TEST_F(DDSimulatorDeviceTest, SubmitJobSendsCalibrationRunsElsewhere) {
+  // A calibration run takes no shot count and an optional payload, so it has
+  // its own entry point rather than a special case in `submitJob`.
+  EXPECT_THROW(std::ignore = device.submitJob(
+                   std::string{}, QDMI_PROGRAM_FORMAT_CALIBRATION, 0),
+               std::invalid_argument);
+}
+
+TEST_F(DDSimulatorDeviceTest, CalibrationJobReachesTheDevice) {
+  // The DD simulator needs no calibration and rejects the format itself. What
+  // matters is that the client no longer refuses before asking: the failure
+  // comes from the device, as a runtime error rather than an argument error.
+  EXPECT_THROW(std::ignore = device.submitCalibrationJob(), std::runtime_error);
+  EXPECT_THROW(std::ignore = device.submitCalibrationJob("configuration"),
+               std::runtime_error);
+
+  constexpr std::array payload{std::byte{1}, std::byte{2}};
+  EXPECT_THROW(std::ignore = device.submitCalibrationJob(payload),
+               std::runtime_error);
+
+  constexpr std::byte emptyPayloadStorage{};
+  const std::span emptyPayload{&emptyPayloadStorage, size_t{0}};
+  EXPECT_THROW(std::ignore = device.submitCalibrationJob(emptyPayload),
+               std::runtime_error);
+
+  EXPECT_NO_THROW({
+    try {
+      std::ignore = device.submitCalibrationJob();
+    } catch (const std::invalid_argument&) {
+      FAIL() << "the client rejected the calibration run before the device saw "
+                "it";
+    } catch (const std::runtime_error&) { // NOLINT(bugprone-empty-catch)
+      // The device declined, which is its decision to make.
+    }
+  });
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {

@@ -10,9 +10,9 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
@@ -50,7 +50,7 @@ namespace mlir::qco::decomposition {
   }
   double wrapped = r - pi;
 
-  if (wrapped >= pi - utils::TOLERANCE) {
+  if (wrapped >= pi - mqt::PARAMETER_COMPARISON_TOLERANCE) {
     wrapped = -pi;
   }
 
@@ -81,7 +81,7 @@ namespace mlir::qco::decomposition {
  * @return `true` when no rotation gate should be emitted.
  */
 [[nodiscard]] static bool isNearZeroRotationAngle(const double angle) {
-  return std::abs(angle) <= utils::TOLERANCE;
+  return std::abs(angle) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
 }
 
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
@@ -110,9 +110,9 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
       2. * std::atan2(std::abs(matrix(1, 0)), std::abs(matrix(0, 0)));
   const auto ang1 = std::arg(matrix(1, 1));
   double ang2 = 0.0;
-  if (std::abs(matrix(1, 0)) > utils::TOLERANCE) {
+  if (std::abs(matrix(1, 0)) > mqt::PARAMETER_COMPARISON_TOLERANCE) {
     ang2 = std::arg(matrix(1, 0));
-  } else if (std::abs(matrix(0, 1)) > utils::TOLERANCE) {
+  } else if (std::abs(matrix(0, 1)) > mqt::PARAMETER_COMPARISON_TOLERANCE) {
     ang2 = std::arg(matrix(0, 1));
   }
   const auto phi = ang1 + ang2 - detArg;
