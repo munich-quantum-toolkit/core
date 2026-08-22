@@ -1722,6 +1722,18 @@ def test_bool_uint_and_float_expressions(condition: expr.Expr, operation: str) -
 
     assert operation in program.ir
     assert restored.data[0].operation.name == "if_else"
+    restored_condition = restored.data[0].operation.condition
+    assert isinstance(restored_condition, expr.Expr)
+    if operation == "arith.andi":
+        expected = expr.logic_and(
+            expr.equal(True, True),  # ruff: ignore[boolean-positional-value-in-call] Qiskit expression arguments are positional-only.
+            expr.equal(False, True),  # ruff: ignore[boolean-positional-value-in-call] Qiskit expression arguments are positional-only.
+        )
+    elif operation == "arith.cmpf une":
+        expected = expr.not_equal(expr.lift(0.5, types.Float()), 0.0)
+    else:
+        expected = condition
+    assert expr.structurally_equivalent(restored_condition, expected)
 
 
 def test_index_expression_export_preserves_low_bit() -> None:

@@ -2039,6 +2039,26 @@ public:
   addControlFlow(const ControlFlowKind kind, ClassicalTarget target, Loop loop,
                  std::vector<SwitchCase> switchCases,
                  std::vector<std::unique_ptr<CircuitWriter>> blocks) override {
+    const bool validBlockCount = [&]() {
+      switch (kind) {
+      case ControlFlowKind::IfElse:
+        return blocks.size() == 1U || blocks.size() == 2U;
+      case ControlFlowKind::While:
+      case ControlFlowKind::For:
+        return blocks.size() == 1U;
+      case ControlFlowKind::Switch:
+        return !blocks.empty() && blocks.size() == switchCases.size();
+      case ControlFlowKind::Box:
+      case ControlFlowKind::Break:
+      case ControlFlowKind::Continue:
+        return false;
+      }
+      return false;
+    }();
+    if (!validBlockCount) {
+      throw std::runtime_error(
+          "Qiskit control flow has an unexpected number of blocks");
+    }
     const auto numQubits = qk_circuit_num_qubits(circuit_);
     const auto numClbits = qk_circuit_num_clbits(circuit_);
     for (const auto& block : blocks) {
