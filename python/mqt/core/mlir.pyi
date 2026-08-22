@@ -70,6 +70,7 @@ class CompilerTarget:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -80,6 +81,7 @@ class CompilerTarget:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -89,6 +91,7 @@ class CompilerTarget:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -99,6 +102,7 @@ class CompilerTarget:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
 
     class DurationUnit:
@@ -243,6 +247,106 @@ class CompilerTarget:
 
         ZXZ = 6
 
+    class ProgramFeature(enum.Enum):
+        """Runtime feature supported for a specific program format."""
+
+        MID_CIRCUIT_MEASUREMENT = 0
+
+        MEASURED_QUBIT_REUSE = 1
+
+        MEASUREMENT_RESULT_USE = 2
+
+        BOOLEAN_COMPUTATION = 3
+
+        INTEGER_COMPUTATION = 4
+
+        FLOAT_COMPUTATION = 5
+
+        FORWARD_BRANCHING = 6
+
+        COUNTED_ITERATION = 7
+
+        CONDITIONAL_LOOP = 8
+
+        MULTIWAY_BRANCHING = 9
+
+        IR_FUNCTIONS = 10
+
+        MULTIPLE_RETURN_POINTS = 11
+
+        DYNAMIC_QUBIT_MANAGEMENT = 12
+
+        DYNAMIC_RESULT_MANAGEMENT = 13
+
+        ARRAYS = 14
+
+    class PayloadEncoding(enum.Enum):
+        TEXT = 0
+
+        BINARY = 1
+
+    class PayloadDescriptor:
+        def __init__(
+            self,
+            format_id: str,
+            version: str,
+            profile: str = "",
+            encoding: CompilerTarget.PayloadEncoding = ...,
+        ) -> None: ...
+        @property
+        def format_id(self) -> str: ...
+        @format_id.setter
+        def format_id(self, arg: str, /) -> None: ...
+        @property
+        def version(self) -> str: ...
+        @version.setter
+        def version(self, arg: str, /) -> None: ...
+        @property
+        def profile(self) -> str: ...
+        @profile.setter
+        def profile(self, arg: str, /) -> None: ...
+        @property
+        def encoding(self) -> CompilerTarget.PayloadEncoding: ...
+        @encoding.setter
+        def encoding(self, arg: CompilerTarget.PayloadEncoding, /) -> None: ...
+        def __eq__(self, other: object, /) -> bool: ...
+
+    class ProgramCapability:
+        def __init__(self, feature: CompilerTarget.ProgramFeature, value: int = 0) -> None: ...
+        @property
+        def feature(self) -> CompilerTarget.ProgramFeature: ...
+        @feature.setter
+        def feature(self, arg: CompilerTarget.ProgramFeature, /) -> None: ...
+        @property
+        def value(self) -> int: ...
+        @value.setter
+        def value(self, arg: int, /) -> None: ...
+        def __eq__(self, other: object, /) -> bool: ...
+
+    class ExecutionProfile:
+        """Runtime features supported for one program format."""
+
+        def __init__(
+            self,
+            descriptor: CompilerTarget.PayloadDescriptor,
+            capabilities: Sequence[CompilerTarget.ProgramCapability] = [],
+            optional_features_known: bool = True,
+        ) -> None: ...
+        @property
+        def descriptor(self) -> CompilerTarget.PayloadDescriptor:
+            """The exact payload described by this profile."""
+
+        @property
+        def capabilities(self) -> list[CompilerTarget.ProgramCapability]:
+            """The supported runtime capabilities in canonical order."""
+
+        @property
+        def optional_features_known(self) -> bool:
+            """Whether optional-feature metadata is complete."""
+
+        def supports(self, feature: CompilerTarget.ProgramFeature, value: int = 0) -> bool:
+            """Whether this profile lists a runtime capability."""
+
     class SynthesisBasis:
         """One synthesis basis usable across the complete target."""
 
@@ -255,12 +359,17 @@ class CompilerTarget:
             """The two-qubit entangler."""
 
     @staticmethod
-    def from_device(device: Device) -> CompilerTarget:
-        """Snapshot a circuit-model QDMI device."""
+    def from_device(
+        device: Device,
+    ) -> CompilerTarget:
+        """Snapshot a circuit-model QDMI device, including execution profiles derived from its program-format metadata."""
 
     @staticmethod
-    def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
-        """Open a registered device and snapshot its compiler target."""
+    def from_device_id(
+        device_id: str,
+        **session_parameters: Unpack[QDMISessionParameters],
+    ) -> CompilerTarget:
+        """Open a registered device and snapshot its compiler target, including execution profiles derived from its program-format metadata."""
 
     @property
     def name(self) -> str | None:
@@ -295,6 +404,10 @@ class CompilerTarget:
         """Operation capabilities in reported order."""
 
     @property
+    def execution_profiles(self) -> list[CompilerTarget.ExecutionProfile] | None:
+        """Payload-specific execution profiles, if reported."""
+
+    @property
     def supported_gates(self) -> list[CompilerTarget.GateKind]:
         """Recognized native gates supported by the target."""
 
@@ -304,6 +417,12 @@ class CompilerTarget:
 
     def supports_operation(self, name: str, num_qubits: int, num_parameters: int | None = None) -> bool:
         """Whether the target supports an operation capability."""
+
+    def execution_profile(self, descriptor: PayloadDescriptor) -> ExecutionProfile | None:
+        """The execution profile for an exact payload, if any."""
+
+    def supports_program_feature(self, descriptor: PayloadDescriptor, feature: ProgramFeature, value: int = 0) -> bool:
+        """Whether an output profile lists a runtime capability."""
 
 class Program:
     """Base class for a typed MLIR compiler program.
@@ -429,9 +548,15 @@ class QCOProgram(Program):
         """Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
 
     def compile_for_target(
-        self, target: CompilerTarget, *, enable_timing: bool = False, enable_statistics: bool = False
+        self,
+        target: CompilerTarget,
+        *,
+        output: OutputFormat = OutputFormat.QCO_OPTIMIZED,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+        payload_descriptor: CompilerTarget.PayloadDescriptor | None = None,
     ) -> None:
-        """Compile this QCO program for the target in place."""
+        """Compile this QCO program for the selected target output profile in place."""
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:
         """Convert this program to QC.
@@ -561,6 +686,7 @@ def compile_program(
     *,
     output: Literal[OutputFormat.OPENQASM3],
     inplace: bool = False,
+    target: CompilerTarget | None = None,
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
@@ -629,7 +755,8 @@ def compile_program(
         output: The requested output stage of the compiler pipeline.
         inplace: Whether a typed input program may be consumed.
         target: An optional compiler target for decomposition, mapping, and native
-            synthesis. A target requires optimized QCO, QC, or QIR output.
+            synthesis. A target requires optimized QCO, QC, OpenQASM 3, or QIR
+            output.
         qco_pipeline: The QCO optimization pipeline to run. A custom pipeline
             cannot be combined with a target.
         enable_timing: Whether to collect pass timing information.

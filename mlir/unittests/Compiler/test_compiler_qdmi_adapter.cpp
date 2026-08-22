@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Compiler/ProgramFormat.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
 #include "qdmi/Client.hpp"
@@ -19,6 +20,8 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
 
+#include <algorithm>
+#include <array>
 #include <cassert>
 #include <string>
 
@@ -74,6 +77,9 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   EXPECT_TRUE(target.supportsOperation("cz", 2, 0));
   EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
   EXPECT_FALSE(target.supportsOperation("rx", 1, 1));
+  const auto executionProfiles = target.executionProfiles();
+  ASSERT_TRUE(executionProfiles.has_value());
+  EXPECT_TRUE(executionProfiles->empty());
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit,
             CompilerTarget::SingleQubitBasis::R);
@@ -90,6 +96,78 @@ TEST(CompilerQDMIAdapterTest, PreservesMissingTopologyAsAllToAll) {
   EXPECT_TRUE(target.supportsOperation("h", 1, 0));
   EXPECT_TRUE(target.supportsOperation("cx", 2, 0));
   EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
+  const auto profiles = target.executionProfiles();
+  ASSERT_TRUE(profiles.has_value());
+  EXPECT_EQ(profiles->size(), 6);
+
+  const mlir::PayloadDescriptor openQASMDescriptor{"openqasm", "3.0.0", "",
+                                                   mlir::PayloadEncoding::Text};
+  const auto* const openQASM = target.executionProfile(openQASMDescriptor);
+  ASSERT_NE(openQASM, nullptr);
+  EXPECT_EQ(openQASM->capabilities().size(), 5);
+  EXPECT_TRUE(openQASM->supports(mlir::ProgramFeature::BooleanComputation));
+  EXPECT_TRUE(openQASM->optionalFeaturesKnown());
+
+  const mlir::PayloadDescriptor qirBaseDescriptor{"qir", "2.1.0", "base",
+                                                  mlir::PayloadEncoding::Text};
+  const auto* const qirBase = target.executionProfile(qirBaseDescriptor);
+  ASSERT_NE(qirBase, nullptr);
+  EXPECT_TRUE(qirBase->capabilities().empty());
+  EXPECT_TRUE(qirBase->optionalFeaturesKnown());
+
+  const mlir::PayloadDescriptor qirAdaptiveDescriptor{
+      "qir", "2.1.0", "adaptive", mlir::PayloadEncoding::Text};
+  const auto* const qirAdaptive =
+      target.executionProfile(qirAdaptiveDescriptor);
+  ASSERT_NE(qirAdaptive, nullptr);
+  constexpr std::array adaptiveBaseline{
+      mlir::ProgramCapability{mlir::ProgramFeature::MidCircuitMeasurement},
+      mlir::ProgramCapability{mlir::ProgramFeature::MeasuredQubitReuse},
+      mlir::ProgramCapability{mlir::ProgramFeature::MeasurementResultUse},
+      mlir::ProgramCapability{mlir::ProgramFeature::BooleanComputation},
+      mlir::ProgramCapability{mlir::ProgramFeature::ForwardBranching},
+  };
+  EXPECT_TRUE(
+      std::ranges::equal(qirAdaptive->capabilities(), adaptiveBaseline));
+  EXPECT_TRUE(qirAdaptive->optionalFeaturesKnown());
+  EXPECT_FALSE(qirAdaptive->supports(mlir::ProgramFeature::CountedIteration));
+  EXPECT_FALSE(qirAdaptive->supports(mlir::ProgramFeature::ConditionalLoop));
+  EXPECT_FALSE(qirAdaptive->supports(mlir::ProgramFeature::MultiwayBranching));
+
+  EXPECT_FALSE(target.supportsProgramFeature(
+      qirBaseDescriptor, mlir::ProgramFeature::ForwardBranching));
+  EXPECT_TRUE(target.supportsProgramFeature(
+      openQASMDescriptor, mlir::ProgramFeature::ForwardBranching));
+}
+
+TEST(CompilerQDMIAdapterTest, DeviceIdMatchesOpenedDeviceExecutionProfiles) {
+  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  const auto direct = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  const auto byId =
+      llvm::cantFail(mlir::compilerTargetFromDeviceId("mqt.ddsim.default"));
+
+  const auto directProfiles = direct.executionProfiles();
+  const auto byIdProfiles = byId.executionProfiles();
+  ASSERT_TRUE(directProfiles.has_value());
+  ASSERT_TRUE(byIdProfiles.has_value());
+  ASSERT_EQ(byIdProfiles->size(), directProfiles->size());
+  for (const auto& profile : *directProfiles) {
+    const auto* const byIdProfile = byId.executionProfile(profile.descriptor());
+    ASSERT_NE(byIdProfile, nullptr);
+    EXPECT_TRUE(std::ranges::equal(byIdProfile->capabilities(),
+                                   profile.capabilities()));
+    EXPECT_EQ(byIdProfile->optionalFeaturesKnown(),
+              profile.optionalFeaturesKnown());
+  }
+}
+
+TEST(CompilerQDMIAdapterTest, PreservesKnownEmptyProgramFormatMetadata) {
+  const auto device = qdmi::Session::openDevice("mqt.sc.default");
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+
+  const auto profiles = target.executionProfiles();
+  ASSERT_TRUE(profiles.has_value());
+  EXPECT_TRUE(profiles->empty());
 }
 
 TEST(CompilerQDMIAdapterTest, ListsRegisteredDeviceIds) {

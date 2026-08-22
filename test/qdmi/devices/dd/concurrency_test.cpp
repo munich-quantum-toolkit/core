@@ -33,7 +33,7 @@
 TEST(Concurrency, ConcurrentStatevectorReads) {
   const qdmi_test::SessionGuard s{};
   qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_BELL_STATE),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
@@ -64,7 +64,7 @@ TEST(Concurrency, ConcurrentStatevectorReads) {
 TEST(Concurrency, ConcurrentHistogramReads) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 1024), QDMI_SUCCESS);
@@ -103,7 +103,7 @@ TEST(Concurrency, ConcurrentHistogramReads) {
 TEST(Concurrency, ConcurrentCheckDuringRun) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   constexpr size_t shots = 4096;
@@ -136,9 +136,9 @@ TEST(Concurrency, ConcurrentQIRJobsOwnTheirRuntimeState) {
 
   for (size_t i = 0; i < numJobs; ++i) {
     auto job = std::make_unique<qdmi_test::JobGuard>(session.session);
-    ASSERT_EQ(qdmi_test::setProgram(job->job, QDMI_PROGRAM_FORMAT_QIRBASESTRING,
-                                    program),
-              QDMI_SUCCESS);
+    ASSERT_EQ(
+        qdmi_test::setProgram(job->job, qdmi_test::QIR21_BASE_TEXT, program),
+        QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::setShots(job->job, shots), QDMI_SUCCESS);
     ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(job->job), QDMI_SUCCESS);
     jobs.emplace_back(std::move(job));

@@ -464,7 +464,7 @@ TEST_P(DriverJobTest, JobSetParameter) {
   EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAM,
                                      sizeof(QDMI_Program_Format), nullptr),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-  const QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
+  const QDMI_Program_Format value = qdmi::OPENQASM2;
   EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
                                      sizeof(QDMI_Program_Format), &value),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
@@ -499,17 +499,17 @@ TEST_P(DriverJobTest, JobQueryProperty) {
                                       nullptr, nullptr),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 
-  QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
+  QDMI_Program_Format value = qdmi::OPENQASM2;
   auto result = QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
                                        sizeof(QDMI_Program_Format), &value);
   EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   if (result == QDMI_SUCCESS) {
-    value = QDMI_PROGRAM_FORMAT_MAX;
+    value = {};
     EXPECT_EQ(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_PROGRAMFORMAT,
                                       sizeof(QDMI_Program_Format), &value,
                                       nullptr),
               QDMI_SUCCESS);
-    EXPECT_EQ(value, QDMI_PROGRAM_FORMAT_QASM2);
+    EXPECT_EQ(value, qdmi::OPENQASM2);
   }
   size_t numShots = 1;
   result = QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
@@ -830,14 +830,6 @@ TEST_P(DriverTest, QuerySessionProperty) {
       << "Device must return `INVALIDARGUMENT` if the buffer is too small.";
 }
 
-TEST_P(DriverTest, QueryNeedsCalibration) {
-  size_t needsCalibration = 0;
-  const auto ret = QDMI_device_query_device_property(
-      device, QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION, sizeof(size_t),
-      &needsCalibration, nullptr);
-  EXPECT_EQ(ret, QDMI_SUCCESS);
-  EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
-}
 constexpr std::array DEVICES{"MQT SC Default QDMI Device",
                              "MQT Core DDSIM QDMI Device"};
 
@@ -1271,8 +1263,7 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   std::optional<qdmi::Job> job;
   {
     auto device = qdmi::Session::openDevice("test.session-overrides");
-    job.emplace(
-        device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2, 1));
+    job.emplace(device.submitJob("OPENQASM 2.0;", qdmi::OPENQASM2, 1));
   }
 
   ASSERT_TRUE(job.has_value());

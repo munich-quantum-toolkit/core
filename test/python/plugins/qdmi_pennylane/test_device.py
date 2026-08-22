@@ -35,7 +35,7 @@ from mqt.core.plugins.pennylane import (
 )
 from mqt.core.qdmi import ProgramFormat
 
-from .helpers import StubDevice, patch_open_device, rotation_results, stub_device
+from .helpers import StubDevice, operation, patch_open_device, rotation_results, stub_device
 
 
 def test_samples_counts_probabilities_expectations_and_variances(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -187,6 +187,37 @@ def test_qasm2_diagonalizes_observable_once(monkeypatch: pytest.MonkeyPatch) -> 
     assert np.isfinite(circuit())
     assert qdmi.submissions[0][1] == ProgramFormat.QASM2
     assert qdmi.submissions[0][0].count("ry(") == 1
+
+
+def test_one_shot_executes_measurement_feedback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reconstruct terminal and raw mid-circuit samples from one output vector."""
+    features = (
+        "mid-circuit-measurement",
+        "measured-qubit-reuse",
+        "measurement-result-use",
+        "boolean-computation",
+        "forward-branching",
+    )
+    qdmi = stub_device(
+        operations=[operation("measure", 1), operation("reset", 1), operation("x", 1)],
+        result_factory=lambda _program, shots: ["110"] * shots,
+        program_features=features,
+    )
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2, shots=4)
+
+    @qp.qnode(device, mcm_method="one-shot")
+    def circuit():
+        measurement = qp.measure(0, reset=True)
+        qp.cond(measurement, qp.PauliX)(1)
+        return qp.sample(wires=[0, 1]), qp.sample(measurement)
+
+    terminal, mid_circuit = circuit()
+
+    np.testing.assert_array_equal(terminal, np.tile([0, 1], (4, 1)))
+    np.testing.assert_array_equal(mid_circuit, np.ones(4, dtype=np.int8))
+    assert len(qdmi.submissions) == 4
+    assert all("c[2] = measure q[0];" in submission[0] for submission in qdmi.submissions)
 
 
 def test_rejects_analytic_execution_before_submission(monkeypatch: pytest.MonkeyPatch) -> None:

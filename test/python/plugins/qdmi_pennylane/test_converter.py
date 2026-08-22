@@ -32,9 +32,40 @@ from mqt.core.plugins.pennylane import (
     PennyLaneValidationError,
     QDMIDevice,
 )
+from mqt.core.plugins.pennylane.converter import _ProgramConverter  # ruff:ignore[import-private-name]
 from mqt.core.qdmi import ProgramFormat
 
 from .helpers import StubDevice, operation, patch_open_device
+
+_DYNAMIC_FEATURES = frozenset({
+    "mid-circuit-measurement",
+    "measured-qubit-reuse",
+    "measurement-result-use",
+    "boolean-computation",
+    "forward-branching",
+})
+
+
+def test_qasm3_emits_measurement_feedback_and_reset() -> None:
+    """Encode PennyLane's one-shot MCM bundle in the declared output bits."""
+    qdmi = StubDevice(
+        [operation("measure", 1), operation("reset", 1), operation("x", 1)],
+        [ProgramFormat.QASM3],
+        program_features=tuple(_DYNAMIC_FEATURES),
+    )
+
+    def circuit():
+        measurement = qp.measure(0, reset=True)
+        qp.cond(measurement, qp.PauliX)(1)
+        return qp.sample(wires=[0, 1])
+
+    tape = qp.tape.make_qscript(circuit)()
+    converted = _ProgramConverter(qdmi, qp.wires.Wires([0, 1]), ProgramFormat.QASM3, _DYNAMIC_FEATURES).convert(tape)  # ty: ignore[invalid-argument-type]
+
+    assert "bit[3] c;" in converted.payload
+    assert "c[2] = measure q[0];\nreset q[0];" in converted.payload
+    assert "if (c[2] == 1) { x q[1]; }" in converted.payload
+    assert converted.mcm_slot_by_uid[tape.operations[0].meas_uid] == 2
 
 
 def test_qasm3_prefers_and_resolves_braket_spellings(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -72,7 +103,8 @@ def test_qasm3_prefers_and_resolves_braket_spellings(monkeypatch: pytest.MonkeyP
         "cnot q[0],q[1];\n"
         "phaseshift(0.25) q[1];\n"
         "xx(0.5) q[1],q[0];\n"
-        "c = measure q;\n"
+        "c[0] = measure q[0];\n"
+        "c[1] = measure q[1];\n"
     )
     assert "include" not in payload
     assert "gate " not in payload

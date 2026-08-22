@@ -9,6 +9,7 @@
 """QDMI entities and access to MQT Core's QDMI driver."""
 
 import enum
+import types
 from collections.abc import Sequence
 from typing import overload
 
@@ -39,6 +40,9 @@ class Job:
 
     def get_counts(self) -> dict[str, int]:
         """Returns the measurement counts from the job."""
+
+    def get_program_output(self) -> str:
+        """Returns the format-defined program output document."""
 
     def get_dense_statevector(self) -> list[complex]:
         """Returns the dense statevector from the job (typically only available from simulator devices)."""
@@ -99,7 +103,7 @@ class Job:
         """The job ID."""
 
     @property
-    def program_format(self) -> ProgramFormat:
+    def program_format(self) -> PayloadDescriptor:
         """The format of the submitted program."""
 
     @property
@@ -138,46 +142,49 @@ class Job:
 
         FAILED = 6
 
-class ProgramFormat(enum.Enum):
-    """Enumeration of program formats."""
+class ProgramEncoding(enum.Enum):
+    """Program payload encoding."""
 
-    QASM2 = 0
+    TEXT = 1
 
-    QASM3 = 1
+    BINARY = 2
 
-    QIR_BASE_STRING = 2
+class PayloadDescriptor:
+    """The exact format, version, profile, and encoding of a payload."""
 
-    QIR_BASE_MODULE = 3
+    def __init__(
+        self,
+        format_id: str,
+        version: tuple[int, int, int],
+        profile: str = "",
+        encoding: ProgramEncoding = ProgramEncoding.TEXT,
+    ) -> None: ...
+    @property
+    def format_id(self) -> str: ...
+    @property
+    def version(self) -> tuple[int, int, int]: ...
+    @property
+    def profile(self) -> str: ...
+    @property
+    def encoding(self) -> ProgramEncoding: ...
+    def __eq__(self, other: object, /) -> bool: ...
+    def __hash__(self) -> int: ...
 
-    QIR_ADAPTIVE_STRING = 4
+ProgramFormat: types.SimpleNamespace = ...
 
-    QIR_ADAPTIVE_MODULE = 5
+class ProgramCapability:
+    """One capability value reported for an exact payload descriptor."""
 
-    CALIBRATION = 6
+    @property
+    def id(self) -> str: ...
+    @property
+    def value(self) -> int: ...
 
-    QPY = 7
-
-    IQM_JSON = 8
-
-    BATCH_JOB = 9
-
-    CUSTOM1 = 999999995
-
-    CUSTOM2 = 999999996
-
-    CUSTOM3 = 999999997
-
-    CUSTOM4 = 999999998
-
-    CUSTOM5 = 999999999
-
-def is_binary_program_format(program_format: ProgramFormat) -> bool:
+def is_binary_program_format(program_format: PayloadDescriptor) -> bool:
     """Returns whether a program format carries a binary payload.
 
-    ``QIR_BASE_MODULE``, ``QIR_ADAPTIVE_MODULE``, and ``QPY`` hold bitcode or
-    another serialized object. Such a payload may contain a null byte and is not
-    text, so the device must receive it as exact bytes. Pass ``bytes`` to
-    :meth:`Device.submit_job` for these formats and ``str`` for the others.
+    Binary payloads may contain null bytes. Pass ``bytes`` to
+    :meth:`Device.submit_job` for binary descriptors and ``str`` for text.
 
     Args:
         program_format: The program format to classify.
@@ -247,9 +254,6 @@ class Device:
     def coupling_map(self) -> list[tuple[Site, Site]] | None:
         """Returns the coupling map of the device as a list of site pairs."""
 
-    def needs_calibration(self) -> int | None:
-        """Returns whether the device needs calibration."""
-
     def queue_length(self) -> int | None:
         """Returns the current queue length, or None if unavailable."""
 
@@ -268,8 +272,14 @@ class Device:
     def min_atom_distance(self) -> int | None:
         """Returns the minimum atom distance on the device."""
 
-    def supported_program_formats(self) -> list[ProgramFormat]:
-        """Returns the list of program formats supported by the device."""
+    def supported_program_formats(self) -> list[PayloadDescriptor]:
+        """Returns the program formats reported by the device. Raises if the property is unsupported."""
+
+    def try_supported_program_formats(self) -> list[PayloadDescriptor] | None:
+        """Returns the reported program formats, including an empty list, or None if the property is unsupported."""
+
+    def try_program_features(self, program_format: PayloadDescriptor) -> list[ProgramCapability] | None:
+        """Returns the complete optional capability list for an exact payload, or None when the metadata is unknown."""
 
     def child_devices(self) -> list[Device]:
         """Returns the direct child devices managed by this device."""
@@ -306,7 +316,7 @@ class Device:
     def submit_job(
         self,
         program: str,
-        program_format: ProgramFormat,
+        program_format: PayloadDescriptor,
         num_shots: int,
         *,
         custom1: str | bool | float | None = None,
@@ -321,7 +331,7 @@ class Device:
     def submit_job(
         self,
         program: bytes,
-        program_format: ProgramFormat,
+        program_format: PayloadDescriptor,
         num_shots: int,
         *,
         custom1: str | bool | float | None = None,
@@ -331,24 +341,6 @@ class Device:
         custom5: str | bool | float | None = None,
     ) -> Job:
         """Submits an exact byte payload to the device."""
-
-    def submit_calibration_job(
-        self,
-        program: str | bytes | None = None,
-        *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
-    ) -> Job:
-        """Triggers a calibration run on the device.
-
-        QDMI does not require a program for a calibration run, so ``program`` is
-        optional and may be a string or bytes. When it is given, the device defines
-        what it means, which is usually a configuration for the run. A calibration run
-        executes no circuit, so it takes no shot count.
-        """
 
     def retrieve_job_by_id(self, job_id: str) -> Job:
         """Retrieves an existing job by its device-provided ID."""

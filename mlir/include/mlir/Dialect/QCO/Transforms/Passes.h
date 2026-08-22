@@ -39,14 +39,20 @@ namespace mlir::qco {
 [[nodiscard]] std::unique_ptr<Pass> createFuseTwoQubitGates();
 
 /**
- * @brief Create post-routing synthesis for one immutable compiler target.
+ * @brief Create post-routing synthesis from the module target environment.
  */
+[[nodiscard]] std::unique_ptr<Pass> createTargetNativeSynthesis();
+
+/// Create target-native synthesis with an explicit target.
 [[nodiscard]] std::unique_ptr<Pass>
 createTargetNativeSynthesis(const CompilerTarget& target);
 
 /**
  * @brief Create the final mapped-operation conformance verifier.
  */
+[[nodiscard]] std::unique_ptr<Pass> createVerifyTargetConformance();
+
+/// Create target conformance verification with an explicit target.
 [[nodiscard]] std::unique_ptr<Pass>
 createVerifyTargetConformance(const CompilerTarget& target);
 

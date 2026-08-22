@@ -16,20 +16,35 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pennylane as qp
-from pennylane.devices import Device, ExecutionConfig
+from pennylane.devices import Device, DeviceCapabilities, ExecutionConfig, MCMConfig
 from pennylane.devices.preprocess import (
     decompose,
     measurements_from_samples,
     validate_device_wires,
     validate_measurements,
 )
-from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, SampleMP, Shots, VarianceMP
-from pennylane.transforms import broadcast_expand, defer_measurements, split_non_commuting
-from pennylane.transforms.core import CompilePipeline
+from pennylane.measurements import (
+    CountsMP,
+    ExpectationMP,
+    MeasurementValue,
+    ProbabilityMP,
+    SampleMeasurement,
+    SampleMP,
+    Shots,
+    VarianceMP,
+)
+from pennylane.transforms import (
+    broadcast_expand,
+    defer_measurements,
+    diagonalize_measurements,
+    dynamic_one_shot,
+    split_non_commuting,
+)
+from pennylane.transforms.core import CompilePipeline, transform
 
 from mqt.core.qdmi import Device as QDMIDeviceHandle
 from mqt.core.qdmi import Job as QDMIJobHandle
-from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi import PayloadDescriptor, ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
 from .converter import _ConvertedProgram, _ProgramConverter
@@ -50,7 +65,7 @@ from .exceptions import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Hashable, Mapping, Sequence
+    from collections.abc import Callable, Hashable, Mapping, Sequence
 
     from pennylane.tape import QuantumScript, QuantumScriptOrBatch
     from pennylane.typing import Result, ResultBatch
@@ -76,6 +91,20 @@ _SESSION_PARAMETERS = frozenset({
 })
 _JOB_PARAMETERS = frozenset({"custom1", "custom2", "custom3", "custom4", "custom5"})
 _SAMPLED_MEASUREMENTS = (SampleMP, CountsMP, ProbabilityMP, ExpectationMP, VarianceMP)
+
+
+@transform
+def _dynamic_or_samples(
+    tape: QuantumScript, postselect_mode: str | None = None
+) -> tuple[Sequence[QuantumScript], Callable[[Sequence[Result]], Result]]:
+    """Use dynamic one-shot only for tapes that contain mid-circuit measurements.
+
+    Returns:
+        The transformed tapes and their result postprocessor.
+    """
+    if any(isinstance(operation, qp.ops.MidMeasure) for operation in tape.operations):
+        return dynamic_one_shot(tape, postselect_mode=postselect_mode)
+    return measurements_from_samples(tape)
 
 
 def _validate_parameter_names(parameters: Mapping[str, object], allowed: frozenset[str], kind: str) -> None:
@@ -161,9 +190,38 @@ class QDMIDevice(Device):
         super().__init__(wires=resolved_wires, shots=None)
         self._shots = Shots(shots)
         self._program_format = self._select_program_format()
-        self._converter = _ProgramConverter(self._qdmi_device, self.wires, self._program_format)
+        reported = self._qdmi_device.try_program_features(self._program_format)
+        self._program_capabilities = frozenset(feature.id for feature in reported or ())
+        operations = {operation.name().lower() for operation in self._qdmi_device.operations()}
+        mcm = {
+            "mid-circuit-measurement",
+            "measured-qubit-reuse",
+            "measurement-result-use",
+            "boolean-computation",
+            "forward-branching",
+        }
+        supports_one_shot = (
+            reported is not None
+            and self._program_format == ProgramFormat.QASM3
+            and mcm <= self._program_capabilities
+            and {"measure", "reset"} <= operations
+        )
+        self._capabilities = DeviceCapabilities(
+            qjit_compatible=False,
+            runtime_code_generation=False,
+            dynamic_qubit_management=False,
+            supported_mcm_methods=["one-shot"] if supports_one_shot else [],
+        )
+        self._converter = _ProgramConverter(
+            self._qdmi_device, self.wires, self._program_format, self._program_capabilities
+        )
         self._submitted_jobs = 0
         self._execution_time = 0.0
+
+    @property
+    def capabilities(self) -> DeviceCapabilities:
+        """Capabilities projected from the selected QDMI payload."""
+        return self._capabilities
 
     @property
     def device_id(self) -> str:
@@ -185,7 +243,7 @@ class QDMIDevice(Device):
         """Cumulative wall-clock time spent submitting and waiting for QDMI jobs."""
         return self._execution_time
 
-    def _select_program_format(self) -> ProgramFormat:
+    def _select_program_format(self) -> PayloadDescriptor:
         """Select QASM3 before QASM2 and reject all other format sets.
 
         Returns:
@@ -208,10 +266,11 @@ class QDMIDevice(Device):
         Returns:
             The transforms applied before device execution.
         """
-        del execution_config
+        config = execution_config or ExecutionConfig()
+        mcm_config = MCMConfig(**config.mcm_config) if isinstance(config.mcm_config, dict) else config.mcm_config
+        one_shot = mcm_config.mcm_method == "one-shot"
         pipeline = CompilePipeline()
         pipeline.add_transform(_validate_finite_shots)
-        pipeline.add_transform(defer_measurements, allow_postselect=False, num_wires=len(self.wires))
         pipeline.add_transform(validate_device_wires, self.wires, name=self.name)
         pipeline.add_transform(
             validate_measurements,
@@ -220,7 +279,12 @@ class QDMIDevice(Device):
             name=self.name,
         )
         pipeline.add_transform(split_non_commuting, grouping_strategy="qwc")
-        pipeline.add_transform(measurements_from_samples)
+        if one_shot:
+            pipeline.add_transform(_dynamic_or_samples, postselect_mode=mcm_config.postselect_mode)
+            pipeline.add_transform(diagonalize_measurements)
+        else:
+            pipeline.add_transform(defer_measurements, allow_postselect=False, num_wires=len(self.wires))
+            pipeline.add_transform(measurements_from_samples)
         pipeline.add_transform(
             decompose,
             stopping_condition=self._converter.supports,
@@ -287,7 +351,7 @@ class QDMIDevice(Device):
             raise ExecutionError(msg)
 
         rows: list[list[int]] = []
-        width = len(converted.wire_map)
+        width = converted.output_width
         for bitstring in bitstrings:
             clean = bitstring.replace(" ", "")
             if len(clean) != width or any(bit not in "01" for bit in clean):
@@ -297,7 +361,7 @@ class QDMIDevice(Device):
             # the highest-index site on the left. PennyLane sample columns use
             # the declared wire order, starting with wire zero.
             wire_order = clean[::-1]
-            rows.append([int(wire_order[index]) for index in converted.measurement_order])
+            rows.append([int(bit) for bit in wire_order])
         return np.asarray(rows, dtype=np.int8)
 
     @staticmethod
@@ -343,11 +407,27 @@ class QDMIDevice(Device):
             Raw samples, partitioned when a shot vector was requested.
         """
         converted = self._converter.convert(tape)
-        results: list[np.ndarray] = []
+        results: list[Any] = []
         for shots in self._shot_copies(tape.shots):
             started = monotonic()
             try:
-                results.append(self._samples(self._submit(converted, shots), converted, shots))
+                samples = self._samples(self._submit(converted, shots), converted, shots)
+                if converted.mcm_slot_by_uid:
+                    terminal = samples[:, : len(self.wires)]
+                    measurement_results = []
+                    for measurement in tape.measurements:
+                        if isinstance(measurement.mv, MeasurementValue):
+                            source = measurement.mv.measurements[0]
+                            uid = source.meas_uid
+                            assert uid is not None
+                            measurement_results.append(samples[0, converted.mcm_slot_by_uid[uid]])
+                        else:
+                            measurement_results.append(
+                                cast("SampleMeasurement", measurement).process_samples(terminal, self.wires)
+                            )
+                    results.append(tuple(measurement_results))
+                else:
+                    results.append(samples[:, converted.measurement_order])
             finally:
                 self._execution_time += monotonic() - started
 

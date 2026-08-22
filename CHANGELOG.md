@@ -31,8 +31,11 @@ releases may include breaking changes.
 - ✨ Add decision diagram-based construction, simulation, and sampling for QCO
   programs ([#1915], [#1973]) ([**@simon1hofmann**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
-  compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
-  [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
+  compilation through C++, Python, and `mqt-cc`, including payload-scoped
+  execution profiles, cleanup-first runtime-control legalization, and native
+  Qiskit and PennyLane capability projection ([#1687], [#1993], [#1999],
+  [#2049], [#2162]) ([**@MatthiasReumann**], [**@simon1hofmann**],
+  [**@burgholzer**])
 
 #### Import and export
 
@@ -792,6 +795,7 @@ for previous changelogs._
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
 [#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
+[#2162]: https://github.com/munich-quantum-toolkit/core/pull/2162
 [#2158]: https://github.com/munich-quantum-toolkit/core/pull/2158
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156

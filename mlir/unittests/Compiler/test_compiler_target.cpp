@@ -52,8 +52,11 @@ namespace {
 using Target = mlir::CompilerTarget;
 using Coupling = Target::Coupling;
 using DurationUnit = Target::DurationUnit;
+using ExecutionProfile = Target::ExecutionProfile;
 using GateKind = Target::GateKind;
 using Operation = Target::Operation;
+using ProgramFeature = mlir::ProgramFeature;
+using ProgramFormat = mlir::ProgramFormat;
 using Site = Target::Site;
 using SiteId = Target::SiteId;
 using SiteTuple = Target::SiteTuple;
@@ -103,6 +106,17 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   EXPECT_EQ(copy.sites().data(), target.sites().data());
   EXPECT_EQ(copy.couplings().data(), target.couplings().data());
   EXPECT_EQ(copy.operations().data(), target.operations().data());
+
+  mlir::MLIRContext context;
+  const auto restored = valid(Target::create(target.materialize(&context)));
+  EXPECT_EQ(restored.name(), target.name());
+  EXPECT_EQ(restored.siteIds(), target.siteIds());
+  EXPECT_EQ(restored.couplings(), target.couplings());
+  ASSERT_EQ(restored.operations().size(), 1);
+  EXPECT_EQ(restored.operations()[0].name(), target.operations()[0].name());
+  EXPECT_EQ(restored.operations()[0].siteTuples()[0].sites(),
+            target.operations()[0].siteTuples()[0].sites());
+  EXPECT_EQ(restored.durationUnit()->unit(), target.durationUnit()->unit());
 }
 
 TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
@@ -131,6 +145,93 @@ TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
   target.forEachNeighbour(
       1, [&](const auto neighbour) { neighbours.emplace_back(neighbour); });
   EXPECT_EQ(neighbours, (std::vector<size_t>{0, 2}));
+}
+
+TEST(CompilerTargetTest, CanonicalizesPayloadSpecificExecutionProfiles) {
+  const PayloadDescriptor adaptiveDescriptor{"qir", "2.1.0", "adaptive",
+                                             PayloadEncoding::Text};
+  const PayloadDescriptor baseDescriptor{"qir", "2.1.0", "base",
+                                         PayloadEncoding::Text};
+  const auto adaptive =
+      valid(ExecutionProfile::create(adaptiveDescriptor,
+                                     {{ProgramFeature::MultiwayBranching},
+                                      {ProgramFeature::BooleanComputation},
+                                      {ProgramFeature::MultiwayBranching}},
+                                     false));
+  const auto base = valid(ExecutionProfile::create(
+      baseDescriptor, {{ProgramFeature::MidCircuitMeasurement}}));
+  const std::optional profiles = std::vector{adaptive, base};
+
+  const auto denseUnnamed = valid(
+      Target::create(2, std::nullopt, std::nullopt, std::nullopt, profiles));
+  const auto denseNamed = valid(Target::create(
+      "named", 2, std::nullopt, std::nullopt, std::nullopt, profiles));
+  const auto detailedUnnamed = valid(Target::create(
+      std::vector{valid(Site::create(0)), valid(Site::create(1))}, std::nullopt,
+      std::nullopt, std::nullopt, profiles));
+  const auto detailedNamed = valid(Target::create(
+      "named", std::vector{valid(Site::create(0)), valid(Site::create(1))},
+      std::nullopt, std::nullopt, std::nullopt, profiles));
+
+  constexpr std::array adaptiveCapabilities{
+      ProgramCapability{ProgramFeature::BooleanComputation},
+      ProgramCapability{ProgramFeature::MultiwayBranching}};
+  for (const auto& target :
+       {denseUnnamed, denseNamed, detailedUnnamed, detailedNamed}) {
+    const auto executionProfiles = target.executionProfiles();
+    ASSERT_TRUE(executionProfiles);
+    ASSERT_EQ(executionProfiles->size(), 2U);
+    EXPECT_NE(target.executionProfile(baseDescriptor), nullptr);
+    EXPECT_NE(target.executionProfile(adaptiveDescriptor), nullptr);
+
+    const auto* const profile = target.executionProfile(adaptiveDescriptor);
+    ASSERT_NE(profile, nullptr);
+    EXPECT_EQ(profile->capabilities(), llvm::ArrayRef(adaptiveCapabilities));
+    EXPECT_FALSE(profile->optionalFeaturesKnown());
+    EXPECT_TRUE(profile->supports(ProgramFeature::BooleanComputation));
+    EXPECT_TRUE(target.supportsProgramFeature(
+        adaptiveDescriptor, ProgramFeature::MultiwayBranching));
+    EXPECT_FALSE(target.supportsProgramFeature(
+        adaptiveDescriptor, ProgramFeature::CountedIteration));
+    EXPECT_EQ(target.executionProfile(PayloadDescriptor{"openqasm", "3.0.0", "",
+                                                        PayloadEncoding::Text}),
+              nullptr);
+  }
+}
+
+TEST(CompilerTargetTest, DistinguishesUnknownAndKnownEmptyExecutionProfiles) {
+  const auto unknown = valid(Target::create(1));
+  const std::optional<std::vector<ExecutionProfile>> knownEmpty{std::in_place};
+  const auto empty = valid(
+      Target::create(1, std::nullopt, std::nullopt, std::nullopt, knownEmpty));
+
+  EXPECT_FALSE(unknown.executionProfiles());
+  ASSERT_TRUE(empty.executionProfiles());
+  EXPECT_TRUE(empty.executionProfiles()->empty());
+  const PayloadDescriptor adaptive{"qir", "2.1.0", "adaptive",
+                                   PayloadEncoding::Text};
+  EXPECT_EQ(unknown.executionProfile(adaptive), nullptr);
+  EXPECT_FALSE(unknown.supportsProgramFeature(
+      adaptive, ProgramFeature::ForwardBranching));
+}
+
+TEST(CompilerTargetTest, RejectsInvalidAndDuplicateExecutionProfiles) {
+  expectInvalid(ExecutionProfile::create(PayloadDescriptor{}),
+                "Compiler execution profile requires a payload ID and version");
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  constexpr auto unknownFeature = static_cast<ProgramFeature>(255);
+  expectInvalid(
+      ExecutionProfile::create(
+          PayloadDescriptor{"qir", "2.1.0", "adaptive", PayloadEncoding::Text},
+          {{unknownFeature}}),
+      "Compiler execution profile contains an invalid program capability");
+
+  const auto profile = valid(ExecutionProfile::create(
+      PayloadDescriptor{"qir", "2.1.0", "adaptive", PayloadEncoding::Text}));
+  const std::optional duplicates = std::vector{profile, profile};
+  expectInvalid(
+      Target::create(1, std::nullopt, std::nullopt, std::nullopt, duplicates),
+      "Compiler target contains duplicate payload profiles");
 }
 
 TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {

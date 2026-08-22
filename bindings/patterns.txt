@@ -97,7 +97,9 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
+
     @overload
     def __init__(
         self,
@@ -107,6 +109,7 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -116,6 +119,7 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
     @overload
     def __init__(
@@ -126,19 +130,47 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         couplings: Sequence[tuple[int, int]] | None = None,
         operations: Sequence[CompilerTarget.Operation] | None = None,
         duration_unit: CompilerTarget.DurationUnit | None = None,
+        execution_profiles: Sequence[CompilerTarget.ExecutionProfile] | None = None,
     ) -> None: ...
+
+mqt\.core\.mlir\.CompilerTarget\.PayloadDescriptor\.__init__$:
+    def __init__(
+        self,
+        format_id: str,
+        version: str,
+        profile: str = "",
+        encoding: CompilerTarget.PayloadEncoding = ...,
+    ) -> None:
+        \doc
+
+mqt\.core\.mlir\.CompilerTarget\.PayloadDescriptor\.__eq__$:
+    def __eq__(self, other: object, /) -> bool:
+        \doc
+
+mqt\.core\.mlir\.CompilerTarget\.ProgramCapability\.__eq__$:
+    def __eq__(self, other: object, /) -> bool:
+        \doc
+
+mqt\.core\.qdmi\.PayloadDescriptor\.__eq__$:
+    def __eq__(self, other: object, /) -> bool:
+        \doc
 
 mqt\.core\.mlir\.CompilerTarget\.from_device$:
     \from mqt.core.qdmi import Device
     @staticmethod
-    def from_device(device: Device) -> CompilerTarget:
+    def from_device(
+        device: Device,
+    ) -> CompilerTarget:
         \doc
 
 mqt\.core\.mlir\.CompilerTarget\.from_device_id$:
     \from mqt.core._compat.typing import Unpack
     \from mqt.core.typing import QDMISessionParameters
     @staticmethod
-    def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
+    def from_device_id(
+        device_id: str,
+        **session_parameters: Unpack[QDMISessionParameters],
+    ) -> CompilerTarget:
         \doc
 
 mqt.core.mlir.compile_program:
@@ -189,6 +221,7 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.OPENQASM3],
         inplace: bool = False,
+        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,

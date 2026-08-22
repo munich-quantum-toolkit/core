@@ -161,6 +161,7 @@ nitpick_ignore_regex = [
     ("py:class", r"Ellipsis"),
     ("py:class", r"mqt\.core\._compat\.typing\.Unpack"),
     ("py:class", r"ParametersType"),
+    ("py:class", r"pennylane\.devices\.DeviceCapabilities"),
     ("py:class", r"pennylane\.tape\.QuantumScriptOrBatch"),
     ("py:class", r"pennylane\.transforms\.core\.CompilePipeline"),
     ("py:class", r"pennylane\.typing\.(Result|ResultBatch)"),

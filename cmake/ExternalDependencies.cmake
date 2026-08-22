@@ -66,13 +66,13 @@ if(BUILD_MQT_CORE_TESTS)
 endif()
 
 # cmake-format: off
-set(QDMI_MINIMUM_VERSION 1.3.3
+set(QDMI_MINIMUM_VERSION 1.4.0
         CACHE STRING "Minimum QDMI version")
-set(QDMI_VERSION 1.3.3
+set(QDMI_VERSION 1.4.0
         CACHE STRING "QDMI version")
-set(QDMI_REV "18cfb67fd9042761d3005c2f8655751c1758f9c5" # v1.3.3
+set(QDMI_REV "2efeac30dd768632f1ef011de08f2958b452dd3f"
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
-set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
+set(QDMI_REPO_OWNER "simon1hofmann"
         CACHE STRING "QDMI repository owner (change when using a fork)")
 cmake_dependent_option(INSTALL_QDMI "Install QDMI library" ON "MQT_CORE_INSTALL" OFF)
 # cmake-format: on

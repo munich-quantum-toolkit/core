@@ -450,6 +450,92 @@ means every operation is native.)pb");
       .value("ZYZ", mlir::CompilerTarget::SingleQubitBasis::ZYZ)
       .value("ZXZ", mlir::CompilerTarget::SingleQubitBasis::ZXZ);
 
+  nb::enum_<mlir::ProgramFeature>(
+      compilerTarget, "ProgramFeature",
+      "Runtime feature supported for a specific program format.")
+      .value("MID_CIRCUIT_MEASUREMENT",
+             mlir::ProgramFeature::MidCircuitMeasurement)
+      .value("MEASURED_QUBIT_REUSE", mlir::ProgramFeature::MeasuredQubitReuse)
+      .value("MEASUREMENT_RESULT_USE",
+             mlir::ProgramFeature::MeasurementResultUse)
+      .value("BOOLEAN_COMPUTATION", mlir::ProgramFeature::BooleanComputation)
+      .value("INTEGER_COMPUTATION", mlir::ProgramFeature::IntegerComputation)
+      .value("FLOAT_COMPUTATION", mlir::ProgramFeature::FloatComputation)
+      .value("FORWARD_BRANCHING", mlir::ProgramFeature::ForwardBranching)
+      .value("COUNTED_ITERATION", mlir::ProgramFeature::CountedIteration)
+      .value("CONDITIONAL_LOOP", mlir::ProgramFeature::ConditionalLoop)
+      .value("MULTIWAY_BRANCHING", mlir::ProgramFeature::MultiwayBranching)
+      .value("IR_FUNCTIONS", mlir::ProgramFeature::IRFunctions)
+      .value("MULTIPLE_RETURN_POINTS",
+             mlir::ProgramFeature::MultipleReturnPoints)
+      .value("DYNAMIC_QUBIT_MANAGEMENT",
+             mlir::ProgramFeature::DynamicQubitManagement)
+      .value("DYNAMIC_RESULT_MANAGEMENT",
+             mlir::ProgramFeature::DynamicResultManagement)
+      .value("ARRAYS", mlir::ProgramFeature::Arrays);
+
+  nb::enum_<mlir::PayloadEncoding>(compilerTarget, "PayloadEncoding")
+      .value("TEXT", mlir::PayloadEncoding::Text)
+      .value("BINARY", mlir::PayloadEncoding::Binary);
+
+  nb::class_<mlir::PayloadDescriptor>(compilerTarget, "PayloadDescriptor")
+      .def(nb::init<std::string, std::string, std::string,
+                    mlir::PayloadEncoding>(),
+           "format_id"_a, "version"_a, "profile"_a = "",
+           "encoding"_a = mlir::PayloadEncoding::Text)
+      .def_rw("format_id", &mlir::PayloadDescriptor::id)
+      .def_rw("version", &mlir::PayloadDescriptor::version)
+      .def_rw("profile", &mlir::PayloadDescriptor::profile)
+      .def_rw("encoding", &mlir::PayloadDescriptor::encoding)
+      .def("__eq__",
+           [](const mlir::PayloadDescriptor& lhs,
+              const mlir::PayloadDescriptor& rhs) { return lhs == rhs; });
+
+  nb::class_<mlir::ProgramCapability>(compilerTarget, "ProgramCapability")
+      .def(nb::init<mlir::ProgramFeature, uint64_t>(), "feature"_a,
+           "value"_a = 0U)
+      .def_rw("feature", &mlir::ProgramCapability::feature)
+      .def_rw("value", &mlir::ProgramCapability::value)
+      .def("__eq__",
+           [](const mlir::ProgramCapability& lhs,
+              const mlir::ProgramCapability& rhs) { return lhs == rhs; });
+
+  auto executionProfile = nb::class_<mlir::CompilerTarget::ExecutionProfile>(
+      compilerTarget, "ExecutionProfile",
+      "Runtime features supported for one program format.");
+  executionProfile
+      .def(
+          "__init__",
+          [](mlir::CompilerTarget::ExecutionProfile& self,
+             mlir::PayloadDescriptor descriptor,
+             std::vector<mlir::ProgramCapability> capabilities,
+             const bool optionalFeaturesKnown) {
+            constructFromExpected(
+                self, mlir::CompilerTarget::ExecutionProfile::create(
+                          std::move(descriptor), std::move(capabilities),
+                          optionalFeaturesKnown));
+          },
+          "descriptor"_a,
+          "capabilities"_a = std::vector<mlir::ProgramCapability>{},
+          "optional_features_known"_a = true)
+      .def_prop_ro("descriptor",
+                   &mlir::CompilerTarget::ExecutionProfile::descriptor,
+                   "The exact payload described by this profile.")
+      .def_prop_ro(
+          "capabilities",
+          [](const mlir::CompilerTarget::ExecutionProfile& profile) {
+            return std::vector<mlir::ProgramCapability>(
+                profile.capabilities().begin(), profile.capabilities().end());
+          },
+          "The supported runtime capabilities in canonical order.")
+      .def_prop_ro(
+          "optional_features_known",
+          &mlir::CompilerTarget::ExecutionProfile::optionalFeaturesKnown,
+          "Whether optional-feature metadata is complete.")
+      .def("supports", &mlir::CompilerTarget::ExecutionProfile::supports,
+           "feature"_a, "value"_a = 0U,
+           "Whether this profile lists a runtime capability.");
+
   auto synthesisBasis = nb::class_<mlir::CompilerTarget::SynthesisBasis>(
       compilerTarget, "SynthesisBasis",
       "One synthesis basis usable across the complete target.");
@@ -468,14 +554,18 @@ means every operation is native.)pb");
                  couplings,
              std::optional<std::vector<mlir::CompilerTarget::Operation>>
                  operations,
-             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit) {
+             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit,
+             std::optional<std::vector<mlir::CompilerTarget::ExecutionProfile>>
+                 executionProfiles) {
             constructFromExpected(self, mlir::CompilerTarget::create(
                                             numQubits, std::move(couplings),
                                             std::move(operations),
-                                            std::move(durationUnit)));
+                                            std::move(durationUnit),
+                                            std::move(executionProfiles)));
           },
           "num_qubits"_a, nb::kw_only(), "couplings"_a = nb::none(),
-          "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+          "operations"_a = nb::none(), "duration_unit"_a = nb::none(),
+          "execution_profiles"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget& self, std::string name,
@@ -484,14 +574,18 @@ means every operation is native.)pb");
                  couplings,
              std::optional<std::vector<mlir::CompilerTarget::Operation>>
                  operations,
-             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit) {
+             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit,
+             std::optional<std::vector<mlir::CompilerTarget::ExecutionProfile>>
+                 executionProfiles) {
             constructFromExpected(
                 self, mlir::CompilerTarget::create(
                           std::move(name), numQubits, std::move(couplings),
-                          std::move(operations), std::move(durationUnit)));
+                          std::move(operations), std::move(durationUnit),
+                          std::move(executionProfiles)));
           },
           "name"_a, "num_qubits"_a, nb::kw_only(), "couplings"_a = nb::none(),
-          "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+          "operations"_a = nb::none(), "duration_unit"_a = nb::none(),
+          "execution_profiles"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget& self,
@@ -500,14 +594,18 @@ means every operation is native.)pb");
                  couplings,
              std::optional<std::vector<mlir::CompilerTarget::Operation>>
                  operations,
-             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit) {
+             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit,
+             std::optional<std::vector<mlir::CompilerTarget::ExecutionProfile>>
+                 executionProfiles) {
             constructFromExpected(
                 self, mlir::CompilerTarget::create(
                           std::move(sites), std::move(couplings),
-                          std::move(operations), std::move(durationUnit)));
+                          std::move(operations), std::move(durationUnit),
+                          std::move(executionProfiles)));
           },
           "sites"_a, nb::kw_only(), "couplings"_a = nb::none(),
-          "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+          "operations"_a = nb::none(), "duration_unit"_a = nb::none(),
+          "execution_profiles"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget& self, std::string name,
@@ -516,21 +614,27 @@ means every operation is native.)pb");
                  couplings,
              std::optional<std::vector<mlir::CompilerTarget::Operation>>
                  operations,
-             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit) {
+             std::optional<mlir::CompilerTarget::DurationUnit> durationUnit,
+             std::optional<std::vector<mlir::CompilerTarget::ExecutionProfile>>
+                 executionProfiles) {
             constructFromExpected(self, mlir::CompilerTarget::create(
                                             std::move(name), std::move(sites),
                                             std::move(couplings),
                                             std::move(operations),
-                                            std::move(durationUnit)));
+                                            std::move(durationUnit),
+                                            std::move(executionProfiles)));
           },
           "name"_a, "sites"_a, nb::kw_only(), "couplings"_a = nb::none(),
-          "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+          "operations"_a = nb::none(), "duration_unit"_a = nb::none(),
+          "execution_profiles"_a = nb::none())
       .def_static(
           "from_device",
           [](const qdmi::Device& device) {
             return takeResult(mlir::compilerTargetFromDevice(device));
           },
-          "device"_a, "Snapshot a circuit-model QDMI device.")
+          "device"_a,
+          "Snapshot a circuit-model QDMI device, including execution profiles "
+          "derived from its program-format metadata.")
       .def_static(
           "from_device_id",
           [](const std::string& deviceId, std::optional<std::string> baseUrl,
@@ -562,7 +666,9 @@ means every operation is native.)pb");
           "device_config_file"_a = std::nullopt, "custom1"_a = std::nullopt,
           "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
           "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
-          "Open a registered device and snapshot its compiler target.")
+          "Open a registered device and snapshot its compiler target, "
+          "including execution profiles derived from its program-format "
+          "metadata.")
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget& target) {
@@ -603,6 +709,19 @@ means every operation is native.)pb");
           },
           "Operation capabilities in reported order.")
       .def_prop_ro(
+          "execution_profiles",
+          [](const mlir::CompilerTarget& target)
+              -> std::optional<
+                  std::vector<mlir::CompilerTarget::ExecutionProfile>> {
+            const auto profiles = target.executionProfiles();
+            if (!profiles) {
+              return std::nullopt;
+            }
+            return std::vector<mlir::CompilerTarget::ExecutionProfile>(
+                profiles->begin(), profiles->end());
+          },
+          "Payload-specific execution profiles, if reported.")
+      .def_prop_ro(
           "supported_gates",
           [](const mlir::CompilerTarget& target) {
             return std::vector<mlir::CompilerTarget::GateKind>(
@@ -619,7 +738,23 @@ means every operation is native.)pb");
             return target.supportsOperation(name, numQubits, numParameters);
           },
           "name"_a, "num_qubits"_a, "num_parameters"_a = nb::none(),
-          "Whether the target supports an operation capability.");
+          "Whether the target supports an operation capability.")
+      .def(
+          "execution_profile",
+          [](const mlir::CompilerTarget& target,
+             const mlir::PayloadDescriptor& descriptor)
+              -> std::optional<mlir::CompilerTarget::ExecutionProfile> {
+            const auto* const profile = target.executionProfile(descriptor);
+            if (profile == nullptr) {
+              return std::nullopt;
+            }
+            return *profile;
+          },
+          "descriptor"_a, "The execution profile for an exact payload, if any.")
+      .def("supports_program_feature",
+           &mlir::CompilerTarget::supportsProgramFeature, "descriptor"_a,
+           "feature"_a, "value"_a = 0U,
+           "Whether an output profile lists a runtime capability.");
 
   auto program = nb::class_<mlir::Program>(
       m, "Program", R"pb(Base class for a typed MLIR compiler program.
@@ -782,11 +917,25 @@ operations.)pb");
            "Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle "
            "phase gates that act on at least min_qubits qubits (min_qubits "
            "must be at least 3; default 3 means wider than two-qubit).")
-      .def("compile_for_target",
-           &BooleanMemberAdapter<&mlir::QCOProgram::compileForTarget>::call,
-           "target"_a, nb::kw_only(), "enable_timing"_a = false,
-           "enable_statistics"_a = false,
-           "Compile this QCO program for the target in place.")
+      .def(
+          "compile_for_target",
+          [](mlir::QCOProgram& program, const mlir::CompilerTarget& target,
+             const mlir::ProgramFormat format, const bool enableTiming,
+             const bool enableStatistics,
+             const std::optional<mlir::PayloadDescriptor>& descriptor) {
+            requireSuccess(
+                descriptor
+                    ? program.compileForTarget(target, *descriptor, format,
+                                               enableTiming, enableStatistics)
+                    : program.compileForTarget(target, format, enableTiming,
+                                               enableStatistics));
+          },
+          "target"_a, nb::kw_only(),
+          "output"_a = mlir::ProgramFormat::QCOOptimized,
+          "enable_timing"_a = false, "enable_statistics"_a = false,
+          "payload_descriptor"_a = nb::none(),
+          "Compile this QCO program for the selected target output profile "
+          "in place.")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {
@@ -907,7 +1056,8 @@ Args:
     output: The requested output stage of the compiler pipeline.
     inplace: Whether a typed input program may be consumed.
     target: An optional compiler target for decomposition, mapping, and native
-        synthesis. A target requires optimized QCO, QC, or QIR output.
+        synthesis. A target requires optimized QCO, QC, OpenQASM 3, or QIR
+        output.
     qco_pipeline: The QCO optimization pipeline to run. A custom pipeline
         cannot be combined with a target.
     enable_timing: Whether to collect pass timing information.

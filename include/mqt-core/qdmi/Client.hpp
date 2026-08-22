@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include "qdmi/ProgramFormat.hpp"
 #include "qdmi/common/Common.hpp"
 #include "qdmi/driver/Driver.hpp"
 #include "qdmi/types.h"
@@ -238,13 +239,6 @@ toJobResult(const CustomProperty property) {
  * @param format The program format to classify.
  * @return True if the format requires exact-byte submission.
  */
-[[nodiscard]] constexpr bool
-isBinaryProgramFormat(const QDMI_Program_Format format) noexcept {
-  return format == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
-         format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE ||
-         format == QDMI_PROGRAM_FORMAT_QPY;
-}
-
 /**
  * @brief Concept for ranges that are contiguous in memory and can be
  * constructed with a size.
@@ -518,9 +512,6 @@ public:
   [[nodiscard]] std::optional<std::vector<std::pair<Site, Site>>>
   getCouplingMap() const;
 
-  /// @see QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION
-  [[nodiscard]] std::optional<size_t> getNeedsCalibration() const;
-
   /// @see QDMI_DEVICE_PROPERTY_QUEUELENGTH
   [[nodiscard]] std::optional<size_t> getQueueLength() const;
 
@@ -539,9 +530,32 @@ public:
   /// @see QDMI_DEVICE_PROPERTY_MINATOMDISTANCE
   [[nodiscard]] std::optional<uint64_t> getMinAtomDistance() const;
 
-  /// @see QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS
+  /**
+   * @brief Return the program formats reported by the device.
+   * @return The reported formats.
+   * @throws std::runtime_error If the device does not support the property.
+   * @see QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS
+   */
   [[nodiscard]] std::vector<QDMI_Program_Format>
   getSupportedProgramFormats() const;
+
+  /**
+   * @brief Try to return the program formats reported by the device.
+   * @return The reported formats, including an empty vector when the device
+   * reports no formats, or `std::nullopt` when the property is unsupported.
+   * @see QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS
+   */
+  [[nodiscard]] std::optional<std::vector<QDMI_Program_Format>>
+  tryGetSupportedProgramFormats() const;
+
+  /**
+   * @brief Try to query the complete optional capabilities for an exact
+   * payload.
+   * @return The complete optional list, or `std::nullopt` when metadata is
+   * unknown.
+   */
+  [[nodiscard]] std::optional<std::vector<QDMI_Program_Feature>>
+  tryGetProgramFeatures(const QDMI_Program_Format& format) const;
 
   /**
    * @brief Returns the direct child devices managed by this device.
@@ -610,42 +624,6 @@ public:
   [[nodiscard]] Job submitJob(
       std::span<const std::byte> program, QDMI_Program_Format format,
       size_t numShots,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
-
-  /**
-   * @brief Triggers a calibration run.
-   * @details A device that reports a nonzero
-   * `QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION` is asked to calibrate by submitting
-   * a job in the `QDMI_PROGRAM_FORMAT_CALIBRATION` format. QDMI does not
-   * require a program for such a job, so the payload is optional; when it is
-   * present, the device defines what it means, which is usually a
-   * configuration for the run. A calibration run executes no circuit, so no
-   * shot count is set.
-   * @param program The calibration payload. An empty span or `std::nullopt`
-   * means that the job has no payload.
-   * @see QDMI_job_submit
-   */
-  [[nodiscard]] Job submitCalibrationJob(
-      std::optional<std::span<const std::byte>> program = std::nullopt,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
-
-  /**
-   * @brief Triggers a calibration run with a text payload.
-   * @details The terminating null byte required by QDMI text formats is
-   * included in the submitted payload.
-   * @param program The calibration payload.
-   * @see QDMI_job_submit
-   */
-  [[nodiscard]] Job submitCalibrationJob(
-      const std::string& program,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
       const std::optional<CustomJobParameter>& custom2 = std::nullopt,
       const std::optional<CustomJobParameter>& custom3 = std::nullopt,
@@ -906,6 +884,12 @@ public:
    * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES
    */
   [[nodiscard]] std::map<std::string, double> getSparseProbabilities() const;
+
+  /**
+   * @brief Returns the format-defined program output document.
+   * @see QDMI_JOB_RESULT_PROGRAMOUTPUT
+   */
+  [[nodiscard]] std::string getProgramOutput() const;
 
   auto operator<=>(const Job&) const noexcept = default;
 

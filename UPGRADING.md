@@ -6,6 +6,25 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Exact QDMI payload descriptors
+
+QDMI program formats are now exact {py:class}`~mqt.core.qdmi.PayloadDescriptor`
+values. A descriptor contains the format ID, version, profile, and text or
+binary encoding. The `ProgramFormat` compatibility namespace retains the common
+OpenQASM and QIR constants, but it is no longer an enum and cannot be iterated.
+Construct provider formats directly:
+
+```python
+from mqt.core.qdmi import PayloadDescriptor, ProgramEncoding
+
+qpy = PayloadDescriptor("qpy", (13, 0, 0), encoding=ProgramEncoding.BINARY)
+```
+
+Calibration and batch submission are not program formats. MQT Core removed
+`needs_calibration`, `submit_calibration_job`, `CALIBRATION`, and `BATCH_JOB`.
+Use a provider administration API for calibration. Submit ordinary programs as
+separate QDMI jobs until QDMI defines a multi-program job API.
+
 ### Program serialization for QDMI Qiskit backends
 
 The Qiskit backend no longer decides in its own code how to turn a circuit into
@@ -24,7 +43,7 @@ import io
 from qiskit import qpy
 
 from mqt.core.plugins.qiskit import register_program_serializer
-from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi import PayloadDescriptor, ProgramEncoding
 
 
 def my_qpy_serializer(circuit, backend) -> bytes:
@@ -33,7 +52,8 @@ def my_qpy_serializer(circuit, backend) -> bytes:
     return buffer.getvalue()
 
 
-register_program_serializer(ProgramFormat.QPY, my_qpy_serializer)
+qpy_format = PayloadDescriptor("qpy", (13, 0, 0), encoding=ProgramEncoding.BINARY)
+register_program_serializer(qpy_format, my_qpy_serializer)
 ```
 
 A package that owns a device advertises its serializer through the
@@ -42,13 +62,14 @@ finds it without importing the package:
 
 ```toml
 [project.entry-points."mqt.core.qiskit.program_serializers"]
-IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
+iqm_json = "iqm.qdmi.serializers:registration"
 ```
 
-`mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` states which
-format the backend picks when a device accepts several. Pass `replace=True` to
-`register_program_serializer` to take over a format that already has a
-serializer, including OpenQASM 2 and OpenQASM 3.
+The loaded entry-point object must be a `(PayloadDescriptor, serializer)` tuple.
+The backend selects the first provider-preferred descriptor with a registered
+serializer when it is constructed. Pass `payload_descriptor=` to require an
+exact descriptor. Pass `replace=True` to `register_program_serializer` to take
+over a descriptor that already has a serializer.
 
 A backend subclass that must represent a device-native operation outside
 Qiskit's standard gate library sets `_EXTRA_GATES`:

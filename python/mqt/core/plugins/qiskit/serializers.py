@@ -6,38 +6,11 @@
 #
 # Licensed under the MIT License
 
-"""Registry of program serializers for QDMI program formats.
+"""Registry of Qiskit serializers for exact QDMI payload descriptors.
 
-A QDMI device accepts a program in one or more *program formats*, listed by
-:class:`~mqt.core.qdmi.ProgramFormat`. A *program serializer* turns one Qiskit
-:class:`~qiskit.circuit.QuantumCircuit` into one program in one such format.
-
-A format fixes the kind of payload it carries, so there are two signatures. A
-text format takes a :class:`TextProgramSerializer`, which returns :class:`str`.
-A binary format takes a :class:`BinaryProgramSerializer`, which returns
-:class:`bytes`. :func:`~mqt.core.qdmi.is_binary_program_format` states which
-kind a format carries. Two formats take no serializer at all, because a
-serialized circuit is not what they carry; see :data:`NON_CIRCUIT_FORMATS`.
-
-MQT Core registers its own OpenQASM 2 and OpenQASM 3 serializers here. Every
-other format belongs to the package that owns the device. Such a package
-advertises its serializer through the ``mqt.core.qiskit.program_serializers``
-entry point group. The entry point name is the
-:class:`~mqt.core.qdmi.ProgramFormat` member name, and the value points to the
-serializer:
-
-```toml
-[project.entry-points."mqt.core.qiskit.program_serializers"]
-IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
-```
-
-:func:`register_program_serializer` does the same at run time. A registration
-takes precedence over an entry point for the same format.
-
-A device usually accepts several formats. :data:`PROGRAM_FORMAT_PREFERENCE`
-records which one to use, from most to least preferred, and
-:func:`preferred_program_formats` applies that order to the formats a device
-reports.
+An entry point in ``mqt.core.qiskit.program_serializers`` must export a
+``(PayloadDescriptor, serializer)`` tuple. A direct registration takes
+precedence over a discovered entry point for the same descriptor.
 """
 
 from __future__ import annotations
@@ -47,7 +20,7 @@ from enum import Enum, auto
 from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Protocol
 
-from ...qdmi import ProgramFormat
+from ...qdmi import PayloadDescriptor
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -59,12 +32,9 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ENTRY_POINT_GROUP",
-    "NON_CIRCUIT_FORMATS",
-    "PROGRAM_FORMAT_PREFERENCE",
     "BinaryProgramSerializer",
     "ProgramSerializer",
     "TextProgramSerializer",
-    "preferred_program_formats",
     "program_serializer",
     "register_program_serializer",
     "unregister_program_serializer",
@@ -128,43 +98,11 @@ class BinaryProgramSerializer(Protocol):
 #: A serializer for one program format, text or binary.
 ProgramSerializer = TextProgramSerializer | BinaryProgramSerializer
 
-#: The program formats that no program serializer can produce. A serializer
-#: turns one Qiskit circuit into one program, and neither of these carries such
-#: a program: ``CALIBRATION`` asks the device to run a calibration routine, and
-#: ``BATCH_JOB`` carries a list of already-created jobs. This states what a
-#: circuit can be serialized into, which is a question about this adapter
-#: rather than about what
-#: :meth:`~mqt.core.qdmi.Device.submit_job` accepts.
-NON_CIRCUIT_FORMATS: frozenset[ProgramFormat] = frozenset({
-    ProgramFormat.CALIBRATION,
-    ProgramFormat.BATCH_JOB,
-})
 
-#: The program formats in the order the backend prefers them, most preferred
-#: first. A device-native format comes first, because a package that registers a
-#: serializer for its own device's format wants that format used. The
-#: standardized formats follow in order of what a circuit may contain: the QIR
-#: adaptive profile allows classical control, QPY carries a Qiskit circuit
-#: without loss, and OpenQASM 3 expresses control flow, while the QIR base
-#: profile forbids classical feedback and OpenQASM 2 has no control flow at all.
-#: Encoding only breaks a tie within one profile, because it decides how the
-#: program travels rather than what it may say. ``CALIBRATION`` and
-#: ``BATCH_JOB`` are absent because a serialized circuit is not what they carry.
-PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...] = (
-    ProgramFormat.IQM_JSON,
-    ProgramFormat.CUSTOM1,
-    ProgramFormat.CUSTOM2,
-    ProgramFormat.CUSTOM3,
-    ProgramFormat.CUSTOM4,
-    ProgramFormat.CUSTOM5,
-    ProgramFormat.QIR_ADAPTIVE_MODULE,
-    ProgramFormat.QIR_ADAPTIVE_STRING,
-    ProgramFormat.QPY,
-    ProgramFormat.QASM3,
-    ProgramFormat.QIR_BASE_MODULE,
-    ProgramFormat.QIR_BASE_STRING,
-    ProgramFormat.QASM2,
-)
+def _format_name(fmt: PayloadDescriptor) -> str:
+    """Return a concise exact payload name for diagnostics."""
+    profile = f"/{fmt.profile}" if fmt.profile else ""
+    return f"{fmt.format_id}/{'.'.join(map(str, fmt.version))}{profile}/{fmt.encoding.name.lower()}"
 
 
 class _LoadState(Enum):
@@ -192,10 +130,10 @@ class _ProgramSerializerRegistry:
                 installed distributions.
         """
         self._discover = discover
-        self._serializers: dict[ProgramFormat, ProgramSerializer] = {}
+        self._serializers: dict[PayloadDescriptor, ProgramSerializer] = {}
         self._load_state = _LoadState.NOT_STARTED
 
-    def register(self, fmt: ProgramFormat, serializer: ProgramSerializer, *, replace: bool = False) -> None:
+    def register(self, fmt: PayloadDescriptor, serializer: ProgramSerializer, *, replace: bool = False) -> None:
         """Add a serializer for one program format.
 
         Registering does not read the entry points. A registration must be able
@@ -212,15 +150,14 @@ class _ProgramSerializerRegistry:
             ValueError: If the format does not carry a serialized circuit, or if
                 the format already has a serializer and ``replace`` is false.
         """
-        if fmt in NON_CIRCUIT_FORMATS:
-            msg = f"{fmt.name} does not carry a serialized circuit, so it cannot have a program serializer."
-            raise ValueError(msg)
         if not replace and fmt in self._serializers:
-            msg = f"A program serializer for {fmt.name} is already registered. Pass replace=True to override it."
+            msg = (
+                f"A program serializer for {_format_name(fmt)} is already registered. Pass replace=True to override it."
+            )
             raise ValueError(msg)
         self._serializers[fmt] = serializer
 
-    def unregister(self, fmt: ProgramFormat) -> None:
+    def unregister(self, fmt: PayloadDescriptor) -> None:
         """Remove the serializer for one program format.
 
         Args:
@@ -230,7 +167,7 @@ class _ProgramSerializerRegistry:
         self._load_entry_points()
         self._serializers.pop(fmt, None)
 
-    def get(self, fmt: ProgramFormat) -> ProgramSerializer | None:
+    def get(self, fmt: PayloadDescriptor) -> ProgramSerializer | None:
         """Return the serializer for one program format.
 
         Args:
@@ -256,7 +193,7 @@ class _ProgramSerializerRegistry:
             return
 
         self._load_state = _LoadState.LOADING
-        discovered: dict[ProgramFormat, ProgramSerializer] = {}
+        discovered: dict[PayloadDescriptor, ProgramSerializer] = {}
         try:
             for entry_point in self._discover():
                 loaded = _ProgramSerializerRegistry._load_entry_point(entry_point)
@@ -275,7 +212,7 @@ class _ProgramSerializerRegistry:
         self._load_state = _LoadState.LOADED
 
     @staticmethod
-    def _load_entry_point(entry_point: EntryPoint) -> tuple[ProgramFormat, ProgramSerializer] | None:
+    def _load_entry_point(entry_point: EntryPoint) -> tuple[PayloadDescriptor, ProgramSerializer] | None:
         """Resolve one entry point into a format and its serializer.
 
         An entry point that names an unknown program format, names a format in
@@ -291,42 +228,30 @@ class _ProgramSerializerRegistry:
             unusable.
         """
         try:
-            fmt = ProgramFormat[entry_point.name]
-        except KeyError:
-            warnings.warn(
-                f"Entry point '{entry_point.name}' in group '{ENTRY_POINT_GROUP}' does not name a program format "
-                f"and will be skipped.",
-                UserWarning,
-                stacklevel=2,
-            )
-            return None
-
-        if fmt in NON_CIRCUIT_FORMATS:
-            warnings.warn(
-                f"Entry point '{entry_point.name}' in group '{ENTRY_POINT_GROUP}' names a program format that "
-                f"does not carry a serialized circuit and will be skipped.",
-                UserWarning,
-                stacklevel=2,
-            )
-            return None
-
-        try:
-            serializer = entry_point.load()
+            loaded = entry_point.load()
         except Exception as exc:  # ruff:ignore[blind-except] One bad package must not break the others
             warnings.warn(
-                f"Failed to load the program serializer for {fmt.name} from '{entry_point.value}': {exc}",
+                f"Failed to load program serializer entry point '{entry_point.value}': {exc}",
                 UserWarning,
                 stacklevel=2,
             )
             return None
-
-        return fmt, serializer
+        if not isinstance(loaded, tuple) or len(loaded) != 2 or not isinstance(loaded[0], PayloadDescriptor):
+            warnings.warn(
+                f"Entry point '{entry_point.name}' must export (PayloadDescriptor, serializer) and will be skipped.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return None
+        return loaded
 
 
 _REGISTRY = _ProgramSerializerRegistry(lambda: entry_points(group=ENTRY_POINT_GROUP))
 
 
-def register_program_serializer(fmt: ProgramFormat, serializer: ProgramSerializer, *, replace: bool = False) -> None:
+def register_program_serializer(
+    fmt: PayloadDescriptor, serializer: ProgramSerializer, *, replace: bool = False
+) -> None:
     """Register a serializer for one program format.
 
     Args:
@@ -343,7 +268,7 @@ def register_program_serializer(fmt: ProgramFormat, serializer: ProgramSerialize
     _REGISTRY.register(fmt, serializer, replace=replace)
 
 
-def unregister_program_serializer(fmt: ProgramFormat) -> None:
+def unregister_program_serializer(fmt: PayloadDescriptor) -> None:
     """Remove the serializer for one program format.
 
     Args:
@@ -353,7 +278,7 @@ def unregister_program_serializer(fmt: ProgramFormat) -> None:
     _REGISTRY.unregister(fmt)
 
 
-def program_serializer(fmt: ProgramFormat) -> ProgramSerializer | None:
+def program_serializer(fmt: PayloadDescriptor) -> ProgramSerializer | None:
     """Return the serializer for one program format.
 
     Args:
@@ -363,21 +288,3 @@ def program_serializer(fmt: ProgramFormat) -> ProgramSerializer | None:
         The registered serializer, or ``None`` if no package provides one.
     """
     return _REGISTRY.get(fmt)
-
-
-def preferred_program_formats(formats: Iterable[ProgramFormat]) -> list[ProgramFormat]:
-    """Order the program formats a device reports by :data:`PROGRAM_FORMAT_PREFERENCE`.
-
-    Args:
-        formats: The program formats the device accepts.
-
-    Returns:
-        Those of the given formats that can carry a serialized circuit, most
-        preferred first. A format that :data:`PROGRAM_FORMAT_PREFERENCE` does
-        not name comes after every format it does name, in the order it was
-        given.
-    """
-    ranks = {fmt: rank for rank, fmt in enumerate(PROGRAM_FORMAT_PREFERENCE)}
-    unranked = len(PROGRAM_FORMAT_PREFERENCE)
-    candidates = [fmt for fmt in formats if fmt not in NON_CIRCUIT_FORMATS]
-    return sorted(candidates, key=lambda fmt: ranks.get(fmt, unranked))

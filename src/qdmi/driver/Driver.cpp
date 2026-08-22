@@ -154,6 +154,7 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
     LOAD_DYNAMIC_SYMBOL(device_job_get_results)
     // device query interface
     LOAD_DYNAMIC_SYMBOL(device_session_query_device_property)
+    LOAD_DYNAMIC_SYMBOL(device_session_query_program_features)
     LOAD_DYNAMIC_SYMBOL(device_session_query_site_property)
     LOAD_DYNAMIC_SYMBOL(device_session_query_operation_property)
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -466,6 +467,14 @@ auto QDMI_Device_impl_d::querySiteProperty(QDMI_Site site,
                                            size_t* sizeRet) const -> int {
   return library_->device_session_query_site_property(
       deviceSession_, site, prop, size, value, sizeRet);
+}
+
+auto QDMI_Device_impl_d::queryProgramFeatures(const QDMI_Program_Format* format,
+                                              const size_t size,
+                                              QDMI_Program_Feature* value,
+                                              size_t* sizeRet) const -> int {
+  return library_->device_session_query_program_features(deviceSession_, format,
+                                                         size, value, sizeRet);
 }
 
 auto QDMI_Device_impl_d::queryOperationProperty(
@@ -905,6 +914,17 @@ int QDMI_device_query_device_property(QDMI_Device device,
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return device->queryDeviceProperty(prop, size, value, sizeRet);
+}
+
+int QDMI_device_query_program_features(QDMI_Device device,
+                                       const QDMI_Program_Format* format,
+                                       const size_t size,
+                                       QDMI_Program_Feature* value,
+                                       size_t* sizeRet) {
+  if (device == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return device->queryProgramFeatures(format, size, value, sizeRet);
 }
 
 int QDMI_device_query_site_property(QDMI_Device device, QDMI_Site site,

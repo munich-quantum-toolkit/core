@@ -18,6 +18,7 @@ add_mlir_dialect_library(
   MLIRCBitDialect
   MLIRFuncDialect
   MLIRIR
+  MLIRDataLayoutInterfaces
   MLIRMemRefDialect
   MLIRQCDialect
   MLIRQCODialect

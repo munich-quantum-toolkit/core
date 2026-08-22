@@ -25,7 +25,8 @@ namespace mlir::mqt {
 [[nodiscard]] std::optional<double> valueToDouble(Value value);
 
 /**
- * Recursively constant-fold a pure SSA expression DAG to an attribute.
+ * Recursively constant-fold a pure SSA expression DAG to an attribute without
+ * modifying the source operations.
  *
  * The cache memoizes successful and failed evaluations so shared operands are
  * resolved once.
@@ -37,7 +38,7 @@ namespace mlir::mqt {
 valueToConstantAttr(Value value,
                     DenseMap<Value, std::optional<Attribute>>& cache);
 
-/// Recursively constant-fold a pure SSA expression DAG to an attribute.
+/// Fold a pure SSA expression DAG to an attribute without modifying its ops.
 [[nodiscard]] std::optional<Attribute> valueToConstantAttr(Value value);
 
 /// Recursively constant-fold a pure SSA expression DAG to a double.

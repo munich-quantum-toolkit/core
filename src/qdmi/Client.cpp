@@ -37,25 +37,6 @@
 #include <vector>
 
 namespace qdmi {
-namespace {
-/// Rejects the formats that `submitJob` cannot carry.
-/// A batch job's program is a list of job handles rather than a byte blob, so
-/// this API cannot express it at all. A calibration run has its own entry
-/// point, because its payload is optional and it takes no shot count.
-void rejectUnsupportedProgramFormat(const QDMI_Program_Format format) {
-  if (format == QDMI_PROGRAM_FORMAT_BATCHJOB) {
-    throw std::invalid_argument(
-        "MQT Core does not support batch jobs. A batch job's program is a list "
-        "of job handles, which this API cannot express");
-  }
-  if (format == QDMI_PROGRAM_FORMAT_CALIBRATION) {
-    throw std::invalid_argument(
-        "Use submitCalibrationJob (submit_calibration_job in Python) to "
-        "trigger a calibration run");
-  }
-}
-} // namespace
-
 size_t Site::getIndex() const {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
@@ -295,11 +276,6 @@ Device::getCouplingMap() const {
   return couplingMap;
 }
 
-std::optional<size_t> Device::getNeedsCalibration() const {
-  return queryProperty<std::optional<size_t>>(
-      QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
-}
-
 std::optional<size_t> Device::getQueueLength() const {
   return queryProperty<std::optional<size_t>>(QDMI_DEVICE_PROPERTY_QUEUELENGTH);
 }
@@ -332,6 +308,35 @@ std::optional<uint64_t> Device::getMinAtomDistance() const {
 std::vector<QDMI_Program_Format> Device::getSupportedProgramFormats() const {
   return queryProperty<std::vector<QDMI_Program_Format>>(
       QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS);
+}
+
+std::optional<std::vector<QDMI_Program_Format>>
+Device::tryGetSupportedProgramFormats() const {
+  return queryProperty<std::optional<std::vector<QDMI_Program_Format>>>(
+      QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS);
+}
+
+std::optional<std::vector<QDMI_Program_Feature>>
+Device::tryGetProgramFeatures(const QDMI_Program_Format& format) const {
+  size_t size = 0U;
+  auto result = QDMI_device_query_program_features(device_.get(), &format, 0U,
+                                                   nullptr, &size);
+  if (result == QDMI_ERROR_NOTSUPPORTED) {
+    return std::nullopt;
+  }
+  qdmi::throwIfError(result, "Querying program feature size");
+  if (size % sizeof(QDMI_Program_Feature) != 0U) {
+    throw std::runtime_error("Invalid program feature list size");
+  }
+  std::vector<QDMI_Program_Feature> features(size /
+                                             sizeof(QDMI_Program_Feature));
+  if (size != 0U) {
+    qdmi::throwIfError(
+        QDMI_device_query_program_features(device_.get(), &format, size,
+                                           features.data(), nullptr),
+        "Querying program features");
+  }
+  return features;
 }
 
 std::vector<Device> Device::getChildDevices() const {
@@ -375,7 +380,6 @@ Job Device::submitJob(const std::string& program,
     throw std::invalid_argument(
         "Binary program formats require exact-byte submission");
   }
-  rejectUnsupportedProgramFormat(format);
 
   const auto bytes = std::as_bytes(
       std::span(program.c_str(), static_cast<size_t>(program.size() + 1)));
@@ -390,7 +394,6 @@ Job Device::submitJob(const std::span<const std::byte> program,
                       const std::optional<CustomJobParameter>& custom3,
                       const std::optional<CustomJobParameter>& custom4,
                       const std::optional<CustomJobParameter>& custom5) const {
-  rejectUnsupportedProgramFormat(format);
 
   return submitJobImpl(format, program, numShots, custom1, custom2, custom3,
                        custom4, custom5);
@@ -445,32 +448,6 @@ Job Device::submitJobImpl(
 
   qdmi::throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");
   return jobWrapper;
-}
-
-Job Device::submitCalibrationJob(
-    const std::optional<std::span<const std::byte>> program,
-    const std::optional<CustomJobParameter>& custom1,
-    const std::optional<CustomJobParameter>& custom2,
-    const std::optional<CustomJobParameter>& custom3,
-    const std::optional<CustomJobParameter>& custom4,
-    const std::optional<CustomJobParameter>& custom5) const {
-  const auto payload =
-      program.has_value() && !program->empty() ? program : std::nullopt;
-  return submitJobImpl(QDMI_PROGRAM_FORMAT_CALIBRATION, payload, std::nullopt,
-                       custom1, custom2, custom3, custom4, custom5);
-}
-
-Job Device::submitCalibrationJob(
-    const std::string& program,
-    const std::optional<CustomJobParameter>& custom1,
-    const std::optional<CustomJobParameter>& custom2,
-    const std::optional<CustomJobParameter>& custom3,
-    const std::optional<CustomJobParameter>& custom4,
-    const std::optional<CustomJobParameter>& custom5) const {
-  const auto bytes = std::as_bytes(
-      std::span(program.c_str(), static_cast<size_t>(program.size() + 1)));
-  return submitCalibrationJob(bytes, custom1, custom2, custom3, custom4,
-                              custom5);
 }
 
 Job Device::retrieveJobById(const std::string_view jobId) const {
@@ -636,6 +613,23 @@ std::vector<std::string> Job::getShots() const {
   }
 
   return shotsVec;
+}
+
+std::string Job::getProgramOutput() const {
+  size_t size = 0;
+  qdmi::throwIfError(QDMI_job_get_results(job_.get(),
+                                          QDMI_JOB_RESULT_PROGRAMOUTPUT, 0,
+                                          nullptr, &size),
+                     "Querying program output size");
+  if (size == 0) {
+    return {};
+  }
+  std::string output(size - 1U, '\0');
+  qdmi::throwIfError(QDMI_job_get_results(job_.get(),
+                                          QDMI_JOB_RESULT_PROGRAMOUTPUT, size,
+                                          output.data(), nullptr),
+                     "Querying program output");
+  return output;
 }
 
 std::map<std::string, size_t> Job::getCounts() const {

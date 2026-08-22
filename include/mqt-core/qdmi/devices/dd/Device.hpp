@@ -17,6 +17,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
 #include "mqt_ddsim_qdmi/device.h"
+#include "qdmi/ProgramFormat.hpp"
 #include "qdmi/common/Common.hpp"
 
 #include <atomic>
@@ -155,6 +156,10 @@ public:
   auto queryDeviceProperty(QDMI_Device_Property prop, size_t size, void* value,
                            size_t* sizeRet) const -> QDMI_STATUS;
 
+  auto queryProgramFeatures(const QDMI_Program_Format& format, size_t size,
+                            QDMI_Program_Feature* value, size_t* sizeRet) const
+      -> QDMI_STATUS;
+
   /**
    * @brief Forwards a query of a site property to the site.
    * @see MQT_DDSIM_QDMI_device_session_query_site_property
@@ -190,7 +195,7 @@ private:
   std::atomic<QDMI_Job_Status> status_{QDMI_JOB_STATUS_CREATED};
 
   /// The program format
-  QDMI_Program_Format format_ = QDMI_PROGRAM_FORMAT_QASM3;
+  QDMI_Program_Format format_ = qdmi::OPENQASM3;
 
   /// The quantum program associated with the job.
   /// Text formats (QASM2/3, QIR Base/Adaptive String) are stored as
@@ -206,6 +211,9 @@ private:
 
   /// The measurement counts for the job
   std::map<std::string, std::size_t> counts_;
+
+  /// The format-defined program output stream.
+  std::string programOutput_;
 
   /// The DD package used for the state vector simulation
   std::unique_ptr<dd::Package> dd_;

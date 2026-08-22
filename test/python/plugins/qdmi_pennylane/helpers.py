@@ -13,12 +13,13 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 from unittest.mock import Mock
 
 from mqt.core.qdmi import Device as QDMIDevice
 from mqt.core.qdmi import Job as QDMIJob
-from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi import PayloadDescriptor, ProgramFormat
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -53,7 +54,7 @@ def operation(
     return cast("QDMIDevice.Operation", metadata)
 
 
-def _standard_operations(program_format: ProgramFormat) -> list[QDMIDevice.Operation]:
+def _standard_operations(program_format: PayloadDescriptor) -> list[QDMIDevice.Operation]:
     """Return the gate set used by execution tests."""
     qasm2 = program_format == ProgramFormat.QASM2
     return [
@@ -98,12 +99,13 @@ class StubDevice:
     def __init__(
         self,
         operations: Sequence[QDMIDevice.Operation],
-        formats: Sequence[ProgramFormat],
+        formats: Sequence[PayloadDescriptor],
         *,
         qubits: int = 2,
         coupling_map: Sequence[tuple[int, int]] | None = None,
         result_factory: Callable[[str, int], Sequence[str]] = bell_results,
         expose_shots: bool = True,
+        program_features: Sequence[str] | None = (),
     ) -> None:
         """Store the advertised capabilities and result behavior."""
         self._operations = list(operations)
@@ -112,7 +114,8 @@ class StubDevice:
         self._coupling_map = coupling_map
         self._result_factory = result_factory
         self._expose_shots = expose_shots
-        self.submissions: list[tuple[str, ProgramFormat, int, Mapping[str, object]]] = []
+        self._program_features = program_features
+        self.submissions: list[tuple[str, PayloadDescriptor, int, Mapping[str, object]]] = []
 
     @staticmethod
     def name() -> str:
@@ -123,9 +126,15 @@ class StubDevice:
         """Return the advertised operations."""
         return self._operations
 
-    def supported_program_formats(self) -> list[ProgramFormat]:
+    def supported_program_formats(self) -> list[PayloadDescriptor]:
         """Return the advertised program formats."""
         return self._formats
+
+    def try_program_features(self, _program_format: PayloadDescriptor) -> list[object] | None:
+        """Return known feature records, or unknown metadata."""
+        if self._program_features is None:
+            return None
+        return [SimpleNamespace(id=feature, value=0) for feature in self._program_features]
 
     def qubits_num(self) -> int:
         """Return the device width."""
@@ -140,7 +149,7 @@ class StubDevice:
     def submit_job(
         self,
         program: str,
-        program_format: ProgramFormat,
+        program_format: PayloadDescriptor,
         num_shots: int,
         **parameters: object,
     ) -> QDMIJob:
@@ -165,11 +174,12 @@ class StubDevice:
 
 def stub_device(
     *,
-    program_format: ProgramFormat = ProgramFormat.QASM3,
+    program_format: PayloadDescriptor = ProgramFormat.QASM3,
     operations: Sequence[QDMIDevice.Operation] | None = None,
     qubits: int = 2,
     result_factory: Callable[[str, int], Sequence[str]] = bell_results,
     expose_shots: bool = True,
+    program_features: Sequence[str] | None = (),
 ) -> StubDevice:
     """Return a stub with the ordinary execution-test gate set."""
     return StubDevice(
@@ -178,6 +188,7 @@ def stub_device(
         qubits=qubits,
         result_factory=result_factory,
         expose_shots=expose_shots,
+        program_features=program_features,
     )
 
 

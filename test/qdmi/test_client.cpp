@@ -10,6 +10,7 @@
 
 #include "qdmi/Client.hpp"
 #include "qdmi/common/Common.hpp"
+#include "qdmi/driver/Driver.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -28,6 +29,7 @@
 #include <ranges>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <tuple>
 #include <vector>
@@ -110,7 +112,7 @@ bit[1] c;
 h q[0];
 c[0] = measure q[0];
 )";
-    return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+    return device.submitJob(qasm3Program, OPENQASM3, 10);
   }
 };
 
@@ -127,7 +129,7 @@ qubit[2] q;
 h q[0];
 cx q[0], q[1];
 )";
-    return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 0);
+    return device.submitJob(qasm3Program, OPENQASM3, 0);
   }
 };
 
@@ -350,8 +352,6 @@ TEST(QDMITest, DevicePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_OPERATIONS), "OPERATIONS");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_COUPLINGMAP),
                "COUPLING MAP");
-  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION),
-               "NEEDS CALIBRATION");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_LENGTHUNIT), "LENGTH UNIT");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR),
                "LENGTH SCALE FACTOR");
@@ -411,54 +411,9 @@ TEST(QDMITest, ThrowIfError) {
 }
 
 TEST(QDMITest, BinaryProgramFormatClassification) {
-  // The switch below states the expected classification of every program
-  // format. It has no default case, so a format added to QDMI later produces
-  // an unhandled-enumerator warning instead of an unnoticed classification.
-  constexpr auto expected = [](const QDMI_Program_Format format) -> bool {
-    switch (format) {
-    case QDMI_PROGRAM_FORMAT_QIRBASEMODULE:
-    case QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE:
-    case QDMI_PROGRAM_FORMAT_QPY:
-      return true;
-    case QDMI_PROGRAM_FORMAT_QASM2:
-    case QDMI_PROGRAM_FORMAT_QASM3:
-    case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
-    case QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING:
-    case QDMI_PROGRAM_FORMAT_CALIBRATION:
-    case QDMI_PROGRAM_FORMAT_IQMJSON:
-    case QDMI_PROGRAM_FORMAT_BATCHJOB:
-    case QDMI_PROGRAM_FORMAT_CUSTOM1:
-    case QDMI_PROGRAM_FORMAT_CUSTOM2:
-    case QDMI_PROGRAM_FORMAT_CUSTOM3:
-    case QDMI_PROGRAM_FORMAT_CUSTOM4:
-    case QDMI_PROGRAM_FORMAT_CUSTOM5:
-      return false;
-    }
-    return false;
-  };
-
-  // Every program format QDMI defines. A format added to QDMI must be added
-  // here as well so that the loop below covers it.
-  constexpr std::array formats{QDMI_PROGRAM_FORMAT_QASM2,
-                               QDMI_PROGRAM_FORMAT_QASM3,
-                               QDMI_PROGRAM_FORMAT_QIRBASESTRING,
-                               QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
-                               QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
-                               QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
-                               QDMI_PROGRAM_FORMAT_CALIBRATION,
-                               QDMI_PROGRAM_FORMAT_QPY,
-                               QDMI_PROGRAM_FORMAT_IQMJSON,
-                               QDMI_PROGRAM_FORMAT_BATCHJOB,
-                               QDMI_PROGRAM_FORMAT_CUSTOM1,
-                               QDMI_PROGRAM_FORMAT_CUSTOM2,
-                               QDMI_PROGRAM_FORMAT_CUSTOM3,
-                               QDMI_PROGRAM_FORMAT_CUSTOM4,
-                               QDMI_PROGRAM_FORMAT_CUSTOM5};
-
-  for (const auto format : formats) {
-    EXPECT_EQ(qdmi::isBinaryProgramFormat(format), expected(format))
-        << "program format " << static_cast<int>(format);
-  }
+  EXPECT_FALSE(qdmi::isBinaryProgramFormat(OPENQASM3));
+  EXPECT_FALSE(qdmi::isBinaryProgramFormat(QIR21_ADAPTIVE_TEXT));
+  EXPECT_TRUE(qdmi::isBinaryProgramFormat(QIR21_ADAPTIVE_BINARY));
 }
 
 TEST_P(DeviceTest, Name) {
@@ -489,10 +444,6 @@ TEST_P(DeviceTest, CouplingMap) {
   EXPECT_NO_THROW(std::ignore = device.getCouplingMap());
 }
 
-TEST_P(DeviceTest, NeedsCalibration) {
-  EXPECT_NO_THROW(std::ignore = device.getNeedsCalibration());
-}
-
 TEST_F(DDSimulatorDeviceTest, QueueLengthIsUnavailable) {
   EXPECT_EQ(device.getQueueLength(), std::nullopt);
 }
@@ -519,6 +470,37 @@ TEST_P(DeviceTest, MinAtomDistance) {
 
 TEST_P(DeviceTest, SupportedProgramFormats) {
   EXPECT_NO_THROW(std::ignore = device.getSupportedProgramFormats());
+  EXPECT_TRUE(device.tryGetSupportedProgramFormats().has_value());
+}
+
+TEST(DeviceProgramFormatsTest, DistinguishesUnsupportedFromKnownEmpty) {
+  constexpr std::string_view deviceId = "test.unsupported-program-formats";
+  static_cast<void>(Driver::get().registerDeviceIfAbsent(
+      {.id = std::string(deviceId),
+       .library = MQT_CORE_QDMI_SESSION_TEST_DEVICE,
+       .prefix = "TEST_SESSION"}));
+
+  const auto unsupported = Session::openDevice(deviceId);
+  EXPECT_EQ(unsupported.tryGetSupportedProgramFormats(), std::nullopt);
+  EXPECT_THROW(std::ignore = unsupported.getSupportedProgramFormats(),
+               std::runtime_error);
+
+  const auto knownEmpty = Session::openDevice("mqt.sc.default");
+  const auto formats = knownEmpty.tryGetSupportedProgramFormats();
+  ASSERT_TRUE(formats.has_value());
+  EXPECT_TRUE(formats->empty());
+  EXPECT_TRUE(knownEmpty.getSupportedProgramFormats().empty());
+}
+
+TEST_F(DDSimulatorDeviceTest, SupportedProgramFormatsAreKnownAndNonempty) {
+  const auto formats = device.tryGetSupportedProgramFormats();
+  ASSERT_TRUE(formats.has_value());
+  EXPECT_FALSE(formats->empty());
+  EXPECT_NE(std::ranges::find_if(*formats,
+                                 [](const auto& format) {
+                                   return equal(format, QIR21_ADAPTIVE_TEXT);
+                                 }),
+            formats->end());
 }
 
 TEST_P(DeviceTest, ChildDevices) {
@@ -802,11 +784,10 @@ h q[0];
 cx q[0], q[1];
 c = measure q;)";
 
-  const auto job =
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
+  const auto job = device.submitJob(qasm3Program, OPENQASM3, 100);
 
   EXPECT_FALSE(job.getId().empty());
-  EXPECT_EQ(job.getProgramFormat(), QDMI_PROGRAM_FORMAT_QASM3);
+  EXPECT_TRUE(equal(job.getProgramFormat(), OPENQASM3));
   EXPECT_STREQ(job.getProgram().c_str(), qasm3Program.c_str());
   EXPECT_EQ(job.getNumShots(), 100);
   EXPECT_TRUE(job.wait());
@@ -816,59 +797,9 @@ c = measure q;)";
 TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
   const std::string textProgram = "OPENQASM 3.0;";
 
-  EXPECT_THROW(std::ignore = device.submitJob(
-                   textProgram, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0),
-               std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsBatchJobs) {
-  // A batch job's program is a list of job handles, which the byte-span API
-  // cannot express, so MQT Core states that it does not support them.
-  constexpr std::array bytes{std::byte{0}};
-
   EXPECT_THROW(std::ignore =
-                   device.submitJob(bytes, QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
+                   device.submitJob(textProgram, QIR21_BASE_BINARY, 0),
                std::invalid_argument);
-  EXPECT_THROW(std::ignore = device.submitJob(std::string{},
-                                              QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
-               std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, SubmitJobSendsCalibrationRunsElsewhere) {
-  // A calibration run takes no shot count and an optional payload, so it has
-  // its own entry point rather than a special case in `submitJob`.
-  EXPECT_THROW(std::ignore = device.submitJob(
-                   std::string{}, QDMI_PROGRAM_FORMAT_CALIBRATION, 0),
-               std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, CalibrationJobReachesTheDevice) {
-  // The DD simulator needs no calibration and rejects the format itself. What
-  // matters is that the client no longer refuses before asking: the failure
-  // comes from the device, as a runtime error rather than an argument error.
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob(), std::runtime_error);
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob("configuration"),
-               std::runtime_error);
-
-  constexpr std::array payload{std::byte{1}, std::byte{2}};
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob(payload),
-               std::runtime_error);
-
-  constexpr std::byte emptyPayloadStorage{};
-  const std::span emptyPayload{&emptyPayloadStorage, size_t{0}};
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob(emptyPayload),
-               std::runtime_error);
-
-  EXPECT_NO_THROW({
-    try {
-      std::ignore = device.submitCalibrationJob();
-    } catch (const std::invalid_argument&) {
-      FAIL() << "the client rejected the calibration run before the device saw "
-                "it";
-    } catch (const std::runtime_error&) { // NOLINT(bugprone-empty-catch)
-      // The device declined, which is its decision to make.
-    }
-  });
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
@@ -878,24 +809,22 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
     try {
       switch (which) {
       case 1:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom);
+        device.submitJob(qasm3Program, OPENQASM3, 10, custom);
         break;
       case 2:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                         std::nullopt, custom);
+        device.submitJob(qasm3Program, OPENQASM3, 10, std::nullopt, custom);
         break;
       case 3:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                         std::nullopt, std::nullopt, custom);
+        device.submitJob(qasm3Program, OPENQASM3, 10, std::nullopt,
+                         std::nullopt, custom);
         break;
       case 4:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                         std::nullopt, std::nullopt, std::nullopt, custom);
+        device.submitJob(qasm3Program, OPENQASM3, 10, std::nullopt,
+                         std::nullopt, std::nullopt, custom);
         break;
       case 5:
-        device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                         std::nullopt, std::nullopt, std::nullopt, std::nullopt,
-                         custom);
+        device.submitJob(qasm3Program, OPENQASM3, 10, std::nullopt,
+                         std::nullopt, std::nullopt, std::nullopt, custom);
         break;
       default:
         throw std::invalid_argument("Invalid 'which' value");
@@ -922,16 +851,13 @@ bit[1] c;
 c[0] = measure q[0];
 )";
 
-  const auto job1 =
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  const auto job1 = device.submitJob(qasm3Program, OPENQASM3, 10);
   EXPECT_EQ(job1.getNumShots(), 10);
 
-  const auto job2 =
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
+  const auto job2 = device.submitJob(qasm3Program, OPENQASM3, 100);
   EXPECT_EQ(job2.getNumShots(), 100);
 
-  const auto job3 =
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 1000);
+  const auto job3 = device.submitJob(qasm3Program, OPENQASM3, 1000);
   EXPECT_EQ(job3.getNumShots(), 1000);
 }
 
@@ -942,8 +868,7 @@ qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 )";
-  const auto job2 =
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  const auto job2 = device.submitJob(qasm3Program, OPENQASM3, 10);
 
   EXPECT_NE(job.getId(), job2.getId());
 }
@@ -1030,8 +955,7 @@ qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 )";
-  const auto jobToCancel =
-      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  const auto jobToCancel = device.submitJob(qasm3Program, OPENQASM3, 10);
 
   // Fast-executing jobs (like the DD simulator) may complete before
   // cancel is called, which should throw an exception.

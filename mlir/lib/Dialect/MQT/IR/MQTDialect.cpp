@@ -11,10 +11,14 @@
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Attributes.h>
@@ -22,6 +26,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/DialectImplementation.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Support/LLVM.h>
@@ -32,7 +37,119 @@ using namespace mlir::mqt;
 
 #include "mlir/Dialect/MQT/IR/MQTDialect.cpp.inc"
 
-void MQTDialect::initialize() {}
+#define GET_ATTRDEF_CLASSES
+#include "mlir/Dialect/MQT/IR/MQTAttributes.cpp.inc"
+
+void MQTDialect::initialize() {
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "mlir/Dialect/MQT/IR/MQTAttributes.cpp.inc"
+      >();
+}
+
+TargetEnvAttr TargetEnvAttr::get(
+    MLIRContext* const context, const StringRef id, const StringRef version,
+    const StringRef profile, const StringRef encoding,
+    const ArrayRef<std::pair<StringRef, uint64_t>> capabilities,
+    const bool optionalFeaturesKnown, const DictionaryAttr target) {
+  SmallVector<Attribute> capabilityAttrs;
+  capabilityAttrs.reserve(capabilities.size());
+  for (const auto& [capability, value] : capabilities) {
+    capabilityAttrs.emplace_back(DictionaryAttr::get(
+        context, {NamedAttribute(StringAttr::get(context, "id"),
+                                 StringAttr::get(context, capability)),
+                  NamedAttribute(StringAttr::get(context, "value"),
+                                 IntegerAttr::get(IntegerType::get(context, 64),
+                                                  value))}));
+  }
+  return Base::get(
+      context, StringAttr::get(context, id), StringAttr::get(context, version),
+      StringAttr::get(context, profile), StringAttr::get(context, encoding),
+      ArrayAttr::get(context, capabilityAttrs), optionalFeaturesKnown, target);
+}
+
+LogicalResult TargetEnvAttr::verify(
+    const function_ref<InFlightDiagnostic()> emitError, const StringAttr id,
+    const StringAttr version, const StringAttr /*profile*/,
+    const StringAttr encoding, const ArrayAttr capabilities,
+    const bool /*optionalFeaturesKnown*/, const DictionaryAttr target) {
+  if (id.getValue().empty() || version.getValue().empty()) {
+    return emitError()
+           << "target environment requires a payload ID and version";
+  }
+  if (encoding.getValue() != "text" && encoding.getValue() != "binary") {
+    return emitError() << "target environment encoding must be text or binary";
+  }
+  if (target.empty()) {
+    return emitError() << "target environment requires a target snapshot";
+  }
+  llvm::SmallDenseSet<std::pair<StringRef, uint64_t>> seen;
+  seen.reserve(capabilities.size());
+  for (const Attribute attribute : capabilities) {
+    const auto capability = dyn_cast<DictionaryAttr>(attribute);
+    const auto capabilityId =
+        capability ? capability.getAs<StringAttr>("id") : StringAttr{};
+    const auto value =
+        capability ? capability.getAs<IntegerAttr>("value") : IntegerAttr{};
+    if (!capabilityId || !value || !value.getType().isSignlessInteger(64)) {
+      return emitError() << "target environment capabilities require string id "
+                            "and i64 value";
+    }
+    if (capabilityId.getValue().empty()) {
+      return emitError()
+             << "target environment capability ID must not be empty";
+    }
+    const auto key =
+        std::pair(capabilityId.getValue(), value.getValue().getZExtValue());
+    if (!seen.insert(key).second) {
+      return emitError() << "target environment contains duplicate capability '"
+                         << capabilityId.getValue() << "'";
+    }
+  }
+  return success();
+}
+
+bool TargetEnvAttr::supports(const StringRef feature,
+                             const uint64_t value) const {
+  return llvm::any_of(getCapabilities(), [&](const Attribute candidate) {
+    const auto capability = dyn_cast<DictionaryAttr>(candidate);
+    const auto id =
+        capability ? capability.getAs<StringAttr>("id") : StringAttr{};
+    const auto candidateValue =
+        capability ? capability.getAs<IntegerAttr>("value") : IntegerAttr{};
+    return id && candidateValue && id.getValue() == feature &&
+           candidateValue.getValue().getZExtValue() == value;
+  });
+}
+
+FailureOr<Attribute> TargetEnvAttr::query(const DataLayoutEntryKey key) {
+  const auto stringKey = key.dyn_cast<StringAttr>();
+  if (!stringKey) {
+    return failure();
+  }
+  if (stringKey.getValue() == "mqt.target_env.id") {
+    return getId();
+  }
+  if (stringKey.getValue() == "mqt.target_env.version") {
+    return getVersion();
+  }
+  if (stringKey.getValue() == "mqt.target_env.profile") {
+    return getProfile();
+  }
+  if (stringKey.getValue() == "mqt.target_env.encoding") {
+    return getEncoding();
+  }
+  if (stringKey.getValue() == "mqt.target_env.capabilities") {
+    return getCapabilities();
+  }
+  if (stringKey.getValue() == "mqt.target_env.optional_features_known") {
+    return BoolAttr::get(getContext(), getOptionalFeaturesKnown());
+  }
+  if (stringKey.getValue() == "mqt.target_env.target") {
+    return getTarget();
+  }
+  return failure();
+}
 
 [[nodiscard]] static LogicalResult
 verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
@@ -141,6 +258,19 @@ verifyRegisterName(Operation* operation, const NamedAttribute attribute) {
 LogicalResult
 MQTDialect::verifyOperationAttribute(Operation* operation,
                                      const NamedAttribute attribute) {
+  if (attribute.getName() == TargetEnvAttr::getOperationAttributeName()) {
+    if (!isa<ModuleOp>(operation)) {
+      return operation->emitError()
+             << "attribute '" << attribute.getName().getValue()
+             << "' is only valid on a module";
+    }
+    if (!isa<TargetEnvAttr>(attribute.getValue())) {
+      return operation->emitError()
+             << "attribute '" << attribute.getName().getValue()
+             << "' must be an mqt target environment";
+    }
+    return success();
+  }
   if (attribute.getName() == EntryPointAttrHelper::getNameStr()) {
     return verifyEntryPoint(operation, attribute);
   }

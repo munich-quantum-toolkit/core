@@ -10,6 +10,7 @@
 
 #include "mlir/Compiler/QDMIAdapter.h"
 
+#include "mlir/Compiler/ProgramFormat.h"
 #include "mlir/Compiler/Target.h"
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
@@ -20,6 +21,7 @@
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/CheckedArithmetic.h>
 #include <llvm/Support/Error.h>
+#include <qdmi/constants.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -321,6 +323,103 @@ snapshotOperations(
   return targetOperations;
 }
 
+[[nodiscard]] static llvm::Expected<
+    std::optional<std::vector<CompilerTarget::ExecutionProfile>>>
+snapshotExecutionProfiles(const qdmi::Device& device) {
+  const auto formats = device.tryGetSupportedProgramFormats();
+  if (!formats) {
+    return std::nullopt;
+  }
+
+  std::vector<CompilerTarget::ExecutionProfile> profiles;
+  profiles.reserve(formats->size());
+  const auto mapFeature =
+      [](const std::string_view id) -> std::optional<ProgramFeature> {
+    if (id == QDMI_PROGRAM_FEATURE_MID_CIRCUIT_MEASUREMENT) {
+      return ProgramFeature::MidCircuitMeasurement;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_MEASURED_QUBIT_REUSE) {
+      return ProgramFeature::MeasuredQubitReuse;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_MEASUREMENT_RESULT_USE) {
+      return ProgramFeature::MeasurementResultUse;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_BOOLEAN_COMPUTATION) {
+      return ProgramFeature::BooleanComputation;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_FORWARD_BRANCHING) {
+      return ProgramFeature::ForwardBranching;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_COUNTED_ITERATION) {
+      return ProgramFeature::CountedIteration;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_CONDITIONAL_LOOP) {
+      return ProgramFeature::ConditionalLoop;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_MULTIWAY_BRANCHING) {
+      return ProgramFeature::MultiwayBranching;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_INTEGER_COMPUTATION) {
+      return ProgramFeature::IntegerComputation;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_FLOAT_COMPUTATION) {
+      return ProgramFeature::FloatComputation;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_IR_FUNCTIONS) {
+      return ProgramFeature::IRFunctions;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_MULTIPLE_RETURN_POINTS) {
+      return ProgramFeature::MultipleReturnPoints;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_DYNAMIC_QUBIT_MANAGEMENT) {
+      return ProgramFeature::DynamicQubitManagement;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_DYNAMIC_RESULT_MANAGEMENT) {
+      return ProgramFeature::DynamicResultManagement;
+    }
+    if (id == QDMI_PROGRAM_FEATURE_ARRAYS) {
+      return ProgramFeature::Arrays;
+    }
+    return std::nullopt;
+  };
+  for (const QDMI_Program_Format& format : *formats) {
+    const uint32_t version = format.version;
+    PayloadDescriptor descriptor{
+        format.id,
+        std::to_string(QDMI_VERSION_MAJOR(version)) + "." +
+            std::to_string(QDMI_VERSION_MINOR(version)) + "." +
+            std::to_string(QDMI_VERSION_PATCH(version)),
+        format.profile,
+        format.encoding == QDMI_PROGRAM_ENCODING_BINARY
+            ? PayloadEncoding::Binary
+            : PayloadEncoding::Text};
+    std::vector<ProgramCapability> capabilities;
+    if (descriptor.id == "qir" && descriptor.version == "2.1.0" &&
+        descriptor.profile == "adaptive") {
+      capabilities = {{ProgramFeature::MidCircuitMeasurement},
+                      {ProgramFeature::MeasuredQubitReuse},
+                      {ProgramFeature::MeasurementResultUse},
+                      {ProgramFeature::BooleanComputation},
+                      {ProgramFeature::ForwardBranching}};
+    }
+    const auto optional = device.tryGetProgramFeatures(format);
+    if (optional) {
+      for (const auto& feature : *optional) {
+        if (const auto mapped = mapFeature(feature.id)) {
+          capabilities.emplace_back(ProgramCapability{*mapped, feature.value});
+        }
+      }
+    }
+    auto profile = CompilerTarget::ExecutionProfile::create(
+        std::move(descriptor), std::move(capabilities), optional.has_value());
+    if (!profile) {
+      return profile.takeError();
+    }
+    profiles.emplace_back(std::move(*profile));
+  }
+  return std::optional(std::move(profiles));
+}
+
 [[nodiscard]] static llvm::Expected<CompilerTarget>
 snapshotCompilerTarget(const qdmi::Device& device) {
   auto deviceName = device.getName();
@@ -378,9 +477,14 @@ snapshotCompilerTarget(const qdmi::Device& device) {
   if (!durationUnit) {
     return durationUnit.takeError();
   }
+  auto executionProfiles = snapshotExecutionProfiles(device);
+  if (!executionProfiles) {
+    return executionProfiles.takeError();
+  }
   return CompilerTarget::create(std::move(deviceName), std::move(sites),
                                 std::move(couplings), std::move(*operations),
-                                std::move(*durationUnit));
+                                std::move(*durationUnit),
+                                std::move(*executionProfiles));
 }
 
 [[nodiscard]] static llvm::Error qdmiError(const llvm::Twine& action,

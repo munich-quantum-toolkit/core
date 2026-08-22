@@ -9,6 +9,8 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -19,9 +21,11 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
+#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -436,8 +440,9 @@ struct TargetNativeSynthesisPass final
     : PassWrapper<TargetNativeSynthesisPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TargetNativeSynthesisPass)
 
+  TargetNativeSynthesisPass() = default;
   explicit TargetNativeSynthesisPass(const CompilerTarget& targetIn)
-      : target(targetIn) {}
+      : explicitTarget(targetIn) {}
 
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<QCODialect, arith::ArithDialect>();
@@ -445,11 +450,36 @@ struct TargetNativeSynthesisPass final
 
 protected:
   void runOnOperation() override {
+    std::optional<CompilerTarget> parsedTarget = explicitTarget;
+    if (!parsedTarget) {
+      const auto environment =
+          getOperation()->getAttrOfType<mqt::TargetEnvAttr>(
+              mqt::TargetEnvAttr::getOperationAttributeName());
+      if (!environment) {
+        getOperation().emitError(
+            "target-native synthesis requires mqt.target_env");
+        signalPassFailure();
+        return;
+      }
+      auto parsed = CompilerTarget::create(environment.getTarget());
+      if (!parsed) {
+        getOperation().emitError() << "invalid target environment: "
+                                   << llvm::toString(parsed.takeError());
+        signalPassFailure();
+        return;
+      }
+      parsedTarget.emplace(std::move(*parsed));
+    }
+    const CompilerTarget& target = *parsedTarget;
     if (!target.hasExplicitOperations()) {
       return;
     }
     ModuleOp moduleOp = getOperation();
-    const auto plan = planTargetSynthesis(moduleOp, target);
+    Operation* root = moduleOp;
+    if (const auto entryPoint = mqt::getEntryPoint(moduleOp)) {
+      root = entryPoint;
+    }
+    const auto plan = planTargetSynthesis(root, target);
     if (plan.firstNeed == nullptr) {
       return;
     }
@@ -482,28 +512,47 @@ protected:
     }
   }
 
-  CompilerTarget target;
+  std::optional<CompilerTarget> explicitTarget;
 };
 
 struct VerifyTargetConformancePass final
     : PassWrapper<VerifyTargetConformancePass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(VerifyTargetConformancePass)
 
+  VerifyTargetConformancePass() = default;
   explicit VerifyTargetConformancePass(const CompilerTarget& targetIn)
-      : target(targetIn) {}
+      : explicitTarget(targetIn) {}
 
 protected:
   void runOnOperation() override {
-    WalkResult result = getOperation()->walk([&](Operation* operation) {
+    ModuleOp moduleOp = getOperation();
+    std::optional<CompilerTarget> parsedTarget = explicitTarget;
+    if (!parsedTarget) {
+      const auto environment = moduleOp->getAttrOfType<mqt::TargetEnvAttr>(
+          mqt::TargetEnvAttr::getOperationAttributeName());
+      if (!environment) {
+        moduleOp.emitError("target conformance requires mqt.target_env");
+        signalPassFailure();
+        return;
+      }
+      auto parsed = CompilerTarget::create(environment.getTarget());
+      if (!parsed) {
+        moduleOp.emitError() << "invalid target environment: "
+                             << llvm::toString(parsed.takeError());
+        signalPassFailure();
+        return;
+      }
+      parsedTarget.emplace(std::move(*parsed));
+    }
+    const CompilerTarget& target = *parsedTarget;
+    Operation* root = moduleOp;
+    if (const auto entryPoint = mqt::getEntryPoint(moduleOp)) {
+      root = entryPoint;
+    }
+    WalkResult result = root->walk([&](Operation* operation) {
       if (auto function = dyn_cast<FunctionOpInterface>(operation);
           function &&
-          llvm::any_of(function.getArgumentTypes(), [](const auto type) {
-            if (isa<QubitType>(type)) {
-              return true;
-            }
-            const auto tensor = dyn_cast<RankedTensorType>(type);
-            return tensor && isa<QubitType>(tensor.getElementType());
-          })) {
+          llvm::any_of(function.getArgumentTypes(), containsQuantumState)) {
         function.emitError()
             << "target conformance requires quantum function inputs to be "
                "assigned to qco.static target sites";
@@ -552,7 +601,31 @@ protected:
     }
   }
 
-  CompilerTarget target;
+private:
+  std::optional<CompilerTarget> explicitTarget;
+
+  [[nodiscard]] static bool containsQuantumState(const Type type) {
+    SmallVector<Type> worklist{type};
+    llvm::DenseSet<Type> visited;
+    while (!worklist.empty()) {
+      const Type current = worklist.pop_back_val();
+      if (isa<QubitType>(current)) {
+        return true;
+      }
+      if (!visited.insert(current).second) {
+        continue;
+      }
+      current.walkImmediateSubElements(
+          [](Attribute) {},
+          [&](const Type nested) { worklist.emplace_back(nested); });
+      // Mutable identified LLVM structs do not expose their body through
+      // generic immutable storage traversal on every supported MLIR version.
+      if (const auto structure = dyn_cast<LLVM::LLVMStructType>(current)) {
+        llvm::append_range(worklist, structure.getBody());
+      }
+    }
+    return false;
+  }
 };
 
 } // namespace
@@ -561,9 +634,17 @@ std::unique_ptr<Pass> createFuseTwoQubitGates() {
   return std::make_unique<FuseTwoQubitGatesPass>();
 }
 
+std::unique_ptr<Pass> createTargetNativeSynthesis() {
+  return std::make_unique<TargetNativeSynthesisPass>();
+}
+
 std::unique_ptr<Pass>
 createTargetNativeSynthesis(const CompilerTarget& target) {
   return std::make_unique<TargetNativeSynthesisPass>(target);
+}
+
+std::unique_ptr<Pass> createVerifyTargetConformance() {
+  return std::make_unique<VerifyTargetConformancePass>();
 }
 
 std::unique_ptr<Pass>

@@ -445,8 +445,8 @@ MQT Core provides the serializers for OpenQASM 2 and OpenQASM 3. Every other
 format belongs to the package that owns the device, which registers its
 serializer through the same registry.
 
-A format fixes the kind of payload it carries, so there are two signatures. A
-text format takes a serializer that returns `str`:
+A payload descriptor fixes its format ID, version, profile, and encoding. A text
+descriptor takes a serializer that returns `str`:
 
 ```python
 def serialize(circuit: QuantumCircuit, backend: QDMIBackend) -> str: ...
@@ -466,13 +466,13 @@ A serializer reads the device through
 operations through
 {py:attr}`~mqt.core.plugins.qiskit.backend.QDMIBackend.target`.
 
-A package advertises its serializers through the
-`mqt.core.qiskit.program_serializers` entry point group. The entry point name is
-the {py:class}`~mqt.core.qdmi.ProgramFormat` member name:
+A package can advertise a serializer through the
+`mqt.core.qiskit.program_serializers` entry point group. The loaded object must
+be a `(PayloadDescriptor, serializer)` tuple:
 
 ```toml
 [project.entry-points."mqt.core.qiskit.program_serializers"]
-IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
+iqm_json = "iqm.qdmi.serializers:registration"
 ```
 
 {py:func}`~mqt.core.plugins.qiskit.serializers.register_program_serializer` does
@@ -480,36 +480,20 @@ the same at run time:
 
 ```python
 from mqt.core.plugins.qiskit import register_program_serializer
-from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi import PayloadDescriptor
 
-register_program_serializer(ProgramFormat.IQM_JSON, qiskit_to_iqm_json)
+iqm_json = PayloadDescriptor("iqm-json", (1, 0, 0))
+register_program_serializer(iqm_json, qiskit_to_iqm_json)
 ```
 
 Pass `replace=True` to take over a format that already has a serializer,
 including OpenQASM 2 and OpenQASM 3.
 
-A device usually accepts several formats. The backend walks them in the order of
-{py:data}`~mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` and
-uses the first one that has a serializer, so the order of the list decides and
-not the order the device reports:
-
-```text
-IQM_JSON, CUSTOM1 ... CUSTOM5,
-QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
-QPY, QASM3,
-QIR_BASE_MODULE, QIR_BASE_STRING,
-QASM2
-```
-
-A device-native format comes first, because a package that registers a
-serializer for its own device's format wants that format used. The standardized
-formats follow in order of what a circuit may contain: the QIR adaptive profile
-allows classical control, QPY carries a Qiskit circuit without loss, and
-OpenQASM 3 expresses control flow, while the QIR base profile forbids classical
-feedback and OpenQASM 2 has no control flow at all. Encoding only breaks a tie
-within one profile, because it decides how the program travels rather than what
-it may say. `CALIBRATION` and `BATCH_JOB` are absent because a serialized
-circuit is not what they carry.
+A device lists accepted descriptors in provider-preference order. The backend
+selects the first descriptor with a registered serializer once during
+construction. Pass `payload_descriptor=` to require one exact offer. The backend
+builds its Qiskit {py:class}`~qiskit.transpiler.Target` from that descriptor
+only; it never unions control-flow support across formats.
 
 ### Device Introspection
 
@@ -519,6 +503,8 @@ The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 2. Mapping each operation to the corresponding Qiskit gate
 3. Determining qubit connectivity from the device's coupling map
 4. Including operation properties (duration, fidelity) if available
+5. Adding Qiskit's `IfElseOp`, `ForLoopOp`, `WhileLoopOp`, and `SwitchCaseOp`
+   classes when the selected descriptor reports the matching execution feature
 
 ### Primitives Implementation
 

@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Compiler/ProgramFormat.h"
+
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/StringRef.h>
@@ -25,6 +27,8 @@
 
 namespace mlir {
 
+class DictionaryAttr;
+class MLIRContext;
 class Operation;
 
 /**
@@ -43,6 +47,45 @@ class CompilerTarget {
 public:
   using SiteId = int64_t;
   using Coupling = std::pair<SiteId, SiteId>;
+
+  /**
+   * @brief Runtime features supported for one program format.
+   *
+   * @details Optional-feature metadata can be marked unknown when a target
+   * reports the format but cannot enumerate all optional features. The listed
+   * features remain authoritative regardless of that flag.
+   */
+  class ExecutionProfile {
+  public:
+    /// Create and canonicalize a payload-specific execution profile.
+    [[nodiscard]] static llvm::Expected<ExecutionProfile>
+    create(PayloadDescriptor descriptor,
+           std::vector<ProgramCapability> capabilities = {},
+           bool optionalFeaturesKnown = true);
+
+    /// Return the exact payload described by this profile.
+    [[nodiscard]] const PayloadDescriptor& descriptor() const noexcept;
+
+    /// Return the sorted runtime capabilities supported for the payload.
+    [[nodiscard]] llvm::ArrayRef<ProgramCapability>
+    capabilities() const noexcept;
+
+    /// Return whether the target reported complete optional-feature metadata.
+    [[nodiscard]] bool optionalFeaturesKnown() const noexcept;
+
+    /// Return whether the profile lists a runtime feature.
+    [[nodiscard]] bool supports(ProgramFeature feature,
+                                uint64_t value = 0U) const noexcept;
+
+  private:
+    ExecutionProfile(PayloadDescriptor descriptor,
+                     std::vector<ProgramCapability> capabilities,
+                     bool optionalFeaturesKnown);
+
+    PayloadDescriptor descriptor_;
+    std::vector<ProgramCapability> capabilities_;
+    bool optionalFeaturesKnown_;
+  };
 
   /**
    * @brief Unit shared by all raw timing metadata on a target.
@@ -244,6 +287,13 @@ public:
          std::optional<std::vector<Operation>> operations = std::nullopt,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
+  /// Create an unnamed dense target with payload-specific execution profiles.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(size_t numQubits, std::optional<std::vector<Coupling>> couplings,
+         std::optional<std::vector<Operation>> operations,
+         std::optional<DurationUnit> durationUnit,
+         std::optional<std::vector<ExecutionProfile>> executionProfiles);
+
   /**
    * @brief Create a named target with dense site IDs `0..numQubits-1`.
    */
@@ -252,6 +302,14 @@ public:
          std::optional<std::vector<Coupling>> couplings = std::nullopt,
          std::optional<std::vector<Operation>> operations = std::nullopt,
          std::optional<DurationUnit> durationUnit = std::nullopt);
+
+  /// Create a named dense target with payload-specific execution profiles.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(std::string name, size_t numQubits,
+         std::optional<std::vector<Coupling>> couplings,
+         std::optional<std::vector<Operation>> operations,
+         std::optional<DurationUnit> durationUnit,
+         std::optional<std::vector<ExecutionProfile>> executionProfiles);
 
   /**
    * @brief Create an unnamed target from detailed sites.
@@ -262,6 +320,14 @@ public:
          std::optional<std::vector<Operation>> operations = std::nullopt,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
+  /// Create an unnamed sparse target with payload-specific execution profiles.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(std::vector<Site> sites,
+         std::optional<std::vector<Coupling>> couplings,
+         std::optional<std::vector<Operation>> operations,
+         std::optional<DurationUnit> durationUnit,
+         std::optional<std::vector<ExecutionProfile>> executionProfiles);
+
   /**
    * @brief Create a named target from detailed sites.
    */
@@ -270,6 +336,21 @@ public:
          std::optional<std::vector<Coupling>> couplings = std::nullopt,
          std::optional<std::vector<Operation>> operations = std::nullopt,
          std::optional<DurationUnit> durationUnit = std::nullopt);
+
+  /// Create a named sparse target with payload-specific execution profiles.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(std::string name, std::vector<Site> sites,
+         std::optional<std::vector<Coupling>> couplings,
+         std::optional<std::vector<Operation>> operations,
+         std::optional<DurationUnit> durationUnit,
+         std::optional<std::vector<ExecutionProfile>> executionProfiles);
+
+  /// Reconstruct a target from its canonical MLIR snapshot.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(DictionaryAttr snapshot);
+
+  /// Materialize the complete target as context-owned MLIR metadata.
+  [[nodiscard]] DictionaryAttr materialize(MLIRContext* context) const;
 
   /// Copying shares immutable storage; rvalues copy and keep the source valid.
   CompilerTarget(const CompilerTarget&) noexcept = default;
@@ -330,6 +411,24 @@ public:
   [[nodiscard]] llvm::ArrayRef<Operation> operations() const noexcept;
 
   /**
+   * @brief Return payload-specific execution profiles, if reported.
+   *
+   * @details An absent value means profile metadata is unavailable. A present
+   * empty value means the target explicitly reports no supported format.
+   */
+  [[nodiscard]] std::optional<llvm::ArrayRef<ExecutionProfile>>
+  executionProfiles() const noexcept;
+
+  /// Return the execution profile for @p format, if reported.
+  [[nodiscard]] const ExecutionProfile*
+  executionProfile(const PayloadDescriptor& descriptor) const noexcept;
+
+  /// Return whether the profile for @p format lists @p feature.
+  [[nodiscard]] bool supportsProgramFeature(const PayloadDescriptor& descriptor,
+                                            ProgramFeature feature,
+                                            uint64_t value = 0U) const noexcept;
+
+  /**
    * @brief Return whether an operation capability is supported by the target.
    */
   [[nodiscard]] bool
@@ -357,7 +456,8 @@ private:
   createImpl(std::optional<std::string> name, std::vector<Site> sites,
              std::optional<std::vector<Coupling>> couplings,
              std::optional<std::vector<Operation>> operations,
-             std::optional<DurationUnit> durationUnit);
+             std::optional<DurationUnit> durationUnit,
+             std::optional<std::vector<ExecutionProfile>> executionProfiles);
 
   [[nodiscard]] llvm::ArrayRef<size_t> explicitNeighbours(size_t vertex) const;
 
