@@ -117,8 +117,7 @@ Building the project requires a C++ compiler with support for C++20 and CMake
 [documentation](https://mqt.readthedocs.io/projects/core). Building (and
 running) is continuously tested under Linux, macOS, and Windows using the
 [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
-MQT Core is compatible with all
-[officially supported Python versions](https://devguide.python.org/versions/).
+MQT Core requires Python 3.11 or newer.
 
 The project relies on some external dependencies:
 

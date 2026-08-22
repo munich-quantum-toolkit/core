@@ -10,16 +10,21 @@ function(add_mqt_python_binding package_name target_name)
   cmake_parse_arguments(ARG "" "MODULE_NAME;INSTALL_DIR" "LINK_LIBS" ${ARGN})
   set(SOURCES ${ARG_UNPARSED_ARGUMENTS})
 
+  if(SKBUILD_SABI_COMPONENT)
+    set(NANOBIND_BACKEND BACKEND_MODULE nanobind_backend)
+  endif()
+
   nanobind_add_module(
     # Name of the extension
     ${target_name}
+    # Target a stable CPython ABI when the interpreter supports it
+    STABLE_ABI
     # Enable free-threaded support
     FREE_THREADED
-    # Use the nanobind backend
-    BACKEND_MODULE
-    nanobind_backend
     # Suppress compiler warnings from the nanobind library
     NB_SUPPRESS_WARNINGS
+    # Use nanobind's shared runtime for Stable ABI wheels
+    ${NANOBIND_BACKEND}
     # Source files
     ${SOURCES})
 
@@ -45,6 +50,15 @@ function(add_mqt_python_binding package_name target_name)
     target_link_options(${target_name} PRIVATE "LINKER:-exported_symbol,_PyInit_${module_name}")
   elseif(UNIX)
     target_link_options(${target_name} PRIVATE "LINKER:--exclude-libs,ALL")
+
+    # nanobind 3.0 omits section garbage collection from split-mode targets.
+    if(NANOBIND_BACKEND AND NOT AIX)
+      target_link_options(
+        ${target_name}
+        PRIVATE
+        "$<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>,$<CONFIG:RelWithDebInfo>>:LINKER:--gc-sections>"
+      )
+    endif()
   elseif(WIN32)
     set_target_properties(${target_name} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)
   endif()

@@ -6,11 +6,23 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### `nanobind` updated to version 3.0.0
+### Python 3.11 and split-mode wheels
 
-`nanobind` 3.0.0 changes the `nanobind` ABI. Rebuild downstream native Python
-extensions that use MQT Core's `nanobind`-bound C++ types. Pure Python consumers
+MQT Core now requires Python 3.11 or newer. Upgrade the Python environment
+before installing this release.
+
+MQT Core now uses nanobind 3 split mode. One `cp311-abi3` wheel supports
+GIL-enabled CPython 3.11 and newer. Free-threaded support starts with CPython
+3.15 and uses a separate `cp315-abi3t` wheel. MQT Core no longer publishes
+free-threaded CPython 3.13 or 3.14 wheels.
+
+Nanobind 3 changes the nanobind ABI. Rebuild downstream native Python
+extensions that use MQT Core's nanobind-bound C++ types. Pure Python consumers
 do not need to recompile anything.
+
+The wheels depend on `nanobind-backend`, which supplies the interpreter-specific
+nanobind runtime. This dependency does not change the C++ API or the Python
+import paths.
 
 ### Program serialization for QDMI Qiskit backends
 

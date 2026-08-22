@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import gc
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -19,6 +20,36 @@ from mqt.core.dd import DDPackage, MatrixDD
 
 if TYPE_CHECKING:
     import numpy.typing as npt
+
+
+def test_matrix_array_ownership() -> None:
+    """Test matrix array ownership and the zero-qubit export."""
+    package = DDPackage(1)
+    zero_qubit_matrix = package.identity().get_matrix(0)
+    assert zero_qubit_matrix.dtype == np.complex128
+    assert zero_qubit_matrix.shape == (1, 1)
+    assert zero_qubit_matrix.flags.c_contiguous
+    assert zero_qubit_matrix.flags.writeable
+    assert zero_qubit_matrix[0, 0] == 1
+
+    expected = np.array([[0, 1], [1, 0]], dtype=np.complex128)
+    matrix_dd = package.single_qubit_gate(expected, 0)
+    matrix = matrix_dd.get_matrix(1)
+    assert matrix.dtype == np.complex128
+    assert matrix.shape == (2, 2)
+    assert matrix.flags.c_contiguous
+    assert matrix.flags.writeable
+
+    matrix[0, 0] = 2 + 3j
+    assert np.allclose(matrix_dd.get_matrix(1), expected)
+
+    view = matrix[:, :1]
+    del matrix, matrix_dd, package, zero_qubit_matrix
+    gc.collect()
+
+    assert np.allclose(view, [[2 + 3j], [1]])
+    view[0, 0] = -1j
+    assert np.allclose(view[0, 0], -1j)
 
 
 def test_identity() -> None:

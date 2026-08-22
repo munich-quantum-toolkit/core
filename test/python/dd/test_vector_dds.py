@@ -10,10 +10,36 @@
 
 from __future__ import annotations
 
+import gc
+
 import numpy as np
 import pytest
 
 from mqt.core.dd import BasisStates, DDPackage, VectorDD
+
+
+def test_vector_array_ownership() -> None:
+    """Test vector array ownership and write access."""
+    package = DDPackage(2)
+    vector_dd = package.zero_state(2)
+    vector = vector_dd.get_vector()
+
+    assert vector.dtype == np.complex128
+    assert vector.shape == (4,)
+    assert vector.flags.c_contiguous
+    assert vector.flags.writeable
+
+    vector[0] = 2 + 3j
+    assert np.allclose(vector_dd.get_vector(), [1, 0, 0, 0])
+
+    view = vector[::2]
+    package.dec_ref_vec(vector_dd)
+    del vector, vector_dd, package
+    gc.collect()
+
+    assert np.allclose(view, [2 + 3j, 0])
+    view[0] = -1j
+    assert np.allclose(view[0], -1j)
 
 
 def test_zero_state() -> None:

@@ -9,7 +9,6 @@
 [build-system]
 requires = [
   "nanobind~=3.0.0",
-  "nanobind-backend~=1.0.0",
   "scikit-build-core>=1.0.3",
   "vcs-versioning>=2.3.0",
 ]
@@ -51,7 +50,7 @@ classifiers = [
 requires-python = ">=3.11"
 dynamic = ["version"]
 dependencies = [
-  "typing-extensions>=4.12; python_version < '3.11'",
+  "nanobind-backend>=1.0; implementation_name == 'cpython'",
 ]
 
 [project.optional-dependencies]
@@ -87,8 +86,8 @@ wheel.install-dir = "mqt/core"
 # Explicitly set the package directory
 wheel.packages = ["python/mqt"]
 
-# Enable Stable ABI builds for CPython 3.12+
-wheel.py-api = "cp312"
+# Build one split-mode Stable ABI wheel for GIL-enabled CPython 3.11+
+wheel.py-api = "cp311"
 
 # Set required Ninja version
 ninja.version = ">=1.10"
@@ -138,6 +137,11 @@ BUILD_MQT_CORE_SHARED_LIBS = "ON"
 CMAKE_UNITY_BUILD = "ON"
 
 [[tool.scikit-build.overrides]]
+if.python-version = ">=3.15"
+if.abi-flags = "t"
+wheel.py-api = "cp315t"
+
+[[tool.scikit-build.overrides]]
 if.python-version = ">=3.13"
 if.abi-flags = "t"
 if.platform-system = "win32"
@@ -184,9 +188,6 @@ testpaths = ["test/python"]
 run.source = ["mqt.core"]
 run.core = "sysmon"
 run.parallel = true
-run.omit = [
-  '*/_compat/*',
-]
 run.disable_warnings = [
   "no-sysmon",
 ]
@@ -228,7 +229,6 @@ ignore = [
     "TID252"   # Prefer absolute imports over relative imports from parent modules
 ]
 future-annotations = true
-typing-modules = ["mqt.core._compat.typing"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["mqt.core"]
@@ -245,7 +245,6 @@ known-first-party = ["mqt.core"]
     "E402", # Allow imports to appear anywhere in Jupyter notebooks
     "I002", # Allow missing `from __future__ import annotations` import
 ]
-"python/mqt/core/_compat/**.py" = ["TID251", "A005"]
 "python/mqt/core/__main__.py" = ["T201"]
 "eval/dd_evaluation.py" = ["T201"]
 
@@ -279,7 +278,7 @@ PC170 = "We do not use rST files anymore"
 
 [tool.cibuildwheel]
 build = "cp3*"
-skip = ["*-musllinux_*"]
+skip = ["*-musllinux_*", "cp313t-*", "cp314t-*"]
 archs = "auto64"
 test-groups = ["test"]
 test-sources = [
@@ -291,11 +290,12 @@ test-sources = [
 ]
 test-command = "pytest test/python"
 build-frontend = "uv"
-test-skip = [
-  "cp3??t-*", # no freethreading qiskit wheels
-  "cp*-win_arm64", # no numpy, qiskit, ... wheels
-  "cp315*", # no 3.15 wheels yet
-]
+
+[[tool.cibuildwheel.overrides]]
+select = ["cp*-win_arm64", "cp315*"]
+test-groups = []
+test-sources = []
+test-command = "python -c \"import mqt.core.dd, mqt.core.ir, mqt.core.mlir, mqt.core.qdmi\""
 
 [tool.cibuildwheel.linux]
 before-all = """
@@ -341,7 +341,6 @@ exclude = [
 [dependency-groups]
 build = [
   "nanobind~=3.0.0",
-  "nanobind-backend~=1.0.0",
   "scikit-build-core>=1.0.3",
   "vcs-versioning>=2.3.0",
 ]
