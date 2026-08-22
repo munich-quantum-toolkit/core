@@ -582,8 +582,56 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
   return mlir::arith::TruncIOp::create(builder, target, value).getResult();
 }
 
-[[nodiscard]] mlir::Value emitExpression(mlir::qc::QCProgramBuilder& builder,
-                                         const Expression& expression) {
+struct ClassicalBitRef {
+  mlir::Value storage;
+  int64_t index;
+};
+
+[[nodiscard]] mlir::Value
+loadClassicalBit(mlir::qc::QCProgramBuilder& builder,
+                 const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+                 const llvm::ArrayRef<uint32_t> rootClbitMap,
+                 const uint32_t index) {
+  if (index >= rootClbitMap.size() ||
+      rootClbitMap[index] >= classicalBits.size()) {
+    throw std::runtime_error(
+        "Qiskit control flow references an invalid classical bit");
+  }
+  const auto& bit = classicalBits[rootClbitMap[index]];
+  return builder.loadClassicalBit(bit.storage, bit.index);
+}
+
+[[nodiscard]] mlir::Value
+packRegister(mlir::qc::QCProgramBuilder& builder,
+             const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+             const llvm::ArrayRef<uint32_t> rootClbitMap, const Register& reg) {
+  if (reg.bits.empty() || reg.bits.size() > 64U) {
+    throw std::runtime_error(
+        "Qiskit classical registers must contain between 1 and 64 bits");
+  }
+  const auto width = static_cast<uint32_t>(reg.bits.size());
+  const auto type = builder.getIntegerType(width);
+  auto packed = integerConstant(builder, width, 0U);
+  for (size_t index = 0; index < reg.bits.size(); ++index) {
+    auto bit = castInteger(
+        builder,
+        loadClassicalBit(builder, classicalBits, rootClbitMap, reg.bits[index]),
+        type);
+    if (index != 0U) {
+      bit = mlir::arith::ShLIOp::create(builder, bit,
+                                        integerConstant(builder, width, index))
+                .getResult();
+    }
+    packed = mlir::arith::OrIOp::create(builder, packed, bit).getResult();
+  }
+  return packed;
+}
+
+[[nodiscard]] mlir::Value
+emitExpression(mlir::qc::QCProgramBuilder& builder,
+               const Expression& expression,
+               const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+               const llvm::ArrayRef<uint32_t> rootClbitMap) {
   const auto resultType =
       expressionType(builder, expression.type, expression.width);
   switch (expression.kind) {
@@ -597,10 +645,40 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
       return floatConstant(builder, expression.floatValue);
     }
     break;
+  case ExpressionKind::ClassicalBit:
+    return loadClassicalBit(builder, classicalBits, rootClbitMap,
+                            expression.bit);
+  case ExpressionKind::ClassicalRegister: {
+    const auto target = llvm::dyn_cast<mlir::IntegerType>(resultType);
+    if (!target) {
+      throw std::runtime_error(
+          "Qiskit classical-register expressions must have Uint type");
+    }
+    return castInteger(
+        builder,
+        packRegister(builder, classicalBits, rootClbitMap, expression.reg),
+        target);
+  }
   case ExpressionKind::Cast: {
-    const auto operand = emitExpression(builder, *expression.left);
+    const auto operand =
+        emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
     if (operand.getType() == resultType) {
       return operand;
+    }
+    if (expression.type == ClassicalType::Bool) {
+      if (const auto source =
+              llvm::dyn_cast<mlir::IntegerType>(operand.getType())) {
+        return mlir::arith::CmpIOp::create(
+                   builder, mlir::arith::CmpIPredicate::ne, operand,
+                   integerConstant(builder, source.getWidth(), 0U))
+            .getResult();
+      }
+      if (operand.getType().isF64()) {
+        return mlir::arith::CmpFOp::create(builder,
+                                           mlir::arith::CmpFPredicate::UNE,
+                                           operand, floatConstant(builder, 0.0))
+            .getResult();
+      }
     }
     if (const auto target = llvm::dyn_cast<mlir::IntegerType>(resultType)) {
       if (llvm::isa<mlir::IntegerType>(operand.getType())) {
@@ -618,7 +696,8 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
     throw std::runtime_error("unsupported Qiskit classical-expression cast");
   }
   case ExpressionKind::Unary: {
-    const auto operand = emitExpression(builder, *expression.left);
+    const auto operand =
+        emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
     switch (expression.unaryOperation) {
     case UnaryOperation::BitNot: {
       const auto type = llvm::dyn_cast<mlir::IntegerType>(operand.getType());
@@ -657,8 +736,10 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
     break;
   }
   case ExpressionKind::Binary: {
-    auto left = emitExpression(builder, *expression.left);
-    auto right = emitExpression(builder, *expression.right);
+    auto left =
+        emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
+    auto right =
+        emitExpression(builder, *expression.right, classicalBits, rootClbitMap);
     const auto comparison = [&]() -> std::optional<mlir::Value> {
       std::optional<mlir::arith::CmpIPredicate> integerPredicate;
       std::optional<mlir::arith::CmpFPredicate> floatPredicate;
@@ -764,8 +845,10 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
     throw std::runtime_error("unsupported Qiskit classical binary operation");
   }
   case ExpressionKind::Index: {
-    const auto target = emitExpression(builder, *expression.left);
-    auto index = emitExpression(builder, *expression.right);
+    const auto target =
+        emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
+    auto index =
+        emitExpression(builder, *expression.right, classicalBits, rootClbitMap);
     const auto targetType = llvm::dyn_cast<mlir::IntegerType>(target.getType());
     if (!targetType) {
       throw std::runtime_error(
@@ -789,51 +872,6 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
   }
   }
   throw std::runtime_error("unsupported normalized Qiskit expression");
-}
-
-struct ClassicalBitRef {
-  mlir::Value storage;
-  int64_t index;
-};
-
-[[nodiscard]] mlir::Value
-loadClassicalBit(mlir::qc::QCProgramBuilder& builder,
-                 const llvm::ArrayRef<ClassicalBitRef> classicalBits,
-                 const llvm::ArrayRef<uint32_t> rootClbitMap,
-                 const uint32_t index) {
-  if (index >= rootClbitMap.size() ||
-      rootClbitMap[index] >= classicalBits.size()) {
-    throw std::runtime_error(
-        "Qiskit control flow references an invalid classical bit");
-  }
-  const auto& bit = classicalBits[rootClbitMap[index]];
-  return builder.loadClassicalBit(bit.storage, bit.index);
-}
-
-[[nodiscard]] mlir::Value
-packRegister(mlir::qc::QCProgramBuilder& builder,
-             const llvm::ArrayRef<ClassicalBitRef> classicalBits,
-             const llvm::ArrayRef<uint32_t> rootClbitMap, const Register& reg) {
-  if (reg.bits.empty() || reg.bits.size() > 64U) {
-    throw std::runtime_error(
-        "Qiskit classical registers must contain between 1 and 64 bits");
-  }
-  const auto width = static_cast<uint32_t>(reg.bits.size());
-  const auto type = builder.getIntegerType(width);
-  auto packed = integerConstant(builder, width, 0U);
-  for (size_t index = 0; index < reg.bits.size(); ++index) {
-    auto bit = castInteger(
-        builder,
-        loadClassicalBit(builder, classicalBits, rootClbitMap, reg.bits[index]),
-        type);
-    if (index != 0U) {
-      bit = mlir::arith::ShLIOp::create(builder, bit,
-                                        integerConstant(builder, width, index))
-                .getResult();
-    }
-    packed = mlir::arith::OrIOp::create(builder, packed, bit).getResult();
-  }
-  return packed;
 }
 
 [[nodiscard]] mlir::Value
@@ -861,7 +899,8 @@ emitCondition(mlir::qc::QCProgramBuilder& builder,
         .getResult();
   }
   case ClassicalTargetKind::Expression: {
-    const auto condition = emitExpression(builder, *target.expression);
+    const auto condition = emitExpression(builder, *target.expression,
+                                          classicalBits, rootClbitMap);
     if (!condition.getType().isInteger(1)) {
       throw std::runtime_error(
           "Qiskit control-flow condition expression must have Boolean type");
@@ -886,7 +925,8 @@ emitSwitchTarget(mlir::qc::QCProgramBuilder& builder,
     value = packRegister(builder, classicalBits, rootClbitMap, target.reg);
     break;
   case ClassicalTargetKind::Expression:
-    value = emitExpression(builder, *target.expression);
+    value = emitExpression(builder, *target.expression, classicalBits,
+                           rootClbitMap);
     break;
   }
   if (!llvm::isa<mlir::IntegerType>(value.getType())) {
@@ -1390,30 +1430,140 @@ void validateCircuit(const CircuitReader& circuit,
                      uint32_t rootClbits, size_t definitionDepth,
                      size_t controlFlowDepth);
 
-void validateExpression(const Expression& expression) {
-  if (expression.type == ClassicalType::Uint &&
-      (expression.width == 0U || expression.width > 64U)) {
+void validateExpression(const Expression& expression,
+                        const uint32_t rootClbits) {
+  if ((expression.type == ClassicalType::Bool && expression.width != 1U) ||
+      (expression.type == ClassicalType::Uint &&
+       (expression.width == 0U || expression.width > 64U)) ||
+      (expression.type == ClassicalType::Float && expression.width != 64U)) {
     throw std::runtime_error(
-        "Qiskit unsigned classical values must be between 1 and 64 bits");
+        "Qiskit classical expression has an invalid type width");
   }
-  const auto requireOperand = [](const std::unique_ptr<Expression>& operand) {
+  const auto requireOperand = [&](const std::unique_ptr<Expression>& operand) {
     if (!operand) {
       throw std::runtime_error(
           "Qiskit classical expression has a missing operand");
     }
-    validateExpression(*operand);
+    validateExpression(*operand, rootClbits);
+  };
+  const auto sameType = [](const Expression& first, const Expression& second) {
+    return first.type == second.type && first.width == second.width;
+  };
+  const auto hasType = [](const Expression& value, const ClassicalType type) {
+    return value.type == type;
+  };
+  const auto requireCompatible = [](const bool compatible) {
+    if (!compatible) {
+      throw std::runtime_error(
+          "Qiskit classical expression has incompatible operator and operand "
+          "types");
+    }
   };
   switch (expression.kind) {
   case ExpressionKind::Value:
     return;
-  case ExpressionKind::Unary:
+  case ExpressionKind::ClassicalBit:
+    if (expression.type != ClassicalType::Bool || expression.width != 1U ||
+        expression.bit >= rootClbits) {
+      throw std::runtime_error(
+          "Qiskit classical-bit expression has an invalid reference");
+    }
+    return;
+  case ExpressionKind::ClassicalRegister: {
+    if (expression.type != ClassicalType::Uint || expression.reg.bits.empty() ||
+        expression.reg.bits.size() > 64U ||
+        expression.width < expression.reg.bits.size()) {
+      throw std::runtime_error(
+          "Qiskit classical-register expression has an invalid type");
+    }
+    llvm::DenseSet<uint32_t> seen;
+    for (const auto bit : expression.reg.bits) {
+      if (bit >= rootClbits || !seen.insert(bit).second) {
+        throw std::runtime_error(
+            "Qiskit classical-register expression has an invalid bit");
+      }
+    }
+    return;
+  }
+  case ExpressionKind::Unary: {
+    requireOperand(expression.left);
+    const auto& operand = *expression.left;
+    switch (expression.unaryOperation) {
+    case UnaryOperation::BitNot:
+      requireCompatible((hasType(operand, ClassicalType::Bool) ||
+                         hasType(operand, ClassicalType::Uint)) &&
+                        sameType(expression, operand));
+      return;
+    case UnaryOperation::LogicNot:
+      requireCompatible(hasType(expression, ClassicalType::Bool) &&
+                        hasType(operand, ClassicalType::Bool));
+      return;
+    case UnaryOperation::Negate:
+      requireCompatible(hasType(expression, ClassicalType::Float) &&
+                        hasType(operand, ClassicalType::Float));
+      return;
+    }
+    return;
+  }
   case ExpressionKind::Cast:
     requireOperand(expression.left);
     return;
-  case ExpressionKind::Binary:
+  case ExpressionKind::Binary: {
+    requireOperand(expression.left);
+    requireOperand(expression.right);
+    const auto& left = *expression.left;
+    const auto& right = *expression.right;
+    switch (expression.binaryOperation) {
+    case BinaryOperation::BitAnd:
+    case BinaryOperation::BitOr:
+    case BinaryOperation::BitXor:
+      requireCompatible(sameType(left, right) && sameType(expression, left) &&
+                        (hasType(left, ClassicalType::Bool) ||
+                         hasType(left, ClassicalType::Uint)));
+      return;
+    case BinaryOperation::LogicAnd:
+    case BinaryOperation::LogicOr:
+      requireCompatible(hasType(expression, ClassicalType::Bool) &&
+                        hasType(left, ClassicalType::Bool) &&
+                        hasType(right, ClassicalType::Bool));
+      return;
+    case BinaryOperation::Equal:
+    case BinaryOperation::NotEqual:
+      requireCompatible(hasType(expression, ClassicalType::Bool) &&
+                        sameType(left, right));
+      return;
+    case BinaryOperation::Less:
+    case BinaryOperation::LessEqual:
+    case BinaryOperation::Greater:
+    case BinaryOperation::GreaterEqual:
+      requireCompatible(hasType(expression, ClassicalType::Bool) &&
+                        sameType(left, right) &&
+                        (hasType(left, ClassicalType::Uint) ||
+                         hasType(left, ClassicalType::Float)));
+      return;
+    case BinaryOperation::ShiftLeft:
+    case BinaryOperation::ShiftRight:
+      requireCompatible(hasType(left, ClassicalType::Uint) &&
+                        hasType(right, ClassicalType::Uint) &&
+                        sameType(expression, left));
+      return;
+    case BinaryOperation::Add:
+    case BinaryOperation::Subtract:
+    case BinaryOperation::Multiply:
+    case BinaryOperation::Divide:
+      requireCompatible(sameType(left, right) && sameType(expression, left) &&
+                        (hasType(left, ClassicalType::Uint) ||
+                         hasType(left, ClassicalType::Float)));
+      return;
+    }
+    return;
+  }
   case ExpressionKind::Index:
     requireOperand(expression.left);
     requireOperand(expression.right);
+    requireCompatible(hasType(expression, ClassicalType::Bool) &&
+                      hasType(*expression.left, ClassicalType::Uint) &&
+                      hasType(*expression.right, ClassicalType::Uint));
     return;
   }
 }
@@ -1443,7 +1593,7 @@ void validateTarget(const ClassicalTarget& target, const uint32_t rootClbits) {
       throw std::runtime_error(
           "Qiskit control flow contains an empty classical expression");
     }
-    validateExpression(*target.expression);
+    validateExpression(*target.expression, rootClbits);
     return;
   }
 }
