@@ -15,6 +15,7 @@ add_mlir_library(
   OpenQASMSyntax.cpp
   LINK_LIBS
   LLVMSupport
+  MLIRPresburger
   MLIRQCTranslationSupport)
 
 mqt_mlir_target_use_project_options(MLIROpenQASMFrontend)

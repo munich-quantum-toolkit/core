@@ -73,6 +73,7 @@ struct SyntaxGateCall {
 struct SyntaxScalarDeclaration {
   ScalarKind kind = ScalarKind::Int;
   StringRef identifier;
+  std::optional<SyntaxExpressionId> size;
   std::optional<SyntaxExpressionId> initializer;
   bool isConst = false;
   bool output = false;
@@ -203,7 +204,7 @@ public:
   [[nodiscard]] SyntaxStatementId
   standardLibraryInclude(SMLoc location, StandardLibraryKind kind);
   [[nodiscard]] LogicalResult scalarDecl(SMLoc location, ScalarKind kind,
-                                         StringRef identifier,
+                                         StringRef identifier, const Expr* size,
                                          const Expr* initializer, bool isConst,
                                          bool output);
   [[nodiscard]] LogicalResult
