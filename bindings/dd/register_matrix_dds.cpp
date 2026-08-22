@@ -48,7 +48,7 @@ Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
     const nb::capsule owner(data, [](void* ptr) noexcept {
       delete static_cast<std::complex<dd::fp>*>(ptr);
     });
-    static_cast<void>(dataPtr.release());
+    [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
     return Matrix(data, {1, 1}, owner);
   }
 
@@ -65,7 +65,7 @@ Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
   const nb::capsule owner(data, [](void* ptr) noexcept {
     delete[] static_cast<std::complex<dd::fp>*>(ptr);
   });
-  static_cast<void>(dataPtr.release());
+  [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
   return Matrix(data, {dim, dim}, owner);
 }
 

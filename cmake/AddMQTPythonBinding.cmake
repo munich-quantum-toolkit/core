@@ -44,11 +44,11 @@ function(add_mqt_python_binding package_name target_name)
     set(module_name ${target_name})
   endif()
 
-  # A Python extension's only public native symbol is its module initializer. Keep symbols from
-  # statically linked dependencies local to avoid collisions with other extension modules.
-  if(APPLE)
+  # Keep statically linked dependencies local. macOS split mode must expose nanobind's weak
+  # exception RTTI so that the backend can catch its exceptions.
+  if(APPLE AND NOT NANOBIND_BACKEND)
     target_link_options(${target_name} PRIVATE "LINKER:-exported_symbol,_PyInit_${module_name}")
-  elseif(UNIX)
+  elseif(UNIX AND NOT APPLE)
     target_link_options(${target_name} PRIVATE "LINKER:--exclude-libs,ALL")
 
     # nanobind 3.0 omits section garbage collection from split-mode targets.

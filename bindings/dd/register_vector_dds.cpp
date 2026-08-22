@@ -43,7 +43,7 @@ Vector getVector(const dd::vEdge& v, const dd::fp threshold) {
   const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
     delete static_cast<dd::CVec*>(ptr);
   });
-  static_cast<void>(dataPtr.release());
+  [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
   return Vector(data, {size}, owner);
 }
 
