@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -251,6 +252,9 @@ public:
 
   /// Consume this program and convert it to `jeff` MLIR.
   [[nodiscard]] std::optional<JeffProgram> intoJeff() &&;
+
+  /// Return the `func.func` marked with `mqt.entry_point`, if present.
+  [[nodiscard]] std::optional<func::FuncOp> entryFunc() const;
 };
 
 /**

@@ -1072,6 +1072,36 @@ h q;
   EXPECT_FALSE(qcoFromString->runPassPipeline("not-a-pass"));
   EXPECT_FALSE(qcoFromString->str().empty());
 
+  auto entry = qcoFromString->entryFunc();
+  ASSERT_TRUE(entry);
+  EXPECT_EQ(entry->getSymName(), "main");
+
+  auto markedEntry = QCOProgram::fromMLIRString(R"mlir(
+module {
+  func.func @main() {
+    return
+  }
+  func.func @selected() attributes {mqt.entry_point} {
+    %q = qco.static 0 : !qco.qubit
+    qco.sink %q : !qco.qubit
+    return
+  }
+}
+)mlir");
+  ASSERT_TRUE(markedEntry);
+  auto selected = markedEntry->entryFunc();
+  ASSERT_TRUE(selected);
+  EXPECT_EQ(selected->getSymName(), "selected");
+
+  auto noFunc = QCOProgram::fromMLIRString(R"mlir(
+module {
+  %theta = arith.constant 0.0 : f64
+  qco.gphase(%theta)
+}
+)mlir");
+  ASSERT_TRUE(noFunc);
+  EXPECT_FALSE(noFunc->entryFunc());
+
   auto baseInput = QCProgram::fromQASMString(qasm);
   auto adaptiveInput = QCProgram::fromQASMString(qasm);
   ASSERT_TRUE(baseInput);

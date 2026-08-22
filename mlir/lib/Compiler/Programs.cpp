@@ -502,6 +502,14 @@ std::optional<JeffProgram> QCOProgram::intoJeff() && {
   return JeffProgram(std::move(*this).releaseStorage());
 }
 
+std::optional<func::FuncOp> QCOProgram::entryFunc() const {
+  auto entry = mqt::getEntryPoint(mod());
+  if (!entry) {
+    return std::nullopt;
+  }
+  return entry;
+}
+
 //===----------------------------------------------------------------------===//
 // JeffProgram
 //===----------------------------------------------------------------------===//
