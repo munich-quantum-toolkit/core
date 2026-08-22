@@ -49,10 +49,21 @@ function(add_mqt_python_binding package_name target_name)
     set(module_name ${target_name})
   endif()
 
-  # Keep statically linked dependencies local. macOS split mode must expose nanobind's weak
-  # exception RTTI so that the backend can catch its exceptions.
-  if(APPLE AND NOT NANOBIND_BACKEND)
+  # Keep statically linked dependencies local.
+  if(APPLE)
     target_link_options(${target_name} PRIVATE "LINKER:-exported_symbol,_PyInit_${module_name}")
+
+    # Split mode passes nanobind exceptions to its backend. On x86-64, export only their weak RTTI
+    # definitions so that the dynamic linker can unify the exception types.
+    if(NANOBIND_BACKEND AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+      target_link_options(
+        ${target_name}
+        PRIVATE
+        "LINKER:-exported_symbol,__ZTIN8nanobind4abi112python_errorE"
+        "LINKER:-exported_symbol,__ZTSN8nanobind4abi112python_errorE"
+        "LINKER:-exported_symbol,__ZTIN8nanobind4abi117builtin_exceptionE"
+        "LINKER:-exported_symbol,__ZTSN8nanobind4abi117builtin_exceptionE")
+    endif()
   elseif(UNIX AND NOT APPLE)
     target_link_options(${target_name} PRIVATE "LINKER:--exclude-libs,ALL")
 

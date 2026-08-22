@@ -47,7 +47,7 @@ does not publish CPython 3.13t or 3.14t wheels.
 - [x] (2026-08-22 14:25Z) Preserved Daniel Haag's nanobind 3 and Python 3.11
   commits and prepared the complete change as a rescope of pull request
   `#2209`.
-- [ ] Validate the Windows `abi3t` detection workaround on both hosted Windows
+- [x] Validate the Windows `abi3t` detection workaround on both hosted Windows
   wheel builders.
 
 ## Surprises & Discoveries
@@ -102,6 +102,11 @@ does not publish CPython 3.13t or 3.14t wheels.
   Windows, where version-bound operators become shell redirections. Windows
   wheel jobs therefore use the existing dependency-free import test; the regular
   Windows job runs the full test suite.
+- Observation: macOS x86-64 split frontends must export nanobind's weak
+  exception RTTI so that the backend catches its exception types. Apple arm64
+  uses non-unique RTTI and needs no extra exports. Exporting every
+  default-visible symbol causes static MQT, LLVM, and MLIR definitions from
+  separate extensions to interpose on both architectures.
 
 ## Decision Log
 
@@ -146,6 +151,12 @@ does not publish CPython 3.13t or 3.14t wheels.
   wrapper for Windows `abi3t` builds. Rationale: the function-scoped override
   activates nanobind's full `abi3t` checks and compile definitions without
   changing other modules or platforms. Date/Author: 2026-08-22 / Codex.
+- Decision: Keep the macOS module-initializer allowlist and add only nanobind's
+  four backend exception RTTI symbols to x86-64 split modules. Rationale: the
+  narrow list matches the x86-64 backend and preserves cross-module exception
+  matching without exposing statically linked project and toolchain symbols.
+  Apple arm64 uses non-unique RTTI and needs no extra exports. Date/Author:
+  2026-08-22 / Codex.
 
 ## Outcomes & Retrospective
 
