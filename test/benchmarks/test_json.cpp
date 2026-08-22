@@ -167,6 +167,12 @@ TEST(BenchmarkJSON, RejectsDuplicateUnknownAndMistypedRequestValues) {
   expectInvalid(
       [] {
         static_cast<void>(ghzFromRequestJSON(
+            R"({"schema_version":1,"benchmark":"ghz","parameters":{"basis":"x","qubits":1076}})"));
+      },
+      "between 1 and 1075");
+  expectInvalid(
+      [] {
+        static_cast<void>(ghzFromRequestJSON(
             R"({"schema_version":1,"benchmark":"new","parameters":{}})"));
       },
       "unsupported benchmark 'new'");
@@ -232,6 +238,7 @@ TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
             std::string::npos);
   EXPECT_NE(ghz.find("\"additionalProperties\":false"), std::string::npos);
   EXPECT_NE(ghz.find("\"maximum\":1000000"), std::string::npos);
+  EXPECT_NE(ghz.find("\"maximum\":1075"), std::string::npos);
   EXPECT_NE(grover.find("\"maxLength\":62"), std::string::npos);
   EXPECT_NE(qpe.find("\"iterative\""), std::string::npos);
   EXPECT_THROW(static_cast<void>(describeBenchmarkJSON("unknown")),

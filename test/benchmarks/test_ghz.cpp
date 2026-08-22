@@ -35,6 +35,12 @@ TEST(GHZ, RejectsUnsupportedQubitCounts) {
   EXPECT_THROW(static_cast<void>(GHZ{{.qubits = 0}}), std::invalid_argument);
   EXPECT_THROW(static_cast<void>(GHZ{{.qubits = GHZOptions::MAX_QUBITS + 1}}),
                std::invalid_argument);
+  EXPECT_NO_THROW(
+      static_cast<void>(GHZ{{.qubits = GHZOptions::MAX_X_BASIS_QUBITS + 1}}));
+  EXPECT_THROW(
+      static_cast<void>(GHZ{{.qubits = GHZOptions::MAX_X_BASIS_QUBITS + 1,
+                             .basis = GHZBasis::X}}),
+      std::invalid_argument);
 }
 
 TEST(GHZ, RejectsUnknownEnumValues) {
@@ -58,6 +64,12 @@ TEST(GHZ, GivesTheXBasisDistribution) {
   EXPECT_DOUBLE_EQ(ghz.probability("000"), 0.25);
   EXPECT_DOUBLE_EQ(ghz.probability("011"), 0.25);
   EXPECT_DOUBLE_EQ(ghz.probability("111"), 0.);
+
+  const GHZ largest{
+      {.qubits = GHZOptions::MAX_X_BASIS_QUBITS, .basis = GHZBasis::X}};
+  EXPECT_GT(
+      largest.probability(std::string(GHZOptions::MAX_X_BASIS_QUBITS, '0')),
+      0.);
 }
 
 TEST(GHZ, EvaluatesCountsAgainstTheWholeIdealDistribution) {

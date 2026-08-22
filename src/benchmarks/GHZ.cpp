@@ -30,6 +30,11 @@ GHZ::GHZ(GHZOptions options)
   if (options_.basis != GHZBasis::Z && options_.basis != GHZBasis::X) {
     throw std::invalid_argument("unknown GHZ measurement basis");
   }
+  if (options_.basis == GHZBasis::X &&
+      options_.qubits > GHZOptions::MAX_X_BASIS_QUBITS) {
+    throw std::invalid_argument(
+        "GHZ X-basis qubits must be between 1 and 1075");
+  }
 }
 
 const GHZOptions& GHZ::options() const noexcept { return options_; }
@@ -50,9 +55,6 @@ double GHZ::probability(const std::string_view outcome) const {
     ones += bit == '1' ? 1U : 0U;
   }
   if (ones % 2U != 0U) {
-    return 0.;
-  }
-  if (options_.qubits > 1075) {
     return 0.;
   }
   return std::ldexp(1., 1 - static_cast<int>(options_.qubits));

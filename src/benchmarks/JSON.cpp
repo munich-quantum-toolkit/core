@@ -448,18 +448,25 @@ template <class Benchmark, class ParseParameters>
 }
 
 [[nodiscard]] Json ghzSchema() {
-  return baseRequestSchema(
-      "ghz",
-      {{"additionalProperties", false},
-       {"properties",
-        {{"basis", {{"default", "z"}, {"enum", {"z", "x"}}}},
-         {"qubits",
-          {{"maximum", GHZOptions::MAX_QUBITS},
-           {"minimum", 1},
-           {"type", "integer"}}},
-         {"topology", {{"default", "linear"}, {"enum", {"linear", "star"}}}}}},
-       {"required", {"qubits"}},
-       {"type", "object"}});
+  Json parameters{
+      {"additionalProperties", false},
+      {"properties",
+       {{"basis", {{"default", "z"}, {"enum", {"z", "x"}}}},
+        {"qubits",
+         {{"maximum", GHZOptions::MAX_QUBITS},
+          {"minimum", 1},
+          {"type", "integer"}}},
+        {"topology", {{"default", "linear"}, {"enum", {"linear", "star"}}}}}},
+      {"required", {"qubits"}},
+      {"type", "object"}};
+  parameters["allOf"] = Json::array(
+      {{{"if",
+         {{"properties", {{"basis", {{"const", "x"}}}}},
+          {"required", {"basis"}}}},
+        {"then",
+         {{"properties",
+           {{"qubits", {{"maximum", GHZOptions::MAX_X_BASIS_QUBITS}}}}}}}}});
+  return baseRequestSchema("ghz", std::move(parameters));
 }
 
 [[nodiscard]] Json groverSchema() {
