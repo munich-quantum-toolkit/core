@@ -6,6 +6,12 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### `nanobind` updated to version 3.0.0
+
+`nanobind` 3.0.0 changes the `nanobind` ABI. Rebuild downstream native Python
+extensions that use MQT Core's `nanobind`-bound C++ types. Pure Python consumers
+do not need to recompile anything.
+
 ### Program serialization for QDMI Qiskit backends
 
 The Qiskit backend no longer decides in its own code how to turn a circuit into

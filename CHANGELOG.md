@@ -83,6 +83,7 @@ releases may include breaking changes.
 
 ### Changed
 
+- ⬆️ Update `nanobind` to version 3.0.0 ([#2141]) ([**@denialhaag**])
 - 💥 Prune dead and misleading CoreIR APIs and remove random-number generator
   state from `QuantumComputation` ([#2111], [#2112]) ([**@simon1hofmann**])
 - 💥 Update QIR execution for QIR 2.1, isolated runtimes, reproducible
