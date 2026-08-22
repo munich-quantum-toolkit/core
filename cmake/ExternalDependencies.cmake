@@ -26,12 +26,8 @@ endif()
 FetchContent_Declare(
   jeff-mlir
   GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
-  GIT_TAG f702b20b9551beb38ced989c288b2e95af758801)
-# Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option and
-# defines a global `check` target when it is enabled. Do not let an embedding project's test setting
-# leak into this third-party dependency.
+  GIT_TAG 66c92d058cb498f5c12628f6a2d2a290480d700b)
 function(_mqt_core_make_jeff_available)
-  set(BUILD_TESTING OFF)
   # jeff's transitive Cap'n Proto dependency contains source files that cannot share a unity
   # translation unit. Keep the complete dependency subtree out of unity builds.
   set(CMAKE_UNITY_BUILD OFF)

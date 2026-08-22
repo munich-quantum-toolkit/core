@@ -1157,7 +1157,13 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<CtrlOp> {
   LogicalResult
   matchAndRewrite(CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
+    const auto numBodyUnitaries = op.getNumBodyUnitaries();
+    if (numBodyUnitaries == 0) {
+      return rewriter.notifyMatchFailure(
+          op, "Control modifiers without a body unitary are not supported. Run "
+              "the canonicalization pass before the conversion");
+    }
+    if (numBodyUnitaries > 1) {
       return rewriter.notifyMatchFailure(
           op,
           "Control modifiers with multiple body unitaries are not supported.");
@@ -1213,7 +1219,13 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
   LogicalResult
   matchAndRewrite(InvOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
+    const auto numBodyUnitaries = op.getNumBodyUnitaries();
+    if (numBodyUnitaries == 0) {
+      return rewriter.notifyMatchFailure(
+          op, "Inversion modifiers without a body unitary are not supported. "
+              "Run the canonicalization pass before the conversion");
+    }
+    if (numBodyUnitaries > 1) {
       return rewriter.notifyMatchFailure(op,
                                          "Inversion modifiers with multiple "
                                          "body unitaries are not supported.");
@@ -1262,7 +1274,13 @@ struct ConvertQCOPowOpToJeff final : StatefulOpConversionPattern<PowOp> {
   LogicalResult
   matchAndRewrite(PowOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
+    const auto numBodyUnitaries = op.getNumBodyUnitaries();
+    if (numBodyUnitaries == 0) {
+      return rewriter.notifyMatchFailure(
+          op, "Power modifiers without a body unitary are not supported. Run "
+              "the canonicalization pass before the conversion");
+    }
+    if (numBodyUnitaries > 1) {
       return rewriter.notifyMatchFailure(op,
                                          "Power modifiers with multiple body "
                                          "unitaries are not supported.");

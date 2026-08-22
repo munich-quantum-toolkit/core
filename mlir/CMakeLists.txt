@@ -41,6 +41,7 @@ endfunction()
 add_subdirectory(include)
 add_subdirectory(lib)
 add_subdirectory(tools)
+add_subdirectory(benchmark)
 
 # add test code
 if(BUILD_MQT_CORE_TESTS)

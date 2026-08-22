@@ -51,6 +51,7 @@ function(mqt_mlir_configure_unittest_target target_name)
 endfunction()
 
 add_subdirectory(programs)
+add_subdirectory(benchmark)
 add_subdirectory(Compiler)
 add_subdirectory(Dialect)
 add_subdirectory(Conversion)
