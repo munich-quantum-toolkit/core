@@ -179,7 +179,8 @@ struct QubitReference {
   QubitReferenceKind kind = QubitReferenceKind::Register;
   uint32_t symbol = 0;
   uint64_t index = 0;
-  std::optional<ExpressionId> dynamicIndex;
+  /// A nonconstant register index proven safe by semantic analysis.
+  std::optional<ExpressionId> provenIndex;
 
   bool operator==(const QubitReference&) const = default;
 };
@@ -301,6 +302,9 @@ struct ForStatement {
   ExpressionId start = 0;
   ExpressionId step = 0;
   ExpressionId stop = 0;
+  /// Whether the inclusive range has a positive constant step and all range
+  /// arithmetic is proven to fit the frontend's signed 64-bit index model.
+  bool provenPositiveRange = false;
   std::vector<StatementId> body;
 };
 
