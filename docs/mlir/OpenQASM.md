@@ -44,11 +44,11 @@ mqt-cc --input-format=qasm program.txt
 | Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC target rejects programs that mix logical allocation with physical qubits.                                                                                      |
 | Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. `popcount`, `rotl`, and `rotr` operate on initialized bit registers.                                                       |
 | Structured control         | `if`, inclusive `for`, `while`, and `switch` lower to SCF operations. Switch controls and case labels must be integers; labels must be unique constant expressions.                                                                                   |
-| Dynamic indexing           | Dynamic qubit and bit indices are supported on input. The generated QC includes bounds checks and structured dispatch where needed.                                                                                                                   |
+| Dynamic indexing           | Classical bit indices can be dynamic and receive runtime bounds checks. A nonconstant qubit index must be a proven affine expression as described below.                                                                                              |
 | Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, input declarations, arbitrary arrays, `break`, and `continue` are diagnosed.                                                                                                                |
 
 Syntax and semantic diagnostics retain source locations and include stacks.
-Runtime integer preconditions and dynamic-index bounds are represented
+Runtime integer preconditions and classical-index bounds are represented
 explicitly in QC. This safety machinery is supported by the normal compiler and
 QIR paths, but it is intentionally outside the export subset described below.
 
@@ -62,6 +62,24 @@ and `sin`, `cos`, and `tan`. Mixed-width angle operands promote to the wider
 width. It uses round-to-nearest, ties-to-even for float conversion and
 narrowing. Runtime angle state, reassignment, bit-level angle operations, and
 angle inputs or outputs are not supported.
+
+The frontend accepts a nonconstant qubit index only when it proves that every
+value is in the register and that operands of one gate or explicit barrier are
+distinct. Proven expressions can contain constants, positive constant-step `for`
+induction variables, known scalar values, negation, addition, subtraction,
+multiplication by an integer constant, and value-preserving `int`/`uint` casts.
+Assignments and control-flow joins preserve a scalar value only while its affine
+form remains known. A nested loop bound can use proven induction variables from
+enclosing loops. The proof treats an inclusive range as its full interval and
+does not use the step's congruence.
+
+The frontend normalizes constant negative indices relative to the register
+width. It rejects measurement-derived values, nonconstant negative indices,
+nonlinear expressions, unsupported integer operators, and ranges whose step is
+not known to be positive when their induction variable reaches a qubit index.
+Mutations in repeating loops and unequal branch values invalidate scalar facts.
+Branch conditions do not add proof facts. Classical bit indexing and loops that
+do not index qubits keep their runtime behavior.
 
 Bit registers use `!cbit.reg<N>` in QC. OpenQASM 2 initializes each register to
 zero. OpenQASM 3 leaves each register undefined until a statement writes it.

@@ -19,6 +19,7 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/DynamicAPInt.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringMap.h>
@@ -27,6 +28,8 @@
 #include <llvm/Support/MathExtras.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
+#include <mlir/Analysis/Presburger/IntegerRelation.h>
+#include <mlir/Analysis/Presburger/PresburgerSpace.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -55,6 +58,7 @@ constexpr uint64_t TOTAL_REGISTER_ELEMENT_LIMIT = 100'000;
 constexpr size_t EXPRESSION_DEPTH_LIMIT = 256;
 constexpr size_t GATE_DEPENDENCY_DEPTH_LIMIT = 64;
 constexpr size_t TYPED_STATEMENT_LIMIT = 1'000'000;
+constexpr size_t AFFINE_DISTINCTNESS_COMPARISON_LIMIT = 1'024;
 constexpr uint32_t DEFAULT_ANGLE_WIDTH = 52;
 constexpr uint32_t MAX_ANGLE_WIDTH = 52;
 constexpr double TWO_PI = 2.0 * std::numbers::pi;
@@ -371,6 +375,11 @@ public:
   }
 
 private:
+  struct AffineForm {
+    SmallVector<llvm::DynamicAPInt, 4> coefficients;
+    llvm::DynamicAPInt constant{0};
+  };
+
   struct DynamicBitFact {
     ExpressionId expression = 0;
     std::vector<std::pair<uint64_t, uint64_t>> dependencies;
@@ -391,6 +400,11 @@ private:
   std::vector<std::shared_ptr<DynamicBitFactSet>> dynamicBitFacts;
   std::vector<bool> initializedScalars;
   std::vector<uint64_t> scalarGenerations;
+  std::vector<std::optional<ExpressionId>> affineScalarValues;
+  llvm::DenseMap<ScalarId, unsigned> activeInductions;
+  llvm::DenseSet<ScalarId> loopVariantScalars;
+  presburger::IntegerPolyhedron affineDomain{
+      presburger::PresburgerSpace::getSetSpace()};
   std::vector<uint64_t> bitGenerations;
   std::vector<ProgramOutput> implicitOutputs;
   std::vector<ProgramOutput> explicitOutputs;
@@ -432,6 +446,329 @@ private:
   [[nodiscard]] LogicalResult fail(const SMLoc location,
                                    const Twine& message) const {
     return fail(getSourceLocation(location), message);
+  }
+
+  [[nodiscard]] static llvm::DynamicAPInt
+  unsignedCoefficient(const uint64_t value) {
+    return llvm::DynamicAPInt(llvm::APInt(65, value));
+  }
+
+  [[nodiscard]] static llvm::DynamicAPInt signedMinimum() {
+    return llvm::DynamicAPInt(llvm::APInt::getSignedMinValue(64));
+  }
+
+  [[nodiscard]] static llvm::DynamicAPInt signedMaximum() {
+    return llvm::DynamicAPInt(llvm::APInt::getSignedMaxValue(64));
+  }
+
+  [[nodiscard]] AffineForm
+  constantAffineForm(const llvm::DynamicAPInt& value) const {
+    return {.coefficients = SmallVector<llvm::DynamicAPInt, 4>(
+                affineDomain.getNumDimVars(), llvm::DynamicAPInt(0)),
+            .constant = value};
+  }
+
+  [[nodiscard]] static bool isAffineConstant(const AffineForm& form) {
+    return llvm::all_of(form.coefficients,
+                        [](const auto& value) { return value == 0; });
+  }
+
+  [[nodiscard]] static AffineForm addAffineForms(const AffineForm& lhs,
+                                                 const AffineForm& rhs) {
+    assert(lhs.coefficients.size() == rhs.coefficients.size());
+    auto result = lhs;
+    for (const auto [index, value] : llvm::enumerate(rhs.coefficients)) {
+      result.coefficients[index] += value;
+    }
+    result.constant += rhs.constant;
+    return result;
+  }
+
+  [[nodiscard]] static AffineForm negateAffineForm(const AffineForm& form) {
+    auto result = form;
+    for (auto& coefficient : result.coefficients) {
+      coefficient = -coefficient;
+    }
+    result.constant = -result.constant;
+    return result;
+  }
+
+  [[nodiscard]] static AffineForm
+  scaleAffineForm(const AffineForm& form, const llvm::DynamicAPInt& scale) {
+    auto result = form;
+    for (auto& coefficient : result.coefficients) {
+      coefficient *= scale;
+    }
+    result.constant *= scale;
+    return result;
+  }
+
+  [[nodiscard]] static SmallVector<llvm::DynamicAPInt, 4>
+  affineConstraint(const AffineForm& form) {
+    SmallVector<llvm::DynamicAPInt, 4> result(form.coefficients);
+    result.push_back(form.constant);
+    return result;
+  }
+
+  [[nodiscard]] bool
+  domainIsEmptyWithInequality(const AffineForm& inequality) const {
+    presburger::IntegerPolyhedron candidate(affineDomain);
+    candidate.addInequality(affineConstraint(inequality));
+    return candidate.isIntegerEmpty();
+  }
+
+  [[nodiscard]] bool
+  domainIsEmptyWithEquality(const AffineForm& equality) const {
+    presburger::IntegerPolyhedron candidate(affineDomain);
+    candidate.addEquality(affineConstraint(equality));
+    return candidate.isIntegerEmpty();
+  }
+
+  [[nodiscard]] bool provesLowerBound(const AffineForm& form,
+                                      const llvm::DynamicAPInt& lower) const {
+    auto counterexample = negateAffineForm(form);
+    counterexample.constant += lower - 1;
+    return domainIsEmptyWithInequality(counterexample);
+  }
+
+  [[nodiscard]] bool provesUpperBound(const AffineForm& form,
+                                      const llvm::DynamicAPInt& upper) const {
+    auto counterexample = form;
+    counterexample.constant -= upper + 1;
+    return domainIsEmptyWithInequality(counterexample);
+  }
+
+  [[nodiscard]] bool affineFormFitsType(const AffineForm& form,
+                                        const ScalarType type) const {
+    if (type != ScalarType::Int && type != ScalarType::Uint) {
+      return false;
+    }
+    return provesLowerBound(form, type == ScalarType::Int
+                                      ? signedMinimum()
+                                      : llvm::DynamicAPInt(0)) &&
+           provesUpperBound(form, signedMaximum());
+  }
+
+  [[nodiscard]] std::optional<AffineForm>
+  buildAffineForm(const ExpressionId expression) const {
+    const auto& value = program.expressions.at(expression);
+    std::optional<AffineForm> result;
+    switch (value.kind) {
+    case ExpressionKind::Constant:
+      if (value.type == ScalarType::Int) {
+        result = constantAffineForm(
+            llvm::DynamicAPInt(std::get<int64_t>(value.constant)));
+      } else if (value.type == ScalarType::Uint) {
+        result = constantAffineForm(
+            unsignedCoefficient(std::get<uint64_t>(value.constant)));
+      }
+      break;
+    case ExpressionKind::Variable: {
+      if (loopVariantScalars.contains(value.variable)) {
+        break;
+      }
+      const auto induction = activeInductions.find(value.variable);
+      if (induction != activeInductions.end()) {
+        result = constantAffineForm(llvm::DynamicAPInt(0));
+        result->coefficients[induction->second] = llvm::DynamicAPInt(1);
+        break;
+      }
+      if (value.variable < affineScalarValues.size() &&
+          affineScalarValues[value.variable]) {
+        result = buildAffineForm(*affineScalarValues[value.variable]);
+      }
+      break;
+    }
+    case ExpressionKind::Cast:
+      if (isInteger(value.type) &&
+          isInteger(program.expressions.at(value.lhs).type)) {
+        result = buildAffineForm(value.lhs);
+      }
+      break;
+    case ExpressionKind::Negate:
+      if (auto operand = buildAffineForm(value.lhs)) {
+        result = negateAffineForm(*operand);
+      }
+      break;
+    case ExpressionKind::Add:
+    case ExpressionKind::Subtract: {
+      auto lhs = buildAffineForm(value.lhs);
+      auto rhs = buildAffineForm(value.rhs);
+      if (lhs && rhs) {
+        result = addAffineForms(*lhs, value.kind == ExpressionKind::Add
+                                          ? *rhs
+                                          : negateAffineForm(*rhs));
+      }
+      break;
+    }
+    case ExpressionKind::Multiply: {
+      auto lhs = buildAffineForm(value.lhs);
+      auto rhs = buildAffineForm(value.rhs);
+      if (!lhs || !rhs) {
+        break;
+      }
+      if (isAffineConstant(*lhs)) {
+        result = scaleAffineForm(*rhs, lhs->constant);
+      } else if (isAffineConstant(*rhs)) {
+        result = scaleAffineForm(*lhs, rhs->constant);
+      }
+      break;
+    }
+    default:
+      break;
+    }
+    if (!result || !affineFormFitsType(*result, value.type)) {
+      return std::nullopt;
+    }
+    return result;
+  }
+
+  [[nodiscard]] std::optional<ExpressionId>
+  expandAffineScalarValues(const ExpressionId expression) {
+    const auto value = program.expressions.at(expression);
+    switch (value.kind) {
+    case ExpressionKind::Constant:
+      return expression;
+    case ExpressionKind::Variable:
+      if (activeInductions.contains(value.variable)) {
+        return expression;
+      }
+      if (value.variable < affineScalarValues.size()) {
+        return affineScalarValues[value.variable];
+      }
+      return std::nullopt;
+    case ExpressionKind::Cast:
+    case ExpressionKind::Negate: {
+      auto operand = expandAffineScalarValues(value.lhs);
+      if (!operand) {
+        return std::nullopt;
+      }
+      if (*operand == value.lhs) {
+        return expression;
+      }
+      auto expanded = value;
+      expanded.lhs = *operand;
+      return addExpression(expanded);
+    }
+    case ExpressionKind::Add:
+    case ExpressionKind::Subtract:
+    case ExpressionKind::Multiply: {
+      auto lhs = expandAffineScalarValues(value.lhs);
+      auto rhs = expandAffineScalarValues(value.rhs);
+      if (!lhs || !rhs) {
+        return std::nullopt;
+      }
+      if (*lhs == value.lhs && *rhs == value.rhs) {
+        return expression;
+      }
+      auto expanded = value;
+      expanded.lhs = *lhs;
+      expanded.rhs = *rhs;
+      return addExpression(expanded);
+    }
+    default:
+      return std::nullopt;
+    }
+  }
+
+  [[nodiscard]] bool sameAffineValue(const ExpressionId lhs,
+                                     const ExpressionId rhs) const {
+    const auto left = buildAffineForm(lhs);
+    const auto right = buildAffineForm(rhs);
+    return left && right && left->coefficients == right->coefficients &&
+           left->constant == right->constant;
+  }
+
+  void
+  collectLoopMutations(const ArrayRef<SyntaxStatementId> statements,
+                       llvm::DenseSet<ScalarId>& mutations,
+                       llvm::DenseSet<StringRef>& blockLocalScalars) const {
+    const auto collectNested = [&](const ArrayRef<SyntaxStatementId> body,
+                                   llvm::DenseSet<StringRef> locals) {
+      collectLoopMutations(body, mutations, locals);
+    };
+    for (const auto statement : statements) {
+      const auto& data = syntax.statements[statement].data;
+      if (const auto* assignment = std::get_if<SyntaxAssignment>(&data)) {
+        if (!assignment->target.index &&
+            !blockLocalScalars.contains(assignment->target.identifier)) {
+          const auto* symbol = lookup(assignment->target.identifier);
+          if (symbol != nullptr && symbol->kind == SymbolKind::Scalar) {
+            mutations.insert(symbol->id);
+          }
+        }
+        continue;
+      }
+      if (const auto* declaration =
+              std::get_if<SyntaxScalarDeclaration>(&data)) {
+        if (!declaration->isConst) {
+          blockLocalScalars.insert(declaration->identifier);
+        }
+        continue;
+      }
+      if (const auto* conditional = std::get_if<SyntaxIf>(&data)) {
+        collectNested(conditional->thenStatements, blockLocalScalars);
+        collectNested(conditional->elseStatements, blockLocalScalars);
+        continue;
+      }
+      if (const auto* loop = std::get_if<SyntaxFor>(&data)) {
+        auto locals = blockLocalScalars;
+        locals.insert(loop->inductionVariable);
+        collectNested(loop->body, std::move(locals));
+        continue;
+      }
+      if (const auto* loop = std::get_if<SyntaxWhile>(&data)) {
+        collectNested(loop->body, blockLocalScalars);
+        continue;
+      }
+      if (const auto* switchStatement = std::get_if<SyntaxSwitch>(&data)) {
+        for (const auto& switchCase : switchStatement->cases) {
+          collectNested(switchCase.body, blockLocalScalars);
+        }
+        collectNested(switchStatement->defaultStatements, blockLocalScalars);
+      }
+    }
+  }
+
+  [[nodiscard]] bool proveDistinct(const QubitReference& lhs,
+                                   const QubitReference& rhs,
+                                   size_t& affineComparisons) const {
+    if (lhs.kind != rhs.kind) {
+      return true;
+    }
+    if (lhs.kind == QubitReferenceKind::GateArgument) {
+      return lhs.symbol != rhs.symbol;
+    }
+    if (lhs.kind == QubitReferenceKind::Hardware) {
+      return lhs.index != rhs.index;
+    }
+    if (lhs.symbol != rhs.symbol) {
+      return true;
+    }
+    if (!lhs.provenIndex && !rhs.provenIndex) {
+      return lhs.index != rhs.index;
+    }
+    const auto indexForm =
+        [&](const QubitReference& reference) -> std::optional<AffineForm> {
+      if (reference.provenIndex) {
+        return buildAffineForm(*reference.provenIndex);
+      }
+      return constantAffineForm(unsignedCoefficient(reference.index));
+    };
+    auto left = indexForm(lhs);
+    auto right = indexForm(rhs);
+    if (!left || !right) {
+      return false;
+    }
+    const auto difference = addAffineForms(*left, negateAffineForm(*right));
+    if (isAffineConstant(difference)) {
+      return difference.constant != 0;
+    }
+    if (affineComparisons >= AFFINE_DISTINCTNESS_COMPARISON_LIMIT) {
+      return false;
+    }
+    ++affineComparisons;
+    return domainIsEmptyWithEquality(difference);
   }
 
   [[nodiscard]] LogicalResult validateExpressionDepth() const {
@@ -479,6 +816,13 @@ private:
     for (size_t reg = facts.size(); reg < dynamicBitFacts.size(); ++reg) {
       dynamicBitFacts[reg] = std::make_shared<DynamicBitFactSet>();
     }
+  }
+
+  void restoreAffineScalarValuesPrefix(
+      const std::vector<std::optional<ExpressionId>>& values) {
+    const auto size = affineScalarValues.size();
+    affineScalarValues = values;
+    affineScalarValues.resize(size);
   }
 
   [[nodiscard]] BitInitialization&
@@ -2405,6 +2749,7 @@ private:
                                .location = getSourceLocation(location)});
     initializedScalars.push_back(false);
     scalarGenerations.push_back(0);
+    affineScalarValues.emplace_back();
     if (failed(declare(location, declaration.identifier,
                        {.kind = SymbolKind::Scalar, .type = type, .id = id}))) {
       return failure();
@@ -2431,6 +2776,10 @@ private:
                 initializer, type,
                 syntax.expressions[*declaration.initializer].location));
         typed.initializer = convertedInitializer;
+        if (buildAffineForm(convertedInitializer)) {
+          affineScalarValues[id] =
+              expandAffineScalarValues(convertedInitializer);
+        }
       }
       initializedScalars[id] = true;
     }
@@ -2468,6 +2817,7 @@ private:
       if (symbol->type == ScalarType::Bool) {
         MQT_OQ3_TRY_ASSIGN(condition, analyzeBoolValue(assignment.value));
         typed.condition = condition;
+        affineScalarValues[symbol->id].reset();
       } else {
         MQT_OQ3_TRY_ASSIGN(value, analyzeExpression(assignment.value));
         MQT_OQ3_TRY_ASSIGN(
@@ -2475,6 +2825,10 @@ private:
             castExpression(value, symbol->type,
                            syntax.expressions[assignment.value].location));
         typed.value = convertedValue;
+        affineScalarValues[symbol->id] =
+            buildAffineForm(convertedValue)
+                ? expandAffineScalarValues(convertedValue)
+                : std::nullopt;
       }
       initializedScalars[symbol->id] = true;
       ++scalarGenerations[symbol->id];
@@ -2749,7 +3103,7 @@ private:
 
     if (barrier.operands.size() > 1) {
       llvm::DenseSet<std::pair<RegisterId, uint64_t>> staticRegisterQubits;
-      llvm::DenseSet<std::pair<RegisterId, ExpressionId>> dynamicRegisterQubits;
+      llvm::DenseSet<std::pair<RegisterId, ExpressionId>> provenRegisterQubits;
       llvm::DenseSet<uint32_t> gateArguments;
       llvm::DenseSet<uint64_t> hardwareQubitOperands;
       llvm::DenseMap<RegisterId, size_t> staticRegisterQubitCounts;
@@ -2758,10 +3112,10 @@ private:
         bool inserted = false;
         switch (qubit.kind) {
         case QubitReferenceKind::Register:
-          if (qubit.dynamicIndex) {
-            inserted = dynamicRegisterQubits
-                           .insert({qubit.symbol, *qubit.dynamicIndex})
-                           .second;
+          if (qubit.provenIndex) {
+            inserted =
+                provenRegisterQubits.insert({qubit.symbol, *qubit.provenIndex})
+                    .second;
           } else {
             inserted =
                 staticRegisterQubits.insert({qubit.symbol, qubit.index}).second;
@@ -2785,14 +3139,34 @@ private:
         }
       }
 
-      for (const auto& dynamicRegisterQubit : dynamicRegisterQubits) {
-        const auto reg = dynamicRegisterQubit.first;
+      for (const auto& provenRegisterQubit : provenRegisterQubits) {
+        const auto reg = provenRegisterQubit.first;
         if (staticRegisterQubitCounts.lookup(reg) ==
             program.registers.at(reg).width) {
           return fail(
               location,
               "barrier operands must not reference the same qubit more than "
               "once");
+        }
+      }
+
+      if (!provenRegisterQubits.empty()) {
+        size_t affineComparisons = 0;
+        for (const auto [position, qubit] : llvm::enumerate(qubits)) {
+          for (const auto& previous : ArrayRef(qubits).take_front(position)) {
+            if (qubit.kind != QubitReferenceKind::Register ||
+                previous.kind != QubitReferenceKind::Register ||
+                qubit.symbol != previous.symbol ||
+                (!qubit.provenIndex && !previous.provenIndex)) {
+              continue;
+            }
+            if (!proveDistinct(previous, qubit, affineComparisons)) {
+              return fail(
+                  location,
+                  "cannot prove that barrier operands reference distinct "
+                  "qubits");
+            }
+          }
         }
       }
     }
@@ -2808,6 +3182,7 @@ private:
     const auto beforeBitsInitialized = initializedBits;
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
+    const auto beforeAffineScalarValues = affineScalarValues;
     const auto beforeBitGenerations = bitGenerations;
     const auto beforeDynamicBitFacts = dynamicBitFacts;
     scopes.emplace_back();
@@ -2821,12 +3196,14 @@ private:
     const auto afterThenBitsInitialized = initializedBits;
     const auto afterThenInitialized = initializedScalars;
     const auto afterThenGenerations = scalarGenerations;
+    const auto afterThenAffineScalarValues = affineScalarValues;
     const auto afterThenBitGenerations = bitGenerations;
     const auto afterThenDynamicBitFacts = dynamicBitFacts;
     scopes.pop_back();
 
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
                        beforeGenerations, beforeBitGenerations);
+    restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     scopes.emplace_back();
     const auto elseResult =
@@ -2839,6 +3216,7 @@ private:
     const auto afterElseBitsInitialized = initializedBits;
     const auto afterElseInitialized = initializedScalars;
     const auto afterElseGenerations = scalarGenerations;
+    const auto afterElseAffineScalarValues = affineScalarValues;
     const auto afterElseBitGenerations = bitGenerations;
     const auto afterElseDynamicBitFacts = dynamicBitFacts;
     scopes.pop_back();
@@ -2852,18 +3230,23 @@ private:
           *knownCondition ? afterThenInitialized : afterElseInitialized;
       const auto& knownGenerations =
           *knownCondition ? afterThenGenerations : afterElseGenerations;
+      const auto& knownAffineScalarValues = *knownCondition
+                                                ? afterThenAffineScalarValues
+                                                : afterElseAffineScalarValues;
       const auto& knownBitGenerations =
           *knownCondition ? afterThenBitGenerations : afterElseBitGenerations;
       const auto& knownDynamicBitFacts =
           *knownCondition ? afterThenDynamicBitFacts : afterElseDynamicBitFacts;
       restoreStatePrefix(knownBitsInitialized, knownInitialized,
                          knownGenerations, knownBitGenerations);
+      restoreAffineScalarValuesPrefix(knownAffineScalarValues);
       restoreDynamicFactsPrefix(knownDynamicBitFacts);
       return addStatement(location, std::move(result));
     }
 
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
                        beforeGenerations, beforeBitGenerations);
+    restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
       auto& merged = mutableBitInitialization(static_cast<RegisterId>(reg));
@@ -2891,6 +3274,14 @@ private:
           afterThenInitialized[scalar] && afterElseInitialized[scalar];
       scalarGenerations[scalar] =
           std::max(afterThenGenerations[scalar], afterElseGenerations[scalar]);
+      if (afterThenAffineScalarValues[scalar] &&
+          afterElseAffineScalarValues[scalar] &&
+          sameAffineValue(*afterThenAffineScalarValues[scalar],
+                          *afterElseAffineScalarValues[scalar])) {
+        affineScalarValues[scalar] = afterThenAffineScalarValues[scalar];
+      } else {
+        affineScalarValues[scalar].reset();
+      }
     }
     for (size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
       bitGenerations[reg] =
@@ -2910,21 +3301,43 @@ private:
         return fail(location, "for-loop ranges require integer expressions");
       }
     }
-    const auto constantIsZero = [](const Constant& value) {
-      return value.type == ScalarType::Uint
-                 ? std::get<uint64_t>(value.value) == 0
-                 : std::get<int64_t>(value.value) == 0;
-    };
-    if (isConstantExpression(loop.step)) {
-      MQT_OQ3_TRY_ASSIGN(stepConstant, evaluateConstant(loop.step));
-      if (constantIsZero(stepConstant)) {
-        return fail(location, "for-loop range step must not be zero");
-      }
+    const auto startForm = buildAffineForm(result.start);
+    const auto stepForm = buildAffineForm(result.step);
+    const auto stopForm = buildAffineForm(result.stop);
+    if (stepForm && isAffineConstant(*stepForm) && stepForm->constant == 0) {
+      return fail(location, "for-loop range step must not be zero");
+    }
+    const bool unsignedEndpoints =
+        program.expressions[result.start].type == ScalarType::Uint ||
+        program.expressions[result.stop].type == ScalarType::Uint;
+    const bool endpointValuesPreserved =
+        !unsignedEndpoints ||
+        (startForm && stopForm &&
+         provesLowerBound(*startForm, llvm::DynamicAPInt(0)) &&
+         provesLowerBound(*stopForm, llvm::DynamicAPInt(0)));
+    std::optional<llvm::DynamicAPInt> positiveStep;
+    if (stepForm && isAffineConstant(*stepForm) && stepForm->constant > 0) {
+      positiveStep = stepForm->constant;
+    }
+    result.provenPositiveRange =
+        startForm && stopForm && endpointValuesPreserved && positiveStep &&
+        *positiveStep <= signedMaximum() &&
+        provesUpperBound(*stopForm, signedMaximum() - 1);
+    if (result.provenPositiveRange) {
+      const auto expandedStart = expandAffineScalarValues(result.start);
+      const auto expandedStep = expandAffineScalarValues(result.step);
+      const auto expandedStop = expandAffineScalarValues(result.stop);
+      assert(expandedStart && expandedStep && expandedStop &&
+             "proven affine ranges must have expandable expressions");
+      result.start = *expandedStart;
+      result.step = *expandedStep;
+      result.stop = *expandedStop;
     }
 
     const auto beforeBitsInitialized = initializedBits;
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
+    const auto beforeAffineScalarValues = affineScalarValues;
     const auto beforeBitGenerations = bitGenerations;
     const auto beforeDynamicBitFacts = dynamicBitFacts;
     scopes.emplace_back();
@@ -2934,6 +3347,7 @@ private:
         {.type = type, .name = loop.inductionVariable.str()});
     initializedScalars.push_back(true);
     scalarGenerations.push_back(0);
+    affineScalarValues.emplace_back();
     if (failed(declare(location, loop.inductionVariable,
                        {.kind = insideGate ? SymbolKind::GateLocalScalar
                                            : SymbolKind::Scalar,
@@ -2943,9 +3357,30 @@ private:
       return failure();
     }
     result.inductionVariable = scalar;
+    const auto outerDomain = affineDomain;
+    const auto outerLoopVariantScalars = loopVariantScalars;
+    llvm::DenseSet<StringRef> blockLocalScalars;
+    collectLoopMutations(loop.body, loopVariantScalars, blockLocalScalars);
+    if (result.provenPositiveRange) {
+      affineDomain.appendVar(presburger::VarKind::SetDim);
+      auto lower = *startForm;
+      auto upper = *stopForm;
+      lower.coefficients.push_back(llvm::DynamicAPInt(0));
+      upper.coefficients.push_back(llvm::DynamicAPInt(0));
+      auto induction = constantAffineForm(llvm::DynamicAPInt(0));
+      induction.coefficients.back() = llvm::DynamicAPInt(1);
+      affineDomain.addInequality(
+          affineConstraint(addAffineForms(induction, negateAffineForm(lower))));
+      affineDomain.addInequality(
+          affineConstraint(addAffineForms(upper, negateAffineForm(induction))));
+      activeInductions.insert({scalar, affineDomain.getNumDimVars() - 1});
+    }
     const auto bodyResult =
         analyzeBody(loop.body, result.body, /*global=*/false);
     if (failed(bodyResult)) {
+      activeInductions.erase(scalar);
+      affineDomain = outerDomain;
+      loopVariantScalars = outerLoopVariantScalars;
       scopes.pop_back();
       return failure();
     }
@@ -2954,10 +3389,15 @@ private:
     const auto afterBodyGenerations = scalarGenerations;
     const auto afterBodyBitGenerations = bitGenerations;
     const auto afterBodyDynamicBitFacts = dynamicBitFacts;
+    activeInductions.erase(scalar);
+    affineDomain = outerDomain;
+    loopVariantScalars = outerLoopVariantScalars;
     scopes.pop_back();
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
                        beforeGenerations, beforeBitGenerations);
+    restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
+    bool rangeMayExecute = true;
     if (isConstantExpression(loop.start) && isConstantExpression(loop.step) &&
         isConstantExpression(loop.stop)) {
       MQT_OQ3_TRY_ASSIGN(startConstant, evaluateConstant(loop.start));
@@ -2994,6 +3434,7 @@ private:
           compareRangeValues(startConstant, stopConstant);
       const bool nonempty =
           positiveStep ? endpointOrder <= 0 : endpointOrder >= 0;
+      rangeMayExecute = nonempty;
       if (nonempty) {
         for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
           initializedBits[reg] = afterBodyBitsInitialized[reg];
@@ -3010,6 +3451,13 @@ private:
         }
       }
     }
+    if (rangeMayExecute) {
+      for (size_t scalar = 0; scalar < beforeGenerations.size(); ++scalar) {
+        if (afterBodyGenerations[scalar] != beforeGenerations[scalar]) {
+          affineScalarValues[scalar].reset();
+        }
+      }
+    }
     return addStatement(location, std::move(result));
   }
 
@@ -3020,11 +3468,16 @@ private:
     const auto beforeBitsInitialized = initializedBits;
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
+    const auto beforeAffineScalarValues = affineScalarValues;
     const auto beforeBitGenerations = bitGenerations;
     const auto beforeDynamicBitFacts = dynamicBitFacts;
     scopes.emplace_back();
+    const auto outerLoopVariantScalars = loopVariantScalars;
+    llvm::DenseSet<StringRef> blockLocalScalars;
+    collectLoopMutations(loop.body, loopVariantScalars, blockLocalScalars);
     const auto bodyResult =
         analyzeBody(loop.body, result.body, /*global=*/false);
+    loopVariantScalars = outerLoopVariantScalars;
     scopes.pop_back();
     if (failed(bodyResult)) {
       return failure();
@@ -3033,10 +3486,14 @@ private:
     const auto afterBodyBitGenerations = bitGenerations;
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
                        beforeGenerations, beforeBitGenerations);
+    restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     for (size_t scalar = 0; scalar < beforeGenerations.size(); ++scalar) {
       scalarGenerations[scalar] =
           std::max(beforeGenerations[scalar], afterBodyGenerations[scalar]);
+      if (afterBodyGenerations[scalar] != beforeGenerations[scalar]) {
+        affineScalarValues[scalar].reset();
+      }
     }
     for (size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
       bitGenerations[reg] =
@@ -3057,6 +3514,7 @@ private:
     const auto beforeBitsInitialized = initializedBits;
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
+    const auto beforeAffineScalarValues = affineScalarValues;
     const auto beforeBitGenerations = bitGenerations;
     const auto beforeDynamicBitFacts = dynamicBitFacts;
     auto mergedScalarGenerations = beforeGenerations;
@@ -3064,11 +3522,14 @@ private:
     std::vector<std::vector<std::shared_ptr<BitInitialization>>>
         branchBitsInitialized;
     std::vector<std::vector<bool>> branchScalarsInitialized;
+    std::vector<std::vector<std::optional<ExpressionId>>>
+        branchAffineScalarValues;
     const auto analyzeBranch =
         [&](const ArrayRef<SyntaxStatementId> syntaxStatements,
             std::vector<StatementId>& statements) -> LogicalResult {
       restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
                          beforeGenerations, beforeBitGenerations);
+      restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
       restoreDynamicFactsPrefix(beforeDynamicBitFacts);
       scopes.emplace_back();
       const auto branchResult =
@@ -3079,6 +3540,7 @@ private:
       }
       branchBitsInitialized.push_back(initializedBits);
       branchScalarsInitialized.push_back(initializedScalars);
+      branchAffineScalarValues.push_back(affineScalarValues);
       for (size_t index = 0; index < beforeGenerations.size(); ++index) {
         mergedScalarGenerations[index] =
             std::max(mergedScalarGenerations[index], scalarGenerations[index]);
@@ -3131,6 +3593,7 @@ private:
 
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
                        mergedScalarGenerations, mergedBitGenerations);
+    restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
       auto& initialized =
@@ -3146,6 +3609,15 @@ private:
       initializedScalars[scalar] =
           llvm::all_of(branchScalarsInitialized,
                        [&](const auto& branch) { return branch[scalar]; });
+      const auto& first = branchAffineScalarValues.front()[scalar];
+      if (first &&
+          llvm::all_of(branchAffineScalarValues, [&](const auto& branch) {
+            return branch[scalar] && sameAffineValue(*first, *branch[scalar]);
+          })) {
+        affineScalarValues[scalar] = first;
+      } else {
+        affineScalarValues[scalar].reset();
+      }
     }
     return addStatement(location, std::move(result));
   }
@@ -3584,6 +4056,7 @@ private:
 
     std::vector<GateApplication> applications;
     applications.reserve(broadcastWidth);
+    size_t affineComparisons = 0;
     for (size_t index = 0; index < broadcastWidth; ++index) {
       GateApplication application{
           .callee = callee, .parameters = parameters, .modifiers = modifiers};
@@ -3593,11 +4066,13 @@ private:
             selection[selection.size() == 1 ? 0 : index]);
       }
       for (const auto [position, qubit] : llvm::enumerate(application.qubits)) {
-        if (llvm::is_contained(
-                ArrayRef(application.qubits).take_front(position), qubit)) {
-          return fail(call.location,
-                      "gate operands must not reference the same qubit more "
-                      "than once");
+        for (const auto& previous :
+             ArrayRef(application.qubits).take_front(position)) {
+          if (!proveDistinct(previous, qubit, affineComparisons)) {
+            return fail(call.location,
+                        "cannot prove that gate operands reference distinct "
+                        "qubits");
+          }
         }
       }
       applications.push_back(std::move(application));
@@ -3649,20 +4124,49 @@ private:
                        constantIndex(*operand.index, width, operand.location));
     if (constant) {
       if (*constant >= width) {
-        return fail(operand.location, "qubit index is out of bounds");
+        return fail(operand.location,
+                    "cannot prove that qubit index is in bounds");
       }
       return std::vector<QubitReference>{{.kind = QubitReferenceKind::Register,
                                           .symbol = reg,
                                           .index = *constant}};
     }
-    MQT_OQ3_TRY_ASSIGN(dynamic, analyzeExpression(*operand.index));
-    if (!isInteger(program.expressions[dynamic].type)) {
+    MQT_OQ3_TRY_ASSIGN(index, analyzeExpression(*operand.index));
+    if (!isInteger(program.expressions[index].type)) {
       return fail(operand.location,
                   "qubit index must be an integer expression");
     }
+    const auto form = buildAffineForm(index);
+    if (!form) {
+      return fail(operand.location,
+                  "cannot prove that qubit index is in bounds");
+    }
+    if (isAffineConstant(*form)) {
+      auto value = static_cast<int64_t>(form->constant);
+      if (value < 0) {
+        value += static_cast<int64_t>(width);
+      }
+      if (value < 0 || std::cmp_greater_equal(value, width)) {
+        return fail(operand.location,
+                    "cannot prove that qubit index is in bounds");
+      }
+      return std::vector<QubitReference>{
+          {.kind = QubitReferenceKind::Register,
+           .symbol = reg,
+           .index = static_cast<uint64_t>(value)}};
+    }
+    if (!provesLowerBound(*form, llvm::DynamicAPInt(0)) ||
+        !provesUpperBound(
+            *form, unsignedCoefficient(static_cast<uint64_t>(width - 1)))) {
+      return fail(operand.location,
+                  "cannot prove that qubit index is in bounds");
+    }
+    const auto expandedIndex = expandAffineScalarValues(index);
+    assert(expandedIndex &&
+           "proven affine indices must have expandable expressions");
     return std::vector<QubitReference>{{.kind = QubitReferenceKind::Register,
                                         .symbol = reg,
-                                        .dynamicIndex = dynamic}};
+                                        .provenIndex = expandedIndex}};
   }
 
   [[nodiscard]] FailureOr<std::vector<frontend::BitReference>>
