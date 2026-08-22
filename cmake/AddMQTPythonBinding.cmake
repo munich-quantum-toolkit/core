@@ -10,15 +10,26 @@ function(add_mqt_python_binding package_name target_name)
   cmake_parse_arguments(ARG "" "MODULE_NAME;INSTALL_DIR" "LINK_LIBS" ${ARGN})
   set(SOURCES ${ARG_UNPARSED_ARGUMENTS})
 
+  if(SKBUILD_SABI_COMPONENT)
+    set(NANOBIND_BACKEND BACKEND_MODULE nanobind_backend)
+  endif()
+
+  # nanobind 3.0 cannot detect Windows abi3t builds because SKBUILD_SOABI is empty there.
+  if(WIN32 AND Py_TARGET_ABI3T)
+    set(NB_ABI "${Python_VERSION_MAJOR}${Python_VERSION_MINOR}t")
+  endif()
+
   nanobind_add_module(
     # Name of the extension
     ${target_name}
-    # Target the stable ABI for Python 3.12+, which reduces the number of binary wheels
+    # Target a stable CPython ABI when the interpreter supports it
     STABLE_ABI
     # Enable free-threaded support
     FREE_THREADED
     # Suppress compiler warnings from the nanobind library
     NB_SUPPRESS_WARNINGS
+    # Use nanobind's shared runtime for Stable ABI wheels
+    ${NANOBIND_BACKEND}
     # Source files
     ${SOURCES})
 
@@ -38,12 +49,32 @@ function(add_mqt_python_binding package_name target_name)
     set(module_name ${target_name})
   endif()
 
-  # A Python extension's only public native symbol is its module initializer. Keep symbols from
-  # statically linked dependencies local to avoid collisions with other extension modules.
+  # Keep statically linked dependencies local.
   if(APPLE)
     target_link_options(${target_name} PRIVATE "LINKER:-exported_symbol,_PyInit_${module_name}")
-  elseif(UNIX)
+
+    # Split mode passes nanobind exceptions to its backend. On x86-64, export only their weak RTTI
+    # definitions so that the dynamic linker can unify the exception types.
+    if(NANOBIND_BACKEND AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+      target_link_options(
+        ${target_name}
+        PRIVATE
+        "LINKER:-exported_symbol,__ZTIN8nanobind4abi112python_errorE"
+        "LINKER:-exported_symbol,__ZTSN8nanobind4abi112python_errorE"
+        "LINKER:-exported_symbol,__ZTIN8nanobind4abi117builtin_exceptionE"
+        "LINKER:-exported_symbol,__ZTSN8nanobind4abi117builtin_exceptionE")
+    endif()
+  elseif(UNIX AND NOT APPLE)
     target_link_options(${target_name} PRIVATE "LINKER:--exclude-libs,ALL")
+
+    # nanobind 3.0 omits section garbage collection from split-mode targets.
+    if(NANOBIND_BACKEND AND NOT AIX)
+      target_link_options(
+        ${target_name}
+        PRIVATE
+        "$<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>,$<CONFIG:RelWithDebInfo>>:LINKER:--gc-sections>"
+      )
+    endif()
   elseif(WIN32)
     set_target_properties(${target_name} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS OFF)
   endif()

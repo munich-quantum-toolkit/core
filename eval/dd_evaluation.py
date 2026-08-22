@@ -8,7 +8,7 @@
 # Licensed under the MIT License
 
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.11"
 # dependencies = [
 #     "pandas[output-formatting]>=2.1.2",
 #     "pandas[output-formatting]>=2.2.3; python_version >= '3.13'",

@@ -20,7 +20,6 @@
 #include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
 
-#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -38,14 +37,14 @@ using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 Vector getVector(const dd::vEdge& v, const dd::fp threshold) {
-  auto vec = v.getVector(threshold);
-  auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(vec.size());
-  std::ranges::copy(vec, dataPtr.get());
-  auto* data = dataPtr.release();
-  const nb::capsule owner(data, [](void* ptr) noexcept {
-    delete[] static_cast<std::complex<dd::fp>*>(ptr);
+  auto dataPtr = std::make_unique<dd::CVec>(v.getVector(threshold));
+  auto* const data = dataPtr->data();
+  const auto size = dataPtr->size();
+  const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
+    delete static_cast<dd::CVec*>(ptr);
   });
-  return Vector(data, {vec.size()}, owner);
+  [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
+  return Vector(data, {size}, owner);
 }
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
