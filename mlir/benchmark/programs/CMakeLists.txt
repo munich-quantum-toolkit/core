@@ -9,6 +9,6 @@
 file(GLOB PROGRAM_SOURCES *.cpp)
 
 add_library(MQTBenchmarkPrograms STATIC ${PROGRAM_SOURCES})
-target_link_libraries(MQTBenchmarkPrograms PUBLIC MLIRQCProgramBuilder MLIRArithDialect)
+target_link_libraries(MQTBenchmarkPrograms PUBLIC MQT::CoreBenchmarks MLIRQCProgramBuilder
+                                                  MLIRArithDialect MLIRTensorDialect)
 mqt_mlir_target_use_project_options(MQTBenchmarkPrograms)
-llvm_update_compile_flags(MQTBenchmarkPrograms)

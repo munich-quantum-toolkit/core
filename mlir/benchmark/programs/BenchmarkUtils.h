@@ -10,9 +10,12 @@
 
 #pragma once
 
+#include "benchmarks/QPE.hpp"
+
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <variant>
 
@@ -31,6 +34,14 @@ void resetRegister(qc::QCProgramBuilder& b, Value reg, int64_t size);
 /// register @p bits, one qubit per bit.
 void measureRegister(qc::QCProgramBuilder& b, Value reg, int64_t size,
                      Value bits);
+
+/// Build the finite controlled-unitary angle table for @p benchmark.
+Value controlledPhaseAngles(qc::QCProgramBuilder& b,
+                            const benchmarks::QPE& benchmark);
+
+/// Emit the iterative circuit for @p benchmark.
+SmallVector<Value> iterativeQPE(qc::QCProgramBuilder& b,
+                                const benchmarks::QPE& benchmark);
 
 /**
  * @brief Runs @p body over the range [@p lower, @p upper) with a scaled angle

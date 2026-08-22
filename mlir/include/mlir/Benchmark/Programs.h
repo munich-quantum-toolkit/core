@@ -19,6 +19,12 @@ namespace mlir::qc {
 class QCProgramBuilder;
 } // namespace mlir::qc
 
+namespace mqt::benchmarks {
+class GHZ;
+class Grover;
+class QPE;
+} // namespace mqt::benchmarks
+
 namespace mqt::benchmark {
 
 using namespace mlir;
@@ -51,6 +57,18 @@ struct Benchmark {
 
 // --- Programs ------------------------------------------------------------- //
 
+/// Emit one configured GHZ benchmark.
+SmallVector<Value> ghz(qc::QCProgramBuilder& b,
+                       const benchmarks::GHZ& benchmark);
+
+/// Emit one configured Grover benchmark.
+SmallVector<Value> grover(qc::QCProgramBuilder& b,
+                          const benchmarks::Grover& benchmark);
+
+/// Emit one configured QPE benchmark.
+SmallVector<Value> qpe(qc::QCProgramBuilder& b,
+                       const benchmarks::QPE& benchmark);
+
 /// GHZ state preparation with a linear chain of CX gates on @p n qubits.
 SmallVector<Value> ghzLinear(qc::QCProgramBuilder& b, uint64_t n);
 
@@ -71,7 +89,7 @@ SmallVector<Value> iqft(qc::QCProgramBuilder& b, uint64_t n);
 /// precision.
 SmallVector<Value> iqpe(qc::QCProgramBuilder& b, uint64_t n);
 
-/// Grover's search algorithm on @p n qubits: n-1 search qubits and one flag.
+/// Grover's search algorithm on @p n qubits: n-1 search qubits.
 SmallVector<Value> grover(qc::QCProgramBuilder& b, uint64_t n);
 
 /// Uniformly controlled RY rotations on @p n qubits: n-1 controls and one

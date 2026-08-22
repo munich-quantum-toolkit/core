@@ -12,6 +12,5 @@ add_subdirectory(programs)
 add_library(MQTBenchmarkGenerate STATIC Generate.cpp)
 target_link_libraries(MQTBenchmarkGenerate PUBLIC MQTBenchmarkPrograms MQTCompilerPipeline)
 mqt_mlir_target_use_project_options(MQTBenchmarkGenerate)
-llvm_update_compile_flags(MQTBenchmarkGenerate)
 
 add_subdirectory(jeff)

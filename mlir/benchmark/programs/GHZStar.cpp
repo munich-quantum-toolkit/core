@@ -8,13 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "BenchmarkUtils.h"
+#include "benchmarks/GHZ.hpp"
 #include "mlir/Benchmark/Programs.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace mqt::benchmark {
@@ -22,18 +21,8 @@ namespace mqt::benchmark {
 using namespace mlir;
 
 SmallVector<Value> ghzStar(qc::QCProgramBuilder& b, const uint64_t n) {
-  const auto size = static_cast<int64_t>(n);
-  auto q = b.allocQubitRegister(size, "q");
-  auto c = b.allocClassicalBitRegister(size, "c");
-
-  resetRegister(b, q.value, size);
-
-  b.h(q[0]);
-  b.scfFor(1, size, 1, [&](Value iv) { b.cx(q[0], b.loadQubit(q.value, iv)); });
-
-  measureRegister(b, q.value, size, c);
-
-  return {c};
+  return ghz(b, benchmarks::GHZ({.qubits = static_cast<size_t>(n),
+                                 .topology = benchmarks::GHZTopology::Star}));
 }
 
 } // namespace mqt::benchmark

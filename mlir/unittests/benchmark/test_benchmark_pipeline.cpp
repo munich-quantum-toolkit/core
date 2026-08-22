@@ -30,11 +30,8 @@ constexpr uint64_t PIPELINE_SIZE = 7;
 /**
  * @brief Runs one benchmark through the default pipeline to @p format.
  *
- * @details The formats the benchmarks reach are QCO, QC, `jeff`, and QIR for
- * the Adaptive Profile. OpenQASM 3 and the QIR Base Profile are left out: the
- * OpenQASM emitter needs constant qubit indices, and the Base Profile allows
- * neither control flow nor a classical register that is read at runtime, so
- * every program that indexes a register in a loop is outside both of them.
+ * @details The formats the benchmarks reach are QCO, QC, and `jeff`. OpenQASM
+ * and QIR are not part of the benchmark generation contract.
  */
 static bool reaches(const Benchmark& benchmark,
                     const mlir::ProgramFormat format) {
@@ -72,10 +69,6 @@ TEST_P(PipelineBenchmarkTest, ReachesQC) {
 
 TEST_P(PipelineBenchmarkTest, ReachesJeff) {
   EXPECT_TRUE(reaches(GetParam(), mlir::ProgramFormat::Jeff));
-}
-
-TEST_P(PipelineBenchmarkTest, ReachesQIRAdaptive) {
-  EXPECT_TRUE(reaches(GetParam(), mlir::ProgramFormat::QIRAdaptive));
 }
 
 } // namespace

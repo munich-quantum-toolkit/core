@@ -15,13 +15,19 @@
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <numbers>
 #include <variant>
+#include <vector>
 
 namespace mqt::benchmark {
 
@@ -35,6 +41,35 @@ void measureRegister(qc::QCProgramBuilder& b, Value reg, const int64_t size,
                      Value bits) {
   b.scfFor(0, size, 1,
            [&](Value i) { b.measure(b.loadQubit(reg, i), bits, i); });
+}
+
+Value controlledPhaseAngles(qc::QCProgramBuilder& b,
+                            const benchmarks::QPE& benchmark) {
+  const auto& options = benchmark.options();
+  const auto precision = options.precision;
+  const auto denominator = options.phase.denominator();
+  auto remainder = options.phase.numerator();
+
+  std::vector<double> angles;
+  angles.reserve(precision);
+  for (size_t i = 0; i < precision; ++i) {
+    const auto turns = static_cast<long double>(remainder) /
+                       static_cast<long double>(denominator);
+    angles.emplace_back(
+        static_cast<double>(2.L * std::numbers::pi_v<long double> * turns));
+
+    if (remainder >= denominator - remainder) {
+      remainder -= denominator - remainder;
+    } else {
+      remainder += remainder;
+    }
+  }
+
+  const auto type =
+      RankedTensorType::get({static_cast<int64_t>(precision)}, b.getF64Type());
+  const auto value =
+      DenseElementsAttr::get(type, llvm::ArrayRef<double>(angles));
+  return arith::ConstantOp::create(b, value).getResult();
 }
 
 /// Runs @p body over [@p lower, @p upper) with an angle that @p advance carries

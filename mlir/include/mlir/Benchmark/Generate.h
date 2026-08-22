@@ -15,6 +15,12 @@
 #include <cstdint>
 #include <optional>
 
+namespace mqt::benchmarks {
+class GHZ;
+class Grover;
+class QPE;
+} // namespace mqt::benchmarks
+
 namespace mqt::benchmark {
 
 struct Benchmark;
@@ -30,5 +36,17 @@ struct Benchmark;
  */
 [[nodiscard]] std::optional<mlir::QCProgram>
 generateProgram(const Benchmark& benchmark, uint64_t n);
+
+/// Generate the QC program for a configured GHZ benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generateProgram(const benchmarks::GHZ& benchmark);
+
+/// Generate the QC program for a configured Grover benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generateProgram(const benchmarks::Grover& benchmark);
+
+/// Generate the QC program for a configured QPE benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generateProgram(const benchmarks::QPE& benchmark);
 
 } // namespace mqt::benchmark
