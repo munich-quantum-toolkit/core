@@ -31,8 +31,10 @@ TEST(GHZ, UsesDocumentedDefaults) {
   EXPECT_EQ(ghz.output(), (Output{"result", 3}));
 }
 
-TEST(GHZ, RejectsZeroQubits) {
+TEST(GHZ, RejectsUnsupportedQubitCounts) {
   EXPECT_THROW(static_cast<void>(GHZ{{.qubits = 0}}), std::invalid_argument);
+  EXPECT_THROW(static_cast<void>(GHZ{{.qubits = GHZOptions::MAX_QUBITS + 1}}),
+               std::invalid_argument);
 }
 
 TEST(GHZ, RejectsUnknownEnumValues) {

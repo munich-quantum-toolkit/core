@@ -20,8 +20,8 @@ namespace mqt::benchmarks {
 
 GHZ::GHZ(GHZOptions options)
     : options_(std::move(options)), output_{"result", options_.qubits} {
-  if (options_.qubits == 0) {
-    throw std::invalid_argument("GHZ requires at least one qubit");
+  if (options_.qubits == 0 || options_.qubits > GHZOptions::MAX_QUBITS) {
+    throw std::invalid_argument("GHZ qubits must be between 1 and 1000000");
   }
   if (options_.topology != GHZTopology::Linear &&
       options_.topology != GHZTopology::Star) {

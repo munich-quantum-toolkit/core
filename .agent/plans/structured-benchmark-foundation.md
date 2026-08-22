@@ -37,6 +37,7 @@ authorization.
 - [x] (2026-08-22 09:24Z) Read the repository agent rules, AI policy, and ExecPlan requirements.
 - [x] (2026-08-22 09:31Z) Made QC program cleanup deterministic with ordered allocation tracking and passed the focused builder regression test.
 - [x] (2026-08-22 09:59Z) Added the MLIR-free benchmark instance and reference library and passed all 20 focused C++ tests.
+- [x] (2026-08-22 10:06Z) Added strict request, manifest, count, evaluation, JSON Schema, and stable case-ID support; all 29 benchmark-library tests pass.
 - [ ] Adapt Daniel's GHZ, Grover, QPE, and IQPE emitters to consume the typed instances and fix the known correctness and scaling defects.
 - [ ] Replace the size-only registry and `mqt-jeff-benchmarks` interface with strict versioned requests, deterministic manifests, and collision-safe output.
 - [ ] Add Python bindings and generated stubs for typed options, generation, references, and evaluation.
@@ -53,6 +54,7 @@ authorization.
 - Observation: Core already defines sampled bitstrings as big-endian: the leftmost character is the highest-index qubit. The benchmark result contract will reuse that convention.
 - Observation: Replacing two `DenseSet<Value>` members with `SetVector<Value>` fixes nondeterministic cleanup at the shared builder boundary. Evidence: `QCTest.BuilderDeallocatesDynamicResourcesDeterministically` passes and checks exact allocation/deallocation order for qubits and registers.
 - Observation: QPE reference probabilities can support precision above 1,024 without a large-integer dependency. Binary long division builds the nearest lower outcome and exact remainder in linear time; a wrapped sine ratio then evaluates only the requested outcome.
+- Observation: Core has no installed stable-hash dependency. A small private SHA-256 implementation keeps the public target free of LLVM and has published empty, short, and multiblock test vectors.
 
 ## Decision Log
 
@@ -64,6 +66,8 @@ authorization.
 - Decision: Represent a QPE phase as a reduced rational number of turns. Rationale: exact integer arithmetic can reduce controlled powers modulo one turn before conversion to `double`, avoiding overflow and loss of exact cases. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
 - Decision: Use the existing big-endian outcome convention and name logical output registers in every reference. Rationale: adapters can normalize backend layouts once without changing analytic formulas. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
 - Decision: Preserve Daniel's program work in #2135 and park non-foundation programs in the archived #2204 line. Rationale: the redesign narrows the first merge without discarding or reattributing his implementation and research. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
+- Decision: Identify a semantic case with the full lowercase SHA-256 of its canonical manifest payload, prefixed by a versioned domain separator. Rationale: the ID is stable across C++ and Python implementations and avoids short-hash collisions without adding an installed dependency. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
+- Decision: Limit GHZ width and QPE precision to 1,000,000. Rationale: strict request parsing must reject tiny inputs that would otherwise request unbounded allocation, while retaining ample range for structured-program scaling. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
 
 ## Outcomes & Retrospective
 
@@ -281,6 +285,9 @@ The semantic-reference check ran as:
     ./build/release/test/benchmarks/mqt-core-benchmarks-test
     [  PASSED  ] 20 tests.
 
+After the strict JSON and case-ID layer landed, the same test binary reported:
+
+    [  PASSED  ] 29 tests.
 ## Interfaces and Dependencies
 
 The installed C++ target is `MQT::CoreBenchmarks`. Its public headers use only
@@ -312,3 +319,6 @@ focused passing test.
 
 Revision note, 2026-08-22: Recorded the completed typed semantic and analytic
 reference layer, including the arbitrary-width QPE check.
+
+Revision note, 2026-08-22: Recorded strict JSON storage, self-checking
+manifests, JSON Schema descriptions, and stable semantic case IDs.

@@ -37,8 +37,12 @@ TEST(QPE, UsesDocumentedDefaults) {
   EXPECT_EQ(qpe.output(), (Output{"result", 3}));
 }
 
-TEST(QPE, RejectsZeroPrecision) {
+TEST(QPE, RejectsUnsupportedPrecision) {
   EXPECT_THROW(static_cast<void>(QPE{{.precision = 0, .phase = Phase(0, 1)}}),
+               std::invalid_argument);
+  EXPECT_THROW(static_cast<void>(QPE{
+                   {.precision = mqt::benchmarks::QPEOptions::MAX_PRECISION + 1,
+                    .phase = Phase(0, 1)}}),
                std::invalid_argument);
 }
 

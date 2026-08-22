@@ -41,7 +41,9 @@ enum class QPEMethod : uint8_t { Standard, Iterative };
 
 /// Parameters for one quantum phase-estimation benchmark instance.
 struct QPEOptions {
-  /// Number of measured phase bits. Must be positive.
+  static constexpr size_t MAX_PRECISION = 1'000'000;
+
+  /// Number of measured phase bits. Must be in `[1, MAX_PRECISION]`.
   size_t precision;
   /// Eigenphase in turns.
   Phase phase;

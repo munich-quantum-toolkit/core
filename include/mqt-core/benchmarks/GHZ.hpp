@@ -27,7 +27,9 @@ enum class GHZBasis : uint8_t { Z, X };
 
 /// Parameters for one GHZ benchmark instance.
 struct GHZOptions {
-  /// Number of qubits. Must be positive.
+  static constexpr size_t MAX_QUBITS = 1'000'000;
+
+  /// Number of qubits. Must be in `[1, MAX_QUBITS]`.
   size_t qubits;
   GHZTopology topology = GHZTopology::Linear;
   GHZBasis basis = GHZBasis::Z;

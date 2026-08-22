@@ -101,16 +101,17 @@ uint64_t Phase::denominator() const noexcept { return denominator_; }
 
 QPE::QPE(QPEOptions options)
     : options_(std::move(options)), output_{"result", options_.precision},
-      lowerOutcome_(options_.precision, '0'),
       scaledRemainder_(options_.phase.numerator()) {
-  if (options_.precision == 0) {
-    throw std::invalid_argument("QPE precision must be positive");
+  if (options_.precision == 0 ||
+      options_.precision > QPEOptions::MAX_PRECISION) {
+    throw std::invalid_argument("QPE precision must be between 1 and 1000000");
   }
   if (options_.method != QPEMethod::Standard &&
       options_.method != QPEMethod::Iterative) {
     throw std::invalid_argument("unknown QPE method");
   }
 
+  lowerOutcome_.assign(options_.precision, '0');
   const auto denominator = options_.phase.denominator();
   for (auto& bit : lowerOutcome_) {
     if (scaledRemainder_ >= denominator - scaledRemainder_) {
