@@ -377,25 +377,15 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
 
 size_t QCProgram::numTwoQubitGates() const {
   size_t count = 0;
-  mod().walk([&count](qc::UnitaryOpInterface op) {
-    // Modifiers describe the gates in their region rather than a gate of their
-    // own, and barriers are not gates at all.
-    if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qc::BarrierOp>(op)) {
-      return;
+  auto entryPoint = mqt::getEntryPoint(module());
+  for (auto op : entryPoint.getOps<qc::UnitaryOpInterface>()) {
+    if (isa<qc::BarrierOp>(op)) {
+      continue;
     }
-    auto numQubits = op.getNumQubits();
-    for (auto* parent = op->getParentOp(); parent != nullptr;
-         parent = parent->getParentOp()) {
-      if (auto ctrl = dyn_cast<qc::CtrlOp>(parent)) {
-        numQubits += ctrl.getNumControls();
-      } else if (!isa<qc::InvOp, qc::PowOp>(parent)) {
-        break;
-      }
-    }
-    if (numQubits == 2) {
+    if (op.getNumQubits() == 2) {
       ++count;
     }
-  });
+  }
   return count;
 }
 

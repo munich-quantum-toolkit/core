@@ -283,8 +283,11 @@ TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
   EXPECT_FALSE(
       QCProgram::fromModule(otherContext, std::move(mismatchedModule)));
 }
-/** @brief Raw QCO stops before the registered default optimization pipeline. */
 
+/**
+ * @brief Test: raw QCO stops before the registered default optimization
+ * pipeline.
+ */
 TEST_F(CompilerPipelineTest, RawAndOptimizedQCOAreDistinctCheckpoints) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -1133,36 +1136,6 @@ cx q[0], q[2];
 }
 
 /**
- * @brief Test: two-qubit gate counting respects modifiers and skips barriers.
- */
-TEST_F(CompilerPipelineTest, QCProgramCountsTwoQubitGates) {
-  const std::string qasm = R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit[3] q;
-h q[0];
-cx q[0], q[1];
-swap q[0], q[1];
-ccx q[0], q[1], q[2];
-ctrl @ swap q[0], q[1], q[2];
-inv @ cx q[0], q[1];
-barrier q[0], q[1];
-)";
-  auto qc = QCProgram::fromQASMString(qasm);
-  ASSERT_TRUE(qc);
-  // cx, swap, and the inverted cx are two-qubit gates. The single-qubit h, the
-  // three-qubit ccx and controlled swap, and the barrier are not.
-  EXPECT_EQ(qc->numTwoQubitGates(), 3);
-
-  auto empty = QCProgram::fromQASMString(R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit q;
-h q;
-)");
-  ASSERT_TRUE(empty);
-  EXPECT_EQ(empty->numTwoQubitGates(), 0);
-}
-
-/**
  * @brief Test: target compilation decomposes, maps, synthesizes, and verifies.
  */
 TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
@@ -1618,5 +1591,35 @@ INSTANTIATE_TEST_SUITE_P(
             nullptr,
             MQT_NAMED_BUILDER(mlir::qir::singleControlledXOnIndividualQubits),
             true, "reuse-qubits,mqt-qco-default"}));
+
+/**
+ * @brief Test: two-qubit gate counting respects modifiers and skips barriers.
+ */
+TEST_F(CompilerPipelineTest, QCProgramCountsTwoQubitGates) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0];
+cx q[0], q[1];
+swap q[0], q[1];
+ccx q[0], q[1], q[2];
+ctrl @ swap q[0], q[1], q[2];
+inv @ cx q[0], q[1];
+barrier q[0], q[1];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  // cx, swap, and the inverted cx are two-qubit gates. The single-qubit h, the
+  // three-qubit ccx and controlled swap, and the barrier are not.
+  EXPECT_EQ(qc->numTwoQubitGates(), 3);
+
+  auto empty = QCProgram::fromQASMString(R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+)");
+  ASSERT_TRUE(empty);
+  EXPECT_EQ(empty->numTwoQubitGates(), 0);
+}
 
 } // namespace mqt::test::compiler

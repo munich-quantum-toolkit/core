@@ -381,12 +381,10 @@ class QCProgram(Program):
         """
 
     def num_two_qubit_gates(self) -> int:
-        """Count the gates in this program that act on exactly two qubits.
+        """Count the two-qubit gates in the program.
 
-        Control qubits contributed by enclosing modifiers count towards the arity of a
-        gate, so a ``qc.x`` nested in a single-control ``qc.ctrl`` is a two-qubit gate.
-        Barriers are not counted. Gates in a loop or a called function are counted
-        once, independently of how often they execute.
+        Any operation that implements the ``UnitaryOpInterface`` and acts on two qubits
+        is counted. Barriers are skipped.
         """
 
 class QCOProgram(Program):
