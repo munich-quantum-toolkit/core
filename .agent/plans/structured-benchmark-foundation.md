@@ -35,6 +35,7 @@ authorization.
 - [x] (2026-08-22 09:24Z) Archived the exact local heads of #2135 and #2204 and created a separate implementation branch.
 - [x] (2026-08-22 09:24Z) Merged current `origin/main` without rebasing Daniel's commits and verified the signed merge commit.
 - [x] (2026-08-22 09:24Z) Read the repository agent rules, AI policy, and ExecPlan requirements.
+- [x] (2026-08-22 09:31Z) Made QC program cleanup deterministic with ordered allocation tracking and passed the focused builder regression test.
 - [ ] Add the MLIR-free benchmark instance and reference library with focused C++ tests.
 - [ ] Adapt Daniel's GHZ, Grover, QPE, and IQPE emitters to consume the typed instances and fix the known correctness and scaling defects.
 - [ ] Replace the size-only registry and `mqt-jeff-benchmarks` interface with strict versioned requests, deterministic manifests, and collision-safe output.
@@ -50,6 +51,7 @@ authorization.
 - Observation: `origin/main` advanced after Daniel's last merge, but a merge-tree probe found no conflicts. A signed merge preserves all of Daniel's existing commit objects, unlike a rebase.
 - Observation: The current QCO DD simulator does not execute `scf.for`. Small semantic tests must first lower structured QC through the optimized QCO pipeline or use an independently built equivalent circuit when the loop structure itself is under test.
 - Observation: Core already defines sampled bitstrings as big-endian: the leftmost character is the highest-index qubit. The benchmark result contract will reuse that convention.
+- Observation: Replacing two `DenseSet<Value>` members with `SetVector<Value>` fixes nondeterministic cleanup at the shared builder boundary. Evidence: `QCTest.BuilderDeallocatesDynamicResourcesDeterministically` passes and checks exact allocation/deallocation order for qubits and registers.
 
 ## Decision Log
 
@@ -267,6 +269,11 @@ The initial attribution boundary is:
 `git verify-commit 00f3c8e5dc80cf1ff2829b42dbac6c82fef05088`
 reported a good signature from the configured maintainer key.
 
+The deterministic-builder check ran as:
+
+    ./build/release/mlir/unittests/Dialect/QC/IR/mqt-core-mlir-unittest-qc-ir --gtest_filter='QCTest.BuilderDeallocatesDynamicResourcesDeterministically'
+    [  PASSED  ] 1 test.
+
 ## Interfaces and Dependencies
 
 The installed C++ target is `MQT::CoreBenchmarks`. Its public headers use only
@@ -292,3 +299,6 @@ existing DD package. No new dependency is added.
 Revision note, 2026-08-22: Created the initial self-contained plan after Daniel
 authorized continued implementation. Recorded the preserved attribution
 boundary, accepted API decisions, and current-main merge.
+
+Revision note, 2026-08-22: Recorded the shared deterministic-cleanup fix and its
+focused passing test.
