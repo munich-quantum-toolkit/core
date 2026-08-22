@@ -1382,10 +1382,7 @@ matchPackedRegister(mlir::Value value, ExportState& state,
                 llvm::dyn_cast<mlir::arith::ConstantOp>(operation)) {
           const auto integer =
               llvm::dyn_cast<mlir::IntegerAttr>(constant.getValue());
-          if (!integer || !integer.getValue().isZero()) {
-            return false;
-          }
-          return true;
+          return integer && integer.getValue().isZero();
         }
         if (operation->getBlock() != &evaluationBlock) {
           return false;
