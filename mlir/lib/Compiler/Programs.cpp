@@ -375,6 +375,20 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
   return result;
 }
 
+size_t QCProgram::numSingleQubitGates() const {
+  size_t count = 0;
+  auto entryPoint = mqt::getEntryPoint(module());
+  for (auto op : entryPoint.getOps<qc::UnitaryOpInterface>()) {
+    if (isa<qc::BarrierOp>(op)) {
+      continue;
+    }
+    if (op.getNumQubits() == 1) {
+      ++count;
+    }
+  }
+  return count;
+}
+
 size_t QCProgram::numTwoQubitGates() const {
   size_t count = 0;
   auto entryPoint = mqt::getEntryPoint(module());
