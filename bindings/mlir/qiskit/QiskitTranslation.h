@@ -351,9 +351,7 @@ public:
   virtual void
   addControlFlow(ControlFlowKind kind, ClassicalTarget target, Loop loop,
                  std::vector<SwitchCase> switchCases,
-                 std::vector<std::unique_ptr<CircuitWriter>> blocks,
-                 const std::vector<uint32_t>& qubits,
-                 const std::vector<uint32_t>& clbits) = 0;
+                 std::vector<std::unique_ptr<CircuitWriter>> blocks) = 0;
   /** Transfer the native circuit to a new owned Python QuantumCircuit. */
   [[nodiscard]] virtual nb::object finish() = 0;
 };

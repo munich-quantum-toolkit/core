@@ -105,12 +105,6 @@ struct ExportedControlFlow {
   Loop loop;
   std::vector<SwitchCase> switchCases;
   std::vector<ExportedCircuit> blocks;
-  std::vector<uint32_t> qubits;
-  std::vector<uint32_t> clbits;
-};
-
-struct ExportScope {
-  ExportedParameters parameters;
 };
 
 [[noreturn]] void throwExportedParameterExpressionSizeError() {
@@ -236,7 +230,7 @@ struct ExportScope {
 }
 
 void validateExportParameterImpl(const Parameter& parameter, const size_t depth,
-                                 size_t& nodes) {
+                                 size_t& nodes, llvm::StringSet<>& names) {
   if (depth > MAX_PARAMETER_EXPRESSION_DEPTH) {
     throwExportedParameterExpressionDepthError();
   }
@@ -254,23 +248,25 @@ void validateExportParameterImpl(const Parameter& parameter, const size_t depth,
       throw std::runtime_error(
           "QC parameter symbol name contains a null character");
     }
+    names.insert(symbol->name);
     return;
   }
   if (const auto* unary = parameter.getUnary()) {
-    validateExportParameterImpl(*unary->operand, depth + 1U, nodes);
+    validateExportParameterImpl(*unary->operand, depth + 1U, nodes, names);
     return;
   }
   if (const auto* binary = parameter.getBinary()) {
-    validateExportParameterImpl(*binary->left, depth + 1U, nodes);
-    validateExportParameterImpl(*binary->right, depth + 1U, nodes);
+    validateExportParameterImpl(*binary->left, depth + 1U, nodes, names);
+    validateExportParameterImpl(*binary->right, depth + 1U, nodes, names);
     return;
   }
   throw std::runtime_error("unknown QC parameter expression");
 }
 
-void validateExportParameter(const Parameter& parameter) {
+void validateExportParameter(const Parameter& parameter,
+                             llvm::StringSet<>& names) {
   size_t nodes = 0U;
-  validateExportParameterImpl(parameter, 1U, nodes);
+  validateExportParameterImpl(parameter, 1U, nodes, names);
 }
 
 [[nodiscard]] bool isParameterExpressionOperation(mlir::Operation& operation) {
@@ -345,22 +341,6 @@ struct ExportState {
   uint32_t numClbits = 0;
 };
 
-void collectParameterNames(const Parameter& parameter,
-                           llvm::StringSet<>& names) {
-  if (const auto* symbol = parameter.getSymbol()) {
-    names.insert(symbol->name);
-    return;
-  }
-  if (const auto* unary = parameter.getUnary()) {
-    collectParameterNames(*unary->operand, names);
-    return;
-  }
-  if (const auto* binary = parameter.getBinary()) {
-    collectParameterNames(*binary->left, names);
-    collectParameterNames(*binary->right, names);
-  }
-}
-
 [[nodiscard]] bool parameterUsesName(const Parameter& parameter,
                                      const std::string_view name) {
   if (const auto* symbol = parameter.getSymbol()) {
@@ -402,8 +382,7 @@ void collectParameterNames(const Parameter& parameter,
 void validateExportParameters(const ExportedCircuit& circuit,
                               llvm::StringSet<>& usedNames) {
   const auto validate = [&](const Parameter& parameter) {
-    validateExportParameter(parameter);
-    collectParameterNames(parameter, usedNames);
+    validateExportParameter(parameter, usedNames);
   };
   validate(circuit.globalPhase);
   for (const auto& instruction : circuit.instructions) {
@@ -1123,7 +1102,6 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
         throw std::runtime_error(
             "Qiskit Float expressions require a floating-point constant");
       }
-      state.expressionOperations.insert(operation);
       return result;
     }
     const auto floating = llvm::dyn_cast<mlir::FloatAttr>(constant.getValue());
@@ -1136,7 +1114,6 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
       throw std::runtime_error(
           "Qiskit classical floating-point literals must be finite");
     }
-    state.expressionOperations.insert(operation);
     return result;
   }
   if (auto load = llvm::dyn_cast<mlir::cbit::LoadOp>(operation)) {
@@ -1408,7 +1385,6 @@ matchPackedRegister(mlir::Value value, ExportState& state,
           if (!integer || !integer.getValue().isZero()) {
             return false;
           }
-          operations.insert(operation);
           return true;
         }
         if (operation->getBlock() != &evaluationBlock) {
@@ -1475,16 +1451,12 @@ void acceptPackedRegister(PackedRegister& packed, ExportState& state) {
 
 [[nodiscard]] bool storesToValueRecursively(mlir::Operation& operation,
                                             const mlir::Value value) {
-  bool stores = false;
-  operation.walk([&](mlir::Operation* nested) {
-    if (auto store = llvm::dyn_cast<mlir::cbit::StoreOp>(nested);
-        store && store.getReg() == value) {
-      stores = true;
-      return mlir::WalkResult::interrupt();
-    }
-    return mlir::WalkResult::advance();
-  });
-  return stores;
+  return operation
+      .walk([&](mlir::cbit::StoreOp store) {
+        return store.getReg() == value ? mlir::WalkResult::interrupt()
+                                       : mlir::WalkResult::advance();
+      })
+      .wasInterrupted();
 }
 
 void validateClassicalSnapshot(const mlir::Value expression,
@@ -1587,21 +1559,17 @@ void validateClassicalSnapshot(const mlir::Value expression,
       if (auto load = actual.getDefiningOp<mlir::cbit::LoadOp>();
           load && actual.getType().isInteger(1) && *constant <= 1U) {
         state.expressionOperations.insert(comparison);
-        state.expressionOperations.insert(expected.getDefiningOp());
         state.expressionOperations.insert(load);
         return {.kind = ClassicalTargetKind::ClassicalBit,
                 .bit = classicalBitIndex(load, state),
                 .expectedBit = *constant != 0U};
       }
       if (auto packed = matchPackedRegister(actual, state, evaluationBlock)) {
-        if (*constant >= (packed->reg.bits.size() == 64U
-                              ? std::numeric_limits<uint64_t>::max()
-                              : uint64_t{1} << packed->reg.bits.size()) &&
-            packed->reg.bits.size() != 64U) {
+        if (packed->reg.bits.size() != 64U &&
+            *constant >= (uint64_t{1} << packed->reg.bits.size())) {
           continue;
         }
         state.expressionOperations.insert(comparison);
-        state.expressionOperations.insert(expected.getDefiningOp());
         acceptPackedRegister(*packed, state);
         return {.kind = ClassicalTargetKind::ClassicalRegister,
                 .reg = std::move(packed->reg),
@@ -1631,7 +1599,6 @@ void validateClassicalSnapshot(const mlir::Value expression,
       expression->type = ClassicalType::Uint;
       expression->width = 64U;
       expression->uintValue = *constant;
-      state.expressionOperations.insert(value.getDefiningOp());
       return {.kind = ClassicalTargetKind::Expression,
               .width = 64U,
               .expression = std::move(expression)};
@@ -1657,6 +1624,7 @@ void validateClassicalSnapshot(const mlir::Value expression,
   if (target.expression->type == ClassicalType::Float) {
     throw std::runtime_error("Qiskit switch targets must be Boolean or Uint");
   }
+  target.width = target.expression->width;
   return target;
 }
 
@@ -1767,25 +1735,16 @@ matchLoopParameterProjection(mlir::scf::ForOp loop) {
   return projection;
 }
 
-[[nodiscard]] ExportedCircuit
-collectBlock(mlir::Block& block, ExportState& state, ExportScope scope,
-             size_t controlFlowDepth, bool topLevel);
-
-[[nodiscard]] std::vector<uint32_t> allIndices(const uint32_t size) {
-  std::vector<uint32_t> result(size);
-  std::iota(result.begin(), result.end(), 0U);
-  return result;
-}
+[[nodiscard]] ExportedCircuit collectBlock(mlir::Block& block,
+                                           ExportState& state,
+                                           size_t controlFlowDepth,
+                                           bool topLevel);
 
 [[nodiscard]] bool isFusableMeasurementStore(mlir::qc::MeasureOp measure,
                                              mlir::cbit::StoreOp store) {
   if (!measure.getResult().hasOneUse() ||
       store.getValue() != measure.getResult() ||
       measure->getBlock() != store->getBlock()) {
-    return false;
-  }
-  const auto index = mlir::getConstantIntValue(store.getIndex());
-  if (!index) {
     return false;
   }
   for (auto* operation = measure->getNextNode(); operation != store;
@@ -1811,12 +1770,8 @@ void validateExpressionBlock(mlir::Block& block, const ExportState& state) {
 }
 
 [[nodiscard]] std::unique_ptr<ExportedControlFlow>
-collectIf(mlir::scf::IfOp ifOp, ExportState& state, const ExportScope& scope,
+collectIf(mlir::scf::IfOp ifOp, ExportState& state,
           const size_t controlFlowDepth) {
-  if (ifOp.getNumResults() != 0U) {
-    throw std::runtime_error(
-        "Qiskit if/else export does not support SSA results");
-  }
   if (controlFlowDepth >= MAX_EXPORT_CONTROL_FLOW_DEPTH) {
     throw std::runtime_error("QC control flow exceeds the nesting limit of 64");
   }
@@ -1825,18 +1780,16 @@ collectIf(mlir::scf::IfOp ifOp, ExportState& state, const ExportScope& scope,
   result->target = exportCondition(ifOp.getCondition(), state,
                                    *ifOp->getBlock(), *ifOp.getOperation());
   result->blocks.push_back(collectBlock(ifOp.getThenRegion().front(), state,
-                                        scope, controlFlowDepth + 1U, false));
+                                        controlFlowDepth + 1U, false));
   if (!ifOp.getElseRegion().empty()) {
     result->blocks.push_back(collectBlock(ifOp.getElseRegion().front(), state,
-                                          scope, controlFlowDepth + 1U, false));
+                                          controlFlowDepth + 1U, false));
   }
-  result->qubits = allIndices(state.numQubits);
-  result->clbits = allIndices(state.numClbits);
   return result;
 }
 
 [[nodiscard]] std::unique_ptr<ExportedControlFlow>
-collectFor(mlir::scf::ForOp loop, ExportState& state, const ExportScope& scope,
+collectFor(mlir::scf::ForOp loop, ExportState& state,
            const size_t controlFlowDepth) {
   if (!loop.getInitArgs().empty() || loop.getNumResults() != 0U) {
     throw std::runtime_error(
@@ -1857,7 +1810,6 @@ collectFor(mlir::scf::ForOp loop, ExportState& state, const ExportScope& scope,
   result->kind = ControlFlowKind::For;
   result->loop = {
       .isRange = true, .start = *lower, .stop = *upper, .step = *step};
-  auto bodyScope = scope;
   std::optional<LoopParameterProjection> projection;
   std::optional<Parameter> loopParameter;
   std::string loopParameterName;
@@ -1878,11 +1830,11 @@ collectFor(mlir::scf::ForOp loop, ExportState& state, const ExportScope& scope,
       } while (state.parameterNames.contains(loopParameterName));
       state.parameterNames.insert(loopParameterName);
       loopParameter = Parameter::symbol(loopParameterName);
-      bodyScope.parameters[projection->value] = *loopParameter;
+      state.parameters[projection->value] = *loopParameter;
     }
   }
-  auto body = collectBlock(*loop.getBody(), state, bodyScope,
-                           controlFlowDepth + 1U, false);
+  auto body =
+      collectBlock(*loop.getBody(), state, controlFlowDepth + 1U, false);
   if (projection && loopParameter &&
       circuitUsesParameterName(body, loopParameterName)) {
     result->loop.parameter = *loopParameter;
@@ -1912,29 +1864,12 @@ collectFor(mlir::scf::ForOp loop, ExportState& state, const ExportScope& scope,
     }
   }
   result->blocks.push_back(std::move(body));
-  result->qubits = allIndices(state.numQubits);
-  result->clbits = allIndices(state.numClbits);
   return result;
-}
-
-[[nodiscard]] uint32_t switchTargetWidth(const ClassicalTarget& target) {
-  switch (target.kind) {
-  case ClassicalTargetKind::ClassicalBit:
-    return 1U;
-  case ClassicalTargetKind::ClassicalRegister:
-    return target.width;
-  case ClassicalTargetKind::Expression:
-    if (target.expression) {
-      return target.expression->width;
-    }
-    break;
-  }
-  throw std::runtime_error("Qiskit switch export has no target expression");
 }
 
 [[nodiscard]] std::unique_ptr<ExportedControlFlow>
 collectWhile(mlir::scf::WhileOp loop, ExportState& state,
-             const ExportScope& scope, const size_t controlFlowDepth) {
+             const size_t controlFlowDepth) {
   if (controlFlowDepth >= MAX_EXPORT_CONTROL_FLOW_DEPTH) {
     throw std::runtime_error("QC control flow exceeds the nesting limit of 64");
   }
@@ -1956,15 +1891,13 @@ collectWhile(mlir::scf::WhileOp loop, ExportState& state,
                                    *condition.getOperation());
   validateExpressionBlock(before, state);
   result->blocks.push_back(
-      collectBlock(after, state, scope, controlFlowDepth + 1U, false));
-  result->qubits = allIndices(state.numQubits);
-  result->clbits = allIndices(state.numClbits);
+      collectBlock(after, state, controlFlowDepth + 1U, false));
   return result;
 }
 
 [[nodiscard]] std::unique_ptr<ExportedControlFlow>
 collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportState& state,
-              const ExportScope& scope, const size_t controlFlowDepth) {
+              const size_t controlFlowDepth) {
   if (switchOp.getNumResults() != 0U) {
     throw std::runtime_error(
         "Qiskit switch export does not support SSA results");
@@ -1977,7 +1910,7 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportState& state,
   result->target =
       exportSwitchTarget(switchOp.getArg(), state, *switchOp->getBlock(),
                          *switchOp.getOperation());
-  const uint32_t targetWidth = switchTargetWidth(result->target);
+  const uint32_t targetWidth = result->target.width;
   for (const auto [index, label] : llvm::enumerate(switchOp.getCases())) {
     if (label < 0) {
       throw std::runtime_error(
@@ -1991,21 +1924,19 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportState& state,
     }
     result->switchCases.push_back({.labels = {static_cast<uint64_t>(label)}});
     result->blocks.push_back(
-        collectBlock(switchOp.getCaseRegions()[index].front(), state, scope,
+        collectBlock(switchOp.getCaseRegions()[index].front(), state,
                      controlFlowDepth + 1U, false));
   }
   result->switchCases.push_back({.isDefault = true});
   result->blocks.push_back(collectBlock(switchOp.getDefaultRegion().front(),
-                                        state, scope, controlFlowDepth + 1U,
-                                        false));
-  result->qubits = allIndices(state.numQubits);
-  result->clbits = allIndices(state.numClbits);
+                                        state, controlFlowDepth + 1U, false));
   return result;
 }
 
-[[nodiscard]] ExportedCircuit
-collectBlock(mlir::Block& block, ExportState& state, ExportScope scope,
-             const size_t controlFlowDepth, const bool topLevel) {
+[[nodiscard]] ExportedCircuit collectBlock(mlir::Block& block,
+                                           ExportState& state,
+                                           const size_t controlFlowDepth,
+                                           const bool topLevel) {
   ExportedCircuit circuit;
   llvm::SmallVector<mlir::Operation*> deferredExpressions;
   for (auto& operation : block) {
@@ -2043,38 +1974,16 @@ collectBlock(mlir::Block& block, ExportState& state, ExportScope scope,
           "QC to Qiskit export encountered an unsupported memory deallocation");
     }
     if (auto store = llvm::dyn_cast<mlir::cbit::StoreOp>(operation)) {
-      auto measure = store.getValue().getDefiningOp<mlir::qc::MeasureOp>();
-      if (!measure || !isFusableMeasurementStore(measure, store)) {
+      if (!store.getValue().getDefiningOp<mlir::qc::MeasureOp>()) {
         throw std::runtime_error(
             "QC to Qiskit export does not support non-measurement classical "
             "stores");
-      }
-      const auto info = state.classicalRegisterInfo.find(store.getReg());
-      const auto index = mlir::getConstantIntValue(store.getIndex());
-      if (info == state.classicalRegisterInfo.end() || !index) {
-        throw std::runtime_error(
-            "QC measurement uses an unsupported classical destination");
-      }
-      const auto checked = checkedIndex(*index, "classical-bit");
-      if (checked >= info->second.size) {
-        throw std::runtime_error(
-            "QC measurement uses an out-of-bounds classical destination");
-      }
-      if (!state.measurementDestinations[store.getReg()]
-               .insert(checked)
-               .second) {
-        throw std::runtime_error(
-            "QC to Qiskit export does not support duplicate classical "
-            "destinations");
-      }
-      if (topLevel) {
-        state.unconditionalWrites[store.getReg()].insert(checked);
       }
       continue;
     }
     if (auto phase = llvm::dyn_cast<mlir::qc::GPhaseOp>(operation)) {
       addGlobalPhase(circuit,
-                     exportParameter(phase.getTheta(), scope.parameters));
+                     exportParameter(phase.getTheta(), state.parameters));
       continue;
     }
     if (auto measure = llvm::dyn_cast<mlir::qc::MeasureOp>(operation)) {
@@ -2113,6 +2022,16 @@ collectBlock(mlir::Block& block, ExportState& state, ExportScope scope,
         throw std::runtime_error(
             "QC measurement uses an out-of-bounds classical destination");
       }
+      if (!state.measurementDestinations[destination.getReg()]
+               .insert(checked)
+               .second) {
+        throw std::runtime_error(
+            "QC to Qiskit export does not support duplicate classical "
+            "destinations");
+      }
+      if (topLevel) {
+        state.unconditionalWrites[destination.getReg()].insert(checked);
+      }
       circuit.instructions.push_back(
           {.kind = ExportedInstruction::Kind::Measure,
            .qubits = mapQubits(measure.getQubit(), state.qubits),
@@ -2134,7 +2053,7 @@ collectBlock(mlir::Block& block, ExportState& state, ExportScope scope,
     }
     if (llvm::isa<mlir::qc::UnitaryOp>(operation)) {
       circuit.instructions.push_back(
-          collectUnitaryInstruction(operation, state.qubits, scope.parameters));
+          collectUnitaryInstruction(operation, state.qubits, state.parameters));
       continue;
     }
     if (auto ifOp = llvm::dyn_cast<mlir::scf::IfOp>(operation)) {
@@ -2151,31 +2070,30 @@ collectBlock(mlir::Block& block, ExportState& state, ExportScope scope,
       }
       circuit.instructions.push_back(
           {.kind = ExportedInstruction::Kind::ControlFlow,
-           .controlFlow = collectIf(ifOp, state, scope, controlFlowDepth)});
+           .controlFlow = collectIf(ifOp, state, controlFlowDepth)});
       continue;
     }
     if (auto loop = llvm::dyn_cast<mlir::scf::ForOp>(operation)) {
       circuit.instructions.push_back(
           {.kind = ExportedInstruction::Kind::ControlFlow,
-           .controlFlow = collectFor(loop, state, scope, controlFlowDepth)});
+           .controlFlow = collectFor(loop, state, controlFlowDepth)});
       continue;
     }
     if (auto loop = llvm::dyn_cast<mlir::scf::WhileOp>(operation)) {
       circuit.instructions.push_back(
           {.kind = ExportedInstruction::Kind::ControlFlow,
-           .controlFlow = collectWhile(loop, state, scope, controlFlowDepth)});
+           .controlFlow = collectWhile(loop, state, controlFlowDepth)});
       continue;
     }
     if (auto switchOp = llvm::dyn_cast<mlir::scf::IndexSwitchOp>(operation)) {
       circuit.instructions.push_back(
           {.kind = ExportedInstruction::Kind::ControlFlow,
-           .controlFlow =
-               collectSwitch(switchOp, state, scope, controlFlowDepth)});
+           .controlFlow = collectSwitch(switchOp, state, controlFlowDepth)});
       continue;
     }
     if (llvm::isa<mlir::qc::UnitaryOpInterface>(operation)) {
       circuit.instructions.push_back(
-          collectUnitaryInstruction(operation, state.qubits, scope.parameters));
+          collectUnitaryInstruction(operation, state.qubits, state.parameters));
       continue;
     }
     if (llvm::isa<mlir::scf::YieldOp>(operation)) {
@@ -2233,7 +2151,8 @@ void validateConstructibleGates(const ExportedCircuit& circuit,
 }
 
 void emitCircuit(ExportedCircuit& circuit, CircuitWriter& writer,
-                 const VersionedTranslation& translation) {
+                 const VersionedTranslation& translation,
+                 const uint32_t numQubits, const uint32_t numClbits) {
   writer.setGlobalPhase(circuit.globalPhase);
   for (auto& instruction : circuit.instructions) {
     switch (instruction.kind) {
@@ -2263,16 +2182,13 @@ void emitCircuit(ExportedCircuit& circuit, CircuitWriter& writer,
       std::vector<std::unique_ptr<CircuitWriter>> blocks;
       blocks.reserve(control.blocks.size());
       for (auto& block : control.blocks) {
-        auto blockWriter = translation.createCircuit(
-            static_cast<uint32_t>(control.qubits.size()),
-            static_cast<uint32_t>(control.clbits.size()));
-        emitCircuit(block, *blockWriter, translation);
+        auto blockWriter = translation.createCircuit(numQubits, numClbits);
+        emitCircuit(block, *blockWriter, translation, numQubits, numClbits);
         blocks.push_back(std::move(blockWriter));
       }
       writer.addControlFlow(control.kind, std::move(control.target),
                             std::move(control.loop),
-                            std::move(control.switchCases), std::move(blocks),
-                            control.qubits, control.clbits);
+                            std::move(control.switchCases), std::move(blocks));
       break;
     }
     }
@@ -2302,9 +2218,7 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                                    "target qubit count");
   }
   collectResources(function, state, target);
-  const ExportScope rootScope{.parameters = state.parameters};
-  auto circuit =
-      collectBlock(function.getBody().front(), state, rootScope, 0U, true);
+  auto circuit = collectBlock(function.getBody().front(), state, 0U, true);
   for (const auto& [reg, info] : state.classicalRegisterInfo) {
     if (info.initialization == mlir::cbit::Initialization::Zero) {
       continue;
@@ -2339,7 +2253,7 @@ nb::object exportCircuit(const mlir::QCProgram& program,
     writer->addClassicalRegister(reg.name,
                                  static_cast<uint32_t>(reg.bits.size()));
   }
-  emitCircuit(circuit, *writer, *translation);
+  emitCircuit(circuit, *writer, *translation, state.numQubits, state.numClbits);
   return writer->finish();
 }
 
