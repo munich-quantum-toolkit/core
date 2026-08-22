@@ -98,6 +98,10 @@ does not publish CPython 3.13t or 3.14t wheels.
   The frontend then advertises the classic nanobind platform ABI and cannot use
   the free-threaded backend. nanobind's current split workflow tests `abi3t`
   only on Linux.
+- Observation: cibuildwheel passes test requirements through `cmd.exe` on
+  Windows, where version-bound operators become shell redirections. Windows
+  wheel jobs therefore use the existing dependency-free import test; the regular
+  Windows job runs the full test suite.
 
 ## Decision Log
 

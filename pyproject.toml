@@ -292,7 +292,7 @@ test-command = "pytest test/python"
 build-frontend = "uv"
 
 [[tool.cibuildwheel.overrides]]
-select = ["cp*-win_arm64", "cp315*"]
+select = ["cp*-win_*", "cp315*"]
 test-groups = []
 test-sources = []
 test-command = "python -c \"import mqt.core.dd, mqt.core.ir, mqt.core.mlir, mqt.core.qdmi\""
