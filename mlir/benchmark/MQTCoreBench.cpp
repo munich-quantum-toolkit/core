@@ -103,10 +103,10 @@ llvm::cl::opt<std::string> countsInputPath(
   return status.type() != std::filesystem::file_type::not_found;
 }
 
-bool validateOutputTarget(const std::filesystem::path& path,
+void validateOutputTarget(const std::filesystem::path& path,
                           const bool mayOverwrite) {
   if (!pathExists(path)) {
-    return false;
+    return;
   }
   if (!mayOverwrite) {
     throw std::runtime_error("refusing to overwrite existing file '" +
@@ -119,7 +119,6 @@ bool validateOutputTarget(const std::filesystem::path& path,
     throw std::runtime_error("refusing to overwrite non-regular file '" +
                              path.string() + "'");
   }
-  return true;
 }
 
 struct OpenSibling {
@@ -175,56 +174,9 @@ stageFile(const std::filesystem::path& finalPath,
   return temporary.path;
 }
 
-[[nodiscard]] std::optional<std::filesystem::path>
-backupFile(const std::filesystem::path& finalPath, const bool exists) {
-  if (!exists) {
-    return std::nullopt;
-  }
-
-  for (size_t attempt = 0; attempt < 32; ++attempt) {
-    auto path = siblingPath(finalPath, "backup");
-    const auto error =
-        llvm::sys::fs::create_hard_link(finalPath.string(), path.string());
-    if (!error) {
-      return path;
-    }
-    if (error != std::errc::file_exists) {
-      throw std::runtime_error("failed to back up '" + finalPath.string() +
-                               "': " + error.message());
-    }
-  }
-  throw std::runtime_error("failed to choose a unique backup file next to '" +
-                           finalPath.string() + "'");
-}
-
 void removeIfPresent(const std::optional<std::filesystem::path>& path) {
   if (path) {
     llvm::sys::fs::remove(path->string());
-  }
-}
-
-void restoreFile(const std::filesystem::path& finalPath,
-                 std::optional<std::filesystem::path>& backupPath) {
-  const auto error = backupPath ? llvm::sys::fs::rename(backupPath->string(),
-                                                        finalPath.string())
-                                : llvm::sys::fs::remove(finalPath.string());
-  if (error) {
-    llvm::errs() << "failed to restore '" << finalPath.string()
-                 << "' after an output error: " << error.message();
-    if (backupPath) {
-      llvm::errs() << "; recovery backup remains at '" << backupPath->string()
-                   << "'";
-      backupPath.reset();
-    }
-    llvm::errs() << '\n';
-  }
-}
-
-void removeOwnedOutput(const std::filesystem::path& temporaryPath,
-                       const std::filesystem::path& finalPath) {
-  std::error_code error;
-  if (std::filesystem::equivalent(temporaryPath, finalPath, error) && !error) {
-    llvm::sys::fs::remove(finalPath.string());
   }
 }
 
@@ -266,8 +218,8 @@ generate(const std::string_view id, const Benchmark& benchmark,
   const auto programPath = directory / (baseName + extension);
   const auto manifestPath =
       directory / (baseName + "." + std::string(format) + ".manifest.json");
-  const auto programExisted = validateOutputTarget(programPath, mayOverwrite);
-  const auto manifestExisted = validateOutputTarget(manifestPath, mayOverwrite);
+  validateOutputTarget(programPath, mayOverwrite);
+  validateOutputTarget(manifestPath, mayOverwrite);
 
   auto program = mqt::benchmark::generateProgram(benchmark);
   if (!program) {
@@ -296,13 +248,9 @@ generate(const std::string_view id, const Benchmark& benchmark,
 
   std::optional<std::filesystem::path> temporaryProgram;
   std::optional<std::filesystem::path> temporaryManifest;
-  std::optional<std::filesystem::path> programBackup;
-  std::optional<std::filesystem::path> manifestBackup;
-  const auto removeTemporaryAndBackups = llvm::make_scope_exit([&] {
+  const auto removeTemporaryFiles = llvm::make_scope_exit([&] {
     removeIfPresent(temporaryProgram);
     removeIfPresent(temporaryManifest);
-    removeIfPresent(programBackup);
-    removeIfPresent(manifestBackup);
   });
 
   temporaryProgram = stageFile(programPath, serializedProgram);
@@ -317,9 +265,10 @@ generate(const std::string_view id, const Benchmark& benchmark,
     }
     if (const auto linkError = llvm::sys::fs::create_hard_link(
             temporaryManifest->string(), manifestPath.string())) {
-      removeOwnedOutput(*temporaryProgram, programPath);
       llvm::errs() << "failed to publish '" << manifestPath.string()
-                   << "': " << linkError.message() << '\n';
+                   << "': " << linkError.message() << "; program remains at '"
+                   << programPath.string()
+                   << "'; this invocation did not publish a manifest\n";
       return 1;
     }
     removeIfPresent(temporaryProgram);
@@ -327,14 +276,8 @@ generate(const std::string_view id, const Benchmark& benchmark,
     temporaryProgram.reset();
     temporaryManifest.reset();
   } else {
-    programBackup = backupFile(programPath, programExisted);
-    manifestBackup = backupFile(manifestPath, manifestExisted);
-
     if (const auto renameError = llvm::sys::fs::rename(
             temporaryProgram->string(), programPath.string())) {
-      if (programExisted) {
-        restoreFile(programPath, programBackup);
-      }
       llvm::errs() << "failed to publish '" << programPath.string()
                    << "': " << renameError.message() << '\n';
       return 1;
@@ -343,10 +286,10 @@ generate(const std::string_view id, const Benchmark& benchmark,
 
     if (const auto renameError = llvm::sys::fs::rename(
             temporaryManifest->string(), manifestPath.string())) {
-      restoreFile(programPath, programBackup);
-      restoreFile(manifestPath, manifestBackup);
       llvm::errs() << "failed to publish '" << manifestPath.string()
-                   << "': " << renameError.message() << '\n';
+                   << "': " << renameError.message() << "; program remains at '"
+                   << programPath.string()
+                   << "'; this invocation did not publish a manifest\n";
       return 1;
     }
     temporaryManifest.reset();

@@ -87,6 +87,27 @@ endif()
 file(SHA256 "${program_path}" original_program_hash)
 file(SHA256 "${manifest_path}" original_manifest_hash)
 
+set(manifest_only_directory "${OUTPUT_DIR}/manifest-only")
+file(MAKE_DIRECTORY "${manifest_only_directory}")
+set(manifest_only_path "${manifest_only_directory}/${manifest_name}")
+set(manifest_only_program_path "${manifest_only_directory}/${program_name}")
+file(COPY_FILE "${manifest_path}" "${manifest_only_path}")
+run_failure(
+  "generation beside an existing manifest"
+  "${CLI}"
+  generate
+  --request
+  "${request}"
+  --format
+  qc
+  --output
+  "${manifest_only_directory}")
+file(SHA256 "${manifest_only_path}" retained_manifest_only_hash)
+if(EXISTS "${manifest_only_program_path}" OR NOT retained_manifest_only_hash STREQUAL
+                                             original_manifest_hash)
+  message(FATAL_ERROR "a manifest collision created a program or changed the manifest")
+endif()
+
 run_failure(
   "generation without --overwrite"
   "${CLI}"
