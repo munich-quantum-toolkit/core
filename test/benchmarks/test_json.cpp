@@ -80,10 +80,6 @@ TEST(BenchmarkJSON, ParsesRequestsAndSerializesResolvedParameters) {
   EXPECT_EQ(
       toRequestJSON(qpe),
       R"({"benchmark":"qpe","parameters":{"method":"iterative","phase":{"denominator":4,"numerator":1},"precision":4},"schema_version":1})");
-
-  const auto integralFloats = ghzFromRequestJSON(
-      R"({"schema_version":1.0,"benchmark":"ghz","parameters":{"qubits":3.0}})");
-  EXPECT_EQ(integralFloats.options().qubits, 3);
 }
 
 TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
@@ -157,7 +153,13 @@ TEST(BenchmarkJSON, RejectsDuplicateUnknownAndMistypedRequestValues) {
         static_cast<void>(ghzFromRequestJSON(
             R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2.5}})"));
       },
-      "non-negative integer");
+      "encoded as an integer");
+  expectInvalid(
+      [] {
+        static_cast<void>(qpeFromRequestJSON(
+            R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":9007199254740993.0,"denominator":9007199254740994}}})"));
+      },
+      "encoded as an integer");
   expectInvalid(
       [] {
         static_cast<void>(qpeFromRequestJSON(

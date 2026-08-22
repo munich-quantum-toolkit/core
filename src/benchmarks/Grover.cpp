@@ -34,12 +34,7 @@ namespace {
   const auto states = std::ldexp(1.L, static_cast<int>(qubits));
   const auto theta = std::asin(1.L / std::sqrt(states));
   const auto target = std::numbers::pi_v<long double> / (4.L * theta) - 0.5L;
-  const auto lower = static_cast<size_t>(std::floor(target));
-  const auto upper = static_cast<size_t>(std::ceil(target));
-  if (successProbability(upper, theta) > successProbability(lower, theta)) {
-    return upper;
-  }
-  return lower;
+  return static_cast<size_t>(std::floor(target + 0.5L));
 }
 
 } // namespace

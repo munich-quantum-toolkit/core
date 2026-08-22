@@ -33,6 +33,11 @@ TEST(Grover, ResolvesTheDefaultIterationCountOnce) {
   EXPECT_NEAR(grover.otherProbability(), 0., 1e-31);
 }
 
+TEST(Grover, ResolvesLargeDefaultIterationCountsWithoutProbabilityRounding) {
+  const Grover grover{{.markedBitstring = std::string(62, '0')}};
+  EXPECT_EQ(*grover.options().iterations, 1'686'629'713);
+}
+
 TEST(Grover, AcceptsAnExplicitZeroIterationCount) {
   const Grover grover{{.markedBitstring = "01", .iterations = 0}};
   EXPECT_EQ(*grover.options().iterations, 0);

@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -34,9 +35,25 @@ namespace {
 using Json = nlohmann::json;
 
 constexpr uint64_t SCHEMA_VERSION = 1;
-constexpr uint64_t DEFINITION_VERSION = 1;
+constexpr uint64_t GHZ_DEFINITION_VERSION = 1;
+constexpr uint64_t GROVER_DEFINITION_VERSION = 1;
+constexpr uint64_t QPE_DEFINITION_VERSION = 1;
 constexpr std::string_view CASE_DOMAIN = "mqt-core:benchmark-case:v1";
 constexpr std::array<std::string_view, 3> BENCHMARK_IDS{"ghz", "grover", "qpe"};
+
+[[nodiscard]] uint64_t definitionVersion(const std::string_view benchmark) {
+  if (benchmark == "ghz") {
+    return GHZ_DEFINITION_VERSION;
+  }
+  if (benchmark == "grover") {
+    return GROVER_DEFINITION_VERSION;
+  }
+  if (benchmark == "qpe") {
+    return QPE_DEFINITION_VERSION;
+  }
+  throw std::invalid_argument("unsupported benchmark '" +
+                              std::string(benchmark) + "'");
+}
 
 [[noreturn]] void fail(const std::string_view source,
                        const std::string_view pointer,
@@ -47,7 +64,7 @@ constexpr std::array<std::string_view, 3> BENCHMARK_IDS{"ghz", "grover", "qpe"};
 
 [[nodiscard]] Json parseJSON(const std::string_view text,
                              const std::string_view source) {
-  std::vector<std::vector<std::string>> keysByDepth;
+  std::vector<std::unordered_set<std::string>> keysByDepth;
   const Json::parser_callback_t rejectDuplicates =
       [&](const int depth, const Json::parse_event_t event, Json& parsed) {
         if (event == Json::parse_event_t::object_start) {
@@ -60,10 +77,9 @@ constexpr std::array<std::string_view, 3> BENCHMARK_IDS{"ghz", "grover", "qpe"};
           const auto index = static_cast<size_t>(depth - 1);
           const auto& key = parsed.get_ref<const std::string&>();
           auto& keys = keysByDepth.at(index);
-          if (std::ranges::find(keys, key) != keys.end()) {
+          if (!keys.emplace(key).second) {
             fail(source, "$", "contains duplicate key '" + key + "'");
           }
-          keys.emplace_back(key);
         }
         return true;
       };
@@ -109,12 +125,7 @@ void rejectUnknownKeys(const Json& value,
                                        const std::string_view source,
                                        const std::string_view pointer) {
   if (value.is_number_float()) {
-    const auto parsed = value.get<double>();
-    if (!std::isfinite(parsed) || parsed < 0. || std::trunc(parsed) != parsed ||
-        parsed >= std::ldexp(1., 64)) {
-      fail(source, pointer, "must be a non-negative integer");
-    }
-    return static_cast<uint64_t>(parsed);
+    fail(source, pointer, "must be encoded as an integer");
   }
   if (!value.is_number_unsigned() &&
       (!value.is_number_integer() || value.get<int64_t>() < 0)) {
@@ -192,12 +203,14 @@ void requireSchemaVersion(const Json& root, const std::string_view source) {
                      "reference"},
                     source, "$");
   requireSchemaVersion(root, source);
-  static_cast<void>(requireBenchmarkId(root, source));
+  const auto benchmark = requireBenchmarkId(root, source);
   const auto definition =
       unsignedInteger(required(root, "definition_version", source, "$"), source,
                       "$/definition_version");
-  if (definition != DEFINITION_VERSION) {
-    fail(source, "$/definition_version", "must be 1");
+  const auto expectedDefinition = definitionVersion(benchmark);
+  if (definition != expectedDefinition) {
+    fail(source, "$/definition_version",
+         "must be " + std::to_string(expectedDefinition));
   }
   static_cast<void>(
       stringValue(required(root, "case_id", source, "$"), source, "$/case_id"));
@@ -372,10 +385,11 @@ void requireBenchmark(const Json& root, const std::string_view expected,
 }
 
 [[nodiscard]] Json semanticJSON(const std::string_view id,
+                                const uint64_t definitionVersionValue,
                                 const Json& parameters, const Output& output,
                                 const Json& reference) {
   return {{"benchmark", std::string(id)},
-          {"definition_version", DEFINITION_VERSION},
+          {"definition_version", definitionVersionValue},
           {"outputs",
            Json::array({{{"name", output.name}, {"width", output.width}}})},
           {"parameters", parameters},
@@ -383,18 +397,19 @@ void requireBenchmark(const Json& root, const std::string_view expected,
 }
 
 [[nodiscard]] Json semanticJSON(const GHZ& benchmark) {
-  return semanticJSON("ghz", parametersJSON(benchmark), benchmark.output(),
-                      referenceJSON(benchmark));
+  return semanticJSON("ghz", GHZ_DEFINITION_VERSION, parametersJSON(benchmark),
+                      benchmark.output(), referenceJSON(benchmark));
 }
 
 [[nodiscard]] Json semanticJSON(const Grover& benchmark) {
-  return semanticJSON("grover", parametersJSON(benchmark), benchmark.output(),
+  return semanticJSON("grover", GROVER_DEFINITION_VERSION,
+                      parametersJSON(benchmark), benchmark.output(),
                       referenceJSON(benchmark));
 }
 
 [[nodiscard]] Json semanticJSON(const QPE& benchmark) {
-  return semanticJSON("qpe", parametersJSON(benchmark), benchmark.output(),
-                      referenceJSON(benchmark));
+  return semanticJSON("qpe", QPE_DEFINITION_VERSION, parametersJSON(benchmark),
+                      benchmark.output(), referenceJSON(benchmark));
 }
 
 [[nodiscard]] std::string semanticCaseId(const Json& semantic) {
@@ -435,6 +450,7 @@ template <class Benchmark, class ParseParameters>
 }
 
 [[nodiscard]] Json baseRequestSchema(const std::string_view id,
+                                     const uint64_t definitionVersionValue,
                                      Json parameters) {
   return {{"$schema", "https://json-schema.org/draft/2020-12/schema"},
           {"additionalProperties", false},
@@ -444,7 +460,7 @@ template <class Benchmark, class ParseParameters>
             {"schema_version", {{"const", SCHEMA_VERSION}}}}},
           {"required", {"schema_version", "benchmark", "parameters"}},
           {"type", "object"},
-          {"x-mqt-definition-version", DEFINITION_VERSION}};
+          {"x-mqt-definition-version", definitionVersionValue}};
 }
 
 [[nodiscard]] Json ghzSchema() {
@@ -466,29 +482,31 @@ template <class Benchmark, class ParseParameters>
         {"then",
          {{"properties",
            {{"qubits", {{"maximum", GHZOptions::MAX_X_BASIS_QUBITS}}}}}}}}});
-  return baseRequestSchema("ghz", std::move(parameters));
+  return baseRequestSchema("ghz", GHZ_DEFINITION_VERSION,
+                           std::move(parameters));
 }
 
 [[nodiscard]] Json groverSchema() {
   return baseRequestSchema(
-      "grover", {{"additionalProperties", false},
-                 {"properties",
-                  {{"iterations",
-                    {{"maximum", std::numeric_limits<int32_t>::max()},
-                     {"minimum", 0},
-                     {"type", "integer"}}},
-                   {"marked_bitstring",
-                    {{"maxLength", 62},
-                     {"minLength", 2},
-                     {"pattern", "^[01]+$"},
-                     {"type", "string"}}}}},
-                 {"required", {"marked_bitstring"}},
-                 {"type", "object"}});
+      "grover", GROVER_DEFINITION_VERSION,
+      {{"additionalProperties", false},
+       {"properties",
+        {{"iterations",
+          {{"maximum", std::numeric_limits<int32_t>::max()},
+           {"minimum", 0},
+           {"type", "integer"}}},
+         {"marked_bitstring",
+          {{"maxLength", 62},
+           {"minLength", 2},
+           {"pattern", "^[01]+$"},
+           {"type", "string"}}}}},
+       {"required", {"marked_bitstring"}},
+       {"type", "object"}});
 }
 
 [[nodiscard]] Json qpeSchema() {
   return baseRequestSchema(
-      "qpe",
+      "qpe", QPE_DEFINITION_VERSION,
       {{"additionalProperties", false},
        {"properties",
         {{"method",
@@ -539,7 +557,7 @@ std::string benchmarkIdFromManifestJSON(const std::string_view json,
 std::string listBenchmarksJSON() {
   auto benchmarks = Json::array();
   for (const auto id : BENCHMARK_IDS) {
-    benchmarks.emplace_back(Json{{"definition_version", DEFINITION_VERSION},
+    benchmarks.emplace_back(Json{{"definition_version", definitionVersion(id)},
                                  {"id", std::string(id)}});
   }
   return Json{{"benchmarks", std::move(benchmarks)},
