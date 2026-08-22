@@ -177,6 +177,7 @@ if(BUILD_MQT_CORE_BINDINGS)
   set(MQT_CORE_WHEEL_TARGETS
       mqt-core-ir
       mqt-core-algorithms
+      mqt-core-benchmarks
       mqt-core-circuit-optimizer
       mqt-core-dd
       mqt-core-ir-bindings

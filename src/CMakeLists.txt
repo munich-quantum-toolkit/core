@@ -65,6 +65,9 @@ add_subdirectory(qasm3)
 # add the algorithms package
 add_subdirectory(algorithms)
 
+# add the benchmark semantic package
+add_subdirectory(benchmarks)
+
 # add the circuit_optimizer package
 add_subdirectory(circuit_optimizer)
 

@@ -36,7 +36,7 @@ authorization.
 - [x] (2026-08-22 09:24Z) Merged current `origin/main` without rebasing Daniel's commits and verified the signed merge commit.
 - [x] (2026-08-22 09:24Z) Read the repository agent rules, AI policy, and ExecPlan requirements.
 - [x] (2026-08-22 09:31Z) Made QC program cleanup deterministic with ordered allocation tracking and passed the focused builder regression test.
-- [ ] Add the MLIR-free benchmark instance and reference library with focused C++ tests.
+- [x] (2026-08-22 09:59Z) Added the MLIR-free benchmark instance and reference library and passed all 20 focused C++ tests.
 - [ ] Adapt Daniel's GHZ, Grover, QPE, and IQPE emitters to consume the typed instances and fix the known correctness and scaling defects.
 - [ ] Replace the size-only registry and `mqt-jeff-benchmarks` interface with strict versioned requests, deterministic manifests, and collision-safe output.
 - [ ] Add Python bindings and generated stubs for typed options, generation, references, and evaluation.
@@ -52,6 +52,7 @@ authorization.
 - Observation: The current QCO DD simulator does not execute `scf.for`. Small semantic tests must first lower structured QC through the optimized QCO pipeline or use an independently built equivalent circuit when the loop structure itself is under test.
 - Observation: Core already defines sampled bitstrings as big-endian: the leftmost character is the highest-index qubit. The benchmark result contract will reuse that convention.
 - Observation: Replacing two `DenseSet<Value>` members with `SetVector<Value>` fixes nondeterministic cleanup at the shared builder boundary. Evidence: `QCTest.BuilderDeallocatesDynamicResourcesDeterministically` passes and checks exact allocation/deallocation order for qubits and registers.
+- Observation: QPE reference probabilities can support precision above 1,024 without a large-integer dependency. Binary long division builds the nearest lower outcome and exact remainder in linear time; a wrapped sine ratio then evaluates only the requested outcome.
 
 ## Decision Log
 
@@ -109,9 +110,10 @@ outcome.
 
 First add `MQT::CoreBenchmarks`. Define shared `Evaluation` and output metadata,
 then three concrete families. GHZ options contain the qubit count, linear or
-star topology, and Z or X measurement basis. Grover options contain the number
-of search qubits, a required marked bitstring, and either an explicit iteration
-count or automatic selection. QPE options contain the precision, a rational
+star topology, and Z or X measurement basis. Grover options contain a required
+marked bitstring, whose width is the number of search qubits, and either an
+explicit iteration count or automatic selection. QPE options contain the
+precision, a rational
 phase in turns, and the standard or iterative method. Constructors validate and
 normalize all values. JSON parsing rejects missing required values, unknown
 keys, wrong types, invalid enum strings, and invalid numeric domains.
@@ -274,6 +276,11 @@ The deterministic-builder check ran as:
     ./build/release/mlir/unittests/Dialect/QC/IR/mqt-core-mlir-unittest-qc-ir --gtest_filter='QCTest.BuilderDeallocatesDynamicResourcesDeterministically'
     [  PASSED  ] 1 test.
 
+The semantic-reference check ran as:
+
+    ./build/release/test/benchmarks/mqt-core-benchmarks-test
+    [  PASSED  ] 20 tests.
+
 ## Interfaces and Dependencies
 
 The installed C++ target is `MQT::CoreBenchmarks`. Its public headers use only
@@ -302,3 +309,6 @@ boundary, accepted API decisions, and current-main merge.
 
 Revision note, 2026-08-22: Recorded the shared deterministic-cleanup fix and its
 focused passing test.
+
+Revision note, 2026-08-22: Recorded the completed typed semantic and analytic
+reference layer, including the arbitrary-width QPE check.
