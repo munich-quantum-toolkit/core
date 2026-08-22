@@ -278,7 +278,7 @@ PC170 = "We do not use rST files anymore"
 
 [tool.cibuildwheel]
 build = "cp3*"
-skip = ["*-musllinux_*", "cp313t-*", "cp314t-*"]
+skip = ["*-musllinux_*", "cp314t-*"]
 archs = "auto64"
 test-groups = ["test"]
 test-sources = [
