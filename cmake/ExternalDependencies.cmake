@@ -70,7 +70,7 @@ set(QDMI_MINIMUM_VERSION 1.4.0
         CACHE STRING "Minimum QDMI version")
 set(QDMI_VERSION 1.4.0
         CACHE STRING "QDMI version")
-set(QDMI_REV "3f8170e3c5e6125081e5fd576d7990b1c0990c69"
+set(QDMI_REV "05eedae555d6dc2567519c875ccd62552fe48d92"
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "simon1hofmann"
         CACHE STRING "QDMI repository owner (change when using a fork)")
