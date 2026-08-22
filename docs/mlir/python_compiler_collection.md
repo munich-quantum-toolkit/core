@@ -159,14 +159,8 @@ This compiler route does not construct an intermediate
 interfaces remain independent and retain their existing version range and
 behavior.
 
-The version-specific adapter uses Qiskit's native C API for flat circuit
-construction. Qiskit 2.5 provides C inspection functions, but no C constructors
-for classical expressions or structured control flow. During export, the adapter
-finalizes each validated block independently and then uses Qiskit's public
-Python classes to construct and insert the control-flow operations at their
-recorded positions. This post-processing is confined to the Qiskit 2.5 adapter
-in {code}`bindings/mlir/qiskit/Qiskit2_5.cpp`; the generic translation remains
-frontend-neutral.
+Qiskit 2.5's C API cannot construct classical expressions or structured control
+flow, so export uses Qiskit's public Python classes for these operations.
 
 | Circuit feature                                                   | Import               | Export         |
 | ----------------------------------------------------------------- | -------------------- | -------------- |

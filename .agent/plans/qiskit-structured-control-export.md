@@ -21,9 +21,10 @@ result again.
 The Qiskit 2.5 C API cannot construct control-flow operations or classical
 expressions. The generic exporter therefore validates and normalizes the whole
 circuit before it allocates a Qiskit writer. The version-specific writer emits
-ordinary operations through the C API, finalizes nested blocks, and then uses
-Qiskit's public Python classes to insert the already validated control-flow
-operations at their recorded positions.
+ordinary operations through the C API and emits a zero-operand barrier as a
+temporary placeholder for each control-flow operation. After conversion to
+Python, it finalizes nested blocks and replaces each placeholder with the
+already validated public Qiskit control-flow operation.
 
 This plan covers only structured-control export. Relaxing measurement-result
 store adjacency across quantum-only operations is an independently reviewable
@@ -87,6 +88,13 @@ follow-up with its own ExecPlan and branch.
 - [x] (2026-08-22 07:04Z) Pass the final clean repository lint run and an
       independent review with no remaining actionable findings; the audit fix is
       ready to commit and push.
+- [x] (2026-08-22 07:50Z) Apply the final complexity pass by sharing exporter
+      parameter state and native Qiskit symbols, replacing deferred insertion
+      bookkeeping with in-place placeholders, reducing repeated round trips and
+      source-preservation checks, and shortening internal user-documentation
+      detail. Rebuild the binding, pass all 208 minimized translation tests on
+      Qiskit 2.5.0, 2.5.1, and 2.5.2, regenerate unchanged stubs, and pass the
+      complete repository lint session.
 
 ## Surprises & Discoveries
 
@@ -145,6 +153,23 @@ follow-up with its own ExecPlan and branch.
   parameter to the emitted Qiskit body. Evidence: a projected value used only by
   a dead `math.sin` expression caused finalization to report that the loop
   parameter was absent from its body.
+
+- Observation: Parent and child native writers previously created separate
+  Qiskit parameter objects and repaired their identity after Python conversion.
+  Evidence: all generated parameter names are unique, so one symbol table shared
+  by the writer tree creates the required identity directly and removes the
+  `assign_parameters` pass.
+
+- Observation: Every exported control-flow block uses all root qubits and
+  classical bits in identity order. Evidence: each child writer is created with
+  the root bit counts and is rebased by constructing a circuit from the parent's
+  exact bit lists and composing once.
+
+- Observation: Re-importing most exported test circuits repeated #2175's import
+  coverage without checking additional exporter behavior. Evidence: direct
+  assertions already inspect conditions, case labels, captures, parameter
+  identities, and block contents. One broad round trip and focused semantic
+  round trips retain the end-to-end contract.
 
 ## Decision Log
 
@@ -215,6 +240,26 @@ follow-up with its own ExecPlan and branch.
   a Qiskit loop parameter that its body does not contain. Date/Author:
   2026-08-22 / Codex.
 
+- Decision: Append a zero-operand native barrier for each deferred control-flow
+  operation and replace that exact instruction after converting the circuit to
+  Python. Rationale: an in-place placeholder preserves instruction order without
+  merging insertion offsets with controlled-unitary replacements. A focused
+  zero-qubit, CBit-only regression verifies that a zero-operand placeholder can
+  become a control-flow instruction with classical operands. Date/Author:
+  2026-08-22 / Codex.
+
+- Decision: Share one native parameter-symbol table among the root writer and
+  all child writers, and share the exporter's SSA-to-parameter state across
+  lexical block collection. Rationale: MLIR values remain unique across nested
+  regions and generated loop names avoid collisions, so copied scopes and
+  post-construction Python parameter replacement add no semantic protection.
+  Date/Author: 2026-08-22 / Codex.
+
+- Decision: Make the all-root-bit invariant explicit and remove per-operation
+  identity capture maps. Rationale: the exporter never produced sparse or
+  permuted captures, and retaining vectors implied unsupported generality while
+  duplicating allocation and validation work. Date/Author: 2026-08-22 / Codex.
+
 ## Outcomes & Retrospective
 
 Structured Qiskit control flow now exports recursively through a normalized,
@@ -224,13 +269,14 @@ switches, and loop parameter identity round-trip. Preflight rejects stale
 snapshots, unsupported expression/result forms, invalid labels, and undefined
 CBit reads or returns before allocating the Qiskit writer.
 
-The MLIR binding builds successfully after the final merge onto `main`. All 211
-tests in `test/python/test_mlir_qiskit_translation.py` pass against the exact
-worktree-built extension. Stub generation and repository lint also pass. The
-complete documentation build was explicitly deferred for this handoff. The
-semantic diff leaves the refreshed import reader and current name-keyed scalar
-parameter normalizer unchanged, while recursively checking that every named
-scalar input remains reachable from the emitted top-level or nested Qiskit
+After the final complexity pass, the release MLIR binding builds successfully
+and all 208 tests in `test/python/test_mlir_qiskit_translation.py` pass against
+the exact worktree-built extension with Qiskit 2.5.0, 2.5.1, and 2.5.2. Stub
+generation produces no tracked changes, and the complete repository lint session
+passes. The documentation build remains explicitly deferred for this handoff.
+The semantic diff leaves the refreshed import reader and current name-keyed
+scalar parameter normalizer unchanged, while recursively checking that every
+named scalar input remains reachable from the emitted top-level or nested Qiskit
 parameter trees. Speculative expression recognition and snapshot validation are
 bounded before recursion can consume unbounded resources, and dead loop
 parameter expressions no longer expose invalid Qiskit metadata. The
@@ -250,7 +296,7 @@ normalized writer stream. `ExportState` discovers qubit resources, returned
 instructions. A CBit register is a first-class SSA value. `cbit.load` reads one
 element, `cbit.store` writes one element, and `cbit.get_reg` plus
 `cbit.get_index` describe a measurement destination. Each SCF region becomes a
-nested circuit block with captured root qubits and classical bits.
+nested circuit block over all root qubits and classical bits.
 
 An SCF operation is MLIR's structured-control representation. `scf.if` has one
 or two regions, `scf.for` has a constant iteration range, `scf.while` has a
@@ -268,11 +314,12 @@ Qiskit-representable value.
 
 `bindings/mlir/qiskit/Qiskit2_5.cpp` implements the version-specific reader and
 writer. The reader and its public-Python expression capture logic stay
-unchanged. The writer preserves scalar symbols by their validated unique names.
-`PythonClassicalBuilder` reconstructs normalized expression trees. The writer
-records control-flow insertion points, finalizes child writers against the
-parent's exact bit objects, creates Python control-flow operations, and inserts
-them in top-down order.
+unchanged. The root writer and its children share scalar symbols by their
+validated unique names. `PythonClassicalBuilder` reconstructs normalized
+expression trees. The writer emits one temporary native barrier at each
+control-flow position, finalizes child writers against the parent's exact bit
+objects, creates Python control-flow operations, and replaces the barriers in
+place.
 
 `test/python/test_mlir_qiskit_translation.py` contains the end-to-end import and
 export contract. `docs/mlir/python_compiler_collection.md` contains the public
@@ -283,18 +330,18 @@ support table and its exact restrictions.
 The implementation adds `CircuitWriter::addControlFlow` in
 `bindings/mlir/qiskit/QiskitTranslation.h`. The method accepts a
 `ControlFlowKind`, one classical target, loop and switch metadata, owned block
-writers, and the captured root qubit and classical-bit indices.
+writers. Each block writer has the full root qubit and classical-bit counts.
 
-`bindings/mlir/qiskit/Qiskit2_5.cpp` contains a `PythonClassicalBuilder` that
-turns constants, captured Clbits, captured ClassicalRegisters, casts, indexing,
-unary operations, and binary operations into Qiskit's public expression objects.
-`NativeCircuitWriter` records control flow without adding a C placeholder.
-During `finish`, it converts native circuits to Python, rebases each nested
-block onto the parent's exact Qubit and Clbit objects, preserves canonical
-scalar parameter objects across blocks, builds the public control-flow
-operations, and inserts them at stable instruction positions. It validates block
-shape, captures, loop metadata, switch labels, and bit counts before
-construction.
+The `PythonClassicalBuilder` in `bindings/mlir/qiskit/Qiskit2_5.cpp` turns
+constants, captured Clbits, captured ClassicalRegisters, casts, indexing, unary
+operations, and binary operations into Qiskit's public expression objects.
+`NativeCircuitWriter` appends a zero-operand native barrier as a placeholder for
+each control-flow operation. During `finish`, it converts native circuits to
+Python, rebases each nested block onto the parent's exact Qubit and Clbit
+objects, uses the symbol table shared by the writer tree, builds the public
+control-flow operations, and replaces the placeholders in place. It validates
+native writer compatibility and bit counts before construction; generic
+preflight has already validated block shape, loop metadata, and switch labels.
 
 `bindings/mlir/qiskit/QiskitExport.cpp` preserves the existing scalar parameter
 normalizer and resource discovery while adding recursive circuit and
@@ -303,8 +350,8 @@ snapshot validation, loop projection, recursive collection, recursive
 constructible-gate validation, and recursive writer emission. It uses only CBit
 operations for classical state and preflights all unsupported results, dynamic
 indices or bounds, signed or over-wide expressions, non-finite values, repeated
-captures or labels, stale snapshots, repeated measurement destinations, and
-unsupported loop forms before writer allocation.
+labels, stale snapshots, repeated measurement destinations, and unsupported loop
+forms before writer allocation.
 
 For undefined returned CBit registers, scan validated stores in the entry block
 in program order. Only an unconditional measurement store makes its destination
@@ -403,9 +450,7 @@ At completion, `CircuitWriter` has this additional virtual operation:
     void addControlFlow(
         ControlFlowKind kind, ClassicalTarget target, Loop loop,
         std::vector<SwitchCase> switchCases,
-        std::vector<std::unique_ptr<CircuitWriter>> blocks,
-        const std::vector<uint32_t>& qubits,
-        const std::vector<uint32_t>& clbits);
+        std::vector<std::unique_ptr<CircuitWriter>> blocks);
 
 `QiskitExport.cpp` owns `ExportedCircuit` and `ExportedControlFlow` records and
 recursively calls this operation only after complete preflight. `Qiskit2_5.cpp`
@@ -423,4 +468,8 @@ contract; only the export-specific delta was replayed. Recorded the final
 low-bit and constant-index corrections together with the required stubs, lint,
 deferred documentation build, and 208-test validation after the last parent
 update. Recorded the squash-merge resolution and the bounded-preflight and dead
-loop-parameter fixes found during the post-merge audit.
+loop-parameter fixes found during the post-merge audit. Recorded the final
+complexity pass that shares parameter state, replaces deferred insertion with
+native placeholders, makes the all-root-bit invariant explicit, and reduces
+repeated test and documentation work; recorded the successful build, unchanged
+stubs, clean lint, and 208-test Qiskit 2.5.0-2.5.2 matrix.
