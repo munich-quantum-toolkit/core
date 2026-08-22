@@ -32,47 +32,159 @@ authorization.
 
 ## Progress
 
-- [x] (2026-08-22 09:24Z) Archived the exact local heads of #2135 and #2204 and created a separate implementation branch.
-- [x] (2026-08-22 09:24Z) Merged current `origin/main` without rebasing Daniel's commits and verified the signed merge commit.
-- [x] (2026-08-22 09:24Z) Read the repository agent rules, AI policy, and ExecPlan requirements.
-- [x] (2026-08-22 09:31Z) Made QC program cleanup deterministic with ordered allocation tracking and passed the focused builder regression test.
-- [x] (2026-08-22 09:59Z) Added the MLIR-free benchmark instance and reference library and passed all 20 focused C++ tests.
-- [x] (2026-08-22 10:06Z) Added strict request, manifest, count, evaluation, JSON Schema, and stable case-ID support; all 29 benchmark-library tests pass.
-- [ ] Adapt Daniel's GHZ, Grover, QPE, and IQPE emitters to consume the typed instances and fix the known correctness and scaling defects.
-- [ ] Replace the size-only registry and `mqt-jeff-benchmarks` interface with strict versioned requests, deterministic manifests, and collision-safe output.
-- [ ] Add Python bindings and generated stubs for typed options, generation, references, and evaluation.
-- [ ] Add independent semantic simulation, structural, CLI, and cross-interface tests.
-- [ ] Remove the old `MQT::CoreAlgorithms` implementation and legacy DD evaluation after replacement tests pass.
-- [ ] Update documentation, `CHANGELOG.md`, and `UPGRADING.md` with every human contributor.
-- [ ] Run focused builds and tests, the install and wheel checks, documentation, and `uvx nox -s lint`.
+- [x] (2026-08-22 09:24Z) Archived the exact local heads of #2135 and #2204 and
+      created a separate implementation branch.
+- [x] (2026-08-22 09:24Z) Merged current `origin/main` without rebasing Daniel's
+      commits and verified the signed merge commit.
+- [x] (2026-08-22 09:24Z) Read the repository agent rules, AI policy, and
+      ExecPlan requirements.
+- [x] (2026-08-22 09:31Z) Made QC program cleanup deterministic with ordered
+      allocation tracking and passed the focused builder regression test.
+- [x] (2026-08-22 09:59Z) Added the MLIR-free benchmark instance and reference
+      library and passed all 20 focused C++ tests.
+- [x] (2026-08-22 10:00Z) Prototyped returned-classical-register sampling and
+      passed all eight focused sampling tests; this change must be restacked
+      directly after #2077 before publication.
+- [x] (2026-08-22 10:06Z) Added strict request, manifest, count, evaluation,
+      JSON Schema, and stable case-ID support; all 29 benchmark-library tests
+      pass.
+- [x] (2026-08-22 11:07Z) Adapted Daniel's GHZ, Grover, QPE, and IQPE emitters
+      to typed instances and passed structural and edge-case tests.
+- [x] (2026-08-22 11:30Z) Replaced the size-only CLI with strict requests,
+      deterministic manifests, analytic evaluation, and collision-safe output.
+- [x] (2026-08-22 11:28Z) Added typed Python bindings and generated stubs
+      without duplicating the MLIR runtime across extension modules.
+- [x] (2026-08-22 11:27Z) Added structural, CLI, and cross-interface tests.
+      Proved the independent DD semantic suite locally and reserved it for the
+      follow-up stack above #2077, where its returned-register sampler belongs.
+- [x] (2026-08-22 11:44Z) Removed the unowned `MQT::CoreAlgorithms` target and
+      legacy DD evaluation after the replacement reference and emitter tests
+      passed.
+- [x] (2026-08-22 11:45Z) Added one benchmark guide and updated `CHANGELOG.md`
+      and `UPGRADING.md` with both human contributors.
+- [x] (2026-08-22 12:05Z) Completed independent reference, frontend, and
+      packaging audits. Fixed cross-platform Grover iteration selection, exact
+      JSON integer parsing, duplicate-key complexity, per-family definition
+      versions, and unsafe output rollback.
+- [ ] Rerun lint after the audit fixes and create the clean local branch stack
+      without the #2077 follow-up changes.
 
 ## Surprises & Discoveries
 
-- Observation: The worktree started detached at Daniel's exact #2135 head, `5e5580eb345249fd1123680994800c7dad85444d`, with no local changes. Evidence: `git status --short --branch` reported `HEAD (no branch)` and `git rev-parse HEAD` returned that hash.
-- Observation: `origin/main` advanced after Daniel's last merge, but a merge-tree probe found no conflicts. A signed merge preserves all of Daniel's existing commit objects, unlike a rebase.
-- Observation: The current QCO DD simulator does not execute `scf.for`. Small semantic tests must first lower structured QC through the optimized QCO pipeline or use an independently built equivalent circuit when the loop structure itself is under test.
-- Observation: Core already defines sampled bitstrings as big-endian: the leftmost character is the highest-index qubit. The benchmark result contract will reuse that convention.
-- Observation: Replacing two `DenseSet<Value>` members with `SetVector<Value>` fixes nondeterministic cleanup at the shared builder boundary. Evidence: `QCTest.BuilderDeallocatesDynamicResourcesDeterministically` passes and checks exact allocation/deallocation order for qubits and registers.
-- Observation: QPE reference probabilities can support precision above 1,024 without a large-integer dependency. Binary long division builds the nearest lower outcome and exact remainder in linear time; a wrapped sine ratio then evaluates only the requested outcome.
-- Observation: Core has no installed stable-hash dependency. A small private SHA-256 implementation keeps the public target free of LLVM and has published empty, short, and multiblock test vectors.
+- Observation: The worktree started detached at Daniel's exact #2135 head,
+  `5e5580eb345249fd1123680994800c7dad85444d`, with no local changes. Evidence:
+  `git status --short --branch` reported `HEAD (no branch)` and
+  `git rev-parse HEAD` returned that hash.
+- Observation: `origin/main` advanced after Daniel's last merge, but a
+  merge-tree probe found no conflicts. A signed merge preserves all of Daniel's
+  existing commit objects, unlike a rebase.
+- Observation: Pull request #2078 already interprets `scf.for`, dynamic QTensor
+  allocation, QTensor transport through regions and calls, and bound gate
+  parameters. Adding narrower QTensor support or compensating loop-unroll
+  behavior in the benchmark branch would duplicate that DD stack.
+- Observation: Existing target mapping removes QTensor allocation, extraction,
+  insertion, and deallocation before benchmark simulation. The benchmark branch
+  therefore does not need #2078. Standard and iterative QPE still need full loop
+  unrolling because #2077 does not interpret `tensor.extract` angle tables.
+- Observation: Core already defines sampled bitstrings as big-endian: the
+  leftmost character is the highest-index qubit. The benchmark result contract
+  will reuse that convention.
+- Observation: Replacing two `DenseSet<Value>` members with `SetVector<Value>`
+  fixes nondeterministic cleanup at the shared builder boundary. Evidence:
+  `QCTest.BuilderDeallocatesDynamicResourcesDeterministically` passes and checks
+  exact allocation/deallocation order for qubits and registers.
+- Observation: QPE reference probabilities can support precision above 1,024
+  without a large-integer dependency. Binary long division builds the nearest
+  lower outcome and exact remainder in linear time; a wrapped sine ratio then
+  evaluates only the requested outcome.
+- Observation: The QCO DD simulator already tracked measured CBit registers in
+  its internal classical environment. Returning those bits after each shot
+  provides independent benchmark outcomes without a second interpreter.
+- Observation: Core has no installed stable-hash dependency. A small private
+  SHA-256 implementation keeps the public target free of LLVM and has published
+  empty, short, and multiblock test vectors.
+- Observation: Returning an MLIR object from a second Python extension that
+  statically links MLIR creates incompatible process-local MLIR type IDs. The
+  benchmark extension now passes canonical request JSON to one private function
+  in the existing `mqt.core.mlir` extension, which creates and owns the
+  `QCProgram`.
+- Observation: Comparing two nearly unit Grover probabilities made automatic
+  iteration selection depend on `long double` width. Rounding the first-peak
+  iteration directly gives the same width-62 instance on all supported hosts.
+- Observation: A two-file rollback cannot safely remove a path after a separate
+  ownership check. The CLI now publishes the manifest last and leaves an orphan
+  program on a second-file failure. An orphan has no completion marker and no
+  final path is deleted during rollback.
 
 ## Decision Log
 
-- Decision: Add a new installed `MQT::CoreBenchmarks` target instead of repurposing `MQT::CoreAlgorithms`. Rationale: the accepted design removes the legacy target and gives semantic benchmark instances a name that does not imply circuit construction. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
-- Decision: Keep the MLIR emitter internal to the build and wheel. Rationale: exporting it would make the installed ordinary-Core CMake package depend on LLVM and MLIR and would require moving the existing install aggregation. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
-- Decision: Ship only GHZ, Grover, and QPE as public benchmark families in the foundation. Standard and iterative QPE are methods of one family. Rationale: these three have compact analytic references and cover topology, an explicit problem instance, exact arithmetic, and dynamic control flow. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
-- Decision: Require a reference for every registered benchmark. Rationale: a generator without an independent expected result cannot prove algorithmic correctness. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
-- Decision: Use concrete C++ option types and a fixed registry only at the JSON boundary. Rationale: this keeps direct APIs typed without a universal map, variant of all future algorithms, plugin hierarchy, or public JSON dependency. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
-- Decision: Represent a QPE phase as a reduced rational number of turns. Rationale: exact integer arithmetic can reduce controlled powers modulo one turn before conversion to `double`, avoiding overflow and loss of exact cases. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
-- Decision: Use the existing big-endian outcome convention and name logical output registers in every reference. Rationale: adapters can normalize backend layouts once without changing analytic formulas. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
-- Decision: Preserve Daniel's program work in #2135 and park non-foundation programs in the archived #2204 line. Rationale: the redesign narrows the first merge without discarding or reattributing his implementation and research. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
-- Decision: Identify a semantic case with the full lowercase SHA-256 of its canonical manifest payload, prefixed by a versioned domain separator. Rationale: the ID is stable across C++ and Python implementations and avoids short-hash collisions without adding an installed dependency. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
-- Decision: Limit GHZ width and QPE precision to 1,000,000. Rationale: strict request parsing must reject tiny inputs that would otherwise request unbounded allocation, while retaining ample range for structured-program scaling. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
+- Decision: Add a new installed `MQT::CoreBenchmarks` target instead of
+  repurposing `MQT::CoreAlgorithms`. Rationale: the accepted design removes the
+  legacy target and gives semantic benchmark instances a name that does not
+  imply circuit construction. Date/Author: 2026-08-22 / Lukas Burgholzer and
+  Codex.
+- Decision: Keep the MLIR emitter internal to the build and wheel. Rationale:
+  exporting it would make the installed ordinary-Core CMake package depend on
+  LLVM and MLIR and would require moving the existing install aggregation.
+  Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
+- Decision: Ship only GHZ, Grover, and QPE as public benchmark families in the
+  foundation. Standard and iterative QPE are methods of one family. Rationale:
+  these three have compact analytic references and cover topology, an explicit
+  problem instance, exact arithmetic, and dynamic control flow. Date/Author:
+  2026-08-22 / Lukas Burgholzer and Codex.
+- Decision: Require a reference for every registered benchmark. Rationale: a
+  generator without an independent expected result cannot prove algorithmic
+  correctness. Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
+- Decision: Use concrete C++ option types and a fixed registry only at the JSON
+  boundary. Rationale: this keeps direct APIs typed without a universal map,
+  variant of all future algorithms, plugin hierarchy, or public JSON dependency.
+  Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
+- Decision: Represent a QPE phase as a reduced rational number of turns.
+  Rationale: exact integer arithmetic can reduce controlled powers modulo one
+  turn before conversion to `double`, avoiding overflow and loss of exact cases.
+  Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
+- Decision: Use the existing big-endian outcome convention and name logical
+  output registers in every reference. Rationale: adapters can normalize backend
+  layouts once without changing analytic formulas. Date/Author: 2026-08-22 /
+  Lukas Burgholzer and Codex.
+- Decision: Preserve Daniel's program work in #2135 and park non-foundation
+  programs in the archived #2204 line. Rationale: the redesign narrows the first
+  merge without discarding or reattributing his implementation and research.
+  Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
+- Decision: Identify a semantic case with the full lowercase SHA-256 of its
+  canonical manifest payload, prefixed by a versioned domain separator.
+  Rationale: the ID is stable across C++ and Python implementations and avoids
+  short-hash collisions without adding an installed dependency. Date/Author:
+  2026-08-22 / Lukas Burgholzer and Codex.
+- Decision: Limit GHZ width and QPE precision to 1,000,000. Rationale: strict
+  request parsing must reject tiny inputs that would otherwise request unbounded
+  allocation, while retaining ample range for structured-program scaling.
+  Date/Author: 2026-08-22 / Lukas Burgholzer and Codex.
+- Decision: Keep DD execution changes in the stack that starts at #2077. Add the
+  missing returned-CBit outcome adapter directly after #2077. Before simulation,
+  use the existing target-mapping pass to replace QTensor values with static
+  qubits. Keep the nested-loop unroll correction as a separate optimizer fix
+  because QPE angle tables use `tensor.extract`, which #2077 does not interpret.
+  Rationale: this reuses the compiler and the DD stack at their existing
+  ownership boundaries and adds no parallel QTensor interpreter. Date/Author:
+  2026-08-22 / Lukas Burgholzer and Codex.
 
 ## Outcomes & Retrospective
 
-Implementation is in progress. The archival refs and signed merge establish a
-safe attribution boundary. No remote state has changed.
+The foundation now provides one semantic owner for typed GHZ, Grover, and QPE
+instances, analytic references, strict requests and manifests, structured MLIR
+generation, a CLI, and Python bindings. The old CoreAlgorithms and DD evaluation
+targets are gone. The installed C++ API remains free of MLIR and JSON types.
+
+Daniel's exact #2135 commit objects remain below the signed merge. His emitters
+and jeff path evolved in place. New architecture, reference, packaging, and
+removal work is in separately authored commits. The archived #2204 head keeps
+the remaining catalog available for later typed migrations.
+
+The DD comparison prevented a parallel QTensor interpreter and duplicate
+deallocation behavior. The returned-final-CBit sampler and the independent
+semantic benchmark suite will live above #2077, not in the benchmark foundation.
+No remote state has changed.
 
 ## Context and Orientation
 
@@ -90,9 +202,10 @@ C++ benchmark instances and emits `mlir::QCProgram`. It does not choose defaults
 or calculate a second reference.
 
 The Python MLIR extension lives in `bindings/mlir/` and is installed as
-`mqt.core.mlir`. A small benchmark binding module may link both
-`MQT::CoreBenchmarks` and the internal emitter, but the installed pure C++ target
-must stay free of MLIR. Generated `.pyi` files are produced with
+`mqt.core.mlir`. The small benchmark binding module links only
+`MQT::CoreBenchmarks`. Generation crosses into the existing MLIR extension as a
+canonical request string so only one extension owns MLIR objects. The installed
+pure C++ target stays free of MLIR. Generated `.pyi` files are produced with
 `uvx nox -s stubs`; they are never edited by hand.
 
 The old installed target is defined in `src/algorithms/CMakeLists.txt`, with
@@ -117,10 +230,10 @@ then three concrete families. GHZ options contain the qubit count, linear or
 star topology, and Z or X measurement basis. Grover options contain a required
 marked bitstring, whose width is the number of search qubits, and either an
 explicit iteration count or automatic selection. QPE options contain the
-precision, a rational
-phase in turns, and the standard or iterative method. Constructors validate and
-normalize all values. JSON parsing rejects missing required values, unknown
-keys, wrong types, invalid enum strings, and invalid numeric domains.
+precision, a rational phase in turns, and the standard or iterative method.
+Constructors validate and normalize all values. JSON parsing rejects missing
+required values, unknown keys, wrong types, invalid enum strings, and invalid
+numeric domains.
 
 Implement references with formulas rather than a class hierarchy. GHZ in Z has
 probability one half at all-zero and all-one. GHZ in X is uniform over even
@@ -133,15 +246,15 @@ sine-ratio form of the Dirichlet-kernel distribution, with exact integer checks
 for deterministic cases.
 
 Then replace the size-only MLIR callbacks with typed overloads for GHZ, Grover,
-and QPE. Reuse Daniel's builder code where it is correct. GHZ becomes one emitter
-with topology and basis branches. Grover removes the flag ancilla, applies X
-around zero bits of the explicit marked string, uses a direct multi-controlled
-phase oracle, and emits the resolved iteration count only after checking the
-MLIR index range. QPE orders controlled powers consistently with the inverse
-Fourier transform, computes every phase power with integer modular arithmetic,
-and shares the same typed phase and reference between standard and iterative
-methods. Avoid eager register element loads when structured indexed loops are
-sufficient.
+and QPE. Reuse Daniel's builder code where it is correct. GHZ becomes one
+emitter with topology and basis branches. Grover removes the flag ancilla,
+applies X around zero bits of the explicit marked string, uses a direct
+multi-controlled phase oracle, and emits the resolved iteration count only after
+checking the MLIR index range. QPE orders controlled powers consistently with
+the inverse Fourier transform, computes every phase power with integer modular
+arithmetic, and shares the same typed phase and reference between standard and
+iterative methods. Avoid eager register element loads when structured indexed
+loops are sufficient.
 
 Replace the current registry with three fixed entries. A generic request has
 `schema_version`, `benchmark`, and `parameters`. Parsing produces one typed
@@ -153,10 +266,10 @@ case ID.
 
 Rename the executable to `mqt-core-bench`. It provides `list`, `describe`,
 `generate`, and `evaluate`, but generation handles one request per invocation.
-Output names contain the benchmark ID and case ID. Write a temporary sibling
-and rename it only after successful generation. Existing files are rejected
-unless the caller passes an explicit overwrite option. Remove the size-only
-`-n` and all-program batch behavior that caused stale mixed corpora.
+Output names contain the benchmark ID and case ID. Write a temporary sibling and
+rename it only after successful generation. Existing files are rejected unless
+the caller passes an explicit overwrite option. Remove the size-only `-n` and
+all-program batch behavior that caused stale mixed corpora.
 
 Add Python bindings with keyword-only option constructors. Python uses
 `fractions.Fraction` for QPE input and renders the canonical reduced fraction as
@@ -188,7 +301,7 @@ Build and test structured emission next:
 Build the CLI and exercise one request after its interface lands:
 
     cmake --build --preset release --target mqt-core-bench
-    ./build/release/mlir/benchmark/mqt-core-bench generate --request test/benchmarks/requests/qpe-inexact.json --format jeff --output build/release/qpe.jeff
+    ./build/release/mlir/benchmark/mqt-core-bench generate --request test/benchmarks/requests/qpe-inexact.json --format jeff --output build/release/benchmarks
 
 The command must print the generated case ID and paths. A second invocation
 without the overwrite option must fail without changing either file.
@@ -219,9 +332,9 @@ and outcome in this plan.
 
 ## Validation and Acceptance
 
-For GHZ, exact reference checks must accept only `00...0` and `11...1` in Z,
-and every even-parity string with equal probability in X. DD samples of both
-linear and star emitters must fit those references.
+For GHZ, exact reference checks must accept only `00...0` and `11...1` in Z, and
+every even-parity string with equal probability in X. DD samples of both linear
+and star emitters must fit those references.
 
 For Grover, reference probabilities must sum to one for explicit and automatic
 iterations. A small DD sample must favor the requested marked bitstring, not
@@ -232,8 +345,8 @@ For QPE, phases `3/16` at precision four and greater must be deterministic at
 the corresponding outcome. An inexact phase such as `1/3` must match the
 analytic distribution within a statistically justified finite-shot tolerance.
 Precision 55 and larger must not produce an infinite or non-finite rotation.
-Standard and iterative methods must expose the same reference and logical
-output ordering.
+Standard and iterative methods must expose the same reference and logical output
+ordering.
 
 The same typed request through C++, Python, and JSON must produce byte-identical
 canonical manifest JSON and the same case ID. Repeated generation must be
@@ -243,8 +356,8 @@ changing only the output format must not.
 The CLI must reject malformed JSON, unknown parameters, unsupported benchmark
 IDs, invalid domains, existing output files, and partial generation without
 leaving a final file. Installed C++ consumers must find `MQT::CoreBenchmarks`.
-The Python wheel must import `mqt.core.benchmarks` without exposing LLVM types in
-its option or reference objects.
+The Python wheel must import `mqt.core.benchmarks` without exposing LLVM types
+in its option or reference objects.
 
 After removal, active source and package metadata must have no reference to
 `MQT::CoreAlgorithms`, `mqt-core-algorithms`, or the removed public headers.
@@ -272,8 +385,8 @@ The initial attribution boundary is:
     current main merged: 9c7a2d55a0da4bb577ec1b5bb919a2dc89abbeff
     signed merge: 00f3c8e5dc80cf1ff2829b42dbac6c82fef05088
 
-`git verify-commit 00f3c8e5dc80cf1ff2829b42dbac6c82fef05088`
-reported a good signature from the configured maintainer key.
+`git verify-commit 00f3c8e5dc80cf1ff2829b42dbac6c82fef05088` reported a good
+signature from the configured maintainer key.
 
 The deterministic-builder check ran as:
 
@@ -285,9 +398,28 @@ The semantic-reference check ran as:
     ./build/release/test/benchmarks/mqt-core-benchmarks-test
     [  PASSED  ] 20 tests.
 
-After the strict JSON and case-ID layer landed, the same test binary reported:
+After the strict JSON, case-ID, and portability fixes landed, the same test
+binary reported:
 
-    [  PASSED  ] 29 tests.
+    [  PASSED  ] 30 tests.
+
+The returned-register sampler check ran as:
+
+    ./build/release/mlir/unittests/Dialect/QCO/Utils/mqt-core-mlir-unittest-qco-utils --gtest_filter='QCODDFunctionalityTest.Sample*'
+    [  PASSED  ] 8 tests.
+
+The complete configured C++ test suite completed all 3,956 tests. One device
+query test reported its expected skip. The ordinary Python test sessions passed
+on Python 3.10 through 3.14 with 684, 723, 723, 723, and 734 passing tests. The
+minimum-dependency sessions passed on the same versions with 495, 534, 534, 534,
+and 545 passing tests. The documentation build passed with warnings treated as
+errors after generating the MLIR reference pages.
+
+A fresh wheel installed in an isolated environment and ran `mqt-core-bench`
+through the packaged Python launcher. A fresh native Runtime install also ran
+the CLI. Both layouts found the shared benchmark library through the installed
+relative run path.
+
 ## Interfaces and Dependencies
 
 The installed C++ target is `MQT::CoreBenchmarks`. Its public headers use only
@@ -307,8 +439,8 @@ The internal MLIR target links `MQT::CoreBenchmarks`, the compiler pipeline, and
 materialized instance types. Only its registry adapter accepts JSON.
 
 The only new external behavior uses dependencies already present in MQT Core:
-the C++ standard library, nlohmann JSON, LLVM/MLIR, nanobind, GoogleTest, and the
-existing DD package. No new dependency is added.
+the C++ standard library, nlohmann JSON, LLVM/MLIR, nanobind, GoogleTest, and
+the existing DD package. No new dependency is added.
 
 Revision note, 2026-08-22: Created the initial self-contained plan after Daniel
 authorized continued implementation. Recorded the preserved attribution
@@ -322,3 +454,10 @@ reference layer, including the arbitrary-width QPE check.
 
 Revision note, 2026-08-22: Recorded strict JSON storage, self-checking
 manifests, JSON Schema descriptions, and stable semantic case IDs.
+
+Revision note, 2026-08-22: Recorded typed structured emitters, the configured
+CLI, and the single-MLIR-owner Python binding design.
+
+Revision note, 2026-08-22: Recorded the #2077 ownership boundary, completed
+implementation and removal, full validation, independent audits, and the final
+portable-reference and no-rollback fixes.

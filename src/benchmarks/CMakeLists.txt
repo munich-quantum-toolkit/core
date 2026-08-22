@@ -13,9 +13,8 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-benchmarks)
   add_mqt_core_library(${MQT_CORE_TARGET_NAME}-benchmarks ALIAS_NAME Benchmarks)
 
   target_sources(${MQT_CORE_TARGET_NAME}-benchmarks PRIVATE ${BENCHMARK_SOURCES})
-  target_link_libraries(
-    ${MQT_CORE_TARGET_NAME}-benchmarks
-    PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
+  target_link_libraries(${MQT_CORE_TARGET_NAME}-benchmarks
+                        PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
   target_sources(
     ${MQT_CORE_TARGET_NAME}-benchmarks
     PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${BENCHMARK_HEADERS})
