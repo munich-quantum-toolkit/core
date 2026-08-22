@@ -101,7 +101,7 @@ include "stdgates.inc";
 qubit[8] q;
 qubit[8] left;
 qubit[8] right;
-const int last = 7;
+int last = 7;
 x q[-1];
 for int i in [0:6] {
   x q[i];
@@ -116,7 +116,27 @@ for int i in [0:6] {
   }
 }
 for int i in [0:2:6] { x q[i]; }
-for int i in [0:3] { h q[2 * i]; }
+for int i in [0:3] {
+  uint even = 2 * i;
+  h q[even];
+}
+int stride = 2;
+for int i in [0:stride:6] { x q[i]; }
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, PreservesEquivalentAffineScalarJoins) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit[2] q;
+int i = 0;
+bit choose = measure q[0];
+if (choose) { i = i + 1; } else { i = 1; }
+x q[i];
 )qasm";
 
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
@@ -130,11 +150,6 @@ TEST(OpenQASMFrontendTest, RejectsUnprovedQuantumIndices) {
            "[0:3] { cx q[i], q[j]; } }",
            "distinct qubits"},
           {"OPENQASM 3.1; qubit[4] q; for int i in [0:3] { x q[i + 1]; }",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[2] q; int i = 0; i = 1; x q[i];",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[4] q; for int i in [0:2] { "
-           "int x = i + 1; h q[x]; }",
            "cannot prove that qubit index is in bounds"},
           {"OPENQASM 3.1; qubit[2] q; bit b = measure q[0]; int i = b; "
            "x q[i];",
@@ -157,9 +172,6 @@ TEST(OpenQASMFrontendTest, RejectsUnprovedQuantumIndices) {
           {"OPENQASM 3.1; qubit[4] q; for int i in [0:1] { x q[i << 1]; }",
            "not supported yet"},
           {"OPENQASM 3.1; qubit[4] q; for int i in [3:-1:0] { x q[i]; }",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[4] q; int step = 1; for int i in "
-           "[0:step:3] { x q[i]; }",
            "cannot prove that qubit index is in bounds"},
           {"OPENQASM 3.1; qubit[4] q; int i = 4; if (i < 4) { x q[i]; }",
            "cannot prove that qubit index is in bounds"},
@@ -213,7 +225,7 @@ TEST(OpenQASMFrontendTest, RejectsDuplicateBarrierQubits) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       "OPENQASM 3.1; qubit q; barrier q, q;",
       "OPENQASM 3.1; qubit[2] q; barrier q[0], q[0];",
-      "OPENQASM 3.1; qubit[2] q; barrier q, q[0];",
+      "OPENQASM 3.1; qubit[2] q; int i = 0; barrier q, q[i];",
       "OPENQASM 3.1; barrier $0, $0;",
   });
 
@@ -459,10 +471,10 @@ ctrl(9223372036854775807) @ ctrl(9223372036854775807) @ ctrl(2) @ x q;
   constexpr llvm::StringLiteral excessiveDynamicDispatch = R"qasm(
 OPENQASM 3.1;
 qubit[16] q;
-const int a = 0;
-const int b = 1;
-const int c = 2;
-const int d = 3;
+int a = 0;
+int b = 1;
+int c = 2;
+int d = 3;
 mcx q[a], q[b], q[c], q[d];
 )qasm";
 
@@ -640,9 +652,9 @@ OPENQASM 3.1;
 qubit[2] q;
 bit[2] c;
 int i = 0;
-c[i] = measure q[0];
+c[i] = measure q[i];
 i = 1;
-if (c[i]) { x q[1]; }
+if (c[i]) { x q[i]; }
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_FALSE(analyzed);
@@ -762,7 +774,7 @@ OPENQASM 3.1;
 qubit[2] q;
 bit[2] c;
 int i = 1;
-if (true) { c[i] = measure q[1]; }
+if (true) { c[i] = measure q[i]; }
 if (c[i]) { x q[0]; }
 output bit result;
 result = measure q[0];

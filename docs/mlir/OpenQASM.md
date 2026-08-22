@@ -66,18 +66,20 @@ angle inputs or outputs are not supported.
 The frontend accepts a nonconstant qubit index only when it proves that every
 value is in the register and that operands of one gate or explicit barrier are
 distinct. Proven expressions can contain constants, positive constant-step `for`
-induction variables, `const` aliases, negation, addition, subtraction,
+induction variables, known scalar values, negation, addition, subtraction,
 multiplication by an integer constant, and value-preserving `int`/`uint` casts.
-A nested loop bound can use proven induction variables from enclosing loops. The
-proof treats an inclusive range as its full interval and does not use the step's
-congruence.
+Assignments and control-flow joins preserve a scalar value only while its affine
+form remains known. A nested loop bound can use proven induction variables from
+enclosing loops. The proof treats an inclusive range as its full interval and
+does not use the step's congruence.
 
 The frontend normalizes constant negative indices relative to the register
-width. It rejects mutable or measurement-derived indices, nonconstant negative
-indices, nonlinear expressions, unsupported integer operators, and ranges with a
-nonconstant or nonpositive step when their induction variable reaches a qubit
-index. Branch conditions do not add proof facts. Classical bit indexing and
-loops that do not index qubits keep their runtime behavior.
+width. It rejects measurement-derived values, nonconstant negative indices,
+nonlinear expressions, unsupported integer operators, and ranges whose step is
+not known to be positive when their induction variable reaches a qubit index.
+Mutations in repeating loops and unequal branch values invalidate scalar facts.
+Branch conditions do not add proof facts. Classical bit indexing and loops that
+do not index qubits keep their runtime behavior.
 
 Bit registers use `!cbit.reg<N>` in QC. OpenQASM 2 initializes each register to
 zero. OpenQASM 3 leaves each register undefined until a statement writes it.

@@ -48,8 +48,9 @@ releases may include breaking changes.
   [#1787], [#1815], [#1823], [#1933], [#1978], [#1979], [#2007], [#2026],
   [#2030], [#2066]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
   [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
-- ✨ Add OpenQASM import and export to the MQT Compiler Collection ([#1910],
-  [#1987], [#1994], [#2003], [#2026], [#2169]) ([**@burgholzer**],
+- ✨ Add OpenQASM import and export to the MQT Compiler Collection, including
+  fixed-angle constants and proven affine quantum-register indices ([#1910],
+  [#1987], [#1994], [#2003], [#2026], [#2169], [#2203]) ([**@burgholzer**],
   [**@denialhaag**])
 
 #### Passes and transformations
@@ -82,9 +83,6 @@ releases may include breaking changes.
 
 ### Changed
 
-- 💥 Require semantic proof for nonconstant OpenQASM quantum-register indices
-  and lower proven affine loops without runtime quantum-index guards ([#2203])
-  ([**@burgholzer**], [**@denialhaag**])
 - 💥 Prune dead and misleading CoreIR APIs and remove random-number generator
   state from `QuantumComputation` ([#2111], [#2112]) ([**@simon1hofmann**])
 - 💥 Update QIR execution for QIR 2.1, isolated runtimes, reproducible

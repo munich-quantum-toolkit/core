@@ -51,6 +51,12 @@ index before MLIR emission. A user can compile the loop from issue #2188 to
 - [x] (2026-08-21 22:27Z) Passed the 169 OpenQASM and 126 compiler tests in
       debug and release builds, the reported Clang-Tidy check, repository lint,
       and a second Ponytail review with no further findings.
+- [x] (2026-08-22 01:10Z) Replaced mutable-alias rejection with affine scalar
+  data-flow facts, restored the original scalar-index tests, and passed 174
+  OpenQASM tests plus focused standard, adaptive, and `jeff` pipeline tests.
+- [x] (2026-08-22 01:35Z) Passed the 174 OpenQASM and 131 compiler tests,
+      Clang-Tidy for the changed production code, repository lint, and final
+      diff checks.
 
 ## Surprises & Discoveries
 
@@ -79,10 +85,10 @@ index before MLIR emission. A user can compile the loop from issue #2188 to
 - Observation: Pairwise Presburger checks run before emitter resource checks.
   Wide affine barriers and broadcast gate calls therefore need their own
   semantic comparison limit.
-- Observation: Mutable scalar aliases can retain runtime `i64` arithmetic after
-  the semantic analyzer accepts the captured affine initializer. Evidence: the
-  source `int x = i + 1; h q[x];` failed `jeff` emission because
-  `jeff.int_binary_op` requires the same operand and result types.
+- Observation: Rejecting all mutable scalar aliases forced simple constant
+  indices into artificial one-iteration loops. Expanding each proven alias in
+  the typed qubit reference lets dead scalar arithmetic disappear before `jeff`
+  conversion while retaining the original OpenQASM program.
 - Observation: The distinctness counter charged constant differences before the
   no-solver fast path. A broadcast of one proven operand pair could exhaust the
   budget even though each comparison was constant.
@@ -100,10 +106,10 @@ index before MLIR emission. A user can compile the loop from issue #2188 to
   domains. Rationale: bounds and same-register distinctness in triangular loops
   require relational reasoning, while this existing dependency provides exact
   integer checks. Date/Author: 2026-08-20, Codex.
-- Decision: Admit only compile-time positive loop steps into the proven range
-  path and ignore step congruence in the proof domain. Rationale: this is a safe
-  over-approximation that covers the benchmark patterns and keeps lowering to a
-  direct positive-step `scf.for`. Date/Author: 2026-08-20, Codex.
+- Decision: Admit only steps with a known positive integer value into the proven
+  range path and ignore step congruence in the proof domain. Rationale: this is
+  a safe over-approximation that covers the benchmark patterns and keeps
+  lowering to a direct positive-step `scf.for`. Date/Author: 2026-08-22, Codex.
 - Decision: Preserve generic loop and dynamic classical-index behavior.
   Rationale: only quantum-register indexing is optional in the base OpenQASM
   contract, and unrelated runtime behavior is outside issue #2188. Date/Author:
@@ -113,11 +119,11 @@ index before MLIR emission. A user can compile the loop from issue #2188 to
   loop. Rationale: generation checks alone see only the first source-order
   iteration and could accept an index that is unsafe after the back edge.
   Date/Author: 2026-08-20, Codex.
-- Decision: Admit direct affine expressions and `const` aliases, but reject
-  mutable scalar aliases in quantum indices. Rationale: the emitter cannot
-  recover a mutable alias's affine initializer without more typed state, while a
-  direct expression or `const` declaration has the required compile-time form.
-  Date/Author: 2026-08-21, Codex.
+- Decision: Track the current canonical affine expression for each scalar and
+  invalidate that fact on unequal control-flow joins or possible loop mutation.
+  Rationale: this admits known mutable values without treating mutability as
+  runtime uncertainty. Canonical expressions also keep scalar aliases out of the
+  emitter's proven-index path. Date/Author: 2026-08-22, Codex.
 - Decision: Use direct positive-range lowering for mixed signed and unsigned
   endpoints only when every signed endpoint is proven nonnegative. Rationale:
   this condition makes unsigned promotion value-preserving; otherwise generic
@@ -134,9 +140,9 @@ domains and rejects unproved bounds or operand distinctness. The emitter is four
 lines smaller than before this work: it directly emits proven `index` arithmetic
 and no longer emits quantum bounds, wrapping, or distinctness guards. The
 semantic analyzer is larger because it owns the source-level proof, including
-exact relational domains, overflow checks, `const` aliases, and loop-back-edge
-mutation safety. Interval bounds or source-order generation checks would not
-cover the required triangular and `j - step` benchmark shapes.
+exact relational domains, overflow checks, known scalar values, and
+loop-back-edge mutation safety. Interval bounds or source-order generation
+checks would not cover the required triangular and `j - step` benchmark shapes.
 
 The exact issue #2188 program reaches `jeff` without `i128`, `arith.select`, or
 `cf.assert`. PR #2135 remained at the audited head and no benchmark source was
@@ -144,7 +150,8 @@ changed. After the rebase, the full release build, 169 OpenQASM tests, all 2,804
 MLIR tests, all 4,301 configured release CTests, and `uvx nox -s lint` passed.
 One QDMI test skipped under its own condition. The first lint run formatted
 changed files; the second run passed without edits. Draft pull request #2203
-contains the signed result.
+contains the signed result. The later scalar-fact revision passed 174 OpenQASM
+tests and all 131 compiler tests, including an affine alias through `jeff`.
 
 ## Context and Orientation
 
@@ -160,23 +167,23 @@ An affine expression is a constant plus integer coefficients multiplied by
 active loop induction variables. A Presburger domain is a set of integer
 solutions to linear equalities and inequalities. For an inclusive OpenQASM range
 `[lower:step:upper]`, this work records `lower <= induction <= upper` when
-`step` is a positive compile-time integer. Omitting the step's congruence class
+`step` has a known positive integer value. Omitting the step's congruence class
 adds possible values, so a property proved over this larger set is still safe.
 
 The semantic analyzer will prove a quantum index by showing that adding either
 `index < 0` or `index >= width` makes the active domain empty. It will prove
 same-register operands distinct by showing that adding `left == right` makes the
 domain empty. It will also prove every supported arithmetic node fits the signed
-64-bit representation emitted by this frontend. The analyzer folds `const`
-aliases before it builds an affine form. A pre-scan excludes scalars assigned
-anywhere in a repeating loop so that the proof remains valid after the loop back
-edge.
+64-bit representation emitted by this frontend. The analyzer tracks canonical
+affine expressions for scalar values and merges only equal facts across control
+flow. A pre-scan excludes scalars assigned anywhere in a repeating loop so that
+the proof remains valid after the loop back edge.
 
 ## Plan of Work
 
 Add a small private affine-expression representation and active-domain state to
 `OpenQASMSemantics.cpp`. Build forms for integer constants, active induction
-variables, folded `const` aliases, negation, addition, subtraction, constant
+variables, known scalar values, negation, addition, subtraction, constant
 multiplication, and value-preserving integer casts. Use arbitrary-precision
 coefficients while constructing constraints. Reject unsupported forms only when
 they reach a quantum index or are needed to mark a loop as a proven range.
@@ -204,8 +211,8 @@ index path for classical bits and the existing generic loop path intact.
 Add semantic tests for accepted and rejected expressions, emitter tests for the
 shape of issue #2188 and nested benchmark patterns, and an in-process compiler
 pipeline regression that produces a `JeffProgram`. Update the documented
-OpenQASM subset, `UPGRADING.md`, and `CHANGELOG.md` without editing generated or
-template-managed files.
+OpenQASM subset and the existing OpenQASM `CHANGELOG.md` entry without editing
+generated or template-managed files.
 
 ## Concrete Steps
 
@@ -235,16 +242,22 @@ the final register index must prove both bounds and operand distinctness. A
 QFT-adder-shaped `j - step` index and reverse `N - 1 - i` index must also pass.
 Constant negative indices must normalize relative to the register width.
 
-Programs with possibly out-of-range, possibly aliased, measurement-derived,
-mutated, nonlinear, or unsupported-step quantum indices must fail semantic
-analysis with a precise diagnostic. Dynamic classical indexing and generic
-runtime loops that do not supply quantum indices must retain their current
-behavior. All existing test suites and lint checks must pass.
+Programs with possibly out-of-range, measurement-derived, nonlinear, mutated
+loop-carried, unequally merged, or unsupported-step quantum indices must fail
+semantic analysis with a precise diagnostic. Dynamic classical indexing and
+generic runtime loops that do not supply quantum indices must retain their
+current behavior. All existing test suites and lint checks must pass.
 
 Revision note (2026-08-21): The review follow-up removed mutable affine aliases,
 restored constant negative-index normalization, and limited the resource counter
 to actual solver queries. Focused debug and release tests, Clang-Tidy, lint, and
 the follow-up simplicity review passed.
+
+Revision note (2026-08-22): The scalar-fact follow-up restored the original
+mutable scalar programs without runtime quantum guards. It canonicalizes proven
+aliases before emission and invalidates facts at uncertain joins and loop back
+edges. The upgrade-guide fragment was removed, and the changelog text was folded
+into the existing OpenQASM entry.
 
 ## Idempotence and Recovery
 
