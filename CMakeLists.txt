@@ -180,6 +180,8 @@ if(BUILD_MQT_CORE_BINDINGS)
       mqt-core-benchmarks
       mqt-core-circuit-optimizer
       mqt-core-dd
+      mqt-core-bench
+      mqt-core-benchmarks-bindings
       mqt-core-ir-bindings
       mqt-core-dd-bindings
       mqt-core-qdmi-bindings
