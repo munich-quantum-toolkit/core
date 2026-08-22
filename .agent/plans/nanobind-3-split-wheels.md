@@ -47,6 +47,8 @@ does not publish CPython 3.13t or 3.14t wheels.
 - [x] (2026-08-22 14:25Z) Preserved Daniel Haag's nanobind 3 and Python 3.11
   commits and prepared the complete change as a rescope of pull request
   `#2209`.
+- [ ] Validate the Windows `abi3t` detection workaround on both hosted Windows
+  wheel builders.
 
 ## Surprises & Discoveries
 
@@ -91,6 +93,11 @@ does not publish CPython 3.13t or 3.14t wheels.
   then copied it into a second allocation for NumPy. A capsule can own the
   returned vector directly. `MatrixDD.get_matrix()` already fills its final
   contiguous allocation and needs no extra data-layout conversion.
+- Observation: scikit-build-core leaves `SKBUILD_SOABI` empty for Windows
+  `abi3t` builds, while nanobind 3.0 uses that value to detect free-threading.
+  The frontend then advertises the classic nanobind platform ABI and cannot use
+  the free-threaded backend. nanobind's current split workflow tests `abi3t`
+  only on Linux.
 
 ## Decision Log
 
@@ -131,6 +138,10 @@ does not publish CPython 3.13t or 3.14t wheels.
   Rationale: current `main` needs the synchronization for free-threaded Python,
   while pull request #1901 deletes this driver and can drop the bridge commit if
   it lands first. Date/Author: 2026-08-22 / Codex.
+- Decision: Supply nanobind's missing `NB_ABI` value inside the shared binding
+  wrapper for Windows `abi3t` builds. Rationale: the function-scoped override
+  activates nanobind's full `abi3t` checks and compile definitions without
+  changing other modules or platforms. Date/Author: 2026-08-22 / Codex.
 
 ## Outcomes & Retrospective
 

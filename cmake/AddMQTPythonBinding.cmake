@@ -14,6 +14,11 @@ function(add_mqt_python_binding package_name target_name)
     set(NANOBIND_BACKEND BACKEND_MODULE nanobind_backend)
   endif()
 
+  # nanobind 3.0 cannot detect Windows abi3t builds because SKBUILD_SOABI is empty there.
+  if(WIN32 AND Py_TARGET_ABI3T)
+    set(NB_ABI "${Python_VERSION_MAJOR}${Python_VERSION_MINOR}t")
+  endif()
+
   nanobind_add_module(
     # Name of the extension
     ${target_name}
