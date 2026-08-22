@@ -9,6 +9,7 @@
 [build-system]
 requires = [
   "nanobind~=3.0.0",
+  "nanobind-backend~=1.0.0",
   "scikit-build-core>=1.0.3",
   "vcs-versioning>=2.3.0",
 ]
@@ -341,6 +342,7 @@ exclude = [
 [dependency-groups]
 build = [
   "nanobind~=3.0.0",
+  "nanobind-backend~=1.0.0",
   "scikit-build-core>=1.0.3",
   "vcs-versioning>=2.3.0",
 ]

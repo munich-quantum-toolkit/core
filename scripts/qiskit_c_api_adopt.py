@@ -11,6 +11,7 @@
 # requires-python = ">=3.14"
 # dependencies = [
 #   "nanobind~=3.0.0",
+#   "nanobind-backend~=1.0.0",
 #   "packaging>=24",
 #   "pytest>=9.0.1",
 #   "pytest-xdist>=3.8.0",

@@ -13,10 +13,11 @@ function(add_mqt_python_binding package_name target_name)
   nanobind_add_module(
     # Name of the extension
     ${target_name}
-    # Target the stable ABI for Python 3.12+, which reduces the number of binary wheels
-    STABLE_ABI
     # Enable free-threaded support
     FREE_THREADED
+    # Use the nanobind backend
+    BACKEND_MODULE
+    nanobind_backend
     # Suppress compiler warnings from the nanobind library
     NB_SUPPRESS_WARNINGS
     # Source files
