@@ -39,6 +39,7 @@
 
 namespace {
 
+llvm::cl::OptionCategory benchmarkOptions("Benchmark options");
 llvm::cl::SubCommand listCommand("list", "List the available benchmarks");
 llvm::cl::SubCommand describeCommand("describe",
                                      "Describe one benchmark request schema");
@@ -50,36 +51,34 @@ llvm::cl::SubCommand evaluateCommand("evaluate",
 llvm::cl::opt<std::string> benchmarkId(llvm::cl::Positional,
                                        llvm::cl::desc("<id>"),
                                        llvm::cl::Required,
+                                       llvm::cl::cat(benchmarkOptions),
                                        llvm::cl::sub(describeCommand));
 
-llvm::cl::opt<std::string>
-    requestPath("request",
-                llvm::cl::desc("Request JSON file, or '-' for standard input"),
-                llvm::cl::value_desc("file|-"), llvm::cl::Required,
-                llvm::cl::sub(generateCommand));
-llvm::cl::opt<std::string>
-    outputFormat("format",
-                 llvm::cl::desc("Generated program format: qc or jeff"),
-                 llvm::cl::value_desc("qc|jeff"), llvm::cl::Required,
-                 llvm::cl::sub(generateCommand));
-llvm::cl::opt<std::string>
-    outputDirectory("output",
-                    llvm::cl::desc("Directory for the program and manifest"),
-                    llvm::cl::value_desc("directory"), llvm::cl::Required,
-                    llvm::cl::sub(generateCommand));
+llvm::cl::opt<std::string> requestPath(
+    "request", llvm::cl::desc("Request JSON file, or '-' for standard input"),
+    llvm::cl::value_desc("file|-"), llvm::cl::Required,
+    llvm::cl::cat(benchmarkOptions), llvm::cl::sub(generateCommand));
+llvm::cl::opt<std::string> outputFormat(
+    "format", llvm::cl::desc("Generated program format: qc or jeff"),
+    llvm::cl::value_desc("qc|jeff"), llvm::cl::Required,
+    llvm::cl::cat(benchmarkOptions), llvm::cl::sub(generateCommand));
+llvm::cl::opt<std::string> outputDirectory(
+    "output", llvm::cl::desc("Directory for the program and manifest"),
+    llvm::cl::value_desc("directory"), llvm::cl::Required,
+    llvm::cl::cat(benchmarkOptions), llvm::cl::sub(generateCommand));
 llvm::cl::opt<bool>
     overwrite("overwrite", llvm::cl::desc("Replace existing generated files"),
-              llvm::cl::init(false), llvm::cl::sub(generateCommand));
+              llvm::cl::init(false), llvm::cl::cat(benchmarkOptions),
+              llvm::cl::sub(generateCommand));
 
-llvm::cl::opt<std::string>
-    manifestInputPath("manifest",
-                      llvm::cl::desc("Benchmark manifest JSON file"),
-                      llvm::cl::value_desc("file"), llvm::cl::Required,
-                      llvm::cl::sub(evaluateCommand));
+llvm::cl::opt<std::string> manifestInputPath(
+    "manifest", llvm::cl::desc("Benchmark manifest JSON file"),
+    llvm::cl::value_desc("file"), llvm::cl::Required,
+    llvm::cl::cat(benchmarkOptions), llvm::cl::sub(evaluateCommand));
 llvm::cl::opt<std::string> countsInputPath(
     "counts", llvm::cl::desc("Counts JSON file, or '-' for standard input"),
     llvm::cl::value_desc("file|-"), llvm::cl::Required,
-    llvm::cl::sub(evaluateCommand));
+    llvm::cl::cat(benchmarkOptions), llvm::cl::sub(evaluateCommand));
 
 [[nodiscard]] std::string readText(const std::string& path) {
   auto buffer = path == "-" ? llvm::MemoryBuffer::getSTDIN()
@@ -421,6 +420,7 @@ template <class Benchmark>
 } // namespace
 
 int main(int argc, char** argv) {
+  llvm::cl::HideUnrelatedOptions(benchmarkOptions);
   llvm::cl::ParseCommandLineOptions(
       argc, argv, "Generate and evaluate structured quantum benchmarks\n");
 

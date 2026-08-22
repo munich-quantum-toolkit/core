@@ -38,6 +38,11 @@ endif()
 file(REMOVE_RECURSE "${OUTPUT_DIR}")
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
+run_success("top-level help" help_output "${CLI}" --help)
+if(help_output MATCHES "cfg-hide-cold-paths")
+  message(FATAL_ERROR "help exposed unrelated LLVM options")
+endif()
+
 run_success("benchmark listing" list_output "${CLI}" list)
 string(JSON benchmark_count LENGTH "${list_output}" benchmarks)
 if(NOT benchmark_count EQUAL 3)
