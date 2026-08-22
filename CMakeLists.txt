@@ -54,8 +54,13 @@ if(BUILD_MQT_CORE_BINDINGS)
   endif()
 
   # top-level call to find Python
-  find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module
-                                               ${SKBUILD_SABI_COMPONENT})
+  if(WIN32)
+    find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module
+                                                 Development.SABIModule ${SKBUILD_SABI_COMPONENT})
+  else()
+    find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module
+                                                 ${SKBUILD_SABI_COMPONENT})
+  endif()
 endif()
 
 option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core" ${PROJECT_IS_TOP_LEVEL})
