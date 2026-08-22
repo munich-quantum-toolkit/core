@@ -30,6 +30,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -38,6 +39,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -1587,10 +1589,336 @@ NativeCircuitReader::controlFlow(const size_t index) const {
       nb::borrow<nb::object>(data_[index]), pythonCircuit_);
 }
 
+class PythonClassicalBuilder final {
+public:
+  explicit PythonClassicalBuilder(const nb::handle circuit)
+      : clbits_(pythonAttribute(circuit, "clbits",
+                                "Qiskit circuit has no classical bits")),
+        cregs_(pythonAttribute(circuit, "cregs",
+                               "Qiskit circuit has no classical registers")),
+        expressionModule_(
+            nb::module_::import_("qiskit.circuit.classical.expr")),
+        typesModule_(nb::module_::import_("qiskit.circuit.classical.types")) {}
+
+  [[nodiscard]] nb::object expression(const Expression& value) const {
+    return expression(value, 0U);
+  }
+
+  [[nodiscard]] nb::object condition(const ClassicalTarget& target) const {
+    switch (target.kind) {
+    case ClassicalTargetKind::ClassicalBit:
+      return nb::make_tuple(classicalBit(target.bit),
+                            nb::bool_(target.expectedBit));
+    case ClassicalTargetKind::ClassicalRegister: {
+      validateRegisterValue(target.reg, target.expectedRegister);
+      if (const auto reg = registeredClassicalRegister(target.reg)) {
+        return nb::make_tuple(*reg, nb::int_(target.expectedRegister));
+      }
+      const auto packed = packedRegister(target.reg);
+      const auto expected = expressionModule_.attr("lift")(
+          nb::int_(target.expectedRegister),
+          classicalType(ClassicalType::Uint,
+                        static_cast<uint32_t>(target.reg.bits.size())));
+      return expressionModule_.attr("equal")(packed, expected);
+    }
+    case ClassicalTargetKind::Expression:
+      if (!target.expression) {
+        throw std::runtime_error(
+            "Qiskit control-flow condition has no expression");
+      }
+      if (target.expression->type != ClassicalType::Bool) {
+        throw std::runtime_error(
+            "Qiskit control-flow condition expression must be Boolean");
+      }
+      return expression(*target.expression);
+    }
+    throw std::runtime_error("Qiskit control flow has an unknown condition");
+  }
+
+  [[nodiscard]] nb::object switchTarget(const ClassicalTarget& target) const {
+    switch (target.kind) {
+    case ClassicalTargetKind::ClassicalBit:
+      return classicalBit(target.bit);
+    case ClassicalTargetKind::ClassicalRegister:
+      if (target.reg.bits.empty() || target.reg.bits.size() > 64U) {
+        throw std::runtime_error(
+            "Qiskit switch registers must contain between 1 and 64 bits");
+      }
+      if (const auto reg = registeredClassicalRegister(target.reg)) {
+        return *reg;
+      }
+      return packedRegister(target.reg);
+    case ClassicalTargetKind::Expression:
+      if (!target.expression) {
+        throw std::runtime_error("Qiskit switch target has no expression");
+      }
+      if (target.expression->type == ClassicalType::Float) {
+        throw std::runtime_error(
+            "Qiskit switch target expression cannot be floating-point");
+      }
+      return expression(*target.expression);
+    }
+    throw std::runtime_error(
+        "Qiskit control flow has an unknown switch target");
+  }
+
+private:
+  [[nodiscard]] nb::object classicalType(const ClassicalType type,
+                                         const uint32_t width) const {
+    switch (type) {
+    case ClassicalType::Bool:
+      if (width != 1U) {
+        throw std::runtime_error("Qiskit Boolean expressions require width 1");
+      }
+      return typesModule_.attr("Bool")();
+    case ClassicalType::Uint:
+      if (width == 0U || width > 64U) {
+        throw std::runtime_error(
+            "Qiskit unsigned expressions require a width from 1 to 64");
+      }
+      return typesModule_.attr("Uint")(width);
+    case ClassicalType::Float:
+      if (width != 64U) {
+        throw std::runtime_error(
+            "Qiskit floating-point expressions require width 64");
+      }
+      return typesModule_.attr("Float")();
+    }
+    throw std::runtime_error("Qiskit expression has an unknown type");
+  }
+
+  [[nodiscard]] nb::object classicalBit(const uint32_t bit) const {
+    if (bit >= nb::len(clbits_)) {
+      throw std::runtime_error(
+          "Qiskit classical expression references an invalid bit");
+    }
+    return nb::borrow<nb::object>(clbits_[bit]);
+  }
+
+  [[nodiscard]] std::optional<nb::object>
+  registeredClassicalRegister(const Register& reg) const {
+    std::optional<nb::object> matchingBits;
+    for (const nb::handle candidateHandle : nb::iter(cregs_)) {
+      if (nb::len(candidateHandle) != reg.bits.size()) {
+        continue;
+      }
+      auto candidate = nb::borrow<nb::object>(candidateHandle);
+      bool matches = true;
+      for (size_t index = 0U; index < reg.bits.size(); ++index) {
+        if (!candidate[index].equal(classicalBit(reg.bits[index]))) {
+          matches = false;
+          break;
+        }
+      }
+      if (!matches) {
+        continue;
+      }
+      if (pythonStringAttribute(candidate, "name",
+                                "Qiskit classical register has no name") ==
+          reg.name) {
+        return candidate;
+      }
+      matchingBits = std::move(candidate);
+    }
+    return matchingBits;
+  }
+
+  static void validateRegisterValue(const Register& reg, const uint64_t value) {
+    if (reg.bits.empty() || reg.bits.size() > 64U) {
+      throw std::runtime_error(
+          "Qiskit condition registers must contain between 1 and 64 bits");
+    }
+    if (reg.bits.size() < std::numeric_limits<uint64_t>::digits &&
+        value >= (uint64_t{1} << reg.bits.size())) {
+      throw std::runtime_error(
+          "Qiskit register condition value exceeds its register width");
+    }
+  }
+
+  [[nodiscard]] nb::object
+  packedRegister(const Register& reg,
+                 const uint32_t expressionWidth = 0U) const {
+    const auto width = expressionWidth == 0U
+                           ? static_cast<uint32_t>(reg.bits.size())
+                           : expressionWidth;
+    if (reg.bits.empty() || reg.bits.size() > 64U || width < reg.bits.size() ||
+        width > 64U) {
+      throw std::runtime_error(
+          "Qiskit expression register has an invalid width");
+    }
+    std::unordered_set<uint32_t> seen;
+    std::vector<nb::object> terms;
+    terms.reserve(reg.bits.size());
+    const auto type = classicalType(ClassicalType::Uint, width);
+    for (size_t index = 0U; index < reg.bits.size(); ++index) {
+      if (!seen.insert(reg.bits[index]).second) {
+        throw std::runtime_error(
+            "Qiskit expression register contains a repeated bit");
+      }
+      auto term =
+          expressionModule_.attr("cast")(classicalBit(reg.bits[index]), type);
+      if (index != 0U) {
+        term = expressionModule_.attr("shift_left")(term, nb::int_(index));
+      }
+      terms.emplace_back(std::move(term));
+    }
+    while (terms.size() > 1U) {
+      std::vector<nb::object> reduced;
+      reduced.reserve((terms.size() + 1U) / 2U);
+      for (size_t index = 0U; index < terms.size(); index += 2U) {
+        if (index + 1U == terms.size()) {
+          reduced.emplace_back(std::move(terms[index]));
+          continue;
+        }
+        reduced.emplace_back(
+            expressionModule_.attr("bit_or")(terms[index], terms[index + 1U]));
+      }
+      terms = std::move(reduced);
+    }
+    return std::move(terms.front());
+  }
+
+  [[nodiscard]] static const char* binaryFunction(const BinaryOperation op) {
+    switch (op) {
+    case BinaryOperation::BitAnd:
+      return "bit_and";
+    case BinaryOperation::BitOr:
+      return "bit_or";
+    case BinaryOperation::BitXor:
+      return "bit_xor";
+    case BinaryOperation::LogicAnd:
+      return "logic_and";
+    case BinaryOperation::LogicOr:
+      return "logic_or";
+    case BinaryOperation::Equal:
+      return "equal";
+    case BinaryOperation::NotEqual:
+      return "not_equal";
+    case BinaryOperation::Less:
+      return "less";
+    case BinaryOperation::LessEqual:
+      return "less_equal";
+    case BinaryOperation::Greater:
+      return "greater";
+    case BinaryOperation::GreaterEqual:
+      return "greater_equal";
+    case BinaryOperation::ShiftLeft:
+      return "shift_left";
+    case BinaryOperation::ShiftRight:
+      return "shift_right";
+    case BinaryOperation::Add:
+      return "add";
+    case BinaryOperation::Subtract:
+      return "sub";
+    case BinaryOperation::Multiply:
+      return "mul";
+    case BinaryOperation::Divide:
+      return "div";
+    }
+    throw std::runtime_error(
+        "Qiskit expression has an unknown binary operation");
+  }
+
+  [[nodiscard]] static const char* unaryFunction(const UnaryOperation op) {
+    switch (op) {
+    case UnaryOperation::BitNot:
+      return "bit_not";
+    case UnaryOperation::LogicNot:
+      return "logic_not";
+    case UnaryOperation::Negate:
+      return "negate";
+    }
+    throw std::runtime_error(
+        "Qiskit expression has an unknown unary operation");
+  }
+
+  [[nodiscard]] nb::object expression(const Expression& value,
+                                      const size_t depth) const {
+    if (depth >= MAX_EXPRESSION_DEPTH) {
+      throw std::runtime_error(
+          "Qiskit classical expressions exceed the nesting limit of 64");
+    }
+    const auto requireOperand = [](const std::unique_ptr<Expression>& operand) {
+      if (!operand) {
+        throw std::runtime_error(
+            "Qiskit classical expression has a missing operand");
+      }
+      return operand.get();
+    };
+    switch (value.kind) {
+    case ExpressionKind::Value: {
+      const auto type = classicalType(value.type, value.width);
+      switch (value.type) {
+      case ClassicalType::Bool:
+        return expressionModule_.attr("lift")(nb::bool_(value.boolValue), type);
+      case ClassicalType::Uint:
+        if (value.width < std::numeric_limits<uint64_t>::digits &&
+            value.uintValue >= (uint64_t{1} << value.width)) {
+          throw std::runtime_error(
+              "Qiskit unsigned expression value exceeds its width");
+        }
+        return expressionModule_.attr("lift")(nb::int_(value.uintValue), type);
+      case ClassicalType::Float:
+        if (!std::isfinite(value.floatValue)) {
+          throw std::runtime_error(
+              "Qiskit floating-point expression value must be finite");
+        }
+        return expressionModule_.attr("lift")(nb::float_(value.floatValue),
+                                              type);
+      }
+      break;
+    }
+    case ExpressionKind::ClassicalBit:
+      if (value.type != ClassicalType::Bool || value.width != 1U) {
+        throw std::runtime_error(
+            "Qiskit classical-bit expression must have Boolean type");
+      }
+      return expressionModule_.attr("lift")(classicalBit(value.bit));
+    case ExpressionKind::ClassicalRegister:
+      if (value.type != ClassicalType::Uint || value.width == 0U ||
+          value.width < value.reg.bits.size() || value.width > 64U) {
+        throw std::runtime_error(
+            "Qiskit classical-register expression has an invalid type");
+      }
+      if (const auto reg = registeredClassicalRegister(value.reg)) {
+        return expressionModule_.attr("lift")(
+            *reg, classicalType(ClassicalType::Uint, value.width));
+      }
+      return packedRegister(value.reg, value.width);
+    case ExpressionKind::Unary:
+      return expressionModule_.attr(unaryFunction(value.unaryOperation))(
+          expression(*requireOperand(value.left), depth + 1U));
+    case ExpressionKind::Binary:
+      return expressionModule_.attr(binaryFunction(value.binaryOperation))(
+          expression(*requireOperand(value.left), depth + 1U),
+          expression(*requireOperand(value.right), depth + 1U));
+    case ExpressionKind::Cast:
+      return expressionModule_.attr("cast")(
+          expression(*requireOperand(value.left), depth + 1U),
+          classicalType(value.type, value.width));
+    case ExpressionKind::Index:
+      return expressionModule_.attr("index")(
+          expression(*requireOperand(value.left), depth + 1U),
+          expression(*requireOperand(value.right), depth + 1U));
+    }
+    throw std::runtime_error("Qiskit classical expression has an unknown kind");
+  }
+
+  nb::object clbits_;
+  nb::object cregs_;
+  nb::object expressionModule_;
+  nb::object typesModule_;
+};
+
+using NativeSymbolTable =
+    std::unordered_map<std::string, std::unique_ptr<OwnedParameter>>;
+
 class NativeCircuitWriter final : public CircuitWriter {
 public:
-  NativeCircuitWriter(const uint32_t looseQubits, const uint32_t looseClbits)
-      : circuit_(qk_circuit_new(looseQubits, looseClbits)) {
+  NativeCircuitWriter(const uint32_t looseQubits, const uint32_t looseClbits,
+                      std::shared_ptr<NativeSymbolTable> symbols)
+      : circuit_(qk_circuit_new(looseQubits, looseClbits)),
+        symbols_(std::move(symbols)) {
     if (circuit_ == nullptr) {
       throwPythonError("Qiskit failed to allocate a circuit");
     }
@@ -1707,7 +2035,65 @@ public:
     }
   }
 
+  void
+  addControlFlow(const ControlFlowKind kind, ClassicalTarget target, Loop loop,
+                 std::vector<SwitchCase> switchCases,
+                 std::vector<std::unique_ptr<CircuitWriter>> blocks) override {
+    const bool validBlockCount = [&]() {
+      switch (kind) {
+      case ControlFlowKind::IfElse:
+        return blocks.size() == 1U || blocks.size() == 2U;
+      case ControlFlowKind::While:
+      case ControlFlowKind::For:
+        return blocks.size() == 1U;
+      case ControlFlowKind::Switch:
+        return !blocks.empty() && blocks.size() == switchCases.size();
+      case ControlFlowKind::Box:
+      case ControlFlowKind::Break:
+      case ControlFlowKind::Continue:
+        return false;
+      }
+      return false;
+    }();
+    if (!validBlockCount) {
+      throw std::runtime_error(
+          "Qiskit control flow has an unexpected number of blocks");
+    }
+    const auto numQubits = qk_circuit_num_qubits(circuit_);
+    const auto numClbits = qk_circuit_num_clbits(circuit_);
+    for (const auto& block : blocks) {
+      const auto* const native =
+          dynamic_cast<const NativeCircuitWriter*>(block.get());
+      if (native == nullptr) {
+        throw std::runtime_error(
+            "Qiskit control-flow blocks use an incompatible writer");
+      }
+      if (native->circuit_ == nullptr ||
+          qk_circuit_num_qubits(native->circuit_) != numQubits ||
+          qk_circuit_num_clbits(native->circuit_) != numClbits) {
+        throw std::runtime_error(
+            "Qiskit control-flow block has incompatible bit counts");
+      }
+    }
+    const auto instructionIndex = qk_circuit_num_instructions(circuit_);
+    checkExitCode(qk_circuit_barrier(circuit_, nullptr, 0U),
+                  "adding control-flow placeholder");
+    pendingControlFlow_.push_back({.instructionIndex = instructionIndex,
+                                   .kind = kind,
+                                   .target = std::move(target),
+                                   .loop = std::move(loop),
+                                   .switchCases = std::move(switchCases),
+                                   .blockWriters = std::move(blocks)});
+  }
+
   [[nodiscard]] nb::object finish() override {
+    return finishImpl(false, nb::none(), nb::none());
+  }
+
+private:
+  [[nodiscard]] nb::object finishImpl(const bool rebase,
+                                      const nb::handle exactQubits,
+                                      const nb::handle exactClbits) {
     if (circuit_ == nullptr) {
       throw std::runtime_error(
           "Qiskit circuit writer has already been finalized");
@@ -1719,19 +2105,31 @@ public:
     }
     auto pythonCircuit = nb::steal<nb::object>(result);
     try {
+      if (rebase) {
+        pythonCircuit = rebaseCircuit(pythonCircuit, exactQubits, exactClbits);
+      }
       replacePendingControlledUnitaries(pythonCircuit);
+      replacePendingControlFlow(pythonCircuit);
     } catch (const nb::python_error& error) {
-      throwPythonError("Qiskit failed to construct a controlled unitary",
+      throwPythonError("Qiskit failed to construct deferred instructions",
                        error);
     }
     return pythonCircuit;
   }
 
-private:
   struct PendingControlledUnitary {
     size_t instructionIndex = 0U;
     uint32_t numControls = 0U;
     std::vector<uint32_t> qubits;
+  };
+
+  struct PendingControlFlow {
+    size_t instructionIndex = 0U;
+    ControlFlowKind kind = ControlFlowKind::IfElse;
+    ClassicalTarget target;
+    Loop loop;
+    std::vector<SwitchCase> switchCases;
+    std::vector<std::unique_ptr<CircuitWriter>> blockWriters;
   };
 
   void replacePendingControlledUnitaries(const nb::handle pythonCircuit) const {
@@ -1769,6 +2167,156 @@ private:
     }
   }
 
+  [[nodiscard]] static nb::object rebaseCircuit(const nb::handle circuit,
+                                                const nb::handle exactQubits,
+                                                const nb::handle exactClbits) {
+    if (nb::len(pythonAttribute(circuit, "qubits",
+                                "Qiskit circuit has no qubits")) !=
+            nb::len(exactQubits) ||
+        nb::len(pythonAttribute(circuit, "clbits",
+                                "Qiskit circuit has no classical bits")) !=
+            nb::len(exactClbits)) {
+      throw std::runtime_error(
+          "Qiskit control-flow block has incompatible bit counts");
+    }
+    auto rebased = nb::module_::import_("qiskit.circuit")
+                       .attr("QuantumCircuit")(exactQubits, exactClbits);
+    pythonAttribute(rebased, "compose",
+                    "Qiskit circuit cannot compose a control-flow block")(
+        circuit, nb::arg("inplace") = true, nb::arg("copy") = false);
+    return rebased;
+  }
+
+  [[nodiscard]] static nb::object loopIndexSet(const Loop& loop) {
+    if (loop.isRange) {
+      return nb::module_::import_("builtins")
+          .attr("range")(loop.start, loop.stop, loop.step);
+    }
+    nb::list values;
+    for (const auto value : loop.values) {
+      values.append(nb::int_(value));
+    }
+    return values;
+  }
+
+  [[nodiscard]] static nb::object loopParameter(const Loop& loop,
+                                                const nb::handle body) {
+    if (!loop.parameter) {
+      return nb::borrow<nb::object>(nb::none());
+    }
+    const auto* symbol = loop.parameter->getSymbol();
+    if (symbol == nullptr) {
+      throw std::runtime_error(
+          "Qiskit for-loop parameter has invalid symbol metadata");
+    }
+    const auto parameters = pythonAttribute(
+        body, "parameters", "Qiskit circuit has no parameter collection");
+    for (const nb::handle parameter : nb::iter(parameters)) {
+      if (pythonStringAttribute(parameter, "name",
+                                "Qiskit circuit parameter has no name") ==
+          symbol->name) {
+        return nb::borrow<nb::object>(parameter);
+      }
+    }
+    throw std::runtime_error(
+        "Qiskit for-loop parameter is absent from its body");
+  }
+
+  [[nodiscard]] static nb::object constructControlFlowOperation(
+      const PendingControlFlow& pending, const std::vector<nb::object>& blocks,
+      const PythonClassicalBuilder& classical, const nb::handle circuitModule) {
+    switch (pending.kind) {
+    case ControlFlowKind::IfElse:
+      return circuitModule.attr("IfElseOp")(
+          classical.condition(pending.target), blocks.front(),
+          blocks.size() == 2U ? blocks[1] : nb::borrow<nb::object>(nb::none()));
+    case ControlFlowKind::While:
+      return circuitModule.attr("WhileLoopOp")(
+          classical.condition(pending.target), blocks.front());
+    case ControlFlowKind::For:
+      return circuitModule.attr("ForLoopOp")(
+          loopIndexSet(pending.loop),
+          loopParameter(pending.loop, blocks.front()), blocks.front());
+    case ControlFlowKind::Switch: {
+      nb::list cases;
+      for (size_t index = 0U; index < pending.switchCases.size(); ++index) {
+        const auto& switchCase = pending.switchCases[index];
+        nb::object labels;
+        if (switchCase.isDefault) {
+          labels = nb::borrow<nb::object>(circuitModule.attr("CASE_DEFAULT"));
+        } else if (switchCase.labels.size() == 1U) {
+          labels = nb::int_(switchCase.labels.front());
+        } else {
+          nb::list values;
+          for (const auto label : switchCase.labels) {
+            values.append(nb::int_(label));
+          }
+          labels = std::move(values);
+        }
+        cases.append(nb::make_tuple(labels, blocks[index]));
+      }
+      return circuitModule.attr("SwitchCaseOp")(
+          classical.switchTarget(pending.target), cases);
+    }
+    case ControlFlowKind::Box:
+    case ControlFlowKind::Break:
+    case ControlFlowKind::Continue:
+      break;
+    }
+    throw std::runtime_error(
+        "Qiskit circuit export encountered an unsupported control-flow kind");
+  }
+
+  void replacePendingControlFlow(const nb::handle pythonCircuit) {
+    auto data = pythonAttribute(pythonCircuit, "data",
+                                "Qiskit circuit has no instruction data");
+    const auto circuitQubits = pythonAttribute(pythonCircuit, "qubits",
+                                               "Qiskit circuit has no qubits");
+    const auto circuitClbits = pythonAttribute(
+        pythonCircuit, "clbits", "Qiskit circuit has no classical bits");
+    const auto circuitModule = nb::module_::import_("qiskit.circuit");
+    const auto circuitInstruction = circuitModule.attr("CircuitInstruction");
+    const PythonClassicalBuilder classical(pythonCircuit);
+    for (auto& pending : pendingControlFlow_) {
+      if (pending.instructionIndex >= nb::len(data)) {
+        throw std::runtime_error("Qiskit control-flow placeholder is missing");
+      }
+      std::vector<nb::object> blocks;
+      blocks.reserve(pending.blockWriters.size());
+      for (size_t index = 0U; index < pending.blockWriters.size(); ++index) {
+        try {
+          auto* const writer = dynamic_cast<NativeCircuitWriter*>(
+              pending.blockWriters[index].get());
+          if (writer == nullptr) {
+            throw std::runtime_error(
+                "Qiskit control-flow blocks use an incompatible writer");
+          }
+          blocks.emplace_back(
+              writer->finishImpl(true, circuitQubits, circuitClbits));
+        } catch (const std::exception& error) {
+          throw std::runtime_error(
+              "Qiskit failed to finalize control-flow block " +
+              std::to_string(index) + ": " + error.what());
+        }
+      }
+      pending.blockWriters.clear();
+      auto operation = constructControlFlowOperation(pending, blocks, classical,
+                                                     circuitModule);
+      if (pythonUnsignedAttribute(operation, "num_qubits",
+                                  "Qiskit control flow has no qubit count") !=
+              nb::len(circuitQubits) ||
+          pythonUnsignedAttribute(
+              operation, "num_clbits",
+              "Qiskit control flow has no classical-bit count") !=
+              nb::len(circuitClbits)) {
+        throw std::runtime_error(
+            "Qiskit control-flow operation has incompatible bit counts");
+      }
+      data[pending.instructionIndex] =
+          circuitInstruction(operation, circuitQubits, circuitClbits);
+    }
+  }
+
   [[nodiscard]] const QkParam* nativeParameter(
       const Parameter& parameter,
       std::vector<std::unique_ptr<OwnedParameter>>& ownedParameters) {
@@ -1794,13 +2342,15 @@ private:
         throw std::runtime_error(
             "cannot export a symbolic parameter without a name");
       }
-      const auto found = symbols_.find(symbol->name);
-      if (found != symbols_.end()) {
+      const auto found = symbols_->find(symbol->name);
+      if (found != symbols_->end()) {
         return found->second->get();
       }
-      auto [inserted, success] = symbols_.emplace(
-          symbol->name, std::make_unique<OwnedParameter>(symbol->name));
-      static_cast<void>(success);
+      const auto inserted =
+          symbols_
+              ->try_emplace(symbol->name,
+                            std::make_unique<OwnedParameter>(symbol->name))
+              .first;
       return inserted->second->get();
     }
 
@@ -1877,7 +2427,8 @@ private:
 
   QkCircuit* circuit_ = nullptr;
   std::vector<PendingControlledUnitary> pendingControlledUnitaries_;
-  std::unordered_map<std::string, std::unique_ptr<OwnedParameter>> symbols_;
+  std::vector<PendingControlFlow> pendingControlFlow_;
+  std::shared_ptr<NativeSymbolTable> symbols_;
 };
 
 class NativeTranslation final : public VersionedTranslation {
@@ -1894,8 +2445,13 @@ public:
   [[nodiscard]] std::unique_ptr<CircuitWriter>
   createCircuit(const uint32_t looseQubits,
                 const uint32_t looseClbits) const override {
-    return std::make_unique<NativeCircuitWriter>(looseQubits, looseClbits);
+    return std::make_unique<NativeCircuitWriter>(looseQubits, looseClbits,
+                                                 symbols_);
   }
+
+private:
+  std::shared_ptr<NativeSymbolTable> symbols_ =
+      std::make_shared<NativeSymbolTable>();
 };
 
 } // namespace
