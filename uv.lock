@@ -1949,13 +1949,13 @@ provides-extras = ["pennylane", "qiskit"]
 
 [package.metadata.requires-dev]
 build = [
-    { name = "nanobind", specifier = "~=2.15.0" },
+    { name = "nanobind", specifier = "~=3.0.0" },
     { name = "scikit-build-core", specifier = ">=1.0.3" },
     { name = "vcs-versioning", specifier = ">=2.3.0" },
 ]
 dev = [
     { name = "lit", specifier = ">=18.1.8" },
-    { name = "nanobind", specifier = "~=2.15.0" },
+    { name = "nanobind", specifier = "~=3.0.0" },
     { name = "nox", specifier = ">=2025.11.12" },
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1" },
     { name = "numpy", marker = "python_full_version >= '3.14'", specifier = ">=2.3.2" },
@@ -2094,11 +2094,11 @@ wheels = [
 
 [[package]]
 name = "nanobind"
-version = "2.15.0"
+version = "3.0.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0d/08/cef3343279d2bde0baa57aadaacf7196ee336f12449c50c27f799c45b3f7/nanobind-2.15.0.tar.gz", hash = "sha256:3eace37a3b8cdadd531fcc6145263985b29821467161d34ff722b0644cf445b5", size = 1060056, upload-time = "2026-08-15T19:01:04.369Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/37/5f136054cfdba93e763d956898048a21997b7478ccadcfec6dfebf4b72aa/nanobind-3.0.0.tar.gz", hash = "sha256:68583c41d58af77649b830407d2ba84627f21f07ad4ae2e32c6988fb96eaa71a", size = 1141160, upload-time = "2026-08-22T04:23:31.014Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d8/72/16a606cbea58be568475f450ece121b3fd62cffb390fd0f8eb8b410904f5/nanobind-2.15.0-py3-none-any.whl", hash = "sha256:91dae9305c6242cf63ab11a5c41594e234e7a22fd9fcc2c5c4ba80724abc1787", size = 271648, upload-time = "2026-08-15T19:01:02.477Z" },
+    { url = "https://files.pythonhosted.org/packages/33/8b/cbd87788012d98179686ecdce7d73d154e277c50859458157ec5575c0352/nanobind-3.0.0-py3-none-any.whl", hash = "sha256:3808620334b1e7e647d71feb1bf525496216b48ee2a8cd4c4a31ae1f1cbb1c6f", size = 316362, upload-time = "2026-08-22T04:23:29.737Z" },
 ]
 
 [[package]]
