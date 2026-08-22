@@ -405,7 +405,7 @@ auto QDMI_Device_impl_d::createJob(QDMI_Job* job) -> int {
   auto uniqueJob = std::make_unique<QDMI_Job_impl_d>(deviceJob, this);
   auto* const jobHandle = uniqueJob.get();
   {
-    const std::lock_guard lock(jobsMutex_);
+    const std::scoped_lock lock(jobsMutex_);
     jobs_.emplace(jobHandle, std::move(uniqueJob));
   }
   *job = jobHandle;
@@ -429,7 +429,7 @@ auto QDMI_Device_impl_d::retrieveJobById(const char* const jobId,
   auto uniqueJob = std::make_unique<QDMI_Job_impl_d>(deviceJob, this);
   auto* const jobHandle = uniqueJob.get();
   {
-    const std::lock_guard lock(jobsMutex_);
+    const std::scoped_lock lock(jobsMutex_);
     jobs_.emplace(jobHandle, std::move(uniqueJob));
   }
   *job = jobHandle;
@@ -439,7 +439,7 @@ auto QDMI_Device_impl_d::retrieveJobById(const char* const jobId,
 auto QDMI_Device_impl_d::freeJob(QDMI_Job job) -> void {
   std::unique_ptr<QDMI_Job_impl_d> ownedJob;
   {
-    const std::lock_guard lock(jobsMutex_);
+    const std::scoped_lock lock(jobsMutex_);
     if (const auto entry = jobs_.find(job); entry != jobs_.end()) {
       ownedJob = std::move(entry->second);
       jobs_.erase(entry);
@@ -716,7 +716,7 @@ void Driver::registerDevice(DeviceDefinition definition, const bool replace) {
 
 auto Driver::registerDeviceIfAbsent(DeviceDefinition definition) -> bool {
   validateDefinition(definition);
-  const std::lock_guard lock(stateMutex_);
+  const std::scoped_lock lock(stateMutex_);
   if (disabledDeviceIds_.contains(definition.id) ||
       std::ranges::find(definitions_, definition.id, &DeviceDefinition::id) !=
           definitions_.end()) {
@@ -727,7 +727,7 @@ auto Driver::registerDeviceIfAbsent(DeviceDefinition definition) -> bool {
 }
 
 auto Driver::registeredDeviceIds() const -> std::vector<std::string> {
-  const std::lock_guard lock(stateMutex_);
+  const std::scoped_lock lock(stateMutex_);
   std::vector<std::string> ids;
   ids.reserve(definitions_.size());
   std::ranges::transform(definitions_, std::back_inserter(ids),
@@ -767,7 +767,7 @@ auto Driver::open(const std::string_view id) -> QDMI_Device {
         definition.session);
   } catch (...) {
     {
-      const std::lock_guard lock(stateMutex_);
+      const std::scoped_lock lock(stateMutex_);
       openingDeviceIds_.erase(deviceId);
     }
     stateChanged_.notify_all();
@@ -776,7 +776,7 @@ auto Driver::open(const std::string_view id) -> QDMI_Device {
 
   auto* device = candidate.get();
   try {
-    const std::lock_guard lock(stateMutex_);
+    const std::scoped_lock lock(stateMutex_);
     const auto [opened, inserted] =
         openedDevices_.emplace(deviceId, candidate.get());
     if (inserted) {
@@ -792,7 +792,7 @@ auto Driver::open(const std::string_view id) -> QDMI_Device {
     openingDeviceIds_.erase(deviceId);
   } catch (...) {
     {
-      const std::lock_guard lock(stateMutex_);
+      const std::scoped_lock lock(stateMutex_);
       openingDeviceIds_.erase(deviceId);
     }
     stateChanged_.notify_all();
@@ -807,7 +807,7 @@ auto Driver::openFresh(const std::string_view id,
     -> std::shared_ptr<QDMI_Device_impl_d> {
   DeviceDefinition definition;
   {
-    const std::lock_guard lock(stateMutex_);
+    const std::scoped_lock lock(stateMutex_);
     if (disabledDeviceIds_.contains(std::string(id))) {
       throw std::runtime_error("QDMI device ID '" + std::string(id) +
                                "' is disabled by configuration");
@@ -829,7 +829,7 @@ void Driver::materializeClientCatalog() {
   std::call_once(clientCatalogOnce_, [this] {
     std::vector<std::string> definitionIds;
     {
-      const std::lock_guard lock(stateMutex_);
+      const std::scoped_lock lock(stateMutex_);
       definitionIds = clientDefinitionIds_;
     }
     std::vector<QDMI_Device> clientDevices;
@@ -840,7 +840,7 @@ void Driver::materializeClientCatalog() {
       } catch (const std::exception& ex) {
         std::string library = "<unknown>";
         {
-          const std::lock_guard lock(stateMutex_);
+          const std::scoped_lock lock(stateMutex_);
           if (const auto definition =
                   std::ranges::find(definitions_, id, &DeviceDefinition::id);
               definition != definitions_.end()) {
@@ -851,7 +851,7 @@ void Driver::materializeClientCatalog() {
                     library, ex.what());
       }
     }
-    const std::lock_guard lock(stateMutex_);
+    const std::scoped_lock lock(stateMutex_);
     clientDevices_ = std::move(clientDevices);
   });
 }
@@ -861,7 +861,7 @@ auto Driver::sessionAlloc(QDMI_Session* session) -> int {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   materializeClientCatalog();
-  const std::lock_guard lock(stateMutex_);
+  const std::scoped_lock lock(stateMutex_);
   auto uniqueSession = std::make_unique<QDMI_Session_impl_d>(clientDevices_);
   auto* const sessionHandle = uniqueSession.get();
   sessions_.emplace(sessionHandle, std::move(uniqueSession));
@@ -872,7 +872,7 @@ auto Driver::sessionAlloc(QDMI_Session* session) -> int {
 auto Driver::sessionFree(QDMI_Session session) -> void {
   std::unique_ptr<QDMI_Session_impl_d> ownedSession;
   {
-    const std::lock_guard lock(stateMutex_);
+    const std::scoped_lock lock(stateMutex_);
     if (const auto entry = sessions_.find(session); entry != sessions_.end()) {
       ownedSession = std::move(entry->second);
       sessions_.erase(entry);

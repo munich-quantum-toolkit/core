@@ -17,7 +17,7 @@
 namespace sym {
 
 Variable::Variable(const std::string& name) {
-  const std::lock_guard lock(registryMutex);
+  const std::scoped_lock lock(registryMutex);
   if (const auto it = registered.find(name); it != registered.end()) {
     id = it->second;
   } else {
@@ -29,7 +29,7 @@ Variable::Variable(const std::string& name) {
 }
 
 std::string Variable::getName() const {
-  const std::lock_guard lock(registryMutex);
+  const std::scoped_lock lock(registryMutex);
   return names.at(id);
 }
 
