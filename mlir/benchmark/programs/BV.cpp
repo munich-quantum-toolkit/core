@@ -39,8 +39,8 @@ namespace {
        bit != benchmark.options().hiddenBitstring.rend(); ++bit) {
     bits.push_back(*bit == '1');
   }
-  const auto type = RankedTensorType::get(
-      {static_cast<int64_t>(bits.size())}, builder.getI1Type());
+  const auto type = RankedTensorType::get({static_cast<int64_t>(bits.size())},
+                                          builder.getI1Type());
   const auto value = DenseElementsAttr::get(type, ArrayRef<bool>(bits));
   return arith::ConstantOp::create(builder, value).getResult();
 }
@@ -59,9 +59,8 @@ SmallVector<Value> bv(qc::QCProgramBuilder& builder, const BV& benchmark) {
     auto query = builder.allocQubit();
     builder.scfFor(0, width, 1, [&](Value index) {
       builder.h(query);
-      auto bit =
-          tensor::ExtractOp::create(builder, hidden, ValueRange{index})
-              .getResult();
+      auto bit = tensor::ExtractOp::create(builder, hidden, ValueRange{index})
+                     .getResult();
       builder.scfIf(bit, [&] { builder.cz(query, flag); });
       builder.h(query);
       builder.measure(query, result, index);
@@ -71,16 +70,18 @@ SmallVector<Value> bv(qc::QCProgramBuilder& builder, const BV& benchmark) {
   }
 
   auto query = builder.allocQubitRegisterStorage(width, "query");
-  builder.scfFor(0, width, 1,
-                 [&](Value index) { builder.h(builder.loadQubit(query, index)); });
+  builder.scfFor(0, width, 1, [&](Value index) {
+    builder.h(builder.loadQubit(query, index));
+  });
   builder.scfFor(0, width, 1, [&](Value index) {
     auto bit = tensor::ExtractOp::create(builder, hidden, ValueRange{index})
                    .getResult();
-    builder.scfIf(
-        bit, [&] { builder.cz(builder.loadQubit(query, index), flag); });
+    builder.scfIf(bit,
+                  [&] { builder.cz(builder.loadQubit(query, index), flag); });
   });
-  builder.scfFor(0, width, 1,
-                 [&](Value index) { builder.h(builder.loadQubit(query, index)); });
+  builder.scfFor(0, width, 1, [&](Value index) {
+    builder.h(builder.loadQubit(query, index));
+  });
   builder.measureQubitRegister(query, result, width);
   return {result};
 }

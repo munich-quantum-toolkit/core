@@ -8,10 +8,9 @@
  * Licensed under the MIT License
  */
 
+#include "Programs.h"
 #include "bench/QFT.hpp"
 #include "bench/QPE.hpp"
-
-#include "Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <llvm/ADT/ArrayRef.h>
@@ -67,8 +66,8 @@ void phaseRotationLoop(
   for (size_t i = 0; i < options.precision; ++i) {
     const auto turns = static_cast<long double>(remainder) /
                        static_cast<long double>(denominator);
-    angles.emplace_back(static_cast<double>(
-        2.L * std::numbers::pi_v<long double> * turns));
+    angles.emplace_back(
+        static_cast<double>(2.L * std::numbers::pi_v<long double> * turns));
     if (remainder >= denominator - remainder) {
       remainder -= denominator - remainder;
     } else {
@@ -94,13 +93,14 @@ SmallVector<Value> iterativeQPE(qc::QCProgramBuilder& builder,
   auto lower = arith::ConstantIndexOp::create(builder, 0).getResult();
   auto upper = arith::ConstantIndexOp::create(builder, precision).getResult();
   auto one = arith::ConstantIndexOp::create(builder, 1).getResult();
-  auto last = arith::ConstantIndexOp::create(builder, precision - 1).getResult();
+  auto last =
+      arith::ConstantIndexOp::create(builder, precision - 1).getResult();
   auto angles = controlledPhaseAngles(builder, benchmark);
 
   builder.scfFor(lower, upper, 1, [&](Value step) {
     auto power = arith::SubIOp::create(builder, last, step);
-    auto angle =
-        tensor::ExtractOp::create(builder, angles, ValueRange{power}).getResult();
+    auto angle = tensor::ExtractOp::create(builder, angles, ValueRange{power})
+                     .getResult();
     builder.h(query);
     builder.cp(angle, query, ancilla);
 
@@ -109,8 +109,7 @@ SmallVector<Value> iterativeQPE(qc::QCProgramBuilder& builder,
         builder, lower, step, -std::numbers::pi / 2.0, 0.5,
         [&](Value correction, Value distance) {
           auto bit = arith::SubIOp::create(builder, previous, distance);
-          builder.scfIf(result, bit,
-                        [&] { builder.p(correction, query); });
+          builder.scfIf(result, bit, [&] { builder.p(correction, query); });
         });
 
     builder.h(query);
@@ -127,14 +126,16 @@ SmallVector<Value> standardQPE(qc::QCProgramBuilder& builder,
   auto ancilla = builder.allocQubit();
   auto result =
       builder.allocClassicalBitRegister(precision, benchmark.output().name);
-  builder.scfFor(0, precision, 1,
-                 [&](Value index) { builder.h(builder.loadQubit(query, index)); });
+  builder.scfFor(0, precision, 1, [&](Value index) {
+    builder.h(builder.loadQubit(query, index));
+  });
   builder.x(ancilla);
 
   auto zero = arith::ConstantIndexOp::create(builder, 0).getResult();
   auto upper = arith::ConstantIndexOp::create(builder, precision).getResult();
   auto one = arith::ConstantIndexOp::create(builder, 1).getResult();
-  auto last = arith::ConstantIndexOp::create(builder, precision - 1).getResult();
+  auto last =
+      arith::ConstantIndexOp::create(builder, precision - 1).getResult();
   auto angles = controlledPhaseAngles(builder, benchmark);
   builder.scfFor(zero, upper, 1, [&](Value index) {
     auto angle = tensor::ExtractOp::create(builder, angles, ValueRange{index})
@@ -145,13 +146,13 @@ SmallVector<Value> standardQPE(qc::QCProgramBuilder& builder,
 
   builder.scfFor(zero, upper, 1, [&](Value step) {
     auto previous = arith::SubIOp::create(builder, step, one);
-    phaseRotationLoop(
-        builder, zero, step, -std::numbers::pi / 2.0, 0.5,
-        [&](Value angle, Value distance) {
-          auto control = arith::SubIOp::create(builder, previous, distance);
-          builder.cp(angle, builder.loadQubit(query, control),
-                     builder.loadQubit(query, step));
-        });
+    phaseRotationLoop(builder, zero, step, -std::numbers::pi / 2.0, 0.5,
+                      [&](Value angle, Value distance) {
+                        auto control =
+                            arith::SubIOp::create(builder, previous, distance);
+                        builder.cp(angle, builder.loadQubit(query, control),
+                                   builder.loadQubit(query, step));
+                      });
     builder.h(builder.loadQubit(query, step));
   });
   builder.measureQubitRegister(query, result, precision);
@@ -167,8 +168,9 @@ SmallVector<Value> standardQFT(qc::QCProgramBuilder& builder,
   auto result =
       builder.allocClassicalBitRegister(qubits, benchmark.output().name);
 
-  builder.scfFor(period, qubits, 1,
-                 [&](Value index) { builder.h(builder.loadQubit(query, index)); });
+  builder.scfFor(period, qubits, 1, [&](Value index) {
+    builder.h(builder.loadQubit(query, index));
+  });
   auto zero = arith::ConstantIndexOp::create(builder, 0).getResult();
   auto one = arith::ConstantIndexOp::create(builder, 1).getResult();
   auto last = arith::ConstantIndexOp::create(builder, qubits - 1).getResult();

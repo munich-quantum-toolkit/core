@@ -35,8 +35,7 @@ TEST(QFT, ValidatesTheConfiguredInstance) {
                std::invalid_argument);
   EXPECT_THROW(static_cast<void>(QFT{{.qubits = 3, .periodExponent = 4}}),
                std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(QFT{{.qubits = 1075,
-                                      .periodExponent = 1075}}),
+  EXPECT_THROW(static_cast<void>(QFT{{.qubits = 1075, .periodExponent = 1075}}),
                std::invalid_argument);
   EXPECT_THROW(static_cast<void>(QFT{{.qubits = 3,
                                       .periodExponent = 1,
@@ -52,8 +51,8 @@ TEST(QFT, GivesTwoPeaksForPeriodTwo) {
 }
 
 TEST(QFT, GivesFourPeaksForPeriodFour) {
-  const QFT benchmark{{.qubits = 4, .periodExponent = 2,
-                       .method = QFTMethod::Semiclassical}};
+  const QFT benchmark{
+      {.qubits = 4, .periodExponent = 2, .method = QFTMethod::Semiclassical}};
   for (const auto* outcome : {"0000", "0100", "1000", "1100"}) {
     EXPECT_DOUBLE_EQ(benchmark.probability(outcome), 0.25);
   }

@@ -33,9 +33,8 @@ TEST(BV, ValidatesTheConfiguredInstance) {
                std::invalid_argument);
   EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = "10x"}}),
                std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(
-                   BV{{.hiddenBitstring = std::string(BVOptions::MAX_BITS + 1,
-                                                     '0')}}),
+  EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = std::string(
+                                         BVOptions::MAX_BITS + 1, '0')}}),
                std::invalid_argument);
   EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = "1",
                                      .method = static_cast<BVMethod>(2)}}),
