@@ -6,17 +6,6 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### Structured benchmarks replace CoreAlgorithms
-
-MQT Core no longer installs `MQT::CoreAlgorithms` or the headers below
-`algorithms/`. Use `MQT::CoreBenchmarks` and `mqt-core-bench` to configure,
-generate, and evaluate structured GHZ, Grover, and phase-estimation benchmarks.
-
-MQT Core does not replace its former Bernstein–Vazirani, QFT, random Clifford,
-state-preparation, or W-state circuit factories. Move such code to the package
-that uses it. The `BUILD_MQT_CORE_BENCHMARKS` option and its legacy DD
-evaluation target were also removed.
-
 ### Program serialization for QDMI Qiskit backends
 
 The Qiskit backend no longer decides in its own code how to turn a circuit into

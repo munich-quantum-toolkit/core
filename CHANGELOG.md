@@ -14,23 +14,20 @@ releases may include breaking changes.
 
 #### General MQT Compiler Collection infrastructure
 
-- ✨ Add typed structured GHZ, Grover, and quantum phase-estimation benchmarks
-  with versioned requests, analytic references, deterministic manifests, and
-  C++, Python, and command-line interfaces ([#2135]) ([**@denialhaag**],
-  [**@burgholzer**])
 - ✨ Launch the MQT Compiler Collection with the QC and QCO dialects, its core
-  compiler infrastructure, and C++ and Python APIs ([#1264], [#1330], [#1402],
-  [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470],
-  [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521],
-  [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572],
-  [#1573], [#1580], [#1602], [#1603], [#1620], [#1623], [#1626], [#1627],
-  [#1635], [#1638], [#1673], [#1675], [#1700], [#1717], [#1728], [#1730],
-  [#1749], [#1751], [#1762], [#1765], [#1780], [#1781], [#1782], [#1806],
-  [#1807], [#1808], [#1815], [#1824], [#1869], [#1872], [#1914], [#1925],
-  [#1927], [#1935], [#1936], [#1938], [#1975], [#1976], [#2006], [#2014],
-  [#2015], [#2017], [#2026], [#2028], [#2054], [#2058], [#2125], [#2136],
-  [#2150], [#2158]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
-  [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
+  compiler infrastructure, structured benchmarks, and C++, Python, and
+  command-line APIs ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436],
+  [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474],
+  [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550],
+  [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602],
+  [#1603], [#1620], [#1623], [#1626], [#1627], [#1635], [#1638], [#1673],
+  [#1675], [#1700], [#1717], [#1728], [#1730], [#1749], [#1751], [#1762],
+  [#1765], [#1780], [#1781], [#1782], [#1806], [#1807], [#1808], [#1815],
+  [#1824], [#1869], [#1872], [#1914], [#1925], [#1927], [#1935], [#1936],
+  [#1938], [#1975], [#1976], [#2006], [#2014], [#2015], [#2017], [#2026],
+  [#2028], [#2054], [#2058], [#2125], [#2136], [#2150], [#2158], [#2135])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**],
+  [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**], [**@J4MMlE**])
 - ✨ Add decision diagram-based construction, simulation, and sampling for QCO
   programs ([#1915], [#1973]) ([**@simon1hofmann**])
@@ -98,9 +95,6 @@ releases may include breaking changes.
 
 ### Removed
 
-- 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
-  DD package evaluation. Use the new structured benchmark API and CLI for GHZ,
-  Grover, and phase estimation ([#2135]) ([**@denialhaag**], [**@burgholzer**])
 - 💥 Remove the unowned decision-diagram approximation algorithm and
   density-matrix support from MQT Core ([#1466], [#2154]) ([**@burgholzer**])
 - 💥 Make `nlohmann_json` an implementation detail and replace JSON-typed
