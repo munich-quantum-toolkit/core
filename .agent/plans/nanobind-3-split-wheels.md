@@ -58,6 +58,8 @@ does not publish CPython 3.13t or 3.14t wheels.
 - [x] (2026-08-23 14:02Z) Built and imported the final `cp311-abi3` wheel with
       CMake 4.4.2, verified the Windows cibuildwheel options, and passed lint
       and lock checks.
+- [x] (2026-08-23 14:08Z) Added CMake 4.4.1 to the existing build dependency
+      group after hosted no-build-isolation sessions exposed the missing tool.
 
 ## Surprises & Discoveries
 
@@ -117,6 +119,9 @@ does not publish CPython 3.13t or 3.14t wheels.
   `Py_GIL_DISABLED` through its Python module targets on Windows. Requiring
   CMake 4.4.1 for Python package builds replaces MQT Core's manual definition
   without raising the CMake floor for ordinary C++ consumers.
+- Observation: scikit-build-core can provision its selected CMake version for
+  isolated package builds, but the repository's no-build-isolation nox sessions
+  must install that version through the existing build dependency group.
 - Observation: macOS x86-64 split frontends must export nanobind's weak
   exception RTTI so that the backend catches its exception types. Apple arm64
   uses non-unique RTTI and needs no extra exports. Exporting every

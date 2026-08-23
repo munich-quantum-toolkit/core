@@ -423,6 +423,32 @@ wheels = [
 ]
 
 [[package]]
+name = "cmake"
+version = "4.4.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/ea/206baf6fd51a47790f766a24fa4514cd39c31b26ab934376f29a4aa458e5/cmake-4.4.2.tar.gz", hash = "sha256:6af2e0585239627f85f49a8f90761ce4560c671daae1d5e8d2b5f059dc7d22de", size = 34953, upload-time = "2026-08-04T06:14:49.786Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/30/5a/578888a6713994abfd97db756c937ce5ced44fa6280e7b7d452eebb8aa83/cmake-4.4.2-py3-none-macosx_10_10_universal2.whl", hash = "sha256:7a0279d3006c961ba1d62fe4383919ebcb7b770fb3357f6ae1309ca89210183b", size = 54414035, upload-time = "2026-08-04T06:13:31.175Z" },
+    { url = "https://files.pythonhosted.org/packages/0f/4f/925a2a60ae544791599e2fb14d3619d979511a56518e512081e7ef4b5f8d/cmake-4.4.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:fc9d9f95dc9a542db99ca96cba1c275adeeb497ff2e134c780a9677b8578bd05", size = 30288280, upload-time = "2026-08-04T06:13:35.675Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/76/6f4327771875666f95c4f4c56a53fc25eaac8e027e3144b37ec827ed3818/cmake-4.4.2-py3-none-manylinux2014_i686.manylinux_2_17_i686.whl", hash = "sha256:b0a9bb2fa889773c3ff719130064de28edd36fd3e916b46e576243a6f16f033f", size = 31466224, upload-time = "2026-08-04T06:13:39.268Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/8f/f5a8bb6e7e86947b6810d2b2685710ed8332c2ab8766c6e3121d17cee59e/cmake-4.4.2-py3-none-manylinux2014_ppc64le.manylinux_2_17_ppc64le.whl", hash = "sha256:93b06166210e478783e3078612144700d44e0492fe7efd6fcd00e4061bc709a6", size = 31225510, upload-time = "2026-08-04T06:13:43.367Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/57/ebd7a6f429a6d5b9cf87a8fe16f17851aa9b3ce78af5b58af3c5e41ac939/cmake-4.4.2-py3-none-manylinux2014_s390x.manylinux_2_17_s390x.whl", hash = "sha256:ea5c206308f8eefc0be7cbeeee93b8b192b6af7338741b6d12fe387234bb7920", size = 29098755, upload-time = "2026-08-04T06:13:47.102Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/b7/b8d0b15f57b37ac5b9e374169471f045da3a715b7f0f3af681011415d972/cmake-4.4.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:27b024e903ef985b37183d754a5c61230b56b41fe0971cd44b71b80c787ec594", size = 30230879, upload-time = "2026-08-04T06:13:50.678Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/91/1d72e960d27edbcc3f02bedd3890c4096bbaaf9dbcb7d86f678d2082fe90/cmake-4.4.2-py3-none-manylinux_2_31_armv7l.whl", hash = "sha256:a3580e0c30755c36b48edbbf471aaeb5d07858de0281e58a4a598dfa52a0f05d", size = 27319760, upload-time = "2026-08-04T06:13:54.468Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/f7/dc27806fdee158ca3f30d043ef1c1b18b5f846266d5adf4989d97cc571cc/cmake-4.4.2-py3-none-manylinux_2_31_riscv64.whl", hash = "sha256:e58296c6e0c04dec37fc28cbf56ca7150646c948dddab2b0d6f8a0a466e7f1ca", size = 27432198, upload-time = "2026-08-04T06:13:58.614Z" },
+    { url = "https://files.pythonhosted.org/packages/97/ff/b3f135c8a28a2ee2b57c2f671342a0c0f3cb1b78ea62a633815483eb4acd/cmake-4.4.2-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:00a0a207efc83019b55f617b93b2592c2616aebd9c4eeab83ec076dc2a9b84a4", size = 39474065, upload-time = "2026-08-04T06:14:03.472Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/b5/463afc4ec6ae535661d6a50918efff9e165ef4793ae6c14c376f0660d756/cmake-4.4.2-py3-none-musllinux_1_2_armv7l.whl", hash = "sha256:0220135cceb78530e79e2b5cd0392672e4c524178db768a5f940ea24520e1359", size = 36109755, upload-time = "2026-08-04T06:14:08.512Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/e8/052a01a2c3362d04cb545c456ab26a8776c683f9a97f4082508c6d8cc506/cmake-4.4.2-py3-none-musllinux_1_2_i686.whl", hash = "sha256:4eb0e17af8344d3063ce0c1a38a156eb7bbe3447f984ad12629a40f5c967fedd", size = 42239493, upload-time = "2026-08-04T06:14:14.295Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/30/c9b5bcd20411793c26838191a73e0e820da64d8f872ecba5364ebc2a3538/cmake-4.4.2-py3-none-musllinux_1_2_ppc64le.whl", hash = "sha256:00195668e40e5dd0d51244e31d15fabb79b97c5e154f9f78b4240f152198c2eb", size = 41399147, upload-time = "2026-08-04T06:14:19.396Z" },
+    { url = "https://files.pythonhosted.org/packages/31/d4/56f18d34b11981031f7bdb0215f05e8e43982d7848dc39a8a96b141d4e6a/cmake-4.4.2-py3-none-musllinux_1_2_riscv64.whl", hash = "sha256:41e2a04663685304222ba03fb5bed8db52480854aa873cbae1478eedf3a8ec1a", size = 36322600, upload-time = "2026-08-04T06:14:24.013Z" },
+    { url = "https://files.pythonhosted.org/packages/34/4a/582268f8468d0f49b4b73423364af7ee82dba28eef63886e9c32f34761a2/cmake-4.4.2-py3-none-musllinux_1_2_s390x.whl", hash = "sha256:269f84ede6543c5d65249dd685db6125a962e5928b7eafd0ed3acdd2b600aa9e", size = 38668384, upload-time = "2026-08-04T06:14:28.633Z" },
+    { url = "https://files.pythonhosted.org/packages/45/24/620930e1ddf0832ac688e00aad2568dd876d71f3637fa98f917dfec25df0/cmake-4.4.2-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:e5b51faffe02ca78ed4f6b9afbe6dee8d25ab36e9a9365f510e890a16db76013", size = 39444623, upload-time = "2026-08-04T06:14:33.525Z" },
+    { url = "https://files.pythonhosted.org/packages/70/a4/2f2af96afacfb0f4e5fc02f6f491d4cde4ce8e51d914311f2492e22ed8d9/cmake-4.4.2-py3-none-win32.whl", hash = "sha256:109af09f308fd53ddc44bbc23536b6ecb72db53f0218f611efccd9871b19f39f", size = 38774551, upload-time = "2026-08-04T06:14:38.493Z" },
+    { url = "https://files.pythonhosted.org/packages/06/9e/3e572a9a8966eec43b6d75b8b8d9543ca2182ec4006a538fb239e004a3cf/cmake-4.4.2-py3-none-win_amd64.whl", hash = "sha256:c28388fe95298486169c45c0ec8bdf067aabcb59273b98a4cdae8be5cd9c74f3", size = 42325289, upload-time = "2026-08-04T06:14:42.919Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/b9/2f0b9b355a5293d73db62cefab46a7d0f3b151962d58fb284f340e3685c4/cmake-4.4.2-py3-none-win_arm64.whl", hash = "sha256:1358f355578d19397f87955d4204f737bb399ba36cce59be5853976912836b32", size = 40497534, upload-time = "2026-08-04T06:14:47.366Z" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -1474,11 +1500,13 @@ qiskit = [
 
 [package.dev-dependencies]
 build = [
+    { name = "cmake" },
     { name = "nanobind" },
     { name = "scikit-build-core" },
     { name = "vcs-versioning" },
 ]
 dev = [
+    { name = "cmake" },
     { name = "lit" },
     { name = "nanobind" },
     { name = "nox" },
@@ -1544,11 +1572,13 @@ provides-extras = ["pennylane", "qiskit"]
 
 [package.metadata.requires-dev]
 build = [
+    { name = "cmake", specifier = ">=4.4.1" },
     { name = "nanobind", specifier = "~=3.0.0" },
     { name = "scikit-build-core", specifier = ">=1.0.3" },
     { name = "vcs-versioning", specifier = ">=2.3.0" },
 ]
 dev = [
+    { name = "cmake", specifier = ">=4.4.1" },
     { name = "lit", specifier = ">=18.1.8" },
     { name = "nanobind", specifier = "~=3.0.0" },
     { name = "nox", specifier = ">=2025.11.12" },
