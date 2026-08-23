@@ -1461,7 +1461,7 @@ wheels = [
 name = "mqt-core"
 source = { editable = "." }
 dependencies = [
-    { name = "nanobind-backend", marker = "implementation_name == 'cpython'" },
+    { name = "nanobind-backend" },
 ]
 
 [package.optional-dependencies]
@@ -1536,7 +1536,7 @@ test-base = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nanobind-backend", marker = "implementation_name == 'cpython'", specifier = ">=1.0" },
+    { name = "nanobind-backend", specifier = ">=1.0" },
     { name = "pennylane", marker = "extra == 'pennylane'", specifier = ">=0.45.1,<0.46" },
     { name = "qiskit", extras = ["qasm3-import"], marker = "extra == 'qiskit'", specifier = ">=1.1.0" },
 ]

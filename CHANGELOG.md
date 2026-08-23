@@ -83,13 +83,18 @@ releases may include breaking changes.
 
 ### Changed
 
-- 💥 Require Python 3.11, update `nanobind` to version 3.0.0, and publish one
-  split-mode `cp311-abi3` wheel for GIL-enabled CPython 3.11 and newer and one
-  `cp315-abi3t` wheel for free-threaded CPython 3.15 and newer ([#2209])
-  ([**@denialhaag**], [**@burgholzer**])
-- ⚡ Remove an extra dense copy from `VectorDD.get_vector` and protect
-  process-wide DD, IR, and QDMI state for free-threaded Python ([#2209])
+- 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
+  [**@burgholzer**])
+- ⬆️ Update `nanobind` to version 3.0.0 ([#2209]) ([**@denialhaag**],
+  [**@burgholzer**])
+- 📦 Publish one split-mode `cp311-abi3` wheel for GIL-enabled CPython 3.11 and
+  newer ([#2209]) ([**@denialhaag**], [**@burgholzer**])
+- 📦 Publish one `cp315-abi3t` wheel for free-threaded CPython 3.15 and newer
+  ([#2209]) ([**@denialhaag**], [**@burgholzer**])
+- ⚡ Remove an extra dense copy from `VectorDD.get_vector` ([#2209])
   ([**@burgholzer**])
+- 🐛 Protect process-wide DD, IR, and QDMI state for free-threaded Python
+  ([#2209]) ([**@burgholzer**])
 - 💥 Prune dead and misleading CoreIR APIs and remove random-number generator
   state from `QuantumComputation` ([#2111], [#2112]) ([**@simon1hofmann**])
 - 💥 Update QIR execution for QIR 2.1, isolated runtimes, reproducible

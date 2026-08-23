@@ -49,6 +49,9 @@ does not publish CPython 3.13t or 3.14t wheels.
   `#2209`.
 - [x] Validate the Windows `abi3t` detection workaround on both hosted Windows
   wheel builders.
+- [x] (2026-08-23 10:15Z) Addressed the collected review by making split mode
+  unconditional, restoring full Windows x64 wheel tests, and simplifying the
+  platform branches and release notes.
 
 ## Surprises & Discoveries
 
@@ -99,9 +102,10 @@ does not publish CPython 3.13t or 3.14t wheels.
   the free-threaded backend. nanobind's current split workflow tests `abi3t`
   only on Linux.
 - Observation: cibuildwheel passes test requirements through `cmd.exe` on
-  Windows, where version-bound operators become shell redirections. Windows
-  wheel jobs therefore use the existing dependency-free import test; the regular
-  Windows job runs the full test suite.
+  Windows, where version-bound operators become shell redirections. Windows x64
+  builds install the test dependency group through one shell-safe `uv` command
+  and run the full wheel tests. Windows ARM64 and CPython 3.15 builds use the
+  dependency-free import test.
 - Observation: macOS x86-64 split frontends must export nanobind's weak
   exception RTTI so that the backend catches its exception types. Apple arm64
   uses non-unique RTTI and needs no extra exports. Exporting every
@@ -110,11 +114,10 @@ does not publish CPython 3.13t or 3.14t wheels.
 
 ## Decision Log
 
-- Decision: Enable split mode only for Python wheels, not generic direct CMake
-  builds. Rationale: official backend wheels require a mainstream shared C++
-  runtime and do not cover every source-build toolchain. Direct CMake builds
-  must remain self-contained unless the caller opts in. Date/Author: 2026-08-22
-  / Codex.
+- Decision: Build every Python binding in split mode. Rationale: MQT Core
+  supports CPython on the mainstream wheel platforms covered by
+  `nanobind-backend`; PyPy, musllinux, and linked binding builds are not part of
+  the supported matrix. Date/Author: 2026-08-23 / Codex.
 - Decision: Use `wheel.py-api = "cp311"` and one scikit-build-core override for
   free-threaded CPython 3.15 and newer. Rationale: the override produces a
   separate `cp315-abi3t` artifact without advertising it as a classic `abi3`
@@ -122,10 +125,9 @@ does not publish CPython 3.13t or 3.14t wheels.
 - Decision: Drop Python 3.10 and all free-threaded builds before CPython 3.15.
   Rationale: this is a major release, and the simpler support boundary removes
   unresolvable backend variants. Date/Author: 2026-08-22 / Codex.
-- Decision: Declare `nanobind-backend>=1.0` as a CPython dependency. Rationale:
-  every supported CPython wheel has a matching backend, nanobind promises
-  backward compatibility for the frontend contract, and the implementation
-  marker preserves linked PyPy source builds. Date/Author: 2026-08-22 / Codex.
+- Decision: Declare `nanobind-backend>=1.0` as an unconditional dependency.
+  Rationale: every supported build uses nanobind split mode; PyPy and musllinux
+  are not supported. Date/Author: 2026-08-23 / Codex.
 - Decision: Add a split-only ELF linker workaround instead of enabling LTO.
   Rationale: `--gc-sections` fixes the nanobind 3.0 CMake omission at its
   consumer boundary and halves the MLIR extension size; LTO adds build cost
@@ -162,7 +164,7 @@ does not publish CPython 3.13t or 3.14t wheels.
 
 The implementation produces one `cp311-abi3` wheel and one `cp315-abi3t` wheel
 per platform. Final local Linux AArch64 artifacts were 78,355,810 and 78,364,536
-bytes. Both declare the CPython-only `nanobind-backend>=1.0` dependency and pass
+bytes. Both declare the `nanobind-backend>=1.0` dependency and pass
 `check-wheel-contents`; the classic wheel also passes strict `abi3audit`. Fresh
 installs imported all four extension modules on CPython 3.11, 3.14, and
 free-threaded 3.15 with the GIL disabled.
@@ -204,8 +206,8 @@ mode module contains both parts and is tied to one CPython ABI, such as
 
 Scikit-build-core requests the classic `cp311` stable ABI by default. One
 override changes that request to `cp315t` when the interpreter is free-threaded
-and at least Python 3.15. The CMake helper detects the resulting
-`SKBUILD_SABI_COMPONENT` and enables split mode for all supported wheels.
+and at least Python 3.15. The CMake helper enables split mode for every binding
+build.
 
 ## Plan of Work
 
@@ -215,11 +217,9 @@ on free-threaded CPython 3.15 and newer. Skip CPython 3.13t and 3.14t in
 cibuildwheel. Use an import-only wheel test where the full test dependencies do
 not yet provide Python 3.15 or Windows ARM64 wheels.
 
-When scikit-build-core requests a stable ABI, `cmake/AddMQTPythonBinding.cmake`
-will pass `BACKEND_MODULE nanobind_backend` for every extension. Retain
-`STABLE_ABI` and `FREE_THREADED`; nanobind selects `abi3` or `abi3t` from the
-interpreter and scikit-build-core settings. Generic direct CMake builds have no
-`SKBUILD_SABI_COMPONENT` and remain linked.
+`cmake/AddMQTPythonBinding.cmake` passes `BACKEND_MODULE nanobind_backend` for
+every extension. Retain `FREE_THREADED`; nanobind selects `abi3` or `abi3t` from
+the interpreter and scikit-build-core settings.
 
 Apply the two required `.none()` API migrations. Change the four shared DD
 random engines to `thread_local`. Do not add `.freeze()`, object pooling, manual
@@ -268,10 +268,8 @@ installed package must import on supported GIL-enabled CPython versions.
 
 CPython 3.13t and 3.14t must not appear in the cibuildwheel build identifiers.
 
-If MQT Core validates nanobind's provisional support, a CPython 3.15t build must
-produce a `cp315-abi3t` wheel that requires the backend and imports all four
-extensions. If this proof fails, the override must keep 3.15t linked and the
-plan must record the failure rather than advertise an unproved stable ABI.
+A CPython 3.15t build must produce a `cp315-abi3t` wheel that requires the
+backend and imports all four extensions.
 
 Windows ARM64 must use the same `cp311-abi3` and `cp315-abi3t` split layout as
 the other supported platforms.
@@ -286,6 +284,6 @@ products, or unrelated changes.
 Lock generation, CMake configuration, wheel builds, tests, and lint are safe to
 repeat. Use fresh temporary wheel and virtual-environment directories when
 comparing ABI variants. Build products remain under `build/` or temporary
-directories and are not committed. If one split-mode platform fails, change only
-that platform's scikit-build-core override back to linked mode and rerun its
-wheel proof; do not weaken the other proven paths.
+directories and are not committed. If one split-mode platform fails, fix or
+remove that unsupported platform instead of publishing a different binding
+layout.

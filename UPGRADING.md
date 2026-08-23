@@ -20,9 +20,9 @@ nanobind 3 changes the nanobind ABI. Rebuild downstream native Python extensions
 that use MQT Core's nanobind-bound C++ types. Pure Python consumers do not need
 to recompile anything.
 
-The wheels depend on `nanobind-backend`, which supplies the interpreter-specific
-nanobind runtime. This dependency does not change the C++ API or the Python
-import paths.
+The Python bindings depend on `nanobind-backend`, which supplies the
+interpreter-specific nanobind runtime. This dependency does not change the C++
+API or the Python import paths.
 
 ### Program serialization for QDMI Qiskit backends
 

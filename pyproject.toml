@@ -50,7 +50,7 @@ classifiers = [
 requires-python = ">=3.11"
 dynamic = ["version"]
 dependencies = [
-  "nanobind-backend>=1.0; implementation_name == 'cpython'",
+  "nanobind-backend>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -292,7 +292,12 @@ test-command = "pytest test/python"
 build-frontend = "uv"
 
 [[tool.cibuildwheel.overrides]]
-select = ["cp*-win_*", "cp315*"]
+select = ["cp31[1-4]-win_amd64"]
+test-groups = []
+before-test = "uv pip install --group test"
+
+[[tool.cibuildwheel.overrides]]
+select = ["cp*-win_arm64", "cp315*"]
 test-groups = []
 test-sources = []
 test-command = "python -c \"import mqt.core.dd, mqt.core.ir, mqt.core.mlir, mqt.core.qdmi\""
