@@ -28,6 +28,7 @@
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/BlockSupport.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -46,6 +47,20 @@
 
 using namespace mlir;
 using namespace qir;
+
+static LLVM::ModuleFlagAttr findModuleFlag(const ModuleOp moduleOp,
+                                           const StringRef name) {
+  LLVM::ModuleFlagAttr result;
+  moduleOp->walk([&](LLVM::ModuleFlagsOp flagsOp) {
+    for (const auto flag :
+         flagsOp.getFlags().getAsRange<LLVM::ModuleFlagAttr>()) {
+      if (flag.getKey().getValue() == name) {
+        result = flag;
+      }
+    }
+  });
+  return result;
+}
 
 namespace {
 
@@ -77,20 +92,6 @@ protected:
     context->loadAllAvailableDialects();
   }
 };
-
-static LLVM::ModuleFlagAttr findModuleFlag(const ModuleOp moduleOp,
-                                           const StringRef name) {
-  LLVM::ModuleFlagAttr result;
-  moduleOp->walk([&](LLVM::ModuleFlagsOp flagsOp) {
-    for (const auto flag :
-         flagsOp.getFlags().getAsRange<LLVM::ModuleFlagAttr>()) {
-      if (flag.getKey().getValue() == name) {
-        result = flag;
-      }
-    }
-  });
-  return result;
-}
 
 } // namespace
 
