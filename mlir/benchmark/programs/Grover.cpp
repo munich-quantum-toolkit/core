@@ -11,15 +11,13 @@
 #include "benchmarks/Grover.hpp"
 
 #include "BenchmarkUtils.h"
-#include "mlir/Benchmark/Programs.h"
+#include "Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
-#include <cstdint>
-#include <string>
 
 namespace mqt::benchmark {
 
@@ -65,10 +63,4 @@ SmallVector<Value> grover(qc::QCProgramBuilder& b,
 
   return {result};
 }
-
-SmallVector<Value> grover(qc::QCProgramBuilder& b, const uint64_t n) {
-  return grover(b, benchmarks::Grover({.markedBitstring = std::string(
-                                           static_cast<size_t>(n - 1), '1')}));
-}
-
 } // namespace mqt::benchmark

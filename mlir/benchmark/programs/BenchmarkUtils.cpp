@@ -77,7 +77,7 @@ Value controlledPhaseAngles(qc::QCProgramBuilder& b,
 static void angleLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
                       Value first, const function_ref<Value(Value)>& advance,
                       const function_ref<void(Value, Value)>& body) {
-  auto one = b.indexConstant(1);
+  auto one = arith::ConstantIndexOp::create(b, 1).getResult();
 
   auto loop = scf::ForOp::create(b, lower, upper, one, ValueRange{first});
   OpBuilder::InsertionGuard guard(b);
@@ -92,23 +92,11 @@ void phaseRotationLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
                        const double factor,
                        const function_ref<void(Value, Value)>& body) {
   auto first = mlir::mqt::variantToValue(b, b.getLoc(), start);
-  auto scale = b.floatConstant(factor);
+  auto scale =
+      arith::ConstantOp::create(b, b.getF64FloatAttr(factor)).getResult();
 
   const auto advance = [&](Value angle) {
     return arith::MulFOp::create(b, angle, scale).getResult();
-  };
-  angleLoop(b, lower, upper, first, advance, body);
-}
-
-void uniformRotationLoop(qc::QCProgramBuilder& b, Value lower, Value upper,
-                         const std::variant<double, Value>& start,
-                         const double increment,
-                         const function_ref<void(Value, Value)>& body) {
-  auto first = mlir::mqt::variantToValue(b, b.getLoc(), start);
-  auto step = b.floatConstant(increment);
-
-  const auto advance = [&](Value angle) {
-    return arith::AddFOp::create(b, angle, step).getResult();
   };
   angleLoop(b, lower, upper, first, advance, body);
 }

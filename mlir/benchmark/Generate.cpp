@@ -13,17 +13,14 @@
 #include "benchmarks/GHZ.hpp"
 #include "benchmarks/Grover.hpp"
 #include "benchmarks/QPE.hpp"
-#include "mlir/Benchmark/Programs.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "programs/Programs.h"
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Support/LLVM.h>
 
-#include <algorithm>
-#include <cstdint>
-#include <limits>
 #include <optional>
 #include <utility>
 
@@ -52,32 +49,6 @@ namespace {
 }
 
 } // namespace
-
-std::optional<QCProgram> generateProgram(const Benchmark& benchmark,
-                                         const uint64_t n) {
-  // The programs size their registers with signed dimensions, so a size that
-  // does not fit into them cannot build a module.
-  constexpr auto signedLimit =
-      static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
-  const auto upper = benchmark.maximumSize == 0
-                         ? signedLimit
-                         : std::min(benchmark.maximumSize, signedLimit);
-
-  if (n < benchmark.minimumSize) {
-    llvm::errs() << benchmark.name << ": needs a size of at least "
-                 << benchmark.minimumSize << "\n";
-    return std::nullopt;
-  }
-  if (n > upper) {
-    llvm::errs() << benchmark.name << ": needs a size of at most " << upper
-                 << "\n";
-    return std::nullopt;
-  }
-
-  return buildProgram(benchmark.name, [&](qc::QCProgramBuilder& b) {
-    return benchmark.build(b, n);
-  });
-}
 
 std::optional<QCProgram> generateProgram(const benchmarks::GHZ& benchmark) {
   return buildProgram(

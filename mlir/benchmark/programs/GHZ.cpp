@@ -8,16 +8,16 @@
  * Licensed under the MIT License
  */
 
-#include "BenchmarkUtils.h"
 #include "benchmarks/GHZ.hpp"
-#include "mlir/Benchmark/Programs.h"
+
+#include "BenchmarkUtils.h"
+#include "Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
-#include <cstddef>
 #include <cstdint>
 
 namespace mqt::benchmark {
@@ -33,10 +33,10 @@ SmallVector<Value> ghz(qc::QCProgramBuilder& b,
 
   resetRegister(b, q, size);
 
-  auto root = b.loadQubit(q, b.indexConstant(0));
+  auto root = b.loadQubit(q, arith::ConstantIndexOp::create(b, 0).getResult());
   b.h(root);
   if (options.topology == benchmarks::GHZTopology::Linear) {
-    auto one = b.indexConstant(1);
+    auto one = arith::ConstantIndexOp::create(b, 1).getResult();
     b.scfFor(1, size, 1, [&](Value iv) {
       auto previous = arith::SubIOp::create(b, iv, one);
       b.cx(b.loadQubit(q, previous), b.loadQubit(q, iv));
@@ -52,9 +52,4 @@ SmallVector<Value> ghz(qc::QCProgramBuilder& b,
 
   return {result};
 }
-
-SmallVector<Value> ghzLinear(qc::QCProgramBuilder& b, const uint64_t n) {
-  return ghz(b, benchmarks::GHZ({.qubits = static_cast<size_t>(n)}));
-}
-
 } // namespace mqt::benchmark

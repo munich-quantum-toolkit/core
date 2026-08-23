@@ -9,8 +9,8 @@
  */
 
 #include "BenchmarkUtils.h"
+#include "Programs.h"
 #include "benchmarks/QPE.hpp"
-#include "mlir/Benchmark/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -19,7 +19,6 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
-#include <cstddef>
 #include <cstdint>
 #include <numbers>
 
@@ -40,10 +39,10 @@ SmallVector<Value> iterativeQPE(qc::QCProgramBuilder& b,
 
   /// Descending powers produce the requested phase bits least-significant
   /// first.
-  auto lower = b.indexConstant(0);
-  auto upper = b.indexConstant(precision);
-  auto one = b.indexConstant(1);
-  auto last = b.indexConstant(precision - 1);
+  auto lower = arith::ConstantIndexOp::create(b, 0).getResult();
+  auto upper = arith::ConstantIndexOp::create(b, precision).getResult();
+  auto one = arith::ConstantIndexOp::create(b, 1).getResult();
+  auto last = arith::ConstantIndexOp::create(b, precision - 1).getResult();
   auto angles = controlledPhaseAngles(b, benchmark);
 
   b.scfFor(lower, upper, 1, [&](Value step) {
@@ -69,11 +68,4 @@ SmallVector<Value> iterativeQPE(qc::QCProgramBuilder& b,
 
   return {result};
 }
-
-SmallVector<Value> iqpe(qc::QCProgramBuilder& b, const uint64_t n) {
-  return qpe(b, benchmarks::QPE({.precision = static_cast<size_t>(n),
-                                 .phase = benchmarks::Phase(3, 16),
-                                 .method = benchmarks::QPEMethod::Iterative}));
-}
-
 } // namespace mqt::benchmark

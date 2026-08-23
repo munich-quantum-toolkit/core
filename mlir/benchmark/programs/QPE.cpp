@@ -11,7 +11,7 @@
 #include "benchmarks/QPE.hpp"
 
 #include "BenchmarkUtils.h"
-#include "mlir/Benchmark/Programs.h"
+#include "Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -45,10 +45,10 @@ SmallVector<Value> qpe(qc::QCProgramBuilder& b,
   b.scfFor(0, counting, 1, [&](Value iv) { b.h(b.loadQubit(q, iv)); });
   b.x(anc);
 
-  auto zero = b.indexConstant(0);
-  auto one = b.indexConstant(1);
-  auto upper = b.indexConstant(counting);
-  auto last = b.indexConstant(counting - 1);
+  auto zero = arith::ConstantIndexOp::create(b, 0).getResult();
+  auto one = arith::ConstantIndexOp::create(b, 1).getResult();
+  auto upper = arith::ConstantIndexOp::create(b, counting).getResult();
+  auto last = arith::ConstantIndexOp::create(b, counting - 1).getResult();
   auto angles = controlledPhaseAngles(b, benchmark);
 
   b.scfFor(zero, upper, 1, [&](Value i) {
@@ -82,10 +82,4 @@ SmallVector<Value> qpe(qc::QCProgramBuilder& b,
 
   return {result};
 }
-
-SmallVector<Value> qpe(qc::QCProgramBuilder& b, const uint64_t n) {
-  return qpe(b, benchmarks::QPE({.precision = static_cast<size_t>(n - 1),
-                                 .phase = benchmarks::Phase(3, 16)}));
-}
-
 } // namespace mqt::benchmark

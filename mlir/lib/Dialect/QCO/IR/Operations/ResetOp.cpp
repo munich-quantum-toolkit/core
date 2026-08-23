@@ -104,13 +104,8 @@ struct RemoveResetAfterExtract final : OpRewritePattern<ResetOp> {
 } // namespace
 
 OpFoldResult ResetOp::fold(FoldAdaptor /*adaptor*/) {
-  // A conversion can replace the operand with a value of the target dialect
-  // before it legalizes this operation, and the folder runs in between. Read
-  // the operand without its type so that the fold declines instead of failing
-  // the cast.
-  auto qubitIn = getOperand();
-  if (qubitIn.getDefiningOp<AllocOp>()) {
-    return qubitIn;
+  if (getQubitIn().getDefiningOp<AllocOp>()) {
+    return getQubitIn();
   }
 
   return {};
