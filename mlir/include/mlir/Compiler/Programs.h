@@ -192,7 +192,8 @@ public:
    * @brief Count the gates in the program.
    *
    * @details Any operation that implements the `UnitaryOpInterface` is counted.
-   * Barriers are skipped.
+   * Operations within modifiers are not counted recursively, and barriers are
+   * skipped.
    */
   [[nodiscard]] size_t numGates() const;
 
@@ -200,7 +201,8 @@ public:
    * @brief Count the single-qubit gates in the program.
    *
    * @details Any operation that implements the `UnitaryOpInterface` and acts on
-   * one qubit is counted. Barriers are skipped.
+   * one qubit is counted. Operations within modifiers are not counted
+   * recursively, and barriers are skipped.
    */
   [[nodiscard]] size_t numSingleQubitGates() const;
 
@@ -208,7 +210,8 @@ public:
    * @brief Count the two-qubit gates in the program.
    *
    * @details Any operation that implements the `UnitaryOpInterface` and acts on
-   * two qubits is counted. Barriers are skipped.
+   * two qubits is counted. Operations within modifiers are not counted
+   * recursively, and barriers are skipped.
    */
   [[nodiscard]] size_t numTwoQubitGates() const;
 };

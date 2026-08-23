@@ -731,8 +731,8 @@ Set ``copy=True`` to preserve it.)pb")
           },
           R"pb(Count the gates in the program.
 
-Any operation that implements the ``UnitaryOpInterface`` is counted. Barriers
-are skipped.)pb")
+Any operation that implements the ``UnitaryOpInterface`` is counted. Operations
+within modifiers are not counted recursively, and barriers are skipped.)pb")
       .def(
           "num_single_qubit_gates",
           [](const mlir::QCProgram& program) {
@@ -742,7 +742,8 @@ are skipped.)pb")
           R"pb(Count the single-qubit gates in the program.
 
 Any operation that implements the ``UnitaryOpInterface`` and acts on one qubit
-is counted. Barriers are skipped.)pb")
+is counted. Operations within modifiers are not counted recursively, and
+barriers are skipped.)pb")
       .def(
           "num_two_qubit_gates",
           [](const mlir::QCProgram& program) {
@@ -752,7 +753,8 @@ is counted. Barriers are skipped.)pb")
           R"pb(Count the two-qubit gates in the program.
 
 Any operation that implements the ``UnitaryOpInterface`` and acts on two qubits
-is counted. Barriers are skipped.)pb");
+is counted. Operations within modifiers are not counted recursively, and
+barriers are skipped.)pb");
 
   auto qcoProgram = nb::class_<mlir::QCOProgram, mlir::Program>(
       m, "QCOProgram", R"pb(A compiler program in the QCO dialect.

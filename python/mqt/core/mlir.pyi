@@ -383,22 +383,24 @@ class QCProgram(Program):
     def num_gates(self) -> int:
         """Count the gates in the program.
 
-        Any operation that implements the ``UnitaryOpInterface`` is counted. Barriers
-        are skipped.
+        Any operation that implements the ``UnitaryOpInterface`` is counted. Operations
+        within modifiers are not counted recursively, and barriers are skipped.
         """
 
     def num_single_qubit_gates(self) -> int:
         """Count the single-qubit gates in the program.
 
         Any operation that implements the ``UnitaryOpInterface`` and acts on one qubit
-        is counted. Barriers are skipped.
+        is counted. Operations within modifiers are not counted recursively, and
+        barriers are skipped.
         """
 
     def num_two_qubit_gates(self) -> int:
         """Count the two-qubit gates in the program.
 
         Any operation that implements the ``UnitaryOpInterface`` and acts on two qubits
-        is counted. Barriers are skipped.
+        is counted. Operations within modifiers are not counted recursively, and
+        barriers are skipped.
         """
 
 class QCOProgram(Program):
