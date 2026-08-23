@@ -56,8 +56,9 @@ releases may include breaking changes.
 #### Passes and transformations
 
 - ✨ Add quantum loop unrolling and qubit reuse passes ([#1705], [#1718],
-  [#1755], [#1756], [#1923], [#1924], [#2039], [#2118]) ([**@MatthiasReumann**],
-  [**@DRovara**], [**@burgholzer**], [**@simon1hofmann**])
+  [#1755], [#1756], [#1923], [#1924], [#2039], [#2118], [#2216])
+  ([**@MatthiasReumann**], [**@DRovara**], [**@burgholzer**],
+  [**@simon1hofmann**])
 - ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
   [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
   [#1748], [#1805], [#1870], [#1904], [#1911], [#1951], [#1997], [#2016],
@@ -793,6 +794,7 @@ for previous changelogs._
 
 [#2211]: https://github.com/munich-quantum-toolkit/core/pull/2211
 [#2210]: https://github.com/munich-quantum-toolkit/core/pull/2210
+[#2216]: https://github.com/munich-quantum-toolkit/core/pull/2216
 [#2203]: https://github.com/munich-quantum-toolkit/core/pull/2203
 [#2214]: https://github.com/munich-quantum-toolkit/core/pull/2214
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
