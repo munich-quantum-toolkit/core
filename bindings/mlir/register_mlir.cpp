@@ -812,7 +812,8 @@ operations.)pb");
            &BooleanMemberAdapter<&mlir::QCOProgram::compileForTarget>::call,
            "target"_a, nb::kw_only(), "enable_timing"_a = false,
            "enable_statistics"_a = false,
-           "Compile this QCO program for the target in place.")
+           "Compile this QCO program for the target in place. Do not rely on "
+           "its contents if compilation fails.")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {
