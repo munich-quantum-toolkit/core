@@ -37,8 +37,9 @@ The device implements the full QDMI job interface (except for the
 
 ## Compile and execute QIR
 
-The compiler can snapshot the DDSIM device as an all-to-all target, compile a
-program to QIR, and submit the resulting bitcode to the same device:
+QDMI v1.3 cannot report unrestricted topology and operation support. State these
+known DDSIM properties when compiling a program to QIR, then submit the
+resulting bitcode to the same device:
 
 ```python
 from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
@@ -46,7 +47,11 @@ from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
 device = open_device("mqt.ddsim.default")
-target = CompilerTarget.from_device(device)
+target = CompilerTarget(
+    device.qubits_num(),
+    connectivity=CompilerTarget.Connectivity.all_to_all(),
+    native_operations=CompilerTarget.NativeOperations.unrestricted(),
+)
 program = compile_program(
     "bell.qasm",
     target=target,

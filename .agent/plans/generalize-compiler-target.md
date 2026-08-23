@@ -38,6 +38,8 @@ unrestricted, and an explicit list.
   tests; regenerated stubs; ran focused clang-tidy, full lint, and the final
   diff checks.
 - [x] (2026-08-23 17:33Z) Published the signed change as pull request #2218.
+- [x] (2026-08-23 17:55Z) Kept the DDSIM QDMI snapshot fail-closed and made its
+      QIR example state the simulator's unrestricted facts explicitly.
 
 ## Surprises & Discoveries
 
@@ -54,6 +56,9 @@ unrestricted, and an explicit list.
   operation claim. Evidence: `QDMI_OPERATION_PROPERTY_SITES` defines the valid
   site tuples, while `Operation::getSites()` returns `std::nullopt` when the
   provider does not report the property.
+- Observation: QDMI v1.3 has no compact representation for all-to-all
+  connectivity or unrestricted operations. Evidence: the DDSIM device omits both
+  optional lists because enumerating all pairs of 65,535 sites is not practical.
 
 ## Decision Log
 
@@ -71,6 +76,10 @@ unrestricted, and an explicit list.
   needs that fact. Rationale: program requirements are stage-relative; a
   classical or single-site program does not need native-operation or topology
   claims. Date/Author: 2026-08-23, Codex.
+- Decision: Keep the DDSIM snapshot unknown and state its known simulator facts
+  at the compiler call site. Rationale: interpreting unavailable QDMI v1.3
+  properties as unrestricted would weaken the target contract for every
+  provider. Date/Author: 2026-08-23, Codex.
 
 ## Outcomes & Retrospective
 
