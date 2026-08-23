@@ -111,7 +111,6 @@ sdist.exclude = [
     "**/.github",
     "**/doc",
     "**/docs",
-    "**/eval",
     "**/meta",
     "**/paper",
     "**/plots",
@@ -247,7 +246,6 @@ known-first-party = ["mqt.core"]
 ]
 "python/mqt/core/_compat/**.py" = ["TID251", "A005"]
 "python/mqt/core/__main__.py" = ["T201"]
-"eval/dd_evaluation.py" = ["T201"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -333,7 +331,6 @@ error-on-warning = true
 [tool.ty.src]
 exclude = [
     "docs/**",
-    "eval/**",
     "mlir/**",
 ]
 

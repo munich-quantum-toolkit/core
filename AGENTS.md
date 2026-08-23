@@ -76,8 +76,12 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - Remove obsolete scaffolding and diagnostic suppressions before handoff. Keep a
   workaround or suppression only when it is still necessary, scope it as
   narrowly as possible, and document the technical reason.
-- Update `CHANGELOG.md` and `UPGRADING.md` for user-facing, breaking, or
-  otherwise noteworthy changes.
+- Until MQT Core v4 is released, do not add standalone changelog entries for
+  changes to unreleased v4 functionality. Fold such changes into the existing
+  feature entry or defer them to a dedicated changelog update.
+- Do not add `UPGRADING.md` sections for changes to unreleased functionality.
+  Continue to document changes to released APIs, especially breaking changes, in
+  both `CHANGELOG.md` and `UPGRADING.md`.
 - Format changelog entries with the pull request reference and every
   contributing author, for example `([#123]) ([**@username**])`, and define the
   corresponding links at the bottom of `CHANGELOG.md`.
