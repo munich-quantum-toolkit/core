@@ -32,11 +32,12 @@ unrestricted, and an explicit list.
   closed when the provider does not report it.
 - [x] (2026-08-23 17:25Z) Regenerated bindings and ran focused clang-tidy on
   every changed C++ source and test file.
-- [ ] Add the pull request reference to the launch changelog entry.
+- [x] (2026-08-23 17:33Z) Added the pull request reference to the existing
+  Compiler Collection launch changelog entry.
 - [x] (2026-08-23 17:31Z) Ran the compiler, mapping, synthesis, and Python
   tests; regenerated stubs; ran focused clang-tidy, full lint, and the final
   diff checks.
-- [ ] Publish the signed pull request.
+- [x] (2026-08-23 17:33Z) Published the signed change as pull request #2218.
 
 ## Surprises & Discoveries
 
@@ -73,10 +74,9 @@ unrestricted, and an explicit list.
 
 ## Outcomes & Retrospective
 
-The context-free target contract is implemented. The compiler, mapping,
-synthesis, and focused Python suites pass. Generated stubs are current. Focused
-clang-tidy, full lint, and final diff checks pass. The changelog reference and
-publication remain.
+The context-free target contract is implemented in pull request #2218. The
+compiler, mapping, synthesis, and focused Python suites pass. Generated stubs
+are current. Focused clang-tidy, full lint, and final diff checks pass.
 
 ## Context and Orientation
 
