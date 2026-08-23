@@ -94,11 +94,6 @@ releases may include breaking changes.
   build MLIR by default, and remove the corresponding build options ([#1356],
   [#1549], [#1953]) ([**@burgholzer**], [**@denialhaag**])
 
-### Fixed
-
-- 🐛 Make QC program finalization deterministic ([#2213])
-  ([**@burgholzer**])
-
 ### Removed
 
 - 💥 Remove the unowned decision-diagram approximation algorithm and
@@ -795,7 +790,6 @@ for previous changelogs._
 
 <!-- PR links -->
 
-[#2213]: https://github.com/munich-quantum-toolkit/core/pull/2213
 [#2210]: https://github.com/munich-quantum-toolkit/core/pull/2210
 [#2203]: https://github.com/munich-quantum-toolkit/core/pull/2203
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
