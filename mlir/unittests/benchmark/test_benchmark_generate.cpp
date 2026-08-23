@@ -8,10 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "benchmarks/GHZ.hpp"
-#include "benchmarks/Grover.hpp"
-#include "benchmarks/QPE.hpp"
-#include "mlir/Benchmark/Generate.h"
+#include "bench/BV.hpp"
+#include "bench/GHZ.hpp"
+#include "bench/Grover.hpp"
+#include "bench/QFT.hpp"
+#include "bench/QPE.hpp"
+#include "mlir/Bench/Generate.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -33,8 +35,10 @@
 #include <cstdint>
 #include <limits>
 #include <numbers>
+#include <utility>
+#include <variant>
 
-namespace mqt::benchmark {
+namespace mqt::bench {
 
 using namespace mlir;
 
@@ -44,6 +48,102 @@ template <class Op> [[nodiscard]] size_t countOps(ModuleOp moduleOp) {
   size_t count = 0;
   moduleOp.walk([&](Op) { ++count; });
   return count;
+}
+
+template <class Benchmark>
+void expectValidQCAndJeff(const Benchmark& benchmark) {
+  auto program = generate(benchmark);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(program->isValid());
+  auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
+                                     ProgramFormat::Jeff);
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(std::holds_alternative<JeffProgram>(*compiled));
+}
+
+TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
+  expectValidQCAndJeff(BV{{.hiddenBitstring = "101"}});
+  expectValidQCAndJeff(
+      BV{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}});
+  expectValidQCAndJeff(GHZ{{.qubits = 3}});
+  expectValidQCAndJeff(Grover{{.markedBitstring = "101"}});
+  expectValidQCAndJeff(QFT{{.qubits = 3, .periodExponent = 1}});
+  expectValidQCAndJeff(QFT{
+      {.qubits = 3, .periodExponent = 1, .method = QFTMethod::Semiclassical}});
+  expectValidQCAndJeff(QPE{{.precision = 3, .phase = Phase(3, 8)}});
+  expectValidQCAndJeff(QPE{
+      {.precision = 3, .phase = Phase(3, 8), .method = QPEMethod::Iterative}});
+}
+
+TEST(GenerateProgramTest, OmitsAllocationAdjacentResets) {
+  EXPECT_EQ(countOps<qc::ResetOp>(generate(GHZ{{.qubits = 3}})->module()), 0U);
+  EXPECT_EQ(countOps<qc::ResetOp>(
+                generate(Grover{{.markedBitstring = "101"}})->module()),
+            0U);
+  EXPECT_EQ(
+      countOps<qc::ResetOp>(generate(BV{{.hiddenBitstring = "101"}})->module()),
+      0U);
+  EXPECT_EQ(countOps<qc::ResetOp>(
+                generate(QFT{{.qubits = 3, .periodExponent = 1}})->module()),
+            0U);
+  EXPECT_EQ(
+      countOps<qc::ResetOp>(
+          generate(QPE{{.precision = 3, .phase = Phase(3, 8)}})->module()),
+      0U);
+
+  EXPECT_GT(countOps<qc::ResetOp>(generate(BV{{.hiddenBitstring = "101",
+                                               .method = BVMethod::Dynamic}})
+                                      ->module()),
+            0U);
+  EXPECT_GT(
+      countOps<qc::ResetOp>(generate(QFT{{.qubits = 3,
+                                          .periodExponent = 1,
+                                          .method = QFTMethod::Semiclassical}})
+                                ->module()),
+      0U);
+  EXPECT_GT(
+      countOps<qc::ResetOp>(generate(QPE{{.precision = 3,
+                                          .phase = Phase(3, 8),
+                                          .method = QPEMethod::Iterative}})
+                                ->module()),
+      0U);
+}
+
+TEST(GenerateProgramTest, EmitsStructuredBVWithMethodSpecificResources) {
+  const BV staticBenchmark{{.hiddenBitstring = "101"}};
+  const BV dynamicBenchmark{
+      {.hiddenBitstring = "101", .method = BVMethod::Dynamic}};
+  auto staticProgram = generate(staticBenchmark);
+  auto dynamicProgram = generate(dynamicBenchmark);
+  ASSERT_TRUE(staticProgram);
+  ASSERT_TRUE(dynamicProgram);
+
+  EXPECT_EQ(countOps<qc::AllocOp>(staticProgram->module()), 1U);
+  EXPECT_EQ(countOps<memref::AllocOp>(staticProgram->module()), 1U);
+  EXPECT_EQ(countOps<qc::AllocOp>(dynamicProgram->module()), 2U);
+  EXPECT_EQ(countOps<memref::AllocOp>(dynamicProgram->module()), 0U);
+  EXPECT_EQ(countOps<tensor::ExtractOp>(staticProgram->module()), 1U);
+  EXPECT_EQ(countOps<tensor::ExtractOp>(dynamicProgram->module()), 1U);
+
+  const auto checkIndexing = [](ModuleOp moduleOp) {
+    tensor::ExtractOp secret;
+    moduleOp.walk([&](tensor::ExtractOp op) { secret = op; });
+    ASSERT_TRUE(secret);
+    auto loop = secret->getParentOfType<scf::ForOp>();
+    ASSERT_TRUE(loop);
+    EXPECT_EQ(secret.getIndices().front(), loop.getInductionVar());
+
+    qc::MeasureOp measure;
+    moduleOp.walk([&](qc::MeasureOp op) { measure = op; });
+    ASSERT_TRUE(measure);
+    auto measurementLoop = measure->getParentOfType<scf::ForOp>();
+    ASSERT_TRUE(measurementLoop);
+    auto store = dyn_cast<cbit::StoreOp>(*measure.getResult().user_begin());
+    ASSERT_TRUE(store);
+    EXPECT_EQ(store.getIndex(), measurementLoop.getInductionVar());
+  };
+  checkIndexing(staticProgram->module());
+  checkIndexing(dynamicProgram->module());
 }
 
 [[nodiscard]] DenseElementsAttr angleTable(ModuleOp moduleOp) {
@@ -58,19 +158,17 @@ template <class Op> [[nodiscard]] size_t countOps(ModuleOp moduleOp) {
 }
 
 TEST(GenerateProgramTest, EmitsConfiguredGHZWithoutEagerRegisterLoads) {
-  const benchmarks::GHZ benchmark({.qubits = 64,
-                                   .topology = benchmarks::GHZTopology::Star,
-                                   .basis = benchmarks::GHZBasis::X});
-  auto program = generateProgram(benchmark);
+  const GHZ benchmark(
+      {.qubits = 64, .topology = GHZTopology::Star, .basis = GHZBasis::X});
+  auto program = generate(benchmark);
   ASSERT_TRUE(program);
 
   EXPECT_LT(countOps<memref::LoadOp>(program->module()), 10U);
 }
 
 TEST(GenerateProgramTest, EmitsDirectGroverOracleWithBigEndianMarkedState) {
-  const benchmarks::Grover benchmark(
-      {.markedBitstring = "01", .iterations = 2});
-  auto program = generateProgram(benchmark);
+  const Grover benchmark({.markedBitstring = "01", .iterations = 2});
+  auto program = generate(benchmark);
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
 
@@ -102,11 +200,10 @@ TEST(GenerateProgramTest, EmitsDirectGroverOracleWithBigEndianMarkedState) {
 }
 
 TEST(GenerateProgramTest, KeepsStandardQPEPowerAndResultOrderAligned) {
-  const benchmarks::QPE benchmark(
-      {.precision = 2, .phase = benchmarks::Phase(1, 4)});
+  const QPE benchmark({.precision = 2, .phase = Phase(1, 4)});
   EXPECT_DOUBLE_EQ(benchmark.probability("01"), 1.);
 
-  auto program = generateProgram(benchmark);
+  auto program = generate(benchmark);
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
   auto table = angleTable(moduleOp);
@@ -148,22 +245,39 @@ TEST(GenerateProgramTest, KeepsStandardQPEPowerAndResultOrderAligned) {
   auto* user = *measure.getResult().getUsers().begin();
   auto store = dyn_cast<cbit::StoreOp>(user);
   ASSERT_TRUE(store);
-  auto resultIndex = store.getIndex().getDefiningOp<arith::SubIOp>();
-  ASSERT_TRUE(resultIndex);
-  EXPECT_EQ(resultIndex.getRhs(), measurementLoop.getInductionVar());
+  EXPECT_EQ(store.getIndex(), measurementLoop.getInductionVar());
+  EXPECT_EQ(countOps<qc::SWAPOp>(moduleOp), 0U);
+}
+
+TEST(GenerateProgramTest, EmitsStandardQFTWithoutSwaps) {
+  const QFT benchmark{{.qubits = 4, .periodExponent = 2}};
+  auto program = generate(benchmark);
+  ASSERT_TRUE(program);
+  auto moduleOp = program->module();
+  EXPECT_EQ(countOps<qc::SWAPOp>(moduleOp), 0U);
+
+  qc::MeasureOp measure;
+  moduleOp.walk([&](qc::MeasureOp op) { measure = op; });
+  ASSERT_TRUE(measure);
+  auto loop = measure->getParentOfType<scf::ForOp>();
+  ASSERT_TRUE(loop);
+  auto store = dyn_cast<cbit::StoreOp>(*measure.getResult().user_begin());
+  ASSERT_TRUE(store);
+  auto index = store.getIndex().getDefiningOp<arith::SubIOp>();
+  ASSERT_TRUE(index);
+  EXPECT_EQ(index.getRhs(), loop.getInductionVar());
 }
 
 TEST(GenerateProgramTest, KeepsLargeQPEFiniteAndStructured) {
   constexpr size_t precision = 1025;
-  for (const auto method :
-       {benchmarks::QPEMethod::Standard, benchmarks::QPEMethod::Iterative}) {
+  for (const auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
     SCOPED_TRACE(static_cast<int>(method));
-    const benchmarks::QPE benchmark(
+    const QPE benchmark(
         {.precision = precision,
-         .phase = benchmarks::Phase(std::numeric_limits<uint64_t>::max() - 1,
-                                    std::numeric_limits<uint64_t>::max()),
+         .phase = Phase(std::numeric_limits<uint64_t>::max() - 1,
+                        std::numeric_limits<uint64_t>::max()),
          .method = method});
-    auto program = generateProgram(benchmark);
+    auto program = generate(benchmark);
     ASSERT_TRUE(program);
     auto moduleOp = program->module();
 
@@ -181,12 +295,28 @@ TEST(GenerateProgramTest, KeepsLargeQPEFiniteAndStructured) {
   }
 }
 
+TEST(GenerateProgramTest, KeepsLargeQFTStructured) {
+  for (const auto method : {QFTMethod::Standard, QFTMethod::Semiclassical}) {
+    SCOPED_TRACE(static_cast<int>(method));
+    auto program =
+        generate(QFT{{.qubits = 1025, .periodExponent = 10, .method = method}});
+    ASSERT_TRUE(program);
+    size_t operations = 0;
+    program->module().walk([&](Operation*) { ++operations; });
+    EXPECT_LT(operations, 100U);
+    program->module().walk([&](arith::ConstantOp op) {
+      if (const auto value = dyn_cast<FloatAttr>(op.getValue())) {
+        EXPECT_TRUE(std::isfinite(value.getValueAsDouble()));
+      }
+    });
+  }
+}
+
 TEST(GenerateProgramTest, DoublesQPEPhaseModuloOneWithoutOverflow) {
-  const benchmarks::QPE benchmark(
-      {.precision = 4,
-       .phase = benchmarks::Phase(uint64_t{1} << 63,
-                                  std::numeric_limits<uint64_t>::max())});
-  auto program = generateProgram(benchmark);
+  const QPE benchmark({.precision = 4,
+                       .phase = Phase(uint64_t{1} << 63,
+                                      std::numeric_limits<uint64_t>::max())});
+  auto program = generate(benchmark);
   ASSERT_TRUE(program);
   const auto table = angleTable(program->module());
   ASSERT_TRUE(table);
@@ -204,4 +334,4 @@ TEST(GenerateProgramTest, DoublesQPEPhaseModuloOneWithoutOverflow) {
 
 } // namespace
 
-} // namespace mqt::benchmark
+} // namespace mqt::bench

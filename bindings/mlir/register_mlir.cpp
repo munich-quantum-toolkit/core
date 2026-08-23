@@ -8,11 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "benchmarks/GHZ.hpp"
-#include "benchmarks/Grover.hpp"
-#include "benchmarks/JSON.hpp"
-#include "benchmarks/QPE.hpp"
-#include "mlir/Benchmark/Generate.h"
+#include "mlir/Bench/Generate.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
@@ -261,20 +257,11 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
 
 [[nodiscard]] mlir::QCProgram
 generateBenchmark(const std::string_view request) {
-  const auto id = benchmarks::benchmarkIdFromRequestJSON(request);
-  if (id == "ghz") {
-    return takeResult(
-        benchmark::generateProgram(benchmarks::ghzFromRequestJSON(request)));
+  auto generated = bench::generate(request);
+  if (!generated) {
+    throw std::runtime_error("failed to generate benchmark");
   }
-  if (id == "grover") {
-    return takeResult(
-        benchmark::generateProgram(benchmarks::groverFromRequestJSON(request)));
-  }
-  if (id == "qpe") {
-    return takeResult(
-        benchmark::generateProgram(benchmarks::qpeFromRequestJSON(request)));
-  }
-  throw std::invalid_argument("unsupported benchmark '" + id + "'");
+  return std::move(generated->program);
 }
 
 } // namespace

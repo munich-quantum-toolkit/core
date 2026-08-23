@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "benchmarks/GHZ.hpp"
+#include "bench/GHZ.hpp"
 
-#include "BenchmarkUtils.h"
 #include "Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -20,22 +19,19 @@
 
 #include <cstdint>
 
-namespace mqt::benchmark {
+namespace mqt::bench {
 
 using namespace mlir;
 
-SmallVector<Value> ghz(qc::QCProgramBuilder& b,
-                       const benchmarks::GHZ& benchmark) {
+SmallVector<Value> ghz(qc::QCProgramBuilder& b, const GHZ& benchmark) {
   const auto& options = benchmark.options();
   const auto size = static_cast<int64_t>(options.qubits);
   auto q = b.allocQubitRegisterStorage(size, "q");
   auto result = b.allocClassicalBitRegister(size, benchmark.output().name);
 
-  resetRegister(b, q, size);
-
   auto root = b.loadQubit(q, arith::ConstantIndexOp::create(b, 0).getResult());
   b.h(root);
-  if (options.topology == benchmarks::GHZTopology::Linear) {
+  if (options.topology == GHZTopology::Linear) {
     auto one = arith::ConstantIndexOp::create(b, 1).getResult();
     b.scfFor(1, size, 1, [&](Value iv) {
       auto previous = arith::SubIOp::create(b, iv, one);
@@ -45,11 +41,11 @@ SmallVector<Value> ghz(qc::QCProgramBuilder& b,
     b.scfFor(1, size, 1, [&](Value iv) { b.cx(root, b.loadQubit(q, iv)); });
   }
 
-  if (options.basis == benchmarks::GHZBasis::X) {
+  if (options.basis == GHZBasis::X) {
     b.scfFor(0, size, 1, [&](Value iv) { b.h(b.loadQubit(q, iv)); });
   }
-  measureRegister(b, q, size, result);
+  b.measureQubitRegister(q, result, size);
 
   return {result};
 }
-} // namespace mqt::benchmark
+} // namespace mqt::bench

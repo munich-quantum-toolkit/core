@@ -17,26 +17,32 @@ namespace mlir::qc {
 class QCProgramBuilder;
 } // namespace mlir::qc
 
-namespace mqt::benchmarks {
+namespace mqt::bench {
+class BV;
 class GHZ;
 class Grover;
+class QFT;
 class QPE;
-} // namespace mqt::benchmarks
+} // namespace mqt::bench
 
-namespace mqt::benchmark {
+namespace mqt::bench {
 
 using namespace mlir;
 
+/// Emit one configured Bernstein--Vazirani benchmark.
+SmallVector<Value> bv(qc::QCProgramBuilder& builder, const BV& benchmark);
+
 /// Emit one configured GHZ benchmark.
-SmallVector<Value> ghz(qc::QCProgramBuilder& b,
-                       const benchmarks::GHZ& benchmark);
+SmallVector<Value> ghz(qc::QCProgramBuilder& builder, const GHZ& benchmark);
 
 /// Emit one configured Grover benchmark.
-SmallVector<Value> grover(qc::QCProgramBuilder& b,
-                          const benchmarks::Grover& benchmark);
+SmallVector<Value> grover(qc::QCProgramBuilder& builder,
+                          const Grover& benchmark);
+
+/// Emit one configured QFT benchmark.
+SmallVector<Value> qft(qc::QCProgramBuilder& builder, const QFT& benchmark);
 
 /// Emit one configured QPE benchmark.
-SmallVector<Value> qpe(qc::QCProgramBuilder& b,
-                       const benchmarks::QPE& benchmark);
+SmallVector<Value> qpe(qc::QCProgramBuilder& builder, const QPE& benchmark);
 
-} // namespace mqt::benchmark
+} // namespace mqt::bench

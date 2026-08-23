@@ -45,8 +45,8 @@ endif()
 
 run_success("benchmark listing" list_output "${CLI}" list)
 string(JSON benchmark_count LENGTH "${list_output}" benchmarks)
-if(NOT benchmark_count EQUAL 3)
-  message(FATAL_ERROR "list returned ${benchmark_count} benchmarks instead of 3")
+if(NOT benchmark_count EQUAL 5)
+  message(FATAL_ERROR "list returned ${benchmark_count} benchmarks instead of 5")
 endif()
 
 run_success("QPE description" describe_output "${CLI}" describe qpe)
@@ -109,7 +109,7 @@ if(EXISTS "${manifest_only_program_path}" OR NOT retained_manifest_only_hash STR
 endif()
 
 run_failure(
-  "generation without --overwrite"
+  "generation beside existing outputs"
   "${CLI}"
   generate
   --request
@@ -124,26 +124,7 @@ if(NOT retained_program_hash STREQUAL original_program_hash OR NOT retained_mani
                                                                original_manifest_hash)
   message(FATAL_ERROR "a rejected generation changed an existing output")
 endif()
-
-run_success(
-  "overwriting generation"
-  overwrite_output
-  "${CLI}"
-  generate
-  --request
-  "${request}"
-  --format
-  qc
-  --output
-  "${qc_directory}"
-  --overwrite)
-file(SHA256 "${program_path}" overwritten_program_hash)
-file(SHA256 "${manifest_path}" overwritten_manifest_hash)
-if(NOT overwritten_program_hash STREQUAL original_program_hash OR NOT overwritten_manifest_hash
-                                                                  STREQUAL original_manifest_hash)
-  message(FATAL_ERROR "repeated generation was not byte reproducible")
-endif()
-file(GLOB qc_temporary_files "${qc_directory}/*.tmp-*" "${qc_directory}/*.backup-*")
+file(GLOB qc_temporary_files "${qc_directory}/*.tmp-*")
 if(qc_temporary_files)
   message(FATAL_ERROR "successful generation left temporary files")
 endif()

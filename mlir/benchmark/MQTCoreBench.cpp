@@ -12,8 +12,8 @@
  * @brief Generates and evaluates structured benchmark instances.
  */
 
-#include "benchmarks/JSON.hpp"
-#include "mlir/Benchmark/Generate.h"
+#include "bench/JSON.hpp"
+#include "mlir/Bench/Generate.h"
 #include "mlir/Compiler/Programs.h"
 
 #include <llvm/ADT/ScopeExit.h>
@@ -28,7 +28,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <numeric>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -66,10 +65,6 @@ llvm::cl::opt<std::string> outputDirectory(
     "output", llvm::cl::desc("Directory for the program and manifest"),
     llvm::cl::value_desc("directory"), llvm::cl::Required,
     llvm::cl::cat(benchmarkOptions), llvm::cl::sub(generateCommand));
-llvm::cl::opt<bool>
-    overwrite("overwrite", llvm::cl::desc("Replace existing generated files"),
-              llvm::cl::init(false), llvm::cl::cat(benchmarkOptions),
-              llvm::cl::sub(generateCommand));
 
 llvm::cl::opt<std::string> manifestInputPath(
     "manifest", llvm::cl::desc("Benchmark manifest JSON file"),
@@ -103,20 +98,9 @@ llvm::cl::opt<std::string> countsInputPath(
   return status.type() != std::filesystem::file_type::not_found;
 }
 
-void validateOutputTarget(const std::filesystem::path& path,
-                          const bool mayOverwrite) {
-  if (!pathExists(path)) {
-    return;
-  }
-  if (!mayOverwrite) {
+void validateOutputTarget(const std::filesystem::path& path) {
+  if (pathExists(path)) {
     throw std::runtime_error("refusing to overwrite existing file '" +
-                             path.string() + "'");
-  }
-
-  std::error_code error;
-  const auto status = std::filesystem::symlink_status(path, error);
-  if (error || status.type() != std::filesystem::file_type::regular) {
-    throw std::runtime_error("refusing to overwrite non-regular file '" +
                              path.string() + "'");
   }
 }
@@ -191,11 +175,9 @@ void removeIfPresent(const std::optional<std::filesystem::path>& path) {
                               std::string(format) + "'");
 }
 
-template <class Benchmark>
-[[nodiscard]] int
-generate(const std::string_view id, const Benchmark& benchmark,
-         const std::string_view format, const std::filesystem::path& directory,
-         const bool mayOverwrite) {
+[[nodiscard]] int publish(mqt::bench::GeneratedBenchmark generated,
+                          const std::string_view format,
+                          const std::filesystem::path& directory) {
   const auto extension = programExtension(format);
   std::error_code error;
   std::filesystem::create_directories(directory, error);
@@ -213,37 +195,32 @@ generate(const std::string_view id, const Benchmark& benchmark,
                              directory.string() + "'");
   }
 
-  const auto caseId = mqt::benchmarks::caseId(benchmark);
-  const auto baseName = std::string(id) + "-" + caseId;
+  const auto baseName = generated.benchmarkId + "-" + generated.caseId;
   const auto programPath = directory / (baseName + extension);
   const auto manifestPath =
       directory / (baseName + "." + std::string(format) + ".manifest.json");
-  validateOutputTarget(programPath, mayOverwrite);
-  validateOutputTarget(manifestPath, mayOverwrite);
-
-  auto program = mqt::benchmark::generateProgram(benchmark);
-  if (!program) {
-    return 1;
-  }
+  validateOutputTarget(programPath);
+  validateOutputTarget(manifestPath);
 
   std::string serializedProgram;
   if (format == "qc") {
-    serializedProgram = program->str();
+    serializedProgram = generated.program.str();
     if (serializedProgram.empty() || serializedProgram.back() != '\n') {
       serializedProgram.push_back('\n');
     }
   } else {
-    auto compiled = mlir::runDefaultPipeline(std::move(*program),
+    auto compiled = mlir::runDefaultPipeline(std::move(generated.program),
                                              mlir::ProgramFormat::Jeff);
     if (!compiled) {
-      llvm::errs() << id << ": failed to build the jeff program\n";
+      llvm::errs() << generated.benchmarkId
+                   << ": failed to build the jeff program\n";
       return 1;
     }
     const auto bytes = std::get<mlir::JeffProgram>(*compiled).toBytes();
     serializedProgram.assign(reinterpret_cast<const char*>(bytes.data()),
                              bytes.size());
   }
-  auto manifest = mqt::benchmarks::toManifestJSON(benchmark);
+  auto manifest = std::move(generated.manifestJSON);
   manifest.push_back('\n');
 
   std::optional<std::filesystem::path> temporaryProgram;
@@ -256,47 +233,27 @@ generate(const std::string_view id, const Benchmark& benchmark,
   temporaryProgram = stageFile(programPath, serializedProgram);
   temporaryManifest = stageFile(manifestPath, manifest);
 
-  if (!mayOverwrite) {
-    if (const auto linkError = llvm::sys::fs::create_hard_link(
-            temporaryProgram->string(), programPath.string())) {
-      llvm::errs() << "failed to publish '" << programPath.string()
-                   << "': " << linkError.message() << '\n';
-      return 1;
-    }
-    if (const auto linkError = llvm::sys::fs::create_hard_link(
-            temporaryManifest->string(), manifestPath.string())) {
-      llvm::errs() << "failed to publish '" << manifestPath.string()
-                   << "': " << linkError.message() << "; program remains at '"
-                   << programPath.string()
-                   << "'; this invocation did not publish a manifest\n";
-      return 1;
-    }
-    removeIfPresent(temporaryProgram);
-    removeIfPresent(temporaryManifest);
-    temporaryProgram.reset();
-    temporaryManifest.reset();
-  } else {
-    if (const auto renameError = llvm::sys::fs::rename(
-            temporaryProgram->string(), programPath.string())) {
-      llvm::errs() << "failed to publish '" << programPath.string()
-                   << "': " << renameError.message() << '\n';
-      return 1;
-    }
-    temporaryProgram.reset();
-
-    if (const auto renameError = llvm::sys::fs::rename(
-            temporaryManifest->string(), manifestPath.string())) {
-      llvm::errs() << "failed to publish '" << manifestPath.string()
-                   << "': " << renameError.message() << "; program remains at '"
-                   << programPath.string()
-                   << "'; this invocation did not publish a manifest\n";
-      return 1;
-    }
-    temporaryManifest.reset();
+  if (const auto linkError = llvm::sys::fs::create_hard_link(
+          temporaryProgram->string(), programPath.string())) {
+    llvm::errs() << "failed to publish '" << programPath.string()
+                 << "': " << linkError.message() << '\n';
+    return 1;
   }
+  if (const auto linkError = llvm::sys::fs::create_hard_link(
+          temporaryManifest->string(), manifestPath.string())) {
+    llvm::errs() << "failed to publish '" << manifestPath.string()
+                 << "': " << linkError.message() << "; program remains at '"
+                 << programPath.string()
+                 << "'; this invocation did not publish a manifest\n";
+    return 1;
+  }
+  removeIfPresent(temporaryProgram);
+  removeIfPresent(temporaryManifest);
+  temporaryProgram.reset();
+  temporaryManifest.reset();
 
-  llvm::json::Object response{{"benchmark", std::string(id)},
-                              {"case_id", caseId},
+  llvm::json::Object response{{"benchmark", generated.benchmarkId},
+                              {"case_id", generated.caseId},
                               {"format", std::string(format)},
                               {"manifest_path", manifestPath.string()},
                               {"program_path", programPath.string()},
@@ -307,57 +264,12 @@ generate(const std::string_view id, const Benchmark& benchmark,
 
 [[nodiscard]] int generateRequest(const std::string& request,
                                   const std::string& source) {
-  const auto id = mqt::benchmarks::benchmarkIdFromRequestJSON(request, source);
-  const auto directory = std::filesystem::path(outputDirectory.getValue());
-  if (id == "ghz") {
-    return generate(id, mqt::benchmarks::ghzFromRequestJSON(request, source),
-                    outputFormat, directory, overwrite);
+  auto generated = mqt::bench::generate(request, source);
+  if (!generated) {
+    return 1;
   }
-  if (id == "grover") {
-    return generate(id, mqt::benchmarks::groverFromRequestJSON(request, source),
-                    outputFormat, directory, overwrite);
-  }
-  if (id == "qpe") {
-    return generate(id, mqt::benchmarks::qpeFromRequestJSON(request, source),
-                    outputFormat, directory, overwrite);
-  }
-  throw std::invalid_argument("unsupported benchmark '" + id + "'");
-}
-
-template <class Benchmark>
-[[nodiscard]] std::string evaluate(const Benchmark& benchmark,
-                                   const mqt::benchmarks::Counts& counts) {
-  const auto shots = std::accumulate(
-      counts.begin(), counts.end(), size_t{0},
-      [](const size_t sum, const auto& item) { return sum + item.second; });
-  return mqt::benchmarks::evaluationToJSON(mqt::benchmarks::caseId(benchmark),
-                                           shots, benchmark.evaluate(counts));
-}
-
-[[nodiscard]] std::string evaluateCounts(const std::string& manifest,
-                                         const std::string& manifestSource,
-                                         const std::string& counts,
-                                         const std::string& countsSource) {
-  const auto id =
-      mqt::benchmarks::benchmarkIdFromManifestJSON(manifest, manifestSource);
-  const auto parsedCounts =
-      mqt::benchmarks::countsFromJSON(counts, countsSource);
-  if (id == "ghz") {
-    return evaluate(
-        mqt::benchmarks::ghzFromManifestJSON(manifest, manifestSource),
-        parsedCounts);
-  }
-  if (id == "grover") {
-    return evaluate(
-        mqt::benchmarks::groverFromManifestJSON(manifest, manifestSource),
-        parsedCounts);
-  }
-  if (id == "qpe") {
-    return evaluate(
-        mqt::benchmarks::qpeFromManifestJSON(manifest, manifestSource),
-        parsedCounts);
-  }
-  throw std::invalid_argument("unsupported benchmark '" + id + "'");
+  return publish(std::move(*generated), outputFormat,
+                 std::filesystem::path(outputDirectory.getValue()));
 }
 
 } // namespace
@@ -369,12 +281,11 @@ int main(int argc, char** argv) {
 
   try {
     if (listCommand) {
-      llvm::outs() << mqt::benchmarks::listBenchmarksJSON() << '\n';
+      llvm::outs() << mqt::bench::listBenchmarksJSON() << '\n';
       return 0;
     }
     if (describeCommand) {
-      llvm::outs() << mqt::benchmarks::describeBenchmarkJSON(benchmarkId)
-                   << '\n';
+      llvm::outs() << mqt::bench::describeBenchmarkJSON(benchmarkId) << '\n';
       return 0;
     }
     if (generateCommand) {
@@ -391,8 +302,8 @@ int main(int argc, char** argv) {
       const auto counts = readText(countsInputPath);
       const auto countsSource =
           countsInputPath == "-" ? "<stdin>" : countsInputPath.getValue();
-      llvm::outs() << evaluateCounts(manifest, manifestInputPath, counts,
-                                     countsSource)
+      llvm::outs() << mqt::bench::evaluateJSON(manifest, counts,
+                                               manifestInputPath, countsSource)
                    << '\n';
       return 0;
     }

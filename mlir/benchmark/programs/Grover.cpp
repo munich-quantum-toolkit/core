@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "benchmarks/Grover.hpp"
+#include "bench/Grover.hpp"
 
-#include "BenchmarkUtils.h"
 #include "Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -19,18 +18,15 @@
 
 #include <cstddef>
 
-namespace mqt::benchmark {
+namespace mqt::bench {
 
 using namespace mlir;
 
-SmallVector<Value> grover(qc::QCProgramBuilder& b,
-                          const benchmarks::Grover& benchmark) {
+SmallVector<Value> grover(qc::QCProgramBuilder& b, const Grover& benchmark) {
   const auto& options = benchmark.options();
   const auto search = static_cast<int64_t>(benchmark.qubits());
   auto q = b.allocQubitRegister(search, "q");
   auto result = b.allocClassicalBitRegister(search, benchmark.output().name);
-
-  resetRegister(b, q.value, search);
 
   b.scfFor(0, search, 1, [&](Value iv) { b.h(b.loadQubit(q.value, iv)); });
 
@@ -59,8 +55,8 @@ SmallVector<Value> grover(qc::QCProgramBuilder& b,
     b.scfFor(0, search, 1, [&](Value iv) { b.h(b.loadQubit(q.value, iv)); });
   });
 
-  measureRegister(b, q.value, search, result);
+  b.measureQubitRegister(q.value, result, search);
 
   return {result};
 }
-} // namespace mqt::benchmark
+} // namespace mqt::bench

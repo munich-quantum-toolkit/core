@@ -9,7 +9,7 @@
 add_executable(mqt-core-mlir-unittests-benchmark test_benchmark_generate.cpp)
 
 target_link_libraries(mqt-core-mlir-unittests-benchmark PRIVATE GTest::gtest_main
-                                                                MQTBenchmarkGenerate)
+                                                                MQT::CoreBenchGenerate)
 
 mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-benchmark)
 

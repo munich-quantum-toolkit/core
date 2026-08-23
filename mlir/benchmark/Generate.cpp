@@ -8,11 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Benchmark/Generate.h"
+#include "mlir/Bench/Generate.h"
 
-#include "benchmarks/GHZ.hpp"
-#include "benchmarks/Grover.hpp"
-#include "benchmarks/QPE.hpp"
+#include "bench/JSON.hpp"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "programs/Programs.h"
@@ -21,10 +19,14 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Support/LLVM.h>
 
+#include <algorithm>
+#include <array>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
 
-namespace mqt::benchmark {
+namespace mqt::bench {
 
 using namespace mlir;
 
@@ -50,19 +52,87 @@ namespace {
 
 } // namespace
 
-std::optional<QCProgram> generateProgram(const benchmarks::GHZ& benchmark) {
+std::optional<QCProgram> generate(const BV& benchmark) {
+  return buildProgram("bv", [&](qc::QCProgramBuilder& builder) {
+    return bv(builder, benchmark);
+  });
+}
+
+std::optional<QCProgram> generate(const GHZ& benchmark) {
   return buildProgram(
       "ghz", [&](qc::QCProgramBuilder& b) { return ghz(b, benchmark); });
 }
 
-std::optional<QCProgram> generateProgram(const benchmarks::Grover& benchmark) {
+std::optional<QCProgram> generate(const Grover& benchmark) {
   return buildProgram(
       "grover", [&](qc::QCProgramBuilder& b) { return grover(b, benchmark); });
 }
 
-std::optional<QCProgram> generateProgram(const benchmarks::QPE& benchmark) {
+std::optional<QCProgram> generate(const QFT& benchmark) {
+  return buildProgram("qft", [&](qc::QCProgramBuilder& builder) {
+    return qft(builder, benchmark);
+  });
+}
+
+std::optional<QCProgram> generate(const QPE& benchmark) {
   return buildProgram(
       "qpe", [&](qc::QCProgramBuilder& b) { return qpe(b, benchmark); });
 }
 
-} // namespace mqt::benchmark
+namespace {
+
+template <class Benchmark>
+[[nodiscard]] std::optional<GeneratedBenchmark>
+generateRequest(const std::string_view id, Benchmark benchmark) {
+  auto program = generate(benchmark);
+  if (!program) {
+    return std::nullopt;
+  }
+  return GeneratedBenchmark{std::string(id), caseId(benchmark),
+                            toManifestJSON(benchmark), std::move(*program)};
+}
+
+using RequestFunction = std::optional<GeneratedBenchmark> (*)(std::string_view,
+                                                              std::string_view);
+
+struct RegistryEntry {
+  std::string_view id;
+  RequestFunction generate;
+};
+
+const std::array<RegistryEntry, 5> REGISTRY{{
+    {"bv",
+     [](const std::string_view request, const std::string_view source) {
+       return generateRequest("bv", bvFromRequestJSON(request, source));
+     }},
+    {"ghz",
+     [](const std::string_view request, const std::string_view source) {
+       return generateRequest("ghz", ghzFromRequestJSON(request, source));
+     }},
+    {"grover",
+     [](const std::string_view request, const std::string_view source) {
+       return generateRequest("grover", groverFromRequestJSON(request, source));
+     }},
+    {"qft",
+     [](const std::string_view request, const std::string_view source) {
+       return generateRequest("qft", qftFromRequestJSON(request, source));
+     }},
+    {"qpe",
+     [](const std::string_view request, const std::string_view source) {
+       return generateRequest("qpe", qpeFromRequestJSON(request, source));
+     }},
+}};
+
+} // namespace
+
+std::optional<GeneratedBenchmark> generate(const std::string_view requestJSON,
+                                           const std::string_view source) {
+  const auto id = benchmarkIdFromRequestJSON(requestJSON, source);
+  const auto found = std::ranges::find(REGISTRY, id, &RegistryEntry::id);
+  if (found == REGISTRY.end()) {
+    return std::nullopt;
+  }
+  return found->generate(requestJSON, source);
+}
+
+} // namespace mqt::bench

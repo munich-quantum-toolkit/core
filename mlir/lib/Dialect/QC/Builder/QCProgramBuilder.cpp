@@ -210,6 +210,14 @@ Value QCProgramBuilder::measure(Value qubit, Value reg,
   return result;
 }
 
+QCProgramBuilder& QCProgramBuilder::measureQubitRegister(Value qubits,
+                                                         Value bits,
+                                                         const int64_t size) {
+  return scfFor(0, size, 1, [&](Value index) {
+    measure(loadQubit(qubits, index), bits, index);
+  });
+}
+
 QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {
   checkFinalized();
   ResetOp::create(*this, qubit);

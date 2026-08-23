@@ -10,12 +10,13 @@ add_subdirectory(programs)
 
 # Generating a benchmark program as a QC program. Every backend starts from here.
 add_library(MQTBenchmarkGenerate STATIC Generate.cpp)
+add_library(MQT::CoreBenchGenerate ALIAS MQTBenchmarkGenerate)
 target_link_libraries(MQTBenchmarkGenerate PUBLIC MQTBenchmarkPrograms MQTCompilerPipeline)
 mqt_mlir_target_use_project_options(MQTBenchmarkGenerate)
 
 # The executable that generates and evaluates configured benchmarks.
 add_executable(mqt-core-bench MQTCoreBench.cpp)
-target_link_libraries(mqt-core-bench PRIVATE MQT::CoreBenchmarks MQTBenchmarkGenerate MLIRSupport)
+target_link_libraries(mqt-core-bench PRIVATE MQT::CoreBenchGenerate MLIRSupport)
 set(LLVM_REQUIRES_EH ON)
 mqt_mlir_target_use_project_options(mqt-core-bench)
 unset(LLVM_REQUIRES_EH)

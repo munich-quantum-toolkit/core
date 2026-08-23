@@ -63,7 +63,7 @@ add_subdirectory(ir)
 add_subdirectory(qasm3)
 
 # add the benchmark semantic package
-add_subdirectory(benchmarks)
+add_subdirectory(bench)
 
 # add the circuit_optimizer package
 add_subdirectory(circuit_optimizer)

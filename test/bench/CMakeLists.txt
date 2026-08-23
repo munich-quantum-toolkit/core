@@ -6,8 +6,7 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(ir)
-add_subdirectory(dd)
-add_subdirectory(qdmi)
-add_subdirectory(mlir)
-add_subdirectory(bench)
+if(TARGET MQT::CoreBench)
+  file(GLOB_RECURSE BENCHMARK_TEST_SOURCES *.cpp)
+  package_add_test(mqt-core-bench-test MQT::CoreBench ${BENCHMARK_TEST_SOURCES})
+endif()

@@ -15,20 +15,19 @@ releases may include breaking changes.
 #### General MQT Compiler Collection infrastructure
 
 - ✨ Launch the MQT Compiler Collection with the QC and QCO dialects, its core
-  compiler infrastructure, structured benchmarks, and C++, Python, and
-  command-line APIs ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436],
-  [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474],
-  [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550],
-  [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602],
-  [#1603], [#1620], [#1623], [#1626], [#1627], [#1635], [#1638], [#1673],
-  [#1675], [#1700], [#1717], [#1728], [#1730], [#1749], [#1751], [#1762],
-  [#1765], [#1780], [#1781], [#1782], [#1806], [#1807], [#1808], [#1815],
-  [#1824], [#1869], [#1872], [#1914], [#1925], [#1927], [#1935], [#1936],
-  [#1938], [#1975], [#1976], [#2006], [#2014], [#2015], [#2017], [#2026],
-  [#2028], [#2054], [#2058], [#2125], [#2136], [#2150], [#2158], [#2210],
-  [#2211], [#2135]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
-  [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
-  [**@simon1hofmann**], [**@J4MMlE**])
+  compiler infrastructure, and C++ and Python APIs ([#1264], [#1330], [#1402],
+  [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470],
+  [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521],
+  [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572],
+  [#1573], [#1580], [#1602], [#1603], [#1620], [#1623], [#1626], [#1627],
+  [#1635], [#1638], [#1673], [#1675], [#1700], [#1717], [#1728], [#1730],
+  [#1749], [#1751], [#1762], [#1765], [#1780], [#1781], [#1782], [#1806],
+  [#1807], [#1808], [#1815], [#1824], [#1869], [#1872], [#1914], [#1925],
+  [#1927], [#1935], [#1936], [#1938], [#1975], [#1976], [#2006], [#2014],
+  [#2015], [#2017], [#2026], [#2028], [#2054], [#2058], [#2125], [#2136],
+  [#2150], [#2158], [#2210], [#2211]) ([**@burgholzer**], [**@denialhaag**],
+  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
+  [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 - ✨ Add decision diagram-based construction, simulation, and sampling for QCO
   programs ([#1915], [#1973]) ([**@simon1hofmann**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
@@ -828,7 +827,6 @@ for previous changelogs._
 [#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
 [#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
 [#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136
-[#2135]: https://github.com/munich-quantum-toolkit/core/pull/2135
 [#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124

@@ -192,6 +192,7 @@ public:
 
   /**
    * @brief Allocate a qubit register and eagerly load every element
+   * @details Every allocated qubit is initialized to |0⟩.
    * @param size Number of qubits (must be positive)
    * @param name Optional source-level register name
    * @return A `QubitRegister` containing the backing memref and one reference
@@ -216,9 +217,9 @@ public:
    * @param name Optional source-level register name
    * @return The memref value representing the qubit register
    *
-   * @details The register is tracked for automatic deallocation and remains
-   * intact until an element is loaded. Use `loadQubit` to obtain references at
-   * their points of use.
+   * @details Every allocated qubit is initialized to |0⟩. The register is
+   * tracked for automatic deallocation and remains intact until an element is
+   * loaded. Use `loadQubit` to obtain references at their points of use.
    */
   Value allocQubitRegisterStorage(int64_t size, StringRef name = {});
 
@@ -316,6 +317,20 @@ public:
    */
   Value measure(Value qubit, Value reg,
                 const std::variant<int64_t, Value>& index);
+
+  /**
+   * @brief Measure a qubit register into an equally sized classical register
+   *
+   * @details Emits a structured loop that loads, measures, and stores each
+   * qubit at the same index.
+   *
+   * @param qubits Qubit-register storage
+   * @param bits Classical output register
+   * @param size Number of qubits and bits
+   * @return Reference to this builder for method chaining
+   */
+  QCProgramBuilder& measureQubitRegister(Value qubits, Value bits,
+                                         int64_t size);
 
   /**
    * @brief Reset a qubit to |0⟩ state
