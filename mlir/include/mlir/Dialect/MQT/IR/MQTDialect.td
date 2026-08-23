@@ -12,6 +12,7 @@
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
+include "mlir/Interfaces/DataLayoutInterfaces.td"
 
 def MQTDialect : Dialect {
   let name = "mqt";
@@ -36,6 +37,8 @@ def MQTDialect : Dialect {
     module.
     `mqt.unitary` marks a private function that defines a unitary operation.
     `#mqt.compilation_target` records compiler-target facts as typed IR.
+    `mqt.target_env` records compiler-target facts and the selected payload
+    execution contract.
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
@@ -208,6 +211,92 @@ def CompilationTargetAttr : MQTAttr<"CompilationTarget", "compilation_target"> {
       MQTArrayRefParameter<"NativeOperationAttr">:$operations);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
+}
+
+def PayloadEncoding
+    : I32EnumAttr<"PayloadEncoding", "Payload encoding",
+                  [I32EnumAttrCase<"Text", 0, "text">,
+                   I32EnumAttrCase<"Binary", 1, "binary">]> {
+  let cppNamespace = "::mlir::mqt";
+  let genSpecializedAttr = 0;
+}
+
+def PayloadDescriptorAttr
+    : MQTAttr<"PayloadDescriptor", "payload_descriptor"> {
+  let summary = "Exact payload identity";
+  let description = [{
+    Identifies a payload by format ID, exact version, optional profile ID, and
+    encoding. Every field takes part in identity. An empty profile denotes a
+    payload without a named profile.
+  }];
+  let parameters = (ins "StringAttr":$id, "StringAttr":$version,
+      "StringAttr":$profile, EnumParameter<PayloadEncoding>:$encoding);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def ProgramConstraintAttr
+    : MQTAttr<"ProgramConstraint", "program_constraint"> {
+  let summary = "One constraint on a payload capability";
+  let description = [{
+    Records one extensible constraint ID and its constraint-specific value.
+  }];
+  let parameters = (ins "StringAttr":$id, "uint64_t":$value);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def ProgramCapabilityAttr
+    : MQTAttr<"ProgramCapability", "program_capability"> {
+  let summary = "One payload execution capability";
+  let description = [{
+    Records one extensible capability ID, its feature-specific value, and all
+    constraints on that capability. Unknown IDs remain valid so newer
+    producers can round-trip through older consumers.
+  }];
+  let parameters = (ins "StringAttr":$id, "uint64_t":$value,
+      MQTArrayRefParameter<"ProgramConstraintAttr">:$constraints);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def PayloadEnvAttr : MQTAttr<"PayloadEnv", "payload_env"> {
+  let summary = "Selected payload execution contract";
+  let description = [{
+    Records the exact payload and its effective capabilities. Producers expand
+    descriptor baselines before creating this attribute. The capability list
+    remains available when optional capability metadata is unknown;
+    `optional_capabilities_known` records whether that optional metadata is
+    complete.
+  }];
+  let parameters = (ins "PayloadDescriptorAttr":$descriptor,
+      MQTArrayRefParameter<"ProgramCapabilityAttr">:$capabilities,
+      "bool":$optional_capabilities_known);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def TargetEnvAttr
+    : MQTAttr<"TargetEnv", "target_env", [DLTIQueryInterface]> {
+  let summary = "Selected compilation and payload environment";
+  let description = [{
+    Combines typed compiler-target facts with the selected payload contract.
+    Optional DLTI extensions carry provider-specific facts. Direct access to
+    the typed fields is authoritative.
+  }];
+  let parameters = (ins "CompilationTargetAttr":$compilation_target,
+      "PayloadEnvAttr":$payload_env,
+      OptionalParameter<"::mlir::MapAttr">:$extensions);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+  let extraClassDeclaration = [{
+    static constexpr ::llvm::StringLiteral kCompilationTargetKey =
+        "mqt.compilation_target";
+    static constexpr ::llvm::StringLiteral kPayloadEnvKey = "mqt.payload_env";
+
+    ::mlir::FailureOr<::mlir::Attribute>
+    query(::mlir::DataLayoutEntryKey key) const;
+  }];
 }
 
 #endif // MLIR_DIALECT_MQT_IR_MQTDIALECT_TD
