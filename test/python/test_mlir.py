@@ -397,12 +397,12 @@ def test_qco_program_compiles_for_direct_sparse_target() -> None:
     target = CompilerTarget(
         "sparse target",
         [CompilerTarget.Site(10), CompilerTarget.Site(20)],
-        couplings=[(10, 20)],
-        operations=[
+        connectivity=CompilerTarget.Connectivity([(10, 20)]),
+        native_operations=CompilerTarget.NativeOperations([
             CompilerTarget.Operation("u", 1, 3),
             CompilerTarget.Operation("cz", 2, 0),
             CompilerTarget.Operation("measure", 1, 0),
-        ],
+        ]),
     )
     assert target.name == "sparse target"
     assert [site.id for site in target.sites] == [10, 20]
@@ -426,14 +426,18 @@ def test_qco_program_compiles_for_direct_sparse_target() -> None:
 @requires_qiskit_translation
 def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
     """Export a mapped program with the complete compiler target."""
-    target = CompilerTarget(5)
+    target = CompilerTarget(
+        5,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
     mapped = compile_program(
         QASM_STRING,
         output=OutputFormat.QCO_OPTIMIZED,
         target=target,
     )
     assert isinstance(mapped, QCOProgram)
-    assert 0 < mapped.ir.count("qco.static") < target.num_qubits
+    assert 0 < mapped.ir.count("qco.static") < target.num_sites
 
     qc = mapped.to_qc(copy=True)
     restored = qc.to_qiskit(target=target)
@@ -457,11 +461,20 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     targets = [
         CompilerTarget(2, duration_unit=duration_unit),
         CompilerTarget("dense", 2, duration_unit=duration_unit),
-        CompilerTarget(sites, operations=[operation], duration_unit=duration_unit),
-        CompilerTarget("sparse", sites, operations=[operation], duration_unit=duration_unit),
+        CompilerTarget(
+            sites,
+            native_operations=CompilerTarget.NativeOperations([operation]),
+            duration_unit=duration_unit,
+        ),
+        CompilerTarget(
+            "sparse",
+            sites,
+            native_operations=CompilerTarget.NativeOperations([operation]),
+            duration_unit=duration_unit,
+        ),
     ]
 
-    assert [target.num_qubits for target in targets] == [2, 2, 2, 2]
+    assert [target.num_sites for target in targets] == [2, 2, 2, 2]
     assert targets[1].name == "dense"
     assert targets[3].name == "sparse"
     assert sites[0].name == "q0"
@@ -484,7 +497,7 @@ def test_compiler_target_construction_preserves_validation_errors() -> None:
         CompilerTarget.SiteTuple([0, 0])
     with pytest.raises(ValueError, match="duration unit must not be empty"):
         CompilerTarget.DurationUnit("", 1.0)
-    with pytest.raises(ValueError, match="operation qubit count must be positive"):
+    with pytest.raises(ValueError, match="operation arity must be positive"):
         CompilerTarget.Operation("x", 0, 0)
 
 
@@ -493,7 +506,9 @@ def test_compiler_target_snapshots_qdmi_device(garnet_target: CompilerTarget) ->
     target = garnet_target
 
     assert target.name == "IQM Garnet"
-    assert target.num_qubits == 20
+    assert target.num_sites == 20
+    assert target.connectivity_kind == CompilerTarget.ConnectivityKind.EXPLICIT
+    assert target.native_operations_kind == CompilerTarget.NativeOperationsKind.EXPLICIT
     assert len(target.couplings) == 30
     assert target.sites[0].name == "QB1"
     assert target.sites[0].t1 == 26626
@@ -523,16 +538,16 @@ def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
     return {
         "name": target.name,
         "duration_unit": None if duration_unit is None else (duration_unit.unit, duration_unit.scale_factor),
-        "num_qubits": target.num_qubits,
+        "num_sites": target.num_sites,
         "sites": [(site.id, site.name, site.t1, site.t2) for site in target.sites],
-        "has_explicit_topology": target.has_explicit_topology,
+        "connectivity_kind": target.connectivity_kind,
         "couplings": target.couplings,
-        "has_explicit_operations": target.has_explicit_operations,
+        "native_operations_kind": target.native_operations_kind,
         "operations": [
             (
                 operation.name,
                 operation.canonical_name,
-                operation.num_qubits,
+                operation.arity,
                 operation.num_parameters,
                 operation.duration,
                 operation.fidelity,

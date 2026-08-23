@@ -201,8 +201,8 @@ makeSparseUCZTarget(const bool includeMeasure) {
                     llvm::cantFail(Site::create(17))};
   return llvm::cantFail(CompilerTarget::create(
       "sparse-line", std::move(sites),
-      std::vector<CompilerTarget::Coupling>{{5, 9}, {9, 17}},
-      std::move(operations)));
+      CompilerTarget::Connectivity::fromCouplings({{5, 9}, {9, 17}}),
+      CompilerTarget::NativeOperations::fromOperations(std::move(operations))));
 }
 
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
@@ -1197,7 +1197,9 @@ c = measure q;
 
   std::vector sites{llvm::cantFail(CompilerTarget::Site::create(2472)),
                     llvm::cantFail(CompilerTarget::Site::create(18449))};
-  const auto target = llvm::cantFail(CompilerTarget::create(std::move(sites)));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      std::move(sites), CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::unrestricted()));
   ASSERT_TRUE(qco->compileForTarget(target));
 
   auto compiled = parseRecordedModule(qco->str());
@@ -1230,7 +1232,9 @@ h q[0];
 reset q[0];
 h q[1];
 )";
-  const auto target = llvm::cantFail(CompilerTarget::create(3));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
 
   auto qc = QCProgram::fromQASMString(source);
   ASSERT_TRUE(qc);

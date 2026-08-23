@@ -225,10 +225,11 @@ def test_two_qubit_dense_unitary_compiles_to_target_basis() -> None:
     circuit.append(library.UnitaryGate(random_unitary(4, seed=2136)), [0, 1])
     target = CompilerTarget(
         2,
-        operations=[
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
             CompilerTarget.Operation("u", 1, 3),
             CompilerTarget.Operation("cx", 2, 0),
-        ],
+        ]),
     )
     program = QCProgram.from_qiskit(circuit).to_qco(copy=True)
 
@@ -526,7 +527,11 @@ def test_flat_export_rejects_classical_store_after_quantum_work(late_value: str)
 
 def test_target_compiled_openqasm2_measurements_export() -> None:
     """Export initialized result registers after target compilation."""
-    target = CompilerTarget(5)
+    target = CompilerTarget(
+        5,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
     program = QCProgram.from_qasm_str(
         """OPENQASM 2.0;
 include "qelib1.inc";

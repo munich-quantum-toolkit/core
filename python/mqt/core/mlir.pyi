@@ -57,27 +57,27 @@ class OutputFormat(enum.Enum):
 class CompilerTarget:
     """Immutable MLIR compiler target.
 
-    An absent topology means all-to-all connectivity. An absent operation set
-    means every operation is native.
+    Connectivity and native-operation metadata distinguish unknown,
+    unrestricted, and explicitly enumerated support.
     """
 
     @overload
     def __init__(
         self,
-        num_qubits: int,
+        num_sites: int,
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity = ...,
+        native_operations: CompilerTarget.NativeOperations = ...,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
     def __init__(
         self,
         name: str,
-        num_qubits: int,
+        num_sites: int,
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity = ...,
+        native_operations: CompilerTarget.NativeOperations = ...,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -85,8 +85,8 @@ class CompilerTarget:
         self,
         sites: Sequence[CompilerTarget.Site],
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity = ...,
+        native_operations: CompilerTarget.NativeOperations = ...,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -95,8 +95,8 @@ class CompilerTarget:
         name: str,
         sites: Sequence[CompilerTarget.Site],
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity = ...,
+        native_operations: CompilerTarget.NativeOperations = ...,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
 
@@ -158,7 +158,7 @@ class CompilerTarget:
         def __init__(
             self,
             name: str,
-            num_qubits: int,
+            arity: int,
             num_parameters: int,
             site_tuples: Sequence[CompilerTarget.SiteTuple] | None = None,
             duration: int | None = None,
@@ -173,7 +173,7 @@ class CompilerTarget:
             """The normalized compiler operation name."""
 
         @property
-        def num_qubits(self) -> int:
+        def arity(self) -> int:
             """The fixed operation arity."""
 
         @property
@@ -253,6 +253,70 @@ class CompilerTarget:
         def entangler(self) -> CompilerTarget.GateKind:
             """The two-qubit entangler."""
 
+    class ConnectivityKind(enum.Enum):
+        """How target connectivity is known."""
+
+        UNKNOWN = 0
+
+        ALL_TO_ALL = 1
+
+        EXPLICIT = 2
+
+    class Connectivity:
+        """A target connectivity claim."""
+
+        @overload
+        def __init__(self) -> None:
+            """Create an unknown connectivity claim."""
+
+        @overload
+        def __init__(self, couplings: Sequence[tuple[int, int]]) -> None:
+            """Create an explicit connectivity claim."""
+
+        @staticmethod
+        def all_to_all() -> CompilerTarget.Connectivity:
+            """Create an all-to-all connectivity claim."""
+
+        @property
+        def kind(self) -> CompilerTarget.ConnectivityKind:
+            """How the connectivity is known."""
+
+        @property
+        def couplings(self) -> list[tuple[int, int]]:
+            """The explicit couplings, if present."""
+
+    class NativeOperationsKind(enum.Enum):
+        """How native target operations are known."""
+
+        UNKNOWN = 0
+
+        UNRESTRICTED = 1
+
+        EXPLICIT = 2
+
+    class NativeOperations:
+        """A native-operation claim."""
+
+        @overload
+        def __init__(self) -> None:
+            """Create an unknown native-operation claim."""
+
+        @overload
+        def __init__(self, operations: Sequence[CompilerTarget.Operation]) -> None:
+            """Create an explicit native-operation claim."""
+
+        @staticmethod
+        def unrestricted() -> CompilerTarget.NativeOperations:
+            """Create an unrestricted native-operation claim."""
+
+        @property
+        def kind(self) -> CompilerTarget.NativeOperationsKind:
+            """How the native operations are known."""
+
+        @property
+        def operations(self) -> list[CompilerTarget.Operation]:
+            """The explicit operations, if present."""
+
     @staticmethod
     def from_device(device: Device) -> CompilerTarget:
         """Snapshot a circuit-model QDMI device."""
@@ -270,7 +334,7 @@ class CompilerTarget:
         """The target timing unit, if available."""
 
     @property
-    def num_qubits(self) -> int:
+    def num_sites(self) -> int:
         """The number of target sites."""
 
     @property
@@ -278,16 +342,16 @@ class CompilerTarget:
         """Detailed sites in compiler-vertex order."""
 
     @property
-    def has_explicit_topology(self) -> bool:
-        """Whether the target defines a coupling topology."""
+    def connectivity_kind(self) -> CompilerTarget.ConnectivityKind:
+        """How the target connectivity is known."""
 
     @property
     def couplings(self) -> list[tuple[int, int]]:
         """Canonical undirected couplings in target site IDs."""
 
     @property
-    def has_explicit_operations(self) -> bool:
-        """Whether the target defines an operation set."""
+    def native_operations_kind(self) -> CompilerTarget.NativeOperationsKind:
+        """How the target native operations are known."""
 
     @property
     def operations(self) -> list[CompilerTarget.Operation]:
@@ -301,8 +365,8 @@ class CompilerTarget:
     def synthesis_basis(self) -> CompilerTarget.SynthesisBasis | None:
         """A complete target-wide synthesis basis, if available."""
 
-    def supports_operation(self, name: str, num_qubits: int, num_parameters: int | None = None) -> bool:
-        """Whether the target supports an operation capability."""
+    def supports_operation(self, name: str, arity: int, num_parameters: int | None = None) -> bool | None:
+        """Whether the target supports an operation, or None if unknown."""
 
 class Program:
     """Base class for a typed MLIR compiler program.

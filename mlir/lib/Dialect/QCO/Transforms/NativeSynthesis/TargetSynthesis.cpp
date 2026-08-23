@@ -295,7 +295,7 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
 
 static bool requiresTargetSynthesis(Operation* operation,
                                     const CompilerTarget& target) {
-  return !target.supports(operation);
+  return target.supports(operation) != true;
 }
 
 namespace {
@@ -445,12 +445,20 @@ struct TargetNativeSynthesisPass final
 
 protected:
   void runOnOperation() override {
-    if (!target.hasExplicitOperations()) {
+    if (target.nativeOperationsKind() ==
+        CompilerTarget::NativeOperations::Kind::Unrestricted) {
       return;
     }
     ModuleOp moduleOp = getOperation();
     const auto plan = planTargetSynthesis(moduleOp, target);
     if (plan.firstNeed == nullptr) {
+      return;
+    }
+    if (target.nativeOperationsKind() ==
+        CompilerTarget::NativeOperations::Kind::Unknown) {
+      plan.firstNeed->emitError()
+          << "target-native synthesis requires known native operations";
+      signalPassFailure();
       return;
     }
 
@@ -537,7 +545,13 @@ protected:
         return WalkResult::advance();
       }
 
-      if (target.supports(operation)) {
+      const auto support = target.supports(operation);
+      if (!support) {
+        operation->emitError()
+            << "target conformance requires known native operations";
+        return WalkResult::interrupt();
+      }
+      if (*support) {
         return WalkResult::advance();
       }
 

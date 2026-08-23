@@ -20,6 +20,7 @@
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
 
@@ -47,53 +48,43 @@ using SiteId = CompilerTarget::SiteId;
 struct GateSpecification {
   GateKind kind{};
   llvm::StringLiteral name;
-  size_t numQubits{};
+  size_t arity{};
   size_t numParameters{};
 };
 
 constexpr std::array GATE_SPECIFICATIONS{
     GateSpecification{
-        .kind = GateKind::U, .name = "u", .numQubits = 1, .numParameters = 3},
+        .kind = GateKind::U, .name = "u", .arity = 1, .numParameters = 3},
     GateSpecification{
-        .kind = GateKind::X, .name = "x", .numQubits = 1, .numParameters = 0},
+        .kind = GateKind::X, .name = "x", .arity = 1, .numParameters = 0},
     GateSpecification{
-        .kind = GateKind::SX, .name = "sx", .numQubits = 1, .numParameters = 0},
+        .kind = GateKind::SX, .name = "sx", .arity = 1, .numParameters = 0},
     GateSpecification{
-        .kind = GateKind::RZ, .name = "rz", .numQubits = 1, .numParameters = 1},
+        .kind = GateKind::RZ, .name = "rz", .arity = 1, .numParameters = 1},
     GateSpecification{
-        .kind = GateKind::RX, .name = "rx", .numQubits = 1, .numParameters = 1},
+        .kind = GateKind::RX, .name = "rx", .arity = 1, .numParameters = 1},
     GateSpecification{
-        .kind = GateKind::RY, .name = "ry", .numQubits = 1, .numParameters = 1},
+        .kind = GateKind::RY, .name = "ry", .arity = 1, .numParameters = 1},
     GateSpecification{
-        .kind = GateKind::R, .name = "r", .numQubits = 1, .numParameters = 2},
-    GateSpecification{.kind = GateKind::RXX,
-                      .name = "rxx",
-                      .numQubits = 2,
-                      .numParameters = 1},
-    GateSpecification{.kind = GateKind::RYY,
-                      .name = "ryy",
-                      .numQubits = 2,
-                      .numParameters = 1},
-    GateSpecification{.kind = GateKind::RZX,
-                      .name = "rzx",
-                      .numQubits = 2,
-                      .numParameters = 1},
-    GateSpecification{.kind = GateKind::RZZ,
-                      .name = "rzz",
-                      .numQubits = 2,
-                      .numParameters = 1},
+        .kind = GateKind::R, .name = "r", .arity = 1, .numParameters = 2},
+    GateSpecification{
+        .kind = GateKind::RXX, .name = "rxx", .arity = 2, .numParameters = 1},
+    GateSpecification{
+        .kind = GateKind::RYY, .name = "ryy", .arity = 2, .numParameters = 1},
+    GateSpecification{
+        .kind = GateKind::RZX, .name = "rzx", .arity = 2, .numParameters = 1},
+    GateSpecification{
+        .kind = GateKind::RZZ, .name = "rzz", .arity = 2, .numParameters = 1},
     GateSpecification{.kind = GateKind::ISWAP,
                       .name = "iswap",
-                      .numQubits = 2,
+                      .arity = 2,
                       .numParameters = 0},
     GateSpecification{
-        .kind = GateKind::CZ, .name = "cz", .numQubits = 2, .numParameters = 0},
+        .kind = GateKind::CZ, .name = "cz", .arity = 2, .numParameters = 0},
     GateSpecification{
-        .kind = GateKind::CX, .name = "cx", .numQubits = 2, .numParameters = 0},
-    GateSpecification{.kind = GateKind::ECR,
-                      .name = "ecr",
-                      .numQubits = 2,
-                      .numParameters = 0},
+        .kind = GateKind::CX, .name = "cx", .arity = 2, .numParameters = 0},
+    GateSpecification{
+        .kind = GateKind::ECR, .name = "ecr", .arity = 2, .numParameters = 0},
 };
 
 } // namespace
@@ -134,21 +125,46 @@ validateFidelity(const std::optional<double> fidelity,
   return llvm::Error::success();
 }
 
+CompilerTarget::Connectivity CompilerTarget::Connectivity::allToAll() {
+  return {Kind::AllToAll, {}};
+}
+
+CompilerTarget::Connectivity::Connectivity() noexcept : kind_(Kind::Unknown) {}
+
+CompilerTarget::Connectivity
+CompilerTarget::Connectivity::fromCouplings(std::vector<Coupling> couplings) {
+  return {Kind::Explicit, std::move(couplings)};
+}
+
+CompilerTarget::Connectivity::Kind
+CompilerTarget::Connectivity::kind() const noexcept {
+  return kind_;
+}
+
+ArrayRef<CompilerTarget::Coupling>
+CompilerTarget::Connectivity::couplings() const noexcept {
+  return couplings_;
+}
+
+CompilerTarget::Connectivity::Connectivity(const Kind kind,
+                                           std::vector<Coupling> couplings)
+    : kind_(kind), couplings_(std::move(couplings)) {}
+
 [[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::Site>>
-makeDenseSites(const size_t numQubits) {
-  if (numQubits == 0) {
+makeDenseSites(const size_t numSites) {
+  if (numSites == 0) {
     return invalidTarget("Compiler target must contain at least one site");
   }
   constexpr auto maxNumSites =
       static_cast<uintmax_t>(std::numeric_limits<int64_t>::max()) + 1;
-  if (static_cast<uintmax_t>(numQubits) > maxNumSites) {
+  if (static_cast<uintmax_t>(numSites) > maxNumSites) {
     return invalidTarget(
-        "Compiler target qubit count exceeds the nonnegative i64 site domain");
+        "Compiler target site count exceeds the nonnegative i64 site domain");
   }
 
   std::vector<CompilerTarget::Site> sites;
-  sites.reserve(numQubits);
-  for (size_t id = 0; id < numQubits; ++id) {
+  sites.reserve(numSites);
+  for (size_t id = 0; id < numSites; ++id) {
     auto site = CompilerTarget::Site::create(static_cast<SiteId>(id));
     if (!site) {
       return site.takeError();
@@ -265,16 +281,15 @@ std::optional<double> CompilerTarget::SiteTuple::fidelity() const noexcept {
 }
 
 llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
-    std::string name, const size_t numQubits, const size_t numParameters,
+    std::string name, const size_t arity, const size_t numParameters,
     std::vector<SiteTuple> siteTuples, const std::optional<uint64_t> duration,
     const std::optional<double> fidelity) {
   auto canonicalName = canonicalOperationName(name);
   if (canonicalName.empty()) {
     return invalidTarget("Compiler target operation name must not be empty");
   }
-  if (numQubits == 0) {
-    return invalidTarget(
-        "Compiler target operation qubit count must be positive");
+  if (arity == 0) {
+    return invalidTarget("Compiler target operation arity must be positive");
   }
   if (auto error =
           validateFidelity(fidelity, "Compiler target operation fidelity")) {
@@ -283,7 +298,7 @@ llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
 
   std::set<std::vector<SiteId>> uniqueSiteCombinations;
   for (const auto& siteTuple : siteTuples) {
-    if (siteTuple.sites().size() != numQubits) {
+    if (siteTuple.sites().size() != arity) {
       return invalidTarget(
           "Compiler target operation site tuple does not match its arity");
     }
@@ -294,19 +309,19 @@ llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
           "Compiler target operation contains a duplicate site tuple");
     }
   }
-  return Operation(std::move(name), std::move(canonicalName), numQubits,
+  return Operation(std::move(name), std::move(canonicalName), arity,
                    numParameters, std::move(siteTuples), duration, fidelity);
 }
 
 CompilerTarget::Operation::Operation(std::string name,
                                      std::string canonicalName,
-                                     const size_t numQubits,
+                                     const size_t arity,
                                      const size_t numParameters,
                                      std::vector<SiteTuple> siteTuples,
                                      const std::optional<uint64_t> duration,
                                      const std::optional<double> fidelity)
     : name_(std::move(name)), canonicalName_(std::move(canonicalName)),
-      numQubits_(numQubits), numParameters_(numParameters),
+      arity_(arity), numParameters_(numParameters),
       siteTuples_(std::move(siteTuples)), duration_(duration),
       fidelity_(fidelity) {}
 
@@ -316,9 +331,7 @@ StringRef CompilerTarget::Operation::canonicalName() const noexcept {
   return canonicalName_;
 }
 
-size_t CompilerTarget::Operation::numQubits() const noexcept {
-  return numQubits_;
-}
+size_t CompilerTarget::Operation::arity() const noexcept { return arity_; }
 
 size_t CompilerTarget::Operation::numParameters() const noexcept {
   return numParameters_;
@@ -337,22 +350,54 @@ std::optional<double> CompilerTarget::Operation::fidelity() const noexcept {
   return fidelity_;
 }
 
+CompilerTarget::NativeOperations
+CompilerTarget::NativeOperations::unrestricted() {
+  return {Kind::Unrestricted, {}};
+}
+
+CompilerTarget::NativeOperations::NativeOperations() noexcept
+    : kind_(Kind::Unknown) {}
+
+CompilerTarget::NativeOperations
+CompilerTarget::NativeOperations::fromOperations(
+    std::vector<Operation> operations) {
+  return {Kind::Explicit, std::move(operations)};
+}
+
+CompilerTarget::NativeOperations::Kind
+CompilerTarget::NativeOperations::kind() const noexcept {
+  return kind_;
+}
+
+ArrayRef<CompilerTarget::Operation>
+CompilerTarget::NativeOperations::operations() const noexcept {
+  return operations_;
+}
+
+CompilerTarget::NativeOperations::NativeOperations(
+    const Kind kind, std::vector<Operation> operations)
+    : kind_(kind), operations_(std::move(operations)) {}
+
 struct CompilerTarget::Storage {
   Storage(std::optional<std::string> targetName, std::vector<Site> targetSites,
-          std::optional<std::vector<Coupling>> targetCouplings,
-          std::optional<std::vector<Operation>> targetOperations,
+          Connectivity::Kind targetConnectivityKind,
+          std::vector<Coupling> targetCouplings,
+          NativeOperations::Kind targetNativeOperationsKind,
+          std::vector<Operation> targetOperations,
           std::optional<DurationUnit> targetDurationUnit);
 
   [[nodiscard]] static llvm::Expected<std::shared_ptr<const Storage>>
   create(std::optional<std::string> targetName, std::vector<Site> targetSites,
-         std::optional<std::vector<Coupling>> targetCouplings,
-         std::optional<std::vector<Operation>> targetOperations,
+         Connectivity::Kind targetConnectivityKind,
+         std::vector<Coupling> targetCouplings,
+         NativeOperations::Kind targetNativeOperationsKind,
+         std::vector<Operation> targetOperations,
          std::optional<DurationUnit> targetDurationUnit);
 
   [[nodiscard]] llvm::Error initialize();
 
-  [[nodiscard]] bool
-  supportsOperation(StringRef name, size_t numQubits,
+  [[nodiscard]] std::optional<bool>
+  supportsOperation(StringRef name, size_t arity,
                     std::optional<size_t> numParameters) const;
   [[nodiscard]] std::optional<SynthesisBasis> resolveSynthesisBasis() const;
 
@@ -361,11 +406,13 @@ struct CompilerTarget::Storage {
   std::vector<Site> sites;
   SmallVector<SiteId> siteIds;
   DenseMap<SiteId, size_t> siteToVertex;
-  std::optional<std::vector<Coupling>> couplings;
+  Connectivity::Kind connectivityKind;
+  std::vector<Coupling> couplings;
   SmallVector<SmallVector<size_t, 4>> adjacency;
   SmallVector<size_t> distances;
   size_t maximumDegree = 0;
-  std::optional<std::vector<Operation>> operations;
+  NativeOperations::Kind nativeOperationsKind;
+  std::vector<Operation> operations;
   llvm::StringMap<SmallVector<size_t, 1>> capabilities;
   SmallVector<GateKind> supportedGates;
   std::optional<SynthesisBasis> basis;
@@ -373,21 +420,28 @@ struct CompilerTarget::Storage {
 
 CompilerTarget::Storage::Storage(
     std::optional<std::string> targetName, std::vector<Site> targetSites,
-    std::optional<std::vector<Coupling>> targetCouplings,
-    std::optional<std::vector<Operation>> targetOperations,
+    const Connectivity::Kind targetConnectivityKind,
+    std::vector<Coupling> targetCouplings,
+    const NativeOperations::Kind targetNativeOperationsKind,
+    std::vector<Operation> targetOperations,
     std::optional<DurationUnit> targetDurationUnit)
     : name(std::move(targetName)), durationUnit(std::move(targetDurationUnit)),
-      sites(std::move(targetSites)), couplings(std::move(targetCouplings)),
+      sites(std::move(targetSites)), connectivityKind(targetConnectivityKind),
+      couplings(std::move(targetCouplings)),
+      nativeOperationsKind(targetNativeOperationsKind),
       operations(std::move(targetOperations)) {}
 
 llvm::Expected<std::shared_ptr<const CompilerTarget::Storage>>
 CompilerTarget::Storage::create(
     std::optional<std::string> targetName, std::vector<Site> targetSites,
-    std::optional<std::vector<Coupling>> targetCouplings,
-    std::optional<std::vector<Operation>> targetOperations,
+    const Connectivity::Kind targetConnectivityKind,
+    std::vector<Coupling> targetCouplings,
+    const NativeOperations::Kind targetNativeOperationsKind,
+    std::vector<Operation> targetOperations,
     std::optional<DurationUnit> targetDurationUnit) {
   auto storage = std::make_shared<Storage>(
-      std::move(targetName), std::move(targetSites), std::move(targetCouplings),
+      std::move(targetName), std::move(targetSites), targetConnectivityKind,
+      std::move(targetCouplings), targetNativeOperationsKind,
       std::move(targetOperations), std::move(targetDurationUnit));
   if (auto error = storage->initialize()) {
     return std::move(error);
@@ -412,9 +466,9 @@ llvm::Error CompilerTarget::Storage::initialize() {
     siteIds.emplace_back(site.id());
   }
 
-  if (couplings) {
+  if (connectivityKind == Connectivity::Kind::Explicit) {
     std::set<Coupling> canonicalCouplings;
-    for (auto [source, target] : *couplings) {
+    for (auto [source, target] : couplings) {
       if (!siteToVertex.contains(source) || !siteToVertex.contains(target)) {
         return invalidTarget(
             "Compiler target topology references an unknown site");
@@ -428,10 +482,10 @@ llvm::Error CompilerTarget::Storage::initialize() {
       }
       canonicalCouplings.emplace(source, target);
     }
-    couplings->assign(canonicalCouplings.begin(), canonicalCouplings.end());
+    couplings.assign(canonicalCouplings.begin(), canonicalCouplings.end());
 
     adjacency.resize(sites.size());
-    for (const auto& [source, target] : *couplings) {
+    for (const auto& [source, target] : couplings) {
       const auto sourceVertex = siteToVertex.at(source);
       const auto targetVertex = siteToVertex.at(target);
       adjacency[sourceVertex].emplace_back(targetVertex);
@@ -469,13 +523,13 @@ llvm::Error CompilerTarget::Storage::initialize() {
         return invalidTarget("Compiler target topology must be connected");
       }
     }
-  } else {
+  } else if (connectivityKind == Connectivity::Kind::AllToAll) {
     maximumDegree = sites.size() - 1;
   }
 
-  if (operations) {
-    for (const auto [index, operation] : llvm::enumerate(*operations)) {
-      if (operation.numQubits() > sites.size()) {
+  if (nativeOperationsKind == NativeOperations::Kind::Explicit) {
+    for (const auto [index, operation] : llvm::enumerate(operations)) {
+      if (operation.arity() > sites.size()) {
         return invalidTarget(
             "Compiler target operation arity exceeds its site count");
       }
@@ -495,7 +549,7 @@ llvm::Error CompilerTarget::Storage::initialize() {
     return site.t1().has_value() || site.t2().has_value();
   });
   const auto hasOperationTiming =
-      operations && llvm::any_of(*operations, [](const auto& operation) {
+      llvm::any_of(operations, [](const auto& operation) {
         return operation.duration().has_value() ||
                llvm::any_of(operation.siteTuples(), [](const auto& siteTuple) {
                  return siteTuple.duration().has_value();
@@ -507,8 +561,8 @@ llvm::Error CompilerTarget::Storage::initialize() {
   }
 
   for (const auto& specification : GATE_SPECIFICATIONS) {
-    if (supportsOperation(specification.name, specification.numQubits,
-                          specification.numParameters)) {
+    if (supportsOperation(specification.name, specification.arity,
+                          specification.numParameters) == true) {
       supportedGates.emplace_back(specification.kind);
     }
   }
@@ -516,14 +570,17 @@ llvm::Error CompilerTarget::Storage::initialize() {
   return llvm::Error::success();
 }
 
-bool CompilerTarget::Storage::supportsOperation(
-    const StringRef operationName, const size_t numQubits,
+std::optional<bool> CompilerTarget::Storage::supportsOperation(
+    const StringRef operationName, const size_t arity,
     const std::optional<size_t> numParameters) const {
   const auto canonical = canonicalOperationName(operationName);
-  if (canonical.empty() || numQubits == 0 || numQubits > sites.size()) {
+  if (canonical.empty() || arity == 0 || arity > sites.size()) {
     return false;
   }
-  if (!operations) {
+  if (nativeOperationsKind == NativeOperations::Kind::Unknown) {
+    return std::nullopt;
+  }
+  if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
     return true;
   }
   const auto found = capabilities.find(canonical);
@@ -531,8 +588,8 @@ bool CompilerTarget::Storage::supportsOperation(
     return false;
   }
   return llvm::any_of(found->second, [&](const auto index) {
-    const auto& operation = (*operations)[index];
-    return operation.numQubits() == numQubits &&
+    const auto& operation = operations[index];
+    return operation.arity() == arity &&
            (!numParameters || operation.numParameters() == *numParameters);
   });
 }
@@ -574,60 +631,58 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
 }
 
 llvm::Expected<CompilerTarget>
-CompilerTarget::create(const size_t numQubits,
-                       std::optional<std::vector<Coupling>> couplings,
-                       std::optional<std::vector<Operation>> operations,
+CompilerTarget::create(const size_t numSites, Connectivity connectivity,
+                       NativeOperations nativeOperations,
                        std::optional<DurationUnit> durationUnit) {
-  auto sites = makeDenseSites(numQubits);
+  auto sites = makeDenseSites(numSites);
   if (!sites) {
     return sites.takeError();
   }
-  return createImpl(std::nullopt, std::move(*sites), std::move(couplings),
-                    std::move(operations), std::move(durationUnit));
+  return createImpl(std::nullopt, std::move(*sites), std::move(connectivity),
+                    std::move(nativeOperations), std::move(durationUnit));
 }
 
 llvm::Expected<CompilerTarget>
-CompilerTarget::create(std::string name, const size_t numQubits,
-                       std::optional<std::vector<Coupling>> couplings,
-                       std::optional<std::vector<Operation>> operations,
+CompilerTarget::create(std::string name, const size_t numSites,
+                       Connectivity connectivity,
+                       NativeOperations nativeOperations,
                        std::optional<DurationUnit> durationUnit) {
-  auto sites = makeDenseSites(numQubits);
+  auto sites = makeDenseSites(numSites);
   if (!sites) {
     return sites.takeError();
   }
   return createImpl(std::optional<std::string>(std::move(name)),
-                    std::move(*sites), std::move(couplings),
-                    std::move(operations), std::move(durationUnit));
+                    std::move(*sites), std::move(connectivity),
+                    std::move(nativeOperations), std::move(durationUnit));
 }
 
 llvm::Expected<CompilerTarget>
-CompilerTarget::create(std::vector<Site> sites,
-                       std::optional<std::vector<Coupling>> couplings,
-                       std::optional<std::vector<Operation>> operations,
+CompilerTarget::create(std::vector<Site> sites, Connectivity connectivity,
+                       NativeOperations nativeOperations,
                        std::optional<DurationUnit> durationUnit) {
-  return createImpl(std::nullopt, std::move(sites), std::move(couplings),
-                    std::move(operations), std::move(durationUnit));
+  return createImpl(std::nullopt, std::move(sites), std::move(connectivity),
+                    std::move(nativeOperations), std::move(durationUnit));
 }
 
 llvm::Expected<CompilerTarget>
 CompilerTarget::create(std::string name, std::vector<Site> sites,
-                       std::optional<std::vector<Coupling>> couplings,
-                       std::optional<std::vector<Operation>> operations,
+                       Connectivity connectivity,
+                       NativeOperations nativeOperations,
                        std::optional<DurationUnit> durationUnit) {
   return createImpl(std::optional<std::string>(std::move(name)),
-                    std::move(sites), std::move(couplings),
-                    std::move(operations), std::move(durationUnit));
+                    std::move(sites), std::move(connectivity),
+                    std::move(nativeOperations), std::move(durationUnit));
 }
 
 llvm::Expected<CompilerTarget>
 CompilerTarget::createImpl(std::optional<std::string> name,
-                           std::vector<Site> sites,
-                           std::optional<std::vector<Coupling>> couplings,
-                           std::optional<std::vector<Operation>> operations,
+                           std::vector<Site> sites, Connectivity connectivity,
+                           NativeOperations nativeOperations,
                            std::optional<DurationUnit> durationUnit) {
-  auto storage =
-      Storage::create(std::move(name), std::move(sites), std::move(couplings),
-                      std::move(operations), std::move(durationUnit));
+  auto storage = Storage::create(
+      std::move(name), std::move(sites), connectivity.kind_,
+      std::move(connectivity.couplings_), nativeOperations.kind_,
+      std::move(nativeOperations.operations_), std::move(durationUnit));
   if (!storage) {
     return storage.takeError();
   }
@@ -649,7 +704,7 @@ CompilerTarget::durationUnit() const noexcept {
   return storage_->durationUnit;
 }
 
-size_t CompilerTarget::numQubits() const noexcept {
+size_t CompilerTarget::numSites() const noexcept {
   return storage_->sites.size();
 }
 
@@ -671,26 +726,27 @@ CompilerTarget::vertexForSite(const SiteId site) const noexcept {
 }
 
 SiteId CompilerTarget::siteForVertex(const size_t vertex) const {
-  assert(vertex < numQubits() && "Compiler target vertex is out of range");
+  assert(vertex < numSites() && "Compiler target vertex is out of range");
   return storage_->siteIds[vertex];
 }
 
-bool CompilerTarget::hasExplicitTopology() const noexcept {
-  return storage_->couplings.has_value();
+CompilerTarget::Connectivity::Kind
+CompilerTarget::connectivityKind() const noexcept {
+  return storage_->connectivityKind;
 }
 
 ArrayRef<CompilerTarget::Coupling> CompilerTarget::couplings() const noexcept {
-  if (!storage_->couplings) {
-    return {};
-  }
-  return *storage_->couplings;
+  return storage_->couplings;
 }
 
 bool CompilerTarget::areAdjacent(const size_t source,
                                  const size_t target) const {
-  assert(source < numQubits() && target < numQubits() &&
+  assert(source < numSites() && target < numSites() &&
          "Compiler target vertex is out of range");
-  if (!hasExplicitTopology()) {
+  if (connectivityKind() == Connectivity::Kind::Unknown) {
+    llvm::report_fatal_error("Compiler target connectivity is unknown");
+  }
+  if (connectivityKind() == Connectivity::Kind::AllToAll) {
     return source != target;
   }
   return llvm::is_contained(storage_->adjacency[source], target);
@@ -699,9 +755,12 @@ bool CompilerTarget::areAdjacent(const size_t source,
 void CompilerTarget::forEachNeighbour(
     const size_t vertex,
     const llvm::function_ref<void(size_t)> callback) const {
-  if (!hasExplicitTopology()) {
-    assert(vertex < numQubits() && "Compiler target vertex is out of range");
-    for (size_t neighbour = 0; neighbour < numQubits(); ++neighbour) {
+  if (connectivityKind() == Connectivity::Kind::Unknown) {
+    llvm::report_fatal_error("Compiler target connectivity is unknown");
+  }
+  if (connectivityKind() == Connectivity::Kind::AllToAll) {
+    assert(vertex < numSites() && "Compiler target vertex is out of range");
+    for (size_t neighbour = 0; neighbour < numSites(); ++neighbour) {
       if (neighbour != vertex) {
         callback(neighbour);
       }
@@ -715,42 +774,47 @@ void CompilerTarget::forEachNeighbour(
 
 size_t CompilerTarget::distanceBetween(const size_t source,
                                        const size_t target) const {
-  assert(source < numQubits() && target < numQubits() &&
+  assert(source < numSites() && target < numSites() &&
          "Compiler target vertex is out of range");
-  if (!hasExplicitTopology()) {
+  if (connectivityKind() == Connectivity::Kind::Unknown) {
+    llvm::report_fatal_error("Compiler target connectivity is unknown");
+  }
+  if (connectivityKind() == Connectivity::Kind::AllToAll) {
     return source == target ? 0 : 1;
   }
-  return storage_->distances[(source * numQubits()) + target];
+  return storage_->distances[(source * numSites()) + target];
 }
 
 ArrayRef<size_t> CompilerTarget::explicitNeighbours(const size_t vertex) const {
-  assert(vertex < numQubits() && "Compiler target vertex is out of range");
+  assert(vertex < numSites() && "Compiler target vertex is out of range");
   return storage_->adjacency[vertex];
 }
 
 size_t CompilerTarget::maxDegree() const noexcept {
+  if (connectivityKind() == Connectivity::Kind::Unknown) {
+    llvm::report_fatal_error("Compiler target connectivity is unknown");
+  }
   return storage_->maximumDegree;
 }
 
-bool CompilerTarget::hasExplicitOperations() const noexcept {
-  return storage_->operations.has_value();
+CompilerTarget::NativeOperations::Kind
+CompilerTarget::nativeOperationsKind() const noexcept {
+  return storage_->nativeOperationsKind;
 }
 
 ArrayRef<CompilerTarget::Operation>
 CompilerTarget::operations() const noexcept {
-  if (!storage_->operations) {
-    return {};
-  }
-  return *storage_->operations;
+  return storage_->operations;
 }
 
-bool CompilerTarget::supportsOperation(
-    const StringRef operationName, const size_t numQubits,
+std::optional<bool> CompilerTarget::supportsOperation(
+    const StringRef operationName, const size_t arity,
     const std::optional<size_t> numParameters) const {
-  return storage_->supportsOperation(operationName, numQubits, numParameters);
+  return storage_->supportsOperation(operationName, arity, numParameters);
 }
 
-bool CompilerTarget::supports(::mlir::Operation* operation) const {
+std::optional<bool>
+CompilerTarget::supports(::mlir::Operation* operation) const {
   if (operation == nullptr) {
     return false;
   }
@@ -784,7 +848,10 @@ bool CompilerTarget::supports(::mlir::Operation* operation) const {
   return false;
 }
 
-bool CompilerTarget::supports(const GateKind gate) const {
+std::optional<bool> CompilerTarget::supports(const GateKind gate) const {
+  if (nativeOperationsKind() == NativeOperations::Kind::Unknown) {
+    return std::nullopt;
+  }
   return llvm::is_contained(storage_->supportedGates, gate);
 }
 
