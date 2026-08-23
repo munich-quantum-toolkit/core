@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -33,7 +34,6 @@
 #include <limits>
 #include <memory>
 #include <optional>
-#include <set>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -245,7 +245,7 @@ llvm::Expected<CompilerTarget::SiteTuple>
 CompilerTarget::SiteTuple::create(std::vector<SiteId> sites,
                                   const std::optional<uint64_t> duration,
                                   const std::optional<double> fidelity) {
-  std::set<SiteId> uniqueSites;
+  llvm::SmallDenseSet<SiteId> uniqueSites;
   for (const auto site : sites) {
     if (site < 0) {
       return invalidTarget(
@@ -296,18 +296,17 @@ llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
     return std::move(error);
   }
 
-  std::set<std::vector<SiteId>> uniqueSiteCombinations;
+  SmallVector<ArrayRef<SiteId>> uniqueSiteCombinations;
   for (const auto& siteTuple : siteTuples) {
     if (siteTuple.sites().size() != arity) {
       return invalidTarget(
           "Compiler target operation site tuple does not match its arity");
     }
-    if (!uniqueSiteCombinations
-             .emplace(siteTuple.sites().begin(), siteTuple.sites().end())
-             .second) {
+    if (llvm::is_contained(uniqueSiteCombinations, siteTuple.sites())) {
       return invalidTarget(
           "Compiler target operation contains a duplicate site tuple");
     }
+    uniqueSiteCombinations.emplace_back(siteTuple.sites());
   }
   return Operation(std::move(name), std::move(canonicalName), arity,
                    numParameters, std::move(siteTuples), duration, fidelity);
@@ -467,8 +466,7 @@ llvm::Error CompilerTarget::Storage::initialize() {
   }
 
   if (connectivityKind == Connectivity::Kind::Explicit) {
-    std::set<Coupling> canonicalCouplings;
-    for (auto [source, target] : couplings) {
+    for (auto& [source, target] : couplings) {
       if (!siteToVertex.contains(source) || !siteToVertex.contains(target)) {
         return invalidTarget(
             "Compiler target topology references an unknown site");
@@ -480,9 +478,9 @@ llvm::Error CompilerTarget::Storage::initialize() {
       if (target < source) {
         std::swap(source, target);
       }
-      canonicalCouplings.emplace(source, target);
     }
-    couplings.assign(canonicalCouplings.begin(), canonicalCouplings.end());
+    std::ranges::sort(couplings);
+    couplings.erase(std::ranges::unique(couplings).begin(), couplings.end());
 
     adjacency.resize(sites.size());
     for (const auto& [source, target] : couplings) {
