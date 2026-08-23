@@ -6,6 +6,14 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Removal of CoreAlgorithms
+
+MQT Core no longer installs `MQT::CoreAlgorithms` or the headers below
+`algorithms/`. MQT Core provides no direct replacement for the removed circuit
+factories. Move required implementations to the package that uses them. The
+`BUILD_MQT_CORE_BENCHMARKS` option and its legacy DD evaluation target were also
+removed.
+
 ### Python 3.11 and split-mode wheels
 
 MQT Core now requires Python 3.11 or newer. Upgrade the Python environment
