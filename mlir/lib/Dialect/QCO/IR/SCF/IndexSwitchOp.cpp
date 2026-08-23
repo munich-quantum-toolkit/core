@@ -19,6 +19,8 @@
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -148,6 +150,42 @@ ValueRange IndexSwitchOp::getSuccessorInputs(RegionSuccessor successor) {
 OperandRange
 IndexSwitchOp::getEntrySuccessorOperands(RegionSuccessor /*successor*/) {
   return getTargets();
+}
+
+namespace {
+/** Inline the selected region when the switch argument is constant. */
+struct RemoveStaticSelector final : OpRewritePattern<IndexSwitchOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IndexSwitchOp op,
+                                PatternRewriter& rewriter) const override {
+    IntegerAttr selector;
+    if (!matchPattern(op.getArg(), m_Constant(&selector))) {
+      return failure();
+    }
+
+    Region* selectedRegion = &op.getDefaultRegion();
+    const auto* const selectedCase =
+        llvm::find(op.getCases(), selector.getInt());
+    if (selectedCase != op.getCases().end()) {
+      const auto caseIndex = static_cast<size_t>(
+          std::distance(op.getCases().begin(), selectedCase));
+      selectedRegion = &op.getCaseRegions()[caseIndex];
+    }
+
+    Block* selectedBlock = &selectedRegion->front();
+    Operation* terminator = selectedBlock->getTerminator();
+    rewriter.inlineBlockBefore(selectedBlock, op, op.getTargets());
+    rewriter.replaceOp(op, terminator->getOperands());
+    rewriter.eraseOp(terminator);
+    return success();
+  }
+};
+} // namespace
+
+void IndexSwitchOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                                MLIRContext* context) {
+  results.add<RemoveStaticSelector>(context);
 }
 
 LogicalResult IndexSwitchOp::verify() {
