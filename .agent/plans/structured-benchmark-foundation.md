@@ -19,8 +19,7 @@ stable case ID, and structured QC or `jeff` program.
 The foundation is also the extension path for Daniel Haag's remaining structured
 programs. It keeps his original commits in the branch history and does not copy
 simulator support from the pull-request stack that starts at
-
-## 2077
+[#2077](https://github.com/munich-quantum-toolkit/core/pull/2077).
 
 ### Progress
 
@@ -38,10 +37,11 @@ simulator support from the pull-request stack that starts at
       switched CLI and MLIR Python generation to generic private dispatch.
 - [x] (2026-08-23 17:10Z) Added singular Python bindings and executable notebook
       documentation. Focused C++, emitter, `jeff`, CLI, and Python checks pass.
-- [ ] Extend the semantic-test branch above #2077 with BV and QFT distribution
-      checks, without copying those simulator changes into this branch.
-- [ ] Run installation, wheel, notebook, full release, and lint validation;
-      inspect the final diff and stale-name search.
+- [x] (2026-08-23 23:20Z) Rebuilt the semantic-test branch above #2077 and added
+      BV and QFT distribution checks without copying simulator code into this
+      branch.
+- [x] (2026-08-23 23:35Z) Ran installation, wheel, notebook, full release, and
+      lint validation and completed the stale-name audit.
 
 ### Surprises & Discoveries
 
@@ -58,6 +58,15 @@ simulator support from the pull-request stack that starts at
 - Observation: The stack that starts at #2077 already owns structured DD
   execution. The benchmark branch therefore owns instances, emission, and
   references only.
+- Observation: The combined DD check exposed a shared QFT ordering error in both
+  methods. Evidence: the old emitters gave total variation distance above 0.28
+  for QFT `(3, 1)`; descending physical targets and matching feed-forward
+  reduced it below 0.05 for both methods.
+- Observation: The full Python matrix reaches all 570 or 581 tests per version,
+  but six unrelated QDMI tests fail because the test installs do not register
+  the built-in `mqt.sc.default` and `mqt.sc.iqm.garnet` devices. The focused
+  benchmark and CLI tests pass for Python 3.11 through 3.14 with minimum direct
+  dependencies.
 
 ### Decision Log
 
@@ -93,10 +102,13 @@ simulator support from the pull-request stack that starts at
 
 ### Outcomes & Retrospective
 
-The active implementation has one semantic owner and one structured emitter path
-for five families. Focused tests prove the analytic contracts and produce valid
-QC and `jeff` for every circuit method. Final whole-project, package, and
-combined-stack validation remains.
+The implementation has one semantic owner and one structured emitter path for
+five families. The complete release build and 4,086 configured C++ tests pass.
+The executable notebook, installed C++ consumer, fresh wheel, launcher, and
+minimum-version Python benchmark tests pass. The separate semantic branch
+validates every family against the #2077-based DD stack. The full Python matrix
+is blocked only by the unrelated missing QDMI device registrations recorded
+above.
 
 ### Context and Orientation
 
