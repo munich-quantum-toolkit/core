@@ -20,6 +20,7 @@
 #include <llvm/Support/Error.h>
 
 #include <cassert>
+#include <optional>
 #include <string>
 
 using mlir::CompilerTarget;
@@ -41,8 +42,9 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
 
   ASSERT_TRUE(target.name());
   EXPECT_EQ(*target.name(), "IQM Garnet");
-  EXPECT_EQ(target.numQubits(), 20);
-  EXPECT_TRUE(target.hasExplicitTopology());
+  EXPECT_EQ(target.numSites(), 20);
+  EXPECT_EQ(target.connectivityKind(),
+            CompilerTarget::Connectivity::Kind::Explicit);
   EXPECT_EQ(target.couplings().size(), 30);
 
   ASSERT_TRUE(target.durationUnit());
@@ -70,26 +72,28 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
     }
   }
 
-  EXPECT_TRUE(target.supportsOperation("r", 1, 2));
-  EXPECT_TRUE(target.supportsOperation("cz", 2, 0));
-  EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
-  EXPECT_FALSE(target.supportsOperation("rx", 1, 1));
+  EXPECT_EQ(target.supportsOperation("r", 1, 2), true);
+  EXPECT_EQ(target.supportsOperation("cz", 2, 0), true);
+  EXPECT_EQ(target.supportsOperation("measure", 1, 0), true);
+  EXPECT_EQ(target.supportsOperation("rx", 1, 1), false);
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit,
             CompilerTarget::SingleQubitBasis::R);
   EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CZ);
 }
 
-TEST(CompilerQDMIAdapterTest, PreservesMissingTopologyAsAllToAll) {
+TEST(CompilerQDMIAdapterTest, PreservesMissingTargetFactsAsUnknown) {
   const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
-  EXPECT_EQ(target.numQubits(), 65535);
-  EXPECT_FALSE(target.hasExplicitTopology());
-  EXPECT_TRUE(target.areAdjacent(0, target.numQubits() - 1));
-  EXPECT_TRUE(target.supportsOperation("h", 1, 0));
-  EXPECT_TRUE(target.supportsOperation("cx", 2, 0));
-  EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
+  EXPECT_EQ(target.numSites(), 65535);
+  EXPECT_EQ(target.connectivityKind(),
+            CompilerTarget::Connectivity::Kind::Unknown);
+  EXPECT_EQ(target.nativeOperationsKind(),
+            CompilerTarget::NativeOperations::Kind::Unknown);
+  EXPECT_EQ(target.supportsOperation("h", 1, 0), std::nullopt);
+  EXPECT_EQ(target.supportsOperation("cx", 2, 0), std::nullopt);
+  EXPECT_EQ(target.supportsOperation("measure", 1, 0), std::nullopt);
 }
 
 TEST(CompilerQDMIAdapterTest, ListsRegisteredDeviceIds) {

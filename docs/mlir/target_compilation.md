@@ -27,13 +27,21 @@ compiled = compile_program(
 Target compilation accepts optimized QCO, QC, or QIR output and uses the
 canonical QCO pipeline; it cannot be combined with a custom `qco_pipeline`.
 
-The target can also be constructed directly. Omitting `couplings` selects
-all-to-all connectivity; omitting `operations` means that every operation is
-native:
+The target can also be constructed directly. Connectivity and native-operation
+metadata are unknown unless the caller states them:
 
 ```python
-target = CompilerTarget(3, couplings=[(0, 1), (1, 2)])
+target = CompilerTarget(
+    3,
+    connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
+    native_operations=CompilerTarget.NativeOperations.unrestricted(),
+)
 ```
+
+Use `CompilerTarget.Connectivity.all_to_all()` for an all-to-all target. An
+empty `CompilerTarget.NativeOperations([])` means that no operation is native.
+The default-constructed metadata objects mean that the corresponding support is
+unknown; target compilation rejects an unknown property when a pass needs it.
 
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` to apply target
 compilation to an existing QCO program. Compilation runs in place. If a pass
@@ -125,6 +133,6 @@ When exporting a program that has already been mapped to a
 {py:meth}`~mqt.core.mlir.QCProgram.to_qiskit`. The exporter maps each static
 target site ID to its index in {py:attr}`~mqt.core.mlir.CompilerTarget.sites`
 and creates a canonical physical Qiskit circuit. The circuit has one register
-named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_qubits` qubits.
+named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits.
 This option does not run target compilation or emit Qiskit layout metadata.
 Target-aware export requires static qubits whose site IDs belong to that target.

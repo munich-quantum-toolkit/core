@@ -62,6 +62,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 using mlir::mqt::getEntryPoint;
+using Connectivity = CompilerTarget::Connectivity;
+using NativeOperations = CompilerTarget::NativeOperations;
 
 static std::string printModule(ModuleOp moduleOp) {
   std::string result;
@@ -243,8 +245,8 @@ static CompilerTarget getSquareGridTarget(const size_t n) {
     }
   }
 
-  return llvm::cantFail(
-      CompilerTarget::create(numTarget, std::move(couplings)));
+  return llvm::cantFail(CompilerTarget::create(
+      numTarget, Connectivity::fromCouplings(std::move(couplings))));
 }
 
 /// Creates an N-qubit GHZ state, where N = `qubits.size()` using
@@ -342,9 +344,9 @@ class MappingPassTest : public MappingPassFixture,
 TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   constexpr int64_t size = 3;
 
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
-      std::vector<CompilerTarget::Operation>{}));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::fromOperations({})));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -439,9 +441,8 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(42)));
 
   const auto target = llvm::cantFail(CompilerTarget::create(
-      std::move(sites),
-      std::vector<CompilerTarget::Coupling>{{7, 19}, {19, 42}},
-      std::vector<CompilerTarget::Operation>{}));
+      std::move(sites), Connectivity::fromCouplings({{7, 19}, {19, 42}}),
+      NativeOperations::fromOperations({})));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -481,7 +482,8 @@ TEST_F(MappingPassFixture, PlaceNoncontiguousTargetCompactly) {
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(7)));
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(19)));
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(42)));
-  const auto target = llvm::cantFail(CompilerTarget::create(std::move(sites)));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(std::move(sites), Connectivity::allToAll()));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize({builder.getI1Type()});
@@ -601,8 +603,8 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
     couplings.emplace_back(0, static_cast<int64_t>(site));
   }
 
-  const auto target = llvm::cantFail(
-      CompilerTarget::create(numTargetQubits, std::move(couplings)));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      numTargetQubits, Connectivity::fromCouplings(std::move(couplings))));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(2, builder.getI1Type()));
@@ -631,6 +633,36 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
   EXPECT_LE(numStatics, 3);
   EXPECT_LT(numStatics, numTargetQubits);
   EXPECT_EQ(numSinks, numStatics);
+}
+
+TEST_F(MappingPassFixture, UnknownConnectivityIsNeededOnlyForTwoQubitOps) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  builder.sink(builder.allocQubit());
+  auto moduleOp = builder.finalize();
+  const auto target = llvm::cantFail(CompilerTarget::create(2));
+
+  EXPECT_TRUE(succeeded(runPass(moduleOp.get(), target, MappingPassOptions{})));
+
+  QCOProgramBuilder twoQubitBuilder(context.get());
+  twoQubitBuilder.initialize();
+  auto first = twoQubitBuilder.allocQubit();
+  auto second = twoQubitBuilder.allocQubit();
+  std::tie(first, second) = twoQubitBuilder.cx(first, second);
+  twoQubitBuilder.sink(first);
+  twoQubitBuilder.sink(second);
+  auto twoQubitModule = twoQubitBuilder.finalize();
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(
+      failed(runPass(twoQubitModule.get(), target, MappingPassOptions{})));
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains("place-and-route requires known target connectivity"));
 }
 
 TEST_P(MappingPassTest, FailNoEntryPoint) {
@@ -918,7 +950,7 @@ TEST_P(MappingPassTest, FailNoExtractAfterInsert) {
 
 TEST_P(MappingPassTest, FailTooManyQubitsForArch) {
   const auto& target = GetParam();
-  const auto size = static_cast<int64_t>(target.numQubits()) + 1;
+  const auto size = static_cast<int64_t>(target.numSites()) + 1;
 
   SmallVector<Value> bits(size);
   SmallVector<Value> qubits(size);
@@ -984,7 +1016,7 @@ TEST_P(MappingPassTest, MapFlatGHZ) {
 
 TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
   const auto& target = GetParam();
-  const auto size = static_cast<int64_t>(target.numQubits());
+  const auto size = static_cast<int64_t>(target.numSites());
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
@@ -1846,7 +1878,7 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
 
 TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
   const auto& target = GetParam();
-  const auto size = (target.numQubits() + 1) / 2;
+  const auto size = (target.numSites() + 1) / 2;
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);

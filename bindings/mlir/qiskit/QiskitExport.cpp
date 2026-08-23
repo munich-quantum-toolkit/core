@@ -2109,7 +2109,7 @@ nb::object exportCircuit(const mlir::QCProgram& program,
   ExportState state;
   collectParameters(function, state);
   if (target != nullptr) {
-    state.numQubits = checkedIndex(static_cast<uint64_t>(target->numQubits()),
+    state.numQubits = checkedIndex(static_cast<uint64_t>(target->numSites()),
                                    "target qubit count");
   }
   collectResources(function, state, target);

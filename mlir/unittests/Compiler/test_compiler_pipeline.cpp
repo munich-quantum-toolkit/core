@@ -1588,7 +1588,9 @@ c = measure q;
   std::vector sites{llvm::cantFail(CompilerTarget::Site::create(2472)),
                     llvm::cantFail(CompilerTarget::Site::create(18449)),
                     llvm::cantFail(CompilerTarget::Site::create(65535))};
-  const auto target = llvm::cantFail(CompilerTarget::create(std::move(sites)));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      std::move(sites), CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::unrestricted()));
   ASSERT_TRUE(qco->compileForTarget(target));
 
   auto compiled = parseRecordedModule(qco->str());

@@ -107,19 +107,13 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
 
 [[nodiscard]] static llvm::Error validateHomogeneousSupport(
     const qdmi::Operation& operation, const size_t arity,
-    const std::optional<std::vector<qdmi::Site>>& flattenedSites,
+    const std::vector<qdmi::Site>& flattenedSites,
     const std::vector<CompilerTarget::Site>& deviceSites,
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
     const llvm::StringRef deviceName) {
-  if (!flattenedSites) {
-    return requireHomogeneousOperation(
-        arity != 2 || !couplings, deviceName, operation.getName(),
-        "the device reports an explicit topology but no ordered two-qubit "
-        "site support");
-  }
   const auto operationName = operation.getName();
   if (auto error = requireHomogeneousOperation(
-          flattenedSites->size() % arity == 0, deviceName, operationName,
+          flattenedSites.size() % arity == 0, deviceName, operationName,
           "the reported site list is not divisible by the fixed arity")) {
     return error;
   }
@@ -138,8 +132,8 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
 
   if (arity == 1) {
     llvm::DenseSet<CompilerTarget::SiteId> supportedSites;
-    supportedSites.reserve(flattenedSites->size());
-    for (const auto& site : *flattenedSites) {
+    supportedSites.reserve(flattenedSites.size());
+    for (const auto& site : flattenedSites) {
       auto siteId = checkedSiteId(site.getIndex());
       if (!siteId) {
         return siteId.takeError();
@@ -159,14 +153,14 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
 
   llvm::DenseSet<CompilerTarget::Coupling> reportedTuples;
   llvm::DenseSet<CompilerTarget::Coupling> supportedCouplings;
-  reportedTuples.reserve(flattenedSites->size() / arity);
-  supportedCouplings.reserve(flattenedSites->size() / arity);
-  for (size_t offset = 0; offset < flattenedSites->size(); offset += arity) {
-    auto first = checkedSiteId((*flattenedSites)[offset].getIndex());
+  reportedTuples.reserve(flattenedSites.size() / arity);
+  supportedCouplings.reserve(flattenedSites.size() / arity);
+  for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
+    auto first = checkedSiteId(flattenedSites[offset].getIndex());
     if (!first) {
       return first.takeError();
     }
-    auto second = checkedSiteId((*flattenedSites)[offset + 1].getIndex());
+    auto second = checkedSiteId(flattenedSites[offset + 1].getIndex());
     if (!second) {
       return second.takeError();
     }
@@ -241,22 +235,18 @@ snapshotDurationUnit(const qdmi::Device& device) {
 
 [[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::SiteTuple>>
 snapshotSiteTuples(const qdmi::Operation& operation, const size_t arity,
-                   const std::optional<std::vector<qdmi::Site>>& flattenedSites,
+                   const std::vector<qdmi::Site>& flattenedSites,
                    const std::optional<uint64_t> defaultDuration,
                    const std::optional<double> defaultFidelity) {
-  if (!flattenedSites) {
-    return std::vector<CompilerTarget::SiteTuple>{};
-  }
-
   std::vector<CompilerTarget::SiteTuple> siteTuples;
-  siteTuples.reserve(flattenedSites->size() / arity);
-  for (size_t offset = 0; offset < flattenedSites->size(); offset += arity) {
+  siteTuples.reserve(flattenedSites.size() / arity);
+  for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
     std::vector<qdmi::Site> sites;
     std::vector<CompilerTarget::SiteId> siteIds;
     sites.reserve(arity);
     siteIds.reserve(arity);
     for (size_t index = 0; index < arity; ++index) {
-      const auto& site = (*flattenedSites)[offset + index];
+      const auto& site = flattenedSites[offset + index];
       sites.emplace_back(site);
       auto siteId = checkedSiteId(site.getIndex());
       if (!siteId) {
@@ -279,7 +269,7 @@ snapshotSiteTuples(const qdmi::Operation& operation, const size_t arity,
   return siteTuples;
 }
 
-[[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::Operation>>
+[[nodiscard]] static llvm::Expected<CompilerTarget::NativeOperations>
 snapshotOperations(
     const std::vector<qdmi::Operation>& operations,
     const std::vector<CompilerTarget::Site>& deviceSites,
@@ -298,14 +288,17 @@ snapshotOperations(
       continue;
     }
     const auto flattenedSites = operation.getSites();
+    if (!flattenedSites) {
+      return CompilerTarget::NativeOperations{};
+    }
     if (auto error =
-            validateHomogeneousSupport(operation, *arity, flattenedSites,
+            validateHomogeneousSupport(operation, *arity, *flattenedSites,
                                        deviceSites, couplings, deviceName)) {
       return error;
     }
     const auto duration = operation.getDuration();
     const auto fidelity = operation.getFidelity();
-    auto siteTuples = snapshotSiteTuples(operation, *arity, flattenedSites,
+    auto siteTuples = snapshotSiteTuples(operation, *arity, *flattenedSites,
                                          duration, fidelity);
     if (!siteTuples) {
       return siteTuples.takeError();
@@ -318,7 +311,8 @@ snapshotOperations(
     }
     targetOperations.emplace_back(std::move(*targetOperation));
   }
-  return targetOperations;
+  return CompilerTarget::NativeOperations::fromOperations(
+      std::move(targetOperations));
 }
 
 [[nodiscard]] static llvm::Expected<CompilerTarget>
@@ -378,8 +372,12 @@ snapshotCompilerTarget(const qdmi::Device& device) {
   if (!durationUnit) {
     return durationUnit.takeError();
   }
+  auto connectivity =
+      couplings
+          ? CompilerTarget::Connectivity::fromCouplings(std::move(*couplings))
+          : CompilerTarget::Connectivity{};
   return CompilerTarget::create(std::move(deviceName), std::move(sites),
-                                std::move(couplings), std::move(*operations),
+                                std::move(connectivity), std::move(*operations),
                                 std::move(*durationUnit));
 }
 
