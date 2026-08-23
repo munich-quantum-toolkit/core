@@ -52,6 +52,12 @@ does not publish CPython 3.13t or 3.14t wheels.
 - [x] (2026-08-23 10:15Z) Addressed the collected review by making split mode
   unconditional, restoring full Windows x64 wheel tests, and simplifying the
   platform branches and release notes.
+- [x] (2026-08-23 13:55Z) Merged current `main`, replaced the Windows GIL
+  definition with CMake 4.4's native detection, simplified the Windows wheel
+  test configuration, and recorded upstream issue drafts.
+- [x] (2026-08-23 14:02Z) Built and imported the final `cp311-abi3` wheel with
+      CMake 4.4.2, verified the Windows cibuildwheel options, and passed lint
+      and lock checks.
 
 ## Surprises & Discoveries
 
@@ -104,8 +110,13 @@ does not publish CPython 3.13t or 3.14t wheels.
 - Observation: cibuildwheel passes test requirements through `cmd.exe` on
   Windows, where version-bound operators become shell redirections. Windows x64
   builds install the test dependency group through one shell-safe `uv` command
-  and run the full wheel tests. Windows ARM64 and CPython 3.15 builds use the
-  dependency-free import test.
+  configured for the platform and run the full wheel tests. Windows ARM64 and
+  CPython 3.15 builds clear that command and use the dependency-free import
+  test.
+- Observation: CMake 4.4 detects free-threaded Python and propagates
+  `Py_GIL_DISABLED` through its Python module targets on Windows. Requiring
+  CMake 4.4.1 for Python package builds replaces MQT Core's manual definition
+  without raising the CMake floor for ordinary C++ consumers.
 - Observation: macOS x86-64 split frontends must export nanobind's weak
   exception RTTI so that the backend catches its exception types. Apple arm64
   uses non-unique RTTI and needs no extra exports. Exporting every
@@ -159,6 +170,19 @@ does not publish CPython 3.13t or 3.14t wheels.
   matching without exposing statically linked project and toolchain symbols.
   Apple arm64 uses non-unique RTTI and needs no extra exports. Date/Author:
   2026-08-22 / Codex.
+- Decision: Require CMake 4.4.1 only through scikit-build-core and remove the
+  Windows `DISABLE_GIL` override. Rationale: CMake now owns free-threaded Python
+  detection and compile definitions, while ordinary C++ builds can retain the
+  project's CMake 3.24 floor. Date/Author: 2026-08-23 / Codex.
+- Decision: Configure the Windows dependency-group installation once at the
+  platform level and clear it for smoke-only builds. Rationale: cibuildwheel
+  cannot safely quote its generated requirement arguments for `cmd.exe`; one
+  native `uv pip install --group test` command preserves the full AMD64 wheel
+  suite without a version-specific selector. Date/Author: 2026-08-23 / Codex.
+- Decision: Store focused upstream issue drafts without publishing them.
+  Rationale: each workaround belongs upstream, but filing or implementing
+  upstream changes is outside this pull request. Date/Author: 2026-08-23 /
+  Codex.
 
 ## Outcomes & Retrospective
 
@@ -186,6 +210,13 @@ Pull request #2209 is the integration vehicle. Its branch retains Daniel Haag's
 original nanobind 3 commits and signed cherry-picks of the Python 3.11 commits
 from pull request #2009. The QDMI synchronization is isolated so that pull
 request #1901 can remove it with the legacy driver.
+
+After the final merge from `main`, scikit-build-core selected CMake 4.4.2 and
+produced a 78,374,846-byte `cp311-abi3` Linux AArch64 wheel. Its metadata still
+requires `nanobind-backend>=1.0`, and a clean CPython 3.14 environment imported
+all four extension modules. The resolved cibuildwheel options retain the full
+Windows AMD64 suite through CPython 3.14 and use import-only tests for Windows
+ARM64 and CPython 3.15.
 
 ## Context and Orientation
 
@@ -287,3 +318,100 @@ comparing ABI variants. Build products remain under `build/` or temporary
 directories and are not committed. If one split-mode platform fails, fix or
 remove that unsupported platform instead of publishing a different binding
 layout.
+
+## Upstream Issue Drafts
+
+These drafts are not published. Each draft is ready to file after a human
+confirms the target repository and current upstream state.
+
+### nanobind: Detect Windows `abi3t` when `SKBUILD_SOABI` is empty
+
+Title: Split-mode `abi3t` detection ignores scikit-build-core's Windows signal
+
+Body:
+
+    🤖 *AI text below* 🤖
+
+    With nanobind 3.0.0, scikit-build-core 1.0.3, CMake 4.4.2, and CPython
+    3.15t on Windows, a split module created with `FREE_THREADED` and
+    `BACKEND_MODULE` is not configured as `abi3t`.
+
+    scikit-build-core defines `SKBUILD_SOABI` as an empty string for Windows
+    Stable ABI builds and sets `Py_TARGET_ABI3T=1`. nanobind treats the defined
+    but empty `SKBUILD_SOABI` as authoritative, leaves `NB_ABI` empty, and does
+    not select its `NB_ABI3T` path.
+
+    Setting `NB_ABI=315t` before `nanobind_add_module` produces the expected
+    `cp315-abi3t` module and definitions. nanobind could instead honor
+    `Py_TARGET_ABI3T` or CMake's `Python_FREE_THREADED`, or fall back to
+    `Python_SOABI` when `SKBUILD_SOABI` is empty. A Windows x64 and ARM64 split
+    test would cover the regression.
+
+### nanobind: Export split-mode exception RTTI on macOS x86-64
+
+Title: Split modules need exception RTTI exports on macOS x86-64
+
+Body:
+
+    🤖 *AI text below* 🤖
+
+    A macOS x86-64 split module linked with an initializer-only export list
+    cannot translate nanobind exceptions in the shared backend. Calls that
+    raise `nanobind::builtin_exception` reach Python as `RuntimeError` because
+    the frontend and backend RTTI does not coalesce.
+
+    Exporting the `__ZTI` and `__ZTS` symbols for
+    `nanobind::abi1::python_error` and `nanobind::abi1::builtin_exception`
+    fixes translation. Exporting the complete frontend symbol table is unsafe
+    for extensions that statically link large libraries because dyld can
+    interpose unrelated weak symbols. Apple arm64 uses non-unique RTTI and does
+    not need these exports.
+
+    Could split-mode CMake targets add the four required weak RTTI exports on
+    macOS x86-64, or expose a supported export-list fragment for projects that
+    restrict module exports?
+
+### nanobind: Preserve section garbage collection in split mode
+
+Title: Split-mode targets omit linked-mode section garbage collection
+
+Body:
+
+    🤖 *AI text below* 🤖
+
+    On ELF platforms, nanobind's linked library target supplies
+    `-ffunction-sections`, `-fdata-sections`, and `--gc-sections` for optimized
+    builds. `nanobind_add_module(BACKEND_MODULE ...)` skips that library target
+    and does not add equivalent options.
+
+    In an extension that links LLVM and MLIR archives, the stripped module was
+    49,552,688 bytes without section GC and 26,469,280 bytes with only
+    `--gc-sections`; the linked-mode module was 27,847,512 bytes. LTO made no
+    material difference.
+
+    Split targets should receive the same optimized-build section compile and
+    link options as linked targets. A size or discarded-section check in the
+    split-mode CMake tests would cover the regression.
+
+### cibuildwheel: Quote dependency-group requirements on Windows
+
+Title: Windows `test-groups` requirements are parsed as `cmd.exe` redirections
+
+Body:
+
+    🤖 *AI text below* 🤖
+
+    cibuildwheel 4.2.0 resolves `test-groups` into individual requirement
+    arguments and passes the resulting argv list to `subprocess.run` with
+    `shell=True` on Windows. `subprocess.list2cmdline` does not quote arguments
+    merely because they contain `<` or `>`, so `cmd.exe` treats PEP 440 version
+    operators as input or output redirections.
+
+    A group containing `pennylane>=0.45.1,<0.46` fails before uv starts with
+    `The system cannot find the file specified.` Requirements containing only
+    `>=` can silently lose their constraint and create redirected output.
+
+    Running `uv pip install --group test` as `before-test` avoids expansion.
+    cibuildwheel should either execute argv commands without a shell or apply
+    quoting that is safe for `cmd.exe`. A Windows test with both `<` and `>` in
+    a dependency group would reproduce the failure.

@@ -92,6 +92,9 @@ wheel.py-api = "cp311"
 # Set required Ninja version
 ninja.version = ">=1.10"
 
+# CMake 4.4 detects free-threaded Python and supplies Py_GIL_DISABLED on Windows
+cmake.version = ">=4.4.1"
+
 # Setuptools-style build caching in a local directory
 build-dir = "build/python/{build_type}"
 
@@ -140,14 +143,6 @@ CMAKE_UNITY_BUILD = "ON"
 if.python-version = ">=3.15"
 if.abi-flags = "t"
 wheel.py-api = "cp315t"
-
-[[tool.scikit-build.overrides]]
-if.python-version = ">=3.13"
-if.abi-flags = "t"
-if.platform-system = "win32"
-inherit.cmake.define = "append"
-cmake.define.DISABLE_GIL = "1"
-
 
 [tool.vcs-versioning]
 write_to = "python/mqt/core/_version.py"
@@ -292,12 +287,8 @@ test-command = "pytest test/python"
 build-frontend = "uv"
 
 [[tool.cibuildwheel.overrides]]
-select = ["cp31[1-4]-win_amd64"]
-test-groups = []
-before-test = "uv pip install --group test"
-
-[[tool.cibuildwheel.overrides]]
 select = ["cp*-win_arm64", "cp315*"]
+before-test = ""
 test-groups = []
 test-sources = []
 test-command = "python -c \"import mqt.core.dd, mqt.core.ir, mqt.core.mlir, mqt.core.qdmi\""
@@ -318,6 +309,10 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
 [tool.cibuildwheel.windows]
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
+# cibuildwheel 4.2 passes expanded dependency groups through cmd.exe, which interprets version
+# operators as redirections. Let uv resolve the group itself.
+test-groups = []
+before-test = "uv pip install --group test"
 
 [tool.uv]
 required-version = ">=0.5.20"

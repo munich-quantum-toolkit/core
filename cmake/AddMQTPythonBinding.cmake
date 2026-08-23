@@ -10,7 +10,8 @@ function(add_mqt_python_binding package_name target_name)
   cmake_parse_arguments(ARG "" "MODULE_NAME;INSTALL_DIR" "LINK_LIBS" ${ARGN})
   set(SOURCES ${ARG_UNPARSED_ARGUMENTS})
 
-  # nanobind 3.0 ignores scikit-build-core's abi3t signal on Windows.
+  # nanobind 3.0 ignores scikit-build-core's abi3t signal on Windows. NB_ABI configures the nested
+  # nanobind_add_module call.
   if(WIN32 AND Py_TARGET_ABI3T)
     set(NB_ABI "${Python_VERSION_MAJOR}${Python_VERSION_MINOR}t")
   endif()
@@ -22,7 +23,7 @@ function(add_mqt_python_binding package_name target_name)
     FREE_THREADED
     # Suppress compiler warnings from the nanobind library
     NB_SUPPRESS_WARNINGS
-    # Use nanobind's shared runtime
+    # Use nanobind's shared runtime. Split mode enables the Stable ABI internally.
     BACKEND_MODULE
     nanobind_backend
     # Source files
