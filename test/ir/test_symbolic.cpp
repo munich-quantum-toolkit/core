@@ -17,9 +17,16 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <barrier>
+#include <cstddef>
+#include <functional>
 #include <memory>
 #include <stdexcept>
+#include <string>
+#include <thread>
 #include <tuple>
+#include <vector>
 
 using namespace qc;
 using namespace sym;
@@ -41,6 +48,55 @@ public:
 };
 
 } // namespace
+
+TEST(SymbolicVariableTest, ConcurrentRegistration) {
+  constexpr size_t threadCount = 8;
+  constexpr size_t variableCount = 128;
+  std::barrier syncPoint(threadCount);
+  std::barrier start(threadCount + 1);
+  std::atomic_size_t activeWriters = threadCount;
+  std::atomic_size_t readCount = 0;
+  std::atomic_bool readsCorrect = true;
+  const Variable observed("concurrent-observed");
+  const auto expectedHash = std::hash<std::string>{}(observed.getName());
+  std::vector<std::vector<Variable>> variables(threadCount);
+  std::vector<std::thread> threads;
+  threads.reserve(threadCount);
+
+  for (size_t thread = 0; thread < threadCount; ++thread) {
+    threads.emplace_back([&, thread] {
+      variables[thread].reserve(variableCount);
+      start.arrive_and_wait();
+      for (size_t variable = 0; variable < variableCount; ++variable) {
+        syncPoint.arrive_and_wait();
+        variables[thread].emplace_back("concurrent-" +
+                                       std::to_string(variable));
+      }
+      activeWriters.fetch_sub(1, std::memory_order_release);
+    });
+  }
+  start.arrive_and_wait();
+  while (activeWriters.load(std::memory_order_acquire) != 0) {
+    if (observed.getName() != "concurrent-observed" ||
+        std::hash<Variable>{}(observed) != expectedHash) {
+      readsCorrect.store(false, std::memory_order_relaxed);
+    }
+    readCount.fetch_add(1, std::memory_order_relaxed);
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  EXPECT_TRUE(readsCorrect.load(std::memory_order_relaxed));
+  EXPECT_GT(readCount.load(std::memory_order_relaxed), 0);
+  for (size_t variable = 0; variable < variableCount; ++variable) {
+    const auto& expected = variables.front()[variable];
+    for (size_t thread = 1; thread < threadCount; ++thread) {
+      EXPECT_EQ(variables[thread][variable], expected);
+      EXPECT_EQ(variables[thread][variable].getName(), expected.getName());
+    }
+  }
+}
 
 TEST_F(SymbolicTest, Gates) {
   auto xVal = PI_4 / 2;

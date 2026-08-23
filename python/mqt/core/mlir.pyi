@@ -11,11 +11,10 @@
 import enum
 import os
 from collections.abc import Sequence
-from typing import Literal, overload
+from typing import Literal, Unpack, overload
 
 import qiskit.circuit
 
-from mqt.core._compat.typing import Unpack
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
 

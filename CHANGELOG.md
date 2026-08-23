@@ -84,6 +84,18 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
+  [**@burgholzer**])
+- ⬆️ Update `nanobind` to version 3.0.0 ([#2209]) ([**@denialhaag**],
+  [**@burgholzer**])
+- 📦 Publish one split-mode `cp311-abi3` wheel for GIL-enabled CPython 3.11 and
+  newer ([#2209]) ([**@denialhaag**], [**@burgholzer**])
+- 📦 Publish one `cp315-abi3t` wheel for free-threaded CPython 3.15 and newer
+  ([#2209]) ([**@denialhaag**], [**@burgholzer**])
+- ⚡ Remove an extra dense copy from `VectorDD.get_vector` ([#2209])
+  ([**@burgholzer**])
+- 🐛 Protect process-wide DD, IR, and QDMI state for free-threaded Python
+  ([#2209]) ([**@burgholzer**])
 - 💥 Prune dead and misleading CoreIR APIs and remove random-number generator
   state from `QuantumComputation` ([#2111], [#2112]) ([**@simon1hofmann**])
 - 💥 Update QIR execution for QIR 2.1, isolated runtimes, reproducible
@@ -792,6 +804,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
 [#2211]: https://github.com/munich-quantum-toolkit/core/pull/2211
 [#2210]: https://github.com/munich-quantum-toolkit/core/pull/2210
 [#2216]: https://github.com/munich-quantum-toolkit/core/pull/2216

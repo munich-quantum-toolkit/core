@@ -135,7 +135,7 @@ mqt\.core\.mlir\.CompilerTarget\.from_device$:
         \doc
 
 mqt\.core\.mlir\.CompilerTarget\.from_device_id$:
-    \from mqt.core._compat.typing import Unpack
+    \from typing import Unpack
     \from mqt.core.typing import QDMISessionParameters
     @staticmethod
     def from_device_id(device_id: str, **session_parameters: Unpack[QDMISessionParameters]) -> CompilerTarget:
