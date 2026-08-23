@@ -32,9 +32,8 @@ class Operation;
  *
  * @details Hardware sites retain their target-defined nonnegative i64
  * identifiers. Routing algorithms use dense zero-based vertices in site order.
- * An absent topology means all-to-all connectivity. An absent operation set
- * means that every operation is native; a present empty set means that no
- * hardware operation is native.
+ * Connectivity and native-operation metadata distinguish unknown,
+ * unrestricted, and explicitly enumerated support.
  *
  * Compiler targets have shared immutable storage, making copies cheap while
  * preserving validated topology and capability caches.
@@ -43,6 +42,36 @@ class CompilerTarget {
 public:
   using SiteId = int64_t;
   using Coupling = std::pair<SiteId, SiteId>;
+
+  /// Target connectivity knowledge.
+  class Connectivity {
+  public:
+    enum class Kind : uint8_t { Unknown, AllToAll, Explicit };
+
+    /// Create unknown connectivity.
+    Connectivity() noexcept;
+
+    /// Create unrestricted all-to-all connectivity.
+    [[nodiscard]] static Connectivity allToAll();
+
+    /// Create explicitly enumerated connectivity.
+    [[nodiscard]] static Connectivity
+    fromCouplings(std::vector<Coupling> couplings);
+
+    /// Return the connectivity knowledge kind.
+    [[nodiscard]] Kind kind() const noexcept;
+
+    /// Return explicitly enumerated couplings, if any.
+    [[nodiscard]] llvm::ArrayRef<Coupling> couplings() const noexcept;
+
+  private:
+    friend class CompilerTarget;
+
+    Connectivity(Kind kind, std::vector<Coupling> couplings);
+
+    Kind kind_;
+    std::vector<Coupling> couplings_;
+  };
 
   /**
    * @brief Unit shared by all raw timing metadata on a target.
@@ -150,7 +179,7 @@ public:
      * @brief Create a validated operation capability.
      */
     [[nodiscard]] static llvm::Expected<Operation>
-    create(std::string name, size_t numQubits, size_t numParameters,
+    create(std::string name, size_t arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
            std::optional<double> fidelity = std::nullopt);
@@ -162,7 +191,7 @@ public:
     [[nodiscard]] llvm::StringRef canonicalName() const noexcept;
 
     /// Return the positive fixed operation arity.
-    [[nodiscard]] size_t numQubits() const noexcept;
+    [[nodiscard]] size_t arity() const noexcept;
 
     /// Return the number of real-valued operation parameters.
     [[nodiscard]] size_t numParameters() const noexcept;
@@ -177,17 +206,47 @@ public:
     [[nodiscard]] std::optional<double> fidelity() const noexcept;
 
   private:
-    Operation(std::string name, std::string canonicalName, size_t numQubits,
+    Operation(std::string name, std::string canonicalName, size_t arity,
               size_t numParameters, std::vector<SiteTuple> siteTuples,
               std::optional<uint64_t> duration, std::optional<double> fidelity);
 
     std::string name_;
     std::string canonicalName_;
-    size_t numQubits_;
+    size_t arity_;
     size_t numParameters_;
     std::vector<SiteTuple> siteTuples_;
     std::optional<uint64_t> duration_;
     std::optional<double> fidelity_;
+  };
+
+  /// Native-operation knowledge.
+  class NativeOperations {
+  public:
+    enum class Kind : uint8_t { Unknown, Unrestricted, Explicit };
+
+    /// Create unknown native-operation support.
+    NativeOperations() noexcept;
+
+    /// Create unrestricted native-operation support.
+    [[nodiscard]] static NativeOperations unrestricted();
+
+    /// Create explicitly enumerated native-operation support.
+    [[nodiscard]] static NativeOperations
+    fromOperations(std::vector<Operation> operations);
+
+    /// Return the native-operation knowledge kind.
+    [[nodiscard]] Kind kind() const noexcept;
+
+    /// Return explicitly enumerated operations, if any.
+    [[nodiscard]] llvm::ArrayRef<Operation> operations() const noexcept;
+
+  private:
+    friend class CompilerTarget;
+
+    NativeOperations(Kind kind, std::vector<Operation> operations);
+
+    Kind kind_;
+    std::vector<Operation> operations_;
   };
 
   /**
@@ -236,30 +295,27 @@ public:
   };
 
   /**
-   * @brief Create an unnamed target with dense site IDs `0..numQubits-1`.
+   * @brief Create an unnamed target with dense site IDs `0..numSites-1`.
    */
   [[nodiscard]] static llvm::Expected<CompilerTarget>
-  create(size_t numQubits,
-         std::optional<std::vector<Coupling>> couplings = std::nullopt,
-         std::optional<std::vector<Operation>> operations = std::nullopt,
+  create(size_t numSites, Connectivity connectivity = {},
+         NativeOperations nativeOperations = {},
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /**
-   * @brief Create a named target with dense site IDs `0..numQubits-1`.
+   * @brief Create a named target with dense site IDs `0..numSites-1`.
    */
   [[nodiscard]] static llvm::Expected<CompilerTarget>
-  create(std::string name, size_t numQubits,
-         std::optional<std::vector<Coupling>> couplings = std::nullopt,
-         std::optional<std::vector<Operation>> operations = std::nullopt,
+  create(std::string name, size_t numSites, Connectivity connectivity = {},
+         NativeOperations nativeOperations = {},
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /**
    * @brief Create an unnamed target from detailed sites.
    */
   [[nodiscard]] static llvm::Expected<CompilerTarget>
-  create(std::vector<Site> sites,
-         std::optional<std::vector<Coupling>> couplings = std::nullopt,
-         std::optional<std::vector<Operation>> operations = std::nullopt,
+  create(std::vector<Site> sites, Connectivity connectivity = {},
+         NativeOperations nativeOperations = {},
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /**
@@ -267,8 +323,7 @@ public:
    */
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   create(std::string name, std::vector<Site> sites,
-         std::optional<std::vector<Coupling>> couplings = std::nullopt,
-         std::optional<std::vector<Operation>> operations = std::nullopt,
+         Connectivity connectivity = {}, NativeOperations nativeOperations = {},
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
   /// Copying shares immutable storage; rvalues copy and keep the source valid.
@@ -284,7 +339,7 @@ public:
   durationUnit() const noexcept;
 
   /// Return the number of compiler vertices and hardware sites.
-  [[nodiscard]] size_t numQubits() const noexcept;
+  [[nodiscard]] size_t numSites() const noexcept;
 
   /// Return detailed sites in dense compiler-vertex order.
   [[nodiscard]] llvm::ArrayRef<Site> sites() const noexcept;
@@ -298,49 +353,60 @@ public:
   /// Return the target site identifier for a valid dense compiler vertex.
   [[nodiscard]] SiteId siteForVertex(size_t vertex) const;
 
-  /// Return whether the target contains an explicit coupling topology.
-  [[nodiscard]] bool hasExplicitTopology() const noexcept;
+  /// Return the connectivity knowledge kind.
+  [[nodiscard]] Connectivity::Kind connectivityKind() const noexcept;
 
   /**
    * @brief Return sorted canonical undirected couplings in target site IDs.
    */
   [[nodiscard]] llvm::ArrayRef<Coupling> couplings() const noexcept;
 
-  /// Return whether two valid dense compiler vertices are adjacent.
+  /**
+   * @brief Return whether two valid dense compiler vertices are adjacent.
+   * @pre Connectivity must be known.
+   */
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;
 
   /**
    * @brief Return the cached shortest-path distance between valid vertices.
+   * @pre Connectivity must be known.
    */
   [[nodiscard]] size_t distanceBetween(size_t source, size_t target) const;
 
   /**
    * @brief Invoke @p callback for every neighbour of a valid dense vertex.
+   * @pre Connectivity must be known.
    */
   void forEachNeighbour(size_t vertex,
                         llvm::function_ref<void(size_t)> callback) const;
 
-  /// Return the maximum degree of the target's routing topology.
+  /**
+   * @brief Return the maximum degree of the target's routing topology.
+   * @pre Connectivity must be known.
+   */
   [[nodiscard]] size_t maxDegree() const noexcept;
 
-  /// Return whether the target contains an explicit operation set.
-  [[nodiscard]] bool hasExplicitOperations() const noexcept;
+  /// Return the native-operation knowledge kind.
+  [[nodiscard]] NativeOperations::Kind nativeOperationsKind() const noexcept;
 
   /// Return operation capabilities in reported order.
   [[nodiscard]] llvm::ArrayRef<Operation> operations() const noexcept;
 
   /**
-   * @brief Return whether an operation capability is supported by the target.
+   * @brief Return whether an operation capability is supported by the target,
+   * or `std::nullopt` if native-operation support is unknown.
    */
-  [[nodiscard]] bool
-  supportsOperation(llvm::StringRef name, size_t numQubits,
+  [[nodiscard]] std::optional<bool>
+  supportsOperation(llvm::StringRef name, size_t arity,
                     std::optional<size_t> numParameters = std::nullopt) const;
 
-  /// Return whether a QCO operation is supported by the target.
-  [[nodiscard]] bool supports(::mlir::Operation* operation) const;
+  /// Return whether a QCO operation is supported, or `std::nullopt` if unknown.
+  [[nodiscard]] std::optional<bool>
+  supports(::mlir::Operation* operation) const;
 
-  /// Return whether a recognized gate is supported by the target.
-  [[nodiscard]] bool supports(GateKind gate) const;
+  /// Return whether a recognized gate is supported, or `std::nullopt` if
+  /// unknown.
+  [[nodiscard]] std::optional<bool> supports(GateKind gate) const;
 
   /// Return the recognized gates supported by the target.
   [[nodiscard]] llvm::ArrayRef<GateKind> supportedGates() const noexcept;
@@ -355,8 +421,7 @@ private:
 
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   createImpl(std::optional<std::string> name, std::vector<Site> sites,
-             std::optional<std::vector<Coupling>> couplings,
-             std::optional<std::vector<Operation>> operations,
+             Connectivity connectivity, NativeOperations nativeOperations,
              std::optional<DurationUnit> durationUnit);
 
   [[nodiscard]] llvm::ArrayRef<size_t> explicitNeighbours(size_t vertex) const;

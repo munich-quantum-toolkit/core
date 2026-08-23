@@ -50,10 +50,12 @@ static void expectInvalid(llvm::Expected<T> value,
 namespace {
 
 using Target = mlir::CompilerTarget;
+using Connectivity = Target::Connectivity;
 using Coupling = Target::Coupling;
 using DurationUnit = Target::DurationUnit;
 using GateKind = Target::GateKind;
 using Operation = Target::Operation;
+using NativeOperations = Target::NativeOperations;
 using Site = Target::Site;
 using SiteId = Target::SiteId;
 using SiteTuple = Target::SiteTuple;
@@ -70,10 +72,11 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   operations.emplace_back(
       valid(Operation::create(" PRX ", 1, 2, std::move(siteTuples), 0, 0.97)));
 
-  const auto target = valid(Target::create(
-      "device", std::move(sites),
-      std::vector<Coupling>{{11, 2}, {2, 11}, {7, 2}}, std::move(operations),
-      valid(DurationUnit::create("ns", 0.5))));
+  const auto target = valid(
+      Target::create("device", std::move(sites),
+                     Connectivity::fromCouplings({{11, 2}, {2, 11}, {7, 2}}),
+                     NativeOperations::fromOperations(std::move(operations)),
+                     valid(DurationUnit::create("ns", 0.5))));
   // The copy itself is the behavior under test: both objects must share the
   // immutable backing storage.
   // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
@@ -92,7 +95,7 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   EXPECT_EQ(target.sites()[0].t2(), 80);
   EXPECT_EQ(target.operations()[0].name(), " PRX ");
   EXPECT_EQ(target.operations()[0].canonicalName(), "r");
-  EXPECT_EQ(target.operations()[0].numQubits(), 1);
+  EXPECT_EQ(target.operations()[0].arity(), 1);
   EXPECT_EQ(target.operations()[0].numParameters(), 2);
   EXPECT_EQ(target.operations()[0].duration(), 0);
   EXPECT_EQ(target.operations()[0].fidelity(), 0.97);
@@ -106,8 +109,9 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
 }
 
 TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
-  const auto target = valid(Target::create(3));
-  const auto named = valid(Target::create("simulator", 2));
+  const auto target = valid(Target::create(3, Connectivity::allToAll()));
+  const auto named =
+      valid(Target::create("simulator", 2, Connectivity::allToAll()));
 
   EXPECT_FALSE(target.name());
   ASSERT_TRUE(named.name());
@@ -119,7 +123,7 @@ TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
   EXPECT_EQ(target.vertexForSite(2), 2);
   EXPECT_FALSE(target.vertexForSite(3));
   EXPECT_EQ(target.siteForVertex(1), 1);
-  EXPECT_FALSE(target.hasExplicitTopology());
+  EXPECT_EQ(target.connectivityKind(), Connectivity::Kind::AllToAll);
   EXPECT_TRUE(target.couplings().empty());
   EXPECT_TRUE(target.areAdjacent(0, 2));
   EXPECT_FALSE(target.areAdjacent(1, 1));
@@ -136,11 +140,11 @@ TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
 TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
   std::vector sites{valid(Site::create(7)), valid(Site::create(2)),
                     valid(Site::create(11))};
-  const auto target = valid(
-      Target::create(std::move(sites),
-                     std::vector<Coupling>{{11, 2}, {2, 11}, {7, 2}, {2, 7}}));
+  const auto target = valid(Target::create(
+      std::move(sites),
+      Connectivity::fromCouplings({{11, 2}, {2, 11}, {7, 2}, {2, 7}})));
 
-  EXPECT_TRUE(target.hasExplicitTopology());
+  EXPECT_EQ(target.connectivityKind(), Connectivity::Kind::Explicit);
   EXPECT_EQ(target.couplings(), (llvm::ArrayRef<Coupling>{{2, 7}, {2, 11}}));
   EXPECT_EQ(target.vertexForSite(7), 0);
   EXPECT_EQ(target.vertexForSite(2), 1);
@@ -164,7 +168,7 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
   if constexpr (sizeof(size_t) >= sizeof(uint64_t)) {
     expectInvalid(
         Target::create(std::numeric_limits<size_t>::max()),
-        "Compiler target qubit count exceeds the nonnegative i64 site domain");
+        "Compiler target site count exceeds the nonnegative i64 site domain");
   }
   expectInvalid(Site::create(-1),
                 "Compiler target site ID must be nonnegative");
@@ -192,7 +196,7 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
   expectInvalid(Operation::create("", 1, 0),
                 "Compiler target operation name must not be empty");
   expectInvalid(Operation::create("x", 0, 0),
-                "Compiler target operation qubit count must be positive");
+                "Compiler target operation arity must be positive");
   expectInvalid(
       Operation::create("x", 1, 0,
                         std::vector{valid(SiteTuple::create({0, 1}))}),
@@ -218,52 +222,58 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
   expectInvalid(
       Target::create(std::vector{valid(Site::create(0, std::nullopt, 1))}),
       "Compiler target timing metadata requires a duration unit");
-  expectInvalid(
-      Target::create(1, std::nullopt,
-                     std::vector{valid(Operation::create("x", 1, 0, {}, 1))}),
-      "Compiler target timing metadata requires a duration unit");
+  expectInvalid(Target::create(1, {},
+                               NativeOperations::fromOperations({valid(
+                                   Operation::create("x", 1, 0, {}, 1))})),
+                "Compiler target timing metadata requires a duration unit");
   expectInvalid(
       Target::create(
-          1, std::nullopt,
-          std::vector{valid(Operation::create(
-              "x", 1, 0, std::vector{valid(SiteTuple::create({0}, 1))}))}),
+          1, {},
+          NativeOperations::fromOperations({valid(Operation::create(
+              "x", 1, 0, std::vector{valid(SiteTuple::create({0}, 1))}))})),
       "Compiler target timing metadata requires a duration unit");
-  expectInvalid(Target::create(2, std::vector<Coupling>{{0, 0}}),
+  expectInvalid(Target::create(2, Connectivity::fromCouplings({{0, 0}})),
                 "Compiler target topology contains a self-coupling");
-  expectInvalid(Target::create(2, std::vector<Coupling>{{0, 2}}),
+  expectInvalid(Target::create(2, Connectivity::fromCouplings({{0, 2}})),
                 "Compiler target topology references an unknown site");
-  expectInvalid(Target::create(3, std::vector<Coupling>{{0, 1}}),
+  expectInvalid(Target::create(3, Connectivity::fromCouplings({{0, 1}})),
                 "Compiler target topology must be connected");
   expectInvalid(
       Target::create(
-          2, std::nullopt,
-          std::vector{valid(Operation::create(
-              "x", 1, 0, std::vector{valid(SiteTuple::create({2}))}))}),
+          2, {},
+          NativeOperations::fromOperations({valid(Operation::create(
+              "x", 1, 0, std::vector{valid(SiteTuple::create({2}))}))})),
       "Compiler target operation site tuple references an unknown site");
-  expectInvalid(
-      Target::create(1, std::nullopt,
-                     std::vector{valid(Operation::create("cx", 2, 0))}),
-      "Compiler target operation arity exceeds its site count");
+  expectInvalid(Target::create(1, {},
+                               NativeOperations::fromOperations(
+                                   {valid(Operation::create("cx", 2, 0))})),
+                "Compiler target operation arity exceeds its site count");
 }
 
-TEST(CompilerTargetTest, DistinguishesAbsentAndEmptyOperationSets) {
-  const auto permissive = valid(Target::create(2));
+TEST(CompilerTargetTest, DistinguishesOperationKnowledge) {
+  const auto unknown = valid(Target::create(2));
+  const auto unrestricted =
+      valid(Target::create(2, {}, NativeOperations::unrestricted()));
   const auto closed =
-      valid(Target::create(2, std::nullopt, std::vector<Operation>{}));
+      valid(Target::create(2, {}, NativeOperations::fromOperations({})));
 
-  EXPECT_FALSE(permissive.hasExplicitOperations());
-  EXPECT_TRUE(permissive.operations().empty());
-  EXPECT_TRUE(permissive.supportsOperation("device.operation", 1));
-  EXPECT_TRUE(permissive.supports(GateKind::CX));
-  EXPECT_FALSE(permissive.supportsOperation("", 1));
-  EXPECT_FALSE(permissive.supportsOperation("   ", 1));
-  EXPECT_FALSE(permissive.supportsOperation("x", 0));
-  EXPECT_FALSE(permissive.supportsOperation("x", 3));
+  EXPECT_EQ(unknown.nativeOperationsKind(), NativeOperations::Kind::Unknown);
+  EXPECT_EQ(unknown.supportsOperation("x", 1), std::nullopt);
+  EXPECT_EQ(unknown.supports(GateKind::CX), std::nullopt);
 
-  EXPECT_TRUE(closed.hasExplicitOperations());
+  EXPECT_EQ(unrestricted.nativeOperationsKind(),
+            NativeOperations::Kind::Unrestricted);
+  EXPECT_EQ(unrestricted.supportsOperation("device.operation", 1), true);
+  EXPECT_EQ(unrestricted.supports(GateKind::CX), true);
+  EXPECT_EQ(unrestricted.supportsOperation("", 1), false);
+  EXPECT_EQ(unrestricted.supportsOperation("   ", 1), false);
+  EXPECT_EQ(unrestricted.supportsOperation("x", 0), false);
+  EXPECT_EQ(unrestricted.supportsOperation("x", 3), false);
+
+  EXPECT_EQ(closed.nativeOperationsKind(), NativeOperations::Kind::Explicit);
   EXPECT_TRUE(closed.operations().empty());
-  EXPECT_FALSE(closed.supportsOperation("x", 1));
-  EXPECT_FALSE(closed.supports(GateKind::CX));
+  EXPECT_EQ(closed.supportsOperation("x", 1), false);
+  EXPECT_EQ(closed.supports(GateKind::CX), false);
   EXPECT_TRUE(closed.supportedGates().empty());
   EXPECT_FALSE(closed.synthesisBasis());
 }
@@ -274,12 +284,13 @@ TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
   const auto cz = valid(Operation::create(
       "cz", 2, 0, std::vector{valid(SiteTuple::create({1, 0}, 5, 0.99))}));
   const auto target =
-      valid(Target::create(3, chain, std::vector{globalU, cz},
+      valid(Target::create(3, Connectivity::fromCouplings(chain),
+                           NativeOperations::fromOperations({globalU, cz}),
                            valid(DurationUnit::create("ns", 1.))));
 
-  EXPECT_TRUE(target.supportsOperation("u", 1, 3));
-  EXPECT_TRUE(target.supportsOperation(" U3 ", 1, 3));
-  EXPECT_TRUE(target.supports(GateKind::CZ));
+  EXPECT_EQ(target.supportsOperation("u", 1, 3), true);
+  EXPECT_EQ(target.supportsOperation(" U3 ", 1, 3), true);
+  EXPECT_EQ(target.supports(GateKind::CZ), true);
   EXPECT_TRUE(llvm::is_contained(target.supportedGates(), GateKind::CZ));
   ASSERT_EQ(target.operations().size(), 2U);
   ASSERT_EQ(target.operations()[1].siteTuples().size(), 1U);
@@ -309,10 +320,11 @@ TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
     SCOPED_TRACE(name);
     const auto operation =
         valid(Operation::create(std::string{name}, 2, numParameters));
-    const auto target =
-        valid(Target::create(3, chain, std::vector{globalU, operation}));
+    const auto target = valid(
+        Target::create(3, Connectivity::fromCouplings(chain),
+                       NativeOperations::fromOperations({globalU, operation})));
     EXPECT_TRUE(llvm::is_contained(target.supportedGates(), gate));
-    EXPECT_TRUE(target.supports(gate));
+    EXPECT_EQ(target.supports(gate), true);
     ASSERT_TRUE(target.synthesisBasis());
     EXPECT_EQ(target.synthesisBasis()->entangler, gate);
   }
@@ -382,21 +394,22 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
       valid(Operation::create("reset", 1, 0)),
       valid(Operation::create("cnot", 2, 0, std::move(directionalTuples)))};
   const auto target = valid(
-      Target::create(std::move(sites), std::nullopt, std::move(operations)));
-  EXPECT_TRUE(target.supports(x));
-  EXPECT_TRUE(target.supports(cx));
-  EXPECT_TRUE(target.supports(measure));
-  EXPECT_TRUE(target.supports(reset));
-  EXPECT_TRUE(target.supports(barrier));
-  EXPECT_TRUE(target.supports(gphase));
-  EXPECT_FALSE(target.supports(nullptr));
+      Target::create(std::move(sites), {},
+                     NativeOperations::fromOperations(std::move(operations))));
+  EXPECT_EQ(target.supports(x), true);
+  EXPECT_EQ(target.supports(cx), true);
+  EXPECT_EQ(target.supports(measure), true);
+  EXPECT_EQ(target.supports(reset), true);
+  EXPECT_EQ(target.supports(barrier), true);
+  EXPECT_EQ(target.supports(gphase), true);
+  EXPECT_EQ(target.supports(nullptr), false);
 
   const auto closed =
-      valid(Target::create(2, std::nullopt, std::vector<Operation>{}));
-  EXPECT_TRUE(closed.supports(barrier));
-  EXPECT_TRUE(closed.supports(gphase));
-  EXPECT_FALSE(closed.supports(x));
-  EXPECT_FALSE(closed.supports(measure));
+      valid(Target::create(2, {}, NativeOperations::fromOperations({})));
+  EXPECT_EQ(closed.supports(barrier), true);
+  EXPECT_EQ(closed.supports(gphase), true);
+  EXPECT_EQ(closed.supports(x), false);
+  EXPECT_EQ(closed.supports(measure), false);
 }
 
 } // namespace
