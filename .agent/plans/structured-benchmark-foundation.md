@@ -46,8 +46,9 @@ New design and integration work keeps its own attribution.
 - [x] (2026-08-23 10:58Z) Extracted the `jeff-mlir` pin, deterministic builder
       finalization, CoreAlgorithms removal, and nested-loop unroll fix into pull
       requests #2212, #2213, #2214, and #2216.
-- [ ] Re-run full lint and the proportionate release suites after the final
-      branch split and restack.
+- [x] (2026-08-23 11:10Z) Re-ran the full lint suite, all 4,068 configured C++
+      tests, 16 focused Python tests, the bindings-enabled wheel aggregate, and
+      the documentation build after pruning.
 
 ## Surprises & Discoveries
 
@@ -222,13 +223,10 @@ explicit human authorization.
 
 ## Artifacts and Notes
 
-The focused ordinary benchmark suite previously reported 30 passing tests. The
-pruned MLIR emitter reports five passing typed tests, the CTest CLI scenario
-passes, and the deterministic builder-order regression passes. The first full
-foundation validation also passed 3,956 configured C++ tests, supported Python
-ordinary and minimum-dependency sessions from 3.10 through 3.14, documentation,
-fresh wheel and native installs, and lint. Re-run the proportionate suites after
-the final branch split because those results predate the pruning.
+The pruned foundation passes all 4,068 configured C++ tests, 16 focused Python
+tests, the bindings-enabled wheel aggregate, the documentation build, and the
+full lint suite. The focused results include 30 reference tests, five typed
+emitter tests, the CLI scenario, and deterministic builder finalization.
 
 ## Interfaces and Dependencies
 
