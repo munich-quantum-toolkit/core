@@ -19,15 +19,48 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/QCO/IR/QCODialect.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 
 namespace mlir::qco {
+
+[[nodiscard]] static LogicalResult verifyLinearValue(Value value) {
+  if (!isLinearQubitType(value.getType()) || value.hasOneUse()) {
+    return success();
+  }
+  return emitError(value.getLoc())
+         << "expected linear QCO value to have exactly one use, but found "
+         << value.getNumUses();
+}
+
+LogicalResult verifyLinearity(Operation* root) {
+  const auto walkResult = root->walk([&](Operation* op) {
+    for (auto result : op->getResults()) {
+      if (failed(verifyLinearValue(result))) {
+        return WalkResult::interrupt();
+      }
+    }
+    for (Region& region : op->getRegions()) {
+      for (Block& block : region) {
+        for (auto argument : block.getArguments()) {
+          if (failed(verifyLinearValue(argument))) {
+            return WalkResult::interrupt();
+          }
+        }
+      }
+    }
+    return WalkResult::advance();
+  });
+  return walkResult.wasInterrupted() ? failure() : success();
+}
 
 /// Returns the wire index for @p wire in @p wireIds, or `std::nullopt` if
 /// untracked.

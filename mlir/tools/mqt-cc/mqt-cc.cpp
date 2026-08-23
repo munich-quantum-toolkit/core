@@ -23,6 +23,7 @@
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/Passes.h"
@@ -522,6 +523,10 @@ static int runCompiler(int argc, char** argv) {
         pm.addPass(createQCToQCO());
         return success();
       }))) {
+    return 1;
+  }
+  if (*parsedOutputFormat != OutputFormat::QCImport &&
+      failed(qco::verifyLinearity(*program.mod))) {
     return 1;
   }
 

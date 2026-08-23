@@ -50,10 +50,13 @@ inline bool checkDeadGate(Operation* op) {
   if (isa<QubitType>(type)) {
     return true;
   }
-  const auto tensorType = dyn_cast<RankedTensorType>(type);
-  return tensorType && tensorType.getRank() == 1 &&
-         isa<QubitType>(tensorType.getElementType());
+  const auto shapedType = dyn_cast<ShapedType>(type);
+  return isa<RankedTensorType, VectorType>(type) && shapedType.getRank() == 1 &&
+         isa<QubitType>(shapedType.getElementType());
 }
+
+/// Verify that every linear QCO value under @p root has exactly one use.
+[[nodiscard]] LogicalResult verifyLinearity(Operation* root);
 
 /// Maximum number of modifier targets supported by @ref
 /// composeBodyMatrix.
