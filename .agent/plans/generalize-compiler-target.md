@@ -9,13 +9,13 @@ repository root.
 
 ## Purpose / Big Picture
 
-The compiler target currently treats missing topology as all-to-all connectivity,
-missing native operations as unrestricted support, and names every quantum
-resource a qubit. After this change, target descriptions can represent neutral
-atoms, trapped ions, photonic modes, spin qubits, and other site-based systems
-without claiming facts that a provider did not report. A focused compiler target
-test demonstrates the three knowledge states: unknown, unrestricted, and an
-explicit list.
+The compiler target currently treats missing topology as all-to-all
+connectivity, missing native operations as unrestricted support, and names every
+quantum resource a qubit. After this change, target descriptions can represent
+neutral atoms, trapped ions, photonic modes, spin qubits, and other site-based
+systems without claiming facts that a provider did not report. A focused
+compiler target test demonstrates the three knowledge states: unknown,
+unrestricted, and an explicit list.
 
 ## Progress
 
@@ -23,10 +23,10 @@ explicit list.
   mapping, synthesis, QDMI adapter, bindings, and tests.
 - [x] (2026-08-23 17:08Z) Added explicit connectivity and native-operation
   knowledge states.
-- [x] (2026-08-23 17:08Z) Replaced target qubit-count vocabulary with site
-  count and operation arity.
-- [x] (2026-08-23 17:12Z) Updated compiler consumers, QDMI construction,
-  public bindings, Python tests, and documentation.
+- [x] (2026-08-23 17:08Z) Replaced target qubit-count vocabulary with site count
+      and operation arity.
+- [x] (2026-08-23 17:12Z) Updated compiler consumers, QDMI construction, public
+      bindings, Python tests, and documentation.
 - [x] (2026-08-23 17:20Z) Made passes request target facts only when the
   residual program needs them and made QDMI operation applicability fail
   closed when the provider does not report it.
@@ -44,8 +44,8 @@ explicit list.
   absence to mean unrestricted support, so they cannot represent unknown
   metadata. Evidence: the class comment and `Storage::supportsOperation` in
   `mlir/lib/Compiler/Target.cpp`.
-- Observation: Tests must compare `std::optional<bool>` with `true`, `false`,
-  or `std::nullopt`; `EXPECT_TRUE` and `EXPECT_FALSE` inspect only whether the
+- Observation: Tests must compare `std::optional<bool>` with `true`, `false`, or
+  `std::nullopt`; `EXPECT_TRUE` and `EXPECT_FALSE` inspect only whether the
   optional has a value. Evidence: the first focused compiler test run exposed
   this test-only error.
 - Observation: QDMI operation site applicability is optional. Treating an
@@ -88,10 +88,10 @@ and synthesis facts. Mapping and synthesis passes under
 Tests live in `mlir/unittests/Compiler/test_compiler_target.cpp` and adjacent
 mapping and synthesis test directories.
 
-Unknown means the provider did not report enough information. Unrestricted
-means every site pair or operation is accepted. Explicit means the target lists
-the accepted couplings or operations. A pass that requires unknown information
-must emit a diagnostic instead of assuming support.
+Unknown means the provider did not report enough information. Unrestricted means
+every site pair or operation is accepted. Explicit means the target lists the
+accepted couplings or operations. A pass that requires unknown information must
+emit a diagnostic instead of assuming support.
 
 ## Plan of Work
 
@@ -99,9 +99,9 @@ Add small value types to `CompilerTarget` for connectivity and native-operation
 support. Each type carries a three-way kind and, for the explicit kind, the
 existing vector. Make target construction accept these values and default them
 to unknown. Rename target `numQubits()` to `numSites()` and operation
-`numQubits()` to `arity()`. Update mapping, synthesis, the QDMI adapter, bindings,
-and tests to use the new vocabulary and to handle unknown facts before querying
-routes or operation support.
+`numQubits()` to `arity()`. Update mapping, synthesis, the QDMI adapter,
+bindings, and tests to use the new vocabulary and to handle unknown facts before
+querying routes or operation support.
 
 Keep site identifiers, ordered operation site tuples, timing units, T1/T2 data,
 and fidelity values unchanged. Add no technology enum and no generic property
@@ -144,7 +144,7 @@ The current behavior to replace is summarized by the existing class comment:
 
 ## Interfaces and Dependencies
 
-Use LLVM containers already linked by the compiler. Do not add dependencies.
-The public target keeps shared immutable storage. Connectivity and native
-operation state are context-free C++ values so the later MLIR attribute layer
-can materialize them without making `CompilerTarget` depend on an MLIR context.
+Use LLVM containers already linked by the compiler. Do not add dependencies. The
+public target keeps shared immutable storage. Connectivity and native operation
+state are context-free C++ values so the later MLIR attribute layer can
+materialize them without making `CompilerTarget` depend on an MLIR context.
