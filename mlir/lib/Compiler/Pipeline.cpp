@@ -10,6 +10,7 @@
 
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/TargetCompilation.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
@@ -33,6 +34,7 @@
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Support/Error.h>
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -225,12 +227,13 @@ bool QCOProgram::decomposeMultiControlled(uint64_t minQubits) {
       "failed to decompose multi-controlled gates"));
 }
 
-bool QCOProgram::compileForTarget(const CompilerTarget& target,
+bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
                                   bool enableTiming, bool enableStatistics) {
+  attachTargetEnvironment(mod(), environment);
   return succeeded(runQCOTransformPasses(
       mod(),
-      [&target](OpPassManager& pm) {
-        populateTargetCompilationPipeline(pm, target);
+      [&environment](OpPassManager& pm) {
+        populateTargetCompilationPipeline(pm, environment.target());
       },
       "failed to compile the QCO program for the target", enableTiming,
       enableStatistics));
@@ -417,23 +420,11 @@ bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
 // Pipeline
 //===----------------------------------------------------------------------===//
 
-std::optional<CompilerProgram>
-runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
-                   const CompilerTarget* target, std::string_view qcoPipeline,
-                   bool enableTiming, bool enableStatistics) {
-  if (target != nullptr &&
-      (output == ProgramFormat::QCImport || output == ProgramFormat::QCO ||
-       output == ProgramFormat::Jeff)) {
-    llvm::errs()
-        << "a compiler target requires QCOOptimized, QC, OpenQASM3, or QIR "
-           "output.\n";
-    return std::nullopt;
-  }
-  if (target != nullptr && qcoPipeline != "mqt-qco-default") {
-    llvm::errs() << "a custom QCO pass pipeline cannot be combined with a "
-                    "compiler target.\n";
-    return std::nullopt;
-  }
+[[nodiscard]] static std::optional<CompilerProgram>
+runDefaultPipelineImpl(CompilerInput&& program, ProgramFormat output,
+                       const TargetEnvironment* environment,
+                       std::string_view qcoPipeline, bool enableTiming,
+                       bool enableStatistics) {
   if ((output == ProgramFormat::QCImport || output == ProgramFormat::QCO) &&
       qcoPipeline != "mqt-qco-default") {
     llvm::errs() << "a custom QCO pass pipeline cannot be used with an output "
@@ -481,8 +472,8 @@ runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
     return CompilerProgram(std::move(*qco));
   }
 
-  if (target != nullptr) {
-    if (!qco->compileForTarget(*target, enableTiming, enableStatistics)) {
+  if (environment != nullptr) {
+    if (!qco->compileForTarget(*environment, enableTiming, enableStatistics)) {
       return std::nullopt;
     }
   } else {
@@ -519,6 +510,29 @@ runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
                            ? QIRProfile::Adaptive
                            : QIRProfile::Base;
   return std::move(*qc).intoQIR(profile);
+}
+
+std::optional<CompilerProgram> runDefaultPipeline(CompilerInput&& program,
+                                                  ProgramFormat output,
+                                                  std::string_view qcoPipeline,
+                                                  bool enableTiming,
+                                                  bool enableStatistics) {
+  return runDefaultPipelineImpl(std::move(program), output, nullptr,
+                                qcoPipeline, enableTiming, enableStatistics);
+}
+
+std::optional<CompilerProgram>
+runDefaultPipeline(CompilerInput&& program,
+                   const TargetEnvironment& environment, bool enableTiming,
+                   bool enableStatistics) {
+  auto output = environment.payloadSpecification().compilerOutput();
+  if (!output) {
+    llvm::errs() << llvm::toString(output.takeError()) << '\n';
+    return std::nullopt;
+  }
+  return runDefaultPipelineImpl(std::move(program), *output, &environment,
+                                "mqt-qco-default", enableTiming,
+                                enableStatistics);
 }
 
 } // namespace mlir

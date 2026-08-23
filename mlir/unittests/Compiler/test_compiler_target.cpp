@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Dialect/MQT/IR/MQTAttributes.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
@@ -21,9 +22,13 @@
 #include <llvm/Support/Error.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/Pass/AnalysisManager.h>
 #include <mlir/Support/LLVM.h>
 
 #include <array>
@@ -62,6 +67,141 @@ using NativeOperations = Target::NativeOperations;
 using Site = Target::Site;
 using SiteId = Target::SiteId;
 using SiteTuple = Target::SiteTuple;
+
+TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+
+  const auto payload = valid(mlir::PayloadSpecification::create(
+      {
+          .id = "vendor.ir",
+          .version = "4.2.0",
+          .profile = "dynamic",
+          .encoding = mlir::PayloadEncoding::Binary,
+      },
+      {
+          {
+              .id = "forward-branching",
+              .constraints =
+                  {
+                      {
+                          .id = "max-control-flow-nesting-depth",
+                          .value = 8,
+                      },
+                  },
+          },
+      },
+      true));
+  const auto attribute = payload.materialize(context);
+  const auto reconstructed =
+      valid(mlir::PayloadSpecification::create(attribute));
+
+  EXPECT_EQ(reconstructed.format(), payload.format());
+  EXPECT_EQ(reconstructed.capabilities(), payload.capabilities());
+  EXPECT_TRUE(reconstructed.optionalCapabilitiesKnown());
+  EXPECT_EQ(reconstructed.materialize(context), attribute);
+
+  expectInvalid(
+      mlir::PayloadSpecification::create(mlir::mqt::PayloadSpecAttr{}),
+      "Invalid payload specification: Payload specification attribute must "
+      "not be null");
+  expectInvalid(mlir::PayloadSpecification::create(
+                    {.id = "qir", .version = "2.1", .profile = "base"}),
+                "Invalid payload specification: Payload format version must "
+                "use canonical major.minor.patch");
+  expectInvalid(
+      mlir::PayloadSpecification::create({.id = "", .version = "2.1.0"}),
+      "Invalid payload specification: Payload format requires an ID and "
+      "version");
+  expectInvalid(
+      mlir::PayloadSpecification::create(
+          {.id = std::string("qir\0", 4), .version = "2.1.0"}),
+      "Invalid payload specification: Payload format fields must not contain "
+      "null characters");
+  expectInvalid(
+      mlir::PayloadSpecification::create({.id = "qir", .version = "2.1.0"},
+                                         {{.id = ""}}),
+      "Invalid payload specification: Program capability ID must not be "
+      "empty");
+  expectInvalid(
+      mlir::PayloadSpecification::create({.id = "qir", .version = "2.1.0"},
+                                         {{.id = std::string("x\0", 2)}}),
+      "Invalid payload specification: Program capability ID must not contain "
+      "a null character");
+  expectInvalid(
+      mlir::PayloadSpecification::create(
+          {.id = "qir", .version = "2.1.0"},
+          {{.id = "capability", .constraints = {{.id = ""}}}}),
+      "Invalid payload specification: Program constraint ID must not be "
+      "empty");
+  expectInvalid(
+      mlir::PayloadSpecification::create(
+          {.id = "qir", .version = "2.1.0"},
+          {
+              {
+                  .id = "capability",
+                  .constraints = {{.id = std::string("x\0", 2)}},
+              },
+          }),
+      "Invalid payload specification: Program constraint ID must not contain "
+      "a null character");
+  expectInvalid(
+      mlir::PayloadSpecification::create(
+          {.id = "qir", .version = "2.1.0", .profile = "base"},
+          {
+              {
+                  .id = "integer-computation",
+                  .constraints = {{.id = "width"}, {.id = "width"}},
+              },
+          }),
+      "Invalid payload specification: Program capability contains a duplicate "
+      "constraint ID");
+  expectInvalid(mlir::PayloadSpecification::create(
+                    {.id = "qir", .version = "2.1.0", .profile = "base"},
+                    {
+                        {.id = "integer-computation", .value = 64},
+                        {.id = "integer-computation", .value = 64},
+                    }),
+                "Invalid payload specification: Payload specification contains "
+                "a duplicate capability ID/value pair");
+}
+
+TEST(TargetEnvironmentTest, InvalidatesCachedAnalysisAfterAttributeChange) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  mlir::OwningOpRef module =
+      mlir::ModuleOp::create(mlir::UnknownLoc::get(&context));
+  const auto payload = valid(mlir::PayloadSpecification::create(
+      {.id = "qir", .version = "2.1.0", .profile = "base"}));
+  mlir::attachTargetEnvironment(
+      *module, mlir::TargetEnvironment(
+                   valid(Target::create(1, Connectivity::allToAll(),
+                                        NativeOperations::unrestricted())),
+                   payload));
+  mlir::ModuleAnalysisManager moduleAnalysisManager(module.get(), nullptr);
+  mlir::AnalysisManager analysisManager = moduleAnalysisManager;
+
+  const auto& initial =
+      analysisManager.getAnalysis<mlir::TargetEnvironmentAnalysis>();
+  ASSERT_TRUE(initial);
+  EXPECT_EQ(initial.environment().target().numSites(), 1);
+
+  mlir::attachTargetEnvironment(
+      *module, mlir::TargetEnvironment(
+                   valid(Target::create(2, Connectivity::allToAll(),
+                                        NativeOperations::unrestricted())),
+                   payload));
+  mlir::AnalysisManager::PreservedAnalyses preserved;
+  preserved.preserve<mlir::TargetEnvironmentAnalysis>();
+  analysisManager.invalidate(preserved);
+  EXPECT_FALSE(
+      analysisManager.getCachedAnalysis<mlir::TargetEnvironmentAnalysis>());
+
+  const auto& updated =
+      analysisManager.getAnalysis<mlir::TargetEnvironmentAnalysis>();
+  ASSERT_TRUE(updated);
+  EXPECT_EQ(updated.environment().target().numSites(), 2);
+}
 
 TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   std::vector<Site> sites;

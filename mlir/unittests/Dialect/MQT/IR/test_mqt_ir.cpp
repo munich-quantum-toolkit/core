@@ -23,7 +23,6 @@
 #include <mlir/AsmParser/AsmParser.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/DLTI/DLTI.h>
-#include <mlir/Interfaces/DataLayoutInterfaces.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Attributes.h>
@@ -33,6 +32,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/Interfaces/DataLayoutInterfaces.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
@@ -49,9 +49,9 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<DLTIDialect, arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                    memref::MemRefDialect, mqt::MQTDialect, qc::QCDialect,
-                    qco::QCODialect, qtensor::QTensorDialect>();
+    registry.insert<DLTIDialect, arith::ArithDialect, cbit::CBitDialect,
+                    func::FuncDialect, memref::MemRefDialect, mqt::MQTDialect,
+                    qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect>();
     context = std::make_unique<MLIRContext>(registry);
     context->loadAllAvailableDialects();
   }
@@ -701,11 +701,11 @@ TEST_F(MQTIRTest, RoundTripsTypedTargetEnvironment) {
               native_operations = explicit,
               operations = [<name = "cx", arity = #mqt.operation_arity<kind = fixed, value = 2>,
                   num_parameters = 0,
-                  site_tuples = [<sites = [10, 20], duration = 50,
+                  site_tuples = [<[10, 20], duration = 50,
                       fidelity = 9.900000e-01 : f64>],
                   duration = 60, fidelity = 9.800000e-01 : f64>]>,
-          payload_env = #mqt.payload_env<
-              descriptor = #mqt.payload_descriptor<id = "vendor-ir",
+          payload_specification = #mqt.payload_spec<
+              format = #mqt.payload_format<id = "vendor-ir",
                   version = "4.2.0", profile = "dynamic", encoding = binary>,
               capabilities = [<id = "integer-computation", value = 64,
                   constraints = [<id = "max-control-flow-depth", value = 8>]>],
@@ -739,25 +739,28 @@ TEST_F(MQTIRTest, RoundTripsTypedTargetEnvironment) {
   EXPECT_EQ(operationSites[0], 10);
   EXPECT_EQ(operationSites[1], 20);
 
-  const auto payloadEnv = targetEnv.getPayloadEnv();
-  EXPECT_EQ(payloadEnv.getDescriptor().getId().getValue(), "vendor-ir");
-  EXPECT_EQ(payloadEnv.getDescriptor().getVersion().getValue(), "4.2.0");
-  EXPECT_EQ(payloadEnv.getDescriptor().getProfile().getValue(), "dynamic");
-  EXPECT_EQ(payloadEnv.getDescriptor().getEncoding(),
+  const auto payloadSpecification = targetEnv.getPayloadSpecification();
+  EXPECT_EQ(payloadSpecification.getFormat().getId().getValue(), "vendor-ir");
+  EXPECT_EQ(payloadSpecification.getFormat().getVersion().getValue(), "4.2.0");
+  EXPECT_EQ(payloadSpecification.getFormat().getProfile().getValue(),
+            "dynamic");
+  EXPECT_EQ(payloadSpecification.getFormat().getEncoding(),
             mqt::PayloadEncoding::Binary);
-  EXPECT_FALSE(payloadEnv.getOptionalCapabilitiesKnown());
-  ASSERT_EQ(payloadEnv.getCapabilities().size(), 1U);
-  ASSERT_EQ(payloadEnv.getCapabilities().front().getConstraints().size(), 1U);
+  EXPECT_FALSE(payloadSpecification.getOptionalCapabilitiesKnown());
+  ASSERT_EQ(payloadSpecification.getCapabilities().size(), 1U);
+  ASSERT_EQ(
+      payloadSpecification.getCapabilities().front().getConstraints().size(),
+      1U);
 
   auto query = cast<DLTIQueryInterface>(targetEnv);
   auto targetResult = query.query(StringAttr::get(
       context.get(), mqt::TargetEnvAttr::kCompilationTargetKey));
   ASSERT_TRUE(succeeded(targetResult));
   EXPECT_EQ(*targetResult, compilationTarget);
-  auto payloadResult = query.query(
-      StringAttr::get(context.get(), mqt::TargetEnvAttr::kPayloadEnvKey));
+  auto payloadResult = query.query(StringAttr::get(
+      context.get(), mqt::TargetEnvAttr::kPayloadSpecificationKey));
   ASSERT_TRUE(succeeded(payloadResult));
-  EXPECT_EQ(*payloadResult, payloadEnv);
+  EXPECT_EQ(*payloadResult, payloadSpecification);
   auto extensionResult =
       query.query(StringAttr::get(context.get(), "vendor.queue_depth"));
   ASSERT_TRUE(succeeded(extensionResult));
@@ -769,16 +772,26 @@ TEST_F(MQTIRTest, RoundTripsTypedTargetEnvironment) {
   EXPECT_EQ((*reparsed)->getAttr(mqt::TargetEnvAttr::name), targetEnv);
 }
 
+TEST_F(MQTIRTest, RepresentsEmptyPayloadCapabilities) {
+  const auto payload = dyn_cast_if_present<mqt::PayloadSpecAttr>(parseAttr(
+      R"mlir(#mqt.payload_spec<format = #mqt.payload_format<
+          id = "openqasm", version = "3.0.0", profile = "", encoding = text>,
+          capabilities = [], optional_capabilities_known = true>)mlir"));
+  ASSERT_TRUE(payload);
+  EXPECT_TRUE(payload.getCapabilities().empty());
+  EXPECT_TRUE(payload.getOptionalCapabilitiesKnown());
+}
+
 TEST_F(MQTIRTest, RejectsInvalidPayloadContracts) {
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_descriptor<id = "",
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_format<id = "",
       version = "2.1.0", profile = "base", encoding = text>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_descriptor<id = "qir",
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_format<id = "qir",
       version = "2.1.0", profile = "base\00suffix", encoding = text>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_descriptor<id = "qir",
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_format<id = "qir",
       version = "2.1", profile = "base", encoding = text>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_descriptor<id = "qir",
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_format<id = "qir",
       version = "02.1.0", profile = "base", encoding = text>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_descriptor<id = "qir",
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_format<id = "qir",
       version = "2.1.0-beta", profile = "base", encoding = text>)mlir"));
   EXPECT_FALSE(
       parseAttr(R"mlir(#mqt.program_constraint<id = "", value = 1>)mlir"));
@@ -791,8 +804,8 @@ TEST_F(MQTIRTest, RejectsInvalidPayloadContracts) {
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.program_capability<id = "loops", value = 1,
       constraints = [<id = "max-depth", value = 4>,
                      <id = "max-depth", value = 8>]>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_env<
-      descriptor = #mqt.payload_descriptor<id = "qir", version = "2.1.0",
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_spec<
+      format = #mqt.payload_format<id = "qir", version = "2.1.0",
           profile = "base", encoding = text>,
       capabilities = [<id = "loops", value = 1, constraints = []>,
                       <id = "loops", value = 1, constraints = []>],
@@ -804,8 +817,8 @@ TEST_F(MQTIRTest, RejectsInvalidTargetEnvironmentExtensions) {
       compilation_target = #mqt.compilation_target<
           sites = [<id = 0>], connectivity = all_to_all, couplings = [],
           native_operations = unrestricted, operations = []>,
-      payload_env = #mqt.payload_env<
-          descriptor = #mqt.payload_descriptor<id = "qir", version = "2.1.0",
+      payload_specification = #mqt.payload_spec<
+          format = #mqt.payload_format<id = "qir", version = "2.1.0",
               profile = "base", encoding = binary>, capabilities = [],
           optional_capabilities_known = false>,
       extensions = #dlti.map<"unnamespaced" = 1 : i64>>)mlir"));
@@ -813,11 +826,11 @@ TEST_F(MQTIRTest, RejectsInvalidTargetEnvironmentExtensions) {
       compilation_target = #mqt.compilation_target<
           sites = [<id = 0>], connectivity = all_to_all, couplings = [],
           native_operations = unrestricted, operations = []>,
-      payload_env = #mqt.payload_env<
-          descriptor = #mqt.payload_descriptor<id = "qir", version = "2.1.0",
+      payload_specification = #mqt.payload_spec<
+          format = #mqt.payload_format<id = "qir", version = "2.1.0",
               profile = "base", encoding = binary>, capabilities = [],
           optional_capabilities_known = false>,
-      extensions = #dlti.map<"mqt.payload_env" = 1 : i64>>)mlir"));
+      extensions = #dlti.map<"mqt.payload_specification" = 1 : i64>>)mlir"));
 }
 
 TEST_F(MQTIRTest, RejectsTargetEnvironmentOutsideModule) {
@@ -831,8 +844,8 @@ TEST_F(MQTIRTest, RejectsTargetEnvironmentOutsideModule) {
             compilation_target = #mqt.compilation_target<
                 sites = [<id = 0>], connectivity = all_to_all, couplings = [],
                 native_operations = unrestricted, operations = []>,
-            payload_env = #mqt.payload_env<
-                descriptor = #mqt.payload_descriptor<id = "qir",
+            payload_specification = #mqt.payload_spec<
+                format = #mqt.payload_format<id = "qir",
                     version = "2.1.0", profile = "base", encoding = binary>,
                 capabilities = [], optional_capabilities_known = false>>
       } { return }

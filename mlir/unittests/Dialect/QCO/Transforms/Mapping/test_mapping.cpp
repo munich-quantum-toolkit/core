@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -71,6 +72,17 @@ static std::string printModule(ModuleOp moduleOp) {
   moduleOp.print(stream);
   stream.flush();
   return result;
+}
+
+static void attachTestEnvironment(ModuleOp moduleOp,
+                                  const CompilerTarget& target) {
+  static const auto PAYLOAD = [] {
+    PayloadFormat format;
+    format.id = "test.payload";
+    format.version = "1.0.0";
+    return llvm::cantFail(PayloadSpecification::create(std::move(format)));
+  }();
+  attachTargetEnvironment(moduleOp, TargetEnvironment(target, PAYLOAD));
 }
 
 static SmallVector<Value> getQubitValues(ValueRange values) {
@@ -313,8 +325,9 @@ protected:
 
   static LogicalResult runPass(ModuleOp m, const CompilerTarget& target,
                                const MappingPassOptions& options) {
+    attachTestEnvironment(m, target);
     PassManager pm(m->getContext());
-    pm.addPass(createMappingPass(target, options));
+    pm.addPass(createMappingPass(options));
     if (failed(pm.run(m))) {
       return failure();
     }
@@ -338,6 +351,27 @@ class MappingPassTest : public MappingPassFixture,
                         public testing::WithParamInterface<CompilerTarget> {};
 
 }; // namespace
+
+TEST_F(MappingPassFixture, RequiresTypedTargetEnvironment) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto moduleOp = builder.finalize();
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    diagnostics += '\n';
+    return success();
+  });
+  PassManager pm(context.get());
+  pm.addPass(createMappingPass(MappingPassOptions{.ntrials = 1}));
+  EXPECT_TRUE(failed(pm.run(moduleOp.get())));
+  EXPECT_NE(diagnostics.find("place-and-route requires a valid "
+                             "mqt.target_env: module does not contain "
+                             "mqt.target_env"),
+            std::string::npos)
+      << diagnostics;
+}
 
 TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   constexpr int64_t size = 3;
@@ -562,6 +596,7 @@ TEST_F(MappingPassFixture, RejectNonExplicitTopologyBeforeMutation) {
   auto qubit = builder.h(builder.allocQubit());
   builder.sink(qubit);
   auto moduleOp = builder.finalize();
+  attachTestEnvironment(moduleOp.get(), target);
   const auto before = printModule(moduleOp.get());
 
   std::string diagnostics;
@@ -772,10 +807,11 @@ TEST_P(MappingPassTest, MapProgramAfterQubitReuse) {
   builder.sink(q1);
 
   auto m = builder.finalize({bit0, bit1});
+  attachTestEnvironment(m.get(), target);
   PassManager pm(context.get());
   pm.addPass(createReuseQubits());
   pm.addPass(createCanonicalizerPass());
-  pm.addPass(createMappingPass(target, MappingPassOptions{.ntrials = 1}));
+  pm.addPass(createMappingPass(MappingPassOptions{.ntrials = 1}));
   pm.addPass(createCanonicalizerPass());
   ASSERT_TRUE(pm.run(m.get()).succeeded());
   ASSERT_TRUE(succeeded(verify(*m)));
@@ -1008,7 +1044,7 @@ TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
   PassManager pm(context.get());
   pm.addNestedPass<func::FuncOp>(createQuantumLoopUnroll());
   populateQCOCleanupPipeline(pm);
-  pm.addPass(createMappingPass(target, MappingPassOptions{}));
+  pm.addPass(createMappingPass(MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -1034,6 +1070,7 @@ TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize(bits);
+  attachTestEnvironment(m.get(), target);
   ASSERT_TRUE(pm.run(m.get()).succeeded());
   ASSERT_TRUE(succeeded(verify(*m)));
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));

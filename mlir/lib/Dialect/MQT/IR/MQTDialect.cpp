@@ -75,21 +75,22 @@ void MQTDialect::initialize() {
          parsed.getAsString() == version;
 }
 
-LogicalResult PayloadDescriptorAttr::verify(
-    const function_ref<InFlightDiagnostic()> emitError, const StringAttr id,
-    const StringAttr version, const StringAttr profile,
-    const PayloadEncoding /*encoding*/) {
+LogicalResult
+PayloadFormatAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
+                          const StringAttr id, const StringAttr version,
+                          const StringAttr profile,
+                          const PayloadEncoding /*encoding*/) {
   if (id.getValue().empty() || version.getValue().empty()) {
-    return emitError() << "payload descriptor requires an ID and version";
+    return emitError() << "payload format requires an ID and version";
   }
   if (id.getValue().contains('\0') || version.getValue().contains('\0') ||
       profile.getValue().contains('\0')) {
     return emitError()
-           << "payload descriptor fields must not contain null characters";
+           << "payload format fields must not contain null characters";
   }
   if (!isCanonicalPayloadVersion(version.getValue())) {
     return emitError()
-           << "payload descriptor version must use canonical major.minor.patch";
+           << "payload format version must use canonical major.minor.patch";
   }
   return success();
 }
@@ -131,10 +132,10 @@ LogicalResult ProgramCapabilityAttr::verify(
 }
 
 LogicalResult
-PayloadEnvAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
-                       const PayloadDescriptorAttr /*descriptor*/,
-                       const ArrayRef<ProgramCapabilityAttr> capabilities,
-                       const bool /*optionalCapabilitiesKnown*/) {
+PayloadSpecAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
+                        const PayloadFormatAttr /*format*/,
+                        const ArrayRef<ProgramCapabilityAttr> capabilities,
+                        const bool /*optionalCapabilitiesKnown*/) {
   llvm::SmallDenseSet<std::pair<StringRef, uint64_t>> seen;
   seen.reserve(capabilities.size());
   for (const ProgramCapabilityAttr capability : capabilities) {
@@ -142,7 +143,7 @@ PayloadEnvAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
         std::pair(capability.getId().getValue(), capability.getValue());
     if (!seen.insert(key).second) {
       return emitError()
-             << "payload environment contains duplicate capability '"
+             << "payload specification contains duplicate capability '"
              << capability.getId().getValue() << "' with value "
              << capability.getValue();
     }
@@ -382,7 +383,7 @@ LogicalResult CompilationTargetAttr::verify(
 LogicalResult
 TargetEnvAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
                       const CompilationTargetAttr /*compilationTarget*/,
-                      const PayloadEnvAttr /*payloadEnv*/,
+                      const PayloadSpecAttr /*payloadSpecification*/,
                       const MapAttr extensions) {
   if (!extensions) {
     return success();
@@ -398,7 +399,7 @@ TargetEnvAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
       return emitError() << "target environment extension key '" << value
                          << "' must be provider or dialect namespaced";
     }
-    if (value == kCompilationTargetKey || value == kPayloadEnvKey) {
+    if (value == kCompilationTargetKey || value == kPayloadSpecificationKey) {
       return emitError() << "target environment extension key '" << value
                          << "' is reserved by MQT";
     }
@@ -414,8 +415,8 @@ FailureOr<Attribute> TargetEnvAttr::query(const DataLayoutEntryKey key) const {
   if (identifier.getValue() == kCompilationTargetKey) {
     return getCompilationTarget();
   }
-  if (identifier.getValue() == kPayloadEnvKey) {
-    return getPayloadEnv();
+  if (identifier.getValue() == kPayloadSpecificationKey) {
+    return getPayloadSpecification();
   }
   if (MapAttr extensions = getExtensions()) {
     return extensions.query(key);

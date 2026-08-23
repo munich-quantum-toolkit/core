@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -55,6 +56,10 @@ namespace mlir::qco {
 
 using decomposition::decomposeUnitary2QWeyl;
 using decomposition::emitUnitary2QWeyl;
+
+#define GEN_PASS_DEF_TARGETNATIVESYNTHESIS
+#define GEN_PASS_DEF_VERIFYTARGETCONFORMANCE
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
 
@@ -578,23 +583,24 @@ protected:
 };
 
 struct TargetNativeSynthesisPass final
-    : PassWrapper<TargetNativeSynthesisPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TargetNativeSynthesisPass)
-
-  explicit TargetNativeSynthesisPass(const CompilerTarget& targetIn)
-      : target(targetIn) {}
-
-  void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect, arith::ArithDialect, math::MathDialect>();
-  }
+    : impl::TargetNativeSynthesisBase<TargetNativeSynthesisPass> {
 
 protected:
   void runOnOperation() override {
+    ModuleOp moduleOp = getOperation();
+    const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+    if (!environment) {
+      moduleOp.emitError()
+          << "target-native synthesis requires a valid mqt.target_env: "
+          << environment.error();
+      signalPassFailure();
+      return;
+    }
+    const CompilerTarget& target = environment.environment().target();
     if (target.nativeOperationsKind() ==
         CompilerTarget::NativeOperations::Kind::Unrestricted) {
       return;
     }
-    ModuleOp moduleOp = getOperation();
     const auto targetBasis = target.synthesisBasis();
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
@@ -630,25 +636,29 @@ protected:
       signalPassFailure();
     }
   }
-
-  CompilerTarget target;
 };
 
 struct VerifyTargetConformancePass final
-    : PassWrapper<VerifyTargetConformancePass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(VerifyTargetConformancePass)
-
-  explicit VerifyTargetConformancePass(const CompilerTarget& targetIn)
-      : target(targetIn) {}
+    : impl::VerifyTargetConformanceBase<VerifyTargetConformancePass> {
 
 protected:
   void runOnOperation() override {
-    auto sites = collectStaticSites(getOperation());
+    ModuleOp moduleOp = getOperation();
+    const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+    if (!environment) {
+      moduleOp.emitError()
+          << "target conformance requires a valid mqt.target_env: "
+          << environment.error();
+      signalPassFailure();
+      return;
+    }
+    const CompilerTarget& target = environment.environment().target();
+    auto sites = collectStaticSites(moduleOp);
     if (failed(sites)) {
       signalPassFailure();
       return;
     }
-    WalkResult result = getOperation()->walk([&](Operation* operation) {
+    WalkResult result = moduleOp->walk([&](Operation* operation) {
       if (auto staticOp = dyn_cast<StaticOp>(operation)) {
         const auto site =
             static_cast<CompilerTarget::SiteId>(staticOp.getIndex());
@@ -686,24 +696,12 @@ protected:
       signalPassFailure();
     }
   }
-
-  CompilerTarget target;
 };
 
 } // namespace
 
 std::unique_ptr<Pass> createFuseTwoQubitGates() {
   return std::make_unique<FuseTwoQubitGatesPass>();
-}
-
-std::unique_ptr<Pass>
-createTargetNativeSynthesis(const CompilerTarget& target) {
-  return std::make_unique<TargetNativeSynthesisPass>(target);
-}
-
-std::unique_ptr<Pass>
-createVerifyTargetConformance(const CompilerTarget& target) {
-  return std::make_unique<VerifyTargetConformancePass>(target);
 }
 
 } // namespace mlir::qco

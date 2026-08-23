@@ -28,16 +28,16 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createFuseTwoQubitGates());
   switch (target.connectivityKind()) {
   case CompilerTarget::Connectivity::Kind::Explicit:
-    pm.addPass(qco::createMappingPass(target, qco::MappingPassOptions{}));
+    pm.addPass(qco::createMappingPass(qco::MappingPassOptions{}));
     break;
   case CompilerTarget::Connectivity::Kind::AllToAll:
     pm.addPass(qco::createPlacementPass(target));
     break;
   }
   populateQCOCleanupPipeline(pm);
-  pm.addPass(qco::createTargetNativeSynthesis(target));
+  pm.addPass(qco::createTargetNativeSynthesis());
   pm.addPass(createCSEPass());
-  pm.addPass(qco::createVerifyTargetConformance(target));
+  pm.addPass(qco::createVerifyTargetConformance());
 }
 
 } // namespace mlir

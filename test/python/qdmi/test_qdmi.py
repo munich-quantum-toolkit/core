@@ -19,7 +19,17 @@ from typing import cast
 import pytest
 from packaging import version
 
-from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
+from mqt.core.mlir import (
+    CompilerTarget,
+    OutputFormat,
+    PayloadEncoding,
+    PayloadFormat,
+    PayloadSpecification,
+    QIRProfile,
+    QIRProgram,
+    TargetEnvironment,
+    compile_program,
+)
 from mqt.core.qdmi import (
     CustomProperty,
     Device,
@@ -556,7 +566,10 @@ cx q[0], q[1];
 c = measure q;
 """
     target = CompilerTarget.from_device(ddsim_device)
-    program = compile_program(qasm3_program, output=OutputFormat.QIR_BASE, target=target)
+    payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.TEXT))
+    program = compile_program(qasm3_program, target_environment=TargetEnvironment(target, payload))
+    assert isinstance(program, QIRProgram)
+    assert program.profile == QIRProfile.BASE
     assert ProgramFormat.QIR_BASE_STRING in ddsim_device.supported_program_formats()
 
     job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=1024)
@@ -593,7 +606,9 @@ def test_device_executes_controlled_qir_with_exact_phase(ddsim_device: Device) -
     expected = quantum_info.Statevector.from_instruction(circuit).data
 
     target = CompilerTarget.from_device(ddsim_device)
-    program = compile_program(circuit, output=OutputFormat.QIR_BASE, target=target)
+    payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.TEXT))
+    program = compile_program(circuit, target_environment=TargetEnvironment(target, payload))
+    assert isinstance(program, QIRProgram)
     job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=0)
     job.wait()
 
