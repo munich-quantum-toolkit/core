@@ -18,6 +18,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/DLTI/DLTI.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/DialectImplementation.h>
 #include <mlir/IR/OpImplementation.h>
