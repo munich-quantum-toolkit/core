@@ -380,6 +380,13 @@ class QCProgram(Program):
         Set ``copy=True`` to preserve it.
         """
 
+    def num_gates(self) -> int:
+        """Count the gates in the program.
+
+        Any operation that implements the ``UnitaryOpInterface`` is counted. Barriers
+        are skipped.
+        """
+
     def num_single_qubit_gates(self) -> int:
         """Count the single-qubit gates in the program.
 

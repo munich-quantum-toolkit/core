@@ -724,6 +724,16 @@ Set ``copy=True`` to preserve it.)pb")
 
 Set ``copy=True`` to preserve it.)pb")
       .def(
+          "num_gates",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.numGates();
+          },
+          R"pb(Count the gates in the program.
+
+Any operation that implements the ``UnitaryOpInterface`` is counted. Barriers
+are skipped.)pb")
+      .def(
           "num_single_qubit_gates",
           [](const mlir::QCProgram& program) {
             requireValid(program);

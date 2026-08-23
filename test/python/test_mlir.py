@@ -690,9 +690,11 @@ ctrl @ swap q[0], q[1], q[2];
 inv @ cx q[0], q[1];
 barrier q[0], q[1];
 """)
+    assert program1.num_gates() == 6
     assert program1.num_single_qubit_gates() == 1
     assert program1.num_two_qubit_gates() == 3
 
     program2 = QCProgram.from_qasm_str(QASM_STRING)
+    assert program2.num_gates() == 2
     assert program2.num_single_qubit_gates() == 1
     assert program2.num_two_qubit_gates() == 1

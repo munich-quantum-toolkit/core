@@ -189,6 +189,14 @@ public:
   [[nodiscard]] std::optional<QIRProgram> intoQIR(QIRProfile profile) &&;
 
   /**
+   * @brief Count the gates in the program.
+   *
+   * @details Any operation that implements the `UnitaryOpInterface` is counted.
+   * Barriers are skipped.
+   */
+  [[nodiscard]] size_t numGates() const;
+
+  /**
    * @brief Count the single-qubit gates in the program.
    *
    * @details Any operation that implements the `UnitaryOpInterface` and acts on

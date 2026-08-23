@@ -1610,6 +1610,7 @@ barrier q[0], q[1];
 )";
   auto qc1 = QCProgram::fromQASMString(qasm1);
   ASSERT_TRUE(qc1);
+  EXPECT_EQ(qc1->numGates(), 6);
   EXPECT_EQ(qc1->numSingleQubitGates(), 1);
   EXPECT_EQ(qc1->numTwoQubitGates(), 3);
 
@@ -1620,6 +1621,7 @@ h q;
 )";
   auto qc2 = QCProgram::fromQASMString(qasm2);
   ASSERT_TRUE(qc2);
+  EXPECT_EQ(qc2->numGates(), 1);
   EXPECT_EQ(qc2->numSingleQubitGates(), 1);
   EXPECT_EQ(qc2->numTwoQubitGates(), 0);
 }
