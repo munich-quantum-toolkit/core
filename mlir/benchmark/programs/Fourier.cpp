@@ -169,18 +169,20 @@ SmallVector<Value> standardQFT(qc::QCProgramBuilder& builder,
 
   builder.scfFor(period, qubits, 1,
                  [&](Value index) { builder.h(builder.loadQubit(query, index)); });
+  auto zero = arith::ConstantIndexOp::create(builder, 0).getResult();
   auto one = arith::ConstantIndexOp::create(builder, 1).getResult();
-  auto upper = arith::ConstantIndexOp::create(builder, qubits).getResult();
   auto last = arith::ConstantIndexOp::create(builder, qubits - 1).getResult();
-  builder.scfFor(0, qubits, 1, [&](Value target) {
+  builder.scfFor(0, qubits, 1, [&](Value step) {
+    auto target = arith::SubIOp::create(builder, last, step);
     builder.h(builder.loadQubit(query, target));
-    auto lower = arith::AddIOp::create(builder, target, one);
-    phaseRotationLoop(
-        builder, lower, upper, std::numbers::pi / 2.0, 0.5,
-        [&](Value angle, Value control) {
-          builder.cp(angle, builder.loadQubit(query, control),
-                     builder.loadQubit(query, target));
-        });
+    auto previous = arith::SubIOp::create(builder, target, one);
+    phaseRotationLoop(builder, zero, target, std::numbers::pi / 2.0, 0.5,
+                      [&](Value angle, Value distance) {
+                        auto control =
+                            arith::SubIOp::create(builder, previous, distance);
+                        builder.cp(angle, builder.loadQubit(query, control),
+                                   builder.loadQubit(query, target));
+                      });
   });
   builder.scfFor(0, qubits, 1, [&](Value index) {
     auto resultIndex = arith::SubIOp::create(builder, last, index);
@@ -199,29 +201,28 @@ SmallVector<Value> semiclassicalQFT(qc::QCProgramBuilder& builder,
       builder.allocClassicalBitRegister(qubits, benchmark.output().name);
   auto zero = arith::ConstantIndexOp::create(builder, 0).getResult();
   auto total = arith::ConstantIndexOp::create(builder, qubits).getResult();
-  auto last = arith::ConstantIndexOp::create(builder, qubits - 1).getResult();
+  auto one = arith::ConstantIndexOp::create(builder, 1).getResult();
+  auto active =
+      arith::ConstantIndexOp::create(builder, qubits - period).getResult();
 
-  const auto round = [&](Value index, const bool preparePlus) {
+  const auto round = [&](Value step, const bool preparePlus) {
     if (preparePlus) {
       builder.h(query);
     }
-    auto offset = arith::SubIOp::create(builder, total, index);
+    auto previous = arith::SubIOp::create(builder, step, one);
     phaseRotationLoop(
-        builder, zero, index, std::numbers::pi / 2.0, 0.5,
+        builder, zero, step, std::numbers::pi / 2.0, 0.5,
         [&](Value angle, Value distance) {
-          auto bit = arith::AddIOp::create(builder, offset, distance);
+          auto bit = arith::SubIOp::create(builder, previous, distance);
           builder.scfIf(result, bit, [&] { builder.p(angle, query); });
         });
     builder.h(query);
-    auto target = arith::SubIOp::create(builder, last, index);
-    builder.measure(query, result, target);
+    builder.measure(query, result, step);
     builder.reset(query);
   };
 
-  builder.scfFor(0, period, 1,
-                 [&](Value index) { round(index, false); });
-  builder.scfFor(period, qubits, 1,
-                 [&](Value index) { round(index, true); });
+  builder.scfFor(zero, active, 1, [&](Value step) { round(step, true); });
+  builder.scfFor(active, total, 1, [&](Value step) { round(step, false); });
   return {result};
 }
 
