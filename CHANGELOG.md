@@ -46,8 +46,9 @@ releases may include breaking changes.
   [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570], [#1572],
   [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751], [#1755],
   [#1787], [#1815], [#1823], [#1933], [#1978], [#1979], [#2007], [#2026],
-  [#2030], [#2066]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
-  [**@li-mingbao**], [**@DRovara**], [**@MatthiasReumann**])
+  [#2030], [#2066], [#2217]) ([**@burgholzer**], [**@denialhaag**],
+  [**@simon1hofmann**], [**@li-mingbao**], [**@DRovara**],
+  [**@MatthiasReumann**])
 - ✨ Add OpenQASM import and export to the MQT Compiler Collection, including
   fixed-angle constants and proven affine quantum-register indices ([#1910],
   [#1987], [#1994], [#2003], [#2026], [#2169], [#2203]) ([**@burgholzer**],
@@ -806,6 +807,7 @@ for previous changelogs._
 
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
 [#2211]: https://github.com/munich-quantum-toolkit/core/pull/2211
+[#2217]: https://github.com/munich-quantum-toolkit/core/pull/2217
 [#2210]: https://github.com/munich-quantum-toolkit/core/pull/2210
 [#2216]: https://github.com/munich-quantum-toolkit/core/pull/2216
 [#2203]: https://github.com/munich-quantum-toolkit/core/pull/2203
