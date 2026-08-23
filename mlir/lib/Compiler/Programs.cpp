@@ -375,44 +375,31 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
   return result;
 }
 
-size_t QCProgram::numGates() const {
+template <typename Predicate>
+static size_t countGatesIf(ModuleOp moduleOp, const Predicate& predicate = {}) {
   size_t count = 0;
-  auto entryPoint = mqt::getEntryPoint(module());
+  auto entryPoint = mqt::getEntryPoint(moduleOp);
   for (auto op : entryPoint.getOps<qc::UnitaryOpInterface>()) {
     if (isa<qc::BarrierOp>(op)) {
       continue;
     }
-    ++count;
+    if (predicate(op)) {
+      ++count;
+    }
   }
   return count;
+}
+
+size_t QCProgram::numGates() const {
+  return countGatesIf(module(), [](auto) { return true; });
 }
 
 size_t QCProgram::numSingleQubitGates() const {
-  size_t count = 0;
-  auto entryPoint = mqt::getEntryPoint(module());
-  for (auto op : entryPoint.getOps<qc::UnitaryOpInterface>()) {
-    if (isa<qc::BarrierOp>(op)) {
-      continue;
-    }
-    if (op.getNumQubits() == 1) {
-      ++count;
-    }
-  }
-  return count;
+  return countGatesIf(module(), [](auto op) { return op.getNumQubits() == 1; });
 }
 
 size_t QCProgram::numTwoQubitGates() const {
-  size_t count = 0;
-  auto entryPoint = mqt::getEntryPoint(module());
-  for (auto op : entryPoint.getOps<qc::UnitaryOpInterface>()) {
-    if (isa<qc::BarrierOp>(op)) {
-      continue;
-    }
-    if (op.getNumQubits() == 2) {
-      ++count;
-    }
-  }
-  return count;
+  return countGatesIf(module(), [](auto op) { return op.getNumQubits() == 2; });
 }
 
 //===----------------------------------------------------------------------===//
