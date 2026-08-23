@@ -59,6 +59,87 @@ class OutputFormat(enum.Enum):
     QIR_ADAPTIVE = 7
     """QIR for the Adaptive Profile."""
 
+class PayloadEncoding(enum.Enum):
+    """Payload representation encoding."""
+
+    TEXT = 0
+
+    BINARY = 1
+
+class PayloadFormat:
+    """Exact payload identity."""
+
+    def __init__(
+        self, format_id: str, version: str, profile: str = "", encoding: PayloadEncoding = PayloadEncoding.TEXT
+    ) -> None: ...
+    @property
+    def format_id(self) -> str: ...
+    @format_id.setter
+    def format_id(self, arg: str, /) -> None: ...
+    @property
+    def version(self) -> str: ...
+    @version.setter
+    def version(self, arg: str, /) -> None: ...
+    @property
+    def profile(self) -> str: ...
+    @profile.setter
+    def profile(self, arg: str, /) -> None: ...
+    @property
+    def encoding(self) -> PayloadEncoding: ...
+    @encoding.setter
+    def encoding(self, arg: PayloadEncoding, /) -> None: ...
+
+class ProgramConstraint:
+    """One payload capability constraint."""
+
+    def __init__(self, constraint_id: str, value: int) -> None: ...
+    @property
+    def constraint_id(self) -> str: ...
+    @constraint_id.setter
+    def constraint_id(self, arg: str, /) -> None: ...
+    @property
+    def value(self) -> int: ...
+    @value.setter
+    def value(self, arg: int, /) -> None: ...
+
+class ProgramCapability:
+    """One payload execution capability."""
+
+    def __init__(self, capability_id: str, value: int = 0, constraints: Sequence[ProgramConstraint] = []) -> None: ...
+    @property
+    def capability_id(self) -> str: ...
+    @capability_id.setter
+    def capability_id(self, arg: str, /) -> None: ...
+    @property
+    def value(self) -> int: ...
+    @value.setter
+    def value(self, arg: int, /) -> None: ...
+    @property
+    def constraints(self) -> list[ProgramConstraint]: ...
+    @constraints.setter
+    def constraints(self, arg: Sequence[ProgramConstraint], /) -> None: ...
+
+class PayloadSpecification:
+    """Selected payload execution contract."""
+
+    def __init__(
+        self,
+        payload_format: PayloadFormat,
+        capabilities: Sequence[ProgramCapability] = [],
+        optional_capabilities_known: bool = False,
+    ) -> None: ...
+    @property
+    def format(self) -> PayloadFormat:
+        """The exact selected payload format."""
+
+    @property
+    def capabilities(self) -> list[ProgramCapability]:
+        """The effective payload capabilities."""
+
+    @property
+    def optional_capabilities_known(self) -> bool:
+        """Whether optional capability metadata is complete."""
+
 class CompilerTarget:
     """Immutable MLIR compiler target.
 
@@ -390,6 +471,18 @@ class CompilerTarget:
     ) -> bool:
         """Whether the target supports an operation."""
 
+class TargetEnvironment:
+    """A compiler target and its selected payload specification."""
+
+    def __init__(self, target: CompilerTarget, payload_specification: PayloadSpecification) -> None: ...
+    @property
+    def target(self) -> CompilerTarget:
+        """The compiler target."""
+
+    @property
+    def payload_specification(self) -> PayloadSpecification:
+        """The selected payload specification."""
+
 class Program:
     """Base class for a typed MLIR compiler program.
 
@@ -541,7 +634,7 @@ class QCOProgram(Program):
         """Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
 
     def compile_for_target(
-        self, target: CompilerTarget, *, enable_timing: bool = False, enable_statistics: bool = False
+        self, target_environment: TargetEnvironment, *, enable_timing: bool = False, enable_statistics: bool = False
     ) -> None:
         """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails."""
 
@@ -758,7 +851,6 @@ def compile_program(
     *,
     output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
     inplace: bool = False,
-    target: CompilerTarget | None = None,
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
@@ -775,7 +867,6 @@ def compile_program(
     *,
     output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
     inplace: bool = False,
-    target: CompilerTarget | None = None,
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
@@ -808,7 +899,6 @@ def compile_program(
     *,
     output: Literal[OutputFormat.JEFF],
     inplace: bool = False,
-    target: CompilerTarget | None = None,
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
@@ -825,7 +915,6 @@ def compile_program(
     *,
     output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
     inplace: bool = False,
-    target: CompilerTarget | None = None,
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
@@ -842,7 +931,6 @@ def compile_program(
     *,
     output: OutputFormat,
     inplace: bool = False,
-    target: CompilerTarget | None = None,
     qco_pipeline: str = "mqt-qco-default",
     enable_timing: bool = False,
     enable_statistics: bool = False,
@@ -859,13 +947,42 @@ def compile_program(
         program: Source text, a file path, a Qiskit circuit, or a typed compiler program.
         output: The requested output stage of the compiler pipeline.
         inplace: Whether a typed input program may be consumed.
-        target: An optional compiler target for decomposition, mapping, and native
-            synthesis. A target requires optimized QCO, QC, or QIR output.
         qco_pipeline: The QCO optimization pipeline to run. A custom pipeline
-            cannot be combined with a target.
+            cannot be combined with target compilation.
         enable_timing: Whether to collect pass timing information.
         enable_statistics: Whether to collect pass statistics.
 
     Returns:
         A typed compiler program for the requested output format.
+    """
+
+@overload
+def compile_program(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    *,
+    inplace: bool = False,
+    target_environment: TargetEnvironment,
+    enable_timing: bool = False,
+    enable_statistics: bool = False,
+) -> OpenQASMProgram | QIRProgram:
+    """Compile a program for a target and return the selected executable payload.
+
+    The payload specification determines the output format. Typed program inputs
+    are copied by default; set ``inplace=True`` to consume them.
+
+    Args:
+        program: Source text, a file path, a Qiskit circuit, or a typed compiler program.
+        inplace: Whether a typed input program may be consumed.
+        target_environment: The compiler target and selected payload specification.
+        enable_timing: Whether to collect pass timing information.
+        enable_statistics: Whether to collect pass statistics.
+
+    Returns:
+        A typed compiler program for the selected payload format.
     """

@@ -183,6 +183,33 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                               "The number of inserted SWAPs">];
 }
 
+def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary = "Synthesize operations for the native target basis";
+  let description = [{
+    Reads the typed `mqt.target_env` module attribute and lowers non-native
+    unitary operations to one complete synthesis basis supported throughout the
+    compiler target. Unknown native-operation metadata is valid when no
+    surviving unitary operation needs it. Otherwise, the pass fails when the
+    metadata is unknown, no complete basis exists, or an operation has no
+    compile-time unitary matrix.
+  }];
+}
+
+def VerifyTargetConformance
+    : Pass<"verify-target-conformance", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "Verify that a mapped program conforms to its compiler target";
+  let description = [{
+    Reads the typed `mqt.target_env` module attribute and verifies that every
+    qubit is assigned to a target site and every remaining quantum operation is
+    native for the compiler target. Unknown native-operation metadata is valid
+    when the surviving program contains no unitary, measurement, or reset
+    operation that needs the metadata.
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // Optimization Passes
 //===----------------------------------------------------------------------===//

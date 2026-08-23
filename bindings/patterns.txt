@@ -168,7 +168,6 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.QC, OutputFormat.QC_IMPORT] = ...,
         inplace: bool = False,
-        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
@@ -185,7 +184,6 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED],
         inplace: bool = False,
-        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
@@ -218,7 +216,6 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.JEFF],
         inplace: bool = False,
-        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
@@ -235,7 +232,6 @@ mqt.core.mlir.compile_program:
         *,
         output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
         inplace: bool = False,
-        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
@@ -252,9 +248,24 @@ mqt.core.mlir.compile_program:
         *,
         output: OutputFormat,
         inplace: bool = False,
-        target: CompilerTarget | None = None,
         qco_pipeline: str = "mqt-qco-default",
         enable_timing: bool = False,
         enable_statistics: bool = False,
     ) -> QCProgram | QCOProgram | OpenQASMProgram | JeffProgram | QIRProgram:
+        \doc
+    @overload
+    def compile_program(
+        program: str
+        | os.PathLike[str]
+        | qiskit.circuit.QuantumCircuit
+        | QCProgram
+        | QCOProgram
+        | JeffProgram
+        | OpenQASMProgram,
+        *,
+        inplace: bool = False,
+        target_environment: TargetEnvironment,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+    ) -> OpenQASMProgram | QIRProgram:
         \doc
