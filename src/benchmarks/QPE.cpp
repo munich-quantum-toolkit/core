@@ -14,7 +14,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <numbers>
 #include <numeric>
 #include <stdexcept>
@@ -161,12 +160,8 @@ double QPE::probability(const std::string_view outcome) const {
                              static_cast<long double>(denominator));
   const auto numerator = sine / (std::numbers::pi_v<long double> * magnitude);
 
-  long double scaledMagnitude = 0.L;
-  if (options_.precision <=
-      static_cast<size_t>(std::numeric_limits<int>::max())) {
-    scaledMagnitude =
-        std::ldexp(magnitude, -static_cast<int>(options_.precision));
-  }
+  const auto scaledMagnitude =
+      std::ldexp(magnitude, -static_cast<int>(options_.precision));
   const auto denominatorFactor = sinc(scaledMagnitude);
   const auto ratio = numerator / denominatorFactor;
   return static_cast<double>(std::clamp(ratio * ratio, 0.L, 1.L));
