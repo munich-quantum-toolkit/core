@@ -95,7 +95,8 @@ releases may include breaking changes.
 ### Removed
 
 - 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
-  DD package evaluation. MQT Core provides no direct replacement.
+  DD package evaluation. MQT Core provides no direct replacement ([#2214])
+  ([**@burgholzer**])
 - 💥 Remove the unowned decision-diagram approximation algorithm and
   density-matrix support from MQT Core ([#1466], [#2154]) ([**@burgholzer**])
 - 💥 Make `nlohmann_json` an implementation detail and replace JSON-typed
@@ -790,6 +791,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2214]: https://github.com/munich-quantum-toolkit/core/pull/2214
 [#2203]: https://github.com/munich-quantum-toolkit/core/pull/2203
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
 [#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
