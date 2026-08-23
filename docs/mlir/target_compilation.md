@@ -36,9 +36,11 @@ target = CompilerTarget(3, couplings=[(0, 1), (1, 2)])
 ```
 
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` to apply target
-compilation to an existing QCO program. For pass-level benchmarking, the C++ API
-exposes separate factories for pre-routing optimization, mapping, native
-synthesis, and conformance verification.
+compilation to an existing QCO program. Compilation runs in place. If a pass
+fails, earlier passes may already have changed the program. Copy the program
+before compilation if the caller must preserve the input. For pass-level
+benchmarking, the C++ API exposes separate factories for pre-routing
+optimization, mapping, native synthesis, and conformance verification.
 
 Target compilation preserves quantum operations even when their final qubit
 values are not measured or returned. This supports measurement-free programs,
