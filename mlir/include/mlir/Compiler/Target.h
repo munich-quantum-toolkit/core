@@ -26,7 +26,12 @@
 
 namespace mlir {
 
+class MLIRContext;
 class Operation;
+
+namespace mqt {
+class CompilationTargetAttr;
+} // namespace mqt
 
 /**
  * @brief Immutable description of an MLIR compiler target.
@@ -327,6 +332,10 @@ public:
          Connectivity connectivity = {}, NativeOperations nativeOperations = {},
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
+  /// Reconstruct a validated compiler target from its MLIR attribute.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(mqt::CompilationTargetAttr attribute);
+
   /// Copying shares immutable storage; rvalues copy and keep the source valid.
   CompilerTarget(const CompilerTarget&) noexcept = default;
   CompilerTarget& operator=(const CompilerTarget&) noexcept = default;
@@ -414,6 +423,10 @@ public:
 
   /// Return one complete globally usable synthesis basis, if available.
   [[nodiscard]] std::optional<SynthesisBasis> synthesisBasis() const noexcept;
+
+  /// Materialize the source target facts as a typed MLIR attribute.
+  [[nodiscard]] mqt::CompilationTargetAttr
+  materialize(MLIRContext& context) const;
 
 private:
   struct Storage;

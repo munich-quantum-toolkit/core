@@ -9,6 +9,8 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -301,6 +303,65 @@ TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit, Target::SingleQubitBasis::U);
   EXPECT_EQ(target.synthesisBasis()->entangler, GateKind::CZ);
+}
+
+TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+
+  std::vector sites{valid(Site::create(7, "left", 100, 80)),
+                    valid(Site::create(2, std::nullopt, 120, std::nullopt)),
+                    valid(Site::create(11, "right"))};
+  std::vector operations{valid(
+      Operation::create(" PRX ", 1, 2,
+                        std::vector{valid(SiteTuple::create({7}, 0, 0.99)),
+                                    valid(SiteTuple::create({2}, 5, 0.98))},
+                        0, 0.97))};
+  const auto target = valid(
+      Target::create("device", std::move(sites),
+                     Connectivity::fromCouplings({{7, 2}, {2, 11}}),
+                     NativeOperations::fromOperations(std::move(operations)),
+                     valid(DurationUnit::create("ns", 0.5))));
+
+  const auto attribute = target.materialize(context);
+  const auto reconstructed = valid(Target::create(attribute));
+
+  EXPECT_EQ(reconstructed.materialize(context), attribute);
+  EXPECT_EQ(reconstructed.couplings(), target.couplings());
+  EXPECT_EQ(reconstructed.supportsOperation("r", 1, 2), true);
+  EXPECT_EQ(reconstructed.synthesisBasis(), target.synthesisBasis());
+}
+
+TEST(CompilerTargetTest, RoundTripsTargetKnowledgeStates) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+
+  const std::array targets{
+      valid(Target::create(2)),
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::unrestricted())),
+      valid(Target::create(2, Connectivity::fromCouplings({{0, 1}}),
+                           NativeOperations::fromOperations({}))),
+  };
+
+  for (const auto& target : targets) {
+    const auto attribute = target.materialize(context);
+    const auto reconstructed = valid(Target::create(attribute));
+    EXPECT_EQ(reconstructed.materialize(context), attribute);
+  }
+
+  expectInvalid(Target::create(mlir::mqt::CompilationTargetAttr{}),
+                "Compiler target attribute must not be null");
+
+  const auto site =
+      mlir::mqt::SiteAttr::get(&context, 0, {}, std::nullopt, std::nullopt);
+  const auto secondSite =
+      mlir::mqt::SiteAttr::get(&context, 1, {}, std::nullopt, std::nullopt);
+  expectInvalid(Target::create(mlir::mqt::CompilationTargetAttr::get(
+                    &context, {}, {site, secondSite}, {},
+                    mlir::mqt::ConnectivityKind::Explicit, {},
+                    mlir::mqt::NativeOperationsKind::Unknown, {})),
+                "Compiler target topology must be connected");
 }
 
 TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
