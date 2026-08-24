@@ -32,62 +32,20 @@ follow-up with its own ExecPlan and branch.
 
 ## Progress
 
-- [x] (2026-08-19 15:07Z) Read the repository instructions, inspect the CBit,
-      scalar-parameter, and expression-capture base, and compare it with the
-      earlier combined control-flow implementation.
-- [x] (2026-08-19 15:15Z) Add the version-neutral writer interface and the
-  Qiskit 2.5 deferred Python control-flow writer without changing the import
-  reader or scalar parameter identity model.
-- [x] (2026-08-19 15:28Z) Replace flat export collection with recursive
-      preflight and emission that uses CBit loads, stores, register/index
-      access, snapshots, and definite writes.
-- [x] (2026-08-19 15:43Z) Add focused CBit structured-control exporter tests and
-      update the public support documentation.
-- [x] (2026-08-19 15:52Z) Build the binding, run all 190 Qiskit translation
-      tests and repository lint, and review the semantic diff. Creating the
-      signed local commit is the final handoff step.
-- [x] (2026-08-19 16:04Z) Close the final audit gaps for repeated-bit Uint
-      expressions and non-CBit function results, add five focused cases, and
-      rerun all 195 translation tests before restacking.
-- [x] (2026-08-19 16:22Z) Restack onto the finalized captured-expression import
-      parent, rebuild the exact structured branch, and pass all 196 translation
-      tests.
-- [x] (2026-08-19 19:55Z) Restack again after #2158 merged, rebuild the release
-      bindings, pass all 196 translation tests, and pass the complete repository
-      lint session and focused diff checks.
-- [x] (2026-08-19 20:13Z) Restack onto the audited scalar/capture foundation,
-      preserve named-input reachability validation recursively through nested
-      structured blocks, rebuild the binding, and pass all 197 translation
-      tests.
-- [x] (2026-08-21 15:55Z) Restack the export-only commit onto the updated #2175
-      head, port it to the closed name-keyed `Parameter` API and current MQT
-      metadata, fix the two include-cleanliness findings, rebuild the binding,
-      and pass all 204 translation tests.
-- [x] (2026-08-21 16:08Z) Preserve low-bit semantics when exporting integer
-      truncation, accept direct constant-index switch selectors, add three
-      focused round-trip regressions, and pass all 207 translation tests.
-- [x] (2026-08-21 16:20Z) Complete the final scope and semantic reviews, pass
-      stub generation and repository lint, explicitly defer the complete
-      documentation build for this handoff, and prepare the two focused
-      implementation and documentation commits.
-- [x] (2026-08-21 16:28Z) Restack both commits onto #2175's final
-      classical-expression node-bound fix, confirm the export patches remain
-      equivalent, rebuild the binding, and pass all 208 translation tests.
-- [x] (2026-08-22 06:46Z) Merge the updated `main` after #2175 landed as a
-      squash commit, retain its finalized importer and minimized tests, remove
-      the duplicated pre-squash parent coverage, rebuild the binding, and pass
-      repository lint.
+- [x] (2026-08-19 15:43Z) Inspect the existing CBit, scalar-parameter, and
+      expression-capture foundations; add the version-neutral writer interface,
+      deferred Qiskit 2.5 writer, recursive preflight and emission, focused
+      tests, and public support documentation.
+- [x] (2026-08-21 16:28Z) Adapt the exporter to the finalized name-keyed
+      `Parameter` and expression-capture APIs; preserve low-bit truncation and
+      constant-index switch semantics; pass the release build, stub generation,
+      translation tests, and repository lint.
+- [x] (2026-08-22 06:46Z) Merge the updated `main`, retain its finalized
+      importer and minimized tests, and remove duplicated parent coverage.
 - [x] (2026-08-22 06:59Z) Bound speculative packed-register matching, replace
       recursive classical-snapshot discovery with a bounded worklist, and omit
       loop parameter metadata when the projected value reaches no emitted
       parameter expression; pass the three focused regressions.
-- [x] (2026-08-22 07:01Z) Rebuild the release binding, pass all 211 Qiskit
-      translation tests against that exact build, and pass focused format and
-      static checks; repository lint reformatted the plan and is ready for its
-      final clean rerun.
-- [x] (2026-08-22 07:04Z) Pass the final clean repository lint run and an
-      independent review with no remaining actionable findings; the audit fix is
-      ready to commit and push.
 - [x] (2026-08-22 07:50Z) Apply the final complexity pass by sharing exporter
       parameter state and native Qiskit symbols, replacing deferred insertion
       bookkeeping with in-place placeholders, reducing repeated round trips and
@@ -101,6 +59,12 @@ follow-up with its own ExecPlan and branch.
       preserve fused affine overflow handling, rebuild the exact release
       binding, pass all 210 translation tests, regenerate unchanged stubs, and
       pass focused format and static checks.
+- [x] (2026-08-24 11:24Z) Complete the critical correctness and minimality pass:
+      balance packed-register import, isolate per-result validation budgets and
+      consumed-result snapshots, preflight normalized depth, and simplify
+      adapter and test code. Rebuild the release binding, pass all 218
+      translation tests, regenerate unchanged stubs, and pass repository lint;
+      keep the complete documentation build explicitly deferred.
 
 ## Surprises & Discoveries
 
@@ -143,12 +107,6 @@ follow-up with its own ExecPlan and branch.
   exporting that truncation as a cast reverses the result for values such as
   binary `010`.
 
-- Observation: Merging a stacked branch after its parent landed as a squash can
-  retain both the old and finalized parent tests without a textual conflict.
-  Evidence: the first merged Python diff contained 1,123 changed lines instead
-  of the export commit's 803; rebuilding it from `main` plus the export-only
-  patch restored the expected delta and kept the finalized #2175 cases.
-
 - Observation: The packed-register recognizer and snapshot validator ran before
   the bounded classical-expression exporter. Evidence: a shared zero-valued
   `arith.ori` DAG caused exponential speculative matching, while a long SSA
@@ -181,6 +139,12 @@ follow-up with its own ExecPlan and branch.
   equivalent to the existing fused affine calculation. Evidence: multiplying
   `-2` by `INT64_MAX` overflows `i64`, but adding `INT64_MAX` produces the valid
   final value `-INT64_MAX`; the 128-bit calculation preserves that case.
+
+- Observation: The expression limits were not enforced uniformly at semantic
+  boundaries. Evidence: linear packing made a 64-bit imported register exceed
+  MLIR nesting limits, unused sibling results shared node and snapshot state,
+  and a normalized Boolean select could exceed the depth limit only after writer
+  allocation.
 
 ## Decision Log
 
@@ -238,12 +202,6 @@ follow-up with its own ExecPlan and branch.
   valid structured selectors without treating truncation as truthiness.
   Date/Author: 2026-08-21 / Codex.
 
-- Decision: Treat the squash-merged `main` tree as authoritative for #2175 and
-  replay only the two structured-export commits while resolving the merge.
-  Rationale: this preserves the reviewed importer refactors and streamlined
-  parent coverage without changing #2176's scope. Date/Author: 2026-08-22 /
-  Codex.
-
 - Decision: Give speculative packed-register matching the same depth and node
   budgets as expression export, use an iterative bounded snapshot walk, and add
   loop metadata only when the generated symbol appears in an emitted body
@@ -278,6 +236,13 @@ follow-up with its own ExecPlan and branch.
   paths implement documented behavior or protect the Python construction
   boundary; the removed code duplicated validated internal state. Date/Author:
   2026-08-24 / Codex.
+
+- Decision: Balance imported packed-register expressions, validate each result's
+  nodes independently, follow snapshots only through the consumed result, and
+  validate the final normalized expression before writer allocation. Rationale:
+  the advertised 64-level and 4,096-node bounds must accept valid 64-bit
+  registers and reject only the consumed expression, with the same limits on
+  both sides of normalization. Date/Author: 2026-08-24 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -450,15 +415,10 @@ this dedicated worktree and do not modify other task worktrees. The generic
 exporter finishes validation before it calls `selectTranslation` or allocates a
 writer, so failures cannot expose a partial Qiskit circuit. If Python
 post-processing fails, `finish` owns and discards its incomplete local objects.
-Do not cherry-pick the earlier combined implementation because it would restore
-obsolete MemRef classical state and overwrite the reviewed scalar and import
-models.
 
 ## Artifacts and Notes
 
-The starting commit already passes captured-expression import tests and uses
-unique symbol names in closed `Parameter` trees. The old combined implementation
-is a design reference only. The final commit boundary is:
+The change is intentionally limited to this commit boundary:
 
     structured export: interface + recursive collector + deferred writer +
     tests + support documentation + this plan
@@ -479,24 +439,12 @@ native gate and scalar parameter creation. No new dependency is introduced. The
 implementation uses LLVM and MLIR utilities already linked by the binding,
 nanobind for public Python objects, and Qiskit 2.5's existing C API.
 
-Revision note: Created the self-contained plan after comparing the reviewed
-CBit/scalar/import base with the earlier combined implementation, then closed it
-after the release build, complete translation tests, lint, and semantic review.
-Updated it for the final audit fixes and restack onto the amended import parent.
-Updated it again after #2175 changed the scalar representation and metadata
-contract; only the export-specific delta was replayed. Recorded the final
-low-bit and constant-index corrections together with the required stubs, lint,
-deferred documentation build, and 208-test validation after the last parent
-update. Recorded the squash-merge resolution and the bounded-preflight and dead
-loop-parameter fixes found during the post-merge audit. Recorded the final
-complexity pass that shares parameter state, replaces deferred insertion with
-native placeholders, makes the all-root-bit invariant explicit, and reduces
-repeated test and documentation work; recorded the successful build, unchanged
-stubs, clean lint, and 208-test Qiskit 2.5.0-2.5.2 matrix. Merged `main` through
-`84ace8ef2`, preserved its QCO switch, deterministic finalization,
-loop-unrolling, and nanobind 3 changes, and made the vendored Qiskit C API
-initialization safe for the new free-threaded binding mode. The split-mode
-binding build and all 209 Qiskit 2.5.2 translation tests passed. Applied the
-post-review simplification without removing documented register and Boolean
-expression behavior, retained fused affine overflow semantics after an
-independent audit, and passed all 210 Qiskit 2.5.2 translation tests.
+Revision note: Created this self-contained plan for structured-control export
+and kept it current as the scalar/capture foundation, bounded preflight, native
+placeholder writer, and minimized coverage stabilized. On 2026-08-24, condensed
+obsolete integration chronology and recorded the current correctness and
+minimality pass: balanced register packing, per-result node and consumed-result
+snapshot validation, final normalized-depth preflight, and smaller adapter and
+test code. The exact release build, all 218 translation tests, unchanged stubs,
+and repository lint passed; the complete documentation build remains explicitly
+deferred.
