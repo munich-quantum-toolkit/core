@@ -33,7 +33,9 @@ symbolicFusionBasisName(const CompilerTarget::SingleQubitBasis basis) {
       std::pair{Basis::XYX, "xyx"}, std::pair{Basis::ZYZ, "zyz"},
       std::pair{Basis::ZXZ, "zxz"},
   };
-  const auto* const name = std::ranges::find_if(
+  // libc++ uses a pointer here, whereas MSVC uses an iterator class.
+  // NOLINTNEXTLINE(readability-qualified-auto)
+  const auto name = std::ranges::find_if(
       names, [basis](const auto& entry) { return entry.first == basis; });
   return name == names.end() ? nullptr : name->second;
 }
