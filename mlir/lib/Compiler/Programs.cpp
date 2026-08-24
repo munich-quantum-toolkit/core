@@ -379,14 +379,21 @@ template <typename Predicate>
 static size_t countGatesIf(ModuleOp moduleOp, const Predicate& predicate = {}) {
   size_t count = 0;
   auto entryPoint = mqt::getEntryPoint(moduleOp);
-  for (auto op : entryPoint.getOps<qc::UnitaryOpInterface>()) {
-    if (isa<qc::BarrierOp>(op)) {
-      continue;
+  entryPoint.walk<WalkOrder::PreOrder>([&](Operation* operation) {
+    const auto op = dyn_cast<qc::UnitaryOpInterface>(operation);
+    if (!op) {
+      return WalkResult::advance();
     }
-    if (predicate(op)) {
+
+    if (!isa<qc::BarrierOp>(op) && predicate(op)) {
       ++count;
     }
-  }
+
+    if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op)) {
+      return WalkResult::skip();
+    }
+    return WalkResult::advance();
+  });
   return count;
 }
 

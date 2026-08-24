@@ -1626,4 +1626,39 @@ h q;
   EXPECT_EQ(qc2->numTwoQubitGates(), 0);
 }
 
+/**
+ * @brief Test: gate counting includes each structured control-flow region once.
+ */
+TEST_F(CompilerPipelineTest, QCProgramCountGatesInStructuredControlFlow) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+bit condition = measure q[0];
+int selector = 1;
+if (condition) {
+  for int i in [0:2] {
+    x q[i];
+  }
+} else {
+  cx q[0], q[1];
+}
+while (condition) {
+  ctrl @ x q[0], q[1];
+}
+switch (selector) {
+  case 1 {
+    swap q[0], q[1];
+  }
+  default {
+    z q[2];
+  }
+}
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  EXPECT_EQ(qc->numGates(), 5);
+  EXPECT_EQ(qc->numSingleQubitGates(), 2);
+  EXPECT_EQ(qc->numTwoQubitGates(), 3);
+}
+
 } // namespace mqt::test::compiler
