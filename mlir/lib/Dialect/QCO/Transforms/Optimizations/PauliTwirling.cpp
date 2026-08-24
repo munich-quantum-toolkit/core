@@ -15,6 +15,7 @@
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
