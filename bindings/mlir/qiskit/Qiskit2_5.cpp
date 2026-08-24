@@ -1696,6 +1696,9 @@ private:
 
   [[nodiscard]] std::optional<nb::object>
   registeredClassicalRegister(const Register& reg) const {
+    if (reg.name.empty()) {
+      return std::nullopt;
+    }
     for (const nb::handle candidateHandle : nb::iter(cregs_)) {
       auto candidate = nb::borrow<nb::object>(candidateHandle);
       if (pythonStringAttribute(candidate, "name",
@@ -1894,8 +1897,7 @@ private:
   nb::object typesModule_;
 };
 
-using NativeSymbolTable =
-    std::unordered_map<std::string, std::unique_ptr<OwnedParameter>>;
+using NativeSymbolTable = std::unordered_map<std::string, OwnedParameter>;
 
 class NativeCircuitWriter final : public CircuitWriter {
 public:
@@ -2154,15 +2156,6 @@ private:
   [[nodiscard]] static nb::object rebaseCircuit(const nb::handle circuit,
                                                 const nb::handle exactQubits,
                                                 const nb::handle exactClbits) {
-    if (nb::len(pythonAttribute(circuit, "qubits",
-                                "Qiskit circuit has no qubits")) !=
-            nb::len(exactQubits) ||
-        nb::len(pythonAttribute(circuit, "clbits",
-                                "Qiskit circuit has no classical bits")) !=
-            nb::len(exactClbits)) {
-      throw std::runtime_error(
-          "Qiskit control-flow block has incompatible bit counts");
-    }
     auto rebased = nb::module_::import_("qiskit.circuit")
                        .attr("QuantumCircuit")(exactQubits, exactClbits);
     pythonAttribute(rebased, "compose",
@@ -2315,16 +2308,8 @@ private:
         throw std::runtime_error(
             "cannot export a symbolic parameter without a name");
       }
-      const auto found = symbols_->find(symbol->name);
-      if (found != symbols_->end()) {
-        return found->second->get();
-      }
-      const auto inserted =
-          symbols_
-              ->try_emplace(symbol->name,
-                            std::make_unique<OwnedParameter>(symbol->name))
-              .first;
-      return inserted->second->get();
+      return symbols_->try_emplace(symbol->name, symbol->name)
+          .first->second.get();
     }
 
     auto output = std::make_unique<OwnedParameter>();

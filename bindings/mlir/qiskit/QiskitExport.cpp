@@ -822,12 +822,8 @@ void collectResources(mlir::func::FuncOp function, ExportState& state,
   }
   if (returnOp.getNumOperands() == 1U) {
     const auto result = returnOp.getOperand(0);
-    auto sentinel = result.getDefiningOp<mlir::arith::ConstantOp>();
-    const auto integer =
-        sentinel ? llvm::dyn_cast<mlir::IntegerAttr>(sentinel.getValue())
-                 : mlir::IntegerAttr{};
-    if (result.getType().isInteger(64) && integer &&
-        integer.getValue().isZero()) {
+    const auto sentinel = mlir::getConstantIntValue(result);
+    if (result.getType().isInteger(64) && sentinel && *sentinel == 0) {
       return;
     }
   }
@@ -929,13 +925,26 @@ void setExpressionType(Expression& expression, const mlir::Type type) {
   return checkedAdd(info->second.base, checked, "classical-bit");
 }
 
+[[noreturn]] void throwClassicalExpressionSizeError() {
+  throw std::runtime_error(
+      "QC classical expression exceeds the size limit of 4096 nodes");
+}
+
+[[noreturn]] void throwClassicalExpressionDepthError() {
+  throw std::runtime_error(
+      "QC classical expressions exceed the nesting limit of 64");
+}
+
+void countExpressionNode(size_t& nodeCount) {
+  if (++nodeCount > MAX_EXPORT_EXPRESSION_NODES) {
+    throwClassicalExpressionSizeError();
+  }
+}
+
 [[nodiscard]] std::unique_ptr<Expression>
 makeBooleanUnary(const UnaryOperation operation,
                  std::unique_ptr<Expression> operand, size_t& nodeCount) {
-  if (++nodeCount > MAX_EXPORT_EXPRESSION_NODES) {
-    throw std::runtime_error(
-        "QC classical expression exceeds the size limit of 4096 nodes");
-  }
+  countExpressionNode(nodeCount);
   auto result = std::make_unique<Expression>();
   result->kind = ExpressionKind::Unary;
   result->type = ClassicalType::Bool;
@@ -949,10 +958,7 @@ makeBooleanUnary(const UnaryOperation operation,
 makeBooleanBinary(const BinaryOperation operation,
                   std::unique_ptr<Expression> left,
                   std::unique_ptr<Expression> right, size_t& nodeCount) {
-  if (++nodeCount > MAX_EXPORT_EXPRESSION_NODES) {
-    throw std::runtime_error(
-        "QC classical expression exceeds the size limit of 4096 nodes");
-  }
+  countExpressionNode(nodeCount);
   auto result = std::make_unique<Expression>();
   result->kind = ExpressionKind::Binary;
   result->type = ClassicalType::Bool;
@@ -974,10 +980,7 @@ constantBoolean(const std::unique_ptr<Expression>& expression) {
 
 [[nodiscard]] std::unique_ptr<Expression>
 cloneExpression(const Expression& expression, size_t& nodeCount) {
-  if (++nodeCount > MAX_EXPORT_EXPRESSION_NODES) {
-    throw std::runtime_error(
-        "QC classical expression exceeds the size limit of 4096 nodes");
-  }
+  countExpressionNode(nodeCount);
   auto result = std::make_unique<Expression>();
   result->kind = expression.kind;
   result->type = expression.type;
@@ -1060,13 +1063,9 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
                      mlir::Block& evaluationBlock, const size_t depth,
                      size_t& nodeCount) {
   if (depth >= MAX_EXPORT_EXPRESSION_DEPTH) {
-    throw std::runtime_error(
-        "QC classical expressions exceed the nesting limit of 64");
+    throwClassicalExpressionDepthError();
   }
-  if (++nodeCount > MAX_EXPORT_EXPRESSION_NODES) {
-    throw std::runtime_error(
-        "QC classical expression exceeds the size limit of 4096 nodes");
-  }
+  countExpressionNode(nodeCount);
   auto* operation = value.getDefiningOp();
   if (operation == nullptr) {
     throw std::runtime_error(
@@ -1123,46 +1122,36 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
     return result;
   }
   if (auto ifOp = llvm::dyn_cast<mlir::scf::IfOp>(operation)) {
-    if (ifOp.getNumResults() == 0U ||
-        !llvm::all_of(
-            ifOp.getResultTypes(),
-            [](const mlir::Type type) { return type.isInteger(1); }) ||
-        ifOp.getElseRegion().empty()) {
+    if (!llvm::all_of(ifOp.getResultTypes(), [](const mlir::Type type) {
+          return type.isInteger(1);
+        })) {
       throw std::runtime_error(
           "Qiskit classical expressions support only Boolean scf.if "
           "results with an else branch");
     }
-    const auto opResult = llvm::dyn_cast<mlir::OpResult>(value);
-    if (!opResult || opResult.getOwner() != operation) {
-      throw std::runtime_error(
-          "Qiskit classical expression does not refer to an scf.if result");
-    }
-    const size_t resultIndex = opResult.getResultNumber();
+    const size_t resultIndex =
+        llvm::cast<mlir::OpResult>(value).getResultNumber();
     auto& thenBlock = ifOp.getThenRegion().front();
     auto& elseBlock = ifOp.getElseRegion().front();
-    auto thenYield =
-        llvm::dyn_cast<mlir::scf::YieldOp>(thenBlock.getTerminator());
-    auto elseYield =
-        llvm::dyn_cast<mlir::scf::YieldOp>(elseBlock.getTerminator());
-    if (!thenYield || !elseYield ||
-        thenYield.getNumOperands() != ifOp.getNumResults() ||
-        elseYield.getNumOperands() != ifOp.getNumResults()) {
-      throw std::runtime_error(
-          "Qiskit Boolean scf.if expressions require one yielded value per "
-          "result in each branch");
-    }
+    auto thenYield = llvm::cast<mlir::scf::YieldOp>(thenBlock.getTerminator());
+    auto elseYield = llvm::cast<mlir::scf::YieldOp>(elseBlock.getTerminator());
     auto condition = exportExpressionImpl(
         ifOp.getCondition(), state, *ifOp->getBlock(), depth + 1U, nodeCount);
-    std::unique_ptr<Expression> thenValue;
-    std::unique_ptr<Expression> elseValue;
+    auto thenValue =
+        exportExpressionImpl(thenYield.getOperand(resultIndex), state,
+                             thenBlock, depth + 1U, nodeCount);
+    auto elseValue =
+        exportExpressionImpl(elseYield.getOperand(resultIndex), state,
+                             elseBlock, depth + 1U, nodeCount);
     for (const size_t index : llvm::seq(ifOp.getNumResults())) {
-      auto currentThen = exportExpressionImpl(
-          thenYield.getOperand(index), state, thenBlock, depth + 1U, nodeCount);
-      auto currentElse = exportExpressionImpl(
-          elseYield.getOperand(index), state, elseBlock, depth + 1U, nodeCount);
-      if (index == resultIndex) {
-        thenValue = std::move(currentThen);
-        elseValue = std::move(currentElse);
+      if (index != resultIndex) {
+        size_t siblingNodeCount = 0U;
+        static_cast<void>(exportExpressionImpl(thenYield.getOperand(index),
+                                               state, thenBlock, depth + 1U,
+                                               siblingNodeCount));
+        static_cast<void>(exportExpressionImpl(elseYield.getOperand(index),
+                                               state, elseBlock, depth + 1U,
+                                               siblingNodeCount));
       }
     }
     const auto validateBranch = [&](mlir::Block& branch) {
@@ -1176,10 +1165,6 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
     };
     validateBranch(thenBlock);
     validateBranch(elseBlock);
-    if (!thenValue || !elseValue) {
-      throw std::runtime_error(
-          "Qiskit classical expression refers to an invalid scf.if result");
-    }
     state.expressionOperations.insert(operation);
     return makeBooleanSelect(std::move(condition), std::move(thenValue),
                              std::move(elseValue), nodeCount);
@@ -1222,10 +1207,7 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
     } else {
       result->left = exportExpressionImpl(cast.getIn(), state, evaluationBlock,
                                           depth + 1U, nodeCount);
-      if (++nodeCount > MAX_EXPORT_EXPRESSION_NODES) {
-        throw std::runtime_error(
-            "QC classical expression exceeds the size limit of 4096 nodes");
-      }
+      countExpressionNode(nodeCount);
       auto zero = std::make_unique<Expression>();
       setExpressionType(*zero, cast.getIn().getType());
       zero->kind = ExpressionKind::Value;
@@ -1338,11 +1320,27 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
       operation->getName().getStringRef().str());
 }
 
+void validateExpressionDepth(const Expression& expression,
+                             const size_t depth = 0U) {
+  if (depth >= MAX_EXPORT_EXPRESSION_DEPTH) {
+    throwClassicalExpressionDepthError();
+  }
+  if (expression.left) {
+    validateExpressionDepth(*expression.left, depth + 1U);
+  }
+  if (expression.right) {
+    validateExpressionDepth(*expression.right, depth + 1U);
+  }
+}
+
 [[nodiscard]] std::unique_ptr<Expression>
 exportExpression(mlir::Value value, ExportState& state,
                  mlir::Block& evaluationBlock) {
   size_t nodeCount = 0U;
-  return exportExpressionImpl(value, state, evaluationBlock, 0U, nodeCount);
+  auto result =
+      exportExpressionImpl(value, state, evaluationBlock, 0U, nodeCount);
+  validateExpressionDepth(*result);
+  return result;
 }
 
 [[nodiscard]] std::optional<PackedRegister>
@@ -1397,11 +1395,7 @@ matchPackedRegister(mlir::Value value, ExportState& state,
         if (!load || shift >= bits.size() || bits[shift]) {
           return false;
         }
-        try {
-          bits[shift] = classicalBitIndex(load, state);
-        } catch (const std::runtime_error&) {
-          return false;
-        }
+        bits[shift] = classicalBitIndex(load, state);
         operations.insert(operation);
         return true;
       };
@@ -1454,8 +1448,7 @@ void validateClassicalSnapshot(const mlir::Value expression,
       continue;
     }
     if (visited.size() > MAX_EXPORT_EXPRESSION_NODES) {
-      throw std::runtime_error(
-          "QC classical expression exceeds the size limit of 4096 nodes");
+      throwClassicalExpressionSizeError();
     }
     auto* operation = value.getDefiningOp();
     if (operation == nullptr) {
@@ -1465,17 +1458,13 @@ void validateClassicalSnapshot(const mlir::Value expression,
       loads.push_back(load);
       continue;
     }
-    if (auto ifOp = llvm::dyn_cast<mlir::scf::IfOp>(operation);
-        ifOp && ifOp.getNumResults() != 0U) {
+    if (auto ifOp = llvm::dyn_cast<mlir::scf::IfOp>(operation)) {
+      const auto resultIndex =
+          llvm::cast<mlir::OpResult>(value).getResultNumber();
       for (auto& region : ifOp->getRegions()) {
-        if (region.empty()) {
-          continue;
-        }
-        if (auto yield = llvm::dyn_cast<mlir::scf::YieldOp>(
-                region.front().getTerminator())) {
-          worklist.append(yield.getOperands().begin(),
-                          yield.getOperands().end());
-        }
+        auto yield =
+            llvm::cast<mlir::scf::YieldOp>(region.front().getTerminator());
+        worklist.push_back(yield.getOperand(resultIndex));
       }
     }
     worklist.append(operation->operand_begin(), operation->operand_end());
@@ -1629,10 +1618,6 @@ void validateClassicalSnapshot(const mlir::Value expression,
 
 [[nodiscard]] uint64_t rangeLength(const int64_t lower, const int64_t upper,
                                    const int64_t step) {
-  if (step <= 0) {
-    throw std::runtime_error(
-        "QC to Qiskit export requires a positive scf.for step");
-  }
   if (lower >= upper) {
     return 0U;
   }
@@ -1700,10 +1685,14 @@ matchLoopParameterProjection(mlir::scf::ForOp loop) {
   return projection;
 }
 
-[[nodiscard]] ExportedCircuit collectBlock(mlir::Block& block,
-                                           ExportState& state,
-                                           size_t controlFlowDepth,
-                                           bool topLevel);
+[[nodiscard]] ExportedCircuit
+collectBlock(mlir::Block& block, ExportState& state, size_t controlFlowDepth);
+
+void validateControlFlowDepth(const size_t controlFlowDepth) {
+  if (controlFlowDepth >= MAX_EXPORT_CONTROL_FLOW_DEPTH) {
+    throw std::runtime_error("QC control flow exceeds the nesting limit of 64");
+  }
+}
 
 [[nodiscard]] bool isFusableMeasurementStore(mlir::qc::MeasureOp measure,
                                              mlir::cbit::StoreOp store) {
@@ -1737,18 +1726,16 @@ void validateExpressionBlock(mlir::Block& block, const ExportState& state) {
 [[nodiscard]] std::unique_ptr<ExportedControlFlow>
 collectIf(mlir::scf::IfOp ifOp, ExportState& state,
           const size_t controlFlowDepth) {
-  if (controlFlowDepth >= MAX_EXPORT_CONTROL_FLOW_DEPTH) {
-    throw std::runtime_error("QC control flow exceeds the nesting limit of 64");
-  }
+  validateControlFlowDepth(controlFlowDepth);
   auto result = std::make_unique<ExportedControlFlow>();
   result->kind = ControlFlowKind::IfElse;
   result->target = exportCondition(ifOp.getCondition(), state,
                                    *ifOp->getBlock(), *ifOp.getOperation());
-  result->blocks.push_back(collectBlock(ifOp.getThenRegion().front(), state,
-                                        controlFlowDepth + 1U, false));
+  result->blocks.push_back(
+      collectBlock(ifOp.getThenRegion().front(), state, controlFlowDepth + 1U));
   if (!ifOp.getElseRegion().empty()) {
     result->blocks.push_back(collectBlock(ifOp.getElseRegion().front(), state,
-                                          controlFlowDepth + 1U, false));
+                                          controlFlowDepth + 1U));
   }
   return result;
 }
@@ -1760,9 +1747,7 @@ collectFor(mlir::scf::ForOp loop, ExportState& state,
     throw std::runtime_error(
         "Qiskit for-loop export does not support loop-carried values");
   }
-  if (controlFlowDepth >= MAX_EXPORT_CONTROL_FLOW_DEPTH) {
-    throw std::runtime_error("QC control flow exceeds the nesting limit of 64");
-  }
+  validateControlFlowDepth(controlFlowDepth);
   const auto lower = mlir::getConstantIntValue(loop.getLowerBound());
   const auto upper = mlir::getConstantIntValue(loop.getUpperBound());
   const auto step = mlir::getConstantIntValue(loop.getStep());
@@ -1798,17 +1783,12 @@ collectFor(mlir::scf::ForOp loop, ExportState& state,
       state.parameters[projection->value] = *loopParameter;
     }
   }
-  auto body =
-      collectBlock(*loop.getBody(), state, controlFlowDepth + 1U, false);
+  auto body = collectBlock(*loop.getBody(), state, controlFlowDepth + 1U);
   if (projection && loopParameter &&
       circuitUsesParameterName(body, loopParameterName)) {
     result->loop.parameter = *loopParameter;
     const auto count = rangeLength(*lower, *upper, *step);
-    if (count == 0U) {
-      result->loop.start = 0;
-      result->loop.stop = 0;
-      result->loop.step = 1;
-    } else {
+    if (count != 0U) {
       result->loop.start =
           checkedAffine(projection->multiplier, *lower, projection->offset,
                         "scf.for induction start");
@@ -1835,9 +1815,7 @@ collectFor(mlir::scf::ForOp loop, ExportState& state,
 [[nodiscard]] std::unique_ptr<ExportedControlFlow>
 collectWhile(mlir::scf::WhileOp loop, ExportState& state,
              const size_t controlFlowDepth) {
-  if (controlFlowDepth >= MAX_EXPORT_CONTROL_FLOW_DEPTH) {
-    throw std::runtime_error("QC control flow exceeds the nesting limit of 64");
-  }
+  validateControlFlowDepth(controlFlowDepth);
   auto& before = loop.getBefore().front();
   auto& after = loop.getAfter().front();
   auto condition =
@@ -1855,8 +1833,7 @@ collectWhile(mlir::scf::WhileOp loop, ExportState& state,
   result->target = exportCondition(condition.getCondition(), state, before,
                                    *condition.getOperation());
   validateExpressionBlock(before, state);
-  result->blocks.push_back(
-      collectBlock(after, state, controlFlowDepth + 1U, false));
+  result->blocks.push_back(collectBlock(after, state, controlFlowDepth + 1U));
   return result;
 }
 
@@ -1867,9 +1844,7 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportState& state,
     throw std::runtime_error(
         "Qiskit switch export does not support SSA results");
   }
-  if (controlFlowDepth >= MAX_EXPORT_CONTROL_FLOW_DEPTH) {
-    throw std::runtime_error("QC control flow exceeds the nesting limit of 64");
-  }
+  validateControlFlowDepth(controlFlowDepth);
   auto result = std::make_unique<ExportedControlFlow>();
   result->kind = ControlFlowKind::Switch;
   result->target =
@@ -1890,18 +1865,18 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportState& state,
     result->switchCases.push_back({.labels = {static_cast<uint64_t>(label)}});
     result->blocks.push_back(
         collectBlock(switchOp.getCaseRegions()[index].front(), state,
-                     controlFlowDepth + 1U, false));
+                     controlFlowDepth + 1U));
   }
   result->switchCases.push_back({.isDefault = true});
   result->blocks.push_back(collectBlock(switchOp.getDefaultRegion().front(),
-                                        state, controlFlowDepth + 1U, false));
+                                        state, controlFlowDepth + 1U));
   return result;
 }
 
 [[nodiscard]] ExportedCircuit collectBlock(mlir::Block& block,
                                            ExportState& state,
-                                           const size_t controlFlowDepth,
-                                           const bool topLevel) {
+                                           const size_t controlFlowDepth) {
+  const bool topLevel = controlFlowDepth == 0U;
   ExportedCircuit circuit;
   llvm::SmallVector<mlir::Operation*> deferredExpressions;
   for (auto& operation : block) {
@@ -2178,7 +2153,7 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                                    "target qubit count");
   }
   collectResources(function, state, target);
-  auto circuit = collectBlock(function.getBody().front(), state, 0U, true);
+  auto circuit = collectBlock(function.getBody().front(), state, 0U);
   for (const auto& [reg, info] : state.classicalRegisterInfo) {
     if (info.initialization == mlir::cbit::Initialization::Zero) {
       continue;

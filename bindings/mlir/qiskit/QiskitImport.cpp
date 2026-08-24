@@ -611,7 +611,8 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
   }
   const auto width = static_cast<uint32_t>(reg.bits.size());
   const auto type = builder.getIntegerType(width);
-  auto packed = integerConstant(builder, width, 0U);
+  llvm::SmallVector<mlir::Value> terms;
+  terms.reserve(reg.bits.size());
   for (size_t index = 0; index < reg.bits.size(); ++index) {
     auto bit = castInteger(
         builder,
@@ -622,9 +623,23 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
                                         integerConstant(builder, width, index))
                 .getResult();
     }
-    packed = mlir::arith::OrIOp::create(builder, packed, bit).getResult();
+    terms.push_back(bit);
   }
-  return packed;
+  while (terms.size() > 1U) {
+    const auto reducedSize = (terms.size() + 1U) / 2U;
+    for (size_t index = 0U; index < reducedSize; ++index) {
+      const auto left = 2U * index;
+      if (left + 1U < terms.size()) {
+        terms[index] =
+            mlir::arith::OrIOp::create(builder, terms[left], terms[left + 1U])
+                .getResult();
+      } else {
+        terms[index] = terms[left];
+      }
+    }
+    terms.resize(reducedSize);
+  }
+  return terms.front();
 }
 
 [[nodiscard]] mlir::Value
