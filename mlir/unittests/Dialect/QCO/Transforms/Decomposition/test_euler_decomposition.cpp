@@ -1023,6 +1023,12 @@ TEST(FuseSingleQubitUnitaryRunsTest, MergesShortDynamicSameAxisRun) {
       valueDependsOn(rotations.front().getTheta(), funcOp.getArgument(0)));
   EXPECT_TRUE(
       valueDependsOn(rotations.front().getTheta(), funcOp.getArgument(1)));
+
+  bindLeadingArguments(funcOp, {0.3, 0.4});
+  ASSERT_TRUE(succeeded(canonicalizeBoundValues(*owned)));
+  ASSERT_TRUE(succeeded(verify(*owned)));
+  expectMatrixPreserved(
+      funcOp, RZOp::unitaryMatrix(0.4) * RZOp::unitaryMatrix(0.3), "zyz");
 }
 
 TEST(FuseSingleQubitUnitaryRunsTest, FusesNamedDynamicGatesInAllBases) {
