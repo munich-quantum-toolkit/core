@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -38,6 +39,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <array>
 #include <cmath>
@@ -244,6 +246,40 @@ template <typename OpTy>
   std::size_t count = 0;
   funcOp.walk([&count](OpTy) { ++count; });
   return count;
+}
+
+[[nodiscard]] static bool valueDependsOn(Value value, Value target) {
+  DenseSet<Value> visited;
+  SmallVector<Value> worklist{value};
+  while (!worklist.empty()) {
+    const Value current = worklist.pop_back_val();
+    if (current == target) {
+      return true;
+    }
+    if (!visited.insert(current).second) {
+      continue;
+    }
+    if (Operation* definingOp = current.getDefiningOp()) {
+      worklist.append(definingOp->operand_begin(), definingOp->operand_end());
+    }
+  }
+  return false;
+}
+
+static void bindLeadingArguments(func::FuncOp funcOp, ArrayRef<double> values) {
+  OpBuilder builder(funcOp.getContext());
+  builder.setInsertionPointToStart(&funcOp.getBody().front());
+  for (const auto [index, value] : llvm::enumerate(values)) {
+    const Value constant = arith::ConstantOp::create(
+        builder, funcOp.getLoc(), builder.getF64FloatAttr(value));
+    funcOp.getArgument(index).replaceAllUsesWith(constant);
+  }
+}
+
+static LogicalResult canonicalizeBoundValues(ModuleOp mlirModule) {
+  PassManager pm(mlirModule.getContext());
+  pm.addPass(createCanonicalizerPass());
+  return pm.run(mlirModule);
 }
 
 [[nodiscard]] static std::size_t countZYZGates(func::FuncOp funcOp) {
@@ -956,6 +992,241 @@ TEST(FuseSingleQubitUnitaryRunsTest, IgnoresDynamicPowerExponent) {
 
   EXPECT_TRUE(succeeded(runFuse(*owned, "zyz")));
   EXPECT_EQ(countOps<PowOp>(funcOp), 1U);
+}
+
+TEST(FuseSingleQubitUnitaryRunsTest, MergesShortDynamicSameAxisRun) {
+  TestFixture fx;
+  fx.setUp();
+  auto owned = QCOProgramBuilder::build(fx.ctx(), [](QCOProgramBuilder& b) {
+    auto q = b.allocQubitRegister(1);
+    q[0] = b.rz(0.3, q[0]);
+    q[0] = b.rz(0.4, q[0]);
+    return measureAndReturn(b, q.qubits);
+  });
+  ASSERT_TRUE(owned);
+
+  auto funcOp = owned->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(funcOp);
+  funcOp.insertArgument(0, Float64Type::get(fx.ctx()), {}, funcOp.getLoc());
+  funcOp.insertArgument(1, Float64Type::get(fx.ctx()), {}, funcOp.getLoc());
+  SmallVector<RZOp> rotations;
+  funcOp.walk([&](RZOp op) { rotations.push_back(op); });
+  ASSERT_EQ(rotations.size(), 2U);
+  rotations[0].getThetaMutable().assign(funcOp.getArgument(0));
+  rotations[1].getThetaMutable().assign(funcOp.getArgument(1));
+
+  ASSERT_TRUE(succeeded(runFuse(*owned, "zyz")));
+  rotations.clear();
+  funcOp.walk([&](RZOp op) { rotations.push_back(op); });
+  ASSERT_EQ(rotations.size(), 1U);
+  EXPECT_TRUE(
+      valueDependsOn(rotations.front().getTheta(), funcOp.getArgument(0)));
+  EXPECT_TRUE(
+      valueDependsOn(rotations.front().getTheta(), funcOp.getArgument(1)));
+}
+
+TEST(FuseSingleQubitUnitaryRunsTest, FusesNamedDynamicGatesInAllBases) {
+  TestFixture fx;
+  fx.setUp();
+  struct GateCase {
+    StringRef name;
+    std::size_t numParameters;
+    Value (*build)(QCOProgramBuilder&, Value);
+  };
+  const std::array gateCases = {
+      GateCase{"rx", 1,
+               [](QCOProgramBuilder& b, Value q) { return b.rx(0.11, q); }},
+      GateCase{"ry", 1,
+               [](QCOProgramBuilder& b, Value q) { return b.ry(0.13, q); }},
+      GateCase{"rz", 1,
+               [](QCOProgramBuilder& b, Value q) { return b.rz(0.17, q); }},
+      GateCase{"p", 1,
+               [](QCOProgramBuilder& b, Value q) { return b.p(0.19, q); }},
+      GateCase{
+          "r", 2,
+          [](QCOProgramBuilder& b, Value q) { return b.r(0.23, -0.29, q); }},
+      GateCase{
+          "u2", 2,
+          [](QCOProgramBuilder& b, Value q) { return b.u2(0.31, -0.37, q); }},
+      GateCase{"u", 3,
+               [](QCOProgramBuilder& b, Value q) {
+                 return b.u(0.41, -0.43, 0.47, q);
+               }},
+  };
+  constexpr std::array boundValues = {0.37, -0.61, 0.83};
+
+  for (const auto& gateCase : gateCases) {
+    SCOPED_TRACE(gateCase.name.str());
+    forEachBasis([&](StringRef basis) {
+      SCOPED_TRACE(basis.str());
+      auto owned = QCOProgramBuilder::build(
+          fx.ctx(), [build = gateCase.build](QCOProgramBuilder& b) {
+            auto q = b.allocQubitRegister(1);
+            q[0] = b.h(q[0]);
+            q[0] = build(b, q[0]);
+            return measureAndReturn(b, q.qubits);
+          });
+      ASSERT_TRUE(owned);
+
+      ModuleOp mlirModule = *owned;
+      auto funcOp = mlirModule.lookupSymbol<func::FuncOp>("main");
+      ASSERT_TRUE(funcOp);
+      for (std::size_t i = 0; i < gateCase.numParameters; ++i) {
+        funcOp.insertArgument(i, Float64Type::get(fx.ctx()), {},
+                              funcOp.getLoc());
+      }
+
+      SmallVector<UnitaryOpInterface> parameterizedGates;
+      funcOp.walk([&](UnitaryOpInterface unitary) {
+        if (unitary.getNumParams() != 0) {
+          parameterizedGates.push_back(unitary);
+        }
+      });
+      ASSERT_EQ(parameterizedGates.size(), 1U);
+      UnitaryOpInterface parameterizedGate = parameterizedGates.front();
+      ASSERT_EQ(parameterizedGate.getBaseSymbol(), gateCase.name);
+      ASSERT_EQ(parameterizedGate.getNumParams(), gateCase.numParameters);
+      SmallVector<Value> parameters(parameterizedGate.getParameters().begin(),
+                                    parameterizedGate.getParameters().end());
+      for (const auto [index, parameter] : llvm::enumerate(parameters)) {
+        parameter.replaceAllUsesWith(funcOp.getArgument(index));
+      }
+      ASSERT_TRUE(succeeded(verify(mlirModule)));
+
+      OwningOpRef<ModuleOp> original = cast<ModuleOp>(mlirModule->clone());
+      ASSERT_TRUE(succeeded(runFuse(mlirModule, basis)));
+      ASSERT_TRUE(succeeded(verify(mlirModule)));
+
+      funcOp = mlirModule.lookupSymbol<func::FuncOp>("main");
+      ASSERT_TRUE(funcOp);
+      const auto parsedBasis = parseSingleQubitBasis(basis);
+      ASSERT_TRUE(parsedBasis);
+      EXPECT_EQ(countOps<HOp>(funcOp), 0U);
+      EXPECT_GT(countBasisGates(funcOp, *parsedBasis), 0U);
+
+      SmallVector<bool> dependsOnParameter(gateCase.numParameters, false);
+      auto recordDependencies = [&](ValueRange emittedParameters) {
+        for (Value emittedParameter : emittedParameters) {
+          for (std::size_t i = 0; i < gateCase.numParameters; ++i) {
+            dependsOnParameter[i] |=
+                valueDependsOn(emittedParameter, funcOp.getArgument(i));
+          }
+        }
+      };
+      funcOp.walk([&](UnitaryOpInterface unitary) {
+        if (!unitary.isSingleQubit()) {
+          return;
+        }
+        EXPECT_TRUE(isAllowedBasisGate(*unitary, *parsedBasis));
+        recordDependencies(unitary.getParameters());
+      });
+      funcOp.walk(
+          [&](GPhaseOp phase) { recordDependencies(phase.getParameters()); });
+      EXPECT_TRUE(llvm::all_of(dependsOnParameter,
+                               [](bool depends) { return depends; }));
+
+      const ArrayRef values{boundValues.data(), gateCase.numParameters};
+      auto originalFunc = original->lookupSymbol<func::FuncOp>("main");
+      ASSERT_TRUE(originalFunc);
+      bindLeadingArguments(originalFunc, values);
+      bindLeadingArguments(funcOp, values);
+      ASSERT_TRUE(succeeded(canonicalizeBoundValues(*original)));
+      ASSERT_TRUE(succeeded(canonicalizeBoundValues(mlirModule)));
+      ASSERT_TRUE(succeeded(verify(*original)));
+      ASSERT_TRUE(succeeded(verify(mlirModule)));
+      const Matrix2x2 expected = compute1QUnitaryMatrix(originalFunc.getBody());
+      expectMatrixPreserved(funcOp, expected, basis);
+    });
+  }
+}
+
+TEST(FuseSingleQubitUnitaryRunsTest,
+     FusesStandaloneDynamicUAtTransformedBasisSingularities) {
+  TestFixture fx;
+  fx.setUp();
+  constexpr std::array<const char*, 3> bases = {"xzx", "xyx", "r"};
+  constexpr std::array<std::array<double, 3>, 2> singularParameterSets{{
+      {0.0, 0.0, 0.0},
+      {std::numbers::pi, 0.0, 0.0},
+  }};
+  constexpr std::size_t numParameters = singularParameterSets.front().size();
+
+  for (const StringRef basis : bases) {
+    SCOPED_TRACE(basis.str());
+    auto owned = QCOProgramBuilder::build(fx.ctx(), [](QCOProgramBuilder& b) {
+      auto q = b.allocQubitRegister(1);
+      q[0] = b.u(0.1, 0.2, 0.3, q[0]);
+      return measureAndReturn(b, q.qubits);
+    });
+    ASSERT_TRUE(owned);
+
+    ModuleOp mlirModule = *owned;
+    auto funcOp = mlirModule.lookupSymbol<func::FuncOp>("main");
+    ASSERT_TRUE(funcOp);
+    for (std::size_t i = 0; i < numParameters; ++i) {
+      funcOp.insertArgument(i, Float64Type::get(fx.ctx()), {}, funcOp.getLoc());
+    }
+
+    UOp uOp = nullptr;
+    funcOp.walk([&](UOp op) { uOp = op; });
+    ASSERT_TRUE(uOp);
+    SmallVector<Value> parameters(uOp.getParameters().begin(),
+                                  uOp.getParameters().end());
+    ASSERT_EQ(parameters.size(), numParameters);
+    for (const auto [index, parameter] : llvm::enumerate(parameters)) {
+      parameter.replaceAllUsesWith(funcOp.getArgument(index));
+    }
+    ASSERT_TRUE(succeeded(verify(mlirModule)));
+
+    OwningOpRef<ModuleOp> original = cast<ModuleOp>(mlirModule->clone());
+    ASSERT_TRUE(succeeded(runFuse(mlirModule, basis)));
+    ASSERT_TRUE(succeeded(verify(mlirModule)));
+
+    funcOp = mlirModule.lookupSymbol<func::FuncOp>("main");
+    ASSERT_TRUE(funcOp);
+    EXPECT_EQ(countOps<UOp>(funcOp), 0U);
+    const auto parsedBasis = parseSingleQubitBasis(basis);
+    ASSERT_TRUE(parsedBasis);
+    EXPECT_GT(countBasisGates(funcOp, *parsedBasis), 0U);
+    SmallVector<bool> dependsOnParameter(numParameters, false);
+    auto recordDependencies = [&](ValueRange emittedParameters) {
+      for (const Value emittedParameter : emittedParameters) {
+        for (std::size_t i = 0; i < numParameters; ++i) {
+          dependsOnParameter[i] |=
+              valueDependsOn(emittedParameter, funcOp.getArgument(i));
+        }
+      }
+    };
+    funcOp.walk([&](UnitaryOpInterface unitary) {
+      if (!unitary.isSingleQubit()) {
+        return;
+      }
+      EXPECT_TRUE(isAllowedBasisGate(*unitary, *parsedBasis));
+      recordDependencies(unitary.getParameters());
+    });
+    funcOp.walk(
+        [&](GPhaseOp phase) { recordDependencies(phase.getParameters()); });
+    EXPECT_TRUE(llvm::all_of(dependsOnParameter,
+                             [](const bool depends) { return depends; }));
+
+    for (const auto& values : singularParameterSets) {
+      SCOPED_TRACE(values.front());
+      OwningOpRef<ModuleOp> boundOriginal = cast<ModuleOp>(original->clone());
+      OwningOpRef<ModuleOp> boundActual = cast<ModuleOp>(mlirModule->clone());
+      auto originalFunc = boundOriginal->lookupSymbol<func::FuncOp>("main");
+      auto actualFunc = boundActual->lookupSymbol<func::FuncOp>("main");
+      ASSERT_TRUE(originalFunc);
+      ASSERT_TRUE(actualFunc);
+      bindLeadingArguments(originalFunc, values);
+      bindLeadingArguments(actualFunc, values);
+      ASSERT_TRUE(succeeded(canonicalizeBoundValues(*boundOriginal)));
+      ASSERT_TRUE(succeeded(canonicalizeBoundValues(*boundActual)));
+      ASSERT_TRUE(succeeded(verify(*boundOriginal)));
+      ASSERT_TRUE(succeeded(verify(*boundActual)));
+      const Matrix2x2 expected = compute1QUnitaryMatrix(originalFunc.getBody());
+      expectMatrixPreserved(actualFunc, expected, basis);
+    }
+  }
 }
 
 TEST(FuseSingleQubitUnitaryRunsTest, FusesProgramsAllBases) {

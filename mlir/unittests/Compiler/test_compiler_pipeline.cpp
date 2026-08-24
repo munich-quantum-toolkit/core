@@ -120,8 +120,8 @@ protected:
     registry.insert<cbit::CBitDialect, QCDialect, QCODialect,
                     qtensor::QTensorDialect, arith::ArithDialect,
                     cf::ControlFlowDialect, func::FuncDialect,
-                    memref::MemRefDialect, scf::SCFDialect, LLVM::LLVMDialect,
-                    jeff::JeffDialect>();
+                    math::MathDialect, memref::MemRefDialect, scf::SCFDialect,
+                    LLVM::LLVMDialect, jeff::JeffDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -203,6 +203,51 @@ makeSparseUCZTarget(const bool includeMeasure) {
       "sparse-line", std::move(sites),
       std::vector<CompilerTarget::Coupling>{{5, 9}, {9, 17}},
       std::move(operations)));
+}
+
+[[nodiscard]] static CompilerTarget makeZSXXCZTarget() {
+  using Operation = CompilerTarget::Operation;
+  std::vector operations{llvm::cantFail(Operation::create("x", 1, 0)),
+                         llvm::cantFail(Operation::create("sx", 1, 0)),
+                         llvm::cantFail(Operation::create("rz", 1, 1)),
+                         llvm::cantFail(Operation::create("cz", 2, 0))};
+  return llvm::cantFail(
+      CompilerTarget::create(2, std::nullopt, std::move(operations)));
+}
+
+[[nodiscard]] static CompilerTarget makeRXRZCZTarget() {
+  using Operation = CompilerTarget::Operation;
+  std::vector operations{llvm::cantFail(Operation::create("rx", 1, 1)),
+                         llvm::cantFail(Operation::create("rz", 1, 1)),
+                         llvm::cantFail(Operation::create("cz", 2, 0))};
+  return llvm::cantFail(
+      CompilerTarget::create(2, std::nullopt, std::move(operations)));
+}
+
+[[nodiscard]] static CompilerTarget makeRXRYCZTarget() {
+  using Operation = CompilerTarget::Operation;
+  std::vector operations{llvm::cantFail(Operation::create("rx", 1, 1)),
+                         llvm::cantFail(Operation::create("ry", 1, 1)),
+                         llvm::cantFail(Operation::create("cz", 2, 0))};
+  return llvm::cantFail(
+      CompilerTarget::create(2, std::nullopt, std::move(operations)));
+}
+
+[[nodiscard]] static CompilerTarget makeRYRZCZTarget() {
+  using Operation = CompilerTarget::Operation;
+  std::vector operations{llvm::cantFail(Operation::create("ry", 1, 1)),
+                         llvm::cantFail(Operation::create("rz", 1, 1)),
+                         llvm::cantFail(Operation::create("cz", 2, 0))};
+  return llvm::cantFail(
+      CompilerTarget::create(2, std::nullopt, std::move(operations)));
+}
+
+[[nodiscard]] static CompilerTarget makeRCZTarget() {
+  using Operation = CompilerTarget::Operation;
+  std::vector operations{llvm::cantFail(Operation::create("r", 1, 2)),
+                         llvm::cantFail(Operation::create("cz", 2, 0))};
+  return llvm::cantFail(
+      CompilerTarget::create(2, std::nullopt, std::move(operations)));
 }
 
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
@@ -1176,6 +1221,86 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   auto unsupportedQCO = std::move(*unsupportedQC).intoQCO();
   ASSERT_TRUE(unsupportedQCO);
   EXPECT_FALSE(unsupportedQCO->compileForTarget(makeSparseUCZTarget(false)));
+}
+
+TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
+      %q0 = qco.alloc : !qco.qubit
+      %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+      %q2 = qco.rz(%theta) %q1 : !qco.qubit -> !qco.qubit
+      qco.sink %q2 : !qco.qubit
+      return
+    }
+  })mlir";
+  struct Case {
+    const char* name;
+    CompilerTarget target;
+    CompilerTarget::SingleQubitBasis resolvedBasis;
+    size_t expectedRZ;
+    size_t expectedRX;
+    size_t expectedRY;
+    size_t expectedSX;
+    size_t expectedR;
+    size_t expectedU;
+  };
+  const std::vector cases{
+      Case{"u", makeSparseUCZTarget(false), CompilerTarget::SingleQubitBasis::U,
+           0, 0, 0, 0, 0, 1},
+      Case{"zsxx", makeZSXXCZTarget(), CompilerTarget::SingleQubitBasis::ZSXX,
+           3, 0, 0, 2, 0, 0},
+      Case{"rx-rz", makeRXRZCZTarget(), CompilerTarget::SingleQubitBasis::XZX,
+           1, 2, 0, 0, 0, 0},
+      Case{"rx-ry", makeRXRYCZTarget(), CompilerTarget::SingleQubitBasis::XYX,
+           0, 2, 1, 0, 0, 0},
+      Case{"ry-rz", makeRYRZCZTarget(), CompilerTarget::SingleQubitBasis::ZYZ,
+           2, 0, 1, 0, 0, 0},
+      Case{"r", makeRCZTarget(), CompilerTarget::SingleQubitBasis::R, 0, 0, 0,
+           0, 3, 0},
+  };
+
+  for (const auto& testCase : cases) {
+    SCOPED_TRACE(testCase.name);
+    auto program = QCOProgram::fromMLIRString(source);
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(testCase.target.synthesisBasis());
+    ASSERT_EQ(testCase.target.synthesisBasis()->singleQubit,
+              testCase.resolvedBasis);
+    ASSERT_TRUE(program->compileForTarget(testCase.target));
+
+    auto compiled = parseRecordedModule(program->str());
+    ASSERT_TRUE(compiled);
+    EXPECT_TRUE(verify(*compiled).succeeded());
+
+    size_t numRZ = 0;
+    size_t numRX = 0;
+    size_t numRY = 0;
+    size_t numSX = 0;
+    size_t numR = 0;
+    size_t numH = 0;
+    size_t numU = 0;
+    compiled->walk([&](Operation* operation) {
+      numRZ += isa<RZOp>(operation);
+      numRX += isa<RXOp>(operation);
+      numRY += isa<RYOp>(operation);
+      numSX += isa<SXOp>(operation);
+      numR += isa<ROp>(operation);
+      numH += isa<HOp>(operation);
+      numU += isa<UOp>(operation);
+    });
+    EXPECT_EQ(numRZ, testCase.expectedRZ);
+    EXPECT_EQ(numRX, testCase.expectedRX);
+    EXPECT_EQ(numRY, testCase.expectedRY);
+    EXPECT_EQ(numSX, testCase.expectedSX);
+    EXPECT_EQ(numR, testCase.expectedR);
+    EXPECT_EQ(numH, 0U);
+    EXPECT_EQ(numU, testCase.expectedU);
+
+    auto main = compiled->lookupSymbol<func::FuncOp>("main");
+    ASSERT_TRUE(main);
+    ASSERT_EQ(main.getNumArguments(), 1U);
+    EXPECT_FALSE(main.getArgument(0).use_empty());
+  }
 }
 
 /**
