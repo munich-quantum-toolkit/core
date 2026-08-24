@@ -58,6 +58,7 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/FileUtilities.h>
