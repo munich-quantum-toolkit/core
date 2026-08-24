@@ -132,6 +132,9 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove the C++ `Device::getNeedsCalibration` and Python
+  `Device.needs_calibration` APIs, and adopt QDMI's removal of the obsolete
+  calibration-readiness and pulse-support metadata ([#2233]) ([**@burgholzer**])
 - 💥 Remove `qc::QuantumComputation`, `MQT::CoreIR`, and `MQT::CoreQASM`. Use
   compiler-backed QC/QCO APIs in v4 or the MQT Core v3 release series for legacy
   code ([#2111], [#2112], [#2288]) ([**@burgholzer**], [**@simon1hofmann**])
@@ -907,6 +910,7 @@ for previous changelogs._
 [#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2240]: https://github.com/munich-quantum-toolkit/core/pull/2240
+[#2233]: https://github.com/munich-quantum-toolkit/core/pull/2233
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2228]: https://github.com/munich-quantum-toolkit/core/pull/2228
 [#2224]: https://github.com/munich-quantum-toolkit/core/pull/2224

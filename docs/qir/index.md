@@ -109,8 +109,3 @@ to Base formats: the JIT stops the selected entry point immediately before the
 first call to a function marked `irreversible`, following the semantic boundary
 defined by the Base Profile. It rejects other profiles and Base Profile programs
 whose irreversible region is not terminal.
-
-The generic submission APIs intentionally reject QDMI calibration and batch-job
-formats. Calibration jobs do not carry a program, while batch jobs contain job
-handles rather than serialized program bytes. Their format identifiers remain
-available for capability discovery; they require dedicated typed APIs.

@@ -830,14 +830,6 @@ TEST_P(DriverTest, QuerySessionProperty) {
       << "Device must return `INVALIDARGUMENT` if the buffer is too small.";
 }
 
-TEST_P(DriverTest, QueryNeedsCalibration) {
-  size_t needsCalibration = 0;
-  const auto ret = QDMI_device_query_device_property(
-      device, QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION, sizeof(size_t),
-      &needsCalibration, nullptr);
-  EXPECT_EQ(ret, QDMI_SUCCESS);
-  EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
-}
 constexpr std::array DEVICES{
     "MQT SC Default QDMI Device",
 #ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
