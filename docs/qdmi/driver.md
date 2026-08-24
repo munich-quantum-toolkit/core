@@ -58,8 +58,8 @@ integration tests.
 The Client and Driver libraries are separate shared libraries. Device-free
 builds can use another QDMI 1.4 Driver through `driver_path` or
 `MQT_CORE_QDMI_DRIVER`. The packaged Driver can load external device libraries
-through [QDMI device configuration](configuration.md). C++ test builds require the bundled devices available in the selected build
-configuration.
+through [QDMI device configuration](configuration.md). C++ test builds require
+the bundled devices available in the selected build configuration.
 
 ## Python Bindings
 

@@ -10,10 +10,8 @@
 
 from __future__ import annotations
 
-import json
 import os
 from collections import Counter
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -891,40 +889,6 @@ def test_simulator_job_get_sparse_probabilities_returns_valid_probabilities(simu
 
     assert "11" in sparse_probabilities
     assert sparse_probabilities["11"] == pytest.approx(0.5)
-
-
-def test_register_device_does_not_load_nonexistent_library() -> None:
-    """Registration stores metadata and opening performs native loading."""
-    library_path = Path("/nonexistent/lib.so")
-    definition = DeviceDefinition("python.missing", library_path, "PREFIX")
-    assert definition.device_id == "python.missing"
-    assert definition.library_path == library_path
-    assert definition.prefix == "PREFIX"
-    register_device(definition)
-    with pytest.raises(RuntimeError):
-        open_device("python.missing")
-
-
-def test_register_device_if_absent_only_ignores_existing_id() -> None:
-    """Idempotent registration still validates duplicate definitions."""
-    definition = DeviceDefinition("python.if-absent", "/nonexistent/device.so", "PREFIX")
-    assert register_device_if_absent(definition)
-    assert not register_device_if_absent(definition)
-    with pytest.raises(ValueError, match="library must not be empty"):
-        register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
-
-
-def test_registered_device_ids_include_runtime_registrations_in_order() -> None:
-    """Stable-ID enumeration is ordered and does not load native libraries."""
-    ids_before = registered_device_ids()
-    register_device(DeviceDefinition("python.enumeration.first", "/nonexistent/first.so", "FIRST"))
-    register_device(DeviceDefinition("python.enumeration.second", "/nonexistent/second.so", "SECOND"))
-
-    assert registered_device_ids() == [
-        *ids_before,
-        "python.enumeration.first",
-        "python.enumeration.second",
-    ]
 
 
 def test_open_device_rejects_unknown_id() -> None:

@@ -985,8 +985,7 @@ public:
   getCustomResult(const CustomProperty property) const {
     const auto qdmiResult = detail::toJobResult(property);
     return detail::queryCustomValue<T>(
-        [this, qdmiResult](const size_t size, void* value,
-                                         size_t* sizeRet) {
+        [this, qdmiResult](const size_t size, void* value, size_t* sizeRet) {
           return job_.get_deleter().session->api->jobGetResults(
               job_.get(), qdmiResult, size, value, sizeRet);
         },

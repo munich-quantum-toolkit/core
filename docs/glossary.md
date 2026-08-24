@@ -99,6 +99,17 @@ Quantum Device Management Interface
   discovering quantum-device properties and submitting and controlling work
   without coupling software to one device implementation.
 
+QDMI Client interface
+  **Preferred term:** QDMI Client interface. The standard C interface consumed by
+  applications to open sessions, query devices, and manage jobs. Core's C++ and
+  Python Client wrappers consume this interface; they are not a driver.
+
+QDMI driver
+  **Preferred term:** QDMI driver. An implementation of the QDMI Client interface.
+  Core's packaged driver loads QDMI device libraries. A replacement driver owns
+  its own discovery, configuration, and device access; applications must not
+  assume it provides Core's private driver extension.
+
 QIR
 Quantum Intermediate Representation
   **Preferred term:** Quantum Intermediate Representation. **Accepted

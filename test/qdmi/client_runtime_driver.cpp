@@ -13,8 +13,6 @@
 #include <cstdint>
 
 #ifdef TEST_FULL_CLIENT
-#include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
@@ -53,10 +51,6 @@ struct QDMI_Session_impl_d {
 namespace {
 constexpr auto DEVICE_ID = "test.fake.client";
 constexpr auto FAIL_ALLOCATION = "MQT_CORE_QDMI_FAKE_FAIL_ALLOCATION";
-
-[[nodiscard]] auto isAdapterTest(const std::string_view token) -> bool {
-  return token.starts_with("adapter-");
-}
 
 [[nodiscard]] auto forcedAllocationStatus() -> std::optional<int> {
   const auto* value = std::getenv(FAIL_ALLOCATION);
@@ -237,10 +231,6 @@ int QDMI_device_query_device_property(QDMI_Device device,
     return queryValue(site, size, value, sizeRet);
   }
   if (prop == QDMI_DEVICE_PROPERTY_OPERATIONS) {
-    if (isAdapterTest(device->session->token)) {
-      return queryValues(std::span<const QDMI_Operation>{}, size, value,
-                         sizeRet);
-    }
     QDMI_Operation operation = &device->operation;
     return queryValue(operation, size, value, sizeRet);
   }
@@ -263,6 +253,7 @@ int QDMI_device_query_site_property(QDMI_Device device, QDMI_Site site,
 int QDMI_device_query_operation_property(
     QDMI_Device device, QDMI_Operation operation, size_t, const QDMI_Site*,
     size_t, const double*, const QDMI_Operation_Property prop, const size_t,
+    // NOLINTNEXTLINE(misc-const-correctness): QDMI C ABI output.
     void* value, size_t* sizeRet) {
   if (device == nullptr || operation != &device->operation) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -310,8 +301,7 @@ int QDMI_job_check(QDMI_Job, QDMI_Job_Status*) {
 
 int QDMI_job_wait(QDMI_Job, size_t) { return QDMI_ERROR_NOTSUPPORTED; }
 
-int QDMI_job_get_results(QDMI_Job, QDMI_Job_Result, size_t, void*,
-                         size_t*) {
+int QDMI_job_get_results(QDMI_Job, QDMI_Job_Result, size_t, void*, size_t*) {
   return QDMI_ERROR_NOTSUPPORTED;
 }
 

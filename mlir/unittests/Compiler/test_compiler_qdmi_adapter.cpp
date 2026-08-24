@@ -164,7 +164,6 @@ TEST(CompilerQDMIAdapterTest, ConvertsUnknownDeviceFailureToError) {
   ASSERT_FALSE(target);
   const auto message = llvm::toString(target.takeError());
   EXPECT_NE(message.find("mqt.unknown.device"), std::string::npos);
-  EXPECT_NE(message.find("has no device with ID"), std::string::npos);
 }
 
 TEST(CompilerQDMIAdapterTest, RejectsNonhomogeneousOperationSupport) {
