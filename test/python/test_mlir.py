@@ -579,6 +579,19 @@ def test_qco_program_runs_textual_pipeline() -> None:
         qco.run_pass_pipeline("not-a-pass")
 
 
+def test_qco_program_runs_pauli_twirling_pass() -> None:
+    """Run seeded Pauli twirling on a copied QCO program."""
+    source = compile_program(QASM_STRING, output=OutputFormat.QCO)
+    assert isinstance(source, QCOProgram)
+
+    twirled = source.copy()
+    twirled.run_pass_pipeline("pauli-twirl-2q-gates{seed=6}")
+
+    assert source.ir.count("qco.id ") == 0
+    assert twirled.ir.count("qco.id ") == 4
+    assert twirled.ir.count("qco.ctrl(") == 1
+
+
 def test_qco_program_reuses_qubits() -> None:
     """Expose the raw and composite qubit-reuse flows."""
     independent_qubits = """

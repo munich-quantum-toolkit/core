@@ -255,6 +255,15 @@ custom = compile_program(
 )
 ```
 
+Pauli twirling is available as an opt-in textual pass. It supports CX, CZ, ECR,
+and iSWAP gates, keeps every inserted Pauli operation (including identities)
+explicit, and preserves the exact global phase. The seed defaults to {code}`42`:
+
+```{code-cell} ipython3
+twirled = compile_program(bell_qasm, output=OutputFormat.QCO)
+twirled.run_pass_pipeline("pauli-twirl-2q-gates{seed=42}")
+```
+
 The raw qubit-reuse pass and its composite preparation pipeline are both
 available through the compiler collection:
 

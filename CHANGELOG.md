@@ -56,9 +56,9 @@ releases may include breaking changes.
 
 #### Passes and transformations
 
-- ✨ Add quantum loop unrolling and qubit reuse passes ([#1705], [#1718],
-  [#1755], [#1756], [#1923], [#1924], [#2039], [#2118], [#2216])
-  ([**@MatthiasReumann**], [**@DRovara**], [**@burgholzer**],
+- ✨ Add Pauli twirling, quantum loop unrolling, and qubit reuse passes
+  ([#1705], [#1718], [#1755], [#1756], [#1923], [#1924], [#2039], [#2118],
+  [#2216]) ([**@MatthiasReumann**], [**@DRovara**], [**@burgholzer**],
   [**@simon1hofmann**])
 - ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
   [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
