@@ -17,7 +17,13 @@ from typing import Any, cast
 
 import pytest
 
-from mqt.core.qdmi import CustomProperty, Device, Job, ProgramFormat
+from mqt.core.qdmi import (
+    CustomProperty,
+    Device,
+    Job,
+    ProgramFormat,
+    is_binary_program_format,
+)
 from mqt.core.qdmi.driver import (
     DeviceDefinition,
     Session,
@@ -500,6 +506,13 @@ c = measure q;
 def test_program_format_includes_batch_job() -> None:
     """Expose every standard QDMI program format."""
     assert ProgramFormat.BATCH_JOB.value == 9
+
+
+def test_is_binary_program_format() -> None:
+    """Classify the program formats that require exact-byte submission."""
+    binary = {ProgramFormat.QIR_BASE_MODULE, ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QPY}
+    for fmt in ProgramFormat:
+        assert is_binary_program_format(fmt) == (fmt in binary), fmt.name
 
 
 @pytest.mark.parametrize("program", [b"OPENQASM 3.0;", b"OPENQASM 3.0;\0garbage\0", "OPENQASM 3.0;\0garbage"])

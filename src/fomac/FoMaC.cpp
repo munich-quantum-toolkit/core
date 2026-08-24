@@ -38,13 +38,6 @@
 
 namespace fomac {
 namespace {
-[[nodiscard]] constexpr bool
-isBinaryProgramFormat(const QDMI_Program_Format format) noexcept {
-  return format == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
-         format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE ||
-         format == QDMI_PROGRAM_FORMAT_QPY;
-}
-
 /// Rejects the formats that `submitJob` cannot carry.
 /// A batch job's program is a list of job handles rather than a byte blob, so
 /// this API cannot express it at all. A calibration run has its own entry
