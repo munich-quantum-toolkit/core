@@ -432,6 +432,7 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
     case QDMI_PROGRAM_FORMAT_CUSTOM3:
     case QDMI_PROGRAM_FORMAT_CUSTOM4:
     case QDMI_PROGRAM_FORMAT_CUSTOM5:
+    case QDMI_PROGRAM_FORMAT_MAX:
       return false;
     }
     return false;
