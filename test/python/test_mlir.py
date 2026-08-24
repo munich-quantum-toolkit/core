@@ -758,6 +758,28 @@ def test_target_environment_from_device_id_adds_adaptive_baseline() -> None:
     assert len(payload.capabilities) == 5
 
 
+def test_target_environment_rejects_conflicting_configuration() -> None:
+    """Both device factories validate configuration at the Python boundary."""
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        TargetEnvironment.from_device_id(
+            "mqt.ddsim.default",
+            ProgramFormat.OPENQASM3,
+            device_config="{}",
+            device_config_file=Path("device.json"),
+        )
+
+
+def test_target_environment_compiles_and_submits_ddsim_bitcode() -> None:
+    """Exercise the documented exact-format compilation and submission path."""
+    device = open_device("mqt.ddsim.default")
+    environment = TargetEnvironment.from_device(device, ProgramFormat.QIR21_BASE_BINARY)
+    program = compile_program(QASM_STRING, target_environment=environment)
+    assert isinstance(program, QIRProgram)
+    job = device.submit_job(program.to_bitcode(), ProgramFormat.QIR21_BASE_BINARY, num_shots=32, custom1=7)
+    job.wait()
+    assert sum(job.get_counts().values()) == 32
+
+
 def test_qco_program_runs_textual_pipeline() -> None:
     """Run registered QCO passes through MLIR textual pipeline syntax."""
     qco = compile_program(QASM_STRING, output=OutputFormat.QCO)

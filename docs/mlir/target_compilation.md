@@ -21,7 +21,7 @@ from mqt.core.mlir import (
 from mqt.core.qdmi import ProgramFormat
 
 environment = TargetEnvironment.from_device_id(
-    "mqt.sc.iqm.garnet",
+    "mqt.ddsim.default",
     ProgramFormat.QIR21_BASE_BINARY,
 )
 compiled = compile_program(
@@ -155,7 +155,7 @@ device ID and the compiler-owned target:
 #include <llvm/Support/raw_ostream.h>
 
 auto environment = mlir::targetEnvironmentFromDeviceId(
-    "mqt.sc.iqm.garnet", qdmi::QIR21_BASE_BINARY);
+    "mqt.ddsim.default", qdmi::QIR21_BASE_BINARY);
 if (!environment) {
   llvm::errs() << "Failed to create target environment: "
                << llvm::toString(environment.takeError()) << '\n';

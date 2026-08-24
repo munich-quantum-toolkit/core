@@ -20,7 +20,6 @@
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/bench/Generate.h"
 #include "qdmi/Client.hpp"
-#include "qdmi/ProgramFormat.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 #include "qiskit/Qiskit.h"
 
