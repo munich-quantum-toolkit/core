@@ -95,6 +95,12 @@ follow-up with its own ExecPlan and branch.
       detail. Rebuild the binding, pass all 208 minimized translation tests on
       Qiskit 2.5.0, 2.5.1, and 2.5.2, regenerate unchanged stubs, and pass the
       complete repository lint session.
+- [x] (2026-08-24 10:20Z) Apply the post-review simplification pass: retain the
+      documented packed-register and general Boolean-select paths, remove
+      duplicated exporter and adapter code, deduplicate focused test setup,
+      preserve fused affine overflow handling, rebuild the exact release
+      binding, pass all 210 translation tests, regenerate unchanged stubs, and
+      pass focused format and static checks.
 
 ## Surprises & Discoveries
 
@@ -170,6 +176,11 @@ follow-up with its own ExecPlan and branch.
   assertions already inspect conditions, case labels, captures, parameter
   identities, and block contents. One broad round trip and focused semantic
   round trips retain the end-to-end contract.
+
+- Observation: A checked signed multiply followed by a checked add is not
+  equivalent to the existing fused affine calculation. Evidence: multiplying
+  `-2` by `INT64_MAX` overflows `i64`, but adding `INT64_MAX` produces the valid
+  final value `-INT64_MAX`; the 128-bit calculation preserves that case.
 
 ## Decision Log
 
@@ -260,6 +271,14 @@ follow-up with its own ExecPlan and branch.
   permuted captures, and retaining vectors implied unsupported generality while
   duplicating allocation and validation work. Date/Author: 2026-08-22 / Codex.
 
+- Decision: Keep packed-register recovery, general pure Boolean `scf.if`
+  selection, and runtime checks at the versioned writer boundary. Simplify the
+  operation dispatch, constant extraction, range calculation, internal lookup,
+  and sole-producer loop and switch construction instead. Rationale: the kept
+  paths implement documented behavior or protect the Python construction
+  boundary; the removed code duplicated validated internal state. Date/Author:
+  2026-08-24 / Codex.
+
 ## Outcomes & Retrospective
 
 Structured Qiskit control flow now exports recursively through a normalized,
@@ -270,18 +289,19 @@ snapshots, unsupported expression/result forms, invalid labels, and undefined
 CBit reads or returns before allocating the Qiskit writer.
 
 After the final complexity pass, the release MLIR binding builds successfully
-and all 208 tests in `test/python/test_mlir_qiskit_translation.py` pass against
-the exact worktree-built extension with Qiskit 2.5.0, 2.5.1, and 2.5.2. Stub
-generation produces no tracked changes, and the complete repository lint session
-passes. The documentation build remains explicitly deferred for this handoff.
-The semantic diff leaves the refreshed import reader and current name-keyed
-scalar parameter normalizer unchanged, while recursively checking that every
-named scalar input remains reachable from the emitted top-level or nested Qiskit
-parameter trees. Speculative expression recognition and snapshot validation are
-bounded before recursion can consume unbounded resources, and dead loop
-parameter expressions no longer expose invalid Qiskit metadata. The
-measurement-store relaxation remains out of scope for this completed plan and
-will receive its own branch and ExecPlan.
+and all 210 tests in `test/python/test_mlir_qiskit_translation.py` pass against
+the exact worktree-built extension with Qiskit 2.5.2. The earlier 208-test
+matrix passed with Qiskit 2.5.0, 2.5.1, and 2.5.2. Stub generation produces no
+tracked changes, and the complete repository lint session passes. The
+documentation build remains explicitly deferred for this handoff. The semantic
+diff leaves the refreshed import reader and current name-keyed scalar parameter
+normalizer unchanged, while recursively checking that every named scalar input
+remains reachable from the emitted top-level or nested Qiskit parameter trees.
+Speculative expression recognition and snapshot validation are bounded before
+recursion can consume unbounded resources, and dead loop parameter expressions
+no longer expose invalid Qiskit metadata. The measurement-store relaxation
+remains out of scope for this completed plan and will receive its own branch and
+ExecPlan.
 
 ## Context and Orientation
 
@@ -476,4 +496,7 @@ stubs, clean lint, and 208-test Qiskit 2.5.0-2.5.2 matrix. Merged `main` through
 `84ace8ef2`, preserved its QCO switch, deterministic finalization,
 loop-unrolling, and nanobind 3 changes, and made the vendored Qiskit C API
 initialization safe for the new free-threaded binding mode. The split-mode
-binding build and all 209 Qiskit 2.5.2 translation tests passed.
+binding build and all 209 Qiskit 2.5.2 translation tests passed. Applied the
+post-review simplification without removing documented register and Boolean
+expression behavior, retained fused affine overflow semantics after an
+independent audit, and passed all 210 Qiskit 2.5.2 translation tests.

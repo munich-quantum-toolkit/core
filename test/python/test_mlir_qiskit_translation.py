@@ -1219,6 +1219,29 @@ def test_zero_qubit_cbit_only_control_flow_round_trip() -> None:
     QCProgram.from_qiskit(restored)
 
 
+def _single_qubit_program(operations: list[str], *, returns_classical: bool = False) -> QCProgram:
+    """Wrap operations in a one-qubit QC entry function.
+
+    Returns:
+        The parsed QC program.
+    """
+    result_type = " -> !cbit.reg<1>" if returns_classical else ""
+    return_value = " %classical : !cbit.reg<1>" if returns_classical else ""
+    lines = [
+        "module {",
+        f"  func.func @main(){result_type} attributes {{mqt.entry_point}} {{",
+        "    %q = qc.alloc : !qc.qubit",
+    ]
+    lines.extend(f"    {operation}" for operation in operations)
+    lines.extend([
+        "    qc.dealloc %q : !qc.qubit",
+        f"    return{return_value}",
+        "  }",
+        "}",
+    ])
+    return QCProgram.from_mlir_str("\n".join(lines))
+
+
 @pytest.mark.parametrize(
     ("values", "expected"),
     [(range(5, -2, -2), [5, 3, 1, -1]), (range(3, 3, -1), [])],
@@ -1235,6 +1258,28 @@ def test_for_loop_range_edges_round_trip(values: range, expected: list[int]) -> 
     loop = restored.data[0].operation
     assert loop.name == "for_loop"
     assert list(loop.params[0]) == expected
+    assert loop.blocks[0].data[0].operation.params[0].uuid == loop.params[1].uuid
+
+
+def test_for_loop_affine_projection_checks_the_fused_result() -> None:
+    """Accept a fitting affine value whose intermediate product overflows."""
+    program = _single_qubit_program([
+        "%lower = arith.constant -2 : index",
+        "%upper = arith.constant -1 : index",
+        "%step = arith.constant 1 : index",
+        "%maximum = arith.constant 9223372036854775807 : i64",
+        "scf.for %iteration = %lower to %upper step %step {",
+        "  %integer = arith.index_cast %iteration : index to i64",
+        "  %scaled = arith.muli %integer, %maximum : i64",
+        "  %shifted = arith.addi %scaled, %maximum : i64",
+        "  %parameter = arith.sitofp %shifted : i64 to f64",
+        "  qc.rz(%parameter) %q : !qc.qubit",
+        "}",
+    ])
+
+    loop = program.to_qiskit().data[0].operation
+
+    assert list(loop.params[0]) == [-9223372036854775807]
     assert loop.blocks[0].data[0].operation.params[0].uuid == loop.params[1].uuid
 
 
@@ -1372,74 +1417,43 @@ def test_constant_index_switch_exports() -> None:
 
 def test_shared_expression_dag_expansion_is_bounded() -> None:
     """Bound tree expansion when both operands reuse the same SSA value."""
-    lines = [
-        "module {",
-        "  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {",
-        "    %q = qc.alloc : !qc.qubit",
-        '    %classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
-        "    %zero = arith.constant 0 : index",
-        "    %value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
+    operations = [
+        '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+        "%zero = arith.constant 0 : index",
+        "%value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
     ]
-    lines.extend(f"    %value{index} = arith.andi %value{index - 1}, %value{index - 1} : i1" for index in range(1, 14))
-    lines.extend([
-        "    scf.if %value13 {",
-        "      qc.x %q : !qc.qubit",
-        "    }",
-        "    qc.dealloc %q : !qc.qubit",
-        "    return %classical : !cbit.reg<1>",
-        "  }",
-        "}",
-    ])
-    program = QCProgram.from_mlir_str("\n".join(lines))
+    operations.extend(f"%value{index} = arith.andi %value{index - 1}, %value{index - 1} : i1" for index in range(1, 14))
+    operations.extend(["scf.if %value13 {", "  qc.x %q : !qc.qubit", "}"])
+    program = _single_qubit_program(operations, returns_classical=True)
     with pytest.raises(RuntimeError, match="size limit of 4096 nodes"):
         program.to_qiskit()
 
 
 def test_shared_packed_register_candidate_expansion_is_bounded() -> None:
     """Bound speculative packed-register matching on a shared SSA DAG."""
-    lines = [
-        "module {",
-        "  func.func @main() attributes {mqt.entry_point} {",
-        "    %q = qc.alloc : !qc.qubit",
-        "    %value0 = arith.constant 0 : i64",
-    ]
-    lines.extend(f"    %value{index} = arith.ori %value{index - 1}, %value{index - 1} : i64" for index in range(1, 31))
-    lines.extend([
-        "    %condition = arith.cmpi eq, %value30, %value0 : i64",
-        "    scf.if %condition {",
-        "      qc.x %q : !qc.qubit",
-        "    }",
-        "    qc.dealloc %q : !qc.qubit",
-        "    return",
-        "  }",
+    operations = ["%value0 = arith.constant 0 : i64"]
+    operations.extend(f"%value{index} = arith.ori %value{index - 1}, %value{index - 1} : i64" for index in range(1, 31))
+    operations.extend([
+        "%condition = arith.cmpi eq, %value30, %value0 : i64",
+        "scf.if %condition {",
+        "  qc.x %q : !qc.qubit",
         "}",
     ])
-    program = QCProgram.from_mlir_str("\n".join(lines))
+    program = _single_qubit_program(operations)
     with pytest.raises(RuntimeError, match="size limit of 4096 nodes"):
         program.to_qiskit()
 
 
 def test_classical_snapshot_walk_is_bounded() -> None:
     """Bound snapshot discovery before recursive expression export."""
-    lines = [
-        "module {",
-        "  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {",
-        "    %q = qc.alloc : !qc.qubit",
-        '    %classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
-        "    %zero = arith.constant 0 : index",
-        "    %value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
+    operations = [
+        '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+        "%zero = arith.constant 0 : index",
+        "%value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
     ]
-    lines.extend(f"    %value{index} = arith.andi %value{index - 1}, %value0 : i1" for index in range(1, 4097))
-    lines.extend([
-        "    scf.if %value4096 {",
-        "      qc.x %q : !qc.qubit",
-        "    }",
-        "    qc.dealloc %q : !qc.qubit",
-        "    return %classical : !cbit.reg<1>",
-        "  }",
-        "}",
-    ])
-    program = QCProgram.from_mlir_str("\n".join(lines))
+    operations.extend(f"%value{index} = arith.andi %value{index - 1}, %value0 : i1" for index in range(1, 4097))
+    operations.extend(["scf.if %value4096 {", "  qc.x %q : !qc.qubit", "}"])
+    program = _single_qubit_program(operations, returns_classical=True)
     with pytest.raises(RuntimeError, match="size limit of 4096 nodes"):
         program.to_qiskit()
 
@@ -1565,26 +1579,32 @@ def test_multi_result_boolean_select_expressions_export() -> None:
     assert expr.structurally_equivalent(second, expected_second)
 
 
+def _undefined_cbit_program(operations: list[str]) -> QCProgram:
+    """Build a one-qubit program with one undefined public CBit.
+
+    Returns:
+        The parsed QC program.
+    """
+    return _single_qubit_program(
+        [
+            '%classical = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "c"} : !cbit.reg<1>',
+            "%zero = arith.constant 0 : index",
+            *operations,
+        ],
+        returns_classical=True,
+    )
+
+
 def test_undefined_cbits_can_be_read_after_unconditional_measurements() -> None:
     """Treat preceding top-level measurement writes as definite initialization."""
-    program = QCProgram.from_mlir_str(
-        """module {
-  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
-    %q = qc.alloc : !qc.qubit
-    %classical = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "c"} : !cbit.reg<1>
-    %zero = arith.constant 0 : index
-    %measured = qc.measure %q : !qc.qubit -> i1
-    cbit.store %measured, %classical[%zero] : !cbit.reg<1>
-    %condition = cbit.load %classical[%zero] : !cbit.reg<1>
-    scf.if %condition {
-      qc.x %q : !qc.qubit
-    }
-    qc.dealloc %q : !qc.qubit
-    return %classical : !cbit.reg<1>
-  }
-}
-"""
-    )
+    program = _undefined_cbit_program([
+        "%measured = qc.measure %q : !qc.qubit -> i1",
+        "cbit.store %measured, %classical[%zero] : !cbit.reg<1>",
+        "%condition = cbit.load %classical[%zero] : !cbit.reg<1>",
+        "scf.if %condition {",
+        "  qc.x %q : !qc.qubit",
+        "}",
+    ])
 
     restored = program.to_qiskit()
 
@@ -1593,24 +1613,14 @@ def test_undefined_cbits_can_be_read_after_unconditional_measurements() -> None:
 
 def test_undefined_cbit_load_before_measurement_is_rejected() -> None:
     """Reject a read that precedes definite initialization of an output bit."""
-    program = QCProgram.from_mlir_str(
-        """module {
-  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
-    %q = qc.alloc : !qc.qubit
-    %classical = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "c"} : !cbit.reg<1>
-    %zero = arith.constant 0 : index
-    %condition = cbit.load %classical[%zero] : !cbit.reg<1>
-    scf.if %condition {
-      qc.x %q : !qc.qubit
-    }
-    %measured = qc.measure %q : !qc.qubit -> i1
-    cbit.store %measured, %classical[%zero] : !cbit.reg<1>
-    qc.dealloc %q : !qc.qubit
-    return %classical : !cbit.reg<1>
-  }
-}
-"""
-    )
+    program = _undefined_cbit_program([
+        "%condition = cbit.load %classical[%zero] : !cbit.reg<1>",
+        "scf.if %condition {",
+        "  qc.x %q : !qc.qubit",
+        "}",
+        "%measured = qc.measure %q : !qc.qubit -> i1",
+        "cbit.store %measured, %classical[%zero] : !cbit.reg<1>",
+    ])
 
     with pytest.raises(RuntimeError, match="loads an undefined classical bit"):
         program.to_qiskit()
@@ -1618,23 +1628,13 @@ def test_undefined_cbit_load_before_measurement_is_rejected() -> None:
 
 def test_conditional_measurement_does_not_initialize_returned_cbit() -> None:
     """Do not count a branch-local measurement as a definite output write."""
-    program = QCProgram.from_mlir_str(
-        """module {
-  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
-    %q = qc.alloc : !qc.qubit
-    %classical = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "c"} : !cbit.reg<1>
-    %zero = arith.constant 0 : index
-    %condition = arith.constant true
-    scf.if %condition {
-      %measured = qc.measure %q : !qc.qubit -> i1
-      cbit.store %measured, %classical[%zero] : !cbit.reg<1>
-    }
-    qc.dealloc %q : !qc.qubit
-    return %classical : !cbit.reg<1>
-  }
-}
-"""
-    )
+    program = _undefined_cbit_program([
+        "%condition = arith.constant true",
+        "scf.if %condition {",
+        "  %measured = qc.measure %q : !qc.qubit -> i1",
+        "  cbit.store %measured, %classical[%zero] : !cbit.reg<1>",
+        "}",
+    ])
 
     with pytest.raises(RuntimeError, match="cannot return undefined classical bits"):
         program.to_qiskit()
