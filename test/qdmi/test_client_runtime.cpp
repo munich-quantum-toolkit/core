@@ -65,9 +65,21 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
   const SessionConfig firstConfig{.driverPath = MQT_CORE_QDMI_TEST_DRIVER,
                                   .token = "first-token"};
   setDriverEnvironment(MQT_CORE_QDMI_TEST_DRIVER);
-  const mqt::test::ScopedEnvironmentVariable failAllocation{
-      "MQT_CORE_QDMI_FAKE_FAIL_ALLOCATION", "1"};
-  EXPECT_THROW(static_cast<void>(Session{firstConfig}), std::bad_alloc);
+  {
+    const mqt::test::ScopedEnvironmentVariable nullAllocation{
+        "MQT_CORE_QDMI_FAKE_FAIL_ALLOCATION", "warning-null"};
+    testing::internal::CaptureStderr();
+    EXPECT_THAT([&] { return Session{firstConfig}; },
+                testing::ThrowsMessage<std::runtime_error>(
+                    testing::HasSubstr("returned a null session")));
+    const auto errorOutput = testing::internal::GetCapturedStderr();
+    EXPECT_THAT(errorOutput, testing::Not(testing::HasSubstr("Warning")));
+  }
+  {
+    const mqt::test::ScopedEnvironmentVariable failAllocation{
+        "MQT_CORE_QDMI_FAKE_FAIL_ALLOCATION", "1"};
+    EXPECT_THROW(static_cast<void>(Session{firstConfig}), std::bad_alloc);
+  }
   EXPECT_THAT(
       [] {
         return Session{
@@ -77,6 +89,13 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
           testing::HasSubstr("missing symbol QDMI_session_alloc")));
 
   Session first(firstConfig);
+  {
+    const mqt::test::ScopedEnvironmentVariable nullAllocation{
+        "MQT_CORE_QDMI_FAKE_FAIL_ALLOCATION", "success-null"};
+    EXPECT_THAT([&] { return Session{firstConfig}; },
+                testing::ThrowsMessage<std::runtime_error>(
+                    testing::HasSubstr("returned a null session")));
+  }
   Session second(SessionConfig{.driverPath = MQT_CORE_QDMI_TEST_DRIVER,
                                .token = "second-token"});
   const auto firstDevices = first.getDevices();
