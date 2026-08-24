@@ -69,9 +69,9 @@ releases may include breaking changes.
 - ✨ Add modifier and global-phase normalization passes ([#1986], [#1995],
   [#2015]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add single-qubit optimization passes for unitary fusion, Hadamard lifting,
-  and rotation merging ([#1407], [#1605], [#1672], [#1674], [#2002], [#2038])
-  ([**@J4MMlE**], [**@lirem101**], [**@burgholzer**], [**@denialhaag**],
-  [**@MatthiasReumann**], [**@simon1hofmann**])
+  and rotation merging ([#1407], [#1605], [#1672], [#1674], [#2002], [#2038],
+  [#2228]) ([**@J4MMlE**], [**@lirem101**], [**@burgholzer**],
+  [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
 - ✨ Add multi-qubit decomposition, fusion, and target-native synthesis passes
   ([#1774], [#1802], [#1803], [#1809], [#1810], [#1814], [#1832], [#1850],
   [#1865], [#1961], [#1996], [#1998], [#2001]) ([**@simon1hofmann**],
@@ -846,6 +846,7 @@ for previous changelogs._
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
+[#2228]: https://github.com/munich-quantum-toolkit/core/pull/2228
 [#2224]: https://github.com/munich-quantum-toolkit/core/pull/2224
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
 [#2211]: https://github.com/munich-quantum-toolkit/core/pull/2211
