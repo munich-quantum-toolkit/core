@@ -422,10 +422,6 @@ class QCOProgram(Program):
     def from_mlir_file(path: str | os.PathLike) -> QCOProgram:
         """Parse QCO MLIR from a file."""
 
-    @property
-    def entry_func(self) -> str:
-        """The textual MLIR representation of the entry func.func operation."""
-
     def copy(self) -> QCOProgram:
         """Return an independent copy of this program."""
 

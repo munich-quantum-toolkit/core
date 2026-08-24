@@ -80,13 +80,6 @@ def test_unitary_x_build_simulate_and_sample() -> None:
     assert result.classical == {}
 
 
-def test_entry_func() -> None:
-    """The entry_func property exposes the selected func.func operation."""
-    entry = _x_program().entry_func
-    assert "func.func @main()" in entry
-    assert "qco.x" in entry
-
-
 def test_simulate_measure_requires_seed() -> None:
     """Simulate without seed rejects measure/reset; with seed it succeeds."""
     program = _measure_program()
@@ -121,7 +114,7 @@ def test_simulate_rejects_state_from_different_package() -> None:
 
 
 def test_entry_func_required() -> None:
-    """Programs without a func.func raise ValueError via entryFunc."""
+    """Programs without a func.func raise ValueError."""
     # Top-level qco op satisfies dialect checks but provides no entry function.
     program = mlir.QCOProgram.from_mlir_str("""
 module {

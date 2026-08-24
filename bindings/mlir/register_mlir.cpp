@@ -13,6 +13,7 @@
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
@@ -34,7 +35,6 @@
 #include <nanobind/stl/variant.h>
 #include <nanobind/stl/vector.h>
 
-#include <algorithm>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
@@ -131,11 +131,11 @@ static void requireValid(const mlir::Program& program) {
 
 [[nodiscard]] mlir::func::FuncOp entryFunc(const mlir::QCOProgram& program) {
   requireValid(program);
-  auto func = program.entryFunc();
+  auto func = mlir::mqt::getEntryPoint(program.module());
   if (!func) {
     throw nb::value_error("QCO program has no func.func entry point");
   }
-  return *func;
+  return func;
 }
 
 [[nodiscard]] std::mt19937_64 makeRng(const std::optional<uint64_t>& seed) {
@@ -600,14 +600,6 @@ means every operation is native.)pb");
              std::optional<std::string> custom3,
              std::optional<std::string> custom4,
              std::optional<std::string> custom5) {
-            // Keep this preflight at the Python boundary so the public
-            // ValueError does not depend on cross-extension exception
-            // translation.
-            if (deviceConfig && deviceConfigFile) {
-              throw nb::value_error(
-                  "device_config and device_config_file are mutually "
-                  "exclusive");
-            }
             const auto overrides = qdmi::makeDeviceSessionConfig(
                 std::move(baseUrl), std::move(token), std::move(authFile),
                 std::move(authUrl), std::move(username), std::move(password),
@@ -836,15 +828,6 @@ operations.)pb");
           "from_mlir_file",
           &OptionalFunctionAdapter<&mlir::QCOProgram::fromMLIRFile>::call,
           "path"_a, "Parse QCO MLIR from a file.")
-      .def_prop_ro(
-          "entry_func",
-          [](const mlir::QCOProgram& value) {
-            std::string result;
-            llvm::raw_string_ostream stream(result);
-            entryFunc(value).print(stream);
-            return result;
-          },
-          "The textual MLIR representation of the entry func.func operation.")
       .def("copy", &mlir::QCOProgram::copy,
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::QCOProgram::cleanup>::call,
@@ -1035,19 +1018,8 @@ Raises:
       "simulate",
       [](const mlir::QCOProgram& program, const dd::VectorDD& initialState,
          dd::Package& ddPackage, const std::optional<uint64_t> seed) {
-        const auto hasLiveReference = [&] {
-          if (!dd::VectorDD::trackingRequired(initialState)) {
-            return true;
-          }
-          return std::ranges::any_of(ddPackage.getRootSet<dd::vNode>(),
-                                     [&](const auto& root) {
-                                       const auto& tracked = root.first;
-                                       return tracked.p == initialState.p &&
-                                              tracked.w.r == initialState.w.r &&
-                                              tracked.w.i == initialState.w.i;
-                                     });
-        }();
-        if (!hasLiveReference) {
+        if (dd::VectorDD::trackingRequired(initialState) &&
+            !ddPackage.getRootSet<dd::vNode>().contains(initialState)) {
           throw nb::value_error(
               "initial_state must have a live reference in dd_package");
         }
