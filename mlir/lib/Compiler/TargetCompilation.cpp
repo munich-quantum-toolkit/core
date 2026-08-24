@@ -20,6 +20,32 @@
 
 namespace mlir {
 
+namespace {
+
+[[nodiscard]] static const char*
+symbolicFusionBasisName(const CompilerTarget::SingleQubitBasis basis) {
+  using enum CompilerTarget::SingleQubitBasis;
+  switch (basis) {
+  case U:
+    return "u";
+  case ZSXX:
+    return "zsxx";
+  case XZX:
+    return "xzx";
+  case ZXZ:
+    return "zxz";
+  case ZYZ:
+    return "zyz";
+  case R:
+    return "r";
+  case XYX:
+    return "xyx";
+  }
+  return nullptr;
+}
+
+} // namespace
+
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const CompilerTarget& target) {
   populateQCOCleanupPipeline(pm);
@@ -28,6 +54,17 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createFuseTwoQubitGates());
   pm.addPass(qco::createMappingPass(target, qco::MappingPassOptions{}));
   populateQCOCleanupPipeline(pm);
+  if (target.hasExplicitOperations()) {
+    if (const auto targetBasis = target.synthesisBasis()) {
+      if (const char* basis =
+              symbolicFusionBasisName(targetBasis->singleQubit)) {
+        qco::FuseSingleQubitUnitaryRunsOptions options;
+        options.basis = basis;
+        options.skipControlledBodies = true;
+        pm.addPass(qco::createFuseSingleQubitUnitaryRuns(options));
+      }
+    }
+  }
   pm.addPass(qco::createTargetNativeSynthesis(target));
   pm.addPass(createCSEPass());
   pm.addPass(createRemoveDeadValuesPass());
