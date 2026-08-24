@@ -540,10 +540,9 @@ unrestricted, and explicitly enumerated support.)pb");
       .def(
           "__init__",
           [](mlir::CompilerTarget::Connectivity& self,
-             std::vector<mlir::CompilerTarget::Coupling> couplings) {
+             const std::vector<mlir::CompilerTarget::Coupling>& couplings) {
             new (&self) mlir::CompilerTarget::Connectivity(
-                mlir::CompilerTarget::Connectivity::fromCouplings(
-                    std::move(couplings)));
+                mlir::CompilerTarget::Connectivity::fromCouplings(couplings));
           },
           "couplings"_a, "Create an explicit connectivity claim.")
       .def_static("all_to_all", &mlir::CompilerTarget::Connectivity::allToAll,
@@ -574,10 +573,10 @@ unrestricted, and explicitly enumerated support.)pb");
       .def(
           "__init__",
           [](mlir::CompilerTarget::NativeOperations& self,
-             std::vector<mlir::CompilerTarget::Operation> operations) {
+             const std::vector<mlir::CompilerTarget::Operation>& operations) {
             new (&self) mlir::CompilerTarget::NativeOperations(
                 mlir::CompilerTarget::NativeOperations::fromOperations(
-                    std::move(operations)));
+                    operations));
           },
           "operations"_a, "Create an explicit native-operation claim.")
       .def_static("unrestricted",

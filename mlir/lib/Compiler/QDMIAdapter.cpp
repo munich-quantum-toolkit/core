@@ -311,8 +311,7 @@ snapshotOperations(
     }
     targetOperations.emplace_back(std::move(*targetOperation));
   }
-  return CompilerTarget::NativeOperations::fromOperations(
-      std::move(targetOperations));
+  return CompilerTarget::NativeOperations::fromOperations(targetOperations);
 }
 
 [[nodiscard]] static llvm::Expected<CompilerTarget>
@@ -373,9 +372,8 @@ snapshotCompilerTarget(const qdmi::Device& device) {
     return durationUnit.takeError();
   }
   auto connectivity =
-      couplings
-          ? CompilerTarget::Connectivity::fromCouplings(std::move(*couplings))
-          : CompilerTarget::Connectivity{};
+      couplings ? CompilerTarget::Connectivity::fromCouplings(*couplings)
+                : CompilerTarget::Connectivity{};
   return CompilerTarget::create(std::move(deviceName), std::move(sites),
                                 std::move(connectivity), std::move(*operations),
                                 std::move(*durationUnit));

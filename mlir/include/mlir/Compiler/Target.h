@@ -12,6 +12,7 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
 
@@ -56,7 +57,7 @@ public:
 
     /// Create explicitly enumerated connectivity.
     [[nodiscard]] static Connectivity
-    fromCouplings(std::vector<Coupling> couplings);
+    fromCouplings(llvm::ArrayRef<Coupling> couplings);
 
     /// Return the connectivity knowledge kind.
     [[nodiscard]] Kind kind() const noexcept;
@@ -67,10 +68,10 @@ public:
   private:
     friend class CompilerTarget;
 
-    Connectivity(Kind kind, std::vector<Coupling> couplings);
+    Connectivity(Kind kind, llvm::ArrayRef<Coupling> couplings);
 
     Kind kind_;
-    std::vector<Coupling> couplings_;
+    llvm::SmallVector<Coupling> couplings_;
   };
 
   /**
@@ -232,7 +233,7 @@ public:
 
     /// Create explicitly enumerated native-operation support.
     [[nodiscard]] static NativeOperations
-    fromOperations(std::vector<Operation> operations);
+    fromOperations(llvm::ArrayRef<Operation> operations);
 
     /// Return the native-operation knowledge kind.
     [[nodiscard]] Kind kind() const noexcept;
@@ -243,10 +244,10 @@ public:
   private:
     friend class CompilerTarget;
 
-    NativeOperations(Kind kind, std::vector<Operation> operations);
+    NativeOperations(Kind kind, llvm::ArrayRef<Operation> operations);
 
     Kind kind_;
-    std::vector<Operation> operations_;
+    llvm::SmallVector<Operation> operations_;
   };
 
   /**

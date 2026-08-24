@@ -205,8 +205,8 @@ makeSparseUCZTarget(const bool includeMeasure) {
                     llvm::cantFail(Site::create(17))};
   return llvm::cantFail(CompilerTarget::create(
       "sparse-line", std::move(sites),
-      std::vector<CompilerTarget::Coupling>{{5, 9}, {9, 17}},
-      std::move(operations)));
+      CompilerTarget::Connectivity::fromCouplings({{5, 9}, {9, 17}}),
+      CompilerTarget::NativeOperations::fromOperations(operations)));
 }
 
 using NameAndCount = std::pair<llvm::StringRef, size_t>;
