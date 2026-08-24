@@ -1271,6 +1271,57 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
   }
 }
 
+TEST_F(CompilerPipelineTest, QCOProgramPreservesDynamicUInNativeCtrlBody) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
+      %q0 = qco.alloc : !qco.qubit
+      %q1 = qco.alloc : !qco.qubit
+      %control, %target = qco.ctrl(%q0) targets(%arg = %q1) {
+        %u = qco.u(%theta, %theta, %theta) %arg : !qco.qubit -> !qco.qubit
+        qco.yield %u : !qco.qubit
+      } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+      qco.sink %control : !qco.qubit
+      qco.sink %target : !qco.qubit
+      return
+    }
+  })mlir";
+  using Operation = CompilerTarget::Operation;
+  std::vector operations{
+      llvm::cantFail(Operation::create("x", 1, 0)),
+      llvm::cantFail(Operation::create("sx", 1, 0)),
+      llvm::cantFail(Operation::create("rz", 1, 1)),
+      llvm::cantFail(Operation::create("cz", 2, 0)),
+      llvm::cantFail(Operation::create("ctrl", 2, 0)),
+  };
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, std::nullopt, std::move(operations)));
+  ASSERT_TRUE(target.synthesisBasis());
+  ASSERT_EQ(target.synthesisBasis()->singleQubit,
+            CompilerTarget::SingleQubitBasis::ZSXX);
+
+  auto program = QCOProgram::fromMLIRString(source);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(program->compileForTarget(target));
+
+  auto compiled = parseRecordedModule(program->str());
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(verify(*compiled).succeeded());
+
+  CtrlOp ctrl;
+  compiled->walk([&](CtrlOp op) { ctrl = op; });
+  ASSERT_TRUE(ctrl);
+  ASSERT_EQ(ctrl.getNumBodyUnitaries(), 1U);
+  auto u = dyn_cast<UOp>(ctrl.getBodyUnitary(0).getOperation());
+  ASSERT_TRUE(u);
+
+  auto main = compiled->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  ASSERT_EQ(main.getNumArguments(), 1U);
+  EXPECT_TRUE(llvm::all_of(u.getParameters(), [&](Value parameter) {
+    return parameter == main.getArgument(0);
+  }));
+}
+
 /**
  * @brief Test: all-to-all target compilation uses compact placement.
  */
