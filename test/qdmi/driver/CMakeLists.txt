@@ -83,6 +83,43 @@ if(TARGET MQT::CoreQDMIDriver)
   string(REPLACE "\"duration\": 20" "\"duration\": 77" custom_sc_json "${custom_sc_json}")
   set(custom_sc_file "${CMAKE_CURRENT_BINARY_DIR}/custom-sc-device.json")
   file(WRITE "${custom_sc_file}" "${custom_sc_json}")
+  set(runtime_one_file "${CMAKE_CURRENT_BINARY_DIR}/runtime-one.json")
+  file(
+    GENERATE
+    OUTPUT "${runtime_one_file}"
+    CONTENT
+      [=[{
+  "schema-version": 1,
+  "name": "SC runtime one",
+  "numQubits": 1,
+  "durationUnit": {"unit": "ns", "scaleFactor": 1},
+  "qubitProperties": {"defaults": {"t1": 10, "t2": 20}, "overrides": []},
+  "couplings": [],
+  "operations": [{"name": "r", "numParameters": 2, "numQubits": 1, "duration": 7, "fidelity": 0.8}]
+}
+]=])
+  set(runtime_two_file "${CMAKE_CURRENT_BINARY_DIR}/runtime-two.json")
+  file(
+    GENERATE
+    OUTPUT "${runtime_two_file}"
+    CONTENT
+      [=[{
+  "schema-version": 1,
+  "name": "SC runtime two",
+  "numQubits": 2,
+  "durationUnit": {"unit": "us", "scaleFactor": 0.5},
+  "qubitProperties": {"defaults": {}, "overrides": []},
+  "couplings": [[1, 0]],
+  "operations": []
+}
+]=])
+  set(config_file "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/configured-devices.json")
+  file(
+    GENERATE
+    OUTPUT "${config_file}"
+    CONTENT
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"mqt.sc.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"},\n      {\"id\": \"mqt.ddsim.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"prefix\": \"MQT_DDSIM\"},\n      {\"id\": \"test.session-overrides\", \"library\": \"$<TARGET_FILE:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\", \"session\": {\"base-url\": \"registered-base\", \"token\": \"registered-token\", \"custom1\": \"registered-custom\"}},\n      {\"id\": \"test.session-with-child\", \"library\": \"$<TARGET_FILE:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\", \"session\": {\"custom5\": \"with-child\"}},\n      {\"id\": \"test.typed-configuration\", \"library\": \"$<TARGET_FILE:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\", \"session\": {\"device-config\": {\"inline\": {\"name\": \"inline\"}}}},\n      {\"id\": \"test.sc.runtime-default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"},\n      {\"id\": \"test.sc.runtime-custom\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${custom_sc_file}\"}}},\n      {\"id\": \"test.sc.runtime-invalid\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"inline\": {}}}},\n      {\"id\": \"test.sc.runtime-one\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${runtime_one_file}\"}}},\n      {\"id\": \"test.sc.runtime-two\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${runtime_two_file}\"}}},\n      {\"id\": \"test.disabled\", \"enabled\": false},\n      {\"id\": \"broken.example\", \"library\": \"missing-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
+  )
   string(MAKE_C_IDENTIFIER "${TARGET_NAME}-mqt-core-qdmi-metadata-device" metadata_manifest_stem)
   set(metadata_manifest_file
       "$<TARGET_FILE_DIR:${TARGET_NAME}>/${metadata_manifest_stem}.qdmi.json")

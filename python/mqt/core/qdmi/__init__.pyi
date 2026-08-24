@@ -6,14 +6,55 @@
 #
 # Licensed under the MIT License
 
-"""QDMI entities and access to MQT Core's QDMI driver."""
+"""QDMI Client entities."""
 
 import enum
+import os
 from collections.abc import Sequence
 from typing import overload
 
-from mqt.core.qdmi import driver as driver
 from mqt.core.qdmi import slurm as slurm
+
+class ClientSession:
+    """One initialized QDMI Client session."""
+
+    def __init__(
+        self,
+        *,
+        driver_path: str | os.PathLike | None = None,
+        token: str | None = None,
+        auth_file: str | os.PathLike | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        project_id: str | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> None: ...
+    @property
+    def devices(self) -> list[Device]:
+        """The devices visible to this authenticated session."""
+
+def open_device(
+    device_id: str,
+    *,
+    driver_path: str | os.PathLike | None = None,
+    token: str | None = None,
+    auth_file: str | os.PathLike | None = None,
+    auth_url: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    project_id: str | None = None,
+    custom1: str | None = None,
+    custom2: str | None = None,
+    custom3: str | None = None,
+    custom4: str | None = None,
+    custom5: str | None = None,
+) -> Device:
+    """Open a Client-visible device by stable ID in a fresh session."""
 
 class Job:
     """A job represents a submitted quantum program execution."""
@@ -219,6 +260,10 @@ class Device:
 
     def name(self) -> str:
         """Returns the name of the device."""
+
+    @property
+    def id(self) -> str:
+        """The stable Client-visible device ID."""
 
     def version(self) -> str:
         """Returns the version of the device."""

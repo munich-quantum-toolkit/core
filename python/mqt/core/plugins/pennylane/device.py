@@ -30,8 +30,7 @@ from pennylane.transforms.core import CompilePipeline
 
 from mqt.core.qdmi import Device as QDMIDeviceHandle
 from mqt.core.qdmi import Job as QDMIJobHandle
-from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import ProgramFormat, open_device
 
 from .converter import _ConvertedProgram, _ProgramConverter
 from .exceptions import (
@@ -61,14 +60,13 @@ if TYPE_CHECKING:
 __all__ = ["DDSIMDevice", "QDMIDevice"]
 
 _SESSION_PARAMETERS = frozenset({
-    "base_url",
+    "driver_path",
     "token",
     "auth_file",
     "auth_url",
     "username",
     "password",
-    "device_config",
-    "device_config_file",
+    "project_id",
     "custom1",
     "custom2",
     "custom3",
@@ -111,14 +109,14 @@ class QDMIDevice(Device):
     """Execute PennyLane programs on a gate-based QDMI device.
 
     Args:
-        device_id: Stable ID from the QDMI device registry. Use either this
+        device_id: Stable ID reported by the QDMI Driver. Use either this
             argument or ``device``.
         wires: PennyLane wire labels or number of wires. By default all QDMI
             qubits are exposed as consecutive integer wires.
         shots: Finite default shot configuration.
         device: An already-open QDMI device. Use this for a session selected by
             an integration such as Slurm.
-        session_parameters: QDMI device-session keyword arguments.
+        session_parameters: QDMI Client-session keyword arguments.
         job_parameters: QDMI custom job keyword arguments.
     """
 

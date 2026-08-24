@@ -16,12 +16,52 @@
 
 #include <qdmi/constants.h>
 
+#include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+
+#ifdef _WIN32
+#include <windows.h>
+
+#include <filesystem>
+#endif
 
 namespace qdmi {
+namespace detail {
+auto environmentUtf8(const std::string_view name)
+    -> std::optional<std::string> {
+#ifdef _WIN32
+  std::wstring wideName;
+  for (const char character : name) {
+    wideName.push_back(
+        static_cast<wchar_t>(static_cast<unsigned char>(character)));
+  }
+  const auto size = GetEnvironmentVariableW(wideName.c_str(), nullptr, 0);
+  if (size == 0) {
+    return std::nullopt;
+  }
+  std::wstring value(size, L'\0');
+  const auto written = GetEnvironmentVariableW(
+      wideName.c_str(), value.data(), static_cast<DWORD>(value.size()));
+  if (written == 0 || written >= value.size()) {
+    return std::nullopt;
+  }
+  value.resize(written);
+  return pathToUtf8(std::filesystem::path(value));
+#else
+  const std::string ownedName{name};
+  if (const auto* value = std::getenv(ownedName.c_str());
+      value != nullptr && *value != '\0') {
+    return std::string(value);
+  }
+  return std::nullopt;
+#endif
+}
+} // namespace detail
 
 auto throwIfError(const int result, const std::string& msg) -> void {
   switch (const auto res = static_cast<QDMI_STATUS>(result)) {

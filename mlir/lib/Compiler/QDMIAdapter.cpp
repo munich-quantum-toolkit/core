@@ -12,7 +12,6 @@
 
 #include "mlir/Compiler/Target.h"
 #include "qdmi/Client.hpp"
-#include "qdmi/driver/Driver.hpp"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/Twine.h>
@@ -510,9 +509,16 @@ compilerTargetFromDeviceId(const std::string_view deviceId) {
 
 llvm::Expected<std::vector<std::string>> registeredQDMIDeviceIds() {
   try {
-    return qdmi::Driver::get().registeredDeviceIds();
+    auto session = qdmi::Session{};
+    auto devices = session.getDevices();
+    std::vector<std::string> ids;
+    ids.reserve(devices.size());
+    std::ranges::transform(
+        devices, std::back_inserter(ids),
+        [](const qdmi::Device& device) { return device.getId(); });
+    return ids;
   } catch (...) {
-    return qdmiError("Failed to discover registered QDMI devices",
+    return qdmiError("Failed to discover QDMI devices",
                      std::current_exception());
   }
 }

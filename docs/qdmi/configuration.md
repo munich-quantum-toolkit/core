@@ -103,67 +103,29 @@ retaining packaged built-ins.
 
 ## Using configured devices
 
-When the QDMI driver initializes a client session, it opens the configured
-definitions. A failure to load one definition does not hide the remaining
-devices. Stable-ID registration does not initialize device libraries.
+When the packaged QDMI Driver initializes a Client session, it opens the
+configured definitions. A failure to load one definition does not hide the
+remaining devices.
 
 ```python
-from mqt.core.qdmi.driver import open_device, registered_device_ids
+from mqt.core.qdmi import ClientSession, open_device
 
-for device_id in registered_device_ids():
-    print(open_device(device_id).name())
+for discovered in ClientSession().devices:
+    print(discovered.id, open_device(discovered.id).name())
 ```
 
 Set `MQT_CORE_QDMI_CONFIG_FILE` or `MQT_CORE_QDMI_CONFIG_JSON` before the first
-driver call. Applications can also register a definition without loading its
-library and open it later by stable ID:
-
-```python
-from mqt.core.qdmi.driver import DeviceDefinition, open_device, register_device
-
-register_device(
-    DeviceDefinition(
-        "example.device",
-        "/path/to/libexample-device.so",
-        "EXAMPLE",
-        base_url="https://device.example",
-        device_config_file="/path/to/device.json",
-    )
-)
-device = open_device("example.device")
-```
-
-{py:class}`~mqt.core.qdmi.driver.DeviceDefinition` and
-{py:func}`~mqt.core.qdmi.driver.open_device` also accept
-`device_config="<json>"` for inline configuration. `device_config` and
-`device_config_file` are mutually exclusive.
-
-Every {py:func}`~mqt.core.qdmi.driver.open_device` call creates a fresh device
-session while preserving the registered defaults and stable ID. The returned
-{py:class}`~mqt.core.qdmi.Device` and any
+Driver call. Every {py:func}`~mqt.core.qdmi.open_device` call creates a fresh
+Client session and finds the stable ID in the standard Client device list. The
+returned {py:class}`~mqt.core.qdmi.Device` and any
 {py:class}`~mqt.core.qdmi.Device.Site`,
 {py:class}`~mqt.core.qdmi.Device.Operation`, or {py:class}`~mqt.core.qdmi.Job`
-wrapper derived from it keeps that fresh device session alive. The session is
-released after the last such wrapper is destroyed.
+wrapper derived from it keeps that Client session alive. The session is released
+after the last such wrapper is destroyed.
 
-Code paths that may be imported more than once can use
-{py:func}`~mqt.core.qdmi.driver.register_device_if_absent`. It returns whether
-the definition was inserted and ignores an existing or explicitly disabled
-stable ID; malformed definitions still raise an error.
-
-Use {py:func}`~mqt.core.qdmi.driver.registered_device_ids` to inspect the
-enabled stable IDs in deterministic registration order. This includes runtime
-registrations without loading native device libraries or exposing their paths,
-prefixes, or session configuration.
-
-The equivalent C++ registration operation is
-{cpp-api:func}`qdmi::Driver::registerDevice`. Duplicate IDs are rejected unless
-`replace` is true, and an opened definition cannot be replaced.
-{cpp-api:func}`qdmi::Driver::registeredDeviceIds` provides the same load-free
-enumeration, and {cpp-api:func}`qdmi::Driver::open` returns the cached device.
-{cpp-api:func}`qdmi::Session::openDevice` returns a fresh device session and
-does not add it to the QDMI client catalog. Runtime registrations and explicit
-opens are not added to that catalog.
+The equivalent C++ API is {cpp-api:class}`qdmi::Session`. `getDevices()`
+enumerates one authenticated session. {cpp-api:func}`qdmi::Session::openDevice`
+creates a fresh session and opens one enumerated ID.
 
 Multiple definitions may refer to the same library and prefix. MQT Core reuses
 the initialized library while creating a fresh QDMI device session, with its own
@@ -172,9 +134,9 @@ session parameters, for every definition.
 ## Selecting a device from a Slurm license environment
 
 MQT Core provides a mechanism-specific adapter for jobs that use local Slurm
-licenses for cluster-wide admission. The license name must equal one registered
-QDMI device ID. Register one definition per separately licensed machine. Each
-job must request one license. For example:
+licenses for cluster-wide admission. The license name must equal one stable ID
+reported by the selected QDMI Driver. Each job must request one license. For
+example:
 
 ```bash
 sbatch --licenses=mqt.ddsim.default:1 simulation.sh
@@ -190,8 +152,8 @@ device = slurm.open_device_from_license()
 
 The equivalent C++ function is `qdmi::slurm::openDeviceFromLicense()` from
 `qdmi/Slurm.hpp`. Both functions read `SLURM_JOB_LICENSES`. They accept only
-`<registered-device-id>` or `<registered-device-id>:1`. They reject remote,
-compound, and non-unit license values.
+`<device-id>` or `<device-id>:1`. They reject remote, compound, and non-unit
+license values.
 
 The adapter opens a fresh device session from the persistent definition. It does
 not replace configuration or inject credentials. Each provider defines its own
@@ -203,9 +165,9 @@ device selection. It does not verify that Slurm allocated the license. It does
 not authenticate the caller or authorize access to the device. Provider
 credentials must authorize remote devices. The operating system must isolate a
 local device when access requires enforcement. A caller can also bypass this
-adapter and call {py:func}`~mqt.core.qdmi.driver.open_device` with a stable
-device ID. A different Slurm lookup would therefore not make MQT Core an access
-control boundary.
+adapter and call {py:func}`~mqt.core.qdmi.open_device` with a stable device ID.
+A different Slurm lookup would therefore not make MQT Core an access control
+boundary.
 
 A cluster can configure more than one license for a device. For example,
 `mqt.ddsim.default:2` permits two independent jobs to request one license each.

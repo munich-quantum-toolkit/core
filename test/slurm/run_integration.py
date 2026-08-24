@@ -308,10 +308,10 @@ def main() -> None:
         registry_check = (
             "from pathlib import Path; "
             "import mqt.core; "
-            "from mqt.core.qdmi import driver; "
+            "from mqt.core.qdmi import ClientSession; "
             "module_path = Path(mqt.core.__file__).resolve(); "
             "assert not any(module_path.is_relative_to(root) for root in ('/workspace', '/runtime')), module_path; "
-            "ids = driver.registered_device_ids(); "
+            "ids = {device.id for device in ClientSession().devices}; "
             "assert 'mqt.ddsim.default' in ids and 'mqt.sc.default' in ids, ids"
         )
         controller("python3", "-c", registry_check)

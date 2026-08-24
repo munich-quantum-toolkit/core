@@ -19,7 +19,6 @@
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/bench/Generate.h"
 #include "qdmi/Client.hpp"
-#include "qdmi/driver/SessionConfig.hpp"
 #include "qiskit/Qiskit.h"
 
 #include <llvm/Support/Error.h>
@@ -187,6 +186,31 @@ template <nb::exception_type Exception = nb::exception_type::value_error,
     throw nb::builtin_exception(Exception, full.c_str());
   }
   return *std::move(result);
+}
+
+[[nodiscard]] qdmi::Device openQDMIDevice(
+    const std::string& deviceId,
+    std::optional<std::filesystem::path> driverPath,
+    std::optional<std::string> token,
+    std::optional<std::filesystem::path> authFile,
+    std::optional<std::string> authUrl, std::optional<std::string> username,
+    std::optional<std::string> password, std::optional<std::string> projectId,
+    std::optional<std::string> custom1, std::optional<std::string> custom2,
+    std::optional<std::string> custom3, std::optional<std::string> custom4,
+    std::optional<std::string> custom5) {
+  return qdmi::Session::openDevice(deviceId,
+                                   {.driverPath = std::move(driverPath),
+                                    .token = std::move(token),
+                                    .authFile = std::move(authFile),
+                                    .authUrl = std::move(authUrl),
+                                    .username = std::move(username),
+                                    .password = std::move(password),
+                                    .projectId = std::move(projectId),
+                                    .custom1 = std::move(custom1),
+                                    .custom2 = std::move(custom2),
+                                    .custom3 = std::move(custom3),
+                                    .custom4 = std::move(custom4),
+                                    .custom5 = std::move(custom5)});
 }
 
 template <class ProgramType>
@@ -826,44 +850,35 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           "device"_a, "Snapshot a circuit-model QDMI device.")
       .def_static(
           "from_device_id",
-          [](const std::string& deviceId, std::optional<std::string> baseUrl,
+          [](const std::string& deviceId,
+             std::optional<std::filesystem::path> driverPath,
              std::optional<std::string> token,
              std::optional<std::filesystem::path> authFile,
              std::optional<std::string> authUrl,
              std::optional<std::string> username,
              std::optional<std::string> password,
-             std::optional<std::string> deviceConfig,
-             std::optional<std::filesystem::path> deviceConfigFile,
+             std::optional<std::string> projectId,
              std::optional<std::string> custom1,
              std::optional<std::string> custom2,
              std::optional<std::string> custom3,
              std::optional<std::string> custom4,
              std::optional<std::string> custom5) {
-            // Keep this preflight at the Python boundary so the public
-            // ValueError does not depend on cross-extension exception
-            // translation.
-            if (deviceConfig && deviceConfigFile) {
-              throw nb::value_error(
-                  "device_config and device_config_file are mutually "
-                  "exclusive");
-            }
-            const auto overrides = qdmi::makeDeviceSessionConfig(
-                std::move(baseUrl), std::move(token), std::move(authFile),
-                std::move(authUrl), std::move(username), std::move(password),
-                std::move(deviceConfig), std::move(deviceConfigFile),
-                std::move(custom1), std::move(custom2), std::move(custom3),
-                std::move(custom4), std::move(custom5));
-            auto device = qdmi::Session::openDevice(deviceId, overrides);
+            auto device = openQDMIDevice(
+                deviceId, std::move(driverPath), std::move(token),
+                std::move(authFile), std::move(authUrl), std::move(username),
+                std::move(password), std::move(projectId), std::move(custom1),
+                std::move(custom2), std::move(custom3), std::move(custom4),
+                std::move(custom5));
             return takeResult(mlir::compilerTargetFromDevice(device));
           },
-          "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
+          "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
           "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
           "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
-          "password"_a = std::nullopt, "device_config"_a = std::nullopt,
-          "device_config_file"_a = std::nullopt, "custom1"_a = std::nullopt,
-          "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
-          "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
-          "Open a registered device and snapshot its compiler target.")
+          "password"_a = std::nullopt, "project_id"_a = std::nullopt,
+          "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
+          "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
+          "custom5"_a = std::nullopt,
+          "Open a Client-visible device and snapshot its compiler target.")
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget& target) {

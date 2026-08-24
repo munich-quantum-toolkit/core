@@ -11,12 +11,13 @@
 from __future__ import annotations
 
 import warnings
+from types import SimpleNamespace
 
 import pytest
 
 from mqt.core.plugins.qiskit import QDMIBackend, QDMIProvider
 from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import open_device
 
 
 def test_provider_backends_filter_by_name() -> None:
@@ -74,8 +75,9 @@ def test_provider_get_backend_stops_after_exact_match(monkeypatch: pytest.Monkey
     expected = QDMIBackend(open_device("mqt.ddsim.default"), device_id="matching.device")
     opened_ids: list[str] = []
     monkeypatch.setattr(
-        "mqt.core.plugins.qiskit.provider.registered_device_ids",
-        lambda: ["unavailable.device", "matching.device", "later.device"],
+        QDMIProvider,
+        "device_ids",
+        staticmethod(lambda: ["unavailable.device", "matching.device", "later.device"]),
     )
 
     def lookup(device_id: str, **_session_parameters: object) -> QDMIBackend:
@@ -106,7 +108,7 @@ def test_provider_get_backend_nonexistent() -> None:
 
 def test_provider_get_backend_no_devices(monkeypatch: pytest.MonkeyPatch) -> None:
     """Provider raises ValueError when no devices available."""
-    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.registered_device_ids", list)
+    monkeypatch.setattr(QDMIProvider, "device_ids", staticmethod(list))
 
     provider = QDMIProvider()
     with pytest.raises(ValueError, match="No backend found with name"):
@@ -130,7 +132,7 @@ def test_backend_has_provider_reference() -> None:
 
 
 def test_provider_default_constructor() -> None:
-    """Provider discovers registered devices without generic session parameters."""
+    """Provider discovers Client-visible devices without session parameters."""
     provider = QDMIProvider()
     backends = provider.backends()
     assert len(backends) > 0
@@ -139,7 +141,7 @@ def test_provider_default_constructor() -> None:
 
 
 def test_provider_construction_opens_no_devices(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Constructing a provider does not initialize any registered device."""
+    """Constructing a provider does not initialize any device."""
     monkeypatch.setattr(
         "mqt.core.plugins.qiskit.provider.QDMIBackend.from_device_id",
         lambda *_args, **_kwargs: pytest.fail("provider construction opened a device"),
@@ -147,10 +149,13 @@ def test_provider_construction_opens_no_devices(monkeypatch: pytest.MonkeyPatch)
     QDMIProvider()
 
 
-def test_provider_reads_registry_on_each_discovery_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A provider reflects registrations made after its construction."""
+def test_provider_reads_client_session_on_each_discovery_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A provider starts a fresh Client session for each discovery call."""
     device_ids = ["first.device"]
-    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.registered_device_ids", lambda: list(device_ids))
+    monkeypatch.setattr(
+        "mqt.core.plugins.qiskit.provider.ClientSession",
+        lambda: SimpleNamespace(devices=[SimpleNamespace(id=device_id) for device_id in device_ids]),
+    )
     provider = QDMIProvider()
 
     assert provider.device_ids() == ["first.device"]
@@ -187,8 +192,9 @@ def test_provider_warns_with_only_id_and_skips_unavailable_device(monkeypatch: p
     """Enumeration reports an unavailable ID without leaking failure details."""
     available = QDMIBackend(open_device("mqt.ddsim.default"), device_id="available.device")
     monkeypatch.setattr(
-        "mqt.core.plugins.qiskit.provider.registered_device_ids",
-        lambda: ["available.device", "unavailable.device"],
+        QDMIProvider,
+        "device_ids",
+        staticmethod(lambda: ["available.device", "unavailable.device"]),
     )
 
     def lookup(device_id: str, **_session_parameters: object) -> QDMIBackend:
@@ -214,8 +220,9 @@ def test_provider_silently_skips_incompatible_device(monkeypatch: pytest.MonkeyP
     """Enumeration silently omits devices that Qiskit cannot represent."""
     available = QDMIBackend(open_device("mqt.ddsim.default"), device_id="available.device")
     monkeypatch.setattr(
-        "mqt.core.plugins.qiskit.provider.registered_device_ids",
-        lambda: ["incompatible.device", "available.device"],
+        QDMIProvider,
+        "device_ids",
+        staticmethod(lambda: ["incompatible.device", "available.device"]),
     )
 
     def lookup(device_id: str, **_session_parameters: object) -> QDMIBackend:

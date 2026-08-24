@@ -14,7 +14,7 @@ components, such as a [QDMI driver](driver.md), a
 
 SC QDMI Device <sc_device>
 DDSIM QDMI Device <ddsim_device>
-QDMI Driver <driver>
+QDMI Client and Driver runtime <driver>
 QDMI device configuration <configuration>
 Slurm integration <slurm>
 QDMI-Qiskit Backend <qdmi_backend>

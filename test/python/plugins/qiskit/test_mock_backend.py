@@ -327,11 +327,14 @@ def mock_qdmi_device_factory() -> type[MockQDMIDevice]:
     return MockQDMIDevice
 
 
-def _patch_registered_devices(monkeypatch: pytest.MonkeyPatch, devices: list[MockQDMIDevice]) -> None:
-    """Make the driver functions expose the given mock devices."""
+def _patch_client_devices(monkeypatch: pytest.MonkeyPatch, devices: list[MockQDMIDevice]) -> None:
+    """Make the Client factory expose the given mock devices."""
     device_ids = [f"test.device.{index}" for index in range(len(devices))]
     devices_by_id = dict(zip(device_ids, devices, strict=True))
-    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.registered_device_ids", lambda: device_ids)
+    monkeypatch.setattr(
+        "mqt.core.plugins.qiskit.provider.QDMIProvider.device_ids",
+        staticmethod(lambda: device_ids),
+    )
     monkeypatch.setattr(
         "mqt.core.plugins.qiskit.backend.open_device",
         lambda device_id, **_kwargs: devices_by_id[device_id],
@@ -349,8 +352,8 @@ def test_backend_warns_on_unmappable_operation(
         operations=["cz", "custom_unmappable_gate", "measure"],
     )
 
-    # Use helper to patch registered driver devices
-    _patch_registered_devices(monkeypatch, [mock_device])
+    # Use helper to patch Client-visible devices
+    _patch_client_devices(monkeypatch, [mock_device])
 
     # Creating backend should trigger warning about unmappable operation
     with warnings.catch_warnings(record=True) as w:
@@ -378,8 +381,8 @@ def test_backend_warns_on_missing_measurement_operation(
         operations=["cz"],  # No measure operation
     )
 
-    # Use helper to patch registered driver devices
-    _patch_registered_devices(monkeypatch, [mock_device])
+    # Use helper to patch Client-visible devices
+    _patch_client_devices(monkeypatch, [mock_device])
 
     # Creating backend should trigger warning about missing measurement operation
     with warnings.catch_warnings(record=True) as w:
@@ -826,8 +829,8 @@ def test_backend_validation_uses_inverse_mapping(
         operations=["prx", "cz", "measure"],  # Uses 'prx' instead of 'r'
     )
 
-    # Use helper to patch registered driver devices
-    _patch_registered_devices(monkeypatch, [mock_device])
+    # Use helper to patch Client-visible devices
+    _patch_client_devices(monkeypatch, [mock_device])
 
     provider = QDMIProvider()
     backend = provider.get_backend("Test Device with PRX")

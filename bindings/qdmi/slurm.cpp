@@ -23,11 +23,10 @@ void registerSlurm(nb::module_& qdmiModule) {
   slurm.def("open_device_from_license", &qdmi::slurm::openDeviceFromLicense,
             R"pb(Open the QDMI device named by the Slurm license environment.
 
-``SLURM_JOB_LICENSES`` must contain one local license whose name equals a
-registered QDMI device ID. The optional count must be one. The function opens a
-fresh device session from the persistent definition and accepts device status
-``IDLE`` or ``BUSY``. It does not apply job-specific QDMI configuration or
-credentials.
+``SLURM_JOB_LICENSES`` must contain one local license whose name equals a stable
+ID visible to the selected QDMI Driver. The optional count must be one. The
+function opens a fresh Client session and accepts device status ``IDLE`` or
+``BUSY``. It does not apply job-specific QDMI configuration or credentials.
 
 Warning:
     ``SLURM_JOB_LICENSES`` is process-mutable. This function uses it only for
