@@ -131,9 +131,9 @@ CompilerTarget::Connectivity CompilerTarget::Connectivity::allToAll() {
 
 CompilerTarget::Connectivity::Connectivity() noexcept : kind_(Kind::Unknown) {}
 
-CompilerTarget::Connectivity
-CompilerTarget::Connectivity::fromCouplings(std::vector<Coupling> couplings) {
-  return {Kind::Explicit, std::move(couplings)};
+CompilerTarget::Connectivity CompilerTarget::Connectivity::fromCouplings(
+    const ArrayRef<Coupling> couplings) {
+  return {Kind::Explicit, couplings};
 }
 
 CompilerTarget::Connectivity::Kind
@@ -147,8 +147,8 @@ CompilerTarget::Connectivity::couplings() const noexcept {
 }
 
 CompilerTarget::Connectivity::Connectivity(const Kind kind,
-                                           std::vector<Coupling> couplings)
-    : kind_(kind), couplings_(std::move(couplings)) {}
+                                           const ArrayRef<Coupling> couplings)
+    : kind_(kind), couplings_(couplings) {}
 
 [[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::Site>>
 makeDenseSites(const size_t numSites) {
@@ -359,8 +359,8 @@ CompilerTarget::NativeOperations::NativeOperations() noexcept
 
 CompilerTarget::NativeOperations
 CompilerTarget::NativeOperations::fromOperations(
-    std::vector<Operation> operations) {
-  return {Kind::Explicit, std::move(operations)};
+    const ArrayRef<Operation> operations) {
+  return {Kind::Explicit, operations};
 }
 
 CompilerTarget::NativeOperations::Kind
@@ -374,23 +374,23 @@ CompilerTarget::NativeOperations::operations() const noexcept {
 }
 
 CompilerTarget::NativeOperations::NativeOperations(
-    const Kind kind, std::vector<Operation> operations)
-    : kind_(kind), operations_(std::move(operations)) {}
+    const Kind kind, const ArrayRef<Operation> operations)
+    : kind_(kind), operations_(operations) {}
 
 struct CompilerTarget::Storage {
   Storage(std::optional<std::string> targetName, std::vector<Site> targetSites,
           Connectivity::Kind targetConnectivityKind,
-          std::vector<Coupling> targetCouplings,
+          SmallVector<Coupling> targetCouplings,
           NativeOperations::Kind targetNativeOperationsKind,
-          std::vector<Operation> targetOperations,
+          SmallVector<Operation> targetOperations,
           std::optional<DurationUnit> targetDurationUnit);
 
   [[nodiscard]] static llvm::Expected<std::shared_ptr<const Storage>>
   create(std::optional<std::string> targetName, std::vector<Site> targetSites,
          Connectivity::Kind targetConnectivityKind,
-         std::vector<Coupling> targetCouplings,
+         SmallVector<Coupling> targetCouplings,
          NativeOperations::Kind targetNativeOperationsKind,
-         std::vector<Operation> targetOperations,
+         SmallVector<Operation> targetOperations,
          std::optional<DurationUnit> targetDurationUnit);
 
   [[nodiscard]] llvm::Error initialize();
@@ -406,12 +406,12 @@ struct CompilerTarget::Storage {
   SmallVector<SiteId> siteIds;
   DenseMap<SiteId, size_t> siteToVertex;
   Connectivity::Kind connectivityKind;
-  std::vector<Coupling> couplings;
+  SmallVector<Coupling> couplings;
   SmallVector<SmallVector<size_t, 4>> adjacency;
   SmallVector<size_t> distances;
   size_t maximumDegree = 0;
   NativeOperations::Kind nativeOperationsKind;
-  std::vector<Operation> operations;
+  SmallVector<Operation> operations;
   llvm::StringMap<SmallVector<size_t, 1>> capabilities;
   SmallVector<GateKind> supportedGates;
   std::optional<SynthesisBasis> basis;
@@ -420,9 +420,9 @@ struct CompilerTarget::Storage {
 CompilerTarget::Storage::Storage(
     std::optional<std::string> targetName, std::vector<Site> targetSites,
     const Connectivity::Kind targetConnectivityKind,
-    std::vector<Coupling> targetCouplings,
+    SmallVector<Coupling> targetCouplings,
     const NativeOperations::Kind targetNativeOperationsKind,
-    std::vector<Operation> targetOperations,
+    SmallVector<Operation> targetOperations,
     std::optional<DurationUnit> targetDurationUnit)
     : name(std::move(targetName)), durationUnit(std::move(targetDurationUnit)),
       sites(std::move(targetSites)), connectivityKind(targetConnectivityKind),
@@ -434,9 +434,9 @@ llvm::Expected<std::shared_ptr<const CompilerTarget::Storage>>
 CompilerTarget::Storage::create(
     std::optional<std::string> targetName, std::vector<Site> targetSites,
     const Connectivity::Kind targetConnectivityKind,
-    std::vector<Coupling> targetCouplings,
+    SmallVector<Coupling> targetCouplings,
     const NativeOperations::Kind targetNativeOperationsKind,
-    std::vector<Operation> targetOperations,
+    SmallVector<Operation> targetOperations,
     std::optional<DurationUnit> targetDurationUnit) {
   auto storage = std::make_shared<Storage>(
       std::move(targetName), std::move(targetSites), targetConnectivityKind,
