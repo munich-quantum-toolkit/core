@@ -900,6 +900,16 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return call.emitError()
                  << "func.call callee must have a single-block body";
         }
+        if (call.getArgOperands().size() != callee.getArguments().size()) {
+          call.emitError() << "func.call argument count does not match callee";
+          return failure();
+        }
+        auto returnOp =
+            cast<func::ReturnOp>(callee.getBody().front().getTerminator());
+        if (call.getNumResults() != returnOp.getNumOperands()) {
+          call.emitError() << "func.call result count does not match callee";
+          return failure();
+        }
         Operation* calleeOp = callee.getOperation();
         if (!walk.activeCalls.insert(calleeOp).second) {
           return call.emitError()
@@ -921,8 +931,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         }
 
         // Map callee return operands onto call results via the return op.
-        auto returnOp =
-            cast<func::ReturnOp>(callee.getBody().front().getTerminator());
         return bindValuePairs(returnOp.getOperands(), call.getResults(), walk,
                               call);
       })

@@ -1852,6 +1852,33 @@ TEST_F(QCODDFunctionalityTest, RejectsMismatchedFuncCallTypes) {
   }
 }
 
+TEST_F(QCODDFunctionalityTest, RejectsMismatchedFuncCallCounts) {
+  for (const StringRef source : {
+           R"mlir(module {
+             func.func @consume(%value: i1) {
+               return
+             }
+             func.func @main() {
+               func.call @consume() : () -> ()
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @produce() {
+               return
+             }
+             func.func @main() {
+               %unused = func.call @produce() : () -> i1
+               return
+             }
+           })mlir"}) {
+    auto mod = parseSourceString<ModuleOp>(
+        source, ParserConfig(context.get(), /*verifyAfterParse=*/false));
+    ASSERT_TRUE(mod);
+    expectSimulationFails(mainFunc(*mod), 0);
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsInvalidScfForBindings) {
   auto unmappedRegister = parseSourceString<ModuleOp>(R"mlir(
     module {
