@@ -139,11 +139,13 @@ if(TARGET MQT::CoreQDMIDriver)
   add_dependencies(${TARGET_NAME} mqt-core-qdmi-session-device)
 
   set(imported_device_build_dir "${CMAKE_CURRENT_BINARY_DIR}/imported-device-consumer")
+  set(imported_device_install_dir "${imported_device_build_dir}/install")
   set(imported_device_configure_command
       ${CMAKE_COMMAND} -S "${CMAKE_CURRENT_SOURCE_DIR}/imported_device" -B
       "${imported_device_build_dir}" -G "${CMAKE_GENERATOR}"
       "-DMQT_CORE_QDMI_DEVICE_TARGETS=${metadata_device_export}"
-      "-DMQT_CORE_QDMI_HELPER=${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake")
+      "-DMQT_CORE_BUILD_DIR=${CMAKE_BINARY_DIR}" "-DMQT_CORE_BUILD_CONFIG=$<CONFIG>"
+      "-DMQT_CORE_INSTALL_DIR=${imported_device_install_dir}" "-DCMAKE_BUILD_TYPE=$<CONFIG>")
   if(CMAKE_GENERATOR_PLATFORM)
     list(APPEND imported_device_configure_command -A "${CMAKE_GENERATOR_PLATFORM}")
   endif()

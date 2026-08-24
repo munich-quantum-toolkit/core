@@ -110,9 +110,10 @@ releases may include breaking changes.
   open targeted sessions through the packaged driver's optional private
   configuration extension ([#2230]) ([**@burgholzer**])
 - 💥 Load one replaceable QDMI 1.4 Client driver through a validated function
-  table, split `MQT::CoreQDMI` from the packaged `MQT::CoreQDMIDriver`, and use
-  stable Client device IDs across C++, Python, MLIR, Qiskit, PennyLane, and
-  Slurm ([#2229]) ([**@burgholzer**])
+  table, split `MQT::CoreQDMI` from the packaged `MQT::CoreQDMIDriver`, and
+  stage their complete runtime dependencies for installed consumers. Use stable
+  Client device IDs across C++, Python, MLIR, Qiskit, PennyLane, and Slurm
+  ([#2229], [#2231]) ([**@burgholzer**])
 - 💥 Drop support for x86 macOS and stop publishing the respective wheels
   ([#2259]) ([**@denialhaag**])
 - ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++
@@ -914,6 +915,7 @@ for previous changelogs._
 [#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2240]: https://github.com/munich-quantum-toolkit/core/pull/2240
+[#2231]: https://github.com/munich-quantum-toolkit/core/pull/2231
 [#2230]: https://github.com/munich-quantum-toolkit/core/pull/2230
 [#2229]: https://github.com/munich-quantum-toolkit/core/pull/2229
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232

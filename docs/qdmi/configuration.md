@@ -247,7 +247,12 @@ mqt_copy_qdmi_runtime(my-application MQT::CoreQDMIScDevice MQT::CoreQDMI_DDSIM_D
 
 Inside an MQT Core build, omitting the device list copies every device
 registered through `mqt_configure_qdmi_device`. Installed consumers select the
-exported device targets they need, as shown above.
+exported device targets they need, as shown above. The helper stages
+`MQT::CoreQDMI` and `MQT::CoreQDMIDriver` when those targets are available,
+whether they come from the current build or an installed CMake package. On
+Windows, it also stages the transitive runtime DLLs of both Core libraries and
+each selected device. During a build, the consumer uses its build RPATH rather
+than an unrelated final install RPATH.
 
 An external device implementation does not need MQT Core as a build dependency.
 It can export its stable ID and prefix as target metadata:
@@ -267,4 +272,5 @@ When `mqt_copy_qdmi_runtime` receives that built or imported target, it
 generates the relocatable manifest while copying the device. Device targets may
 also declare `RUNTIME_FILES` through `mqt_configure_qdmi_device`; their exported
 `QDMI_RUNTIME_FILES` basenames are copied beside the provider as part of the
-same operation.
+same operation. The result is one colocated directory with the Client, Driver,
+provider, manifest, provider assets, and required Windows DLLs.
