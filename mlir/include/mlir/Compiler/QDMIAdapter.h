@@ -11,8 +11,10 @@
 #pragma once
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 
 #include <llvm/Support/Error.h>
+#include <qdmi/constants.h>
 
 #include <string>
 #include <string_view>
@@ -45,6 +47,28 @@ compilerTargetFromDevice(const qdmi::Device& device);
  */
 [[nodiscard]] llvm::Expected<CompilerTarget>
 compilerTargetFromDeviceId(std::string_view deviceId);
+
+/**
+ * @brief Snapshot a QDMI device and one accepted payload as a target
+ * environment.
+ *
+ * @details The adapter preserves the exact program format, groups feature
+ * records with the same ID and value, and adds the normative baseline of a
+ * standard payload. Unknown optional feature metadata remains unknown.
+ */
+[[nodiscard]] llvm::Expected<TargetEnvironment>
+targetEnvironmentFromDevice(const qdmi::Device& device,
+                            const QDMI_Program_Format& format);
+
+/**
+ * @brief Open a registered QDMI device and snapshot one accepted payload.
+ *
+ * @details This adapter contains exceptions from the QDMI C++ API and returns
+ * them as LLVM errors. The returned environment owns all queried metadata.
+ */
+[[nodiscard]] llvm::Expected<TargetEnvironment>
+targetEnvironmentFromDeviceId(std::string_view deviceId,
+                              const QDMI_Program_Format& format);
 
 /**
  * @brief List the stable IDs of registered QDMI devices.

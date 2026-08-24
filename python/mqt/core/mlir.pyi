@@ -17,6 +17,7 @@ import numpy as np
 import qiskit.circuit
 
 import mqt.core.dd
+import mqt.core.qdmi
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
 
@@ -475,6 +476,31 @@ class TargetEnvironment:
     """A compiler target and its selected payload specification."""
 
     def __init__(self, target: CompilerTarget, payload_specification: PayloadSpecification) -> None: ...
+    @staticmethod
+    def from_device(device: mqt.core.qdmi.Device, program_format: mqt.core.qdmi.ProgramFormat) -> TargetEnvironment:
+        """Snapshot a QDMI device and one accepted payload."""
+
+    @staticmethod
+    def from_device_id(
+        device_id: str,
+        program_format: mqt.core.qdmi.ProgramFormat,
+        *,
+        base_url: str | None = None,
+        token: str | None = None,
+        auth_file: str | os.PathLike | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        device_config: str | None = None,
+        device_config_file: str | os.PathLike | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> TargetEnvironment:
+        """Open a registered device and snapshot one accepted payload."""
+
     @property
     def target(self) -> CompilerTarget:
         """The compiler target."""

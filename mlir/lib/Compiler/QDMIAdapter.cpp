@@ -11,19 +11,24 @@
 #include "mlir/Compiler/QDMIAdapter.h"
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "qdmi/Client.hpp"
+#include "qdmi/ProgramFormat.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/CheckedArithmetic.h>
 #include <llvm/Support/Error.h>
+#include <qdmi/constants.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <iterator>
 #include <limits>
+#include <map>
 #include <optional>
 #include <set>
 #include <span>
@@ -471,6 +476,154 @@ snapshotCompilerTarget(const qdmi::Device& device) {
                                 std::move(*durationUnit));
 }
 
+[[nodiscard]] static llvm::Error
+invalidFeatureGroup(const std::string_view id, const uint64_t value,
+                    const llvm::StringRef detail) {
+  return llvm::createStringError(
+      std::make_error_code(std::errc::invalid_argument),
+      llvm::Twine("Invalid QDMI program feature group '") + id + "' value " +
+          llvm::Twine(value) + ": " + detail);
+}
+
+[[nodiscard]] static llvm::Expected<std::vector<ProgramCapability>>
+groupProgramFeatures(const std::vector<QDMI_Program_Feature>& features) {
+  struct FeatureGroup {
+    ProgramCapability capability;
+    bool unrestricted = false;
+  };
+
+  std::vector<FeatureGroup> groups;
+  std::map<std::pair<std::string, uint64_t>, size_t> groupIndices;
+  groups.reserve(features.size());
+
+  for (const auto& feature : features) {
+    if (!qdmi::isValidProgramFeature(feature)) {
+      return invalidFeatureGroup("<invalid>", feature.value,
+                                 "record fields are not canonical");
+    }
+    const std::string id{std::data(feature.id)};
+    const auto key = std::pair{id, feature.value};
+    const auto [position, inserted] =
+        groupIndices.try_emplace(key, groups.size());
+    if (inserted) {
+      groups.push_back({.capability = {.id = id, .value = feature.value}});
+    }
+    auto& group = groups[position->second];
+    const std::string constraintId{std::data(feature.constraint_id)};
+    if (constraintId.empty()) {
+      if (!inserted || !group.capability.constraints.empty()) {
+        return invalidFeatureGroup(
+            id, feature.value,
+            "an unrestricted group must contain exactly one record");
+      }
+      group.unrestricted = true;
+      continue;
+    }
+    if (group.unrestricted) {
+      return invalidFeatureGroup(
+          id, feature.value,
+          "an unrestricted record cannot have constrained siblings");
+    }
+    if (std::ranges::any_of(group.capability.constraints,
+                            [&](const ProgramConstraint& constraint) {
+                              return constraint.id == constraintId;
+                            })) {
+      return invalidFeatureGroup(id, feature.value,
+                                 "constraint IDs must be unique");
+    }
+    group.capability.constraints.push_back(
+        {.id = constraintId, .value = feature.constraint_value});
+  }
+
+  std::vector<ProgramCapability> capabilities;
+  capabilities.reserve(groups.size());
+  std::ranges::transform(
+      groups, std::back_inserter(capabilities),
+      [](FeatureGroup& group) { return std::move(group.capability); });
+  return capabilities;
+}
+
+[[nodiscard]] static std::vector<ProgramCapability>
+payloadBaseline(const PayloadFormat& format) {
+  if (format.id != "qir" || format.version != "2.1.0" ||
+      format.profile != "adaptive") {
+    return {};
+  }
+  return {{.id = QDMI_PROGRAM_FEATURE_MID_CIRCUIT_MEASUREMENT},
+          {.id = QDMI_PROGRAM_FEATURE_MEASURED_QUBIT_REUSE},
+          {.id = QDMI_PROGRAM_FEATURE_MEASUREMENT_RESULT_USE},
+          {.id = QDMI_PROGRAM_FEATURE_BOOLEAN_COMPUTATION},
+          {.id = QDMI_PROGRAM_FEATURE_FORWARD_BRANCHING}};
+}
+
+[[nodiscard]] static llvm::Expected<PayloadSpecification>
+snapshotPayloadSpecification(const qdmi::Device& device,
+                             const QDMI_Program_Format& format) {
+  if (!qdmi::isValidProgramFormat(format)) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "Invalid QDMI program format: fields are not canonical");
+  }
+  const auto supported = device.getSupportedProgramFormats();
+  if (std::ranges::none_of(supported, [&](const auto& candidate) {
+        return qdmi::equal(candidate, format);
+      })) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "QDMI device does not accept the selected program format");
+  }
+
+  auto encoding = PayloadEncoding::Text;
+  switch (format.encoding) {
+  case QDMI_PROGRAM_ENCODING_TEXT:
+    encoding = PayloadEncoding::Text;
+    break;
+  case QDMI_PROGRAM_ENCODING_BINARY:
+    encoding = PayloadEncoding::Binary;
+    break;
+  default:
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "Invalid QDMI program format encoding");
+  }
+  PayloadFormat payloadFormat{
+      .id = std::data(format.id),
+      .version = std::to_string(QDMI_VERSION_MAJOR(format.version)) + "." +
+                 std::to_string(QDMI_VERSION_MINOR(format.version)) + "." +
+                 std::to_string(QDMI_VERSION_PATCH(format.version)),
+      .profile = std::data(format.profile),
+      .encoding = encoding};
+
+  auto capabilities = payloadBaseline(payloadFormat);
+  const auto optionalFeatures = device.tryGetProgramFeatures(format);
+  if (optionalFeatures) {
+    auto optionalCapabilities = groupProgramFeatures(*optionalFeatures);
+    if (!optionalCapabilities) {
+      return optionalCapabilities.takeError();
+    }
+    capabilities.insert(capabilities.end(),
+                        std::make_move_iterator(optionalCapabilities->begin()),
+                        std::make_move_iterator(optionalCapabilities->end()));
+  }
+  return PayloadSpecification::create(std::move(payloadFormat),
+                                      std::move(capabilities),
+                                      optionalFeatures.has_value());
+}
+
+[[nodiscard]] static llvm::Expected<TargetEnvironment>
+snapshotTargetEnvironment(const qdmi::Device& device,
+                          const QDMI_Program_Format& format) {
+  auto target = snapshotCompilerTarget(device);
+  if (!target) {
+    return target.takeError();
+  }
+  auto payload = snapshotPayloadSpecification(device, format);
+  if (!payload) {
+    return payload.takeError();
+  }
+  return TargetEnvironment(*target, std::move(*payload));
+}
+
 [[nodiscard]] static llvm::Error qdmiError(const llvm::Twine& action,
                                            const char* const detail) {
   return llvm::createStringError(std::make_error_code(std::errc::io_error),
@@ -503,6 +656,30 @@ compilerTargetFromDeviceId(const std::string_view deviceId) {
                       std::string(deviceId) + "'";
   try {
     return snapshotCompilerTarget(qdmi::Session::openDevice(deviceId));
+  } catch (...) {
+    return qdmiError(action, std::current_exception());
+  }
+}
+
+llvm::Expected<TargetEnvironment>
+targetEnvironmentFromDevice(const qdmi::Device& device,
+                            const QDMI_Program_Format& format) {
+  try {
+    return snapshotTargetEnvironment(device, format);
+  } catch (...) {
+    return qdmiError("Failed to query QDMI device and payload",
+                     std::current_exception());
+  }
+}
+
+llvm::Expected<TargetEnvironment>
+targetEnvironmentFromDeviceId(const std::string_view deviceId,
+                              const QDMI_Program_Format& format) {
+  const auto action = std::string("Failed to open or query QDMI device '") +
+                      std::string(deviceId) + "' and payload";
+  try {
+    return snapshotTargetEnvironment(qdmi::Session::openDevice(deviceId),
+                                     format);
   } catch (...) {
     return qdmiError(action, std::current_exception());
   }

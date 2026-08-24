@@ -39,6 +39,7 @@ from mqt.core.mlir import (
     TargetEnvironment,
     compile_program,
 )
+from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
 requires_qiskit_translation = pytest.mark.skipif(
@@ -720,6 +721,41 @@ def test_compiler_target_from_device_id_preserves_open_and_conversion_errors() -
             device_config="{}",
             device_config_file=Path("device.json"),
         )
+
+
+def test_target_environment_from_device_groups_exact_payload_features() -> None:
+    """QDMI conversion preserves the exact format and complete feature groups."""
+    environment = TargetEnvironment.from_device(open_device("mqt.ddsim.default"), ProgramFormat.OPENQASM3)
+    payload = environment.payload_specification
+
+    assert payload.format.format_id == "openqasm"
+    assert payload.format.version == "3.0.0"
+    assert not payload.format.profile
+    assert payload.format.encoding == PayloadEncoding.TEXT
+    assert payload.optional_capabilities_known
+    assert {capability.capability_id for capability in payload.capabilities} == {
+        "mid-circuit-measurement",
+        "measured-qubit-reuse",
+        "measurement-result-use",
+        "boolean-computation",
+        "forward-branching",
+    }
+    assert all(not capability.constraints for capability in payload.capabilities)
+
+
+def test_target_environment_from_device_id_adds_adaptive_baseline() -> None:
+    """Stable-ID conversion adds the QIR Adaptive normative baseline once."""
+    environment = TargetEnvironment.from_device_id(
+        "mqt.ddsim.default", ProgramFormat.QIR21_ADAPTIVE_BINARY, custom1="value"
+    )
+    payload = environment.payload_specification
+
+    assert payload.format.format_id == "qir"
+    assert payload.format.version == "2.1.0"
+    assert payload.format.profile == "adaptive"
+    assert payload.format.encoding == PayloadEncoding.BINARY
+    assert payload.optional_capabilities_known
+    assert len(payload.capabilities) == 5
 
 
 def test_qco_program_runs_textual_pipeline() -> None:

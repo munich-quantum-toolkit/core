@@ -10,7 +10,9 @@
 
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "qdmi/Client.hpp"
+#include "qdmi/ProgramFormat.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <gtest/gtest.h>
@@ -18,6 +20,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
+#include <qdmi/constants.h>
 
 #include <cassert>
 #include <initializer_list>
@@ -27,6 +30,18 @@
 #include <vector>
 
 using mlir::CompilerTarget;
+
+[[nodiscard]] static const mlir::ProgramCapability&
+findCapability(const mlir::PayloadSpecification& payload,
+               const llvm::StringRef id) {
+  const auto* const found =
+      llvm::find_if(payload.capabilities(), [&](const auto& capability) {
+        return capability.id == id;
+      });
+  assert(found != payload.capabilities().end() &&
+         "Payload capability not found");
+  return *found;
+}
 
 [[nodiscard]] static const CompilerTarget::Operation&
 findOperation(const CompilerTarget& target, const llvm::StringRef name) {
@@ -132,6 +147,65 @@ TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
   EXPECT_EQ(target.supportsOperation("measure", 1, 0), true);
   EXPECT_EQ(target.supportsOperation("reset", 1, 0), true);
   EXPECT_EQ(target.supportsOperation("barrier", 0, 0), false);
+}
+
+TEST(CompilerQDMIAdapterTest, SnapshotsExactPayloadAndFeatureGroups) {
+  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  const auto environment = llvm::cantFail(
+      mlir::targetEnvironmentFromDevice(device, qdmi::OPENQASM3));
+  const auto& payload = environment.payloadSpecification();
+
+  EXPECT_EQ(payload.format(),
+            (mlir::PayloadFormat{.id = "openqasm",
+                                 .version = "3.0.0",
+                                 .profile = "",
+                                 .encoding = mlir::PayloadEncoding::Text}));
+  EXPECT_TRUE(payload.optionalCapabilitiesKnown());
+  ASSERT_EQ(payload.capabilities().size(), 5);
+  for (const llvm::StringRef id : {QDMI_PROGRAM_FEATURE_MID_CIRCUIT_MEASUREMENT,
+                                   QDMI_PROGRAM_FEATURE_MEASURED_QUBIT_REUSE,
+                                   QDMI_PROGRAM_FEATURE_MEASUREMENT_RESULT_USE,
+                                   QDMI_PROGRAM_FEATURE_BOOLEAN_COMPUTATION,
+                                   QDMI_PROGRAM_FEATURE_FORWARD_BRANCHING}) {
+    const auto& capability = findCapability(payload, id);
+    EXPECT_EQ(capability.value, 0);
+    EXPECT_TRUE(capability.constraints.empty());
+  }
+}
+
+TEST(CompilerQDMIAdapterTest, AddsQIRAdaptiveBaselineOnce) {
+  const auto environment = llvm::cantFail(mlir::targetEnvironmentFromDeviceId(
+      "mqt.ddsim.default", qdmi::QIR21_ADAPTIVE_BINARY));
+  const auto& payload = environment.payloadSpecification();
+
+  EXPECT_EQ(payload.format(),
+            (mlir::PayloadFormat{.id = "qir",
+                                 .version = "2.1.0",
+                                 .profile = "adaptive",
+                                 .encoding = mlir::PayloadEncoding::Binary}));
+  EXPECT_TRUE(payload.optionalCapabilitiesKnown());
+  ASSERT_EQ(payload.capabilities().size(), 5);
+  for (const llvm::StringRef id : {QDMI_PROGRAM_FEATURE_MID_CIRCUIT_MEASUREMENT,
+                                   QDMI_PROGRAM_FEATURE_MEASURED_QUBIT_REUSE,
+                                   QDMI_PROGRAM_FEATURE_MEASUREMENT_RESULT_USE,
+                                   QDMI_PROGRAM_FEATURE_BOOLEAN_COMPUTATION,
+                                   QDMI_PROGRAM_FEATURE_FORWARD_BRANCHING}) {
+    EXPECT_TRUE(findCapability(payload, id).constraints.empty());
+  }
+}
+
+TEST(CompilerQDMIAdapterTest, RejectsPayloadNotAcceptedByDevice) {
+  constexpr QDMI_Program_Format unsupported{
+      .version = QDMI_MAKE_VERSION(3, 1, 0),
+      .encoding = QDMI_PROGRAM_ENCODING_TEXT,
+      .id = "openqasm",
+      .profile = ""};
+  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  auto environment = mlir::targetEnvironmentFromDevice(device, unsupported);
+
+  ASSERT_FALSE(environment);
+  EXPECT_NE(llvm::toString(environment.takeError()).find("does not accept"),
+            std::string::npos);
 }
 
 TEST(CompilerQDMIAdapterTest, ListsRegisteredDeviceIds) {
