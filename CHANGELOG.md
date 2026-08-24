@@ -77,6 +77,8 @@ releases may include breaking changes.
 
 #### Other additions
 
+- 🚸 Let PennyLane QDMI devices reuse an already-open session, including a
+  device selected from a Slurm license ([#2232]) ([**@burgholzer**])
 - ✨ Add extensible program serializers to QDMI Qiskit backends. [QDMI-on-IQM]
   now provides the IQM JSON serializer and `MoveGate` integration ([#2114])
   ([**@marcelwa**])
@@ -805,6 +807,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
 [#2211]: https://github.com/munich-quantum-toolkit/core/pull/2211
 [#2217]: https://github.com/munich-quantum-toolkit/core/pull/2217
