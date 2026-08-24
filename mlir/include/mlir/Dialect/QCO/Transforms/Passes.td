@@ -111,6 +111,36 @@ def QuantumLoopUnroll
 }
 
 //===----------------------------------------------------------------------===//
+// Payload legalization passes
+//===----------------------------------------------------------------------===//
+
+def UnrollUnsupportedPayloadLoops
+    : Pass<"unroll-unsupported-payload-loops", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::arith::ArithDialect",
+                           "mlir::scf::SCFDialect"];
+  let summary = "Unroll static loops unsupported by the selected payload";
+  let description = [{
+    Reads the selected payload from `mqt.target_env` and fully unrolls static
+    `scf.for` operations that its counted-iteration capability does not cover.
+    The pass limits the total number of cloned body operations to 65,536.
+    Dynamic loops remain for payload control-flow legalization.
+  }];
+}
+
+def LegalizePayloadControlFlow
+    : Pass<"legalize-payload-control-flow", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect",
+                           "mlir::arith::ArithDialect"];
+  let summary = "Legalize control flow for the selected payload";
+  let description = [{
+    Reads the selected payload from `mqt.target_env`. The pass retains covered
+    QCO and SCF branches and loops, lowers unsupported index switches to nested
+    forward branches when possible, and rejects residual structural control
+    flow that the payload does not support.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
 

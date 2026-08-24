@@ -44,6 +44,44 @@ effective capability, including the selected format's baseline. Set
 `optional_capabilities_known=True` only when the producer also knows that the
 list contains every optional device capability.
 
+### Payload control flow
+
+Target compilation removes unused symbols, lifts reducible ControlFlow dialect
+graphs to SCF, and propagates constants. It checks constant loop ranges with
+widened arithmetic before generic canonicalization, unrolls unsupported static
+loops, and then runs the standard QCO cleanup pipeline. It applies these
+structural capabilities to the remaining control flow:
+
+| Capability           | Residual operations                                 |
+| -------------------- | --------------------------------------------------- |
+| `forward-branching`  | `qco.if` and classical `scf.if`                     |
+| `counted-iteration`  | `scf.for`                                           |
+| `conditional-loop`   | `scf.while`                                         |
+| `multiway-branching` | `qco.index_switch` and classical `scf.index_switch` |
+
+A finite `scf.for` that exceeds the selected counted-iteration contract is fully
+unrolled when this clones at most 65,536 body operations. Cleanup runs again
+because unrolling can make nested bounds and conditions constant. An unsupported
+index switch is lowered to nested forward branches when that form fits the
+selected contract. Generic SCF branches cannot capture or return QCO qubits or
+quantum tensors; use the corresponding QCO branch operation for linear quantum
+state. SCF loops must carry linear quantum state through their iteration
+arguments instead of capturing it.
+
+The supported constraints are `max-control-flow-nesting-depth` on all four
+capabilities, `max-iteration-count` on both iteration capabilities, and
+`max-case-count` on multiway branching. Limits are inclusive. The compiler must
+prove a constrained loop's trip count. It currently proves constant `scf.for`
+bounds and rejects a constrained `scf.while` because no general termination
+bound is available. The compiler rejects a constant range when MLIR's native
+trip-count result disagrees with widened arithmetic. A zero, unknown, or
+misapplied constraint makes that capability group unusable. Missing or
+incomplete optional metadata never implies support.
+
+This stage checks structural control flow only. Later lowering stages remain
+responsible for scalar types and operations, measurement provenance, function
+features, allocation, and final payload-profile conformance.
+
 The target can also be constructed directly. Connectivity and native-operation
 support are required:
 
