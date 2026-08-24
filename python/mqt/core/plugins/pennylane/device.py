@@ -110,39 +110,54 @@ class QDMIDevice(Device):
     """Execute PennyLane programs on a gate-based QDMI device.
 
     Args:
-        device_id: Stable ID from the QDMI device registry.
+        device_id: Stable ID from the QDMI device registry. Use either this
+            argument or ``device``.
         wires: PennyLane wire labels or number of wires. By default all QDMI
             qubits are exposed as consecutive integer wires.
         shots: Finite default shot configuration.
+        device: An already-open QDMI device. Use this for a session selected by
+            an integration such as Slurm.
         session_parameters: QDMI device-session keyword arguments.
         job_parameters: QDMI custom job keyword arguments.
     """
 
     def __init__(
         self,
-        device_id: str,
+        device_id: str | None = None,
         wires: int | Sequence[Hashable] | None = None,
         shots: int | Sequence[int | tuple[int, int]] | Shots | None = 1024,
         *,
+        device: QDMIDeviceHandle | None = None,
         session_parameters: QDMISessionParameters | None = None,
         job_parameters: QDMIJobParameters | None = None,
     ) -> None:
-        """Initialize and open a fresh QDMI device session.
+        """Initialize from a stable ID or an open QDMI device.
 
         Raises:
             PennyLaneConfigurationError: If configuration or requested wires are invalid.
         """
-        self._device_id = device_id
         self._session_parameters = dict(session_parameters or {})
         self._job_parameters = dict(job_parameters or {})
         _validate_parameter_names(self._session_parameters, _SESSION_PARAMETERS, "session")
         _validate_parameter_names(self._job_parameters, _JOB_PARAMETERS, "job")
 
-        try:
-            self._qdmi_device = open_device(device_id, **self._session_parameters)
-        except (IndexError, RuntimeError, ValueError) as exc:
-            msg = f"Failed to open QDMI device '{device_id}': {exc}"
-            raise ConfigurationError(msg) from exc
+        if (device_id is None) == (device is None):
+            msg = "Specify exactly one of device_id and device."
+            raise ConfigurationError(msg)
+        if device is not None:
+            if self._session_parameters:
+                msg = "session_parameters cannot be used with an already-open QDMI device."
+                raise ConfigurationError(msg)
+            self._qdmi_device = device
+        else:
+            assert device_id is not None
+            try:
+                self._qdmi_device = open_device(device_id, **self._session_parameters)
+            except (IndexError, RuntimeError, ValueError) as exc:
+                msg = f"Failed to open QDMI device '{device_id}': {exc}"
+                raise ConfigurationError(msg) from exc
+        self._device_id = device_id
+        self._device_name = device_id or self._qdmi_device.name()
 
         num_qubits = self._qdmi_device.qubits_num()
         resolved_wires: int | Sequence[Hashable] = num_qubits if wires is None else wires
@@ -151,7 +166,10 @@ class QDMIDevice(Device):
             msg = "A QDMI PennyLane device requires at least one wire."
             raise ConfigurationError(msg)
         if requested_wires > num_qubits:
-            msg = f"QDMI device '{device_id}' exposes {num_qubits} qubits, but {requested_wires} wires were requested."
+            msg = (
+                f"QDMI device '{self._device_name}' exposes {num_qubits} qubits, "
+                f"but {requested_wires} wires were requested."
+            )
             raise ConfigurationError(msg)
 
         # PennyLane deprecates passing device-level shots to Device.__init__,
@@ -166,8 +184,8 @@ class QDMIDevice(Device):
         self._execution_time = 0.0
 
     @property
-    def device_id(self) -> str:
-        """Stable QDMI device ID."""
+    def device_id(self) -> str | None:
+        """Stable QDMI device ID, if the device was opened by ID."""
         return self._device_id
 
     @property
@@ -199,7 +217,7 @@ class QDMIDevice(Device):
             return ProgramFormat.QASM3
         if ProgramFormat.QASM2 in formats:
             return ProgramFormat.QASM2
-        msg = f"QDMI device '{self._device_id}' advertises neither OpenQASM 3 nor OpenQASM 2."
+        msg = f"QDMI device '{self._device_name}' advertises neither OpenQASM 3 nor OpenQASM 2."
         raise UnsupportedFormatError(msg)
 
     def preprocess_transforms(self, execution_config: ExecutionConfig | None = None) -> CompilePipeline:
@@ -331,7 +349,7 @@ class QDMIDevice(Device):
             self._submitted_jobs += 1
             job.wait()
         except (RuntimeError, ValueError) as exc:
-            msg = f"QDMI execution on '{self._device_id}' failed: {exc}"
+            msg = f"QDMI execution on '{self._device_name}' failed: {exc}"
             raise ExecutionError(msg) from exc
         self._require_done(job)
         return job
