@@ -16,7 +16,6 @@
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
@@ -465,68 +464,6 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
     return std::nullopt;
   }
   return emitUnitary1QEulerPlan(builder, loc, qubit, plan);
-}
-
-std::optional<SynthesizedParameterizedUnitary1Q>
-synthesizeParameterizedUnitary1QEuler(OpBuilder& builder, const Location loc,
-                                      Value qubit, const Value theta,
-                                      const Value phi, const Value lambda,
-                                      const SingleQubitBasis basis) {
-  if (basis != SingleQubitBasis::ZYZ && basis != SingleQubitBasis::ZXZ &&
-      basis != SingleQubitBasis::ZSXX) {
-    return std::nullopt;
-  }
-
-  const Value pi = mqt::constantFromScalar(builder, loc, std::numbers::pi);
-  const Value halfPi =
-      mqt::constantFromScalar(builder, loc, std::numbers::pi / 2.0);
-  const Value two = mqt::constantFromScalar(builder, loc, 2.0);
-  const Value intrinsicPhase =
-      arith::DivFOp::create(
-          builder, loc, arith::AddFOp::create(builder, loc, phi, lambda), two)
-          .getResult();
-
-  switch (basis) {
-  case SingleQubitBasis::ZYZ:
-    qubit = RZOp::create(builder, loc, qubit, lambda).getQubitOut();
-    qubit = RYOp::create(builder, loc, qubit, theta).getQubitOut();
-    qubit = RZOp::create(builder, loc, qubit, phi).getQubitOut();
-    return SynthesizedParameterizedUnitary1Q{qubit, intrinsicPhase};
-  case SingleQubitBasis::ZXZ: {
-    const Value shiftedLambda =
-        arith::SubFOp::create(builder, loc, lambda, halfPi).getResult();
-    qubit = RZOp::create(builder, loc, qubit, shiftedLambda).getQubitOut();
-  }
-    qubit = RXOp::create(builder, loc, qubit, theta).getQubitOut();
-    {
-      const Value shiftedPhi =
-          arith::AddFOp::create(builder, loc, phi, halfPi).getResult();
-      qubit = RZOp::create(builder, loc, qubit, shiftedPhi).getQubitOut();
-    }
-    return SynthesizedParameterizedUnitary1Q{qubit, intrinsicPhase};
-  case SingleQubitBasis::ZSXX:
-    qubit = RZOp::create(builder, loc, qubit, lambda).getQubitOut();
-    qubit = SXOp::create(builder, loc, qubit).getQubitOut();
-    {
-      const Value shiftedTheta =
-          arith::AddFOp::create(builder, loc, theta, pi).getResult();
-      qubit = RZOp::create(builder, loc, qubit, shiftedTheta).getQubitOut();
-    }
-    qubit = SXOp::create(builder, loc, qubit).getQubitOut();
-    {
-      const Value shiftedPhi =
-          arith::AddFOp::create(builder, loc, phi, pi).getResult();
-      qubit = RZOp::create(builder, loc, qubit, shiftedPhi).getQubitOut();
-    }
-    return SynthesizedParameterizedUnitary1Q{
-        qubit, arith::AddFOp::create(builder, loc, intrinsicPhase, halfPi)};
-  case SingleQubitBasis::XZX:
-  case SingleQubitBasis::XYX:
-  case SingleQubitBasis::U:
-  case SingleQubitBasis::R:
-    return std::nullopt;
-  }
-  llvm_unreachable("invalid single-qubit synthesis basis");
 }
 
 } // namespace mlir::qco::decomposition

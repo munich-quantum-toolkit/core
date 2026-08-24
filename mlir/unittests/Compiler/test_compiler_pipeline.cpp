@@ -32,6 +32,7 @@
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -62,6 +63,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <iosfwd>
 #include <iterator>
 #include <memory>
@@ -205,47 +207,18 @@ makeSparseUCZTarget(const bool includeMeasure) {
       std::move(operations)));
 }
 
-[[nodiscard]] static CompilerTarget makeZSXXCZTarget() {
-  using Operation = CompilerTarget::Operation;
-  std::vector operations{llvm::cantFail(Operation::create("x", 1, 0)),
-                         llvm::cantFail(Operation::create("sx", 1, 0)),
-                         llvm::cantFail(Operation::create("rz", 1, 1)),
-                         llvm::cantFail(Operation::create("cz", 2, 0))};
-  return llvm::cantFail(
-      CompilerTarget::create(2, std::nullopt, std::move(operations)));
-}
+using NameAndCount = std::pair<llvm::StringRef, size_t>;
 
-[[nodiscard]] static CompilerTarget makeRXRZCZTarget() {
+[[nodiscard]] static CompilerTarget
+makeCZTarget(const std::initializer_list<NameAndCount> singleQubitGates) {
   using Operation = CompilerTarget::Operation;
-  std::vector operations{llvm::cantFail(Operation::create("rx", 1, 1)),
-                         llvm::cantFail(Operation::create("rz", 1, 1)),
-                         llvm::cantFail(Operation::create("cz", 2, 0))};
-  return llvm::cantFail(
-      CompilerTarget::create(2, std::nullopt, std::move(operations)));
-}
-
-[[nodiscard]] static CompilerTarget makeRXRYCZTarget() {
-  using Operation = CompilerTarget::Operation;
-  std::vector operations{llvm::cantFail(Operation::create("rx", 1, 1)),
-                         llvm::cantFail(Operation::create("ry", 1, 1)),
-                         llvm::cantFail(Operation::create("cz", 2, 0))};
-  return llvm::cantFail(
-      CompilerTarget::create(2, std::nullopt, std::move(operations)));
-}
-
-[[nodiscard]] static CompilerTarget makeRYRZCZTarget() {
-  using Operation = CompilerTarget::Operation;
-  std::vector operations{llvm::cantFail(Operation::create("ry", 1, 1)),
-                         llvm::cantFail(Operation::create("rz", 1, 1)),
-                         llvm::cantFail(Operation::create("cz", 2, 0))};
-  return llvm::cantFail(
-      CompilerTarget::create(2, std::nullopt, std::move(operations)));
-}
-
-[[nodiscard]] static CompilerTarget makeRCZTarget() {
-  using Operation = CompilerTarget::Operation;
-  std::vector operations{llvm::cantFail(Operation::create("r", 1, 2)),
-                         llvm::cantFail(Operation::create("cz", 2, 0))};
+  std::vector<Operation> operations;
+  operations.reserve(singleQubitGates.size() + 1);
+  for (const auto& [name, numParameters] : singleQubitGates) {
+    operations.emplace_back(
+        llvm::cantFail(Operation::create(name.str(), 1, numParameters)));
+  }
+  operations.emplace_back(llvm::cantFail(Operation::create("cz", 2, 0)));
   return llvm::cantFail(
       CompilerTarget::create(2, std::nullopt, std::move(operations)));
 }
@@ -1237,26 +1210,33 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
     const char* name;
     CompilerTarget target;
     CompilerTarget::SingleQubitBasis resolvedBasis;
-    size_t expectedRZ;
-    size_t expectedRX;
-    size_t expectedRY;
-    size_t expectedSX;
-    size_t expectedR;
-    size_t expectedU;
+    std::vector<NameAndCount> expectedGates;
   };
   const std::vector cases{
-      Case{"u", makeSparseUCZTarget(false), CompilerTarget::SingleQubitBasis::U,
-           0, 0, 0, 0, 0, 1},
-      Case{"zsxx", makeZSXXCZTarget(), CompilerTarget::SingleQubitBasis::ZSXX,
-           3, 0, 0, 2, 0, 0},
-      Case{"rx-rz", makeRXRZCZTarget(), CompilerTarget::SingleQubitBasis::XZX,
-           1, 2, 0, 0, 0, 0},
-      Case{"rx-ry", makeRXRYCZTarget(), CompilerTarget::SingleQubitBasis::XYX,
-           0, 2, 1, 0, 0, 0},
-      Case{"ry-rz", makeRYRZCZTarget(), CompilerTarget::SingleQubitBasis::ZYZ,
-           2, 0, 1, 0, 0, 0},
-      Case{"r", makeRCZTarget(), CompilerTarget::SingleQubitBasis::R, 0, 0, 0,
-           0, 3, 0},
+      Case{.name = "u",
+           .target = makeSparseUCZTarget(false),
+           .resolvedBasis = CompilerTarget::SingleQubitBasis::U,
+           .expectedGates = {{"u", 1}}},
+      Case{.name = "zsxx",
+           .target = makeCZTarget({{"x", 0}, {"sx", 0}, {"rz", 1}}),
+           .resolvedBasis = CompilerTarget::SingleQubitBasis::ZSXX,
+           .expectedGates = {{"rz", 3}, {"sx", 2}}},
+      Case{.name = "rx-rz",
+           .target = makeCZTarget({{"rx", 1}, {"rz", 1}}),
+           .resolvedBasis = CompilerTarget::SingleQubitBasis::XZX,
+           .expectedGates = {{"rz", 1}, {"rx", 2}}},
+      Case{.name = "rx-ry",
+           .target = makeCZTarget({{"rx", 1}, {"ry", 1}}),
+           .resolvedBasis = CompilerTarget::SingleQubitBasis::XYX,
+           .expectedGates = {{"rx", 2}, {"ry", 1}}},
+      Case{.name = "ry-rz",
+           .target = makeCZTarget({{"ry", 1}, {"rz", 1}}),
+           .resolvedBasis = CompilerTarget::SingleQubitBasis::ZYZ,
+           .expectedGates = {{"rz", 2}, {"ry", 1}}},
+      Case{.name = "r",
+           .target = makeCZTarget({{"r", 2}}),
+           .resolvedBasis = CompilerTarget::SingleQubitBasis::R,
+           .expectedGates = {{"r", 3}}},
   };
 
   for (const auto& testCase : cases) {
@@ -1272,29 +1252,17 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
     ASSERT_TRUE(compiled);
     EXPECT_TRUE(verify(*compiled).succeeded());
 
-    size_t numRZ = 0;
-    size_t numRX = 0;
-    size_t numRY = 0;
-    size_t numSX = 0;
-    size_t numR = 0;
-    size_t numH = 0;
-    size_t numU = 0;
-    compiled->walk([&](Operation* operation) {
-      numRZ += isa<RZOp>(operation);
-      numRX += isa<RXOp>(operation);
-      numRY += isa<RYOp>(operation);
-      numSX += isa<SXOp>(operation);
-      numR += isa<ROp>(operation);
-      numH += isa<HOp>(operation);
-      numU += isa<UOp>(operation);
+    llvm::StringMap<size_t> gateCounts;
+    compiled->walk([&](UnitaryOpInterface unitary) {
+      if (unitary.getNumQubits() == 1) {
+        ++gateCounts[unitary.getBaseSymbol()];
+      }
     });
-    EXPECT_EQ(numRZ, testCase.expectedRZ);
-    EXPECT_EQ(numRX, testCase.expectedRX);
-    EXPECT_EQ(numRY, testCase.expectedRY);
-    EXPECT_EQ(numSX, testCase.expectedSX);
-    EXPECT_EQ(numR, testCase.expectedR);
-    EXPECT_EQ(numH, 0U);
-    EXPECT_EQ(numU, testCase.expectedU);
+    for (const auto& [name, expectedCount] : testCase.expectedGates) {
+      EXPECT_EQ(gateCounts.lookup(name), expectedCount) << name.str();
+    }
+    EXPECT_EQ(gateCounts.lookup("h"), 0U);
+    EXPECT_EQ(gateCounts.size(), testCase.expectedGates.size());
 
     auto main = compiled->lookupSymbol<func::FuncOp>("main");
     ASSERT_TRUE(main);

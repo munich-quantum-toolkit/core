@@ -20,8 +20,6 @@
 
 namespace mlir {
 
-namespace {
-
 [[nodiscard]] static const char*
 symbolicFusionBasisName(const CompilerTarget::SingleQubitBasis basis) {
   using enum CompilerTarget::SingleQubitBasis;
@@ -43,8 +41,6 @@ symbolicFusionBasisName(const CompilerTarget::SingleQubitBasis basis) {
   }
   return nullptr;
 }
-
-} // namespace
 
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const CompilerTarget& target) {
