@@ -20,6 +20,7 @@
 #include <cstring>
 #include <memory>
 #include <new>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -57,17 +58,27 @@ constexpr auto FAIL_ALLOCATION = "MQT_CORE_QDMI_FAKE_FAIL_ALLOCATION";
   return token.starts_with("adapter-");
 }
 
-[[nodiscard]] auto failAllocation() -> bool {
+[[nodiscard]] auto forcedAllocationStatus() -> std::optional<int> {
   const auto* value = std::getenv(FAIL_ALLOCATION);
-  if (value == nullptr || std::string_view{value} != "1") {
-    return false;
+  if (value == nullptr || std::string_view{value} == "0") {
+    return std::nullopt;
   }
+  const std::string requested{value};
 #ifdef _WIN32
   static_cast<void>(_putenv_s(FAIL_ALLOCATION, "0"));
 #else
   static_cast<void>(setenv(FAIL_ALLOCATION, "0", 1));
 #endif
-  return true;
+  if (requested == "1") {
+    return QDMI_ERROR_OUTOFMEM;
+  }
+  if (requested == "success-null") {
+    return QDMI_SUCCESS;
+  }
+  if (requested == "warning-null") {
+    return QDMI_WARN_GENERAL;
+  }
+  return std::nullopt;
 }
 
 auto queryString(const std::string_view result, const size_t size, void* value,
@@ -125,8 +136,8 @@ int QDMI_session_alloc(QDMI_Session* session) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   *session = nullptr;
-  if (failAllocation()) {
-    return QDMI_ERROR_OUTOFMEM;
+  if (const auto status = forcedAllocationStatus()) {
+    return *status;
   }
   /// NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   *session = new (std::nothrow) QDMI_Session_impl_d;

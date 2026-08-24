@@ -312,6 +312,14 @@ void selectClient(ClientSelection& selection, LoadedClient& loaded,
 using SessionGuard =
     std::unique_ptr<QDMI_Session_impl_d, decltype(&QDMI_session_free)>;
 
+void validateSessionAllocation(const int status, QDMI_Session session) {
+  if (session == nullptr &&
+      (status == QDMI_SUCCESS || status == QDMI_WARN_GENERAL)) {
+    throw std::runtime_error("The QDMI Client driver returned a null session");
+  }
+  qdmi::throwIfError(status, "Allocating QDMI session");
+}
+
 [[nodiscard]] auto allocateSession(const SessionConfig& config)
     -> std::shared_ptr<detail::ClientSession> {
   auto& selection = clientSelection();
@@ -326,7 +334,7 @@ using SessionGuard =
     QDMI_Session session = nullptr;
     const auto result = api->sessionAlloc(&session);
     SessionGuard guard{session, api->sessionFree};
-    qdmi::throwIfError(result, "Allocating QDMI session");
+    validateSessionAllocation(result, session);
     auto owner = std::make_shared<detail::ClientSession>(api, session);
     /// The ClientSession now owns the raw QDMI session.
     /// NOLINTNEXTLINE(bugprone-unused-return-value)
@@ -340,7 +348,7 @@ using SessionGuard =
   QDMI_Session session = nullptr;
   const auto result = api->sessionAlloc(&session);
   SessionGuard guard{session, api->sessionFree};
-  qdmi::throwIfError(result, "Allocating QDMI session");
+  validateSessionAllocation(result, session);
   auto owner = std::make_shared<detail::ClientSession>(api, session);
   selectClient(selection, loaded, path);
   /// The ClientSession now owns the raw QDMI session.
