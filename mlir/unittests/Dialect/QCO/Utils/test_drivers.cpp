@@ -35,7 +35,6 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
