@@ -8,6 +8,14 @@ The format is based on a mixture of [Keep a Changelog] and [Common Changelog].
 This project adheres to [Semantic Versioning], with the exception that minor
 releases may include breaking changes.
 
+## [Unreleased]
+
+### Removed
+
+- 💥 Remove the C++ `Device::getNeedsCalibration` and Python
+  `Device.needs_calibration` APIs, and adopt QDMI’s removal of the obsolete
+  calibration-readiness and pulse-support metadata ([#2233]) ([**@burgholzer**])
+
 ## [4.0.0] - 2026-09-11
 
 ### MQT Core 4: a compiler foundation built on MLIR and LLVM
@@ -1259,6 +1267,7 @@ for previous changelogs._
 [#2249]: https://github.com/munich-quantum-toolkit/core/pull/2249
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2240]: https://github.com/munich-quantum-toolkit/core/pull/2240
+[#2233]: https://github.com/munich-quantum-toolkit/core/pull/2233
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2228]: https://github.com/munich-quantum-toolkit/core/pull/2228
 [#2224]: https://github.com/munich-quantum-toolkit/core/pull/2224

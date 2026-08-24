@@ -247,9 +247,6 @@ class Device:
     def coupling_map(self) -> list[tuple[Device.Site, Device.Site]] | None:
         """Returns the coupling map of the device as a list of site pairs."""
 
-    def needs_calibration(self) -> int | None:
-        """Returns whether the device needs calibration."""
-
     def queue_length(self) -> int | None:
         """Returns the current queue length, or None if unavailable."""
 

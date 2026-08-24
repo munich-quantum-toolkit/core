@@ -4,6 +4,19 @@ This document describes breaking changes and how to upgrade. For a complete list
 of changes including minor and patch releases, please refer to the
 [changelog](CHANGELOG.md).
 
+## [Unreleased]
+
+### QDMI 1.4 metadata removal
+
+MQT Core removes `Device::getNeedsCalibration` and `Device.needs_calibration`
+after QDMI removes its calibration advisory. Bundled devices no longer report
+pulse-support metadata. The `CALIBRATION` status and calibration-job submission
+remain available.
+
+The removed QDMI property values remain reserved, and all surviving property
+values are unchanged. Existing binaries can continue querying supported
+properties. Rebuild source code that uses the removed names after updating it.
+
 ## [4.0.0]
 
 ### Migrating from MQT Core 3 to 4

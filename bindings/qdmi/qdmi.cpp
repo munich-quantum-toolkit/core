@@ -328,10 +328,6 @@ Returns:
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the coupling map of the device as a list of site pairs.");
 
-  device.def("needs_calibration", &qdmi::Device::getNeedsCalibration,
-             nb::call_guard<nb::gil_scoped_release>(),
-             "Returns whether the device needs calibration.");
-
   device.def("queue_length", &qdmi::Device::getQueueLength,
              nb::call_guard<nb::gil_scoped_release>(),
              "Returns the current queue length, or None if unavailable.");

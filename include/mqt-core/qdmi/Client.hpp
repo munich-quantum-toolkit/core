@@ -579,9 +579,6 @@ public:
   [[nodiscard]] std::optional<std::vector<std::pair<Site, Site>>>
   getCouplingMap() const;
 
-  /// @see QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION
-  [[nodiscard]] std::optional<size_t> getNeedsCalibration() const;
-
   /// @see QDMI_DEVICE_PROPERTY_QUEUELENGTH
   [[nodiscard]] std::optional<size_t> getQueueLength() const;
 
@@ -693,15 +690,11 @@ public:
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
-  /// Triggers a calibration run.
+  /// Triggers a calibration run in the `QDMI_PROGRAM_FORMAT_CALIBRATION`
+  /// format.
   ///
-  /// A device that reports a nonzero
-  /// `QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION` is asked to calibrate by
-  /// submitting a job in the `QDMI_PROGRAM_FORMAT_CALIBRATION` format. QDMI
-  /// does not require a program for such a job, so the payload is optional;
-  /// when it is present, the device defines what it means, which is usually a
-  /// configuration for the run. A calibration run executes no circuit, so no
-  /// shot count is set.
+  /// The payload is optional. When present, its meaning is device-specific.
+  /// A calibration run executes no circuit, so no shot count is set.
   /// @param program The calibration payload. An empty span or `std::nullopt`
   /// means that the job has no payload.
   /// @param custom1,custom2,custom3,custom4,custom5 Optional provider-defined
