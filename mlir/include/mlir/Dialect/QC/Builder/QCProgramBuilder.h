@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 
+#include <llvm/ADT/SetVector.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -1400,10 +1401,10 @@ private:
   Operation* module;
 
   /// Track allocated qubits for automatic deallocation
-  DenseSet<Value> allocatedQubits;
+  SetVector<Value> allocatedQubits;
 
   /// Track allocated memrefs for automatic deallocation
-  DenseSet<Value> allocatedQregs;
+  SetVector<Value> allocatedQregs;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;

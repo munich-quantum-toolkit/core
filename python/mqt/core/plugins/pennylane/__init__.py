@@ -12,7 +12,6 @@
 
 from __future__ import annotations
 
-import sys
 from importlib import import_module
 from typing import TYPE_CHECKING
 
@@ -27,7 +26,7 @@ else:
 
 __all__ = ["HAS_PENNYLANE"]
 
-if TYPE_CHECKING or (sys.version_info >= (3, 11) and HAS_PENNYLANE):
+if TYPE_CHECKING or HAS_PENNYLANE:
     from .device import DDSIMDevice, QDMIDevice
     from .exceptions import (
         PennyLaneConfigurationError,

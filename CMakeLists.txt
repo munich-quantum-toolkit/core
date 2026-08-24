@@ -48,13 +48,8 @@ if(BUILD_MQT_CORE_BINDINGS)
       ON
       CACHE BOOL "Prevent multiple searches for Python and instead cache the results.")
 
-  if(DISABLE_GIL)
-    message(STATUS "Disabling Python GIL")
-    add_compile_definitions(Py_GIL_DISABLED)
-  endif()
-
   # top-level call to find Python
-  find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module
+  find_package(Python 3.11 REQUIRED COMPONENTS Interpreter Development.Module
                                                ${SKBUILD_SABI_COMPONENT})
 endif()
 
@@ -133,11 +128,6 @@ if(BUILD_MQT_CORE_TESTS)
   add_subdirectory(test)
 endif()
 
-option(BUILD_MQT_CORE_BENCHMARKS "Also build benchmarks for the MQT Core project" OFF)
-if(BUILD_MQT_CORE_BENCHMARKS)
-  add_subdirectory(eval)
-endif()
-
 add_subdirectory(mlir)
 
 # Preserve the top-level `mlir-doc` behavior without modifying a target owned by an embedding
@@ -176,7 +166,6 @@ endif()
 if(BUILD_MQT_CORE_BINDINGS)
   set(MQT_CORE_WHEEL_TARGETS
       mqt-core-ir
-      mqt-core-algorithms
       mqt-core-circuit-optimizer
       mqt-core-dd
       mqt-core-ir-bindings

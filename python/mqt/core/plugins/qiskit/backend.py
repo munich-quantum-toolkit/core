@@ -47,11 +47,11 @@ from .serializers import preferred_program_formats, program_serializer, register
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, MutableSet, Sequence
+    from typing import Unpack
 
     from qiskit.circuit import Instruction, Parameter
     from qiskit.circuit.parameterexpression import ParameterValueType
 
-    from ..._compat.typing import Unpack
     from ...typing import QDMISessionParameters
     from .provider import QDMIProvider
 
