@@ -28,7 +28,6 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <array>
-#include <cstddef>
 #include <cstdint>
 #include <set>
 #include <string>
