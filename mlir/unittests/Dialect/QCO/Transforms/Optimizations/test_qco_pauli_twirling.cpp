@@ -15,7 +15,6 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -24,6 +23,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <array>

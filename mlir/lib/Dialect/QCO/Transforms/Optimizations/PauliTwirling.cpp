@@ -13,12 +13,13 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <array>
 #include <cstdint>
@@ -40,6 +41,12 @@ struct Twirl {
   Pauli afterFirst;
   Pauli afterSecond;
   bool correctPhase;
+
+  constexpr Twirl(const Pauli preFirst, const Pauli preSecond,
+                  const Pauli postFirst, const Pauli postSecond,
+                  const bool phase)
+      : beforeFirst(preFirst), beforeSecond(preSecond), afterFirst(postFirst),
+        afterSecond(postSecond), correctPhase(phase) {}
 };
 
 // Rows are ordered by the pre-Pauli pair II, IX, ..., ZZ. Each table is
@@ -121,12 +128,14 @@ constexpr std::array<Twirl, 16> ISWAP_TWIRLS = {{
     {Pauli::Z, Pauli::Z, Pauli::Z, Pauli::Z, false},
 }};
 
-[[nodiscard]] bool isNestedInModifier(Operation* op) {
+} // namespace
+
+[[nodiscard]] static bool isNestedInModifier(Operation* op) {
   return op->getParentOfType<CtrlOp>() || op->getParentOfType<InvOp>() ||
          op->getParentOfType<PowOp>();
 }
 
-[[nodiscard]] const std::array<Twirl, 16>* getTwirlTable(Operation* op) {
+[[nodiscard]] static const std::array<Twirl, 16>* getTwirlTable(Operation* op) {
   if (isNestedInModifier(op)) {
     return nullptr;
   }
@@ -155,8 +164,8 @@ constexpr std::array<Twirl, 16> ISWAP_TWIRLS = {{
   return nullptr;
 }
 
-Value createPauli(IRRewriter& rewriter, const Location loc, const Pauli pauli,
-                  const Value qubit) {
+static Value createPauli(IRRewriter& rewriter, const Location loc,
+                         const Pauli pauli, const Value qubit) {
   switch (pauli) {
   case Pauli::I:
     return IdOp::create(rewriter, loc, qubit).getOutputQubit(0);
@@ -170,8 +179,8 @@ Value createPauli(IRRewriter& rewriter, const Location loc, const Pauli pauli,
   llvm_unreachable("unknown Pauli gate");
 }
 
-void twirlGate(IRRewriter& rewriter, UnitaryOpInterface gate,
-               const Twirl& twirl) {
+static void twirlGate(IRRewriter& rewriter, UnitaryOpInterface gate,
+                      const Twirl& twirl) {
   auto* op = gate.getOperation();
   const auto firstIn = gate.getInputQubit(0);
   const auto secondIn = gate.getInputQubit(1);
@@ -203,6 +212,8 @@ void twirlGate(IRRewriter& rewriter, UnitaryOpInterface gate,
   }
 }
 
+namespace {
+
 struct PauliTwirl2QGates final
     : impl::PauliTwirl2QGatesBase<PauliTwirl2QGates> {
   using PauliTwirl2QGatesBase::PauliTwirl2QGatesBase;
@@ -216,7 +227,7 @@ protected:
     SmallVector<Candidate> gates;
     getOperation().walk([&](Operation* op) {
       if (const auto* table = getTwirlTable(op)) {
-        gates.push_back({cast<UnitaryOpInterface>(op), table});
+        gates.push_back({.gate = cast<UnitaryOpInterface>(op), .table = table});
       }
     });
 
