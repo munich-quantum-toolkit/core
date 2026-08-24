@@ -1204,8 +1204,9 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
     return std::move(result);
   };
 
-  if (auto cast = llvm::dyn_cast<mlir::arith::ExtUIOp>(operation)) {
-    return unary(ExpressionKind::Cast, cast.getIn());
+  if (llvm::isa<mlir::arith::ExtUIOp, mlir::arith::UIToFPOp,
+                mlir::arith::FPToUIOp>(operation)) {
+    return unary(ExpressionKind::Cast, operation->getOperand(0));
   }
   if (auto cast = llvm::dyn_cast<mlir::arith::TruncIOp>(operation)) {
     if (!cast.getType().isInteger(1)) {
@@ -1233,12 +1234,6 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
     }
     state.expressionOperations.insert(operation);
     return result;
-  }
-  if (auto cast = llvm::dyn_cast<mlir::arith::UIToFPOp>(operation)) {
-    return unary(ExpressionKind::Cast, cast.getIn());
-  }
-  if (auto cast = llvm::dyn_cast<mlir::arith::FPToUIOp>(operation)) {
-    return unary(ExpressionKind::Cast, cast.getIn());
   }
   if (auto cast = llvm::dyn_cast<mlir::arith::IndexCastUIOp>(operation)) {
     state.expressionOperations.insert(operation);
@@ -1318,29 +1313,21 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
   if (auto op = llvm::dyn_cast<mlir::arith::ShRUIOp>(operation)) {
     return binary(BinaryOperation::ShiftRight, op.getLhs(), op.getRhs());
   }
-  if (auto op = llvm::dyn_cast<mlir::arith::AddIOp>(operation)) {
-    return binary(BinaryOperation::Add, op.getLhs(), op.getRhs());
+  if (llvm::isa<mlir::arith::AddIOp, mlir::arith::AddFOp>(operation)) {
+    return binary(BinaryOperation::Add, operation->getOperand(0),
+                  operation->getOperand(1));
   }
-  if (auto op = llvm::dyn_cast<mlir::arith::SubIOp>(operation)) {
-    return binary(BinaryOperation::Subtract, op.getLhs(), op.getRhs());
+  if (llvm::isa<mlir::arith::SubIOp, mlir::arith::SubFOp>(operation)) {
+    return binary(BinaryOperation::Subtract, operation->getOperand(0),
+                  operation->getOperand(1));
   }
-  if (auto op = llvm::dyn_cast<mlir::arith::MulIOp>(operation)) {
-    return binary(BinaryOperation::Multiply, op.getLhs(), op.getRhs());
+  if (llvm::isa<mlir::arith::MulIOp, mlir::arith::MulFOp>(operation)) {
+    return binary(BinaryOperation::Multiply, operation->getOperand(0),
+                  operation->getOperand(1));
   }
-  if (auto op = llvm::dyn_cast<mlir::arith::DivUIOp>(operation)) {
-    return binary(BinaryOperation::Divide, op.getLhs(), op.getRhs());
-  }
-  if (auto op = llvm::dyn_cast<mlir::arith::AddFOp>(operation)) {
-    return binary(BinaryOperation::Add, op.getLhs(), op.getRhs());
-  }
-  if (auto op = llvm::dyn_cast<mlir::arith::SubFOp>(operation)) {
-    return binary(BinaryOperation::Subtract, op.getLhs(), op.getRhs());
-  }
-  if (auto op = llvm::dyn_cast<mlir::arith::MulFOp>(operation)) {
-    return binary(BinaryOperation::Multiply, op.getLhs(), op.getRhs());
-  }
-  if (auto op = llvm::dyn_cast<mlir::arith::DivFOp>(operation)) {
-    return binary(BinaryOperation::Divide, op.getLhs(), op.getRhs());
+  if (llvm::isa<mlir::arith::DivUIOp, mlir::arith::DivFOp>(operation)) {
+    return binary(BinaryOperation::Divide, operation->getOperand(0),
+                  operation->getOperand(1));
   }
   if (auto op = llvm::dyn_cast<mlir::arith::NegFOp>(operation)) {
     result->unaryOperation = UnaryOperation::Negate;
@@ -1625,18 +1612,6 @@ void validateClassicalSnapshot(const mlir::Value expression,
   return target;
 }
 
-[[nodiscard]] int64_t signedIntegerConstant(const mlir::Value value,
-                                            const std::string_view kind) {
-  auto constant = value.getDefiningOp<mlir::arith::ConstantOp>();
-  const auto integer =
-      constant ? llvm::dyn_cast<mlir::IntegerAttr>(constant.getValue())
-               : mlir::IntegerAttr{};
-  if (!integer || integer.getValue().getBitWidth() > 64U) {
-    throw std::runtime_error(std::string(kind) + " must be a constant i64");
-  }
-  return integer.getValue().getSExtValue();
-}
-
 [[nodiscard]] int64_t checkedAffine(const int64_t multiplier,
                                     const int64_t value, const int64_t offset,
                                     const std::string_view kind) {
@@ -1661,14 +1636,9 @@ void validateClassicalSnapshot(const mlir::Value expression,
   if (lower >= upper) {
     return 0U;
   }
-  const llvm::APInt lowerWide(65U, static_cast<uint64_t>(lower), true);
-  const llvm::APInt upperWide(65U, static_cast<uint64_t>(upper), true);
-  const llvm::APInt stepWide(65U, static_cast<uint64_t>(step), true);
-  const auto count = ((upperWide - lowerWide - 1U).udiv(stepWide)) + 1U;
-  if (count.getActiveBits() > 64U) {
-    throw std::runtime_error("scf.for iteration count is too large for Qiskit");
-  }
-  return count.getZExtValue();
+  const auto distance =
+      static_cast<uint64_t>(upper) - static_cast<uint64_t>(lower);
+  return ((distance - 1U) / static_cast<uint64_t>(step)) + 1U;
 }
 
 struct LoopParameterProjection {
@@ -1698,12 +1668,11 @@ matchLoopParameterProjection(mlir::scf::ForOp loop) {
     if (auto multiply = llvm::dyn_cast<mlir::arith::MulIOp>(user)) {
       const auto other =
           multiply.getLhs() == current ? multiply.getRhs() : multiply.getLhs();
-      auto constant = other.getDefiningOp<mlir::arith::ConstantOp>();
+      const auto constant = mlir::getConstantIntValue(other);
       if (!constant) {
         return std::nullopt;
       }
-      projection.multiplier =
-          signedIntegerConstant(other, "scf.for induction multiplier");
+      projection.multiplier = *constant;
       projection.operations.insert(user);
       current = multiply.getResult();
     }
@@ -1711,12 +1680,11 @@ matchLoopParameterProjection(mlir::scf::ForOp loop) {
   if (auto* user = uniqueUser(current)) {
     if (auto add = llvm::dyn_cast<mlir::arith::AddIOp>(user)) {
       const auto other = add.getLhs() == current ? add.getRhs() : add.getLhs();
-      auto constant = other.getDefiningOp<mlir::arith::ConstantOp>();
+      const auto constant = mlir::getConstantIntValue(other);
       if (!constant) {
         return std::nullopt;
       }
-      projection.offset =
-          signedIntegerConstant(other, "scf.for induction offset");
+      projection.offset = *constant;
       projection.operations.insert(user);
       current = add.getResult();
     }
@@ -2137,8 +2105,7 @@ void validateConstructibleGates(const ExportedCircuit& circuit,
           descriptor.operationSymbol.str() + "' with " +
           std::to_string(instruction.gate.controls) + " controls");
     }
-    if (instruction.kind != ExportedInstruction::Kind::ControlFlow ||
-        !instruction.controlFlow) {
+    if (instruction.kind != ExportedInstruction::Kind::ControlFlow) {
       continue;
     }
     for (const auto& block : instruction.controlFlow->blocks) {
@@ -2171,10 +2138,6 @@ void emitCircuit(ExportedCircuit& circuit, CircuitWriter& writer,
                         instruction.unitaryControls);
       break;
     case ExportedInstruction::Kind::ControlFlow: {
-      if (!instruction.controlFlow) {
-        throw std::runtime_error(
-            "Qiskit export encountered an empty control-flow plan");
-      }
       auto& control = *instruction.controlFlow;
       std::vector<std::unique_ptr<CircuitWriter>> blocks;
       blocks.reserve(control.blocks.size());
