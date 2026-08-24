@@ -735,7 +735,7 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
     for (const auto coupling : attribute.getCouplings()) {
       couplings.emplace_back(coupling.getSource(), coupling.getTarget());
     }
-    connectivity = Connectivity::fromCouplings(std::move(couplings));
+    connectivity = Connectivity::fromCouplings(couplings);
     break;
   }
   }
@@ -788,7 +788,7 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
       }
       operations.emplace_back(std::move(*operation));
     }
-    nativeOperations = NativeOperations::fromOperations(std::move(operations));
+    nativeOperations = NativeOperations::fromOperations(operations);
     break;
   }
   }
@@ -1014,36 +1014,11 @@ CompilerTarget::materialize(MLIRContext& context) const {
         builder.getF64FloatAttr(unit->scaleFactor()));
   }
 
-  mqt::ConnectivityKind connectivity = mqt::ConnectivityKind::Unknown;
-  switch (connectivityKind()) {
-  case Connectivity::Kind::Unknown:
-    break;
-  case Connectivity::Kind::AllToAll:
-    connectivity = mqt::ConnectivityKind::AllToAll;
-    break;
-  case Connectivity::Kind::Explicit:
-    connectivity = mqt::ConnectivityKind::Explicit;
-    break;
-  }
-
   SmallVector<mqt::CouplingAttr> couplingAttrs;
   couplingAttrs.reserve(couplings().size());
   for (const auto& [source, target] : couplings()) {
     couplingAttrs.emplace_back(
         mqt::CouplingAttr::get(&context, source, target));
-  }
-
-  mqt::NativeOperationsKind nativeOperations =
-      mqt::NativeOperationsKind::Unknown;
-  switch (nativeOperationsKind()) {
-  case NativeOperations::Kind::Unknown:
-    break;
-  case NativeOperations::Kind::Unrestricted:
-    nativeOperations = mqt::NativeOperationsKind::Unrestricted;
-    break;
-  case NativeOperations::Kind::Explicit:
-    nativeOperations = mqt::NativeOperationsKind::Explicit;
-    break;
   }
 
   SmallVector<mqt::NativeOperationAttr> operationAttrs;
@@ -1071,8 +1046,8 @@ CompilerTarget::materialize(MLIRContext& context) const {
   }
 
   return mqt::CompilationTargetAttr::get(
-      &context, nameAttr, siteAttrs, durationUnitAttr, connectivity,
-      couplingAttrs, nativeOperations, operationAttrs);
+      &context, nameAttr, siteAttrs, durationUnitAttr, connectivityKind(),
+      couplingAttrs, nativeOperationsKind(), operationAttrs);
 }
 
 } // namespace mlir

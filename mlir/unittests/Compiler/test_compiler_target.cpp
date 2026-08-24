@@ -317,11 +317,11 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
                         std::vector{valid(SiteTuple::create({7}, 0, 0.99)),
                                     valid(SiteTuple::create({2}, 5, 0.98))},
                         0, 0.97))};
-  const auto target = valid(
-      Target::create("device", std::move(sites),
-                     Connectivity::fromCouplings({{7, 2}, {2, 11}}),
-                     NativeOperations::fromOperations(std::move(operations)),
-                     valid(DurationUnit::create("ns", 0.5))));
+  const auto target =
+      valid(Target::create("device", std::move(sites),
+                           Connectivity::fromCouplings({{7, 2}, {2, 11}}),
+                           NativeOperations::fromOperations(operations),
+                           valid(DurationUnit::create("ns", 0.5))));
 
   const auto attribute = target.materialize(context);
   const auto reconstructed = valid(Target::create(attribute));

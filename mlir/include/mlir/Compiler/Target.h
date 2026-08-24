@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
+
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -28,10 +30,6 @@ namespace mlir {
 
 class MLIRContext;
 class Operation;
-
-namespace mqt {
-class CompilationTargetAttr;
-} // namespace mqt
 
 /**
  * @brief Immutable description of an MLIR compiler target.
@@ -52,7 +50,7 @@ public:
   /// Target connectivity knowledge.
   class Connectivity {
   public:
-    enum class Kind : uint8_t { Unknown, AllToAll, Explicit };
+    using Kind = mqt::ConnectivityKind;
 
     /// Create unknown connectivity.
     Connectivity() noexcept;
@@ -228,7 +226,7 @@ public:
   /// Native-operation knowledge.
   class NativeOperations {
   public:
-    enum class Kind : uint8_t { Unknown, Unrestricted, Explicit };
+    using Kind = mqt::NativeOperationsKind;
 
     /// Create unknown native-operation support.
     NativeOperations() noexcept;
