@@ -30,7 +30,6 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -1697,30 +1696,15 @@ private:
 
   [[nodiscard]] std::optional<nb::object>
   registeredClassicalRegister(const Register& reg) const {
-    std::optional<nb::object> matchingBits;
     for (const nb::handle candidateHandle : nb::iter(cregs_)) {
-      if (nb::len(candidateHandle) != reg.bits.size()) {
-        continue;
-      }
       auto candidate = nb::borrow<nb::object>(candidateHandle);
-      bool matches = true;
-      for (size_t index = 0U; index < reg.bits.size(); ++index) {
-        if (!candidate[index].equal(classicalBit(reg.bits[index]))) {
-          matches = false;
-          break;
-        }
-      }
-      if (!matches) {
-        continue;
-      }
       if (pythonStringAttribute(candidate, "name",
                                 "Qiskit classical register has no name") ==
           reg.name) {
         return candidate;
       }
-      matchingBits = std::move(candidate);
     }
-    return matchingBits;
+    return std::nullopt;
   }
 
   static void validateRegisterValue(const Register& reg, const uint64_t value) {
@@ -2188,15 +2172,12 @@ private:
   }
 
   [[nodiscard]] static nb::object loopIndexSet(const Loop& loop) {
-    if (loop.isRange) {
-      return nb::module_::import_("builtins")
-          .attr("range")(loop.start, loop.stop, loop.step);
+    if (!loop.isRange) {
+      throw std::runtime_error(
+          "Qiskit circuit export supports only range-based for loops");
     }
-    nb::list values;
-    for (const auto value : loop.values) {
-      values.append(nb::int_(value));
-    }
-    return values;
+    return nb::module_::import_("builtins")
+        .attr("range")(loop.start, loop.stop, loop.step);
   }
 
   [[nodiscard]] static nb::object loopParameter(const Loop& loop,
@@ -2244,14 +2225,12 @@ private:
         nb::object labels;
         if (switchCase.isDefault) {
           labels = nb::borrow<nb::object>(circuitModule.attr("CASE_DEFAULT"));
-        } else if (switchCase.labels.size() == 1U) {
-          labels = nb::int_(switchCase.labels.front());
         } else {
-          nb::list values;
-          for (const auto label : switchCase.labels) {
-            values.append(nb::int_(label));
+          if (switchCase.labels.size() != 1U) {
+            throw std::runtime_error(
+                "Qiskit circuit export requires one label per switch case");
           }
-          labels = std::move(values);
+          labels = nb::int_(switchCase.labels.front());
         }
         cases.append(nb::make_tuple(labels, blocks[index]));
       }
@@ -2283,21 +2262,15 @@ private:
       }
       std::vector<nb::object> blocks;
       blocks.reserve(pending.blockWriters.size());
-      for (size_t index = 0U; index < pending.blockWriters.size(); ++index) {
-        try {
-          auto* const writer = dynamic_cast<NativeCircuitWriter*>(
-              pending.blockWriters[index].get());
-          if (writer == nullptr) {
-            throw std::runtime_error(
-                "Qiskit control-flow blocks use an incompatible writer");
-          }
-          blocks.emplace_back(
-              writer->finishImpl(true, circuitQubits, circuitClbits));
-        } catch (const std::exception& error) {
+      for (const auto& blockWriter : pending.blockWriters) {
+        auto* const writer =
+            dynamic_cast<NativeCircuitWriter*>(blockWriter.get());
+        if (writer == nullptr) {
           throw std::runtime_error(
-              "Qiskit failed to finalize control-flow block " +
-              std::to_string(index) + ": " + error.what());
+              "Qiskit control-flow blocks use an incompatible writer");
         }
+        blocks.emplace_back(
+            writer->finishImpl(true, circuitQubits, circuitClbits));
       }
       pending.blockWriters.clear();
       auto operation = constructControlFlowOperation(pending, blocks, classical,
@@ -2454,28 +2427,23 @@ private:
       std::make_shared<NativeSymbolTable>();
 };
 
-[[nodiscard]] uint32_t qiskitApiVersion() {
-  static const uint32_t VERSION = []() {
+} // namespace
+
+std::unique_ptr<VersionedTranslation>
+MQT_QISKIT_VERSION_FACTORY() { // NOLINT(misc-use-internal-linkage): declared in
+                               // the version registry.
+  static const auto VERSION = []() {
     if (qk_import() < 0) {
       throwPythonError(
           "failed to initialize the Qiskit " MQT_QISKIT_VERSION_LABEL " C API");
     }
     return qk_api_version();
   }();
-  return VERSION;
-}
-
-} // namespace
-
-std::unique_ptr<VersionedTranslation>
-MQT_QISKIT_VERSION_FACTORY() { // NOLINT(misc-use-internal-linkage): declared in
-                               // the version registry.
-  const auto version = qiskitApiVersion();
-  const auto major = (version >> 24U) & 0xffU;
-  const auto minor = (version >> 16U) & 0xffU;
+  const auto major = (VERSION >> 24U) & 0xffU;
+  const auto minor = (VERSION >> 16U) & 0xffU;
   if (major != MQT_QISKIT_VERSION_EXPECTED_MAJOR ||
       minor != MQT_QISKIT_VERSION_EXPECTED_MINOR ||
-      (MQT_QISKIT_VERSION_EXACT_API != 0 && version != QISKIT_VERSION_HEX)) {
+      (MQT_QISKIT_VERSION_EXACT_API != 0 && VERSION != QISKIT_VERSION_HEX)) {
     throw std::runtime_error("Qiskit C API capsule version does not match the "
                              "selected " MQT_QISKIT_VERSION_LABEL
                              " translation");
