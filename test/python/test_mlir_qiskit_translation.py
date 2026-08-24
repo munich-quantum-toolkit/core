@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -103,6 +104,18 @@ STANDARD_GATES = (
     library.C3SXGate(),
     library.RC3XGate(),
 )
+
+
+def test_native_api_initialization_supports_concurrent_translation() -> None:
+    """Initialize and reuse the native Qiskit API from concurrent translations."""
+
+    def _round_trip(_: int) -> str:
+        circuit = QuantumCircuit(1)
+        circuit.x(0)
+        return QCProgram.from_qiskit(circuit).to_qiskit().data[0].operation.name
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        assert list(executor.map(_round_trip, range(32))) == ["x"] * 32
 
 
 @pytest.mark.parametrize("gate", STANDARD_GATES, ids=lambda gate: gate.name)

@@ -2454,16 +2454,23 @@ private:
       std::make_shared<NativeSymbolTable>();
 };
 
+[[nodiscard]] uint32_t qiskitApiVersion() {
+  static const uint32_t VERSION = []() {
+    if (qk_import() < 0) {
+      throwPythonError(
+          "failed to initialize the Qiskit " MQT_QISKIT_VERSION_LABEL " C API");
+    }
+    return qk_api_version();
+  }();
+  return VERSION;
+}
+
 } // namespace
 
 std::unique_ptr<VersionedTranslation>
 MQT_QISKIT_VERSION_FACTORY() { // NOLINT(misc-use-internal-linkage): declared in
                                // the version registry.
-  if (qk_import() < 0) {
-    throwPythonError("failed to initialize the Qiskit " MQT_QISKIT_VERSION_LABEL
-                     " C API");
-  }
-  const auto version = qk_api_version();
+  const auto version = qiskitApiVersion();
   const auto major = (version >> 24U) & 0xffU;
   const auto minor = (version >> 16U) & 0xffU;
   if (major != MQT_QISKIT_VERSION_EXPECTED_MAJOR ||

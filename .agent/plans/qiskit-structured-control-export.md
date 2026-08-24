@@ -472,4 +472,8 @@ loop-parameter fixes found during the post-merge audit. Recorded the final
 complexity pass that shares parameter state, replaces deferred insertion with
 native placeholders, makes the all-root-bit invariant explicit, and reduces
 repeated test and documentation work; recorded the successful build, unchanged
-stubs, clean lint, and 208-test Qiskit 2.5.0-2.5.2 matrix.
+stubs, clean lint, and 208-test Qiskit 2.5.0-2.5.2 matrix. Merged `main` through
+`84ace8ef2`, preserved its QCO switch, deterministic finalization,
+loop-unrolling, and nanobind 3 changes, and made the vendored Qiskit C API
+initialization safe for the new free-threaded binding mode. The split-mode
+binding build and all 209 Qiskit 2.5.2 translation tests passed.
