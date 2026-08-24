@@ -14,6 +14,7 @@
 
 #ifdef TEST_FULL_CLIENT
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
@@ -52,6 +53,10 @@ namespace {
 constexpr auto DEVICE_ID = "test.fake.client";
 constexpr auto FAIL_ALLOCATION = "MQT_CORE_QDMI_FAKE_FAIL_ALLOCATION";
 
+[[nodiscard]] auto isAdapterTest(const std::string_view token) -> bool {
+  return token.starts_with("adapter-");
+}
+
 [[nodiscard]] auto failAllocation() -> bool {
   const auto* value = std::getenv(FAIL_ALLOCATION);
   if (value == nullptr || std::string_view{value} != "1") {
@@ -83,21 +88,30 @@ auto queryString(const std::string_view result, const size_t size, void* value,
   return QDMI_SUCCESS;
 }
 
-template <class T>
-auto queryValue(const T& result, const size_t size, void* value,
-                size_t* sizeRet) -> int {
+template <class T, size_t Extent>
+auto queryValues(const std::span<const T, Extent> result, const size_t size,
+                 void* value, size_t* sizeRet) -> int {
+  const auto required = result.size_bytes();
   if (sizeRet != nullptr) {
-    *sizeRet = sizeof(T);
+    *sizeRet = required;
   }
   if (value == nullptr) {
     return QDMI_SUCCESS;
   }
-  if (size < sizeof(T)) {
+  if (size < required) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  std::memcpy(value, static_cast<const void*>(std::addressof(result)),
-              sizeof(T));
+  if (!result.empty()) {
+    std::memcpy(value, static_cast<const void*>(result.data()), required);
+  }
   return QDMI_SUCCESS;
+}
+
+template <class T>
+auto queryValue(const T& result, const size_t size, void* value,
+                size_t* sizeRet) -> int {
+  return queryValues(std::span<const T>{std::addressof(result), 1U}, size,
+                     value, sizeRet);
 }
 } // namespace
 #endif
@@ -212,6 +226,10 @@ int QDMI_device_query_device_property(QDMI_Device device,
     return queryValue(site, size, value, sizeRet);
   }
   if (prop == QDMI_DEVICE_PROPERTY_OPERATIONS) {
+    if (isAdapterTest(device->session->token)) {
+      return queryValues(std::span<const QDMI_Operation>{}, size, value,
+                         sizeRet);
+    }
     QDMI_Operation operation = &device->operation;
     return queryValue(operation, size, value, sizeRet);
   }
@@ -233,8 +251,8 @@ int QDMI_device_query_site_property(QDMI_Device device, QDMI_Site site,
 
 int QDMI_device_query_operation_property(
     QDMI_Device device, QDMI_Operation operation, size_t, const QDMI_Site*,
-    size_t, const double*, const QDMI_Operation_Property prop,
-    const size_t size, void* value, size_t* sizeRet) {
+    size_t, const double*, const QDMI_Operation_Property prop, const size_t,
+    void* value, size_t* sizeRet) {
   if (device == nullptr || operation != &device->operation) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }

@@ -27,7 +27,14 @@ if(TARGET MQT::CoreQDMI)
     mqt-core-qdmi-fake-client PRIVATE QDMI_driver_EXPORTS TEST_CLIENT_ABI=QDMI_CLIENT_ABI_VERSION
                                       TEST_FULL_CLIENT)
 
+  if(WIN32)
+    # Discover tests after the Driver and device runtime copies finish.
+    set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
+  endif()
   package_add_test(mqt-core-qdmi-client-runtime-test MQT::CoreQDMI test_client_runtime.cpp)
+  if(WIN32)
+    unset(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE)
+  endif()
   target_compile_definitions(
     mqt-core-qdmi-client-runtime-test
     PRIVATE "MQT_CORE_QDMI_TEST_DRIVER=\"$<TARGET_FILE:mqt-core-qdmi-fake-client>\""
