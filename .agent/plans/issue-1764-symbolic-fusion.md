@@ -68,6 +68,9 @@ operations that do not expose named SSA angle parameters remain run boundaries.
       132 compiler tests, `git diff --check`, and `uvx nox -s lint` pass. Three
       independent read-only reviews found no blocking correctness or scope
       issue.
+- [x] (2026-08-24 14:52Z) Committed and pushed the reviewed implementation,
+      opened pull request #2228, and folded its reference into the existing
+      unreleased single-qubit optimization changelog entry.
 
 ## Surprises & Discoveries
 
