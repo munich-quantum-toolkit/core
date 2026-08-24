@@ -190,8 +190,12 @@ TEST_F(PauliTwirlingTest, LeavesUnsupportedModifiedGatesAndPhasesUnchanged) {
     auto [control, nestedTarget] = builder.cx(qubits[0], qubits[1]);
     return SmallVector<Value>{control, nestedTarget};
   });
-  builder.sink(inverse[0]);
-  builder.sink(inverse[1]);
+  const auto powered = builder.pow(2.0, inverse, [&](ValueRange qubits) {
+    auto [control, nestedTarget] = builder.cx(qubits[0], qubits[1]);
+    return SmallVector<Value>{control, nestedTarget};
+  });
+  builder.sink(powered[0]);
+  builder.sink(powered[1]);
 
   builder.gphase(0.25);
   builder.gphase(0.5);
