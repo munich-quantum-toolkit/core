@@ -21,6 +21,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
@@ -29,6 +30,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <set>
 #include <string>
 #include <tuple>
 
@@ -82,15 +84,15 @@ protected:
     return pm.run(moduleOp);
   }
 
-  static size_t countTopLevelPaulis(ModuleOp moduleOp) {
-    size_t count = 0;
+  static SmallVector<std::string, 4> getTopLevelPaulis(ModuleOp moduleOp) {
+    SmallVector<std::string, 4> paulis;
     moduleOp.walk([&](Operation* op) {
       if (isa<IdOp, XOp, YOp, ZOp>(op) && !op->getParentOfType<CtrlOp>() &&
           !op->getParentOfType<InvOp>() && !op->getParentOfType<PowOp>()) {
-        ++count;
+        paulis.emplace_back(op->getName().getStringRef().str());
       }
     });
-    return count;
+    return paulis;
   }
 
   static std::string print(ModuleOp moduleOp) {
@@ -105,25 +107,53 @@ class AllPauliTwirlRowsTest
     : public PauliTwirlingTest,
       public testing::WithParamInterface<std::tuple<GateKind, uint64_t>> {};
 
+class AllPauliTwirlSeedsTest : public PauliTwirlingTest,
+                               public testing::WithParamInterface<GateKind> {};
+
 TEST_P(AllPauliTwirlRowsTest, PreservesExactUnitary) {
   const auto [gate, seed] = GetParam();
   auto module = buildGate(gate);
-  OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
+  const OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
 
   ASSERT_TRUE(succeeded(runPass(*module, seed)));
   EXPECT_TRUE(succeeded(verify(*module)));
-  EXPECT_EQ(countTopLevelPaulis(*module), 4);
+  EXPECT_EQ(getTopLevelPaulis(*module).size(), 4);
   ::mqt::test::expectFullUnitaryEqual(*original, *module, 2);
 }
 
 TEST_F(PauliTwirlingTest, SameSeedProducesSameProgram) {
   auto source = buildGate(GateKind::CX);
-  OwningOpRef<ModuleOp> first = cast<ModuleOp>(source->clone());
-  OwningOpRef<ModuleOp> second = cast<ModuleOp>(source->clone());
+  const OwningOpRef<ModuleOp> first = cast<ModuleOp>(source->clone());
+  const OwningOpRef<ModuleOp> second = cast<ModuleOp>(source->clone());
 
   ASSERT_TRUE(succeeded(runPass(*first, 12345)));
   ASSERT_TRUE(succeeded(runPass(*second, 12345)));
   EXPECT_EQ(print(*first), print(*second));
+}
+
+TEST_F(PauliTwirlingTest, PreservesExistingPhaseWhenRewriting) {
+  builder.gphase(0.25);
+  auto module = buildGate(GateKind::CX);
+  const OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
+
+  GPhaseOp initialPhase = nullptr;
+  module->walk([&](GPhaseOp op) { initialPhase = op; });
+  ASSERT_TRUE(initialPhase);
+  Operation* const initialPhaseOp = initialPhase.getOperation();
+  const Value initialTheta = initialPhase.getTheta();
+
+  ASSERT_TRUE(succeeded(runPass(*module, 4)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_EQ(getTopLevelPaulis(*module).size(), 4);
+  ::mqt::test::expectFullUnitaryEqual(*original, *module, 2);
+
+  bool initialPhaseUnchanged = false;
+  module->walk([&](GPhaseOp op) {
+    if (op.getOperation() == initialPhaseOp) {
+      initialPhaseUnchanged = op.getTheta() == initialTheta;
+    }
+  });
+  EXPECT_TRUE(initialPhaseUnchanged);
 }
 
 TEST_F(PauliTwirlingTest, LeavesUnsupportedModifiedGatesAndPhasesUnchanged) {
@@ -172,17 +202,37 @@ TEST_F(PauliTwirlingTest, LeavesUnsupportedModifiedGatesAndPhasesUnchanged) {
 
   ASSERT_TRUE(succeeded(runPass(*module, 42)));
   EXPECT_TRUE(succeeded(verify(*module)));
-  EXPECT_EQ(countTopLevelPaulis(*module), 0);
+  EXPECT_TRUE(getTopLevelPaulis(*module).empty());
   EXPECT_EQ(print(*module), original);
 }
 
 constexpr std::array<uint64_t, 16> SEEDS_FOR_EACH_TWIRL = {
     6, 16, 10, 11, 12, 18, 5, 4, 1, 8, 62, 3, 2, 94, 0, 13};
 
+TEST_P(AllPauliTwirlSeedsTest, CoversEveryTwirl) {
+  using PauliTuple =
+      std::tuple<std::string, std::string, std::string, std::string>;
+
+  auto source = buildGate(GetParam());
+  std::set<PauliTuple> emittedTwirlRows;
+  for (const auto seed : SEEDS_FOR_EACH_TWIRL) {
+    const OwningOpRef<ModuleOp> module = cast<ModuleOp>(source->clone());
+    ASSERT_TRUE(succeeded(runPass(*module, seed)));
+    const auto paulis = getTopLevelPaulis(*module);
+    ASSERT_EQ(paulis.size(), 4);
+    emittedTwirlRows.emplace(paulis[0], paulis[1], paulis[2], paulis[3]);
+  }
+  EXPECT_EQ(emittedTwirlRows.size(), SEEDS_FOR_EACH_TWIRL.size());
+}
+
 INSTANTIATE_TEST_SUITE_P(
     SupportedGates, AllPauliTwirlRowsTest,
     testing::Combine(testing::Values(GateKind::CX, GateKind::CZ, GateKind::ECR,
                                      GateKind::ISWAP),
                      testing::ValuesIn(SEEDS_FOR_EACH_TWIRL)));
+
+INSTANTIATE_TEST_SUITE_P(SupportedGates, AllPauliTwirlSeedsTest,
+                         testing::Values(GateKind::CX, GateKind::CZ,
+                                         GateKind::ECR, GateKind::ISWAP));
 
 } // namespace
