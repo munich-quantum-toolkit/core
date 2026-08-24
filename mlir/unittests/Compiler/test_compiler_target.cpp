@@ -75,7 +75,7 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   const auto target = valid(
       Target::create("device", std::move(sites),
                      Connectivity::fromCouplings({{11, 2}, {2, 11}, {7, 2}}),
-                     NativeOperations::fromOperations(std::move(operations)),
+                     NativeOperations::fromOperations(operations),
                      valid(DurationUnit::create("ns", 0.5))));
   // The copy itself is the behavior under test: both objects must share the
   // immutable backing storage.
@@ -393,9 +393,8 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
       valid(Operation::create("measure", 1, 0)),
       valid(Operation::create("reset", 1, 0)),
       valid(Operation::create("cnot", 2, 0, std::move(directionalTuples)))};
-  const auto target = valid(
-      Target::create(std::move(sites), {},
-                     NativeOperations::fromOperations(std::move(operations))));
+  const auto target = valid(Target::create(
+      std::move(sites), {}, NativeOperations::fromOperations(operations)));
   EXPECT_EQ(target.supports(x), true);
   EXPECT_EQ(target.supports(cx), true);
   EXPECT_EQ(target.supports(measure), true);

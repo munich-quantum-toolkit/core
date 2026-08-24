@@ -152,9 +152,8 @@ makeUCxTarget(std::optional<std::vector<Site>> sites = std::nullopt) {
   }
   std::vector operations{valid(Operation::create("u", 1, 3)),
                          valid(Operation::create("cx", 2, 0))};
-  return valid(
-      Target::create(std::move(*sites), {},
-                     NativeOperations::fromOperations(std::move(operations))));
+  return valid(Target::create(std::move(*sites), {},
+                              NativeOperations::fromOperations(operations)));
 }
 
 [[nodiscard]] static mlir::DenseElementsAttr

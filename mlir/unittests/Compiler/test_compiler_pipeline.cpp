@@ -202,7 +202,7 @@ makeSparseUCZTarget(const bool includeMeasure) {
   return llvm::cantFail(CompilerTarget::create(
       "sparse-line", std::move(sites),
       CompilerTarget::Connectivity::fromCouplings({{5, 9}, {9, 17}}),
-      CompilerTarget::NativeOperations::fromOperations(std::move(operations))));
+      CompilerTarget::NativeOperations::fromOperations(operations)));
 }
 
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
