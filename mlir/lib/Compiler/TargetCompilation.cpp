@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 
+#include <mlir/Conversion/ControlFlowToSCF/ControlFlowToSCF.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/Passes.h>
@@ -52,6 +53,13 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(std::make_unique<InitializeTargetEnvironmentPass>(environment));
   const auto& target = environment.target();
   pm.addPass(createInlinerPass());
+  pm.addPass(createSymbolDCEPass());
+  pm.addPass(createLiftControlFlowToSCFPass());
+  pm.addPass(createSCCPPass());
+  pm.addPass(qco::createUnrollUnsupportedPayloadLoops());
+  pm.addPass(createSCCPPass());
+  populateQCOCleanupPipeline(pm);
+  pm.addPass(qco::createLegalizePayloadControlFlow());
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createDecomposeMultiControlled(target));
   populateDefaultQCOOptimizationPipeline(pm);
