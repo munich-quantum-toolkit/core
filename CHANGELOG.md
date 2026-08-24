@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- 🚸 Let PennyLane QDMI devices reuse an already-open session, including a
+  device selected from a Slurm license ([#2232]) ([**@burgholzer**])
 - ✨ Let a package register a program serializer for a program format through
   the `mqt.core.qiskit.program_serializers` entry point group ([#2114])
   ([**@marcelwa**], [**@burgholzer**])
@@ -704,6 +706,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156

@@ -308,6 +308,20 @@ device = QDMIDevice(
 )
 ```
 
+An integration can return an already-open device. Pass that handle directly to
+the generic class. Do not repeat session parameters because the session already
+exists. For example, a Slurm job can reuse the device selected by its license:
+
+```python
+from mqt.core.plugins.pennylane import QDMIDevice
+from mqt.core.qdmi import slurm
+
+device = QDMIDevice(
+    device=slurm.open_device_from_license(),
+    shots=1000,
+)
+```
+
 Arbitrary PennyLane wire labels map deterministically to contiguous QASM
 indices. The converter validates the one- and two-qubit loci advertised through
 QDMI but does not route circuits. A topology-incompatible program therefore
