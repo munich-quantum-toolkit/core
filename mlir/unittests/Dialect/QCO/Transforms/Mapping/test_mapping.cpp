@@ -237,7 +237,7 @@ static CompilerTarget getSquareGridTarget(const size_t n) {
   }
 
   return llvm::cantFail(CompilerTarget::create(
-      numTarget, Connectivity::fromCouplings(std::move(couplings))));
+      numTarget, Connectivity::fromCouplings(couplings)));
 }
 
 /// Creates an N-qubit GHZ state, where N = `qubits.size()` using
@@ -454,7 +454,7 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
   }
 
   const auto target = llvm::cantFail(CompilerTarget::create(
-      numTargetQubits, Connectivity::fromCouplings(std::move(couplings))));
+      numTargetQubits, Connectivity::fromCouplings(couplings)));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(2, builder.getI1Type()));
