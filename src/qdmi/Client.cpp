@@ -158,6 +158,11 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
   if (path.empty()) {
     throw std::invalid_argument("QDMI Client driver path must not be empty");
   }
+  if (path.native().find(std::filesystem::path::value_type{}) !=
+      std::filesystem::path::string_type::npos) {
+    throw std::invalid_argument(
+        "QDMI Client driver path must not contain null bytes");
+  }
   std::error_code error;
   auto normalized = std::filesystem::weakly_canonical(
       std::filesystem::absolute(path, error), error);
@@ -201,9 +206,26 @@ void closeLibrary(LibraryHandle library) { dlclose(library); }
   return packaged.has_parent_path() ? normalizePath(packaged) : packaged;
 }
 
+[[nodiscard]] auto requestedDefaultDriverPath(
+    const std::optional<std::filesystem::path>& driverPath = std::nullopt)
+    -> std::filesystem::path {
+  if (driverPath) {
+    return normalizePath(*driverPath);
+  }
+  const auto packaged = packagedDriverPath();
+  return packaged.has_parent_path() ? normalizePath(packaged) : packaged;
+}
+
 struct LoadedClient {
+  /// Private ABI v1 path arguments use UTF-8.
+  using AddManifest = int (*)(const char*);
+  using SessionAllocForDevice = int (*)(const char*, size_t, const char*,
+                                        QDMI_Session*);
+
   LibraryHandle library{};
   std::shared_ptr<detail::ClientApi> api;
+  AddManifest addManifest{};
+  SessionAllocForDevice sessionAllocForDevice{};
 
   LoadedClient(LibraryHandle selectedLibrary,
                std::shared_ptr<detail::ClientApi> selectedApi)
@@ -219,7 +241,8 @@ struct LoadedClient {
   LoadedClient& operator=(const LoadedClient&) = delete;
   LoadedClient(LoadedClient&& other) noexcept
       : library(std::exchange(other.library, nullptr)),
-        api(std::move(other.api)) {}
+        api(std::move(other.api)), addManifest(other.addManifest),
+        sessionAllocForDevice(other.sessionAllocForDevice) {}
 };
 
 template <class Function>
@@ -232,6 +255,13 @@ template <class Function>
                              std::string(name));
   }
   return function;
+}
+
+template <class Function>
+[[nodiscard]] auto loadOptionalSymbol(LibraryHandle library, const char* name)
+    -> Function {
+  /// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+  return reinterpret_cast<Function>(findSymbol(library, name));
 }
 
 [[nodiscard]] auto loadClient(const std::filesystem::path& path)
@@ -282,7 +312,13 @@ template <class Function>
     LOAD_CLIENT_SYMBOL(deviceQueryOperationProperty,
                        QDMI_device_query_operation_property);
 #undef LOAD_CLIENT_SYMBOL
-    return {library, std::move(api)};
+    auto loaded = LoadedClient{library, std::move(api)};
+    loaded.addManifest = loadOptionalSymbol<LoadedClient::AddManifest>(
+        library, "MQT_CORE_QDMI_driver_add_manifest_v1");
+    loaded.sessionAllocForDevice =
+        loadOptionalSymbol<LoadedClient::SessionAllocForDevice>(
+            library, "MQT_CORE_QDMI_driver_session_alloc_for_device_v1");
+    return loaded;
   } catch (...) {
     closeLibrary(library);
     throw;
@@ -295,6 +331,10 @@ struct ClientSelection {
   LibraryHandle library{};
   std::shared_ptr<const detail::ClientApi> api;
   std::filesystem::path path;
+  LoadedClient::AddManifest addManifest{};
+  LoadedClient::SessionAllocForDevice sessionAllocForDevice{};
+  std::unique_ptr<LoadedClient> stagedDefault;
+  std::filesystem::path stagedDefaultPath;
 };
 
 [[nodiscard]] auto clientSelection() -> ClientSelection& {
@@ -309,6 +349,8 @@ void selectClient(ClientSelection& selection, LoadedClient& loaded,
   selection.library = std::exchange(loaded.library, nullptr);
   selection.api = loaded.api;
   selection.path.swap(path);
+  selection.addManifest = loaded.addManifest;
+  selection.sessionAllocForDevice = loaded.sessionAllocForDevice;
 }
 
 using SessionGuard =
@@ -320,6 +362,70 @@ void validateSessionAllocation(const int status, QDMI_Session session) {
     throw std::runtime_error("The QDMI Client driver returned a null session");
   }
   qdmi::throwIfError(status, "Allocating QDMI session");
+}
+
+[[nodiscard]] auto candidateClient(ClientSelection& selection,
+                                   const std::filesystem::path& path,
+                                   std::unique_ptr<LoadedClient>& local)
+    -> LoadedClient& {
+  if (selection.stagedDefault != nullptr &&
+      path == selection.stagedDefaultPath) {
+    return *selection.stagedDefault;
+  }
+  local = std::make_unique<LoadedClient>(loadClient(path));
+  return *local;
+}
+
+template <class OnAllocated>
+[[nodiscard]] auto allocateRawTargetedSession(
+    std::shared_ptr<const detail::ClientApi> api,
+    const LoadedClient::SessionAllocForDevice sessionAllocForDevice,
+    const std::string_view id, const std::string_view deviceSessionJson,
+    OnAllocated&& onAllocated) -> std::shared_ptr<detail::ClientSession> {
+  const auto* json =
+      deviceSessionJson.empty() ? nullptr : deviceSessionJson.data();
+  const std::string deviceId{id};
+  QDMI_Session session = nullptr;
+  const auto status = sessionAllocForDevice(
+      deviceId.c_str(), deviceSessionJson.size(), json, &session);
+  SessionGuard guard{session, api->sessionFree};
+  if (session == nullptr &&
+      (status == QDMI_SUCCESS || status == QDMI_WARN_GENERAL)) {
+    throw std::runtime_error(
+        "The targeted QDMI Client driver returned a null session");
+  }
+  throwIfError(status, "Allocating targeted QDMI session");
+  std::forward<OnAllocated>(onAllocated)();
+  auto owner = std::make_shared<detail::ClientSession>(std::move(api), session);
+  /// The ClientSession now owns the raw QDMI session.
+  /// NOLINTNEXTLINE(bugprone-unused-return-value)
+  guard.release();
+  return owner;
+}
+
+[[nodiscard]] auto
+initializeTargetedSession(const std::shared_ptr<detail::ClientSession>& owner)
+    -> QDMI_Device {
+  const auto& api = owner->api;
+  auto* const session = owner->handle;
+  throwIfError(api->sessionInit(session), "Initializing targeted QDMI session");
+  size_t size = 0;
+  throwIfError(api->sessionQueryProperty(session, QDMI_SESSION_PROPERTY_DEVICES,
+                                         0, nullptr, &size),
+               "Querying targeted QDMI device");
+  if (size != sizeof(QDMI_Device)) {
+    throw std::runtime_error(
+        "A targeted QDMI session must expose exactly one device");
+  }
+  QDMI_Device device = nullptr;
+  throwIfError(api->sessionQueryProperty(session, QDMI_SESSION_PROPERTY_DEVICES,
+                                         size, static_cast<void*>(&device),
+                                         nullptr),
+               "Querying targeted QDMI device");
+  if (device == nullptr) {
+    throw std::runtime_error("A targeted QDMI session returned a null device");
+  }
+  return device;
 }
 
 [[nodiscard]] auto allocateSession(const SessionConfig& config)
@@ -345,7 +451,8 @@ void validateSessionAllocation(const int status, QDMI_Session session) {
   }
 
   auto path = requestedDriverPath(config);
-  auto loaded = loadClient(path);
+  std::unique_ptr<LoadedClient> local;
+  auto& loaded = candidateClient(selection, path, local);
   const std::shared_ptr<const detail::ClientApi> api = loaded.api;
   QDMI_Session session = nullptr;
   const auto result = api->sessionAlloc(&session);
@@ -353,12 +460,93 @@ void validateSessionAllocation(const int status, QDMI_Session session) {
   validateSessionAllocation(result, session);
   auto owner = std::make_shared<detail::ClientSession>(api, session);
   selectClient(selection, loaded, path);
+  if (selection.stagedDefault != nullptr) {
+    selection.stagedDefault.reset();
+    selection.stagedDefaultPath.clear();
+  }
   /// The ClientSession now owns the raw QDMI session.
   /// NOLINTNEXTLINE(bugprone-unused-return-value)
   guard.release();
   return owner;
 }
 } // namespace
+
+void default_driver::addManifest(const std::filesystem::path& path) {
+  const auto canonical = normalizePath(path);
+  const auto manifestPath = detail::pathToUtf8(canonical);
+  auto& selection = clientSelection();
+  const std::scoped_lock lock(selection.mutex);
+  if (selection.api != nullptr) {
+    if (selection.addManifest == nullptr) {
+      throw std::runtime_error(
+          "The selected QDMI Client driver does not support package manifests");
+    }
+    throwIfError(selection.addManifest(manifestPath.c_str()),
+                 "Staging QDMI package manifest");
+    return;
+  }
+
+  if (selection.stagedDefault == nullptr) {
+    selection.stagedDefaultPath = requestedDefaultDriverPath();
+    selection.stagedDefault =
+        std::make_unique<LoadedClient>(loadClient(selection.stagedDefaultPath));
+  }
+  if (selection.stagedDefault->addManifest == nullptr) {
+    throw std::runtime_error(
+        "MQT Core's packaged QDMI Client driver does not support manifests");
+  }
+  throwIfError(selection.stagedDefault->addManifest(manifestPath.c_str()),
+               "Staging QDMI package manifest");
+}
+
+Device default_driver::openDevice(
+    const std::string_view id, const std::string_view deviceSessionJson,
+    const std::optional<std::filesystem::path>& driverPath) {
+  if (id.empty() || id.find('\0') != std::string_view::npos) {
+    throw std::invalid_argument(
+        "QDMI device ID must not be empty or contain null bytes");
+  }
+
+  auto& selection = clientSelection();
+  std::shared_ptr<detail::ClientSession> owner;
+  {
+    const std::scoped_lock lock(selection.mutex);
+    if (selection.api != nullptr) {
+      if (driverPath && normalizePath(*driverPath) != selection.path) {
+        throw std::runtime_error(
+            "The QDMI Client driver is already selected for this process");
+      }
+      if (selection.sessionAllocForDevice == nullptr) {
+        throw std::runtime_error("The selected QDMI Client driver does not "
+                                 "support targeted sessions");
+      }
+      owner = allocateRawTargetedSession(selection.api,
+                                         selection.sessionAllocForDevice, id,
+                                         deviceSessionJson, [] {});
+    } else {
+      auto selectedPath = requestedDefaultDriverPath(driverPath);
+      std::unique_ptr<LoadedClient> local;
+      auto& loaded = candidateClient(selection, selectedPath, local);
+      if (loaded.sessionAllocForDevice == nullptr) {
+        throw std::runtime_error("The selected QDMI Client driver does not "
+                                 "support targeted sessions");
+      }
+      owner = allocateRawTargetedSession(
+          loaded.api, loaded.sessionAllocForDevice, id, deviceSessionJson, [&] {
+            selectClient(selection, loaded, selectedPath);
+            if (selection.stagedDefault != nullptr) {
+              selection.stagedDefault.reset();
+              selection.stagedDefaultPath.clear();
+            }
+          });
+    }
+  }
+  auto* const device = initializeTargetedSession(owner);
+  /// Keep the explicit construction to avoid MSVC's dependent braced-init
+  /// evaluation bug (C4868).
+  /// NOLINTNEXTLINE(modernize-return-braced-init-list)
+  return Device(device, std::move(owner));
+}
 
 detail::ClientSession::~ClientSession() {
   if (handle != nullptr) {

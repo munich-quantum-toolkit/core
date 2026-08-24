@@ -32,6 +32,13 @@ int main(const int argc, const char* const argv[]) {
       return EXIT_FAILURE;
     }
     std::filesystem::current_path(std::filesystem::temp_directory_path());
+    {
+      const auto targeted =
+          qdmi::default_driver::openDevice("mqt.ddsim.default");
+      if (targeted.getId() != "mqt.ddsim.default") {
+        return EXIT_FAILURE;
+      }
+    }
     qdmi::Session session;
     return session.getDevices().empty() ? EXIT_FAILURE : EXIT_SUCCESS;
   } catch (const std::exception& error) {

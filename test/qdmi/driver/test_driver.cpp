@@ -38,6 +38,14 @@
 #include <utility>
 #include <vector>
 
+/// The private Driver ABI fixes these exported symbol names.
+/// NOLINTBEGIN(readability-identifier-naming)
+extern "C" int MQT_CORE_QDMI_driver_add_manifest_v1(const char* manifestPath);
+extern "C" int MQT_CORE_QDMI_driver_session_alloc_for_device_v1(
+    const char* deviceId, size_t deviceSessionJsonSize,
+    const char* deviceSessionJson, QDMI_Session* session);
+/// NOLINTEND(readability-identifier-naming)
+
 namespace testing {
 namespace {
 auto stringConcat5(const std::string& a, const std::string& b,
@@ -398,7 +406,7 @@ TEST(ChildDeviceTest, CleansUpWhenSelectingAChildFails) {
 TEST(ChildDeviceTest, RejectsMalformedChildLists) {
   const auto library = std::make_shared<ChildDeviceLibrary>();
   library->malformedChildList = true;
-  EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
+  EXPECT_THROW(QDMI_Device_impl_d{library}, std::invalid_argument);
   EXPECT_EQ(library->allocatedSessions, 1);
   EXPECT_EQ(library->freedSessions, 1);
 }
@@ -923,6 +931,36 @@ TEST(ConfiguredDriverTest, ExposesWorkingDefinitionsAndIsolatesFailures) {
   QDMI_session_free(session);
 }
 
+TEST(ConfiguredDriverTest,
+     ExtensionAbiValidatesArgumentsAndPropagatesDeviceStatus) {
+  EXPECT_EQ(MQT_CORE_QDMI_driver_add_manifest_v1(nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_CORE_QDMI_driver_add_manifest_v1(""),
+            QDMI_ERROR_INVALIDARGUMENT);
+
+  QDMI_Session session = nullptr;
+  EXPECT_EQ(MQT_CORE_QDMI_driver_session_alloc_for_device_v1(
+                "test.session-overrides", 0, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_CORE_QDMI_driver_session_alloc_for_device_v1(nullptr, 0,
+                                                             nullptr, &session),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_CORE_QDMI_driver_session_alloc_for_device_v1("", 0, nullptr,
+                                                             &session),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_CORE_QDMI_driver_session_alloc_for_device_v1(
+                "test.session-overrides", 1, nullptr, &session),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_CORE_QDMI_driver_session_alloc_for_device_v1("test.disabled", 0,
+                                                             nullptr, &session),
+            QDMI_ERROR_PERMISSIONDENIED);
+  EXPECT_EQ(session, nullptr);
+  EXPECT_EQ(MQT_CORE_QDMI_driver_session_alloc_for_device_v1(
+                "test.unknown-target", 0, nullptr, &session),
+            QDMI_ERROR_NOTFOUND);
+  EXPECT_EQ(session, nullptr);
+}
+
 TEST(DeviceRegistrationTest, ValidatesDuplicatesAndReplacement) {
   auto& driver = qdmi::Driver::get();
   EXPECT_THROW(driver.registerDevice({}), std::invalid_argument);
@@ -937,6 +975,15 @@ TEST(DeviceRegistrationTest, ValidatesDuplicatesAndReplacement) {
   auto invalidId = original;
   invalidId.id = std::string{"test.alias\0hidden", 17};
   EXPECT_THROW(driver.registerDevice(std::move(invalidId)),
+               std::invalid_argument);
+  auto invalidLibrary = original;
+  invalidLibrary.library =
+      std::filesystem::path{std::string{"device\0alias", 12}};
+  EXPECT_THROW(driver.registerDevice(std::move(invalidLibrary)),
+               std::invalid_argument);
+  auto invalidPrefix = original;
+  invalidPrefix.prefix.clear();
+  EXPECT_THROW(driver.registerDevice(std::move(invalidPrefix)),
                std::invalid_argument);
   driver.registerDevice(original);
   EXPECT_THROW(driver.registerDevice(original), std::invalid_argument);

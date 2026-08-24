@@ -124,6 +124,27 @@ auto queryValue(const T& result, const size_t size, void* value,
 /// NOLINTBEGIN(readability-identifier-naming, readability-named-parameter)
 uint32_t QDMI_driver_get_client_abi_version() { return TEST_CLIENT_ABI; }
 
+#if defined(TEST_TARGETED_EXTENSION) ||                                        \
+    defined(TEST_TARGETED_INIT_FAILURE_EXTENSION)
+extern "C" QDMI_DRIVER_EXPORT int
+MQT_CORE_QDMI_driver_session_alloc_for_device_v1(const char* deviceId, size_t,
+                                                 const char*,
+                                                 QDMI_Session* session) {
+  if (deviceId == nullptr || session == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  *session = nullptr;
+#ifdef TEST_TARGETED_INIT_FAILURE_EXTENSION
+  return QDMI_session_alloc(session);
+#else
+  if (deviceId != nullptr && std::string_view{deviceId} == "warning-null") {
+    return QDMI_WARN_GENERAL;
+  }
+  return QDMI_ERROR_OUTOFMEM;
+#endif
+}
+#endif
+
 #ifdef TEST_FULL_CLIENT
 int QDMI_session_alloc(QDMI_Session* session) {
   if (session == nullptr) {
@@ -173,6 +194,9 @@ int QDMI_session_init(QDMI_Session session) {
   if (session->initialized) {
     return QDMI_ERROR_BADSTATE;
   }
+#ifdef TEST_TARGETED_INIT_FAILURE_EXTENSION
+  return QDMI_ERROR_PERMISSIONDENIED;
+#endif
   session->initialized = true;
   return QDMI_SUCCESS;
 }

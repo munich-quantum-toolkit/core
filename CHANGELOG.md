@@ -106,6 +106,9 @@ releases may include breaking changes.
 - 💥 Replace the QDMI-specific primitives with native Qiskit primitives and
   typed backend factories. Sampler and `memory=True` require genuine QDMI
   `SHOTS` ([#2358]) ([**@burgholzer**])
+- ✨ Discover installed device catalogues without importing provider modules and
+  open targeted sessions through the packaged driver's optional private
+  configuration extension ([#2230]) ([**@burgholzer**])
 - 💥 Load one replaceable QDMI 1.4 Client driver through a validated function
   table, split `MQT::CoreQDMI` from the packaged `MQT::CoreQDMIDriver`, and use
   stable Client device IDs across C++, Python, MLIR, Qiskit, PennyLane, and
@@ -911,6 +914,7 @@ for previous changelogs._
 [#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2240]: https://github.com/munich-quantum-toolkit/core/pull/2240
+[#2230]: https://github.com/munich-quantum-toolkit/core/pull/2230
 [#2229]: https://github.com/munich-quantum-toolkit/core/pull/2229
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2228]: https://github.com/munich-quantum-toolkit/core/pull/2228

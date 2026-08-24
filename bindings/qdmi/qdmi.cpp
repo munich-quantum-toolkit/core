@@ -9,6 +9,7 @@
  */
 
 #include "qdmi/Client.hpp"
+#include "qdmi/common/Common.hpp"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
@@ -66,6 +67,61 @@ qdmi::SessionConfig makeClientSessionConfig(
   };
 }
 
+[[nodiscard]] auto makeDeviceSessionJson(
+    const std::optional<std::string>& baseUrl,
+    const std::optional<std::string>& token,
+    const std::optional<std::filesystem::path>& authFile,
+    const std::optional<std::string>& authUrl,
+    const std::optional<std::string>& username,
+    const std::optional<std::string>& password,
+    const std::optional<std::string>& deviceConfig,
+    const std::optional<std::filesystem::path>& deviceConfigFile,
+    const std::optional<std::string>& custom1,
+    const std::optional<std::string>& custom2,
+    const std::optional<std::string>& custom3,
+    const std::optional<std::string>& custom4,
+    const std::optional<std::string>& custom5) -> std::string {
+  if (deviceConfig && deviceConfigFile) {
+    throw nb::value_error(
+        "device_config and device_config_file are mutually exclusive");
+  }
+  nb::dict session;
+  const auto setString = [&session](const char* key,
+                                    const std::optional<std::string>& value) {
+    if (value) {
+      session[key] = *value;
+    }
+  };
+  setString("base-url", baseUrl);
+  setString("token", token);
+  if (authFile) {
+    session["auth-file"] = qdmi::detail::pathToUtf8(*authFile);
+  }
+  setString("auth-url", authUrl);
+  setString("username", username);
+  setString("password", password);
+  setString("custom1", custom1);
+  setString("custom2", custom2);
+  setString("custom3", custom3);
+  setString("custom4", custom4);
+  setString("custom5", custom5);
+  if (deviceConfig) {
+    nb::dict source;
+    source["inline"] =
+        nb::module_::import_("json").attr("loads")(*deviceConfig);
+    session["device-config"] = std::move(source);
+  } else if (deviceConfigFile) {
+    nb::dict source;
+    source["file"] = qdmi::detail::pathToUtf8(*deviceConfigFile);
+    session["device-config"] = std::move(source);
+  }
+  if (session.empty()) {
+    return {};
+  }
+  return nb::cast<std::string>(
+      nb::module_::import_("json").attr("dumps")(session));
+}
+
 template <typename Query>
 [[nodiscard]] nb::object queryCustomValue(Query query,
                                           const nb::handle valueType) {
@@ -105,7 +161,9 @@ template <typename Query>
 } // namespace
 
 NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
-  qdmiModule.doc() = "QDMI Client entities.";
+  qdmiModule.doc() = "QDMI Client entities and MQT Core's default driver.";
+  auto defaultDriver = qdmiModule.def_submodule(
+      "default_driver", "Configure MQT Core's packaged QDMI Client driver.");
   bindings::registerSlurm(qdmiModule);
 
   nb::class_<qdmi::Session>(qdmiModule, "ClientSession",
@@ -707,6 +765,48 @@ when the custom slot is unsupported.)pb");
                 nb::sig("def __eq__(self, arg: object, /) -> bool"));
   operation.def(nb::self != nb::self,
                 nb::sig("def __ne__(self, arg: object, /) -> bool"));
+
+  defaultDriver.def("add_manifest", &qdmi::default_driver::addManifest,
+                    "manifest_path"_a,
+                    "Stage one installed package manifest before the default "
+                    "driver freezes.");
+
+  defaultDriver.def(
+      "open_device",
+      [](const std::string& deviceId,
+         const std::optional<std::filesystem::path>& driverPath,
+         const std::optional<std::string>& baseUrl,
+         const std::optional<std::string>& token,
+         const std::optional<std::filesystem::path>& authFile,
+         const std::optional<std::string>& authUrl,
+         const std::optional<std::string>& username,
+         const std::optional<std::string>& password,
+         const std::optional<std::string>& deviceConfig,
+         const std::optional<std::filesystem::path>& deviceConfigFile,
+         const std::optional<std::string>& custom1,
+         const std::optional<std::string>& custom2,
+         const std::optional<std::string>& custom3,
+         const std::optional<std::string>& custom4,
+         const std::optional<std::string>& custom5) {
+        return qdmi::default_driver::openDevice(
+            deviceId,
+            makeDeviceSessionJson(baseUrl, token, authFile, authUrl, username,
+                                  password, deviceConfig, deviceConfigFile,
+                                  custom1, custom2, custom3, custom4, custom5),
+            driverPath);
+      },
+      "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
+      "base_url"_a = std::nullopt, "token"_a = std::nullopt,
+      "auth_file"_a = std::nullopt, "auth_url"_a = std::nullopt,
+      "username"_a = std::nullopt, "password"_a = std::nullopt,
+      "device_config"_a = std::nullopt, "device_config_file"_a = std::nullopt,
+      "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
+      "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
+      "custom5"_a = std::nullopt,
+      "Open one device through MQT Core's strict private driver extension.");
+
+  nb::module_::import_("mqt.core._qdmi_discovery")
+      .attr("discover_qdmi_manifests")(defaultDriver.attr("add_manifest"));
 }
 
 } // namespace mqt
