@@ -13,9 +13,13 @@
 #include "qdmi/driver/Driver.hpp"
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace qdmi::detail {
+
+/// Rejects IDs that the QDMI string-property ABI cannot represent.
+void validateDeviceId(std::string_view id);
 
 /// Discovers configured QDMI devices without loading their libraries.
 class DeviceRegistry {

@@ -205,6 +205,9 @@ enum class SessionStatus : uint8_t {
 /// Definition of the QDMI Device.
 struct QDMI_Device_impl_d {
 private:
+  /// Stable ID assigned by the driver.
+  std::string id_;
+
   /// The device library that provides the device interface functions.
   /// @note This must be a pointer type as we need access to dynamic and static
   /// libraries that are subclasses of qdmi::DeviceLibrary.
@@ -225,8 +228,10 @@ public:
   /// @param lib is the device library to take ownership of.
   /// @param config is the configuration for device session parameters.
   explicit QDMI_Device_impl_d(std::unique_ptr<qdmi::DeviceLibrary>&& lib,
-                              const qdmi::DeviceSessionConfig& config = {})
-      : QDMI_Device_impl_d(std::shared_ptr(std::move(lib)), config) {}
+                              const qdmi::DeviceSessionConfig& config = {},
+                              std::string id = {})
+      : QDMI_Device_impl_d(std::shared_ptr(std::move(lib)), config,
+                           std::move(id)) {}
 
   /// Constructor for the QDMI device.
   ///
@@ -238,6 +243,7 @@ public:
   /// @param childDevice optionally selects a child device for this wrapper.
   explicit QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> lib,
                               const qdmi::DeviceSessionConfig& config = {},
+                              std::string id = {},
                               QDMI_Child_Device childDevice = nullptr);
 
   /// Destructor for the QDMI device.

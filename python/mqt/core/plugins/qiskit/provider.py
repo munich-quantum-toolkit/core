@@ -17,7 +17,7 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-from ...qdmi.driver import registered_device_ids
+from ...qdmi import ClientSession
 from .backend import QDMIBackend
 from .exceptions import UnsupportedDeviceError
 
@@ -35,9 +35,9 @@ def __dir__() -> list[str]:
 
 
 class QDMIProvider:
-    """Provider for registered QDMI devices.
+    """Provider for Client-visible QDMI devices.
 
-    This provider discovers registered QDMI devices lazily and adapts
+    This provider discovers QDMI devices lazily and adapts
     Qiskit-compatible devices as backends.
 
     Examples:
@@ -58,8 +58,8 @@ class QDMIProvider:
 
     @staticmethod
     def device_ids() -> list[str]:
-        """Return the current registered QDMI device IDs without opening them."""
-        return registered_device_ids()
+        """Return the devices visible to a fresh QDMI Client session."""
+        return [device.id for device in ClientSession().devices]
 
     def backends(self, name: str | None = None) -> list[QDMIBackend]:
         """Return all available backends, optionally filtered by name substring.
@@ -84,13 +84,13 @@ class QDMIProvider:
         return list(self._iter_backends(name))
 
     def _iter_backends(self, name: str | None = None) -> Iterator[QDMIBackend]:
-        """Open available registered backends one at a time.
+        """Open available backends one at a time.
 
         Args:
             name: If provided, yield only backends whose name contains this substring.
 
         Yields:
-            Each backend whose registered device can be opened.
+            Each backend whose device can be opened.
         """
         for device_id in self.device_ids():
             try:
@@ -99,7 +99,7 @@ class QDMIProvider:
                 continue
             except (IndexError, RuntimeError, ValueError):
                 warnings.warn(
-                    f"Could not open registered QDMI device '{device_id}'.",
+                    f"Could not open QDMI device '{device_id}'.",
                     RuntimeWarning,
                     stacklevel=3,
                 )

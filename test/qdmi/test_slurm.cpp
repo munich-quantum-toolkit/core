@@ -9,7 +9,6 @@
  */
 
 #include "qdmi/Slurm.hpp"
-#include "qdmi/driver/Driver.hpp"
 
 #include "TestUtils.hpp"
 
@@ -29,20 +28,9 @@ namespace {
 
 using mqt::test::ScopedEnvironmentVariable;
 
-void registerStatusDevice(const std::string& id,
-                          const std::string& configuredStatus) {
-  static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent({
-      .id = id,
-      .library = MQT_CORE_QDMI_SLURM_TEST_DEVICE,
-      .prefix = "TEST_SESSION",
-      .session = {.custom4 = configuredStatus},
-  }));
-}
-
 } // namespace
 
 TEST(SlurmAdapterTest, AcceptsImplicitAndExplicitUnitCounts) {
-  registerStatusDevice("test.slurm.idle", "idle");
   for (const auto* const value : {"test.slurm.idle", "test.slurm.idle:1"}) {
     const ScopedEnvironmentVariable licenses("SLURM_JOB_LICENSES", value);
     EXPECT_EQ(openDeviceFromLicense().getStatus(), QDMI_DEVICE_STATUS_IDLE);
@@ -50,9 +38,7 @@ TEST(SlurmAdapterTest, AcceptsImplicitAndExplicitUnitCounts) {
 }
 
 TEST(SlurmAdapterTest, AcceptsBusyDevice) {
-  registerStatusDevice("test.slurm.busy", "busy");
-  const ScopedEnvironmentVariable licenses("SLURM_JOB_LICENSES",
-                                           "test.slurm.busy");
+  const ScopedSlurmLicenses licenses("test.slurm.busy");
   EXPECT_EQ(openDeviceFromLicense().getStatus(), QDMI_DEVICE_STATUS_BUSY);
 }
 
@@ -72,7 +58,6 @@ TEST(SlurmAdapterTest, KeepsSessionsFreshAndReportsUnknownDevice) {
 }
 
 TEST(SlurmAdapterTest, RejectsMissingAndMalformedValues) {
-  registerStatusDevice("test.slurm.grammar", "idle");
   const std::array<std::optional<std::string>, 13> invalidValues{
       std::nullopt,
       "",
@@ -97,7 +82,6 @@ TEST(SlurmAdapterTest, RejectsMissingAndMalformedValues) {
 }
 
 TEST(SlurmAdapterTest, RejectsUnknownRemoteAndCompoundLicenses) {
-  registerStatusDevice("test.slurm.single", "idle");
   constexpr std::array invalidValues{
       "test.slurm.unknown",          "test.slurm.single@license-server:1",
       "test.slurm.single,unrelated", "unrelated,test.slurm.single",
@@ -122,8 +106,7 @@ TEST(SlurmAdapterTest, RejectsUnavailableDeviceWithIdAndStatus) {
 
   for (const auto& [configuredStatus, reportedStatus] : rejectedStates) {
     const auto id = std::string{"test.slurm."} + configuredStatus;
-    registerStatusDevice(id, configuredStatus);
-    const ScopedEnvironmentVariable licenses("SLURM_JOB_LICENSES", id);
+    const ScopedSlurmLicenses licenses(id);
     EXPECT_THAT(
         [] { return openDeviceFromLicense(); },
         testing::ThrowsMessage<std::runtime_error>(testing::AllOf(
