@@ -38,7 +38,14 @@ if(TARGET MQT::CoreQDMIDriver)
     PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device"
                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/device")
 
+  if(WIN32)
+    # Discover tests after the Driver and device runtime copies finish.
+    set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
+  endif()
   package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_driver.cpp)
+  if(WIN32)
+    unset(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE)
+  endif()
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMI)
 
   set(DIAGNOSTIC_TARGET_NAME mqt-core-qdmi-driver-diagnostic-test)

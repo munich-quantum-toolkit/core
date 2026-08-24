@@ -9,7 +9,14 @@
 set(TARGET_NAME mqt-core-qdmi-registry-test)
 
 if(TARGET MQT::CoreQDMIDriver)
+  if(WIN32)
+    # Discover tests after the Driver and device runtime copies finish.
+    set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
+  endif()
   package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_device_registry.cpp)
+  if(WIN32)
+    unset(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE)
+  endif()
   target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi/driver
                                                     ${PROJECT_SOURCE_DIR}/test)
   if(TARGET MQT::CoreQDMI_DDSIM_Device)
