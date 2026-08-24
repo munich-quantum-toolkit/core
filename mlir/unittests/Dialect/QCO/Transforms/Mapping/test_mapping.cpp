@@ -9,9 +9,9 @@
  */
 
 #include "mlir/Compiler/Target.h"
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -299,8 +299,8 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<cbit::CBitDialect, mqt::MQTDialect, QCODialect,
-                    qtensor::QTensorDialect,
-                    scf::SCFDialect, arith::ArithDialect, func::FuncDialect>();
+                    qtensor::QTensorDialect, scf::SCFDialect,
+                    arith::ArithDialect, func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -339,7 +339,7 @@ TEST_F(MappingPassFixture,
        TopologicalSortDeduplicatesNestedUsesAndPreemptsStably) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %first = arith.constant true
         %producer = arith.constant true
         %user = scf.if %first -> (i1) {
@@ -380,10 +380,10 @@ TEST_F(MappingPassFixture,
        TopologicalSortDeduplicatesSSAAndClassicalMemoryEdges) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %index = arith.constant 0 : index
         %value = arith.constant true
-        %register = cbit.alloc(#cbit.init<zero>) source_name = "c"
+        %register = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
             : !cbit.reg<1>
         %loaded = cbit.load %register[%index] : !cbit.reg<1>
         cbit.store %value, %register[%index] : !cbit.reg<1>
@@ -417,7 +417,7 @@ TEST_F(MappingPassFixture,
 TEST_F(MappingPassFixture, TopologicalSortLeavesCyclesUnchanged) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {passthrough = ["entry_point"]} {
+      func.func @main() attributes {mqt.entry_point} {
         %constant = arith.constant true
         %first = arith.xori %constant, %constant : i1
         %second = arith.xori %first, %constant : i1
@@ -650,7 +650,7 @@ TEST_F(MappingPassFixture, MapUnaryIfBeforeIndependentMeasurement) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%condition: i1) -> i1
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
         %q1 = qco.alloc : !qco.qubit
         %q2 = qco.alloc : !qco.qubit
@@ -699,15 +699,15 @@ TEST_F(MappingPassFixture, MapUnaryIfBeforeIndependentMeasurement) {
 TEST_F(MappingPassFixture, PreserveCBitOrderAroundConditional) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() -> !cbit.reg<3> attributes {passthrough = ["entry_point"]} {
+      func.func @main() -> !cbit.reg<3> attributes {mqt.entry_point} {
         %false = arith.constant false
         %true = arith.constant true
         %c2 = arith.constant 2 : index
         %c1 = arith.constant 1 : index
         %c0 = arith.constant 0 : index
         %c3 = arith.constant 3 : index
-        %0 = qtensor.alloc(%c3) {mqt.qubit_register_name = "q"} : tensor<3x!qco.qubit>
-        %1 = cbit.alloc(#cbit.init<zero>) source_name = "c" : !cbit.reg<3>
+        %0 = qtensor.alloc(%c3) {mqt.register_name = "q"} : tensor<3x!qco.qubit>
+        %1 = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<3>
         %out_tensor, %result = qtensor.extract %0[%c0] : tensor<3x!qco.qubit>
         %out_tensor_0, %result_1 = qtensor.extract %out_tensor[%c1] : tensor<3x!qco.qubit>
         %controls_out, %targets_out = qco.ctrl(%result) targets (%arg0 = %result_1) {
@@ -808,13 +808,13 @@ TEST_F(MappingPassFixture, PreserveCBitOrderAroundConditional) {
 }
 
 /**
- * @brief Test: complete targets do not pad sparse conditionals with idle wires.
+ * @brief Test: complete targets use identity placement and sparse control flow.
  */
-TEST_F(MappingPassFixture, KeepUnaryIfSparseOnAllToAllTarget) {
+TEST_F(MappingPassFixture, UseIdentityPlacementOnAllToAllTarget) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%condition: i1)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
         %q1 = qco.alloc : !qco.qubit
         %q2 = qco.alloc : !qco.qubit
@@ -824,9 +824,11 @@ TEST_F(MappingPassFixture, KeepUnaryIfSparseOnAllToAllTarget) {
         } else args(%arg0 = %q0) {
           qco.yield %arg0 : !qco.qubit
         }
+        %next1 = qco.h %q1 : !qco.qubit -> !qco.qubit
+        %next2 = qco.z %q2 : !qco.qubit -> !qco.qubit
         qco.sink %next0 : !qco.qubit
-        qco.sink %q1 : !qco.qubit
-        qco.sink %q2 : !qco.qubit
+        qco.sink %next1 : !qco.qubit
+        qco.sink %next2 : !qco.qubit
         return
       }
     }
@@ -843,9 +845,19 @@ TEST_F(MappingPassFixture, KeepUnaryIfSparseOnAllToAllTarget) {
   ASSERT_TRUE(succeeded(verify(*module)));
 
   IfOp conditional;
+  HOp h;
+  ZOp z;
   module->walk([&](IfOp candidate) { conditional = candidate; });
+  module->walk([&](HOp candidate) { h = candidate; });
+  module->walk([&](ZOp candidate) { z = candidate; });
   ASSERT_TRUE(conditional);
+  ASSERT_TRUE(h);
+  ASSERT_TRUE(z);
   EXPECT_EQ(conditional.getQubits().size(), 1U);
+  EXPECT_EQ(
+      conditional.getQubits().front().getDefiningOp<StaticOp>().getIndex(), 0);
+  EXPECT_EQ(h.getInputQubit(0).getDefiningOp<StaticOp>().getIndex(), 1);
+  EXPECT_EQ(z.getInputQubit(0).getDefiningOp<StaticOp>().getIndex(), 2);
 }
 
 /**
@@ -859,7 +871,7 @@ TEST_F(MappingPassFixture, IgnoreInactiveTensorCarrierAtUnaryIfFrontier) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%condition: i1)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c2 = arith.constant 2 : index
         %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
@@ -903,7 +915,7 @@ TEST_F(MappingPassFixture, KeepAdjacentTwoQubitIfSparseOnLineTarget) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%condition: i1)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
         %q1 = qco.alloc : !qco.qubit
         %q2 = qco.alloc : !qco.qubit
@@ -952,7 +964,7 @@ TEST_F(MappingPassFixture, ExpandNonAdjacentTwoQubitIfOnLineTarget) {
   constexpr StringLiteral source = R"mlir(
     module {
       func.func @main(%condition: i1)
-          attributes {passthrough = ["entry_point"]} {
+          attributes {mqt.entry_point} {
         %q0 = qco.alloc : !qco.qubit
         %q1 = qco.alloc : !qco.qubit
         %q2 = qco.alloc : !qco.qubit

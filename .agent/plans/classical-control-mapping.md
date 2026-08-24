@@ -51,6 +51,9 @@ compilation, sparse conditional routing, and measurement-store-load ordering.
       seven affected native binaries passed 1,223/1,223 tests, the complete
       CTest suite passed 4,147/4,147 tests with one expected skip, and the
       repository lint session passed.
+- [x] (2026-08-24 13:47Z) Replayed the capability and mapping commits onto
+      current `main`, updated tests for the shared MQT attributes, and moved the
+      complete-topology fast path to `runOnOperation`.
 
 ## Surprises & Discoveries
 
@@ -75,6 +78,9 @@ compilation, sparse conditional routing, and measurement-store-load ordering.
   separate 14-case differential found no IR change when the pass was reapplied.
   The pipeline change therefore belongs to its own child task and commit, not
   this mapping slice.
+- Observation: A complete target topology needs neither initial-layout search
+  nor hot routing. Evidence: root placement with the identity layout preserves
+  sparse control flow and makes every multi-qubit operation executable.
 
 ## Decision Log
 
@@ -100,6 +106,10 @@ compilation, sparse conditional routing, and measurement-store-load ordering.
   cycle. Rationale: a failed sort must not leave a partially reordered block,
   and silently breaking a combined SSA/classical-memory cycle would hide an
   invalid scheduling constraint. Date/Author: 2026-08-20, Codex.
+- Decision: Detect complete topology once in `runOnOperation`, place the program
+  with the identity layout, and return before routing. Keep the zero-SWAP
+  preview for sparse topologies because it proves when a structured operation
+  can remain sparse. Date/Author: 2026-08-24, Codex.
 
 ## Outcomes & Retrospective
 

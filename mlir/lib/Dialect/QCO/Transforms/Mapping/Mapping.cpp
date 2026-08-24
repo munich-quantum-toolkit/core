@@ -11,8 +11,8 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
 #include "mlir/Compiler/Target.h"
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -529,6 +529,15 @@ protected:
                  " qubits. However, the architecture only supports " +
                  Twine(target->numQubits()) + " qubits.";
       signalPassFailure();
+      return;
+    }
+
+    /// A complete topology needs no routing. Place each program qubit on the
+    /// matching target vertex and keep sparse control flow unchanged.
+    if (hasAllToAllConnectivity()) {
+      const auto identity =
+          Layout::fromMapping(llvm::to_vector(llvm::seq(target->numQubits())));
+      place(body, identity, *comp, rewriter);
       return;
     }
 
@@ -1810,28 +1819,21 @@ private:
 
         for (auto& composite : composites) {
           if constexpr (Mode == RoutingMode::Hot) {
-            // A complete topology cannot require routing SWAPs. Likewise, a
-            // composite containing only unary operations cannot change its
-            // child layouts on any topology. In both cases excluded wires need
-            // not be threaded through the operation, avoiding a quadratic IR
-            // expansion for large collections of sparse conditionals.
-            bool needsWorkspace = !hasAllToAllConnectivity() &&
-                                  requiresRoutingWorkspace(composite.op);
-            if (needsWorkspace) {
-              // Preview routing without mutating the IR. A zero-SWAP preview
-              // proves that neither child routing nor branch convergence
-              // touches an excluded wire, so the sparse composite is already
-              // sufficient for the hot dispatch.
+            /// A composite containing only unary operations cannot change its
+            /// child layouts. Excluded wires need not be threaded through it.
+            if (requiresRoutingWorkspace(composite.op)) {
+              /// Preview routing without mutating the IR. A zero-SWAP preview
+              /// proves that child routing and branch convergence leave every
+              /// excluded wire unchanged.
               auto preview =
                   dispatch<Direction, RoutingMode::Cold>(composite, bundle);
               if (failed(preview)) {
                 return failure();
               }
-              needsWorkspace = preview->second.nswaps != 0;
-            }
-            if (needsWorkspace) {
-              auto patch = place(composite, bundle, *rewriter);
-              bundle.applyPatch(std::move(patch));
+              if (preview->second.nswaps != 0) {
+                auto patch = place(composite, bundle, *rewriter);
+                bundle.applyPatch(std::move(patch));
+              }
             }
           }
 
