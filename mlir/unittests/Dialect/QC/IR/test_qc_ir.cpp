@@ -217,6 +217,32 @@ TEST_F(QCTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
       "undefined");
 }
 
+TEST_F(QCTest, BuilderDeallocatesDynamicResourcesDeterministically) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+
+  SmallVector<Value> allocatedQubits;
+  SmallVector<Value> allocatedRegisters;
+  for (size_t i = 0; i < 3; ++i) {
+    allocatedQubits.push_back(builder.allocQubit());
+    allocatedRegisters.push_back(builder.allocQubitRegisterStorage(1));
+  }
+
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+
+  SmallVector<Value> deallocatedQubits;
+  SmallVector<Value> deallocatedRegisters;
+  moduleOp->walk(
+      [&](DeallocOp op) { deallocatedQubits.push_back(op.getQubit()); });
+  moduleOp->walk([&](memref::DeallocOp op) {
+    deallocatedRegisters.push_back(op.getMemref());
+  });
+
+  EXPECT_EQ(deallocatedQubits, allocatedQubits);
+  EXPECT_EQ(deallocatedRegisters, allocatedRegisters);
+}
+
 TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {
   QCProgramBuilder builder(context.get());
   builder.initialize();

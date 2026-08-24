@@ -630,20 +630,19 @@ bool QIRProgram::cleanup() {
 QIRProfile QIRProgram::profile() const noexcept { return profile_; }
 
 [[nodiscard]] static std::unique_ptr<llvm::Module>
-translateToLLVM(ModuleOp mod, llvm::LLVMContext& context,
-                const QIRProfile profile) {
+translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
   auto llvmModule = translateModuleToLLVMIR(mod, context);
   if (!llvmModule) {
     mod.emitError("failed to translate QIR MLIR to LLVM IR");
     return nullptr;
   }
-  qir::normalizeQIRModuleFlags(*llvmModule, profile == QIRProfile::Adaptive);
+  qir::normalizeQIRModuleFlags(*llvmModule, mod);
   return llvmModule;
 }
 
 std::optional<std::string> QIRProgram::llvmIR() const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(mod(), context, profile_);
+  auto llvmModule = translateToLLVM(mod(), context);
   if (!llvmModule) {
     return std::nullopt;
   }
@@ -655,7 +654,7 @@ std::optional<std::string> QIRProgram::llvmIR() const {
 
 std::optional<std::vector<std::byte>> QIRProgram::toBitcode() const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(mod(), context, profile_);
+  auto llvmModule = translateToLLVM(mod(), context);
   if (!llvmModule) {
     return std::nullopt;
   }
@@ -670,7 +669,7 @@ std::optional<std::vector<std::byte>> QIRProgram::toBitcode() const {
 
 bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(mod(), context, profile_);
+  auto llvmModule = translateToLLVM(mod(), context);
   if (!llvmModule) {
     return false;
   }

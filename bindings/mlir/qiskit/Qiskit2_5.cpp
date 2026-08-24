@@ -1903,16 +1903,18 @@ public:
 std::unique_ptr<VersionedTranslation>
 MQT_QISKIT_VERSION_FACTORY() { // NOLINT(misc-use-internal-linkage): declared in
                                // the version registry.
-  if (qk_import() < 0) {
-    throwPythonError("failed to initialize the Qiskit " MQT_QISKIT_VERSION_LABEL
-                     " C API");
-  }
-  const auto version = qk_api_version();
-  const auto major = (version >> 24U) & 0xffU;
-  const auto minor = (version >> 16U) & 0xffU;
+  static const auto VERSION = []() {
+    if (qk_import() < 0) {
+      throwPythonError(
+          "failed to initialize the Qiskit " MQT_QISKIT_VERSION_LABEL " C API");
+    }
+    return qk_api_version();
+  }();
+  const auto major = (VERSION >> 24U) & 0xffU;
+  const auto minor = (VERSION >> 16U) & 0xffU;
   if (major != MQT_QISKIT_VERSION_EXPECTED_MAJOR ||
       minor != MQT_QISKIT_VERSION_EXPECTED_MINOR ||
-      (MQT_QISKIT_VERSION_EXACT_API != 0 && version != QISKIT_VERSION_HEX)) {
+      (MQT_QISKIT_VERSION_EXACT_API != 0 && VERSION != QISKIT_VERSION_HEX)) {
     throw std::runtime_error("Qiskit C API capsule version does not match the "
                              "selected " MQT_QISKIT_VERSION_LABEL
                              " translation");
