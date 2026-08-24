@@ -652,31 +652,6 @@ template <typename T> static Quat<T> hadamardConjugate(const Quat<T>& q) {
   return {.w = q.w, .x = q.z, .y = -q.y, .z = q.x};
 }
 
-/**
- * @brief Extracts runtime Euler angles for the bases that require an axis
- * transform of the canonical ZYZ extraction.
- */
-template <typename T>
-static std::array<Val<T>, 4> anglesFromQuaternionInTransformedBasis(
-    const Quat<T>& q, const ScalarConsts<T>& c,
-    const decomposition::SingleQubitBasis basis) {
-  auto [theta, phi, lambda, phase] =
-      anglesFromQuaternion(hadamardConjugate(q), c);
-  switch (basis) {
-  case decomposition::SingleQubitBasis::XZX:
-    return {theta, phi + (c.pi / c.two), lambda - (c.pi / c.two), phase};
-  case decomposition::SingleQubitBasis::XYX:
-  case decomposition::SingleQubitBasis::R:
-    return {theta, phi + c.pi, lambda + c.pi, phase + c.pi};
-  case decomposition::SingleQubitBasis::ZYZ:
-  case decomposition::SingleQubitBasis::ZXZ:
-  case decomposition::SingleQubitBasis::U:
-  case decomposition::SingleQubitBasis::ZSXX:
-    llvm_unreachable("basis does not require transformed Euler extraction");
-  }
-  llvm_unreachable("invalid single-qubit synthesis basis");
-}
-
 static bool isMergeable(Operation* op) {
   return isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp, XOp, YOp, ZOp, HOp, SOp,
              SdgOp, TOp, TdgOp, SXOp, SXdgOp, IdOp>(op);
@@ -771,7 +746,7 @@ struct MergeSingleQubitRotationGatesPattern final
     case decomposition::SingleQubitBasis::R:
       return 3;
     }
-    llvm_unreachable("invalid single-qubit synthesis basis");
+    llvm_unreachable("invalid single-qubit synthesis basis"); // LCOV_EXCL_LINE
   }
 
   /**
@@ -887,10 +862,18 @@ struct MergeSingleQubitRotationGatesPattern final
     const bool transformed = basis == decomposition::SingleQubitBasis::XZX ||
                              basis == decomposition::SingleQubitBasis::XYX ||
                              basis == decomposition::SingleQubitBasis::R;
-    const auto [theta, phi, lambda, eulerPhase] =
-        transformed
-            ? anglesFromQuaternionInTransformedBasis(qAccum, consts, basis)
-            : anglesFromQuaternion(qAccum, consts);
+    auto [theta, phi, lambda, eulerPhase] =
+        transformed ? anglesFromQuaternion(hadamardConjugate(qAccum), consts)
+                    : anglesFromQuaternion(qAccum, consts);
+    if (basis == decomposition::SingleQubitBasis::XZX) {
+      phi = phi + (consts.pi / consts.two);
+      lambda = lambda - (consts.pi / consts.two);
+    } else if (basis == decomposition::SingleQubitBasis::XYX ||
+               basis == decomposition::SingleQubitBasis::R) {
+      phi = phi + consts.pi;
+      lambda = lambda + consts.pi;
+      eulerPhase = eulerPhase + consts.pi;
+    }
     Val<Value> phaseCorrection = phaseAccum + eulerPhase;
     Value qubit = chain.front().getInputQubit(0);
     switch (basis) {

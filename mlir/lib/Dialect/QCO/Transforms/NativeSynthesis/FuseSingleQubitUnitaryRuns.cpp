@@ -205,24 +205,16 @@ protected:
     RewritePatternSet compositionPatterns(&getContext());
     decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
         compositionPatterns, *parsed, skipControlledBodies);
-    if (failed(
-            applyPatternsGreedily(moduleOp, std::move(compositionPatterns)))) {
-      moduleOp.emitError("failed to compose parameterized single-qubit runs");
-      signalPassFailure();
-      return;
-    }
 
     RewritePatternSet patterns(&getContext());
     decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
         patterns, *parsed, skipControlledBodies);
 
-    if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
-      moduleOp.emitError("failed to fuse single-qubit unitary runs");
-      signalPassFailure();
-      return;
-    }
-    if (failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
-      moduleOp.emitError("failed to normalize global phases");
+    if (failed(
+            applyPatternsGreedily(moduleOp, std::move(compositionPatterns))) ||
+        failed(applyPatternsGreedily(moduleOp, std::move(patterns))) ||
+        failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
+      moduleOp.emitError("fusion pipeline failed"); // LCOV_EXCL_LINE
       signalPassFailure();
     }
   }
