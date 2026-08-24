@@ -1231,6 +1231,15 @@ TEST_F(QCODDFunctionalityTest, RejectsInvalidClassicalOperations) {
              func.func @main() {
                %q = qco.static 0 : !qco.qubit
                %one = arith.constant 1 : i64
+               %bad = arith.addi %one, %one : i64
+               qco.sink %q : !qco.qubit
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main() {
+               %q = qco.static 0 : !qco.qubit
+               %one = arith.constant 1 : i64
                %bad = arith.andi %one, %one : i64
                qco.sink %q : !qco.qubit
                return
@@ -1811,6 +1820,36 @@ TEST_F(QCODDFunctionalityTest, RejectsInvalidFuncCalls) {
       cast<func::FuncOp>(mainFunc(*unresolved)->clone()));
   expectSimulationFails(*standalone, 1);
   EXPECT_TRUE(failed(buildFunctionality(*standalone, *dd)));
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsMismatchedFuncCallTypes) {
+  for (const StringRef source : {
+           R"mlir(module {
+             func.func @consume(%q: !qco.qubit) {
+               qco.sink %q : !qco.qubit
+               return
+             }
+             func.func @main() {
+               %true = arith.constant true
+               func.call @consume(%true) : (i1) -> ()
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @consume(%reg: !cbit.reg<2>) {
+               return
+             }
+             func.func @main() {
+               %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+               func.call @consume(%reg) : (!cbit.reg<1>) -> ()
+               return
+             }
+           })mlir"}) {
+    auto mod = parseSourceString<ModuleOp>(
+        source, ParserConfig(context.get(), /*verifyAfterParse=*/false));
+    ASSERT_TRUE(mod);
+    expectSimulationFails(mainFunc(*mod), 0);
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsInvalidScfForBindings) {

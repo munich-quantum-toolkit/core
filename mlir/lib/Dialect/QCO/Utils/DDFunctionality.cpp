@@ -499,7 +499,7 @@ static LogicalResult storeRegister(cbit::StoreOp store,
   if (failed(index) || failed(value)) {
     return failure();
   }
-  (*regIt->second)[*index] = *value;
+  (*regIt->second)[*index].emplace(*value);
   return success();
 }
 
@@ -960,7 +960,11 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             }
             return applyUnitaryMatrix(unitary, walk, state);
           })
-      .Default([](Operation* unsupported) {
+      .Default([&](Operation* unsupported) -> LogicalResult {
+        if (unsupported->getName().getDialectNamespace() ==
+            arith::ArithDialect::getDialectNamespace()) {
+          return applyClassicalOp(*unsupported, *walk.classical);
+        }
         return unsupported->emitError()
                << "unsupported op for QCO DD construction: "
                << unsupported->getName().getStringRef();

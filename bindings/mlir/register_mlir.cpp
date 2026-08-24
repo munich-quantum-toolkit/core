@@ -600,6 +600,14 @@ means every operation is native.)pb");
              std::optional<std::string> custom3,
              std::optional<std::string> custom4,
              std::optional<std::string> custom5) {
+            // Keep this preflight at the Python boundary so the public
+            // ValueError does not depend on cross-extension exception
+            // translation.
+            if (deviceConfig && deviceConfigFile) {
+              throw nb::value_error(
+                  "device_config and device_config_file are mutually "
+                  "exclusive");
+            }
             const auto overrides = qdmi::makeDeviceSessionConfig(
                 std::move(baseUrl), std::move(token), std::move(authFile),
                 std::move(authUrl), std::move(username), std::move(password),
