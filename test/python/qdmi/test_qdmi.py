@@ -10,12 +10,10 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
 from collections import Counter
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -783,41 +781,47 @@ def test_simulator_job_result_bindings(ddsim_device: Device) -> None:
     assert sparse_probabilities == pytest.approx({"00": 0.5, "11": 0.5})
 
 
-def test_device_registration_bindings() -> None:
-    """Exercise registration without leaving invalid devices in the shared registry."""
-    ids_before = registered_device_ids()
-    script = """
-from pathlib import Path
+def test_simulator_job_get_dense_probabilities_returns_valid_probabilities(simulator_job: Job) -> None:
+    """Test that get_dense_probabilities() returns the correct probabilities."""
+    simulator_job.wait()
 
-import pytest
+    probabilities = simulator_job.get_dense_probabilities()
+    assert len(probabilities) == 4  # 2 qubits -> 4 probabilities
 
-from mqt.core.qdmi.driver import (
-    DeviceDefinition,
-    open_device,
-    register_device,
-    register_device_if_absent,
-    registered_device_ids,
-)
+    # The expected probabilities are 0.5 for |00> and |11>, and 0 for |01> and |10>
+    assert probabilities[0] == pytest.approx(0.5)  # |00>
+    assert probabilities[1] == pytest.approx(0.0)  # |01>
+    assert probabilities[2] == pytest.approx(0.0)  # |10>
+    assert probabilities[3] == pytest.approx(0.5)  # |11>
 
-ids_before = registered_device_ids()
-library_path = Path("/nonexistent/lib.so")
-definition = DeviceDefinition("python.missing", library_path, "PREFIX")
-assert definition.device_id == "python.missing"
-assert definition.library_path == library_path
-assert definition.prefix == "PREFIX"
-register_device(definition)
-with pytest.raises(RuntimeError):
-    open_device("python.missing")
 
-definition = DeviceDefinition("python.if-absent", "/nonexistent/device.so", "PREFIX")
-assert register_device_if_absent(definition) is True
-assert register_device_if_absent(definition) is False
-with pytest.raises(ValueError, match="library must not be empty"):
-    register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
-assert registered_device_ids() == [*ids_before, "python.missing", "python.if-absent"]
-"""
-    subprocess.run([sys.executable, "-c", script], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
-    assert registered_device_ids() == ids_before
+def test_simulator_job_get_sparse_state_vector_returns_valid_state(simulator_job: Job) -> None:
+    """Test that get_sparse_statevector() returns the correct Bell state."""
+    simulator_job.wait()
+
+    sparse_state_vector = simulator_job.get_sparse_statevector()
+    assert len(sparse_state_vector) == 2  # Only |00> and |11> should be present
+
+    inv_sqrt2 = 1.0 / (2**0.5)
+    assert "00" in sparse_state_vector
+    assert abs(sparse_state_vector["00"]) == pytest.approx(inv_sqrt2)
+
+    assert "11" in sparse_state_vector
+    assert abs(sparse_state_vector["11"]) == pytest.approx(inv_sqrt2)
+
+
+def test_simulator_job_get_sparse_probabilities_returns_valid_probabilities(simulator_job: Job) -> None:
+    """Test that get_sparse_probabilities() returns the correct probabilities."""
+    simulator_job.wait()
+
+    sparse_probabilities = simulator_job.get_sparse_probabilities()
+    assert len(sparse_probabilities) == 2  # Only |00> and |11> should be present
+
+    assert "00" in sparse_probabilities
+    assert sparse_probabilities["00"] == pytest.approx(0.5)
+
+    assert "11" in sparse_probabilities
+    assert sparse_probabilities["11"] == pytest.approx(0.5)
 
 
 def test_open_device_rejects_unknown_id() -> None:

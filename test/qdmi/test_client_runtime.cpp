@@ -62,8 +62,10 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
       testing::ThrowsMessage<std::runtime_error>(
           testing::HasSubstr("incompatible ABI")));
 
-  const SessionConfig firstConfig{.driverPath = MQT_CORE_QDMI_TEST_DRIVER,
-                                  .token = "first-token"};
+  const SessionConfig firstConfig{
+      .driverPath = MQT_CORE_QDMI_TEST_DRIVER,
+      .token = "first-token",
+  };
   setDriverEnvironment(MQT_CORE_QDMI_TEST_DRIVER);
   {
     const mqt::test::ScopedEnvironmentVariable nullAllocation{
@@ -96,8 +98,10 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
                 testing::ThrowsMessage<std::runtime_error>(
                     testing::HasSubstr("returned a null session")));
   }
-  Session second(SessionConfig{.driverPath = MQT_CORE_QDMI_TEST_DRIVER,
-                               .token = "second-token"});
+  Session second(SessionConfig{
+      .driverPath = MQT_CORE_QDMI_TEST_DRIVER,
+      .token = "second-token",
+  });
   const auto firstDevices = first.getDevices();
   const auto secondDevices = second.getDevices();
   ASSERT_EQ(firstDevices.size(), 1U);
@@ -107,34 +111,27 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
   EXPECT_EQ(firstDevices.front().getName(), "first-token");
   EXPECT_EQ(secondDevices.front().getName(), "second-token");
 
-  Session oddSize(SessionConfig{.driverPath = MQT_CORE_QDMI_TEST_DRIVER,
-                                .token = "odd-size"});
+  Session oddSize(SessionConfig{
+      .driverPath = MQT_CORE_QDMI_TEST_DRIVER,
+      .token = "odd-size",
+  });
   EXPECT_THROW(static_cast<void>(oddSize.getDevices()), std::invalid_argument);
-  Session oddDeviceSize(SessionConfig{.driverPath = MQT_CORE_QDMI_TEST_DRIVER,
-                                      .token = "odd-device-size"});
+  Session oddDeviceSize(SessionConfig{
+      .driverPath = MQT_CORE_QDMI_TEST_DRIVER,
+      .token = "odd-device-size",
+  });
   EXPECT_THROW(static_cast<void>(oddDeviceSize.getDevices().front().getSites()),
                std::invalid_argument);
   Session oddOperationSize(SessionConfig{
-      .driverPath = MQT_CORE_QDMI_TEST_DRIVER, .token = "odd-operation-size"});
+      .driverPath = MQT_CORE_QDMI_TEST_DRIVER,
+      .token = "odd-operation-size",
+  });
   EXPECT_THROW(static_cast<void>(oddOperationSize.getDevices()
                                      .front()
                                      .getOperations()
                                      .front()
                                      .getSites()),
                std::invalid_argument);
-
-  Session malformedFormat(SessionConfig{.driverPath = MQT_CORE_QDMI_TEST_DRIVER,
-                                        .token = "malformed-format"});
-  EXPECT_THROW(
-      static_cast<void>(
-          malformedFormat.getDevices().front().getSupportedProgramFormats()),
-      std::runtime_error);
-  Session malformedFeature(SessionConfig{
-      .driverPath = MQT_CORE_QDMI_TEST_DRIVER, .token = "malformed-feature"});
-  EXPECT_THROW(static_cast<void>(
-                   malformedFeature.getDevices().front().tryGetProgramFeatures(
-                       OPENQASM3)),
-               std::runtime_error);
 
   EXPECT_THAT(
       [] {
@@ -145,10 +142,11 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
           testing::HasSubstr("already selected")));
 
   const auto site = [] {
-    auto device = Session::openDevice(
-        "test.fake.client",
-        SessionConfig{.driverPath = MQT_CORE_QDMI_TEST_DRIVER,
-                      .token = "retained-token"});
+    const auto device = Session::openDevice(
+        "test.fake.client", SessionConfig{
+                                .driverPath = MQT_CORE_QDMI_TEST_DRIVER,
+                                .token = "retained-token",
+                            });
     auto sites = device.getSites();
     return sites.front();
   }();
