@@ -10,323 +10,232 @@
 
 #include "ConstantPropagationLattice.hpp"
 
-#include "llvm/ADT/STLExtras.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/IR/BuiltinTypes.h"
-#include "mlir/Support/LogicalResult.h"
+#include <llvm/ADT/STLExtras.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
 #include <cmath>
 
 using namespace mlir;
-using namespace mlir::mqt::qco;
+namespace mlir::mqt::qco {
 
-static uint64_t clearBit(uint64_t value, unsigned pos) {
-  const uint64_t lowMask = (pos == 0) ? 0 : ((uint64_t{1} << pos) - 1);
-  uint64_t low = value & lowMask;
-  uint64_t high = value >> (pos + 1);
-  return low | (high << pos);
+/**
+ * Removes the bit at a specified position in a 64-bit unsigned integer.
+ * The resulting value is effectively the input value with the bit at the given
+ * position cleared or removed, shifting higher bits down by one position.
+ *
+ * @param value The 64-bit unsigned integer from which to clear a bit.
+ * @param pos The zero-based position of the bit to remove.
+ *            Must be less than 64; undefined behavior if out of bounds.
+ * @return A new 64-bit unsigned integer with the specified bit removed.
+ */
+static uint64_t clearBit(const uint64_t value, const unsigned pos) {
+  const uint64_t lowMask = pos == 0 ? 0 : (uint64_t{1} << pos) - 1;
+  const uint64_t low = value & lowMask;
+  const uint64_t high = value >> (pos + 1);
+  return low | high << pos;
 }
 
-static uint64_t insertBit(uint64_t value, unsigned pos, bool bit) {
-  const uint64_t lowMask = (pos == 0) ? 0 : ((uint64_t{1} << pos) - 1);
-  uint64_t low = value & lowMask;
-  uint64_t high = value >> pos;
-  return low | (uint64_t(bit) << pos) | (high << (pos + 1));
+/**
+ * Inserts a bit at a specified position in a 64-bit unsigned integer.
+ * The resulting value includes the new bit at the given position, with
+ * all higher bits shifted up by one position to make room for the insertion.
+ *
+ * @param value The 64-bit unsigned integer where the bit will be inserted.
+ * @param pos The zero-based position at which the bit is to be inserted.
+ *            Must be less than 64; undefined behavior if out of bounds.
+ * @param bit The value of the bit to be inserted (true for 1, false for 0).
+ * @return A new 64-bit unsigned integer with the specified bit inserted.
+ */
+static uint64_t insertBit(const uint64_t value, const unsigned pos,
+                          const bool bit) {
+  const uint64_t lowMask = pos == 0 ? 0 : (uint64_t{1} << pos) - 1;
+  const uint64_t low = value & lowMask;
+  const uint64_t high = value >> pos;
+  return low | static_cast<uint64_t>(bit) << pos | high << (pos + 1);
 }
 
-static bool sameAttribute(Attribute a, Attribute b) { return a == b; }
-
-bool mlir::mqt::isZeroAttribute(Attribute attr) {
-  if (!attr)
+bool isZeroAttribute(const Attribute attr) {
+  if (!attr) {
     return false;
-  if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+  }
+  if (const auto intAttr = dyn_cast<IntegerAttr>(attr)) {
     return intAttr.getValue().isZero();
-  if (auto floatAttr = dyn_cast<FloatAttr>(attr))
+  }
+  if (const auto floatAttr = dyn_cast<FloatAttr>(attr)) {
     return floatAttr.getValue().isZero();
-  if (auto boolAttr = dyn_cast<BoolAttr>(attr))
+  }
+  if (const auto boolAttr = dyn_cast<BoolAttr>(attr)) {
     return !boolAttr.getValue();
+  }
   return false;
 }
 
-bool mlir::mqt::isOneAttribute(Attribute attr) {
-  if (!attr)
+bool isOneAttribute(const Attribute attr) {
+  if (!attr) {
     return false;
-  if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+  }
+  if (const auto intAttr = dyn_cast<IntegerAttr>(attr)) {
     return intAttr.getValue().isOne();
-  if (auto floatAttr = dyn_cast<FloatAttr>(attr))
+  }
+  if (const auto floatAttr = dyn_cast<FloatAttr>(attr)) {
     return floatAttr.getValue().isExactlyValue(1.0);
-  if (auto boolAttr = dyn_cast<BoolAttr>(attr))
+  }
+  if (const auto boolAttr = dyn_cast<BoolAttr>(attr)) {
     return boolAttr.getValue();
+  }
   return false;
-}
-
-//===----------------------------------------------------------------------===//
-// QuantumComponent
-//===----------------------------------------------------------------------===//
-
-QuantumComponent QuantumComponent::singletonZero(Value qubit) {
-  QuantumComponent c;
-  c.qubits.push_back(qubit);
-  c.amplitudes[0] = Complex(1.0, 0.0);
-  return c;
-}
-
-QuantumComponent QuantumComponent::top(ArrayRef<Value> qs) {
-  QuantumComponent c;
-  c.isTop = true;
-  c.qubits.append(qs.begin(), qs.end());
-  return c;
-}
-
-bool QuantumComponent::operator==(const QuantumComponent& other) const {
-  if (isTop != other.isTop)
-    return false;
-  if (qubits.size() != other.qubits.size())
-    return false;
-  for (auto [a, b] : llvm::zip(qubits, other.qubits)) {
-    if (a != b)
-      return false;
-  }
-  if (isTop)
-    return true;
-  if (amplitudes.size() != other.amplitudes.size())
-    return false;
-  for (const auto& it : amplitudes) {
-    auto found = other.amplitudes.find(it.first);
-    if (found == other.amplitudes.end())
-      return false;
-    if (found->second != it.second)
-      return false;
-  }
-  return true;
-}
-
-bool QuantumComponent::contains(Value v) const {
-  return llvm::is_contained(qubits, v);
-}
-
-std::optional<unsigned> QuantumComponent::indexOf(Value v) const {
-  for (auto [idx, q] : llvm::enumerate(qubits)) {
-    if (q == v)
-      return idx;
-  }
-  return std::nullopt;
-}
-
-bool QuantumComponent::isAlwaysZero(Value q) const {
-  if (isTop)
-    return false;
-  auto idx = indexOf(q);
-  if (!idx)
-    return false;
-  for (const auto& it : amplitudes) {
-    if (((it.first >> *idx) & 1ULL) != 0ULL)
-      return false;
-  }
-  return true;
-}
-
-bool QuantumComponent::isAlwaysOne(Value q) const {
-  if (isTop)
-    return false;
-  auto idx = indexOf(q);
-  if (!idx)
-    return false;
-  for (const auto& it : amplitudes) {
-    if (((it.first >> *idx) & 1ULL) == 0ULL)
-      return false;
-  }
-  return true;
-}
-
-void QuantumComponent::markTop() {
-  isTop = true;
-  amplitudes.clear();
-}
-
-bool QuantumComponent::enforceMaxAmplitudes(unsigned maxTrackedAmplitudes) {
-  if (isTop)
-    return true;
-  if (amplitudes.size() > maxTrackedAmplitudes) {
-    markTop();
-    return false;
-  }
-  return true;
 }
 
 //===----------------------------------------------------------------------===//
 // QuantumState
 //===----------------------------------------------------------------------===//
 
+QuantumState
+QuantumState::singletonZero(const unsigned int maxTrackedAmplitudes,
+                            const Value qubit) {
+  QuantumState c(std::min(maxTrackedAmplitudes, 64u));
+  c.qubits.push_back(qubit);
+  c.amplitudes[0] = Complex(1.0, 0.0);
+  return c;
+}
+
 bool QuantumState::operator==(const QuantumState& other) const {
-  if (qubitToComponent.size() != other.qubitToComponent.size())
+  if (isTop != other.isTop) {
     return false;
-  if (components.size() != other.components.size())
+  }
+  if (maxTrackedAmplitudes != other.maxTrackedAmplitudes) {
     return false;
-
-  for (const auto& it : qubitToComponent) {
-    auto found = other.qubitToComponent.find(it.first);
-    if (found == other.qubitToComponent.end())
+  }
+  if (qubits.size() != other.qubits.size()) {
+    return false;
+  }
+  for (auto [a, b] : llvm::zip(qubits, other.qubits)) {
+    if (a != b) {
       return false;
-
-    auto compA = components.find(it.second);
-    auto compB = other.components.find(found->second);
-    if (compA == components.end() || compB == other.components.end())
+    }
+  }
+  if (isTop) {
+    return other.isTop;
+  }
+  if (amplitudes.size() != other.amplitudes.size()) {
+    return false;
+  }
+  for (const auto& it : amplitudes) {
+    auto found = other.amplitudes.find(it.first);
+    if (found == other.amplitudes.end()) {
       return false;
-    if (!(compA->second == compB->second))
+    }
+    if (found->second != it.second) {
       return false;
+    }
   }
   return true;
 }
 
-void QuantumState::initializeQubit(Value q) {
-  if (qubitToComponent.count(q))
-    return;
-  assignFreshComponent(q, QuantumComponent::singletonZero(q));
+bool QuantumState::contains(const Value v) const {
+  return llvm::is_contained(qubits, v);
 }
 
-void QuantumState::assignFreshComponent(Value q, QuantumComponent component) {
-  unsigned id = nextComponentId++;
-  qubitToComponent[q] = id;
-  components[id] = std::move(component);
-}
-
-void QuantumState::forwardQubit(Value from, Value to) {
-  auto id = getComponentId(from);
-  if (!id)
-    return;
-  auto& component = components[*id];
-  for (Value& q : component.qubits) {
-    if (q == from) {
-      q = to;
-      break;
+std::optional<unsigned> QuantumState::indexOf(const Value v) const {
+  for (auto [idx, q] : llvm::enumerate(qubits)) {
+    if (q == v) {
+      return idx;
     }
   }
-  qubitToComponent.erase(from);
-  qubitToComponent[to] = *id;
+  return {};
 }
 
-std::optional<unsigned> QuantumState::getComponentId(Value q) const {
-  auto it = qubitToComponent.find(q);
-  if (it == qubitToComponent.end())
-    return std::nullopt;
-  return it->second;
+bool QuantumState::isAlwaysZero(const Value q) const {
+  if (isTop) {
+    return false;
+  }
+  const auto idx = indexOf(q);
+  if (!idx) {
+    return false;
+  }
+  for (const auto& it : amplitudes) {
+    if ((it.first >> *idx & 1ULL) != 0ULL) {
+      return false;
+    }
+  }
+  return true;
 }
 
-QuantumComponent* QuantumState::getComponent(Value q) {
-  auto id = getComponentId(q);
+bool QuantumState::isAlwaysOne(const Value q) const {
+  if (isTop) {
+    return false;
+  }
+  const auto idx = indexOf(q);
+  if (!idx) {
+    return false;
+  }
+  for (const auto& it : amplitudes) {
+    if ((it.first >> *idx & 1ULL) == 0ULL) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void QuantumState::markTop() {
+  isTop = true;
+  amplitudes.clear();
+}
+
+void QuantumState::forwardQubit(const Value from, const Value to) {
+  const auto id = indexOf(from);
   if (!id)
-    return nullptr;
-  auto it = components.find(*id);
-  if (it == components.end())
-    return nullptr;
-  return &it->second;
+    return;
+  qubits[id.value()] = to;
 }
 
-const QuantumComponent* QuantumState::getComponent(Value q) const {
-  auto id = getComponentId(q);
-  if (!id)
-    return nullptr;
-  auto it = components.find(*id);
-  if (it == components.end())
-    return nullptr;
-  return &it->second;
-}
+QuantumState QuantumState::tensorProduct(const QuantumState& that) {
+  QuantumState result(maxTrackedAmplitudes);
+  result.qubits.append(qubits.begin(), qubits.end());
+  result.qubits.append(that.qubits.begin(), that.qubits.end());
 
-void QuantumState::markTop(Value q) {
-  if (auto* component = getComponent(q))
-    component->markTop();
-}
-
-bool QuantumState::isAlwaysZero(Value q) const {
-  if (const auto* component = getComponent(q))
-    return component->isAlwaysZero(q);
-  return false;
-}
-
-bool QuantumState::isAlwaysOne(Value q) const {
-  if (const auto* component = getComponent(q))
-    return component->isAlwaysOne(q);
-  return false;
-}
-
-static QuantumComponent tensorProduct(const QuantumComponent& a,
-                                      const QuantumComponent& b) {
-  QuantumComponent result;
-  result.qubits.append(a.qubits.begin(), a.qubits.end());
-  result.qubits.append(b.qubits.begin(), b.qubits.end());
-
-  if (a.isTop || b.isTop) {
+  if (isTop || that.isTop) {
     result.isTop = true;
     return result;
   }
 
-  unsigned widthB = b.qubits.size();
-  for (const auto& itA : a.amplitudes) {
-    for (const auto& itB : b.amplitudes) {
-      uint64_t basis = itA.first | (itB.first << a.qubits.size());
+  for (const auto& itA : amplitudes) {
+    for (const auto& itB : that.amplitudes) {
+      uint64_t basis = itA.first | itB.first << qubits.size();
       result.amplitudes[basis] += itA.second * itB.second;
     }
   }
   return result;
 }
 
-LogicalResult QuantumState::mergeComponents(Value a, Value b,
-                                            unsigned maxTrackedAmplitudes) {
-  auto idA = getComponentId(a);
-  auto idB = getComponentId(b);
-  if (!idA || !idB)
-    return failure();
-  if (*idA == *idB)
-    return success();
-
-  QuantumComponent merged = tensorProduct(components[*idA], components[*idB]);
-  merged.enforceMaxAmplitudes(maxTrackedAmplitudes);
-
-  unsigned newId = nextComponentId++;
-  components[newId] = std::move(merged);
-
-  for (Value q : components[*idA].qubits)
-    qubitToComponent[q] = newId;
-  for (Value q : components[*idB].qubits)
-    qubitToComponent[q] = newId;
-
-  components.erase(*idA);
-  components.erase(*idB);
-  return success();
-}
-
-static QuantumComponent applyMatrix1Q(const QuantumComponent& component,
-                                      Value input, Value output,
-                                      const Matrix2x2& matrix,
-                                      unsigned maxTrackedAmplitudes) {
-  QuantumComponent out = component;
-  if (out.isTop) {
-    for (Value& q : out.qubits) {
+void QuantumState::applyMatrix1Q(const Value input, const Value output,
+                                 const Matrix2x2& matrix) {
+  if (isTop) {
+    for (Value& q : qubits) {
       if (q == input) {
         q = output;
         break;
       }
     }
-    return out;
+    return;
   }
 
-  auto idxOpt = out.indexOf(input);
+  const auto idxOpt = indexOf(input);
   if (!idxOpt) {
-    out.markTop();
-    return out;
+    return;
   }
-  unsigned idx = *idxOpt;
+  const unsigned idx = *idxOpt;
 
   llvm::DenseMap<uint64_t, Complex> result;
-  llvm::DenseMap<uint64_t, Complex> inputAmps = out.amplitudes;
 
-  // Group amplitudes by all bits except target bit.
+  // Group amplitudes by all bits except the target bit.
   llvm::DenseMap<uint64_t, std::array<Complex, 2>> grouped;
-  for (const auto& it : inputAmps) {
+  for (const auto& it : amplitudes) {
     uint64_t reduced = clearBit(it.first, idx);
-    bool bit = ((it.first >> idx) & 1ULL) != 0ULL;
+    const bool bit = (it.first >> idx & 1ULL) != 0ULL;
     grouped[reduced][bit ? 1 : 0] += it.second;
   }
 
@@ -341,48 +250,43 @@ static QuantumComponent applyMatrix1Q(const QuantumComponent& component,
       result[insertBit(it.first, idx, true)] += out1;
   }
 
-  out.amplitudes = std::move(result);
-  for (Value& q : out.qubits) {
+  amplitudes = std::move(result);
+  for (Value& q : qubits) {
     if (q == input) {
       q = output;
       break;
     }
   }
-  out.enforceMaxAmplitudes(maxTrackedAmplitudes);
-  return out;
 }
 
-static QuantumComponent applyMatrix2Q(const QuantumComponent& component,
-                                      Value input0, Value input1, Value output0,
-                                      Value output1, const Matrix4x4& matrix,
-                                      unsigned maxTrackedAmplitudes) {
-  QuantumComponent out = component;
-  if (out.isTop) {
-    for (Value& q : out.qubits) {
-      if (q == input0)
+void QuantumState::applyMatrix2Q(const Value input0, const Value input1,
+                                 const Value output0, const Value output1,
+                                 const Matrix4x4& matrix) {
+  if (isTop) {
+    for (Value& q : qubits) {
+      if (q == input0) {
         q = output0;
-      else if (q == input1)
+      } else if (q == input1) {
         q = output1;
+      }
     }
-    return out;
+    return;
   }
 
-  auto idx0Opt = out.indexOf(input0);
-  auto idx1Opt = out.indexOf(input1);
+  const auto idx0Opt = indexOf(input0);
+  const auto idx1Opt = indexOf(input1);
   if (!idx0Opt || !idx1Opt || *idx0Opt == *idx1Opt) {
-    out.markTop();
-    return out;
+    return;
   }
-  unsigned idx0 = *idx0Opt;
-  unsigned idx1 = *idx1Opt;
-  if (idx0 > idx1)
-    std::swap(idx0, idx1);
+  const unsigned idx0 = *idx0Opt;
+  const unsigned idx1 = *idx1Opt;
 
   llvm::DenseMap<uint64_t, std::array<Complex, 4>> grouped;
-  for (const auto& it : out.amplitudes) {
-    bool b0 = ((it.first >> idx0) & 1ULL) != 0ULL;
-    bool b1 = ((it.first >> idx1) & 1ULL) != 0ULL;
-    unsigned local = unsigned(b0) | (unsigned(b1) << 1u);
+  for (const auto& it : amplitudes) {
+    const bool b0 = (it.first >> idx0 & 1ULL) != 0ULL;
+    const bool b1 = (it.first >> idx1 & 1ULL) != 0ULL;
+    const unsigned local = static_cast<unsigned>(b0) | static_cast<unsigned>(b1)
+                                                           << 1u;
     uint64_t reduced = clearBit(clearBit(it.first, idx1), idx0);
     grouped[reduced][local] += it.second;
   }
@@ -437,7 +341,7 @@ LogicalResult QuantumState::applyUnitary(ArrayRef<Value> inputs,
     if (!id)
       return failure();
 
-    QuantumComponent component = components[*id];
+    QuantumState component = components[*id];
     if (!std::holds_alternative<Matrix2x2>(matrix)) {
       component.markTop();
     } else {
@@ -461,7 +365,7 @@ LogicalResult QuantumState::applyUnitary(ArrayRef<Value> inputs,
   if (!mergedId)
     return failure();
 
-  QuantumComponent component = components[*mergedId];
+  QuantumState component = components[*mergedId];
   if (!std::holds_alternative<Matrix4x4>(matrix)) {
     component.markTop();
   } else {
@@ -494,7 +398,7 @@ QuantumState::measure(Value inQubit, Value outQubit, MLIRContext* ctx) const {
     return successors;
   }
 
-  const QuantumComponent& component = components.at(*compId);
+  const QuantumState& component = components.at(*compId);
   if (component.isTop)
     return successors;
 
@@ -519,7 +423,7 @@ QuantumState::measure(Value inQubit, Value outQubit, MLIRContext* ctx) const {
     if (!nextId)
       return std::pair<QuantumState, Attribute>{next, {}};
 
-    QuantumComponent& c = next.components[*nextId];
+    QuantumState& c = next.components[*nextId];
     llvm::DenseMap<uint64_t, Complex> filtered;
     double norm = 0.0;
     for (const auto& it : c.amplitudes) {
@@ -715,3 +619,4 @@ std::optional<Attribute> HybridStateSet::getUniqueConstant(Value v) const {
   }
   return candidate;
 }
+} // namespace mlir::mqt::qco

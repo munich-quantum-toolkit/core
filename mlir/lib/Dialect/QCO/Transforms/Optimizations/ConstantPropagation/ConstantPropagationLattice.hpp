@@ -10,14 +10,13 @@
 
 #pragma once
 
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/SmallVector.h"
-#include "mlir/IR/Attributes.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/Value.h"
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/SmallVector.h>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Value.h>
 
 #include <complex>
-#include <cstdint>
 #include <optional>
 #include <utility>
 #include <variant>
@@ -30,12 +29,19 @@ using Matrix2x2 = std::array<std::array<Complex, 2>, 2>;
 using Matrix4x4 = std::array<std::array<Complex, 4>, 4>;
 using UnitaryMatrix = std::variant<Matrix2x2, Matrix4x4>;
 
+/**
+ * This struct represents a QuantumState. It contains of the amplitudes of
+ * different qubit states. It is top if the number of non-zero amplitudes
+ * exceeds a given maximum number of amplitudes.
+ */
 struct QuantumState {
+private:
   bool isTop = false;
   unsigned int maxTrackedAmplitudes;
   SmallVector<Value> qubits;
   llvm::DenseMap<uint64_t, Complex> amplitudes;
 
+public:
   explicit QuantumState(const unsigned int maxTrackedAmplitudes)
       : maxTrackedAmplitudes(maxTrackedAmplitudes) {}
 
@@ -93,49 +99,170 @@ struct QuantumState {
    */
   void markTop();
 
+  /**
+   * Changes qubit value one to another.
+   *
+   * @param from The original qubit value.
+   * @param to The new qubit value.
+   */
   void forwardQubit(Value from, Value to);
 
-  [[nodiscard("QuantumState::mergeQuantumStates called but ignored.")]]
-  QuantumState mergeQuantumStates(QuantumState that);
+  /**
+   * Computes the tensor product of this QuantumState with another QuantumState.
+   * The tensor product combines the qubits and amplitudes of both states,
+   * producing a new QuantumState that represents the combined quantum system.
+   *
+   * @param that The QuantumState to be combined with this QuantumState.
+   * @return A new QuantumState representing the tensor product of the two
+   * states.
+   */
+  [[nodiscard("QuantumState::tensorProduct called but ignored.")]]
+  QuantumState tensorProduct(const QuantumState& that);
 
+  /**
+   * Applies a 2x2 unitary matrix to a single qubit in the QuantumState.
+   * This operation updates the quantum state's amplitude distribution
+   * and the tracked qubit values.
+   *
+   * @param input The qubit identifier to which the matrix is applied.
+   * @param output The updated qubit identifier after transformation.
+   * @param matrix The 2x2 unitary matrix describing the transformation
+   *               to be applied to the specified qubit.
+   */
+  void applyMatrix1Q(Value input, Value output, const Matrix2x2& matrix);
+
+  /**
+   * Applies a 4x4 unitary matrix to a single qubit in the QuantumState.
+   * This operation updates the quantum state's amplitude distribution
+   * and the tracked qubit values.
+   *
+   * @param input0 The first qubit identifier (corresponding to the lower index
+   * of the matrix) to which the matrix is applied.
+   * @param input1 The second qubit identifier (corresponding to the higher
+   * index of the matrix) to which the matrix is applied.
+   * @param output0 The updated first qubit identifier after transformation.
+   * @param output1 The updated second qubit identifier after transformation.
+   * @param matrix The 4x4 unitary matrix describing the transformation
+   *               to be applied to the specified qubit.
+   */
+  void applyMatrix2Q(Value input0, Value input1, Value output0, Value output1,
+                     const Matrix4x4& matrix);
+
+  /**
+   * Applies a unitary matrix to the QuantumState.
+   *
+   * @param inputs The values that the matrix is applied to.
+   * @param matrix The matrix that is applied to the QuantumState.
+   * @param outputs The values that replace the input values after matrix
+   * application.
+   * @return Whether the application was successful or not.
+   */
   LogicalResult applyUnitary(ArrayRef<Value> inputs,
                              const UnitaryMatrix& matrix,
                              ArrayRef<Value> outputs);
 
-  /// Returns successor states paired with the measured classical result.
+  /**
+   * Simulates a quantum measurement on a given qubit and updates the quantum
+   * state, producing possible successor states along with their classical
+   * outcomes.
+   *
+   * @param inQubit The qubit to be measured.
+   * @param outQubit The qubit value after the measurement.
+   * @param ctx The MLIRContext used for type creation and attribute
+   * propagation.
+   * @return A map of possible successor states paired with their probability.
+   * The keys are the measurement results.
+   */
   std::unordered_map<unsigned int, std::pair<QuantumState, double>>
   measure(Value inQubit, Value outQubit, MLIRContext* ctx) const;
 };
 
+/**
+ * This struct represents a HybridState. It contains a QuantumState and
+ * classical values that are tracked alongside the QuantumState. It is top if
+ * the QuantumState is top.
+ */
 struct HybridState {
+private:
   llvm::DenseMap<Value, Attribute> classicalValues;
-  QuantumState quantumState;
+  std::unique_ptr<QuantumState> quantumState;
+  unsigned int maxTrackedAmplitudes;
   double probability = 1.0;
+  bool isTop = false;
+
+public:
+  explicit HybridState(const unsigned int maxTrackedAmplitudes,
+                       const Value qubit)
+      : quantumState(std::make_unique<QuantumState>(
+            QuantumState::singletonZero(maxTrackedAmplitudes, qubit))),
+        maxTrackedAmplitudes(maxTrackedAmplitudes) {}
+
+  explicit HybridState(const unsigned int maxTrackedAmplitudes)
+      : quantumState(nullptr), maxTrackedAmplitudes(maxTrackedAmplitudes) {}
 
   bool operator==(const HybridState& other) const;
 
-  std::optional<Attribute> getClassical(Value v) const;
+  /**
+   * Gets the attribute of a classical value if present.
+   *
+   * @param v The classical value to be checked.
+   * @return The Attribute of the classical value.
+   */
+  [[nodiscard("HybridState::getClassical called but ignored.")]] std::optional<
+      Attribute>
+  getClassical(Value v) const;
+
+  /**
+   * Sets the attribute of a classical value. If the value already has an
+   * attribute, it is overwritten.
+   *
+   * @param v The classical value to be set.
+   * @param attr The attribute to be set.
+   */
   void setClassical(Value v, Attribute attr);
 };
 
+/**
+ * A set of all HybridStates in the current pass. It becomes top if either all
+ * HybridStates are top or if the number of HybridStates exceeds the maximum
+ * number.
+ */
 struct HybridStateSet {
+private:
   bool isTop = false;
-  llvm::SmallVector<HybridState> states;
+  unsigned int maxTrackedAmplitudes;
+  unsigned int maxTrackedHybridStates;
+  SmallVector<HybridState> states;
+
+public:
+  explicit HybridStateSet(const unsigned int maxTrackedAmplitudes,
+                          const unsigned int maxTrackedHybridStates)
+      : maxTrackedAmplitudes(maxTrackedAmplitudes),
+        maxTrackedHybridStates(maxTrackedHybridStates) {}
 
   bool operator==(const HybridStateSet& other) const;
 
-  static HybridStateSet top();
+  /**
+   * Creates a HybridStateSet with an empty set of HybridStates.
+   *
+   * @return An empty HybridStateSet.
+   */
   static HybridStateSet singletonInitial();
 
+  /**
+   * Adds a hybridState to the set.
+   *
+   * @param state The HybridState to be added.
+   */
   void addState(HybridState state);
   void canonicalize();
   void join(const HybridStateSet& other);
 
-  void enforceMaxStates(unsigned maxTrackedStates);
-
+  [[nodiscard("HybridStateSet::isAlwaysZero called but ignored.")]]
   bool isAlwaysZero(Value v) const;
+
+  [[nodiscard("HybridStateSet::isAlwaysOne called but ignored.")]]
   bool isAlwaysOne(Value v) const;
-  std::optional<Attribute> getUniqueConstant(Value v) const;
 };
 
 /// Utility used by the pass analysis.
