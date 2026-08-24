@@ -18,28 +18,24 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <algorithm>
+#include <array>
+#include <utility>
+
 namespace mlir {
 
 [[nodiscard]] static const char*
 symbolicFusionBasisName(const CompilerTarget::SingleQubitBasis basis) {
-  using enum CompilerTarget::SingleQubitBasis;
-  switch (basis) {
-  case U:
-    return "u";
-  case ZSXX:
-    return "zsxx";
-  case XZX:
-    return "xzx";
-  case ZXZ:
-    return "zxz";
-  case ZYZ:
-    return "zyz";
-  case R:
-    return "r";
-  case XYX:
-    return "xyx";
-  }
-  return nullptr;
+  using Basis = CompilerTarget::SingleQubitBasis;
+  constexpr std::array names{
+      std::pair{Basis::U, "u"},     std::pair{Basis::ZSXX, "zsxx"},
+      std::pair{Basis::R, "r"},     std::pair{Basis::XZX, "xzx"},
+      std::pair{Basis::XYX, "xyx"}, std::pair{Basis::ZYZ, "zyz"},
+      std::pair{Basis::ZXZ, "zxz"},
+  };
+  const auto* const name = std::ranges::find_if(
+      names, [basis](const auto& entry) { return entry.first == basis; });
+  return name == names.end() ? nullptr : name->second;
 }
 
 void populateTargetCompilationPipeline(OpPassManager& pm,
