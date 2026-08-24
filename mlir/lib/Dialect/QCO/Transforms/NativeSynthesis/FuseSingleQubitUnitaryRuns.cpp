@@ -151,20 +151,6 @@ struct FuseSingleQubitUnitaryRunsPattern final
       return failure();
     }
 
-    if (auto uOp = dyn_cast<UOp>(op.getOperation());
-        uOp && !getRunMemberMatrix(op)) {
-      const auto synthesized =
-          decomposition::synthesizeParameterizedUnitary1QEuler(
-              rewriter, op.getLoc(), op.getInputTarget(0), uOp.getTheta(),
-              uOp.getPhi(), uOp.getLambda(), basis);
-      if (!synthesized) {
-        return failure();
-      }
-      GPhaseOp::create(rewriter, op.getLoc(), synthesized->globalPhase);
-      rewriter.replaceOp(op, synthesized->qubit);
-      return success();
-    }
-
     const auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
         op.getInputTarget(0).getDefiningOp());
     if (getRunMemberMatrix(predecessor)) {

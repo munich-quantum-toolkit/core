@@ -71,6 +71,21 @@ operations that do not expose named SSA angle parameters remain run boundaries.
 - [x] (2026-08-24 14:52Z) Committed and pushed the reviewed implementation,
       opened pull request #2228, and folded its reference into the existing
       unreleased single-qubit optimization changelog entry.
+- [x] (2026-08-24 15:08Z) Simplified the reviewed implementation so the dynamic
+      composer emits all seven bases directly. Removed the intermediate dynamic
+      U synthesis API and collapsed the compiler target fixtures and gate-count
+      checks. The production refactor removes 98 lines and the test refactor
+      removes 32 lines.
+- [x] (2026-08-24 15:11Z) Rebuilt the affected targets and passed all 236
+      decomposition tests, 122 optimization tests, 132 compiler tests,
+      `git diff --check`, and `uvx nox -s lint` after the simplification.
+- [x] (2026-08-24 15:19Z) Inspected the failed online C++ lint annotations.
+      Direct emission removed the three obsolete Euler warnings. Designated
+      initializers, a direct `<cstddef>` include, and file-scope placement fix
+      the remaining warnings. Local Clang-Tidy reports no warning in the changed
+      production sources.
+- [x] (2026-08-24 15:21Z) Committed and pushed the reviewed simplification and
+      online C++ lint fixes to pull request #2228.
 
 ## Surprises & Discoveries
 
@@ -120,6 +135,12 @@ operations that do not expose named SSA angle parameters remain run boundaries.
   `premature end of file; recovering`, so incremental builds rebuild more
   objects than expected. All requested targets still compile and their test
   binaries pass.
+- Observation: The fuser-specific quaternion composer already had every value
+  needed to emit the canonical bases. Emitting those bases there removes the
+  intermediate U operation, its one-caller public synthesis API, and its second
+  dynamic rewrite without changing the phase equations. Evidence: the direct
+  production refactor removes 98 lines while all 236 decomposition tests and 122
+  optimization tests pass.
 
 ## Decision Log
 
@@ -162,6 +183,11 @@ operations that do not expose named SSA angle parameters remain run boundaries.
   target-native synthesis's plan-before-rewrite atomicity, and is late enough
   that the default merger cannot collapse the emitted basis sequence back to U.
   Date/Author: 2026-08-24, Codex.
+- Decision: Emit every requested dynamic basis in the fuser-specific quaternion
+  composer. Rationale: the composer already owns the runtime Euler angles and
+  accumulated phase. Direct emission removes an intermediate U operation and a
+  public API with one caller while keeping the normal merge pass's U output
+  unchanged. Date/Author: 2026-08-24, Codex.
 
 ## Outcomes & Retrospective
 
@@ -173,10 +199,12 @@ in all seven bases. It proves SSA dependence before binding and exact matrices
 after binding. A standalone U regression covers both Euler gimbal branches in
 the transformed bases. Target compilation now invokes the pass for every basis
 it can resolve, and the end-to-end regression covers U, ZSXX, XZX, XYX, ZYZ, and
-R targets. Constant-only behavior, controlled gate recognition, and the existing
-dynamic merge pass remain green. Dynamic `pow`, arbitrary dynamic unitary
-shells, and Qiskit parameter-vector import remain separate work because they do
-not expose the named angle operands required by the symbolic composer.
+R targets. The composer emits the final runtime basis directly; no intermediate
+dynamic U synthesis API remains. Constant-only behavior, controlled gate
+recognition, and the existing dynamic merge pass remain green. Dynamic `pow`,
+arbitrary dynamic unitary shells, and Qiskit parameter-vector import remain
+separate work because they do not expose the named angle operands required by
+the symbolic composer.
 
 ## Context and Orientation
 
@@ -202,9 +230,9 @@ operations for dynamic parameters. The pass emits one `qco.u` plus a
 `mlir/lib/Dialect/QCO/Transforms/Decomposition/Euler.cpp` contains the
 constant-matrix Euler emitter.
 `mlir/include/mlir/Dialect/QCO/Transforms/Decomposition/Euler.h` declares its
-shared API. The dynamic extension should live with this basis logic or use a
-small shared pattern-population interface from the merger; it must not expose
-incidental implementation details as a public contract.
+shared API. The dynamic path uses only the small pattern-population interface
+declared there. Its basis emission stays inside the quaternion composer and does
+not expose intermediate synthesis results as a public contract.
 
 `mlir/unittests/Dialect/QCO/Transforms/Decomposition/test_euler_decomposition.cpp`
 owns tests for the fuser. Dynamic dependency and binding helpers can follow the
@@ -231,8 +259,10 @@ that quaternion by Hadamard changes its components from `(w, x, y, z)` to
 outer angles and the phase by pi. XYX emits RX-RY-RX. R emits the same axes as
 `R(lambda, 0)`, `R(theta, pi / 2)`, and `R(phi, 0)`.
 
-When symbolic composition first replaces a longer run with U, its existing phase
-correction must be retained and normalized with the basis-conversion phase.
+Symbolic composition emits the final basis sequence and one combined phase
+correction. ZYZ, ZXZ, XZX, XYX, and R add the input and Euler-wrap phases. ZSXX
+also adds pi over two. U subtracts `(phi + lambda) / 2` for the intrinsic U
+phase.
 
 ## Plan of Work
 
@@ -249,11 +279,12 @@ that contains a dynamic parameter and that either contains a gate outside the
 requested basis or is longer than the conservative runtime basis sequence. A
 single dynamic U in the U basis must not rewrite repeatedly.
 
-Then extend the Euler basis support with a value-backed emitter for canonical
-dynamic U parameters. Emit the unconditional general form for runtime values; do
-not introduce runtime control flow to imitate constant-angle gate-count
-shortcuts. Add `MathDialect` to the fuser's dependent dialects when the reused
-composition path emits trigonometric operations.
+Then make the fuser-specific quaternion composer emit the requested basis
+directly. Emit the unconditional general form for runtime values; do not
+introduce runtime control flow to imitate constant-angle gate-count shortcuts.
+Keep the normal merge pass's U output unchanged. Add `MathDialect` to the
+fuser's dependent dialects because the reused composition path emits
+trigonometric operations.
 
 For `xzx`, `xyx`, and `r`, reuse the existing quaternion Euler extraction after
 Hadamard conjugation and apply fixed angle and phase shifts. Emit the requested
@@ -346,7 +377,8 @@ Use `mlir::Value` for dynamic angles and `mlir::RewritePatternSet` for reusable
 pattern population. The existing merge pattern converts every supported gate
 before mutating the run, so a rejected gate cannot cause a partial rewrite. Use
 the existing `mlir::qco::decomposition::SingleQubitBasis` enum and QCO gate
-builders. Do not add an external dependency.
+builders. Do not expose a separate value-backed synthesis result. Do not add an
+external dependency.
 
 The dynamic composer must keep support aligned with the existing merge pass:
 `rx`, `ry`, `rz`, `p`, `r`, `u2`, `u`, `x`, `y`, `z`, `h`, `s`, `sdg`, `t`,
@@ -367,3 +399,6 @@ follow-up work.
 Revision note (2026-08-24): Extended the completed design to all seven bases,
 recorded same-axis and target integration, added full cross-product and singular
 coverage, and removed superseded limits from the outcome.
+
+Revision note (2026-08-24): Recorded the post-review simplification that emits
+all dynamic bases directly and removes the intermediate U synthesis API.

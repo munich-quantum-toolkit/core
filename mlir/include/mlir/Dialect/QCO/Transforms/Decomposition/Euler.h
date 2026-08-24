@@ -65,16 +65,6 @@ struct SynthesizedUnitary1Q {
 };
 
 /**
- * @brief Result of dynamic single-qubit synthesis.
- *
- * The caller owns materialization of @ref globalPhase.
- */
-struct SynthesizedParameterizedUnitary1Q {
-  Value qubit;
-  Value globalPhase;
-};
-
-/**
  * @brief Whether @p op belongs to @p basis.
  */
 [[nodiscard]] bool isSingleQubitBasisGate(Operation* op,
@@ -113,20 +103,6 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                          bool hasNonBasisGate, SingleQubitBasis basis);
 
 /**
- * @brief Synthesizes a dynamic U gate in a supported Euler basis.
- *
- * Runtime angles use the general basis sequence without constant-angle
- * shortcuts. The supported bases are `zyz`, `zxz`, and `zsxx`.
- *
- * @return The synthesized qubit and phase correction, or `std::nullopt` when
- * the basis needs general symbolic Euler extraction.
- */
-[[nodiscard]] std::optional<SynthesizedParameterizedUnitary1Q>
-synthesizeParameterizedUnitary1QEuler(OpBuilder& builder, Location loc,
-                                      Value qubit, Value theta, Value phi,
-                                      Value lambda, SingleQubitBasis basis);
-
-/**
  * @brief Materializes one accumulated phase correction when needed.
  *
  * @param builder Builder for the operation.
@@ -150,8 +126,7 @@ void populateFuseSingleQubitUnitaryRunsPatterns(
  * @brief Populates patterns that compose profitable parameterized
  * single-qubit runs for synthesis in @p basis.
  *
- * The patterns emit a dynamic U gate for canonical-basis synthesis or emit
- * XZX, XYX, and R sequences directly.
+ * The patterns emit the requested target basis directly.
  *
  * @param skipControlledBodies When set, single-qubit gates nested in `qco.ctrl`
  * bodies are left untouched.
