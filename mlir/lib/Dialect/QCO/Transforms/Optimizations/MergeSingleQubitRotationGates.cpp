@@ -865,7 +865,11 @@ struct MergeSingleQubitRotationGatesPattern final
     auto [theta, phi, lambda, eulerPhase] =
         transformed ? anglesFromQuaternion(hadamardConjugate(qAccum), consts)
                     : anglesFromQuaternion(qAccum, consts);
-    if (basis == decomposition::SingleQubitBasis::XZX) {
+    // ZXZ and XZX both shift the ZYZ-style outer angles by +/-pi/2 (the
+    // latter after the Hadamard conjugation above); XYX and R additionally
+    // shift the phase by pi.
+    if (basis == decomposition::SingleQubitBasis::ZXZ ||
+        basis == decomposition::SingleQubitBasis::XZX) {
       phi = phi + (consts.pi / consts.two);
       lambda = lambda - (consts.pi / consts.two);
     } else if (basis == decomposition::SingleQubitBasis::XYX ||
@@ -883,13 +887,9 @@ struct MergeSingleQubitRotationGatesPattern final
       qubit = RZOp::create(rewriter, loc, qubit, phi.v).getQubitOut();
       break;
     case decomposition::SingleQubitBasis::ZXZ:
-      qubit = RZOp::create(rewriter, loc, qubit,
-                           (lambda - (consts.pi / consts.two)).v)
-                  .getQubitOut();
+      qubit = RZOp::create(rewriter, loc, qubit, lambda.v).getQubitOut();
       qubit = RXOp::create(rewriter, loc, qubit, theta.v).getQubitOut();
-      qubit =
-          RZOp::create(rewriter, loc, qubit, (phi + (consts.pi / consts.two)).v)
-              .getQubitOut();
+      qubit = RZOp::create(rewriter, loc, qubit, phi.v).getQubitOut();
       break;
     case decomposition::SingleQubitBasis::XZX:
       qubit = RXOp::create(rewriter, loc, qubit, lambda.v).getQubitOut();

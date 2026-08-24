@@ -39,6 +39,12 @@ using SingleQubitBasis = CompilerTarget::SingleQubitBasis;
 parseSingleQubitBasis(StringRef basis);
 
 /**
+ * @brief Returns the canonical lowercase name of @p basis (e.g. `zyz`,
+ * `zsxx`), the inverse of @ref parseSingleQubitBasis.
+ */
+[[nodiscard]] StringRef singleQubitBasisName(SingleQubitBasis basis);
+
+/**
  * @brief Euler angles `(theta, phi, lambda)` and global phase for a 2x2
  * unitary.
  *

@@ -593,25 +593,11 @@ TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
 // FuseSingleQubitUnitaryRuns support
 //===----------------------------------------------------------------------===//
 
-[[nodiscard]] static bool isAllowedBasisGate(const Operation& op,
+// Delegates to the production gate-set mapping shared with the fuser and
+// composer, instead of maintaining a second copy of the same table.
+[[nodiscard]] static bool isAllowedBasisGate(Operation* op,
                                              SingleQubitBasis basis) {
-  switch (basis) {
-  case ZYZ:
-    return isa<RZOp, RYOp>(op);
-  case ZXZ:
-    return isa<RZOp, RXOp>(op);
-  case XZX:
-    return isa<RXOp, RZOp>(op);
-  case XYX:
-    return isa<RXOp, RYOp>(op);
-  case U:
-    return isa<UOp>(op);
-  case ZSXX:
-    return isa<RZOp, SXOp, XOp>(op);
-  case R:
-    return isa<ROp>(op);
-  }
-  return false;
+  return isSingleQubitBasisGate(op, basis);
 }
 
 template <typename ParentOp> [[nodiscard]] static bool inParent(Operation* op) {
@@ -628,7 +614,7 @@ static WalkResult visitBasisGateOp(Operation* op, StringRef basis,
       return unitary.isTwoQubit() ? WalkResult::advance() : WalkResult::skip();
     }
     if (Matrix2x2 matrix; unitary.getUnitaryMatrix2x2(matrix)) {
-      EXPECT_TRUE(isAllowedBasisGate(*op, parsedBasis) || isa<GPhaseOp>(*op))
+      EXPECT_TRUE(isAllowedBasisGate(op, parsedBasis) || isa<GPhaseOp>(*op))
           << "basis=" << basis.str()
           << " unexpected gate: " << op->getName().getStringRef().str();
       return WalkResult::advance();
@@ -1133,7 +1119,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesNamedDynamicGatesInAllBases) {
         if (!unitary.isSingleQubit()) {
           return;
         }
-        EXPECT_TRUE(isAllowedBasisGate(*unitary, *parsedBasis));
+        EXPECT_TRUE(isAllowedBasisGate(unitary.getOperation(), *parsedBasis));
         recordDependencies(unitary.getParameters());
       });
       funcOp.walk(
@@ -1217,7 +1203,7 @@ TEST(FuseSingleQubitUnitaryRunsTest,
       if (!unitary.isSingleQubit()) {
         return;
       }
-      EXPECT_TRUE(isAllowedBasisGate(*unitary, *parsedBasis));
+      EXPECT_TRUE(isAllowedBasisGate(unitary.getOperation(), *parsedBasis));
       recordDependencies(unitary.getParameters());
     });
     funcOp.walk(

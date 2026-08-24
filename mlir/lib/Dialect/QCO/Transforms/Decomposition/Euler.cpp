@@ -454,6 +454,26 @@ std::optional<SingleQubitBasis> parseSingleQubitBasis(StringRef basis) {
       .Default(std::nullopt);
 }
 
+StringRef singleQubitBasisName(const SingleQubitBasis basis) {
+  switch (basis) {
+  case SingleQubitBasis::ZYZ:
+    return "zyz";
+  case SingleQubitBasis::ZXZ:
+    return "zxz";
+  case SingleQubitBasis::XZX:
+    return "xzx";
+  case SingleQubitBasis::XYX:
+    return "xyx";
+  case SingleQubitBasis::U:
+    return "u";
+  case SingleQubitBasis::ZSXX:
+    return "zsxx";
+  case SingleQubitBasis::R:
+    return "r";
+  }
+  llvm_unreachable("invalid single-qubit synthesis basis");
+}
+
 std::optional<SynthesizedUnitary1Q>
 synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                          const Matrix2x2& composed, const std::size_t runSize,
