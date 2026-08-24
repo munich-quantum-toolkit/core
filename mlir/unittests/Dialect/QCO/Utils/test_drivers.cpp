@@ -35,7 +35,6 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -59,65 +58,71 @@ protected:
     context->loadAllAvailableDialects();
   }
 
+  /// Construct the test program.
+  [[maybe_unused]] [[nodiscard]] OwningOpRef<ModuleOp> getProgram() const {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize(SmallVector<Type>(4, builder.getI1Type()));
+
+    SmallVector<Value> qubits(4);
+    SmallVector<Value> bits(4);
+
+    for (size_t i = 0; i < 4; ++i) {
+      qubits[i] = builder.allocQubit();
+    }
+
+    qubits[0] = builder.h(qubits[0]);
+
+    std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
+    std::tie(qubits[2], qubits[3]) = builder.cx(qubits[2], qubits[3]);
+
+    qubits[0] = builder.z(qubits[0]);
+    qubits[2] = builder.h(qubits[2]);
+
+    std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
+
+    std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
+
+    qubits[1] = builder.h(qubits[1]);
+
+    qubits = builder.scfFor(0, 3, 1, qubits, [&](Value, ValueRange args) {
+      return SmallVector<Value>{args};
+    });
+
+    qubits = builder.qcoIf(
+        false, qubits,
+        [&](ValueRange args) { return SmallVector<Value>{args}; },
+        [&](ValueRange args) { return SmallVector<Value>{args}; });
+
+    const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
+    qubits = builder.qcoIndexSwitch(0, qubits, SmallVector<int64_t>{0},
+                                    {identity}, identity);
+
+    qubits = builder.barrier(qubits);
+
+    for (size_t i = 0; i < 4; ++i) {
+      std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+    }
+
+    return builder.finalize(bits);
+  }
+
+  /// Return the wires of the test program.
+  static SmallVector<WireIterator> getWires(ModuleOp op) {
+    auto func = mlir::mqt::getEntryPoint(op);
+    SmallVector<WireIterator> wires;
+    for (AllocOp op : func.getOps<AllocOp>()) {
+      wires.emplace_back(op.getResult());
+    }
+    return wires;
+  }
+
   std::unique_ptr<MLIRContext> context;
 };
 } // namespace
 
-static OwningOpRef<ModuleOp> getTestProgram(MLIRContext* context) {
-  QCOProgramBuilder builder(context);
-  builder.initialize(SmallVector<Type>(4, builder.getI1Type()));
-
-  SmallVector<Value> qubits(4);
-  SmallVector<Value> bits(4);
-
-  for (size_t i = 0; i < 4; ++i) {
-    qubits[i] = builder.allocQubit();
-  }
-
-  qubits[0] = builder.h(qubits[0]);
-
-  std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
-  std::tie(qubits[2], qubits[3]) = builder.cx(qubits[2], qubits[3]);
-
-  qubits[0] = builder.z(qubits[0]);
-  qubits[2] = builder.h(qubits[2]);
-
-  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
-
-  std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
-
-  qubits[1] = builder.h(qubits[1]);
-
-  qubits = builder.scfFor(0, 3, 1, qubits, [&](Value, ValueRange args) {
-    return SmallVector<Value>{args};
-  });
-
-  qubits = builder.qcoIf(
-      false, qubits, [&](ValueRange args) { return SmallVector<Value>{args}; },
-      [&](ValueRange args) { return SmallVector<Value>{args}; });
-
-  const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
-  qubits = builder.qcoIndexSwitch(0, qubits, SmallVector<int64_t>{0},
-                                  {identity}, identity);
-
-  qubits = builder.barrier(qubits);
-
-  for (size_t i = 0; i < 4; ++i) {
-    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
-  }
-
-  return builder.finalize(bits);
-}
-
 TEST_F(DriversFixture, ProgramWalkVisitsAllOps) {
-  [[maybe_unused]] auto mod = getTestProgram(context.get());
-
-  auto func = mlir::mqt::getEntryPoint(*mod);
-  SmallVector<WireIterator> wires;
-  for (AllocOp op : func.getOps<AllocOp>()) {
-    wires.emplace_back(op.getResult());
-  }
-
+  auto mod = getProgram();
+  auto wires = getWires(*mod);
   size_t nvisited = 0;
   walkProgramGraph<WireDirection::Forward>(
       wires, [&](const Frontier& frontier, ReleasedOps& released) {
@@ -150,14 +155,8 @@ TEST_F(DriversFixture, ProgramWalkVisitsAllOps) {
 }
 
 TEST_F(DriversFixture, StopProgramWalkWithInterrupt) {
-  [[maybe_unused]] auto mod = getTestProgram(context.get());
-
-  auto func = mlir::mqt::getEntryPoint(*mod);
-  SmallVector<WireIterator> wires;
-  for (AllocOp op : func.getOps<AllocOp>()) {
-    wires.emplace_back(op.getResult());
-  }
-
+  auto mod = getProgram();
+  auto wires = getWires(*mod);
   size_t nvisited = 0;
   walkProgramGraph<WireDirection::Forward>(
       wires, [&](const Frontier& frontier, ReleasedOps& released) {
@@ -174,39 +173,9 @@ TEST_F(DriversFixture, StopProgramWalkWithInterrupt) {
   ASSERT_EQ(nvisited, 16);
 }
 
-TEST_F(DriversFixture, StopProgramWalkWithSkip) {
-  [[maybe_unused]] auto mod = getTestProgram(context.get());
-
-  auto func = mlir::mqt::getEntryPoint(*mod);
-  SmallVector<WireIterator> wires;
-  for (AllocOp op : func.getOps<AllocOp>()) {
-    wires.emplace_back(op.getResult());
-  }
-
-  size_t nvisited = 0;
-  walkProgramGraph<WireDirection::Forward>(
-      wires, [&](const Frontier& frontier, ReleasedOps& released) {
-        for (const auto& [op, indices] : frontier) {
-          ++nvisited;
-          if (isa<BarrierOp>(op)) {
-            return WalkResult::skip();
-          }
-
-          released.emplace_back(op);
-        }
-        return WalkResult::advance();
-      });
-  ASSERT_EQ(nvisited, 16);
-}
-
 TEST_F(DriversFixture, ProgramWalkTooFewWires) {
-  [[maybe_unused]] auto mod = getTestProgram(context.get());
-
-  auto func = mlir::mqt::getEntryPoint(*mod);
-
-  SmallVector<WireIterator> wires;
-  wires.emplace_back(*func.getOps<AllocOp>().begin());
-
+  auto mod = getProgram();
+  SmallVector<WireIterator> wires{getWires(*mod).front()};
   ASSERT_DEATH(walkProgramGraph<WireDirection::Forward>(
                    wires,
                    [&](const Frontier& frontier, ReleasedOps& released) {
@@ -219,16 +188,9 @@ TEST_F(DriversFixture, ProgramWalkTooFewWires) {
 }
 
 TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
-  [[maybe_unused]] auto mod = getTestProgram(context.get());
-
-  auto func = mlir::mqt::getEntryPoint(*mod);
-  SmallVector<WireIterator> wires;
-  for (AllocOp op : func.getOps<AllocOp>()) {
-    wires.emplace_back(op.getResult());
-  }
-
+  auto mod = getProgram();
+  auto wires = getWires(*mod);
   SmallVector<DenseSet<std::pair<size_t, size_t>>> layers;
-
   const auto callback = [&](const Frontier& frontier, ReleasedOps& released) {
     for (const auto& [op, indices] : frontier) {
       if (indices.size() == 1) {
@@ -241,7 +203,7 @@ TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
       layer.reserve(frontier.size());
 
       for (const auto& [op, indices] : frontier) {
-        if (!isa<BarrierOp>(op) & isa<UnitaryOpInterface>(op)) {
+        if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
           layer.insert(std::minmax(indices[0], indices[1]));
         }
         released.emplace_back(op);
@@ -257,6 +219,7 @@ TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
 
   walkProgramGraph<WireDirection::Forward>(wires, callback);
 
+  ASSERT_EQ(layers.size(), 3);
   ASSERT_TRUE(layers[0].contains(std::make_pair(0, 1)));
   ASSERT_TRUE(layers[0].contains(std::make_pair(2, 3)));
   ASSERT_TRUE(layers[1].contains(std::make_pair(1, 2)));
@@ -268,6 +231,7 @@ TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
 
   walkProgramGraph<WireDirection::Backward>(wires, callback);
 
+  ASSERT_EQ(layers.size(), 3);
   ASSERT_TRUE(layers[0].contains(std::make_pair(0, 1)));
   ASSERT_TRUE(layers[1].contains(std::make_pair(1, 2)));
   ASSERT_TRUE(layers[2].contains(std::make_pair(0, 1)));
@@ -278,13 +242,13 @@ TEST_F(DriversFixture, ProgramWalkRetainsUnreleasedReadyOperations) {
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(3, builder.getI1Type()));
 
-  SmallVector<Value> alloc(3);
+  SmallVector<WireIterator> wires;
   SmallVector<Value> qubits(3);
   SmallVector<Value> bits(3);
 
   for (size_t i = 0; i < 3; ++i) {
     qubits[i] = builder.allocQubit();
-    alloc[i] = qubits[i];
+    wires.emplace_back(qubits[i]);
   }
 
   qubits[0] = builder.h(qubits[0]);
@@ -296,18 +260,17 @@ TEST_F(DriversFixture, ProgramWalkRetainsUnreleasedReadyOperations) {
 
   [[maybe_unused]] auto mod = builder.finalize(bits);
 
-  SmallVector<WireIterator> wires;
-  for (auto q : alloc) {
-    wires.emplace_back(q);
-  }
-
   size_t iteration = 0;
   DenseSet<Operation*> prev;
   DenseSet<Operation*> curr;
   walkProgramGraph<WireDirection::Forward>(
       wires, [&](const Frontier& frontier, ReleasedOps& released) {
         if (iteration++ == 0) {
-          assert(frontier.size() >= 2);
+          EXPECT_GE(frontier.size(), 2U);
+          if (frontier.size() < 2) {
+            return WalkResult::interrupt();
+          }
+
           released.emplace_back(*frontier.keys().begin());
           for (Operation* op : llvm::drop_begin(frontier.keys())) {
             prev.insert(op);

@@ -1181,9 +1181,9 @@ private:
   /// Advance past all executable gates and return operations with nested
   /// regions and the respective wire indices. Stops when no more executable
   /// gates are found. The function positions each wire on a non-executable
-  /// two-gate or a composite unitary, if possible. The function never advances
-  /// past sink-like operation and thus, each wire will never reach the sentinel
-  /// state.
+  /// two-qubit gate or a composite unitary, if possible. The function never
+  /// advances past sink-like operation and thus, each wire will never reach the
+  /// sentinel state.
   template <WireDirection Direction>
   SmallVector<CompositeUnitary> advance(Wires& wires, const WireInfos& infos,
                                         const Layout& layout) {
