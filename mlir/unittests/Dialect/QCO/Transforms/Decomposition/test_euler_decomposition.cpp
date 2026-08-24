@@ -249,7 +249,7 @@ template <typename OpTy>
 }
 
 [[nodiscard]] static bool valueDependsOn(Value value, Value target) {
-  DenseSet<Value> visited;
+  llvm::DenseSet<Value> visited;
   SmallVector<Value> worklist{value};
   while (!worklist.empty()) {
     const Value current = worklist.pop_back_val();
@@ -1030,28 +1030,38 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesNamedDynamicGatesInAllBases) {
   fx.setUp();
   struct GateCase {
     StringRef name;
-    std::size_t numParameters;
-    Value (*build)(QCOProgramBuilder&, Value);
+    std::size_t numParameters = 0;
+    Value (*build)(QCOProgramBuilder&, Value) = nullptr;
   };
   const std::array gateCases = {
-      GateCase{"rx", 1,
-               [](QCOProgramBuilder& b, Value q) { return b.rx(0.11, q); }},
-      GateCase{"ry", 1,
-               [](QCOProgramBuilder& b, Value q) { return b.ry(0.13, q); }},
-      GateCase{"rz", 1,
-               [](QCOProgramBuilder& b, Value q) { return b.rz(0.17, q); }},
-      GateCase{"p", 1,
-               [](QCOProgramBuilder& b, Value q) { return b.p(0.19, q); }},
       GateCase{
-          "r", 2,
-          [](QCOProgramBuilder& b, Value q) { return b.r(0.23, -0.29, q); }},
+          .name = "rx",
+          .numParameters = 1,
+          .build = [](QCOProgramBuilder& b, Value q) { return b.rx(0.11, q); }},
       GateCase{
-          "u2", 2,
-          [](QCOProgramBuilder& b, Value q) { return b.u2(0.31, -0.37, q); }},
-      GateCase{"u", 3,
-               [](QCOProgramBuilder& b, Value q) {
-                 return b.u(0.41, -0.43, 0.47, q);
-               }},
+          .name = "ry",
+          .numParameters = 1,
+          .build = [](QCOProgramBuilder& b, Value q) { return b.ry(0.13, q); }},
+      GateCase{
+          .name = "rz",
+          .numParameters = 1,
+          .build = [](QCOProgramBuilder& b, Value q) { return b.rz(0.17, q); }},
+      GateCase{
+          .name = "p",
+          .numParameters = 1,
+          .build = [](QCOProgramBuilder& b, Value q) { return b.p(0.19, q); }},
+      GateCase{.name = "r",
+               .numParameters = 2,
+               .build = [](QCOProgramBuilder& b,
+                           Value q) { return b.r(0.23, -0.29, q); }},
+      GateCase{.name = "u2",
+               .numParameters = 2,
+               .build = [](QCOProgramBuilder& b,
+                           Value q) { return b.u2(0.31, -0.37, q); }},
+      GateCase{.name = "u",
+               .numParameters = 3,
+               .build = [](QCOProgramBuilder& b,
+                           Value q) { return b.u(0.41, -0.43, 0.47, q); }},
   };
   constexpr std::array boundValues = {0.37, -0.61, 0.83};
 
