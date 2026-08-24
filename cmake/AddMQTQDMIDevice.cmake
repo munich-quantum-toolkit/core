@@ -147,105 +147,105 @@ function(mqt_get_qdmi_device_targets result)
       PARENT_SCOPE)
 endfunction()
 
-# Copy in-tree QDMI runtime libraries and manifests beside a runtime consumer.
+function(_mqt_qdmi_runtime_files result target)
+  set(runtime_files "$<TARGET_FILE:${target}>")
+  if(WIN32)
+    get_target_property(library_target ${target} ALIASED_TARGET)
+    if(NOT library_target)
+      set(library_target ${target})
+    endif()
+    get_target_property(imported ${library_target} IMPORTED)
+    if(imported)
+      # CMake cannot evaluate TARGET_RUNTIME_DLLS on an imported target. An unbuilt
+      # local target lets it traverse the imported library's declared dependencies.
+      string(MAKE_C_IDENTIFIER "${library_target}-dependencies" dependency_target)
+      if(NOT TARGET ${dependency_target})
+        add_library(${dependency_target} MODULE EXCLUDE_FROM_ALL
+                    "${CMAKE_CURRENT_FUNCTION_LIST_FILE}")
+        set_property(TARGET ${dependency_target} PROPERTY LINKER_LANGUAGE CXX)
+        target_link_libraries(${dependency_target} PRIVATE ${target})
+      endif()
+      set(runtime_files "$<TARGET_RUNTIME_DLLS:${dependency_target}>")
+    else()
+      list(APPEND runtime_files "$<TARGET_RUNTIME_DLLS:${target}>")
+    endif()
+  endif()
+  set(${result}
+      ${runtime_files}
+      PARENT_SCOPE)
+endfunction()
+
+# Copy the shared QDMI libraries, device manifests, and assets beside an application.
 function(mqt_copy_qdmi_runtime target)
   if(NOT TARGET ${target})
-    message(FATAL_ERROR "Unknown QDMI runtime consumer target: ${target}")
+    message(FATAL_ERROR "Unknown QDMI application target: ${target}")
   endif()
   set_property(TARGET ${target} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
-  get_target_property(consumer_target ${target} ALIASED_TARGET)
-  if(NOT consumer_target)
-    set(consumer_target ${target})
-  endif()
-  foreach(runtime_target IN ITEMS MQT::CoreQDMI MQT::CoreQDMIDriver)
-    if(TARGET ${runtime_target})
-      get_target_property(runtime_concrete_target ${runtime_target} ALIASED_TARGET)
-      if(NOT runtime_concrete_target)
-        set(runtime_concrete_target ${runtime_target})
-      endif()
-      get_target_property(runtime_imported ${runtime_concrete_target} IMPORTED)
-      get_target_property(library_type ${runtime_concrete_target} TYPE)
-      if(NOT runtime_imported
-         AND library_type STREQUAL "SHARED_LIBRARY"
-         AND NOT consumer_target STREQUAL runtime_concrete_target)
-        add_dependencies(${consumer_target} ${runtime_concrete_target})
-        set(runtime_files "$<TARGET_FILE:${runtime_target}>")
-        if(WIN32)
-          list(APPEND runtime_files "$<TARGET_RUNTIME_DLLS:${runtime_target}>")
-        endif()
-        add_custom_command(
-          TARGET ${consumer_target}
-          POST_BUILD
-          COMMAND ${CMAKE_COMMAND} -E copy_if_different ${runtime_files}
-                  "$<TARGET_FILE_DIR:${consumer_target}>"
-          COMMAND_EXPAND_LISTS)
-      endif()
-    endif()
-  endforeach()
   set(devices ${ARGN})
   if(NOT devices)
     mqt_get_qdmi_device_targets(devices)
   endif()
-  if(NOT devices AND NOT TARGET MQT::CoreQDMIDriver)
-    message(FATAL_ERROR "mqt_copy_qdmi_runtime requires at least one QDMI device target")
-  endif()
-  foreach(device IN LISTS devices)
-    if(NOT TARGET ${device})
-      message(FATAL_ERROR "Unknown QDMI device target: ${device}")
+  set(libraries ${devices})
+  foreach(library IN ITEMS MQT::CoreQDMI MQT::CoreQDMIDriver)
+    if(TARGET ${library})
+      list(APPEND libraries ${library})
     endif()
-    get_target_property(device_target ${device} ALIASED_TARGET)
-    if(NOT device_target)
-      set(device_target ${device})
+  endforeach()
+  list(REMOVE_DUPLICATES libraries)
+  foreach(library IN LISTS libraries)
+    if(NOT TARGET ${library})
+      message(FATAL_ERROR "Unknown QDMI library target: ${library}")
     endif()
-    get_target_property(manifest_name ${device_target} QDMI_MANIFEST_NAME)
-    if(NOT manifest_name)
-      get_target_property(device_id ${device_target} QDMI_DEVICE_ID)
-      get_target_property(device_prefix ${device_target} QDMI_DEVICE_PREFIX)
-      if(NOT device_id OR NOT device_prefix)
-        message(
-          FATAL_ERROR
-            "QDMI device target '${device}' must define either QDMI_MANIFEST_NAME or both QDMI_DEVICE_ID and QDMI_DEVICE_PREFIX"
+    get_target_property(library_target ${library} ALIASED_TARGET)
+    if(NOT library_target)
+      set(library_target ${library})
+    endif()
+    get_target_property(library_type ${library_target} TYPE)
+    if(library_target STREQUAL target OR NOT library_type MATCHES "^(SHARED|MODULE)_LIBRARY$")
+      continue()
+    endif()
+    _mqt_qdmi_runtime_files(files ${library})
+    if(library IN_LIST devices)
+      get_target_property(manifest_name ${library_target} QDMI_MANIFEST_NAME)
+      if(NOT manifest_name)
+        get_target_property(device_id ${library_target} QDMI_DEVICE_ID)
+        get_target_property(device_prefix ${library_target} QDMI_DEVICE_PREFIX)
+        if(NOT device_id OR NOT device_prefix)
+          message(
+            FATAL_ERROR
+              "QDMI device target '${library}' must define either QDMI_MANIFEST_NAME or both QDMI_DEVICE_ID and QDMI_DEVICE_PREFIX"
+          )
+        endif()
+        _mqt_qdmi_json_escape(device_id "${device_id}")
+        _mqt_qdmi_json_escape(device_prefix "${device_prefix}")
+        string(MAKE_C_IDENTIFIER "${target}-${library}" manifest_stem)
+        set(manifest_name "${manifest_stem}.qdmi.json")
+        set(manifest "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${manifest_name}")
+        file(
+          GENERATE
+          OUTPUT "${manifest}"
+          CONTENT
+            "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${library}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }\n    ]\n  }\n}\n"
         )
+      else()
+        set(manifest "$<TARGET_FILE_DIR:${library}>/${manifest_name}")
       endif()
-      _mqt_qdmi_json_escape(device_id "${device_id}")
-      _mqt_qdmi_json_escape(device_prefix "${device_prefix}")
-      string(MAKE_C_IDENTIFIER "${target}-${device}" manifest_stem)
-      set(manifest_name "${manifest_stem}.qdmi.json")
-      set(manifest "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${manifest_name}")
-      file(
-        GENERATE
-        OUTPUT "${manifest}"
-        CONTENT
-          "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${device}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }\n    ]\n  }\n}\n"
-      )
-    else()
-      set(manifest "$<TARGET_FILE_DIR:${device}>/${manifest_name}")
+      list(APPEND files "${manifest}")
+      get_target_property(assets ${library_target} QDMI_RUNTIME_FILES)
+      if(assets)
+        foreach(asset IN LISTS assets)
+          list(APPEND files "$<TARGET_FILE_DIR:${library}>/${asset}")
+        endforeach()
+      endif()
     endif()
-    get_target_property(device_imported ${device_target} IMPORTED)
-    if(NOT device_imported)
-      add_dependencies(${target} ${device})
-    endif()
-    set(device_files "$<TARGET_FILE:${device}>")
-    if(WIN32 AND NOT device_imported)
-      list(APPEND device_files "$<TARGET_RUNTIME_DLLS:${device}>")
+    get_target_property(imported ${library_target} IMPORTED)
+    if(NOT imported)
+      add_dependencies(${target} ${library_target})
     endif()
     add_custom_command(
       TARGET ${target}
       POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${device_files} "$<TARGET_FILE_DIR:${target}>"
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${manifest}"
-              "$<TARGET_FILE_DIR:${target}>/${manifest_name}"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${files} "$<TARGET_FILE_DIR:${target}>"
       COMMAND_EXPAND_LISTS)
-    get_target_property(runtime_files ${device_target} QDMI_RUNTIME_FILES)
-    if(runtime_files)
-      foreach(runtime_file IN LISTS runtime_files)
-        add_custom_command(
-          TARGET ${target}
-          POST_BUILD
-          COMMAND
-            ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE_DIR:${device}>/${runtime_file}"
-            "$<TARGET_FILE_DIR:${target}>/${runtime_file}")
-      endforeach()
-    endif()
   endforeach()
 endfunction()
