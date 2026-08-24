@@ -241,7 +241,9 @@ public:
   /// least 3; default 3 means wider than two-qubit).
   [[nodiscard]] bool decomposeMultiControlled(uint64_t minQubits = 3);
 
-  /// Compile this program for a target.
+  /// Compile this program for a target in place.
+  ///
+  /// Do not rely on the program contents if compilation fails.
   [[nodiscard]] bool compileForTarget(const CompilerTarget& target,
                                       bool enableTiming = false,
                                       bool enableStatistics = false);

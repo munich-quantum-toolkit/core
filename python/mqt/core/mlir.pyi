@@ -11,11 +11,10 @@
 import enum
 import os
 from collections.abc import Sequence
-from typing import Literal, overload
+from typing import Literal, Unpack, overload
 
 import qiskit.circuit
 
-from mqt.core._compat.typing import Unpack
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
 
@@ -431,7 +430,7 @@ class QCOProgram(Program):
     def compile_for_target(
         self, target: CompilerTarget, *, enable_timing: bool = False, enable_statistics: bool = False
     ) -> None:
-        """Compile this QCO program for the target in place."""
+        """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails."""
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:
         """Convert this program to QC.

@@ -24,6 +24,7 @@ add_mlir_library(
   MLIRMQTTransforms
   MLIRMQTUtils
   MLIRSCFUtils
+  MLIRTransformUtils
   DEPENDS
   MLIRQCOTransformsIncGen)
 
