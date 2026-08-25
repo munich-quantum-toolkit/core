@@ -9,7 +9,7 @@
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runtime)
 
 if(NOT TARGET ${TARGET_NAME})
-  # Add the internal QIR runtime library.
+  # Add internal QIR runtime library
   add_library(${TARGET_NAME} STATIC)
 
   # Add sources to target

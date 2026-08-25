@@ -16,8 +16,7 @@ is a standardized intermediate representation for quantum programs based on the
 
 The MQT Compiler Collection generates QIR in LLVM assembly or bitcode form.
 Execute this output with the DDSIM QDMI device or a compatible external QIR
-runtime. The runtime and just-in-time compiler that support QIR jobs in the
-DDSIM device are internal MQT Core implementation details.
+runtime.
 
 See {cite:p}`stadeTowardsSupportingQIR2025` for more details about QIR support
 in MQT.
