@@ -10,6 +10,8 @@
 
 #include "qir/jit/IRRewriter.hpp"
 
+#include "qir/Definitions.hpp"
+
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
@@ -35,7 +37,7 @@ static constexpr llvm::StringLiteral TERMINAL_REGION_ERROR =
 static bool isIrreversible(const llvm::CallBase& call) {
   const auto* callee = llvm::dyn_cast<llvm::Function>(
       call.getCalledOperand()->stripPointerCasts());
-  return callee != nullptr && callee->hasFnAttribute("irreversible");
+  return callee != nullptr && callee->hasFnAttribute(IRREVERSIBLE_ATTR);
 }
 
 static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
@@ -50,8 +52,7 @@ static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
           call == nullptr ? nullptr
                           : llvm::dyn_cast<llvm::Function>(
                                 call->getCalledOperand()->stripPointerCasts());
-      if (callee != nullptr &&
-          callee->getName().starts_with("__quantum__qis__") &&
+      if (callee != nullptr && callee->getName().starts_with(QIS_PREFIX) &&
           !isIrreversible(*call)) {
         throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
       }
@@ -84,9 +85,9 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
         "QIR state extraction requires an i64() entry point");
   }
 
-  const auto profile = entryPoint.getFnAttribute("qir_profiles");
+  const auto profile = entryPoint.getFnAttribute(QIR_PROFILES_ATTR);
   if (!profile.isStringAttribute() ||
-      profile.getValueAsString() != "base_profile") {
+      profile.getValueAsString() != BASE_PROFILE) {
     throw std::invalid_argument(
         "QIR state extraction requires a Base Profile entry point");
   }

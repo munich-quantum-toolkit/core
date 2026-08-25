@@ -10,6 +10,7 @@
 
 #include "qir/jit/Session.hpp"
 
+#include "qir/Definitions.hpp"
 #include "qir/jit/IRRewriter.hpp"
 #include "qir/runtime/QIR.h"
 #include "qir/runtime/Runtime.hpp"
@@ -65,7 +66,7 @@
 namespace qir {
 
 static auto isEntryPoint(const llvm::Function& function) -> bool {
-  return function.hasFnAttribute("entry_point") ||
+  return function.hasFnAttribute(ENTRY_POINT_ATTR) ||
          function.hasFnAttribute("EntryPoint");
 }
 
@@ -109,8 +110,8 @@ static auto selectEntryPoint(llvm::Module& module,
 
 static auto readOutputSchema(const llvm::Function& entryPoint)
     -> Runtime::OutputSchema {
-  if (const auto attr = entryPoint.getFnAttribute("output_labeling_schema");
-      attr.isValid() && attr.getValueAsString() == "ordered") {
+  if (const auto attr = entryPoint.getFnAttribute(OUTPUT_LABELING_SCHEMA_ATTR);
+      attr.isValid() && attr.getValueAsString() == ORDERED_SCHEMA) {
     return Runtime::OutputSchema::Ordered;
   }
   return Runtime::OutputSchema::Labeled;

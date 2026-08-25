@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "qir/Definitions.hpp"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/IR/Constants.h>
@@ -253,7 +254,7 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
     }
     if (llvm::any_of(passthrough, [](Attribute attr) {
           const auto strAttr = dyn_cast<StringAttr>(attr);
-          return strAttr && strAttr.getValue() == "entry_point";
+          return strAttr && strAttr.getValue() == ::qir::ENTRY_POINT_ATTR;
         })) {
       return funcOp;
     }
@@ -286,7 +287,8 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
 
     // Add irreversible attribute to irreversible quantum operations
     if (fnName == QIR_MEASURE || fnName == QIR_RESET) {
-      fnDecl->setAttr("passthrough", builder.getStrArrayAttr({"irreversible"}));
+      fnDecl->setAttr("passthrough",
+                      builder.getStrArrayAttr({::qir::IRREVERSIBLE_ATTR}));
     }
   }
 

@@ -9,25 +9,23 @@
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runtime)
 
 if(NOT TARGET ${TARGET_NAME})
-  # Add QIRRuntime library
-  add_mqt_core_library(${TARGET_NAME} FORCE_STATIC ALIAS_NAME QIRRuntime)
+  # Add the internal QIR runtime library.
+  add_library(${TARGET_NAME} STATIC)
 
   # Add sources to target
-  target_sources(${TARGET_NAME} PRIVATE QIR.cpp Runtime.cpp
-                                        ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/runtime/Runtime.hpp)
-
-  # Add headers using file sets
   target_sources(
     ${TARGET_NAME}
-    PUBLIC FILE_SET
-           HEADERS
-           BASE_DIRS
-           ${MQT_CORE_INCLUDE_BUILD_DIR}
-           ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-           FILES
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/runtime/QIR.h
-           ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Conversion/GateTable.def)
+    PRIVATE QIR.cpp Runtime.cpp ${PROJECT_SOURCE_DIR}/src/qir/include/qir/Definitions.hpp
+            ${PROJECT_SOURCE_DIR}/src/qir/include/qir/runtime/QIR.h
+            ${PROJECT_SOURCE_DIR}/src/qir/include/qir/runtime/Runtime.hpp)
+  target_include_directories(${TARGET_NAME}
+                             PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/qir/include>)
+  target_compile_features(${TARGET_NAME} PUBLIC cxx_std_20)
+  set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
   # Add link libraries
-  target_link_libraries(${TARGET_NAME} PUBLIC MQT::CoreIR MQT::CoreDD)
+  target_link_libraries(
+    ${TARGET_NAME}
+    PUBLIC MQT::CoreIR MQT::CoreDD
+    PRIVATE MQT::ProjectWarnings MQT::ProjectOptions)
 endif()

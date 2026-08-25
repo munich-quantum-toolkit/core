@@ -167,13 +167,18 @@ Boost.Multiprecision or GMP.
 
 ### QIR execution
 
-The standalone QIR runner now invokes a selected QIR entry point as a
-parameterless `i64` function instead of assuming an `int main(int, char**)`. Use
-`--entry-point` to select among multiple entry points, `--shots` for repeated
-execution, and `--seed` for deterministic sampling.
+MQT Core no longer builds or installs the `mqt-core-qir-runner` executable. Use
+the DDSIM QDMI device to execute supported QIR programs with MQT Core, or use an
+external runtime such as QIR-Runner.
+
+The QIR runtime and just-in-time compiler are now internal implementation
+details of the DDSIM QDMI device. MQT Core no longer provides the build-tree
+`MQT::CoreQIRRuntime` and `MQT::CoreQIRJIT` CMake aliases or the headers below
+`mqt-core/qir/runtime` and `mqt-core/qir/jit`. MQT Core does not provide a
+replacement standalone C++ API.
 
 Dynamic QIR inputs must use the current QIR 2.1 resource-management interface.
-Legacy qir-runner allocator and output overloads are no longer accepted.
+Legacy allocator and output overloads are no longer accepted.
 
 The DDSIM QDMI device now isolates the runtime, simulator state, random-number
 generator, and output sink of every QIR job. Concurrently submitted jobs no

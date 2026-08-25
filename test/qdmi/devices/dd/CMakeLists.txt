@@ -34,7 +34,7 @@ if(TARGET MQT::CoreQDMI_DDSIM_Device)
   target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
   llvm_map_components_to_libnames(llvm_native_libs asmparser bitwriter core support)
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime mqt-core-qir-test-utils
+  target_link_libraries(${TARGET_NAME} PRIVATE mqt-core-qir-runtime mqt-core-qir-test-utils
                                                ${llvm_native_libs})
   target_compile_definitions(${TARGET_NAME}
                              PRIVATE QIR_FILES_DIR="${PROJECT_SOURCE_DIR}/test/circuits")

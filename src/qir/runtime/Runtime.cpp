@@ -19,6 +19,7 @@
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
+#include "qir/Definitions.hpp"
 #include "qir/runtime/QIR.h"
 
 #include <algorithm>
@@ -349,8 +350,8 @@ auto Runtime::setMetadata(
 
 auto operator<<(std::ostream& os, const Runtime::OutputSchema schema)
     -> std::ostream& {
-  return os << (schema == Runtime::OutputSchema::Labeled ? "labeled"
-                                                         : "ordered");
+  return os << (schema == Runtime::OutputSchema::Labeled ? LABELED_SCHEMA
+                                                         : ORDERED_SCHEMA);
 }
 
 } // namespace qir

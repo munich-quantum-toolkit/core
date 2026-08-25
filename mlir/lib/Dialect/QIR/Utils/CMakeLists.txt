@@ -19,6 +19,7 @@ add_mlir_library(
   MLIRIR)
 
 mqt_mlir_target_use_project_options(MLIRQIRUtils)
+target_include_directories(MLIRQIRUtils PRIVATE ${PROJECT_SOURCE_DIR}/src/qir/include)
 
 file(GLOB_RECURSE QIR_UTILS_HEADERS_SOURCE
      ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QIR/Utils/*.h)
