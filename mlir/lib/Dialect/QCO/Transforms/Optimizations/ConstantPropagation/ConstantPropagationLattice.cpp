@@ -156,12 +156,9 @@ bool QuantumState::isAlwaysZero(const Value q) const {
   if (!idx) {
     return false;
   }
-  for (const auto& it : amplitudes) {
-    if ((it.first >> *idx & 1ULL) != 0ULL) {
-      return false;
-    }
-  }
-  return true;
+  return std::ranges::all_of(amplitudes, [&](const auto& it) {
+    return (it.first >> *idx & 1ULL) == 0ULL;
+  });
 }
 
 bool QuantumState::isAlwaysOne(const Value q) const {
@@ -172,12 +169,9 @@ bool QuantumState::isAlwaysOne(const Value q) const {
   if (!idx) {
     return false;
   }
-  for (const auto& it : amplitudes) {
-    if ((it.first >> *idx & 1ULL) == 0ULL) {
-      return false;
-    }
-  }
-  return true;
+  return std::ranges::all_of(amplitudes, [&](const auto& it) {
+    return (it.first >> *idx & 1ULL) != 0ULL;
+  });
 }
 
 void QuantumState::markTop() {
@@ -187,8 +181,9 @@ void QuantumState::markTop() {
 
 void QuantumState::forwardQubit(const Value from, const Value to) {
   const auto id = indexOf(from);
-  if (!id)
+  if (!id) {
     return;
+  }
   qubits[id.value()] = to;
 }
 
@@ -244,10 +239,12 @@ void QuantumState::applyMatrix1Q(const Value input, const Value output,
     Complex in1 = it.second[1];
     Complex out0 = matrix[0][0] * in0 + matrix[0][1] * in1;
     Complex out1 = matrix[1][0] * in0 + matrix[1][1] * in1;
-    if (out0 != Complex(0.0, 0.0))
+    if (out0 != Complex(0.0, 0.0)) {
       result[insertBit(it.first, idx, false)] += out0;
-    if (out1 != Complex(0.0, 0.0))
+    }
+    if (out1 != Complex(0.0, 0.0)) {
       result[insertBit(it.first, idx, true)] += out1;
+    }
   }
 
   amplitudes = std::move(result);
@@ -256,6 +253,10 @@ void QuantumState::applyMatrix1Q(const Value input, const Value output,
       q = output;
       break;
     }
+  }
+  if (amplitudes.size() > maxTrackedAmplitudes) {
+    amplitudes.clear();
+    isTop = true;
   }
 }
 
@@ -296,14 +297,16 @@ void QuantumState::applyMatrix2Q(const Value input0, const Value input1,
     std::array<Complex, 4> outVec{};
     for (unsigned row = 0; row < 4; ++row) {
       Complex sum(0.0, 0.0);
-      for (unsigned col = 0; col < 4; ++col)
+      for (unsigned col = 0; col < 4; ++col) {
         sum += matrix[row][col] * it.second[col];
+      }
       outVec[row] = sum;
     }
 
     for (unsigned row = 0; row < 4; ++row) {
-      if (outVec[row] == Complex(0.0, 0.0))
+      if (outVec[row] == Complex(0.0, 0.0)) {
         continue;
+      }
       bool b0 = (row & 1u) != 0u;
       bool b1 = (row & 2u) != 0u;
       uint64_t basis = insertBit(insertBit(it.first, idx0, b0), idx1, b1);
@@ -311,157 +314,117 @@ void QuantumState::applyMatrix2Q(const Value input0, const Value input1,
     }
   }
 
-  out.amplitudes = std::move(result);
-  for (Value& q : out.qubits) {
-    if (q == input0)
+  amplitudes = std::move(result);
+  for (Value& q : qubits) {
+    if (q == input0) {
       q = output0;
-    else if (q == input1)
+    } else if (q == input1) {
       q = output1;
+    }
   }
-  out.enforceMaxAmplitudes(maxTrackedAmplitudes);
-  return out;
+  if (amplitudes.size() > maxTrackedAmplitudes) {
+    amplitudes.clear();
+    isTop = true;
+  }
 }
 
-LogicalResult QuantumState::applyUnitary(ArrayRef<Value> inputs,
+LogicalResult QuantumState::applyUnitary(const ArrayRef<Value> inputs,
                                          const UnitaryMatrix& matrix,
-                                         ArrayRef<Value> outputs,
-                                         unsigned maxTrackedAmplitudes) {
-  if (inputs.size() != outputs.size())
-    return failure();
-  if (inputs.empty() || inputs.size() > 2)
-    return failure();
+                                         const ArrayRef<Value> outputs) {
 
-  for (Value in : inputs) {
-    if (!getComponentId(in))
-      initializeQubit(in);
+  if (inputs.size() != outputs.size()) {
+    return failure();
+  }
+  if (inputs.empty() || inputs.size() > 2) {
+    return failure();
   }
 
-  if (inputs.size() == 1) {
-    auto id = getComponentId(inputs[0]);
-    if (!id)
+  for (const auto& in : inputs) {
+    if (!indexOf(in)) {
       return failure();
-
-    QuantumState component = components[*id];
-    if (!std::holds_alternative<Matrix2x2>(matrix)) {
-      component.markTop();
-    } else {
-      component =
-          applyMatrix1Q(component, inputs[0], outputs[0],
-                        std::get<Matrix2x2>(matrix), maxTrackedAmplitudes);
     }
+  }
 
-    unsigned newId = nextComponentId++;
-    components.erase(*id);
-    qubitToComponent.erase(inputs[0]);
-    components[newId] = std::move(component);
-    qubitToComponent[outputs[0]] = newId;
+  if (isTop) {
+    for (const auto& [in, out] : llvm::zip(inputs, outputs)) {
+      forwardQubit(in, out);
+    }
     return success();
   }
 
-  if (failed(mergeComponents(inputs[0], inputs[1], maxTrackedAmplitudes)))
-    return failure();
+  if (inputs.size() == 1) {
+    if (!std::holds_alternative<Matrix2x2>(matrix)) {
+      return failure();
+    }
+    applyMatrix1Q(inputs[0], outputs[0], std::get<Matrix2x2>(matrix));
 
-  auto mergedId = getComponentId(inputs[0]);
-  if (!mergedId)
-    return failure();
-
-  QuantumState component = components[*mergedId];
-  if (!std::holds_alternative<Matrix4x4>(matrix)) {
-    component.markTop();
-  } else {
-    component =
-        applyMatrix2Q(component, inputs[0], inputs[1], outputs[0], outputs[1],
-                      std::get<Matrix4x4>(matrix), maxTrackedAmplitudes);
+    return success();
   }
 
-  components.erase(*mergedId);
-  qubitToComponent.erase(inputs[0]);
-  qubitToComponent.erase(inputs[1]);
+  if (!std::holds_alternative<Matrix4x4>(matrix)) {
+    return failure();
+  }
+  applyMatrix2Q(inputs[0], inputs[1], outputs[0], outputs[1],
+                std::get<Matrix4x4>(matrix));
 
-  unsigned newId = nextComponentId++;
-  components[newId] = std::move(component);
-  qubitToComponent[outputs[0]] = newId;
-  qubitToComponent[outputs[1]] = newId;
   return success();
 }
 
-SmallVector<std::pair<QuantumState, Attribute>>
-QuantumState::measure(Value inQubit, Value outQubit, MLIRContext* ctx) const {
-  SmallVector<std::pair<QuantumState, Attribute>> successors;
-  auto compId = getComponentId(inQubit);
-  if (!compId) {
-    QuantumState unknown = *this;
-    auto i1 = IntegerType::get(ctx, 1);
-    // Unknown classical result cannot be represented as an Attribute directly
-    // here, so return no successors and let caller handle top/unknown.
-    (void)i1;
-    return successors;
+std::unordered_map<unsigned int, std::pair<QuantumState, double>>
+QuantumState::measure(const Value inQubit, const Value outQubit,
+                      MLIRContext* ctx) {
+
+  if (isTop) {
+    forwardQubit(inQubit, outQubit);
+    return {};
   }
 
-  const QuantumState& component = components.at(*compId);
-  if (component.isTop)
-    return successors;
-
-  auto idxOpt = component.indexOf(inQubit);
-  if (!idxOpt)
-    return successors;
+  const auto idxOpt = indexOf(inQubit);
+  if (!idxOpt) {
+    llvm::report_fatal_error("Called measure on a qubit not in the state");
+  }
   unsigned idx = *idxOpt;
 
   double prob0 = 0.0;
   double prob1 = 0.0;
-  for (const auto& it : component.amplitudes) {
-    double p = std::norm(it.second);
-    if (((it.first >> idx) & 1ULL) == 0ULL)
+  for (const auto& it : amplitudes) {
+    const double p = std::norm(it.second);
+    if ((it.first >> idx & 1ULL) == 0ULL) {
       prob0 += p;
-    else
+    } else {
       prob1 += p;
+    }
   }
 
-  auto makeSuccessor = [&](bool bit) {
-    QuantumState next = *this;
-    auto nextId = next.getComponentId(inQubit);
-    if (!nextId)
-      return std::pair<QuantumState, Attribute>{next, {}};
-
-    QuantumState& c = next.components[*nextId];
-    llvm::DenseMap<uint64_t, Complex> filtered;
-    double norm = 0.0;
-    for (const auto& it : c.amplitudes) {
-      bool curBit = (((it.first >> idx) & 1ULL) != 0ULL);
+  auto makeSuccessor = [&](const bool bit, const double probability) {
+    const double scaleFactor = 1.0 / std::sqrt(probability);
+    auto c = QuantumState(maxTrackedAmplitudes);
+    for (const auto& it : amplitudes) {
+      const bool curBit = (it.first >> idx & 1ULL) != 0ULL;
       if (curBit == bit) {
-        filtered[it.first] = it.second;
-        norm += std::norm(it.second);
+        c.amplitudes[it.first] = it.second * scaleFactor;
       }
     }
 
-    if (norm == 0.0) {
-      c.markTop();
-    } else {
-      double scale = 1.0 / std::sqrt(norm);
-      for (auto& it : filtered)
-        it.second *= scale;
-      c.amplitudes = std::move(filtered);
-    }
-
-    for (Value& q : c.qubits) {
+    for (Value& q : qubits) {
       if (q == inQubit) {
-        q = outQubit;
-        break;
+        c.qubits.push_back(outQubit);
+      } else {
+        c.qubits.push_back(q);
       }
     }
-    next.qubitToComponent.erase(inQubit);
-    next.qubitToComponent[outQubit] = *nextId;
 
-    auto i1 = IntegerType::get(ctx, 1);
-    Attribute bitAttr = IntegerAttr::get(i1, bit ? 1 : 0);
-    return std::pair<QuantumState, Attribute>{std::move(next), bitAttr};
+    return std::pair{std::move(c), probability};
   };
 
-  if (prob0 > 0.0)
-    successors.push_back(makeSuccessor(false));
-  if (prob1 > 0.0)
-    successors.push_back(makeSuccessor(true));
-  return successors;
+  std::unordered_map<unsigned int, std::pair<QuantumState, double>> result;
+  if (std::norm(prob0 - 0.0) >= 1e-10) {
+    result.emplace(0, makeSuccessor(false, prob0));
+  }
+  if (std::norm(prob1 - 0.0) >= 1e-10) {
+    result.emplace(1, makeSuccessor(true, prob1));
+  }
+  return result;
 }
 
 //===----------------------------------------------------------------------===//

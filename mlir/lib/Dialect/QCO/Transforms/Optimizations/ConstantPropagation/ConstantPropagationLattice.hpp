@@ -41,32 +41,6 @@ private:
   SmallVector<Value> qubits;
   llvm::DenseMap<uint64_t, Complex> amplitudes;
 
-public:
-  explicit QuantumState(const unsigned int maxTrackedAmplitudes)
-      : maxTrackedAmplitudes(maxTrackedAmplitudes) {}
-
-  /**
-   * Create a new QuantumState that is initialized to |0>.
-   *
-   * @param maxTrackedAmplitudes The maximum number of amplitudes before
-   * QuantumStates becomes top.
-   * @param qubit The qubit value that the new quantum component should own.
-   * @return The newly created QuantumState.
-   */
-  static QuantumState singletonZero(unsigned int maxTrackedAmplitudes,
-                                    Value qubit);
-
-  bool operator==(const QuantumState& other) const;
-
-  /**
-   * Check if the QuantumState contains a certain value.
-   *
-   * @param v The value to be checked.
-   * @return True if QuantumState contains v.
-   */
-  [[nodiscard("QuantumState::contains called but ignored.")]]
-  bool contains(Value v) const;
-
   /**
    * Checks what the index of value v in the QuantumState is.
    *
@@ -75,37 +49,6 @@ public:
    */
   [[nodiscard("QuantumState::indexOf called but ignored.")]]
   std::optional<unsigned> indexOf(Value v) const;
-
-  /**
-   * Check if a value is always zero.
-   *
-   * @param q The value to check for.
-   * @return True if the value is always zero.
-   */
-  [[nodiscard("QuantumState::isAlwaysZero called but ignored.")]]
-  bool isAlwaysZero(Value q) const;
-
-  /**
-   * Check if a value is always one.
-   *
-   * @param q The value to check for.
-   * @return True if the value is always one.
-   */
-  [[nodiscard("QuantumState::isAlwaysOne called but ignored.")]]
-  bool isAlwaysOne(Value q) const;
-
-  /**
-   * Put QuantumState to top.
-   */
-  void markTop();
-
-  /**
-   * Changes qubit value one to another.
-   *
-   * @param from The original qubit value.
-   * @param to The new qubit value.
-   */
-  void forwardQubit(Value from, Value to);
 
   /**
    * Computes the tensor product of this QuantumState with another QuantumState.
@@ -148,6 +91,63 @@ public:
   void applyMatrix2Q(Value input0, Value input1, Value output0, Value output1,
                      const Matrix4x4& matrix);
 
+public:
+  explicit QuantumState(const unsigned int maxTrackedAmplitudes)
+      : maxTrackedAmplitudes(maxTrackedAmplitudes) {}
+
+  /**
+   * Create a new QuantumState that is initialized to |0>.
+   *
+   * @param maxTrackedAmplitudes The maximum number of amplitudes before
+   * QuantumStates becomes top.
+   * @param qubit The qubit value that the new quantum component should own.
+   * @return The newly created QuantumState.
+   */
+  static QuantumState singletonZero(unsigned int maxTrackedAmplitudes,
+                                    Value qubit);
+
+  bool operator==(const QuantumState& other) const;
+
+  /**
+   * Check if the QuantumState contains a certain value.
+   *
+   * @param v The value to be checked.
+   * @return True if QuantumState contains v.
+   */
+  [[nodiscard("QuantumState::contains called but ignored.")]]
+  bool contains(Value v) const;
+
+  /**
+   * Check if a value is always zero.
+   *
+   * @param q The value to check for.
+   * @return True if the value is always zero.
+   */
+  [[nodiscard("QuantumState::isAlwaysZero called but ignored.")]]
+  bool isAlwaysZero(Value q) const;
+
+  /**
+   * Check if a value is always one.
+   *
+   * @param q The value to check for.
+   * @return True if the value is always one.
+   */
+  [[nodiscard("QuantumState::isAlwaysOne called but ignored.")]]
+  bool isAlwaysOne(Value q) const;
+
+  /**
+   * Put QuantumState to top.
+   */
+  void markTop();
+
+  /**
+   * Changes qubit value one to another.
+   *
+   * @param from The original qubit value.
+   * @param to The new qubit value.
+   */
+  void forwardQubit(Value from, Value to);
+
   /**
    * Applies a unitary matrix to the QuantumState.
    *
@@ -174,7 +174,7 @@ public:
    * The keys are the measurement results.
    */
   std::unordered_map<unsigned int, std::pair<QuantumState, double>>
-  measure(Value inQubit, Value outQubit, MLIRContext* ctx) const;
+  measure(Value inQubit, Value outQubit, MLIRContext* ctx);
 };
 
 /**
@@ -220,6 +220,15 @@ public:
    * @param attr The attribute to be set.
    */
   void setClassical(Value v, Attribute attr);
+
+  /**
+   * Checks whether a HybridState contains a value. The value can be a quantum
+   * or a classical one.
+   *
+   * @param v The value to check for.
+   * @return Whether the value is in the HybridState.
+   */
+  bool contains(Value v);
 };
 
 /**
@@ -233,6 +242,8 @@ private:
   unsigned int maxTrackedAmplitudes;
   unsigned int maxTrackedHybridStates;
   SmallVector<HybridState> states;
+
+  // TODO: Merging of Hybrid States given values
 
 public:
   explicit HybridStateSet(const unsigned int maxTrackedAmplitudes,
@@ -255,6 +266,9 @@ public:
    * @param state The HybridState to be added.
    */
   void addState(HybridState state);
+
+  // TODO: Application of various operations
+
   void canonicalize();
   void join(const HybridStateSet& other);
 
