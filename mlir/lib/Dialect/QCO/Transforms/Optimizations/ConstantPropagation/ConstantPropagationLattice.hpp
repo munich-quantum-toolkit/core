@@ -200,6 +200,33 @@ public:
   explicit HybridState(const unsigned int maxTrackedAmplitudes)
       : quantumState(nullptr), maxTrackedAmplitudes(maxTrackedAmplitudes) {}
 
+  explicit HybridState(const HybridState& that)
+      : classicalValues(that.classicalValues),
+        quantumState(that.quantumState
+                         ? std::make_unique<QuantumState>(*that.quantumState)
+                         : nullptr),
+        maxTrackedAmplitudes(that.maxTrackedAmplitudes),
+        probability(that.probability), isTop(that.isTop) {}
+
+  HybridState& operator=(const HybridState& that) {
+    if (this == &that) {
+      return *this;
+    }
+
+    classicalValues = that.classicalValues;
+    maxTrackedAmplitudes = that.maxTrackedAmplitudes;
+    probability = that.probability;
+    isTop = that.isTop;
+
+    if (that.quantumState) {
+      quantumState = std::make_unique<QuantumState>(*that.quantumState);
+    } else {
+      quantumState.reset();
+    }
+
+    return *this;
+  }
+
   bool operator==(const HybridState& that) const;
 
   /**
@@ -229,6 +256,28 @@ public:
    * @return Whether the value is in the HybridState.
    */
   bool contains(Value v) const;
+
+  /**
+   * Checks if a value is always false, i.e., false/zero if it is a classical
+   * value and |0> if it is a quantum value. If the value is not part of the
+   * HybridState, the result is false.
+   *
+   * @param v The value to be checked.
+   * @return Whether the value is always false.
+   */
+  [[nodiscard("HybridState::isAlwaysFalse called but ignored.")]]
+  bool isAlwaysFalse(Value v) const;
+
+  /**
+   * Checks if a value is always false, i.e., true/nonzero if it is a classical
+   * value and |1> if it is a quantum value. If the value is not part of the
+   * HybridState, the result is false.
+   *
+   * @param v The value to be checked.
+   * @return Whether the value is always true.
+   */
+  [[nodiscard("HybridState::isAlwaysTrue called but ignored.")]]
+  bool isAlwaysTrue(Value v) const;
 
   // TODO: Application of various operations
 };
@@ -264,21 +313,50 @@ public:
 
   // TODO: Application of various operations
 
-  void canonicalize();
+  /**
+   * Joins HybridStateSets after branching. In that case, the new HybridStateSet
+   * is the union of the states in both old sets. If either of the old sets is
+   * top, the new state is top.
+   *
+   * @param other the HybridStateSet to join the current set with.
+   */
   void join(const HybridStateSet& other);
+
+  /**
+   * Checks if there are too many HybridStates in the set. If the number of
+   * states exceeds the specified maximum, the state set is marked as "top", and
+   * all individual states tracked in the set are cleared.
+   */
+  void enforceMaxStates();
 
   [[nodiscard("HybridStateSet::isTop called but ignored.")]]
   bool areStatesTop() const;
 
-  [[nodiscard("HybridStateSet::isAlwaysZero called but ignored.")]]
-  bool isAlwaysZero(Value v) const;
+  /**
+     * Checks if a value is always false, i.e., false/zero if it is a classical
+     * value and |0> if it is a quantum value. If the value is not part of the
+     * HybridState, the result is false.
+     *
+     * @param v The value to be checked.
+     * @return Whether the value is always false.
+     */
+  [[nodiscard("HybridStateSet::isAlwaysFalse called but ignored.")]]
+  bool isAlwaysFalse(Value v) const;
 
-  [[nodiscard("HybridStateSet::isAlwaysOne called but ignored.")]]
-  bool isAlwaysOne(Value v) const;
+  /**
+   * Checks if a value is always false, i.e., true/nonzero if it is a classical
+   * value and |1> if it is a quantum value. If the value is not part of the
+   * HybridState, the result is false.
+   *
+   * @param v The value to be checked.
+   * @return Whether the value is always true.
+   */
+  [[nodiscard("HybridStateSet::isAlwaysTrue called but ignored.")]]
+  bool isAlwaysTrue(Value v) const;
 };
 
 /// Utility used by the pass analysis.
 bool isZeroAttribute(Attribute attr);
-bool isOneAttribute(Attribute attr);
+bool isTrueAttribute(Attribute attr);
 
 } // namespace mlir::qco

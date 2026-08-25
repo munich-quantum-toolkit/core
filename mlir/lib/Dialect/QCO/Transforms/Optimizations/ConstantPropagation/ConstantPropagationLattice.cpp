@@ -12,7 +12,6 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
@@ -73,15 +72,15 @@ bool isZeroAttribute(const Attribute attr) {
   return false;
 }
 
-bool isOneAttribute(const Attribute attr) {
+bool isTrueAttribute(const Attribute attr) {
   if (!attr) {
     return false;
   }
   if (const auto intAttr = dyn_cast<IntegerAttr>(attr)) {
-    return intAttr.getValue().isOne();
+    return !intAttr.getValue().isZero();
   }
   if (const auto floatAttr = dyn_cast<FloatAttr>(attr)) {
-    return floatAttr.getValue().isExactlyValue(1.0);
+    return !floatAttr.getValue().isZero();
   }
   if (const auto boolAttr = dyn_cast<BoolAttr>(attr)) {
     return boolAttr.getValue();
@@ -478,6 +477,22 @@ bool HybridState::contains(const Value v) const {
   return quantumState->contains(v);
 }
 
+bool HybridState::isAlwaysFalse(const Value v) const {
+  const auto attr = getClassical(v);
+  if (attr.has_value()) {
+    return isZeroAttribute(attr.value());
+  }
+  return quantumState->isAlwaysZero(v);
+}
+
+bool HybridState::isAlwaysTrue(const Value v) const {
+  const auto attr = getClassical(v);
+  if (attr.has_value()) {
+    return isTrueAttribute(attr.value());
+  }
+  return quantumState->isAlwaysOne(v);
+}
+
 //===----------------------------------------------------------------------===//
 // HybridStateSet
 //===----------------------------------------------------------------------===//
@@ -510,92 +525,53 @@ void HybridStateSet::addState(HybridState state) {
   states.push_back(std::move(state));
 }
 
-void HybridStateSet::canonicalize() {
-  if (isTop) {
-    return;
-  }
-
-  SmallVector<HybridState> merged;
-  for (HybridState& state : states) {
-    bool found = false;
-    for (HybridState& existing : merged) {
-      HybridState lhs = state;
-      HybridState rhs = existing;
-      lhs.probability = 0.0;
-      rhs.probability = 0.0;
-      if (lhs == rhs) {
-        existing.probability += state.probability;
-        found = true;
-        break;
-      }
-    }
-    if (!found)
-      merged.push_back(std::move(state));
-  }
-  states = std::move(merged);
-}
-
 void HybridStateSet::join(const HybridStateSet& other) {
   if (isTop || other.isTop) {
     isTop = true;
     states.clear();
     return;
   }
-  states.append(other.states.begin(), other.states.end());
-  canonicalize();
+  llvm::append_range(states, other.states);
 }
 
-void HybridStateSet::enforceMaxStates(unsigned maxTrackedStates) {
-  if (isTop)
+void HybridStateSet::enforceMaxStates() {
+  if (isTop) {
     return;
-  canonicalize();
-  if (states.size() > maxTrackedStates) {
+  }
+  if (states.size() > maxTrackedHybridStates) {
     isTop = true;
     states.clear();
   }
 }
 
-bool HybridStateSet::isAlwaysZero(Value v) const {
-  if (isTop || states.empty())
+bool HybridStateSet::areStatesTop() const { return isTop; }
+
+bool HybridStateSet::isAlwaysFalse(const Value v) const {
+  if (isTop) {
     return false;
+  }
   for (const HybridState& state : states) {
-    auto attr = state.getClassical(v);
-    if (attr && isZeroAttribute(*attr))
-      continue;
-    if (state.quantumState.isAlwaysZero(v))
-      continue;
-    return false;
+    if (state.contains(v)) {
+      if (!state.isAlwaysFalse(v)) {
+        return false;
+      }
+    }
   }
   return true;
 }
 
-bool HybridStateSet::isAlwaysOne(Value v) const {
-  if (isTop || states.empty())
+bool HybridStateSet::isAlwaysTrue(const Value v) const {
+  if (isTop) {
     return false;
+  }
   for (const HybridState& state : states) {
-    auto attr = state.getClassical(v);
-    if (attr && isOneAttribute(*attr))
-      continue;
-    if (state.quantumState.isAlwaysOne(v))
-      continue;
-    return false;
+    if (state.contains(v)) {
+      if (!state.isAlwaysTrue(v)) {
+        return false;
+      }
+    }
   }
   return true;
 }
 
-std::optional<Attribute> HybridStateSet::getUniqueConstant(Value v) const {
-  if (isTop || states.empty())
-    return std::nullopt;
-  std::optional<Attribute> candidate;
-  for (const HybridState& state : states) {
-    auto attr = state.getClassical(v);
-    if (!attr)
-      return std::nullopt;
-    if (!candidate)
-      candidate = attr;
-    else if (*candidate != *attr)
-      return std::nullopt;
-  }
-  return candidate;
-}
 } // namespace mlir::qco
