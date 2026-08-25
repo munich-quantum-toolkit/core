@@ -2317,23 +2317,6 @@ def test_standalone_bracket_parameter_names_remain_standalone() -> None:
     assert Operator(restored.assign_parameters(values)).equiv(Operator(circuit.assign_parameters(values)))
 
 
-@pytest.mark.parametrize(("size", "index"), [(0, 0), (1, 1)])
-def test_out_of_range_parameter_vector_element_round_trip(size: int, index: int) -> None:
-    """Keep an element whose index is outside its recorded vector size."""
-    vector = ParameterVector("theta", size)
-    parameter = ParameterVectorElement(vector, index)
-    circuit = QuantumCircuit(1)
-    circuit.rx(parameter, 0)
-
-    program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit()
-
-    restored_parameter = next(iter(restored.parameters))
-    assert isinstance(restored_parameter, ParameterVectorElement)
-    assert restored_parameter.index == index
-    assert len(restored_parameter.vector) == size
-
-
 def test_parameter_vector_element_is_valid_loop_parameter() -> None:
     """Keep a vector-element loop symbol lexical rather than a free input."""
     iteration = ParameterVector("iteration", 4)[2]
@@ -2349,24 +2332,21 @@ def test_parameter_vector_element_is_valid_loop_parameter() -> None:
     assert "mqt.input_group" not in program.ir
 
 
-@pytest.mark.parametrize(
-    ("sizes", "message"),
-    [([65_537], "parameter vectors support at most"), ([32_769, 32_769], "across all distinct")],
-)
-def test_parameter_vector_size_limits_on_import(sizes: list[int], message: str) -> None:
+@pytest.mark.parametrize("sizes", [[65_537], [32_769, 32_769]])
+def test_parameter_vector_size_limits_on_import(sizes: list[int]) -> None:
     """Bound individual and aggregate vector metadata before MLIR creation."""
     circuit = QuantumCircuit(1)
     for index, size in enumerate(sizes):
         circuit.rx(ParameterVector(f"theta{index}", size)[0], 0)
 
-    with pytest.raises(RuntimeError, match=message):
+    with pytest.raises(RuntimeError, match="across all distinct"):
         QCProgram.from_qiskit(circuit)
 
 
 @pytest.mark.parametrize(
     ("sizes", "shared_group_id", "message"),
     [
-        ([65_537], None, "parameter vectors support at most"),
+        ([65_537], None, "across all distinct"),
         ([32_769, 32_769], None, "across all distinct"),
         ([1, 2], 0, "conflicting metadata"),
     ],

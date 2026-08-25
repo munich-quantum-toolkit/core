@@ -473,11 +473,6 @@ void collectParameters(mlir::func::FuncOp function, ExportState& state) {
           .index = static_cast<uint64_t>(groupIndex.getInt()),
           .size = static_cast<uint64_t>(groupSize.getInt()),
       };
-      if (group->size > MAX_PARAMETER_GROUP_SIZE) {
-        throw std::runtime_error("Qiskit parameter vectors support at most " +
-                                 std::to_string(MAX_PARAMETER_GROUP_SIZE) +
-                                 " elements");
-      }
       if (name.getValue() !=
           group->name + "[" + std::to_string(group->index) + "]") {
         throw std::runtime_error(

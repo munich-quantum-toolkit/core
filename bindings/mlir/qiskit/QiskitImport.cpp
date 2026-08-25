@@ -1906,11 +1906,6 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
     }
     if (symbol->group) {
       const auto& group = *symbol->group;
-      if (group.size > MAX_PARAMETER_GROUP_SIZE) {
-        throw std::runtime_error("Qiskit parameter vectors support at most " +
-                                 std::to_string(MAX_PARAMETER_GROUP_SIZE) +
-                                 " elements");
-      }
       if (group.index >
           static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
         throw std::runtime_error(
@@ -1974,10 +1969,6 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   GlobalParameters globalParameters;
   for (const auto& parameter : freeParameters) {
     const auto* symbol = parameter.getSymbol();
-    if (symbol == nullptr) {
-      throw std::runtime_error(
-          "Qiskit circuit returned an invalid free parameter");
-    }
     llvm::SmallVector<mlir::NamedAttribute> argumentAttributes{
         builder.getNamedAttr(
             mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr(),

@@ -2172,8 +2172,6 @@ private:
     try {
       const auto circuitModule = nb::module_::import_("qiskit.circuit");
       const auto parameterVector = circuitModule.attr("ParameterVector");
-      const auto parameterVectorElement =
-          circuitModule.attr("ParameterVectorElement");
       std::unordered_map<std::string, nb::object> groups;
       nb::dict replacements;
       const auto getParameter =
@@ -2189,8 +2187,7 @@ private:
           group->second =
               parameterVector(symbol.group->name, symbol.group->size);
         }
-        replacements[getParameter(name)] =
-            parameterVectorElement(group->second, symbol.group->index);
+        replacements[getParameter(name)] = group->second[symbol.group->index];
       }
       pythonAttribute(circuit, "assign_parameters",
                       "Qiskit circuit cannot replace output parameters")(
