@@ -549,6 +549,27 @@ measure q[0] -> c[1];
     assert restored.count_ops() == {"measure": 2, "x": 1}
 
 
+def test_cleanup_forwards_measurement_results_to_qiskit_condition() -> None:
+    """Export a condition after cleanup forwards its measurement loads."""
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+creg c[2];
+measure q[0] -> c[0];
+measure q[1] -> c[1];
+if (c == 3) x q[2];
+"""
+    )
+    optimized = program.to_qco(copy=True)
+    optimized.cleanup()
+
+    restored = optimized.to_qc(copy=True).to_qiskit()
+
+    assert restored.count_ops() == {"measure": 2, "if_else": 1}
+    assert restored.data[2].operation.blocks[0].count_ops() == {"x": 1}
+
+
 def test_openqasm3_measurement_export_uses_undefined_cbit_register() -> None:
     """Represent OpenQASM 3 output initialization without poison values."""
     program = QCProgram.from_qasm_str(
