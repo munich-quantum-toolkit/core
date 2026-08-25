@@ -376,6 +376,14 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
   return result;
 }
 
+/**
+ * @brief Count gates in the entry point that satisfy a predicate.
+ *
+ * @details The walk counts each matching gate in nested regions once, so the
+ * result describes the static IR rather than runtime execution. Modifier
+ * operations count as gates, but the walk skips their bodies. Barriers do not
+ * count.
+ */
 template <typename Predicate>
 static size_t countGatesIf(ModuleOp moduleOp, const Predicate& predicate = {}) {
   size_t count = 0;
