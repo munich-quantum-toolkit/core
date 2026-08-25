@@ -68,9 +68,10 @@ record. The MQT Core test uses two CPUs on `node1` and `node2`.
 
 ## Register the devices
 
-MQT Core installs persistent definitions for `mqt.ddsim.default` and
-`mqt.sc.default`. You do not have to add another registry file for these two
-devices. You can verify the stable IDs before you configure Slurm:
+MQT Core installs persistent definitions for `mqt.ddsim.default`,
+`mqt.sc.default`, `mqt.sc.iqm.garnet`, and `mqt.sc.iqm.emerald`, so these four
+devices need no further registry file. Verify their stable IDs before you
+configure Slurm:
 
 ```console
 python -c "from mqt.core.qdmi import driver; print(*driver.registered_device_ids(), sep='\n')"
