@@ -34,7 +34,7 @@ jobs:
           - runs-on: ubuntu-24.04
             compiler: gcc
             preset: debug
-            run-on-draft: false
+            run-on-draft: true
           - runs-on: ubuntu-24.04-arm
             compiler: gcc
             preset: release
