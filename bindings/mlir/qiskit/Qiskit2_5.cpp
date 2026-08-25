@@ -1939,6 +1939,7 @@ struct NativeSymbol {
 };
 
 using NativeSymbolTable = std::unordered_map<std::string, NativeSymbol>;
+using PythonParameterGroups = std::unordered_map<std::string, nb::object>;
 
 class NativeCircuitWriter final : public CircuitWriter {
 public:
@@ -2114,15 +2115,15 @@ public:
   }
 
   [[nodiscard]] nb::object finish() override {
-    auto circuit = finishImpl(false, nb::none(), nb::none());
-    restoreParameterGroups(circuit, *symbols_);
-    return circuit;
+    PythonParameterGroups groups;
+    return finishImpl(false, nb::none(), nb::none(), groups);
   }
 
 private:
   [[nodiscard]] nb::object finishImpl(const bool rebase,
                                       const nb::handle exactQubits,
-                                      const nb::handle exactClbits) {
+                                      const nb::handle exactClbits,
+                                      PythonParameterGroups& groups) {
     if (circuit_ == nullptr) {
       throw std::runtime_error(
           "Qiskit circuit writer has already been finalized");
@@ -2138,7 +2139,8 @@ private:
         pythonCircuit = rebaseCircuit(pythonCircuit, exactQubits, exactClbits);
       }
       replacePendingControlledUnitaries(pythonCircuit);
-      replacePendingControlFlow(pythonCircuit);
+      restoreParameterGroups(pythonCircuit, *symbols_, groups);
+      replacePendingControlFlow(pythonCircuit, groups);
     } catch (const nb::python_error& error) {
       throwPythonError("Qiskit failed to construct deferred instructions",
                        error);
@@ -2162,7 +2164,8 @@ private:
   };
 
   static void restoreParameterGroups(const nb::handle circuit,
-                                     const NativeSymbolTable& symbols) {
+                                     const NativeSymbolTable& symbols,
+                                     PythonParameterGroups& groups) {
     if (!std::ranges::any_of(symbols, [](const auto& entry) {
           return entry.second.group.has_value();
         })) {
@@ -2172,22 +2175,28 @@ private:
     try {
       const auto circuitModule = nb::module_::import_("qiskit.circuit");
       const auto parameterVector = circuitModule.attr("ParameterVector");
-      std::unordered_map<std::string, nb::object> groups;
+      const auto parameterVectorElement =
+          circuitModule.attr("ParameterVectorElement");
       nb::dict replacements;
-      const auto getParameter =
-          pythonAttribute(circuit, "get_parameter",
-                          "Qiskit circuit cannot retrieve an output parameter");
-      for (const auto& [name, symbol] : symbols) {
-        if (!symbol.group) {
+      const auto parameters = pythonAttribute(
+          circuit, "parameters", "Qiskit circuit has no parameter collection");
+      for (const nb::handle parameter : nb::iter(parameters)) {
+        const auto name = pythonStringAttribute(
+            parameter, "name", "Qiskit circuit parameter has no name");
+        const auto symbol = symbols.find(name);
+        if (symbol == symbols.end() || !symbol->second.group) {
           continue;
         }
-        const auto [group, inserted] =
-            groups.try_emplace(symbol.group->identity);
+        const auto& metadata = *symbol->second.group;
+        const auto [group, inserted] = groups.try_emplace(metadata.identity);
         if (inserted) {
-          group->second =
-              parameterVector(symbol.group->name, symbol.group->size);
+          group->second = parameterVector(metadata.name, metadata.size);
         }
-        replacements[getParameter(name)] = group->second[symbol.group->index];
+        replacements[parameter] =
+            parameterVectorElement(group->second, metadata.index);
+      }
+      if (nb::len(replacements) == 0U) {
+        return;
       }
       pythonAttribute(circuit, "assign_parameters",
                       "Qiskit circuit cannot replace output parameters")(
@@ -2264,12 +2273,16 @@ private:
       throw std::runtime_error(
           "Qiskit for-loop parameter has invalid symbol metadata");
     }
+    const auto parameterName =
+        symbol->group ? symbol->group->name + "[" +
+                            std::to_string(symbol->group->index) + "]"
+                      : symbol->name;
     const auto parameters = pythonAttribute(
         body, "parameters", "Qiskit circuit has no parameter collection");
     for (const nb::handle parameter : nb::iter(parameters)) {
       if (pythonStringAttribute(parameter, "name",
                                 "Qiskit circuit parameter has no name") ==
-          symbol->name) {
+          parameterName) {
         return nb::borrow<nb::object>(parameter);
       }
     }
@@ -2320,7 +2333,8 @@ private:
         "Qiskit circuit export encountered an unsupported control-flow kind");
   }
 
-  void replacePendingControlFlow(const nb::handle pythonCircuit) {
+  void replacePendingControlFlow(const nb::handle pythonCircuit,
+                                 PythonParameterGroups& groups) {
     auto data = pythonAttribute(pythonCircuit, "data",
                                 "Qiskit circuit has no instruction data");
     const auto circuitQubits = pythonAttribute(pythonCircuit, "qubits",
@@ -2344,7 +2358,7 @@ private:
               "Qiskit control-flow blocks use an incompatible writer");
         }
         blocks.emplace_back(
-            writer->finishImpl(true, circuitQubits, circuitClbits));
+            writer->finishImpl(true, circuitQubits, circuitClbits, groups));
       }
       pending.blockWriters.clear();
       auto operation = constructControlFlowOperation(pending, blocks, classical,

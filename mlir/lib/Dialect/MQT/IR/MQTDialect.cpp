@@ -17,6 +17,7 @@
 
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -85,33 +86,48 @@ verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
 }
 
 [[nodiscard]] static LogicalResult
-verifyInputGroup(FunctionOpInterface function, Operation* operation,
-                 const unsigned argIndex, const Attribute attribute) {
-  const auto inputName = function.getArgAttrOfType<StringAttr>(
-      argIndex, MQTDialect::InputNameAttrHelper::getNameStr());
+verifyParameterGroup(Operation* operation, const Attribute attribute) {
   const auto group = dyn_cast<DictionaryAttr>(attribute);
   const auto identity = group ? group.getAs<StringAttr>("identity") : nullptr;
   const auto groupName = group ? group.getAs<StringAttr>("name") : nullptr;
   const auto groupIndex = group ? group.getAs<IntegerAttr>("index") : nullptr;
   const auto groupSize = group ? group.getAs<IntegerAttr>("size") : nullptr;
-  if (!inputName || !group || group.size() != 4U || !identity || !groupName ||
-      !groupIndex || !groupSize) {
+  if (!group || group.size() != 4U || !identity || !groupName || !groupIndex ||
+      !groupSize) {
     return operation->emitError()
-           << "parameter input-group metadata must contain exactly identity, "
+           << "parameter-group metadata must contain exactly identity, "
               "name, index, and size";
   }
   if (identity.getValue().empty() || identity.getValue().contains('\0') ||
       groupName.getValue().contains('\0')) {
     return operation->emitError()
-           << "parameter input-group string metadata is invalid";
+           << "parameter-group string metadata is invalid";
   }
   if (!groupIndex.getType().isInteger(64) ||
       groupIndex.getValue().isNegative() ||
       !groupSize.getType().isInteger(64) || groupSize.getValue().isNegative()) {
     return operation->emitError()
-           << "parameter input-group index and size must be nonnegative i64 "
+           << "parameter-group index and size must be nonnegative i64 "
               "integers";
   }
+  return success();
+}
+
+[[nodiscard]] static LogicalResult
+verifyInputGroup(FunctionOpInterface function, Operation* operation,
+                 const unsigned argIndex, const Attribute attribute) {
+  const auto inputName = function.getArgAttrOfType<StringAttr>(
+      argIndex, MQTDialect::InputNameAttrHelper::getNameStr());
+  if (!inputName) {
+    return operation->emitError()
+           << "parameter input-group metadata requires an input name";
+  }
+  if (failed(verifyParameterGroup(operation, attribute))) {
+    return failure();
+  }
+  const auto group = cast<DictionaryAttr>(attribute);
+  const auto groupName = group.getAs<StringAttr>("name");
+  const auto groupIndex = group.getAs<IntegerAttr>("index");
   const auto expectedName =
       groupName.str() + "[" + std::to_string(groupIndex.getInt()) + "]";
   if (inputName.getValue() != expectedName) {
@@ -185,6 +201,14 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
   }
   if (attribute.getName() == RegisterNameAttrHelper::getNameStr()) {
     return verifyRegisterName(operation, attribute);
+  }
+  if (attribute.getName() == LoopParameterGroupAttrHelper::getNameStr()) {
+    if (!isa<scf::ForOp>(operation)) {
+      return operation->emitError()
+             << "attribute '" << attribute.getName().getValue()
+             << "' is only valid on scf.for";
+    }
+    return verifyParameterGroup(operation, attribute.getValue());
   }
   if (attribute.getName() == InputNameAttrHelper::getNameStr() ||
       attribute.getName() == InputGroupAttrHelper::getNameStr()) {

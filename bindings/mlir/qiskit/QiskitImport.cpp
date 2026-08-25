@@ -88,6 +88,24 @@ constexpr size_t MAX_EXPANDED_OPERATIONS = 10'000'000U;
 [[nodiscard]] mlir::Value floatConstant(mlir::ImplicitLocOpBuilder& builder,
                                         double value);
 
+[[nodiscard]] mlir::DictionaryAttr
+parameterGroupAttribute(mlir::Builder& builder, const ParameterGroup& group) {
+  if (group.index >
+          static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ||
+      group.size > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+    throw std::runtime_error(
+        "Qiskit parameter-vector metadata cannot be represented by MLIR");
+  }
+  return builder.getDictionaryAttr({
+      builder.getNamedAttr("identity", builder.getStringAttr(group.identity)),
+      builder.getNamedAttr("name", builder.getStringAttr(group.name)),
+      builder.getNamedAttr("index", builder.getI64IntegerAttr(
+                                        static_cast<int64_t>(group.index))),
+      builder.getNamedAttr(
+          "size", builder.getI64IntegerAttr(static_cast<int64_t>(group.size))),
+  });
+}
+
 [[noreturn]] void throwImportedParameterExpressionSizeError() {
   throw std::runtime_error(
       "Qiskit parameter expression exceeds the supported " +
@@ -1129,6 +1147,7 @@ void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
       requireExactLoopParameter(loop.start);
       requireExactLoopParameter(loop.step > 0 ? loop.stop - 1 : loop.stop + 1);
     }
+    auto* const containingBlock = builder.getInsertionBlock();
     builder.scfFor(0, count, 1, [&](const mlir::Value iteration) {
       auto parameters = localParameters;
       if (loop.parameter) {
@@ -1140,6 +1159,15 @@ void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
       }
       translateBlock(*body, parameters);
     });
+    if (loop.parameter) {
+      const auto* symbol = loop.parameter->getSymbol();
+      if (symbol != nullptr && symbol->group) {
+        mlir::cast<mlir::scf::ForOp>(&containingBlock->back())
+            ->setAttr(mlir::mqt::MQTDialect::LoopParameterGroupAttrHelper::
+                          getNameStr(),
+                      parameterGroupAttribute(builder, *symbol->group));
+      }
+    }
     return;
   }
   case ControlFlowKind::Switch: {
@@ -1976,18 +2004,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
     if (symbol->group) {
       argumentAttributes.push_back(builder.getNamedAttr(
           mlir::mqt::MQTDialect::InputGroupAttrHelper::getNameStr(),
-          builder.getDictionaryAttr({
-              builder.getNamedAttr(
-                  "identity", builder.getStringAttr(symbol->group->identity)),
-              builder.getNamedAttr("name",
-                                   builder.getStringAttr(symbol->group->name)),
-              builder.getNamedAttr(
-                  "index", builder.getI64IntegerAttr(
-                               static_cast<int64_t>(symbol->group->index))),
-              builder.getNamedAttr(
-                  "size", builder.getI64IntegerAttr(
-                              static_cast<int64_t>(symbol->group->size))),
-          })));
+          parameterGroupAttribute(builder, *symbol->group)));
     }
     const auto index = function.getNumArguments();
     // MLIR types are handles. Converting FloatType to Type keeps the same
