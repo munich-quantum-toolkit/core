@@ -105,6 +105,8 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove the standalone QIR runner and make the QIR runtime and JIT internal
+  DDSIM implementation details ([#2246]) ([**@denialhaag**])
 - 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
   DD package evaluation. MQT Core provides no direct replacement ([#2214])
   ([**@burgholzer**])
@@ -824,6 +826,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
 [#2211]: https://github.com/munich-quantum-toolkit/core/pull/2211
