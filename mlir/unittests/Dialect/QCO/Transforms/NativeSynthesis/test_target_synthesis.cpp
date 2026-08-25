@@ -65,8 +65,11 @@ using mlir::qco::CtrlOp;
 using mlir::qco::HOp;
 using mlir::qco::QCOProgramBuilder;
 using mlir::qco::RXXOp;
+using mlir::qco::RYOp;
+using mlir::qco::RZOp;
 using mlir::qco::SWAPOp;
 using mlir::qco::UnitaryOp;
+using mlir::qco::UOp;
 using mlir::qco::XOp;
 using mlir::qco::ZOp;
 
@@ -392,6 +395,31 @@ TEST_F(TargetSynthesisTest,
   expectEquivalent(expected, synthesized);
 }
 
+TEST_F(TargetSynthesisTest,
+       TargetNativeSynthesisLowersRuntimeParameterizedSingleQubitGates) {
+  auto module = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> !qco.qubit {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.rz(%theta) %q0 : !qco.qubit -> !qco.qubit
+        %q2 = qco.ry(%theta) %q1 : !qco.qubit -> !qco.qubit
+        return %q2 : !qco.qubit
+      }
+    }
+  )mlir",
+                                                  context.get());
+  ASSERT_TRUE(module);
+  const auto target = makeUCxTarget();
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*module, mlir::qco::createTargetNativeSynthesis(target))));
+  EXPECT_EQ(countOps<RZOp>(*module), 0U);
+  EXPECT_EQ(countOps<RYOp>(*module), 0U);
+  EXPECT_EQ(countOps<UOp>(*module), 2U);
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*module, mlir::qco::createVerifyTargetConformance(target))));
+}
+
 TEST_F(TargetSynthesisTest, DenseUnitaryHasAsymmetricTwoQubitDDSemantics) {
   const auto denseCx = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
@@ -629,7 +657,7 @@ TEST_F(TargetSynthesisTest,
       func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
         %q0 = qco.static 0 : !qco.qubit
         %q1 = qco.static 1 : !qco.qubit
-        %q2 = qco.h %q0 : !qco.qubit -> !qco.qubit
+        %q2 = qco.rz(%theta) %q0 : !qco.qubit -> !qco.qubit
         %q3, %q4 = qco.rxx(%theta) %q2, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
         return %q3, %q4 : !qco.qubit, !qco.qubit
       }
@@ -639,8 +667,15 @@ TEST_F(TargetSynthesisTest,
   ASSERT_TRUE(module);
   const auto before = printModule(*module);
 
-  static_cast<void>(expectFailure(
-      *module, mlir::qco::createTargetNativeSynthesis(makeUCxTarget())));
+  const auto diagnostics = expectFailure(
+      *module, mlir::qco::createTargetNativeSynthesis(makeUCxTarget()));
+  EXPECT_NE(diagnostics.find("target-native synthesis cannot lower operation "
+                             "'qco.rxx'"),
+            std::string::npos)
+      << diagnostics;
+  EXPECT_NE(diagnostics.find("unitary matrix is not available at compile time"),
+            std::string::npos)
+      << diagnostics;
   EXPECT_EQ(printModule(*module), before);
 }
 

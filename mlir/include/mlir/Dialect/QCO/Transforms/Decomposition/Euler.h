@@ -22,6 +22,7 @@
 
 namespace mlir {
 class Operation;
+class RewriterBase;
 class RewritePatternSet;
 } // namespace mlir
 
@@ -110,6 +111,19 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
  * @param phase Global phase in radians.
  */
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
+
+/**
+ * @brief Whether @p op can be synthesized from runtime one-qubit parameters.
+ */
+[[nodiscard]] bool canSynthesizeParameterizedUnitary1Q(Operation* op);
+
+/**
+ * @brief Replace one supported runtime-parameterized operation in @p basis.
+ *
+ * @pre `canSynthesizeParameterizedUnitary1Q(op)` is true.
+ */
+void synthesizeParameterizedUnitary1Q(RewriterBase& rewriter, Operation* op,
+                                      SingleQubitBasis basis);
 
 /**
  * @brief Populates @p patterns with the single-qubit run fusion rewrite for

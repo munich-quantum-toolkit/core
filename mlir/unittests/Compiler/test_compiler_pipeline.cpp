@@ -1271,14 +1271,15 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
   }
 }
 
-TEST_F(CompilerPipelineTest, QCOProgramPreservesDynamicUInNativeCtrlBody) {
+TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
       %q0 = qco.alloc : !qco.qubit
       %q1 = qco.alloc : !qco.qubit
       %control, %target = qco.ctrl(%q0) targets(%arg = %q1) {
-        %u = qco.u(%theta, %theta, %theta) %arg : !qco.qubit -> !qco.qubit
-        qco.yield %u : !qco.qubit
+        %h = qco.h %arg : !qco.qubit -> !qco.qubit
+        %rz = qco.rz(%theta) %h : !qco.qubit -> !qco.qubit
+        qco.yield %rz : !qco.qubit
       } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
       qco.sink %control : !qco.qubit
       qco.sink %target : !qco.qubit
@@ -1311,15 +1312,12 @@ TEST_F(CompilerPipelineTest, QCOProgramPreservesDynamicUInNativeCtrlBody) {
   compiled->walk([&](CtrlOp op) { ctrl = op; });
   ASSERT_TRUE(ctrl);
   ASSERT_EQ(ctrl.getNumBodyUnitaries(), 1U);
-  auto u = dyn_cast<UOp>(ctrl.getBodyUnitary(0).getOperation());
-  ASSERT_TRUE(u);
+  EXPECT_TRUE(isa<UOp>(ctrl.getBodyUnitary(0).getOperation()));
 
   auto main = compiled->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(main);
   ASSERT_EQ(main.getNumArguments(), 1U);
-  EXPECT_TRUE(llvm::all_of(u.getParameters(), [&](Value parameter) {
-    return parameter == main.getArgument(0);
-  }));
+  EXPECT_FALSE(main.getArgument(0).use_empty());
 }
 
 /**

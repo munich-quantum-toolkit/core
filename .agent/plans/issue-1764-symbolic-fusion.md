@@ -86,6 +86,18 @@ operations that do not expose named SSA angle parameters remain run boundaries.
       production sources.
 - [x] (2026-08-24 15:21Z) Committed and pushed the reviewed simplification and
       online C++ lint fixes to pull request #2228.
+- [x] (2026-08-25 15:14Z) Reworked target compilation around the canonical stage
+      order: generic one-qubit merging to U and generic two-qubit fusion,
+      mapping, then one atomic target-native synthesis pass.
+- [x] (2026-08-25 15:14Z) Extended target-native planning and lowering with the
+      existing parameterized quaternion emitter. Removed the separate late fuser
+      and its basis-string adapter from the compiler pipeline.
+- [x] (2026-08-25 15:14Z) Strengthened the controlled-body regression so it
+      uniquely proves the early generic merge occurred, and added direct native
+      synthesis and no-partial-rewrite coverage for runtime one-qubit gates.
+- [x] (2026-08-25 15:32Z) Passed 236 decomposition tests, 122 optimization
+      tests, 24 target-synthesis tests, 133 compiler tests, `git diff --check`,
+      `uvx nox -s lint`, and local Clang-Tidy on every changed translation unit.
 
 ## Surprises & Discoveries
 
@@ -141,6 +153,17 @@ operations that do not expose named SSA angle parameters remain run boundaries.
   dynamic rewrite without changing the phase equations. Evidence: the direct
   production refactor removes 98 lines while all 236 decomposition tests and 122
   optimization tests pass.
+- Observation: The early generic merger and the cleanup pipelines recurse into
+  `qco.ctrl`, so an `h; rz(%theta)` body is merged to U before mapping. The
+  target-native planner intentionally treats modifier bodies as opaque, leaving
+  that U in place while lowering any dynamic phase lifted out of the body. This
+  makes the controlled-body regression an ordering test rather than a promise
+  that every compilation stage preserves the original body.
+- Observation: Running a separate target-basis fuser before target-native
+  synthesis allows the fuser to mutate the module before native preflight
+  rejects a later unsupported operation. Planning supported runtime one-qubit
+  actions alongside constant-matrix actions restores the pass's existing
+  no-partial-rewrite guarantee.
 
 ## Decision Log
 
@@ -178,16 +201,27 @@ operations that do not expose named SSA angle parameters remain run boundaries.
   intentionally leave native programs unchanged; explicit targets need dynamic
   non-native gates lowered before target-native synthesis rejects their
   unavailable compile-time matrix. Date/Author: 2026-08-24, Codex.
-- Decision: Keep symbolic fusion as a separate pass immediately before
-  target-native synthesis. Rationale: this reuses the public pass, preserves
-  target-native synthesis's plan-before-rewrite atomicity, and is late enough
-  that the default merger cannot collapse the emitted basis sequence back to U.
-  Date/Author: 2026-08-24, Codex.
+- Decision (superseded on 2026-08-25): Keep symbolic fusion as a separate pass
+  immediately before target-native synthesis. Rationale: this reused the public
+  pass and preserved atomicity of the native pass in isolation. It was
+  superseded because the two-pass stage could still partially rewrite the module
+  before native preflight failed; direct symbolic actions in the native plan
+  preserve atomicity for the complete stage. Date/Author: 2026-08-24, Codex.
 - Decision: Emit every requested dynamic basis in the fuser-specific quaternion
   composer. Rationale: the composer already owns the runtime Euler angles and
   accumulated phase. Direct emission removes an intermediate U operation and a
   public API with one caller while keeping the normal merge pass's U output
   unchanged. Date/Author: 2026-08-24, Codex.
+- Decision: Keep generic one-qubit merging and generic two-qubit fusion
+  unconditional before mapping. Rationale: U and U/CZ are the target-independent
+  intermediate forms consumed by mapping; target capabilities should affect only
+  the post-mapping native-synthesis stage. Date/Author: 2026-08-25, Codex.
+- Decision: Teach target-native synthesis to plan and lower the seven supported
+  named parameterized one-qubit operations directly. Rationale: each planned
+  symbolic operation can reuse the existing quaternion emitter without a greedy
+  rewrite over the whole module. The compiler pipeline stays explicit, hidden
+  modifier bodies remain untouched, operation pointers stay stable, and no IR is
+  changed until preflight succeeds. Date/Author: 2026-08-25, Codex.
 
 ## Outcomes & Retrospective
 
@@ -199,12 +233,15 @@ in all seven bases. It proves SSA dependence before binding and exact matrices
 after binding. A standalone U regression covers both Euler gimbal branches in
 the transformed bases. Target compilation now invokes the pass for every basis
 it can resolve, and the end-to-end regression covers U, ZSXX, XZX, XYX, ZYZ, and
-R targets. The composer emits the final runtime basis directly; no intermediate
-dynamic U synthesis API remains. Constant-only behavior, controlled gate
-recognition, and the existing dynamic merge pass remain green. Dynamic `pow`,
-arbitrary dynamic unitary shells, and Qiskit parameter-vector import remain
-separate work because they do not expose the named angle operands required by
-the symbolic composer.
+R targets. The complete target flow now first performs target-independent
+one-qubit merging to U and two-qubit fusion to U/CZ, then maps, and finally runs
+one atomic target-native synthesis pass. That pass plans both constant matrices
+and supported runtime one-qubit operations before rewriting, and the shared
+composer emits the final runtime basis directly. Constant-only behavior,
+controlled gate recognition, and the existing dynamic merge pass remain green.
+Dynamic `pow`, arbitrary dynamic unitary shells, and Qiskit parameter-vector
+import remain separate work because they do not expose the named angle operands
+required by the symbolic composer.
 
 ## Context and Orientation
 

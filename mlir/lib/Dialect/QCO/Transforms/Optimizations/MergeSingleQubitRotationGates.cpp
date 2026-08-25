@@ -59,12 +59,12 @@ template <typename T> struct Val {
                 "Val supports double and Value only");
 
   T v{};
-  PatternRewriter* rewriter = nullptr;
+  RewriterBase* rewriter = nullptr;
   Location loc;
 
   using Pred = std::conditional_t<std::is_same_v<T, double>, bool, Value>;
 
-  static Val constant(PatternRewriter& rewriter, Location loc, double x) {
+  static Val constant(RewriterBase& rewriter, Location loc, double x) {
     if constexpr (std::is_same_v<T, double>) {
       return {x, &rewriter, loc};
     } else {
@@ -198,14 +198,14 @@ template <typename T> struct Val {
     }
   }
 
-  static Pred land(Pred a, Pred b, PatternRewriter& rewriter, Location loc) {
+  static Pred land(Pred a, Pred b, RewriterBase& rewriter, Location loc) {
     if constexpr (std::is_same_v<T, double>) {
       return a && b;
     } else {
       return arith::AndIOp::create(rewriter, loc, a, b).getResult();
     }
   }
-  static Pred lnot(Pred a, PatternRewriter& rewriter, Location loc) {
+  static Pred lnot(Pred a, RewriterBase& rewriter, Location loc) {
     if constexpr (std::is_same_v<T, double>) {
       return !a;
     } else {
@@ -256,7 +256,7 @@ template <typename T> struct ScalarConsts {
  * https://github.com/evbernardes/quaternion_to_euler/blob/main/euler_from_quat.py
  */
 template <typename T>
-static ScalarConsts<T> makeConsts(PatternRewriter& rewriter, Location loc) {
+static ScalarConsts<T> makeConsts(RewriterBase& rewriter, Location loc) {
   auto c = [&](double x) { return Val<T>::constant(rewriter, loc, x); };
   return {.negOne = c(-1.0),
           .zero = c(0.0),
@@ -369,8 +369,7 @@ static std::optional<RotationAxis> getRotationAxis(Operation* op) {
 
 template <typename T>
 static std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
-                                       PatternRewriter& rewriter,
-                                       Location loc) {
+                                       RewriterBase& rewriter, Location loc) {
   Value p = op.getParameter(i);
   if constexpr (std::is_same_v<T, double>) {
     const auto folded = mlir::mqt::valueToConstantDouble(p);
@@ -401,7 +400,7 @@ static std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
 template <typename T>
 static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
                                                  const ScalarConsts<T>& c,
-                                                 PatternRewriter& rewriter) {
+                                                 RewriterBase& rewriter) {
   const Location loc = op->getLoc();
   auto param = [&](unsigned i) { return gateParam<T>(op, i, rewriter, loc); };
 
@@ -512,7 +511,7 @@ static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
 template <typename T>
 static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
                                        const ScalarConsts<T>& c,
-                                       PatternRewriter& rewriter) {
+                                       RewriterBase& rewriter) {
   const Location loc = op->getLoc();
   auto param = [&](unsigned i) { return gateParam<T>(op, i, rewriter, loc); };
 
@@ -587,7 +586,7 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
 template <typename T>
 static std::array<Val<T>, 4> anglesFromQuaternion(const Quat<T>& q,
                                                   const ScalarConsts<T>& c) {
-  PatternRewriter& rewriter = *q.w.rewriter;
+  RewriterBase& rewriter = *q.w.rewriter;
   const Location loc = q.w.loc;
 
   const auto xyNearZero =
@@ -653,8 +652,9 @@ template <typename T> static Quat<T> hadamardConjugate(const Quat<T>& q) {
 }
 
 static bool isMergeable(Operation* op) {
-  return isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp, XOp, YOp, ZOp, HOp, SOp,
-             SdgOp, TOp, TdgOp, SXOp, SXdgOp, IdOp>(op);
+  return decomposition::canSynthesizeParameterizedUnitary1Q(op) ||
+         isa<XOp, YOp, ZOp, HOp, SOp, SdgOp, TOp, TdgOp, SXOp, SXdgOp, IdOp>(
+             op);
 }
 
 static bool areQuaternionMergeable(Operation* a, Operation* b) {
@@ -774,7 +774,7 @@ struct MergeSingleQubitRotationGatesPattern final
    */
   static LogicalResult
   tryMergeStaticChain(MutableArrayRef<UnitaryOpInterface> chain,
-                      PatternRewriter& rewriter) {
+                      RewriterBase& rewriter) {
     const Location loc = chain.front()->getLoc();
     const auto consts = makeConsts<double>(rewriter, loc);
 
@@ -827,7 +827,7 @@ struct MergeSingleQubitRotationGatesPattern final
    * leave partially rewired ops.
    */
   static LogicalResult mergeDynamicChain(
-      MutableArrayRef<UnitaryOpInterface> chain, PatternRewriter& rewriter,
+      MutableArrayRef<UnitaryOpInterface> chain, RewriterBase& rewriter,
       const std::optional<decomposition::SingleQubitBasis> fusionBasis =
           std::nullopt) {
     const Location loc = chain.front()->getLoc();
@@ -997,6 +997,22 @@ protected:
 };
 
 } // namespace
+
+bool decomposition::canSynthesizeParameterizedUnitary1Q(Operation* op) {
+  return op != nullptr && isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp>(op);
+}
+
+void decomposition::synthesizeParameterizedUnitary1Q(
+    RewriterBase& rewriter, Operation* op, const SingleQubitBasis basis) {
+  assert(canSynthesizeParameterizedUnitary1Q(op) &&
+         "operation must support parameterized one-qubit synthesis");
+  SmallVector<UnitaryOpInterface, 1> chain{cast<UnitaryOpInterface>(op)};
+  rewriter.setInsertionPointAfter(op);
+  [[maybe_unused]] const auto result =
+      MergeSingleQubitRotationGatesPattern::mergeDynamicChain(chain, rewriter,
+                                                              basis);
+  assert(succeeded(result) && "planned parameterized synthesis must succeed");
+}
 
 } // namespace mlir::qco
 
