@@ -56,7 +56,9 @@ protected:
 TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
   EXPECT_TRUE(parse(R"mlir(
     module {
-      func.func @qc(%theta: f64 {mqt.input_name = "theta"}) {
+      func.func @qc(%theta: f64 {mqt.input_name = "theta[2]",
+          mqt.input_group = {identity = "group-id", name = "theta",
+                             index = 2 : i64, size = 4 : i64}}) {
         %reg = memref.alloc() {mqt.register_name = "q"}
             : memref<2x!qc.qubit>
         return
@@ -74,6 +76,11 @@ TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
       }
       func.func @lowered_cbit() {
         %reg = memref.alloc() {mqt.register_name = "lowered"} : memref<2xi1>
+        return
+      }
+      func.func @empty_vector_name(%element: f64 {mqt.input_name = "[0]",
+          mqt.input_group = {identity = "empty-name", name = "",
+                             index = 0 : i64, size = 1 : i64}}) {
         return
       }
     }
@@ -157,6 +164,29 @@ TEST_F(MQTIRTest, RejectsDuplicateInputNames) {
                       %rhs: i1 {mqt.input_name = "theta"}) {
         return
       }
+    }
+  )mlir"));
+}
+
+TEST_F(MQTIRTest, RejectsInvalidInputGroups) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @incomplete(%arg: f64 {mqt.input_name = "theta[0]",
+          mqt.input_group = {identity = "group"}}) { return }
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @wrong_integer_type(%arg: f64 {mqt.input_name = "theta[0]",
+          mqt.input_group = {identity = "group", name = "theta",
+                             index = 0 : i32, size = 1 : i64}}) { return }
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @wrong_name(%arg: f64 {mqt.input_name = "phi[0]",
+          mqt.input_group = {identity = "group", name = "theta",
+                             index = 0 : i64, size = 1 : i64}}) { return }
     }
   )mlir"));
 }
