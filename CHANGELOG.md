@@ -77,9 +77,6 @@ releases may include breaking changes.
 
 #### Other additions
 
-- ✨ Add extensible program serializers to QDMI Qiskit backends. [QDMI-on-IQM]
-  now provides the IQM JSON serializer and `MoveGate` integration ([#2114])
-  ([**@marcelwa**])
 - 🐳 Add dev container configuration for a consistent local development
   environment ([#1786]) ([**@denialhaag**])
 
@@ -125,6 +122,27 @@ releases may include breaking changes.
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
   ([**@burgholzer**])
+
+## [3.9.1] - 2026-08-25
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#391)._
+
+### Added
+
+- 🚸 Let PennyLane QDMI devices reuse an already-open session, including a
+  device selected from a Slurm license ([#2232]) ([**@burgholzer**])
+- ✨ Let a package register a program serializer for a program format through
+  the `mqt.core.qiskit.program_serializers` entry point group ([#2114])
+  ([**@marcelwa**], [**@burgholzer**])
+- ✨ Add `mqt.core.qdmi.is_binary_program_format`, which states whether a
+  program format requires exact-byte submission ([#2114]) ([**@marcelwa**],
+  [**@burgholzer**])
+
+### Removed
+
+- 💥 Remove the IQM JSON converter `qiskit_to_iqm_json` and the `MoveGate` from
+  the Qiskit plugin, which [QDMI-on-IQM] now owns ([#2114]) ([**@marcelwa**],
+  [**@burgholzer**])
 
 ## [3.9.0] - 2026-08-19
 
@@ -781,7 +799,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...HEAD
+[3.9.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.0
 [3.8.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.8.0
 [3.7.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.7.0
@@ -805,6 +824,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
 [#2211]: https://github.com/munich-quantum-toolkit/core/pull/2211
 [#2217]: https://github.com/munich-quantum-toolkit/core/pull/2217
