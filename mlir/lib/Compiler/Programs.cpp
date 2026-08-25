@@ -381,15 +381,13 @@ static size_t countGatesIf(ModuleOp moduleOp, const Predicate& predicate = {}) {
   size_t count = 0;
   auto entryPoint = mqt::getEntryPoint(moduleOp);
   entryPoint.walk<WalkOrder::PreOrder>([&](Operation* operation) {
-    const auto op = dyn_cast<qc::UnitaryOpInterface>(operation);
+    auto op = dyn_cast<qc::UnitaryOpInterface>(operation);
     if (!op) {
       return WalkResult::advance();
     }
-
     if (!isa<qc::BarrierOp>(op) && predicate(op)) {
       ++count;
     }
-
     if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op)) {
       return WalkResult::skip();
     }
