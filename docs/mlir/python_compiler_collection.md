@@ -231,7 +231,8 @@ Each exported measurement must write to one static public CBit in the same
 block, and destinations must be unique. Its destination store must follow the
 measurement directly, apart from constant operations. A conditional or otherwise
 delayed destination store is rejected because Qiskit cannot preserve it as one
-measurement instruction.
+measurement instruction. The measurement result may feed supported classical
+expressions after that store and is exported as the destination CBit.
 
 Dense numeric unitaries remain explicit matrix operations during import and
 export. Target compilation synthesizes supported one- and two-qubit matrices to
