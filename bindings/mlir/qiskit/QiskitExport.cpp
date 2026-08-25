@@ -40,6 +40,7 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>

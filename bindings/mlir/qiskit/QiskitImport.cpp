@@ -50,6 +50,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <nanobind/nanobind.h>
