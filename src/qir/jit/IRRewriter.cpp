@@ -87,7 +87,7 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
 
   const auto profile = entryPoint.getFnAttribute(QIR_PROFILES_ATTR);
   if (!profile.isStringAttribute() ||
-      profile.getValueAsString() != BASE_PROFILE) {
+      profile.getValueAsString().compare(BASE_PROFILE) != 0) {
     throw std::invalid_argument(
         "QIR state extraction requires a Base Profile entry point");
   }
