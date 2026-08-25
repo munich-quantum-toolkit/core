@@ -117,7 +117,8 @@ public:
 
   [[nodiscard]] static Parameter
   symbol(std::string name, std::optional<ParameterGroup> group = std::nullopt) {
-    return Parameter(Symbol{std::move(name), std::move(group)});
+    return Parameter(
+        Symbol{.name = std::move(name), .group = std::move(group)});
   }
 
   [[nodiscard]] static Parameter unary(const UnaryParameterKind operation,
