@@ -8,7 +8,6 @@
 
 add_mlir_library(
   MLIRSupportMQT
-  IRVerification.cpp
   Passes.cpp
   PrettyPrinting.cpp
   ADDITIONAL_HEADER_DIRS
@@ -22,15 +21,11 @@ add_mlir_library(
   MLIRControlFlowInterfaces
   MLIRTransformUtils
   MLIRCBitToMemRef
-  MLIRLLVMDialect
-  MLIRFuncDialect
-  MLIRArithDialect
   MLIRMQTTransforms
   MLIRQCTransforms
   MLIRQCOTransforms
   MLIRQIRTransforms
-  MLIRQTensorTransforms
-  MLIRQTensorDialect)
+  MLIRQTensorTransforms)
 
 mqt_mlir_target_use_project_options(MLIRSupportMQT)
 

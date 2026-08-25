@@ -15,9 +15,11 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/SCF/Utils/Utils.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 namespace mlir::qco {
 
@@ -87,14 +89,46 @@ protected:
 
     // If the unroll factor is -1, fully unroll all loops.
     if (unrollFactor == -1) {
-      for (auto loop : collectQuantumLoops(getOperation())) {
-        if (failed(loopUnrollFull(loop))) {
-          loop.emitError() << "failed to fully unroll";
+      while (true) {
+        auto loops = collectQuantumLoops(getOperation());
+        if (loops.empty()) {
+          return;
+        }
+
+        bool changed = false;
+        for (auto loop : loops) {
+          const auto tripCount = loop.getStaticTripCount();
+          if (!tripCount) {
+            continue;
+          }
+          if (tripCount->isZero() ||
+              llvm::hasSingleElement(loop.getBody()->getOperations())) {
+            loop.replaceAllUsesWith(loop.getInitArgs());
+            loop.erase();
+            changed = true;
+            continue;
+          }
+
+          if (failed(loopUnrollFull(loop))) {
+            loop.emitError() << "failed to fully unroll";
+            signalPassFailure();
+            return;
+          }
+          changed = true;
+        }
+
+        if (!changed) {
+          loops.front().emitError() << "failed to fully unroll";
+          signalPassFailure();
+          return;
+        }
+
+        if (failed(applyPatternsGreedily(getOperation(),
+                                         RewritePatternSet(&getContext())))) {
           signalPassFailure();
           return;
         }
       }
-      return;
     }
 
     for (auto loop : collectQuantumLoops(getOperation())) {

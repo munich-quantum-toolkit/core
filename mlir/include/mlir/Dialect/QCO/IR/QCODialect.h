@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -132,7 +132,7 @@ public:
         return true;
       } else {
         return llvm::all_of(this->getParameters(), [](Value param) {
-          return utils::valueToDouble(param).has_value();
+          return mlir::mqt::valueToDouble(param).has_value();
         });
       }
     }

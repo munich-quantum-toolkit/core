@@ -31,6 +31,7 @@ class Module;
 } // namespace llvm
 
 namespace mlir {
+class ModuleOp;
 class OpBuilder;
 class Operation;
 namespace LLVM {
@@ -47,9 +48,9 @@ namespace mlir::qir {
 /// metadata and only supports array-valued flags for LLVM's own CG profile.
 /// QIR instead requires i1/i2 capability flags and metadata tuples describing
 /// the integer and floating-point widths used by Adaptive Profile classical
-/// computations. This function repairs the scalar flag widths and derives the
-/// optional Adaptive Profile flags from the translated LLVM module.
-void normalizeQIRModuleFlags(llvm::Module& moduleOp, bool useAdaptive);
+/// computations. This function repairs the scalar flag widths and serializes
+/// type metadata that the MLIR pipeline derived before translation.
+void normalizeQIRModuleFlags(llvm::Module& moduleOp, ModuleOp sourceModule);
 
 // QIR function names
 
@@ -139,11 +140,11 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, Location loc,
                  StringRef fnName);
 
 /**
- * @brief Find the main LLVM function with entry_point attribute
+ * @brief Find the main LLVM function
  *
  * @details
- * Searches for the LLVM function marked with the "entry_point" attribute in
- * the passthrough attributes.
+ * Searches first for the MQT program entry-point marker. It also accepts the
+ * lowered QIR `entry_point` passthrough attribute.
  *
  * @param op The module operation to search in
  * @return The main LLVM function, or nullptr if not found

@@ -13,14 +13,11 @@
 from __future__ import annotations
 
 import math
-import sys
 from collections import Counter
+from typing import cast
 
 import numpy as np
 import pytest
-
-if sys.version_info < (3, 11):
-    pytest.skip("PennyLane requires Python 3.11 or newer.", allow_module_level=True)
 
 try:
     import pennylane as qp
@@ -33,9 +30,24 @@ from mqt.core.plugins.pennylane import (
     PennyLaneValidationError,
     QDMIDevice,
 )
+from mqt.core.qdmi import Device as QDMIDeviceHandle
 from mqt.core.qdmi import ProgramFormat
 
 from .helpers import StubDevice, patch_open_device, rotation_results, stub_device
+
+
+def test_uses_already_open_qdmi_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reuse a device session selected outside the PennyLane adapter."""
+    qdmi = stub_device()
+    monkeypatch.setattr(
+        "mqt.core.plugins.pennylane.device.open_device",
+        lambda *_args, **_kwargs: pytest.fail("The adapter reopened the QDMI device."),
+    )
+
+    device = QDMIDevice(device=cast("QDMIDeviceHandle", qdmi), wires=2, shots=10)
+
+    assert device.qdmi_device is qdmi
+    assert device.device_id is None
 
 
 def test_samples_counts_probabilities_expectations_and_variances(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -220,6 +232,15 @@ def test_validates_configuration_and_width(monkeypatch: pytest.MonkeyPatch) -> N
         )
     with pytest.raises(PennyLaneConfigurationError, match="3 wires"):
         QDMIDevice("fake.qdmi", wires=3)
+    with pytest.raises(PennyLaneConfigurationError, match="exactly one"):
+        QDMIDevice()
+    with pytest.raises(PennyLaneConfigurationError, match="exactly one"):
+        QDMIDevice("fake.qdmi", device=cast("QDMIDeviceHandle", qdmi))
+    with pytest.raises(PennyLaneConfigurationError, match="session_parameters"):
+        QDMIDevice(
+            device=cast("QDMIDeviceHandle", qdmi),
+            session_parameters={"token": "unused"},
+        )
 
 
 def test_rejects_device_without_openqasm(monkeypatch: pytest.MonkeyPatch) -> None:

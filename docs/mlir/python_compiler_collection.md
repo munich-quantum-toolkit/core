@@ -159,14 +159,8 @@ This compiler route does not construct an intermediate
 interfaces remain independent and retain their existing version range and
 behavior.
 
-The version-specific adapter uses Qiskit's native C API for flat circuit
-construction. Qiskit 2.5 provides C inspection functions, but no C constructors
-for classical expressions or structured control flow. During export, the adapter
-finalizes each validated block independently and then uses Qiskit's public
-Python classes to construct and insert the control-flow operations at their
-recorded positions. This post-processing is confined to the Qiskit 2.5 adapter
-in {code}`bindings/mlir/qiskit/Qiskit2_5.cpp`; the generic translation remains
-frontend-neutral.
+Qiskit 2.5's C API cannot construct classical expressions or structured control
+flow, so export uses Qiskit's public Python classes for these operations.
 
 | Circuit feature                                                   | Import               | Export         |
 | ----------------------------------------------------------------- | -------------------- | -------------- |
@@ -212,7 +206,9 @@ result-bearing {code}`scf.if` is accepted only when every result is Boolean and
 both branches contain expression operations. A live {code}`scf.for` induction
 value must reduce to an affine {code}`f64` gate parameter. The exporter
 preserves one Qiskit parameter identity for that value throughout its lexical
-body. Switch labels must be nonnegative constants that fit the target width.
+body. An {code}`scf.index_switch` selector must be a constant index or a
+supported Boolean/Uint expression converted with {code}`arith.index_castui`.
+Switch labels must be nonnegative constants that fit the target width.
 
 Nested blocks may capture existing qubits and classical bits but may not
 allocate or release circuit resources. Control flow and classical expressions
@@ -229,20 +225,13 @@ An undefined public CBit may be read only after an unconditional top-level
 measurement write to that bit, and every bit of an undefined returned register
 must be written unconditionally. Branch-local writes do not establish definite
 initialization. A captured classical snapshot must not cross a later CBit write
-that targets or may dynamically target the same bit, directly or in nested
-control flow.
+or a nested write to the same register.
 
 Each exported measurement must write to one static public CBit in the same
-block, and destinations must be unique. Constants, measurements, and
-quantum-only reset or unitary operations may appear between a measurement and
-its destination store. Another measurement destination store may also appear
-when its static register bit is distinct from the delayed destination. Dynamic
-or aliasing stores and other classical operations remain unsupported in this
-gap. The measurement result may feed supported classical expressions after its
-store; the exporter represents those uses by the destination CBit and rejects a
-later or nested write that would make the CBit a stale replacement for the SSA
-result. A conditional before the store is rejected because Qiskit cannot
-preserve it as one measurement instruction.
+block, and destinations must be unique. Its destination store must follow the
+measurement directly, apart from constant operations. A conditional or otherwise
+delayed destination store is rejected because Qiskit cannot preserve it as one
+measurement instruction.
 
 Dense numeric unitaries remain explicit matrix operations during import and
 export. Target compilation synthesizes supported one- and two-qubit matrices to

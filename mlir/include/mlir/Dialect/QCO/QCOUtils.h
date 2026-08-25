@@ -10,12 +10,13 @@
 
 #pragma once
 
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Utils/Utils.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
@@ -74,7 +75,7 @@ inline constexpr size_t kMaxModifierTargetQubits = 10;
  *
  * @details
  * Identical SSA values always match. Otherwise, if both are constants, they
- * are compared with @ref utils::TOLERANCE.
+ * are compared with @ref mqt::PARAMETER_COMPARISON_TOLERANCE.
  *
  * @param lhs The first parameter value.
  * @param rhs The second parameter value.
@@ -84,9 +85,10 @@ static bool valuesMatchWithinTolerance(Value lhs, Value rhs) {
   if (lhs == rhs) {
     return true;
   }
-  const auto lhsVal = utils::valueToDouble(lhs);
-  const auto rhsVal = utils::valueToDouble(rhs);
-  return lhsVal && rhsVal && std::abs(*lhsVal - *rhsVal) <= utils::TOLERANCE;
+  const auto lhsVal = mlir::mqt::valueToDouble(lhs);
+  const auto rhsVal = mlir::mqt::valueToDouble(rhs);
+  return lhsVal && rhsVal &&
+         std::abs(*lhsVal - *rhsVal) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
 }
 
 /**

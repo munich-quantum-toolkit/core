@@ -18,6 +18,9 @@
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
@@ -25,8 +28,6 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/Utils/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 
 #include <capnp/common.h>
@@ -84,8 +85,8 @@ namespace mlir {
 
 [[nodiscard]] static std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
-  registry.insert<cbit::CBitDialect, qc::QCDialect, qco::QCODialect,
-                  qtensor::QTensorDialect, arith::ArithDialect,
+  registry.insert<cbit::CBitDialect, mqt::MQTDialect, qc::QCDialect,
+                  qco::QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
                   cf::ControlFlowDialect, func::FuncDialect, math::MathDialect,
                   scf::SCFDialect, LLVM::LLVMDialect, memref::MemRefDialect,
                   tensor::TensorDialect, jeff::JeffDialect>();
@@ -327,7 +328,7 @@ bool QCProgram::cleanup() {
 }
 
 bool QCProgram::normalizeGlobalPhases() {
-  return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
+  return succeeded(mqt::normalizeGlobalPhases(mod()));
 }
 
 std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
@@ -398,7 +399,7 @@ bool QCOProgram::cleanup() {
 }
 
 bool QCOProgram::normalizeGlobalPhases() {
-  return succeeded(mlir::mqt::normalizeGlobalPhases(mod()));
+  return succeeded(mqt::normalizeGlobalPhases(mod()));
 }
 
 bool QCOProgram::runPassPipeline(const std::string_view pipeline,
@@ -592,20 +593,19 @@ bool QIRProgram::cleanup() {
 QIRProfile QIRProgram::profile() const noexcept { return profile_; }
 
 [[nodiscard]] static std::unique_ptr<llvm::Module>
-translateToLLVM(ModuleOp mod, llvm::LLVMContext& context,
-                const QIRProfile profile) {
+translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
   auto llvmModule = translateModuleToLLVMIR(mod, context);
   if (!llvmModule) {
     mod.emitError("failed to translate QIR MLIR to LLVM IR");
     return nullptr;
   }
-  qir::normalizeQIRModuleFlags(*llvmModule, profile == QIRProfile::Adaptive);
+  qir::normalizeQIRModuleFlags(*llvmModule, mod);
   return llvmModule;
 }
 
 std::optional<std::string> QIRProgram::llvmIR() const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(mod(), context, profile_);
+  auto llvmModule = translateToLLVM(mod(), context);
   if (!llvmModule) {
     return std::nullopt;
   }
@@ -617,7 +617,7 @@ std::optional<std::string> QIRProgram::llvmIR() const {
 
 std::optional<std::vector<std::byte>> QIRProgram::toBitcode() const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(mod(), context, profile_);
+  auto llvmModule = translateToLLVM(mod(), context);
   if (!llvmModule) {
     return std::nullopt;
   }
@@ -632,7 +632,7 @@ std::optional<std::vector<std::byte>> QIRProgram::toBitcode() const {
 
 bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
   llvm::LLVMContext context;
-  auto llvmModule = translateToLLVM(mod(), context, profile_);
+  auto llvmModule = translateToLLVM(mod(), context);
   if (!llvmModule) {
     return false;
   }

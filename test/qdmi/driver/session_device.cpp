@@ -43,6 +43,11 @@ namespace {
   return sessions;
 }
 
+[[nodiscard]] auto freedJobs() -> std::atomic_size_t& {
+  static std::atomic_size_t jobs = 0;
+  return jobs;
+}
+
 [[nodiscard]] auto parameter(const QDMI_Device_Session_impl_d* const session,
                              const QDMI_Device_Session_Parameter key)
     -> std::string {
@@ -265,6 +270,9 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
         deviceStatus(parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4)),
         size, value, sizeRet);
   }
+  if (prop == QDMI_DEVICE_PROPERTY_CUSTOM5) {
+    return queryValue(freedJobs().load(), size, value, sizeRet);
+  }
   if (prop != QDMI_DEVICE_PROPERTY_NAME) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
@@ -392,6 +400,9 @@ extern "C" int TEST_SESSION_QDMI_device_job_get_results(
 }
 
 extern "C" void TEST_SESSION_QDMI_device_job_free(QDMI_Device_Job job) {
+  if (job != nullptr) {
+    freedJobs().fetch_add(1, std::memory_order_relaxed);
+  }
   // This releases the opaque handle allocated by
   // device_session_create_device_job.
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)

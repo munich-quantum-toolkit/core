@@ -21,6 +21,8 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt::bindings::qiskit {
@@ -51,14 +53,7 @@ validateRegisterLayout(const std::vector<Register>& registers, uint32_t total,
 inline constexpr size_t MAX_PARAMETER_EXPRESSION_DEPTH = 64U;
 inline constexpr size_t MAX_PARAMETER_EXPRESSION_NODES = 4096U;
 
-enum class ParameterKind : uint8_t {
-  Number,
-  Symbol,
-  Add,
-  Subtract,
-  Multiply,
-  Divide,
-  Power,
+enum class UnaryParameterKind : uint8_t {
   Negate,
   Sin,
   Cos,
@@ -72,14 +67,83 @@ enum class ParameterKind : uint8_t {
   Conjugate,
 };
 
+enum class BinaryParameterKind : uint8_t {
+  Add,
+  Subtract,
+  Multiply,
+  Divide,
+  Power,
+};
+
 /** One normalized scalar parameter-expression tree. */
-struct Parameter {
-  ParameterKind kind = ParameterKind::Number;
-  double number = 0.0;
-  std::string text;
-  std::string identity;
-  std::shared_ptr<const Parameter> left;
-  std::shared_ptr<const Parameter> right;
+class Parameter {
+public:
+  struct Number {
+    double value;
+  };
+
+  struct Symbol {
+    std::string name;
+  };
+
+  struct Unary {
+    UnaryParameterKind operation;
+    std::shared_ptr<const Parameter> operand;
+  };
+
+  struct Binary {
+    BinaryParameterKind operation;
+    std::shared_ptr<const Parameter> left;
+    std::shared_ptr<const Parameter> right;
+  };
+
+  Parameter() = default;
+
+  [[nodiscard]] static Parameter number(const double value) {
+    return Parameter(Number{value});
+  }
+
+  [[nodiscard]] static Parameter symbol(std::string name) {
+    return Parameter(Symbol{std::move(name)});
+  }
+
+  [[nodiscard]] static Parameter unary(const UnaryParameterKind operation,
+                                       Parameter operand) {
+    return Parameter(Unary{
+        .operation = operation,
+        .operand = std::make_shared<const Parameter>(std::move(operand))});
+  }
+
+  [[nodiscard]] static Parameter binary(const BinaryParameterKind operation,
+                                        Parameter left, Parameter right) {
+    return Parameter(
+        Binary{.operation = operation,
+               .left = std::make_shared<const Parameter>(std::move(left)),
+               .right = std::make_shared<const Parameter>(std::move(right))});
+  }
+
+  [[nodiscard]] const Number* getNumber() const {
+    return std::get_if<Number>(&storage);
+  }
+
+  [[nodiscard]] const Symbol* getSymbol() const {
+    return std::get_if<Symbol>(&storage);
+  }
+
+  [[nodiscard]] const Unary* getUnary() const {
+    return std::get_if<Unary>(&storage);
+  }
+
+  [[nodiscard]] const Binary* getBinary() const {
+    return std::get_if<Binary>(&storage);
+  }
+
+private:
+  using Value = std::variant<Number, Symbol, Unary, Binary>;
+
+  explicit Parameter(Value value) : storage(std::move(value)) {}
+
+  Value storage = Number{0.0};
 };
 
 enum class GateModifierKind : uint8_t {
@@ -91,7 +155,7 @@ enum class GateModifierKind : uint8_t {
 struct GateModifier {
   GateModifierKind kind = GateModifierKind::Inverse;
   uint32_t numControls = 0;
-  Parameter exponent{};
+  Parameter exponent;
 };
 
 struct StandardGateMapping {
@@ -287,9 +351,7 @@ public:
   virtual void
   addControlFlow(ControlFlowKind kind, ClassicalTarget target, Loop loop,
                  std::vector<SwitchCase> switchCases,
-                 std::vector<std::unique_ptr<CircuitWriter>> blocks,
-                 const std::vector<uint32_t>& qubits,
-                 const std::vector<uint32_t>& clbits) = 0;
+                 std::vector<std::unique_ptr<CircuitWriter>> blocks) = 0;
   /** Transfer the native circuit to a new owned Python QuantumCircuit. */
   [[nodiscard]] virtual nb::object finish() = 0;
 };
