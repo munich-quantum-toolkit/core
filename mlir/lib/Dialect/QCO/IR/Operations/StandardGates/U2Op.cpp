@@ -8,9 +8,10 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -26,7 +27,7 @@
 
 using namespace mlir;
 using namespace mlir::qco;
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 namespace {
 
@@ -40,8 +41,8 @@ struct ReplaceU2WithH final : OpRewritePattern<U2Op> {
                                 PatternRewriter& rewriter) const override {
     const auto phi = valueToDouble(op.getPhi());
     const auto lambda = valueToDouble(op.getLambda());
-    if (!phi || std::abs(*phi) > TOLERANCE || !lambda ||
-        std::abs(*lambda - std::numbers::pi) > TOLERANCE) {
+    if (!phi || std::abs(*phi) > PARAMETER_COMPARISON_TOLERANCE || !lambda ||
+        std::abs(*lambda - std::numbers::pi) > PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
     rewriter.replaceOpWithNewOp<HOp>(op, op.getInputQubit(0));
@@ -59,8 +60,12 @@ struct ReplaceU2WithRX final : OpRewritePattern<U2Op> {
                                 PatternRewriter& rewriter) const override {
     const auto phi = valueToDouble(op.getPhi());
     const auto lambda = valueToDouble(op.getLambda());
-    if (!phi || std::abs(*phi + (std::numbers::pi / 2.0)) > TOLERANCE ||
-        !lambda || std::abs(*lambda - (std::numbers::pi / 2.0)) > TOLERANCE) {
+    if (!phi ||
+        std::abs(*phi + (std::numbers::pi / 2.0)) >
+            PARAMETER_COMPARISON_TOLERANCE ||
+        !lambda ||
+        std::abs(*lambda - (std::numbers::pi / 2.0)) >
+            PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
     rewriter.replaceOpWithNewOp<RXOp>(op, op.getInputQubit(0),
@@ -79,8 +84,8 @@ struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
                                 PatternRewriter& rewriter) const override {
     const auto phi = valueToDouble(op.getPhi());
     const auto lambda = valueToDouble(op.getLambda());
-    if (!phi || std::abs(*phi) > TOLERANCE || !lambda ||
-        std::abs(*lambda) > TOLERANCE) {
+    if (!phi || std::abs(*phi) > PARAMETER_COMPARISON_TOLERANCE || !lambda ||
+        std::abs(*lambda) > PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
     rewriter.replaceOpWithNewOp<RYOp>(op, op.getInputQubit(0),

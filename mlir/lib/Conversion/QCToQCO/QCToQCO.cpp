@@ -20,7 +20,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
@@ -840,7 +839,6 @@ struct ConvertMemRefAllocOp final
       return failure();
     }
 
-    const auto registerName = op->getAttr(utils::QUBIT_REGISTER_NAME_ATTR);
     qtensor::AllocOp alloc;
     if (shape[0] == ShapedType::kDynamic) {
       alloc = qtensor::AllocOp::create(rewriter, op.getLoc(),
@@ -850,9 +848,7 @@ struct ConvertMemRefAllocOp final
           arith::ConstantIndexOp::create(rewriter, op.getLoc(), shape[0]);
       alloc = qtensor::AllocOp::create(rewriter, op.getLoc(), size.getResult());
     }
-    if (registerName) {
-      alloc->setAttr(utils::QUBIT_REGISTER_NAME_ATTR, registerName);
-    }
+    alloc->setDiscardableAttrs(op->getDiscardableAttrDictionary());
 
     auto& state = getState();
     auto memref = op.getResult();

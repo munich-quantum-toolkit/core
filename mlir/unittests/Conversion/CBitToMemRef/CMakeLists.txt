@@ -16,6 +16,7 @@ target_link_libraries(
           MLIRCBitToMemRef
           MLIRFuncDialect
           MLIRMemRefDialect
+          MLIRMQTDialect
           MLIRParser
           MLIRSCFDialect
           MLIRSupport)

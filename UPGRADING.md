@@ -6,70 +6,31 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### Program serialization for QDMI Qiskit backends
+### Removal of CoreAlgorithms
 
-The Qiskit backend no longer decides in its own code how to turn a circuit into
-a program. It takes every program format from a registered _program serializer_,
-and MQT Core registers its own OpenQASM 2 and OpenQASM 3 serializers the same
-way as everyone else.
+MQT Core no longer installs `MQT::CoreAlgorithms` or the headers below
+`algorithms/`. MQT Core provides no direct replacement for the removed circuit
+factories. Move required implementations to the package that uses them. The
+`BUILD_MQT_CORE_BENCHMARKS` option and its legacy DD evaluation target were also
+removed.
 
-A serializer takes the circuit and the backend. It returns `str` for a text
-format and `bytes` for a binary format;
-{py:func}`~mqt.core.qdmi.is_binary_program_format` states which kind a format
-carries. Register one at run time:
+### Python 3.11 and split-mode wheels
 
-```python
-import io
+MQT Core now requires Python 3.11 or newer. Upgrade the Python environment
+before installing this release.
 
-from qiskit import qpy
+MQT Core now uses nanobind 3 split mode. One `cp311-abi3` wheel supports
+GIL-enabled CPython 3.11 and newer. Free-threaded support starts with CPython
+3.15 and uses a separate `cp315-abi3t` wheel. MQT Core no longer publishes
+free-threaded CPython 3.13 or 3.14 wheels.
 
-from mqt.core.plugins.qiskit import register_program_serializer
-from mqt.core.qdmi import ProgramFormat
+nanobind 3 changes the nanobind ABI. Rebuild downstream native Python extensions
+that use MQT Core's nanobind-bound C++ types. Pure Python consumers do not need
+to recompile anything.
 
-
-def my_qpy_serializer(circuit, backend) -> bytes:
-    buffer = io.BytesIO()
-    qpy.dump(circuit, buffer)
-    return buffer.getvalue()
-
-
-register_program_serializer(ProgramFormat.QPY, my_qpy_serializer)
-```
-
-A package that owns a device advertises its serializer through the
-`mqt.core.qiskit.program_serializers` entry point group instead, so MQT Core
-finds it without importing the package:
-
-```toml
-[project.entry-points."mqt.core.qiskit.program_serializers"]
-IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
-```
-
-`mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` states which
-format the backend picks when a device accepts several. Pass `replace=True` to
-`register_program_serializer` to take over a format that already has a
-serializer, including OpenQASM 2 and OpenQASM 3.
-
-A backend subclass that must represent a device-native operation outside
-Qiskit's standard gate library sets `_EXTRA_GATES`:
-
-```python
-class MyBackend(QDMIBackend):
-    _EXTRA_GATES = {"move": MoveGate()}
-```
-
-MQT Core no longer provides `qiskit_to_iqm_json` or `MoveGate`.
-[QDMI-on-IQM](https://github.com/iqm-finland/QDMI-on-IQM) owns both. Import them
-from `iqm.qdmi` instead:
-
-```python
-from iqm.qdmi.serializers import qiskit_to_iqm_json
-from iqm.qdmi.gates import MoveGate
-```
-
-Installing `iqm-qdmi` is enough to keep submitting IQM JSON. The package
-advertises its serializer through the entry point group described above, so a
-backend over an IQM device needs no code change.
+The Python bindings depend on `nanobind-backend`, which supplies the
+interpreter-specific nanobind runtime. This dependency does not change the C++
+API or the Python import paths.
 
 ### Removal of DD approximation and density-matrix support
 
@@ -258,6 +219,75 @@ Known limitations:
 MQT Core no longer provides the `datastructures` (`ds`) sublibrary. MQT QMAP was
 its only consumer. Downstream users must depend on MQT QMAP or provide the
 required data structures directly.
+
+## [3.9.1]
+
+### Program serializers for the Qiskit backend
+
+The Qiskit backend no longer decides in its own code how to turn a circuit into
+a program. It takes every program format from a registered _program serializer_,
+and MQT Core registers its own OpenQASM 2 and OpenQASM 3 serializers the same
+way as everyone else.
+
+A serializer takes the circuit and the backend. It returns `str` for a text
+format and `bytes` for a binary format;
+{py:func}`~mqt.core.qdmi.is_binary_program_format` states which kind a format
+carries. Register one at run time:
+
+```python
+import io
+
+from qiskit import qpy
+
+from mqt.core.plugins.qiskit import register_program_serializer
+from mqt.core.qdmi import ProgramFormat
+
+
+def my_qpy_serializer(circuit, backend) -> bytes:
+    buffer = io.BytesIO()
+    qpy.dump(circuit, buffer)
+    return buffer.getvalue()
+
+
+register_program_serializer(ProgramFormat.QPY, my_qpy_serializer)
+```
+
+A package that owns a device advertises its serializer through the
+`mqt.core.qiskit.program_serializers` entry point group instead, so MQT Core
+finds it without importing the package:
+
+```toml
+[project.entry-points."mqt.core.qiskit.program_serializers"]
+IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
+```
+
+`mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` states which
+format the backend picks when a device accepts several. Pass `replace=True` to
+`register_program_serializer` to take over a format that already has a
+serializer, including OpenQASM 2 and OpenQASM 3.
+
+A backend subclass that must represent a device-native operation outside
+Qiskit's standard gate library sets `_EXTRA_GATES`:
+
+```python
+class MyBackend(QDMIBackend):
+    _EXTRA_GATES = {"move": MoveGate()}
+```
+
+### IQM JSON serialization moved to QDMI-on-IQM
+
+MQT Core no longer provides `qiskit_to_iqm_json` or `MoveGate`.
+[QDMI-on-IQM](https://github.com/iqm-finland/QDMI-on-IQM) owns both. Import them
+from `iqm.qdmi` instead:
+
+```python
+from iqm.qdmi.serializers import qiskit_to_iqm_json
+from iqm.qdmi.gates import MoveGate
+```
+
+Installing `iqm-qdmi` is enough to keep submitting IQM JSON. The package
+advertises its serializer through the entry point group described above, so a
+backend over an IQM device needs no code change.
 
 ## [3.9.0]
 
@@ -847,7 +877,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...HEAD
+[3.9.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...v3.9.0
 [3.8.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...v3.7.0

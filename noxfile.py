@@ -35,7 +35,7 @@ nox.options.default_venv_backend = "uv"
 if os.environ.get("CI", None):
     nox.options.error_on_missing_interpreters = True
 
-PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
+PYTHON_ALL_VERSIONS = ["3.11", "3.12", "3.13", "3.14"]
 
 
 @contextlib.contextmanager

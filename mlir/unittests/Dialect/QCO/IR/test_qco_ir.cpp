@@ -8,18 +8,19 @@
  * Licensed under the MIT License
  */
 
+#include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/Utils/Transforms/Passes.h"
-#include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
 
@@ -56,7 +57,6 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -237,17 +237,6 @@ TEST_F(QCOTest, BuilderRejectsUntrackedTensorInitArg) {
       "Invalid tensor value used");
 }
 
-TEST_F(QCOTest, BuilderRejectsDuplicateNonEmptyQubitRegisterNames) {
-  EXPECT_DEATH(
-      {
-        QCOProgramBuilder builder(context.get());
-        builder.initialize();
-        std::ignore = builder.allocQubitRegister(1, "q");
-        std::ignore = builder.allocQubitRegister(1, "q");
-      },
-      "Qubit register names must be unique");
-}
-
 TEST_F(QCOTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
   EXPECT_DEATH(
       {
@@ -304,10 +293,16 @@ TEST_F(QCOTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
   moduleOp->walk([&](cbit::AllocOp op) { allocations.push_back(op); });
   ASSERT_EQ(allocations.size(), 2);
   EXPECT_EQ(allocations[0].getInitialization(), cbit::Initialization::Zero);
-  EXPECT_FALSE(allocations[0].getSourceNameAttr());
+  EXPECT_FALSE(allocations[0]->getAttr(
+      ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr()));
   EXPECT_EQ(allocations[1].getInitialization(),
             cbit::Initialization::Undefined);
-  EXPECT_EQ(allocations[1].getSourceName(), "undefined");
+  EXPECT_EQ(
+      allocations[1]
+          ->getAttrOfType<StringAttr>(
+              ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
+          .getValue(),
+      "undefined");
 }
 
 TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
@@ -331,6 +326,48 @@ TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
   EXPECT_EQ(pow.getBody()->getArgument(0), bodyQubit);
   EXPECT_EQ(pow.getBody()->getTerminator()->getOperand(0), bodyResult);
   EXPECT_TRUE(pow.verify().succeeded());
+}
+
+TEST_F(QCOTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
+  constexpr std::array<StringLiteral, 2> invalidPrograms{
+      R"mlir(
+        module {
+          func.func @main(%input: f64) {
+            %q = qco.alloc : !qco.qubit
+            %infinity = arith.constant 0x7FF0000000000000 : f64
+            %theta = arith.addf %input, %infinity : f64
+            %out = qco.rx(%theta) %q : !qco.qubit -> !qco.qubit
+            qco.sink %out : !qco.qubit
+            return
+          }
+        }
+      )mlir",
+      R"mlir(
+        module {
+          func.func @main() {
+            %q = qco.alloc : !qco.qubit
+            %nan = arith.constant 0x7FF8000000000000 : f64
+            %out = qco.pow(%nan) (%arg = %q) {
+              %body = qco.x %arg : !qco.qubit -> !qco.qubit
+              qco.yield %body : !qco.qubit
+            } : {!qco.qubit} -> {!qco.qubit}
+            qco.sink %out : !qco.qubit
+            return
+          }
+        }
+      )mlir"};
+
+  for (const auto source : invalidPrograms) {
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |= StringRef(diagnostic.str())
+                                   .contains("constant parameter expression at "
+                                             "index 0 must be finite");
+      return success();
+    });
+    EXPECT_FALSE(parseSourceString<ModuleOp>(source, context.get()));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
 }
 
 namespace {
@@ -422,7 +459,7 @@ static Operation* buildInvalidNestedModifierBody(
           case ForbiddenModifierBodyOp::CBitAlloc:
             cbit::AllocOp::create(
                 builder, cbit::RegisterType::get(builder.getContext(), 1),
-                cbit::Initialization::Zero, StringAttr{});
+                cbit::Initialization::Zero);
             break;
           case ForbiddenModifierBodyOp::CBitLoad:
             cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg,
@@ -666,7 +703,7 @@ TEST_F(QCOTest, IfOpParser) {
   // Test IfOp parser
   const char* mlirCode = R"(
       module {
-        func.func @main() -> i1 attributes {passthrough = ["entry_point"]} {
+        func.func @main() -> i1 attributes {mqt.entry_point} {
             %c0 = arith.constant 0 : index
             %c1 = arith.constant 1 : index
             %q0_0 = qco.alloc : !qco.qubit
@@ -929,7 +966,7 @@ TEST_F(QCOTest, IndexSwitchParser) {
   // Test IndexSwitch parser
   const char* mlirCode = R"(
       module {
-        func.func @main() -> !cbit.reg<3> attributes {passthrough = ["entry_point"]} {
+        func.func @main() -> !cbit.reg<3> attributes {mqt.entry_point} {
             %c2 = arith.constant 2 : index
             %c1 = arith.constant 1 : index
             %c0 = arith.constant 0 : index
@@ -1375,6 +1412,84 @@ TEST_F(QCOTest, IndexSwitchConstantSuccessor) {
   switchOp->setAttr(
       "cases", DenseI64ArrayAttr::get(context.get(), ArrayRef<int64_t>{0, 0}));
   EXPECT_TRUE(switchOp.verify().failed());
+}
+
+TEST_F(QCOTest, CanonicalizesConstantIndexSwitchToSelectedCaseOrDefault) {
+  constexpr StringLiteral mlirCode = R"mlir(
+    module {
+      func.func @selected_case() -> i64 {
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %number, %q1 = qco.index_switch %c1 -> (i64, !qco.qubit)
+        case 1 args(%arg0 = %q0) {
+          %caseQubit = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          %caseNumber = arith.constant 11 : i64
+          qco.yield %caseNumber, %caseQubit : i64, !qco.qubit
+        }
+        default args(%arg0 = %q0) {
+          %defaultQubit = qco.z %arg0 : !qco.qubit -> !qco.qubit
+          %defaultNumber = arith.constant 12 : i64
+          qco.yield %defaultNumber, %defaultQubit : i64, !qco.qubit
+        }
+        %q2 = qco.h %q1 : !qco.qubit -> !qco.qubit
+        qco.sink %q2 : !qco.qubit
+        return %number : i64
+      }
+
+      func.func @selected_default() -> i64 {
+        %c7 = arith.constant 7 : index
+        %q0 = qco.alloc : !qco.qubit
+        %number, %q1 = qco.index_switch %c7 -> (i64, !qco.qubit)
+        case 1 args(%arg0 = %q0) {
+          %caseQubit = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          %caseNumber = arith.constant 21 : i64
+          qco.yield %caseNumber, %caseQubit : i64, !qco.qubit
+        }
+        default args(%arg0 = %q0) {
+          %defaultQubit = qco.z %arg0 : !qco.qubit -> !qco.qubit
+          %defaultNumber = arith.constant 22 : i64
+          qco.yield %defaultNumber, %defaultQubit : i64, !qco.qubit
+        }
+        %q2 = qco.h %q1 : !qco.qubit -> !qco.qubit
+        qco.sink %q2 : !qco.qubit
+        return %number : i64
+      }
+    }
+  )mlir";
+
+  auto module = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(module.get())));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool containsSwitch = false;
+  module->walk([&](IndexSwitchOp) { containsSwitch = true; });
+  EXPECT_FALSE(containsSwitch);
+
+  const auto checkSelectedRegion = [&](const StringRef functionName,
+                                       const int64_t expectedNumber,
+                                       const StringRef expectedGate) {
+    auto func = module->lookupSymbol<func::FuncOp>(functionName);
+    ASSERT_TRUE(func);
+
+    HOp consumer;
+    func->walk([&](HOp candidate) { consumer = candidate; });
+    ASSERT_TRUE(consumer);
+    const Value input = cast<UnitaryOpInterface>(consumer.getOperation())
+                            .getInputQubits()
+                            .front();
+    ASSERT_TRUE(input.getDefiningOp());
+    EXPECT_EQ(input.getDefiningOp()->getName().getStringRef(), expectedGate);
+
+    auto returnOp = cast<func::ReturnOp>(func.getBody().back().back());
+    APInt number;
+    ASSERT_TRUE(matchPattern(returnOp.getOperand(0), m_ConstantInt(&number)));
+    EXPECT_EQ(number.getSExtValue(), expectedNumber);
+  };
+
+  checkSelectedRegion("selected_case", 11, "qco.x");
+  checkSelectedRegion("selected_default", 22, "qco.z");
 }
 
 /// \name QCO/SCF/IfOp.cpp

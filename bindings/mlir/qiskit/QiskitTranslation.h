@@ -21,6 +21,8 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt::bindings::qiskit {
@@ -48,9 +50,100 @@ struct Register {
 validateRegisterLayout(const std::vector<Register>& registers, uint32_t total,
                        std::string_view kind);
 
-struct Parameter {
-  std::optional<double> number = 0.0;
-  std::string text;
+inline constexpr size_t MAX_PARAMETER_EXPRESSION_DEPTH = 64U;
+inline constexpr size_t MAX_PARAMETER_EXPRESSION_NODES = 4096U;
+
+enum class UnaryParameterKind : uint8_t {
+  Negate,
+  Sin,
+  Cos,
+  Tan,
+  ArcSin,
+  ArcCos,
+  ArcTan,
+  Exp,
+  Log,
+  Abs,
+  Conjugate,
+};
+
+enum class BinaryParameterKind : uint8_t {
+  Add,
+  Subtract,
+  Multiply,
+  Divide,
+  Power,
+};
+
+/** One normalized scalar parameter-expression tree. */
+class Parameter {
+public:
+  struct Number {
+    double value;
+  };
+
+  struct Symbol {
+    std::string name;
+  };
+
+  struct Unary {
+    UnaryParameterKind operation;
+    std::shared_ptr<const Parameter> operand;
+  };
+
+  struct Binary {
+    BinaryParameterKind operation;
+    std::shared_ptr<const Parameter> left;
+    std::shared_ptr<const Parameter> right;
+  };
+
+  Parameter() = default;
+
+  [[nodiscard]] static Parameter number(const double value) {
+    return Parameter(Number{value});
+  }
+
+  [[nodiscard]] static Parameter symbol(std::string name) {
+    return Parameter(Symbol{std::move(name)});
+  }
+
+  [[nodiscard]] static Parameter unary(const UnaryParameterKind operation,
+                                       Parameter operand) {
+    return Parameter(Unary{
+        .operation = operation,
+        .operand = std::make_shared<const Parameter>(std::move(operand))});
+  }
+
+  [[nodiscard]] static Parameter binary(const BinaryParameterKind operation,
+                                        Parameter left, Parameter right) {
+    return Parameter(
+        Binary{.operation = operation,
+               .left = std::make_shared<const Parameter>(std::move(left)),
+               .right = std::make_shared<const Parameter>(std::move(right))});
+  }
+
+  [[nodiscard]] const Number* getNumber() const {
+    return std::get_if<Number>(&storage);
+  }
+
+  [[nodiscard]] const Symbol* getSymbol() const {
+    return std::get_if<Symbol>(&storage);
+  }
+
+  [[nodiscard]] const Unary* getUnary() const {
+    return std::get_if<Unary>(&storage);
+  }
+
+  [[nodiscard]] const Binary* getBinary() const {
+    return std::get_if<Binary>(&storage);
+  }
+
+private:
+  using Value = std::variant<Number, Symbol, Unary, Binary>;
+
+  explicit Parameter(Value value) : storage(std::move(value)) {}
+
+  Value storage = Number{0.0};
 };
 
 enum class GateModifierKind : uint8_t {
@@ -62,7 +155,7 @@ enum class GateModifierKind : uint8_t {
 struct GateModifier {
   GateModifierKind kind = GateModifierKind::Inverse;
   uint32_t numControls = 0;
-  Parameter exponent{};
+  Parameter exponent;
 };
 
 struct StandardGateMapping {
@@ -98,6 +191,8 @@ enum class ExpressionKind : uint8_t {
   Cast,
   Value,
   Index,
+  ClassicalBit,
+  ClassicalRegister,
 };
 enum class BinaryOperation : uint8_t {
   BitAnd,
@@ -134,6 +229,8 @@ struct Expression {
   bool boolValue = false;
   uint64_t uintValue = 0;
   double floatValue = 0.0;
+  uint32_t bit = 0;
+  Register reg;
   std::unique_ptr<Expression> left;
   std::unique_ptr<Expression> right;
 };
@@ -169,7 +266,7 @@ struct Loop {
   int64_t stop = 0;
   int64_t step = 1;
   std::vector<int64_t> values;
-  std::optional<std::string> parameter;
+  std::optional<Parameter> parameter;
 };
 
 struct SwitchCase {
@@ -196,6 +293,8 @@ public:
   [[nodiscard]] virtual bool hasClassicalVariables() const = 0;
   [[nodiscard]] virtual Register quantumRegister(size_t index) const = 0;
   [[nodiscard]] virtual Register classicalRegister(size_t index) const = 0;
+  /** Return the circuit's free scalar parameters in a stable order. */
+  [[nodiscard]] virtual std::vector<Parameter> parameters() const = 0;
   [[nodiscard]] virtual Parameter globalPhase() const = 0;
   [[nodiscard]] virtual Instruction instruction(size_t index) const = 0;
   [[nodiscard]] virtual std::vector<std::complex<double>>
@@ -239,10 +338,10 @@ public:
 
   virtual void addQuantumRegister(std::string_view name, uint32_t size) = 0;
   virtual void addClassicalRegister(std::string_view name, uint32_t size) = 0;
-  virtual void setGlobalPhase(double phase) = 0;
+  virtual void setGlobalPhase(const Parameter& phase) = 0;
   virtual void addGate(StandardGateMapping gate,
                        const std::vector<uint32_t>& qubits,
-                       const std::vector<double>& parameters) = 0;
+                       const std::vector<Parameter>& parameters) = 0;
   virtual void addMeasure(uint32_t qubit, uint32_t clbit) = 0;
   virtual void addReset(uint32_t qubit) = 0;
   virtual void addBarrier(const std::vector<uint32_t>& qubits) = 0;

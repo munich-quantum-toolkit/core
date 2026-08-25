@@ -24,6 +24,10 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
         The interface enables uniform introspection and composition capabilities
         across all unitary operations with value semantics.
+
+        Every statically known floating-point value in a parameter expression
+        must be finite. Dynamic parameter values have the same runtime
+        precondition.
     }];
 
   let cppNamespace = "::mlir::qco";
@@ -247,6 +251,10 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
           return std::nullopt;
         }
     }];
+
+  let verify = [{
+    return ::mlir::qco::verifyUnitaryOpInterface($_op);
+  }];
 }
 
 #endif // MLIR_DIALECT_QCO_IR_QCOINTERFACES_TD

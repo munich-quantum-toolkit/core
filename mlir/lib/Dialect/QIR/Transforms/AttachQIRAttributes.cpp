@@ -8,11 +8,13 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallSet.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -20,6 +22,7 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Dominance.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -53,6 +56,11 @@ struct Metadata {
   /// Whether the module uses backward branching (0 = none, 1 = iteration based,
   /// 2 = condition based, 3 = both)
   int backwardsBranching{0};
+  llvm::SmallSet<std::string, 4> integerTypes;
+  llvm::SmallSet<std::string, 4> floatingTypes;
+  bool usesIRFunctions{false};
+  bool usesMultipleTargetBranching{false};
+  bool usesMultipleReturnPoints{false};
 };
 
 /**
@@ -70,8 +78,11 @@ protected:
     if (!main) {
       return;
     }
-    setMetadata(main, useAdaptive ? getAdaptive(main) : getBase(main),
-                rewriter);
+    Metadata metadata = useAdaptive ? getAdaptive(main) : getBase(main);
+    if (useAdaptive) {
+      collectOptionalFeatures(getOperation(), main, metadata);
+    }
+    setMetadata(main, metadata, rewriter);
   }
 
 private:
@@ -119,6 +130,7 @@ private:
             {"required_num_results", std::to_string(metadata.numResults)})};
 
     main->setAttr("passthrough", rewriter.getArrayAttr(attributes));
+    mqt::removeEntryPoint(main);
 
     rewriter.setInsertionPointToEnd(m.getBody());
 
@@ -137,9 +149,33 @@ private:
                                              metadata.backwardsBranching)));
       flags.emplace_back(createBoolFlag(LLVM::ModFlagBehavior::Error, "arrays",
                                         metadata.useArrays));
+      if (metadata.usesIRFunctions) {
+        flags.emplace_back(
+            createBoolFlag(LLVM::ModFlagBehavior::Error, "ir_functions", true));
+      }
+      if (metadata.usesMultipleTargetBranching) {
+        flags.emplace_back(createBoolFlag(LLVM::ModFlagBehavior::Error,
+                                          "multiple_target_branching", true));
+      }
+      if (metadata.usesMultipleReturnPoints) {
+        flags.emplace_back(createBoolFlag(LLVM::ModFlagBehavior::Error,
+                                          "multiple_return_points", true));
+      }
     }
 
     removeExistingModuleFlags(m, rewriter);
+    const auto setTypes = [&](const StringRef name,
+                              const llvm::SmallSet<std::string, 4>& types) {
+      if (types.empty()) {
+        m->removeAttr(name);
+        return;
+      }
+      SmallVector<StringRef> values(types.begin(), types.end());
+      llvm::sort(values);
+      m->setAttr(name, rewriter.getStrArrayAttr(values));
+    };
+    setTypes("qir.int_computations", metadata.integerTypes);
+    setTypes("qir.float_computations", metadata.floatingTypes);
     LLVM::ModuleFlagsOp::create(rewriter, m.getLoc(),
                                 rewriter.getArrayAttr(flags));
   }
@@ -362,6 +398,54 @@ private:
     });
 
     return std::make_tuple(useDynamicQubit, useDynamicResult, useArrays);
+  }
+
+  static void collectOptionalFeatures(ModuleOp moduleOp,
+                                      LLVM::LLVMFuncOp entryPoint,
+                                      Metadata& metadata) {
+    const auto recordType = [&](const Type type) {
+      if (const auto integer = dyn_cast<IntegerType>(type);
+          integer && integer.getWidth() > 1) {
+        metadata.integerTypes.insert("i" + std::to_string(integer.getWidth()));
+      } else if (type.isF16()) {
+        metadata.floatingTypes.insert("half");
+      } else if (type.isF32()) {
+        metadata.floatingTypes.insert("float");
+      } else if (type.isF64()) {
+        metadata.floatingTypes.insert("double");
+      }
+    };
+
+    moduleOp.walk([&](LLVM::LLVMFuncOp function) {
+      if (function.isExternal()) {
+        return;
+      }
+      metadata.usesIRFunctions |= function != entryPoint;
+      if (function != entryPoint) {
+        recordType(function.getFunctionType().getReturnType());
+      }
+      for (Block& block : function.getBody()) {
+        llvm::for_each(block.getArgumentTypes(), recordType);
+      }
+      size_t returnCount = 0;
+      function.walk([&](Operation* operation) {
+        returnCount += isa<LLVM::ReturnOp>(operation);
+        metadata.usesMultipleTargetBranching |= isa<LLVM::SwitchOp>(operation);
+        if (operation->hasTrait<OpTrait::ConstantLike>()) {
+          return;
+        }
+        const auto hasScalarResult =
+            llvm::any_of(operation->getResultTypes(), [](const Type type) {
+              return isa<IntegerType>(type) || type.isF16() || type.isF32() ||
+                     type.isF64();
+            });
+        if (hasScalarResult && !isa<LLVM::CallOp>(operation)) {
+          llvm::for_each(operation->getOperandTypes(), recordType);
+        }
+        llvm::for_each(operation->getResultTypes(), recordType);
+      });
+      metadata.usesMultipleReturnPoints |= returnCount > 1;
+    });
   }
 
   /// Return the metadata for a QIR base profile compliant program.

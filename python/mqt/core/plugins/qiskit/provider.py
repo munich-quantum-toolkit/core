@@ -23,8 +23,8 @@ from .exceptions import UnsupportedDeviceError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from typing import Unpack
 
-    from ..._compat.typing import Unpack
     from ...typing import QDMISessionParameters
 
 __all__ = ["QDMIProvider"]

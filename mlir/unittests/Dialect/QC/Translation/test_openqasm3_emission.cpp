@@ -85,10 +85,10 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
 TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main() -> !cbit.reg<1>
-        attributes {passthrough = ["entry_point"]} {
+        attributes {mqt.entry_point} {
       %zero = arith.constant 0 : index
       %qubit = qc.alloc : !qc.qubit
-      %bits = cbit.alloc(#cbit.init<undefined>) source_name = "c"
+      %bits = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "c"}
           : !cbit.reg<1>
       %measured = qc.measure %qubit : !qc.qubit -> i1
       qc.x %qubit : !qc.qubit
@@ -113,6 +113,31 @@ TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
   ASSERT_NE(store, std::string::npos) << *emitted;
   EXPECT_LT(measurement, gate);
   EXPECT_LT(gate, store);
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
+}
+
+TEST(OpenQASM3EmissionTest, CanonicalizesFixedAnglesToPortableFloats) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+angle[8] theta = angle[8](pi / 2);
+qubit q;
+rx(theta) q;
+output bit result;
+result = measure q;
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_EQ(emitted->find("angle"), std::string::npos);
+  EXPECT_EQ(emitted->find("mqt.openqasm"), std::string::npos);
+  EXPECT_NE(emitted->find("rx(1.5707963267948966)"), std::string::npos)
+      << *emitted;
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
       *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
       << *emitted;
@@ -179,7 +204,7 @@ r = measure q;
 TEST(OpenQASM3EmissionTest, RenamesOutputsThatCollideWithStandardGates) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main() -> !cbit.reg<1> {
-      %bits = cbit.alloc(#cbit.init<zero>) source_name = "x"
+      %bits = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "x"}
           : !cbit.reg<1>
       return %bits : !cbit.reg<1>
     }
@@ -243,7 +268,7 @@ switch (selector) {
 TEST(OpenQASM3EmissionTest, EmitsNativeIndexSwitch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func @main() attributes {passthrough = ["entry_point"]} {
+  func.func @main() attributes {mqt.entry_point} {
     %qubit = qc.alloc : !qc.qubit
     %index = arith.constant 1 : index
     scf.index_switch %index
@@ -372,7 +397,7 @@ TEST(OpenQASM3EmissionTest, EmitsSignedBooleanAndFloatingExpressions) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main() -> (i64, i1, f64, f64, i1)
-      attributes {passthrough = ["entry_point"]} {
+      attributes {mqt.entry_point} {
     %one = arith.constant 1 : i64
     %two = arith.constant 2 : i64
     %sum = arith.addi %one, %two : i64
@@ -538,9 +563,9 @@ TEST(OpenQASM3EmissionTest, ReusesClassicalRegisterNamesForOutputs) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main() -> (!cbit.reg<1>, !cbit.reg<2>, i1) {
-    %single = cbit.alloc(#cbit.init<undefined>) source_name = "single"
+    %single = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "single"}
         : !cbit.reg<1>
-    %bits = cbit.alloc(#cbit.init<undefined>) source_name = "bits"
+    %bits = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "bits"}
         : !cbit.reg<2>
     %qubit = qc.alloc : !qc.qubit
     %measured = qc.measure %qubit : !qc.qubit -> i1

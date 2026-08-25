@@ -167,6 +167,11 @@ Submit the job with this command:
 sbatch bell.sbatch
 ```
 
+The same open handle works with application adapters. Pass it to
+{py:class}`mqt.core.plugins.qiskit.backend.QDMIBackend` or to the PennyLane
+{py:class}`mqt.core.plugins.pennylane.device.QDMIDevice`. See the
+{doc}`pennylane_device` guide for the PennyLane constructor.
+
 ## Check concurrent jobs
 
 For a scheduling test, add a sufficiently long classical post-processing step

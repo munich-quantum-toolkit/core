@@ -14,10 +14,10 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
-#include "mlir/Dialect/Utils/Transforms/GlobalPhaseNormalization.h"
 
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
@@ -685,7 +685,7 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto* moduleOp = getOperation();
-    if (failed(mlir::mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
+    if (failed(mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
       signalPassFailure();
       return;
     }
@@ -730,7 +730,7 @@ protected:
 
     auto main = getMainFunction(moduleOp);
     if (!main) {
-      moduleOp->emitError("No main function with entry_point attribute found");
+      moduleOp->emitError("no main function with mqt.entry_point found");
       signalPassFailure();
       return;
     }

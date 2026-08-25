@@ -16,6 +16,7 @@
 
 #include "Definitions.hpp"
 
+#include <atomic>
 #include <cstddef>
 #include <functional>
 #include <stdexcept>
@@ -89,8 +90,9 @@ public:
 
 protected:
   static std::string generateName() {
-    static std::size_t counter = 0;
-    return "q" + std::to_string(counter++);
+    static std::atomic_size_t counter = 0;
+    return "q" +
+           std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
   }
 };
 
@@ -106,8 +108,9 @@ public:
 
 protected:
   static std::string generateName() {
-    static std::size_t counter = 0;
-    return "c" + std::to_string(counter++);
+    static std::atomic_size_t counter = 0;
+    return "c" +
+           std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
   }
 };
 
