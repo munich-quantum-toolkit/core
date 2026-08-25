@@ -177,6 +177,20 @@ TEST_F(MQTIRTest, RejectsInvalidInputGroups) {
   )mlir"));
   EXPECT_FALSE(parse(R"mlir(
     module {
+      func.func @empty_identity(%arg: f64 {mqt.input_name = "theta[0]",
+          mqt.input_group = {identity = "", name = "theta",
+                             index = 0 : i64, size = 1 : i64}}) { return }
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @null_name(%arg: f64 {mqt.input_name = "theta[0]",
+          mqt.input_group = {identity = "group", name = "theta\00",
+                             index = 0 : i64, size = 1 : i64}}) { return }
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
       func.func @wrong_integer_type(%arg: f64 {mqt.input_name = "theta[0]",
           mqt.input_group = {identity = "group", name = "theta",
                              index = 0 : i32, size = 1 : i64}}) { return }
@@ -191,12 +205,23 @@ TEST_F(MQTIRTest, RejectsInvalidInputGroups) {
   )mlir"));
 }
 
-TEST_F(MQTIRTest, RejectsInputNameOnOperation) {
+TEST_F(MQTIRTest, RejectsInputMetadataOnOperations) {
   EXPECT_FALSE(parse(R"mlir(
     module {
       func.func @main() {
         %c0 = "arith.constant"() {mqt.input_name = "theta", value = 0.0 : f64}
             : () -> f64
+        return
+      }
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %c0 = "arith.constant"() {
+          mqt.loop_parameter_group = {identity = "group", name = "theta",
+                                      index = 0 : i64, size = 1 : i64},
+          value = 0.0 : f64} : () -> f64
         return
       }
     }
