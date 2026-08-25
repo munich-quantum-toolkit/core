@@ -27,6 +27,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <string>
+
 using namespace mlir;
 using namespace mlir::mqt;
 
@@ -78,6 +80,43 @@ verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
            << "' must not contain a null character";
+  }
+  return success();
+}
+
+[[nodiscard]] static LogicalResult
+verifyInputGroup(FunctionOpInterface function, Operation* operation,
+                 const unsigned argIndex, const Attribute attribute) {
+  const auto inputName = function.getArgAttrOfType<StringAttr>(
+      argIndex, MQTDialect::InputNameAttrHelper::getNameStr());
+  const auto group = dyn_cast<DictionaryAttr>(attribute);
+  const auto identity = group ? group.getAs<StringAttr>("identity") : nullptr;
+  const auto groupName = group ? group.getAs<StringAttr>("name") : nullptr;
+  const auto groupIndex = group ? group.getAs<IntegerAttr>("index") : nullptr;
+  const auto groupSize = group ? group.getAs<IntegerAttr>("size") : nullptr;
+  if (!inputName || !group || group.size() != 4U || !identity || !groupName ||
+      !groupIndex || !groupSize) {
+    return operation->emitError()
+           << "parameter input-group metadata must contain exactly identity, "
+              "name, index, and size";
+  }
+  if (identity.getValue().empty() || identity.getValue().contains('\0') ||
+      groupName.getValue().contains('\0')) {
+    return operation->emitError()
+           << "parameter input-group string metadata is invalid";
+  }
+  if (!groupIndex.getType().isInteger(64) ||
+      groupIndex.getValue().isNegative() ||
+      !groupSize.getType().isInteger(64) || groupSize.getValue().isNegative()) {
+    return operation->emitError()
+           << "parameter input-group index and size must be nonnegative i64 "
+              "integers";
+  }
+  const auto expectedName =
+      groupName.str() + "[" + std::to_string(groupIndex.getInt()) + "]";
+  if (inputName.getValue() != expectedName) {
+    return operation->emitError()
+           << "parameter input name must match its group name and index";
   }
   return success();
 }
@@ -147,7 +186,8 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
   if (attribute.getName() == RegisterNameAttrHelper::getNameStr()) {
     return verifyRegisterName(operation, attribute);
   }
-  if (attribute.getName() == InputNameAttrHelper::getNameStr()) {
+  if (attribute.getName() == InputNameAttrHelper::getNameStr() ||
+      attribute.getName() == InputGroupAttrHelper::getNameStr()) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
            << "' is only valid on a function argument";
@@ -159,13 +199,12 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
 LogicalResult MQTDialect::verifyRegionArgAttribute(
     Operation* operation, const unsigned regionIndex, const unsigned argIndex,
     const NamedAttribute attribute) {
-  if (attribute.getName() != InputNameAttrHelper::getNameStr()) {
+  const auto attributeName = attribute.getName();
+  if (attributeName != InputNameAttrHelper::getNameStr() &&
+      attributeName != InputGroupAttrHelper::getNameStr()) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
            << "' is not valid on a region argument";
-  }
-  if (failed(verifyName(operation, attribute))) {
-    return failure();
   }
 
   auto function = dyn_cast<FunctionOpInterface>(operation);
@@ -173,6 +212,14 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
            << "' requires a function entry-block argument";
+  }
+
+  if (attributeName == InputGroupAttrHelper::getNameStr()) {
+    return verifyInputGroup(function, operation, argIndex,
+                            attribute.getValue());
+  }
+  if (failed(verifyName(operation, attribute))) {
+    return failure();
   }
 
   const auto name = cast<StringAttr>(attribute.getValue());
