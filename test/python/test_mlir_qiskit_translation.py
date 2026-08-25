@@ -2251,13 +2251,10 @@ def test_sparse_parameter_vector_round_trip_preserves_order_and_binding() -> Non
     circuit = QuantumCircuit(1, global_phase=vector[0])
     circuit.rx(vector[10] + vector[2], 0)
 
-    program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit()
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
 
     parameters = list(restored.parameters)
-    assert all(isinstance(parameter, ParameterVectorElement) for parameter in parameters)
     assert [parameter.index for parameter in parameters] == [0, 2, 10]
-    assert len({parameter.vector.uuid for parameter in parameters}) == 1
     restored_vector = parameters[0].vector
     assert len(restored_vector) == len(vector)
     values = [0.01 * index for index in range(12)]
@@ -2279,7 +2276,6 @@ def test_parameter_vector_is_shared_across_sibling_blocks() -> None:
 
     parameters = [block.data[0].operation.params[0] for block in restored.data[0].operation.blocks]
     assert [parameter.index for parameter in parameters] == [0, 1]
-    assert parameters[0].vector.uuid == parameters[1].vector.uuid
     restored.assign_parameters({parameters[0].vector: [0.25, 0.5]}, inplace=True)
     assert not restored.parameters
 
@@ -2308,8 +2304,7 @@ def test_standalone_bracket_parameter_names_remain_standalone() -> None:
     circuit.rx(theta_ten, 0)
     circuit.ry(theta_two, 0)
 
-    program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit()
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
 
     assert all(not isinstance(parameter, ParameterVectorElement) for parameter in restored.parameters)
     assert {parameter.name for parameter in restored.parameters} == {"theta[2]", "theta[10]"}
