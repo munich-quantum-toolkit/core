@@ -19,7 +19,7 @@
 #include <cmath>
 
 using namespace mlir;
-namespace mlir::mqt::qco {
+namespace mlir::qco {
 
 /**
  * Removes the bit at a specified position in a 64-bit unsigned integer.
@@ -431,73 +431,89 @@ QuantumState::measure(const Value inQubit, const Value outQubit,
 // HybridState
 //===----------------------------------------------------------------------===//
 
-bool HybridState::operator==(const HybridState& other) const {
-  if (probability != other.probability)
+bool HybridState::operator==(const HybridState& that) const {
+  if (isTop || that.isTop) {
+    return isTop == that.isTop;
+  }
+  if (std::norm(probability - that.probability) >= 1e-10) {
     return false;
-  if (!(quantumState == other.quantumState))
+  }
+  if (maxTrackedAmplitudes != that.maxTrackedAmplitudes) {
     return false;
-  if (classicalValues.size() != other.classicalValues.size())
+  }
+  if (quantumState != that.quantumState) {
     return false;
+  }
+  if (classicalValues.size() != that.classicalValues.size()) {
+    return false;
+  }
   for (const auto& it : classicalValues) {
-    auto found = other.classicalValues.find(it.first);
-    if (found == other.classicalValues.end())
+    auto found = that.classicalValues.find(it.first);
+    if (found == that.classicalValues.end()) {
       return false;
-    if (!sameAttribute(it.second, found->second))
+    }
+    if (it.second != found->second) {
       return false;
+    }
   }
   return true;
 }
 
-std::optional<Attribute> HybridState::getClassical(Value v) const {
-  auto it = classicalValues.find(v);
-  if (it == classicalValues.end())
-    return std::nullopt;
+std::optional<Attribute> HybridState::getClassical(const Value v) const {
+  const auto it = classicalValues.find(v);
+  if (it == classicalValues.end()) {
+    return {};
+  }
   return it->second;
 }
 
-void HybridState::setClassical(Value v, Attribute attr) {
+void HybridState::setClassical(const Value v, const Attribute attr) {
   classicalValues[v] = attr;
+}
+
+bool HybridState::contains(const Value v) const {
+  if (getClassical(v).has_value()) {
+    return true;
+  }
+  return quantumState->contains(v);
 }
 
 //===----------------------------------------------------------------------===//
 // HybridStateSet
 //===----------------------------------------------------------------------===//
 
-bool HybridStateSet::operator==(const HybridStateSet& other) const {
-  if (isTop != other.isTop)
+bool HybridStateSet::operator==(const HybridStateSet& that) const {
+  if (isTop || that.isTop) {
+    return isTop && that.isTop;
+  }
+  if (states.size() != that.states.size()) {
     return false;
-  if (isTop)
-    return true;
-  if (states.size() != other.states.size())
+  }
+  if (maxTrackedAmplitudes != that.maxTrackedAmplitudes) {
     return false;
+  }
+  if (maxTrackedHybridStates != that.maxTrackedHybridStates) {
+    return false;
+  }
   for (const auto& s : states) {
-    if (!llvm::is_contained(other.states, s))
+    if (!llvm::is_contained(that.states, s)) {
       return false;
+    }
   }
   return true;
 }
 
-HybridStateSet HybridStateSet::top() {
-  HybridStateSet s;
-  s.isTop = true;
-  return s;
-}
-
-HybridStateSet HybridStateSet::singletonInitial() {
-  HybridStateSet s;
-  s.states.push_back(HybridState{});
-  return s;
-}
-
 void HybridStateSet::addState(HybridState state) {
-  if (isTop)
+  if (isTop) {
     return;
+  }
   states.push_back(std::move(state));
 }
 
 void HybridStateSet::canonicalize() {
-  if (isTop)
+  if (isTop) {
     return;
+  }
 
   SmallVector<HybridState> merged;
   for (HybridState& state : states) {
@@ -582,4 +598,4 @@ std::optional<Attribute> HybridStateSet::getUniqueConstant(Value v) const {
   }
   return candidate;
 }
-} // namespace mlir::mqt::qco
+} // namespace mlir::qco

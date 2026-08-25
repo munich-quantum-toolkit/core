@@ -14,24 +14,27 @@
 // Adjust these includes to your actual generated QCO interface/type headers.
 #include "mlir/Analysis/DataFlow/SparseAnalysis.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/QCO/IR/QCOOpsTypes.h.inc"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 using namespace mlir;
 
-namespace mlir::mqt::qco {
+namespace mlir::qco {
 
-static bool isQubitType(Type ty) { return isa<QubitType>(ty); }
+static unsigned int maxTrackedAmplitudes = 8;
+static unsigned int maxTrackedHybridStates = 4;
 
-static bool isClassicalType(Type ty) { return ty.isIntOrIndexOrFloat(); }
+static bool isQubitType(const Type ty) { return isa<mlir::qco::QubitType>(ty); }
+
+static bool isClassicalType(const Type ty) { return ty.isIntOrIndexOrFloat(); }
 
 static std::optional<Attribute> foldWithState(Operation* op,
                                               const HybridState& state) {
   SmallVector<Attribute> operandAttrs;
   operandAttrs.reserve(op->getNumOperands());
-  for (Value operand : op->getOperands()) {
+  for (const Value operand : op->getOperands()) {
     auto attr = state.getClassical(operand);
     if (!attr) {
       return std::nullopt;
@@ -51,59 +54,68 @@ static std::optional<Attribute> foldWithState(Operation* op,
 
 class HybridStateLattice : public dataflow::AbstractSparseLattice {
 public:
-  explicit HybridStateLattice(Value anchor)
-      : dataflow::AbstractSparseLattice(anchor) {}
+  using AbstractSparseLattice::AbstractSparseLattice;
+
+  explicit HybridStateLattice(const Value anchor)
+      : AbstractSparseLattice(anchor),
+        value(HybridStateSet(maxTrackedAmplitudes, maxTrackedHybridStates)) {}
 
   const HybridStateSet& getValue() const { return value; }
 
-  ChangeResult join(const HybridStateSet& rhs) {
-    HybridStateSet old = value;
-    value.join(rhs);
+  ChangeResult join(const AbstractSparseLattice& rhs) override {
+    const auto rhsHS = llvm::cast<HybridStateLattice>(rhs);
+    const HybridStateSet old = value;
+    value.join(rhsHS.getValue());
     return old == value ? ChangeResult::NoChange : ChangeResult::Change;
   }
 
+  ChangeResult meet(const AbstractSparseLattice& rhs) override {
+    return join(rhs);
+  }
+
+  void print(raw_ostream& os) const override;
+
 private:
-  HybridStateSet value = HybridStateSet::singletonInitial();
+  HybridStateSet value;
 };
 
 class HybridConstantPropagationAnalysis
     : public dataflow::SparseForwardDataFlowAnalysis<HybridStateLattice> {
 public:
-  explicit HybridConstantPropagationAnalysis(DataFlowSolver& solver,
-                                             unsigned maxTrackedAmplitudes,
-                                             unsigned maxTrackedStates)
-      : dataflow::SparseForwardDataFlowAnalysis<HybridStateLattice>(solver),
-        maxTrackedAmplitudes(maxTrackedAmplitudes),
-        maxTrackedStates(maxTrackedStates) {}
+  explicit HybridConstantPropagationAnalysis(DataFlowSolver& solver)
+      : SparseForwardDataFlowAnalysis(solver) {}
 
   void setToEntryState(dataflow::AbstractSparseLattice* lattice) override {
+    const auto value = lattice->getAnchor();
     auto* hybrid = llvm::cast<HybridStateLattice>(lattice);
-    propagateIfChanged(hybrid,
-                       hybrid->join(HybridStateSet::singletonInitial()));
+    // TODO: Propagate the values to the HybridState
+    // auto newLattice = HybridStateLattice();
+    // propagateIfChanged(hybrid, hybrid->join(newLattice));
   }
 
   LogicalResult
   visitOperation(Operation* op,
-                 ArrayRef<const dataflow::AbstractSparseLattice*> operands,
-                 ArrayRef<dataflow::AbstractSparseLattice*> results) override {
+                 const ArrayRef<const HybridStateLattice*> operands,
+                 ArrayRef<HybridStateLattice*> results) override {
     HybridStateSet input = gatherInputState(operands);
 
-    if (input.isTop) {
-      setAllResults(results, HybridStateSet::top());
+    if (input.areStatesTop()) {
+      // TODO: Forward Qubits to results
+      // setAllResults(results, HybridStateSet::top());
       return success();
     }
 
-    if (auto measureOp = dyn_cast<qco::MeasureOp>(op)) {
+    if (const auto measureOp = dyn_cast<MeasureOp>(op)) {
       visitMeasureOp(measureOp, input, results);
       return success();
     }
 
-    if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
+    if (const auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
       visitUnitaryOp(op, unitary, input, results);
       return success();
     }
 
-    if (auto ctrlOp = dyn_cast<qco::CtrlOp>(op)) {
+    if (const auto ctrlOp = dyn_cast<CtrlOp>(op)) {
       visitCtrlOp(ctrlOp, input, results);
       return success();
     }
@@ -118,9 +130,6 @@ public:
   }
 
 private:
-  unsigned maxTrackedAmplitudes;
-  unsigned maxTrackedStates;
-
   static HybridStateLattice* asHybrid(dataflow::AbstractSparseLattice* l) {
     return llvm::cast<HybridStateLattice>(l);
   }
@@ -130,8 +139,9 @@ private:
     return llvm::cast<HybridStateLattice>(l);
   }
 
+  // TODO: Merge :)
   HybridStateSet
-  gatherInputState(ArrayRef<const dataflow::AbstractSparseLattice*> operands) {
+  gatherInputState(ArrayRef<const HybridStateLattice*> operands) {
     HybridStateSet input = HybridStateSet::singletonInitial();
     bool first = true;
     for (const auto* operand : operands) {
@@ -146,7 +156,7 @@ private:
     return input;
   }
 
-  void setAllResults(ArrayRef<dataflow::AbstractSparseLattice*> results,
+  void setAllResults(const ArrayRef<HybridStateLattice*> results,
                      const HybridStateSet& state) {
     for (auto* res : results) {
       auto* lat = asHybrid(res);
@@ -155,7 +165,7 @@ private:
   }
 
   void visitClassicalOp(Operation* op, const HybridStateSet& input,
-                        ArrayRef<dataflow::AbstractSparseLattice*> results) {
+                        ArrayRef<HybridStateLattice*> results) {
     HybridStateSet output;
     output.states.clear();
 
@@ -177,7 +187,7 @@ private:
 
   void visitUnitaryOp(Operation* op, qco::UnitaryOpInterface unitary,
                       const HybridStateSet& input,
-                      ArrayRef<dataflow::AbstractSparseLattice*> results) {
+                      ArrayRef<HybridStateLattice*> results) {
     HybridStateSet output;
     output.states.clear();
 
@@ -202,7 +212,7 @@ private:
   }
 
   void visitMeasureOp(qco::MeasureOp op, const HybridStateSet& input,
-                      ArrayRef<dataflow::AbstractSparseLattice*> results) {
+                      ArrayRef<HybridStateLattice*> results) {
     HybridStateSet output;
     output.states.clear();
 
@@ -254,7 +264,7 @@ private:
   }
 
   void visitCtrlOp(qco::CtrlOp op, const HybridStateSet& input,
-                   ArrayRef<dataflow::AbstractSparseLattice*> results) {
+                   ArrayRef<HybridStateLattice*> results) {
     // Forward target inputs conservatively.
     HybridStateSet output;
     output.states = input.states;
@@ -278,7 +288,7 @@ private:
   }
 
   void visitFallback(Operation* op, const HybridStateSet& input,
-                     ArrayRef<dataflow::AbstractSparseLattice*> results) {
+                     ArrayRef<HybridStateLattice*> results) {
     HybridStateSet output = input;
     for (HybridState& state : output.states) {
       for (Value res : op->getResults()) {

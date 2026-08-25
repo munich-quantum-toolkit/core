@@ -21,7 +21,7 @@
 #include <utility>
 #include <variant>
 
-namespace mlir::mqt::qco {
+namespace mlir::qco {
 
 using Complex = std::complex<double>;
 
@@ -200,7 +200,7 @@ public:
   explicit HybridState(const unsigned int maxTrackedAmplitudes)
       : quantumState(nullptr), maxTrackedAmplitudes(maxTrackedAmplitudes) {}
 
-  bool operator==(const HybridState& other) const;
+  bool operator==(const HybridState& that) const;
 
   /**
    * Gets the attribute of a classical value if present.
@@ -228,7 +228,9 @@ public:
    * @param v The value to check for.
    * @return Whether the value is in the HybridState.
    */
-  bool contains(Value v);
+  bool contains(Value v) const;
+
+  // TODO: Application of various operations
 };
 
 /**
@@ -251,14 +253,7 @@ public:
       : maxTrackedAmplitudes(maxTrackedAmplitudes),
         maxTrackedHybridStates(maxTrackedHybridStates) {}
 
-  bool operator==(const HybridStateSet& other) const;
-
-  /**
-   * Creates a HybridStateSet with an empty set of HybridStates.
-   *
-   * @return An empty HybridStateSet.
-   */
-  static HybridStateSet singletonInitial();
+  bool operator==(const HybridStateSet& that) const;
 
   /**
    * Adds a hybridState to the set.
@@ -272,6 +267,9 @@ public:
   void canonicalize();
   void join(const HybridStateSet& other);
 
+  [[nodiscard("HybridStateSet::isTop called but ignored.")]]
+  bool areStatesTop() const;
+
   [[nodiscard("HybridStateSet::isAlwaysZero called but ignored.")]]
   bool isAlwaysZero(Value v) const;
 
@@ -283,4 +281,4 @@ public:
 bool isZeroAttribute(Attribute attr);
 bool isOneAttribute(Attribute attr);
 
-} // namespace mlir::mqt::qco
+} // namespace mlir::qco
