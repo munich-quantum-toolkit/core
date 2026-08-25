@@ -96,8 +96,8 @@ public:
   LogicalResult
   visitOperation(Operation* op,
                  const ArrayRef<const HybridStateLattice*> operands,
-                 ArrayRef<HybridStateLattice*> results) override {
-    HybridStateSet input = gatherInputState(operands);
+                 const ArrayRef<HybridStateLattice*> results) override {
+    const HybridStateSet input = gatherInputState(operands);
 
     if (input.areStatesTop()) {
       // TODO: Forward Qubits to results
@@ -139,21 +139,17 @@ private:
     return llvm::cast<HybridStateLattice>(l);
   }
 
-  // TODO: Merge :)
-  HybridStateSet
-  gatherInputState(ArrayRef<const HybridStateLattice*> operands) {
-    HybridStateSet input = HybridStateSet::singletonInitial();
-    bool first = true;
-    for (const auto* operand : operands) {
-      const HybridStateSet& state = asHybrid(operand)->getValue();
-      if (first) {
-        input = state;
-        first = false;
-      } else {
-        input.join(state);
-      }
+  static HybridStateSet
+  gatherInputState(const ArrayRef<const HybridStateLattice*> operands) {
+    if (operands.size() == 1) {
+      return operands[0]->getValue();
     }
-    return input;
+
+    auto result = operands[0]->getValue().mergeStates(operands[1]->getValue());
+    for (unsigned int i = 2; i < operands.size(); ++i) {
+      result = result.mergeStates(operands[i]->getValue());
+    }
+    return result;
   }
 
   void setAllResults(const ArrayRef<HybridStateLattice*> results,
@@ -253,7 +249,7 @@ private:
         next.setClassical(outClassical, succ.second);
         if (isZeroAttribute(succ.second))
           next.probability *= prob0;
-        else if (isOneAttribute(succ.second))
+        else if (isTrueAttribute(succ.second))
           next.probability *= prob1;
         output.addState(std::move(next));
       }
@@ -312,7 +308,7 @@ struct RemoveAlwaysZeroCtrlPattern : public OpRewritePattern<qco::CtrlOp> {
       auto* state = solver.lookupState<HybridStateLattice>(ctrl);
       if (!state)
         return failure();
-      if (!state->getValue().isAlwaysZero(ctrl))
+      if (!state->getValue().isAlwaysFalse(ctrl))
         continue;
 
       unsigned numResults = op->getNumResults();
@@ -358,7 +354,7 @@ struct ConstantPropagationPass
   }
 };
 
-} // namespace mlir::mqt::qco
+} // namespace mlir::qco
 
 std::unique_ptr<Pass> mlir::mqt::createConstantPropagationPass() {
   return std::make_unique<ConstantPropagationPass>();

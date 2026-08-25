@@ -191,7 +191,8 @@ QuantumState QuantumState::tensorProduct(const QuantumState& that) {
   result.qubits.append(qubits.begin(), qubits.end());
   result.qubits.append(that.qubits.begin(), that.qubits.end());
 
-  if (isTop || that.isTop) {
+  if (isTop || that.isTop ||
+      amplitudes.size() * that.amplitudes.size() > maxTrackedAmplitudes) {
     result.isTop = true;
     return result;
   }
@@ -204,6 +205,7 @@ QuantumState QuantumState::tensorProduct(const QuantumState& that) {
   }
   return result;
 }
+bool QuantumState::isStateTop() const { return isTop; }
 
 void QuantumState::applyMatrix1Q(const Value input, const Value output,
                                  const Matrix2x2& matrix) {
@@ -476,6 +478,7 @@ bool HybridState::contains(const Value v) const {
   }
   return quantumState->contains(v);
 }
+bool HybridState::isStateTop() const { return isTop; }
 
 bool HybridState::isAlwaysFalse(const Value v) const {
   const auto attr = getClassical(v);
@@ -491,6 +494,27 @@ bool HybridState::isAlwaysTrue(const Value v) const {
     return isTrueAttribute(attr.value());
   }
   return quantumState->isAlwaysOne(v);
+}
+
+HybridState HybridState::mergeStates(const HybridState& that) const {
+  auto result = HybridState(maxTrackedAmplitudes);
+  result.probability = probability * that.probability;
+
+  if (isTop || that.isTop) {
+    result.isTop = true;
+    return result;
+  }
+  result.classicalValues = classicalValues;
+  for (const auto& [v, a] : that.classicalValues) {
+    result.classicalValues[v] = a;
+  }
+  auto qS = quantumState->tensorProduct(*that.quantumState);
+  if (qS.isStateTop()) {
+    result.isTop = true;
+    return result;
+  }
+  result.quantumState = std::make_unique<QuantumState>(qS);
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -522,6 +546,11 @@ void HybridStateSet::addState(HybridState state) {
   if (isTop) {
     return;
   }
+  if (maxTrackedHybridStates == states.size()) {
+    isTop = true;
+    states.clear();
+    return;
+  }
   states.push_back(std::move(state));
 }
 
@@ -542,6 +571,30 @@ void HybridStateSet::enforceMaxStates() {
     isTop = true;
     states.clear();
   }
+}
+HybridStateSet HybridStateSet::mergeStates(const HybridStateSet& that) const {
+  auto result = HybridStateSet(maxTrackedAmplitudes, maxTrackedHybridStates);
+  if (isTop || that.isTop) {
+    result.isTop = true;
+    result.states.clear();
+    return result;
+  }
+  bool allTop = true;
+  SmallVector<HybridState> newStates;
+  for (const auto& s : states) {
+    for (const auto& thatS : that.states) {
+      const auto newState = s.mergeStates(thatS);
+      newStates.push_back(newState);
+      allTop &= newState.isStateTop();
+    }
+  }
+  if (allTop) {
+    result.isTop = true;
+    result.states.clear();
+  } else {
+    result.states = std::move(newStates);
+  }
+  return result;
 }
 
 bool HybridStateSet::areStatesTop() const { return isTop; }

@@ -51,18 +51,6 @@ private:
   std::optional<unsigned> indexOf(Value v) const;
 
   /**
-   * Computes the tensor product of this QuantumState with another QuantumState.
-   * The tensor product combines the qubits and amplitudes of both states,
-   * producing a new QuantumState that represents the combined quantum system.
-   *
-   * @param that The QuantumState to be combined with this QuantumState.
-   * @return A new QuantumState representing the tensor product of the two
-   * states.
-   */
-  [[nodiscard("QuantumState::tensorProduct called but ignored.")]]
-  QuantumState tensorProduct(const QuantumState& that);
-
-  /**
    * Applies a 2x2 unitary matrix to a single qubit in the QuantumState.
    * This operation updates the quantum state's amplitude distribution
    * and the tracked qubit values.
@@ -116,6 +104,21 @@ public:
    */
   [[nodiscard("QuantumState::contains called but ignored.")]]
   bool contains(Value v) const;
+
+  /**
+   * Computes the tensor product of this QuantumState with another QuantumState.
+   * The tensor product combines the qubits and amplitudes of both states,
+   * producing a new QuantumState that represents the combined quantum system.
+   *
+   * @param that The QuantumState to be combined with this QuantumState.
+   * @return A new QuantumState representing the tensor product of the two
+   * states.
+   */
+  [[nodiscard("QuantumState::tensorProduct called but ignored.")]]
+  QuantumState tensorProduct(const QuantumState& that);
+
+  [[nodiscard("QuantumState::isStateTop called but ignored.")]]
+  bool isStateTop() const;
 
   /**
    * Check if a value is always zero.
@@ -200,7 +203,7 @@ public:
   explicit HybridState(const unsigned int maxTrackedAmplitudes)
       : quantumState(nullptr), maxTrackedAmplitudes(maxTrackedAmplitudes) {}
 
-  explicit HybridState(const HybridState& that)
+  HybridState(const HybridState& that)
       : classicalValues(that.classicalValues),
         quantumState(that.quantumState
                          ? std::make_unique<QuantumState>(*that.quantumState)
@@ -257,6 +260,9 @@ public:
    */
   bool contains(Value v) const;
 
+  [[nodiscard("HybridState::isStateTop called but ignored.")]]
+  bool isStateTop() const;
+
   /**
    * Checks if a value is always false, i.e., false/zero if it is a classical
    * value and |0> if it is a quantum value. If the value is not part of the
@@ -280,6 +286,13 @@ public:
   bool isAlwaysTrue(Value v) const;
 
   // TODO: Application of various operations
+  /**
+   * Merges two HybridStates which have QuantumState with different qubits.
+   *
+   * @param that The HybridStateSet to be merged with this.
+   * @return A new merged HybridState.
+   */
+  HybridState mergeStates(const HybridState& that) const;
 };
 
 /**
@@ -293,8 +306,6 @@ private:
   unsigned int maxTrackedAmplitudes;
   unsigned int maxTrackedHybridStates;
   SmallVector<HybridState> states;
-
-  // TODO: Merging of Hybrid States given values
 
 public:
   explicit HybridStateSet(const unsigned int maxTrackedAmplitudes,
@@ -329,17 +340,27 @@ public:
    */
   void enforceMaxStates();
 
-  [[nodiscard("HybridStateSet::isTop called but ignored.")]]
+  /**
+   * Merges two HybridStateSets which have QuantumState with different qubits.
+   * Needs to be done before an operation entangles qubits from two
+   * HybridStates.
+   *
+   * @param that The HybridStateSet to be merged with this.
+   * @returns The new HybridStateSet.
+   */
+  HybridStateSet mergeStates(const HybridStateSet& that) const;
+
+  [[nodiscard("HybridStateSet::areStatesTop called but ignored.")]]
   bool areStatesTop() const;
 
   /**
-     * Checks if a value is always false, i.e., false/zero if it is a classical
-     * value and |0> if it is a quantum value. If the value is not part of the
-     * HybridState, the result is false.
-     *
-     * @param v The value to be checked.
-     * @return Whether the value is always false.
-     */
+   * Checks if a value is always false, i.e., false/zero if it is a classical
+   * value and |0> if it is a quantum value. If the value is not part of the
+   * HybridState, the result is false.
+   *
+   * @param v The value to be checked.
+   * @return Whether the value is always false.
+   */
   [[nodiscard("HybridStateSet::isAlwaysFalse called but ignored.")]]
   bool isAlwaysFalse(Value v) const;
 
