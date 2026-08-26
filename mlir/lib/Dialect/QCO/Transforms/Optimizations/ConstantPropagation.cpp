@@ -92,8 +92,7 @@ public:
     }
 
     if (const auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
-      visitUnitaryOp(op, unitary, input, results);
-      return success();
+      return visitUnitaryOp(unitary, input, results);
     }
 
     if (const auto ctrlOp = dyn_cast<CtrlOp>(op)) {
@@ -102,8 +101,7 @@ public:
     }
 
     if (llvm::all_of(op->getResultTypes(), isClassicalType)) {
-      visitClassicalOp(op, input, results);
-      return success();
+      return visitClassicalOp(op, input, results);
     }
 
     visitFallback(op, input, results);
@@ -133,47 +131,30 @@ private:
     return result;
   }
 
-  void setAllResults(const ArrayRef<HybridStateLattice*> results,
-                     const HybridStateSet& state) {
-    for (auto* res : results) {
-      auto* lat = asHybrid(res);
-      propagateIfChanged(lat, lat->join(state));
+  LogicalResult visitClassicalOp(Operation* op, HybridStateSet& input,
+                                 ArrayRef<HybridStateLattice*> results) {
+    if (input.applyClassicalOperation(op).failed()) {
+      return failure();
     }
-  }
-
-  void visitClassicalOp(Operation* op, HybridStateSet& input,
-                        ArrayRef<HybridStateLattice*> results) {
-    input.applyClassicalOperation(op);
     for (auto [resLattice, resValue] : llvm::zip(results, op->getResults())) {
       const auto newLattice = HybridStateLattice(resValue, input);
       propagateIfChanged(resLattice, resLattice->join(newLattice));
     }
+    return success();
   }
 
-  void visitUnitaryOp(Operation* op, qco::UnitaryOpInterface unitary,
-                      const HybridStateSet& input,
-                      ArrayRef<HybridStateLattice*> results) {
-    HybridStateSet output;
-    output.states.clear();
-
-    SmallVector<Value> inputs(op->getOperands().begin(),
-                              op->getOperands().end());
-    SmallVector<Value> outputsV(op->getResults().begin(),
-                                op->getResults().end());
-    UnitaryMatrix matrix = unitary.getUnitaryMatrix();
-
-    for (const HybridState& state : input.states) {
-      HybridState next = state;
-      if (failed(next.quantumState.applyUnitary(inputs, matrix, outputsV,
-                                                maxTrackedAmplitudes))) {
-        for (Value out : outputsV)
-          next.quantumState.markTop(out);
-      }
-      output.addState(std::move(next));
+  LogicalResult visitUnitaryOp(UnitaryOpInterface unitary,
+                               HybridStateSet& input,
+                               ArrayRef<HybridStateLattice*> results) {
+    if (input.applyUnitaryOperation(&unitary).failed()) {
+      return failure();
     }
-
-    output.enforceMaxStates(maxTrackedStates);
-    setAllResults(results, output);
+    for (auto [resLattice, resValue] :
+         llvm::zip(results, unitary->getResults())) {
+      const auto newLattice = HybridStateLattice(resValue, input);
+      propagateIfChanged(resLattice, resLattice->join(newLattice));
+    }
+    return success();
   }
 
   void visitMeasureOp(qco::MeasureOp op, const HybridStateSet& input,

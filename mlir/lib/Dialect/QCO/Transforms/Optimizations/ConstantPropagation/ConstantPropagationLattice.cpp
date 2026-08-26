@@ -238,8 +238,8 @@ void QuantumState::applyMatrix1Q(const Value input, const Value output,
   for (const auto& it : grouped) {
     Complex in0 = it.second[0];
     Complex in1 = it.second[1];
-    Complex out0 = matrix[0][0] * in0 + matrix[0][1] * in1;
-    Complex out1 = matrix[1][0] * in0 + matrix[1][1] * in1;
+    Complex out0 = matrix.data[0] * in0 + matrix.data[1] * in1;
+    Complex out1 = matrix.data[2] * in0 + matrix.data[3] * in1;
     if (out0 != Complex(0.0, 0.0)) {
       result[insertBit(it.first, idx, false)] += out0;
     }
@@ -299,7 +299,7 @@ void QuantumState::applyMatrix2Q(const Value input0, const Value input1,
     for (unsigned row = 0; row < 4; ++row) {
       Complex sum(0.0, 0.0);
       for (unsigned col = 0; col < 4; ++col) {
-        sum += matrix[row][col] * it.second[col];
+        sum += matrix.data[row * 4 + col] * it.second[col];
       }
       outVec[row] = sum;
     }
@@ -308,8 +308,8 @@ void QuantumState::applyMatrix2Q(const Value input0, const Value input1,
       if (outVec[row] == Complex(0.0, 0.0)) {
         continue;
       }
-      bool b0 = (row & 1u) != 0u;
-      bool b1 = (row & 2u) != 0u;
+      const bool b0 = (row & 1u) != 0u;
+      const bool b1 = (row & 2u) != 0u;
       uint64_t basis = insertBit(insertBit(it.first, idx0, b0), idx1, b1);
       result[basis] += outVec[row];
     }
@@ -372,8 +372,7 @@ LogicalResult QuantumState::applyUnitary(const ArrayRef<Value> inputs,
 }
 
 std::unordered_map<unsigned int, std::pair<QuantumState, double>>
-QuantumState::measure(const Value inQubit, const Value outQubit,
-                      MLIRContext* ctx) {
+QuantumState::measure(const Value inQubit, const Value outQubit) {
 
   if (isTop) {
     forwardQubit(inQubit, outQubit);
@@ -384,7 +383,7 @@ QuantumState::measure(const Value inQubit, const Value outQubit,
   if (!idxOpt) {
     llvm::report_fatal_error("Called measure on a qubit not in the state");
   }
-  unsigned idx = *idxOpt;
+  const unsigned idx = *idxOpt;
 
   double prob0 = 0.0;
   double prob1 = 0.0;
@@ -517,7 +516,7 @@ HybridState HybridState::mergeStates(const HybridState& that) const {
   return result;
 }
 
-void HybridState::applyClassicalOperation(Operation* op) {
+LogicalResult HybridState::applyClassicalOperation(Operation* op) {
   SmallVector<Attribute> operandAttrs;
   operandAttrs.reserve(op->getNumOperands());
   for (const Value operand : op->getOperands()) {
@@ -525,6 +524,7 @@ void HybridState::applyClassicalOperation(Operation* op) {
     if (!attr) {
       llvm::report_fatal_error(
           "Called operation on a classical value not in the state");
+      return failure();
     }
     operandAttrs.push_back(*attr);
   }
@@ -536,9 +536,31 @@ void HybridState::applyClassicalOperation(Operation* op) {
         setClassical(val, attr);
       }
     }
-    return;
+    return success();
   }
   llvm::report_fatal_error("Error while propagating classical operation.");
+  return failure();
+}
+
+LogicalResult HybridState::applyUnitaryOperation(UnitaryOpInterface* op) const {
+  const SmallVector<Value> inputs = op->getInputTargets();
+  const SmallVector<Value> outputs = op->getOutputTargets();
+  UnitaryMatrix matrix;
+
+  if (inputs.size() == 1) {
+    auto matrix2 = Matrix2x2();
+    op->getUnitaryMatrix2x2(matrix2);
+    matrix = matrix2;
+  } else if (inputs.size() == 2) {
+    auto matrix4 = Matrix4x4();
+    op->getUnitaryMatrix4x4(matrix4);
+    matrix = matrix4;
+  } else {
+    llvm::report_fatal_error(
+        "Constant propagation needs gates with one or two targets.");
+    return failure();
+  }
+  return quantumState->applyUnitary(inputs, matrix, outputs);
 }
 
 //===----------------------------------------------------------------------===//
@@ -651,10 +673,22 @@ bool HybridStateSet::isAlwaysTrue(const Value v) const {
   return true;
 }
 
-void HybridStateSet::applyClassicalOperation(Operation* op) {
+LogicalResult HybridStateSet::applyClassicalOperation(Operation* op) {
   for (HybridState& state : states) {
-    state.applyClassicalOperation(op);
+    if (state.applyClassicalOperation(op).failed()) {
+      return failure();
+    }
   }
+  return success();
+}
+
+LogicalResult HybridStateSet::applyUnitaryOperation(UnitaryOpInterface* op) {
+  for (HybridState& state : states) {
+    if (state.applyUnitaryOperation(op).failed()) {
+      return failure();
+    }
+  }
+  return success();
 }
 
 } // namespace mlir::qco

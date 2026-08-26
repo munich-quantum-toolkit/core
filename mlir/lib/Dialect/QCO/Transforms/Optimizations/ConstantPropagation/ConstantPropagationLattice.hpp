@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Attributes.h>
@@ -25,8 +27,6 @@ namespace mlir::qco {
 
 using Complex = std::complex<double>;
 
-using Matrix2x2 = std::array<std::array<Complex, 2>, 2>;
-using Matrix4x4 = std::array<std::array<Complex, 4>, 4>;
 using UnitaryMatrix = std::variant<Matrix2x2, Matrix4x4>;
 
 /**
@@ -171,13 +171,11 @@ public:
    *
    * @param inQubit The qubit to be measured.
    * @param outQubit The qubit value after the measurement.
-   * @param ctx The MLIRContext used for type creation and attribute
-   * propagation.
    * @return A map of possible successor states paired with their probability.
    * The keys are the measurement results.
    */
   std::unordered_map<unsigned int, std::pair<QuantumState, double>>
-  measure(Value inQubit, Value outQubit, MLIRContext* ctx);
+  measure(Value inQubit, Value outQubit);
 };
 
 /**
@@ -299,7 +297,14 @@ public:
    *
    * @param op The classical operation to apply.
    */
-  void applyClassicalOperation(Operation* op);
+  LogicalResult applyClassicalOperation(Operation* op);
+
+  /**
+   * Applies an (uncontrolled) unitary gate on all HybridStates of the set.
+   *
+   * @param op The operation to apply.
+   */
+  LogicalResult applyUnitaryOperation(UnitaryOpInterface* op) const;
 };
 
 /**
@@ -383,13 +388,18 @@ public:
   bool isAlwaysTrue(Value v) const;
 
   /**
-   * Applies a classical operation on all HybridStates of the set and returns a
-   * new set.
+   * Applies a classical operation on all HybridStates of the set.
    *
    * @param op The operation to apply.
-   * @return The set with applied operation.
    */
-  void applyClassicalOperation(Operation* op);
+  LogicalResult applyClassicalOperation(Operation* op);
+
+  /**
+   * Applies an (uncontrolled) unitary gate on all HybridStates of the set.
+   *
+   * @param op The operation to apply.
+   */
+  LogicalResult applyUnitaryOperation(UnitaryOpInterface* op);
 };
 
 /// Utility used by the pass analysis.
