@@ -376,44 +376,31 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
   return result;
 }
 
-/**
- * @brief Count gates in the entry point that satisfy a predicate.
- *
- * @details The walk counts each matching gate in nested regions once, so the
- * result describes the static IR rather than runtime execution. Modifier
- * operations count as gates, but the walk skips their bodies. Barriers do not
- * count.
- */
-template <typename Predicate>
-static size_t countGatesIf(ModuleOp moduleOp, const Predicate& predicate = {}) {
+static size_t
+countGatesIf(ModuleOp moduleOp,
+             const llvm::function_ref<bool(qc::UnitaryOpInterface)> predicate) {
   size_t count = 0;
   auto entryPoint = mqt::getEntryPoint(moduleOp);
-  entryPoint.walk<WalkOrder::PreOrder>([&](Operation* operation) {
-    auto op = dyn_cast<qc::UnitaryOpInterface>(operation);
-    if (!op) {
-      return WalkResult::advance();
-    }
-    if (!isa<qc::BarrierOp>(op) && predicate(op)) {
-      ++count;
-    }
-    if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op)) {
-      return WalkResult::skip();
-    }
-    return WalkResult::advance();
+  entryPoint.walk<WalkOrder::PreOrder>([&](qc::UnitaryOpInterface op) {
+    count += !isa<qc::BarrierOp>(op) && predicate(op);
+    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op) ? WalkResult::skip()
+                                                     : WalkResult::advance();
   });
   return count;
 }
 
 size_t QCProgram::numGates() const {
-  return countGatesIf(module(), [](auto) { return true; });
+  return countGatesIf(mod(), [](qc::UnitaryOpInterface) { return true; });
 }
 
 size_t QCProgram::numSingleQubitGates() const {
-  return countGatesIf(module(), [](auto op) { return op.getNumQubits() == 1; });
+  return countGatesIf(
+      mod(), [](qc::UnitaryOpInterface op) { return op.isSingleQubit(); });
 }
 
 size_t QCProgram::numTwoQubitGates() const {
-  return countGatesIf(module(), [](auto op) { return op.getNumQubits() == 2; });
+  return countGatesIf(
+      mod(), [](qc::UnitaryOpInterface op) { return op.isTwoQubit(); });
 }
 
 //===----------------------------------------------------------------------===//
