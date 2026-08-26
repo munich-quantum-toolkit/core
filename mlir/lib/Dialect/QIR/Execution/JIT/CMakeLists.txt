@@ -9,23 +9,14 @@
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-jit)
 
 if(NOT TARGET ${TARGET_NAME})
-  # Add QIRJIT library
-  add_mqt_core_library(${TARGET_NAME} FORCE_STATIC ALIAS_NAME QIRJIT)
+  # Add internal QIR JIT library
+  add_library(${TARGET_NAME} STATIC IRRewriter.cpp Session.cpp)
+  add_library(MQT::CoreQIRJIT ALIAS ${TARGET_NAME})
 
-  # Add sources to target
-  target_sources(${TARGET_NAME} PRIVATE Session.cpp IRRewriter.cpp)
+  target_include_directories(${TARGET_NAME}
+                             PUBLIC $<BUILD_INTERFACE:${MQT_MLIR_SOURCE_INCLUDE_DIR}>)
+  set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
   mqt_llvm_target_disable_rtti(${TARGET_NAME})
-
-  # Add headers using file sets
-  target_sources(
-    ${TARGET_NAME}
-    PUBLIC FILE_SET
-           HEADERS
-           BASE_DIRS
-           ${MQT_CORE_INCLUDE_BUILD_DIR}
-           FILES
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/jit/Session.hpp
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/jit/IRRewriter.hpp)
 
   # Get the LLVM native target libraries
   llvm_map_components_to_libnames(
@@ -43,5 +34,6 @@ if(NOT TARGET ${TARGET_NAME})
     transformutils)
 
   # Add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime ${llvm_native_libs})
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime MQT::ProjectWarnings
+                                               MQT::ProjectOptions ${llvm_native_libs})
 endif()

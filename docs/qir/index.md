@@ -12,51 +12,14 @@ The [_Quantum Intermediate Representation_ (QIR)](https://www.qir-alliance.org)
 is a standardized intermediate representation for quantum programs based on the
 [_LLVM intermediate representation_ (LLVM IR)](http://llvm.org/).
 
-## The QIR Runtime in MQT Core
+## Compiling and Executing QIR
 
-MQT Core provides a runtime for QIR that is based on its decision diagram-based
-quantum simulator. This allows for the execution of QIR programs using MQT
-Core's high-performance simulation capabilities.
+The MQT Compiler Collection generates QIR in LLVM assembly or bitcode form.
+Execute this output with the DDSIM QDMI device or a compatible external QIR
+runtime.
 
-The runtime can be utilized in two ways:
-
-1. As a standalone library that can be linked to any QIR program, resulting in a
-   binary executable.
-2. By using the `mqt-core-qir-runner` command-line tool, which interprets QIR
-   programs directly.
-
-See {cite:p}`stadeTowardsSupportingQIR2025` for more details.
-
-### Building the Runner
-
-The runner is part of every MQT Core build. From the root of the repository, you
-can build it as follows:
-
-```bash
-cmake -S . -B build
-cmake --build build --target mqt-core-qir-runner
-```
-
-After building, the tool can be found in the build directory under
-`bin/mqt-core-qir-runner`.
-
-### Executing a QIR Program
-
-The `mqt-core-qir-runner` can be used to execute a QIR file (typically with a
-`.ll` extension).
-
-```bash
-./build/bin/mqt-core-qir-runner bell.ll
-```
-
-The entry-point function may have any valid LLVM name. If a module contains more
-than one function with the `entry_point` attribute, select one explicitly. The
-runner also supports repeated, reproducible execution:
-
-```bash
-./build/bin/mqt-core-qir-runner \
-  --entry-point=bell_entry --shots=1024 --seed=7 bell.ll
-```
+See {cite:p}`stadeTowardsSupportingQIR2025` for more details about QIR support
+in MQT.
 
 ### Executing Generated QIR from Python
 
@@ -91,8 +54,8 @@ This path is tested for Base Profile programs with static qubit and result
 allocation, including dedicated one- and two-control QIS functions and the
 generic QIR controlled specialization used for three or more controls.
 QIR-Runner does not currently implement every QIR 2.1 dynamic resource
-management function supported by the MQT runner and DDSIM QDMI device; use those
-MQT runtimes for dynamically allocated programs.
+management function supported by the DDSIM QDMI device. Submit dynamically
+allocated programs to that device instead.
 
 QIR entry points take no arguments and return an `i64` exit code. Runtime and
 QIS declarations are checked before JIT compilation; a mismatched or unsupported
@@ -113,17 +76,6 @@ Adaptive profiles, so the entry point keeps its `base_profile` or
 
 MQT's two-angle phased-X rotation gate uses the `prx` QIS stem. The incompatible
 QIR-Runner Pauli-axis operation named `r` is not part of MQT's QIS.
-
-The runner prints the program's outputs to the console in one of the two
-[QIR Output Schemas][output-schemas] (Labeled or Ordered): the two `HEADER`
-records announce the schema, and each shot is wrapped in `START` and `END`
-records with a `METADATA\toutput_labeling_schema\t<schema>` line inside.
-
-The active schema is selected by the `output_labeling_schema` function attribute
-on the entry-point function of the QIR program. The value `ordered` selects
-Ordered; anything else, or a missing attribute, selects Labeled.
-
-[output-schemas]: https://github.com/qir-alliance/qir-spec/tree/main/specification/output_schemas
 
 ### QIR Support in the DDSIM QDMI Device
 
