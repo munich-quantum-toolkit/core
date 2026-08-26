@@ -19,7 +19,9 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <array>
 #include <cstdint>
@@ -130,15 +132,7 @@ constexpr std::array<Twirl, 16> ISWAP_TWIRLS = {{
 
 } // namespace
 
-[[nodiscard]] static bool isNestedInModifier(Operation* op) {
-  return op->getParentOfType<CtrlOp>() || op->getParentOfType<InvOp>() ||
-         op->getParentOfType<PowOp>();
-}
-
 [[nodiscard]] static const std::array<Twirl, 16>* getTwirlTable(Operation* op) {
-  if (isNestedInModifier(op)) {
-    return nullptr;
-  }
   if (auto ctrl = dyn_cast<CtrlOp>(op)) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return nullptr;
@@ -225,10 +219,12 @@ protected:
       const std::array<Twirl, 16>* table;
     };
     SmallVector<Candidate> gates;
-    getOperation().walk([&](Operation* op) {
+    getOperation().walk<WalkOrder::PreOrder>([&](Operation* op) {
       if (const auto* table = getTwirlTable(op)) {
         gates.push_back({.gate = cast<UnitaryOpInterface>(op), .table = table});
       }
+      return isa<CtrlOp, InvOp, PowOp>(op) ? WalkResult::skip()
+                                           : WalkResult::advance();
     });
 
     IRRewriter rewriter(&getContext());
