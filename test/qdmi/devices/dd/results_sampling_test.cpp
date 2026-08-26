@@ -15,7 +15,6 @@
 #include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
-#include "qir/helpers/test_utils.hpp"
 
 #include <gtest/gtest.h>
 #include <llvm/AsmParser/Parser.h>
@@ -93,7 +92,7 @@ protected:
 class QIRHistogramTestModule : public HistogramTest {
 protected:
   static std::string getProgram(const std::string_view file) {
-    const std::string text = qir_test::getProgram(file);
+    const std::string text = qdmi_test::getQIRProgram(file);
     llvm::LLVMContext context;
     llvm::SMDiagnostic err;
     auto llvmModule = llvm::parseAssemblyString(text, err, context);
@@ -127,7 +126,8 @@ TEST_F(QIRHistogramTestModule, BaseStatic) {
 
 TEST_F(QIRHistogramTestString, BaseStatic) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
-  checkHistogram(runProgram(format, qir_test::getProgram("BellPairStatic.ll")));
+  checkHistogram(
+      runProgram(format, qdmi_test::getQIRProgram("BellPairStatic.ll")));
 }
 
 TEST_F(QIRHistogramTestModule, BaseDynamic) {
@@ -138,7 +138,7 @@ TEST_F(QIRHistogramTestModule, BaseDynamic) {
 TEST_F(QIRHistogramTestString, BaseDynamic) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
   checkHistogram(
-      runProgram(format, qir_test::getProgram("BellPairDynamic.ll")));
+      runProgram(format, qdmi_test::getQIRProgram("BellPairDynamic.ll")));
 }
 
 TEST_F(QIRHistogramTestModule, Adaptive) {
@@ -149,7 +149,7 @@ TEST_F(QIRHistogramTestModule, Adaptive) {
 TEST_F(QIRHistogramTestString, Adaptive) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
   checkHistogram(
-      runProgram(format, qir_test::getProgram("BellPairAdaptive.ll")));
+      runProgram(format, qdmi_test::getQIRProgram("BellPairAdaptive.ll")));
 }
 
 TEST_F(QIRHistogramTestModule, AdaptiveRecordOutputs) {
@@ -161,7 +161,7 @@ TEST_F(QIRHistogramTestModule, AdaptiveRecordOutputs) {
 TEST_F(QIRHistogramTestString, AdaptiveRecordOutputs) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
   checkSmokeHistogram(
-      runProgram(format, qir_test::getProgram("AdaptiveRecordOutputs.ll")));
+      runProgram(format, qdmi_test::getQIRProgram("AdaptiveRecordOutputs.ll")));
 }
 
 TEST_F(HistogramTest, SeedReproducesQASMSampling) {
@@ -172,7 +172,7 @@ TEST_F(HistogramTest, SeedReproducesQASMSampling) {
 
 TEST_F(QIRHistogramTestString, SeedReproducesQIRSampling) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
-  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  const auto program = qdmi_test::getQIRProgram("BellPairStatic.ll");
   EXPECT_EQ(runProgram(format, program, 7), runProgram(format, program, 7));
 }
 

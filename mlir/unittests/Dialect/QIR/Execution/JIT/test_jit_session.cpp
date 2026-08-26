@@ -10,18 +10,27 @@
 
 #include "mlir/Dialect/QIR/Execution/JIT/Session.h"
 #include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
-#include "qir/helpers/test_utils.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
+
+static std::string getProgram(const std::string_view file) {
+  const auto path = std::filesystem::path(QIR_FILES_DIR) / file;
+  std::ifstream stream(path);
+  EXPECT_TRUE(stream.is_open()) << "Failed to open " << path;
+  return {std::istreambuf_iterator<char>{stream}, {}};
+}
 
 namespace {
 
@@ -31,7 +40,7 @@ protected:
 };
 
 TEST_F(JitSessionTest, LoadModuleFromMemory) {
-  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  const auto program = getProgram("BellPairStatic.ll");
   qir::JitSession session(program, "BellPairStatic.ll");
   session.runtime().setOstream(sink);
   ASSERT_EQ(session.run(), 0);
@@ -39,7 +48,7 @@ TEST_F(JitSessionTest, LoadModuleFromMemory) {
 }
 
 TEST_F(JitSessionTest, SamplingRecordsOutputs) {
-  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  const auto program = getProgram("BellPairStatic.ll");
   // qir::Execution::Sampling is the default Execution mode
   qir::JitSession session(program, "BellPairStatic.ll");
   session.runtime().setOstream(sink);
@@ -52,7 +61,7 @@ TEST_F(JitSessionTest, SamplingRecordsOutputs) {
 }
 
 TEST_F(JitSessionTest, StateExtractionLeavesNoRecordedOutputs) {
-  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  const auto program = getProgram("BellPairStatic.ll");
   qir::JitSession session(program, "BellPairStatic.ll",
                           qir::Execution::StateExtraction);
   session.runtime().setOstream(sink);
@@ -286,7 +295,7 @@ attributes #0 = { "entry_point" }
 }
 
 TEST_F(JitSessionTest, SessionsExecuteIndependently) {
-  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  const auto program = getProgram("BellPairStatic.ll");
   qir::JitSession first(program, "first.ll");
   qir::JitSession second(program, "second.ll");
   std::ostringstream firstSink;
@@ -311,7 +320,7 @@ TEST_F(JitSessionTest, SessionsExecuteIndependently) {
 }
 
 TEST_F(JitSessionTest, SeedReproducesShotSequence) {
-  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  const auto program = getProgram("BellPairStatic.ll");
   qir::JitSession first(program, "first.ll");
   qir::JitSession second(program, "second.ll");
   first.runtime().seed(42);

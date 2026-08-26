@@ -15,7 +15,6 @@
 #include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
-#include "qir/helpers/test_utils.hpp"
 
 #include <gtest/gtest.h>
 
@@ -110,7 +109,7 @@ TEST(ResultsStatevector, HistogramRequestsInvalidWithShotsZero) {
 TEST(ResultsStatevector, QIRBaseStringYieldsBellState) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  const auto program = qdmi_test::getQIRProgram("BellPairStatic.ll");
   ASSERT_EQ(
       qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QIRBASESTRING, program),
       QDMI_SUCCESS);

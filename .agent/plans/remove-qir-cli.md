@@ -49,6 +49,9 @@ output, and random number generator state.
 - [x] (2026-08-26 07:25Z) Replaced shared QIR character arrays with C++20 string
       views, moved the executor tests below the MLIR QIR subtree, and ran the
       focused tests and array-decay clang-tidy check.
+- [x] (2026-08-26 07:47Z) Moved the `mqt-cc` QIR output test below the MLIR
+      compiler tests, removed the obsolete shared QIR test utility target and
+      `test/qir` subtree, and fixed the LLVM static-function warnings.
 
 ## Surprises & Discoveries
 
@@ -104,6 +107,11 @@ output, and random number generator state.
   selection. Rationale: MQT's compiler emits one entry point, while QIR-Runner
   already serves external modules that need selection. Date/Author: 2026-08-26 /
   Codex.
+- Decision: Keep the QIR output driver test below `mlir/unittests/Compiler` and
+  let the JIT and DDSIM tests load their own fixtures. Rationale: The test
+  checks `mqt-cc`, while a separate library for one small file loader created
+  needless coupling between the MLIR and QDMI test trees. Date/Author:
+  2026-08-26 / Codex.
 
 ## Outcomes & Retrospective
 
@@ -113,8 +121,9 @@ MLIR QIR subtree and is shared by DDSIM, the compiler, and focused tests. Its
 unexported targets retain consistent build-tree aliases. DDSIM exposes
 deterministic OpenQASM and QIR sampling through custom job parameter 1. The
 internal JIT accepts only in-memory modules with one standard QIR entry point.
-The focused tests, all 4,035 configured C++ tests, documentation build,
-install-surface scan, focused clang-tidy check, and lint pass.
+The obsolete `test/qir` subtree is gone. The focused tests, all 4,035 configured
+C++ tests, documentation build, install-surface scan, focused clang-tidy check,
+and lint pass.
 
 ## Context and Orientation
 
@@ -272,3 +281,6 @@ retained consistent build-tree target aliases.
 
 Plan revision note (2026-08-26): Used C++20 string views for shared QIR literals
 and moved the focused executor tests beside the MLIR implementation.
+
+Plan revision note (2026-08-26): Moved the `mqt-cc` QIR output test to the MLIR
+compiler tests and removed the shared QIR test utility target and subtree.

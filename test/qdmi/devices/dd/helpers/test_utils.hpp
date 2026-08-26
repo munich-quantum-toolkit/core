@@ -65,6 +65,7 @@ std::pair<std::vector<std::string>, std::vector<double>>
 getSparseProbabilities(MQT_DDSIM_QDMI_Device_Job job);
 
 // Small helpers
+std::string getQIRProgram(std::string_view file);
 std::vector<std::string> splitCSV(const std::string& csv);
 
 } // namespace qdmi_test
