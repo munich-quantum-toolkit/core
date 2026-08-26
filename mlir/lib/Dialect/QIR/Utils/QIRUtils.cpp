@@ -254,7 +254,8 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
     }
     if (llvm::any_of(passthrough, [](Attribute attr) {
           const auto strAttr = dyn_cast<StringAttr>(attr);
-          return strAttr && strAttr.getValue() == ::qir::ENTRY_POINT_ATTR;
+          return strAttr &&
+                 strAttr.getValue().compare(::qir::ENTRY_POINT_ATTR) == 0;
         })) {
       return funcOp;
     }

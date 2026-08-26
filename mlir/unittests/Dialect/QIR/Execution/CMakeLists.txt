@@ -6,5 +6,5 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(helpers)
-add_subdirectory(mqt-cc)
+add_subdirectory(JIT)
+add_subdirectory(Runtime)

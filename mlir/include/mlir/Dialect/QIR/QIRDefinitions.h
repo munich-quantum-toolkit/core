@@ -10,16 +10,19 @@
 
 #pragma once
 
+#include <string_view>
+
 namespace qir {
 
-inline constexpr char ENTRY_POINT_ATTR[] = "entry_point";
-inline constexpr char OUTPUT_LABELING_SCHEMA_ATTR[] = "output_labeling_schema";
-inline constexpr char QIR_PROFILES_ATTR[] = "qir_profiles";
-inline constexpr char IRREVERSIBLE_ATTR[] = "irreversible";
+inline constexpr std::string_view ENTRY_POINT_ATTR = "entry_point";
+inline constexpr std::string_view OUTPUT_LABELING_SCHEMA_ATTR =
+    "output_labeling_schema";
+inline constexpr std::string_view QIR_PROFILES_ATTR = "qir_profiles";
+inline constexpr std::string_view IRREVERSIBLE_ATTR = "irreversible";
 
-inline constexpr char BASE_PROFILE[] = "base_profile";
-inline constexpr char ADAPTIVE_PROFILE[] = "adaptive_profile";
-inline constexpr char LABELED_SCHEMA[] = "labeled";
-inline constexpr char ORDERED_SCHEMA[] = "ordered";
+inline constexpr std::string_view BASE_PROFILE = "base_profile";
+inline constexpr std::string_view ADAPTIVE_PROFILE = "adaptive_profile";
+inline constexpr std::string_view LABELED_SCHEMA = "labeled";
+inline constexpr std::string_view ORDERED_SCHEMA = "ordered";
 
 } // namespace qir

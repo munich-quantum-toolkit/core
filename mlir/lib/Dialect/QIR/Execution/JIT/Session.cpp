@@ -98,7 +98,7 @@ static auto selectEntryPoint(llvm::Module& module) -> llvm::Function& {
 static auto readOutputSchema(const llvm::Function& entryPoint)
     -> Runtime::OutputSchema {
   if (const auto attr = entryPoint.getFnAttribute(OUTPUT_LABELING_SCHEMA_ATTR);
-      attr.isValid() && attr.getValueAsString() == ORDERED_SCHEMA) {
+      attr.isValid() && attr.getValueAsString().compare(ORDERED_SCHEMA) == 0) {
     return Runtime::OutputSchema::Ordered;
   }
   return Runtime::OutputSchema::Labeled;

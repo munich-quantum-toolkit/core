@@ -46,6 +46,9 @@ output, and random number generator state.
       restored its build-tree aliases, and removed cross-tree include paths.
 - [x] (2026-08-26 06:50Z) Ran final focused and full validation and prepared the
       review update for publication.
+- [x] (2026-08-26 07:25Z) Replaced shared QIR character arrays with C++20 string
+      views, moved the executor tests below the MLIR QIR subtree, and ran the
+      focused tests and array-decay clang-tidy check.
 
 ## Surprises & Discoveries
 
@@ -56,7 +59,7 @@ output, and random number generator state.
   tests and DDSIM device tests already cover execution, repeated runs,
   ownership, concurrent jobs, and result isolation without requiring a
   production executable. Evidence: `test/qir/runner/test_qir_runner.cpp`,
-  `test/qir/jit/test_jit_session.cpp`, and
+  `mlir/unittests/Dialect/QIR/Execution/JIT/test_jit_session.cpp`, and
   `test/qdmi/devices/dd/concurrency_test.cpp`.
 - Observation: The compiler and executor repeated QIR attribute, profile,
   schema, and irreversible-operation literals. Both now use
@@ -89,9 +92,10 @@ output, and random number generator state.
   and DDSIM tests own the retained behavioral contracts. Date/Author: 2026-08-25
   / Codex.
 - Decision: Store shared QIR attribute, profile, and schema literals in
-  `mlir/Dialect/QIR/QIRDefinitions.h`. Rationale: Compiler generation and
-  internal execution must agree on these spellings. The header is not part of an
-  installed file set. Date/Author: 2026-08-26 / Codex.
+  `mlir/Dialect/QIR/QIRDefinitions.h` as C++20 string views. Rationale: Compiler
+  generation and internal execution must agree on these spellings without
+  array-to-pointer decay. The header is not part of an installed file set.
+  Date/Author: 2026-08-26 / Codex.
 - Decision: Keep deterministic seeding as DDSIM QDMI custom job parameter 1
   instead of a JIT session option. Rationale: The job owns sampling policy and
   can apply one seed contract to OpenQASM and QIR. Date/Author: 2026-08-26 /
@@ -110,7 +114,7 @@ unexported targets retain consistent build-tree aliases. DDSIM exposes
 deterministic OpenQASM and QIR sampling through custom job parameter 1. The
 internal JIT accepts only in-memory modules with one standard QIR entry point.
 The focused tests, all 4,035 configured C++ tests, documentation build,
-install-surface scan, and lint pass.
+install-surface scan, focused clang-tidy check, and lint pass.
 
 ## Context and Orientation
 
@@ -120,8 +124,8 @@ programs to QIR and executes QIR inside the decision diagram simulator device in
 `mlir/lib/Dialect/QIR/Execution`. Its runtime implements quantum instructions
 and QIR resource and output functions. Its JIT loads LLVM modules, validates
 declarations, binds runtime symbols, and invokes an entry point. Focused tests
-live under `test/qir`; DDSIM integration tests live under
-`test/qdmi/devices/dd`.
+live under `mlir/unittests/Dialect/QIR/Execution`; shared QIR test data and
+DDSIM integration tests remain under `test`.
 
 Installed targets are controlled through `MQT_CORE_TARGETS` in
 `src/CMakeLists.txt`. The QIR libraries are absent from that list. Plain static
@@ -185,8 +189,8 @@ Configure and build with:
 
 Run the focused binaries with:
 
-    ./build/release/test/qir/jit/mqt-core-qir-jit-test
-    ./build/release/test/qir/runtime/mqt-core-qir-runtime-test
+    ./build/release/mlir/unittests/Dialect/QIR/Execution/JIT/mqt-core-qir-jit-test
+    ./build/release/mlir/unittests/Dialect/QIR/Execution/Runtime/mqt-core-qir-runtime-test
     ./build/release/test/qdmi/devices/dd/mqt-core-qdmi-ddsim-device-test
 
 Run documentation and lint checks with:
@@ -265,3 +269,6 @@ job boundary, removed speculative multiple-entry selection, recorded issue
 
 Plan revision note (2026-08-26): Moved the executor to the MLIR QIR subtree and
 retained consistent build-tree target aliases.
+
+Plan revision note (2026-08-26): Used C++20 string views for shared QIR literals
+and moved the focused executor tests beside the MLIR implementation.
