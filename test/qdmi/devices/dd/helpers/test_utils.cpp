@@ -18,6 +18,9 @@
 #include <cassert>
 #include <complex>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -121,6 +124,14 @@ int setShots(MQT_DDSIM_QDMI_Device_Job job, const size_t shots) {
       job, QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM, sizeof(size_t), &shots);
 }
 
+int setSeed(MQT_DDSIM_QDMI_Device_Job job, const int seed) {
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return MQT_DDSIM_QDMI_device_job_set_parameter(
+      job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM1, sizeof(int), &seed);
+}
+
 int submitAndWait(MQT_DDSIM_QDMI_Device_Job job, size_t timeoutSeconds) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -138,6 +149,13 @@ size_t querySize(MQT_DDSIM_QDMI_Device_Job job, QDMI_Job_Result result) {
       MQT_DDSIM_QDMI_device_job_get_results(job, result, 0, nullptr, &sz);
   EXPECT_EQ(rc, QDMI_SUCCESS);
   return sz;
+}
+
+std::string getQIRProgram(const std::string_view file) {
+  const auto path = std::filesystem::path(QIR_FILES_DIR) / file;
+  std::ifstream stream(path);
+  EXPECT_TRUE(stream.is_open()) << "Failed to open " << path;
+  return {std::istreambuf_iterator<char>{stream}, {}};
 }
 
 std::vector<std::string> splitCSV(const std::string& csv) {

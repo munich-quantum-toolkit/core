@@ -574,6 +574,37 @@ if (c == 3) x q[2];
     assert expr.structurally_equivalent(condition, expr.logic_and(*restored.clbits))
 
 
+def test_openqasm_short_circuit_expression_exports_to_qiskit() -> None:
+    """Export nested OpenQASM short-circuit logic through canonical scf.if."""
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+bit[2] c;
+c[0] = measure q[0];
+c[1] = measure q[1];
+if (c[0] && (c[1] || !c[0])) x q[2];
+"""
+    )
+
+    restored = program.to_qiskit()
+    condition = restored.data[2].operation.condition
+    expected = expr.logic_and(
+        restored.clbits[0],
+        expr.logic_or(
+            restored.clbits[1],
+            expr.bit_xor(
+                restored.clbits[0],
+                True,  # ruff: ignore[boolean-positional-value-in-call] Qiskit expression arguments are positional-only.
+            ),
+        ),
+    )
+
+    assert program.ir.count("scf.if") >= 2
+    assert isinstance(condition, expr.Expr)
+    assert expr.structurally_equivalent(condition, expected)
+
+
 def test_openqasm3_measurement_export_uses_undefined_cbit_register() -> None:
     """Represent OpenQASM 3 output initialization without poison values."""
     program = QCProgram.from_qasm_str(
@@ -1496,30 +1527,28 @@ def test_export_expression_depth_is_bounded() -> None:
         program.to_qiskit()
 
 
-def test_normalized_boolean_select_depth_is_bounded() -> None:
-    """Bound the final expression produced for a Boolean scf.if result."""
-    operations = [
-        '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
-        "%zero = arith.constant 0 : index",
-        "%true = arith.constant true",
-        "%value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
-    ]
-    operations.extend(f"%value{index} = arith.andi %value{index - 1}, %true : i1" for index in range(1, 62))
-    operations.extend([
-        "%selected = scf.if %value61 -> (i1) {",
-        "  %then = cbit.load %classical[%zero] : !cbit.reg<1>",
-        "  scf.yield %then : i1",
-        "} else {",
-        "  %else = cbit.load %classical[%zero] : !cbit.reg<1>",
-        "  scf.yield %else : i1",
-        "}",
-        "scf.if %selected {",
-        "  qc.x %q : !qc.qubit",
-        "}",
-    ])
-    program = _single_qubit_program(operations, returns_classical=True)
+def test_general_boolean_select_is_rejected() -> None:
+    """Reject a result-bearing scf.if that is not short-circuit logic."""
+    program = _single_qubit_program(
+        [
+            '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+            "%zero = arith.constant 0 : index",
+            "%condition = cbit.load %classical[%zero] : !cbit.reg<1>",
+            "%selected = scf.if %condition -> (i1) {",
+            "  %then = cbit.load %classical[%zero] : !cbit.reg<1>",
+            "  scf.yield %then : i1",
+            "} else {",
+            "  %else = cbit.load %classical[%zero] : !cbit.reg<1>",
+            "  scf.yield %else : i1",
+            "}",
+            "scf.if %selected {",
+            "  qc.x %q : !qc.qubit",
+            "}",
+        ],
+        returns_classical=True,
+    )
 
-    with pytest.raises(RuntimeError, match=r"^QC classical expressions exceed the nesting limit of 64"):
+    with pytest.raises(RuntimeError, match=r"canonical short-circuit Boolean scf\.if"):
         program.to_qiskit()
 
 
@@ -1548,7 +1577,7 @@ def test_nonboolean_result_bearing_if_is_rejected() -> None:
         "}",
         "qc.x %q : !qc.qubit",
     ])
-    with pytest.raises(RuntimeError, match="does not support SSA results"):
+    with pytest.raises(RuntimeError, match="canonical short-circuit Boolean SSA result"):
         program.to_qiskit()
 
 
@@ -1613,111 +1642,26 @@ def test_delayed_measurement_store_is_rejected() -> None:
         program.to_qiskit()
 
 
-def test_multi_result_boolean_select_expressions_export() -> None:
-    """Export every Boolean result of one side-effect-free scf.if expression."""
-    program = QCProgram.from_mlir_str(
-        """module {
-  func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
-    %first_qubit = qc.alloc : !qc.qubit
-    %second_qubit = qc.alloc : !qc.qubit
-    %classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<2>
-    %zero = arith.constant 0 : index
-    %one = arith.constant 1 : index
-    %false = arith.constant false
-    %selector = cbit.load %classical[%zero] : !cbit.reg<2>
-    %conditions:2 = scf.if %selector -> (i1, i1) {
-      %other = cbit.load %classical[%one] : !cbit.reg<2>
-      scf.yield %false, %other : i1, i1
-    } else {
-      %other = cbit.load %classical[%one] : !cbit.reg<2>
-      scf.yield %other, %false : i1, i1
-    }
-    scf.if %conditions#0 {
-      qc.x %first_qubit : !qc.qubit
-    }
-    scf.if %conditions#1 {
-      qc.z %second_qubit : !qc.qubit
-    }
-    qc.dealloc %first_qubit : !qc.qubit
-    qc.dealloc %second_qubit : !qc.qubit
-    return %classical : !cbit.reg<2>
-  }
-}
-"""
-    )
-
-    restored = program.to_qiskit()
-
-    assert [instruction.operation.name for instruction in restored.data] == ["if_else", "if_else"]
-    first = restored.data[0].operation.condition
-    second = restored.data[1].operation.condition
-    expected_first = expr.logic_and(expr.logic_not(restored.clbits[0]), restored.clbits[1])
-    expected_second = expr.logic_and(restored.clbits[0], restored.clbits[1])
-    assert isinstance(first, expr.Expr)
-    assert isinstance(second, expr.Expr)
-    assert expr.structurally_equivalent(first, expected_first)
-    assert expr.structurally_equivalent(second, expected_second)
-
-
-def test_unused_stale_boolean_select_result_does_not_block_export() -> None:
-    """Ignore stale snapshots belonging only to an unused sibling result."""
-    program = _single_qubit_program(
-        [
-            '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
-            "%zero = arith.constant 0 : index",
-            "%true = arith.constant true",
-            "%clean, %unused = scf.if %true -> (i1, i1) {",
-            "  %false = arith.constant false",
-            "  %stale = cbit.load %classical[%zero] : !cbit.reg<1>",
-            "  scf.yield %false, %stale : i1, i1",
-            "} else {",
-            "  %false = arith.constant false",
-            "  %stale = cbit.load %classical[%zero] : !cbit.reg<1>",
-            "  scf.yield %false, %stale : i1, i1",
-            "}",
-            "%measured = qc.measure %q : !qc.qubit -> i1",
-            "cbit.store %measured, %classical[%zero] : !cbit.reg<1>",
-            "scf.if %clean {",
-            "  qc.x %q : !qc.qubit",
-            "}",
-        ],
-        returns_classical=True,
-    )
-
-    restored = program.to_qiskit()
-
-    assert [instruction.operation.name for instruction in restored.data] == ["measure", "if_else"]
-
-
-def test_unused_boolean_select_result_has_independent_size_budget() -> None:
-    """Validate an unused sibling result without charging its selected sibling."""
-    operations = [
-        '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
-        "%zero = arith.constant 0 : index",
-        "%false = arith.constant false",
-        "%selector = cbit.load %classical[%zero] : !cbit.reg<1>",
-        "%conditions:2 = scf.if %selector -> (i1, i1) {",
-        "  %then0 = cbit.load %classical[%zero] : !cbit.reg<1>",
-    ]
-    operations.extend(f"  %then{index} = arith.andi %then{index - 1}, %then{index - 1} : i1" for index in range(1, 11))
-    operations.extend([
-        "  scf.yield %false, %then10 : i1, i1",
+def test_multi_result_boolean_select_is_rejected() -> None:
+    """Reject multiple results instead of reconstructing Boolean selections."""
+    program = _single_qubit_program([
+        "%condition = arith.constant true",
+        "%first, %second = scf.if %condition -> (i1, i1) {",
+        "  %true = arith.constant true",
+        "  %false = arith.constant false",
+        "  scf.yield %true, %false : i1, i1",
         "} else {",
-        "  %else0 = cbit.load %classical[%zero] : !cbit.reg<1>",
-    ])
-    operations.extend(f"  %else{index} = arith.andi %else{index - 1}, %else{index - 1} : i1" for index in range(1, 11))
-    operations.extend([
-        "  scf.yield %false, %else10 : i1, i1",
+        "  %true = arith.constant true",
+        "  %false = arith.constant false",
+        "  scf.yield %false, %true : i1, i1",
         "}",
-        "scf.if %conditions#0 {",
+        "scf.if %first {",
         "  qc.x %q : !qc.qubit",
         "}",
     ])
-    program = _single_qubit_program(operations, returns_classical=True)
 
-    restored = program.to_qiskit()
-
-    assert [instruction.operation.name for instruction in restored.data] == ["if_else"]
+    with pytest.raises(RuntimeError, match="only one canonical short-circuit Boolean SSA result"):
+        program.to_qiskit()
 
 
 def _undefined_cbit_program(operations: list[str]) -> QCProgram:
@@ -1846,7 +1790,8 @@ def test_qiskit_import_zero_initializes_clbits_before_control_flow() -> None:
 @pytest.mark.parametrize(
     ("condition", "operation"),
     [
-        (expr.logic_and(expr.equal(1, 1), expr.equal(0, 1)), "arith.andi"),
+        (expr.logic_and(expr.equal(1, 1), expr.equal(0, 1)), "scf.if"),
+        (expr.equal(expr.bit_and(expr.lift(2, types.Uint(8)), 3), 2), "arith.andi"),
         (expr.equal(expr.bit_xor(expr.lift(2, types.Uint(8)), 3), 5), "arith.xori"),
         (expr.less(expr.add(expr.lift(2, types.Uint(8)), 1), 8), "arith.addi"),
         (
@@ -1870,7 +1815,7 @@ def test_bool_uint_and_float_expressions(condition: expr.Expr, operation: str) -
     assert restored.data[0].operation.name == "if_else"
     restored_condition = restored.data[0].operation.condition
     assert isinstance(restored_condition, expr.Expr)
-    if operation == "arith.andi":
+    if operation == "scf.if":
         expected = expr.logic_and(
             expr.equal(True, True),  # ruff: ignore[boolean-positional-value-in-call] Qiskit expression arguments are positional-only.
             expr.equal(False, True),  # ruff: ignore[boolean-positional-value-in-call] Qiskit expression arguments are positional-only.
@@ -1942,7 +1887,8 @@ def test_boolean_expression_literals_are_imported() -> None:
 
     assert "arith.constant false" in ir
     assert "arith.constant true" in ir
-    assert "arith.ori" in ir
+    assert "scf.if" in ir
+    assert "arith.ori" not in ir
 
 
 def test_uint_register_cast_to_bool_tests_all_bits() -> None:
@@ -1974,10 +1920,13 @@ def test_public_expression_condition_mutation_is_observed() -> None:
     assert isinstance(operation, IfElseOp)
     operation.condition = expr.logic_or(circuit.clbits[0], circuit.clbits[1])
 
-    ir = QCProgram.from_qiskit(circuit).ir
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+    condition = restored.data[0].operation.condition
 
-    assert "arith.ori" in ir
-    assert "arith.andi" not in ir
+    assert "scf.if" in program.ir
+    assert isinstance(condition, expr.Expr)
+    assert expr.structurally_equivalent(condition, expr.logic_or(*restored.clbits))
 
 
 def test_public_tuple_condition_mutation_is_observed() -> None:
@@ -2037,7 +1986,7 @@ def test_classical_expression_clbit_captures_import() -> None:
 
     assert _cbit_load_indices(ir) == [1, 0]
     assert "arith.xori" in ir
-    assert "arith.andi" in ir
+    assert "scf.if" in ir
     assert "scf.if" in ir
 
 

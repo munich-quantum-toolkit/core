@@ -28,7 +28,6 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
@@ -42,6 +41,7 @@
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
@@ -1005,114 +1005,6 @@ void countExpressionNode(size_t& nodeCount) {
   }
 }
 
-[[nodiscard]] std::unique_ptr<Expression>
-makeBooleanUnary(const UnaryOperation operation,
-                 std::unique_ptr<Expression> operand, size_t& nodeCount) {
-  countExpressionNode(nodeCount);
-  auto result = std::make_unique<Expression>();
-  result->kind = ExpressionKind::Unary;
-  result->type = ClassicalType::Bool;
-  result->width = 1U;
-  result->unaryOperation = operation;
-  result->left = std::move(operand);
-  return result;
-}
-
-[[nodiscard]] std::unique_ptr<Expression>
-makeBooleanBinary(const BinaryOperation operation,
-                  std::unique_ptr<Expression> left,
-                  std::unique_ptr<Expression> right, size_t& nodeCount) {
-  countExpressionNode(nodeCount);
-  auto result = std::make_unique<Expression>();
-  result->kind = ExpressionKind::Binary;
-  result->type = ClassicalType::Bool;
-  result->width = 1U;
-  result->binaryOperation = operation;
-  result->left = std::move(left);
-  result->right = std::move(right);
-  return result;
-}
-
-[[nodiscard]] std::optional<bool>
-constantBoolean(const std::unique_ptr<Expression>& expression) {
-  if (expression && expression->kind == ExpressionKind::Value &&
-      expression->type == ClassicalType::Bool) {
-    return expression->boolValue;
-  }
-  return std::nullopt;
-}
-
-[[nodiscard]] std::unique_ptr<Expression>
-cloneExpression(const Expression& expression, size_t& nodeCount) {
-  countExpressionNode(nodeCount);
-  auto result = std::make_unique<Expression>();
-  result->kind = expression.kind;
-  result->type = expression.type;
-  result->width = expression.width;
-  result->binaryOperation = expression.binaryOperation;
-  result->unaryOperation = expression.unaryOperation;
-  result->boolValue = expression.boolValue;
-  result->uintValue = expression.uintValue;
-  result->floatValue = expression.floatValue;
-  result->bit = expression.bit;
-  result->reg = expression.reg;
-  if (expression.left) {
-    result->left = cloneExpression(*expression.left, nodeCount);
-  }
-  if (expression.right) {
-    result->right = cloneExpression(*expression.right, nodeCount);
-  }
-  return result;
-}
-
-[[nodiscard]] std::unique_ptr<Expression>
-makeBooleanSelect(std::unique_ptr<Expression> condition,
-                  std::unique_ptr<Expression> thenValue,
-                  std::unique_ptr<Expression> elseValue, size_t& nodeCount) {
-  const auto thenConstant = constantBoolean(thenValue);
-  const auto elseConstant = constantBoolean(elseValue);
-  if (thenConstant && elseConstant) {
-    if (*thenConstant == *elseConstant) {
-      return std::move(thenValue);
-    }
-    if (*thenConstant) {
-      return condition;
-    }
-    return makeBooleanUnary(UnaryOperation::LogicNot, std::move(condition),
-                            nodeCount);
-  }
-  if (elseConstant && !*elseConstant) {
-    return makeBooleanBinary(BinaryOperation::LogicAnd, std::move(condition),
-                             std::move(thenValue), nodeCount);
-  }
-  if (elseConstant && *elseConstant) {
-    return makeBooleanBinary(BinaryOperation::LogicOr,
-                             makeBooleanUnary(UnaryOperation::LogicNot,
-                                              std::move(condition), nodeCount),
-                             std::move(thenValue), nodeCount);
-  }
-  if (thenConstant && *thenConstant) {
-    return makeBooleanBinary(BinaryOperation::LogicOr, std::move(condition),
-                             std::move(elseValue), nodeCount);
-  }
-  if (thenConstant && !*thenConstant) {
-    return makeBooleanBinary(BinaryOperation::LogicAnd,
-                             makeBooleanUnary(UnaryOperation::LogicNot,
-                                              std::move(condition), nodeCount),
-                             std::move(elseValue), nodeCount);
-  }
-  auto negated =
-      makeBooleanUnary(UnaryOperation::LogicNot,
-                       cloneExpression(*condition, nodeCount), nodeCount);
-  return makeBooleanBinary(
-      BinaryOperation::LogicOr,
-      makeBooleanBinary(BinaryOperation::LogicAnd, std::move(condition),
-                        std::move(thenValue), nodeCount),
-      makeBooleanBinary(BinaryOperation::LogicAnd, std::move(negated),
-                        std::move(elseValue), nodeCount),
-      nodeCount);
-}
-
 struct PackedRegister {
   Register reg;
   llvm::SmallPtrSet<mlir::Operation*, 16> operations;
@@ -1192,38 +1084,37 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
     return result;
   }
   if (auto ifOp = llvm::dyn_cast<mlir::scf::IfOp>(operation)) {
-    if (!llvm::all_of(ifOp.getResultTypes(), [](const mlir::Type type) {
-          return type.isInteger(1);
-        })) {
+    if (ifOp.getNumResults() != 1U || !value.getType().isInteger(1) ||
+        ifOp.getElseRegion().empty()) {
       throw std::runtime_error(
-          "Qiskit classical expressions support only Boolean scf.if "
-          "results with an else branch");
+          "Qiskit classical expressions support only canonical "
+          "short-circuit Boolean scf.if results");
     }
-    const size_t resultIndex =
-        llvm::cast<mlir::OpResult>(value).getResultNumber();
     auto& thenBlock = ifOp.getThenRegion().front();
     auto& elseBlock = ifOp.getElseRegion().front();
     auto thenYield = llvm::cast<mlir::scf::YieldOp>(thenBlock.getTerminator());
     auto elseYield = llvm::cast<mlir::scf::YieldOp>(elseBlock.getTerminator());
+    const auto thenValue = thenYield.getOperand(0);
+    const auto elseValue = elseYield.getOperand(0);
+    mlir::Value right;
+    if (mlir::matchPattern(elseValue, mlir::m_Zero())) {
+      result->binaryOperation = BinaryOperation::LogicAnd;
+      right = thenValue;
+    } else if (mlir::matchPattern(thenValue, mlir::m_One())) {
+      result->binaryOperation = BinaryOperation::LogicOr;
+      right = elseValue;
+    } else {
+      throw std::runtime_error(
+          "Qiskit classical expressions support only canonical "
+          "short-circuit Boolean scf.if results");
+    }
     auto condition = exportExpressionImpl(
         ifOp.getCondition(), state, *ifOp->getBlock(), depth + 1U, nodeCount);
-    auto thenValue =
-        exportExpressionImpl(thenYield.getOperand(resultIndex), state,
-                             thenBlock, depth + 1U, nodeCount);
-    auto elseValue =
-        exportExpressionImpl(elseYield.getOperand(resultIndex), state,
-                             elseBlock, depth + 1U, nodeCount);
-    for (const size_t index : llvm::seq(ifOp.getNumResults())) {
-      if (index != resultIndex) {
-        size_t siblingNodeCount = 0U;
-        static_cast<void>(exportExpressionImpl(thenYield.getOperand(index),
-                                               state, thenBlock, depth + 1U,
-                                               siblingNodeCount));
-        static_cast<void>(exportExpressionImpl(elseYield.getOperand(index),
-                                               state, elseBlock, depth + 1U,
-                                               siblingNodeCount));
-      }
-    }
+    auto rightExpression = exportExpressionImpl(
+        right, state,
+        result->binaryOperation == BinaryOperation::LogicAnd ? thenBlock
+                                                             : elseBlock,
+        depth + 1U, nodeCount);
     const auto validateBranch = [&](mlir::Block& branch) {
       for (auto& nested : branch.without_terminator()) {
         if (!llvm::isa<mlir::arith::ConstantOp>(nested) &&
@@ -1236,8 +1127,10 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
     validateBranch(thenBlock);
     validateBranch(elseBlock);
     state.expressionOperations.insert(operation);
-    return makeBooleanSelect(std::move(condition), std::move(thenValue),
-                             std::move(elseValue), nodeCount);
+    result->kind = ExpressionKind::Binary;
+    result->left = std::move(condition);
+    result->right = std::move(rightExpression);
+    return result;
   }
 
   const auto unary = [&](const ExpressionKind kind, const mlir::Value operand) {
@@ -2076,12 +1969,11 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportState& state,
     }
     if (auto ifOp = llvm::dyn_cast<mlir::scf::IfOp>(operation)) {
       if (ifOp.getNumResults() != 0U) {
-        if (!llvm::all_of(ifOp.getResultTypes(), [](const mlir::Type type) {
-              return type.isInteger(1);
-            })) {
+        if (ifOp.getNumResults() != 1U ||
+            !ifOp.getResult(0).getType().isInteger(1)) {
           throw std::runtime_error(
-              "Qiskit if/else export does not support SSA results except as "
-              "a Boolean classical expression");
+              "Qiskit if/else export supports only one canonical "
+              "short-circuit Boolean SSA result");
         }
         deferredExpressions.push_back(&operation);
         continue;

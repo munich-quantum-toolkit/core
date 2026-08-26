@@ -204,12 +204,15 @@ operations.
 
 Structured-control export accepts result-free {code}`scf.if`, constant-range
 {code}`scf.for` without loop-carried values, expression-based {code}`scf.while`
-without carried state, and result-free {code}`scf.index_switch`. A pure
-result-bearing {code}`scf.if` is accepted only when every result is Boolean and
-both branches contain expression operations. A live {code}`scf.for` induction
-value must reduce to an affine {code}`f64` gate parameter. The exporter
-preserves one Qiskit parameter identity for that value throughout its lexical
-body. An {code}`scf.index_switch` selector must be a constant index or a
+without carried state, and result-free {code}`scf.index_switch`. A
+result-bearing {code}`scf.if` is accepted only for one Boolean result in the
+canonical short-circuit form. Logical AND evaluates its right operand in the
+then branch and yields false from the else branch. Logical OR yields true from
+the then branch and evaluates its right operand in the else branch. General
+Boolean selection and multiple results are rejected. A live {code}`scf.for`
+induction value must reduce to an affine {code}`f64` gate parameter. The
+exporter preserves one Qiskit parameter identity for that value throughout its
+lexical body. An {code}`scf.index_switch` selector must be a constant index or a
 supported Boolean/Uint expression converted with {code}`arith.index_castui`.
 Switch labels must be nonnegative constants that fit the target width.
 

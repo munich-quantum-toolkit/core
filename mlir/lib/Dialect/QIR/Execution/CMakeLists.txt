@@ -6,6 +6,5 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(jit)
-add_subdirectory(runtime)
-add_subdirectory(runner)
+add_subdirectory(Runtime)
+add_subdirectory(JIT)

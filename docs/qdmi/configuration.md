@@ -173,7 +173,8 @@ session parameters, for every definition.
 
 MQT Core provides a mechanism-specific adapter for jobs that use local Slurm
 licenses for cluster-wide admission. The license name must equal one registered
-QDMI device ID. Each job must request one license. For example:
+QDMI device ID. Register one definition per separately licensed machine. Each
+job must request one license. For example:
 
 ```bash
 sbatch --licenses=mqt.ddsim.default:1 simulation.sh

@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qir/jit/IRRewriter.hpp"
+#include "mlir/Dialect/QIR/Execution/JIT/IRRewriter.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/StringRef.h>
@@ -29,9 +29,7 @@
 #include <string>
 #include <string_view>
 
-namespace {
-
-std::size_t countCallsTo(const llvm::Module& m, llvm::StringRef name) {
+static std::size_t countCallsTo(const llvm::Module& m, llvm::StringRef name) {
   std::size_t count = 0;
   for (const auto& fn : m) {
     for (const auto& bb : fn) {
@@ -50,8 +48,8 @@ std::size_t countCallsTo(const llvm::Module& m, llvm::StringRef name) {
   return count;
 }
 
-std::unique_ptr<llvm::Module> loadIRFile(const std::filesystem::path& path,
-                                         llvm::LLVMContext& ctx) {
+static std::unique_ptr<llvm::Module>
+loadIRFile(const std::filesystem::path& path, llvm::LLVMContext& ctx) {
   llvm::SMDiagnostic err;
   auto llvmModule = llvm::parseIRFile(path.string(), err, ctx);
   if (!llvmModule) {
@@ -63,6 +61,8 @@ std::unique_ptr<llvm::Module> loadIRFile(const std::filesystem::path& path,
   }
   return llvmModule;
 }
+
+namespace {
 
 class IRRewriterTest : public testing::TestWithParam<std::string_view> {
 protected:

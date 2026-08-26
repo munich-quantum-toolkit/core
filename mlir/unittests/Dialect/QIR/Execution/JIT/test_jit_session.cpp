@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "qir/helpers/test_utils.hpp"
-#include "qir/jit/Session.hpp"
-#include "qir/runtime/Runtime.hpp"
+#include "mlir/Dialect/QIR/Execution/JIT/Session.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -18,11 +17,20 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
+
+static std::string getProgram(const std::string_view file) {
+  const auto path = std::filesystem::path(QIR_FILES_DIR) / file;
+  std::ifstream stream(path);
+  EXPECT_TRUE(stream.is_open()) << "Failed to open " << path;
+  return {std::istreambuf_iterator<char>{stream}, {}};
+}
 
 namespace {
 
@@ -32,7 +40,7 @@ protected:
 };
 
 TEST_F(JitSessionTest, LoadModuleFromMemory) {
-  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  const auto program = getProgram("BellPairStatic.ll");
   qir::JitSession session(program, "BellPairStatic.ll");
   session.runtime().setOstream(sink);
   ASSERT_EQ(session.run(), 0);
@@ -40,9 +48,9 @@ TEST_F(JitSessionTest, LoadModuleFromMemory) {
 }
 
 TEST_F(JitSessionTest, SamplingRecordsOutputs) {
-  const auto path = std::filesystem::path(QIR_FILES_DIR) / "BellPairStatic.ll";
+  const auto program = getProgram("BellPairStatic.ll");
   // qir::Execution::Sampling is the default Execution mode
-  qir::JitSession session(path.string());
+  qir::JitSession session(program, "BellPairStatic.ll");
   session.runtime().setOstream(sink);
   ASSERT_EQ(session.run(), 0);
   EXPECT_FALSE(session.runtime().getMeasurements().empty());
@@ -53,10 +61,9 @@ TEST_F(JitSessionTest, SamplingRecordsOutputs) {
 }
 
 TEST_F(JitSessionTest, StateExtractionLeavesNoRecordedOutputs) {
-  const auto path = std::filesystem::path(QIR_FILES_DIR) / "BellPairStatic.ll";
-  const qir::SessionOptions options{.execution =
-                                        qir::Execution::StateExtraction};
-  qir::JitSession session(path.string(), options);
+  const auto program = getProgram("BellPairStatic.ll");
+  qir::JitSession session(program, "BellPairStatic.ll",
+                          qir::Execution::StateExtraction);
   session.runtime().setOstream(sink);
   ASSERT_EQ(session.run(), 0);
   EXPECT_TRUE(session.runtime().getMeasurements().empty());
@@ -67,12 +74,11 @@ TEST_F(JitSessionTest, StateExtractionRejectsAdaptiveProfile) {
 define i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
 )";
-  const qir::SessionOptions options{.execution =
-                                        qir::Execution::StateExtraction};
   EXPECT_THROW(
       {
         try {
-          const qir::JitSession session(ir, "Adaptive.ll", options);
+          const qir::JitSession session(ir, "Adaptive.ll",
+                                        qir::Execution::StateExtraction);
         } catch (const std::invalid_argument& error) {
           EXPECT_THAT(error.what(), ::testing::HasSubstr("Base Profile"));
           throw;
@@ -93,12 +99,11 @@ declare void @__quantum__qis__x__body(ptr)
 attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
 attributes #1 = { "irreversible" }
 )";
-  const qir::SessionOptions options{.execution =
-                                        qir::Execution::StateExtraction};
   EXPECT_THROW(
       {
         try {
-          const qir::JitSession session(ir, "NonTerminal.ll", options);
+          const qir::JitSession session(ir, "NonTerminal.ll",
+                                        qir::Execution::StateExtraction);
         } catch (const std::invalid_argument& error) {
           EXPECT_THAT(error.what(), ::testing::HasSubstr("terminal region"));
           throw;
@@ -140,22 +145,10 @@ attributes #0 = { "entry_point" "output_labeling_schema"="ordered" }
 TEST_F(JitSessionTest, ExecutesArbitrarilyNamedEntryPoint) {
   constexpr std::string_view ir = R"(
 define i64 @bell_entry() #0 { ret i64 7 }
-attributes #0 = { "entry_point" }
+  attributes #0 = { "entry_point" }
 )";
   qir::JitSession session(ir, "NamedEntry.ll");
-  EXPECT_EQ(session.entryPointName(), "bell_entry");
   EXPECT_EQ(session.run(), 7);
-}
-
-TEST_F(JitSessionTest, SelectsRequestedEntryPoint) {
-  constexpr std::string_view ir = R"(
-define i64 @first() #0 { ret i64 1 }
-define i64 @second() #0 { ret i64 2 }
-attributes #0 = { "entry_point" }
-)";
-  const qir::SessionOptions options{.entryPoint = "second"};
-  qir::JitSession session(ir, "MultipleEntries.ll", options);
-  EXPECT_EQ(session.run(), 2);
 }
 
 TEST_F(JitSessionTest, SupportsQir21DynamicResources) {
@@ -302,7 +295,7 @@ attributes #0 = { "entry_point" }
 }
 
 TEST_F(JitSessionTest, SessionsExecuteIndependently) {
-  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  const auto program = getProgram("BellPairStatic.ll");
   qir::JitSession first(program, "first.ll");
   qir::JitSession second(program, "second.ll");
   std::ostringstream firstSink;
@@ -327,10 +320,11 @@ TEST_F(JitSessionTest, SessionsExecuteIndependently) {
 }
 
 TEST_F(JitSessionTest, SeedReproducesShotSequence) {
-  const auto program = qir_test::getProgram("BellPairStatic.ll");
-  const qir::SessionOptions options{.seed = 42};
-  qir::JitSession first(program, "first.ll", options);
-  qir::JitSession second(program, "second.ll", options);
+  const auto program = getProgram("BellPairStatic.ll");
+  qir::JitSession first(program, "first.ll");
+  qir::JitSession second(program, "second.ll");
+  first.runtime().seed(42);
+  second.runtime().seed(42);
   first.runtime().setOstream(sink);
   second.runtime().setOstream(sink);
   std::string firstSequence;
@@ -361,7 +355,7 @@ attributes #0 = { "entry_point" }
   EXPECT_THROW(qir::JitSession(ir, "BadEntrySignature.ll"), std::runtime_error);
 }
 
-TEST(JitSessionErrors, RequiresSelectionForMultipleEntryPoints) {
+TEST(JitSessionErrors, RejectsMultipleEntryPoints) {
   constexpr std::string_view ir = R"(
 define i64 @first() #0 { ret i64 0 }
 define i64 @second() #0 { ret i64 0 }
