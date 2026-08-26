@@ -58,9 +58,9 @@ releases may include breaking changes.
 
 - ✨ Add passes for quantum-specific interprocedural optimizations ([#2193])
   ([**@DRovara**], [**@burgholzer**])
-- ✨ Add quantum loop unrolling and qubit reuse passes ([#1705], [#1718],
-  [#1755], [#1756], [#1923], [#1924], [#2039], [#2118], [#2216])
-  ([**@MatthiasReumann**], [**@DRovara**], [**@burgholzer**],
+- ✨ Add Pauli twirling, quantum loop unrolling, and qubit reuse passes
+  ([#1705], [#1718], [#1755], [#1756], [#1923], [#1924], [#2039], [#2118],
+  [#2216], [#2224]) ([**@MatthiasReumann**], [**@DRovara**], [**@burgholzer**],
   [**@simon1hofmann**])
 - ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
   [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
@@ -846,6 +846,7 @@ for previous changelogs._
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
+[#2224]: https://github.com/munich-quantum-toolkit/core/pull/2224
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
 [#2211]: https://github.com/munich-quantum-toolkit/core/pull/2211
 [#2217]: https://github.com/munich-quantum-toolkit/core/pull/2217
