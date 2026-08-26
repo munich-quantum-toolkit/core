@@ -84,6 +84,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Move classic IR OpenQASM serialization from operation subclasses to
+  `OpenQASMSerializer` ([#2249]) ([**@simon1hofmann**])
 - 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
   [**@burgholzer**])
 - ⬆️ Update `nanobind` to version 3.0.0 ([#2209]) ([**@denialhaag**],
@@ -828,6 +830,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2249]: https://github.com/munich-quantum-toolkit/core/pull/2249
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
