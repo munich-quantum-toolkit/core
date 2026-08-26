@@ -79,6 +79,8 @@ releases may include breaking changes.
 
 #### Other additions
 
+- ✨ Allow QDMI jobs to omit the shot-count parameter when the program defines
+  its own repetition semantics ([#2258]) ([**@burgholzer**])
 - 🐳 Add dev container configuration for a consistent local development
   environment ([#1786]) ([**@denialhaag**])
 
@@ -828,6 +830,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
