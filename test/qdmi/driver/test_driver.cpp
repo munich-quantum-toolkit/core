@@ -1339,6 +1339,18 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   EXPECT_THAT(queryName(probe), testing::HasSubstr("active=1"));
 }
 
+TEST(DeviceRegistrationTest, CustomBinaryJobDoesNotRequireShots) {
+  registerSessionTestDevice();
+  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  constexpr std::array payload{std::byte{0}, std::byte{1}};
+
+  EXPECT_NO_THROW(std::ignore =
+                      device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1));
+  EXPECT_THROW(std::ignore = device.submitJob(
+                   payload, QDMI_PROGRAM_FORMAT_CUSTOM1, size_t{1}),
+               std::runtime_error);
+}
+
 TEST(DeviceRegistrationTest, ConcurrentlyFreesDistinctJobs) {
   constexpr size_t threadCount = 8;
   constexpr size_t jobCount = 64;
