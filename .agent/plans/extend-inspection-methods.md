@@ -32,6 +32,10 @@ textual MLIR.
       complete documentation build cannot finish because the local Graphviz
       `dot` executable is absent; Sphinx reached notebook execution before this
       unrelated environment failure.
+- [x] (2026-08-26 16:43Z) Fixed all nine clang-tidy findings from the draft PR
+      and added Python binding tests for gate histograms, static depth, SCF, and
+      dynamic register indices. The focused Python tests pass on Python 3.11
+      through 3.14.
 
 ## Surprises & Discoveries
 
@@ -52,6 +56,9 @@ textual MLIR.
   executable for an existing notebook. Evidence: Sphinx stopped in
   `docs/dd_package.md` with
   `ExecutableNotFound: failed to execute PosixPath('dot')`.
+- Observation: `getConstantIntValue` is declared by
+  `mlir/Dialect/Utils/StaticValueUtils.h`, not `mlir/IR/Matchers.h`. The draft
+  PR's include-cleaner check identified the indirect declaration.
 
 ## Decision Log
 
@@ -73,10 +80,11 @@ textual MLIR.
 ## Outcomes & Retrospective
 
 The C++ and Python APIs are implemented. All 136 compiler tests and the full
-lint suite pass. A Python smoke test returns `{'ctrl': 1, 'h': 1, 'x': 1}` and
-depth 2 for two parallel gates followed by a controlled gate. The generated stub
-and Python guide expose both methods. The complete documentation build remains
-unavailable only because the local Graphviz executable is missing.
+lint suite pass. Focused Python tests pass on Python 3.11 through 3.14. A Python
+smoke test returns `{'ctrl': 1, 'h': 1, 'x': 1}` and depth 2 for two parallel
+gates followed by a controlled gate. The generated stub and Python guide expose
+both methods. The complete documentation build remains unavailable only because
+the local Graphviz executable is missing.
 
 ## Context and Orientation
 
@@ -196,4 +204,5 @@ the compiler library. Do not introduce a new external dependency.
 
 Plan revision note: Finalized after implementation and validation. Recorded the
 successful compiler tests, stub generation, Python smoke test, and lint suite,
-as well as the unrelated local documentation dependency failure.
+as well as the unrelated local documentation dependency failure. Updated after
+the draft PR review to record the clang-tidy fixes and Python tests.

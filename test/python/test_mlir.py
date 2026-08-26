@@ -701,3 +701,51 @@ def test_qc_program_num_gates() -> None:
     assert program.num_gates() == 2
     assert program.num_single_qubit_gates() == 1
     assert program.num_two_qubit_gates() == 1
+    assert program.gate_counts() == {"ctrl": 1, "h": 1}
+    assert program.static_depth() == 2
+
+
+def test_qc_program_num_gates_in_structured_control_flow() -> None:
+    """Gate counting includes each structured control-flow region once."""
+    program = QCProgram.from_qasm_str("""OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+bit condition = measure q[0];
+int selector = 1;
+if (condition) {
+  for int i in [0:2] {
+    x q[i];
+  }
+} else {
+  cx q[0], q[1];
+}
+while (condition) {
+  ctrl @ x q[0], q[1];
+}
+switch (selector) {
+  case 1 {
+    swap q[0], q[1];
+  }
+  default {
+    z q[2];
+  }
+}
+""")
+    assert program.num_gates() == 5
+    assert program.num_single_qubit_gates() == 2
+    assert program.num_two_qubit_gates() == 3
+    assert program.gate_counts() == {"ctrl": 2, "swap": 1, "x": 1, "z": 1}
+    assert program.static_depth() == 3
+
+
+def test_qc_program_static_depth_with_dynamic_index() -> None:
+    """A dynamic register index conservatively aliases each element."""
+    program = QCProgram.from_qasm_str("""OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0];
+for int i in [0:2] {
+  x q[i];
+}
+""")
+    assert program.static_depth() == 2
