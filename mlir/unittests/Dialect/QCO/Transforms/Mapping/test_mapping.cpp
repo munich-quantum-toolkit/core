@@ -1922,7 +1922,7 @@ TEST_P(MappingPassTest, MapClassicalResultCapturedByNestedRegion) {
       func.func @main() -> i1 attributes {mqt.entry_point} {
         %b0 = arith.constant 0 : i1
         %b1 = arith.constant 1 : i1
-        
+
         %q0_0 = qco.alloc : !qco.qubit
         %q1_0 = qco.alloc : !qco.qubit
         %q2_0 = qco.alloc : !qco.qubit
@@ -1940,7 +1940,7 @@ TEST_P(MappingPassTest, MapClassicalResultCapturedByNestedRegion) {
           %else0, %else1 = qco.swap %arg0, %arg1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
           qco.yield %b0, %else0, %else1 : i1, !qco.qubit, !qco.qubit
         }
-        
+
         qco.sink %q0_1 : !qco.qubit
         qco.sink %q1_1 : !qco.qubit
         qco.sink %q2_1 : !qco.qubit
