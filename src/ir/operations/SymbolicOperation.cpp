@@ -11,7 +11,6 @@
 #include "ir/operations/SymbolicOperation.hpp"
 
 #include "ir/Definitions.hpp"
-#include "ir/Register.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/Expression.hpp"
 #include "ir/operations/OpType.hpp"
@@ -22,7 +21,6 @@
 #include <cstddef>
 #include <cstdlib>
 #include <memory>
-#include <ostream>
 #include <stdexcept>
 #include <utility>
 #include <variant>
@@ -355,18 +353,6 @@ bool SymbolicOperation::equals(const Operation& op) const {
     }
   }
   return true;
-}
-
-[[noreturn]] void SymbolicOperation::dumpOpenQASM(
-    [[maybe_unused]] std::ostream& of,
-    [[maybe_unused]] const QubitIndexToRegisterMap& qubitMap,
-    [[maybe_unused]] const BitIndexToRegisterMap& bitMap,
-    [[maybe_unused]] size_t indent, bool openQASM3) const {
-  if (openQASM3) {
-    throw std::runtime_error(
-        "Printing OpenQASM 3.0 parameterized gates is not supported yet!");
-  }
-  throw std::runtime_error("OpenQASM 2.0 doesn't support parameterized gates!");
 }
 
 StandardOperation SymbolicOperation::getInstantiatedOperation(

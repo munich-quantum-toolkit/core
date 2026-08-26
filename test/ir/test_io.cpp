@@ -9,6 +9,7 @@
  */
 
 #include "ir/Definitions.hpp"
+#include "ir/OpenQASMSerializer.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
@@ -833,4 +834,29 @@ TEST_F(IO, indexedRegisterOperands) {
                                "c[0] = measure q[0];\n"
                                "c[1] = measure q[1];\n";
   EXPECT_EQ(qasm, expected);
+}
+
+TEST(OpenQASMSerializer, serializesCompoundOperationBody) {
+  const qc::QuantumRegister qreg{0U, 2U, "q"};
+  qc::QubitIndexToRegisterMap qubitMap{};
+  qubitMap.try_emplace(0U, qreg, "left");
+  qubitMap.try_emplace(1U, qreg, "right");
+
+  qc::CompoundOperation compound{};
+  compound.emplace_back<qc::StandardOperation>(0U, qc::H);
+  compound.emplace_back<qc::StandardOperation>(qc::Control{0U}, 1U, qc::X);
+  compound.emplace_back<qc::StandardOperation>(
+      qc::Control{0U, qc::Control::Type::Neg}, 1U, qc::X);
+
+  std::ostringstream output3{};
+  qc::OpenQASMSerializer(output3).serialize(compound, qubitMap,
+                                            qc::BitIndexToRegisterMap{});
+  EXPECT_EQ(output3.str(),
+            "h left;\ncx left, right;\nnegctrl @ x left, right;\n");
+
+  std::ostringstream output2{};
+  qc::OpenQASMSerializer(output2, qc::Format::OpenQASM2)
+      .serialize(compound, qubitMap, qc::BitIndexToRegisterMap{});
+  EXPECT_EQ(output2.str(),
+            "h left;\ncx left, right;\nx left;\ncx left, right;\nx left;\n");
 }
