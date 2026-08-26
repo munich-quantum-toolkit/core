@@ -79,8 +79,6 @@ releases may include breaking changes.
 
 #### Other additions
 
-- ✨ Allow QDMI jobs to omit the shot-count parameter when the program defines
-  its own repetition semantics ([#2258]) ([**@burgholzer**])
 - 🐳 Add dev container configuration for a consistent local development
   environment ([#1786]) ([**@denialhaag**])
 
@@ -132,6 +130,15 @@ releases may include breaking changes.
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
   ([**@burgholzer**])
+
+## [3.9.2] - 2026-08-26
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#392)._
+
+### Added
+
+- ✨ Allow C++ and Python QDMI job submissions to omit the shot count, leaving
+  repetition semantics to the program and device ([#2258]) ([**@burgholzer**])
 
 ## [3.9.1] - 2026-08-25
 
@@ -809,7 +816,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[3.9.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.0
 [3.8.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.8.0
