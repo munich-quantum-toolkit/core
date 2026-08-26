@@ -68,9 +68,6 @@ add_subdirectory(circuit_optimizer)
 # add DD package library
 add_subdirectory(dd)
 
-# add QIR package library
-add_subdirectory(qir)
-
 # add QDMI libraries
 add_subdirectory(qdmi)
 

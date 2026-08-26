@@ -8,12 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "qir/jit/Session.hpp"
+#include "mlir/Dialect/QIR/Execution/JIT/Session.h"
 
-#include "qir/Definitions.hpp"
-#include "qir/jit/IRRewriter.hpp"
-#include "qir/runtime/QIR.h"
-#include "qir/runtime/Runtime.hpp"
+#include "mlir/Dialect/QIR/Execution/JIT/IRRewriter.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
+#include "mlir/Dialect/QIR/QIRDefinitions.h"
 
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/StringRef.h>

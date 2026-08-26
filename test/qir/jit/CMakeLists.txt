@@ -11,8 +11,8 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-jit-test)
 # Get the LLVM native target libraries
 llvm_map_components_to_libnames(llvm_native_libs_for_test asmparser core irreader support)
 
-package_add_test(${TARGET_NAME} mqt-core-qir-jit test_ir_rewriter.cpp test_jit_session.cpp)
-target_link_libraries(${TARGET_NAME} PRIVATE mqt-core-qir-runtime mqt-core-qir-test-utils
+package_add_test(${TARGET_NAME} MQT::CoreQIRJIT test_ir_rewriter.cpp test_jit_session.cpp)
+target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime mqt-core-qir-test-utils
                                              ${llvm_native_libs_for_test})
 
 target_compile_definitions(${TARGET_NAME}

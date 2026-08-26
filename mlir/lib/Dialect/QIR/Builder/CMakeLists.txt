@@ -18,7 +18,6 @@ add_mlir_library(
   MLIRSupport)
 
 mqt_mlir_target_use_project_options(MLIRQIRProgramBuilder)
-target_include_directories(MLIRQIRProgramBuilder PRIVATE ${PROJECT_SOURCE_DIR}/src/qir/include)
 
 # collect header files
 file(GLOB_RECURSE QIR_BUILDER_HEADERS_SOURCE

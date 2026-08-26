@@ -8,11 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "qir/runtime/QIR.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
 
 #include "ir/Definitions.hpp"
 #include "ir/operations/OpType.hpp"
-#include "qir/runtime/Runtime.hpp"
+#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
 
 #include <algorithm>
 #include <array>

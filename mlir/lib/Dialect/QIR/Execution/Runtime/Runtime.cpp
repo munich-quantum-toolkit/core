@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qir/runtime/Runtime.hpp"
+#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
@@ -19,8 +19,8 @@
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
-#include "qir/Definitions.hpp"
-#include "qir/runtime/QIR.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
+#include "mlir/Dialect/QIR/QIRDefinitions.h"
 
 #include <algorithm>
 #include <array>

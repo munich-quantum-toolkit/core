@@ -30,7 +30,7 @@ macro(ADD_QIR_CIRCUIT target_name circuit_path)
       DEPENDS ${circuit_path}
       COMMENT "Compiling ${circuit_path} to ${circuit_name}.o with llc")
     add_executable(${target_name} ${circuit_name}.o)
-    target_link_libraries(${target_name} PRIVATE mqt-core-qir-runtime)
+    target_link_libraries(${target_name} PRIVATE MQT::CoreQIRRuntime)
     set_target_properties(${target_name} PROPERTIES LINKER_LANGUAGE CXX)
   endif()
 endmacro()
@@ -48,7 +48,7 @@ endfunction()
 set(TARGET_NAME mqt-core-qir-runtime-test)
 
 # add test executable
-package_add_test(${TARGET_NAME} mqt-core-qir-runtime test_qir_runtime.cpp)
+package_add_test(${TARGET_NAME} MQT::CoreQIRRuntime test_qir_runtime.cpp)
 
 # add tests for QIR files
 set(QIR_EXECUTABLES "")

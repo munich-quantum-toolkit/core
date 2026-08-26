@@ -50,8 +50,8 @@ if(NOT TARGET ${TARGET_NAME})
             MQT::CoreQASM
             MQT::CoreCircuitOptimizer
             MQT::CoreQDMICommon
-            mqt-core-qir-jit
-            mqt-core-qir-runtime
+            MQT::CoreQIRJIT
+            MQT::CoreQIRRuntime
             spdlog::spdlog)
 
   mqt_configure_qdmi_device(${TARGET_NAME} ID mqt.ddsim.default PREFIX ${QDMI_PREFIX})

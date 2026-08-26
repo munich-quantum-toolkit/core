@@ -11,7 +11,7 @@
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
-#include "qir/Definitions.hpp"
+#include "mlir/Dialect/QIR/QIRDefinitions.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/IR/Constants.h>

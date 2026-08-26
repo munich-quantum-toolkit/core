@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qir/jit/IRRewriter.hpp"
+#include "mlir/Dialect/QIR/Execution/JIT/IRRewriter.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/StringRef.h>

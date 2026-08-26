@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "qir/jit/IRRewriter.hpp"
+#include "mlir/Dialect/QIR/Execution/JIT/IRRewriter.h"
 
-#include "qir/Definitions.hpp"
+#include "mlir/Dialect/QIR/QIRDefinitions.h"
 
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>

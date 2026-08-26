@@ -9,9 +9,9 @@
  */
 
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/QIR/QIRDefinitions.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
-#include "qir/Definitions.hpp"
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/STLExtras.h>

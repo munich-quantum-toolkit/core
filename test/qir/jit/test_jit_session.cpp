@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QIR/Execution/JIT/Session.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
 #include "qir/helpers/test_utils.hpp"
-#include "qir/jit/Session.hpp"
-#include "qir/runtime/Runtime.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>

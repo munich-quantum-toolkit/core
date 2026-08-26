@@ -11,9 +11,10 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-jit)
 if(NOT TARGET ${TARGET_NAME})
   # Add internal QIR JIT library
   add_library(${TARGET_NAME} STATIC IRRewriter.cpp Session.cpp)
+  add_library(MQT::CoreQIRJIT ALIAS ${TARGET_NAME})
 
   target_include_directories(${TARGET_NAME}
-                             PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/qir/include>)
+                             PUBLIC $<BUILD_INTERFACE:${MQT_MLIR_SOURCE_INCLUDE_DIR}>)
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
   mqt_llvm_target_disable_rtti(${TARGET_NAME})
 
@@ -33,6 +34,6 @@ if(NOT TARGET ${TARGET_NAME})
     transformutils)
 
   # Add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE mqt-core-qir-runtime MQT::ProjectWarnings
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime MQT::ProjectWarnings
                                                MQT::ProjectOptions ${llvm_native_libs})
 endif()

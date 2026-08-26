@@ -23,7 +23,7 @@
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
-#include "qir/runtime/QIR.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
 
 #include <array>
 #include <cstddef>

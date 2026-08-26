@@ -20,7 +20,6 @@ add_mlir_library(
   MLIRQIRTransformsIncGen)
 
 mqt_mlir_target_use_project_options(MLIRQIRTransforms)
-target_include_directories(MLIRQIRTransforms PRIVATE ${PROJECT_SOURCE_DIR}/src/qir/include)
 
 # collect header files
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE
