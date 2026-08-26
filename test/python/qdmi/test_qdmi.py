@@ -636,6 +636,20 @@ c[0] = measure q[0];
     assert job3.num_shots == 1000
 
 
+def test_device_submit_job_without_shots(ddsim_device: Device) -> None:
+    """Allow devices or custom programs to define their own repetitions."""
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+"""
+
+    job = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3)
+
+    assert job.num_shots == 1024
+
+
 def test_device_retrieve_job_by_id_reports_unsupported_provider(
     ddsim_device: Device,
 ) -> None:

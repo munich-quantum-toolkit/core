@@ -1325,6 +1325,29 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   EXPECT_THAT(queryName(probe), testing::HasSubstr("active=1"));
 }
 
+TEST(DeviceRegistrationTest, CustomBinaryJobDoesNotRequireShots) {
+  registerSessionTestDevice();
+  const auto device = fomac::Session::openDevice("test.session-overrides");
+  constexpr std::array payload{std::byte{0}, std::byte{1}};
+
+  EXPECT_NO_THROW(std::ignore =
+                      device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1));
+  EXPECT_THROW(std::ignore = device.submitJob(
+                   payload, QDMI_PROGRAM_FORMAT_CUSTOM1, size_t{1}),
+               std::runtime_error);
+}
+
+TEST(DeviceRegistrationTest, TextJobDoesNotRequireShots) {
+  registerSessionTestDevice();
+  const auto device = fomac::Session::openDevice("test.session-overrides");
+
+  EXPECT_NO_THROW(std::ignore = device.submitJob("OPENQASM 2.0;",
+                                                 QDMI_PROGRAM_FORMAT_QASM2));
+  EXPECT_THROW(std::ignore = device.submitJob(std::string{"binary"},
+                                              QDMI_PROGRAM_FORMAT_QPY),
+               std::invalid_argument);
+}
+
 TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
   registerSessionTestDevice();
   const auto device = fomac::Session::openDevice("test.session-overrides");

@@ -35,6 +35,7 @@ struct QDMI_Device_Session_impl_d {
 struct QDMI_Device_Job_impl_d {
   QDMI_Device_Session session = nullptr;
   bool retrieved = false;
+  QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_MAX;
 };
 
 namespace {
@@ -342,12 +343,25 @@ extern "C" int TEST_SESSION_QDMI_device_session_retrieve_device_job_by_id(
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
-    QDMI_Device_Job job, QDMI_Device_Job_Parameter /*parameter*/,
-    size_t /*size*/, const void* /*value*/) {
+    QDMI_Device_Job job, const QDMI_Device_Job_Parameter parameter,
+    const size_t size, const void* value) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return job->retrieved ? QDMI_ERROR_BADSTATE : QDMI_SUCCESS;
+  if (job->retrieved) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  if (parameter == QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT) {
+    if (value == nullptr || size != sizeof(job->format)) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    std::memcpy(&job->format, value, size);
+  }
+  if (parameter == QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM &&
+      job->format == QDMI_PROGRAM_FORMAT_CUSTOM1) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
+  return QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_query_property(

@@ -76,7 +76,8 @@ The Python API follows the same distinction: pass `str` to `Device.submit_job`
 for a textual program and `bytes` for an exact binary payload.
 `Job.program_bytes` always returns the unmodified payload, while `Job.program`
 expects a null-terminated UTF-8 text payload and rejects known binary or
-non-text formats.
+non-text formats. The `num_shots` argument is optional for device-defined
+formats that encode their repetition count in the program payload.
 
 The generic submission APIs intentionally reject QDMI calibration and batch-job
 formats. Calibration jobs do not carry a program, while batch jobs contain job
