@@ -882,11 +882,12 @@ TEST_F(QCODDFunctionalityTest, AcceptsLargestValidShift) {
     auto one = arith::ConstantIndexOp::create(b, 1).getResult();
     auto amount = arith::ConstantIndexOp::create(b, 63).getResult();
     auto shifted = arith::ShLIOp::create(b, one, amount).getResult();
-    q = b.qcoIndexSwitch(shifted, q,
-                         ArrayRef<int64_t>{std::numeric_limits<int64_t>::min()},
-                         SmallVector<function_ref<Value(Value)>>{
-                             [&](Value arg) { return b.x(arg); }},
-                         [&](Value arg) { return arg; });
+    auto negative = arith::CmpIOp::create(b, arith::CmpIPredicate::slt, shifted,
+                                          arith::ConstantIndexOp::create(b, 0))
+                        .getResult();
+    q = b.qcoIf(
+        negative, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
     b.sink(q);
     return b.intConstant(0);
   });

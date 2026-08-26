@@ -65,12 +65,12 @@ and therefore skips collection, while each Nox environment installs and tests
 the built extension.
 
 Relative to the original PR tip `97f904f6`, the total PR diff shrank from 1,670
-insertions and 238 deletions to 1,662 insertions and 540 deletions. The
+insertions and 238 deletions to 1,668 insertions and 545 deletions. The
 production implementation shrank from 1,232 to 1,229 lines. Generated `mlir.pyi`
 churn accounts for 55 insertions in the final PR diff. The first hosted run
-exposed eight clang-tidy findings in the refactored implementation; a small
-additive follow-up corrects them. The replacement result will be reported in the
-PR handoff rather than requiring another documentation-only commit.
+exposed eight clang-tidy findings and a macOS-only `qco.index_switch` verifier
+crash caused by its `INT64_MIN` tombstone. Small additive follow-ups correct the
+lint and avoid that unrelated verifier path in the maximum-shift test.
 
 ## Context and Orientation
 
