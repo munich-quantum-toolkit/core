@@ -32,16 +32,17 @@
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
@@ -371,13 +372,6 @@ static LogicalResult validateReturn(func::ReturnOp returnOp,
   return success();
 }
 
-static LogicalResult recordConstant(arith::ConstantOp constant,
-                                    ClassicalEnv& classical) {
-  if (auto attr = dyn_cast<IntegerAttr>(constant.getValue()))
-    classical.scalars[constant.getResult()] = attr;
-  return success();
-}
-
 static void bindInteger(Value result, const llvm::APInt& value,
                         ClassicalEnv& classical) {
   classical.scalars[result] = IntegerAttr::get(result.getType(), value);
@@ -499,7 +493,7 @@ static LogicalResult storeRegister(cbit::StoreOp store,
   if (failed(value)) {
     return failure();
   }
-  cell.value = *value;
+  cell.value.emplace(*value);
   cell.deferredWire.reset();
   return success();
 }
@@ -618,7 +612,7 @@ static FailureOr<LoopRange> resolveLoop(scf::ForOp forOp,
 
   const bool unsignedCmp = forOp.getUnsignedCmp();
   if (!(unsignedCmp ? lower->ult(*upper) : lower->slt(*upper))) {
-    return LoopRange{*lower, *step, 0};
+    return LoopRange{.induction = *lower, .step = *step, .trips = 0};
   }
 
   const unsigned wideWidth = lower->getBitWidth() + 1;
@@ -636,7 +630,7 @@ static FailureOr<LoopRange> resolveLoop(scf::ForOp forOp,
     return forOp.emitError(
         "QCO DD execution exceeds the limit of 10000 control-flow steps");
   }
-  return LoopRange{lowerWide, stepWide, limited};
+  return LoopRange{.induction = lowerWide, .step = stepWide, .trips = limited};
 }
 
 static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
@@ -705,7 +699,10 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
   return TypeSwitch<Operation*, LogicalResult>(&op)
       .template Case<StaticOp, AllocOp, SinkOp>([](auto) { return success(); })
       .template Case<arith::ConstantOp>([&](arith::ConstantOp constant) {
-        return recordConstant(constant, *walk.classical);
+        if (auto attr = dyn_cast<IntegerAttr>(constant.getValue())) {
+          walk.classical->scalars[constant.getResult()] = attr;
+        }
+        return success();
       })
       .template Case<cbit::AllocOp>([&](cbit::AllocOp alloc) {
         return allocateRegister(alloc, *walk.classical);
@@ -981,8 +978,9 @@ static FailureOr<QubitMap> prepare(func::FuncOp func, const dd::Package& dd) {
     }
     qubits.numQubits = next;
   }
-  for (AllocOp alloc : func.getBody().front().getOps<AllocOp>())
+  for (AllocOp alloc : func.getBody().front().getOps<AllocOp>()) {
     qubits.bind(alloc.getResult(), static_cast<qc::Qubit>(qubits.numQubits++));
+  }
   if (dd.qubits() < qubits.numQubits) {
     return func.emitError() << "DD package has " << dd.qubits()
                             << " qubits but function uses " << qubits.numQubits;

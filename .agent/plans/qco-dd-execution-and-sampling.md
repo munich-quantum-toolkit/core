@@ -24,7 +24,8 @@ sampling them demonstrates the behavior end to end.
 - [x] (2026-08-26 22:17Z) Add the two compiler-to-sampler Python cases.
 - [x] (2026-08-26 22:22Z) Run full local validation and prepare two signed
   additive commits.
-- [ ] Push normally and inspect hosted checks.
+- [x] (2026-08-26 22:29Z) Push normally and inspect hosted checks.
+- [ ] Confirm replacement hosted checks after the lint-only follow-up.
 
 ## Surprises & Discoveries
 
@@ -64,11 +65,12 @@ and therefore skips collection, while each Nox environment installs and tests
 the built extension.
 
 Relative to the original PR tip `97f904f6`, the total PR diff shrank from 1,670
-insertions and 238 deletions to 1,658 insertions and 536 deletions. The
-production implementation shrank from 1,232 to 1,231 lines. Generated `mlir.pyi`
-churn accounts for 55 insertions in the final PR diff. Hosted CI remains to be
-inspected after the normal push and will be reported in the PR handoff rather
-than requiring a documentation-only commit.
+insertions and 238 deletions to 1,662 insertions and 540 deletions. The
+production implementation shrank from 1,232 to 1,229 lines. Generated `mlir.pyi`
+churn accounts for 55 insertions in the final PR diff. The first hosted run
+exposed eight clang-tidy findings in the refactored implementation; a small
+additive follow-up corrects them. The replacement result will be reported in the
+PR handoff rather than requiring another documentation-only commit.
 
 ## Context and Orientation
 
