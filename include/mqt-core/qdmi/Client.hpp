@@ -600,14 +600,12 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /**
-   * @brief Submits a textual program with an optional shot count.
-   * @details Omitting the shot count leaves repetition semantics to the
-   * submitted program and device.
+   * @brief Submits a textual program without setting a shot count.
+   * @details Repetition semantics are left to the submitted program and device.
    * @see QDMI_job_submit
    */
   [[nodiscard]] Job submitJob(
       const std::string& program, QDMI_Program_Format format,
-      std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
       const std::optional<CustomJobParameter>& custom2 = std::nullopt,
       const std::optional<CustomJobParameter>& custom3 = std::nullopt,
@@ -632,14 +630,12 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /**
-   * @brief Submits a binary program with an optional shot count.
-   * @details Omitting the shot count leaves repetition semantics to the
-   * submitted program and device.
+   * @brief Submits a binary program without setting a shot count.
+   * @details Repetition semantics are left to the submitted program and device.
    * @see QDMI_job_submit
    */
   [[nodiscard]] Job submitJob(
       std::span<const std::byte> program, QDMI_Program_Format format,
-      std::optional<size_t> numShots = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
       const std::optional<CustomJobParameter>& custom2 = std::nullopt,
       const std::optional<CustomJobParameter>& custom3 = std::nullopt,

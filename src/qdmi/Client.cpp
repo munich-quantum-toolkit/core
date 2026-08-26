@@ -371,13 +371,20 @@ Job Device::submitJob(const std::string& program,
                       const std::optional<CustomJobParameter>& custom3,
                       const std::optional<CustomJobParameter>& custom4,
                       const std::optional<CustomJobParameter>& custom5) const {
-  return submitJob(program, format, std::optional<size_t>{numShots}, custom1,
-                   custom2, custom3, custom4, custom5);
+  if (isBinaryProgramFormat(format)) {
+    throw std::invalid_argument(
+        "Binary program formats require exact-byte submission");
+  }
+  rejectUnsupportedProgramFormat(format);
+
+  const auto bytes = std::as_bytes(
+      std::span(program.c_str(), static_cast<size_t>(program.size() + 1)));
+  return submitJob(bytes, format, numShots, custom1, custom2, custom3, custom4,
+                   custom5);
 }
 
 Job Device::submitJob(const std::string& program,
                       const QDMI_Program_Format format,
-                      const std::optional<size_t> numShots,
                       const std::optional<CustomJobParameter>& custom1,
                       const std::optional<CustomJobParameter>& custom2,
                       const std::optional<CustomJobParameter>& custom3,
@@ -391,8 +398,7 @@ Job Device::submitJob(const std::string& program,
 
   const auto bytes = std::as_bytes(
       std::span(program.c_str(), static_cast<size_t>(program.size() + 1)));
-  return submitJob(bytes, format, numShots, custom1, custom2, custom3, custom4,
-                   custom5);
+  return submitJob(bytes, format, custom1, custom2, custom3, custom4, custom5);
 }
 
 Job Device::submitJob(const std::span<const std::byte> program,
@@ -402,13 +408,14 @@ Job Device::submitJob(const std::span<const std::byte> program,
                       const std::optional<CustomJobParameter>& custom3,
                       const std::optional<CustomJobParameter>& custom4,
                       const std::optional<CustomJobParameter>& custom5) const {
-  return submitJob(program, format, std::optional<size_t>{numShots}, custom1,
-                   custom2, custom3, custom4, custom5);
+  rejectUnsupportedProgramFormat(format);
+
+  return submitJobImpl(format, program, numShots, custom1, custom2, custom3,
+                       custom4, custom5);
 }
 
 Job Device::submitJob(const std::span<const std::byte> program,
                       const QDMI_Program_Format format,
-                      const std::optional<size_t> numShots,
                       const std::optional<CustomJobParameter>& custom1,
                       const std::optional<CustomJobParameter>& custom2,
                       const std::optional<CustomJobParameter>& custom3,
@@ -416,7 +423,7 @@ Job Device::submitJob(const std::span<const std::byte> program,
                       const std::optional<CustomJobParameter>& custom5) const {
   rejectUnsupportedProgramFormat(format);
 
-  return submitJobImpl(format, program, numShots, custom1, custom2, custom3,
+  return submitJobImpl(format, program, std::nullopt, custom1, custom2, custom3,
                        custom4, custom5);
 }
 

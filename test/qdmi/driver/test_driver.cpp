@@ -1351,6 +1351,17 @@ TEST(DeviceRegistrationTest, CustomBinaryJobDoesNotRequireShots) {
                std::runtime_error);
 }
 
+TEST(DeviceRegistrationTest, TextJobDoesNotRequireShots) {
+  registerSessionTestDevice();
+  const auto device = qdmi::Session::openDevice("test.session-overrides");
+
+  EXPECT_NO_THROW(std::ignore = device.submitJob("OPENQASM 2.0;",
+                                                 QDMI_PROGRAM_FORMAT_QASM2));
+  EXPECT_THROW(std::ignore = device.submitJob(std::string{"binary"},
+                                              QDMI_PROGRAM_FORMAT_QPY),
+               std::invalid_argument);
+}
+
 TEST(DeviceRegistrationTest, ConcurrentlyFreesDistinctJobs) {
   constexpr size_t threadCount = 8;
   constexpr size_t jobCount = 64;

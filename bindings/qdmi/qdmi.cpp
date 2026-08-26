@@ -361,8 +361,12 @@ when the custom slot is unsupported.)pb");
          const std::optional<qdmi::CustomJobParameter>& custom3,
          const std::optional<qdmi::CustomJobParameter>& custom4,
          const std::optional<qdmi::CustomJobParameter>& custom5) {
-        return self.submitJob(program, format, numShots, custom1, custom2,
-                              custom3, custom4, custom5);
+        if (numShots.has_value()) {
+          return self.submitJob(program, format, *numShots, custom1, custom2,
+                                custom3, custom4, custom5);
+        }
+        return self.submitJob(program, format, custom1, custom2, custom3,
+                              custom4, custom5);
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
       nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
@@ -381,8 +385,12 @@ when the custom slot is unsupported.)pb");
          const std::optional<qdmi::CustomJobParameter>& custom5) {
         const auto bytes = std::span{
             static_cast<const std::byte*>(program.data()), program.size()};
-        return self.submitJob(bytes, format, numShots, custom1, custom2,
-                              custom3, custom4, custom5);
+        if (numShots.has_value()) {
+          return self.submitJob(bytes, format, *numShots, custom1, custom2,
+                                custom3, custom4, custom5);
+        }
+        return self.submitJob(bytes, format, custom1, custom2, custom3, custom4,
+                              custom5);
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
       nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
