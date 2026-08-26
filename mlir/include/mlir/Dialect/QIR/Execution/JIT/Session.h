@@ -22,8 +22,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <optional>
-#include <string>
 
 namespace qir {
 
@@ -40,17 +38,10 @@ class Runtime;
  */
 enum class Execution { Sampling, StateExtraction };
 
-struct SessionOptions {
-  Execution execution = Execution::Sampling;
-  std::optional<std::string> entryPoint;
-  std::optional<uint64_t> seed;
-};
-
 /**
  * @brief In-process JIT executor for QIR programs.
  * @details The session does the following, in order:
- * - Loads an LLVM module from either an IR file (text or bitcode) or
- *   an in-memory buffer,
+ * - Loads an LLVM module from an in-memory buffer,
  * - JIT-compiles it via LLVM's OrcJIT with lazy compilation.
  * - wires up the QIR runtime symbols, and
  * - runs the module function marked as its QIR entry point.
@@ -63,27 +54,17 @@ public:
   using EntryPointFn = int64_t();
 
   /**
-   * @brief Build a session by loading IR from a file on disk.
-   * @param inputFile Path to a textual IR or bitcode file.
-   * @param mode Execution mode
-   * @throws std::runtime_error if the file cannot be parsed or the JIT fails
-   * to initialize.
-   */
-  explicit JitSession(llvm::StringRef inputFile,
-                      const SessionOptions& options = {});
-
-  /**
    * @brief Build a session by loading IR from a memory buffer.
    * @details Accepts either textual IR or bitcode. The buffer does not have
    * to be null-terminated.
    * @param irBytes Byte view of the IR.
    * @param bufferName Identifier used in diagnostics.
-   * @param mode Execution mode
+   * @param execution Execution mode.
    * @throws std::runtime_error if the IR cannot be parsed or the JIT fails
    * to initialize.
    */
   JitSession(llvm::StringRef irBytes, llvm::StringRef bufferName,
-             const SessionOptions& options = {});
+             Execution execution = Execution::Sampling);
 
   /// Tears down the LLJIT and any JIT'd resources owned by the session.
   ~JitSession();
@@ -95,10 +76,6 @@ public:
   int64_t run();
 
   [[nodiscard]] auto runtime() -> Runtime&;
-  [[nodiscard]] auto runtime() const -> const Runtime&;
-  [[nodiscard]] auto entryPointName() const -> const std::string& {
-    return entryPointName_;
-  }
 
 private:
   llvm::orc::ThreadSafeContext tsCtx_{std::make_unique<llvm::LLVMContext>()};
@@ -106,15 +83,10 @@ private:
   std::unique_ptr<Runtime> runtime_;
   std::unique_ptr<llvm::orc::LLJIT> jit_;
   EntryPointFn* entryPointFn_ = nullptr;
-  std::string entryPointName_;
 
   /// Initializes the native target, asm printer and asm parser.
   /// Safe to call multiple times; the work runs only on the first call.
   static void initNativeTargets();
-
-  /// Parses LLVM IR from @p irPath using the session's thread-safe context.
-  llvm::Expected<llvm::orc::ThreadSafeModule>
-  loadModuleFromFile(llvm::StringRef irPath);
 
   /// Parses LLVM IR (textual or bitcode) from @p irBytes using the session's
   /// thread-safe context. @p bufferName is used in diagnostics.
@@ -130,7 +102,7 @@ private:
   /// - Resolves the selected QIR entry point.
   /// @throws std::runtime_error if loading failed or the JIT cannot start.
   void initialize(llvm::Expected<llvm::orc::ThreadSafeModule> llvmModule,
-                  const SessionOptions& options);
+                  Execution execution);
 
   /// Tears down the @c LLJIT.
   void deinitialize() const;

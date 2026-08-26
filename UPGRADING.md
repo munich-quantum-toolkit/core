@@ -6,6 +6,11 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### macOS support
+
+MQT Core no longer supports x86 macOS. Use Apple silicon with macOS 13.3 or
+newer. The new deployment target enables `std::format` in libc++.
+
 ### Removal of CoreAlgorithms
 
 MQT Core no longer installs `MQT::CoreAlgorithms` or the headers below
@@ -167,13 +172,8 @@ Boost.Multiprecision or GMP.
 
 ### QIR execution
 
-The standalone QIR runner now invokes a selected QIR entry point as a
-parameterless `i64` function instead of assuming an `int main(int, char**)`. Use
-`--entry-point` to select among multiple entry points, `--shots` for repeated
-execution, and `--seed` for deterministic sampling.
-
 Dynamic QIR inputs must use the current QIR 2.1 resource-management interface.
-Legacy qir-runner allocator and output overloads are no longer accepted.
+Legacy allocator and output overloads are no longer accepted.
 
 The DDSIM QDMI device now isolates the runtime, simulator state, random-number
 generator, and output sink of every QIR job. Concurrently submitted jobs no
@@ -189,10 +189,9 @@ return `QDMI_ERROR_NOTSUPPORTED`.
 MQT Core now builds its MLIR-based compiler infrastructure unconditionally. LLVM
 22.1+ (including MLIR) is therefore required when building MQT Core from source,
 including as a CMake dependency or Python package. The `BUILD_MQT_CORE_MLIR`
-CMake option has been removed. The QIR runner and QIR support in the DDSIM QDMI
-Device are also built unconditionally, so the `BUILD_MQT_CORE_QIR_RUNNER` and
-`BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` options have been removed. Remove these
-three options from build scripts and presets.
+CMake option has been removed. MQT Core also builds QIR support in the DDSIM
+QDMI device unconditionally, so the `BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` option
+has been removed. Remove both options from build scripts and presets.
 
 We offer pre-built distributions for all supported platforms as part of the
 `setup-mlir` project at
@@ -219,6 +218,15 @@ Known limitations:
 MQT Core no longer provides the `datastructures` (`ds`) sublibrary. MQT QMAP was
 its only consumer. Downstream users must depend on MQT QMAP or provide the
 required data structures directly.
+
+## [3.9.2]
+
+### Optional QDMI shot counts
+
+QDMI jobs whose repetition count is encoded in the program can now omit
+`num_shots`. Existing C++ calls that pass a `size_t` keep the same ABI and
+behavior; new C++ overloads omit the argument, while Python accepts `None` and
+uses it by default.
 
 ## [3.9.1]
 
@@ -694,7 +702,7 @@ access to QDMI devices.
 Install with Qiskit support: `uv pip install "mqt-core[qiskit]"`
 
 See the
-[Qiskit Backend documentation](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qdmi_backend.html)
+[Qiskit Backend documentation](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/qdmi_backend.html)
 for details.
 
 ### Argument name changes in `QuantumComputation` and `CompoundOperation` dunder methods
@@ -877,7 +885,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[3.9.2]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...v3.9.0
 [3.8.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...v3.8.0

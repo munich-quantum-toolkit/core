@@ -40,3 +40,5 @@ mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-compiler REQUIRES_EH)
 
 gtest_discover_tests(mqt-core-mlir-unittests-compiler PROPERTIES LABELS mqt-mlir-unittests
                                                                  DISCOVERY_TIMEOUT 60)
+
+add_subdirectory(mqt-cc)

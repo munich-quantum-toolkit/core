@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qir/runtime/Runtime.hpp"
+#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
@@ -19,7 +19,8 @@
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
-#include "qir/runtime/QIR.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
+#include "mlir/Dialect/QIR/QIRDefinitions.h"
 
 #include <algorithm>
 #include <array>
@@ -258,8 +259,6 @@ auto Runtime::takeState() -> QState {
   return ret;
 }
 
-auto Runtime::getOstream() const -> std::ostream& { return *os; }
-
 auto Runtime::setOstream(std::ostream& other) -> void { os = &other; }
 
 auto Runtime::resetOstream() -> void { os = &std::cout; }
@@ -349,8 +348,8 @@ auto Runtime::setMetadata(
 
 auto operator<<(std::ostream& os, const Runtime::OutputSchema schema)
     -> std::ostream& {
-  return os << (schema == Runtime::OutputSchema::Labeled ? "labeled"
-                                                         : "ordered");
+  return os << (schema == Runtime::OutputSchema::Labeled ? LABELED_SCHEMA
+                                                         : ORDERED_SCHEMA);
 }
 
 } // namespace qir
