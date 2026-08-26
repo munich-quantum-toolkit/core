@@ -259,8 +259,6 @@ auto Runtime::takeState() -> QState {
   return ret;
 }
 
-auto Runtime::getOstream() const -> std::ostream& { return *os; }
-
 auto Runtime::setOstream(std::ostream& other) -> void { os = &other; }
 
 auto Runtime::resetOstream() -> void { os = &std::cout; }

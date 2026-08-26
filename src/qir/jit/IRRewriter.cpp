@@ -52,7 +52,8 @@ static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
           call == nullptr ? nullptr
                           : llvm::dyn_cast<llvm::Function>(
                                 call->getCalledOperand()->stripPointerCasts());
-      if (callee != nullptr && callee->getName().starts_with(QIS_PREFIX) &&
+      if (callee != nullptr &&
+          callee->getName().starts_with("__quantum__qis__") &&
           !isIrreversible(*call)) {
         throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
       }
@@ -87,7 +88,7 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
 
   const auto profile = entryPoint.getFnAttribute(QIR_PROFILES_ATTR);
   if (!profile.isStringAttribute() ||
-      profile.getValueAsString().compare(BASE_PROFILE) != 0) {
+      profile.getValueAsString() != BASE_PROFILE) {
     throw std::invalid_argument(
         "QIR state extraction requires a Base Profile entry point");
   }

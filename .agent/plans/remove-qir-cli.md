@@ -34,6 +34,16 @@ state.
       checks as practical, and ran `uvx nox -s lint`.
 - [x] (2026-08-25 01:29Z) Inspected the final diff and working tree and recorded
       the outcome and validation evidence here.
+- [x] (2026-08-26 05:59Z) Reviewed the change against issue #1734 and removed
+      file loading, named entry-point selection, and other runner-only JIT
+      surface.
+- [x] (2026-08-26 05:59Z) Exposed deterministic OpenQASM and QIR sampling as
+      DDSIM QDMI custom job parameter 1.
+- [x] (2026-08-26 06:15Z) Built the full release preset, ran the revised focused
+      and full tests, built the documentation, checked the install surface, and
+      ran lint.
+- [x] (2026-08-26 06:15Z) Prepared the validated, authorized update to pull
+      request #2246.
 
 ## Surprises & Discoveries
 
@@ -53,16 +63,17 @@ state.
   irreversible-operation literals. Evidence: searches found the same strings in
   `mlir/lib/Dialect/QIR` and `src/qir/jit`; both now use
   `src/qir/include/qir/Definitions.hpp`.
-- Observation: The full documentation session cannot run on this host because
-  the unrelated `docs/dd_package.md` notebook requires the missing Graphviz
-  `dot` executable. Evidence: `uvx nox --non-interactive -s docs` stopped with
-  `ExecutableNotFound: failed to execute PosixPath('dot')`. Markdown, links, and
-  formatting passed in the full lint suite.
-- Observation: Installing to a temporary prefix attempted to create Cap'n
-  Proto's unscoped `/usr/local/bin/capnpc` link and reported an operating-system
-  permission error, but CMake continued and installed MQT Core into the
-  requested prefix. Evidence: the final install-tree scan found no native QIR
-  runner, public QIR headers, or QIR package targets.
+- Observation: Release configuration, package installation, and documentation
+  need the local LLVM/MLIR package path on this host. Evidence: all three pass
+  with `MLIR_DIR=/home/nvidia/.local/opt/mqt-llvm-mlir/22.1.7/lib/cmake/mlir`.
+- Observation: The full release build installs cleanly to a temporary prefix.
+  Evidence: the final install-tree scan found no native QIR runner, public QIR
+  headers, or QIR package targets.
+- Observation: Two of issue #1734's three intended outcomes are now covered.
+  Base Profile IR and pipeline tests exist, and QIR-Runner provides external
+  interoperability checks. The Base Profile conversion still contains its own
+  `ConvertMemRefLoadOp`; centralizing dynamic-to-static qubit conversion remains
+  separate compiler work.
 
 ## Decision Log
 
@@ -85,16 +96,25 @@ state.
   internal execution must agree on these spellings, while the source-private
   location avoids creating a replacement public API. Date/Author: 2026-08-25 /
   Codex.
+- Decision: Keep deterministic seeding as DDSIM QDMI custom job parameter 1
+  instead of a JIT session option. Rationale: The job owns sampling policy and
+  can apply one seed contract to OpenQASM and QIR. Date/Author: 2026-08-26 /
+  Codex.
+- Decision: Require exactly one standard QIR entry point and remove named
+  selection. Rationale: MQT's compiler emits one entry point, while QIR-Runner
+  already serves external modules that need selection. Date/Author: 2026-08-26 /
+  Codex.
 
 ## Outcomes & Retrospective
 
 The native QIR runner, its subprocess test, its user guide, the build-tree
 `MQT::` JIT/runtime aliases, and all public QIR runtime/JIT headers are removed.
 The retained implementation is source-private and shared by DDSIM, the compiler,
-and focused tests. All 528 focused tests pass, the install-tree scan proves that
-the removed surfaces are absent, and the full lint suite passes. The only
-validation gap is full notebook execution in the documentation build because
-this host lacks Graphviz `dot`; documentation lint and link checks pass.
+and focused tests. DDSIM exposes deterministic OpenQASM and QIR sampling through
+custom job parameter 1. The internal JIT accepts only in-memory modules with one
+standard QIR entry point. The focused C++ tests, all 4,035 configured C++ tests,
+254 Python QDMI/QIR tests, documentation, installation, and lint pass. The
+install-tree scan proves that the removed surfaces are absent.
 
 ## Context and Orientation
 
@@ -117,8 +137,8 @@ list. This task must also remove the aliases and public header placement.
 The change is limited to QIR runtime/JIT/runner build files and headers, their
 direct consumers and tests, the QIR user guide, `UPGRADING.md`, and this plan.
 It must preserve unrelated worktree changes. It must follow `AGENTS.md` and
-`docs/ai_usage.md`. No GitHub post, push, pull request, or other remote mutation
-is authorized by this plan.
+`docs/ai_usage.md`. The maintainer authorized a fast-forward update to pull
+request #2246 after local validation and signed-commit verification.
 
 ## Plan of Work
 
@@ -126,11 +146,12 @@ First, create an internal header root at `src/qir/include/qir`. Move
 `Session.hpp`, `IRRewriter.hpp`, `Runtime.hpp`, and `QIR.h` there without
 changing their logical include spellings. Adjust `src/qir/jit/CMakeLists.txt`
 and `src/qir/runtime/CMakeLists.txt` to use ordinary static libraries rather
-than `add_mqt_core_library`, set C++20 and position-independent code directly,
-attach project warning and option targets, and publish only the source-local
-build include directory to internal dependents. Link the JIT, DDSIM device, and
-tests through raw `mqt-core-qir-*` target names. Do not add either target to
-`MQT_CORE_TARGETS` and do not create a namespaced alias.
+than `add_mqt_core_library`, set position-independent code directly, attach
+project warning and option targets, and publish only the source-local build
+include directory to internal dependents. The project-wide C++20 setting also
+applies to these targets. Link the JIT, DDSIM device, and tests through raw
+`mqt-core-qir-*` target names. Do not add either target to `MQT_CORE_TARGETS`
+and do not create a namespaced alias.
 
 Second, remove `src/qir/runner`, remove its subdirectory from
 `src/qir/CMakeLists.txt`, remove `test/qir/runner`, and remove its subdirectory
@@ -146,6 +167,14 @@ and headers and points users to DDSIM QDMI or an external QIR runtime. Because
 this change removes unreleased v4-facing surfaces and repository policy says not
 to add a standalone changelog entry for unreleased v4 functionality, do not add
 a new `CHANGELOG.md` item.
+
+Fourth, reduce the retained JIT to the in-memory DDSIM contract. Remove file
+loading, named entry-point selection, session-owned seeding, and unused
+accessors. Require one function with the standard `entry_point` attribute.
+Define DDSIM custom job parameter 1 as an optional positive `int` seed and use
+it for both OpenQASM and QIR sampling. Document this migration in
+`docs/qdmi/ddsim_device.md`, `UPGRADING.md`, and the existing aggregate QIR
+changelog entry.
 
 Finally, configure the release preset, build the focused QIR JIT/runtime and
 DDSIM test targets, run those binaries, and inspect an install tree or generated
@@ -201,6 +230,10 @@ device test binary must pass QIR assembly and bitcode submission, sampling,
 statevector, error, repeated-job, and concurrency cases. A zero exit status and
 GoogleTest's complete pass summary are required.
 
+DDSIM custom job parameter 1 must accept positive `int` seeds, reject invalid
+values, and reproduce both OpenQASM and QIR sampling results across independent
+jobs. Modules with multiple `entry_point` functions must be rejected.
+
 The QIR guide must no longer tell users to build or invoke the removed native
 runner. The upgrade guide must name every removed CLI and CMake/header surface
 and provide a migration path. `uvx nox -s lint` must pass before handoff unless
@@ -241,7 +274,10 @@ them. Neither target has an `MQT::` alias or install/export rule.
 `src/qdmi/devices/dd/Device.cpp` continues to include `qir/jit/Session.hpp` and
 `qir/runtime/Runtime.hpp` and gains those includes through its private link to
 the internal targets. Existing in-process tests use the same internal targets.
-No new public C++ or Python interface is added.
+The existing QDMI custom parameter interface gains a DDSIM-specific contract:
+custom parameter 1 is a positive `int` sampling seed. No binding or generated
+stub changes are required. `JitSession` accepts only in-memory QIR plus an
+execution mode and requires exactly one entry point.
 
 Plan revision note (2026-08-25): Created the initial self-contained plan after
 repository and issue inspection.
@@ -249,4 +285,8 @@ repository and issue inspection.
 Plan revision note (2026-08-25): Added the shared internal QIR definitions
 header after finding repeated compiler and JIT literals. Recorded the completed
 implementation, focused test totals, install-tree evidence, lint result, and
-Graphviz documentation limitation.
+documentation result.
+
+Plan revision note (2026-08-26): Moved deterministic seeding to the DDSIM QDMI
+job boundary, removed speculative multiple-entry selection, recorded issue
+1734's current status, and authorized the pull-request update.

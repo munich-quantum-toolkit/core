@@ -121,6 +121,14 @@ int setShots(MQT_DDSIM_QDMI_Device_Job job, const size_t shots) {
       job, QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM, sizeof(size_t), &shots);
 }
 
+int setSeed(MQT_DDSIM_QDMI_Device_Job job, const int seed) {
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return MQT_DDSIM_QDMI_device_job_set_parameter(
+      job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM1, sizeof(int), &seed);
+}
+
 int submitAndWait(MQT_DDSIM_QDMI_Device_Job job, size_t timeoutSeconds) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;

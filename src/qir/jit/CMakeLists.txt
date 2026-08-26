@@ -10,17 +10,10 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-jit)
 
 if(NOT TARGET ${TARGET_NAME})
   # Add internal QIR JIT library
-  add_library(${TARGET_NAME} STATIC)
+  add_library(${TARGET_NAME} STATIC IRRewriter.cpp Session.cpp)
 
-  # Add sources to target
-  target_sources(
-    ${TARGET_NAME}
-    PRIVATE Session.cpp IRRewriter.cpp ${PROJECT_SOURCE_DIR}/src/qir/include/qir/Definitions.hpp
-            ${PROJECT_SOURCE_DIR}/src/qir/include/qir/jit/Session.hpp
-            ${PROJECT_SOURCE_DIR}/src/qir/include/qir/jit/IRRewriter.hpp)
   target_include_directories(${TARGET_NAME}
                              PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/qir/include>)
-  target_compile_features(${TARGET_NAME} PUBLIC cxx_std_20)
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
   mqt_llvm_target_disable_rtti(${TARGET_NAME})
 

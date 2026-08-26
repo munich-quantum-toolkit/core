@@ -96,9 +96,9 @@ releases may include breaking changes.
   ([#2209]) ([**@burgholzer**])
 - 💥 Prune dead and misleading CoreIR APIs and remove random-number generator
   state from `QuantumComputation` ([#2111], [#2112]) ([**@simon1hofmann**])
-- 💥 Update QIR execution for QIR 2.1, isolated runtimes, reproducible
-  multi-shot execution, and safe statevector extraction ([#2035], [#2036])
-  ([**@burgholzer**])
+- 💥 Update QIR execution for QIR 2.1, isolated runtimes, deterministic QDMI
+  sampling, and safe statevector extraction ([#2035], [#2036], [#2246])
+  ([**@burgholzer**], [**@denialhaag**])
 - 💥 Require LLVM/MLIR 22.1 and QIR support in every MQT Core source build,
   build MLIR by default, and remove the corresponding build options ([#1356],
   [#1549], [#1953]) ([**@burgholzer**], [**@denialhaag**])

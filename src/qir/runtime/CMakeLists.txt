@@ -10,17 +10,10 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runtime)
 
 if(NOT TARGET ${TARGET_NAME})
   # Add internal QIR runtime library
-  add_library(${TARGET_NAME} STATIC)
+  add_library(${TARGET_NAME} STATIC QIR.cpp Runtime.cpp)
 
-  # Add sources to target
-  target_sources(
-    ${TARGET_NAME}
-    PRIVATE QIR.cpp Runtime.cpp ${PROJECT_SOURCE_DIR}/src/qir/include/qir/Definitions.hpp
-            ${PROJECT_SOURCE_DIR}/src/qir/include/qir/runtime/QIR.h
-            ${PROJECT_SOURCE_DIR}/src/qir/include/qir/runtime/Runtime.hpp)
   target_include_directories(${TARGET_NAME}
                              PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/qir/include>)
-  target_compile_features(${TARGET_NAME} PUBLIC cxx_std_20)
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
   # Add link libraries

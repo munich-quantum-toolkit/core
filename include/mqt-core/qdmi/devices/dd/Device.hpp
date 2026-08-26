@@ -28,6 +28,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <random>
 #include <string>
 #include <unordered_map>
@@ -200,6 +201,9 @@ private:
 
   /// The number of shots for the job
   size_t numShots_ = 1024U;
+
+  /// Optional positive seed for deterministic sampling.
+  std::optional<int> seed_;
 
   /// Handle for the asynchronous job
   std::future<void> jobHandle_;

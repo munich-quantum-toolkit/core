@@ -437,7 +437,6 @@ public:
   /// @returns the moved @c QState from the runtime.
   auto takeState() -> QState;
 
-  auto getOstream() const -> std::ostream&;
   auto setOstream(std::ostream& other) -> void;
   auto resetOstream() -> void;
 

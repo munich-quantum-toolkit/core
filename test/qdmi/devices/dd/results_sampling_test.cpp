@@ -28,6 +28,7 @@
 #include <cstddef>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -43,11 +44,15 @@ protected:
   static constexpr size_t NUM_QUBITS = 3;
 
   static Histogram runProgram(const QDMI_Program_Format format,
-                              const std::string_view program) {
+                              const std::string_view program,
+                              const std::optional<int> seed = std::nullopt) {
     const qdmi_test::SessionGuard s{};
     const qdmi_test::JobGuard j{s.session};
     EXPECT_EQ(qdmi_test::setProgram(j.job, format, program), QDMI_SUCCESS);
     EXPECT_EQ(qdmi_test::setShots(j.job, NUM_SHOTS), QDMI_SUCCESS);
+    if (seed.has_value()) {
+      EXPECT_EQ(qdmi_test::setSeed(j.job, *seed), QDMI_SUCCESS);
+    }
     EXPECT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
     return qdmi_test::getHistogram(j.job);
   }
@@ -157,6 +162,18 @@ TEST_F(QIRHistogramTestString, AdaptiveRecordOutputs) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
   checkSmokeHistogram(
       runProgram(format, qir_test::getProgram("AdaptiveRecordOutputs.ll")));
+}
+
+TEST_F(HistogramTest, SeedReproducesQASMSampling) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QASM3;
+  constexpr std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
+  EXPECT_EQ(runProgram(format, program, 7), runProgram(format, program, 7));
+}
+
+TEST_F(QIRHistogramTestString, SeedReproducesQIRSampling) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  EXPECT_EQ(runProgram(format, program, 7), runProgram(format, program, 7));
 }
 
 TEST(ResultsSampling, BufferTooSmallErrors) {

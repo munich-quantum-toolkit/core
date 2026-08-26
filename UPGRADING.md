@@ -171,6 +171,14 @@ MQT Core no longer builds or installs the `mqt-core-qir-runner` executable. Use
 the DDSIM QDMI device to execute supported QIR programs with MQT Core, or use an
 external runtime such as QIR-Runner.
 
+The DDSIM QDMI device accepts a positive `int` random-number generator seed as
+custom job parameter 1 (`QDMI_DEVICE_JOB_PARAMETER_CUSTOM1`, or `custom1` in the
+Python API). This replaces the runner's `--seed` option and applies to both
+OpenQASM and QIR sampling jobs. The DDSIM device requires each QIR module to
+contain exactly one function with the standard `entry_point` attribute. Use an
+external runtime such as QIR-Runner for modules that require named entry-point
+selection.
+
 The QIR runtime and just-in-time compiler are now internal implementation
 details of the DDSIM QDMI device. MQT Core no longer provides the build-tree
 `MQT::CoreQIRRuntime` and `MQT::CoreQIRJIT` CMake aliases or the headers below
