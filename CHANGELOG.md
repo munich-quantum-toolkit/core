@@ -31,8 +31,8 @@ releases may include breaking changes.
 - ✨ Add decision diagram-based construction, simulation, and sampling for QCO
   programs, including mid-circuit `measure` / `reset`, concrete `if` /
   `index_switch` / `scf.for` / `func.call`, classical SSA and CBit registers,
-  dense multi-wire embedding, multi-shot `sample` / `sampleWithClassics`, and
-  Python bindings ([#1915], [#1973], [#2077]) ([**@simon1hofmann**])
+  dense multi-wire embedding, output-aware multi-shot sampling, and Python
+  bindings ([#1915], [#1973], [#2077]) ([**@simon1hofmann**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
   compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
   [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])

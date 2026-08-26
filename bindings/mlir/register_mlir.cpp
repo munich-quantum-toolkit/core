@@ -990,13 +990,6 @@ LLVM bitcode.)pb");
 
   nb::module_::import_("mqt.core.dd");
 
-  nb::class_<mlir::qco::SampleResult>(m, "SampleResult",
-                                      R"pb(Histograms from QCO DD sampling.)pb")
-      .def_ro("shots", &mlir::qco::SampleResult::shots,
-              R"pb(Final computational-basis outcome histogram.)pb")
-      .def_ro("classical", &mlir::qco::SampleResult::classical,
-              R"pb(Mid-circuit measure-bit histogram (encounter order).)pb");
-
   m.def(
       "build_functionality",
       [](const mlir::QCOProgram& program, dd::Package& ddPackage) {
@@ -1075,7 +1068,7 @@ Raises:
             [&] { return mlir::qco::sample(func, ddPackage, shots, rng); });
       },
       "program"_a, "dd_package"_a, "shots"_a = 1024U, "seed"_a = nb::none(),
-      R"pb(Sample final computational-basis outcomes from a QCO program.
+      R"pb(Sample the declared outputs of a QCO program.
 
 Args:
     program: A QCO program whose entry ``func.func`` is sampled.
@@ -1084,33 +1077,8 @@ Args:
     seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
 
 Returns:
-    Histogram of final ``measureAll`` bitstrings.
-
-Raises:
-    ValueError: When the program is unsupported for sampling.)pb");
-
-  m.def(
-      "sample_with_classics",
-      [](const mlir::QCOProgram& program, dd::Package& ddPackage,
-         const size_t shots, const std::optional<uint64_t> seed) {
-        auto func = entryFunc(program);
-        auto rng = makeRng(seed);
-        return takeFailureOr(
-            func.getContext(), "cannot sample this QCO program", [&] {
-              return mlir::qco::sampleWithClassics(func, ddPackage, shots, rng);
-            });
-      },
-      "program"_a, "dd_package"_a, "shots"_a = 1024U, "seed"_a = nb::none(),
-      R"pb(Sample final and mid-circuit classical outcomes from a QCO program.
-
-Args:
-    program: A QCO program whose entry ``func.func`` is sampled.
-    dd_package: DD package with enough qubits for the program.
-    shots: Number of shots (default 1024).
-    seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
-
-Returns:
-    A :class:`SampleResult` with ``shots`` and ``classical`` histograms.
+    Histogram of returned CBit registers in return order, each MSB first. If
+    no CBit result exists, final ``measureAll`` bitstrings instead.
 
 Raises:
     ValueError: When the program is unsupported for sampling.)pb");

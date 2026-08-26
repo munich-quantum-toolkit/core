@@ -75,9 +75,6 @@ def test_unitary_x_build_simulate_and_sample() -> None:
     package.dec_ref_vec(expected)
 
     assert mlir.sample(program, package, shots=32, seed=1) == {"1": 32}
-    result = mlir.sample_with_classics(program, package, shots=16, seed=2)
-    assert result.shots == {"1": 16}
-    assert result.classical == {}
 
 
 def test_simulate_measure_requires_seed() -> None:
@@ -125,12 +122,3 @@ module {
     package = dd.DDPackage(1)
     with pytest.raises(ValueError, match=r"no func\.func"):
         mlir.build_functionality(program, package)
-
-
-def test_sample_with_classics_records_midcircuit_measure() -> None:
-    """Measure then classically controlled X records classical bit '1'."""
-    program = _measure_program()
-    package = dd.DDPackage(1)
-    result = mlir.sample_with_classics(program, package, shots=20, seed=3)
-    assert result.shots == {"0": 20}
-    assert result.classical == {"1": 20}
