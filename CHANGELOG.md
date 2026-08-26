@@ -84,6 +84,10 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Drop support for x86 macOS and stop publishing the respective wheels
+  ([#2259]) ([**@denialhaag**])
+- ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++
+  ([#2259]) ([**@denialhaag**])
 - 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
   [**@burgholzer**])
 - ⬆️ Update `nanobind` to version 3.0.0 ([#2209]) ([**@denialhaag**],
@@ -126,6 +130,15 @@ releases may include breaking changes.
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
   ([**@burgholzer**])
+
+## [3.9.2] - 2026-08-26
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#392)._
+
+### Added
+
+- ✨ Allow C++ and Python QDMI job submissions to omit the shot count, leaving
+  repetition semantics to the program and device ([#2258]) ([**@burgholzer**])
 
 ## [3.9.1] - 2026-08-25
 
@@ -803,7 +816,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[3.9.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.0
 [3.8.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.8.0
@@ -828,6 +842,8 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
+[#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
