@@ -107,6 +107,11 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Reduce `CircuitOptimizer` to the shared `singleQubitGateFusion`,
+  `removeFinalMeasurements`, and `flattenOperations` transformations. Move
+  equivalence-checking transformations to MQT QCEC and mapping transformations
+  to MQT QMAP. Remove the public circuit dependency graph and transformations
+  without production consumers ([#2262]) ([**@simon1hofmann**])
 - 💥 Remove the standalone QIR runner and make the QIR runtime and JIT internal
   DDSIM implementation details ([#2246]) ([**@denialhaag**])
 - 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
@@ -866,6 +871,7 @@ for previous changelogs._
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
+[#2262]: https://github.com/munich-quantum-toolkit/core/pull/2262
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2082]: https://github.com/munich-quantum-toolkit/core/pull/2082
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074

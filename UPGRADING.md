@@ -6,6 +6,44 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### CircuitOptimizer API reduction
+
+MQT Core now limits `qc::CircuitOptimizer` to transformations with shared
+production use:
+
+- `singleQubitGateFusion`
+- `removeFinalMeasurements`
+- `flattenOperations`
+
+MQT QCEC now owns the equivalence-checking transformations `swapReconstruction`,
+`removeDiagonalGatesBeforeMeasure`, `eliminateResets`, `deferMeasurements`,
+`backpropagateOutputPermutation`, and `elidePermutations`. Use MQT QCEC's
+equivalence-checking flow for this behavior, or keep a package-specific
+transformation with the consumer that needs it.
+
+MQT QMAP now owns the mapping transformations `decomposeSWAP`, `cancelCNOTs`,
+and `replaceMCXWithMCZ`. Replace calls to the corresponding
+`qc::CircuitOptimizer` methods with `qmap::decomposeSWAP`, `qmap::cancelCNOTs`,
+and `qmap::replaceMCXWithMCZ`, respectively. Include
+`datastructures/CircuitOptimizations.hpp` and link `MQT::QMapDS`.
+
+The public `constructDAG` function and the `DAG`, `DAGIterator`,
+`DAGReverseIterator`, `DAGIterators`, and `DAGReverseIterators` aliases have no
+Core replacement. Build the small traversal structure in the package that
+consumes it. MQT QMAP and MQT QuSAT demonstrate this migration.
+
+The public `removeIdentities`, `removeOperation`, `collectBlocks`, and
+`collectCliffordBlocks` functions have no replacement. Erase operations through
+`QuantumComputation` where needed.
+
+The public default `CircuitOptimizer` constructor is also removed. Call the
+remaining transformations statically; `CircuitOptimizer` is no longer
+instantiable.
+
+The `MQT::CoreCircuitOptimizer` CMake target and the
+`circuit_optimizer/CircuitOptimizer.hpp` header remain available for the three
+shared transformations.
+
 ### Removal of CoreAlgorithms
 
 MQT Core no longer installs `MQT::CoreAlgorithms` or the headers below
