@@ -63,13 +63,14 @@ void printSortedRegisters(
   }
 }
 
-template <class RegisterMap, class Index>
-bool isWholeRegister(const RegisterMap& regMap, const Index start,
-                     const Index end) {
-  const auto& startReg = regMap.at(start).first;
-  const auto& endReg = regMap.at(end).first;
-  return startReg == endReg && startReg.getStartIndex() == start &&
-         endReg.getEndIndex() == end;
+template <class RegisterMap, class Indices>
+bool isWholeRegister(const RegisterMap& regMap, const Indices& indices) {
+  const auto& reg = regMap.at(indices.front()).first;
+  auto expected = reg.getStartIndex();
+  return indices.size() == reg.getSize() &&
+         std::ranges::all_of(indices, [&expected](const auto index) {
+           return index == expected++;
+         });
 }
 
 void dumpControls(std::ostringstream& serialized,
@@ -290,7 +291,7 @@ void dumpGateType(std::ostream& output, std::ostringstream& serialized,
   }
 
   if (!targets.empty() && type == Barrier &&
-      isWholeRegister(qubitMap, targets.front(), targets.back())) {
+      isWholeRegister(qubitMap, targets)) {
     output << " " << qubitMap.at(targets.front()).first.getName();
   } else {
     for (auto it = targets.begin(); it != targets.end();) {
@@ -330,24 +331,19 @@ void dumpStandardOperation(std::ostream& output,
   }
 
   serialized << std::string(controls.size(), 'c');
-  const bool isSpecialGate = type == Peres || type == Peresdg;
-  if (!isSpecialGate) {
-    for (const auto& control : controls) {
-      if (control.type == Control::Type::Neg) {
-        output << indentPrefix << "x " << qubitMap.at(control.qubit).second
-               << ";\n";
-      }
+  for (const auto& control : controls) {
+    if (control.type == Control::Type::Neg) {
+      output << indentPrefix << "x " << qubitMap.at(control.qubit).second
+             << ";\n";
     }
   }
 
   dumpGateType(output, serialized, operation, qubitMap);
 
-  if (!isSpecialGate) {
-    for (const auto& control : controls) {
-      if (control.type == Control::Type::Neg) {
-        output << indentPrefix << "x " << qubitMap.at(control.qubit).second
-               << ";\n";
-      }
+  for (const auto& control : controls) {
+    if (control.type == Control::Type::Neg) {
+      output << indentPrefix << "x " << qubitMap.at(control.qubit).second
+             << ";\n";
     }
   }
 }
@@ -362,9 +358,8 @@ void dumpNonUnitaryOperation(std::ostream& output,
   const auto& targets = operation.getTargets();
   const auto& classics = operation.getClassics();
   const auto type = operation.getType();
-  if (isWholeRegister(qubitMap, targets.front(), targets.back()) &&
-      (type != Measure ||
-       isWholeRegister(bitMap, classics.front(), classics.back()))) {
+  if (isWholeRegister(qubitMap, targets) &&
+      (type != Measure || isWholeRegister(bitMap, classics))) {
     output << indentPrefix;
     if (type == Measure && openQASM3) {
       output << bitMap.at(classics.front()).first.getName() << " = ";
@@ -407,7 +402,8 @@ void dumpIfElseOperation(std::ostream& output, const IfElseOperation& operation,
                          const QubitIndexToRegisterMap& qubitMap,
                          const BitIndexToRegisterMap& bitMap,
                          const std::size_t indent, const bool openQASM3) {
-  output << std::string(indent * OUTPUT_INDENT_SIZE, ' ') << "if (";
+  const auto indentPrefix = std::string(indent * OUTPUT_INDENT_SIZE, ' ');
+  output << indentPrefix << "if (";
   if (const auto& controlRegister = operation.getControlRegister();
       controlRegister.has_value()) {
     assert(!operation.getControlBit().has_value());
@@ -428,17 +424,17 @@ void dumpIfElseOperation(std::ostream& output, const IfElseOperation& operation,
 
   const auto* elseOperation = operation.getElseOp();
   if (elseOperation == nullptr) {
-    output << "}\n";
+    output << indentPrefix << "}\n";
     return;
   }
 
-  output << "}";
+  output << indentPrefix << "}";
   if (openQASM3) {
     output << " else {\n";
     dumpOperation(output, *elseOperation, qubitMap, bitMap, indent + 1U,
                   openQASM3);
   } else {
-    output << '\n' << "if (";
+    output << '\n' << indentPrefix << "if (";
     if (const auto& controlRegister = operation.getControlRegister();
         controlRegister.has_value()) {
       assert(!operation.getControlBit().has_value());
@@ -456,7 +452,7 @@ void dumpIfElseOperation(std::ostream& output, const IfElseOperation& operation,
     dumpOperation(output, *elseOperation, qubitMap, bitMap, indent + 1U,
                   openQASM3);
   }
-  output << "}\n";
+  output << indentPrefix << "}\n";
 }
 
 void dumpOperation(std::ostream& output, const Operation& operation,
