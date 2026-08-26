@@ -112,27 +112,27 @@ void dumpControls(std::ostringstream& serialized,
   }
 
   auto currentType = controls.begin()->type;
-  auto count = 0;
+  std::size_t count = 0U;
+  const auto dumpModifier = [&serialized](const Control::Type type,
+                                          const std::size_t modifierCount) {
+    serialized << (type == Control::Type::Neg ? "negctrl" : "ctrl");
+    if (modifierCount > 1U) {
+      serialized << "(" << modifierCount << ")";
+    }
+    serialized << " @ ";
+  };
 
   for (const auto& control : controls) {
     if (control.type == currentType) {
       ++count;
     } else {
-      serialized << (currentType == Control::Type::Neg ? "negctrl" : "ctrl");
-      if (count > 1) {
-        serialized << "(" << count << ")";
-      }
-      serialized << " @ ";
+      dumpModifier(currentType, count);
       currentType = control.type;
-      count = 1;
+      count = 1U;
     }
   }
 
-  serialized << (currentType == Control::Type::Neg ? "negctrl" : "ctrl");
-  if (count > 1) {
-    serialized << "(" << count << ")";
-  }
-  serialized << " @ ";
+  dumpModifier(currentType, count);
 }
 
 void dumpGateType(std::ostream& output, std::ostringstream& serialized,
@@ -330,7 +330,6 @@ void dumpStandardOperation(std::ostream& output,
                  "work with this library.\n";
   }
 
-  serialized << std::string(controls.size(), 'c');
   for (const auto& control : controls) {
     if (control.type == Control::Type::Neg) {
       output << indentPrefix << "x " << qubitMap.at(control.qubit).second
@@ -338,6 +337,7 @@ void dumpStandardOperation(std::ostream& output,
     }
   }
 
+  serialized << std::string(controls.size(), 'c');
   dumpGateType(output, serialized, operation, qubitMap);
 
   for (const auto& control : controls) {
@@ -396,12 +396,16 @@ void dumpNonUnitaryOperation(std::ostream& output,
 void dumpOperation(std::ostream& output, const Operation& operation,
                    const QubitIndexToRegisterMap& qubitMap,
                    const BitIndexToRegisterMap& bitMap, std::size_t indent,
-                   bool openQASM3);
+                   bool openQASM3,
+                   const OpenQASMSerializer::CustomOperationSerializer&
+                       customOperationSerializer);
 
 void dumpIfElseOperation(std::ostream& output, const IfElseOperation& operation,
                          const QubitIndexToRegisterMap& qubitMap,
                          const BitIndexToRegisterMap& bitMap,
-                         const std::size_t indent, const bool openQASM3) {
+                         const std::size_t indent, const bool openQASM3,
+                         const OpenQASMSerializer::CustomOperationSerializer&
+                             customOperationSerializer) {
   const auto indentPrefix = std::string(indent * OUTPUT_INDENT_SIZE, ' ');
   output << indentPrefix << "if (";
   if (const auto& controlRegister = operation.getControlRegister();
@@ -419,7 +423,7 @@ void dumpIfElseOperation(std::ostream& output, const IfElseOperation& operation,
   if (const auto* thenOperation = operation.getThenOp();
       thenOperation != nullptr) {
     dumpOperation(output, *thenOperation, qubitMap, bitMap, indent + 1U,
-                  openQASM3);
+                  openQASM3, customOperationSerializer);
   }
 
   const auto* elseOperation = operation.getElseOp();
@@ -432,7 +436,7 @@ void dumpIfElseOperation(std::ostream& output, const IfElseOperation& operation,
   if (openQASM3) {
     output << " else {\n";
     dumpOperation(output, *elseOperation, qubitMap, bitMap, indent + 1U,
-                  openQASM3);
+                  openQASM3, customOperationSerializer);
   } else {
     output << '\n' << indentPrefix << "if (";
     if (const auto& controlRegister = operation.getControlRegister();
@@ -450,7 +454,7 @@ void dumpIfElseOperation(std::ostream& output, const IfElseOperation& operation,
     }
     output << ") {\n";
     dumpOperation(output, *elseOperation, qubitMap, bitMap, indent + 1U,
-                  openQASM3);
+                  openQASM3, customOperationSerializer);
   }
   output << indentPrefix << "}\n";
 }
@@ -458,7 +462,9 @@ void dumpIfElseOperation(std::ostream& output, const IfElseOperation& operation,
 void dumpOperation(std::ostream& output, const Operation& operation,
                    const QubitIndexToRegisterMap& qubitMap,
                    const BitIndexToRegisterMap& bitMap,
-                   const std::size_t indent, const bool openQASM3) {
+                   const std::size_t indent, const bool openQASM3,
+                   const OpenQASMSerializer::CustomOperationSerializer&
+                       customOperationSerializer) {
   if (dynamic_cast<const SymbolicOperation*>(&operation) != nullptr) {
     if (openQASM3) {
       throw std::runtime_error(
@@ -469,14 +475,15 @@ void dumpOperation(std::ostream& output, const Operation& operation,
   }
   if (const auto* ifElse = dynamic_cast<const IfElseOperation*>(&operation);
       ifElse != nullptr) {
-    dumpIfElseOperation(output, *ifElse, qubitMap, bitMap, indent, openQASM3);
+    dumpIfElseOperation(output, *ifElse, qubitMap, bitMap, indent, openQASM3,
+                        customOperationSerializer);
     return;
   }
   if (const auto* compound = dynamic_cast<const CompoundOperation*>(&operation);
       compound != nullptr) {
     for (const auto& nestedOperation : *compound) {
       dumpOperation(output, *nestedOperation, qubitMap, bitMap, indent,
-                    openQASM3);
+                    openQASM3, customOperationSerializer);
     }
     return;
   }
@@ -490,6 +497,10 @@ void dumpOperation(std::ostream& output, const Operation& operation,
   if (const auto* standard = dynamic_cast<const StandardOperation*>(&operation);
       standard != nullptr) {
     dumpStandardOperation(output, *standard, qubitMap, indent, openQASM3);
+    return;
+  }
+  if (customOperationSerializer &&
+      customOperationSerializer(output, operation, qubitMap, bitMap, indent)) {
     return;
   }
   throw std::invalid_argument(
@@ -571,7 +582,7 @@ void OpenQASMSerializer::serialize(const Operation& operation,
                                    const BitIndexToRegisterMap& bitMap,
                                    const std::size_t indent) const {
   dumpOperation(output, operation, qubitMap, bitMap, indent,
-                format == Format::OpenQASM3);
+                format == Format::OpenQASM3, customOperationSerializer);
 }
 
 } // namespace qc

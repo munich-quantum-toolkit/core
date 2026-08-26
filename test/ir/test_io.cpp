@@ -1011,6 +1011,52 @@ TEST(OpenQASMSerializer, handlesUnsupportedOperations) {
                std::invalid_argument);
 }
 
+TEST(OpenQASMSerializer, delegatesCustomOperationsRecursively) {
+  const qc::QuantumRegister qreg{0U, 1U, "q"};
+  qc::QubitIndexToRegisterMap qubitMap{};
+  qubitMap.try_emplace(0U, qreg, "q[0]");
+  const qc::ClassicalRegister creg{0U, 1U, "c"};
+  qc::BitIndexToRegisterMap bitMap{};
+  bitMap.try_emplace(0U, creg, "c[0]");
+
+  std::ostringstream output{};
+  const qc::OpenQASMSerializer serializer{
+      output, qc::Format::OpenQASM2,
+      [](std::ostream& customOutput, const qc::Operation& operation,
+         const qc::QubitIndexToRegisterMap& qubits,
+         const qc::BitIndexToRegisterMap& bits, const std::size_t indent) {
+        if (dynamic_cast<const UnsupportedOperation*>(&operation) == nullptr) {
+          return false;
+        }
+        customOutput << std::string(indent * 2U, ' ') << "custom "
+                     << qubits.at(0U).second << " -> " << bits.at(0U).second
+                     << ";\n";
+        return true;
+      }};
+
+  const UnsupportedOperation direct{};
+  serializer.serialize(direct, qubitMap, bitMap);
+  EXPECT_EQ(output.str(), "custom q[0] -> c[0];\n");
+
+  output.str({});
+  qc::CompoundOperation compound{};
+  compound.emplace_back<UnsupportedOperation>();
+  serializer.serialize(compound, qubitMap, bitMap);
+  EXPECT_EQ(output.str(), "custom q[0] -> c[0];\n");
+
+  output.str({});
+  const qc::IfElseOperation conditional{
+      std::make_unique<UnsupportedOperation>(),
+      std::make_unique<UnsupportedOperation>(), 0U};
+  serializer.serialize(conditional, qubitMap, bitMap);
+  EXPECT_EQ(output.str(), "if (c[0]) {\n"
+                          "  custom q[0] -> c[0];\n"
+                          "}\n"
+                          "if (!c[0]) {\n"
+                          "  custom q[0] -> c[0];\n"
+                          "}\n");
+}
+
 TEST(OpenQASMSerializer, serializesAncillaRegisters) {
   qc::QuantumComputation computation{1U};
   computation.addAncillaryRegister(1U, "anc");

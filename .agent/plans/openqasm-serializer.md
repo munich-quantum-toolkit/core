@@ -1,4 +1,4 @@
-# Move classic OpenQASM serialization into one serializer
+# Move circuit IR OpenQASM serialization into one serializer
 
 This ExecPlan is a living document. The sections `Progress`,
 `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
@@ -9,9 +9,9 @@ repository root.
 
 ## Purpose / Big Picture
 
-MQT Core currently makes every classic intermediate-representation operation
-format itself as OpenQASM. After this change, `QuantumComputation::dumpOpenQASM`
-and `QuantumComputation::toQASM` keep producing the same text, but one concrete
+MQT Core currently makes every circuit IR operation format itself as OpenQASM.
+After this change, `QuantumComputation::dumpOpenQASM` and
+`QuantumComputation::toQASM` keep producing the same text, but one concrete
 `OpenQASMSerializer` owns all formatting. Operation classes no longer expose or
 implement OpenQASM methods. Code that must format an individual operation can
 use the serializer with the same qubit and classical-bit register maps that the
@@ -56,6 +56,9 @@ demonstrates the replacement for direct operation dumping.
       request number and author.
 - [x] (2026-08-26 12:01Z) Addressed review feedback on nested indentation and
       multi-target OpenQASM 3 measurement assignments. All 283 IR tests pass.
+- [x] (2026-08-26 14:45Z) Added an optional custom-leaf serializer callback so
+      downstream formats reuse Core's recursive traversal. All 287 IR tests and
+      the QMAP integration tests pass.
 
 ## Surprises & Discoveries
 
@@ -95,12 +98,12 @@ demonstrates the replacement for direct operation dumping.
 
 - Decision: Add one concrete `qc::OpenQASMSerializer` in
   `include/mqt-core/ir/OpenQASMSerializer.hpp` and
-  `src/ir/OpenQASMSerializer.cpp`. It stores only the destination stream and
-  selected format; register maps are supplied to the operation entry point and
-  are never retained. Rationale: One serializer removes formatting from the
-  operation hierarchy without adding a visitor interface, factory, extension
-  registry, or lifetime hazards around reference-bearing maps. Date/Author:
-  2026-08-26 / Codex.
+  `src/ir/OpenQASMSerializer.cpp`. It stores the destination stream, selected
+  format, and an optional callback for otherwise unsupported leaf operations;
+  register maps are supplied to the callback and are never retained. Rationale:
+  One serializer removes formatting from the operation hierarchy while letting
+  downstream formats reuse Core's compound and conditional traversal without a
+  visitor hierarchy or extension registry. Date/Author: 2026-08-26 / Codex.
 - Decision: Keep an operation-level serializer entry point that accepts the
   existing register maps. Rationale: MQT Debugger and QMAP need to format
   operations without exporting a complete `QuantumComputation`. Date/Author:
@@ -110,10 +113,10 @@ demonstrates the replacement for direct operation dumping.
   of the local combined-register map used to build it. Owning the small
   descriptors removes that dangling-reference hazard without changing how
   callers construct or access map entries. Date/Author: 2026-08-26 / Codex.
-- Decision: Dispatch over the closed operation hierarchy in the serializer and
-  use only public operation getters. Rationale: This avoids friends and new
-  virtual methods while keeping ownership of formatting in one file.
-  Date/Author: 2026-08-26 / Codex.
+- Decision: Dispatch built-in operations in the serializer, then offer otherwise
+  unsupported leaves to the optional callback. Rationale: This avoids friends
+  and new virtual methods while keeping built-in formatting in one file and
+  supporting downstream operation types. Date/Author: 2026-08-26 / Codex.
 - Decision: Preserve emitted bytes, warnings, and exceptions before improving
   any OpenQASM behavior. Rationale: Issue #2098 is an ownership refactor, not a
   syntax or feature change. Date/Author: 2026-08-26 / Codex.
@@ -131,9 +134,10 @@ operation subclasses contain no OpenQASM formatting code, and the generic
 register header no longer exposes serialization-only aliases. The ponytail
 constraint kept the design to one class and implementation-local dispatch; there
 is no visitor hierarchy, extension registry, friend access, or new dependency.
+An optional leaf callback lets downstream serializers reuse the same traversal.
 
 Validation completed successfully: the release IR target and MinSizeRel Python
-bindings build; all 283 IR tests pass; all three focused Python IR tests pass;
+bindings build; all 287 IR tests pass; all three focused Python IR tests pass;
 the rebuilt Python extension produces identical string and file exports for
 OpenQASM 2 and 3; the downstream Debugger integration build passes with
 transitive standard-library includes disabled; and `uvx nox -s lint` passes.
@@ -147,7 +151,7 @@ AOD circuit serialization into QMAP.
 
 ## Context and Orientation
 
-Classic IR means the `qc::QuantumComputation` circuit representation and the
+Circuit IR means the `qc::QuantumComputation` circuit representation and the
 operation classes under `include/mqt-core/ir/operations/`; it is separate from
 the MLIR OpenQASM translation code under `mlir/`. The public circuit export
 methods are declared in `include/mqt-core/ir/QuantumComputation.hpp` and
@@ -279,8 +283,9 @@ direct consumers. It must depend only on the existing Core IR library and the
 C++20 standard library.
 
 No operation class may declare an OpenQASM formatting method. No new virtual
-interface, generic visitor framework, factory, callback, or external dependency
-is part of this change.
+interface, generic visitor framework, factory, extension registry, or external
+dependency is part of this change. The serializer may accept one optional
+custom-leaf callback.
 
 Revision note: Created the initial self-contained plan after tracing the current
 implementation and downstream direct callers. Updated it after the compiling

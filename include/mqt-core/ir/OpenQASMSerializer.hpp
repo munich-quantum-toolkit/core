@@ -9,7 +9,7 @@
  */
 
 /** @file OpenQASMSerializer.hpp
- * @brief OpenQASM serialization for the classic intermediate representation.
+ * @brief OpenQASM serialization for the circuit intermediate representation.
  */
 
 #pragma once
@@ -18,6 +18,7 @@
 #include "ir/Register.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <iosfwd>
 #include <string>
 #include <unordered_map>
@@ -34,13 +35,23 @@ using BitIndexToRegisterMap =
     std::unordered_map<Bit, std::pair<ClassicalRegister, std::string>>;
 
 /**
- * @brief Serializes classic IR circuits and operations to OpenQASM.
+ * @brief Serializes circuit IR computations and operations to OpenQASM.
  */
 class OpenQASMSerializer final {
 public:
+  /**
+   * @brief Callback for serializing otherwise unsupported leaf operations.
+   * @return Whether the operation was serialized.
+   */
+  using CustomOperationSerializer = std::function<bool(
+      std::ostream&, const Operation&, const QubitIndexToRegisterMap&,
+      const BitIndexToRegisterMap&, std::size_t)>;
+
   explicit OpenQASMSerializer(std::ostream& output,
-                              Format format = Format::OpenQASM3)
-      : output(output), format(format) {}
+                              Format format = Format::OpenQASM3,
+                              CustomOperationSerializer customSerializer = {})
+      : output(output), format(format),
+        customOperationSerializer(std::move(customSerializer)) {}
 
   /**
    * @brief Serialize a complete quantum computation.
@@ -63,6 +74,7 @@ public:
 private:
   std::ostream& output;
   Format format;
+  CustomOperationSerializer customOperationSerializer;
 };
 
 } // namespace qc

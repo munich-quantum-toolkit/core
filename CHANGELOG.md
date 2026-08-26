@@ -84,7 +84,7 @@ releases may include breaking changes.
 
 ### Changed
 
-- 💥 Move classic IR OpenQASM serialization from operation subclasses to
+- 💥 Move circuit IR OpenQASM serialization from operation subclasses to
   `OpenQASMSerializer` ([#2249]) ([**@simon1hofmann**])
 - 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
   [**@burgholzer**])
