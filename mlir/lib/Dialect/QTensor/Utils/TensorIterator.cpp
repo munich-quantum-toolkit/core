@@ -16,6 +16,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Value.h>
@@ -28,8 +29,9 @@
 namespace mlir::qtensor {
 TypedValue<RankedTensorType> TensorIterator::tensor() const {
   // The following operations don't have an OpResult.
-  if (op_ != nullptr &&
-      isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp>(op_)) {
+  // `func::CallOp` is deliberately absent: it does produce results.
+  if (op_ != nullptr && isa<DeallocOp, scf::YieldOp, scf::ConditionOp,
+                            qco::YieldOp, func::ReturnOp>(op_)) {
     return nullptr;
   }
 
@@ -97,8 +99,11 @@ void TensorIterator::forward() {
   assert(tensor_.hasOneUse() && "expected linear typing");
   op_ = *(tensor_.user_begin());
 
-  // The following operations define the end of the tensor's life-chain.
-  if (isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp>(op_)) {
+  // The following operations define the end of the tensor's life-chain. A
+  // `func.call` ends it because the tensor is handed to the callee; the tensor
+  // the call returns starts a life-chain of its own.
+  if (isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp,
+          func::ReturnOp, func::CallOp>(op_)) {
     isFinal_ = true;
     return;
   }
@@ -144,8 +149,16 @@ void TensorIterator::backward() {
     return;
   }
 
+  // A `func.call` sits on both sides of a life-chain: it consumes the caller's
+  // tensor and produces a fresh one. When the tensor is the call's result, it
+  // is the start of its chain, just like an allocation.
+  if (isa<func::CallOp>(op_) && tensor_.getDefiningOp() == op_) {
+    return;
+  }
+
   // For these operations, tensor_ is an OpOperand. Hence, only get the def-op.
-  if (isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp>(op_)) {
+  if (isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp,
+          func::ReturnOp, func::CallOp>(op_)) {
     op_ = tensor_.getDefiningOp();
     isFinal_ = false;
     return;
