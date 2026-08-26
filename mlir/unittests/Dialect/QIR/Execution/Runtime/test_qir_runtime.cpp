@@ -9,8 +9,8 @@
  */
 
 #include "ir/Definitions.hpp"
-#include "qir/runtime/QIR.h"
-#include "qir/runtime/Runtime.hpp"
+#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>

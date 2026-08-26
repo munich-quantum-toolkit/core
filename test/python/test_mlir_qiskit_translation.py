@@ -549,6 +549,61 @@ measure q[0] -> c[1];
     assert restored.count_ops() == {"measure": 2, "x": 1}
 
 
+def test_cleanup_forwards_measurement_results_to_qiskit_condition() -> None:
+    """Export a condition after cleanup forwards its measurement loads."""
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+creg c[2];
+measure q[0] -> c[0];
+measure q[1] -> c[1];
+if (c == 3) x q[2];
+"""
+    )
+    optimized = program.to_qco(copy=True)
+    optimized.cleanup()
+
+    restored = optimized.to_qc(copy=True).to_qiskit()
+
+    assert restored.count_ops() == {"measure": 2, "if_else": 1}
+    assert restored.data[2].operation.blocks[0].count_ops() == {"x": 1}
+    condition = restored.data[2].operation.condition
+    assert isinstance(condition, expr.Expr)
+    assert expr.structurally_equivalent(condition, expr.logic_and(*restored.clbits))
+
+
+def test_openqasm_short_circuit_expression_exports_to_qiskit() -> None:
+    """Export nested OpenQASM short-circuit logic through canonical scf.if."""
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+bit[2] c;
+c[0] = measure q[0];
+c[1] = measure q[1];
+if (c[0] && (c[1] || !c[0])) x q[2];
+"""
+    )
+
+    restored = program.to_qiskit()
+    condition = restored.data[2].operation.condition
+    expected = expr.logic_and(
+        restored.clbits[0],
+        expr.logic_or(
+            restored.clbits[1],
+            expr.bit_xor(
+                restored.clbits[0],
+                True,  # ruff: ignore[boolean-positional-value-in-call] Qiskit expression arguments are positional-only.
+            ),
+        ),
+    )
+
+    assert program.ir.count("scf.if") >= 2
+    assert isinstance(condition, expr.Expr)
+    assert expr.structurally_equivalent(condition, expected)
+
+
 def test_openqasm3_measurement_export_uses_undefined_cbit_register() -> None:
     """Represent OpenQASM 3 output initialization without poison values."""
     program = QCProgram.from_qasm_str(
@@ -588,6 +643,43 @@ def test_flat_export_rejects_undefined_returned_bits() -> None:
     )
 
     with pytest.raises(RuntimeError, match="cannot return undefined classical bits"):
+        program.to_qiskit()
+
+
+def test_qiskit_export_rejects_noncanonical_i64_function_result() -> None:
+    """Reject a nonzero i64 result instead of treating it as the output sentinel."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> i64 attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %value = arith.constant 1 : i64
+    qc.dealloc %q : !qc.qubit
+    return %value : i64
+  }
+}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="supports only CBit function return values"):
+        program.to_qiskit()
+
+
+def test_qiskit_export_rejects_mixed_sentinel_and_cbit_results() -> None:
+    """Reject the zero sentinel when it is mixed with a public CBit result."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> (i64, !cbit.reg<1>) attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>
+    %zero = arith.constant 0 : i64
+    qc.dealloc %q : !qc.qubit
+    return %zero, %classical : i64, !cbit.reg<1>
+  }
+}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="supports only CBit function return values"):
         program.to_qiskit()
 
 
@@ -976,12 +1068,13 @@ def test_noncanonical_register_membership_is_rejected(resource: str, layout: str
 
 
 def test_nested_structured_control_and_bound_loop_parameter() -> None:
-    """Import nested control flow while keeping induction values lexical."""
+    """Round-trip structured control while keeping induction values lexical."""
     circuit = QuantumCircuit(2, 2)
     with circuit.for_loop(range(1, 5, 2), None, None, None, None, label=None) as iteration:
-        circuit.rx(iteration, 0)
-        with circuit.if_test((circuit.clbits[0], False)):
-            circuit.cx(0, 1)
+        with circuit.if_test((circuit.clbits[0], False)) as else_:
+            circuit.ry(iteration, 1)
+        with else_:
+            circuit.rz(iteration, 1)
     with circuit.while_loop((circuit.cregs[0], 0), None, None, None, label=None):
         circuit.measure(0, 0)
     with circuit.switch(circuit.cregs[0], None, None, None, label=None) as case:
@@ -991,13 +1084,692 @@ def test_nested_structured_control_and_bound_loop_parameter() -> None:
             circuit.z(1)
 
     program = compile_program(circuit)
+    source = program.ir
 
     assert "scf.for" in program.ir
     assert "scf.if" in program.ir
     assert "scf.while" in program.ir
     assert "scf.index_switch" in program.ir
-    with pytest.raises(RuntimeError, match=r"classical loads or control flow|cannot construct structured control flow"):
+    restored = program.to_qiskit()
+
+    assert program.ir == source
+    assert [instruction.operation.name for instruction in restored.data] == [
+        "for_loop",
+        "while_loop",
+        "switch_case",
+    ]
+    loop = restored.data[0].operation
+    loop_parameter = loop.params[1]
+    loop_body = loop.blocks[0]
+    branch = loop_body.data[0].operation
+    assert branch.name == "if_else"
+    assert branch.blocks[0].data[0].operation.params[0].uuid == loop_parameter.uuid
+    assert branch.blocks[1].data[0].operation.params[0].uuid == loop_parameter.uuid
+    switch_cases = list(restored.data[2].operation.cases_specifier())
+    assert [labels for labels, _ in switch_cases] == [(0,), (1,), (CASE_DEFAULT,)]
+    assert [[instruction.operation.name for instruction in body.data] for _, body in switch_cases] == [
+        ["x"],
+        ["x"],
+        ["z"],
+    ]
+    QCProgram.from_qiskit(restored)
+
+
+def test_control_flow_and_controlled_unitary_preserve_instruction_order() -> None:
+    """Keep both deferred instruction kinds at their original positions."""
+    circuit = QuantumCircuit(2, 1)
+    circuit.h(0)
+    controlled = library.UnitaryGate(np.asarray([[0.0, 1.0], [1.0, 0.0]])).control(1)
+    with circuit.if_test((circuit.clbits[0], True)):
+        circuit.append(controlled, [0, 1])
+    circuit.z(1)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    assert [instruction.operation.name for instruction in restored.data] == ["h", "if_else", "z"]
+    body_operation = restored.data[1].operation.blocks[0].data[0].operation
+    assert isinstance(body_operation, AnnotatedOperation)
+    assert isinstance(body_operation.modifiers[0], ControlModifier)
+
+
+@pytest.mark.parametrize("num_clbits", [3, 64])
+def test_root_register_expression_and_nested_condition_preserve_captures(num_clbits: int) -> None:
+    """Keep a root register leaf and pack its nested block-local condition."""
+    circuit = QuantumCircuit(1, num_clbits)
+    condition = expr.logic_and(expr.equal(circuit.cregs[0], 5), circuit.clbits[0])
+    with circuit.if_test(condition), circuit.if_test((circuit.cregs[0], 2)):
+        circuit.x(0)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    outer = restored.data[0].operation
+    assert isinstance(outer.condition, expr.Expr)
+    outer_variables = {variable.var for variable in expr.iter_vars(outer.condition)}
+    assert outer_variables == {restored.cregs[0], restored.clbits[0]}
+    inner = outer.blocks[0].data[0].operation
+    assert isinstance(inner.condition, expr.Expr)
+    assert {variable.var for variable in expr.iter_vars(inner.condition)} == set(outer.blocks[0].clbits)
+
+
+def test_repeated_cbit_uint_expression_falls_back_to_expression_tree() -> None:
+    """Do not misidentify repeated source bits as a packed classical register."""
+    program = _single_qubit_program(
+        [
+            '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+            "%zero = arith.constant 0 : index",
+            "%one = arith.constant 1 : i2",
+            "%three = arith.constant 3 : i2",
+            "%bit = cbit.load %classical[%zero] : !cbit.reg<1>",
+            "%wide = arith.extui %bit : i1 to i2",
+            "%shifted = arith.shli %wide, %one : i2",
+            "%repeated = arith.ori %wide, %shifted : i2",
+            "%condition = arith.cmpi eq, %repeated, %three : i2",
+            "scf.if %condition {",
+            "  qc.x %q : !qc.qubit",
+            "}",
+        ],
+        returns_classical=True,
+    )
+
+    restored = program.to_qiskit()
+
+    condition = restored.data[0].operation.condition
+    assert isinstance(condition, expr.Expr)
+    assert {variable.var for variable in expr.iter_vars(condition)} == {restored.clbits[0]}
+
+
+def test_free_parameter_identity_is_shared_with_control_flow_blocks() -> None:
+    """Canonicalize one scalar Parameter across root and nested writers."""
+    theta = Parameter("theta")
+    circuit = QuantumCircuit(1, 1, global_phase=theta / 2)
+    circuit.rz(theta, 0)
+    with circuit.if_test((circuit.clbits[0], True)):
+        circuit.rx(theta + 1, 0)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    restored_theta = next(iter(restored.parameters))
+    assert restored.global_phase.parameters == {restored_theta}
+    assert restored.data[0].operation.params[0] == restored_theta
+    nested_parameter = restored.data[1].operation.blocks[0].data[0].operation.params[0]
+    assert nested_parameter.parameters == {restored_theta}
+
+
+def test_nested_if_while_switch_preserve_capture_identity() -> None:
+    """Map nested control-flow operands through each block-local bit list."""
+    circuit = QuantumCircuit(2, 2)
+    with (
+        circuit.if_test(expr.logic_and(circuit.clbits[0], expr.logic_not(circuit.clbits[1]))),
+        circuit.while_loop(expr.logic_not(circuit.clbits[0]), None, None, None, label=None),
+        circuit.switch(expr.bit_xor(circuit.cregs[0], 1), None, None, None, label=None) as case,
+    ):
+        with case(0):
+            circuit.x(0)
+        with case(case.DEFAULT):
+            circuit.cx(0, 1)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    outer = restored.data[0]
+    assert [restored.find_bit(bit).index for bit in outer.clbits] == [0, 1]
+    outer_body = outer.operation.blocks[0]
+    while_instruction = outer_body.data[0]
+    assert [outer_body.find_bit(bit).index for bit in while_instruction.clbits] == [0, 1]
+    assert isinstance(while_instruction.operation.condition, expr.Expr)
+    while_body = while_instruction.operation.blocks[0]
+    switch_instruction = while_body.data[0]
+    assert [while_body.find_bit(bit).index for bit in switch_instruction.clbits] == [0, 1]
+    assert switch_instruction.operation.name == "switch_case"
+    assert isinstance(switch_instruction.operation.target, expr.Expr)
+
+
+def test_empty_if_else_branches_round_trip() -> None:
+    """Preserve an explicit else branch when both branches are empty."""
+    circuit = QuantumCircuit(1, 1)
+    with circuit.if_test((circuit.clbits[0], True)) as else_:
+        pass
+    with else_:
+        pass
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    operation = restored.data[0].operation
+    assert operation.name == "if_else"
+    assert len(operation.blocks) == 2
+    assert all(not block.data for block in operation.blocks)
+
+
+def test_zero_qubit_cbit_only_control_flow_round_trip() -> None:
+    """Round-trip CBit-only structured control without allocating qubits."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+    %classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>
+    %zero = arith.constant 0 : index
+    %phase = arith.constant 0.0 : f64
+    qc.gphase(%phase)
+    %condition = cbit.load %classical[%zero] : !cbit.reg<1>
+    scf.if %condition {
+    }
+    return %classical : !cbit.reg<1>
+  }
+}
+"""
+    )
+
+    restored = program.to_qiskit()
+
+    assert restored.num_qubits == 0
+    assert restored.num_clbits == 1
+    assert len(restored.data) == 1
+    instruction = restored.data[0]
+    assert instruction.operation.name == "if_else"
+    assert instruction.qubits == ()
+    assert instruction.clbits == (restored.clbits[0],)
+    block = instruction.operation.blocks[0]
+    assert block.num_qubits == 0
+    assert block.num_clbits == 1
+    QCProgram.from_qiskit(restored)
+
+
+def _single_qubit_program(operations: list[str], *, returns_classical: bool = False) -> QCProgram:
+    """Wrap operations in a one-qubit QC entry function.
+
+    Returns:
+        The parsed QC program.
+    """
+    result_type = " -> !cbit.reg<1>" if returns_classical else ""
+    return_value = " %classical : !cbit.reg<1>" if returns_classical else ""
+    lines = [
+        "module {",
+        f"  func.func @main(){result_type} attributes {{mqt.entry_point}} {{",
+        "    %q = qc.alloc : !qc.qubit",
+    ]
+    lines.extend(f"    {operation}" for operation in operations)
+    lines.extend([
+        "    qc.dealloc %q : !qc.qubit",
+        f"    return{return_value}",
+        "  }",
+        "}",
+    ])
+    return QCProgram.from_mlir_str("\n".join(lines))
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [(range(5, -2, -2), [5, 3, 1, -1]), (range(3, 3, -1), [])],
+    ids=["negative-step", "zero-iterations"],
+)
+def test_for_loop_range_edges_round_trip(values: range, expected: list[int]) -> None:
+    """Preserve descending induction values and empty iteration sets."""
+    circuit = QuantumCircuit(1)
+    with circuit.for_loop(values, None, None, None, None, label=None) as iteration:
+        circuit.rx(iteration, 0)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    loop = restored.data[0].operation
+    assert loop.name == "for_loop"
+    assert list(loop.params[0]) == expected
+    assert loop.blocks[0].data[0].operation.params[0].uuid == loop.params[1].uuid
+
+
+def test_for_loop_affine_projection_checks_the_fused_result() -> None:
+    """Accept a fitting affine value whose intermediate product overflows."""
+    program = _single_qubit_program([
+        "%lower = arith.constant -2 : index",
+        "%upper = arith.constant -1 : index",
+        "%step = arith.constant 1 : index",
+        "%maximum = arith.constant 9223372036854775807 : i64",
+        "scf.for %iteration = %lower to %upper step %step {",
+        "  %integer = arith.index_cast %iteration : index to i64",
+        "  %scaled = arith.muli %integer, %maximum : i64",
+        "  %shifted = arith.addi %scaled, %maximum : i64",
+        "  %parameter = arith.sitofp %shifted : i64 to f64",
+        "  qc.rz(%parameter) %q : !qc.qubit",
+        "}",
+    ])
+
+    loop = program.to_qiskit().data[0].operation
+
+    assert list(loop.params[0]) == [-9223372036854775807]
+    assert loop.blocks[0].data[0].operation.params[0].uuid == loop.params[1].uuid
+
+
+def test_empty_for_loop_ignores_unrepresentable_projection() -> None:
+    """Keep an empty loop even when its unused projection has a zero step."""
+    program = _single_qubit_program([
+        "%lower = arith.constant 1 : index",
+        "%upper = arith.constant 0 : index",
+        "%step = arith.constant 1 : index",
+        "%zero = arith.constant 0 : i64",
+        "scf.for %iteration = %lower to %upper step %step {",
+        "  %integer = arith.index_cast %iteration : index to i64",
+        "  %scaled = arith.muli %integer, %zero : i64",
+        "  %parameter = arith.sitofp %scaled : i64 to f64",
+        "  qc.rz(%parameter) %q : !qc.qubit",
+        "}",
+    ])
+
+    loop = program.to_qiskit().data[0].operation
+
+    assert list(loop.params[0]) == []
+
+
+def test_nested_for_loop_induction_values_remain_lexically_scoped() -> None:
+    """Keep nested induction variables distinct while retaining outer captures."""
+    circuit = QuantumCircuit(1)
+    with circuit.for_loop(range(2), None, None, None, None, label=None) as outer:
+        circuit.rz(outer, 0)
+        with circuit.for_loop(range(4, 0, -2), None, None, None, None, label=None) as inner:
+            circuit.rx(inner, 0)
+        circuit.ry(outer, 0)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    outer_loop = restored.data[0].operation
+    outer_body = outer_loop.blocks[0]
+    inner_loop = outer_body.data[1].operation
+    outer_parameter = outer_loop.params[1]
+    inner_parameter = inner_loop.params[1]
+    assert outer_parameter.uuid != inner_parameter.uuid
+    assert outer_body.data[0].operation.params[0].uuid == outer_parameter.uuid
+    assert outer_body.data[2].operation.params[0].uuid == outer_parameter.uuid
+    assert inner_loop.blocks[0].data[0].operation.params[0].uuid == inner_parameter.uuid
+
+
+def test_generated_loop_parameter_name_avoids_free_symbol_collision() -> None:
+    """Choose a loop symbol name distinct from every free program input."""
+    free = Parameter("_mqt_loop_0")
+    circuit = QuantumCircuit(1)
+    circuit.rz(free, 0)
+    with circuit.for_loop(range(2), None, None, None, None, label=None) as iteration:
+        circuit.rx(iteration, 0)
+
+    restored = compile_program(circuit).to_qiskit()
+
+    assert restored.data[0].operation.params[0].name == "_mqt_loop_0"
+    loop = restored.data[1].operation
+    assert loop.params[1].name == "_mqt_loop_1"
+    assert loop.blocks[0].data[0].operation.params[0].uuid == loop.params[1].uuid
+
+
+@pytest.mark.parametrize(
+    "dead_use",
+    ["", "%unused = math.sin %parameter : f64"],
+    ids=["direct", "transitive"],
+)
+def test_dead_for_loop_parameter_projection_is_ignored(dead_use: str) -> None:
+    """Omit a loop symbol whose projection has no emitted parameter use."""
+    program = _single_qubit_program([
+        "%lower = arith.constant 0 : index",
+        "%upper = arith.constant 2 : index",
+        "%step = arith.constant 1 : index",
+        "scf.for %iteration = %lower to %upper step %step {",
+        "  %integer = arith.index_cast %iteration : index to i64",
+        "  %parameter = arith.sitofp %integer : i64 to f64",
+        f"  {dead_use}",
+        "  qc.x %q : !qc.qubit",
+        "}",
+    ])
+
+    restored = program.to_qiskit()
+
+    loop = restored.data[0].operation
+    assert loop.name == "for_loop"
+    assert loop.params[1] is None
+    assert loop.blocks[0].count_ops() == {"x": 1}
+
+
+def test_switch_case_label_width_is_preflighted() -> None:
+    """Reject a switch label that cannot fit its one-bit target."""
+    program = _single_qubit_program(
+        [
+            '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+            "%zero = arith.constant 0 : index",
+            "%bit = cbit.load %classical[%zero] : !cbit.reg<1>",
+            "%index = arith.index_castui %bit : i1 to index",
+            "scf.index_switch %index",
+            "case 2 {",
+            "  qc.x %q : !qc.qubit",
+            "  scf.yield",
+            "}",
+            "default {",
+            "  scf.yield",
+            "}",
+        ],
+        returns_classical=True,
+    )
+    with pytest.raises(RuntimeError, match="case label 2 does not fit the 1-bit target"):
         program.to_qiskit()
+
+
+def test_constant_index_switch_exports() -> None:
+    """Lift a direct constant index selector into a Qiskit Uint expression."""
+    program = _single_qubit_program([
+        "%selector = arith.constant 0 : index",
+        "scf.index_switch %selector",
+        "case 0 {",
+        "  qc.x %q : !qc.qubit",
+        "  scf.yield",
+        "}",
+        "default {",
+        "  qc.z %q : !qc.qubit",
+        "  scf.yield",
+        "}",
+    ])
+
+    restored = program.to_qiskit()
+    switch = restored.data[0].operation
+    expected = expr.lift(0, types.Uint(64))
+    assert isinstance(switch.target, expr.Expr)
+    assert expr.structurally_equivalent(switch.target, expected)
+    assert [labels for labels, _ in switch.cases_specifier()] == [(0,), (CASE_DEFAULT,)]
+
+
+def test_shared_expression_dag_expansion_is_bounded() -> None:
+    """Bound tree expansion when both operands reuse the same SSA value."""
+    operations = [
+        '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+        "%zero = arith.constant 0 : index",
+        "%value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
+    ]
+    operations.extend(f"%value{index} = arith.andi %value{index - 1}, %value{index - 1} : i1" for index in range(1, 14))
+    operations.extend(["scf.if %value13 {", "  qc.x %q : !qc.qubit", "}"])
+    program = _single_qubit_program(operations, returns_classical=True)
+    with pytest.raises(RuntimeError, match="size limit of 4096 nodes"):
+        program.to_qiskit()
+
+
+def test_shared_packed_register_candidate_expansion_is_bounded() -> None:
+    """Bound speculative packed-register matching on a shared SSA DAG."""
+    operations = ["%value0 = arith.constant 0 : i64"]
+    operations.extend(f"%value{index} = arith.ori %value{index - 1}, %value{index - 1} : i64" for index in range(1, 31))
+    operations.extend([
+        "%condition = arith.cmpi eq, %value30, %value0 : i64",
+        "scf.if %condition {",
+        "  qc.x %q : !qc.qubit",
+        "}",
+    ])
+    program = _single_qubit_program(operations)
+    with pytest.raises(RuntimeError, match="size limit of 4096 nodes"):
+        program.to_qiskit()
+
+
+def test_classical_snapshot_walk_is_bounded() -> None:
+    """Bound snapshot discovery before recursive expression export."""
+    operations = [
+        '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+        "%zero = arith.constant 0 : index",
+        "%value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
+    ]
+    operations.extend(f"%value{index} = arith.andi %value{index - 1}, %value0 : i1" for index in range(1, 4097))
+    operations.extend(["scf.if %value4096 {", "  qc.x %q : !qc.qubit", "}"])
+    program = _single_qubit_program(operations, returns_classical=True)
+    with pytest.raises(RuntimeError, match="size limit of 4096 nodes"):
+        program.to_qiskit()
+
+
+def test_export_expression_depth_is_bounded() -> None:
+    """Reject a classical expression deeper than 64 levels during export."""
+    operations = [
+        '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+        "%zero = arith.constant 0 : index",
+        "%true = arith.constant true",
+        "%value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
+    ]
+    operations.extend(f"%value{index} = arith.andi %value{index - 1}, %true : i1" for index in range(1, 65))
+    operations.extend(["scf.if %value64 {", "  qc.x %q : !qc.qubit", "}"])
+    program = _single_qubit_program(operations, returns_classical=True)
+
+    with pytest.raises(RuntimeError, match="classical expressions exceed the nesting limit of 64"):
+        program.to_qiskit()
+
+
+def test_general_boolean_select_is_rejected() -> None:
+    """Reject a result-bearing scf.if that is not short-circuit logic."""
+    program = _single_qubit_program(
+        [
+            '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+            "%zero = arith.constant 0 : index",
+            "%condition = cbit.load %classical[%zero] : !cbit.reg<1>",
+            "%selected = scf.if %condition -> (i1) {",
+            "  %then = cbit.load %classical[%zero] : !cbit.reg<1>",
+            "  scf.yield %then : i1",
+            "} else {",
+            "  %else = cbit.load %classical[%zero] : !cbit.reg<1>",
+            "  scf.yield %else : i1",
+            "}",
+            "scf.if %selected {",
+            "  qc.x %q : !qc.qubit",
+            "}",
+        ],
+        returns_classical=True,
+    )
+
+    with pytest.raises(RuntimeError, match=r"canonical short-circuit Boolean scf\.if"):
+        program.to_qiskit()
+
+
+def test_export_control_flow_depth_is_bounded() -> None:
+    """Reject structured control flow deeper than 64 levels during export."""
+    operations = ["%condition = arith.constant true"]
+    operations.extend(f"{'  ' * depth}scf.if %condition {{" for depth in range(65))
+    operations.append(f"{'  ' * 65}qc.x %q : !qc.qubit")
+    operations.extend(f"{'  ' * depth}}}" for depth in reversed(range(65)))
+    program = _single_qubit_program(operations)
+
+    with pytest.raises(RuntimeError, match="control flow exceeds the nesting limit of 64"):
+        program.to_qiskit()
+
+
+def test_nonboolean_result_bearing_if_is_rejected() -> None:
+    """Reject a result-bearing scf.if whose result is not Boolean."""
+    program = _single_qubit_program([
+        "%condition = arith.constant true",
+        "%result = scf.if %condition -> (i64) {",
+        "  %one = arith.constant 1 : i64",
+        "  scf.yield %one : i64",
+        "} else {",
+        "  %zero = arith.constant 0 : i64",
+        "  scf.yield %zero : i64",
+        "}",
+        "qc.x %q : !qc.qubit",
+    ])
+    with pytest.raises(RuntimeError, match="canonical short-circuit Boolean SSA result"):
+        program.to_qiskit()
+
+
+@pytest.mark.parametrize(
+    "write_operations",
+    [
+        (
+            "%measured = qc.measure %q : !qc.qubit -> i1",
+            "cbit.store %measured, %classical[%zero] : !cbit.reg<1>",
+        ),
+        (
+            "%always = arith.constant true",
+            "scf.if %always {",
+            "  %measured = qc.measure %q : !qc.qubit -> i1",
+            "  cbit.store %measured, %classical[%zero] : !cbit.reg<1>",
+            "}",
+        ),
+    ],
+    ids=["flat-write", "nested-write"],
+)
+def test_stale_classical_snapshot_is_rejected(write_operations: tuple[str, ...]) -> None:
+    """Reject a condition whose classical snapshot crosses a later write."""
+    program = _single_qubit_program(
+        [
+            '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+            "%zero = arith.constant 0 : index",
+            "%stale = cbit.load %classical[%zero] : !cbit.reg<1>",
+            *write_operations,
+            "scf.if %stale {",
+            "  qc.x %q : !qc.qubit",
+            "}",
+        ],
+        returns_classical=True,
+    )
+    with pytest.raises(RuntimeError, match=r"cannot preserve a (?:stale )?classical snapshot"):
+        program.to_qiskit()
+
+
+def test_delayed_measurement_store_is_rejected() -> None:
+    """Reject a delayed write that would change a captured bit snapshot."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+    %measured_qubit = qc.alloc : !qc.qubit
+    %controlled_qubit = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>
+    %zero = arith.constant 0 : index
+    %old = cbit.load %classical[%zero] : !cbit.reg<1>
+    %measured = qc.measure %measured_qubit : !qc.qubit -> i1
+    scf.if %old {
+      qc.x %controlled_qubit : !qc.qubit
+    }
+    cbit.store %measured, %classical[%zero] : !cbit.reg<1>
+    qc.dealloc %measured_qubit : !qc.qubit
+    qc.dealloc %controlled_qubit : !qc.qubit
+    return %classical : !cbit.reg<1>
+  }
+}
+"""
+    )
+    with pytest.raises(RuntimeError, match="destination must follow the measurement"):
+        program.to_qiskit()
+
+
+def test_multi_result_boolean_select_is_rejected() -> None:
+    """Reject multiple results instead of reconstructing Boolean selections."""
+    program = _single_qubit_program([
+        "%condition = arith.constant true",
+        "%first, %second = scf.if %condition -> (i1, i1) {",
+        "  %true = arith.constant true",
+        "  %false = arith.constant false",
+        "  scf.yield %true, %false : i1, i1",
+        "} else {",
+        "  %true = arith.constant true",
+        "  %false = arith.constant false",
+        "  scf.yield %false, %true : i1, i1",
+        "}",
+        "scf.if %first {",
+        "  qc.x %q : !qc.qubit",
+        "}",
+    ])
+
+    with pytest.raises(RuntimeError, match="only one canonical short-circuit Boolean SSA result"):
+        program.to_qiskit()
+
+
+def _undefined_cbit_program(operations: list[str]) -> QCProgram:
+    """Build a one-qubit program with one undefined public CBit.
+
+    Returns:
+        The parsed QC program.
+    """
+    return _single_qubit_program(
+        [
+            '%classical = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "c"} : !cbit.reg<1>',
+            "%zero = arith.constant 0 : index",
+            *operations,
+        ],
+        returns_classical=True,
+    )
+
+
+def test_undefined_cbits_can_be_read_after_unconditional_measurements() -> None:
+    """Treat preceding top-level measurement writes as definite initialization."""
+    program = _undefined_cbit_program([
+        "%measured = qc.measure %q : !qc.qubit -> i1",
+        "cbit.store %measured, %classical[%zero] : !cbit.reg<1>",
+        "%condition = cbit.load %classical[%zero] : !cbit.reg<1>",
+        "scf.if %condition {",
+        "  qc.x %q : !qc.qubit",
+        "}",
+    ])
+
+    restored = program.to_qiskit()
+
+    assert [instruction.operation.name for instruction in restored.data] == ["measure", "if_else"]
+
+
+def test_undefined_cbit_load_before_measurement_is_rejected() -> None:
+    """Reject a read that precedes definite initialization of an output bit."""
+    program = _undefined_cbit_program([
+        "%condition = cbit.load %classical[%zero] : !cbit.reg<1>",
+        "scf.if %condition {",
+        "  qc.x %q : !qc.qubit",
+        "}",
+        "%measured = qc.measure %q : !qc.qubit -> i1",
+        "cbit.store %measured, %classical[%zero] : !cbit.reg<1>",
+    ])
+
+    with pytest.raises(RuntimeError, match="loads an undefined classical bit"):
+        program.to_qiskit()
+
+
+def test_conditional_measurement_does_not_initialize_returned_cbit() -> None:
+    """Do not count a branch-local measurement as a definite output write."""
+    program = _undefined_cbit_program([
+        "%condition = arith.constant true",
+        "scf.if %condition {",
+        "  %measured = qc.measure %q : !qc.qubit -> i1",
+        "  cbit.store %measured, %classical[%zero] : !cbit.reg<1>",
+        "}",
+    ])
+
+    with pytest.raises(RuntimeError, match="cannot return undefined classical bits"):
+        program.to_qiskit()
+
+
+@pytest.mark.parametrize(
+    ("expression", "error"),
+    [
+        (
+            """%left = arith.constant 5 : i8
+    %right = arith.constant 2 : i8
+    %remainder = arith.remui %left, %right : i8
+    %expected = arith.constant 1 : i8
+    %condition = arith.cmpi eq, %remainder, %expected : i8""",
+            "unsupported QC classical operation in Qiskit export: arith.remui",
+        ),
+        (
+            """%left = arith.constant 0 : i65
+    %right = arith.constant 1 : i65
+    %condition = arith.cmpi eq, %left, %right : i65""",
+            "unsigned classical values must be between 1 and 64 bits",
+        ),
+        (
+            """%left = arith.constant 0 : i8
+    %right = arith.constant 1 : i8
+    %condition = arith.cmpi slt, %left, %right : i8""",
+            "Uint expressions do not support signed comparisons",
+        ),
+        (
+            """%infinity = arith.constant 0x7FF0000000000000 : f64
+    %zero = arith.constant 0.0 : f64
+    %condition = arith.cmpf oeq, %infinity, %zero : f64""",
+            "floating-point literals must be finite",
+        ),
+    ],
+    ids=["unsupported-op", "width", "signed-compare", "nonfinite"],
+)
+def test_unsupported_export_expressions_fail_closed(expression: str, error: str) -> None:
+    """Reject unsupported expression forms before modifying the source program."""
+    program = _single_qubit_program([
+        *expression.splitlines(),
+        "scf.if %condition {",
+        "  qc.x %q : !qc.qubit",
+        "}",
+    ])
+    source = program.ir
+
+    with pytest.raises(RuntimeError, match=error):
+        program.to_qiskit()
+
+    assert program.ir == source
 
 
 def test_qiskit_import_zero_initializes_clbits_before_control_flow() -> None:
@@ -1017,7 +1789,8 @@ def test_qiskit_import_zero_initializes_clbits_before_control_flow() -> None:
 @pytest.mark.parametrize(
     ("condition", "operation"),
     [
-        (expr.logic_and(expr.equal(1, 1), expr.equal(0, 1)), "arith.andi"),
+        (expr.logic_and(expr.equal(1, 1), expr.equal(0, 1)), "scf.if"),
+        (expr.equal(expr.bit_and(expr.lift(2, types.Uint(8)), 3), 2), "arith.andi"),
         (expr.equal(expr.bit_xor(expr.lift(2, types.Uint(8)), 3), 5), "arith.xori"),
         (expr.less(expr.add(expr.lift(2, types.Uint(8)), 1), 8), "arith.addi"),
         (
@@ -1029,14 +1802,61 @@ def test_qiskit_import_zero_initializes_clbits_before_control_flow() -> None:
     ],
 )
 def test_bool_uint_and_float_expressions(condition: expr.Expr, operation: str) -> None:
-    """Lower representative constant classical expressions."""
+    """Round-trip representative Bool, Uint, and Float expressions."""
     circuit = QuantumCircuit(1)
     with circuit.if_test(condition):
         circuit.x(0)
 
     program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
 
     assert operation in program.ir
+    assert restored.data[0].operation.name == "if_else"
+    restored_condition = restored.data[0].operation.condition
+    assert isinstance(restored_condition, expr.Expr)
+    if operation == "scf.if":
+        expected = expr.logic_and(
+            expr.equal(True, True),  # ruff: ignore[boolean-positional-value-in-call] Qiskit expression arguments are positional-only.
+            expr.equal(False, True),  # ruff: ignore[boolean-positional-value-in-call] Qiskit expression arguments are positional-only.
+        )
+    elif operation == "arith.cmpf une":
+        expected = expr.not_equal(expr.lift(0.5, types.Float()), 0.0)
+    else:
+        expected = condition
+    assert expr.structurally_equivalent(restored_condition, expected)
+
+
+def test_index_expression_export_preserves_low_bit() -> None:
+    """Export integer truncation as bit indexing instead of a truthiness cast."""
+    condition = expr.index(expr.lift(2, types.Uint(3)), expr.lift(0, types.Uint(3)))
+    circuit = QuantumCircuit(1)
+    with circuit.if_test(condition):
+        circuit.x(0)
+
+    program = QCProgram.from_qiskit(circuit)
+    assert "arith.trunci" in program.ir
+
+    restored = program.to_qiskit()
+    restored_condition = restored.data[0].operation.condition
+    assert isinstance(restored_condition, expr.Expr)
+    assert expr.structurally_equivalent(restored_condition, condition)
+
+
+def test_integer_truncation_exports_as_low_bit_index() -> None:
+    """Preserve the low-bit semantics of a generic integer truncation."""
+    program = _single_qubit_program([
+        "%two = arith.constant 2 : i3",
+        "%condition = arith.trunci %two : i3 to i1",
+        "scf.if %condition {",
+        "  qc.x %q : !qc.qubit",
+        "}",
+    ])
+
+    restored = program.to_qiskit()
+    restored_condition = restored.data[0].operation.condition
+    expected = expr.index(expr.lift(2, types.Uint(3)), expr.lift(0, types.Uint(3)))
+    assert isinstance(restored_condition, expr.Expr)
+    assert expr.structurally_equivalent(restored_condition, expected)
 
 
 def _cbit_load_indices(ir: str) -> list[int]:
@@ -1066,7 +1886,8 @@ def test_boolean_expression_literals_are_imported() -> None:
 
     assert "arith.constant false" in ir
     assert "arith.constant true" in ir
-    assert "arith.ori" in ir
+    assert "scf.if" in ir
+    assert "arith.ori" not in ir
 
 
 def test_uint_register_cast_to_bool_tests_all_bits() -> None:
@@ -1077,10 +1898,16 @@ def test_uint_register_cast_to_bool_tests_all_bits() -> None:
     with circuit.if_test(expr.cast(circuit.cregs[0], types.Bool())):
         circuit.z(0)
 
-    ir = QCProgram.from_qiskit(circuit).ir
+    program = QCProgram.from_qiskit(circuit)
+    ir = program.ir
 
     assert "arith.cmpi ne" in ir
     assert "arith.trunci" not in ir
+
+    restored = program.to_qiskit()
+    round_trip_ir = QCProgram.from_qiskit(restored).ir
+    assert "arith.cmpi ne" in round_trip_ir
+    assert "arith.trunci" not in round_trip_ir
 
 
 def test_public_expression_condition_mutation_is_observed() -> None:
@@ -1092,10 +1919,13 @@ def test_public_expression_condition_mutation_is_observed() -> None:
     assert isinstance(operation, IfElseOp)
     operation.condition = expr.logic_or(circuit.clbits[0], circuit.clbits[1])
 
-    ir = QCProgram.from_qiskit(circuit).ir
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+    condition = restored.data[0].operation.condition
 
-    assert "arith.ori" in ir
-    assert "arith.andi" not in ir
+    assert "scf.if" in program.ir
+    assert isinstance(condition, expr.Expr)
+    assert expr.structurally_equivalent(condition, expr.logic_or(*restored.clbits))
 
 
 def test_public_tuple_condition_mutation_is_observed() -> None:
@@ -1155,7 +1985,7 @@ def test_classical_expression_clbit_captures_import() -> None:
 
     assert _cbit_load_indices(ir) == [1, 0]
     assert "arith.xori" in ir
-    assert "arith.andi" in ir
+    assert "scf.if" in ir
     assert "scf.if" in ir
 
 

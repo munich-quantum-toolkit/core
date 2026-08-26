@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/QIR/QIRDefinitions.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
@@ -119,11 +120,12 @@ private:
     };
 
     const SmallVector<Attribute> attributes{
-        rewriter.getStringAttr("entry_point"),
-        rewriter.getStrArrayAttr({"output_labeling_schema", "labeled"}),
-        rewriter.getStrArrayAttr({"qir_profiles", useAdaptive
-                                                      ? "adaptive_profile"
-                                                      : "base_profile"}),
+        rewriter.getStringAttr(::qir::ENTRY_POINT_ATTR),
+        rewriter.getStrArrayAttr(
+            {::qir::OUTPUT_LABELING_SCHEMA_ATTR, ::qir::LABELED_SCHEMA}),
+        rewriter.getStrArrayAttr(
+            {::qir::QIR_PROFILES_ATTR,
+             useAdaptive ? ::qir::ADAPTIVE_PROFILE : ::qir::BASE_PROFILE}),
         rewriter.getStrArrayAttr(
             {"required_num_qubits", std::to_string(metadata.numQubits)}),
         rewriter.getStrArrayAttr(

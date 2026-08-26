@@ -8,11 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "qir/jit/Session.hpp"
+#include "mlir/Dialect/QIR/Execution/JIT/Session.h"
 
-#include "qir/jit/IRRewriter.hpp"
-#include "qir/runtime/QIR.h"
-#include "qir/runtime/Runtime.hpp"
+#include "mlir/Dialect/QIR/Execution/JIT/IRRewriter.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
+#include "mlir/Dialect/QIR/QIRDefinitions.h"
 
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/StringRef.h>
@@ -65,34 +66,21 @@
 namespace qir {
 
 static auto isEntryPoint(const llvm::Function& function) -> bool {
-  return function.hasFnAttribute("entry_point") ||
-         function.hasFnAttribute("EntryPoint");
+  return function.hasFnAttribute(ENTRY_POINT_ATTR);
 }
 
-static auto selectEntryPoint(llvm::Module& module,
-                             const std::optional<std::string>& requested)
-    -> llvm::Function& {
+static auto selectEntryPoint(llvm::Module& module) -> llvm::Function& {
   std::vector<llvm::Function*> matches;
   for (auto& function : module) {
-    if (!function.isDeclaration() && isEntryPoint(function) &&
-        (!requested || function.getName() == *requested)) {
+    if (!function.isDeclaration() && isEntryPoint(function)) {
       matches.emplace_back(&function);
     }
   }
   if (matches.empty()) {
-    if (requested) {
-      throw std::runtime_error("No QIR entry point named '" + *requested +
-                               "' was found");
-    }
     throw std::runtime_error("No QIR entry point was found");
   }
   if (matches.size() != 1) {
-    std::ostringstream message;
-    message << "Multiple QIR entry points were found; select one explicitly:";
-    for (const auto* function : matches) {
-      message << " " << function->getName().str();
-    }
-    throw std::runtime_error(message.str());
+    throw std::runtime_error("Multiple QIR entry points were found");
   }
   auto& entryPoint = *matches.front();
   const auto* type = entryPoint.getFunctionType();
@@ -109,8 +97,8 @@ static auto selectEntryPoint(llvm::Module& module,
 
 static auto readOutputSchema(const llvm::Function& entryPoint)
     -> Runtime::OutputSchema {
-  if (const auto attr = entryPoint.getFnAttribute("output_labeling_schema");
-      attr.isValid() && attr.getValueAsString() == "ordered") {
+  if (const auto attr = entryPoint.getFnAttribute(OUTPUT_LABELING_SCHEMA_ATTR);
+      attr.isValid() && attr.getValueAsString().compare(ORDERED_SCHEMA) == 0) {
     return Runtime::OutputSchema::Ordered;
   }
   return Runtime::OutputSchema::Labeled;
@@ -380,14 +368,6 @@ getThreadSafeModuleOrError(std::unique_ptr<llvm::Module> llvmModule,
 }
 
 llvm::Expected<llvm::orc::ThreadSafeModule>
-JitSession::loadModuleFromFile(const llvm::StringRef irPath) {
-  llvm::SMDiagnostic err;
-  auto m = tsCtx_.withContextDo(
-      [&](llvm::LLVMContext* ctx) { return parseIRFile(irPath, err, *ctx); });
-  return getThreadSafeModuleOrError(std::move(m), err, tsCtx_);
-}
-
-llvm::Expected<llvm::orc::ThreadSafeModule>
 JitSession::loadModuleFromMemory(const llvm::StringRef irBytes,
                                  const llvm::StringRef bufferName) {
   llvm::SMDiagnostic err;
@@ -400,15 +380,10 @@ JitSession::loadModuleFromMemory(const llvm::StringRef irBytes,
   return getThreadSafeModuleOrError(std::move(m), err, tsCtx_);
 }
 
-JitSession::JitSession(const llvm::StringRef inputFile,
-                       const SessionOptions& options) {
-  initialize(loadModuleFromFile(inputFile), options);
-}
-
 JitSession::JitSession(const llvm::StringRef irBytes,
                        const llvm::StringRef bufferName,
-                       const SessionOptions& options) {
-  initialize(loadModuleFromMemory(irBytes, bufferName), options);
+                       const Execution execution) {
+  initialize(loadModuleFromMemory(irBytes, bufferName), execution);
 }
 
 JitSession::~JitSession() { deinitialize(); }
@@ -421,8 +396,6 @@ int64_t JitSession::run() {
 }
 
 auto JitSession::runtime() -> Runtime& { return *runtime_; }
-
-auto JitSession::runtime() const -> const Runtime& { return *runtime_; }
 
 void JitSession::initNativeTargets() {
   static std::once_flag flag;
@@ -439,17 +412,18 @@ void JitSession::initNativeTargets() {
 
 void JitSession::initialize(
     llvm::Expected<llvm::orc::ThreadSafeModule> llvmModule,
-    const SessionOptions& options) {
+    const Execution execution) {
   if (!llvmModule) {
     throw std::runtime_error(llvm::toString(llvmModule.takeError()));
   }
   module_ = std::move(*llvmModule);
   runtime_ = std::make_unique<Runtime>();
 
+  std::string entryPointName;
   std::vector<std::pair<std::string, void*>> runtimeSymbols;
   module_.withModuleDo([&](llvm::Module& module) {
-    auto& entryPoint = selectEntryPoint(module, options.entryPoint);
-    entryPointName_ = entryPoint.getName().str();
+    auto& entryPoint = selectEntryPoint(module);
+    entryPointName = entryPoint.getName().str();
     runtime_->setOutputSchema(readOutputSchema(entryPoint));
     std::vector<std::pair<std::string, std::string>> metadata;
     for (const auto attribute : entryPoint.getAttributes().getFnAttrs()) {
@@ -459,15 +433,11 @@ void JitSession::initialize(
       }
     }
     runtime_->setMetadata(std::move(metadata));
-    if (options.execution == Execution::StateExtraction) {
+    if (execution == Execution::StateExtraction) {
       prepareForStateExtraction(entryPoint);
     }
     runtimeSymbols = selectRuntimeSymbols(module);
   });
-  if (options.seed) {
-    runtime_->seed(*options.seed);
-  }
-
   initNativeTargets();
 
   // Get TargetTriple and DataLayout from the main module if they're explicitly
@@ -602,7 +572,7 @@ void JitSession::initialize(
   }
 
   // Resolve the selected QIR entry point.
-  auto entryPointAddress = jit_->lookup(entryPointName_);
+  auto entryPointAddress = jit_->lookup(entryPointName);
   if (!entryPointAddress) {
     throw std::runtime_error(llvm::toString(entryPointAddress.takeError()));
   }

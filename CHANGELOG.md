@@ -37,8 +37,8 @@ releases may include breaking changes.
 #### Import and export
 
 - ✨ Add Qiskit circuit import and target-aware export to the compiler
-  collection ([#2031], [#2133], [#2140], [#2150], [#2175]) ([**@burgholzer**],
-  [**@simon1hofmann**])
+  collection ([#2031], [#2133], [#2140], [#2150], [#2175], [#2176])
+  ([**@burgholzer**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105])
   ([**@denialhaag**], [**@burgholzer**])
@@ -98,15 +98,17 @@ releases may include breaking changes.
   ([#2209]) ([**@burgholzer**])
 - 💥 Prune dead and misleading CoreIR APIs and remove random-number generator
   state from `QuantumComputation` ([#2111], [#2112]) ([**@simon1hofmann**])
-- 💥 Update QIR execution for QIR 2.1, isolated runtimes, reproducible
-  multi-shot execution, and safe statevector extraction ([#2035], [#2036])
-  ([**@burgholzer**])
+- 💥 Update QIR execution for QIR 2.1, isolated runtimes, deterministic QDMI
+  sampling, and safe statevector extraction ([#2035], [#2036], [#2246])
+  ([**@burgholzer**], [**@denialhaag**])
 - 💥 Require LLVM/MLIR 22.1 and QIR support in every MQT Core source build,
   build MLIR by default, and remove the corresponding build options ([#1356],
   [#1549], [#1953]) ([**@burgholzer**], [**@denialhaag**])
 
 ### Removed
 
+- 💥 Remove the standalone QIR runner and make the QIR runtime and JIT internal
+  DDSIM implementation details ([#2246]) ([**@denialhaag**])
 - 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
   DD package evaluation. MQT Core provides no direct replacement ([#2214])
   ([**@burgholzer**])
@@ -826,6 +828,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
 [#2211]: https://github.com/munich-quantum-toolkit/core/pull/2211
@@ -835,6 +838,7 @@ for previous changelogs._
 [#2203]: https://github.com/munich-quantum-toolkit/core/pull/2203
 [#2214]: https://github.com/munich-quantum-toolkit/core/pull/2214
 [#2193]: https://github.com/munich-quantum-toolkit/core/pull/2193
+[#2176]: https://github.com/munich-quantum-toolkit/core/pull/2176
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
 [#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168

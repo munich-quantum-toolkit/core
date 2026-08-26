@@ -159,8 +159,8 @@ This compiler route does not construct an intermediate
 interfaces remain independent and retain their existing version range and
 behavior.
 
-Import and export have different contracts because Qiskit 2.5 can inspect more
-program structures than its C API can construct.
+Qiskit 2.5's C API cannot construct classical expressions or structured control
+flow, so export uses Qiskit's public Python classes for these operations.
 
 | Circuit feature                                                   | Import               | Export         |
 | ----------------------------------------------------------------- | -------------------- | -------------- |
@@ -169,10 +169,10 @@ program structures than its C API can construct.
 | Measurement, reset, and barrier                                   | Supported            | Supported      |
 | Canonical named registers and leading loose bits                  | Supported            | Supported      |
 | Custom instructions with finite, acyclic definitions              | Recursively expanded | Not applicable |
-| Nested `if`/`else`, `for`, `while`, and `switch`                  | Supported            | Rejected       |
-| Classical-bit and register conditions                             | Supported            | Rejected       |
-| Constant Boolean, `Uint` up to 64 bits, and `Float` expressions   | Supported            | Rejected       |
-| Clbit and ClassicalRegister expression variables                  | Supported            | Rejected       |
+| Nested `if`/`else`, `for`, `while`, and `switch`                  | Supported            | Supported      |
+| Classical-bit and register conditions                             | Supported            | Supported      |
+| Constant Boolean, `Uint` up to 64 bits, and `Float` expressions   | Supported            | Supported      |
+| Clbit and ClassicalRegister expression variables                  | Supported            | Supported      |
 | Standalone classical runtime variables                            | Rejected             | Rejected       |
 | Free symbols and supported real parameter expressions             | Supported            | Supported      |
 | Parameter-vector elements                                         | Rejected             | Not emitted    |
@@ -199,6 +199,44 @@ after their symbols and expressions are resolved. Definition expansion rejects
 missing definitions, cycles, operand arity mismatches, nesting beyond 64 levels,
 and more than 10 million expanded operations.
 
+Structured-control export accepts result-free {code}`scf.if`, constant-range
+{code}`scf.for` without loop-carried values, expression-based {code}`scf.while`
+without carried state, and result-free {code}`scf.index_switch`. A
+result-bearing {code}`scf.if` is accepted only for one Boolean result in the
+canonical short-circuit form. Logical AND evaluates its right operand in the
+then branch and yields false from the else branch. Logical OR yields true from
+the then branch and evaluates its right operand in the else branch. General
+Boolean selection and multiple results are rejected. A live {code}`scf.for`
+induction value must reduce to an affine {code}`f64` gate parameter. The
+exporter preserves one Qiskit parameter identity for that value throughout its
+lexical body. An {code}`scf.index_switch` selector must be a constant index or a
+supported Boolean/Uint expression converted with {code}`arith.index_castui`.
+Switch labels must be nonnegative constants that fit the target width.
+
+Nested blocks may capture existing qubits and classical bits but may not
+allocate or release circuit resources. Control flow and classical expressions
+may nest up to 64 levels, and expression trees may contain at most 4,096 nodes.
+Boolean, unsigned-integer up to 64 bits, and floating-point expression
+operations must have a direct Qiskit equivalent. Unsupported operations, signed
+interpretations, invalid widths, non-finite constants, dynamic bounds,
+loop-carried values, and other SSA results fail during validation. The sole
+exception is Core's canonical constant-zero `i64` exit-code sentinel for a
+circuit without classical outputs.
+
+Conditions and switch targets may read a zero-initialized public CBit register.
+An undefined public CBit may be read only after an unconditional top-level
+measurement write to that bit, and every bit of an undefined returned register
+must be written unconditionally. Branch-local writes do not establish definite
+initialization. A captured classical snapshot must not cross a later CBit write
+or a nested write to the same register.
+
+Each exported measurement must write to one static public CBit in the same
+block, and destinations must be unique. Its destination store must follow the
+measurement directly, apart from constant operations. A conditional or otherwise
+delayed destination store is rejected because Qiskit cannot preserve it as one
+measurement instruction. The measurement result may feed supported classical
+expressions after that store and is exported as the destination CBit.
+
 Dense numeric unitaries remain explicit matrix operations during import and
 export. Target compilation synthesizes supported one- and two-qubit matrices to
 the target gate set. Dense unitary operations support at most eight qubits.
@@ -210,9 +248,11 @@ A circuit remains valid when {code}`circ.layout` is present. The importer
 translates the circuit operations and deliberately does not preserve physical or
 virtual layout metadata.
 
-Input validation finishes before an MLIR module is created. Output validation
-finishes before a Qiskit circuit is allocated. Unsupported programs therefore
-fail without modifying the source object or exposing a partial result.
+Input validation finishes before an MLIR module is created. Generic output
+validation finishes before Qiskit construction starts; the version-specific
+adapter validates its constructed blocks before returning the top-level circuit.
+Unsupported programs therefore fail without modifying the source object or
+exposing a partial result.
 
 The binding imports Qiskit only when circuit translation is requested. It
 accepts versions in the registered {code}`>=2.5.0,<2.6.0` range and verifies the

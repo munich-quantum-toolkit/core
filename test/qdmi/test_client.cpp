@@ -906,7 +906,8 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
                   std::string::npos);
     }
   };
-  for (size_t i = 1; i <= 5; ++i) {
+  submitWithCustoms(7, 1);
+  for (size_t i = 2; i <= 5; ++i) {
     submitWithCustoms(std::string("custom"), i);
     submitWithCustoms(42, i);
     submitWithCustoms(3.14, i);

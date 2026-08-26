@@ -611,7 +611,8 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
   }
   const auto width = static_cast<uint32_t>(reg.bits.size());
   const auto type = builder.getIntegerType(width);
-  auto packed = integerConstant(builder, width, 0U);
+  llvm::SmallVector<mlir::Value> terms;
+  terms.reserve(reg.bits.size());
   for (size_t index = 0; index < reg.bits.size(); ++index) {
     auto bit = castInteger(
         builder,
@@ -622,9 +623,23 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
                                         integerConstant(builder, width, index))
                 .getResult();
     }
-    packed = mlir::arith::OrIOp::create(builder, packed, bit).getResult();
+    terms.push_back(bit);
   }
-  return packed;
+  while (terms.size() > 1U) {
+    const auto reducedSize = (terms.size() + 1U) / 2U;
+    for (size_t index = 0U; index < reducedSize; ++index) {
+      const auto left = 2U * index;
+      if (left + 1U < terms.size()) {
+        terms[index] =
+            mlir::arith::OrIOp::create(builder, terms[left], terms[left + 1U])
+                .getResult();
+      } else {
+        terms[index] = terms[left];
+      }
+    }
+    terms.resize(reducedSize);
+  }
+  return terms.front();
 }
 
 [[nodiscard]] mlir::Value
@@ -738,6 +753,37 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
   case ExpressionKind::Binary: {
     auto left =
         emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
+    if (expression.binaryOperation == BinaryOperation::LogicAnd ||
+        expression.binaryOperation == BinaryOperation::LogicOr) {
+      if (!left.getType().isInteger(1)) {
+        throw std::runtime_error(
+            "Qiskit logical operation requires Boolean operands");
+      }
+      const auto emitRight = [&]() {
+        auto right = emitExpression(builder, *expression.right, classicalBits,
+                                    rootClbitMap);
+        if (!right.getType().isInteger(1)) {
+          throw std::runtime_error(
+              "Qiskit logical operation requires Boolean operands");
+        }
+        return right;
+      };
+      const auto isAnd =
+          expression.binaryOperation == BinaryOperation::LogicAnd;
+      return mlir::scf::IfOp::create(
+                 builder, left,
+                 [&](mlir::OpBuilder&, mlir::Location) {
+                   mlir::scf::YieldOp::create(
+                       builder,
+                       isAnd ? emitRight() : builder.boolConstant(true));
+                 },
+                 [&](mlir::OpBuilder&, mlir::Location) {
+                   mlir::scf::YieldOp::create(
+                       builder,
+                       isAnd ? builder.boolConstant(false) : emitRight());
+                 })
+          .getResult(0);
+    }
     auto right =
         emitExpression(builder, *expression.right, classicalBits, rootClbitMap);
     const auto comparison = [&]() -> std::optional<mlir::Value> {
@@ -820,10 +866,8 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     right = castInteger(builder, right, integerType);
     switch (expression.binaryOperation) {
     case BinaryOperation::BitAnd:
-    case BinaryOperation::LogicAnd:
       return mlir::arith::AndIOp::create(builder, left, right).getResult();
     case BinaryOperation::BitOr:
-    case BinaryOperation::LogicOr:
       return mlir::arith::OrIOp::create(builder, left, right).getResult();
     case BinaryOperation::BitXor:
       return mlir::arith::XOrIOp::create(builder, left, right).getResult();

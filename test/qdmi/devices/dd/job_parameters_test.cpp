@@ -161,3 +161,18 @@ TEST(JobParameters, ProgramFormatSupport) {
               QDMI_ERROR_NOTSUPPORTED);
   }
 }
+
+TEST(JobParameters, SamplingSeed) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+
+  EXPECT_EQ(qdmi_test::setSeed(j.job, 7), QDMI_SUCCESS);
+  EXPECT_EQ(qdmi_test::setSeed(j.job, 0), QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(qdmi_test::setSeed(j.job, -1), QDMI_ERROR_INVALIDARGUMENT);
+
+  constexpr bool wrongType = true;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM1, sizeof(wrongType),
+                &wrongType),
+            QDMI_ERROR_INVALIDARGUMENT);
+}
