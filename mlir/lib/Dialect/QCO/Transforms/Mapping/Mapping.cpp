@@ -432,7 +432,7 @@ private:
     assert(succeeded(res));
     auto newForOp = cast<scf::ForOp>(*res);
 
-    for (const auto [before, after] : llvm::zip_equal(
+    for (auto [before, after] : llvm::zip_equal(
              addons, newForOp.getResults().take_back(addons.size()))) {
       rewriter.replaceAllUsesExcept(before, after, newForOp);
     }
@@ -448,7 +448,7 @@ private:
 
     auto newIfOp = ifOp.replaceWithAdditionalQubits(rewriter, addons);
 
-    for (const auto [before, after] : llvm::zip_equal(
+    for (auto [before, after] : llvm::zip_equal(
              addons, newIfOp->getResults().take_back(addons.size()))) {
       rewriter.replaceAllUsesExcept(before, after, newIfOp);
     }
@@ -465,7 +465,7 @@ private:
     rewriter.setInsertionPoint(switchOp);
 
     auto newSwitchOp = switchOp.replaceWithAdditionalTargets(rewriter, addons);
-    for (const auto [before, after] : llvm::zip_equal(
+    for (auto [before, after] : llvm::zip_equal(
              addons, newSwitchOp.getLinearResults().take_back(addons.size()))) {
       rewriter.replaceAllUsesExcept(before, after, newSwitchOp);
     }
@@ -543,7 +543,7 @@ private:
     rewriter.replaceOp(
         whileOp, newWhileOp.getResults().take_front(whileOp.getNumResults()));
 
-    for (const auto [before, after] : llvm::zip_equal(
+    for (auto [before, after] : llvm::zip_equal(
              addons, newWhileOp->getResults().take_back(addons.size()))) {
       rewriter.replaceAllUsesExcept(before, after, newWhileOp);
     }
@@ -629,7 +629,7 @@ private:
                    << "must extract and insert all qubits at once.";
           }
 
-          const auto qubit = extract.getResult();
+          auto qubit = extract.getResult();
           const auto index = computation.wires.size();
 
           computation.wires.emplace_back(qubit);
@@ -674,7 +674,7 @@ private:
     for (auto alloc : computation.scalarAllocations) {
       const auto prog = wires.size();
       const auto hw = layout.getHardwareIndex(prog);
-      const auto qubit = staticQubits[hw];
+      auto qubit = staticQubits[hw];
 
       rewriter.replaceAllUsesWith(alloc.getResult(), qubit);
       rewriter.eraseOp(alloc);
@@ -689,7 +689,7 @@ private:
             .Case<ExtractOp>([&](auto op) {
               const auto prog = wires.size();
               const auto hw = layout.getHardwareIndex(prog);
-              const auto qubit = staticQubits[hw];
+              auto qubit = staticQubits[hw];
 
               rewriter.replaceAllUsesWith(op.getResult(), qubit);
               rewriter.replaceAllUsesWith(op.getOutTensor(), op.getTensor());
@@ -715,7 +715,7 @@ private:
     rewriter.setInsertionPoint(body.back().getTerminator());
     for (size_t prog = wires.size(); prog < layout.nqubits(); ++prog) {
       const auto hw = layout.getHardwareIndex(prog);
-      const auto qubit = staticQubits[hw];
+      auto qubit = staticQubits[hw];
 
       wires.emplace_back(qubit);
       infos.insertOrUpdate(prog, prog);
@@ -1112,14 +1112,14 @@ private:
         auto& w0 = wires[i0];
         auto& w1 = wires[i1];
 
-        const auto in0 = w0.qubit();
-        const auto in1 = w1.qubit();
+        auto in0 = w0.qubit();
+        auto in1 = w1.qubit();
 
         rewriter->setInsertionPointAfterValue(in0); // Valid bc. Hot => Forward.
         auto swapOp = SWAPOp::create(*rewriter, in0.getLoc(), in0, in1);
 
-        const auto out0 = swapOp.getQubit0Out();
-        const auto out1 = swapOp.getQubit1Out();
+        auto out0 = swapOp.getQubit0Out();
+        auto out1 = swapOp.getQubit1Out();
 
         rewriter->replaceAllUsesExcept(in0, out1, swapOp);
         rewriter->replaceAllUsesExcept(in1, out0, swapOp);
@@ -1242,13 +1242,13 @@ private:
                   }),
         .indices = allIndices};
 
-    const auto results = composite.op->getResults();
+    auto results = composite.op->getResults();
 
     Wires wires(allIndices.size());
     for (size_t index : included) {
       wires[index] = WireIterator(results[indexToResultNum.at(index)]);
     }
-    for (const auto [index, res] :
+    for (auto [index, res] :
          llvm::zip_equal(excluded, results.take_back(excluded.size()))) {
       wires[index] = WireIterator(res);
     }
@@ -1316,7 +1316,7 @@ private:
 
     SmallVector<std::optional<size_t>> resultToQubitIndex(op->getNumResults());
     size_t numQubitResults = 0;
-    for (const auto res : op->getResults()) {
+    for (auto res : op->getResults()) {
       if (isa<QubitType>(res.getType())) {
         resultToQubitIndex[res.getResultNumber()] = numQubitResults++;
       }
@@ -1335,7 +1335,7 @@ private:
     for (size_t i : indices) {
       const auto prog = parent.infos.lookupProgram(i);
       const auto hw = parent.layout.getHardwareIndex(prog);
-      const auto res = cast<OpResult>(parent.wires[i].qubit());
+      auto res = cast<OpResult>(parent.wires[i].qubit());
       const auto resNum = res.getResultNumber();
       const auto qubitResNum = *resultToQubitIndex[resNum];
 
@@ -1352,37 +1352,35 @@ private:
 
       TypeSwitch<Operation*>(op)
           .template Case<scf::ForOp>([&](scf::ForOp forOp) {
-            const auto arg = forOp.getTiedLoopRegionIterArg(res);
-            const auto yielded = forOp.getTiedLoopYieldedValue(arg)->get();
+            auto arg = forOp.getTiedLoopRegionIterArg(res);
+            auto yielded = forOp.getTiedLoopYieldedValue(arg)->get();
             append(children[0], arg, yielded);
           })
           .template Case<scf::WhileOp>([&](scf::WhileOp) {
-            const auto arg = whileBeforeQubits[qubitResNum];
-            const auto yielded = whileConditionQubits[qubitResNum];
+            auto arg = whileBeforeQubits[qubitResNum];
+            auto yielded = whileConditionQubits[qubitResNum];
             append(children[0], arg, yielded);
           })
           .template Case<IfOp>([&](IfOp ifOp) {
             OpOperand* const qubit = ifOp.getTiedQubit(res);
-            const auto thenArg = ifOp.getTiedThenBlockArgument(qubit);
-            const auto thenYielded =
-                ifOp.getTiedThenYieldedValue(thenArg)->get();
-            const auto elseArg = ifOp.getTiedElseBlockArgument(qubit);
-            const auto elseYielded =
-                ifOp.getTiedElseYieldedValue(elseArg)->get();
+            auto thenArg = ifOp.getTiedThenBlockArgument(qubit);
+            auto thenYielded = ifOp.getTiedThenYieldedValue(thenArg)->get();
+            auto elseArg = ifOp.getTiedElseBlockArgument(qubit);
+            auto elseYielded = ifOp.getTiedElseYieldedValue(elseArg)->get();
 
             append(children[0], thenArg, thenYielded);
             append(children[1], elseArg, elseYielded);
           })
           .template Case<IndexSwitchOp>([&](IndexSwitchOp switchOp) {
             OpOperand* const qubit = switchOp.getTiedTarget(res);
-            const auto defaultArg = switchOp.getTiedDefaultBlockArgument(qubit);
-            const auto defaultYielded =
+            auto defaultArg = switchOp.getTiedDefaultBlockArgument(qubit);
+            auto defaultYielded =
                 switchOp.getTiedDefaultYieldedValue(defaultArg)->get();
             append(children[0], defaultArg, defaultYielded);
 
             for (size_t r = 1; r < switchOp.getNumRegions(); ++r) {
-              const auto arg = switchOp.getTiedCaseBlockArgument(qubit, r - 1);
-              const auto yielded =
+              auto arg = switchOp.getTiedCaseBlockArgument(qubit, r - 1);
+              auto yielded =
                   switchOp.getTiedCaseYieldedValue(arg, r - 1)->get();
               append(children[r], arg, yielded);
             }
@@ -1419,7 +1417,7 @@ private:
       children.emplace_back(RoutingBundle{.layout = children[0].layout});
       assert(children.size() == 2);
 
-      const auto values = [&] -> ValueRange {
+      auto values = [&] -> ValueRange {
         if constexpr (Direction == WireDirection::Forward) {
           return whileOp.getAfterArguments();
         }

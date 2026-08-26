@@ -937,17 +937,17 @@ TEST(Eigensolver, Matrix4x4SwapDirect) {
 }
 
 TEST(Eigensolver, GeneralComplex3x3DynamicPath) {
-  std::mt19937 rng(0x33U); // NOLINT(cert-msc51-cpp)
+  std::mt19937 rng(0x33U);
   expectGeneralEigenDecomposition(randomComplexMatrix(3, rng));
 }
 
 TEST(Eigensolver, GeneralComplex8x8DynamicPath) {
-  std::mt19937 rng(0x88U); // NOLINT(cert-msc51-cpp)
+  std::mt19937 rng(0x88U);
   expectGeneralEigenDecomposition(randomComplexMatrix(8, rng));
 }
 
 TEST(Eigensolver, RandomComplex4x4Eispack) {
-  std::mt19937 rng(0x44U); // NOLINT(cert-msc51-cpp)
+  std::mt19937 rng(0x44U);
   for (int trial = 0; trial < 20; ++trial) {
     expectGeneralEigenDecomposition(randomComplexMatrix(4, rng));
   }
@@ -997,7 +997,7 @@ TEST(SymmetricEigensolver, SparseCornerElement) {
 }
 
 TEST(Eigensolver, RandomComplex2x2ClosedForm) {
-  std::mt19937 rng(0xE1E1E1U); // NOLINT(cert-msc51-cpp)
+  std::mt19937 rng(0xE1E1E1U);
   for (int trial = 0; trial < 50; ++trial) {
     expectGeneralEigenDecomposition(randomComplexMatrix(2, rng));
   }

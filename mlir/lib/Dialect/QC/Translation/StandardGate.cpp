@@ -91,9 +91,8 @@ lookupStandardGateByOperationSymbol(const llvm::StringRef symbol) {
 }
 
 LogicalResult emitStandardGate(OpBuilder& builder, const Location loc,
-                               const StandardGate gate,
-                               const ValueRange parameters,
-                               const ValueRange qubits) {
+                               const StandardGate gate, ValueRange parameters,
+                               ValueRange qubits) {
   const auto& descriptor = getStandardGateDescriptor(gate);
   if (parameters.size() != descriptor.parameterCount ||
       qubits.size() != descriptor.targetCount) {

@@ -25,7 +25,6 @@
 #include <optional>
 #include <utility>
 
-// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 namespace mlir::oq3::frontend::detail {
 
 [[nodiscard]] static bool canStartIdentifier(char c) {
@@ -564,4 +563,3 @@ Token Lexer::next() {
 }
 
 } // namespace mlir::oq3::frontend::detail
-// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)

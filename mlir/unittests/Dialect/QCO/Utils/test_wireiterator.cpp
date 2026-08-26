@@ -55,10 +55,10 @@ TEST_P(WireIteratorTest, Traversal) {
 
   const auto q00 = isDynamic ? builder.allocQubit() : builder.staticQubit(0);
   const auto q10 = isDynamic ? builder.allocQubit() : builder.staticQubit(1);
-  const auto q01 = builder.h(q00);
-  const auto [q02, q11] = builder.cx(q01, q10);
-  const auto [q03, c0] = builder.measure(q02);
-  const auto q04 = builder.reset(q03);
+  auto q01 = builder.h(q00);
+  auto [q02, q11] = builder.cx(q01, q10);
+  auto [q03, c0] = builder.measure(q02);
+  auto q04 = builder.reset(q03);
 
   Value iterQ00;
   Value iterQ01;
@@ -66,7 +66,7 @@ TEST_P(WireIteratorTest, Traversal) {
   Value iterQ10;
   Value iterQ11;
 
-  const auto loopOut =
+  auto loopOut =
       builder.scfFor(1, 4, 1, {q04, q11}, [&](Value, ValueRange iterArgs) {
         iterQ00 = iterArgs[0];
         iterQ10 = iterArgs[1];
@@ -74,21 +74,21 @@ TEST_P(WireIteratorTest, Traversal) {
         std::tie(iterQ02, iterQ11) = builder.cx(iterQ01, iterQ10);
         return SmallVector{iterQ02, iterQ11};
       });
-  const auto q05 = loopOut[0];
-  const auto q12 = loopOut[1];
-  const auto ifOut = builder.qcoIf(
+  auto q05 = loopOut[0];
+  auto q12 = loopOut[1];
+  auto ifOut = builder.qcoIf(
       true, {q05, q12},
       [&](ValueRange args) { return SmallVector{args[0], args[1]}; },
       [&](ValueRange args) { return SmallVector{args[0], args[1]}; });
-  const auto q06 = ifOut[0];
-  const auto q13 = ifOut[1];
+  auto q06 = ifOut[0];
+  auto q13 = ifOut[1];
   const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
   const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
       identity};
-  const auto switchOut = builder.qcoIndexSwitch(
+  auto switchOut = builder.qcoIndexSwitch(
       0, {q06, q13}, SmallVector<int64_t>{0}, caseBodies, identity);
-  const auto q07 = switchOut[0];
-  const auto q14 = switchOut[1];
+  auto q07 = switchOut[0];
+  auto q14 = switchOut[1];
   builder.sink(q07);
   builder.sink(q14);
   [[maybe_unused]] auto module = builder.finalize();

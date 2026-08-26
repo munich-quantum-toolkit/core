@@ -251,10 +251,10 @@ TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
 
   QCProgramBuilder builder(context.get());
   builder.initialize();
-  const auto qubit = builder.allocQubit();
+  auto qubit = builder.allocQubit();
   builder.h(qubit);
   auto moduleOp = builder.finalize();
-  const auto borrowed = *moduleOp;
+  auto borrowed = *moduleOp;
 
   auto program = QCProgram::fromModule(context, std::move(moduleOp));
 

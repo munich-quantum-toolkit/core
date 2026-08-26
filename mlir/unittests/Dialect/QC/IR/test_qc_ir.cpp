@@ -155,7 +155,7 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QCProgramBuilder builder(context.get());
         builder.initialize();
-        const auto q = builder.allocQubit();
+        auto q = builder.allocQubit();
         auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, -1);
       },
@@ -165,7 +165,7 @@ TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QCProgramBuilder builder(context.get());
         builder.initialize();
-        const auto q = builder.allocQubit();
+        auto q = builder.allocQubit();
         auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, 1);
       },
@@ -246,8 +246,8 @@ TEST_F(QCTest, BuilderDeallocatesDynamicResourcesDeterministically) {
 TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
-  const auto reg = builder.allocQubitRegisterStorage(1);
-  const auto index = arith::ConstantIndexOp::create(builder, 0).getResult();
+  auto reg = builder.allocQubitRegisterStorage(1);
+  auto index = arith::ConstantIndexOp::create(builder, 0).getResult();
 
   builder.h(builder.loadQubit(reg, index));
   builder.x(builder.loadQubit(reg, index));
@@ -274,7 +274,7 @@ TEST_F(QCTest, BuilderAllowsRepeatedQubitLoadsAcrossNestedRegions) {
 TEST_F(QCTest, BuilderCanAllocateQubitRegisterStorageWithoutEagerLoads) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
-  const auto reg = builder.allocQubitRegisterStorage(4);
+  auto reg = builder.allocQubitRegisterStorage(4);
 
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
@@ -299,7 +299,7 @@ TEST_F(QCTest, BuilderCanAllocateQubitRegisterStorageWithoutEagerLoads) {
 TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
-  const auto qubit = builder.allocQubit();
+  auto qubit = builder.allocQubit();
 
   Value bodyQubit;
   auto pow = PowOp::create(builder, 2.0, qubit, [&](Value argument) {
@@ -366,7 +366,7 @@ TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
 
   QCProgramBuilder builder(context.get());
   builder.initialize();
-  const auto qubit = builder.allocQubit();
+  auto qubit = builder.allocQubit();
   builder.unitary(ValueRange{qubit}, xMatrix);
   auto module = builder.finalize();
   ASSERT_TRUE(module);
@@ -395,7 +395,7 @@ TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
 TEST_F(QCTest, DenseUnitaryVerifierRejectsNonUnitaryMatrix) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
-  const auto qubit = builder.allocQubit();
+  auto qubit = builder.allocQubit();
   const auto matrixType =
       RankedTensorType::get({2, 2}, ComplexType::get(builder.getF64Type()));
   ScopedDiagnosticHandler handler(context.get(),
@@ -424,7 +424,7 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsNonUnitaryMatrix) {
 TEST_F(QCTest, DenseUnitaryVerifierRejectsMalformedShapeAndDimension) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
-  const auto qubit = builder.allocQubit();
+  auto qubit = builder.allocQubit();
   const auto complexType = ComplexType::get(builder.getF64Type());
   const auto expectRejected = [&](const ArrayRef<int64_t> shape) {
     const auto matrix =
@@ -444,7 +444,7 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsMalformedShapeAndDimension) {
 TEST_F(QCTest, DenseUnitaryVerifierRejectsUnsupportedArityAndAttributes) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
-  const auto qubit = builder.allocQubit();
+  auto qubit = builder.allocQubit();
   const auto complexType = ComplexType::get(builder.getF64Type());
 
   const auto scalarMatrix =
@@ -488,7 +488,7 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsUnsupportedArityAndAttributes) {
 TEST_F(QCTest, DenseUnitaryVerifierRejectsRepeatedQubit) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
-  const auto qubit = builder.allocQubit();
+  auto qubit = builder.allocQubit();
   const auto matrixType =
       RankedTensorType::get({4, 4}, ComplexType::get(builder.getF64Type()));
   const std::array<std::complex<double>, 16> identityValues{{
@@ -567,7 +567,7 @@ static StringRef modifierName(const VerifierModifierKind kind) {
   llvm_unreachable("unknown modifier");
 }
 
-static StringRef forbiddenOperationName(const ForbiddenModifierBodyOp kind) {
+static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
   switch (kind) {
   case ForbiddenModifierBodyOp::Alloc:
     return "alloc";
@@ -591,10 +591,11 @@ static StringRef forbiddenOperationName(const ForbiddenModifierBodyOp kind) {
   llvm_unreachable("unknown forbidden modifier operation");
 }
 
-static void emitForbiddenModifierBodyOperation(
-    QCProgramBuilder& builder, const ForbiddenModifierBodyOp kind,
-    const Value argument, const Value qubitReg, const Value cbitReg,
-    const Value index, const Value bit) {
+static void emitForbiddenModifierBodyOperation(QCProgramBuilder& builder,
+                                               ForbiddenModifierBodyOp kind,
+                                               Value argument, Value qubitReg,
+                                               Value cbitReg, Value index,
+                                               Value bit) {
   switch (kind) {
   case ForbiddenModifierBodyOp::Alloc:
     AllocOp::create(builder);
@@ -629,18 +630,19 @@ static void emitForbiddenModifierBodyOperation(
   llvm_unreachable("unknown forbidden modifier operation");
 }
 
-static OwningOpRef<ModuleOp> buildInvalidNestedModifierProgram(
-    MLIRContext* context, const VerifierModifierKind modifier,
-    const ForbiddenModifierBodyOp forbiddenOperation) {
+static OwningOpRef<ModuleOp>
+buildInvalidNestedModifierProgram(MLIRContext* context,
+                                  const VerifierModifierKind modifier,
+                                  ForbiddenModifierBodyOp forbiddenOperation) {
   QCProgramBuilder builder(context);
   builder.initialize();
-  const auto target = builder.allocQubit();
-  const auto control = builder.allocQubit();
-  const auto qubitReg = builder.allocQubitRegisterStorage(1);
+  auto target = builder.allocQubit();
+  auto control = builder.allocQubit();
+  auto qubitReg = builder.allocQubitRegisterStorage(1);
   auto cbitReg = builder.allocClassicalBitRegister(1);
-  const auto bit = builder.boolConstant(false);
+  auto bit = builder.boolConstant(false);
   auto index = arith::ConstantIndexOp::create(builder, 0);
-  const auto modifierBody = [&](const Value argument) {
+  const auto modifierBody = [&](Value argument) {
     builder.scfIf(true, [&] {
       emitForbiddenModifierBodyOperation(builder, forbiddenOperation, argument,
                                          qubitReg, cbitReg, index.getResult(),
@@ -708,10 +710,10 @@ buildInvalidModifierCaptureProgram(MLIRContext* context,
                                    const bool nested) {
   QCProgramBuilder builder(context);
   builder.initialize();
-  const auto target = builder.allocQubit();
-  const auto captured = builder.allocQubit();
-  const auto control = builder.allocQubit();
-  const auto modifierBody = [&](const Value) {
+  auto target = builder.allocQubit();
+  auto captured = builder.allocQubit();
+  auto control = builder.allocQubit();
+  const auto modifierBody = [&](Value) {
     if (nested) {
       builder.scfIf(true, [&] { builder.x(captured); });
       return;

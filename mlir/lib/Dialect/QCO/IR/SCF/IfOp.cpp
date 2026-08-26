@@ -147,7 +147,6 @@ ValueRange IfOp::getSuccessorInputs(RegionSuccessor successor) {
 OperandRange IfOp::getEntrySuccessorOperands(RegionSuccessor /*successor*/) {
   return getQubits();
 }
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void IfOp::getRegionInvocationBounds(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<InvocationBounds>& invocationBounds) {
@@ -180,7 +179,7 @@ static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
   assert(llvm::hasSingleElement(region) && "expected single-region block");
   Block* block = &region.front();
   Operation* terminator = block->getTerminator();
-  const auto results = terminator->getOperands();
+  auto results = terminator->getOperands();
   rewriter.inlineBlockBefore(block, op, blockArgs);
   rewriter.replaceOp(op, results);
   rewriter.eraseOp(terminator);
@@ -295,14 +294,14 @@ struct ForwardClassicalResults : public OpRewritePattern<IfOp> {
 
   LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto classicalResults = op.getClassicalResults();
+    auto classicalResults = op.getClassicalResults();
     if (classicalResults.empty()) {
       return failure();
     }
 
-    const auto thenValues =
+    auto thenValues =
         op.thenYield().getTargets().take_front(classicalResults.size());
-    const auto elseValues =
+    auto elseValues =
         op.elseYield().getTargets().take_front(classicalResults.size());
 
     bool changed = false;
@@ -343,7 +342,7 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
   LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter& rewriter) const override {
     llvm::BitVector resultsToErase(op.getNumResults());
-    for (const OpResult result : op.getClassicalResults()) {
+    for (OpResult result : op.getClassicalResults()) {
       if (result.use_empty()) {
         resultsToErase.set(result.getResultNumber());
       }
@@ -357,7 +356,7 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
         op.getClassicalResults().size() - resultsToErase.count();
 
     llvm::BitVector yieldOperandsToErase(op.thenYield().getNumOperands());
-    for (const auto result : op.getClassicalResults()) {
+    for (auto result : op.getClassicalResults()) {
       if (resultsToErase.test(result.getResultNumber())) {
         yieldOperandsToErase.set(result.getResultNumber());
       }
@@ -387,9 +386,9 @@ void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 LogicalResult IfOp::verify() {
-  const auto& inputQubits = getQubits();
+  auto inputQubits = getQubits();
   const auto numInputQubits = inputQubits.size();
-  const auto& outputQubits = getLinearResults();
+  auto outputQubits = getLinearResults();
   const auto numOutputQubits = outputQubits.size();
 
   const auto numThenArgs = thenBlock()->getNumArguments();
@@ -494,7 +493,7 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
     return *this;
   }
 
-  const auto qubits = getQubits();
+  auto qubits = getQubits();
 
   SmallVector<Value> newQubits;
   newQubits.reserve(qubits.size() + addons.size());

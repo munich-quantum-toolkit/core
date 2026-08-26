@@ -66,7 +66,7 @@ whileResultForInit(scf::WhileOp op, OpOperand& init) {
 }
 
 [[nodiscard]] static TypedValue<RankedTensorType>
-whileInitForResult(scf::WhileOp op, const OpResult result) {
+whileInitForResult(scf::WhileOp op, OpResult result) {
   auto condition = cast<scf::ConditionOp>(op.getBeforeBody()->getTerminator());
   auto current = cast<TypedValue<RankedTensorType>>(
       condition.getArgs()[result.getResultNumber()]);

@@ -211,7 +211,7 @@ std::string Program::str() const {
 }
 
 Program::Storage Program::cloneStorage() const {
-  const auto cloned = cast<ModuleOp>(mod()->clone());
+  auto cloned = cast<ModuleOp>(mod()->clone());
   return {.context = storage_.context, .mod = OwningOpRef<ModuleOp>(cloned)};
 }
 

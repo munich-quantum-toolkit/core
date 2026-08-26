@@ -99,9 +99,8 @@ struct MergeSubsequentR final : OpRewritePattern<ROp> {
 void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                 const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi) {
-  const auto thetaOperand =
-      variantToValue(odsBuilder, odsState.location, theta);
-  const auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
   build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand);
 }
 
