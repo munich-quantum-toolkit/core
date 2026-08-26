@@ -219,6 +219,15 @@ MQT Core no longer provides the `datastructures` (`ds`) sublibrary. MQT QMAP was
 its only consumer. Downstream users must depend on MQT QMAP or provide the
 required data structures directly.
 
+## [3.9.2]
+
+### Optional QDMI shot counts
+
+QDMI jobs whose repetition count is encoded in the program can now omit
+`num_shots`. Existing C++ calls that pass a `size_t` keep the same ABI and
+behavior; new C++ overloads omit the argument, while Python accepts `None` and
+uses it by default.
+
 ## [3.9.1]
 
 ### Program serializers for the Qiskit backend
@@ -876,7 +885,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[3.9.2]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...v3.9.0
 [3.8.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...v3.8.0
