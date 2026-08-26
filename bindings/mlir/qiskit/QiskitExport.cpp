@@ -330,6 +330,7 @@ struct ExportState {
   llvm::DenseMap<mlir::Value, ClassicalRegisterInfo> classicalRegisterInfo;
   llvm::DenseMap<mlir::Value, llvm::DenseSet<uint32_t>> unconditionalWrites;
   llvm::DenseMap<mlir::Value, llvm::DenseSet<uint32_t>> measurementDestinations;
+  llvm::DenseMap<mlir::Value, uint32_t> measurementResultBits;
   llvm::DenseSet<mlir::Operation*> expressionOperations;
   std::vector<Register> quantumRegisters;
   std::vector<Register> classicalRegisters;
@@ -972,6 +973,12 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
 
   auto result = std::make_unique<Expression>();
   setExpressionType(*result, value.getType());
+  if (const auto measured = state.measurementResultBits.find(value);
+      measured != state.measurementResultBits.end()) {
+    result->kind = ExpressionKind::ClassicalBit;
+    result->bit = measured->second;
+    return result;
+  }
   if (result->type == ClassicalType::Uint) {
     if (auto packed = matchPackedRegister(value, state, evaluationBlock)) {
       result->kind = ExpressionKind::ClassicalRegister;
@@ -1589,8 +1596,7 @@ void validateControlFlowDepth(const size_t controlFlowDepth) {
 
 [[nodiscard]] bool isFusableMeasurementStore(mlir::qc::MeasureOp measure,
                                              mlir::cbit::StoreOp store) {
-  if (!measure.getResult().hasOneUse() ||
-      store.getValue() != measure.getResult() ||
+  if (store.getValue() != measure.getResult() ||
       measure->getBlock() != store->getBlock()) {
     return false;
   }
@@ -1865,11 +1871,14 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportState& state,
       if (topLevel) {
         state.unconditionalWrites[destination.getReg()].insert(checked);
       }
+      const auto destinationBit =
+          checkedAdd(info->second.base, checked, "classical-bit");
       circuit.instructions.push_back(
           {.kind = ExportedInstruction::Kind::Measure,
            .qubits = mapQubits(measure.getQubit(), state.qubits),
-           .clbits = {
-               checkedAdd(info->second.base, checked, "classical-bit")}});
+           .clbits = {destinationBit}});
+      state.measurementResultBits.try_emplace(measure.getResult(),
+                                              destinationBit);
       continue;
     }
     if (auto reset = llvm::dyn_cast<mlir::qc::ResetOp>(operation)) {
