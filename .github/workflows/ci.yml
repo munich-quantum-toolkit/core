@@ -60,6 +60,10 @@ jobs:
         include:
           - runs-on: macos-26
             compiler: clang
+            preset: release
+            run-on-draft: false
+          - runs-on: macos-26
+            compiler: clang
             preset: debug
             run-on-draft: true
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@063c90c8e7e094bfffb73f8436eb55341c1e820f # v2.3.0

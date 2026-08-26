@@ -84,8 +84,8 @@ releases may include breaking changes.
 
 ### Changed
 
-- 💥 Drop support for x86 macOS and stop publishing Intel macOS wheels ([#2259])
-  ([**@denialhaag**])
+- 💥 Drop support for x86 macOS and stop publishing the respective wheels
+  ([#2259]) ([**@denialhaag**])
 - ⬆️ Raise the macOS deployment target to 13.3 ([#2259])
   ([**@denialhaag**])
 - 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
