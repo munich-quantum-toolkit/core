@@ -57,12 +57,15 @@ def test_build_unitary_and_functionality_simple_circuit() -> None:
     p = DDPackage(2)
     package_refcount = sys.getrefcount(p)
     functionality = build_functionality(qc, p)
-    assert sys.getrefcount(p) == package_refcount + 1
-    mat = functionality.get_matrix(2)
-    arr = np.array(mat, copy=False)
-    assert arr.shape == (4, 4)
-    assert np.allclose(arr, np.array([[1, 1, 0, 0], [0, 0, 1, -1], [0, 0, 1, 1], [1, -1, 0, 0]]) / np.sqrt(2))
-    assert np.allclose(np.array(build_unitary(qc), copy=False), arr)
+    try:
+        assert sys.getrefcount(p) == package_refcount + 1
+        mat = functionality.get_matrix(2)
+        arr = np.array(mat, copy=False)
+        assert arr.shape == (4, 4)
+        assert np.allclose(arr, np.array([[1, 1, 0, 0], [0, 0, 1, -1], [0, 0, 1, 1], [1, -1, 0, 0]]) / np.sqrt(2))
+        assert np.allclose(np.array(build_unitary(qc), copy=False), arr)
+    finally:
+        p.dec_ref_mat(functionality)
 
 
 def test_simulate_simple_circuit() -> None:

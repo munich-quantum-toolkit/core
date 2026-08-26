@@ -39,9 +39,8 @@ and Python tests continue to pass for all retained behavior.
 - [x] (2026-08-26 12:38Z) Review the final diff, complete an independent
   correctness and migration review, and record the downstream DDSIM merge
   prerequisite.
-- [x] (2026-08-26 12:53Z) Internalize recursive construction on the local DDSIM
-      branch `codex/2102-ddsim-recursive` and validate it against this Core
-      tree.
+- [x] (2026-08-26 12:53Z) Internalize recursive construction in
+      munich-quantum-toolkit/ddsim#975 and validate it against this Core tree.
 
 ## Surprises & Discoveries
 
@@ -99,7 +98,7 @@ and Python tests continue to pass for all retained behavior.
 - Decision: Treat the DDSIM migration as a merge prerequisite, not as code in
   this repository. Rationale: the cleanup tracker requires the downstream owner
   to be ready before Core removes the API. After explicit authorization, the
-  migration was implemented on a separate local DDSIM branch; it still must
+  migration was implemented in munich-quantum-toolkit/ddsim#975; it still must
   merge before the Core removal. Date/Author: 2026-08-26 / Codex.
 - Decision: Add `nb::keep_alive<0, 2>()` to the retained Python
   `build_functionality` binding. Rationale: every matrix DD depends on the
@@ -115,9 +114,9 @@ retained-API Python regression. No new abstraction or dependency was needed.
 The complete DD test binary passes 282 tests. The focused Python DD suite passes
 13 tests on each of Python 3.11, 3.12, 3.13, and 3.14. Stub generation and the
 full repository lint session pass. DDSIM now owns and tests recursive
-construction on the local `codex/2102-ddsim-recursive` branch, and its
-production library builds against this Core tree. The DDSIM change must merge
-before this Core branch.
+construction in munich-quantum-toolkit/ddsim#975, and its production library
+builds against this Core tree. The DDSIM pull request must merge before this
+Core pull request.
 
 ## Context and Orientation
 
@@ -235,12 +234,12 @@ A repository search must find none of `generateExponentialState`,
 installed public headers must expose `makeZeroState`, `makeBasisState`,
 `makeGHZState`, `makeWState`, `makeStateFromVector`, and `buildFunctionality`.
 
-Before the Core pull request merges, the DDSIM branch
-`codex/2102-ddsim-recursive` must merge first. It replaces the call to
-`dd::buildFunctionalityRecursive` with a DDSIM-owned private implementation and
-tests sequential-versus-recursive equivalence for empty and one-operation
-circuits, virtual swaps, non-power-of-two operation counts, layouts and output
-permutations, ancillary qubits, garbage qubits, and root reference counts.
+Before the Core pull request merges, munich-quantum-toolkit/ddsim#975 must merge
+first. It replaces the call to `dd::buildFunctionalityRecursive` with a
+DDSIM-owned private implementation and tests sequential-versus-recursive
+equivalence for empty and one-operation circuits, virtual swaps,
+non-power-of-two operation counts, layouts and output permutations, ancillary
+qubits, garbage qubits, and root reference counts.
 
 ## Idempotence and Recovery
 
@@ -274,7 +273,8 @@ Validation completed on 2026-08-26:
     git diff --check
     # Both passed.
 
-DDSIM validation completed from `/Users/simonhofmann/ddsim`:
+DDSIM validation completed from the DDSIM repository root, with
+`MQT_CORE_SOURCE_DIR` set to the MQT Core repository root:
 
     cmake --preset release
     cmake --build build/release --target mqt-ddsim-test
@@ -283,7 +283,7 @@ DDSIM validation completed from `/Users/simonhofmann/ddsim`:
 
     cmake -S . -B build/core-2102 -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DBUILD_MQT_DDSIM_TESTS=OFF -DBUILD_MQT_DDSIM_CLI=OFF \
-      -DFETCHCONTENT_SOURCE_DIR_MQT-CORE=/Users/simonhofmann/mqt-core
+      -DFETCHCONTENT_SOURCE_DIR_MQT-CORE="${MQT_CORE_SOURCE_DIR}"
     cmake --build build/core-2102 --target mqt-ddsim
     # DDSIM built against the Core tree with the recursive API removed.
 
