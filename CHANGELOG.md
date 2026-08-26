@@ -25,9 +25,9 @@ releases may include breaking changes.
   [#1807], [#1808], [#1815], [#1824], [#1869], [#1872], [#1914], [#1925],
   [#1927], [#1935], [#1936], [#1938], [#1975], [#1976], [#2006], [#2014],
   [#2015], [#2017], [#2026], [#2028], [#2054], [#2058], [#2125], [#2136],
-  [#2150], [#2158], [#2210], [#2211]) ([**@burgholzer**], [**@denialhaag**],
-  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
-  [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
+  [#2149], [#2150], [#2158], [#2210], [#2211]) ([**@burgholzer**],
+  [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
+  [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 - ✨ Add decision diagram-based construction, simulation, and sampling for QCO
   programs ([#1915], [#1973]) ([**@simon1hofmann**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
@@ -863,6 +863,7 @@ for previous changelogs._
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
 [#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
 [#2150]: https://github.com/munich-quantum-toolkit/core/pull/2150
+[#2149]: https://github.com/munich-quantum-toolkit/core/pull/2149
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
 [#2141]: https://github.com/munich-quantum-toolkit/core/pull/2141
