@@ -37,8 +37,8 @@ releases may include breaking changes.
 #### Import and export
 
 - ✨ Add Qiskit circuit import and target-aware export to the compiler
-  collection ([#2031], [#2133], [#2140], [#2150], [#2175]) ([**@burgholzer**],
-  [**@simon1hofmann**])
+  collection ([#2031], [#2133], [#2140], [#2150], [#2175], [#2176])
+  ([**@burgholzer**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105])
   ([**@denialhaag**], [**@burgholzer**])
@@ -84,6 +84,10 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Drop support for x86 macOS and stop publishing the respective wheels
+  ([#2259]) ([**@denialhaag**])
+- ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++
+  ([#2259]) ([**@denialhaag**])
 - 💥 Move circuit IR OpenQASM serialization from operation subclasses to
   `OpenQASMSerializer` ([#2249]) ([**@simon1hofmann**])
 - 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
@@ -128,6 +132,15 @@ releases may include breaking changes.
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
   ([**@burgholzer**])
+
+## [3.9.2] - 2026-08-26
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#392)._
+
+### Added
+
+- ✨ Allow C++ and Python QDMI job submissions to omit the shot count, leaving
+  repetition semantics to the program and device ([#2258]) ([**@burgholzer**])
 
 ## [3.9.1] - 2026-08-25
 
@@ -805,7 +818,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[3.9.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.0
 [3.8.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.8.0
@@ -830,6 +844,8 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
+[#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2249]: https://github.com/munich-quantum-toolkit/core/pull/2249
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
@@ -841,6 +857,7 @@ for previous changelogs._
 [#2203]: https://github.com/munich-quantum-toolkit/core/pull/2203
 [#2214]: https://github.com/munich-quantum-toolkit/core/pull/2214
 [#2193]: https://github.com/munich-quantum-toolkit/core/pull/2193
+[#2176]: https://github.com/munich-quantum-toolkit/core/pull/2176
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
 [#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168

@@ -98,7 +98,8 @@ The Python API follows the same distinction: pass `str` to `Device.submit_job`
 for a textual program and `bytes` for an exact binary payload.
 `Job.program_bytes` always returns the unmodified payload, while `Job.program`
 expects a null-terminated UTF-8 text payload and rejects known binary or
-non-text formats.
+non-text formats. The `num_shots` argument is optional for device-defined
+formats that encode their repetition count in the program payload.
 
 Every DDSIM QIR job owns its JIT session, runtime, simulator state,
 random-number generator, and output sink. QIR jobs can therefore execute

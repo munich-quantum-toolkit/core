@@ -355,17 +355,21 @@ when the custom slot is unsupported.)pb");
   device.def(
       "submit_job",
       [](const qdmi::Device& self, const std::string& program,
-         const QDMI_Program_Format format, const size_t numShots,
+         const QDMI_Program_Format format, const std::optional<size_t> numShots,
          const std::optional<qdmi::CustomJobParameter>& custom1,
          const std::optional<qdmi::CustomJobParameter>& custom2,
          const std::optional<qdmi::CustomJobParameter>& custom3,
          const std::optional<qdmi::CustomJobParameter>& custom4,
          const std::optional<qdmi::CustomJobParameter>& custom5) {
-        return self.submitJob(program, format, numShots, custom1, custom2,
-                              custom3, custom4, custom5);
+        if (numShots.has_value()) {
+          return self.submitJob(program, format, *numShots, custom1, custom2,
+                                custom3, custom4, custom5);
+        }
+        return self.submitJob(program, format, custom1, custom2, custom3,
+                              custom4, custom5);
       },
-      "program"_a, "program_format"_a, "num_shots"_a, nb::kw_only(),
-      "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+      "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
+      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
       "custom3"_a = nb::none(), "custom4"_a = nb::none(),
       "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
       "Submits a text job to the device.");
@@ -373,7 +377,7 @@ when the custom slot is unsupported.)pb");
   device.def(
       "submit_job",
       [](const qdmi::Device& self, const nb::bytes& program,
-         const QDMI_Program_Format format, const size_t numShots,
+         const QDMI_Program_Format format, const std::optional<size_t> numShots,
          const std::optional<qdmi::CustomJobParameter>& custom1,
          const std::optional<qdmi::CustomJobParameter>& custom2,
          const std::optional<qdmi::CustomJobParameter>& custom3,
@@ -381,11 +385,15 @@ when the custom slot is unsupported.)pb");
          const std::optional<qdmi::CustomJobParameter>& custom5) {
         const auto bytes = std::span{
             static_cast<const std::byte*>(program.data()), program.size()};
-        return self.submitJob(bytes, format, numShots, custom1, custom2,
-                              custom3, custom4, custom5);
+        if (numShots.has_value()) {
+          return self.submitJob(bytes, format, *numShots, custom1, custom2,
+                                custom3, custom4, custom5);
+        }
+        return self.submitJob(bytes, format, custom1, custom2, custom3, custom4,
+                              custom5);
       },
-      "program"_a, "program_format"_a, "num_shots"_a, nb::kw_only(),
-      "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+      "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
+      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
       "custom3"_a = nb::none(), "custom4"_a = nb::none(),
       "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
       "Submits an exact byte payload to the device.");
