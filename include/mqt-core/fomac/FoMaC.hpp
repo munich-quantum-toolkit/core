@@ -596,6 +596,19 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /**
+   * @brief Submits a textual program without setting a shot count.
+   * @details Repetition semantics are left to the submitted program and device.
+   * @see QDMI_job_submit
+   */
+  [[nodiscard]] Job submitJob(
+      const std::string& program, QDMI_Program_Format format,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
+  /**
    * @brief Submits a binary program.
    * @details The bytes are submitted exactly as provided without appending a
    * null byte.
@@ -606,6 +619,19 @@ public:
   [[nodiscard]] Job submitJob(
       std::span<const std::byte> program, QDMI_Program_Format format,
       size_t numShots,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
+  /**
+   * @brief Submits a binary program without setting a shot count.
+   * @details Repetition semantics are left to the submitted program and device.
+   * @see QDMI_job_submit
+   */
+  [[nodiscard]] Job submitJob(
+      std::span<const std::byte> program, QDMI_Program_Format format,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
       const std::optional<CustomJobParameter>& custom2 = std::nullopt,
       const std::optional<CustomJobParameter>& custom3 = std::nullopt,

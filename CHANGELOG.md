@@ -10,6 +10,15 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+## [3.9.2] - 2026-08-26
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#392)._
+
+### Added
+
+- ✨ Allow C++ and Python QDMI job submissions to omit the shot count, leaving
+  repetition semantics to the program and device ([#2258]) ([**@burgholzer**])
+
 ## [3.9.1] - 2026-08-25
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#391)._
@@ -686,7 +695,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[3.9.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.0
 [3.8.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.8.0
@@ -711,6 +721,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
