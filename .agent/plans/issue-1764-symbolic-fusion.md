@@ -98,6 +98,17 @@ operations that do not expose named SSA angle parameters remain run boundaries.
 - [x] (2026-08-25 15:32Z) Passed 236 decomposition tests, 122 optimization
       tests, 24 target-synthesis tests, 133 compiler tests, `git diff --check`,
       `uvx nox -s lint`, and local Clang-Tidy on every changed translation unit.
+- [x] (2026-08-26 22:02Z) Addressed final review feedback: supported symbolic
+      singleton gates now use closed-form U/ZYZ/ZXZ/ZSXX lowering, quaternion
+      accumulation is streamed in the conversion loop, and the unused
+      `skip-controlled-bodies` pass option is gone.
+- [x] (2026-08-26 22:02Z) Added a 28-case direct-lowering regression that checks
+      exact gate counts, exact matrices including global phase, and the absence
+      of runtime trigonometric operations. Passed 237 decomposition tests, 122
+      optimization tests, 24 target-synthesis tests, and 133 compiler tests.
+- [x] (2026-08-26 22:17Z) Rebased onto current `origin/main` at `f4d8cdb21` and
+      passed 237 decomposition tests, 193 optimization tests, 24
+      target-synthesis tests, 135 compiler tests, and the repository lint suite.
 
 ## Surprises & Discoveries
 
@@ -111,20 +122,21 @@ operations that do not expose named SSA angle parameters remain run boundaries.
   return a concrete `Matrix2x2`. A dynamic gate therefore ends the scan.
   Evidence: `getRunMemberMatrix` returns `std::nullopt` when `getUnitaryMatrix`
   cannot fold every parameter.
-- Observation: A dynamic `U(theta, phi, lambda)` has closed-form exact
-  decompositions for the `zyz`, `zxz`, and `zsxx` bases. The general `zsxx` form
-  always has five gates because runtime values cannot use the static near-zero,
-  half-pi, or pi shortcuts.
+- Observation: RX, RY, RZ, P, R, U2, and U have closed-form exact decompositions
+  for the U, ZYZ, ZXZ, and ZSXX bases. Direct singleton lowering can therefore
+  preserve native gates and use structural shortcuts such as one-SX U2-to-ZSXX
+  without emitting trigonometric operations.
 - Observation: The normal target compilation pipeline already runs
   `merge-single-qubit-rotation-gates`. Parameterized layers therefore reach
-  target-native synthesis as a dynamic `qco.u`, which that pass rejects because
-  no compile-time matrix is available. Scheduling the symbolic fuser after the
-  post-mapping cleanup converts that U to the target basis before the rejecting
-  preflight.
-- Observation: Target conformance recognizes a one-control X or Z structurally
-  as CX or CZ. Rewriting a gate inside `qco.ctrl` would hide that structure, so
-  target compilation must run the fuser with controlled bodies disabled while
-  the standalone pass retains its existing default behavior.
+  target-native synthesis as a dynamic `qco.u`. Planning supported named
+  parameterized gates directly in target-native synthesis preserves its
+  no-partial-rewrite guarantee and makes a separate post-mapping fuser
+  unnecessary.
+- Observation: Target-native synthesis already treats modifier bodies as opaque.
+  The later `skip-controlled-bodies` pass option had no in-tree caller, and
+  disabling the dynamic pattern also disabled useful top-level canonicalization.
+  Removing that option restores one consistent standalone fuser behavior without
+  changing the pre-existing constant-pattern API.
 - Observation: `CompilerTarget::resolveSynthesisBasis` selects XZX for RX/RZ
   targets and never selects ZXZ. The dynamic path must therefore emit XZX
   directly even though both bases use RX and RZ gates. Direct emission also
@@ -222,6 +234,16 @@ operations that do not expose named SSA angle parameters remain run boundaries.
   rewrite over the whole module. The compiler pipeline stays explicit, hidden
   modifier bodies remain untouched, operation pointers stay stable, and no IR is
   changed until preflight succeeds. Date/Author: 2026-08-25, Codex.
+- Decision: Lower symbolic singletons directly for U, ZYZ, ZXZ, and ZSXX, and
+  retain quaternion/Euler extraction for composed runs and transformed XZX, XYX,
+  and R bases. Rationale: named-gate identities avoid unnecessary trigonometric
+  IR while the general algorithm remains the single fallback for cases that need
+  it. Date/Author: 2026-08-26, Codex.
+- Decision: Remove the newly introduced `skip-controlled-bodies` option and
+  stream quaternion accumulation during gate conversion. Rationale: neither
+  abstraction has a required caller or rollback benefit; removing them makes the
+  implementation smaller without changing supported behavior. Date/Author:
+  2026-08-26, Codex.
 
 ## Outcomes & Retrospective
 
@@ -230,18 +252,18 @@ reuses the existing `Val<Value>` quaternion path to compose profitable named
 dynamic runs and emits exact U, ZYZ, ZXZ, XZX, XYX, ZSXX, or R sequences. A
 table-driven regression checks all seven primitive parameterized one-qubit gates
 in all seven bases. It proves SSA dependence before binding and exact matrices
-after binding. A standalone U regression covers both Euler gimbal branches in
-the transformed bases. Target compilation now invokes the pass for every basis
-it can resolve, and the end-to-end regression covers U, ZSXX, XZX, XYX, ZYZ, and
-R targets. The complete target flow now first performs target-independent
-one-qubit merging to U and two-qubit fusion to U/CZ, then maps, and finally runs
-one atomic target-native synthesis pass. That pass plans both constant matrices
-and supported runtime one-qubit operations before rewriting, and the shared
-composer emits the final runtime basis directly. Constant-only behavior,
-controlled gate recognition, and the existing dynamic merge pass remain green.
-Dynamic `pow`, arbitrary dynamic unitary shells, and Qiskit parameter-vector
-import remain separate work because they do not expose the named angle operands
-required by the symbolic composer.
+after binding. A second 28-case regression proves that supported singleton
+lowering to U, ZYZ, ZXZ, and ZSXX uses direct parameter identities rather than
+runtime quaternion/Euler extraction. A standalone U regression covers both Euler
+gimbal branches in the transformed bases. The complete target flow now first
+performs target-independent one-qubit merging to U and two-qubit fusion to U/CZ,
+then maps, and finally runs one atomic target-native synthesis pass. That pass
+plans both constant matrices and supported runtime one-qubit operations before
+rewriting, and the shared composer emits the final runtime basis directly.
+Constant-only behavior, controlled gate recognition, and the existing dynamic
+merge pass remain green. Dynamic `pow`, arbitrary dynamic unitary shells, and
+Qiskit parameter-vector import remain separate work because they do not expose
+the named angle operands required by the symbolic composer.
 
 ## Context and Orientation
 
@@ -268,8 +290,9 @@ operations for dynamic parameters. The pass emits one `qco.u` plus a
 constant-matrix Euler emitter.
 `mlir/include/mlir/Dialect/QCO/Transforms/Decomposition/Euler.h` declares its
 shared API. The dynamic path uses only the small pattern-population interface
-declared there. Its basis emission stays inside the quaternion composer and does
-not expose intermediate synthesis results as a public contract.
+and singleton synthesis entry point declared there. Basis emission stays inside
+the shared implementation and does not expose intermediate synthesis results as
+a public contract.
 
 `mlir/unittests/Dialect/QCO/Transforms/Decomposition/test_euler_decomposition.cpp`
 owns tests for the fuser. Dynamic dependency and binding helpers can follow the
@@ -400,10 +423,11 @@ The existing dynamic merger computes:
 
 Final test evidence:
 
-    decomposition: 236 passed
-    optimizations: 122 passed
-    compiler: 132 passed
-    lint: passed
+    decomposition: 237 passed
+    optimizations: 193 passed
+    target synthesis: 24 passed
+    compiler: 135 passed
+    lint, formatting, and diff checks: passed
 
 Retain the clamp around `acos`, the pure-Z gimbal path, the sanitized
 `atan2(0,0)` input, and the Euler wrap phase when reusing this code.

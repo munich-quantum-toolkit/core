@@ -24,6 +24,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -416,6 +417,12 @@ TEST_F(TargetSynthesisTest,
   EXPECT_EQ(countOps<RZOp>(*module), 0U);
   EXPECT_EQ(countOps<RYOp>(*module), 0U);
   EXPECT_EQ(countOps<UOp>(*module), 2U);
+  EXPECT_EQ(countOps<mlir::math::SinOp>(*module), 0U);
+  EXPECT_EQ(countOps<mlir::math::CosOp>(*module), 0U);
+  EXPECT_EQ(countOps<mlir::math::AbsFOp>(*module), 0U);
+  EXPECT_EQ(countOps<mlir::math::FloorOp>(*module), 0U);
+  EXPECT_EQ(countOps<mlir::math::AcosOp>(*module), 0U);
+  EXPECT_EQ(countOps<mlir::math::Atan2Op>(*module), 0U);
   ASSERT_TRUE(mlir::succeeded(
       runPass(*module, mlir::qco::createVerifyTargetConformance(target))));
 }

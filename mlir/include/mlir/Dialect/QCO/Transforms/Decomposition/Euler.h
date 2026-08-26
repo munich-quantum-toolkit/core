@@ -118,7 +118,9 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
 [[nodiscard]] bool canSynthesizeParameterizedUnitary1Q(Operation* op);
 
 /**
- * @brief Replace one supported runtime-parameterized operation in @p basis.
+ * @brief Synthesizes one supported runtime-parameterized operation in @p basis.
+ *
+ * Operations that already belong to @p basis are left unchanged.
  *
  * @pre `canSynthesizeParameterizedUnitary1Q(op)` is true.
  */
@@ -141,12 +143,8 @@ void populateFuseSingleQubitUnitaryRunsPatterns(
  * single-qubit runs for synthesis in @p basis.
  *
  * The patterns emit the requested target basis directly.
- *
- * @param skipControlledBodies When set, single-qubit gates nested in `qco.ctrl`
- * bodies are left untouched.
  */
 void populateParameterizedSingleQubitRunCompositionPatterns(
-    RewritePatternSet& patterns, SingleQubitBasis basis,
-    bool skipControlledBodies = false);
+    RewritePatternSet& patterns, SingleQubitBasis basis);
 
 } // namespace mlir::qco::decomposition

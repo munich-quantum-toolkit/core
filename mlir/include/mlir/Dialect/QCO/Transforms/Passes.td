@@ -87,11 +87,9 @@ def FuseSingleQubitUnitaryRuns
     and emits conservative runtime sequences in the requested basis. Dynamic
     `pow` and arbitrary dynamic unitaries remain unchanged.
   }];
-  let options = [Option<"basis", "basis", "std::string", "\"zyz\"",
-                        "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r).">,
-                 Option<"skipControlledBodies", "skip-controlled-bodies",
-                        "bool", /*default=*/"false",
-                        "Leave gates nested in qco.ctrl unchanged.">];
+  let options = [Option<
+      "basis", "basis", "std::string", "\"zyz\"",
+      "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r).">];
 }
 
 //===----------------------------------------------------------------------===//

@@ -204,11 +204,11 @@ protected:
 
     RewritePatternSet compositionPatterns(&getContext());
     decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
-        compositionPatterns, *parsed, skipControlledBodies);
+        compositionPatterns, *parsed);
 
     RewritePatternSet patterns(&getContext());
     decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
-        patterns, *parsed, skipControlledBodies);
+        patterns, *parsed, /*skipControlledBodies=*/false);
 
     if (failed(
             applyPatternsGreedily(moduleOp, std::move(compositionPatterns))) ||

@@ -247,6 +247,13 @@ template <typename T> struct ScalarConsts {
   Val<T> pi;
 };
 
+struct RuntimeEulerAngles {
+  Val<Value> theta;
+  Val<Value> phi;
+  Val<Value> lambda;
+  Val<Value> phase;
+};
+
 } // namespace
 
 /**
@@ -651,6 +658,223 @@ template <typename T> static Quat<T> hadamardConjugate(const Quat<T>& q) {
   return {.w = q.w, .x = q.z, .y = -q.y, .z = q.x};
 }
 
+static bool isConstantAngle(const Val<Value> angle,
+                            const double expected = 0.0) {
+  const auto value = mqt::valueToConstantDouble(angle.v);
+  return value &&
+         std::abs(*value - expected) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
+}
+
+template <typename RotationOp>
+static Value emitRotationIfNeeded(RewriterBase& rewriter, const Location loc,
+                                  Value qubit, const Val<Value> angle) {
+  if (isConstantAngle(angle)) {
+    return qubit;
+  }
+  return RotationOp::create(rewriter, loc, qubit, angle.v).getQubitOut();
+}
+
+static Value emitRIfNeeded(RewriterBase& rewriter, const Location loc,
+                           Value qubit, const Val<Value> theta,
+                           const Val<Value> phi) {
+  if (isConstantAngle(theta)) {
+    return qubit;
+  }
+  return ROp::create(rewriter, loc, qubit, theta.v, phi.v).getQubitOut();
+}
+
+static Val<Value> sumAngles(const Val<Value> lhs, const Val<Value> rhs) {
+  if (isConstantAngle(lhs)) {
+    return rhs;
+  }
+  if (isConstantAngle(rhs)) {
+    return lhs;
+  }
+  return lhs + rhs;
+}
+
+static void emitParameterizedGPhaseIfNeeded(RewriterBase& rewriter,
+                                            const Location loc,
+                                            const Val<Value> phase) {
+  if (!isConstantAngle(phase)) {
+    GPhaseOp::create(rewriter, loc, phase.v);
+  }
+}
+
+static Value emitRuntimeEulerAngles(RewriterBase& rewriter, const Location loc,
+                                    Value qubit, RuntimeEulerAngles angles,
+                                    const decomposition::SingleQubitBasis basis,
+                                    const ScalarConsts<Value>& consts) {
+  auto [theta, phi, lambda, phase] = angles;
+
+  const bool usesZYZAngles = basis == decomposition::SingleQubitBasis::ZYZ ||
+                             basis == decomposition::SingleQubitBasis::ZXZ ||
+                             basis == decomposition::SingleQubitBasis::ZSXX;
+  if (usesZYZAngles && isConstantAngle(theta)) {
+    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
+                                       sumAngles(phi, lambda));
+    emitParameterizedGPhaseIfNeeded(rewriter, loc, phase);
+    return qubit;
+  }
+
+  switch (basis) {
+  case decomposition::SingleQubitBasis::ZYZ:
+    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, lambda);
+    qubit = emitRotationIfNeeded<RYOp>(rewriter, loc, qubit, theta);
+    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, phi);
+    break;
+  case decomposition::SingleQubitBasis::ZXZ:
+    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
+                                       lambda - (consts.pi / consts.two));
+    qubit = emitRotationIfNeeded<RXOp>(rewriter, loc, qubit, theta);
+    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
+                                       phi + (consts.pi / consts.two));
+    break;
+  case decomposition::SingleQubitBasis::XZX:
+    qubit = emitRotationIfNeeded<RXOp>(rewriter, loc, qubit, lambda);
+    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, theta);
+    qubit = emitRotationIfNeeded<RXOp>(rewriter, loc, qubit, phi);
+    break;
+  case decomposition::SingleQubitBasis::XYX:
+    qubit = emitRotationIfNeeded<RXOp>(rewriter, loc, qubit, lambda);
+    qubit = emitRotationIfNeeded<RYOp>(rewriter, loc, qubit, theta);
+    qubit = emitRotationIfNeeded<RXOp>(rewriter, loc, qubit, phi);
+    break;
+  case decomposition::SingleQubitBasis::U:
+    phase = phase - (sumAngles(phi, lambda) / consts.two);
+    qubit = UOp::create(rewriter, loc, qubit, theta.v, phi.v, lambda.v)
+                .getQubitOut();
+    break;
+  case decomposition::SingleQubitBasis::ZSXX:
+    if (isConstantAngle(theta, std::numbers::pi / 2.0)) {
+      const auto halfPi =
+          Val<Value>::constant(rewriter, loc, std::numbers::pi / 2.0);
+      const auto quarterPi =
+          Val<Value>::constant(rewriter, loc, std::numbers::pi / 4.0);
+      qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, lambda - halfPi);
+      qubit = SXOp::create(rewriter, loc, qubit).getQubitOut();
+      qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, phi + halfPi);
+      phase = phase - quarterPi;
+      break;
+    }
+    phase = phase + (consts.pi / consts.two);
+    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, lambda);
+    qubit = SXOp::create(rewriter, loc, qubit).getQubitOut();
+    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, theta + consts.pi);
+    qubit = SXOp::create(rewriter, loc, qubit).getQubitOut();
+    qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, phi + consts.pi);
+    break;
+  case decomposition::SingleQubitBasis::R:
+    qubit = emitRIfNeeded(rewriter, loc, qubit, lambda, consts.zero);
+    qubit = emitRIfNeeded(rewriter, loc, qubit, theta, consts.pi / consts.two);
+    qubit = emitRIfNeeded(rewriter, loc, qubit, phi, consts.zero);
+    break;
+  }
+  emitParameterizedGPhaseIfNeeded(rewriter, loc, phase);
+  return qubit;
+}
+
+static RuntimeEulerAngles
+directZYZAnglesFromGate(UnitaryOpInterface op, RewriterBase& rewriter,
+                        const ScalarConsts<Value>& consts) {
+  const Location loc = op->getLoc();
+  auto parameter = [&](const unsigned index) {
+    return Val<Value>{
+        .v = op.getParameter(index), .rewriter = &rewriter, .loc = loc};
+  };
+  const auto halfPi =
+      Val<Value>::constant(rewriter, loc, std::numbers::pi / 2.0);
+
+  if (const auto axis = getRotationAxis(op.getOperation())) {
+    const auto angle = parameter(0);
+    const auto phase =
+        isa<POp>(op.getOperation()) ? angle / consts.two : consts.zero;
+    switch (*axis) {
+    case RotationAxis::X:
+      return {.theta = angle, .phi = -halfPi, .lambda = halfPi, .phase = phase};
+    case RotationAxis::Y:
+      return {.theta = angle,
+              .phi = consts.zero,
+              .lambda = consts.zero,
+              .phase = phase};
+    case RotationAxis::Z:
+      return {.theta = consts.zero,
+              .phi = consts.zero,
+              .lambda = angle,
+              .phase = phase};
+    }
+  }
+
+  if (isa<ROp>(op.getOperation())) {
+    const auto theta = parameter(0);
+    const auto phi = parameter(1);
+    return {.theta = theta,
+            .phi = phi - halfPi,
+            .lambda = halfPi - phi,
+            .phase = consts.zero};
+  }
+  if (isa<U2Op>(op.getOperation())) {
+    const auto phi = parameter(0);
+    const auto lambda = parameter(1);
+    return {.theta = halfPi,
+            .phi = phi,
+            .lambda = lambda,
+            .phase = sumAngles(phi, lambda) / consts.two};
+  }
+
+  const auto theta = parameter(0);
+  const auto phi = parameter(1);
+  const auto lambda = parameter(2);
+  return {.theta = theta,
+          .phi = phi,
+          .lambda = lambda,
+          .phase = sumAngles(phi, lambda) / consts.two};
+}
+
+static Value emitDirectU(RewriterBase& rewriter, UnitaryOpInterface op,
+                         const ScalarConsts<Value>& consts) {
+  const Location loc = op->getLoc();
+  Value qubit = op.getInputQubit(0);
+  auto parameter = [&](const unsigned index) {
+    return Val<Value>{
+        .v = op.getParameter(index), .rewriter = &rewriter, .loc = loc};
+  };
+  const auto halfPi =
+      Val<Value>::constant(rewriter, loc, std::numbers::pi / 2.0);
+
+  if (isa<U2Op>(op.getOperation())) {
+    return UOp::create(rewriter, loc, qubit, halfPi.v, parameter(0).v,
+                       parameter(1).v)
+        .getQubitOut();
+  }
+  if (isa<RXOp>(op.getOperation())) {
+    return UOp::create(rewriter, loc, qubit, parameter(0).v, (-halfPi).v,
+                       halfPi.v)
+        .getQubitOut();
+  }
+  if (isa<RYOp>(op.getOperation())) {
+    return UOp::create(rewriter, loc, qubit, parameter(0).v, consts.zero.v,
+                       consts.zero.v)
+        .getQubitOut();
+  }
+  if (isa<RZOp, POp>(op.getOperation())) {
+    const auto angle = parameter(0);
+    qubit =
+        UOp::create(rewriter, loc, qubit, consts.zero.v, consts.zero.v, angle.v)
+            .getQubitOut();
+    if (isa<RZOp>(op.getOperation())) {
+      emitParameterizedGPhaseIfNeeded(rewriter, loc, -(angle / consts.two));
+    }
+    return qubit;
+  }
+
+  const auto theta = parameter(0);
+  const auto phi = parameter(1);
+  return UOp::create(rewriter, loc, qubit, theta.v, (phi - halfPi).v,
+                     (halfPi - phi).v)
+      .getQubitOut();
+}
+
 static bool isMergeable(Operation* op) {
   return decomposition::canSynthesizeParameterizedUnitary1Q(op) ||
          isa<XOp, YOp, ZOp, HOp, SOp, SdgOp, TOp, TdgOp, SXOp, SXdgOp, IdOp>(
@@ -671,13 +895,10 @@ struct MergeSingleQubitRotationGatesPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   explicit MergeSingleQubitRotationGatesPattern(
       MLIRContext* context,
-      std::optional<decomposition::SingleQubitBasis> fusionBasis = std::nullopt,
-      const bool skipControlledBodies = false)
-      : OpInterfaceRewritePattern(context), fusionBasis(fusionBasis),
-        skipControlledBodies(skipControlledBodies) {}
+      std::optional<decomposition::SingleQubitBasis> fusionBasis = std::nullopt)
+      : OpInterfaceRewritePattern(context), fusionBasis(fusionBasis) {}
 
   std::optional<decomposition::SingleQubitBasis> fusionBasis;
-  bool skipControlledBodies;
 
   /**
    * @brief Checks if this op is the start of a mergeable chain.
@@ -833,8 +1054,7 @@ struct MergeSingleQubitRotationGatesPattern final
     const Location loc = chain.front()->getLoc();
     const auto consts = makeConsts<Value>(rewriter, loc);
 
-    SmallVector<Quat<Value>, 4> quats;
-    quats.reserve(chain.size());
+    std::optional<Quat<Value>> qAccum;
     Val<Value> phaseAccum = consts.zero;
     for (UnitaryOpInterface chainOp : chain) {
       auto qi = quaternionFromGate<Value>(chainOp, consts, rewriter);
@@ -845,13 +1065,8 @@ struct MergeSingleQubitRotationGatesPattern final
       if (failed(phase)) {
         return failure();
       }
-      quats.push_back(*qi);
+      qAccum = qAccum ? hamiltonProduct(*qi, *qAccum) : *qi;
       phaseAccum = phaseAccum + *phase;
-    }
-
-    Quat<Value> qAccum = quats.front();
-    for (const Quat<Value>& qi : llvm::drop_begin(quats)) {
-      qAccum = hamiltonProduct(qi, qAccum);
     }
 
     for (auto chainOp : llvm::drop_begin(chain)) {
@@ -863,8 +1078,8 @@ struct MergeSingleQubitRotationGatesPattern final
                              basis == decomposition::SingleQubitBasis::XYX ||
                              basis == decomposition::SingleQubitBasis::R;
     auto [theta, phi, lambda, eulerPhase] =
-        transformed ? anglesFromQuaternion(hadamardConjugate(qAccum), consts)
-                    : anglesFromQuaternion(qAccum, consts);
+        transformed ? anglesFromQuaternion(hadamardConjugate(*qAccum), consts)
+                    : anglesFromQuaternion(*qAccum, consts);
     if (basis == decomposition::SingleQubitBasis::XZX) {
       phi = phi + (consts.pi / consts.two);
       lambda = lambda - (consts.pi / consts.two);
@@ -874,59 +1089,12 @@ struct MergeSingleQubitRotationGatesPattern final
       lambda = lambda + consts.pi;
       eulerPhase = eulerPhase + consts.pi;
     }
-    Val<Value> phaseCorrection = phaseAccum + eulerPhase;
-    Value qubit = chain.front().getInputQubit(0);
-    switch (basis) {
-    case decomposition::SingleQubitBasis::ZYZ:
-      qubit = RZOp::create(rewriter, loc, qubit, lambda.v).getQubitOut();
-      qubit = RYOp::create(rewriter, loc, qubit, theta.v).getQubitOut();
-      qubit = RZOp::create(rewriter, loc, qubit, phi.v).getQubitOut();
-      break;
-    case decomposition::SingleQubitBasis::ZXZ:
-      qubit = RZOp::create(rewriter, loc, qubit,
-                           (lambda - (consts.pi / consts.two)).v)
-                  .getQubitOut();
-      qubit = RXOp::create(rewriter, loc, qubit, theta.v).getQubitOut();
-      qubit =
-          RZOp::create(rewriter, loc, qubit, (phi + (consts.pi / consts.two)).v)
-              .getQubitOut();
-      break;
-    case decomposition::SingleQubitBasis::XZX:
-      qubit = RXOp::create(rewriter, loc, qubit, lambda.v).getQubitOut();
-      qubit = RZOp::create(rewriter, loc, qubit, theta.v).getQubitOut();
-      qubit = RXOp::create(rewriter, loc, qubit, phi.v).getQubitOut();
-      break;
-    case decomposition::SingleQubitBasis::XYX:
-      qubit = RXOp::create(rewriter, loc, qubit, lambda.v).getQubitOut();
-      qubit = RYOp::create(rewriter, loc, qubit, theta.v).getQubitOut();
-      qubit = RXOp::create(rewriter, loc, qubit, phi.v).getQubitOut();
-      break;
-    case decomposition::SingleQubitBasis::U:
-      phaseCorrection = phaseCorrection - ((phi + lambda) / consts.two);
-      qubit = UOp::create(rewriter, loc, qubit, theta.v, phi.v, lambda.v)
-                  .getQubitOut();
-      break;
-    case decomposition::SingleQubitBasis::ZSXX:
-      phaseCorrection = phaseCorrection + (consts.pi / consts.two);
-      qubit = RZOp::create(rewriter, loc, qubit, lambda.v).getQubitOut();
-      qubit = SXOp::create(rewriter, loc, qubit).getQubitOut();
-      qubit = RZOp::create(rewriter, loc, qubit, (theta + consts.pi).v)
-                  .getQubitOut();
-      qubit = SXOp::create(rewriter, loc, qubit).getQubitOut();
-      qubit =
-          RZOp::create(rewriter, loc, qubit, (phi + consts.pi).v).getQubitOut();
-      break;
-    case decomposition::SingleQubitBasis::R:
-      qubit = ROp::create(rewriter, loc, qubit, lambda.v, consts.zero.v)
-                  .getQubitOut();
-      qubit =
-          ROp::create(rewriter, loc, qubit, theta.v, (consts.pi / consts.two).v)
-              .getQubitOut();
-      qubit =
-          ROp::create(rewriter, loc, qubit, phi.v, consts.zero.v).getQubitOut();
-      break;
-    }
-    GPhaseOp::create(rewriter, loc, phaseCorrection.v);
+    const RuntimeEulerAngles angles{.theta = theta,
+                                    .phi = phi,
+                                    .lambda = lambda,
+                                    .phase = phaseAccum + eulerPhase};
+    Value qubit = emitRuntimeEulerAngles(
+        rewriter, loc, chain.front().getInputQubit(0), angles, basis, consts);
     rewriter.replaceOp(chain.front(), qubit);
     return success();
   }
@@ -941,10 +1109,6 @@ struct MergeSingleQubitRotationGatesPattern final
    */
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
-    if (skipControlledBodies &&
-        (op.getOperation()->getParentOfType<CtrlOp>() != nullptr)) {
-      return failure();
-    }
     if (!isChainStart(op)) {
       return failure();
     }
@@ -1006,8 +1170,30 @@ void decomposition::synthesizeParameterizedUnitary1Q(
     RewriterBase& rewriter, Operation* op, const SingleQubitBasis basis) {
   assert(canSynthesizeParameterizedUnitary1Q(op) &&
          "operation must support parameterized one-qubit synthesis");
-  SmallVector<UnitaryOpInterface, 1> chain{cast<UnitaryOpInterface>(op)};
+  if (isSingleQubitBasisGate(op, basis)) {
+    return;
+  }
+
+  auto unitary = cast<UnitaryOpInterface>(op);
   rewriter.setInsertionPointAfter(op);
+  const bool usesDirectZYZAngles = basis == SingleQubitBasis::ZYZ ||
+                                   basis == SingleQubitBasis::ZXZ ||
+                                   basis == SingleQubitBasis::ZSXX;
+  if (basis == SingleQubitBasis::U || usesDirectZYZAngles) {
+    const auto consts = makeConsts<Value>(rewriter, op->getLoc());
+    Value qubit;
+    if (basis == SingleQubitBasis::U) {
+      qubit = emitDirectU(rewriter, unitary, consts);
+    } else {
+      qubit = emitRuntimeEulerAngles(
+          rewriter, op->getLoc(), unitary.getInputQubit(0),
+          directZYZAnglesFromGate(unitary, rewriter, consts), basis, consts);
+    }
+    rewriter.replaceOp(op, qubit);
+    return;
+  }
+
+  SmallVector<UnitaryOpInterface, 1> chain{unitary};
   [[maybe_unused]] const auto result =
       MergeSingleQubitRotationGatesPattern::mergeDynamicChain(chain, rewriter,
                                                               basis);
@@ -1019,16 +1205,13 @@ void decomposition::synthesizeParameterizedUnitary1Q(
 namespace mlir::qco::decomposition {
 
 void populateParameterizedSingleQubitRunCompositionPatterns(
-    RewritePatternSet& patterns, const SingleQubitBasis basis,
-    const bool skipControlledBodies) {
-  if (!skipControlledBodies) {
-    RXOp::getCanonicalizationPatterns(patterns, patterns.getContext());
-    RYOp::getCanonicalizationPatterns(patterns, patterns.getContext());
-    RZOp::getCanonicalizationPatterns(patterns, patterns.getContext());
-    POp::getCanonicalizationPatterns(patterns, patterns.getContext());
-  }
-  patterns.add<MergeSingleQubitRotationGatesPattern>(
-      patterns.getContext(), basis, skipControlledBodies);
+    RewritePatternSet& patterns, const SingleQubitBasis basis) {
+  RXOp::getCanonicalizationPatterns(patterns, patterns.getContext());
+  RYOp::getCanonicalizationPatterns(patterns, patterns.getContext());
+  RZOp::getCanonicalizationPatterns(patterns, patterns.getContext());
+  POp::getCanonicalizationPatterns(patterns, patterns.getContext());
+  patterns.add<MergeSingleQubitRotationGatesPattern>(patterns.getContext(),
+                                                     basis);
 }
 
 } // namespace mlir::qco::decomposition
