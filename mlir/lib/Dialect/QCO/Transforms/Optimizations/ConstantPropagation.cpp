@@ -157,94 +157,89 @@ private:
     return success();
   }
 
-  void visitMeasureOp(qco::MeasureOp op, const HybridStateSet& input,
+  void visitMeasureOp(MeasureOp op, const HybridStateSet& input,
                       ArrayRef<HybridStateLattice*> results) {
-    HybridStateSet output;
-    output.states.clear();
-
-    Value inQubit = op.getOperand();
-    Value outQubit = op.getResult(0);
-    Value outClassical = op.getResult(1);
-
-    for (const HybridState& state : input.states) {
-      auto successors =
-          state.quantumState.measure(inQubit, outQubit, op.getContext());
-      if (successors.empty()) {
-        HybridState next = state;
-        next.quantumState.markTop(inQubit);
-        output.addState(std::move(next));
-        continue;
-      }
-
-      const QuantumComponent* component =
-          state.quantumState.getComponent(inQubit);
-      double prob0 = 0.0;
-      double prob1 = 0.0;
-      if (component && !component->isTop) {
-        auto idx = component->indexOf(inQubit);
-        if (idx) {
-          for (const auto& it : component->amplitudes) {
-            double p = std::norm(it.second);
-            if (((it.first >> *idx) & 1ULL) == 0ULL)
-              prob0 += p;
-            else
-              prob1 += p;
-          }
-        }
-      }
-
-      for (auto& succ : successors) {
-        HybridState next = state;
-        next.quantumState = std::move(succ.first);
-        next.setClassical(outClassical, succ.second);
-        if (isZeroAttribute(succ.second))
-          next.probability *= prob0;
-        else if (isTrueAttribute(succ.second))
-          next.probability *= prob1;
-        output.addState(std::move(next));
-      }
-    }
-
-    output.enforceMaxStates(maxTrackedStates);
-    setAllResults(results, output);
+    // HybridStateSet output;
+    // output.states.clear();
+    //
+    // Value inQubit = op.getOperand();
+    // Value outQubit = op.getResult(0);
+    // Value outClassical = op.getResult(1);
+    //
+    // for (const HybridState& state : input.states) {
+    //   auto successors =
+    //       state.quantumState.measure(inQubit, outQubit, op.getContext());
+    //   if (successors.empty()) {
+    //     HybridState next = state;
+    //     next.quantumState.markTop(inQubit);
+    //     output.addState(std::move(next));
+    //     continue;
+    //   }
+    //
+    //   const QuantumComponent* component =
+    //       state.quantumState.getComponent(inQubit);
+    //   double prob0 = 0.0;
+    //   double prob1 = 0.0;
+    //   if (component && !component->isTop) {
+    //     auto idx = component->indexOf(inQubit);
+    //     if (idx) {
+    //       for (const auto& it : component->amplitudes) {
+    //         double p = std::norm(it.second);
+    //         if (((it.first >> *idx) & 1ULL) == 0ULL)
+    //           prob0 += p;
+    //         else
+    //           prob1 += p;
+    //       }
+    //     }
+    //   }
+    //
+    //   for (auto& succ : successors) {
+    //     HybridState next = state;
+    //     next.quantumState = std::move(succ.first);
+    //     next.setClassical(outClassical, succ.second);
+    //     if (isZeroAttribute(succ.second))
+    //       next.probability *= prob0;
+    //     else if (isTrueAttribute(succ.second))
+    //       next.probability *= prob1;
+    //     output.addState(std::move(next));
+    //   }
+    // }
+    //
+    // output.enforceMaxStates(maxTrackedStates);
+    // setAllResults(results, output);
   }
 
-  void visitCtrlOp(qco::CtrlOp op, const HybridStateSet& input,
+  void visitCtrlOp(CtrlOp op, const HybridStateSet& input,
                    ArrayRef<HybridStateLattice*> results) {
     // Forward target inputs conservatively.
-    HybridStateSet output;
-    output.states = input.states;
-    output.isTop = input.isTop;
-
-    unsigned numResults = op->getNumResults();
-    unsigned numOperands = op->getNumOperands();
-    unsigned numControls = numOperands - numResults;
-    (void)numControls;
-
-    for (HybridState& state : output.states) {
-      for (unsigned i = 0; i < numResults; ++i) {
-        Value in = op->getOperand(numOperands - numResults + i);
-        Value out = op->getResult(i);
-        state.quantumState.forwardQubit(in, out);
-      }
-    }
-
-    output.enforceMaxStates(maxTrackedStates);
-    setAllResults(results, output);
+    // HybridStateSet output;
+    // output.states = input.states;
+    // output.isTop = input.isTop;
+    //
+    // unsigned numResults = op->getNumResults();
+    // unsigned numOperands = op->getNumOperands();
+    // unsigned numControls = numOperands - numResults;
+    // (void)numControls;
+    //
+    // for (HybridState& state : output.states) {
+    //   for (unsigned i = 0; i < numResults; ++i) {
+    //     Value in = op->getOperand(numOperands - numResults + i);
+    //     Value out = op->getResult(i);
+    //     state.quantumState.forwardQubit(in, out);
+    //   }
+    // }
+    //
+    // output.enforceMaxStates(maxTrackedStates);
+    // setAllResults(results, output);
   }
 
   void visitFallback(Operation* op, const HybridStateSet& input,
                      ArrayRef<HybridStateLattice*> results) {
-    HybridStateSet output = input;
-    for (HybridState& state : output.states) {
-      for (Value res : op->getResults()) {
-        if (isQubitType(res.getType()))
-          state.quantumState.initializeQubit(res),
-              state.quantumState.markTop(res);
-      }
+    for (auto [resLattice, resValue] :
+         llvm::zip(results, op->getResults())) {
+      const auto newLattice = HybridStateLattice(resValue, input);
+      propagateIfChanged(resLattice, resLattice->join(newLattice));
     }
-    output.enforceMaxStates(maxTrackedStates);
-    setAllResults(results, output);
   }
 };
 
