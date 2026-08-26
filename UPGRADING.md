@@ -6,6 +6,11 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### macOS support
+
+MQT Core no longer supports x86-64 macOS. Use Apple silicon with macOS 13.3 or
+newer.
+
 ### Removal of CoreAlgorithms
 
 MQT Core no longer installs `MQT::CoreAlgorithms` or the headers below
