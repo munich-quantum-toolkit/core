@@ -58,7 +58,10 @@ TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
     module {
       func.func @qc(%theta: f64 {mqt.input_name = "theta[2]",
           mqt.input_group = {identity = "group-id", name = "theta",
-                             index = 2 : i64, size = 4 : i64}}) {
+                             index = 2 : i64, size = 4 : i64}},
+          %element: f64 {mqt.input_name = "[0]",
+          mqt.input_group = {identity = "empty-name", name = "",
+                             index = 0 : i64, size = 1 : i64}}) {
         %reg = memref.alloc() {mqt.register_name = "q"}
             : memref<2x!qc.qubit>
         return
@@ -76,11 +79,6 @@ TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
       }
       func.func @lowered_cbit() {
         %reg = memref.alloc() {mqt.register_name = "lowered"} : memref<2xi1>
-        return
-      }
-      func.func @empty_vector_name(%element: f64 {mqt.input_name = "[0]",
-          mqt.input_group = {identity = "empty-name", name = "",
-                             index = 0 : i64, size = 1 : i64}}) {
         return
       }
     }
