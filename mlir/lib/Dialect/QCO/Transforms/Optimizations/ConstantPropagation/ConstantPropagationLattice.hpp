@@ -15,7 +15,6 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Attributes.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
 
 #include <complex>

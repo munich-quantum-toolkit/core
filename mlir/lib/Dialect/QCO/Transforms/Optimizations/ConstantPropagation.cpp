@@ -9,19 +9,19 @@
  */
 
 #include "ConstantPropagation/ConstantPropagationLattice.hpp"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-
-// Adjust these includes to your actual generated QCO interface/type headers.
 #include "mlir/Analysis/DataFlow/SparseAnalysis.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/IR/PatternMatch.h"
-#include "mlir/Pass/Pass.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
+
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 using namespace mlir;
 
 namespace mlir::qco {
+
+#define GEN_PASS_DEF_CONSTANTPROPAGATION
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 static unsigned int maxTrackedAmplitudes = 8;
 static unsigned int maxTrackedHybridStates = 4;
@@ -62,22 +62,23 @@ private:
 
 class HybridConstantPropagationAnalysis
     : public dataflow::SparseForwardDataFlowAnalysis<HybridStateLattice> {
+
+protected:
+  void setToEntryState(HybridStateLattice* lattice) override {}
+
 public:
   explicit HybridConstantPropagationAnalysis(DataFlowSolver& solver)
       : SparseForwardDataFlowAnalysis(solver) {}
 
   void setToEntryState(dataflow::AbstractSparseLattice* lattice) override {
-    const auto value = lattice->getAnchor();
-    auto* hybrid = llvm::cast<HybridStateLattice>(lattice);
-    // TODO: Propagate the values to the HybridState
-    // auto newLattice = HybridStateLattice();
-    // propagateIfChanged(hybrid, hybrid->join(newLattice));
+    const auto newLattice = HybridStateLattice(lattice->getAnchor());
+    propagateIfChanged(lattice, lattice->join(newLattice));
   }
 
   LogicalResult
   visitOperation(Operation* op,
                  const ArrayRef<const HybridStateLattice*> operands,
-                 ArrayRef<HybridStateLattice*> results) override {
+                 const ArrayRef<HybridStateLattice*> results) override {
     HybridStateSet input = gatherInputState(operands);
 
     if (input.areStatesTop()) {
@@ -235,8 +236,7 @@ private:
 
   void visitFallback(Operation* op, const HybridStateSet& input,
                      ArrayRef<HybridStateLattice*> results) {
-    for (auto [resLattice, resValue] :
-         llvm::zip(results, op->getResults())) {
+    for (auto [resLattice, resValue] : llvm::zip(results, op->getResults())) {
       const auto newLattice = HybridStateLattice(resValue, input);
       propagateIfChanged(resLattice, resLattice->join(newLattice));
     }
@@ -249,7 +249,7 @@ struct RemoveAlwaysZeroCtrlPattern : public OpRewritePattern<qco::CtrlOp> {
 
   LogicalResult matchAndRewrite(qco::CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    for (Value ctrl : op.getConditions()) {
+    for (Value ctrl : op.getControlsIn()) {
       auto* state = solver.lookupState<HybridStateLattice>(ctrl);
       if (!state)
         return failure();
@@ -275,18 +275,17 @@ private:
   DataFlowSolver& solver;
 };
 
-struct ConstantPropagationPass
-    : public mlir::mqt::impl::ConstantPropagationPassBase<
-          ConstantPropagationPass> {
+struct ConstantPropagation final
+    : impl::ConstantPropagationBase<ConstantPropagation> {
+  using ConstantPropagationBase::ConstantPropagationBase;
+
   void runOnOperation() override {
-    ModuleOp module = getOperation();
+    const auto op = getOperation();
 
     DataFlowSolver solver;
-    solver.load<dataflow::DeadCodeAnalysis>();
-    solver.load<HybridConstantPropagationAnalysis>(maxTrackedAmplitudes,
-                                                   maxTrackedStates);
+    solver.load<HybridConstantPropagationAnalysis>();
 
-    if (failed(solver.initializeAndRun(module))) {
+    if (failed(solver.initializeAndRun(op))) {
       signalPassFailure();
       return;
     }
@@ -294,17 +293,10 @@ struct ConstantPropagationPass
     RewritePatternSet patterns(&getContext());
     patterns.add<RemoveAlwaysZeroCtrlPattern>(&getContext(), solver);
 
-    if (failed(applyPatternsAndFoldGreedily(module, std::move(patterns))))
+    if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
+    }
   }
 };
 
 } // namespace mlir::qco
-
-std::unique_ptr<Pass> mlir::mqt::createConstantPropagationPass() {
-  return std::make_unique<ConstantPropagationPass>();
-}
-
-void mlir::mqt::registerConstantPropagationPass() {
-  PassRegistration<ConstantPropagationPass>();
-}
