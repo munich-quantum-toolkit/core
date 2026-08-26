@@ -21,9 +21,10 @@ sampling them demonstrates the behavior end to end.
   sampling classification, and the public API.
 - [x] (2026-08-26 22:08Z) Add focused C++ coverage and regenerate stubs through
   `uvx nox -s stubs`.
-- [ ] Add the two compiler-to-sampler Python cases.
-- [ ] Run full validation, create two signed additive commits, push normally,
-  and inspect hosted checks. Focused C++, stubs, and lint are green.
+- [x] (2026-08-26 22:17Z) Add the two compiler-to-sampler Python cases.
+- [x] (2026-08-26 22:22Z) Run full local validation and prepare two signed
+  additive commits.
+- [ ] Push normally and inspect hosted checks.
 
 ## Surprises & Discoveries
 
@@ -54,9 +55,20 @@ sampling them demonstrates the behavior end to end.
 
 ## Outcomes & Retrospective
 
-The focused engine, 43 C++ tests, generated stub, and lint are green. The final
-entry will record the end-to-end and full-suite results, diff reduction, signed
-commits, and hosted CI outcome.
+The focused engine, all 3,872 runnable C++ tests, generated stub, and lint are
+green. The compiler-to-sampler file passes all six tests against an installed
+extension, including the two new cases. The Python Nox matrix passes 725 tests
+on each of Python 3.11 through 3.13 and 736 on Python 3.14; documented skips are
+unchanged. The bare root `uv run --no-sync` invocation cannot import the package
+and therefore skips collection, while each Nox environment installs and tests
+the built extension.
+
+Relative to the original PR tip `97f904f6`, the total PR diff shrank from 1,670
+insertions and 238 deletions to 1,658 insertions and 536 deletions. The
+production implementation shrank from 1,232 to 1,231 lines. Generated `mlir.pyi`
+churn accounts for 55 insertions in the final PR diff. Hosted CI remains to be
+inspected after the normal push and will be reported in the PR handoff rather
+than requiring a documentation-only commit.
 
 ## Context and Orientation
 

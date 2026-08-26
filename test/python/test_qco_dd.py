@@ -122,3 +122,52 @@ module {
     package = dd.DDPackage(1)
     with pytest.raises(ValueError, match=r"no func\.func"):
         mlir.build_functionality(program, package)
+
+
+@pytest.mark.parametrize(
+    ("source", "num_qubits", "expected"),
+    [
+        (
+            """
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit q0;
+qubit q1;
+bit[2] c;
+h q0;
+cx q0, q1;
+c[0] = measure q0;
+c[1] = measure q1;
+""",
+            2,
+            {"00", "11"},
+        ),
+        (
+            """
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+bit[2] c;
+h q;
+c[0] = measure q;
+if (c[0]) {
+  x q;
+}
+c[1] = measure q;
+""",
+            1,
+            {"00", "01"},
+        ),
+    ],
+    ids=["terminal-bell", "adaptive-reset"],
+)
+def test_compiler_to_sampler_outputs(source: str, num_qubits: int, expected: set[str]) -> None:
+    """Compile optimized QCO and sample the declared CBit output."""
+    program = mlir.compile_program(source, output=mlir.OutputFormat.QCO_OPTIMIZED)
+    package = dd.DDPackage(num_qubits)
+    shots = 256
+
+    counts = mlir.sample(program, package, shots=shots, seed=17)
+
+    assert set(counts) == expected
+    assert sum(counts.values()) == shots
