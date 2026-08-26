@@ -14,6 +14,7 @@
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
+#include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 #include "ir/operations/StandardOperation.hpp"
@@ -858,6 +859,10 @@ TEST(OpenQASMSerializer, serializesCompoundOperationBody) {
   qubitMap.try_emplace(0U, qreg, "left");
   qubitMap.try_emplace(1U, qreg, "right");
   qubitMap.try_emplace(2U, qreg, "aux");
+  const qc::ClassicalRegister creg{0U, 2U, "c"};
+  qc::BitIndexToRegisterMap bitMap{};
+  bitMap.try_emplace(0U, creg, "c[0]");
+  bitMap.try_emplace(1U, creg, "c[1]");
 
   qc::CompoundOperation compound{};
   compound.emplace_back<qc::StandardOperation>(0U, qc::H);
@@ -868,22 +873,26 @@ TEST(OpenQASMSerializer, serializesCompoundOperationBody) {
                                                1U, 2U, qc::Peres);
   compound.emplace_back<qc::StandardOperation>(qc::Controls{qc::Control{0U}},
                                                1U, 2U, qc::Peresdg);
+  compound.emplace_back<qc::NonUnitaryOperation>(qc::Targets{1U, 2U},
+                                                 std::vector<qc::Bit>{0U, 1U});
 
   std::ostringstream output3{};
-  qc::OpenQASMSerializer(output3).serialize(compound, qubitMap,
-                                            qc::BitIndexToRegisterMap{});
+  qc::OpenQASMSerializer(output3).serialize(compound, qubitMap, bitMap);
   EXPECT_EQ(output3.str(),
             "h left;\ncx left, right;\nnegctrl @ x left, right;\n"
             "ctrl @ cx left, aux, right;\nctrl @ x left, aux;\n"
-            "ctrl @ x left, aux;\nctrl @ cx left, aux, right;\n");
+            "ctrl @ x left, aux;\nctrl @ cx left, aux, right;\n"
+            "c[0] = measure right;\nc[1] = measure aux;\n");
 
   std::ostringstream output2{};
   qc::OpenQASMSerializer(output2, qc::Format::OpenQASM2)
-      .serialize(compound, qubitMap, qc::BitIndexToRegisterMap{});
+      .serialize(compound, qubitMap, bitMap, 1U);
   EXPECT_EQ(output2.str(),
-            "h left;\ncx left, right;\nx left;\ncx left, right;\nx left;\n"
-            "ccx left, aux, right;\ncx left, aux;\n"
-            "cx left, aux;\nccx left, aux, right;\n");
+            "  h left;\n  cx left, right;\n  x left;\n"
+            "  cx left, right;\n  x left;\n"
+            "  ccx left, aux, right;\n  cx left, aux;\n"
+            "  cx left, aux;\n  ccx left, aux, right;\n"
+            "  measure right -> c[0];\n  measure aux -> c[1];\n");
 }
 
 TEST(OpenQASMSerializer, handlesUnsupportedOperations) {

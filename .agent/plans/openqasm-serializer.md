@@ -42,9 +42,7 @@ demonstrates the replacement for direct operation dumping.
   string/file parity coverage; retained all existing golden, round-trip, and
   symbolic-error behavior.
 - [x] (2026-08-26 10:20Z) Documented the direct-caller and custom-operation
-  migration in the v4 upgrade guide. A changelog reference remains deferred
-  until this work has a PR number, because project policy requires changelog
-  entries to cite the PR and author.
+  migration in the v4 upgrade guide.
 - [x] (2026-08-26 10:20Z) Built the release IR target and Python bindings, ran
       all 281 IR tests, the focused Python tests, full lint, standalone checks
       for all changed public headers, and final whitespace checks.
@@ -54,6 +52,10 @@ demonstrates the replacement for direct operation dumping.
 - [x] (2026-08-26 11:03Z) Applied the final Ponytail review: unified the two
       whole-register predicates and inlined compound dispatch, removing 16
       source lines. The 52 focused tests and full lint pass.
+- [x] (2026-08-26 11:11Z) Added the required changelog entry with the pull
+      request number and author.
+- [x] (2026-08-26 12:01Z) Addressed review feedback on nested indentation and
+      multi-target OpenQASM 3 measurement assignments. All 283 IR tests pass.
 
 ## Surprises & Discoveries
 
@@ -131,7 +133,7 @@ constraint kept the design to one class and implementation-local dispatch; there
 is no visitor hierarchy, extension registry, friend access, or new dependency.
 
 Validation completed successfully: the release IR target and MinSizeRel Python
-bindings build; all 281 IR tests pass; all three focused Python IR tests pass;
+bindings build; all 283 IR tests pass; all three focused Python IR tests pass;
 the rebuilt Python extension produces identical string and file exports for
 OpenQASM 2 and 3; the downstream Debugger integration build passes with
 transitive standard-library includes disabled; and `uvx nox -s lint` passes.
@@ -141,8 +143,7 @@ Follow-up work remains in downstream repositories. MQT Debugger must replace its
 direct `dumpOpenQASM2` calls with the serializer (and should serialize the
 inverted clone it already creates). QMAP's superconducting logger can use the
 Core operation entry point, while QMAP draft PR #1111 must move neutral-atom and
-AOD circuit serialization into QMAP. Add the required changelog entry when the
-Core pull request number is known.
+AOD circuit serialization into QMAP.
 
 ## Context and Orientation
 
@@ -284,4 +285,4 @@ is part of this change.
 Revision note: Created the initial self-contained plan after tracing the current
 implementation and downstream direct callers. Updated it after the compiling
 milestone with the final API, compatibility evidence, downstream coordination,
-and the deferred changelog requirement.
+changelog completion, and review follow-ups.

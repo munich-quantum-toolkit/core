@@ -309,7 +309,8 @@ void dumpStandardOperation(std::ostream& output,
                            const std::size_t indent, const bool openQASM3) {
   std::ostringstream serialized;
   serialized << std::setprecision(std::numeric_limits<fp>::digits10);
-  serialized << std::string(indent * OUTPUT_INDENT_SIZE, ' ');
+  const auto indentPrefix = std::string(indent * OUTPUT_INDENT_SIZE, ' ');
+  serialized << indentPrefix;
 
   const auto& controls = operation.getControls();
   if (openQASM3) {
@@ -333,7 +334,8 @@ void dumpStandardOperation(std::ostream& output,
   if (!isSpecialGate) {
     for (const auto& control : controls) {
       if (control.type == Control::Type::Neg) {
-        output << "x " << qubitMap.at(control.qubit).second << ";\n";
+        output << indentPrefix << "x " << qubitMap.at(control.qubit).second
+               << ";\n";
       }
     }
   }
@@ -343,7 +345,8 @@ void dumpStandardOperation(std::ostream& output,
   if (!isSpecialGate) {
     for (const auto& control : controls) {
       if (control.type == Control::Type::Neg) {
-        output << "x " << qubitMap.at(control.qubit).second << ";\n";
+        output << indentPrefix << "x " << qubitMap.at(control.qubit).second
+               << ";\n";
       }
     }
   }
@@ -354,7 +357,7 @@ void dumpNonUnitaryOperation(std::ostream& output,
                              const QubitIndexToRegisterMap& qubitMap,
                              const BitIndexToRegisterMap& bitMap,
                              const std::size_t indent, const bool openQASM3) {
-  output << std::string(indent * OUTPUT_INDENT_SIZE, ' ');
+  const auto indentPrefix = std::string(indent * OUTPUT_INDENT_SIZE, ' ');
 
   const auto& targets = operation.getTargets();
   const auto& classics = operation.getClassics();
@@ -362,6 +365,7 @@ void dumpNonUnitaryOperation(std::ostream& output,
   if (isWholeRegister(qubitMap, targets.front(), targets.back()) &&
       (type != Measure ||
        isWholeRegister(bitMap, classics.front(), classics.back()))) {
+    output << indentPrefix;
     if (type == Measure && openQASM3) {
       output << bitMap.at(classics.front()).first.getName() << " = ";
     }
@@ -376,6 +380,7 @@ void dumpNonUnitaryOperation(std::ostream& output,
 
   auto classicsIt = classics.cbegin();
   for (const auto& target : targets) {
+    output << indentPrefix;
     const auto& qreg = qubitMap.at(target);
     if (type == Measure && openQASM3) {
       const auto& creg = bitMap.at(*classicsIt);
@@ -385,9 +390,11 @@ void dumpNonUnitaryOperation(std::ostream& output,
     if (type == Measure && !openQASM3) {
       const auto& creg = bitMap.at(*classicsIt);
       output << " -> " << creg.second;
-      ++classicsIt;
     }
     output << ";\n";
+    if (type == Measure) {
+      ++classicsIt;
+    }
   }
 }
 
