@@ -11,6 +11,7 @@
 #include "ir/OpenQASMSerializer.hpp"
 
 #include "ir/Definitions.hpp"
+#include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/Register.hpp"
 #include "ir/operations/CompoundOperation.hpp"

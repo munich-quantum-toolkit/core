@@ -21,7 +21,6 @@
 #include <cstddef>
 #include <cstdlib>
 #include <memory>
-#include <stdexcept>
 #include <utility>
 #include <variant>
 #include <vector>
