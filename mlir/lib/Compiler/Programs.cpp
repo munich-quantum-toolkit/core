@@ -383,34 +383,15 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
   return result;
 }
 
-/**
- * @brief Visit each gate in the entry point.
- *
- * @details The walk visits each gate in nested regions once, so the result
- * describes the static IR rather than runtime execution. Modifier operations
- * count as gates, but the walk skips their bodies. Barriers do not count.
- */
-template <typename Callback>
-static void walkGates(ModuleOp moduleOp, const Callback& callback) {
+static size_t
+countGatesIf(ModuleOp moduleOp,
+             const llvm::function_ref<bool(qc::UnitaryOpInterface)> predicate) {
+  size_t count = 0;
   auto entryPoint = mqt::getEntryPoint(moduleOp);
   entryPoint.walk<WalkOrder::PreOrder>([&](qc::UnitaryOpInterface op) {
-    if (!isa<qc::BarrierOp>(op)) {
-      callback(op);
-    }
-    if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op)) {
-      return WalkResult::skip();
-    }
-    return WalkResult::advance();
-  });
-}
-
-template <typename Predicate>
-static size_t countGatesIf(ModuleOp moduleOp, const Predicate& predicate = {}) {
-  size_t count = 0;
-  walkGates(moduleOp, [&](qc::UnitaryOpInterface op) {
-    if (predicate(op)) {
-      ++count;
-    }
+    count += !isa<qc::BarrierOp>(op) && predicate(op);
+    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op) ? WalkResult::skip()
+                                                     : WalkResult::advance();
   });
   return count;
 }
@@ -594,8 +575,13 @@ size_t QCProgram::numTwoQubitGates() const {
 
 std::map<std::string, size_t> QCProgram::gateCounts() const {
   std::map<std::string, size_t> counts;
-  walkGates(mod(), [&](qc::UnitaryOpInterface op) {
-    ++counts[op.getBaseSymbol().str()];
+  auto entryPoint = mqt::getEntryPoint(mod());
+  entryPoint.walk<WalkOrder::PreOrder>([&](qc::UnitaryOpInterface op) {
+    if (!isa<qc::BarrierOp>(op)) {
+      ++counts[op.getBaseSymbol().str()];
+    }
+    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op) ? WalkResult::skip()
+                                                     : WalkResult::advance();
   });
   return counts;
 }
