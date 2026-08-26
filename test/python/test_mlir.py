@@ -693,3 +693,11 @@ def test_compile_program_fails_for_missing_file() -> None:
     """A missing known input file extension raises an error."""
     with pytest.raises(RuntimeError, match="does not exist"):
         compile_program("missing_program.qasm")
+
+
+def test_qc_program_num_gates() -> None:
+    """Expose gate counts to Python."""
+    program = QCProgram.from_qasm_str(QASM_STRING)
+    assert program.num_gates() == 2
+    assert program.num_single_qubit_gates() == 1
+    assert program.num_two_qubit_gates() == 1

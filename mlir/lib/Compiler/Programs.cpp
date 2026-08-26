@@ -22,6 +22,8 @@
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -56,6 +58,7 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/FileUtilities.h>
@@ -371,6 +374,33 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
     return std::nullopt;
   }
   return result;
+}
+
+static size_t
+countGatesIf(ModuleOp moduleOp,
+             const llvm::function_ref<bool(qc::UnitaryOpInterface)> predicate) {
+  size_t count = 0;
+  auto entryPoint = mqt::getEntryPoint(moduleOp);
+  entryPoint.walk<WalkOrder::PreOrder>([&](qc::UnitaryOpInterface op) {
+    count += !isa<qc::BarrierOp>(op) && predicate(op);
+    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op) ? WalkResult::skip()
+                                                     : WalkResult::advance();
+  });
+  return count;
+}
+
+size_t QCProgram::numGates() const {
+  return countGatesIf(mod(), [](qc::UnitaryOpInterface) { return true; });
+}
+
+size_t QCProgram::numSingleQubitGates() const {
+  return countGatesIf(
+      mod(), [](qc::UnitaryOpInterface op) { return op.isSingleQubit(); });
+}
+
+size_t QCProgram::numTwoQubitGates() const {
+  return countGatesIf(
+      mod(), [](qc::UnitaryOpInterface op) { return op.isTwoQubit(); });
 }
 
 //===----------------------------------------------------------------------===//
