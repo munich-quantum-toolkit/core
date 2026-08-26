@@ -767,6 +767,8 @@ static LogicalResult runFuse(ModuleOp mlirModule, StringRef basis) {
   return pm.run(mlirModule);
 }
 
+namespace {
+
 struct DynamicGateCase {
   StringRef name;
   std::size_t numParameters = 0;
@@ -812,6 +814,8 @@ struct DirectSynthesisCounts {
   std::size_t sx = 0;
   bool gphase = false;
 };
+
+} // namespace
 
 [[nodiscard]] static DirectSynthesisCounts
 expectedDirectSynthesisCounts(const StringRef gate,
