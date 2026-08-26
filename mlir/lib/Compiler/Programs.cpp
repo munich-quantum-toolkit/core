@@ -54,11 +54,11 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
-#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
@@ -508,6 +508,8 @@ struct GateDepthState {
   }
 };
 
+} // namespace
+
 static void updateGateDepth(qc::UnitaryOpInterface gate,
                             GateDepthState& state) {
   if (isa<qc::BarrierOp>(gate) || gate.getNumQubits() == 0) {
@@ -575,8 +577,6 @@ static void calculateRegionDepth(Region& region, GateDepthState& state) {
     }
   }
 }
-
-} // namespace
 
 size_t QCProgram::numGates() const {
   return countGatesIf(mod(), [](qc::UnitaryOpInterface) { return true; });
