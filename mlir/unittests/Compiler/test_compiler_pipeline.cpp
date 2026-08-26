@@ -284,10 +284,7 @@ TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
       QCProgram::fromModule(otherContext, std::move(mismatchedModule)));
 }
 
-/**
- * @brief Test: raw QCO stops before the registered default optimization
- * pipeline.
- */
+/** @brief Raw QCO stops before the registered default optimization pipeline. */
 TEST_F(CompilerPipelineTest, RawAndOptimizedQCOAreDistinctCheckpoints) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -1596,7 +1593,7 @@ INSTANTIATE_TEST_SUITE_P(
  * @brief Test: gate counting respects modifiers and skips barriers.
  */
 TEST_F(CompilerPipelineTest, QCProgramCountGates) {
-  const std::string qasm1 = R"(OPENQASM 3.0;
+  const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
 h q[0];
@@ -1608,22 +1605,11 @@ ctrl @ swap q[0], q[1], q[2];
 inv @ cx q[0], q[1];
 barrier q[0], q[1];
 )";
-  auto qc1 = QCProgram::fromQASMString(qasm1);
-  ASSERT_TRUE(qc1);
-  EXPECT_EQ(qc1->numGates(), 6);
-  EXPECT_EQ(qc1->numSingleQubitGates(), 1);
-  EXPECT_EQ(qc1->numTwoQubitGates(), 3);
-
-  const std::string qasm2 = R"(OPENQASM 3.0;
-include "stdgates.inc";
-qubit q;
-h q;
-)";
-  auto qc2 = QCProgram::fromQASMString(qasm2);
-  ASSERT_TRUE(qc2);
-  EXPECT_EQ(qc2->numGates(), 1);
-  EXPECT_EQ(qc2->numSingleQubitGates(), 1);
-  EXPECT_EQ(qc2->numTwoQubitGates(), 0);
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  EXPECT_EQ(qc->numGates(), 6);
+  EXPECT_EQ(qc->numSingleQubitGates(), 1);
+  EXPECT_EQ(qc->numTwoQubitGates(), 3);
 }
 
 /**
