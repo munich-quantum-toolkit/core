@@ -11,6 +11,7 @@
 #include "QiskitTranslation.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringSwitch.h>
 
 // Qiskit requires its umbrella header before the extension function table.
@@ -37,7 +38,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -1936,8 +1936,8 @@ struct NativeSymbol {
   OwnedParameter parameter;
 };
 
-using NativeSymbolTable = std::unordered_map<std::string, NativeSymbol>;
-using PythonParameterGroups = std::unordered_map<std::string, nb::object>;
+using NativeSymbolTable = llvm::StringMap<NativeSymbol>;
+using PythonParameterGroups = llvm::StringMap<nb::object>;
 
 class NativeCircuitWriter final : public CircuitWriter {
 public:
