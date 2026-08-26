@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 
+#include <llvm/ADT/StringMap.h>
 #include <nanobind/nanobind.h>
 
 #include <complex>
@@ -62,6 +63,15 @@ struct ParameterGroup {
   uint64_t size = 0U;
 
   [[nodiscard]] bool operator==(const ParameterGroup&) const = default;
+};
+
+class ParameterGroupRegistry {
+public:
+  void add(const ParameterGroup& group);
+
+private:
+  llvm::StringMap<ParameterGroup> groups;
+  uint64_t totalSize = 0U;
 };
 
 enum class UnaryParameterKind : uint8_t {

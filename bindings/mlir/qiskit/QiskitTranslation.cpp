@@ -21,6 +21,24 @@
 
 namespace mqt::bindings::qiskit {
 
+void ParameterGroupRegistry::add(const ParameterGroup& group) {
+  const auto [known, inserted] = groups.try_emplace(group.identity, group);
+  if (inserted) {
+    if (group.size > MAX_PARAMETER_GROUP_SIZE - totalSize) {
+      throw std::runtime_error(
+          "Qiskit circuit translation supports at most " +
+          std::to_string(MAX_PARAMETER_GROUP_SIZE) +
+          " elements across all distinct parameter vectors");
+    }
+    totalSize += group.size;
+    return;
+  }
+  if (known->second.name != group.name || known->second.size != group.size) {
+    throw std::runtime_error(
+        "one Qiskit parameter group has conflicting metadata");
+  }
+}
+
 uint32_t validateRegisterLayout(const std::vector<Register>& registers,
                                 const uint32_t total,
                                 const std::string_view kind) {

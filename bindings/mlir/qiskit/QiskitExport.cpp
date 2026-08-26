@@ -30,7 +30,6 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringSet.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -339,8 +338,7 @@ struct ExportState {
   ExportedParameters parameters;
   std::vector<Parameter> inputParameters;
   llvm::StringSet<> parameterNames;
-  llvm::StringMap<ParameterGroup> parameterGroups;
-  uint64_t totalParameterGroupSize = 0U;
+  ParameterGroupRegistry parameterGroups;
   size_t nextLoopParameter = 0U;
   uint32_t numQubits = 0;
   uint32_t numClbits = 0;
@@ -371,25 +369,6 @@ struct ExportState {
       .index = static_cast<uint64_t>(index.getInt()),
       .size = static_cast<uint64_t>(size.getInt()),
   };
-}
-
-void registerParameterGroup(ExportState& state, const ParameterGroup& group) {
-  const auto [known, inserted] =
-      state.parameterGroups.try_emplace(group.identity, group);
-  if (inserted) {
-    if (group.size > MAX_PARAMETER_GROUP_SIZE - state.totalParameterGroupSize) {
-      throw std::runtime_error(
-          "Qiskit circuit export supports at most " +
-          std::to_string(MAX_PARAMETER_GROUP_SIZE) +
-          " elements across all distinct parameter vectors");
-    }
-    state.totalParameterGroupSize += group.size;
-    return;
-  }
-  if (known->second.name != group.name || known->second.size != group.size) {
-    throw std::runtime_error(
-        "one Qiskit parameter group has conflicting metadata");
-  }
 }
 
 [[nodiscard]] bool parameterUsesName(const Parameter& parameter,
@@ -499,7 +478,7 @@ void collectParameters(mlir::func::FuncOp function, ExportState& state) {
         throw std::runtime_error(
             "Qiskit parameter input name does not match its group and index");
       }
-      registerParameterGroup(state, *group);
+      state.parameterGroups.add(*group);
     }
     auto parameter = Parameter::symbol(name.str(), std::move(group));
     state.parameters[argument] = parameter;
@@ -1726,7 +1705,7 @@ collectFor(mlir::scf::ForOp loop, ExportState& state,
   if (const auto attribute = loop->getAttr(
           mlir::mqt::MQTDialect::LoopParameterGroupAttrHelper::getNameStr())) {
     sourceGroup = parameterGroup(attribute);
-    registerParameterGroup(state, *sourceGroup);
+    state.parameterGroups.add(*sourceGroup);
   }
   std::optional<LoopParameterProjection> projection;
   std::optional<Parameter> loopParameter;

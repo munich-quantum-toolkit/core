@@ -1242,12 +1242,10 @@ public:
           throw std::runtime_error("Qiskit for-loop parameter is not a symbol");
         }
         const auto nativeIsElement = symbol.ty == QkSymbolType_Element;
-        if ((!nativeIsElement &&
-             (parameterSymbol->group || parameterSymbol->name != nativeName)) ||
-            (nativeIsElement &&
-             (!parameterSymbol->group ||
-              parameterSymbol->group->name != nativeName ||
-              parameterSymbol->group->index != symbol.index))) {
+        const auto& group = parameterSymbol->group;
+        if (nativeIsElement != group.has_value() ||
+            (group ? group->name : parameterSymbol->name) != nativeName ||
+            (group && group->index != symbol.index)) {
           throw std::runtime_error(
               "Qiskit Python and native loop-parameter metadata do not match");
         }
@@ -2172,40 +2170,34 @@ private:
       return;
     }
 
-    try {
-      const auto circuitModule = nb::module_::import_("qiskit.circuit");
-      const auto parameterVector = circuitModule.attr("ParameterVector");
-      const auto parameterVectorElement =
-          circuitModule.attr("ParameterVectorElement");
-      nb::dict replacements;
-      const auto parameters = pythonAttribute(
-          circuit, "parameters", "Qiskit circuit has no parameter collection");
-      for (const nb::handle parameter : nb::iter(parameters)) {
-        const auto name = pythonStringAttribute(
-            parameter, "name", "Qiskit circuit parameter has no name");
-        const auto symbol = symbols.find(name);
-        if (symbol == symbols.end() || !symbol->second.group) {
-          continue;
-        }
-        const auto& metadata = *symbol->second.group;
-        const auto [group, inserted] = groups.try_emplace(metadata.identity);
-        if (inserted) {
-          group->second = parameterVector(metadata.name, metadata.size);
-        }
-        replacements[parameter] =
-            parameterVectorElement(group->second, metadata.index);
+    const auto circuitModule = nb::module_::import_("qiskit.circuit");
+    const auto parameterVector = circuitModule.attr("ParameterVector");
+    const auto parameterVectorElement =
+        circuitModule.attr("ParameterVectorElement");
+    nb::dict replacements;
+    const auto parameters = pythonAttribute(
+        circuit, "parameters", "Qiskit circuit has no parameter collection");
+    for (const nb::handle parameter : nb::iter(parameters)) {
+      const auto name = pythonStringAttribute(
+          parameter, "name", "Qiskit circuit parameter has no name");
+      const auto symbol = symbols.find(name);
+      if (symbol == symbols.end() || !symbol->second.group) {
+        continue;
       }
-      if (nb::len(replacements) == 0U) {
-        return;
+      const auto& metadata = *symbol->second.group;
+      const auto [group, inserted] = groups.try_emplace(metadata.identity);
+      if (inserted) {
+        group->second = parameterVector(metadata.name, metadata.size);
       }
-      pythonAttribute(circuit, "assign_parameters",
-                      "Qiskit circuit cannot replace output parameters")(
-          replacements, nb::arg("inplace") = true,
-          nb::arg("flat_input") = true);
-    } catch (const nb::python_error& error) {
-      throwPythonError("Qiskit failed to restore parameter-vector elements",
-                       error);
+      replacements[parameter] =
+          parameterVectorElement(group->second, metadata.index);
     }
+    if (nb::len(replacements) == 0U) {
+      return;
+    }
+    pythonAttribute(circuit, "assign_parameters",
+                    "Qiskit circuit cannot replace output parameters")(
+        replacements, nb::arg("inplace") = true, nb::arg("flat_input") = true);
   }
 
   void replacePendingControlledUnitaries(const nb::handle pythonCircuit) const {
@@ -2277,17 +2269,9 @@ private:
         symbol->group ? symbol->group->name + "[" +
                             std::to_string(symbol->group->index) + "]"
                       : symbol->name;
-    const auto parameters = pythonAttribute(
-        body, "parameters", "Qiskit circuit has no parameter collection");
-    for (const nb::handle parameter : nb::iter(parameters)) {
-      if (pythonStringAttribute(parameter, "name",
-                                "Qiskit circuit parameter has no name") ==
-          parameterName) {
-        return nb::borrow<nb::object>(parameter);
-      }
-    }
-    throw std::runtime_error(
-        "Qiskit for-loop parameter is absent from its body");
+    return pythonAttribute(body, "get_parameter",
+                           "Qiskit circuit cannot find its loop parameter")(
+        parameterName);
   }
 
   [[nodiscard]] static nb::object constructControlFlowOperation(
@@ -2403,13 +2387,8 @@ private:
         throw std::runtime_error(
             "cannot export a symbolic parameter without a name");
       }
-      const auto [known, inserted] =
-          symbols_->try_emplace(symbol->name, symbol->name, symbol->group);
-      if (!inserted && known->second.group != symbol->group) {
-        throw std::runtime_error(
-            "one Qiskit parameter symbol has conflicting group metadata");
-      }
-      return known->second.parameter.get();
+      return symbols_->try_emplace(symbol->name, symbol->name, symbol->group)
+          .first->second.parameter.get();
     }
 
     auto output = std::make_unique<OwnedParameter>();
