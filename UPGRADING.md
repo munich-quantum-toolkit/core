@@ -6,6 +6,22 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Pruned DD construction helpers
+
+MQT Core no longer provides `dd::GenerationWireStrategy`,
+`dd::generateExponentialState`, or `dd::generateRandomState`. These APIs
+generated decision diagrams with selected shapes for tests and have no direct
+replacement.
+
+MQT Core also removed `dd::buildFunctionalityRecursive`. The Python
+`mqt.core.dd.build_unitary` and `mqt.core.dd.build_functionality` functions no
+longer accept the `recursive` argument and always use sequential construction.
+Use MQT DDSIM's unitary simulator when recursive pairwise construction is
+required.
+
+The zero, basis, GHZ, W, dense-vector, and sequential circuit constructors
+remain available.
+
 ### Removal of CoreAlgorithms
 
 MQT Core no longer installs `MQT::CoreAlgorithms` or the headers below
