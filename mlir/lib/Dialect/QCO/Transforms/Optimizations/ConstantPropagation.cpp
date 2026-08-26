@@ -26,31 +26,9 @@ namespace mlir::qco {
 static unsigned int maxTrackedAmplitudes = 8;
 static unsigned int maxTrackedHybridStates = 4;
 
-static bool isQubitType(const Type ty) { return isa<mlir::qco::QubitType>(ty); }
+static bool isQubitType(const Type ty) { return isa<QubitType>(ty); }
 
 static bool isClassicalType(const Type ty) { return ty.isIntOrIndexOrFloat(); }
-
-static std::optional<Attribute> foldWithState(Operation* op,
-                                              const HybridState& state) {
-  SmallVector<Attribute> operandAttrs;
-  operandAttrs.reserve(op->getNumOperands());
-  for (const Value operand : op->getOperands()) {
-    auto attr = state.getClassical(operand);
-    if (!attr) {
-      return std::nullopt;
-    }
-    operandAttrs.push_back(*attr);
-  }
-
-  SmallVector<OpFoldResult> foldResults;
-  if (succeeded(op->fold(operandAttrs, foldResults)) &&
-      foldResults.size() == 1) {
-    if (auto attr = llvm::dyn_cast<Attribute>(foldResults.front())) {
-      return attr;
-    }
-  }
-  return std::nullopt;
-}
 
 class HybridStateLattice : public dataflow::AbstractSparseLattice {
 public:
@@ -59,6 +37,9 @@ public:
   explicit HybridStateLattice(const Value anchor)
       : AbstractSparseLattice(anchor),
         value(HybridStateSet(maxTrackedAmplitudes, maxTrackedHybridStates)) {}
+
+  explicit HybridStateLattice(const Value anchor, const HybridStateSet& state)
+      : AbstractSparseLattice(anchor), value(state) {}
 
   const HybridStateSet& getValue() const { return value; }
 
@@ -96,8 +77,8 @@ public:
   LogicalResult
   visitOperation(Operation* op,
                  const ArrayRef<const HybridStateLattice*> operands,
-                 const ArrayRef<HybridStateLattice*> results) override {
-    const HybridStateSet input = gatherInputState(operands);
+                 ArrayRef<HybridStateLattice*> results) override {
+    HybridStateSet input = gatherInputState(operands);
 
     if (input.areStatesTop()) {
       // TODO: Forward Qubits to results
@@ -160,25 +141,13 @@ private:
     }
   }
 
-  void visitClassicalOp(Operation* op, const HybridStateSet& input,
+  void visitClassicalOp(Operation* op, HybridStateSet& input,
                         ArrayRef<HybridStateLattice*> results) {
-    HybridStateSet output;
-    output.states.clear();
-
-    for (const HybridState& state : input.states) {
-      HybridState next = state;
-      auto attr = foldWithState(op, state);
-      if (!attr) {
-        output.addState(std::move(next));
-        continue;
-      }
-      if (!op->getResults().empty())
-        next.setClassical(op->getResult(0), *attr);
-      output.addState(std::move(next));
+    input.applyClassicalOperation(op);
+    for (auto [resLattice, resValue] : llvm::zip(results, op->getResults())) {
+      const auto newLattice = HybridStateLattice(resValue, input);
+      propagateIfChanged(resLattice, resLattice->join(newLattice));
     }
-
-    output.enforceMaxStates(maxTrackedStates);
-    setAllResults(results, output);
   }
 
   void visitUnitaryOp(Operation* op, qco::UnitaryOpInterface unitary,

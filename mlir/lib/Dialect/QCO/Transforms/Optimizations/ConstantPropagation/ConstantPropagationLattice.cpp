@@ -517,6 +517,30 @@ HybridState HybridState::mergeStates(const HybridState& that) const {
   return result;
 }
 
+void HybridState::applyClassicalOperation(Operation* op) {
+  SmallVector<Attribute> operandAttrs;
+  operandAttrs.reserve(op->getNumOperands());
+  for (const Value operand : op->getOperands()) {
+    auto attr = getClassical(operand);
+    if (!attr) {
+      llvm::report_fatal_error(
+          "Called operation on a classical value not in the state");
+    }
+    operandAttrs.push_back(*attr);
+  }
+
+  SmallVector<OpFoldResult> foldResults;
+  if (succeeded(op->fold(operandAttrs, foldResults))) {
+    for (const auto& [val, res] : llvm::zip(op->getResults(), foldResults)) {
+      if (auto attr = llvm::dyn_cast<Attribute>(res)) {
+        setClassical(val, attr);
+      }
+    }
+    return;
+  }
+  llvm::report_fatal_error("Error while propagating classical operation.");
+}
+
 //===----------------------------------------------------------------------===//
 // HybridStateSet
 //===----------------------------------------------------------------------===//
@@ -625,6 +649,12 @@ bool HybridStateSet::isAlwaysTrue(const Value v) const {
     }
   }
   return true;
+}
+
+void HybridStateSet::applyClassicalOperation(Operation* op) {
+  for (HybridState& state : states) {
+    state.applyClassicalOperation(op);
+  }
 }
 
 } // namespace mlir::qco

@@ -293,6 +293,13 @@ public:
    * @return A new merged HybridState.
    */
   HybridState mergeStates(const HybridState& that) const;
+
+  /**
+   * Apply a classical state to the Hybrid state.
+   *
+   * @param op The classical operation to apply.
+   */
+  void applyClassicalOperation(Operation* op);
 };
 
 /**
@@ -374,6 +381,15 @@ public:
    */
   [[nodiscard("HybridStateSet::isAlwaysTrue called but ignored.")]]
   bool isAlwaysTrue(Value v) const;
+
+  /**
+   * Applies a classical operation on all HybridStates of the set and returns a
+   * new set.
+   *
+   * @param op The operation to apply.
+   * @return The set with applied operation.
+   */
+  void applyClassicalOperation(Operation* op);
 };
 
 /// Utility used by the pass analysis.
