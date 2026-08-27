@@ -77,14 +77,17 @@ def test_unitary_x_build_simulate_and_sample() -> None:
     assert sample(program, package, shots=32, seed=1) == {"1": 32}
 
 
-def test_simulate_measure_requires_seed() -> None:
-    """Simulate without seed rejects measure/reset; with seed it succeeds."""
+def test_simulate_measure_uses_default_or_explicit_seed() -> None:
+    """Simulation supports measurement with default and explicit seeds."""
     program = _measure_program()
     package = DDPackage(1)
 
     zero = package.zero_state(1)
-    with pytest.raises(ValueError, match=r"measurements require simulate\(\.\.\., rng\)"):
-        simulate(program, zero, package)
+    out = simulate(program, zero, package)
+    expected = package.computational_basis_state(1, [False])
+    assert np.allclose(out.get_vector(), expected.get_vector())
+    package.dec_ref_vec(out)
+    package.dec_ref_vec(expected)
 
     zero = package.zero_state(1)
     out = simulate(program, zero, package, seed=3)
@@ -102,9 +105,10 @@ def test_simulate_rejects_state_from_different_package() -> None:
     zero = source_package.zero_state(1)
     target_zero = target_package.zero_state(1)
 
-    for seed in (None, 7):
-        with pytest.raises(ValueError, match=r"live reference in dd_package"):
-            simulate(program, zero, target_package, seed=seed)
+    with pytest.raises(ValueError, match=r"live reference in dd_package"):
+        simulate(program, zero, target_package)
+    with pytest.raises(ValueError, match=r"live reference in dd_package"):
+        simulate(program, zero, target_package, seed=7)
 
     source_package.dec_ref_vec(zero)
     target_package.dec_ref_vec(target_zero)

@@ -557,7 +557,7 @@ def build_functionality(program: QCOProgram, dd_package: mqt.core.dd.DDPackage) 
     """
 
 def simulate(
-    program: QCOProgram, initial_state: mqt.core.dd.VectorDD, dd_package: mqt.core.dd.DDPackage, seed: int | None = None
+    program: QCOProgram, initial_state: mqt.core.dd.VectorDD, dd_package: mqt.core.dd.DDPackage, seed: int = 0
 ) -> mqt.core.dd.VectorDD:
     """Simulate a QCO program on a DD state.
 
@@ -567,9 +567,8 @@ def simulate(
             has a live reference in ``dd_package``. Higher wires are preserved. A
             valid input reference is consumed.
         dd_package: DD package with enough qubits for the program.
-        seed: If ``None``, rejects programs containing measurements or resets.
-            Otherwise seeds the RNG used to collapse them
-            (``0`` = nondeterministic).
+        seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+            value produces reproducible measurement and reset results.
 
     Returns:
         Output state DD.
@@ -579,16 +578,15 @@ def simulate(
             has too few qubits, or the program is unsupported for simulation.
     """
 
-def sample(
-    program: QCOProgram, dd_package: mqt.core.dd.DDPackage, shots: int = 1024, seed: int | None = None
-) -> dict[str, int]:
+def sample(program: QCOProgram, dd_package: mqt.core.dd.DDPackage, shots: int = 1024, seed: int = 0) -> dict[str, int]:
     """Sample the declared outputs of a QCO program.
 
     Args:
         program: A QCO program whose entry ``func.func`` is sampled.
         dd_package: DD package with enough qubits for the program.
         shots: Number of shots (default 1024).
-        seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
+        seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+            value produces reproducible results.
 
     Returns:
         Histogram of returned CBit registers in return order, each MSB first. If

@@ -138,11 +138,11 @@ static void requireValid(const mlir::Program& program) {
   return func;
 }
 
-[[nodiscard]] std::mt19937_64 makeRng(const std::optional<uint64_t>& seed) {
-  if (!seed.has_value() || *seed == 0) {
+[[nodiscard]] std::mt19937_64 makeRng(const uint64_t seed) {
+  if (seed == 0) {
     return std::mt19937_64(std::random_device{}());
   }
-  return std::mt19937_64(*seed);
+  return std::mt19937_64(seed);
 }
 
 /// Run @p fn under a diagnostic handler and raise `ValueError` on failure,
@@ -1018,26 +1018,20 @@ Raises:
   m.def(
       "simulate",
       [](const mlir::QCOProgram& program, const dd::VectorDD& initialState,
-         dd::Package& ddPackage, const std::optional<uint64_t> seed) {
+         dd::Package& ddPackage, const uint64_t seed) {
         if (dd::VectorDD::trackingRequired(initialState) &&
             !ddPackage.getRootSet<dd::vNode>().contains(initialState)) {
           throw nb::value_error(
               "initial_state must have a live reference in dd_package");
         }
         auto func = entryFunc(program);
-        if (!seed.has_value()) {
-          return takeFailureOr(
-              func.getContext(), "cannot simulate this QCO program", [&] {
-                return mlir::qco::simulate(func, initialState, ddPackage);
-              });
-        }
         auto rng = makeRng(seed);
         return takeFailureOr(
             func.getContext(), "cannot simulate this QCO program", [&] {
               return mlir::qco::simulate(func, initialState, ddPackage, rng);
             });
       },
-      "program"_a, "initial_state"_a, "dd_package"_a, "seed"_a = nb::none(),
+      "program"_a, "initial_state"_a, "dd_package"_a, "seed"_a = 0U,
       // Keep the DD package alive while the returned vector DD is alive.
       nb::keep_alive<0, 3>(),
       R"pb(Simulate a QCO program on a DD state.
@@ -1048,9 +1042,8 @@ Args:
         has a live reference in ``dd_package``. Higher wires are preserved. A
         valid input reference is consumed.
     dd_package: DD package with enough qubits for the program.
-    seed: If ``None``, rejects programs containing measurements or resets.
-        Otherwise seeds the RNG used to collapse them
-        (``0`` = nondeterministic).
+    seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+        value produces reproducible measurement and reset results.
 
 Returns:
     Output state DD.
@@ -1062,21 +1055,22 @@ Raises:
   m.def(
       "sample",
       [](const mlir::QCOProgram& program, dd::Package& ddPackage,
-         const size_t shots, const std::optional<uint64_t> seed) {
+         const size_t shots, const uint64_t seed) {
         auto func = entryFunc(program);
         auto rng = makeRng(seed);
         return takeFailureOr(
             func.getContext(), "cannot sample this QCO program",
             [&] { return mlir::qco::sample(func, ddPackage, shots, rng); });
       },
-      "program"_a, "dd_package"_a, "shots"_a = 1024U, "seed"_a = nb::none(),
+      "program"_a, "dd_package"_a, "shots"_a = 1024U, "seed"_a = 0U,
       R"pb(Sample the declared outputs of a QCO program.
 
 Args:
     program: A QCO program whose entry ``func.func`` is sampled.
     dd_package: DD package with enough qubits for the program.
     shots: Number of shots (default 1024).
-    seed: RNG seed. ``None`` (default) or ``0`` selects nondeterministic seeding.
+    seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+        value produces reproducible results.
 
 Returns:
     Histogram of returned CBit registers in return order, each MSB first. If
