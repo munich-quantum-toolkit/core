@@ -190,7 +190,7 @@ flow, so export uses Qiskit's public Python classes for these operations.
 | Clbit and ClassicalRegister expression variables                  | Supported            | Supported      |
 | Standalone classical runtime variables                            | Rejected             | Rejected       |
 | Free symbols and supported real parameter expressions             | Supported            | Supported      |
-| Parameter-vector elements                                         | Rejected             | Not emitted    |
+| Parameter-vector elements                                         | Supported            | Supported      |
 | Dense numeric unitaries up to eight qubits                        | Supported            | Supported      |
 | Register aliases or interleaved membership                        | Rejected             | Rejected       |
 | Transpiler layout metadata                                        | Accepted and ignored | Not emitted    |
@@ -200,19 +200,22 @@ containing circuit. This includes values used only by the condition or switch
 target and not by a control-flow block. Standalone runtime variables remain
 unsupported.
 
-Free standalone symbols become named {code}`f64` program inputs.
-Parameter-vector elements are rejected because converting them to standalone
-parameters would change positional binding order. Standalone parameter names
-that contain brackets remain ordinary scalar names. Parameter-expression trees
-support at most 64 levels and 4,096 nodes. Import and export support real
-addition, subtraction, multiplication, division, power, negation, trigonometric
-and inverse trigonometric functions, exponential, logarithm, absolute value, and
-real conjugation. Other parameter-expression functions are rejected. Lexically
-bound {code}`for`-loop induction parameters are supported and remain distinct
-from free symbols. Parameterized custom-instruction definitions are expanded
-after their symbols and expressions are resolved. Definition expansion rejects
-missing definitions, cycles, operand arity mismatches, nesting beyond 64 levels,
-and more than 10 million expanded operations.
+Free symbols become named {code}`f64` program inputs. Parameter-vector elements
+retain their grouping and index, preserving vector order and positional binding
+across a round trip; similarly named standalone parameters remain standalone.
+Elements used in different structured-control blocks are restored into one
+shared vector for the complete circuit tree. Free parameter vectors and their
+combined declared size in one translated circuit are each limited to 65,536
+elements. Parameter-expression trees support at most 64 levels and 4,096 nodes.
+Import and export support real addition, subtraction, multiplication, division,
+power, negation, trigonometric and inverse trigonometric functions, exponential,
+logarithm, absolute value, and real conjugation. Other parameter-expression
+functions are rejected. Lexically bound {code}`for`-loop induction parameters
+are supported and remain distinct from free symbols. Parameterized
+custom-instruction definitions are expanded after their symbols and expressions
+are resolved. Definition expansion rejects missing definitions, cycles, operand
+arity mismatches, nesting beyond 64 levels, and more than 10 million expanded
+operations.
 
 Structured-control export accepts result-free {code}`scf.if`, constant-range
 {code}`scf.for` without loop-carried values, expression-based {code}`scf.while`

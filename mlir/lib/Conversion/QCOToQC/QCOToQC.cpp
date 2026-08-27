@@ -890,6 +890,7 @@ struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
     auto newFor = scf::ForOp::create(
         rewriter, op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
         adaptor.getStep(), classicalInits);
+    newFor->setDiscardableAttrs(op->getDiscardableAttrDictionary());
     // Erase default block
     rewriter.eraseBlock(&newFor.getRegion().front());
 
