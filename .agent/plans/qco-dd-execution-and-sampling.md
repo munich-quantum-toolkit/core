@@ -25,7 +25,8 @@ sampling them demonstrates the behavior end to end.
 - [x] (2026-08-26 22:22Z) Run full local validation and prepare two signed
   additive commits.
 - [x] (2026-08-26 22:29Z) Push normally and inspect hosted checks.
-- [ ] Confirm replacement hosted checks after the lint-only follow-up.
+- [x] (2026-08-26 23:45Z) Confirm replacement hosted checks after the
+      follow-ups.
 
 ## Surprises & Discoveries
 
@@ -60,17 +61,18 @@ The focused engine, all 3,872 runnable C++ tests, generated stub, and lint are
 green. The compiler-to-sampler file passes all six tests against an installed
 extension, including the two new cases. The Python Nox matrix passes 725 tests
 on each of Python 3.11 through 3.13 and 736 on Python 3.14; documented skips are
-unchanged. The bare root `uv run --no-sync` invocation cannot import the package
-and therefore skips collection, while each Nox environment installs and tests
-the built extension.
+unchanged. A bare `uv run --no-sync` invocation requires an installed package;
+without one, collection fails. Each Nox environment installs and tests the built
+extension.
 
-Relative to the original PR tip `97f904f6`, the total PR diff shrank from 1,670
-insertions and 238 deletions to 1,668 insertions and 545 deletions. The
-production implementation shrank from 1,232 to 1,229 lines. Generated `mlir.pyi`
-churn accounts for 55 insertions in the final PR diff. The first hosted run
-exposed eight clang-tidy findings and a macOS-only `qco.index_switch` verifier
-crash caused by its `INT64_MIN` tombstone. Small additive follow-ups correct the
-lint and avoid that unrelated verifier path in the maximum-shift test.
+Relative to the original PR tip `97f904f6`, the current PR diff has 1,688
+insertions and 545 deletions, including 18 lines that make nanobind generate
+direct DD type imports. The production implementation shrank from 1,232 to 1,229
+lines. Generated `mlir.pyi` churn accounts for 56 insertions. The first hosted
+run exposed eight clang-tidy findings and a macOS-only `qco.index_switch`
+verifier crash caused by its `INT64_MIN` tombstone. Small additive follow-ups
+correct the lint and avoid that unrelated verifier path in the maximum-shift
+test.
 
 ## Context and Orientation
 

@@ -15,7 +15,7 @@ from typing import Literal, Unpack, overload
 
 import qiskit.circuit
 
-import mqt.core.dd
+from mqt.core.dd import DDPackage, MatrixDD, VectorDD
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
 
@@ -542,7 +542,7 @@ class QIRProgram(Program):
     def write_bitcode(self, path: str | os.PathLike) -> None:
         """Write this program as LLVM bitcode."""
 
-def build_functionality(program: QCOProgram, dd_package: mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD:
+def build_functionality(program: QCOProgram, dd_package: DDPackage) -> MatrixDD:
     """Build a matrix DD for a static unitary QCO program.
 
     Args:
@@ -557,8 +557,11 @@ def build_functionality(program: QCOProgram, dd_package: mqt.core.dd.DDPackage) 
     """
 
 def simulate(
-    program: QCOProgram, initial_state: mqt.core.dd.VectorDD, dd_package: mqt.core.dd.DDPackage, seed: int | None = None
-) -> mqt.core.dd.VectorDD:
+    program: QCOProgram,
+    initial_state: VectorDD,
+    dd_package: DDPackage,
+    seed: int | None = None,
+) -> VectorDD:
     """Simulate a QCO program on a DD state.
 
     Args:
@@ -577,9 +580,7 @@ def simulate(
             or the program is unsupported for simulation.
     """
 
-def sample(
-    program: QCOProgram, dd_package: mqt.core.dd.DDPackage, shots: int = 1024, seed: int | None = None
-) -> dict[str, int]:
+def sample(program: QCOProgram, dd_package: DDPackage, shots: int = 1024, seed: int | None = None) -> dict[str, int]:
     """Sample the declared outputs of a QCO program.
 
     Args:

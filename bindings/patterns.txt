@@ -86,6 +86,24 @@ mqt\.core\.qdmi\.Device\.Operation\.query_custom_property$:
     ) -> str | bool | int | float | bytes | None:
         \doc
 
+mqt\.core\.mlir\.build_functionality$:
+    \from mqt.core.dd import DDPackage, MatrixDD, VectorDD
+    def build_functionality(program: QCOProgram, dd_package: DDPackage) -> MatrixDD:
+        \doc
+
+mqt\.core\.mlir\.simulate$:
+    def simulate(
+        program: QCOProgram,
+        initial_state: VectorDD,
+        dd_package: DDPackage,
+        seed: int | None = None,
+    ) -> VectorDD:
+        \doc
+
+mqt\.core\.mlir\.sample$:
+    def sample(program: QCOProgram, dd_package: DDPackage, shots: int = 1024, seed: int | None = None) -> dict[str, int]:
+        \doc
+
 mqt\.core\.mlir\.CompilerTarget\.__init__$:
     \from collections.abc import Sequence
     \from typing import overload

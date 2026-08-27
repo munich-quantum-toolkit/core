@@ -13,8 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-dd = pytest.importorskip("mqt.core.dd")
-mlir = pytest.importorskip("mqt.core.mlir")
+from mqt.core import dd, mlir
 
 
 def _x_program() -> mlir.QCOProgram:
