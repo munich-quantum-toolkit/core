@@ -2273,8 +2273,7 @@ def test_parameter_vector_element_is_valid_loop_parameter() -> None:
     circuit.for_loop(range(3), iteration, body, [0], [], label=None)
 
     program = QCProgram.from_qiskit(circuit)
-    assert "mqt.input_group" not in program.ir
-    assert "mqt.loop_parameter_group" in program.ir
+    assert program.ir.count("mqt.parameter_group") == 1
     restored_circuits = (
         program.to_qiskit(),
         program.to_qco(copy=True).to_qc().to_qiskit(),
@@ -2329,7 +2328,7 @@ def test_parameter_vector_metadata_is_preflighted(sizes: list[int], shared_group
     for index, size in enumerate(sizes):
         arguments.append(
             f'%theta{index}: f64 {{mqt.input_name = "theta{index}[0]", '
-            f'mqt.input_group = {{identity = "group{index if shared_group_id is None else shared_group_id}", '
+            f'mqt.parameter_group = {{identity = "group{index if shared_group_id is None else shared_group_id}", '
             f'name = "theta{index}", index = 0 : i64, size = {size} : i64}}}}'
         )
         gates.append(f"    qc.rx(%theta{index}) %q : !qc.qubit")
