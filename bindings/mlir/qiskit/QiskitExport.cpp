@@ -469,7 +469,7 @@ void collectParameters(mlir::func::FuncOp function, ExportState& state) {
     }
 
     const auto groupAttribute = function.getArgAttr(
-        index, mlir::mqt::MQTDialect::InputGroupAttrHelper::getNameStr());
+        index, mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr());
     std::optional<ParameterGroup> group;
     if (groupAttribute) {
       group = parameterGroup(groupAttribute);
@@ -1703,7 +1703,7 @@ collectFor(mlir::scf::ForOp loop, ExportState& state,
       .isRange = true, .start = *lower, .stop = *upper, .step = *step};
   std::optional<ParameterGroup> sourceGroup;
   if (const auto attribute = loop->getAttr(
-          mlir::mqt::MQTDialect::LoopParameterGroupAttrHelper::getNameStr())) {
+          mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr())) {
     sourceGroup = parameterGroup(attribute);
     state.parameterGroups.add(*sourceGroup);
   }

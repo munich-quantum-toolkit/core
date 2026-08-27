@@ -120,7 +120,8 @@ verifyInputGroup(FunctionOpInterface function, Operation* operation,
       argIndex, MQTDialect::InputNameAttrHelper::getNameStr());
   if (!inputName) {
     return operation->emitError()
-           << "parameter input-group metadata requires an input name";
+           << "parameter-group metadata on a function argument requires an "
+              "input name";
   }
   if (failed(verifyParameterGroup(operation, attribute))) {
     return failure();
@@ -202,7 +203,7 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
   if (attribute.getName() == RegisterNameAttrHelper::getNameStr()) {
     return verifyRegisterName(operation, attribute);
   }
-  if (attribute.getName() == LoopParameterGroupAttrHelper::getNameStr()) {
+  if (attribute.getName() == ParameterGroupAttrHelper::getNameStr()) {
     if (!isa<scf::ForOp>(operation)) {
       return operation->emitError()
              << "attribute '" << attribute.getName().getValue()
@@ -210,8 +211,7 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     }
     return verifyParameterGroup(operation, attribute.getValue());
   }
-  if (attribute.getName() == InputNameAttrHelper::getNameStr() ||
-      attribute.getName() == InputGroupAttrHelper::getNameStr()) {
+  if (attribute.getName() == InputNameAttrHelper::getNameStr()) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
            << "' is only valid on a function argument";
@@ -225,7 +225,7 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
     const NamedAttribute attribute) {
   const auto attributeName = attribute.getName();
   if (attributeName != InputNameAttrHelper::getNameStr() &&
-      attributeName != InputGroupAttrHelper::getNameStr()) {
+      attributeName != ParameterGroupAttrHelper::getNameStr()) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
            << "' is not valid on a region argument";
@@ -238,7 +238,7 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
            << "' requires a function entry-block argument";
   }
 
-  if (attributeName == InputGroupAttrHelper::getNameStr()) {
+  if (attributeName == ParameterGroupAttrHelper::getNameStr()) {
     return verifyInputGroup(function, operation, argIndex,
                             attribute.getValue());
   }

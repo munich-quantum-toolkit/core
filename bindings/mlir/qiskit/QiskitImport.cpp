@@ -1193,9 +1193,9 @@ void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
       const auto* symbol = loop.parameter->getSymbol();
       if (symbol != nullptr && symbol->group) {
         mlir::cast<mlir::scf::ForOp>(&containingBlock->back())
-            ->setAttr(mlir::mqt::MQTDialect::LoopParameterGroupAttrHelper::
-                          getNameStr(),
-                      parameterGroupAttribute(builder, *symbol->group));
+            ->setAttr(
+                mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr(),
+                parameterGroupAttribute(builder, *symbol->group));
       }
     }
     return;
@@ -2018,7 +2018,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
             builder.getStringAttr(symbol->name))};
     if (symbol->group) {
       argumentAttributes.push_back(builder.getNamedAttr(
-          mlir::mqt::MQTDialect::InputGroupAttrHelper::getNameStr(),
+          mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr(),
           parameterGroupAttribute(builder, *symbol->group)));
     }
     const auto index = function.getNumArguments();

@@ -21,9 +21,8 @@ def MQTDialect : Dialect {
     across quantum dialect conversions. It defines no operations or types.
 
     `mqt.input_name` records the source-level name of a function input.
-    `mqt.input_group` optionally preserves its source-level vector identity,
-    name, element index, and size.
-    `mqt.loop_parameter_group` preserves the same metadata for a lexically
+    `mqt.parameter_group` optionally preserves the source-level vector
+    identity, name, element index, and size of a function input or a lexically
     bound `scf.for` parameter.
     `mqt.register_name` records the source-level name of a quantum or classical
     register allocation. Input and register names share one function-wide
@@ -33,8 +32,7 @@ def MQTDialect : Dialect {
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
-      "::mlir::DictionaryAttr":$input_group,
-      "::mlir::DictionaryAttr":$loop_parameter_group,
+      "::mlir::DictionaryAttr":$parameter_group,
       "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point);
 
   let hasOperationAttrVerify = 1;
