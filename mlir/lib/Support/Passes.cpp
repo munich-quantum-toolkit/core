@@ -56,6 +56,7 @@ void registerMQTCompilerPasses() {
     qco::registerHadamardLifting();
     qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();
+    qco::registerPauliTwirl2QGates();
     qco::registerQuantumLoopUnroll();
     qco::registerRemoveDeadGates();
     qco::registerReplaceClassicalControls();

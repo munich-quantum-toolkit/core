@@ -722,7 +722,43 @@ Set ``copy=True`` to preserve it.)pb")
           "profile"_a, nb::kw_only(), "copy"_a = false,
           R"pb(Lower this program to QIR for the requested profile.
 
-Set ``copy=True`` to preserve it.)pb");
+Set ``copy=True`` to preserve it.)pb")
+      .def(
+          "num_gates",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.numGates();
+          },
+          R"pb(Count the gates in the program.
+
+Any operation that implements the ``UnitaryOpInterface`` is counted. Operations
+in every structured control-flow region are counted once, regardless of how
+often the region executes. Operations within modifiers are not counted
+recursively, and barriers are skipped.)pb")
+      .def(
+          "num_single_qubit_gates",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.numSingleQubitGates();
+          },
+          R"pb(Count the single-qubit gates in the program.
+
+Any operation that implements the ``UnitaryOpInterface`` and acts on one qubit
+is counted. Operations in every structured control-flow region are counted
+once, regardless of how often the region executes. Operations within modifiers
+are not counted recursively, and barriers are skipped.)pb")
+      .def(
+          "num_two_qubit_gates",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.numTwoQubitGates();
+          },
+          R"pb(Count the two-qubit gates in the program.
+
+Any operation that implements the ``UnitaryOpInterface`` and acts on two qubits
+is counted. Operations in every structured control-flow region are counted
+once, regardless of how often the region executes. Operations within modifiers
+are not counted recursively, and barriers are skipped.)pb");
 
   auto qcoProgram = nb::class_<mlir::QCOProgram, mlir::Program>(
       m, "QCOProgram", R"pb(A compiler program in the QCO dialect.

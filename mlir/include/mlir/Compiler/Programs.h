@@ -187,6 +187,38 @@ public:
 
   /// Consume this program and lower it to QIR.
   [[nodiscard]] std::optional<QIRProgram> intoQIR(QIRProfile profile) &&;
+
+  /**
+   * @brief Count the gates in the program.
+   *
+   * @details Any operation that implements the `UnitaryOpInterface` is counted.
+   * The count includes operations in every structured control-flow region once,
+   * regardless of how often the region executes. Operations within modifiers
+   * are not counted recursively, and barriers are skipped.
+   */
+  [[nodiscard]] size_t numGates() const;
+
+  /**
+   * @brief Count the single-qubit gates in the program.
+   *
+   * @details Any operation that implements the `UnitaryOpInterface` and acts on
+   * one qubit is counted. The count includes operations in every structured
+   * control-flow region once, regardless of how often the region executes.
+   * Operations within modifiers are not counted recursively, and barriers are
+   * skipped.
+   */
+  [[nodiscard]] size_t numSingleQubitGates() const;
+
+  /**
+   * @brief Count the two-qubit gates in the program.
+   *
+   * @details Any operation that implements the `UnitaryOpInterface` and acts on
+   * two qubits is counted. The count includes operations in every structured
+   * control-flow region once, regardless of how often the region executes.
+   * Operations within modifiers are not counted recursively, and barriers are
+   * skipped.
+   */
+  [[nodiscard]] size_t numTwoQubitGates() const;
 };
 
 /**

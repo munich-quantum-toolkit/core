@@ -66,6 +66,21 @@ constructing MLIR directly, return the values produced by the measurement
 operations.
 :::
 
+## Inspect a QC program
+
+Use the inspection methods of a {py:class}`~mqt.core.mlir.QCProgram` to count
+gates without parsing the textual IR:
+
+```{code-cell} ipython3
+print("Gates:", compiled.num_gates())
+print("Single-qubit gates:", compiled.num_single_qubit_gates())
+print("Two-qubit gates:", compiled.num_two_qubit_gates())
+```
+
+These counts describe the entry-point IR. A gate in each structured control-flow
+region counts once, regardless of the runtime path or loop iteration count.
+Barriers do not count, and operations inside gate modifiers do not count again.
+
 ## Select an output format
 
 Select an output format to stop the pipeline at a particular representation:
@@ -294,6 +309,26 @@ custom = compile_program(
     qco_pipeline="hadamard-lifting,merge-single-qubit-rotation-gates",
 )
 ```
+
+Pauli twirling is available as an opt-in textual pass. It supports CX, CZ, ECR,
+and iSWAP gates, keeps every inserted Pauli operation (including identities)
+explicit, and preserves the exact global phase. The seed defaults to {code}`42`:
+
+```{code-cell} ipython3
+twirled = compile_program(bell_qasm, output=OutputFormat.QCO)
+twirled.run_pass_pipeline("pauli-twirl-2q-gates{seed=42}")
+```
+
+Each invocation produces one deterministic realization; omitting the seed
+reproduces the realization selected by {code}`seed=42`. To construct an ensemble
+for noise tailoring, transform copies with different seeds, execute them, and
+aggregate their measurement results. Different seeds are not guaranteed to
+produce distinct realizations.
+
+This is a raw-QCO transformation. It does not place twirling relative to target
+mapping or synthesis and does not guarantee that the result uses a target's
+native gate set. Target-aware twirling is not currently available through the
+target compilation pipeline.
 
 The raw qubit-reuse pass and its composite preparation pipeline are both
 available through the compiler collection:
