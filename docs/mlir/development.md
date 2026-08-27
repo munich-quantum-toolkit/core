@@ -80,6 +80,13 @@ LLVM data structure such as `SmallVector`, `DenseMap`, or `MapVector` when its
 storage, lookup, ordering, or API behavior provides a concrete benefit. Keep a
 standard-library type when it already expresses the required contract.
 
+When code in the `mlir` namespace or one of its nested namespaces uses an LLVM
+name that `mlir/Support/LLVM.h` imports, include that header and use the
+unqualified name, such as `SmallVector`, `StringRef`, or `function_ref`. Do not
+rely on `mlir/Support/LLVM.h` for type definitions. Include each LLVM header
+that the source file needs. Keep the `llvm::` qualifier for names that
+`mlir/Support/LLVM.h` does not import.
+
 Do not convert containers in bulk for style. Require a profile, benchmark, or a
 specific allocation or complexity argument for a performance rewrite. Keep
 user-visible output deterministic: never use pointer identity or unspecified
