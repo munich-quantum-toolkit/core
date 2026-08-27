@@ -65,9 +65,7 @@ struct SynthesizedUnitary1Q {
   double globalPhase = 0.0;
 };
 
-/**
- * @brief Whether @p op belongs to @p basis.
- */
+/// Returns whether @p op belongs to @p basis.
 [[nodiscard]] bool isSingleQubitBasisGate(Operation* op,
                                           SingleQubitBasis basis);
 
@@ -112,18 +110,14 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
  */
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
 
-/**
- * @brief Whether @p op can be synthesized from runtime one-qubit parameters.
- */
+/// Returns whether @p op supports runtime one-qubit synthesis.
 [[nodiscard]] bool canSynthesizeParameterizedUnitary1Q(Operation* op);
 
-/**
- * @brief Synthesizes one supported runtime-parameterized operation in @p basis.
- *
- * Operations that already belong to @p basis are left unchanged.
- *
- * @pre `canSynthesizeParameterizedUnitary1Q(op)` is true.
- */
+/// Synthesizes one supported runtime-parameterized operation in @p basis.
+///
+/// Leaves operations that already belong to @p basis unchanged.
+///
+/// @pre `canSynthesizeParameterizedUnitary1Q(op)` is true.
 void synthesizeParameterizedUnitary1Q(RewriterBase& rewriter, Operation* op,
                                       SingleQubitBasis basis);
 
@@ -138,12 +132,9 @@ void populateFuseSingleQubitUnitaryRunsPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis,
     bool skipControlledBodies = false);
 
-/**
- * @brief Populates patterns that compose profitable parameterized
- * single-qubit runs for synthesis in @p basis.
- *
- * The patterns emit the requested target basis directly.
- */
+/// Populates patterns that compose profitable parameterized single-qubit runs.
+///
+/// The patterns emit @p basis directly.
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis);
 

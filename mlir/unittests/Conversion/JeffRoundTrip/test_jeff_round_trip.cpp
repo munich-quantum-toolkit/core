@@ -108,7 +108,7 @@ static Value measureToRegister(qco::QCOProgramBuilder& b, ValueRange qubits) {
 
 static Value powDcx(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+  auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
     auto [q0, q1] = b.dcx(qubits[0], qubits[1]);
     return SmallVector{q0, q1};
   });
@@ -117,7 +117,7 @@ static Value powDcx(qco::QCOProgramBuilder& b) {
 
 static Value powInvDcx(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+  auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
     auto inner = b.inv({qubits[0], qubits[1]}, [&](ValueRange invArgs) {
       auto [q0, q1] = b.dcx(invArgs[0], invArgs[1]);
       return SmallVector{q0, q1};
@@ -129,7 +129,7 @@ static Value powInvDcx(qco::QCOProgramBuilder& b) {
 
 static Value ctrlPowDcx(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  const auto& [controlsOut, targetsOut] =
+  auto [controlsOut, targetsOut] =
       b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
         auto inner =
             b.pow(2.0, {targets[0], targets[1]}, [&](ValueRange powArgs) {
@@ -144,7 +144,7 @@ static Value ctrlPowDcx(qco::QCOProgramBuilder& b) {
 
 static Value ctrlPowInvDcx(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  const auto& [controlsOut, targetsOut] =
+  auto [controlsOut, targetsOut] =
       b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
         auto inner =
             b.pow(2.0, {targets[0], targets[1]}, [&](ValueRange powArgs) {
@@ -163,7 +163,7 @@ static Value ctrlPowInvDcx(qco::QCOProgramBuilder& b) {
 
 static Value powU(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto powOut =
+  auto powOut =
       b.pow(3.0, q[0], [&](Value qubit) { return b.u(0.1, 0.2, 0.3, qubit); });
   return b.measure(powOut).second;
 }

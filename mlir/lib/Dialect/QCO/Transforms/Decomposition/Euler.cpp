@@ -31,7 +31,7 @@
 
 namespace mlir::qco::decomposition {
 
-bool isSingleQubitBasisGate(Operation* op, const SingleQubitBasis basis) {
+bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
   return TypeSwitch<Operation*, bool>(op)
       .Case<RZOp>([&](auto) {
         return basis == SingleQubitBasis::ZYZ ||

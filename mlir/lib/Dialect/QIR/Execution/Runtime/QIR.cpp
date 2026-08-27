@@ -40,7 +40,6 @@ struct alignas(std::max_align_t) TupleHeader {
 } // namespace
 
 static auto getTupleHeader(Tuple* tuple) -> TupleHeader* {
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
   return reinterpret_cast<TupleHeader*>(tuple) - 1;
 }
 
@@ -127,7 +126,6 @@ Array* __quantum__rt__array_create_1d(const int32_t size, const int64_t n) {
   if (length > maxObjectSize / elementSize) {
     throw std::length_error("QIR array allocation size overflow");
   }
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   auto* array = new Array;
   array->refcount = 1;
   array->data = std::vector(length * elementSize, static_cast<int8_t>(0));
@@ -152,7 +150,6 @@ void __quantum__rt__array_update_reference_count(Array* array,
   if (array != nullptr) {
     array->refcount += k;
     if (array->refcount == 0) {
-      // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
       delete array;
     }
   }

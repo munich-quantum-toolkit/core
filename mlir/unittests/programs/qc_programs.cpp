@@ -140,10 +140,10 @@ Value staticQubitsWithInv(QCProgramBuilder& b) {
 }
 
 Value staticQubitsWithDuplicates(QCProgramBuilder& b) {
-  const auto q0a = b.staticQubit(0);
-  const auto q1a = b.staticQubit(1);
-  const auto q0b = b.staticQubit(0);
-  const auto q1b = b.staticQubit(1);
+  auto q0a = b.staticQubit(0);
+  auto q1a = b.staticQubit(1);
+  auto q0b = b.staticQubit(0);
+  auto q1b = b.staticQubit(1);
 
   b.rx(std::numbers::pi / 4., q0a);
   b.p(std::numbers::pi / 2., q1a);
@@ -154,8 +154,8 @@ Value staticQubitsWithDuplicates(QCProgramBuilder& b) {
 }
 
 Value staticQubitsCanonical(QCProgramBuilder& b) {
-  const auto q0 = b.staticQubit(0);
-  const auto q1 = b.staticQubit(1);
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
 
   b.rx(std::numbers::pi / 4., q0);
   b.p(std::numbers::pi / 2., q1);
@@ -2648,8 +2648,8 @@ Value indexSwitchMultiCase(QCProgramBuilder& b) {
           .getResult();
   for (int64_t i = 0; i < size; ++i) {
     b.h(reg[i]);
-    const auto bit = b.measure(reg[i]);
-    const auto index =
+    auto bit = b.measure(reg[i]);
+    auto index =
         arith::IndexCastUIOp::create(b, b.getIndexType(), bit).getOut();
     condition = arith::OrIOp::create(b, {condition, index}).getResult();
     condition = arith::ShLIOp::create(b, {condition, c1});

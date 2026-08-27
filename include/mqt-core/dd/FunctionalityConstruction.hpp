@@ -56,24 +56,4 @@ namespace dd {
  */
 MatrixDD buildFunctionality(const qc::QuantumComputation& qc, Package& dd);
 
-/**
- * @brief Recursively build a decision diagram representation for the
- * functionality of a purely-quantum @ref qc::QuantumComputation.
- *
- * @see buildFunctionality
- * @details Instead of sequentially applying the decision diagrams of the gates
- * in the circuit, this function builds a binary computation tree out of the
- * decision diagrams of the gates in the circuit.
- * This results in a recursive pairwise grouping that can be more memory and
- * runtime efficient compared to the sequential approach.
- * @see https://arxiv.org/abs/2103.08281
- *
- * @param qc The quantum computation to construct the functionality for
- * @param dd The DD package to use for the construction
- * @return The matrix diagram representing the functionality of the quantum
- * computation
- */
-MatrixDD buildFunctionalityRecursive(const qc::QuantumComputation& qc,
-                                     Package& dd);
-
 } // namespace dd

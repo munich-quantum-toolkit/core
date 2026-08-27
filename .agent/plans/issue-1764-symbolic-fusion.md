@@ -111,6 +111,10 @@ operations that do not expose named SSA angle parameters remain run boundaries.
       target-synthesis tests, 135 compiler tests, and the repository lint suite.
 - [x] (2026-08-27 12:31Z) Removed 34 lines of duplicate assertions while
       preserving singularity, atomicity, all-bases, and fast-path coverage.
+- [x] (2026-08-27 13:54Z) Merged current `main`, applied the new MLIR handle,
+      parameter, and documentation rules to the changed code, and passed 237
+      decomposition tests, 193 optimization tests, 24 target-synthesis tests,
+      135 compiler tests, `uvx nox -s lint`, and `uvx nox -s cpp-lint`.
 
 ## Surprises & Discoveries
 
@@ -429,7 +433,7 @@ Final test evidence:
     optimizations: 193 passed
     target synthesis: 24 passed
     compiler: 135 passed
-    lint, formatting, and diff checks: passed
+    lint, whole-file C++ lint, formatting, and diff checks: passed
 
 Retain the clamp around `acos`, the pure-Z gimbal path, the sanitized
 `atan2(0,0)` input, and the Euler wrap phase when reusing this code.
@@ -465,3 +469,6 @@ coverage, and removed superseded limits from the outcome.
 
 Revision note (2026-08-24): Recorded the post-review simplification that emits
 all dynamic bases directly and removes the intermediate U synthesis API.
+
+Revision note (2026-08-27): Recorded the final merge, current MLIR policy
+alignment, and validation evidence.

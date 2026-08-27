@@ -10,7 +10,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from mqt.core.ir import QuantumComputation
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_bell_state_circuit() -> None:
@@ -48,3 +53,18 @@ def test_num_output_qubits_excludes_garbage() -> None:
 
     qc.set_circuit_qubit_garbage(1)
     assert qc.num_output_qubits == 2
+
+
+def test_qasm_file_exports_match_string_exports(tmp_path: Path) -> None:
+    """Test that both OpenQASM file exporters use the circuit serializer."""
+    qc = QuantumComputation(2)
+    qc.h(0)
+    qc.cx(0, 1)
+
+    qasm2_path = tmp_path / "circuit.qasm2"
+    qc.qasm2(str(qasm2_path))
+    assert qasm2_path.read_text() == qc.qasm2_str()
+
+    qasm3_path = tmp_path / "circuit.qasm3"
+    qc.qasm3(str(qasm3_path))
+    assert qasm3_path.read_text() == qc.qasm3_str()

@@ -245,10 +245,8 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
   const auto status =
       _putenv_s("MQT_CORE_QDMI_CONFIG_FILE", path.str().c_str());
 #else
-  // NOLINTBEGIN(misc-include-cleaner)
   const auto status =
       setenv("MQT_CORE_QDMI_CONFIG_FILE", path.str().c_str(), 1);
-  // NOLINTEND(misc-include-cleaner)
 #endif
   return reportQDMIErrorIf(
       status != 0,
@@ -376,6 +374,8 @@ static int runCompiler(int argc, char** argv) {
   const llvm::InitLLVM y(argc, argv);
 
   registerMQTCompilerPasses();
+  registerAsmPrinterCLOptions();
+  registerMLIRContextCLOptions();
   registerPassManagerCLOptions();
   PassPipelineCLParser passPipeline(
       "passes", "QCO optimization passes to run instead of the default");
@@ -468,7 +468,9 @@ static int runCompiler(int argc, char** argv) {
   switch (*parsedInputFormat) {
   case InputFormat::MLIR:
     program.mod = loadMLIRFile(inputFilename, &context);
-    program.dialect = detectInputDialect(*program.mod);
+    if (program.mod) {
+      program.dialect = detectInputDialect(*program.mod);
+    }
     break;
   case InputFormat::QASM:
     program.mod = loadQASMFile(inputFilename, &context);

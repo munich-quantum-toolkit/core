@@ -388,10 +388,8 @@ private:
   using DynamicBitFactSet = std::vector<DynamicBitFact>;
 
   // The analyzed syntax and source manager are mandatory and outlive this run.
-  const SyntaxProgram&
-      syntax; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  const llvm::SourceMgr&
-      sources; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  const SyntaxProgram& syntax;
+  const llvm::SourceMgr& sources;
   FrontendOptions options;
   TypedProgram program;
   SmallVector<llvm::StringMap<Symbol>> scopes;

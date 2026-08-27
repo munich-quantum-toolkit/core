@@ -105,8 +105,8 @@ TEST(QCToQIRAdaptiveNativeTest,
                       LLVM::LLVMDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto control = builder.allocQubit();
-  const auto target = builder.allocQubit();
+  auto control = builder.allocQubit();
+  auto target = builder.allocQubit();
   builder.ctrl(control, target, [&](Value targetArg) {
     builder.x(targetArg);
     builder.gphase(0.317);
@@ -124,8 +124,8 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsControlledPhaseWithNonHoistableAngle) {
                       LLVM::LLVMDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto control = builder.allocQubit();
-  const auto target = builder.allocQubit();
+  auto control = builder.allocQubit();
+  auto target = builder.allocQubit();
   builder.ctrl(control, target, [&](Value /*targetArg*/) {
     auto angle = func::CallOp::create(builder, builder.getLoc(), "angle",
                                       builder.getF64Type(), ValueRange{});
@@ -217,7 +217,7 @@ TEST(QCToQIRAdaptiveNativeTest, LowersUnreturnedClassicalControlRegister) {
                    scf::SCFDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1);
   builder.measure(q, c, 0);
   builder.scfIf(c, 0, [&] { builder.x(q); });
@@ -242,7 +242,7 @@ TEST(QCToQIRAdaptiveNativeTest, LowersZeroInitializedClassicalControlRegister) {
                    scf::SCFDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1);
   builder.scfIf(c, 0, [&] { builder.x(q); });
   auto module = builder.finalize();
@@ -264,9 +264,9 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleRegisterDestinations) {
                    scf::SCFDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(2);
-  const auto result = builder.measure(q, c, 0);
+  auto result = builder.measure(q, c, 0);
   builder.storeClassicalBit(result, c, 1);
   builder.retype(c.getType());
   auto module = builder.finalize(c);
@@ -281,7 +281,7 @@ TEST(QCToQIRAdaptiveNativeTest, RecordsReturnedRegisterMeasurement) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1, "named_result");
   builder.measure(q, c, 0);
   builder.retype(c.getType());
@@ -342,7 +342,7 @@ TEST(QCToQIRAdaptiveNativeTest, LowersInternalZeroInitializedRegisterStorage) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   auto c = builder.allocClassicalBitRegister(2);
-  const auto first = builder.loadClassicalBit(c, 0);
+  auto first = builder.loadClassicalBit(c, 0);
   builder.storeClassicalBit(first, c, 1);
   auto module = builder.finalize();
   ASSERT_TRUE(module);
@@ -372,7 +372,7 @@ TEST(QCToQIRAdaptiveNativeTest, SupportsDynamicInternalRegisterIndices) {
   auto index = arith::IndexCastOp::create(builder, builder.getIndexType(),
                                           unknown.getResult());
   builder.storeClassicalBit(builder.boolConstant(true), c, index.getResult());
-  const auto value = builder.loadClassicalBit(c, index.getResult());
+  auto value = builder.loadClassicalBit(c, index.getResult());
   builder.storeClassicalBit(value, c, 0);
   auto module = builder.finalize();
   ASSERT_TRUE(module);
@@ -387,7 +387,7 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1);
   builder.measure(q, c, 0);
   builder.storeClassicalBit(builder.boolConstant(false), c, 0);
@@ -415,7 +415,7 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedIntegerMemref) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto type = MemRefType::get({1}, builder.getI8Type());
-  const auto memref = memref::AllocOp::create(builder, type).getResult();
+  auto memref = memref::AllocOp::create(builder, type).getResult();
   builder.retype(type);
   auto module = builder.finalize(memref);
   ASSERT_TRUE(module);

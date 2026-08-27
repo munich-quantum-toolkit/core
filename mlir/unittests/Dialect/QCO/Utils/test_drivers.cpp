@@ -57,7 +57,7 @@ TEST_F(DriversTest, ProgramGraphWalkTooFewWires) {
 
   const auto q00 = builder.allocQubit();
   const auto q10 = builder.allocQubit();
-  const auto [q01, q11] = builder.cx(q00, q10);
+  auto [q01, q11] = builder.cx(q00, q10);
 
   [[maybe_unused]] auto mod = builder.finalize();
 
@@ -81,9 +81,9 @@ TEST_F(DriversTest, ProgramGraphWalkRetainsUnreleasedReadyOperations) {
   const auto q20 = builder.allocQubit();
   const auto q30 = builder.allocQubit();
 
-  const auto [q01, q11] = builder.cx(q00, q10);
-  const auto [q21, q31] = builder.cx(q20, q30);
-  const auto [q02, q12] = builder.cx(q01, q11);
+  auto [q01, q11] = builder.cx(q00, q10);
+  auto [q21, q31] = builder.cx(q20, q30);
+  auto [q02, q12] = builder.cx(q01, q11);
 
   builder.measure(q02);
   builder.measure(q12);
@@ -139,30 +139,30 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   const auto q20 = builder.allocQubit();
   const auto q30 = builder.allocQubit();
 
-  const auto q01 = builder.h(q00);
+  auto q01 = builder.h(q00);
 
-  const auto [q02, q11] = builder.cx(q01, q10);
-  const auto [q21, q31] = builder.cx(q20, q30);
+  auto [q02, q11] = builder.cx(q01, q10);
+  auto [q21, q31] = builder.cx(q20, q30);
 
-  const auto q03 = builder.z(q02);
-  const auto q22 = builder.h(q21);
+  auto q03 = builder.z(q02);
+  auto q22 = builder.h(q21);
 
-  const auto [q12, q23] = builder.cx(q11, q22);
+  auto [q12, q23] = builder.cx(q11, q22);
 
-  const auto [q04, q13] = builder.cx(q03, q12);
-  const auto q14 = builder.h(q13);
+  auto [q04, q13] = builder.cx(q03, q12);
+  auto q14 = builder.h(q13);
 
   Value iterQ0;
   Value iterQ1;
   ValueRange blockArgs;
-  const auto forResults = builder.scfFor(
+  auto forResults = builder.scfFor(
       0, 3, 1, {q04, q14, q23, q31}, [&](Value, ValueRange args) {
         blockArgs = args;
         std::tie(iterQ0, iterQ1) = builder.cx(args[0], args[1]);
         return SmallVector<Value>{iterQ0, iterQ1, args[2], args[3]};
       });
 
-  const auto q05 = builder.qcoIf(
+  auto q05 = builder.qcoIf(
       false, forResults[0],
       [&](ValueRange args) { return SmallVector<Value>{builder.h(args[0])}; },
       [&](ValueRange args) {
@@ -172,8 +172,8 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
   const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
       identity};
-  const auto q06 = builder.qcoIndexSwitch(0, q05, SmallVector<int64_t>{0},
-                                          caseBodies, identity)[0];
+  auto q06 = builder.qcoIndexSwitch(0, q05, SmallVector<int64_t>{0}, caseBodies,
+                                    identity)[0];
 
   builder.measure(q06);
   builder.measure(forResults[1]);

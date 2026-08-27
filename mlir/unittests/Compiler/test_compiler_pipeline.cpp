@@ -210,7 +210,7 @@ makeSparseUCZTarget(const bool includeMeasure) {
 using NameAndCount = std::pair<llvm::StringRef, size_t>;
 
 [[nodiscard]] static CompilerTarget
-makeCZTarget(const std::initializer_list<NameAndCount> singleQubitGates) {
+makeCZTarget(std::initializer_list<NameAndCount> singleQubitGates) {
   using Operation = CompilerTarget::Operation;
   std::vector<Operation> operations;
   operations.reserve(singleQubitGates.size() + 1);
@@ -269,10 +269,10 @@ TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
 
   QCProgramBuilder builder(context.get());
   builder.initialize();
-  const auto qubit = builder.allocQubit();
+  auto qubit = builder.allocQubit();
   builder.h(qubit);
   auto moduleOp = builder.finalize();
-  const auto borrowed = *moduleOp;
+  auto borrowed = *moduleOp;
 
   auto program = QCProgram::fromModule(context, std::move(moduleOp));
 

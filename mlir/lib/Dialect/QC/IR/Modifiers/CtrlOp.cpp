@@ -242,7 +242,7 @@ LogicalResult CtrlOp::verify() {
   }
 
   SmallPtrSet<Value, 4> uniqueQubits;
-  for (const auto& qubit : getQubits()) {
+  for (auto qubit : getQubits()) {
     if (!uniqueQubits.insert(qubit).second) {
       return emitOpError("duplicate qubit found");
     }

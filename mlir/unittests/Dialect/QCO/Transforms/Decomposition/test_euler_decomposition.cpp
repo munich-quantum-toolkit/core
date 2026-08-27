@@ -254,7 +254,7 @@ template <typename OpTy>
   llvm::DenseSet<Value> visited;
   SmallVector<Value> worklist{value};
   while (!worklist.empty()) {
-    const Value current = worklist.pop_back_val();
+    Value current = worklist.pop_back_val();
     if (current == target) {
       return true;
     }
@@ -272,8 +272,8 @@ static void bindLeadingArguments(func::FuncOp funcOp, ArrayRef<double> values) {
   OpBuilder builder(funcOp.getContext());
   builder.setInsertionPointToStart(&funcOp.getBody().front());
   for (const auto [index, value] : llvm::enumerate(values)) {
-    const Value constant = arith::ConstantOp::create(
-        builder, funcOp.getLoc(), builder.getF64FloatAttr(value));
+    Value constant = arith::ConstantOp::create(builder, funcOp.getLoc(),
+                                               builder.getF64FloatAttr(value));
     funcOp.getArgument(index).replaceAllUsesWith(constant);
   }
 }
@@ -595,7 +595,7 @@ TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
 // FuseSingleQubitUnitaryRuns support
 //===----------------------------------------------------------------------===//
 
-[[nodiscard]] static bool isAllowedBasisGate(const Operation& op,
+[[nodiscard]] static bool isAllowedBasisGate(Operation& op,
                                              SingleQubitBasis basis) {
   switch (basis) {
   case ZYZ:
@@ -818,8 +818,7 @@ struct DirectSynthesisCounts {
 } // namespace
 
 [[nodiscard]] static DirectSynthesisCounts
-expectedDirectSynthesisCounts(const StringRef gate,
-                              const SingleQubitBasis basis) {
+expectedDirectSynthesisCounts(StringRef gate, SingleQubitBasis basis) {
   switch (basis) {
   case U:
     return {.u = 1, .gphase = gate == "rz"};
@@ -1060,7 +1059,7 @@ static SmallVector<Value> controlledH(QCOProgramBuilder& b) {
 
 static Value dynamicPowX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto powOut = b.pow(0.5, q[0], [&](Value qubit) { return b.x(qubit); });
+  auto powOut = b.pow(0.5, q[0], [&](Value qubit) { return b.x(qubit); });
   return b.measure(powOut).second;
 }
 
@@ -1183,7 +1182,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesNamedDynamicGatesInAllBases) {
       ASSERT_EQ(parameterizedGate.getNumParams(), gateCase.numParameters);
       SmallVector<Value> parameters(parameterizedGate.getParameters().begin(),
                                     parameterizedGate.getParameters().end());
-      for (const auto [index, parameter] : llvm::enumerate(parameters)) {
+      for (auto [index, parameter] : llvm::enumerate(parameters)) {
         parameter.replaceAllUsesWith(funcOp.getArgument(index));
       }
       ASSERT_TRUE(succeeded(verify(mlirModule)));
@@ -1277,7 +1276,7 @@ TEST(FuseSingleQubitUnitaryRunsTest,
       SmallVector<Value> parameters(parameterizedGate.getParameters().begin(),
                                     parameterizedGate.getParameters().end());
       ASSERT_EQ(parameters.size(), gateCase.numParameters);
-      for (const auto [index, parameter] : llvm::enumerate(parameters)) {
+      for (auto [index, parameter] : llvm::enumerate(parameters)) {
         parameter.replaceAllUsesWith(funcOp.getArgument(index));
       }
       ASSERT_TRUE(succeeded(verify(mlirModule)));
@@ -1338,7 +1337,7 @@ TEST(FuseSingleQubitUnitaryRunsTest,
     SmallVector<Value> parameters(uOp.getParameters().begin(),
                                   uOp.getParameters().end());
     ASSERT_EQ(parameters.size(), numParameters);
-    for (const auto [index, parameter] : llvm::enumerate(parameters)) {
+    for (auto [index, parameter] : llvm::enumerate(parameters)) {
       parameter.replaceAllUsesWith(funcOp.getArgument(index));
     }
     ASSERT_TRUE(succeeded(verify(mlirModule)));
@@ -1466,21 +1465,20 @@ TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossBoundariesAllBases) {
                }
              });
              EXPECT_EQ(twoQ, 1U) << basis.str();
-             expectSplitFixtureSegments(
-                 funcOp, basis, ctx, [](const Operation& op) {
-                   if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
-                     return unitary.isTwoQubit();
-                   }
-                   return false;
-                 });
+             expectSplitFixtureSegments(funcOp, basis, ctx, [](Operation& op) {
+               if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
+                 return unitary.isTwoQubit();
+               }
+               return false;
+             });
            }},
       {.program = &singleQubitRunsSplitByBarrier,
        .check =
            [](func::FuncOp funcOp, StringRef basis, MLIRContext* ctx) {
              EXPECT_EQ(countOps<BarrierOp>(funcOp), 1U) << basis.str();
-             expectSplitFixtureSegments(
-                 funcOp, basis, ctx,
-                 [](const Operation& op) { return isa<BarrierOp>(op); });
+             expectSplitFixtureSegments(funcOp, basis, ctx, [](Operation& op) {
+               return isa<BarrierOp>(op);
+             });
            }},
       {.program = &singleQubitRunsSplitByScfFor,
        .check =

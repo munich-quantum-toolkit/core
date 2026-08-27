@@ -332,7 +332,7 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
         auto q1 = builder.staticQubit(1);
         q0 = builder.x(q0);
         std::tie(q0, q1) = builder.cx(q0, q1);
-        const auto barrierResults = builder.barrier({q0, q1});
+        auto barrierResults = builder.barrier({q0, q1});
         q0 = barrierResults[0];
         q1 = barrierResults[1];
         builder.gphase(0.25);

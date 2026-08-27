@@ -97,7 +97,7 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
 
     if (auto op = dyn_cast<qco::IfOp>(it.operation())) {
       const auto prev = std::prev(it);
-      const auto qubits = op.getQubits();
+      auto qubits = op.getQubits();
       const auto qIt = llvm::find(qubits, prev.tensor());
       assert(qIt != op.getQubits().end());
       const auto idx = std::distance(qubits.begin(), qIt);
@@ -105,14 +105,14 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
       auto& thenRegion = op.getThenRegion();
       auto& elseRegion = op.getElseRegion();
 
-      const auto& thenArg = thenRegion.getArgument(idx);
-      const auto& elseArg = elseRegion.getArgument(idx);
+      auto thenArg = thenRegion.getArgument(idx);
+      auto elseArg = elseRegion.getArgument(idx);
 
       initEquivGroup(cast<TypedValue<RankedTensorType>>(thenArg), id, group);
       initEquivGroup(cast<TypedValue<RankedTensorType>>(elseArg), id, group);
     } else if (auto op = dyn_cast<qco::IndexSwitchOp>(it.operation())) {
       const auto prev = std::prev(it);
-      const auto targets = op.getTargets();
+      auto targets = op.getTargets();
       const auto targetIt = llvm::find(targets, prev.tensor());
       assert(targetIt != targets.end());
       const auto idx = std::distance(targets.begin(), targetIt);
@@ -123,8 +123,7 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
             group);
       }
     } else if (auto forOp = dyn_cast<scf::ForOp>(it.operation())) {
-      const auto& arg =
-          forOp.getTiedLoopRegionIterArg(cast<OpResult>(it.tensor()));
+      auto arg = forOp.getTiedLoopRegionIterArg(cast<OpResult>(it.tensor()));
       initEquivGroup(cast<TypedValue<RankedTensorType>>(arg), id, group);
     } else if (auto whileOp = dyn_cast<scf::WhileOp>(it.operation())) {
       const auto previous = std::prev(it);
@@ -136,7 +135,7 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
                          whileOp.getBeforeBody()->getArgument(initNumber)),
                      id, group);
 
-      const auto result = cast<OpResult>(it.tensor());
+      auto result = cast<OpResult>(it.tensor());
       initEquivGroup(
           cast<TypedValue<RankedTensorType>>(
               whileOp.getAfterBody()->getArgument(result.getResultNumber())),
@@ -181,7 +180,7 @@ static void mapSegmentedResults(ValueRange lhsClassical,
                                 ValueRange rhsLinear,
                                 ArrayRef<size_t> linearPermutation,
                                 IRMapping& mapping) {
-  for (const auto [lhsResult, rhsResult] :
+  for (auto [lhsResult, rhsResult] :
        llvm::zip_equal(lhsClassical, rhsClassical)) {
     mapping.map(lhsResult, rhsResult);
   }
@@ -465,7 +464,7 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
       numClassicalResults = switchOp.getClassicalResults().size();
     }
 
-    for (const auto [lhsValue, rhsValue] : llvm::zip_equal(
+    for (auto [lhsValue, rhsValue] : llvm::zip_equal(
              lhsYield.getTargets().take_front(numClassicalResults),
              rhsYield.getTargets().take_front(numClassicalResults))) {
       if (m.lookup(lhsValue) != rhsValue) {
@@ -478,7 +477,7 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
       return false;
     }
   } else {
-    for (const auto& [lhsOperand, rhsOperand] :
+    for (auto [lhsOperand, rhsOperand] :
          llvm::zip_equal(lhs->getOperands(), rhs->getOperands())) {
       if (tm.tracksLhs(lhsOperand)) {
         if (!tm.tracksRhs(rhsOperand)) {
@@ -489,7 +488,7 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
           return false;
         }
       } else {
-        const auto& v = m.lookup(lhsOperand);
+        auto v = m.lookup(lhsOperand);
         if (v != rhsOperand) {
           return false;
         }

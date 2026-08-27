@@ -22,7 +22,6 @@
 #pragma once
 
 // NOLINTBEGIN(modernize-use-using)
-// NOLINTBEGIN(modernize-deprecated-headers)
 // NOLINTBEGIN(readability-identifier-naming)
 
 #include <stdbool.h>
@@ -218,7 +217,6 @@ void __quantum__rt__array_record_output(int64_t size, const char*);
 void __quantum__rt__result_array_record_output(int64_t, Result**, const char*);
 
 // NOLINTEND(readability-identifier-naming)
-// NOLINTEND(modernize-deprecated-headers)
 // NOLINTEND(modernize-use-using)
 
 #ifdef __cplusplus

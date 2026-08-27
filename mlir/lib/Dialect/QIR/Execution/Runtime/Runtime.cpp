@@ -198,7 +198,6 @@ auto Runtime::qAlloc() -> Qubit* {
         "Cannot dynamically allocate qubits after using static qubit IDs");
   }
   qubitMode = ResourceMode::DYNAMIC;
-  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   auto* qubit = reinterpret_cast<Qubit*>(currentMaxQubitAddress++);
   qRegister.emplace(qubit, currentMaxQubitId++);
   return qubit;
@@ -218,7 +217,6 @@ auto Runtime::rAlloc() -> Result* {
         "Cannot dynamically allocate results after using static result IDs");
   }
   resultMode = ResourceMode::DYNAMIC;
-  // NOLINTNEXTLINE(performance-no-int-to-ptr)
   auto* result = reinterpret_cast<Result*>(currentMaxResultAddress++);
   rRegister.emplace(result, ResultStruct{.r = false});
   return result;

@@ -97,7 +97,7 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
   mlir::LogicalResult
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
-    const auto qubitVariable = op.getQubitIn();
+    auto qubitVariable = op.getQubitIn();
     auto* predecessor = qubitVariable.getDefiningOp();
 
     auto predecessorUnitary = mlir::dyn_cast<UnitaryOpInterface>(predecessor);
@@ -134,7 +134,7 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
   mlir::LogicalResult
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
-    const auto qubitVariable = op.getQubitIn();
+    auto qubitVariable = op.getQubitIn();
     auto* predecessor = qubitVariable.getDefiningOp();
 
     auto predecessorUnitary = mlir::dyn_cast<UnitaryOpInterface>(predecessor);
@@ -146,7 +146,7 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
     if (isInverting(predecessor)) {
       swapGateWithMeasurement(predecessorUnitary, op, rewriter);
       rewriter.setInsertionPointAfter(op);
-      const mlir::Value trueConstant = mlir::arith::ConstantOp::create(
+      mlir::Value trueConstant = mlir::arith::ConstantOp::create(
           rewriter, op.getLoc(), rewriter.getBoolAttr(true));
       auto inversion = mlir::arith::XOrIOp::create(
           rewriter, op.getLoc(), op.getResult(), trueConstant);
@@ -176,7 +176,7 @@ struct LiftMeasurementsAboveControlsPattern final
   mlir::LogicalResult
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
-    const auto qubitVariable = op.getQubitIn();
+    auto qubitVariable = op.getQubitIn();
     auto* predecessor = qubitVariable.getDefiningOp();
     auto predecessorCtrl = mlir::dyn_cast<CtrlOp>(predecessor);
 
@@ -205,7 +205,7 @@ struct MeasurementLifting final
 
 protected:
   void runOnOperation() override {
-    const auto op = getOperation();
+    auto op = getOperation();
     auto* ctx = &getContext();
 
     // Define the set of patterns to use.

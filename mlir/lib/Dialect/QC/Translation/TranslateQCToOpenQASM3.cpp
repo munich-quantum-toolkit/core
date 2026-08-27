@@ -123,8 +123,7 @@ struct GateCall {
          oq3::frontend::lookupGate(value) == nullptr;
 }
 
-[[nodiscard]] static std::optional<int64_t>
-getConstantInteger(const Value value) {
+[[nodiscard]] static std::optional<int64_t> getConstantInteger(Value value) {
   return getConstantIntValue(value);
 }
 
@@ -132,7 +131,7 @@ namespace {
 
 class OpenQASMEmitter {
 public:
-  explicit OpenQASMEmitter(const ModuleOp moduleOp) : moduleOp(moduleOp) {}
+  explicit OpenQASMEmitter(ModuleOp moduleOp) : moduleOp(moduleOp) {}
 
   [[nodiscard]] FailureOr<std::string> emit() {
     if (failed(verify(moduleOp)) || failed(preflight()) ||
@@ -188,7 +187,7 @@ private:
   }
 
   [[nodiscard]] static FailureOr<std::string>
-  failExpression(const Value value, const Twine& message) {
+  failExpression(Value value, const Twine& message) {
     emitError(value.getLoc()) << "OpenQASM emission error: " << message;
     return failure();
   }
@@ -334,7 +333,7 @@ private:
       resourceOrder.push_back(alloc.getResult());
     }
 
-    for (const auto value : returnedRegisters) {
+    for (auto value : returnedRegisters) {
       if (!resources.contains(value)) {
         return fail(returnOp, "returned CBit registers must be entry-block "
                               "allocations");
@@ -343,7 +342,7 @@ private:
     return success();
   }
 
-  [[nodiscard]] static bool isCanonicalStatus(const Value value,
+  [[nodiscard]] static bool isCanonicalStatus(Value value,
                                               const size_t resultIndex) {
     if (resultIndex != 0 || !value.getType().isInteger(64)) {
       return false;
@@ -354,7 +353,7 @@ private:
     return integer && integer.getValue().isZero();
   }
 
-  [[nodiscard]] static std::string inferScalarKind(const Value value) {
+  [[nodiscard]] static std::string inferScalarKind(Value value) {
     const auto type = value.getType();
     if (type.isInteger(1)) {
       return value.getDefiningOp<qc::MeasureOp>() ? "bit" : "bool";
@@ -369,7 +368,7 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitDeclarations() {
-    for (const auto value : resourceOrder) {
+    for (auto value : resourceOrder) {
       const auto& resource = resources.at(value);
       if (resource.output) {
         *output << "output ";
@@ -421,9 +420,8 @@ private:
     }
     if (isa<cf::AssertOp>(&operation) ||
         (isa<ub::PoisonOp>(&operation) &&
-         llvm::any_of(operation.getResults(), [](const Value result) {
-           return !result.use_empty();
-         }))) {
+         llvm::any_of(operation.getResults(),
+                      [](Value result) { return !result.use_empty(); }))) {
       return fail(&operation, "runtime safety machinery is not supported");
     }
     if (isa<ub::PoisonOp>(&operation)) {
@@ -461,7 +459,7 @@ private:
     if (auto unitary = dyn_cast<UnitaryOpInterface>(&operation)) {
       if (auto barrier = dyn_cast<BarrierOp>(&operation)) {
         SmallVector<std::string> qubits;
-        for (const auto value : barrier.getTargets()) {
+        for (auto value : barrier.getTargets()) {
           auto qubit = emitQubit(value);
           if (failed(qubit)) {
             return failure();
@@ -492,7 +490,7 @@ private:
 
   [[nodiscard]] LogicalResult
   validateInlineExpressionOperation(Operation& operation) {
-    for (const auto result : operation.getResults()) {
+    for (auto result : operation.getResults()) {
       const auto type = result.getType();
       if (!type.isInteger(1) && !type.isInteger(64) && !type.isIndex() &&
           !type.isF64()) {
@@ -505,7 +503,7 @@ private:
     return success();
   }
 
-  [[nodiscard]] FailureOr<std::string> emitQubit(const Value value) {
+  [[nodiscard]] FailureOr<std::string> emitQubit(Value value) {
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
     }
@@ -530,8 +528,8 @@ private:
     return (Twine(resource->second.name) + "[" + Twine(*index) + "]").str();
   }
 
-  [[nodiscard]] FailureOr<std::string>
-  emitBitReference(const Value reg, const Value indexValue) {
+  [[nodiscard]] FailureOr<std::string> emitBitReference(Value reg,
+                                                        Value indexValue) {
     const auto resource = resources.find(reg);
     if (resource == resources.end() ||
         resource->second.kind != ResourceKind::Bit) {
@@ -551,7 +549,7 @@ private:
     return (Twine(resource->second.name) + "[" + *dynamicIndex + "]").str();
   }
 
-  [[nodiscard]] FailureOr<std::string> emitExpression(const Value value) {
+  [[nodiscard]] FailureOr<std::string> emitExpression(Value value) {
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
     }
@@ -631,7 +629,7 @@ private:
     }
     if (const auto functionName = mathFunction(name); !functionName.empty()) {
       SmallVector<std::string> arguments;
-      for (const auto operand : operation->getOperands()) {
+      for (auto operand : operation->getOperands()) {
         auto argument = emitExpression(operand);
         if (failed(argument)) {
           return failure();
@@ -678,9 +676,8 @@ private:
     return failure();
   }
 
-  [[nodiscard]] FailureOr<std::string> emitBinary(const Value lhsValue,
-                                                  const StringRef operation,
-                                                  const Value rhsValue) {
+  [[nodiscard]] FailureOr<std::string>
+  emitBinary(Value lhsValue, const StringRef operation, Value rhsValue) {
     auto lhs = emitExpression(lhsValue);
     auto rhs = emitExpression(rhsValue);
     if (failed(lhs) || failed(rhs)) {
@@ -1008,14 +1005,14 @@ private:
     if (baseSymbol == "sxdg") {
       call.modifiers = "inv @ ";
     }
-    for (const auto parameter : unitary.getParameters()) {
+    for (auto parameter : unitary.getParameters()) {
       auto expression = emitExpression(parameter);
       if (failed(expression)) {
         return failure();
       }
       call.parameters.push_back(std::move(*expression));
     }
-    for (const auto qubitValue : unitary.getTargets()) {
+    for (auto qubitValue : unitary.getTargets()) {
       auto qubit = emitQubit(qubitValue);
       if (failed(qubit)) {
         return failure();
@@ -1046,7 +1043,7 @@ private:
     }
 
     SmallVector<std::string> targets;
-    for (const auto target : modifier.getTargets()) {
+    for (auto target : modifier.getTargets()) {
       auto qubit = emitQubit(target);
       if (failed(qubit)) {
         return failure();
@@ -1080,7 +1077,7 @@ private:
 
     if constexpr (std::is_same_v<ModifierOp, CtrlOp>) {
       SmallVector<std::string> controls;
-      for (const auto control : modifier.getControls()) {
+      for (auto control : modifier.getControls()) {
         auto qubit = emitQubit(control);
         if (failed(qubit)) {
           return failure();
@@ -1141,7 +1138,7 @@ private:
 
     GateCall helperCall;
     helperCall.symbol = helperName;
-    for (const auto capture : captures) {
+    for (auto capture : captures) {
       auto expression = emitExpression(capture);
       if (failed(expression)) {
         return failure();
@@ -1150,7 +1147,7 @@ private:
     }
 
     DenseMap<Value, std::string> savedNames;
-    auto saveAndMap = [&](const Value value, std::string name) {
+    auto saveAndMap = [&](Value value, std::string name) {
       if (const auto found = valueNames.find(value);
           found != valueNames.end()) {
         savedNames.try_emplace(value, found->second);
@@ -1182,7 +1179,7 @@ private:
     definitionOutput.indent();
     auto* savedOutput = output;
     output = &definitionOutput;
-    for (const auto* operation : unitaries) {
+    for (auto* operation : unitaries) {
       auto call = emitGateCall(cast<UnitaryOpInterface>(operation));
       if (failed(call)) {
         output = savedOutput;
@@ -1196,7 +1193,7 @@ private:
     definitionOutput.flush();
     compositeHelpers.push_back(std::move(definition));
 
-    for (const auto value : captures) {
+    for (auto value : captures) {
       if (const auto found = savedNames.find(value);
           found != savedNames.end()) {
         valueNames[value] = found->second;
@@ -1204,7 +1201,7 @@ private:
         valueNames.erase(value);
       }
     }
-    for (const auto argument : body.getArguments()) {
+    for (auto argument : body.getArguments()) {
       if (const auto found = savedNames.find(argument);
           found != savedNames.end()) {
         valueNames[argument] = found->second;
@@ -1360,7 +1357,7 @@ private:
 
 } // namespace
 
-LogicalResult translateQCToOpenQASM3(const ModuleOp moduleOp,
+LogicalResult translateQCToOpenQASM3(ModuleOp moduleOp,
                                      llvm::raw_ostream& output) {
   auto source = translateQCToOpenQASM3(moduleOp);
   if (failed(source)) {
@@ -1370,7 +1367,7 @@ LogicalResult translateQCToOpenQASM3(const ModuleOp moduleOp,
   return success();
 }
 
-FailureOr<std::string> translateQCToOpenQASM3(const ModuleOp moduleOp) {
+FailureOr<std::string> translateQCToOpenQASM3(ModuleOp moduleOp) {
   return OpenQASMEmitter(moduleOp).emit();
 }
 

@@ -139,7 +139,7 @@ TEST_F(PauliTwirlingTest, PreservesExistingPhaseWhenRewriting) {
   module->walk([&](GPhaseOp op) { initialPhase = op; });
   ASSERT_TRUE(initialPhase);
   Operation* const initialPhaseOp = initialPhase.getOperation();
-  const Value initialTheta = initialPhase.getTheta();
+  Value initialTheta = initialPhase.getTheta();
 
   ASSERT_TRUE(succeeded(runPass(*module, 4)));
   EXPECT_TRUE(succeeded(verify(*module)));
@@ -172,25 +172,25 @@ TEST_F(PauliTwirlingTest, LeavesUnsupportedModifiedGatesAndPhasesUnchanged) {
 
   auto q5 = builder.staticQubit(5);
   auto q6 = builder.staticQubit(6);
-  const auto [emptyControl, emptyTarget] =
-      builder.ctrl(q5, q6, [](const Value target) { return target; });
+  auto [emptyControl, emptyTarget] =
+      builder.ctrl(q5, q6, [](Value target) { return target; });
   builder.sink(emptyControl);
   builder.sink(emptyTarget);
 
   auto q7 = builder.staticQubit(7);
   auto q8 = builder.staticQubit(8);
-  const auto [hControl, hTarget] = builder.ctrl(
-      q7, q8, [&](const Value target) { return builder.h(target); });
+  auto [hControl, hTarget] =
+      builder.ctrl(q7, q8, [&](Value target) { return builder.h(target); });
   builder.sink(hControl);
   builder.sink(hTarget);
 
   auto q9 = builder.staticQubit(9);
   auto q10 = builder.staticQubit(10);
-  const auto inverse = builder.inv({q9, q10}, [&](ValueRange qubits) {
+  auto inverse = builder.inv({q9, q10}, [&](ValueRange qubits) {
     auto [control, nestedTarget] = builder.cx(qubits[0], qubits[1]);
     return SmallVector<Value>{control, nestedTarget};
   });
-  const auto powered = builder.pow(2.0, inverse, [&](ValueRange qubits) {
+  auto powered = builder.pow(2.0, inverse, [&](ValueRange qubits) {
     auto [control, nestedTarget] = builder.cx(qubits[0], qubits[1]);
     return SmallVector<Value>{control, nestedTarget};
   });

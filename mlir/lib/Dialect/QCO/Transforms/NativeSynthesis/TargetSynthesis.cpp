@@ -159,8 +159,8 @@ static Operation* twoQubitGateAtEndOfOneQChain(Value wire) {
 /// Whether both input wires of `op` come from one earlier two-qubit run, making
 /// `op` a continuation of that run rather than a fresh run start.
 static bool feedsFromSameTwoQubitRun(UnitaryOpInterface op) {
-  const Value in0 = op.getInputQubit(0);
-  const Value in1 = op.getInputQubit(1);
+  Value in0 = op.getInputQubit(0);
+  Value in1 = op.getInputQubit(1);
   assert(in0.hasOneUse() && in1.hasOneUse() &&
          "qubit values are single-use, so a run member consumes each input "
          "exactly once");
@@ -177,8 +177,8 @@ static bool feedsFromSameTwoQubitRun(UnitaryOpInterface op) {
 static void absorbTwoQubitIntoRun(FusableTwoQubitRun& run,
                                   UnitaryOpInterface op,
                                   const Matrix4x4& opMatrix) {
-  const Value in0 = op.getInputQubit(0);
-  const Value in1 = op.getInputQubit(1);
+  Value in0 = op.getInputQubit(0);
+  Value in1 = op.getInputQubit(1);
   size_t id0 = 0;
   size_t id1 = 1;
   if (in0 == run.tailA && in1 == run.tailB) {

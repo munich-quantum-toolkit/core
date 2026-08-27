@@ -72,7 +72,7 @@ RegisterType::verify(const function_ref<InFlightDiagnostic()> emitError,
 }
 
 void mlir::cbit::validateStaticRegisterIndex(
-    const Value reg, const std::variant<int64_t, Value>& index) {
+    Value reg, const std::variant<int64_t, Value>& index) {
   const auto type = dyn_cast<RegisterType>(reg.getType());
   if (!type) {
     llvm::reportFatalUsageError("Expected a CBit register");
@@ -90,9 +90,8 @@ void mlir::cbit::validateStaticRegisterIndex(
   }
 }
 
-static LogicalResult verifyIndex(Operation* operation,
-                                 const Value registerValue,
-                                 const Value indexValue) {
+static LogicalResult verifyIndex(Operation* operation, Value registerValue,
+                                 Value indexValue) {
   const auto index = getConstantIntValue(indexValue);
   if (!index) {
     return success();
