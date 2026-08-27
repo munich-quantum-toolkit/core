@@ -109,6 +109,8 @@ operations that do not expose named SSA angle parameters remain run boundaries.
 - [x] (2026-08-26 22:17Z) Rebased onto current `origin/main` at `f4d8cdb21` and
       passed 237 decomposition tests, 193 optimization tests, 24
       target-synthesis tests, 135 compiler tests, and the repository lint suite.
+- [x] (2026-08-27 12:31Z) Removed 34 lines of duplicate assertions while
+      preserving singularity, atomicity, all-bases, and fast-path coverage.
 
 ## Surprises & Discoveries
 

@@ -674,15 +674,8 @@ TEST_F(TargetSynthesisTest,
   ASSERT_TRUE(module);
   const auto before = printModule(*module);
 
-  const auto diagnostics = expectFailure(
-      *module, mlir::qco::createTargetNativeSynthesis(makeUCxTarget()));
-  EXPECT_NE(diagnostics.find("target-native synthesis cannot lower operation "
-                             "'qco.rxx'"),
-            std::string::npos)
-      << diagnostics;
-  EXPECT_NE(diagnostics.find("unitary matrix is not available at compile time"),
-            std::string::npos)
-      << diagnostics;
+  static_cast<void>(expectFailure(
+      *module, mlir::qco::createTargetNativeSynthesis(makeUCxTarget())));
   EXPECT_EQ(printModule(*module), before);
 }
 

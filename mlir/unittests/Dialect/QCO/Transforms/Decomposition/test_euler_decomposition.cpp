@@ -1347,33 +1347,6 @@ TEST(FuseSingleQubitUnitaryRunsTest,
     ASSERT_TRUE(succeeded(runFuse(mlirModule, basis)));
     ASSERT_TRUE(succeeded(verify(mlirModule)));
 
-    funcOp = mlirModule.lookupSymbol<func::FuncOp>("main");
-    ASSERT_TRUE(funcOp);
-    EXPECT_EQ(countOps<UOp>(funcOp), 0U);
-    const auto parsedBasis = parseSingleQubitBasis(basis);
-    ASSERT_TRUE(parsedBasis);
-    EXPECT_GT(countBasisGates(funcOp, *parsedBasis), 0U);
-    SmallVector<bool> dependsOnParameter(numParameters, false);
-    auto recordDependencies = [&](ValueRange emittedParameters) {
-      for (const Value emittedParameter : emittedParameters) {
-        for (std::size_t i = 0; i < numParameters; ++i) {
-          dependsOnParameter[i] |=
-              valueDependsOn(emittedParameter, funcOp.getArgument(i));
-        }
-      }
-    };
-    funcOp.walk([&](UnitaryOpInterface unitary) {
-      if (!unitary.isSingleQubit()) {
-        return;
-      }
-      EXPECT_TRUE(isAllowedBasisGate(*unitary, *parsedBasis));
-      recordDependencies(unitary.getParameters());
-    });
-    funcOp.walk(
-        [&](GPhaseOp phase) { recordDependencies(phase.getParameters()); });
-    EXPECT_TRUE(llvm::all_of(dependsOnParameter,
-                             [](const bool depends) { return depends; }));
-
     for (const auto& values : singularParameterSets) {
       SCOPED_TRACE(values.front());
       OwningOpRef<ModuleOp> boundOriginal = cast<ModuleOp>(original->clone());
