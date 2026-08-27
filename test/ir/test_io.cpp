@@ -9,11 +9,14 @@
  */
 
 #include "ir/Definitions.hpp"
+#include "ir/OpenQASMSerializer.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
+#include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
+#include "ir/operations/Operation.hpp"
 #include "ir/operations/StandardOperation.hpp"
 #include "qasm3/Exception.hpp"
 #include "qasm3/Importer.hpp"
@@ -32,6 +35,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -51,6 +55,21 @@ protected:
   std::string output5 = "./tmpdir/circuit.qasm";
   std::string output5dir = "tmpdir";
   qc::QuantumComputation qc;
+};
+
+class UnsupportedOperation final : public qc::Operation {
+public:
+  [[nodiscard]] auto clone() const -> std::unique_ptr<qc::Operation> override {
+    return std::make_unique<UnsupportedOperation>(*this);
+  }
+  void addControl(qc::Control /*control*/) override {}
+  void clearControls() override {}
+  void removeControl(qc::Control /*control*/) override {}
+  auto removeControl(qc::Controls::iterator it)
+      -> qc::Controls::iterator override {
+    return it;
+  }
+  void invert() override {}
 };
 
 void compareFiles(const std::string& file1, const std::string& file2) {
@@ -833,4 +852,213 @@ TEST_F(IO, indexedRegisterOperands) {
                                "c[0] = measure q[0];\n"
                                "c[1] = measure q[1];\n";
   EXPECT_EQ(qasm, expected);
+}
+
+TEST(OpenQASMSerializer, serializesCompoundOperationBody) {
+  const qc::QuantumRegister qreg{0U, 3U, "q"};
+  qc::QubitIndexToRegisterMap qubitMap{};
+  qubitMap.try_emplace(0U, qreg, "left");
+  qubitMap.try_emplace(1U, qreg, "right");
+  qubitMap.try_emplace(2U, qreg, "aux");
+  const qc::ClassicalRegister creg{0U, 2U, "c"};
+  qc::BitIndexToRegisterMap bitMap{};
+  bitMap.try_emplace(0U, creg, "c[0]");
+  bitMap.try_emplace(1U, creg, "c[1]");
+
+  qc::CompoundOperation compound{};
+  compound.emplace_back<qc::StandardOperation>(0U, qc::H);
+  compound.emplace_back<qc::StandardOperation>(qc::Control{0U}, 1U, qc::X);
+  compound.emplace_back<qc::StandardOperation>(
+      qc::Control{0U, qc::Control::Type::Neg}, 1U, qc::X);
+  compound.emplace_back<qc::StandardOperation>(qc::Controls{qc::Control{0U}},
+                                               1U, 2U, qc::Peres);
+  compound.emplace_back<qc::StandardOperation>(qc::Controls{qc::Control{0U}},
+                                               1U, 2U, qc::Peresdg);
+  compound.emplace_back<qc::NonUnitaryOperation>(qc::Targets{1U, 2U},
+                                                 std::vector<qc::Bit>{0U, 1U});
+
+  std::ostringstream output3{};
+  qc::OpenQASMSerializer(output3).serialize(compound, qubitMap, bitMap);
+  EXPECT_EQ(output3.str(),
+            "h left;\ncx left, right;\nnegctrl @ x left, right;\n"
+            "ctrl @ cx left, aux, right;\nctrl @ x left, aux;\n"
+            "ctrl @ x left, aux;\nctrl @ cx left, aux, right;\n"
+            "c[0] = measure right;\nc[1] = measure aux;\n");
+
+  std::ostringstream output2{};
+  qc::OpenQASMSerializer(output2, qc::Format::OpenQASM2)
+      .serialize(compound, qubitMap, bitMap, 1U);
+  EXPECT_EQ(output2.str(),
+            "  h left;\n  cx left, right;\n  x left;\n"
+            "  cx left, right;\n  x left;\n"
+            "  ccx left, aux, right;\n  cx left, aux;\n"
+            "  cx left, aux;\n  ccx left, aux, right;\n"
+            "  measure right -> c[0];\n  measure aux -> c[1];\n");
+}
+
+TEST(OpenQASMSerializer, serializesOnlyContiguousWholeRegisters) {
+  const qc::QuantumRegister qreg{0U, 3U, "q"};
+  qc::QubitIndexToRegisterMap qubitMap{};
+  const qc::ClassicalRegister creg{0U, 3U, "c"};
+  qc::BitIndexToRegisterMap bitMap{};
+  for (qc::Qubit i = 0U; i < 3U; ++i) {
+    qubitMap.try_emplace(i, qreg, qreg.toString(i));
+  }
+  for (qc::Bit i = 0U; i < 3U; ++i) {
+    bitMap.try_emplace(i, creg, creg.toString(i));
+  }
+
+  qc::CompoundOperation compound{};
+  compound.emplace_back<qc::StandardOperation>(qc::Targets{0U, 2U},
+                                               qc::Barrier);
+  compound.emplace_back<qc::NonUnitaryOperation>(qc::Targets{0U, 2U});
+  compound.emplace_back<qc::NonUnitaryOperation>(qc::Targets{0U, 2U},
+                                                 std::vector<qc::Bit>{0U, 2U});
+  compound.emplace_back<qc::StandardOperation>(qc::Targets{0U, 0U, 2U},
+                                               qc::Barrier);
+  compound.emplace_back<qc::NonUnitaryOperation>(
+      qc::Targets{0U, 1U, 2U}, std::vector<qc::Bit>{0U, 0U, 2U});
+  compound.emplace_back<qc::NonUnitaryOperation>(qc::Targets{0U, 1U, 2U});
+
+  std::ostringstream output{};
+  qc::OpenQASMSerializer(output).serialize(compound, qubitMap, bitMap);
+  EXPECT_EQ(output.str(), "barrier q[0], q[2];\n"
+                          "reset q[0];\nreset q[2];\n"
+                          "c[0] = measure q[0];\nc[2] = measure q[2];\n"
+                          "barrier q[0], q[0], q[2];\n"
+                          "c[0] = measure q[0];\nc[0] = measure q[1];\n"
+                          "c[2] = measure q[2];\n"
+                          "reset q;\n");
+}
+
+TEST(OpenQASMSerializer, preservesNegativePeresControlsInOpenQASM2) {
+  const qc::QuantumRegister qreg{0U, 3U, "q"};
+  qc::QubitIndexToRegisterMap qubitMap{};
+  qubitMap.try_emplace(0U, qreg, "left");
+  qubitMap.try_emplace(1U, qreg, "right");
+  qubitMap.try_emplace(2U, qreg, "aux");
+
+  const qc::Controls controls{qc::Control{0U, qc::Control::Type::Neg}};
+  qc::CompoundOperation compound{};
+  compound.emplace_back<qc::StandardOperation>(controls, 1U, 2U, qc::Peres);
+  compound.emplace_back<qc::StandardOperation>(controls, 1U, 2U, qc::Peresdg);
+
+  std::ostringstream output{};
+  qc::OpenQASMSerializer(output, qc::Format::OpenQASM2)
+      .serialize(compound, qubitMap, {});
+  EXPECT_EQ(output.str(), "x left;\n"
+                          "ccx left, aux, right;\n"
+                          "cx left, aux;\n"
+                          "x left;\n"
+                          "x left;\n"
+                          "cx left, aux;\n"
+                          "ccx left, aux, right;\n"
+                          "x left;\n");
+}
+
+TEST(OpenQASMSerializer, indentsNestedIfElseStructure) {
+  const qc::QuantumRegister qreg{0U, 1U, "q"};
+  qc::QubitIndexToRegisterMap qubitMap{};
+  qubitMap.try_emplace(0U, qreg, "q[0]");
+  const qc::ClassicalRegister creg{0U, 1U, "c"};
+  qc::BitIndexToRegisterMap bitMap{};
+  bitMap.try_emplace(0U, creg, "c[0]");
+
+  auto nested = std::make_unique<qc::IfElseOperation>(
+      std::make_unique<qc::StandardOperation>(0U, qc::X),
+      std::make_unique<qc::StandardOperation>(0U, qc::Y), 0U);
+  const qc::IfElseOperation operation{std::move(nested), nullptr, 0U};
+
+  std::ostringstream output3{};
+  qc::OpenQASMSerializer(output3).serialize(operation, qubitMap, bitMap);
+  EXPECT_EQ(output3.str(), "if (c[0]) {\n"
+                           "  if (c[0]) {\n"
+                           "    x q[0];\n"
+                           "  } else {\n"
+                           "    y q[0];\n"
+                           "  }\n"
+                           "}\n");
+
+  std::ostringstream output2{};
+  qc::OpenQASMSerializer(output2, qc::Format::OpenQASM2)
+      .serialize(operation, qubitMap, bitMap);
+  EXPECT_EQ(output2.str(), "if (c[0]) {\n"
+                           "  if (c[0]) {\n"
+                           "    x q[0];\n"
+                           "  }\n"
+                           "  if (!c[0]) {\n"
+                           "    y q[0];\n"
+                           "  }\n"
+                           "}\n");
+}
+
+TEST(OpenQASMSerializer, handlesUnsupportedOperations) {
+  const qc::QuantumRegister qreg{0U, 1U, "q"};
+  qc::QubitIndexToRegisterMap qubitMap{};
+  qubitMap.try_emplace(0U, qreg, "q[0]");
+
+  std::ostringstream output{};
+  const qc::OpenQASMSerializer serializer{output};
+  const qc::StandardOperation unsupportedGate{0U, qc::None};
+  testing::internal::CaptureStderr();
+  serializer.serialize(unsupportedGate, qubitMap, {});
+  EXPECT_NE(testing::internal::GetCapturedStderr().find(
+                "gate type none could not be converted"),
+            std::string::npos);
+
+  const UnsupportedOperation unsupportedOperation{};
+  EXPECT_THROW(serializer.serialize(unsupportedOperation, {}, {}),
+               std::invalid_argument);
+}
+
+TEST(OpenQASMSerializer, delegatesCustomOperationsRecursively) {
+  const qc::QuantumRegister qreg{0U, 1U, "q"};
+  qc::QubitIndexToRegisterMap qubitMap{};
+  qubitMap.try_emplace(0U, qreg, "q[0]");
+  const qc::ClassicalRegister creg{0U, 1U, "c"};
+  qc::BitIndexToRegisterMap bitMap{};
+  bitMap.try_emplace(0U, creg, "c[0]");
+
+  std::ostringstream output{};
+  const qc::OpenQASMSerializer serializer{
+      output, qc::Format::OpenQASM2,
+      [](std::ostream& customOutput, const qc::Operation& operation,
+         const qc::QubitIndexToRegisterMap& qubits,
+         const qc::BitIndexToRegisterMap& bits, const std::size_t indent) {
+        if (dynamic_cast<const UnsupportedOperation*>(&operation) == nullptr) {
+          return false;
+        }
+        customOutput << std::string(indent * 2U, ' ') << "custom "
+                     << qubits.at(0U).second << " -> " << bits.at(0U).second
+                     << ";\n";
+        return true;
+      }};
+
+  const UnsupportedOperation direct{};
+  serializer.serialize(direct, qubitMap, bitMap);
+  EXPECT_EQ(output.str(), "custom q[0] -> c[0];\n");
+
+  output.str({});
+  qc::CompoundOperation compound{};
+  compound.emplace_back<UnsupportedOperation>();
+  serializer.serialize(compound, qubitMap, bitMap);
+  EXPECT_EQ(output.str(), "custom q[0] -> c[0];\n");
+
+  output.str({});
+  const qc::IfElseOperation conditional{
+      std::make_unique<UnsupportedOperation>(),
+      std::make_unique<UnsupportedOperation>(), 0U};
+  serializer.serialize(conditional, qubitMap, bitMap);
+  EXPECT_EQ(output.str(), "if (c[0]) {\n"
+                          "  custom q[0] -> c[0];\n"
+                          "}\n"
+                          "if (!c[0]) {\n"
+                          "  custom q[0] -> c[0];\n"
+                          "}\n");
+}
+
+TEST(OpenQASMSerializer, serializesAncillaRegisters) {
+  qc::QuantumComputation computation{1U};
+  computation.addAncillaryRegister(1U, "anc");
+  EXPECT_NE(computation.toQASM().find("qubit[1] anc;"), std::string::npos);
 }
