@@ -79,6 +79,9 @@ releases may include breaking changes.
 
 #### Other additions
 
+- ✨ Add a low-level package-aware `dd::sample` overload that accepts a
+  caller-owned random-number generator and returns counts, the retained state,
+  and the execution count ([#2273]) ([**@simon1hofmann**])
 - 🐳 Add dev container configuration for a consistent local development
   environment ([#1786]) ([**@denialhaag**])
 
@@ -113,6 +116,9 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Move the high-level `mqt.core.dd.sample` and
+  `mqt.core.dd.simulate_statevector` helpers to MQT DDSIM and make virtual DD
+  execution internal ([#2273]) ([**@simon1hofmann**])
 - 💥 Remove `CircuitOptimizer`. Move circuit flattening and final-measurement
   removal to `QuantumComputation`, equivalence-checking transformations to MQT
   QCEC, and mapping transformations to MQT QMAP. Move single-qubit gate fusion
@@ -851,6 +857,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2273]: https://github.com/munich-quantum-toolkit/core/pull/2273
 [#2262]: https://github.com/munich-quantum-toolkit/core/pull/2262
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
