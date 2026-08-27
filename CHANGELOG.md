@@ -25,7 +25,7 @@ releases may include breaking changes.
   [#1807], [#1808], [#1815], [#1824], [#1869], [#1872], [#1914], [#1925],
   [#1927], [#1935], [#1936], [#1938], [#1975], [#1976], [#2006], [#2014],
   [#2015], [#2017], [#2026], [#2028], [#2054], [#2058], [#2125], [#2136],
-  [#2149], [#2150], [#2158], [#2210], [#2211]) ([**@burgholzer**],
+  [#2149], [#2150], [#2158], [#2210], [#2211], [#2220]) ([**@burgholzer**],
   [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
   [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 - ✨ Add decision diagram-based construction, simulation, and sampling for QCO
@@ -857,6 +857,7 @@ for previous changelogs._
 [#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
 [#2249]: https://github.com/munich-quantum-toolkit/core/pull/2249
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
+[#2220]: https://github.com/munich-quantum-toolkit/core/pull/2220
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2228]: https://github.com/munich-quantum-toolkit/core/pull/2228
 [#2224]: https://github.com/munich-quantum-toolkit/core/pull/2224

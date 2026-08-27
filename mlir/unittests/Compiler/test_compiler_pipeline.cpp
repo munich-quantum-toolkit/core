@@ -301,6 +301,72 @@ TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
   EXPECT_FALSE(
       QCProgram::fromModule(otherContext, std::move(mismatchedModule)));
 }
+TEST(CompilerProgramOwnershipTest, EnforcesQCOLinearityAtPublicBoundaries) {
+  DialectRegistry registry;
+  registry.insert<QCODialect, func::FuncDialect>();
+  auto context = std::make_shared<MLIRContext>(registry);
+  context->loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral validSource = R"mlir(module {
+    func.func @main() {
+      %qubit = qco.alloc : !qco.qubit
+      qco.sink %qubit : !qco.qubit
+      return
+    }
+  })mlir";
+  constexpr llvm::StringLiteral nonlinearSource = R"mlir(module {
+    func.func @main() {
+      %qubit = qco.alloc : !qco.qubit
+      return
+    }
+  })mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(validSource, context.get());
+  ASSERT_TRUE(moduleOp);
+  auto program = QCOProgram::fromModule(context, std::move(moduleOp));
+  ASSERT_TRUE(program);
+
+  EXPECT_FALSE(QCOProgram::fromModule(context, {}));
+
+  auto contextlessModule =
+      parseSourceString<ModuleOp>(validSource, context.get());
+  ASSERT_TRUE(contextlessModule);
+  EXPECT_FALSE(QCOProgram::fromModule({}, std::move(contextlessModule)));
+
+  auto mismatchedModule =
+      parseSourceString<ModuleOp>(validSource, context.get());
+  ASSERT_TRUE(mismatchedModule);
+  auto otherContext = std::make_shared<MLIRContext>(registry);
+  EXPECT_FALSE(
+      QCOProgram::fromModule(otherContext, std::move(mismatchedModule)));
+
+  auto invalidModule = parseSourceString<ModuleOp>(validSource, context.get());
+  ASSERT_TRUE(invalidModule);
+  auto main = invalidModule->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  main.getBody().front().getTerminator()->erase();
+  EXPECT_FALSE(QCOProgram::fromModule(context, std::move(invalidModule)));
+
+  auto nonlinearModule =
+      parseSourceString<ModuleOp>(nonlinearSource, context.get());
+  ASSERT_TRUE(nonlinearModule);
+  EXPECT_FALSE(QCOProgram::fromModule(context, std::move(nonlinearModule)));
+
+  auto transformInput = program->copy();
+  auto pipelineInput = program->copy();
+  const auto eraseSink = [](QCOProgram& input) {
+    Operation* sink = nullptr;
+    input.module().walk([&sink](SinkOp op) { sink = op.getOperation(); });
+    ASSERT_NE(sink, nullptr);
+    sink->erase();
+  };
+  eraseSink(transformInput);
+  eraseSink(pipelineInput);
+
+  EXPECT_FALSE(transformInput.cleanup());
+  EXPECT_FALSE(runDefaultPipeline(CompilerInput{std::move(pipelineInput)},
+                                  ProgramFormat::QCO));
+}
 
 /** @brief Raw QCO stops before the registered default optimization pipeline. */
 TEST_F(CompilerPipelineTest, RawAndOptimizedQCOAreDistinctCheckpoints) {
@@ -899,6 +965,55 @@ h q;
   ASSERT_TRUE(qcoFromQC);
   EXPECT_FALSE(QCProgram::fromMLIRString(qcoFromQC->str()));
   EXPECT_FALSE(QCOProgram::fromMLIRString(mlir));
+}
+
+/**
+ * @brief Test: QCO imports require each linear value to have one use.
+ */
+TEST_F(CompilerPipelineTest, QCOProgramImportsEnforceLinearity) {
+  const std::string valid = R"mlir(module {
+    func.func @main() {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %reg = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+      %rest, %qubit = qtensor.extract %reg[%c0]
+          : tensor<1x!qco.qubit>
+      qco.sink %qubit : !qco.qubit
+      qtensor.dealloc %rest : tensor<1x!qco.qubit>
+      return
+    }
+  })mlir";
+  const std::string unusedResult = R"mlir(module {
+    func.func @main() {
+      %qubit = qco.alloc : !qco.qubit
+      return
+    }
+  })mlir";
+  const std::string reusedBlockArgument = R"mlir(module {
+    func.func @main(%reg: tensor<1x!qco.qubit>) {
+      qtensor.dealloc %reg : tensor<1x!qco.qubit>
+      qtensor.dealloc %reg : tensor<1x!qco.qubit>
+      %qubit = qco.alloc : !qco.qubit
+      qco.sink %qubit : !qco.qubit
+      return
+    }
+  })mlir";
+  const std::string unusedVectorArgument = R"mlir(module {
+    func.func @main(%qubits: vector<2x!qco.qubit>) {
+      %qubit = qco.alloc : !qco.qubit
+      qco.sink %qubit : !qco.qubit
+      return
+    }
+  })mlir";
+
+  EXPECT_TRUE(QCOProgram::fromMLIRString(valid));
+  EXPECT_FALSE(QCOProgram::fromMLIRString(unusedResult));
+  EXPECT_FALSE(QCOProgram::fromMLIRString(unusedVectorArgument));
+
+  const auto path = std::filesystem::path(testing::TempDir()) /
+                    "nonlinear_block_argument.qco.mlir";
+  std::ofstream(path) << reusedBlockArgument;
+  EXPECT_FALSE(QCOProgram::fromMLIRFile(path));
 }
 
 /**

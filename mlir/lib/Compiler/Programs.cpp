@@ -27,6 +27,7 @@
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -153,18 +154,13 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
 
 template <class ProgramType, class Parse>
 [[nodiscard]] static std::optional<ProgramType>
-parseTypedProgram(const StringRef dialect, Parse&& parse) {
+parseTypedProgram(Parse&& parse) {
   auto context = createCompilerContext();
   auto mod = std::forward<Parse>(parse)(context.get());
   if (failed(mod)) {
     return std::nullopt;
   }
-  if (!moduleUsesDialect(**mod, dialect)) {
-    (**mod)->emitError() << "expected a module using the '" << dialect
-                         << "' dialect";
-    return std::nullopt;
-  }
-  return ProgramType({.context = std::move(context), .mod = std::move(*mod)});
+  return ProgramType::fromModule(std::move(context), std::move(*mod));
 }
 
 [[nodiscard]] static LogicalResult
@@ -184,6 +180,17 @@ runPasses(ModuleOp mod,
     return mod.emitError(failureMessage);
   }
   return success();
+}
+
+[[nodiscard]] static LogicalResult runQCOTransformPasses(
+    ModuleOp mod, const llvm::function_ref<void(OpPassManager&)> populatePasses,
+    const StringRef failureMessage, const bool enableTiming = false,
+    const bool enableStatistics = false) {
+  if (failed(qco::verifyLinearity(mod))) {
+    return failure();
+  }
+  return runPasses(mod, populatePasses, failureMessage, enableTiming,
+                   enableStatistics);
 }
 
 //===----------------------------------------------------------------------===//
@@ -252,16 +259,15 @@ bool OpenQASMProgram::write(const std::filesystem::path& path) const {
 
 std::optional<QCProgram>
 QCProgram::fromMLIRString(const std::string_view source) {
-  return parseTypedProgram<QCProgram>("qc", [source](MLIRContext* context) {
+  return parseTypedProgram<QCProgram>([source](MLIRContext* context) {
     return parseMLIRString(context, source);
   });
 }
 
 std::optional<QCProgram>
 QCProgram::fromMLIRFile(const std::filesystem::path& path) {
-  return parseTypedProgram<QCProgram>("qc", [&path](MLIRContext* context) {
-    return parseMLIRFile(context, path);
-  });
+  return parseTypedProgram<QCProgram>(
+      [&path](MLIRContext* context) { return parseMLIRFile(context, path); });
 }
 
 std::optional<QCProgram>
@@ -296,31 +302,32 @@ QCProgram::fromQASMFile(const std::filesystem::path& path) {
 std::optional<QCProgram>
 QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
                       OwningOpRef<ModuleOp> moduleOp) {
-  if (!moduleOp) {
-    if (context) {
-      emitError(UnknownLoc::get(context.get()),
+  Storage storage{.context = std::move(context), .mod = std::move(moduleOp)};
+  if (!storage.mod) {
+    if (storage.context) {
+      emitError(UnknownLoc::get(storage.context.get()),
                 "cannot construct a QC program from a null module");
     }
     return std::nullopt;
   }
-  if (!context) {
-    moduleOp->emitError(
+  if (!storage.context) {
+    storage.mod->emitError(
         "cannot construct a QC program without its owning context");
     return std::nullopt;
   }
-  if (moduleOp->getContext() != context.get()) {
-    moduleOp->emitError(
+  if (storage.mod->getContext() != storage.context.get()) {
+    storage.mod->emitError(
         "cannot construct a QC program with a different MLIR context");
     return std::nullopt;
   }
-  if (failed(verify(*moduleOp))) {
+  if (failed(verify(*storage.mod))) {
     return std::nullopt;
   }
-  if (!moduleUsesDialect(*moduleOp, "qc")) {
-    moduleOp->emitError("expected a module using the 'qc' dialect");
+  if (!moduleUsesDialect(*storage.mod, "qc")) {
+    storage.mod->emitError("expected a module using the 'qc' dialect");
     return std::nullopt;
   }
-  return QCProgram({.context = std::move(context), .mod = std::move(moduleOp)});
+  return QCProgram(std::move(storage));
 }
 
 QCProgram QCProgram::copy() const { return QCProgram(cloneStorage()); }
@@ -350,6 +357,9 @@ std::optional<QCOProgram> QCProgram::intoQCO() && {
   if (failed(runPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createQCToQCO()); },
           "failed to convert QC to QCO"))) {
+    return std::nullopt;
+  }
+  if (failed(qco::verifyLinearity(mod()))) {
     return std::nullopt;
   }
   return QCOProgram(std::move(*this).releaseStorage());
@@ -409,38 +419,82 @@ size_t QCProgram::numTwoQubitGates() const {
 
 std::optional<QCOProgram>
 QCOProgram::fromMLIRString(const std::string_view source) {
-  return parseTypedProgram<QCOProgram>("qco", [source](MLIRContext* context) {
+  return parseTypedProgram<QCOProgram>([source](MLIRContext* context) {
     return parseMLIRString(context, source);
   });
 }
 
 std::optional<QCOProgram>
 QCOProgram::fromMLIRFile(const std::filesystem::path& path) {
-  return parseTypedProgram<QCOProgram>("qco", [&path](MLIRContext* context) {
-    return parseMLIRFile(context, path);
-  });
+  return parseTypedProgram<QCOProgram>(
+      [&path](MLIRContext* context) { return parseMLIRFile(context, path); });
+}
+
+std::optional<QCOProgram>
+QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
+                       OwningOpRef<ModuleOp> moduleOp) {
+  Storage storage{.context = std::move(context), .mod = std::move(moduleOp)};
+  if (!storage.mod) {
+    if (storage.context) {
+      emitError(UnknownLoc::get(storage.context.get()),
+                "cannot construct a QCO program from a null module");
+    }
+    return std::nullopt;
+  }
+  if (!storage.context) {
+    storage.mod->emitError(
+        "cannot construct a QCO program without its owning context");
+    return std::nullopt;
+  }
+  if (storage.mod->getContext() != storage.context.get()) {
+    storage.mod->emitError(
+        "cannot construct a QCO program with a different MLIR context");
+    return std::nullopt;
+  }
+  if (failed(verify(*storage.mod))) {
+    return std::nullopt;
+  }
+  if (!moduleUsesDialect(*storage.mod, "qco")) {
+    storage.mod->emitError("expected a module using the 'qco' dialect");
+    return std::nullopt;
+  }
+  if (failed(qco::verifyLinearity(*storage.mod))) {
+    return std::nullopt;
+  }
+  return QCOProgram(std::move(storage));
 }
 
 QCOProgram QCOProgram::copy() const { return QCOProgram(cloneStorage()); }
 
+bool QCOProgram::hasValidLinearity() const {
+  return succeeded(qco::verifyLinearity(mod()));
+}
+
 bool QCOProgram::cleanup() {
-  return succeeded(runPasses(mod(), populateQCOCleanupPipeline,
-                             "failed to run the QCO cleanup pipeline"));
+  return succeeded(
+      runQCOTransformPasses(mod(), populateQCOCleanupPipeline,
+                            "failed to run the QCO cleanup pipeline"));
 }
 
 bool QCOProgram::normalizeGlobalPhases() {
+  if (!hasValidLinearity()) {
+    return false;
+  }
   return succeeded(mqt::normalizeGlobalPhases(mod()));
 }
 
 bool QCOProgram::runPassPipeline(const std::string_view pipeline,
                                  const bool enableTiming,
                                  const bool enableStatistics) {
+  if (!hasValidLinearity()) {
+    return false;
+  }
   return succeeded(
       ::runPassPipeline(mod(), pipeline, enableTiming, enableStatistics));
 }
 
 bool QCOProgram::mergeSingleQubitRotationGates() {
-  return succeeded(runPasses(
+  return succeeded(runQCOTransformPasses(
       mod(),
       [](OpPassManager& pm) {
         pm.addPass(qco::createMergeSingleQubitRotationGates());
@@ -451,7 +505,7 @@ bool QCOProgram::mergeSingleQubitRotationGates() {
 bool QCOProgram::fuseSingleQubitUnitaryRuns(const std::string_view basis) {
   qco::FuseSingleQubitUnitaryRunsOptions options;
   options.basis = basis;
-  return succeeded(runPasses(
+  return succeeded(runQCOTransformPasses(
       mod(),
       [&options](OpPassManager& pm) {
         pm.addPass(qco::createFuseSingleQubitUnitaryRuns(options));
@@ -462,7 +516,7 @@ bool QCOProgram::fuseSingleQubitUnitaryRuns(const std::string_view basis) {
 bool QCOProgram::unrollQuantumLoops(const int64_t factor) {
   qco::QuantumLoopUnrollOptions options;
   options.unrollFactor = factor;
-  return succeeded(runPasses(
+  return succeeded(runQCOTransformPasses(
       mod(),
       [&options](OpPassManager& pm) {
         pm.addNestedPass<func::FuncOp>(qco::createQuantumLoopUnroll(options));
@@ -471,26 +525,26 @@ bool QCOProgram::unrollQuantumLoops(const int64_t factor) {
 }
 
 bool QCOProgram::liftHadamards() {
-  return succeeded(runPasses(
+  return succeeded(runQCOTransformPasses(
       mod(),
       [](OpPassManager& pm) { pm.addPass(qco::createHadamardLifting()); },
       "failed to lift Hadamard gates"));
 }
 
 bool QCOProgram::reuseQubits() {
-  return succeeded(runPasses(
+  return succeeded(runQCOTransformPasses(
       mod(), [](OpPassManager& pm) { pm.addPass(qco::createReuseQubits()); },
       "failed to reuse qubits"));
 }
 
 bool QCOProgram::runQubitReusePipeline() {
-  return succeeded(runPasses(
+  return succeeded(runQCOTransformPasses(
       mod(), [](OpPassManager& pm) { populateQubitReusePipeline(pm); },
       "failed to run the qubit reuse pipeline"));
 }
 
 bool QCOProgram::decomposeMultiControlled(const uint64_t minQubits) {
-  return succeeded(runPasses(
+  return succeeded(runQCOTransformPasses(
       mod(),
       [minQubits](OpPassManager& pm) {
         populateDecomposeMultiControlledPipeline(pm, minQubits);
@@ -501,6 +555,9 @@ bool QCOProgram::decomposeMultiControlled(const uint64_t minQubits) {
 bool QCOProgram::compileForTarget(const CompilerTarget& target,
                                   const bool enableTiming,
                                   const bool enableStatistics) {
+  if (!hasValidLinearity()) {
+    return false;
+  }
   return succeeded(runPasses(
       mod(),
       [&target](OpPassManager& pm) {
@@ -511,7 +568,7 @@ bool QCOProgram::compileForTarget(const CompilerTarget& target,
 }
 
 std::optional<QCProgram> QCOProgram::intoQC() && {
-  if (failed(runPasses(
+  if (failed(runQCOTransformPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createQCOToQC()); },
           "failed to convert QCO to QC"))) {
     return std::nullopt;
@@ -520,7 +577,7 @@ std::optional<QCProgram> QCOProgram::intoQC() && {
 }
 
 std::optional<JeffProgram> QCOProgram::intoJeff() && {
-  if (failed(runPasses(
+  if (failed(runQCOTransformPasses(
           mod(),
           [](OpPassManager& pm) {
             pm.addPass(mqt::createUnrollModifiers());
@@ -597,6 +654,9 @@ std::optional<QCOProgram> JeffProgram::intoQCO() && {
   if (failed(runPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createJeffToQCO()); },
           "failed to convert jeff to QCO"))) {
+    return std::nullopt;
+  }
+  if (failed(qco::verifyLinearity(mod()))) {
     return std::nullopt;
   }
   return QCOProgram(std::move(*this).releaseStorage());
@@ -744,7 +804,7 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
         }
       },
       std::move(program));
-  if (!qco) {
+  if (!qco || failed(qco::verifyLinearity(qco->module()))) {
     return std::nullopt;
   }
   if (output == ProgramFormat::QCO) {
