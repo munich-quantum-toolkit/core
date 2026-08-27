@@ -1835,6 +1835,26 @@ TEST_F(QCODDFunctionalityTest,
   EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 
+TEST_F(QCODDFunctionalityTest, SampleRejectsStaticWireAliases) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto reg =
+        b.allocClassicalBitRegister(1, {}, cbit::Initialization::Undefined);
+    auto measured = b.staticQubit(0);
+    auto alias = b.staticQubit(0);
+    std::tie(measured, std::ignore) = b.measure(measured, reg, 0);
+    b.sink(measured);
+    alias = b.x(alias);
+    b.sink(alias);
+    return reg;
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(11);
+  EXPECT_TRUE(failed(sample(mainFunc(*mod), *dd, 8, rng)));
+  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+}
+
 TEST_F(QCODDFunctionalityTest, SampleExecutesControlMeasurementPerShot) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto reg =

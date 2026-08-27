@@ -958,8 +958,13 @@ static FailureOr<QubitMap> prepare(func::FuncOp func, const dd::Package& dd) {
   }
 
   QubitMap qubits;
+  DenseSet<qc::Qubit> staticQubits;
   for (StaticOp staticOp : func.getBody().front().getOps<StaticOp>()) {
     const auto q = static_cast<qc::Qubit>(staticOp.getIndex());
+    if (!staticQubits.insert(q).second) {
+      return staticOp.emitError()
+             << "duplicate static qubit index " << staticOp.getIndex();
+    }
     qubits.bind(staticOp.getQubit(), q);
     qubits.numQubits = std::max(qubits.numQubits, static_cast<size_t>(q) + 1);
   }
