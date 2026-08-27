@@ -468,7 +468,9 @@ static int runCompiler(int argc, char** argv) {
   switch (*parsedInputFormat) {
   case InputFormat::MLIR:
     program.mod = loadMLIRFile(inputFilename, &context);
-    program.dialect = detectInputDialect(*program.mod);
+    if (program.mod) {
+      program.dialect = detectInputDialect(*program.mod);
+    }
     break;
   case InputFormat::QASM:
     program.mod = loadQASMFile(inputFilename, &context);
