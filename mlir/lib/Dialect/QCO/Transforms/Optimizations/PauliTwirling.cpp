@@ -158,8 +158,8 @@ constexpr std::array<Twirl, 16> ISWAP_TWIRLS = {{
   return nullptr;
 }
 
-static Value createPauli(IRRewriter& rewriter, const Location loc,
-                         const Pauli pauli, const Value qubit) {
+static Value createPauli(IRRewriter& rewriter, const Location loc, Pauli pauli,
+                         Value qubit) {
   switch (pauli) {
   case Pauli::I:
     return IdOp::create(rewriter, loc, qubit).getOutputQubit(0);
@@ -176,15 +176,15 @@ static Value createPauli(IRRewriter& rewriter, const Location loc,
 static void twirlGate(IRRewriter& rewriter, UnitaryOpInterface gate,
                       const Twirl& twirl) {
   auto* op = gate.getOperation();
-  const auto firstIn = gate.getInputQubit(0);
-  const auto secondIn = gate.getInputQubit(1);
-  const auto firstOut = gate.getOutputQubit(0);
-  const auto secondOut = gate.getOutputQubit(1);
+  auto firstIn = gate.getInputQubit(0);
+  auto secondIn = gate.getInputQubit(1);
+  auto firstOut = gate.getOutputQubit(0);
+  auto secondOut = gate.getOutputQubit(1);
 
   rewriter.setInsertionPoint(op);
-  const auto newFirstIn =
+  auto newFirstIn =
       createPauli(rewriter, op->getLoc(), twirl.beforeFirst, firstIn);
-  const auto newSecondIn =
+  auto newSecondIn =
       createPauli(rewriter, op->getLoc(), twirl.beforeSecond, secondIn);
   rewriter.modifyOpInPlace(op, [&]() {
     op->setOperand(0, newFirstIn);
@@ -192,9 +192,9 @@ static void twirlGate(IRRewriter& rewriter, UnitaryOpInterface gate,
   });
 
   rewriter.setInsertionPointAfter(op);
-  const auto newFirstOut =
+  auto newFirstOut =
       createPauli(rewriter, op->getLoc(), twirl.afterFirst, firstOut);
-  const auto newSecondOut =
+  auto newSecondOut =
       createPauli(rewriter, op->getLoc(), twirl.afterSecond, secondOut);
   rewriter.replaceAllUsesExcept(firstOut, newFirstOut,
                                 newFirstOut.getDefiningOp());

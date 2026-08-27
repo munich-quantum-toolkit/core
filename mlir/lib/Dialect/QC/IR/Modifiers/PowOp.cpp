@@ -639,7 +639,7 @@ struct DropUnusedPowQubits final : OpRewritePattern<PowOp> {
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     auto* body = op.getBody();
-    const auto qubits = op.getQubits();
+    auto qubits = op.getQubits();
     return qc::detail::dropUnusedQubits(
         op, *body, qubits,
         [&](ValueRange narrowedQubits, ArrayRef<size_t> used) {
@@ -689,7 +689,7 @@ void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   const std::variant<double, Value>& exponent, Value qubit,
                   const function_ref<void(Value)>& bodyBuilder) {
-  const auto expValue = variantToValue(odsBuilder, odsState.location, exponent);
+  auto expValue = variantToValue(odsBuilder, odsState.location, exponent);
   odsState.addOperands(expValue);
   odsState.addOperands(qubit);
   odsState.addRegion();

@@ -1,14 +1,6 @@
 InheritParentConfig: true
-Checks: |
-  llvm-namespace-comment,
-  llvm-prefer-isa-or-dyn-cast-in-conditionals,
-  llvm-prefer-register-over-unsigned,
-  llvm-prefer-static-over-anonymous-namespace,
-  -bugprone-throwing-static-initialization,
-  -cppcoreguidelines-avoid-non-const-global-variables,
-  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
-  -misc-use-anonymous-namespace,
 
 CheckOptions:
+  # The QIR runtime follows the external QIR ABI's identifier conventions.
   - key: readability-identifier-naming.VariableCase
     value: CamelCase

@@ -49,8 +49,7 @@ struct MergeSubsequentRZX final : OpRewritePattern<RZXOp> {
 void RZXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   Value qubit0In, Value qubit1In,
                   const std::variant<double, Value>& theta) {
-  const auto thetaOperand =
-      variantToValue(odsBuilder, odsState.location, theta);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand);
 }
 

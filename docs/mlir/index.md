@@ -39,6 +39,7 @@ directly to QC and emits structured OpenQASM from QC.
 
 python_compiler_collection
 target_compilation
+development
 MQT
 QC
 QCO

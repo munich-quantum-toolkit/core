@@ -48,7 +48,7 @@
 using namespace mlir;
 using namespace qir;
 
-static LLVM::ModuleFlagAttr findModuleFlag(const ModuleOp moduleOp,
+static LLVM::ModuleFlagAttr findModuleFlag(ModuleOp moduleOp,
                                            const StringRef name) {
   LLVM::ModuleFlagAttr result;
   moduleOp->walk([&](LLVM::ModuleFlagsOp flagsOp) {
@@ -147,7 +147,7 @@ TEST_F(QIRTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QIRProgramBuilder builder(context.get());
         builder.initialize();
-        const auto q = builder.allocQubit();
+        auto q = builder.allocQubit();
         const auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, -1);
       },
@@ -157,7 +157,7 @@ TEST_F(QIRTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       {
         QIRProgramBuilder builder(context.get());
         builder.initialize();
-        const auto q = builder.allocQubit();
+        auto q = builder.allocQubit();
         const auto c = builder.allocClassicalBitRegister(1);
         builder.measure(q, c, 1);
       },
@@ -184,10 +184,10 @@ TEST_F(QIRTest, AdaptiveBuilderSelectsControlledSpecializationsByArity) {
   auto module = QIRProgramBuilder::build(
       context.get(),
       [](QIRProgramBuilder& builder) {
-        const auto control0 = builder.allocQubit();
-        const auto control1 = builder.allocQubit();
-        const auto control2 = builder.allocQubit();
-        const auto target = builder.allocQubit();
+        auto control0 = builder.allocQubit();
+        auto control1 = builder.allocQubit();
+        auto control2 = builder.allocQubit();
+        auto target = builder.allocQubit();
         builder.crx(0.25, control0, target);
         builder.mcrx(0.5, {control0, control1}, target);
         builder.mcrx(0.75, {control0, control1, control2}, target);
@@ -207,7 +207,7 @@ TEST_F(QIRTest, AdaptiveBuilderSelectsControlledSpecializationsByArity) {
   EXPECT_EQ(argumentTypes[1], LLVM::LLVMPointerType::get(context.get()));
   EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_ARRAY_CREATE));
   EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_TUPLE_CREATE));
-  const auto main = getMainFunction(module.get());
+  auto main = getMainFunction(module.get());
   ASSERT_TRUE(main);
   const auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
   ASSERT_TRUE(passthrough);
@@ -227,10 +227,10 @@ TEST_F(QIRTest, BaseBuilderUsesGenericSpecializationForThreeControls) {
   auto module = QIRProgramBuilder::build(
       context.get(),
       [](QIRProgramBuilder& builder) {
-        const auto control0 = builder.staticQubit(0);
-        const auto control1 = builder.staticQubit(1);
-        const auto control2 = builder.staticQubit(2);
-        const auto target = builder.staticQubit(3);
+        auto control0 = builder.staticQubit(0);
+        auto control1 = builder.staticQubit(1);
+        auto control2 = builder.staticQubit(2);
+        auto target = builder.staticQubit(3);
         builder.mcrx(0.25, {control0, control1, control2}, target);
         return builder.intConstant(0);
       },
@@ -238,7 +238,7 @@ TEST_F(QIRTest, BaseBuilderUsesGenericSpecializationForThreeControls) {
 
   ASSERT_TRUE(module);
   EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_RX_CTL));
-  const auto main = getMainFunction(module.get());
+  auto main = getMainFunction(module.get());
   ASSERT_TRUE(main);
   const auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
   ASSERT_TRUE(passthrough);
@@ -289,7 +289,7 @@ TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
   main->setAttr("passthrough", builder.getStrArrayAttr({"entry_point"}));
   auto* mainBlock = main.addEntryBlock(builder);
   builder.setInsertionPointToEnd(mainBlock);
-  const Value exitCode =
+  Value exitCode =
       LLVM::ConstantOp::create(builder, location, builder.getI64IntegerAttr(0))
           .getResult();
   LLVM::ReturnOp::create(builder, location, exitCode);
@@ -303,19 +303,19 @@ TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
   auto* defaultBlock = helper.addBlock();
   auto* caseBlock = helper.addBlock();
   builder.setInsertionPointToEnd(helperEntry);
-  const Value left =
+  Value left =
       LLVM::ConstantOp::create(builder, location, builder.getI32IntegerAttr(1))
           .getResult();
-  const Value right =
+  Value right =
       LLVM::ConstantOp::create(builder, location, builder.getI32IntegerAttr(2))
           .getResult();
   std::ignore = LLVM::ICmpOp::create(builder, location,
                                      LLVM::ICmpPredicate::slt, left, right);
-  const Value floating =
+  Value floating =
       LLVM::FPExtOp::create(builder, location, builder.getF64Type(),
                             helperEntry->getArgument(1))
           .getResult();
-  const Value doubled =
+  Value doubled =
       LLVM::FAddOp::create(builder, location, floating, floating).getResult();
   const std::array<APInt, 1> caseValues{APInt(8, 0)};
   const std::array<Block*, 1> caseDestinations{caseBlock};

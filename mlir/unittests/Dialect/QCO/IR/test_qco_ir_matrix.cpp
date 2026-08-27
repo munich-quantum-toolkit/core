@@ -116,7 +116,7 @@ static void makePowBodyParameterDynamic(ModuleOp module) {
 
 static Value powUnsupportedThreeQubitBody(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  const auto powOut = b.pow(2.0, q.qubits, [&](ValueRange args) {
+  auto powOut = b.pow(2.0, q.qubits, [&](ValueRange args) {
     auto [q0, q1, q2] = b.rccx(args[0], args[1], args[2]);
     std::tie(q0, q1, q2) = b.rccx(q0, q1, q2);
     return SmallVector<Value>{q0, q1, q2};
@@ -126,8 +126,8 @@ static Value powUnsupportedThreeQubitBody(QCOProgramBuilder& b) {
 
 static Value composedBodyWithNestedPow(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto powOut = b.pow(2.0, q[0], [&](Value qubit) {
-    const auto nested =
+  auto powOut = b.pow(2.0, q[0], [&](Value qubit) {
+    auto nested =
         b.pow(0.5, qubit, [&](Value nestedQubit) { return b.x(nestedQubit); });
     return b.z(nested);
   });
@@ -346,7 +346,7 @@ TEST_F(QCOMatrixTest, DenseUnitaryComposesThroughModifiers) {
   auto inverse =
       QCOProgramBuilder::build(context.get(), [&](QCOProgramBuilder& builder) {
         auto qubit = builder.allocQubit();
-        qubit = builder.inv(qubit, [&](const Value argument) {
+        qubit = builder.inv(qubit, [&](Value argument) {
           return builder.unitary(ValueRange{argument}, sMatrix).front();
         });
         return builder.measure(qubit).second;
@@ -361,7 +361,7 @@ TEST_F(QCOMatrixTest, DenseUnitaryComposesThroughModifiers) {
       QCOProgramBuilder::build(context.get(), [&](QCOProgramBuilder& builder) {
         auto qubits = builder.allocQubitRegister(2);
         const auto outputs =
-            builder.ctrl(qubits[0], qubits[1], [&](const Value argument) {
+            builder.ctrl(qubits[0], qubits[1], [&](Value argument) {
               return builder.unitary(ValueRange{argument}, sMatrix).front();
             });
         return builder.measure(outputs.second).second;
@@ -376,7 +376,7 @@ TEST_F(QCOMatrixTest, DenseUnitaryComposesThroughModifiers) {
   auto powered =
       QCOProgramBuilder::build(context.get(), [&](QCOProgramBuilder& builder) {
         auto qubit = builder.allocQubit();
-        qubit = builder.pow(-1.0, qubit, [&](const Value argument) {
+        qubit = builder.pow(-1.0, qubit, [&](Value argument) {
           return builder.unitary(ValueRange{argument}, sMatrix).front();
         });
         return builder.measure(qubit).second;
@@ -765,7 +765,7 @@ TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
     auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
       auto controlIn = b.staticQubit(0);
       auto targetIn = b.staticQubit(1);
-      const auto [control, target] =
+      auto [control, target] =
           b.ctrl(controlIn, targetIn, [&](Value targetArg) -> Value {
             return b.pow(exponent, targetArg, [&](Value powArg) {
               return b.u(theta, phi, lambda, powArg);
@@ -792,12 +792,11 @@ TEST_F(QCOMatrixTest, PowUBeyondSafeExponentRemainsUnchanged) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
     auto controlIn = b.staticQubit(0);
     auto targetIn = b.staticQubit(1);
-    const auto [control, target] =
-        b.ctrl(controlIn, targetIn, [&](Value targetArg) -> Value {
-          return b.pow(exponent, targetArg, [&](Value powArg) {
-            return b.u(0.1, 0.2, 0.3, powArg);
-          });
-        });
+    auto [control,
+          target] = b.ctrl(controlIn, targetIn, [&](Value targetArg) -> Value {
+      return b.pow(exponent, targetArg,
+                   [&](Value powArg) { return b.u(0.1, 0.2, 0.3, powArg); });
+    });
     return SmallVector<Value>{control, target};
   });
   ASSERT_TRUE(moduleOp);
@@ -820,7 +819,7 @@ TEST_F(QCOMatrixTest, NumericallyUnstableIntegralPowURemainsUnchanged) {
     auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
       auto controlIn = b.staticQubit(0);
       auto targetIn = b.staticQubit(1);
-      const auto [control, target] =
+      auto [control, target] =
           b.ctrl(controlIn, targetIn, [&](Value targetArg) -> Value {
             return b.pow(exponent, targetArg, [&](Value powArg) {
               return b.u(theta, phi, lambda, powArg);

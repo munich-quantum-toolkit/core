@@ -81,7 +81,7 @@ protected:
 
   static void expectNormalizedUnitary(OwningOpRef<ModuleOp>& moduleOp,
                                       const std::size_t numQubits) {
-    const auto cloned = cast<ModuleOp>((*moduleOp)->clone());
+    auto cloned = cast<ModuleOp>((*moduleOp)->clone());
     OwningOpRef<ModuleOp> expected(cloned);
     ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
@@ -90,7 +90,7 @@ protected:
 
   static void expectNormalizedQCUnitary(OwningOpRef<ModuleOp>& moduleOp,
                                         const std::size_t numQubits) {
-    const auto cloned = cast<ModuleOp>((*moduleOp)->clone());
+    auto cloned = cast<ModuleOp>((*moduleOp)->clone());
     OwningOpRef<ModuleOp> expected(cloned);
     ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
 
@@ -217,9 +217,9 @@ TEST_F(GlobalPhaseNormalizationTest,
        QCControlledExtractionPreservesFullUnitaryUnderOuterControl) {
   auto moduleOp = mlir::qc::QCProgramBuilder::build(
       context.get(), [](mlir::qc::QCProgramBuilder& builder) {
-        const auto outer = builder.staticQubit(0);
-        const auto inner = builder.staticQubit(1);
-        const auto target = builder.staticQubit(2);
+        auto outer = builder.staticQubit(0);
+        auto inner = builder.staticQubit(1);
+        auto target = builder.staticQubit(2);
         builder.ctrl(outer, {inner, target}, [&](ValueRange outerTargets) {
           builder.ctrl(outerTargets[0], outerTargets[1],
                        [&](Value innerTarget) {
@@ -237,8 +237,8 @@ TEST_F(GlobalPhaseNormalizationTest,
        QCInverseAndIntegralPowerPreserveFullUnitary) {
   auto moduleOp = mlir::qc::QCProgramBuilder::build(
       context.get(), [](mlir::qc::QCProgramBuilder& builder) {
-        const auto q0 = builder.staticQubit(0);
-        const auto q1 = builder.staticQubit(1);
+        auto q0 = builder.staticQubit(0);
+        auto q1 = builder.staticQubit(1);
         builder.inv(q0, [&](Value target) {
           builder.h(target);
           builder.gphase(0.371);
@@ -271,10 +271,10 @@ TEST_F(GlobalPhaseNormalizationTest,
   auto func = cast<func::FuncOp>(moduleOp->getBody()->front());
   auto phases = llvm::to_vector(func.getBody().getOps<mlir::qc::GPhaseOp>());
   ASSERT_EQ(phases.size(), 1);
-  const auto dependsOn = [](Value value, const Value input) {
+  const auto dependsOn = [](Value value, Value input) {
     llvm::SmallVector<Value> worklist{value};
     while (!worklist.empty()) {
-      const auto current = worklist.pop_back_val();
+      auto current = worklist.pop_back_val();
       if (current == input) {
         return true;
       }
@@ -521,7 +521,7 @@ TEST_F(GlobalPhaseNormalizationTest, ReorderedQCOControlsThreadCorrectResults) {
     }
   )mlir");
   ASSERT_TRUE(moduleOp);
-  const auto cloned = cast<ModuleOp>((*moduleOp)->clone());
+  auto cloned = cast<ModuleOp>((*moduleOp)->clone());
   OwningOpRef<ModuleOp> expected(cloned);
   ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
   ASSERT_TRUE(verify(*moduleOp).succeeded());
@@ -635,10 +635,10 @@ TEST_F(GlobalPhaseNormalizationTest, ZeroControlsReleaseAnUnchangedPhase) {
       builder, loc, "test", builder.getFunctionType({qubitType}, {qubitType}));
   auto* entry = function.addEntryBlock();
   builder.setInsertionPointToStart(entry);
-  const auto phase = mlir::mqt::constantFromScalar(builder, loc, 0.417);
+  auto phase = mlir::mqt::constantFromScalar(builder, loc, 0.417);
   auto ctrl = qco::CtrlOp::create(
       builder, loc, ValueRange{}, entry->getArgument(0), [&](Value target) {
-        const auto out = qco::XOp::create(builder, loc, target).getQubitOut();
+        auto out = qco::XOp::create(builder, loc, target).getQubitOut();
         qco::GPhaseOp::create(builder, loc, phase);
         return out;
       });
@@ -858,7 +858,7 @@ TEST_F(GlobalPhaseNormalizationTest, VerifiesPracticalConstantAngleRange) {
                                          builder.getFunctionType({}, {}));
     auto* entry = function.addEntryBlock();
     builder.setInsertionPointToStart(entry);
-    const auto value = mlir::mqt::constantFromScalar(builder, loc, angle);
+    auto value = mlir::mqt::constantFromScalar(builder, loc, angle);
     if (useQCO) {
       qco::GPhaseOp::create(builder, loc, value);
     } else {

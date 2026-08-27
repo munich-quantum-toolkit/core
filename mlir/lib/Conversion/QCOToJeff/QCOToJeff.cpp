@@ -446,7 +446,7 @@ static void patchCregYields(Operation* module, LoweringState& state) {
       return;
     }
     for (auto& operand : yieldOp->getOpOperands()) {
-      const auto reg = state.cbitState.getRegisterForAlias(operand.get());
+      auto reg = state.cbitState.getRegisterForAlias(operand.get());
       if (!reg) {
         continue;
       }
@@ -534,7 +534,7 @@ static LogicalResult moveRegion(Region& source, Region& dest,
     auto newArg = newBlock->addArgument(
         typeConverter->convertType(value.getType()), value.getLoc());
     mapping.map(value, newArg);
-    if (const auto reg = state.cbitState.findRegister(value)) {
+    if (auto reg = state.cbitState.findRegister(value)) {
       state.cbitState.setCurrentValue(reg, newArg, &dest);
       state.cbitState.addAlias(newArg, reg);
     }
@@ -598,7 +598,7 @@ struct ConvertCBitStoreOpToJeff final
   matchAndRewrite(cbit::StoreOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState().cbitState;
-    const auto reg = state.resolveRegisterUse(op, op->getOperand(1));
+    auto reg = state.resolveRegisterUse(op, op->getOperand(1));
     auto array = state.getCurrentValue(reg, op);
     if (!array) {
       return rewriter.notifyMatchFailure(op, "unknown classical register");
@@ -624,7 +624,7 @@ struct ConvertCBitLoadOpToJeff final
   matchAndRewrite(cbit::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState().cbitState;
-    const auto reg = state.resolveRegisterUse(op, op->getOperand(0));
+    auto reg = state.resolveRegisterUse(op, op->getOperand(0));
     auto array = state.getCurrentValue(reg, op);
     if (!array) {
       return rewriter.notifyMatchFailure(op, "unknown classical register");
@@ -1414,7 +1414,7 @@ struct ConvertQCOIfOpToJeff final : RegionMovingConversionPattern<IfOp> {
     auto& state = getState();
     for (auto value : aboveValues) {
       Value remappedValue;
-      if (const auto creg = state.cbitState.findRegister(value)) {
+      if (auto creg = state.cbitState.findRegister(value)) {
         remappedValue = state.cbitState.getCurrentValue(creg, op);
         if (!remappedValue) {
           return rewriter.notifyMatchFailure(op, "unknown classical register");
@@ -1454,8 +1454,8 @@ struct ConvertQCOIfOpToJeff final : RegionMovingConversionPattern<IfOp> {
 
     // Update tensor values
     const auto numResults = op.getNumResults();
-    for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
-      if (const auto creg = state.cbitState.findRegister(value)) {
+    for (auto [i, value] : llvm::enumerate(aboveValues)) {
+      if (auto creg = state.cbitState.findRegister(value)) {
         state.cbitState.setCurrentValue(
             creg, jeffSwitch.getResult(numResults + i), op);
       }
@@ -1515,7 +1515,7 @@ struct ConvertSCFForOpToJeff final : RegionMovingConversionPattern<scf::ForOp> {
     auto& state = getState();
     for (auto value : aboveValues) {
       Value remappedValue;
-      if (const auto creg = state.cbitState.findRegister(value)) {
+      if (auto creg = state.cbitState.findRegister(value)) {
         remappedValue = state.cbitState.getCurrentValue(creg, op);
         if (!remappedValue) {
           return rewriter.notifyMatchFailure(op, "unknown classical register");
@@ -1538,8 +1538,8 @@ struct ConvertSCFForOpToJeff final : RegionMovingConversionPattern<scf::ForOp> {
 
     // Update tensor values
     const auto numResults = op.getNumResults();
-    for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
-      if (const auto creg = state.cbitState.findRegister(value)) {
+    for (auto [i, value] : llvm::enumerate(aboveValues)) {
+      if (auto creg = state.cbitState.findRegister(value)) {
         state.cbitState.setCurrentValue(creg, jeffFor.getResult(numResults + i),
                                         op);
       }
@@ -1600,7 +1600,7 @@ struct ConvertSCFWhileOpToJeff final
     auto& state = getState();
     for (auto value : aboveValues) {
       Value remappedValue;
-      if (const auto creg = state.cbitState.findRegister(value)) {
+      if (auto creg = state.cbitState.findRegister(value)) {
         remappedValue = state.cbitState.getCurrentValue(creg, op);
         if (!remappedValue) {
           return rewriter.notifyMatchFailure(op, "unknown classical register");
@@ -1626,8 +1626,8 @@ struct ConvertSCFWhileOpToJeff final
 
     // Update tensor values
     const auto numResults = op.getNumResults();
-    for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
-      if (const auto creg = state.cbitState.findRegister(value)) {
+    for (auto [i, value] : llvm::enumerate(aboveValues)) {
+      if (auto creg = state.cbitState.findRegister(value)) {
         state.cbitState.setCurrentValue(
             creg, jeffWhile.getResult(numResults + i), op);
       }
@@ -1709,10 +1709,10 @@ struct ConvertFuncReturnOpToJeff final
     auto& state = getState().cbitState;
     SmallVector<Value> returnValues;
     returnValues.reserve(op.getNumOperands());
-    for (const auto& [operand, adapted] :
+    for (auto [operand, adapted] :
          llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
-      const auto reg = state.findRegister(operand);
-      const auto current = reg ? state.getCurrentValue(reg, op) : Value{};
+      auto reg = state.findRegister(operand);
+      auto current = reg ? state.getCurrentValue(reg, op) : Value{};
       returnValues.push_back(current ? rewriter.getRemappedValue(current)
                                      : adapted);
     }

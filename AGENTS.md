@@ -26,8 +26,10 @@ MQT Core. The project-wide policy for AI-assisted contributions is
   authorization.
 - Preserve user changes and inspect the working tree before editing. Never
   discard or overwrite changes that are outside the task.
-- Follow the patterns in neighboring files and prefer the smallest change that
-  fully solves the problem.
+- Follow the repository's documented development policies and the nearest scoped
+  `AGENTS.md`. Use neighboring code as evidence of established practice, not as
+  authority when it conflicts with current policy. Prefer the smallest change
+  that fully solves the problem.
 - Write code comments, documentation, tests, changelog entries, and public text
   for the final design. Never preserve prompts, review chronology, former names,
   or abandoned approaches unless they remain necessary user-facing context.
@@ -59,6 +61,9 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - Preserve the established capitalization of project and dependency names in
   prose. For example, write `jeff` for the exchange format and `jeff-mlir` for
   the related MLIR project.
+- Use the preferred terms in `docs/glossary.md`. Update the glossary in the same
+  change when public or potentially ambiguous terminology is introduced or
+  changed.
 - Add or update automated tests for every behavioral code change. During
   development, run the narrowest relevant test first, then the required lint
   checks before handoff.
@@ -100,6 +105,9 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - Configure a release build with `cmake --preset release`.
 - Build it with `cmake --build --preset release`.
 - Run all configured C++ tests with `ctest --preset release`.
+- Before pushing a C++ change, run `uvx nox -s cpp-lint`. This reproduces the CI
+  `cpp-linter` check on every line of each changed C++ file. A changed-line
+  `clang-tidy` run is useful while iterating but is not sufficient validation.
 - Run a component binary directly when iterating, for example
   `./build/release/test/ir/mqt-core-ir-test` or
   `./build/release/test/qdmi/driver/mqt-core-qdmi-driver-test`.
@@ -108,16 +116,20 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - Replace `release` with `debug` for a debug build. Consult `CMakePresets.json`
   for other supported configurations.
 
-The C++ code targets C++20 and uses GoogleTest. Use Doxygen-style documentation,
-`#pragma once` in headers, and existing project abstractions. Prefer C++20
-standard-library facilities over custom equivalents. Within `mlir/`, prefer LLVM
-types such as `llvm::SmallVector` and `llvm::function_ref` where appropriate. Do
-not use C-style casts, including casts to `void`; use the appropriate C++ cast
-or adjust the code so that no cast is needed. Use C standard-library typedefs
-such as `size_t` and fixed-width integer types such as `uint64_t` without the
-`std::` namespace qualifier, while directly including the header that provides
-them. Do not use `module` as a C++ variable or parameter name because it
-conflicts with the C++20 keyword. Use `moduleOp` for `mlir::ModuleOp` values.
+The C++ code targets C++20 and uses GoogleTest. Write Doxygen comments with
+`///` and follow `docs/development.md`; use `#pragma once` in headers and
+existing project abstractions. Prefer C++20 standard-library facilities over
+custom equivalents. Within `mlir/`, prefer LLVM types such as
+`llvm::SmallVector` and `llvm::function_ref` where appropriate. Do not use
+C-style casts, including casts to `void`; use the appropriate C++ cast or adjust
+the code so that no cast is needed. Use C standard-library typedefs such as
+`size_t` and fixed-width integer types such as `uint64_t` without the `std::`
+namespace qualifier, while directly including the header that provides them. Do
+not use `module` as a C++ variable or parameter name because it conflicts with
+the C++20 keyword. Use `moduleOp` for `mlir::ModuleOp` values. The canonical
+general and MLIR-specific coding policies are documented in
+[`docs/development.md`](docs/development.md) and
+[`docs/mlir/development.md`](docs/mlir/development.md).
 
 ### Python and Bindings
 
@@ -181,6 +193,14 @@ lands as its own pull request.
 
 ## Git and GitHub Actions
 
+- Match the established issue and pull-request title style. Begin each title
+  with an appropriate gitmoji, followed by a concise description.
+- Keep the repository's gitmoji commit prefix. Write an imperative subject that
+  targets 50 characters and never exceeds 72 characters, including the prefix.
+  Do not end the subject with a period. Separate a body with a blank line and
+  use it to explain why, constraints, and non-obvious tradeoffs.
+- Preserve legitimate human authorship trailers. Record AI assistance with an
+  `Assisted-by` trailer, never an AI `Co-authored-by` trailer.
 - A coding agent may perform coding, Git, and GitHub workflow tasks that a human
   has explicitly delegated. Authorization is limited to that stated scope;
   request fresh authorization before taking an external action outside it.
@@ -195,6 +215,9 @@ lands as its own pull request.
   generate spam, repetitive reviews, or unreviewed contributions.
 - Do not push, open or merge a pull request, post on GitHub, or otherwise change
   remote state unless the human has explicitly authorized that action.
+- Pushing or opening a pull request does not imply a request to monitor CI.
+  Unless the human explicitly asks for CI monitoring, report the status already
+  available at handoff, then stop and wait for further instructions.
 - Review findings should focus on substantive correctness, contracts,
   maintainability, tests, documentation, licensing, and validation rather than
   optional process metadata.
@@ -204,6 +227,7 @@ lands as its own pull request.
 - The diff is focused and follows neighboring code conventions.
 - Behavioral changes have automated test coverage, and targeted tests pass.
 - `uvx nox -s lint` passes.
+- `uvx nox -s cpp-lint` passes when C++ files changed.
 - Binding changes have regenerated stubs.
 - User-facing changes update `CHANGELOG.md` and `UPGRADING.md` when appropriate.
 - Generated, template-managed, secret, and unrelated files are absent from the

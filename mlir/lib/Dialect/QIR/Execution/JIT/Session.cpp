@@ -122,7 +122,6 @@ static int mingwNoopMain() {
 static llvm::Error tryEnableDebugSupport(llvm::orc::LLJIT& jit) {
   if (auto err = enableDebuggerSupport(jit)) {
     [[maybe_unused]] const std::string errMsg = toString(std::move(err));
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
     LLVM_DEBUG(llvm::dbgs() << DEBUG_TYPE ": " << errMsg << "\n");
   }
   return llvm::Error::success();

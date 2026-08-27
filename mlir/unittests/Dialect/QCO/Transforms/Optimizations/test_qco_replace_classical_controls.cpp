@@ -87,11 +87,11 @@ protected:
   static Value outcomeScaledAngle(QCOProgramBuilder& builder, Value outcome,
                                   const double theta, const double trueScale,
                                   const double falseScale) {
-    const Value thetaValue = builder.floatConstant(theta);
-    const Value trueValue = builder.floatConstant(trueScale);
-    const Value falseValue = builder.floatConstant(falseScale);
-    const Value scale = arith::SelectOp::create(builder, builder.getLoc(),
-                                                outcome, trueValue, falseValue);
+    Value thetaValue = builder.floatConstant(theta);
+    Value trueValue = builder.floatConstant(trueScale);
+    Value falseValue = builder.floatConstant(falseScale);
+    Value scale = arith::SelectOp::create(builder, builder.getLoc(), outcome,
+                                          trueValue, falseValue);
     return arith::MulFOp::create(builder, builder.getLoc(), thetaValue, scale);
   }
 };
@@ -626,7 +626,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value referenceInitialTargetOutcome;
   std::tie(referenceTarget, referenceInitialTargetOutcome) =
       referenceBuilder.measure(referenceTarget);
-  const Value selectedPhase = outcomeScaledAngle(
+  Value selectedPhase = outcomeScaledAngle(
       referenceBuilder, referenceInitialTargetOutcome, theta, 0.5, -0.5);
   referenceControl = referenceBuilder.p(selectedPhase, referenceControl);
   Value referenceControlOutcome;
@@ -676,7 +676,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   }
   Value referenceTargetOutcome;
   std::tie(r[2], referenceTargetOutcome) = referenceBuilder.measure(r[2]);
-  const Value selectedPhase = outcomeScaledAngle(
+  Value selectedPhase = outcomeScaledAngle(
       referenceBuilder, referenceTargetOutcome, theta, 0.5, -0.5);
   std::tie(r[0], r[1]) = referenceBuilder.cp(selectedPhase, r[0], r[1]);
   Value referenceControl0Outcome;
@@ -786,7 +786,7 @@ TEST_P(QCOReplaceClassicalControlsRZZTest,
   std::tie(referenceTargets[measuredTargetIndex],
            referenceMeasuredTargetOutcome) =
       referenceBuilder.measure(referenceTargets[measuredTargetIndex]);
-  const Value selectedAngle = outcomeScaledAngle(
+  Value selectedAngle = outcomeScaledAngle(
       referenceBuilder, referenceMeasuredTargetOutcome, theta, -1.0, 1.0);
   std::tie(referenceControl, referenceTargets[otherTargetIndex]) =
       referenceBuilder.crz(selectedAngle, referenceControl,
@@ -819,8 +819,8 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto target1 = programBuilder.h(programBuilder.allocQubit());
   Value measuredTargetOutcome;
   std::tie(target0, measuredTargetOutcome) = programBuilder.measure(target0);
-  const Value measuredTarget = target0;
-  const auto [controls, targets] =
+  Value measuredTarget = target0;
+  auto [controls, targets] =
       programBuilder.ctrl({control}, {target0, target1},
                           [&](ValueRange args) -> SmallVector<Value> {
                             auto [output0, output1] =
@@ -854,7 +854,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto passthrough = programBuilder.h(programBuilder.allocQubit());
   Value outcome;
   std::tie(target0, outcome) = programBuilder.measure(target0);
-  const auto [controls, targets] =
+  auto [controls, targets] =
       programBuilder.ctrl({control}, {target0, target1, passthrough},
                           [&](ValueRange args) -> SmallVector<Value> {
                             auto [output0, output1] =
@@ -887,7 +887,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(control, controlOutcome) = programBuilder.measure(control);
   Value targetOutcome;
   std::tie(target0, targetOutcome) = programBuilder.measure(target0);
-  const auto [outputControl, outputTargets] =
+  auto [outputControl, outputTargets] =
       programBuilder.crzz(theta, control, target0, target1);
   Value otherTargetOutcome;
   std::tie(target1, otherTargetOutcome) =
@@ -910,7 +910,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value referenceTargetOutcome;
   std::tie(referenceTarget0, referenceTargetOutcome) =
       referenceBuilder.measure(referenceTarget0);
-  const Value selectedAngle = outcomeScaledAngle(
+  Value selectedAngle = outcomeScaledAngle(
       referenceBuilder, referenceTargetOutcome, theta, -1.0, 1.0);
   referenceTarget1 = referenceBuilder.qcoIf(
       referenceControlOutcome, referenceTarget1,
@@ -942,7 +942,7 @@ TEST_F(QCOReplaceClassicalControlsTest, replacesRZZWhenBothTargetsAreMeasured) {
   Value outcome1;
   std::tie(target0, outcome0) = programBuilder.measure(target0);
   std::tie(target1, outcome1) = programBuilder.measure(target1);
-  const auto [outputControl, outputTargets] =
+  auto [outputControl, outputTargets] =
       programBuilder.crzz(theta, control, target0, target1);
   Value controlOutcome;
   std::tie(control, controlOutcome) = programBuilder.measure(outputControl);
@@ -963,10 +963,10 @@ TEST_F(QCOReplaceClassicalControlsTest, replacesRZZWhenBothTargetsAreMeasured) {
       referenceBuilder.measure(referenceTarget0);
   std::tie(referenceTarget1, referenceOutcome1) =
       referenceBuilder.measure(referenceTarget1);
-  const Value outcomesDiffer =
+  Value outcomesDiffer =
       arith::XOrIOp::create(referenceBuilder, referenceBuilder.getLoc(),
                             referenceOutcome0, referenceOutcome1);
-  const Value selectedPhase =
+  Value selectedPhase =
       outcomeScaledAngle(referenceBuilder, outcomesDiffer, theta, 0.5, -0.5);
   referenceControl = referenceBuilder.p(selectedPhase, referenceControl);
   Value referenceControlOutcome;
@@ -997,7 +997,7 @@ TEST_F(QCOReplaceClassicalControlsTest, removesRZZWhenAllQubitsAreMeasured) {
   std::tie(control, controlOutcome) = programBuilder.measure(control);
   std::tie(target0, target0Outcome) = programBuilder.measure(target0);
   std::tie(target1, target1Outcome) = programBuilder.measure(target1);
-  const auto [outputControl, outputTargets] =
+  auto [outputControl, outputTargets] =
       programBuilder.crzz(0.789, control, target0, target1);
   control = outputControl;
   target0 = outputTargets.first;
@@ -1061,7 +1061,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto target1 = programBuilder.h(programBuilder.allocQubit());
   Value outcome;
   std::tie(control, outcome) = programBuilder.measure(control);
-  const auto [outputControl, outputTargets] =
+  auto [outputControl, outputTargets] =
       programBuilder.crzz(0.789, control, target0, target1);
   programBuilder.sink(outputControl);
   programBuilder.sink(outputTargets.first);
@@ -1125,7 +1125,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   Value referenceMeasuredTargetOutcome;
   std::tie(r[2], referenceMeasuredTargetOutcome) =
       referenceBuilder.measure(r[2]);
-  const Value selectedAngle = outcomeScaledAngle(
+  Value selectedAngle = outcomeScaledAngle(
       referenceBuilder, referenceMeasuredTargetOutcome, theta, -1.0, 1.0);
   ValueRange referenceControls;
   std::tie(referenceControls, r[3]) =
@@ -1190,7 +1190,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(r[0], referenceControlOutcome) = referenceBuilder.measure(r[0]);
   Value referenceTargetOutcome;
   std::tie(r[2], referenceTargetOutcome) = referenceBuilder.measure(r[2]);
-  const Value selectedAngle = outcomeScaledAngle(
+  Value selectedAngle = outcomeScaledAngle(
       referenceBuilder, referenceTargetOutcome, theta, -1.0, 1.0);
   auto conditionalQubits = referenceBuilder.qcoIf(
       referenceControlOutcome, ValueRange{r[1], r[3]},
@@ -1208,7 +1208,7 @@ TEST_F(QCOReplaceClassicalControlsTest,
       referenceBuilder.measure(r[1]);
   Value referenceOtherTargetOutcome;
   std::tie(r[3], referenceOtherTargetOutcome) = referenceBuilder.measure(r[3]);
-  for (const Value qubit : r.qubits) {
+  for (Value qubit : r.qubits) {
     referenceBuilder.sink(qubit);
   }
   reference = referenceBuilder.finalize(

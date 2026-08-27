@@ -102,8 +102,8 @@ matrixFromDD(const dd::CMat& matrix) {
 
 static void expectEquivalent(const OwningOpRef<ModuleOp>& expected,
                              const OwningOpRef<ModuleOp>& actual) {
-  const auto expectedFunction = mainFunction(*expected);
-  const auto actualFunction = mainFunction(*actual);
+  auto expectedFunction = mainFunction(*expected);
+  auto actualFunction = mainFunction(*actual);
   const auto numQubits = countStaticQubits(expectedFunction);
   ASSERT_EQ(numQubits, countStaticQubits(actualFunction));
   ASSERT_GT(numQubits, 0U);

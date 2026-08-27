@@ -53,8 +53,7 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
 
 void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                      const std::variant<double, Value>& theta) {
-  const auto thetaOperand =
-      variantToValue(odsBuilder, odsState.location, theta);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, thetaOperand);
 }
 

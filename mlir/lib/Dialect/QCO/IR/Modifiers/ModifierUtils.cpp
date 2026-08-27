@@ -48,7 +48,7 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
 
   SetVector<Value> captures;
   getUsedValuesDefinedAbove(modifierOp->getRegions(), captures);
-  if (llvm::any_of(captures, [](const Value value) {
+  if (llvm::any_of(captures, [](Value value) {
         return isa<QubitType>(value.getType());
       })) {
     return modifierOp->emitOpError(
