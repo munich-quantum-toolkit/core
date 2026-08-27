@@ -21,7 +21,6 @@
 #include <functional>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <utility>
 
 namespace qc {
@@ -96,9 +95,6 @@ protected:
   }
 };
 
-using QubitIndexToRegisterMap =
-    std::unordered_map<Qubit, std::pair<const QuantumRegister&, std::string>>;
-
 class ClassicalRegister final : public Register<Bit> {
 public:
   ClassicalRegister(const Bit regStartIndex, const std::size_t regSize,
@@ -113,9 +109,6 @@ protected:
            std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
   }
 };
-
-using BitIndexToRegisterMap =
-    std::unordered_map<Bit, std::pair<const ClassicalRegister&, std::string>>;
 
 } // namespace qc
 

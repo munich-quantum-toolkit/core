@@ -172,6 +172,22 @@ The CoreIR API cleanup requires the following migrations:
   accessors, and direct `Permutation` iteration, respectively.
 - Construct output-permutation measurements explicitly instead of calling
   `appendMeasurementsAccordingToOutputPermutation()`.
+- Replace direct `Operation::dumpOpenQASM2()`, `dumpOpenQASM3()`, or
+  `dumpOpenQASM()` calls with `OpenQASMSerializer`. The register-map aliases
+  moved from `ir/Register.hpp` to `ir/OpenQASMSerializer.hpp`:
+
+  ```cpp
+  #include "ir/OpenQASMSerializer.hpp"
+
+  qc::OpenQASMSerializer(stream, qc::Format::OpenQASM2)
+      .serialize(operation, qubitMap, bitMap);
+  ```
+
+  Use `qc::Format::OpenQASM3` for OpenQASM 3 output. The relocated maps own
+  their register metadata instead of retaining references to the registers used
+  to construct them. Packages that define custom `Operation` subclasses must own
+  serialization for their extended syntax; in particular, MQT QMAP owns
+  neutral-atom OpenQASM serialization.
 
 The register lookup helpers `getQubitRegister()`, `getPhysicalQubitIndex()`, and
 `physicalQubitIsAncillary()` are now private implementation details.

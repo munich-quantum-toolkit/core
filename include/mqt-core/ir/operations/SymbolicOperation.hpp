@@ -16,7 +16,6 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
-#include "ir/Register.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/Expression.hpp"
 #include "ir/operations/OpType.hpp"
@@ -27,7 +26,6 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <ostream>
 #include <variant>
 #include <vector>
 
@@ -72,12 +70,6 @@ public:
   [[nodiscard]] bool isStandardOperation() const override;
 
   [[nodiscard]] bool equals(const Operation& op) const override;
-
-  [[noreturn]] void dumpOpenQASM(std::ostream& of,
-                                 const QubitIndexToRegisterMap& qubitMap,
-                                 const BitIndexToRegisterMap& bitMap,
-                                 std::size_t indent,
-                                 bool openQASM3) const override;
 
   [[nodiscard]] StandardOperation
   getInstantiatedOperation(const VariableAssignment& assignment) const;
