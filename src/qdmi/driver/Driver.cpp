@@ -268,10 +268,10 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
       }
 
       if (status == QDMI_ERROR_NOTSUPPORTED) {
-        qdmi::detail::emitDiagnostic(qdmi::detail::DiagnosticLevel::Info,
-                                     {"Device session parameter ",
-                                      qdmi::toString(param),
-                                      " not supported by device (skipped)"});
+        qdmi::detail::emitDiagnostic(
+            qdmi::detail::DiagnosticLevel::Info,
+            "Device session parameter {} not supported by device (skipped)",
+            qdmi::toString(param));
         return;
       }
       library_->device_session_free(deviceSession_);
@@ -852,10 +852,10 @@ void Driver::materializeClientCatalog() {
         }
         const std::string_view libraryText =
             library.empty() ? "<unknown>" : std::string_view(library);
-        qdmi::detail::emitDiagnostic(qdmi::detail::DiagnosticLevel::Warning,
-                                     {"Skipping configured QDMI device '", id,
-                                      "' from '", libraryText,
-                                      "': ", ex.what()});
+        qdmi::detail::emitDiagnostic(
+            qdmi::detail::DiagnosticLevel::Warning,
+            "Skipping configured QDMI device '{}' from '{}': {}", id,
+            libraryText, ex.what());
       }
     }
     const std::scoped_lock lock(stateMutex_);

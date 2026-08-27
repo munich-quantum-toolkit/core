@@ -171,23 +171,23 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
                : std::string_view("selected configuration");
     qdmi::detail::emitDiagnostic(
         qdmi::detail::DiagnosticLevel::Error,
-        {"Out of memory while initializing SC device from ", source});
+        "Out of memory while initializing SC device from {}", source);
     return QDMI_ERROR_OUTOFMEM;
   } catch (const std::invalid_argument& error) {
     const std::string_view source =
         loaded ? std::string_view(loaded->source)
                : std::string_view("selected configuration");
-    qdmi::detail::emitDiagnostic(
-        qdmi::detail::DiagnosticLevel::Error,
-        {"Invalid SC device configuration from ", source, ": ", error.what()});
+    qdmi::detail::emitDiagnostic(qdmi::detail::DiagnosticLevel::Error,
+                                 "Invalid SC device configuration from {}: {}",
+                                 source, error.what());
     return QDMI_ERROR_INVALIDARGUMENT;
   } catch (const std::exception& error) {
     const std::string_view source =
         loaded ? std::string_view(loaded->source)
                : std::string_view("selected configuration");
-    qdmi::detail::emitDiagnostic(
-        qdmi::detail::DiagnosticLevel::Error,
-        {"Failed to initialize SC device from ", source, ": ", error.what()});
+    qdmi::detail::emitDiagnostic(qdmi::detail::DiagnosticLevel::Error,
+                                 "Failed to initialize SC device from {}: {}",
+                                 source, error.what());
     return QDMI_ERROR_FATAL;
   }
 }

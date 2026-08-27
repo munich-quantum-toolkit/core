@@ -22,8 +22,6 @@ TEST(DriverDiagnosticTest, ReportsSkippedConfiguredDevice) {
                       MQT_CORE_QDMI_DIAGNOSTIC_CONFIG_FILE),
             0);
 #else
-  // POSIX exposes setenv through <cstdlib>, but include-cleaner does not
-  // associate the global declaration with that C++ header.
   // NOLINTNEXTLINE(misc-include-cleaner)
   ASSERT_EQ(setenv("MQT_CORE_QDMI_CONFIG_FILE",
                    MQT_CORE_QDMI_DIAGNOSTIC_CONFIG_FILE, 1),

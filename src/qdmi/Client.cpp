@@ -898,10 +898,10 @@ Session::Session(const SessionConfig& config) {
           session_.get(), param, value->size() + 1, value->c_str()));
       if (status == QDMI_ERROR_NOTSUPPORTED) {
         // Optional parameter not supported by session - skip it
-        qdmi::detail::emitDiagnostic(qdmi::detail::DiagnosticLevel::Info,
-                                     {"Session parameter ",
-                                      qdmi::toString(param),
-                                      " not supported (skipped)"});
+        qdmi::detail::emitDiagnostic(
+            qdmi::detail::DiagnosticLevel::Info,
+            "Session parameter {} not supported (skipped)",
+            qdmi::toString(param));
         return;
       }
       if (status == QDMI_SUCCESS) {

@@ -12,8 +12,9 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <initializer_list>
+#include <format>
 #include <string_view>
+#include <utility>
 
 namespace qdmi::detail {
 
@@ -32,18 +33,12 @@ diagnosticLevelName(const DiagnosticLevel level) noexcept {
   return "error";
 }
 
-/// Writes one best-effort diagnostic to the process standard error stream.
-///
-/// The writer does not allocate memory. This property lets exception handlers
-/// report allocation failures without throwing another exception.
-inline void
-emitDiagnostic(const DiagnosticLevel level,
-               const std::initializer_list<std::string_view> parts) noexcept {
+/// Writes one diagnostic to standard error without allocating memory.
+inline void writeDiagnostic(const DiagnosticLevel level,
+                            const std::string_view message) noexcept {
 #ifdef _WIN32
   _lock_file(stderr);
 #else
-  // POSIX exposes these declarations through <cstdio>, but include-cleaner
-  // does not associate them with the C++ header.
   // NOLINTNEXTLINE(misc-include-cleaner)
   flockfile(stderr);
 #endif
@@ -59,22 +54,31 @@ emitDiagnostic(const DiagnosticLevel level,
   write("[mqt-core] [");
   write(diagnosticLevelName(level));
   write("] ");
-  for (const auto part : parts) {
-    write(part);
-  }
+  write(message);
 #ifdef _WIN32
   _fputc_nolock('\n', stderr);
   _fflush_nolock(stderr);
+  _unlock_file(stderr);
 #else
   std::fputc('\n', stderr);
   std::fflush(stderr);
-#endif
-#ifdef _WIN32
-  _unlock_file(stderr);
-#else
   // NOLINTNEXTLINE(misc-include-cleaner)
   funlockfile(stderr);
 #endif
+}
+
+/// Formats and writes one best-effort diagnostic to standard error.
+///
+/// Writes the unformatted format string if formatting fails.
+template <class... Args>
+void emitDiagnostic(const DiagnosticLevel level,
+                    const std::format_string<Args...> format,
+                    Args&&... args) noexcept {
+  try {
+    writeDiagnostic(level, std::format(format, std::forward<Args>(args)...));
+  } catch (...) {
+    writeDiagnostic(level, format.get());
+  }
 }
 
 } // namespace qdmi::detail
