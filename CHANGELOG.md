@@ -113,6 +113,8 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove test-only DD state generators and recursive functionality
+  construction from MQT Core ([#2257]) ([**@simon1hofmann**])
 - 💥 Remove the standalone QIR runner and make the QIR runtime and JIT internal
   DDSIM implementation details ([#2246]) ([**@denialhaag**])
 - 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
@@ -846,6 +848,7 @@ for previous changelogs._
 
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
+[#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
 [#2249]: https://github.com/munich-quantum-toolkit/core/pull/2249
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
