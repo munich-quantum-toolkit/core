@@ -21,6 +21,8 @@
 #include <optional>
 
 namespace mlir {
+class Operation;
+class RewriterBase;
 class RewritePatternSet;
 } // namespace mlir
 
@@ -63,6 +65,10 @@ struct SynthesizedUnitary1Q {
   double globalPhase = 0.0;
 };
 
+/// Returns whether @p op belongs to @p basis.
+[[nodiscard]] bool isSingleQubitBasisGate(Operation* op,
+                                          SingleQubitBasis basis);
+
 /**
  * @brief Extracts `(theta, phi, lambda, phase)` of @p matrix in @p basis.
  *
@@ -104,6 +110,17 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
  */
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
 
+/// Returns whether @p op supports runtime one-qubit synthesis.
+[[nodiscard]] bool canSynthesizeParameterizedUnitary1Q(Operation* op);
+
+/// Synthesizes one supported runtime-parameterized operation in @p basis.
+///
+/// Leaves operations that already belong to @p basis unchanged.
+///
+/// @pre `canSynthesizeParameterizedUnitary1Q(op)` is true.
+void synthesizeParameterizedUnitary1Q(RewriterBase& rewriter, Operation* op,
+                                      SingleQubitBasis basis);
+
 /**
  * @brief Populates @p patterns with the single-qubit run fusion rewrite for
  * @p basis (the reusable core of `fuse-single-qubit-unitary-runs`).
@@ -114,5 +131,11 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
 void populateFuseSingleQubitUnitaryRunsPatterns(
     RewritePatternSet& patterns, SingleQubitBasis basis,
     bool skipControlledBodies = false);
+
+/// Populates patterns that compose profitable parameterized single-qubit runs.
+///
+/// The patterns emit @p basis directly.
+void populateParameterizedSingleQubitRunCompositionPatterns(
+    RewritePatternSet& patterns, SingleQubitBasis basis);
 
 } // namespace mlir::qco::decomposition

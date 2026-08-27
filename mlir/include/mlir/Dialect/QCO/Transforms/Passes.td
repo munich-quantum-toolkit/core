@@ -67,6 +67,7 @@ def FuseSingleQubitUnitaryRuns
     : Pass<"fuse-single-qubit-unitary-runs", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect",
+                           "::mlir::math::MathDialect",
                            "::mlir::qtensor::QTensorDialect"];
   let summary = "Fuse single-qubit unitary runs using Euler resynthesis";
   let description = [{
@@ -82,8 +83,9 @@ def FuseSingleQubitUnitaryRuns
     A `gphase` correction is inserted when needed so the rewritten sequence
     matches the composed matrix exactly (not only up to global phase).
 
-    Currently, only operations whose unitary matrix can be obtained at compile
-    time are fused.
+    The pass also composes supported named gates with dynamic `f64` parameters
+    and emits conservative runtime sequences in the requested basis. Dynamic
+    `pow` and arbitrary dynamic unitaries remain unchanged.
   }];
   let options = [Option<
       "basis", "basis", "std::string", "\"zyz\"",

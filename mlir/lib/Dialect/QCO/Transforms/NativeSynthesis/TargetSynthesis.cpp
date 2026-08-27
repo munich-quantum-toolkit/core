@@ -22,6 +22,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -326,7 +327,8 @@ static SynthesisPlan planTargetSynthesis(Operation* root,
 
     if (unitary.isSingleQubit()) {
       Matrix2x2 matrix;
-      if (unitary.getUnitaryMatrix2x2(matrix)) {
+      if (unitary.getUnitaryMatrix2x2(matrix) ||
+          decomposition::canSynthesizeParameterizedUnitary1Q(operation)) {
         plan.operations.emplace_back(operation);
         return WalkResult::advance();
       }
@@ -349,7 +351,11 @@ static void lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
   rewriter.setInsertionPoint(operation);
   if (op.isSingleQubit()) {
     Matrix2x2 matrix;
-    op.getUnitaryMatrix2x2(matrix);
+    if (!op.getUnitaryMatrix2x2(matrix)) {
+      decomposition::synthesizeParameterizedUnitary1Q(rewriter, operation,
+                                                      basis.singleQubit);
+      return;
+    }
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
         /*runSize=*/1, /*hasNonBasisGate=*/true, basis.singleQubit);
@@ -440,7 +446,7 @@ struct TargetNativeSynthesisPass final
       : target(targetIn) {}
 
   void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect, arith::ArithDialect>();
+    registry.insert<QCODialect, arith::ArithDialect, math::MathDialect>();
   }
 
 protected:

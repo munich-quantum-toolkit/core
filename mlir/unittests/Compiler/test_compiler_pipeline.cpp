@@ -32,6 +32,7 @@
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -62,6 +63,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <iosfwd>
 #include <iterator>
 #include <memory>
@@ -120,8 +122,8 @@ protected:
     registry.insert<cbit::CBitDialect, QCDialect, QCODialect,
                     qtensor::QTensorDialect, arith::ArithDialect,
                     cf::ControlFlowDialect, func::FuncDialect,
-                    memref::MemRefDialect, scf::SCFDialect, LLVM::LLVMDialect,
-                    jeff::JeffDialect>();
+                    math::MathDialect, memref::MemRefDialect, scf::SCFDialect,
+                    LLVM::LLVMDialect, jeff::JeffDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -203,6 +205,22 @@ makeSparseUCZTarget(const bool includeMeasure) {
       "sparse-line", std::move(sites),
       std::vector<CompilerTarget::Coupling>{{5, 9}, {9, 17}},
       std::move(operations)));
+}
+
+using NameAndCount = std::pair<llvm::StringRef, size_t>;
+
+[[nodiscard]] static CompilerTarget
+makeCZTarget(std::initializer_list<NameAndCount> singleQubitGates) {
+  using Operation = CompilerTarget::Operation;
+  std::vector<Operation> operations;
+  operations.reserve(singleQubitGates.size() + 1);
+  for (const auto& [name, numParameters] : singleQubitGates) {
+    operations.emplace_back(
+        llvm::cantFail(Operation::create(name.str(), 1, numParameters)));
+  }
+  operations.emplace_back(llvm::cantFail(Operation::create("cz", 2, 0)));
+  return llvm::cantFail(
+      CompilerTarget::create(2, std::nullopt, std::move(operations)));
 }
 
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
@@ -1176,6 +1194,130 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   auto unsupportedQCO = std::move(*unsupportedQC).intoQCO();
   ASSERT_TRUE(unsupportedQCO);
   EXPECT_FALSE(unsupportedQCO->compileForTarget(makeSparseUCZTarget(false)));
+}
+
+TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
+      %q0 = qco.alloc : !qco.qubit
+      %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+      %q2 = qco.rz(%theta) %q1 : !qco.qubit -> !qco.qubit
+      qco.sink %q2 : !qco.qubit
+      return
+    }
+  })mlir";
+  struct Case {
+    const char* name;
+    CompilerTarget target;
+    CompilerTarget::SingleQubitBasis resolvedBasis;
+    std::vector<NameAndCount> expectedGates;
+  };
+  const std::vector cases{
+      Case{.name = "u",
+           .target = makeSparseUCZTarget(false),
+           .resolvedBasis = CompilerTarget::SingleQubitBasis::U,
+           .expectedGates = {{"u", 1}}},
+      Case{.name = "zsxx",
+           .target = makeCZTarget({{"x", 0}, {"sx", 0}, {"rz", 1}}),
+           .resolvedBasis = CompilerTarget::SingleQubitBasis::ZSXX,
+           .expectedGates = {{"rz", 3}, {"sx", 2}}},
+      Case{.name = "rx-rz",
+           .target = makeCZTarget({{"rx", 1}, {"rz", 1}}),
+           .resolvedBasis = CompilerTarget::SingleQubitBasis::XZX,
+           .expectedGates = {{"rz", 1}, {"rx", 2}}},
+      Case{.name = "rx-ry",
+           .target = makeCZTarget({{"rx", 1}, {"ry", 1}}),
+           .resolvedBasis = CompilerTarget::SingleQubitBasis::XYX,
+           .expectedGates = {{"rx", 2}, {"ry", 1}}},
+      Case{.name = "ry-rz",
+           .target = makeCZTarget({{"ry", 1}, {"rz", 1}}),
+           .resolvedBasis = CompilerTarget::SingleQubitBasis::ZYZ,
+           .expectedGates = {{"rz", 2}, {"ry", 1}}},
+      Case{.name = "r",
+           .target = makeCZTarget({{"r", 2}}),
+           .resolvedBasis = CompilerTarget::SingleQubitBasis::R,
+           .expectedGates = {{"r", 3}}},
+  };
+
+  for (const auto& testCase : cases) {
+    SCOPED_TRACE(testCase.name);
+    auto program = QCOProgram::fromMLIRString(source);
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(testCase.target.synthesisBasis());
+    ASSERT_EQ(testCase.target.synthesisBasis()->singleQubit,
+              testCase.resolvedBasis);
+    ASSERT_TRUE(program->compileForTarget(testCase.target));
+
+    auto compiled = parseRecordedModule(program->str());
+    ASSERT_TRUE(compiled);
+    EXPECT_TRUE(verify(*compiled).succeeded());
+
+    llvm::StringMap<size_t> gateCounts;
+    compiled->walk([&](UnitaryOpInterface unitary) {
+      if (unitary.getNumQubits() == 1) {
+        ++gateCounts[unitary.getBaseSymbol()];
+      }
+    });
+    for (const auto& [name, expectedCount] : testCase.expectedGates) {
+      EXPECT_EQ(gateCounts.lookup(name), expectedCount) << name.str();
+    }
+    EXPECT_EQ(gateCounts.lookup("h"), 0U);
+    EXPECT_EQ(gateCounts.size(), testCase.expectedGates.size());
+
+    auto main = compiled->lookupSymbol<func::FuncOp>("main");
+    ASSERT_TRUE(main);
+    ASSERT_EQ(main.getNumArguments(), 1U);
+    EXPECT_FALSE(main.getArgument(0).use_empty());
+  }
+}
+
+TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
+      %q0 = qco.alloc : !qco.qubit
+      %q1 = qco.alloc : !qco.qubit
+      %control, %target = qco.ctrl(%q0) targets(%arg = %q1) {
+        %h = qco.h %arg : !qco.qubit -> !qco.qubit
+        %rz = qco.rz(%theta) %h : !qco.qubit -> !qco.qubit
+        qco.yield %rz : !qco.qubit
+      } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+      qco.sink %control : !qco.qubit
+      qco.sink %target : !qco.qubit
+      return
+    }
+  })mlir";
+  using Operation = CompilerTarget::Operation;
+  std::vector operations{
+      llvm::cantFail(Operation::create("x", 1, 0)),
+      llvm::cantFail(Operation::create("sx", 1, 0)),
+      llvm::cantFail(Operation::create("rz", 1, 1)),
+      llvm::cantFail(Operation::create("cz", 2, 0)),
+      llvm::cantFail(Operation::create("ctrl", 2, 0)),
+  };
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, std::nullopt, std::move(operations)));
+  ASSERT_TRUE(target.synthesisBasis());
+  ASSERT_EQ(target.synthesisBasis()->singleQubit,
+            CompilerTarget::SingleQubitBasis::ZSXX);
+
+  auto program = QCOProgram::fromMLIRString(source);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(program->compileForTarget(target));
+
+  auto compiled = parseRecordedModule(program->str());
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(verify(*compiled).succeeded());
+
+  CtrlOp ctrl;
+  compiled->walk([&](CtrlOp op) { ctrl = op; });
+  ASSERT_TRUE(ctrl);
+  ASSERT_EQ(ctrl.getNumBodyUnitaries(), 1U);
+  EXPECT_TRUE(isa<UOp>(ctrl.getBodyUnitary(0).getOperation()));
+
+  auto main = compiled->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  ASSERT_EQ(main.getNumArguments(), 1U);
+  EXPECT_FALSE(main.getArgument(0).use_empty());
 }
 
 /**
