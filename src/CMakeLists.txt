@@ -62,9 +62,6 @@ add_subdirectory(ir)
 # add the QASM package
 add_subdirectory(qasm3)
 
-# add the circuit_optimizer package
-add_subdirectory(circuit_optimizer)
-
 # add DD package library
 add_subdirectory(dd)
 

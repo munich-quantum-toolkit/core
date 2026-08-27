@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "circuit_optimizer/CircuitOptimizer.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
@@ -22,6 +21,12 @@
 #include <string>
 
 namespace qc {
+TEST(RemoveFinalMeasurements, EmptyCircuit) {
+  QuantumComputation qc;
+  qc.removeFinalMeasurements();
+  EXPECT_TRUE(qc.empty());
+}
+
 TEST(RemoveFinalMeasurements, removeFinalMeasurements) {
   constexpr std::size_t nqubits = 2;
   QuantumComputation qc(nqubits, nqubits);
@@ -32,7 +37,7 @@ TEST(RemoveFinalMeasurements, removeFinalMeasurements) {
   qc.h(1);
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
-  CircuitOptimizer::removeFinalMeasurements(qc);
+  qc.removeFinalMeasurements();
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
   auto it = qc.begin();
@@ -57,7 +62,7 @@ TEST(RemoveFinalMeasurements, removeFinalMeasurementsTwoQubitMeasurement) {
   qc.h(1);
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
-  CircuitOptimizer::removeFinalMeasurements(qc);
+  qc.removeFinalMeasurements();
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
   auto it = qc.begin();
@@ -84,7 +89,7 @@ TEST(RemoveFinalMeasurements, removeFinalMeasurementsCompound) {
   qc.h(1);
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
-  CircuitOptimizer::removeFinalMeasurements(qc);
+  qc.removeFinalMeasurements();
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
   auto it = qc.begin();
@@ -111,7 +116,7 @@ TEST(RemoveFinalMeasurements, removeFinalMeasurementsCompoundDegraded) {
   qc.h(1);
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
-  CircuitOptimizer::removeFinalMeasurements(qc);
+  qc.removeFinalMeasurements();
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
   auto it = qc.begin();
@@ -135,7 +140,7 @@ TEST(RemoveFinalMeasurements, removeFinalMeasurementsCompoundEmpty) {
   qc.h(1);
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
-  CircuitOptimizer::removeFinalMeasurements(qc);
+  qc.removeFinalMeasurements();
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
   auto it = qc.begin();
@@ -152,7 +157,7 @@ TEST(RemoveFinalMeasurements, removeFinalMeasurementsWithOperationsInFront) {
   auto qc = qasm3::Importer::imports(circ);
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
-  CircuitOptimizer::removeFinalMeasurements(qc);
+  qc.removeFinalMeasurements();
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
   ASSERT_EQ(qc.getNops(), 2);
@@ -167,7 +172,7 @@ TEST(RemoveFinalMeasurements, removeFinalMeasurementsWithBarrier) {
   qc.measure(1, 1);
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
-  CircuitOptimizer::removeFinalMeasurements(qc);
+  qc.removeFinalMeasurements();
   std::cout << "-----------------------------\n";
   qc.print(std::cout);
   EXPECT_TRUE(qc.empty());

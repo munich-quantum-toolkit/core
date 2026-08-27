@@ -460,6 +460,14 @@ public:
 
   void reset();
 
+  /// Flattens compound operations.
+  ///
+  /// \param customGatesOnly Whether to flatten only custom gates.
+  void flattenOperations(bool customGatesOnly = false);
+
+  /// Removes measurements and barriers from the end of the circuit.
+  void removeFinalMeasurements();
+
   /**
    * @brief Reorders the operations in the quantum computation to establish a
    * canonical order
