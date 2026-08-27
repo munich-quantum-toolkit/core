@@ -34,7 +34,7 @@ namespace mlir::qtensor {
 /**
  * @brief Return the unique user of a linear qtensor value.
  */
-[[nodiscard]] static Operation* getLinearTensorUser(const Value tensor) {
+[[nodiscard]] static Operation* getLinearTensorUser(Value tensor) {
   assert(tensor.hasOneUse() && "Expected a linear tensor with exactly one use");
   return *tensor.getUsers().begin();
 }

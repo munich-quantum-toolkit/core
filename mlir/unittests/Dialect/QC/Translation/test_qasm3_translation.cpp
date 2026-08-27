@@ -122,7 +122,7 @@ static SmallVector<Value> twoX(qc::QCProgramBuilder& b) {
   return {measureToRegister(b, {q[0], q[1]})};
 }
 
-static void legacyU2(qc::QCProgramBuilder& b, const Value target) {
+static void legacyU2(qc::QCProgramBuilder& b, Value target) {
   b.gphase(-0.5 * (0.234 + 0.567));
   b.u2(0.234, 0.567, target);
 }
@@ -135,18 +135,18 @@ static Value legacyU2(qc::QCProgramBuilder& b) {
 
 static SmallVector<Value> legacySingleControlledU2(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](const Value target) { legacyU2(b, target); });
+  b.ctrl(q[0], q[1], [&](Value target) { legacyU2(b, target); });
   return {measureToRegister(b, {q[0], q[1]})};
 }
 
 static SmallVector<Value> legacyMultipleControlledU2(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.ctrl(ValueRange{q[0], q[1]}, q[2],
-         [&](const Value target) { legacyU2(b, target); });
+         [&](Value target) { legacyU2(b, target); });
   return {measureToRegister(b, {q[0], q[1], q[2]})};
 }
 
-static void legacyU(qc::QCProgramBuilder& b, const Value target) {
+static void legacyU(qc::QCProgramBuilder& b, Value target) {
   b.gphase(-0.5 * (0.2 + 0.3));
   b.u(0.1, 0.2, 0.3, target);
 }
@@ -159,21 +159,21 @@ static Value legacyU(qc::QCProgramBuilder& b) {
 
 static SmallVector<Value> legacySingleControlledU(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](const Value target) { legacyU(b, target); });
+  b.ctrl(q[0], q[1], [&](Value target) { legacyU(b, target); });
   return {measureToRegister(b, {q[0], q[1]})};
 }
 
 static SmallVector<Value> legacyMultipleControlledU(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.ctrl(ValueRange{q[0], q[1]}, q[2],
-         [&](const Value target) { legacyU(b, target); });
+         [&](Value target) { legacyU(b, target); });
   return {measureToRegister(b, {q[0], q[1], q[2]})};
 }
 
 static Value legacyTripleControlledSx(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl(ValueRange{q[0], q[1], q[2]}, q[3],
-         [&](const Value target) { b.sx(target); });
+         [&](Value target) { b.sx(target); });
   return measureToRegister(b, q.qubits);
 }
 
@@ -309,7 +309,7 @@ openQASM2UMatrix(const double theta, const double phi, const double lambda) {
                                body(1, 1));
 }
 
-[[nodiscard]] static std::optional<double> evaluateScalar(const Value value) {
+[[nodiscard]] static std::optional<double> evaluateScalar(Value value) {
   if (auto constant = value.getDefiningOp<arith::ConstantOp>()) {
     if (const auto floatValue = dyn_cast<FloatAttr>(constant.getValue())) {
       return floatValue.getValueAsDouble();
@@ -412,8 +412,7 @@ evaluateOneQubitRegion(Region& region) {
   return result;
 }
 
-[[nodiscard]] static std::optional<size_t>
-topLevelQubitIndex(const Value qubit) {
+[[nodiscard]] static std::optional<size_t> topLevelQubitIndex(Value qubit) {
   auto load = qubit.getDefiningOp<memref::LoadOp>();
   if (!load || load.getIndices().size() != 1) {
     return std::nullopt;

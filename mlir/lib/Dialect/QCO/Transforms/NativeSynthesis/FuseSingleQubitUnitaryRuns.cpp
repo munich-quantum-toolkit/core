@@ -180,7 +180,7 @@ struct FuseSingleQubitUnitaryRunsPattern final
     if (!isRunMemberCandidate(op)) {
       return failure();
     }
-    const auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
+    auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
         op.getInputTarget(0).getDefiningOp());
     if (getRunMemberMatrix(predecessor)) {
       return failure();

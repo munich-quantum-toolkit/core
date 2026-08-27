@@ -234,7 +234,7 @@ TEST_F(ConstantFoldingTest, valueToConstantDoubleSharedOperandsFailure) {
   OpBuilder::InsertionGuard guard(*builder);
   builder->setInsertionPointToStart(entry);
 
-  const Value arg = entry->getArgument(0);
+  Value arg = entry->getArgument(0);
   SmallVector<Value> nodes = {arg};
   Value v = arg;
   for (int i = 0; i < depth; ++i) {
@@ -245,7 +245,7 @@ TEST_F(ConstantFoldingTest, valueToConstantDoubleSharedOperandsFailure) {
   llvm::DenseMap<Value, std::optional<Attribute>> cache;
   EXPECT_FALSE(mlir::mqt::valueToConstantAttr(v, cache).has_value());
   ASSERT_EQ(cache.size(), nodes.size());
-  for (const Value node : nodes) {
+  for (Value node : nodes) {
     const auto it = cache.find(node);
     ASSERT_NE(it, cache.end());
     EXPECT_FALSE(it->second.has_value());

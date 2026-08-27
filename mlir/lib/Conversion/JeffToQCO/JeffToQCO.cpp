@@ -351,7 +351,7 @@ struct ConvertJeffIntArraySetIndexOpToCBit final
   LogicalResult
   matchAndRewrite(jeff::IntArraySetIndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto reg = adaptor.getInArray();
+    auto reg = adaptor.getInArray();
     if (!isa<cbit::RegisterType>(reg.getType())) {
       return failure();
     }
@@ -372,7 +372,7 @@ struct ConvertJeffIntArrayGetIndexOpToCBit final
   LogicalResult
   matchAndRewrite(jeff::IntArrayGetIndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto reg = adaptor.getInArray();
+    auto reg = adaptor.getInArray();
     if (!isa<cbit::RegisterType>(reg.getType())) {
       return failure();
     }

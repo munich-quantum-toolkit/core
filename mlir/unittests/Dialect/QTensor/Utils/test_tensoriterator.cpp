@@ -109,8 +109,8 @@ TEST_F(TensorIteratorTest, Traversal) {
   const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
   const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
       identity};
-  const auto tensor9 = builder.qcoIndexSwitch(
-      0, tensor8, SmallVector<int64_t>{0}, caseBodies, identity)[0];
+  auto tensor9 = builder.qcoIndexSwitch(0, tensor8, SmallVector<int64_t>{0},
+                                        caseBodies, identity)[0];
   builder.qtensorDealloc(tensor9);
   [[maybe_unused]] auto m = builder.finalize();
 
@@ -303,7 +303,7 @@ func.func @main() {
   ASSERT_TRUE(call);
   ASSERT_TRUE(extract);
 
-  const auto result = cast<TypedValue<RankedTensorType>>(call.getResult(0));
+  auto result = cast<TypedValue<RankedTensorType>>(call.getResult(0));
   TensorIterator it(extract.getOutTensor());
   ASSERT_EQ(it.operation(), extract.getOperation());
 

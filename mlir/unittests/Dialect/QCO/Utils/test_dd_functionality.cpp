@@ -207,7 +207,7 @@ TEST_F(QCODDFunctionalityTest, Rccx) {
     auto q3 = b.staticQubit(3);
     std::tie(q2, q0, q3) = b.rccx(q2, q0, q3);
     auto [control, targets] = b.crccx(q1, q2, q0, q3);
-    const auto& [q2Out, q0Out, q3Out] = targets;
+    auto [q2Out, q0Out, q3Out] = targets;
     q1 = control;
     q2 = q2Out;
     q0 = q0Out;

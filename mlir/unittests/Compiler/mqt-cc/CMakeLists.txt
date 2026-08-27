@@ -13,3 +13,10 @@ add_test(
     "-DLLVM_DIS=$<TARGET_FILE:llvm-dis>" "-DINPUT_FILE=${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm"
     "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/output-$<CONFIG>" -P
     "${CMAKE_CURRENT_SOURCE_DIR}/verify_qir_output.cmake")
+
+add_test(
+  NAME mqt-core-mqt-cc-invalid-mlir-test
+  COMMAND
+    ${CMAKE_COMMAND} "-DMQT_CC=$<TARGET_FILE:mqt-cc>"
+    "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/output-$<CONFIG>" -P
+    "${CMAKE_CURRENT_SOURCE_DIR}/verify_invalid_mlir.cmake")

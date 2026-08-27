@@ -100,9 +100,9 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   // Query state for modifier information
   const SmallVector<Value> controls =
       state.inCtrlOp ? state.controls : SmallVector<Value>{};
-  const auto convertedOperands = adaptor.getOperands();
-  const auto targets = convertedOperands.take_front(numTargets);
-  const auto parameters = convertedOperands.drop_front(numTargets);
+  auto convertedOperands = adaptor.getOperands();
+  auto targets = convertedOperands.take_front(numTargets);
+  auto parameters = convertedOperands.drop_front(numTargets);
   assert(parameters.size() == numParams && "unexpected gate parameter count");
 
   // Clean up modifier information
@@ -483,7 +483,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       SmallVector<Value> keptOperands;
       SmallVector<Type> keptReturnTypes;
 
-      for (const auto operand : returnOp.getOperands()) {
+      for (auto operand : returnOp.getOperands()) {
         if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
           state.returnedStaticResults.insert(measureOp.getOperation());
         } else if (auto allocOp = operand.getDefiningOp<cbit::AllocOp>();

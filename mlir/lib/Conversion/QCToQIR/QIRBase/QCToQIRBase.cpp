@@ -69,7 +69,7 @@ static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
   if (it == state.cregMeasurements.end()) {
     return Value{};
   }
-  const auto [registerIndex, index] = it->second;
+  auto [registerIndex, index] = it->second;
   const auto indexValue = getConstantIntValue(index);
   if (!indexValue) {
     op->emitError("QIR Base Profile requires constant classical-register "

@@ -557,7 +557,7 @@ TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
 // FuseSingleQubitUnitaryRuns support
 //===----------------------------------------------------------------------===//
 
-[[nodiscard]] static bool isAllowedBasisGate(const Operation& op,
+[[nodiscard]] static bool isAllowedBasisGate(Operation& op,
                                              SingleQubitBasis basis) {
   switch (basis) {
   case ZYZ:
@@ -910,7 +910,7 @@ static SmallVector<Value> controlledH(QCOProgramBuilder& b) {
 
 static Value dynamicPowX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto powOut = b.pow(0.5, q[0], [&](Value qubit) { return b.x(qubit); });
+  auto powOut = b.pow(0.5, q[0], [&](Value qubit) { return b.x(qubit); });
   return b.measure(powOut).second;
 }
 
@@ -1057,21 +1057,20 @@ TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossBoundariesAllBases) {
                }
              });
              EXPECT_EQ(twoQ, 1U) << basis.str();
-             expectSplitFixtureSegments(
-                 funcOp, basis, ctx, [](const Operation& op) {
-                   if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
-                     return unitary.isTwoQubit();
-                   }
-                   return false;
-                 });
+             expectSplitFixtureSegments(funcOp, basis, ctx, [](Operation& op) {
+               if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
+                 return unitary.isTwoQubit();
+               }
+               return false;
+             });
            }},
       {.program = &singleQubitRunsSplitByBarrier,
        .check =
            [](func::FuncOp funcOp, StringRef basis, MLIRContext* ctx) {
              EXPECT_EQ(countOps<BarrierOp>(funcOp), 1U) << basis.str();
-             expectSplitFixtureSegments(
-                 funcOp, basis, ctx,
-                 [](const Operation& op) { return isa<BarrierOp>(op); });
+             expectSplitFixtureSegments(funcOp, basis, ctx, [](Operation& op) {
+               return isa<BarrierOp>(op);
+             });
            }},
       {.program = &singleQubitRunsSplitByScfFor,
        .check =

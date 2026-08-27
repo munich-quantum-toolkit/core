@@ -64,7 +64,7 @@ static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
   if (it == state.cregMeasurements.end()) {
     return nullptr;
   }
-  const auto [registerIndex, index] = it->second;
+  auto [registerIndex, index] = it->second;
   auto& reg = state.cregs[registerIndex];
   assert(reg.array && "result array must be allocated");
   auto loc = op->getLoc();
@@ -458,7 +458,7 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
     // Declare QIR function
     const auto fnSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
-    const auto fnDecl =
+    auto fnDecl =
         getOrCreateFunctionDeclaration(rewriter, op, QIR_RESET, fnSignature);
 
     // Replace operation with CallOp

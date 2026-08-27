@@ -136,6 +136,24 @@ TEST_P(QCOTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+TEST_F(QCOTest, QubitIsVectorElement) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @f(%arg: vector<2x!qco.qubit>) {
+        return
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+
+  auto function = *module->getOps<func::FuncOp>().begin();
+  const auto vectorType =
+      dyn_cast<VectorType>(function.getArgument(0).getType());
+  ASSERT_TRUE(vectorType);
+  EXPECT_TRUE(isa<QubitType>(vectorType.getElementType()));
+}
+
 TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
   EXPECT_DEATH(
       {
@@ -189,7 +207,7 @@ TEST_F(QCOTest, CleanupPreservesReturnedStaticQubit) {
   auto mainFunc = *module->getOps<func::FuncOp>().begin();
   auto returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
   ASSERT_EQ(returnOp.getNumOperands(), 1U);
-  const auto returnedQubit = returnOp.getOperand(0);
+  auto returnedQubit = returnOp.getOperand(0);
   EXPECT_TRUE(returnedQubit.getDefiningOp<StaticOp>());
   EXPECT_TRUE(returnedQubit.hasOneUse());
   EXPECT_EQ(*returnedQubit.user_begin(), returnOp.getOperation());
@@ -210,7 +228,7 @@ TEST_F(QCOTest, CleanupPreservesReturnedQubitTensor) {
   auto mainFunc = *module->getOps<func::FuncOp>().begin();
   auto returnOp = cast<func::ReturnOp>(mainFunc.getBody().front().back());
   ASSERT_EQ(returnOp.getNumOperands(), 1U);
-  const auto returnedTensor = returnOp.getOperand(0);
+  auto returnedTensor = returnOp.getOperand(0);
   EXPECT_TRUE(returnedTensor.getDefiningOp<qtensor::AllocOp>());
   EXPECT_TRUE(returnedTensor.hasOneUse());
   EXPECT_EQ(*returnedTensor.user_begin(), returnOp.getOperation());
@@ -229,7 +247,7 @@ TEST_F(QCOTest, BuilderRejectsUntrackedTensorInitArg) {
         QCOProgramBuilder builder(context.get());
         builder.initialize();
         auto size = arith::ConstantIndexOp::create(builder, 1);
-        const auto tensor =
+        auto tensor =
             qtensor::AllocOp::create(builder, size.getResult()).getResult();
         const auto identity = [](Value value) { return value; };
         builder.qcoIf(true, tensor, identity, identity);
@@ -394,7 +412,7 @@ static StringRef modifierName(const VerifierModifierKind kind) {
   llvm_unreachable("unknown modifier");
 }
 
-static StringRef forbiddenOperationName(const ForbiddenModifierBodyOp kind) {
+static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
   switch (kind) {
   case ForbiddenModifierBodyOp::Measure:
     return "measure";
@@ -416,9 +434,9 @@ buildInvalidModifierCapture(QCOProgramBuilder& builder,
   const auto target = builder.allocQubit();
   const auto captured = builder.allocQubit();
   const auto control = builder.allocQubit();
-  const auto modifierBody = [&](const Value argument) -> Value {
+  const auto modifierBody = [&](Value argument) -> Value {
     if (nested) {
-      const auto condition = builder.boolConstant(true);
+      auto condition = builder.boolConstant(true);
       auto ifOp = scf::IfOp::create(builder, TypeRange{}, condition, false);
       const OpBuilder::InsertionGuard guard(builder);
       builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
@@ -441,18 +459,19 @@ buildInvalidModifierCapture(QCOProgramBuilder& builder,
   llvm_unreachable("unknown modifier");
 }
 
-static Operation* buildInvalidNestedModifierBody(
-    QCOProgramBuilder& builder, const VerifierModifierKind modifier,
-    const ForbiddenModifierBodyOp forbiddenOperation) {
+static Operation*
+buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
+                               const VerifierModifierKind modifier,
+                               ForbiddenModifierBodyOp forbiddenOperation) {
   builder.initialize();
   const auto target = builder.allocQubit();
   const auto control = builder.allocQubit();
-  const auto condition = builder.boolConstant(true);
+  auto condition = builder.boolConstant(true);
   auto cbitReg = builder.allocClassicalBitRegister(1);
   auto index = arith::ConstantIndexOp::create(builder, 0);
-  const auto modifierBody = [&](const Value argument) -> Value {
+  const auto modifierBody = [&](Value argument) -> Value {
     auto ifOp = IfOp::create(
-        builder, condition, argument, [&](const Value nestedArgument) -> Value {
+        builder, condition, argument, [&](Value nestedArgument) -> Value {
           switch (forbiddenOperation) {
           case ForbiddenModifierBodyOp::Measure:
             return MeasureOp::create(builder, nestedArgument).getQubitOut();
@@ -653,8 +672,8 @@ TEST_F(QCOTest, IndexSwitchTiedValuesAndTargetExtension) {
                             ArrayRef<int64_t>{0}, caseBuilders, identity);
 
   auto* targetOperand = &switchOp->getOpOperand(1);
-  const auto caseArgument = switchOp.getCaseBlock(0)->getArgument(0);
-  const auto defaultArgument = switchOp.getDefaultBlock()->getArgument(0);
+  auto caseArgument = switchOp.getCaseBlock(0)->getArgument(0);
+  auto defaultArgument = switchOp.getDefaultBlock()->getArgument(0);
   auto* caseYieldOperand = &switchOp.getCaseYield(0)->getOpOperand(0);
   auto* defaultYieldOperand = &switchOp.getDefaultYield()->getOpOperand(0);
 
@@ -1284,9 +1303,9 @@ TEST_F(QCOTest, EquivalentTensorIndexSwitches) {
     const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
         identity};
 
-    const auto tensor = builder.qtensorAlloc(1);
-    const auto result = builder.qcoIndexSwitch(
-        0, tensor, SmallVector<int64_t>{0}, caseBodies, identity);
+    auto tensor = builder.qtensorAlloc(1);
+    auto result = builder.qcoIndexSwitch(0, tensor, SmallVector<int64_t>{0},
+                                         caseBodies, identity);
     builder.qtensorDealloc(result.front());
     return builder.finalize();
   };
@@ -1309,8 +1328,8 @@ TEST_F(QCOTest, IndexSwitchCaseValuesAffectEquivalence) {
     const SmallVector<function_ref<Value(Value)>> caseBodies{identity};
 
     const auto q0 = builder.allocQubit();
-    const auto result = builder.qcoIndexSwitch(
-        0, q0, SmallVector<int64_t>{caseValue}, caseBodies, identity);
+    auto result = builder.qcoIndexSwitch(0, q0, SmallVector<int64_t>{caseValue},
+                                         caseBodies, identity);
     builder.sink(result);
     return builder.finalize();
   };
@@ -1333,12 +1352,12 @@ TEST_F(QCOTest, NonEquivalentTensorIndexSwitches) {
     const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
         identity};
 
-    const auto first = builder.qtensorAlloc(1);
-    const auto second = builder.qtensorAlloc(1);
-    const auto target = switchFirstTensor ? first : second;
-    const auto untouched = switchFirstTensor ? second : first;
-    const auto result = builder.qcoIndexSwitch(
-        0, target, SmallVector<int64_t>{0}, caseBodies, identity);
+    auto first = builder.qtensorAlloc(1);
+    auto second = builder.qtensorAlloc(1);
+    auto target = switchFirstTensor ? first : second;
+    auto untouched = switchFirstTensor ? second : first;
+    auto result = builder.qcoIndexSwitch(0, target, SmallVector<int64_t>{0},
+                                         caseBodies, identity);
     builder.qtensorDealloc(result.front());
     builder.qtensorDealloc(untouched);
     return builder.finalize();
@@ -1476,9 +1495,9 @@ TEST_F(QCOTest, CanonicalizesConstantIndexSwitchToSelectedCaseOrDefault) {
     HOp consumer;
     func->walk([&](HOp candidate) { consumer = candidate; });
     ASSERT_TRUE(consumer);
-    const Value input = cast<UnitaryOpInterface>(consumer.getOperation())
-                            .getInputQubits()
-                            .front();
+    Value input = cast<UnitaryOpInterface>(consumer.getOperation())
+                      .getInputQubits()
+                      .front();
     ASSERT_TRUE(input.getDefiningOp());
     EXPECT_EQ(input.getDefiningOp()->getName().getStringRef(), expectedGate);
 
@@ -1563,7 +1582,7 @@ INSTANTIATE_TEST_SUITE_P(
 /// A power modifier with a qubit that its body does not use.
 static Value powWithUnusedQubit(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  const auto powOut =
+  auto powOut =
       b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) -> SmallVector<Value> {
         return {b.id(qubits[0]), qubits[1]};
       });
@@ -1676,7 +1695,7 @@ TEST_F(QCOTest, PowRxxFold) {
 
 static Value powRzxWithReorderedBody(QCOProgramBuilder& builder) {
   auto qubits = builder.allocQubitRegister(2);
-  const auto powOut = builder.pow(
+  auto powOut = builder.pow(
       2.0, qubits.qubits, [&](ValueRange args) -> SmallVector<Value> {
         auto [out1, out0] = builder.rzx(0.123, args[1], args[0]);
         return {out0, out1};
@@ -1687,9 +1706,9 @@ static Value powRzxWithReorderedBody(QCOProgramBuilder& builder) {
 static Value powBarrierWithReorderedBody(QCOProgramBuilder& builder) {
   auto q0 = builder.allocQubit();
   auto q1 = builder.allocQubit();
-  const auto powOut =
+  auto powOut =
       builder.pow(2.0, {q0, q1}, [&](ValueRange args) -> SmallVector<Value> {
-        const auto barrierOut = builder.barrier({args[1], args[0]});
+        auto barrierOut = builder.barrier({args[1], args[0]});
         return {barrierOut[1], barrierOut[0]};
       });
   return measureRegister(builder, powOut);
@@ -1698,7 +1717,7 @@ static Value powBarrierWithReorderedBody(QCOProgramBuilder& builder) {
 static Value powEvenSwapWithReorderedBody(QCOProgramBuilder& builder) {
   auto q0 = builder.allocQubit();
   auto q1 = builder.allocQubit();
-  const auto powOut =
+  auto powOut =
       builder.pow(2.0, {q0, q1}, [&](ValueRange args) -> SmallVector<Value> {
         auto [out1, out0] = builder.swap(args[1], args[0]);
         return {out1, out0};
@@ -1821,7 +1840,7 @@ TEST_F(QCOTest, CtrlGPhasePassesTargetsThrough) {
   auto program = QCOProgramBuilder::build(context.get(), [&](auto& builder) {
     auto controlIn = builder.staticQubit(0);
     auto targetIn = builder.staticQubit(1);
-    const auto [control, target] =
+    auto [control, target] =
         builder.ctrl(controlIn, targetIn, [&](Value targetArg) {
           builder.gphase(0.123);
           return targetArg;

@@ -220,7 +220,7 @@ private:
         return;
       }
 
-      const auto toPtrOp = cast<LLVM::IntToPtrOp>(*userIt);
+      auto toPtrOp = cast<LLVM::IntToPtrOp>(*userIt);
       const auto callIt =
           llvm::find_if(toPtrOp->getUses(), [](OpOperand& operand) {
             auto callOp = dyn_cast<LLVM::CallOp>(operand.getOwner());
@@ -267,13 +267,13 @@ private:
         return;
       }
 
-      const auto operand = callOp->getOperand(0);
+      auto operand = callOp->getOperand(0);
       auto toPtrOp = dyn_cast<LLVM::IntToPtrOp>(operand.getDefiningOp());
       if (!toPtrOp) {
         return;
       }
 
-      const auto arg = toPtrOp.getArg();
+      auto arg = toPtrOp.getArg();
       auto constOp = dyn_cast<LLVM::ConstantOp>(arg.getDefiningOp());
       if (!constOp) {
         return;
