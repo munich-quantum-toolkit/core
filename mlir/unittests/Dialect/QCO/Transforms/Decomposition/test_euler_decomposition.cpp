@@ -771,7 +771,7 @@ namespace {
 
 struct DynamicGateCase {
   StringRef name;
-  std::size_t numParameters = 0;
+  size_t numParameters = 0;
   Value (*build)(QCOProgramBuilder&, Value) = nullptr;
 };
 
@@ -807,11 +807,11 @@ const std::array DYNAMIC_GATE_CASES = {
 };
 
 struct DirectSynthesisCounts {
-  std::size_t u = 0;
-  std::size_t rz = 0;
-  std::size_t ry = 0;
-  std::size_t rx = 0;
-  std::size_t sx = 0;
+  size_t u = 0;
+  size_t rz = 0;
+  size_t ry = 0;
+  size_t rx = 0;
+  size_t sx = 0;
   bool gphase = false;
 };
 
@@ -864,8 +864,7 @@ static void expectDirectSynthesisCounts(func::FuncOp funcOp,
   EXPECT_EQ(countOps<RYOp>(funcOp), expected.ry);
   EXPECT_EQ(countOps<RXOp>(funcOp), expected.rx);
   EXPECT_EQ(countOps<SXOp>(funcOp), expected.sx);
-  EXPECT_EQ(countOps<GPhaseOp>(funcOp),
-            static_cast<std::size_t>(expected.gphase));
+  EXPECT_EQ(countOps<GPhaseOp>(funcOp), static_cast<size_t>(expected.gphase));
   EXPECT_EQ(countOps<U2Op>(funcOp), 0U);
   EXPECT_EQ(countOps<POp>(funcOp), 0U);
   EXPECT_EQ(countOps<ROp>(funcOp), 0U);
@@ -1165,7 +1164,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesNamedDynamicGatesInAllBases) {
       ModuleOp mlirModule = *owned;
       auto funcOp = mlirModule.lookupSymbol<func::FuncOp>("main");
       ASSERT_TRUE(funcOp);
-      for (std::size_t i = 0; i < gateCase.numParameters; ++i) {
+      for (size_t i = 0; i < gateCase.numParameters; ++i) {
         funcOp.insertArgument(i, Float64Type::get(fx.ctx()), {},
                               funcOp.getLoc());
       }
@@ -1201,7 +1200,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesNamedDynamicGatesInAllBases) {
       SmallVector<bool> dependsOnParameter(gateCase.numParameters, false);
       auto recordDependencies = [&](ValueRange emittedParameters) {
         for (Value emittedParameter : emittedParameters) {
-          for (std::size_t i = 0; i < gateCase.numParameters; ++i) {
+          for (size_t i = 0; i < gateCase.numParameters; ++i) {
             dependsOnParameter[i] |=
                 valueDependsOn(emittedParameter, funcOp.getArgument(i));
           }
@@ -1219,7 +1218,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesNamedDynamicGatesInAllBases) {
       EXPECT_TRUE(llvm::all_of(dependsOnParameter,
                                [](bool depends) { return depends; }));
 
-      const ArrayRef values{boundValues.data(), gateCase.numParameters};
+      ArrayRef values{boundValues.data(), gateCase.numParameters};
       auto originalFunc = original->lookupSymbol<func::FuncOp>("main");
       ASSERT_TRUE(originalFunc);
       bindLeadingArguments(originalFunc, values);
@@ -1261,7 +1260,7 @@ TEST(FuseSingleQubitUnitaryRunsTest,
       ModuleOp mlirModule = *owned;
       auto funcOp = mlirModule.lookupSymbol<func::FuncOp>("main");
       ASSERT_TRUE(funcOp);
-      for (std::size_t i = 0; i < gateCase.numParameters; ++i) {
+      for (size_t i = 0; i < gateCase.numParameters; ++i) {
         funcOp.insertArgument(i, Float64Type::get(fx.ctx()), {},
                               funcOp.getLoc());
       }
@@ -1291,7 +1290,7 @@ TEST(FuseSingleQubitUnitaryRunsTest,
 
       auto originalFunc = original->lookupSymbol<func::FuncOp>("main");
       ASSERT_TRUE(originalFunc);
-      const ArrayRef values{boundValues.data(), gateCase.numParameters};
+      ArrayRef values{boundValues.data(), gateCase.numParameters};
       bindLeadingArguments(originalFunc, values);
       bindLeadingArguments(funcOp, values);
       ASSERT_TRUE(succeeded(canonicalizeBoundValues(*original)));
@@ -1313,7 +1312,7 @@ TEST(FuseSingleQubitUnitaryRunsTest,
       {0.0, 0.0, 0.0},
       {std::numbers::pi, 0.0, 0.0},
   }};
-  constexpr std::size_t numParameters = singularParameterSets.front().size();
+  constexpr size_t numParameters = singularParameterSets.front().size();
 
   for (const StringRef basis : bases) {
     SCOPED_TRACE(basis.str());
@@ -1327,7 +1326,7 @@ TEST(FuseSingleQubitUnitaryRunsTest,
     ModuleOp mlirModule = *owned;
     auto funcOp = mlirModule.lookupSymbol<func::FuncOp>("main");
     ASSERT_TRUE(funcOp);
-    for (std::size_t i = 0; i < numParameters; ++i) {
+    for (size_t i = 0; i < numParameters; ++i) {
       funcOp.insertArgument(i, Float64Type::get(fx.ctx()), {}, funcOp.getLoc());
     }
 

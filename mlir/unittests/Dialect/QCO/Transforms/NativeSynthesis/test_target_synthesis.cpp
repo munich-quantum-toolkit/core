@@ -398,7 +398,7 @@ TEST_F(TargetSynthesisTest,
 
 TEST_F(TargetSynthesisTest,
        TargetNativeSynthesisLowersRuntimeParameterizedSingleQubitGates) {
-  auto module = mlir::parseSourceString<ModuleOp>(R"mlir(
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @main(%theta: f64) -> !qco.qubit {
         %q0 = qco.static 0 : !qco.qubit
@@ -408,23 +408,23 @@ TEST_F(TargetSynthesisTest,
       }
     }
   )mlir",
-                                                  context.get());
-  ASSERT_TRUE(module);
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
   const auto target = makeUCxTarget();
 
   ASSERT_TRUE(mlir::succeeded(
-      runPass(*module, mlir::qco::createTargetNativeSynthesis(target))));
-  EXPECT_EQ(countOps<RZOp>(*module), 0U);
-  EXPECT_EQ(countOps<RYOp>(*module), 0U);
-  EXPECT_EQ(countOps<UOp>(*module), 2U);
-  EXPECT_EQ(countOps<mlir::math::SinOp>(*module), 0U);
-  EXPECT_EQ(countOps<mlir::math::CosOp>(*module), 0U);
-  EXPECT_EQ(countOps<mlir::math::AbsFOp>(*module), 0U);
-  EXPECT_EQ(countOps<mlir::math::FloorOp>(*module), 0U);
-  EXPECT_EQ(countOps<mlir::math::AcosOp>(*module), 0U);
-  EXPECT_EQ(countOps<mlir::math::Atan2Op>(*module), 0U);
+      runPass(*moduleOp, mlir::qco::createTargetNativeSynthesis(target))));
+  EXPECT_EQ(countOps<RZOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<RYOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<UOp>(*moduleOp), 2U);
+  EXPECT_EQ(countOps<mlir::math::SinOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<mlir::math::CosOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<mlir::math::AbsFOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<mlir::math::FloorOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<mlir::math::AcosOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<mlir::math::Atan2Op>(*moduleOp), 0U);
   ASSERT_TRUE(mlir::succeeded(
-      runPass(*module, mlir::qco::createVerifyTargetConformance(target))));
+      runPass(*moduleOp, mlir::qco::createVerifyTargetConformance(target))));
 }
 
 TEST_F(TargetSynthesisTest, DenseUnitaryHasAsymmetricTwoQubitDDSemantics) {

@@ -651,7 +651,7 @@ static std::array<Val<T>, 4> anglesFromQuaternion(const Quat<T>& q,
   return {beta, phi, lambda, ((alpha - phi) + (gamma - lambda)) / c.two};
 }
 
-/// Conjugates @p q by Hadamard, mapping X to Z, Y to -Y, and Z to X.
+// Conjugates q by Hadamard, mapping X to Z, Y to -Y, and Z to X.
 template <typename T> static Quat<T> hadamardConjugate(const Quat<T>& q) {
   return {.w = q.w, .x = q.z, .y = -q.y, .z = q.x};
 }
@@ -1019,19 +1019,14 @@ struct MergeSingleQubitRotationGatesPattern final
     return success();
   }
 
-  /**
-   * @brief Merge a dynamic or mixed-angle chain via `Val<Value>` SSA.
-   *
-   * Same quaternion / Euler algorithm as the static path. Fusion mode emits
-   * the requested basis directly. The regular merge mode emits U. U output
-   * needs its intrinsic global-phase correction:
-   *   correction = totalInputPhase - (phi + lambda) / 2
-   * The pass-level global-phase normalization subsequently combines and
-   * normalizes the emitted correction.
-   *
-   * Converts every gate before rewriting so a missing conversion Case cannot
-   * leave partially rewired ops.
-   */
+  // Merges a dynamic or mixed-angle chain through `Val<Value>` SSA.
+  //
+  // Fusion mode emits the requested basis directly. Regular merge mode emits
+  // U and applies its intrinsic global-phase correction:
+  //   correction = totalInputPhase - (phi + lambda) / 2
+  // Pass-level global-phase normalization combines and normalizes the result.
+  // Converting every gate before rewriting prevents a missing conversion case
+  // from leaving partially rewired operations.
   static LogicalResult
   mergeDynamicChain(MutableArrayRef<UnitaryOpInterface> chain,
                     RewriterBase& rewriter,
@@ -1085,14 +1080,9 @@ struct MergeSingleQubitRotationGatesPattern final
     return success();
   }
 
-  /**
-   * @brief Matches and merges a chain of consecutive rotation gates.
-   *
-   * Detects the full chain of mergeable operations, folds their quaternions
-   * via Hamilton product, and emits a single UOp or the requested fusion basis.
-   * Fully static chains use host STL math; otherwise the SSA
-   * `arith`/`math` path is used.
-   */
+  // Matches the full chain, folds its quaternions with Hamilton products, and
+  // emits one U operation or the requested fusion basis. Static chains use
+  // host arithmetic. Other chains use the SSA `arith` and `math` path.
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
     if (!isChainStart(op)) {
@@ -1100,7 +1090,7 @@ struct MergeSingleQubitRotationGatesPattern final
     }
 
     auto chain = collectChain(op);
-    /// Emit helper operations at the chain tail next to the merged output.
+    // Emit helper operations at the chain tail next to the merged output.
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPointAfter(chain.back().getOperation());
 

@@ -115,6 +115,13 @@ operations that do not expose named SSA angle parameters remain run boundaries.
       parameter, and documentation rules to the changed code, and passed 237
       decomposition tests, 193 optimization tests, 24 target-synthesis tests,
       135 compiler tests, `uvx nox -s lint`, and `uvx nox -s cpp-lint`.
+- [x] (2026-08-27 14:32Z) Completed a branch-wide audit against the merged
+      development policies. Renamed the remaining `module` variable, used the
+      required C typedef spelling, removed `const` from range views, fixed
+      implementation comments, and made this plan describe the final pipeline. A
+      fresh build and all 589 focused tests pass. `uvx nox -s lint` passes. The
+      local `cpp-lint` rerun stops because the host has Clang-Tidy 21.1.1 and
+      the new session requires Clang-Tidy 22.
 
 ## Surprises & Discoveries
 
@@ -357,20 +364,38 @@ Hadamard conjugation and apply fixed angle and phase shifts. Emit the requested
 basis directly so the greedy composer cannot loop through an intermediate U. Do
 not add a second inverse-trigonometric implementation.
 
-Finally, run the focused decomposition and optimization test binaries. Run the
-compiler test binary if a shared API or pipeline changes. Run the repository
-lint suite, inspect the diff, and update this plan with evidence and remaining
-limits.
+Then integrate symbolic lowering into the existing target-native synthesis
+stage. Keep target compilation in this order: the default QCO optimization
+pipeline merges target-independent one-qubit runs to U, two-qubit fusion creates
+the U/CZ intermediate form, mapping assigns target sites, and
+`TargetNativeSynthesisPass` lowers the mapped program to the target basis. In
+`mlir/lib/Dialect/QCO/Transforms/NativeSynthesis/TargetSynthesis.cpp`, plan
+every required rewrite before changing the IR. Accept a single-qubit operation
+when it has either a constant matrix or named runtime parameters supported by
+`canSynthesizeParameterizedUnitary1Q`. After the complete plan succeeds, lower
+runtime operations with `synthesizeParameterizedUnitary1Q` and keep the existing
+matrix Euler path for constant operations. This keeps target synthesis atomic
+and avoids a separate post-mapping fuser.
+
+Add native-synthesis tests for direct runtime lowering and failed-preflight
+atomicity. Add compiler tests that exercise the complete stage order, every
+target-selected one-qubit basis, and modifier bodies. Finally, run all four
+affected MLIR test binaries, the whole-file C++ lint session, and the repository
+lint suite. Inspect the final diff and update this plan with the results.
 
 ## Concrete Steps
 
 Run all commands from the repository root.
 
-Build and establish the focused baseline:
+Configure the release preset, build the four affected test targets, and
+establish the focused baseline:
 
-    cmake --build build/release --target \
+    cmake --preset release
+    cmake --build --preset release --target \
       mqt-core-mlir-unittest-decomposition \
-      mqt-core-mlir-unittest-optimizations
+      mqt-core-mlir-unittest-optimizations \
+      mqt-core-mlir-unittest-target-synthesis \
+      mqt-core-mlir-unittests-compiler
     build/release/mlir/unittests/Dialect/QCO/Transforms/Decomposition/\
       mqt-core-mlir-unittest-decomposition \
       --gtest_filter='FuseSingleQubitUnitaryRunsTest.*'
@@ -385,8 +410,11 @@ After the focused tests pass, run:
       mqt-core-mlir-unittest-decomposition
     build/release/mlir/unittests/Dialect/QCO/Transforms/Optimizations/\
       mqt-core-mlir-unittest-optimizations
+    build/release/mlir/unittests/Dialect/QCO/Transforms/NativeSynthesis/\
+      mqt-core-mlir-unittest-target-synthesis
     build/release/mlir/unittests/Compiler/\
       mqt-core-mlir-unittests-compiler
+    uvx nox -s cpp-lint
     uvx nox -s lint
 
 Record exact pass counts and any unavailable check in this plan.
@@ -411,10 +439,11 @@ that runtime values use a conservative fixed gate sequence.
 
 All build and test commands are repeatable. CMake places generated files under
 `build/`, which is not committed. Source edits remain limited to the QCO
-transform, its shared declarations, focused tests, and this plan. If a rewrite
-fails during development, use the failing focused test to restore a valid
-milestone; do not reset or discard unrelated work. The worktree was clean when
-the task started, so any later unrelated change must be preserved and reported.
+decomposition, fusion, and target-synthesis transforms; the compiler target
+pipeline; their focused tests; `CHANGELOG.md`; and this plan. If a rewrite fails
+during development, use the failing focused test to restore a valid milestone;
+do not reset or discard unrelated work. The worktree was clean when the task
+started, so any later unrelated change must be preserved and reported.
 
 ## Artifacts and Notes
 
@@ -433,7 +462,8 @@ Final test evidence:
     optimizations: 193 passed
     target synthesis: 24 passed
     compiler: 135 passed
-    lint, whole-file C++ lint, formatting, and diff checks: passed
+    lint, formatting, and diff checks: passed
+    whole-file C++ lint rerun: unavailable; Clang-Tidy 22 is not installed
 
 Retain the clamp around `acos`, the pure-Z gimbal path, the sanitized
 `atan2(0,0)` input, and the Euler wrap phase when reusing this code.
@@ -472,3 +502,7 @@ all dynamic bases directly and removes the intermediate U synthesis API.
 
 Revision note (2026-08-27): Recorded the final merge, current MLIR policy
 alignment, and validation evidence.
+
+Revision note (2026-08-27): Aligned every branch-added file with the merged
+development policies and updated the work plan, commands, scope, and evidence to
+describe the final target-native design.
