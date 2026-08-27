@@ -101,7 +101,7 @@ Value QCProgramBuilder::allocQubit() {
 
   // Create the AllocOp without register metadata
   auto allocOp = AllocOp::create(*this);
-  const auto qubit = allocOp.getResult();
+  auto qubit = allocOp.getResult();
 
   // Track the allocated qubit for automatic deallocation
   allocatedQubits.insert(qubit);
@@ -179,7 +179,7 @@ Value QCProgramBuilder::loadClassicalBit(
     Value reg, const std::variant<int64_t, Value>& index) {
   checkFinalized();
   cbit::validateStaticRegisterIndex(reg, index);
-  const auto indexValue = variantToValue(*this, getLoc(), index);
+  auto indexValue = variantToValue(*this, getLoc(), index);
   return cbit::LoadOp::create(*this, getI1Type(), reg, indexValue).getResult();
 }
 
@@ -187,7 +187,7 @@ void QCProgramBuilder::storeClassicalBit(
     Value value, Value reg, const std::variant<int64_t, Value>& index) {
   checkFinalized();
   cbit::validateStaticRegisterIndex(reg, index);
-  const auto indexValue = variantToValue(*this, getLoc(), index);
+  auto indexValue = variantToValue(*this, getLoc(), index);
   cbit::StoreOp::create(*this, value, reg, indexValue);
 }
 

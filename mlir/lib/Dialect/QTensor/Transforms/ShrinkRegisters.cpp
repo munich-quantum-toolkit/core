@@ -34,7 +34,7 @@ namespace mlir::qtensor {
 /**
  * @brief Return the unique user of a linear qtensor value.
  */
-[[nodiscard]] static Operation* getLinearTensorUser(const Value tensor) {
+[[nodiscard]] static Operation* getLinearTensorUser(Value tensor) {
   assert(tensor.hasOneUse() && "Expected a linear tensor with exactly one use");
   return *tensor.getUsers().begin();
 }
@@ -88,9 +88,6 @@ collectLiveIndices(AllocOp allocOp, BitVector& live, DeallocOp& deallocOp) {
   auto tensor = allocOp.getResult();
   while (true) {
     auto* user = getLinearTensorUser(tensor);
-    if (user == nullptr) {
-      return failure();
-    }
 
     if (auto currentDealloc = dyn_cast<DeallocOp>(user)) {
       if (currentDealloc.getTensor() != tensor) {
@@ -177,9 +174,6 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
     auto currentTensor = newAlloc.getResult();
     while (true) {
       Operation* currentOp = getLinearTensorUser(oldTensor);
-      if (currentOp == nullptr) {
-        return failure();
-      }
 
       if (auto deallocOp = dyn_cast<DeallocOp>(currentOp)) {
         if (deallocOp != oldDeallocOp || deallocOp.getTensor() != oldTensor) {
@@ -207,9 +201,6 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         }
         auto oldOutTensor = extractOp.getOutTensor();
         auto* nextOp = getLinearTensorUser(oldOutTensor);
-        if (nextOp == nullptr) {
-          return failure();
-        }
 
         rewriter.setInsertionPoint(extractOp);
         auto index = arith::ConstantIndexOp::create(
@@ -243,9 +234,6 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         }
         auto oldResultTensor = insertOp.getResult();
         auto* nextOp = getLinearTensorUser(oldResultTensor);
-        if (nextOp == nullptr) {
-          return failure();
-        }
 
         rewriter.setInsertionPoint(insertOp);
         auto index = arith::ConstantIndexOp::create(rewriter, insertOp.getLoc(),

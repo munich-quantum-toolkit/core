@@ -382,6 +382,33 @@ class QCProgram(Program):
         Set ``copy=True`` to preserve it.
         """
 
+    def num_gates(self) -> int:
+        """Count the gates in the program.
+
+        Any operation that implements the ``UnitaryOpInterface`` is counted. Operations
+        in every structured control-flow region are counted once, regardless of how
+        often the region executes. Operations within modifiers are not counted
+        recursively, and barriers are skipped.
+        """
+
+    def num_single_qubit_gates(self) -> int:
+        """Count the single-qubit gates in the program.
+
+        Any operation that implements the ``UnitaryOpInterface`` and acts on one qubit
+        is counted. Operations in every structured control-flow region are counted
+        once, regardless of how often the region executes. Operations within modifiers
+        are not counted recursively, and barriers are skipped.
+        """
+
+    def num_two_qubit_gates(self) -> int:
+        """Count the two-qubit gates in the program.
+
+        Any operation that implements the ``UnitaryOpInterface`` and acts on two qubits
+        is counted. Operations in every structured control-flow region are counted
+        once, regardless of how often the region executes. Operations within modifiers
+        are not counted recursively, and barriers are skipped.
+        """
+
 class QCOProgram(Program):
     """A compiler program in the QCO dialect.
 

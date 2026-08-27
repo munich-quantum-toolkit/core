@@ -53,6 +53,8 @@ UPGRADING
 
 contributing
 ai_usage
+development
+glossary
 tooling
 support
 ```

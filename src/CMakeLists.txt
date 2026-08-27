@@ -65,17 +65,11 @@ add_subdirectory(qasm3)
 # add the benchmark semantic package
 add_subdirectory(bench)
 
-# add the circuit_optimizer package
-add_subdirectory(circuit_optimizer)
-
 # add DD package library
 add_subdirectory(dd)
 
 # add QDMI libraries
 add_subdirectory(qdmi)
-
-# add QIR package library
-add_subdirectory(qir)
 
 # Installation instructions for the main library
 if(MQT_CORE_INSTALL)

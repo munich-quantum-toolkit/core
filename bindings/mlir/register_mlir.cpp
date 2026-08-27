@@ -12,19 +12,19 @@
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
-#include "qdmi/Client.hpp" // NOLINT(misc-include-cleaner)
+#include "qdmi/Client.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 #include "qiskit/Qiskit.h"
 
 #include <llvm/Support/Error.h>
 #include <nanobind/nanobind.h>
-#include <nanobind/stl/filesystem.h>  // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/optional.h>    // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/pair.h>        // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string.h>      // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string_view.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/variant.h>     // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h>      // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/filesystem.h>
+#include <nanobind/stl/optional.h>
+#include <nanobind/stl/pair.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/string_view.h>
+#include <nanobind/stl/variant.h>
+#include <nanobind/stl/vector.h>
 
 #include <cctype>
 #include <cstddef>
@@ -45,9 +45,8 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-namespace {
-
-template <class T> [[nodiscard]] T takeResult(std::optional<T>&& result) {
+template <class T>
+[[nodiscard]] static T takeResult(std::optional<T>&& result) {
   if (!result) {
     throw std::runtime_error(
         "MLIR operation failed; see diagnostics for details.");
@@ -55,7 +54,8 @@ template <class T> [[nodiscard]] T takeResult(std::optional<T>&& result) {
   return *std::move(result);
 }
 
-template <class T> [[nodiscard]] T takeResult(llvm::Expected<T>&& result) {
+template <class T>
+[[nodiscard]] static T takeResult(llvm::Expected<T>&& result) {
   if (!result) {
     const auto message = llvm::toString(result.takeError());
     throw nb::value_error(message.c_str());
@@ -64,17 +64,18 @@ template <class T> [[nodiscard]] T takeResult(llvm::Expected<T>&& result) {
 }
 
 template <class T>
-void constructFromExpected(T& self, llvm::Expected<T>&& result) {
+static void constructFromExpected(T& self, llvm::Expected<T>&& result) {
   std::construct_at(&self, takeResult(std::move(result)));
 }
 
-void requireSuccess(const bool succeeded) {
+static void requireSuccess(const bool succeeded) {
   if (!succeeded) {
     throw std::runtime_error(
         "MLIR operation failed; see diagnostics for details.");
   }
 }
 
+namespace {
 template <auto Function> struct OptionalFunctionAdapter;
 
 template <class T, class... Args, std::optional<T> (*Function)(Args...)>
@@ -109,8 +110,9 @@ struct BooleanMemberAdapter<Method> {
     requireSuccess((self.*Method)(std::forward<Args>(args)...));
   }
 };
+} // namespace
 
-void requireValid(const mlir::Program& program) {
+static void requireValid(const mlir::Program& program) {
   if (!program.isValid()) {
     throw std::runtime_error(
         "This compiler program has already been consumed.");
@@ -118,8 +120,8 @@ void requireValid(const mlir::Program& program) {
 }
 
 template <class ProgramType>
-[[nodiscard]] ProgramType copiedOrConsumed(ProgramType& program,
-                                           const bool copy) {
+[[nodiscard]] static ProgramType copiedOrConsumed(ProgramType& program,
+                                                  const bool copy) {
   requireValid(program);
   if (copy) {
     return program.copy();
@@ -130,7 +132,7 @@ template <class ProgramType>
 /**
  * @brief Check whether @p input unambiguously looks like source text.
  */
-[[nodiscard]] bool isSourceString(const std::string_view input) {
+[[nodiscard]] static bool isSourceString(const std::string_view input) {
   auto source = input;
   while (!source.empty() &&
          std::isspace(static_cast<unsigned char>(source.front())) != 0) {
@@ -145,7 +147,7 @@ template <class ProgramType>
 /**
  * @brief Construct a frontend program from a file path.
  */
-[[nodiscard]] mlir::CompilerInput
+[[nodiscard]] static mlir::CompilerInput
 programFromPath(const std::filesystem::path& path) {
   if (path.empty()) {
     throw std::runtime_error("Input path must not be empty.");
@@ -183,7 +185,8 @@ programFromPath(const std::filesystem::path& path) {
 /**
  * @brief Construct a frontend program from a string containing source or path.
  */
-[[nodiscard]] mlir::CompilerInput programFromString(const std::string& input) {
+[[nodiscard]] static mlir::CompilerInput
+programFromString(const std::string& input) {
   if (isSourceString(input)) {
     if (input.find("OPENQASM") != std::string::npos) {
       return takeResult(mlir::QCProgram::fromQASMString(input));
@@ -200,8 +203,8 @@ programFromPath(const std::filesystem::path& path) {
  * behaves like a conventional compiler function. Set @p inplace to transfer
  * ownership from a program object instead.
  */
-[[nodiscard]] mlir::CompilerInput programFromInput(const nb::object& program,
-                                                   const bool inplace) {
+[[nodiscard]] static mlir::CompilerInput
+programFromInput(const nb::object& program, const bool inplace) {
   if (nb::isinstance<nb::str>(program)) {
     return programFromString(nb::cast<std::string>(program));
   }
@@ -245,7 +248,7 @@ programFromPath(const std::filesystem::path& path) {
 /**
  * @brief Run the coordinated default pipeline and return a typed program.
  */
-[[nodiscard]] mlir::CompilerProgram
+[[nodiscard]] static mlir::CompilerProgram
 compileProgram(const nb::object& program, const mlir::ProgramFormat output,
                const bool inplace, const mlir::CompilerTarget* const target,
                const std::string& qcoPipeline, const bool enableTiming,
@@ -255,7 +258,7 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
                                              enableTiming, enableStatistics));
 }
 
-[[nodiscard]] mlir::QCProgram
+[[nodiscard]] static mlir::QCProgram
 generateBenchmark(const std::string_view request) {
   auto generated = bench::generate(request);
   if (!generated) {
@@ -263,8 +266,6 @@ generateBenchmark(const std::string_view request) {
   }
   return std::move(generated->program);
 }
-
-} // namespace
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   m.doc() = "MQT Core MLIR compiler bindings.";
@@ -735,7 +736,43 @@ Set ``copy=True`` to preserve it.)pb")
           "profile"_a, nb::kw_only(), "copy"_a = false,
           R"pb(Lower this program to QIR for the requested profile.
 
-Set ``copy=True`` to preserve it.)pb");
+Set ``copy=True`` to preserve it.)pb")
+      .def(
+          "num_gates",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.numGates();
+          },
+          R"pb(Count the gates in the program.
+
+Any operation that implements the ``UnitaryOpInterface`` is counted. Operations
+in every structured control-flow region are counted once, regardless of how
+often the region executes. Operations within modifiers are not counted
+recursively, and barriers are skipped.)pb")
+      .def(
+          "num_single_qubit_gates",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.numSingleQubitGates();
+          },
+          R"pb(Count the single-qubit gates in the program.
+
+Any operation that implements the ``UnitaryOpInterface`` and acts on one qubit
+is counted. Operations in every structured control-flow region are counted
+once, regardless of how often the region executes. Operations within modifiers
+are not counted recursively, and barriers are skipped.)pb")
+      .def(
+          "num_two_qubit_gates",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.numTwoQubitGates();
+          },
+          R"pb(Count the two-qubit gates in the program.
+
+Any operation that implements the ``UnitaryOpInterface`` and acts on two qubits
+is counted. Operations in every structured control-flow region are counted
+once, regardless of how often the region executes. Operations within modifiers
+are not counted recursively, and barriers are skipped.)pb");
 
   auto qcoProgram = nb::class_<mlir::QCOProgram, mlir::Program>(
       m, "QCOProgram", R"pb(A compiler program in the QCO dialect.

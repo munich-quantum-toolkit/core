@@ -10,7 +10,6 @@
 
 #include "mlir/Compiler/TargetCompilation.h"
 
-#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"

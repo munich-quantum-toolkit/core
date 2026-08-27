@@ -16,8 +16,8 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
-#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
+#include <mlir/Dialect/Math/IR/Math.h>   // IWYU pragma: keep (Passes.h.inc)
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -65,36 +65,6 @@ static std::optional<Matrix2x2> getRunMemberMatrix(UnitaryOpInterface gate) {
 }
 
 /**
- * @brief Whether `op` is a gate that Euler synthesis emits for `basis`.
- *
- * @param op The operation to classify.
- * @param basis The single-qubit synthesis basis.
- * @return Whether `op` is in the gate set for `basis`.
- */
-static bool isTargetBasisGate(Operation* op,
-                              const decomposition::SingleQubitBasis basis) {
-  using decomposition::SingleQubitBasis;
-  return TypeSwitch<Operation*, bool>(op)
-      .Case<RZOp>([&](auto) {
-        return basis == SingleQubitBasis::ZYZ ||
-               basis == SingleQubitBasis::ZXZ ||
-               basis == SingleQubitBasis::XZX ||
-               basis == SingleQubitBasis::ZSXX;
-      })
-      .Case<RYOp>([&](auto) {
-        return basis == SingleQubitBasis::ZYZ || basis == SingleQubitBasis::XYX;
-      })
-      .Case<RXOp>([&](auto) {
-        return basis == SingleQubitBasis::ZXZ ||
-               basis == SingleQubitBasis::XZX || basis == SingleQubitBasis::XYX;
-      })
-      .Case<UOp>([&](auto) { return basis == SingleQubitBasis::U; })
-      .Case<SXOp, XOp>([&](auto) { return basis == SingleQubitBasis::ZSXX; })
-      .Case<ROp>([&](auto) { return basis == SingleQubitBasis::R; })
-      .Default([](auto) { return false; });
-}
-
-/**
  * @brief Walks the wire from @p head, composing the run's matrix and metadata.
  *
  * @param head First gate of the run.
@@ -118,7 +88,7 @@ scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
       break;
     }
     scan.composed.premultiplyBy(*matrix);
-    scan.hasNonBasisGate |= !isTargetBasisGate(op, basis);
+    scan.hasNonBasisGate |= !decomposition::isSingleQubitBasisGate(op, basis);
     scan.tail = member;
     ++scan.gateCount;
   }
@@ -180,7 +150,7 @@ struct FuseSingleQubitUnitaryRunsPattern final
     if (!isRunMemberCandidate(op)) {
       return failure();
     }
-    const auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
+    auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
         op.getInputTarget(0).getDefiningOp());
     if (getRunMemberMatrix(predecessor)) {
       return failure();
@@ -231,12 +201,19 @@ protected:
       return;
     }
 
+    RewritePatternSet compositionPatterns(&getContext());
+    decomposition::populateParameterizedSingleQubitRunCompositionPatterns(
+        compositionPatterns, *parsed);
+
     RewritePatternSet patterns(&getContext());
     decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
         patterns, *parsed, /*skipControlledBodies=*/false);
 
-    if (failed(applyPatternsGreedily(moduleOp, std::move(patterns))) ||
+    if (failed(
+            applyPatternsGreedily(moduleOp, std::move(compositionPatterns))) ||
+        failed(applyPatternsGreedily(moduleOp, std::move(patterns))) ||
         failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
+      moduleOp.emitError("fusion pipeline failed"); // LCOV_EXCL_LINE
       signalPassFailure();
     }
   }

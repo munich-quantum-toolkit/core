@@ -109,8 +109,8 @@ TEST_F(TensorIteratorTest, Traversal) {
   const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
   const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
       identity};
-  const auto tensor9 = builder.qcoIndexSwitch(
-      0, tensor8, SmallVector<int64_t>{0}, caseBodies, identity)[0];
+  auto tensor9 = builder.qcoIndexSwitch(0, tensor8, SmallVector<int64_t>{0},
+                                        caseBodies, identity)[0];
   builder.qtensorDealloc(tensor9);
   [[maybe_unused]] auto m = builder.finalize();
 
@@ -259,6 +259,63 @@ TEST_F(TensorIteratorTest, Traversal) {
   --recIt;
   ASSERT_EQ(recIt.operation(), nullptr);
   ASSERT_EQ(recIt.tensor(), tensorElse0);
+}
+
+/**
+ * @brief A tensor returned by a call starts its own life-chain.
+ *
+ * @details
+ * A call sits on both sides of a chain: it consumes the caller's tensor and
+ * hands back a fresh one. Walking backward from the result therefore stops at
+ * the call, the same way it stops at an allocation, instead of continuing into
+ * the tensor that was passed in.
+ */
+TEST_F(TensorIteratorTest, CallResultStartsALifeChain) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+func.func private @relabel(%t: tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit> {
+  return %t : tensor<2x!qco.qubit>
+}
+func.func @main() {
+  %c0 = arith.constant 0 : index
+  %c2 = arith.constant 2 : index
+  %in = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+  %out = func.call @relabel(%in) : (tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit>
+  %rest, %q = qtensor.extract %out[%c0] : tensor<2x!qco.qubit>
+  %h = qco.h %q : !qco.qubit -> !qco.qubit
+  %back = qtensor.insert %h into %rest[%c0] : tensor<2x!qco.qubit>
+  qtensor.dealloc %back : tensor<2x!qco.qubit>
+  return
+}
+)mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+
+  func::CallOp call;
+  ExtractOp extract;
+  module->walk([&](Operation* op) {
+    if (auto c = dyn_cast<func::CallOp>(op)) {
+      call = c;
+    }
+    if (auto e = dyn_cast<ExtractOp>(op)) {
+      extract = e;
+    }
+  });
+  ASSERT_TRUE(call);
+  ASSERT_TRUE(extract);
+
+  auto result = cast<TypedValue<RankedTensorType>>(call.getResult(0));
+  TensorIterator it(extract.getOutTensor());
+  ASSERT_EQ(it.operation(), extract.getOperation());
+
+  --it;
+  EXPECT_EQ(it.operation(), call.getOperation());
+  EXPECT_EQ(it.tensor(), result);
+
+  // The call produced this tensor, so the chain starts here: stepping back
+  // again must not walk into the tensor that was passed in.
+  --it;
+  EXPECT_EQ(it.operation(), call.getOperation());
+  EXPECT_EQ(it.tensor(), result);
 }
 
 TEST_F(TensorIteratorTest, TraversesMixedResultConditionals) {

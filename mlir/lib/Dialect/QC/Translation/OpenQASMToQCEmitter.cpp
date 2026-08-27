@@ -182,10 +182,8 @@ public:
 
 private:
   // The engine cannot exist without the program and context that outlive it.
-  const oq3::frontend::TypedProgram&
-      program; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  MLIRContext&
-      context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  const oq3::frontend::TypedProgram& program;
+  MLIRContext& context;
   EmissionBudget emissionBudget;
   qc::QCProgramBuilder builder;
   std::vector<Value> qubitValues;
@@ -1145,7 +1143,7 @@ private:
     if (expression.kind == frontend::BitVectorExpressionKind::Register) {
       SmallVector<Value> bits;
       bits.reserve(expression.width);
-      const auto reg = classicalRegisters.at(expression.reg);
+      auto reg = classicalRegisters.at(expression.reg);
       assert(reg && "semantic analysis must declare bit registers before use");
       for (uint64_t bit = 0; bit < expression.width; ++bit) {
         auto index = arith::ConstantIndexOp::create(opBuilder, loc,
@@ -1467,7 +1465,7 @@ private:
   }
 
   Value resolveQubit(const frontend::QubitReference& reference,
-                     ValueRange gateQubits, const Value index = {}) {
+                     ValueRange gateQubits, Value index = {}) {
     switch (reference.kind) {
     case frontend::QubitReferenceKind::Register: {
       const auto& declaration = program.registers.at(reference.symbol);
@@ -1527,14 +1525,13 @@ private:
 
   static LogicalResult emitPrimitive(OpBuilder& opBuilder, const Location loc,
                                      const GateLowering lowering,
-                                     const ValueRange parameters,
-                                     const ValueRange qubits) {
+                                     ValueRange parameters, ValueRange qubits) {
     return qc::emitStandardGate(opBuilder, loc, lowering, parameters, qubits);
   }
 
   static Value
   emitOpenQASM3Phase(OpBuilder& opBuilder, const Location loc,
-                     const ValueRange uParameters,
+                     ValueRange uParameters,
                      const std::optional<Value> extraPhase = std::nullopt) {
     assert(uParameters.size() == 3);
     auto half = arith::ConstantFloatOp::create(
@@ -1547,7 +1544,7 @@ private:
   }
 
   static Value emitOpenQASM2UPhase(OpBuilder& opBuilder, const Location loc,
-                                   const ValueRange uParameters) {
+                                   ValueRange uParameters) {
     assert(uParameters.size() >= 2);
     const auto phiIndex = uParameters.size() == 2 ? 0U : 1U;
     const auto lambdaIndex = uParameters.size() == 2 ? 1U : 2U;
@@ -1858,7 +1855,7 @@ private:
   }
 
   [[nodiscard]] Value readBit(const frontend::BitReference& reference) {
-    const auto reg = classicalRegisters.at(reference.reg);
+    auto reg = classicalRegisters.at(reference.reg);
     assert(reg && "semantic analysis must declare bit registers before use");
     if (!reference.dynamicIndex) {
       return builder.loadClassicalBit(reg,
@@ -2050,7 +2047,7 @@ private:
     SmallVector<StateSlot> slots;
     slots.reserve(mutations.size());
     for (const auto slot : mutations) {
-      const auto value = scalarValues.at(slot);
+      auto value = scalarValues.at(slot);
       if (value) {
         slots.push_back(slot);
       }
@@ -2069,7 +2066,7 @@ private:
   }
 
   void assignState(ArrayRef<StateSlot> slots, ValueRange values) {
-    for (const auto [slot, value] : llvm::zip_equal(slots, values)) {
+    for (auto [slot, value] : llvm::zip_equal(slots, values)) {
       scalarValues.at(slot) = value;
     }
   }
@@ -2193,7 +2190,7 @@ private:
   }
 
   void assignBit(const frontend::BitReference& target, Value value) {
-    const auto reg = classicalRegisters[target.reg];
+    auto reg = classicalRegisters[target.reg];
     assert(reg && "semantic analysis must declare bit registers before use");
     if (!target.dynamicIndex) {
       builder.storeClassicalBit(value, reg, static_cast<int64_t>(target.index));
@@ -2218,9 +2215,9 @@ private:
       const frontend::BitVectorAssignmentStatement& assignment) {
     auto value = emitBitVectorExpression(builder, assignment.value);
     const auto bits = ensureBits(builder, value);
-    const auto reg = classicalRegisters[assignment.target];
+    auto reg = classicalRegisters[assignment.target];
     assert(reg && "semantic analysis must declare bit registers before use");
-    for (const auto [index, bit] : llvm::enumerate(bits)) {
+    for (auto [index, bit] : llvm::enumerate(bits)) {
       builder.storeClassicalBit(bit, reg, static_cast<int64_t>(index));
     }
   }

@@ -153,7 +153,7 @@ struct ReuseQubits final : impl::ReuseQubitsBase<ReuseQubits> {
 
 protected:
   void runOnOperation() override {
-    const auto op = getOperation();
+    auto op = getOperation();
     auto* ctx = &getContext();
 
     // Define the set of patterns to use.

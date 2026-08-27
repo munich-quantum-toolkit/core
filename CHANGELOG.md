@@ -25,9 +25,9 @@ releases may include breaking changes.
   [#1807], [#1808], [#1815], [#1824], [#1869], [#1872], [#1914], [#1925],
   [#1927], [#1935], [#1936], [#1938], [#1975], [#1976], [#2006], [#2014],
   [#2015], [#2017], [#2026], [#2028], [#2054], [#2058], [#2125], [#2136],
-  [#2150], [#2158], [#2210], [#2211]) ([**@burgholzer**], [**@denialhaag**],
-  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
-  [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
+  [#2149], [#2150], [#2158], [#2210], [#2211], [#2220]) ([**@burgholzer**],
+  [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
+  [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 - ✨ Add decision diagram-based construction, simulation, and sampling for QCO
   programs ([#1915], [#1973]) ([**@simon1hofmann**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
@@ -37,8 +37,8 @@ releases may include breaking changes.
 #### Import and export
 
 - ✨ Add Qiskit circuit import and target-aware export to the compiler
-  collection ([#2031], [#2133], [#2140], [#2150], [#2175]) ([**@burgholzer**],
-  [**@simon1hofmann**])
+  collection ([#2031], [#2133], [#2140], [#2150], [#2175], [#2176], [#2178])
+  ([**@burgholzer**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105])
   ([**@denialhaag**], [**@burgholzer**])
@@ -56,9 +56,11 @@ releases may include breaking changes.
 
 #### Passes and transformations
 
-- ✨ Add quantum loop unrolling and qubit reuse passes ([#1705], [#1718],
-  [#1755], [#1756], [#1923], [#1924], [#2039], [#2118], [#2216])
-  ([**@MatthiasReumann**], [**@DRovara**], [**@burgholzer**],
+- ✨ Add passes for quantum-specific interprocedural optimizations ([#2193])
+  ([**@DRovara**], [**@burgholzer**])
+- ✨ Add Pauli twirling, quantum loop unrolling, and qubit reuse passes
+  ([#1705], [#1718], [#1755], [#1756], [#1923], [#1924], [#2039], [#2118],
+  [#2216], [#2224]) ([**@MatthiasReumann**], [**@DRovara**], [**@burgholzer**],
   [**@simon1hofmann**])
 - ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
   [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
@@ -67,9 +69,9 @@ releases may include breaking changes.
 - ✨ Add modifier and global-phase normalization passes ([#1986], [#1995],
   [#2015]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add single-qubit optimization passes for unitary fusion, Hadamard lifting,
-  and rotation merging ([#1407], [#1605], [#1672], [#1674], [#2002], [#2038])
-  ([**@J4MMlE**], [**@lirem101**], [**@burgholzer**], [**@denialhaag**],
-  [**@MatthiasReumann**], [**@simon1hofmann**])
+  and rotation merging ([#1407], [#1605], [#1672], [#1674], [#2002], [#2038],
+  [#2228]) ([**@J4MMlE**], [**@lirem101**], [**@burgholzer**],
+  [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
 - ✨ Add multi-qubit decomposition, fusion, and target-native synthesis passes
   ([#1774], [#1802], [#1803], [#1809], [#1810], [#1814], [#1832], [#1850],
   [#1865], [#1961], [#1996], [#1998], [#2001]) ([**@simon1hofmann**],
@@ -77,14 +79,17 @@ releases may include breaking changes.
 
 #### Other additions
 
-- ✨ Add extensible program serializers to QDMI Qiskit backends. [QDMI-on-IQM]
-  now provides the IQM JSON serializer and `MoveGate` integration ([#2114])
-  ([**@marcelwa**])
 - 🐳 Add dev container configuration for a consistent local development
   environment ([#1786]) ([**@denialhaag**])
 
 ### Changed
 
+- 💥 Drop support for x86 macOS and stop publishing the respective wheels
+  ([#2259]) ([**@denialhaag**])
+- ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++
+  ([#2259]) ([**@denialhaag**])
+- 💥 Move circuit IR OpenQASM serialization from operation subclasses to
+  `OpenQASMSerializer` ([#2249]) ([**@simon1hofmann**])
 - 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
   [**@burgholzer**])
 - ⬆️ Update `nanobind` to version 3.0.0 ([#2209]) ([**@denialhaag**],
@@ -99,15 +104,24 @@ releases may include breaking changes.
   ([#2209]) ([**@burgholzer**])
 - 💥 Prune dead and misleading CoreIR APIs and remove random-number generator
   state from `QuantumComputation` ([#2111], [#2112]) ([**@simon1hofmann**])
-- 💥 Update QIR execution for QIR 2.1, isolated runtimes, reproducible
-  multi-shot execution, and safe statevector extraction ([#2035], [#2036])
-  ([**@burgholzer**])
+- 💥 Update QIR execution for QIR 2.1, isolated runtimes, deterministic QDMI
+  sampling, and safe statevector extraction ([#2035], [#2036], [#2246])
+  ([**@burgholzer**], [**@denialhaag**])
 - 💥 Require LLVM/MLIR 22.1 and QIR support in every MQT Core source build,
   build MLIR by default, and remove the corresponding build options ([#1356],
   [#1549], [#1953]) ([**@burgholzer**], [**@denialhaag**])
 
 ### Removed
 
+- 💥 Remove `CircuitOptimizer`. Move circuit flattening and final-measurement
+  removal to `QuantumComputation`, equivalence-checking transformations to MQT
+  QCEC, and mapping transformations to MQT QMAP. Move single-qubit gate fusion
+  to both downstream packages. Remove the public circuit dependency graph and
+  transformations without production consumers ([#2262]) ([**@simon1hofmann**])
+- 💥 Remove test-only DD state generators and recursive functionality
+  construction from MQT Core ([#2257]) ([**@simon1hofmann**])
+- 💥 Remove the standalone QIR runner and make the QIR runtime and JIT internal
+  DDSIM implementation details ([#2246]) ([**@denialhaag**])
 - 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
   DD package evaluation. MQT Core provides no direct replacement ([#2214])
   ([**@burgholzer**])
@@ -125,6 +139,36 @@ releases may include breaking changes.
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
   ([**@burgholzer**])
+
+## [3.9.2] - 2026-08-26
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#392)._
+
+### Added
+
+- ✨ Allow C++ and Python QDMI job submissions to omit the shot count, leaving
+  repetition semantics to the program and device ([#2258]) ([**@burgholzer**])
+
+## [3.9.1] - 2026-08-25
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#391)._
+
+### Added
+
+- 🚸 Let PennyLane QDMI devices reuse an already-open session, including a
+  device selected from a Slurm license ([#2232]) ([**@burgholzer**])
+- ✨ Let a package register a program serializer for a program format through
+  the `mqt.core.qiskit.program_serializers` entry point group ([#2114])
+  ([**@marcelwa**], [**@burgholzer**])
+- ✨ Add `mqt.core.qdmi.is_binary_program_format`, which states whether a
+  program format requires exact-byte submission ([#2114]) ([**@marcelwa**],
+  [**@burgholzer**])
+
+### Removed
+
+- 💥 Remove the IQM JSON converter `qiskit_to_iqm_json` and the `MoveGate` from
+  the Qiskit plugin, which [QDMI-on-IQM] now owns ([#2114]) ([**@marcelwa**],
+  [**@burgholzer**])
 
 ## [3.9.0] - 2026-08-19
 
@@ -781,7 +825,9 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[3.9.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.2
+[3.9.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.0
 [3.8.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.8.0
 [3.7.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.7.0
@@ -805,6 +851,16 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2262]: https://github.com/munich-quantum-toolkit/core/pull/2262
+[#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
+[#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
+[#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
+[#2249]: https://github.com/munich-quantum-toolkit/core/pull/2249
+[#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
+[#2220]: https://github.com/munich-quantum-toolkit/core/pull/2220
+[#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
+[#2228]: https://github.com/munich-quantum-toolkit/core/pull/2228
+[#2224]: https://github.com/munich-quantum-toolkit/core/pull/2224
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
 [#2211]: https://github.com/munich-quantum-toolkit/core/pull/2211
 [#2217]: https://github.com/munich-quantum-toolkit/core/pull/2217
@@ -812,6 +868,9 @@ for previous changelogs._
 [#2216]: https://github.com/munich-quantum-toolkit/core/pull/2216
 [#2203]: https://github.com/munich-quantum-toolkit/core/pull/2203
 [#2214]: https://github.com/munich-quantum-toolkit/core/pull/2214
+[#2193]: https://github.com/munich-quantum-toolkit/core/pull/2193
+[#2178]: https://github.com/munich-quantum-toolkit/core/pull/2178
+[#2176]: https://github.com/munich-quantum-toolkit/core/pull/2176
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
 [#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
@@ -820,6 +879,7 @@ for previous changelogs._
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156
 [#2154]: https://github.com/munich-quantum-toolkit/core/pull/2154
 [#2150]: https://github.com/munich-quantum-toolkit/core/pull/2150
+[#2149]: https://github.com/munich-quantum-toolkit/core/pull/2149
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
 [#2141]: https://github.com/munich-quantum-toolkit/core/pull/2141

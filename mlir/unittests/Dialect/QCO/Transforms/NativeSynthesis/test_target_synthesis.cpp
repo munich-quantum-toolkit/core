@@ -24,6 +24,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -65,8 +66,11 @@ using mlir::qco::CtrlOp;
 using mlir::qco::HOp;
 using mlir::qco::QCOProgramBuilder;
 using mlir::qco::RXXOp;
+using mlir::qco::RYOp;
+using mlir::qco::RZOp;
 using mlir::qco::SWAPOp;
 using mlir::qco::UnitaryOp;
+using mlir::qco::UOp;
 using mlir::qco::XOp;
 using mlir::qco::ZOp;
 
@@ -102,8 +106,8 @@ matrixFromDD(const dd::CMat& matrix) {
 
 static void expectEquivalent(const OwningOpRef<ModuleOp>& expected,
                              const OwningOpRef<ModuleOp>& actual) {
-  const auto expectedFunction = mainFunction(*expected);
-  const auto actualFunction = mainFunction(*actual);
+  auto expectedFunction = mainFunction(*expected);
+  auto actualFunction = mainFunction(*actual);
   const auto numQubits = countStaticQubits(expectedFunction);
   ASSERT_EQ(numQubits, countStaticQubits(actualFunction));
   ASSERT_GT(numQubits, 0U);
@@ -392,6 +396,37 @@ TEST_F(TargetSynthesisTest,
   expectEquivalent(expected, synthesized);
 }
 
+TEST_F(TargetSynthesisTest,
+       TargetNativeSynthesisLowersRuntimeParameterizedSingleQubitGates) {
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> !qco.qubit {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.rz(%theta) %q0 : !qco.qubit -> !qco.qubit
+        %q2 = qco.ry(%theta) %q1 : !qco.qubit -> !qco.qubit
+        return %q2 : !qco.qubit
+      }
+    }
+  )mlir",
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
+  const auto target = makeUCxTarget();
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*moduleOp, mlir::qco::createTargetNativeSynthesis(target))));
+  EXPECT_EQ(countOps<RZOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<RYOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<UOp>(*moduleOp), 2U);
+  EXPECT_EQ(countOps<mlir::math::SinOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<mlir::math::CosOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<mlir::math::AbsFOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<mlir::math::FloorOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<mlir::math::AcosOp>(*moduleOp), 0U);
+  EXPECT_EQ(countOps<mlir::math::Atan2Op>(*moduleOp), 0U);
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*moduleOp, mlir::qco::createVerifyTargetConformance(target))));
+}
+
 TEST_F(TargetSynthesisTest, DenseUnitaryHasAsymmetricTwoQubitDDSemantics) {
   const auto denseCx = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
@@ -629,7 +664,7 @@ TEST_F(TargetSynthesisTest,
       func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
         %q0 = qco.static 0 : !qco.qubit
         %q1 = qco.static 1 : !qco.qubit
-        %q2 = qco.h %q0 : !qco.qubit -> !qco.qubit
+        %q2 = qco.rz(%theta) %q0 : !qco.qubit -> !qco.qubit
         %q3, %q4 = qco.rxx(%theta) %q2, %q1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
         return %q3, %q4 : !qco.qubit, !qco.qubit
       }

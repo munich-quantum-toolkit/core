@@ -8,10 +8,8 @@
 
 # add various subdirectories containing tests
 add_subdirectory(bench)
-add_subdirectory(circuit_optimizer)
 add_subdirectory(dd)
 add_subdirectory(ir)
-add_subdirectory(qir)
 add_subdirectory(qdmi)
 
 # copy test circuits to build directory

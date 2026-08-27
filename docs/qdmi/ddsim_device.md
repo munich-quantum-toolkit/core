@@ -25,6 +25,12 @@ for weak simulation or to `0` for strong simulation. QIR Adaptive Profile
 programs require at least one shot because their measurement-dependent control
 flow cannot be represented by state extraction.
 
+For reproducible sampling, set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM1` to a positive
+`int` seed. The Python API exposes the same parameter as `custom1`. If `custom1`
+is absent, the device seeds the random-number generator from the system. The
+seed applies to OpenQASM and QIR sampling jobs. State extraction does not use
+it.
+
 Under the hood, the QDMI device uses the MQT Core OpenQASM parser (see
 {cpp-api:func}`qasm3::Importer::imports`) to parse the program into a
 {cpp-api:class}`qc::QuantumComputation` object. That circuit is then passed
@@ -57,6 +63,7 @@ job = device.submit_job(
     program.to_bitcode(),
     ProgramFormat.QIR_BASE_MODULE,
     num_shots=1024,
+    custom1=7,
 )
 job.wait()
 print(job.get_counts())

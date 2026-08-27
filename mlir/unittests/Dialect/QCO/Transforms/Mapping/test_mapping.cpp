@@ -94,8 +94,8 @@ static bool isExecutable(Region& body,
         }
       }
 
-      for (const auto [pred, succ] : llvm::zip_equal(
-               unitaryOp.getInputQubits(), unitaryOp.getOutputQubits())) {
+      for (auto [pred, succ] : llvm::zip_equal(unitaryOp.getInputQubits(),
+                                               unitaryOp.getOutputQubits())) {
         const auto hw = m.at(pred);
         m.try_emplace(succ, hw);
       }
@@ -120,7 +120,7 @@ static bool isExecutable(Region& body,
     }
 
     for (Region& region : op.getRegions()) {
-      const ValueRange initArgs =
+      ValueRange initArgs =
           TypeSwitch<Operation*, ValueRange>(&op)
               .Case<qco::IfOp>([&](qco::IfOp ifOp) { return ifOp.getQubits(); })
               .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp switchOp) {
@@ -138,8 +138,7 @@ static bool isExecutable(Region& body,
       const auto qubitArgs = getQubitValues(region.getArguments());
 
       DenseMap<Value, CompilerTarget::SiteId> localM;
-      for (const auto [arg, hw] :
-           llvm::zip_equal(qubitArgs, initialHardwareOrder)) {
+      for (auto [arg, hw] : llvm::zip_equal(qubitArgs, initialHardwareOrder)) {
         localM.try_emplace(arg, hw);
       }
 
@@ -148,7 +147,7 @@ static bool isExecutable(Region& body,
       }
 
       Operation* terminator = region.front().getTerminator();
-      const ValueRange finalOrderArgs =
+      ValueRange finalOrderArgs =
           TypeSwitch<Operation*, ValueRange>(region.getParentOp())
               .Case<qco::IfOp, qco::IndexSwitchOp>([&](auto) {
                 return cast<qco::YieldOp>(terminator).getTargets();
@@ -188,7 +187,7 @@ static bool isExecutable(Region& body,
       if (!isa<QubitType>(res.getType())) {
         continue;
       }
-      const Value init =
+      Value init =
           TypeSwitch<Operation*, Value>(&op)
               .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
                 return whileOp.getInits()[res.getResultNumber()];
@@ -684,7 +683,7 @@ TEST_P(MappingPassTest, FailNestedHigherArityUnitary) {
         return SmallVector<Value>{controls[0], controls[1], targetQubit};
       },
       [](ValueRange args) { return llvm::to_vector(args); }));
-  for (const auto qubit : qubits) {
+  for (auto qubit : qubits) {
     builder.sink(qubit);
   }
 
@@ -920,7 +919,7 @@ TEST_P(MappingPassTest, MapParallelLoops) {
     qubits[i] = builder.h(qubits[i]);
   }
 
-  const auto upForResults =
+  auto upForResults =
       builder.scfFor(1, 3, 1, {qubits[0], qubits[1], qubits[2]},
                      [&builder](Value, ValueRange iterArgs) {
                        Value iterQ0 = iterArgs[0];
@@ -940,7 +939,7 @@ TEST_P(MappingPassTest, MapParallelLoops) {
   qubits[1] = upForResults[1];
   qubits[2] = upForResults[2];
 
-  const auto downForResults =
+  auto downForResults =
       builder.scfFor(1, 3, 1, {qubits[3], qubits[4], qubits[5]},
                      [&builder](Value, ValueRange iterArgs) {
                        Value iterQ0 = iterArgs[0];

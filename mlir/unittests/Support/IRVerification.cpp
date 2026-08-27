@@ -11,7 +11,6 @@
 #include "Support/IRVerification.h"
 
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
@@ -61,6 +60,19 @@ struct TensorMapping {
     const auto i = lhsEquivGroups.at(lhs);
     return equivGroupMapping.at(i) == rhsEquivGroups.at(rhs);
   }
+
+  /// Return true if the given lhs value takes part in the equivalence
+  /// tracking. Only tensors reachable from a `qtensor` allocation are tracked;
+  /// builtin tensors of qubits are compared through the regular SSA mapping.
+  [[nodiscard]] bool tracksLhs(Value lhs) const {
+    return lhsEquivGroups.contains(lhs);
+  }
+
+  /// Return true if the given rhs value takes part in the equivalence
+  /// tracking.
+  [[nodiscard]] bool tracksRhs(Value rhs) const {
+    return rhsEquivGroups.contains(rhs);
+  }
 };
 } // namespace
 
@@ -68,16 +80,6 @@ static bool compareRegions(Region& lhs, Region& rhs,
                            SetVector<Operation*>& lhsClosed,
                            SetVector<Operation*>& rhsClosed, IRMapping& m,
                            TensorMapping& tm);
-
-/// Return true, if the given value has the type `tensor<qco.qubit>`.
-static bool hasTypeQubitTensor(Value v) {
-  auto tensor = dyn_cast<RankedTensorType>(v.getType());
-  if (!tensor) {
-    return false;
-  }
-
-  return isa<qco::QubitType>(tensor.getElementType());
-}
 
 /// Recursively initialize the equivalence group for a tensor value.
 static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
@@ -95,7 +97,7 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
 
     if (auto op = dyn_cast<qco::IfOp>(it.operation())) {
       const auto prev = std::prev(it);
-      const auto qubits = op.getQubits();
+      auto qubits = op.getQubits();
       const auto qIt = llvm::find(qubits, prev.tensor());
       assert(qIt != op.getQubits().end());
       const auto idx = std::distance(qubits.begin(), qIt);
@@ -103,14 +105,14 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
       auto& thenRegion = op.getThenRegion();
       auto& elseRegion = op.getElseRegion();
 
-      const auto& thenArg = thenRegion.getArgument(idx);
-      const auto& elseArg = elseRegion.getArgument(idx);
+      auto thenArg = thenRegion.getArgument(idx);
+      auto elseArg = elseRegion.getArgument(idx);
 
       initEquivGroup(cast<TypedValue<RankedTensorType>>(thenArg), id, group);
       initEquivGroup(cast<TypedValue<RankedTensorType>>(elseArg), id, group);
     } else if (auto op = dyn_cast<qco::IndexSwitchOp>(it.operation())) {
       const auto prev = std::prev(it);
-      const auto targets = op.getTargets();
+      auto targets = op.getTargets();
       const auto targetIt = llvm::find(targets, prev.tensor());
       assert(targetIt != targets.end());
       const auto idx = std::distance(targets.begin(), targetIt);
@@ -121,8 +123,7 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
             group);
       }
     } else if (auto forOp = dyn_cast<scf::ForOp>(it.operation())) {
-      const auto& arg =
-          forOp.getTiedLoopRegionIterArg(cast<OpResult>(it.tensor()));
+      auto arg = forOp.getTiedLoopRegionIterArg(cast<OpResult>(it.tensor()));
       initEquivGroup(cast<TypedValue<RankedTensorType>>(arg), id, group);
     } else if (auto whileOp = dyn_cast<scf::WhileOp>(it.operation())) {
       const auto previous = std::prev(it);
@@ -134,7 +135,7 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
                          whileOp.getBeforeBody()->getArgument(initNumber)),
                      id, group);
 
-      const auto result = cast<OpResult>(it.tensor());
+      auto result = cast<OpResult>(it.tensor());
       initEquivGroup(
           cast<TypedValue<RankedTensorType>>(
               whileOp.getAfterBody()->getArgument(result.getResultNumber())),
@@ -179,7 +180,7 @@ static void mapSegmentedResults(ValueRange lhsClassical,
                                 ValueRange rhsLinear,
                                 ArrayRef<size_t> linearPermutation,
                                 IRMapping& mapping) {
-  for (const auto [lhsResult, rhsResult] :
+  for (auto [lhsResult, rhsResult] :
        llvm::zip_equal(lhsClassical, rhsClassical)) {
     mapping.map(lhsResult, rhsResult);
   }
@@ -206,10 +207,10 @@ getPermutation(const LhsRange& lhs, const RhsRange& rhs, const IRMapping& m,
                const TensorMapping& tm) {
   SmallVector<size_t> permutation(lhs.size());
   for (const auto& [i, lhsValue] : llvm::enumerate(lhs)) {
-    const auto it = hasTypeQubitTensor(lhsValue)
+    const auto it = tm.tracksLhs(lhsValue)
                         ? llvm::find_if(rhs,
                                         [&](const auto rhsValue) {
-                                          if (!hasTypeQubitTensor(rhsValue)) {
+                                          if (!tm.tracksRhs(rhsValue)) {
                                             return false;
                                           }
                                           return tm.equals(lhsValue, rhsValue);
@@ -233,9 +234,9 @@ static bool compareValueLists(const LhsRange& lhs, const RhsRange& rhs,
 
   for (const auto lhsValue : lhs) {
     Value mapped;
-    if (hasTypeQubitTensor(lhsValue)) {
+    if (tm.tracksLhs(lhsValue)) {
       const auto it = llvm::find_if(rhs, [&](const auto rhsValue) {
-        return hasTypeQubitTensor(rhsValue) && tm.equals(lhsValue, rhsValue);
+        return tm.tracksRhs(rhsValue) && tm.equals(lhsValue, rhsValue);
       });
       if (it == rhs.end()) {
         return false;
@@ -463,7 +464,7 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
       numClassicalResults = switchOp.getClassicalResults().size();
     }
 
-    for (const auto [lhsValue, rhsValue] : llvm::zip_equal(
+    for (auto [lhsValue, rhsValue] : llvm::zip_equal(
              lhsYield.getTargets().take_front(numClassicalResults),
              rhsYield.getTargets().take_front(numClassicalResults))) {
       if (m.lookup(lhsValue) != rhsValue) {
@@ -476,16 +477,18 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
       return false;
     }
   } else {
-    for (const auto& [lhsOperand, rhsOperand] :
+    for (auto [lhsOperand, rhsOperand] :
          llvm::zip_equal(lhs->getOperands(), rhs->getOperands())) {
-      if (hasTypeQubitTensor(lhsOperand)) {
-        assert(hasTypeQubitTensor(rhsOperand));
+      if (tm.tracksLhs(lhsOperand)) {
+        if (!tm.tracksRhs(rhsOperand)) {
+          return false;
+        }
 
         if (!tm.equals(lhsOperand, rhsOperand)) {
           return false;
         }
       } else {
-        const auto& v = m.lookup(lhsOperand);
+        auto v = m.lookup(lhsOperand);
         if (v != rhsOperand) {
           return false;
         }
@@ -745,6 +748,9 @@ static bool compareBlocks(Block& lhs, Block& rhs,
             auto lhsExtract = cast<qtensor::ExtractOp>(lhsOp);
             auto rhsExtract = cast<qtensor::ExtractOp>(rhsOp);
             m.map(lhsExtract.getResult(), rhsExtract.getResult());
+            // The threaded tensor is only covered by the equivalence groups
+            // when it descends from an allocation, so map it here as well.
+            m.map(lhsExtract.getOutTensor(), rhsExtract.getOutTensor());
           } else {
             SmallVector<size_t> permutation(lhsOp->getNumResults());
             std::iota(permutation.begin(), permutation.end(), 0);

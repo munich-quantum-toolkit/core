@@ -58,6 +58,70 @@ def lint(session: nox.Session) -> None:
     session.run("prek", "run", "--all-files", *session.posargs, external=True)
 
 
+@nox.session(name="cpp-lint", reuse_venv=True, venv_backend="uv")
+def cpp_lint(session: nox.Session) -> None:
+    """Reproduce the CI cpp-linter check for changed or all C++ files."""
+    all_files = session.posargs == ["--all"]
+    if not all_files and (len(session.posargs) > 1 or (session.posargs and session.posargs[0].startswith("-"))):
+        session.error("pass --all or at most one diff base")
+    diff_base = session.posargs[0] if session.posargs else "origin/main"
+
+    if shutil.which("cmake") is None:
+        session.install("cmake")
+    if shutil.which("ninja") is None:
+        session.install("ninja")
+    # Keep this group aligned with cpp-linter-action v2.21.0 and its inputs.
+    session.install("--group", "cpp-lint")
+
+    clang_tidy = shutil.which("clang-tidy-22") or shutil.which("clang-tidy")
+    if clang_tidy is None:
+        session.error("clang-tidy 22 is required")
+    llvm_bin = Path(clang_tidy).resolve().parent
+    version = session.run(llvm_bin / "clang-tidy", "--version", external=True, silent=True)
+    if "version 22." not in (version or ""):
+        session.error("clang-tidy 22 is required")
+
+    compiler_env = {
+        "CC": str(llvm_bin / "clang"),
+        "CXX": str(llvm_bin / "clang++"),
+    }
+    session.run(
+        "cmake",
+        "-B",
+        "build/cpp-lint",
+        "--preset",
+        "lint",
+        env=compiler_env,
+        external=True,
+    )
+    session.run("cmake", "--build", "build/cpp-lint", env=compiler_env, external=True)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output = Path(temp_dir) / "github-output"
+        session.run(
+            "cpp-linter",
+            "--style=",
+            "--tidy-checks=",
+            f"--version={llvm_bin}",
+            "--ignore=build|!build/mlir/**|**/include|include|vendor/**",
+            "--thread-comments=false",
+            "--step-summary=false",
+            "--database=build/cpp-lint",
+            "--extra-arg=-std=c++20",
+            "--extra-arg=-Wunused-template",
+            f"--files-changed-only={'false' if all_files else 'true'}",
+            "--lines-changed-only=false",
+            *(() if all_files else (f"--diff-base={diff_base}",)),
+            "--file-annotations=false",
+            "--jobs=0",
+            "--verbosity=info",
+            env={"GITHUB_OUTPUT": str(output)},
+        )
+        results = dict(line.split("=", 1) for line in output.read_text().splitlines())
+        if int(results["checks-failed"]) != 0:
+            session.error(f"cpp-linter reported {results['checks-failed']} finding(s)")
+
+
 def _run_tests(
     session: nox.Session,
     *,
@@ -66,7 +130,7 @@ def _run_tests(
     pytest_run_args: Sequence[str] = (),
 ) -> None:
     env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
-    if shutil.which("cmake") is None and shutil.which("cmake3") is None:
+    if shutil.which("cmake") is None:
         session.install("cmake")
     if shutil.which("ninja") is None:
         session.install("ninja")
@@ -132,7 +196,7 @@ def qiskit(session: nox.Session) -> None:
     """Test against Qiskit main with its exact extension headers."""
     env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
     with preserve_lockfile():
-        if shutil.which("cmake") is None and shutil.which("cmake3") is None:
+        if shutil.which("cmake") is None:
             session.install("cmake")
         if shutil.which("ninja") is None:
             session.install("ninja")

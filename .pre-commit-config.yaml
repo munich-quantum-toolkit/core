@@ -81,6 +81,15 @@ repos:
         entry: \b(Nanobind|Numpy|Cmake|CCache|Github|PyTest|Mqt|Tum)\b
         exclude: ^(\.pre-commit-config\.yaml|vendor/)
         priority: 0
+      - id: disallow-const-mlir-handles
+        name: Disallow const on named MLIR handles and views
+        language: pygrep
+        entry: >-
+          (?x) \b(?: const\s+(?:(?:::)?mlir::)?(?:Value|TypedValue|BlockArgument|OpResult|ValueRange|OperandRange|ResultRange|Operation|Block|Region|ModuleOp)\b |
+          (?:(?:::)?mlir::)?(?:Value|TypedValue|BlockArgument|OpResult|ValueRange|OperandRange|ResultRange|Operation|Block|Region|ModuleOp)\s+const\b |
+          (?:(?:::)?mlir::)?TypedValue\s*<[^;\n]+>\s+const\b )
+        files: ^(mlir|bindings/mlir)/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$
+        priority: 0
 
   ## Check for typos
   - repo: https://github.com/adhtruong/mirrors-typos
@@ -127,7 +136,7 @@ repos:
 
   ## Format Markdown files with rumdl
   - repo: https://github.com/rvben/rumdl-pre-commit
-    rev: v0.2.55
+    rev: v0.2.57
     hooks:
       - id: rumdl
         args: [--fix]
@@ -172,7 +181,7 @@ repos:
 
   ## Check Python types with ty
   - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: v0.0.72
+    rev: v0.0.73
     hooks:
       - id: ty
         args: [--only-dev]

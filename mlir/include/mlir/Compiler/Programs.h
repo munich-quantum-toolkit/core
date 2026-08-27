@@ -187,6 +187,38 @@ public:
 
   /// Consume this program and lower it to QIR.
   [[nodiscard]] std::optional<QIRProgram> intoQIR(QIRProfile profile) &&;
+
+  /**
+   * @brief Count the gates in the program.
+   *
+   * @details Any operation that implements the `UnitaryOpInterface` is counted.
+   * The count includes operations in every structured control-flow region once,
+   * regardless of how often the region executes. Operations within modifiers
+   * are not counted recursively, and barriers are skipped.
+   */
+  [[nodiscard]] size_t numGates() const;
+
+  /**
+   * @brief Count the single-qubit gates in the program.
+   *
+   * @details Any operation that implements the `UnitaryOpInterface` and acts on
+   * one qubit is counted. The count includes operations in every structured
+   * control-flow region once, regardless of how often the region executes.
+   * Operations within modifiers are not counted recursively, and barriers are
+   * skipped.
+   */
+  [[nodiscard]] size_t numSingleQubitGates() const;
+
+  /**
+   * @brief Count the two-qubit gates in the program.
+   *
+   * @details Any operation that implements the `UnitaryOpInterface` and acts on
+   * two qubits is counted. The count includes operations in every structured
+   * control-flow region once, regardless of how often the region executes.
+   * Operations within modifiers are not counted recursively, and barriers are
+   * skipped.
+   */
+  [[nodiscard]] size_t numTwoQubitGates() const;
 };
 
 /**
@@ -194,8 +226,6 @@ public:
  */
 class QCOProgram final : public Program {
 public:
-  explicit QCOProgram(Storage storage) : Program(std::move(storage)) {}
-
   /// Parse QCO MLIR assembly.
   [[nodiscard]] static std::optional<QCOProgram>
   fromMLIRString(std::string_view source);
@@ -203,6 +233,17 @@ public:
   /// Parse QCO MLIR assembly from a file.
   [[nodiscard]] static std::optional<QCOProgram>
   fromMLIRFile(const std::filesystem::path& path);
+
+  /**
+   * @brief Take ownership of an MLIR module that contains a QCO program.
+   *
+   * @details The context must own every dialect referenced by the module and
+   * must remain the module's context. The factory verifies the module, requires
+   * at least one operation from the QCO dialect, and verifies QCO linearity.
+   */
+  [[nodiscard]] static std::optional<QCOProgram>
+  fromModule(std::shared_ptr<MLIRContext> context,
+             OwningOpRef<ModuleOp> moduleOp);
 
   /// Create an independent QCO program copy.
   [[nodiscard]] QCOProgram copy() const;
@@ -253,6 +294,13 @@ public:
 
   /// Consume this program and convert it to `jeff` MLIR.
   [[nodiscard]] std::optional<JeffProgram> intoJeff() &&;
+
+private:
+  friend class QCProgram;
+  friend class JeffProgram;
+
+  explicit QCOProgram(Storage storage) : Program(std::move(storage)) {}
+  [[nodiscard]] bool hasValidLinearity() const;
 };
 
 /**

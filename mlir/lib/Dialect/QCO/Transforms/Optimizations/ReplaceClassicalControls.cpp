@@ -67,9 +67,9 @@ static Value selectScaledAngle(PatternRewriter& rewriter, Location loc,
                                Value theta, Value condition,
                                const double trueScale,
                                const double falseScale) {
-  const Value trueValue = mqt::constantFromScalar(rewriter, loc, trueScale);
-  const Value falseValue = mqt::constantFromScalar(rewriter, loc, falseScale);
-  const Value scale =
+  Value trueValue = mqt::constantFromScalar(rewriter, loc, trueScale);
+  Value falseValue = mqt::constantFromScalar(rewriter, loc, falseScale);
+  Value scale =
       arith::SelectOp::create(rewriter, loc, condition, trueValue, falseValue);
   return arith::MulFOp::create(rewriter, loc, theta, scale);
 }
@@ -147,12 +147,12 @@ static std::optional<SmallVector<size_t>> getRZZTargetResultOrder(CtrlOp ctrlOp,
   SmallVector<size_t> resultOrder;
   resultOrder.reserve(ctrlOp.getNumTargets());
   auto yieldOp = cast<YieldOp>(ctrlOp.getBody()->getTerminator());
-  for (const Value yielded : yieldOp.getOperands()) {
-    const auto result = dyn_cast<OpResult>(yielded);
+  for (Value yielded : yieldOp.getOperands()) {
+    auto result = dyn_cast<OpResult>(yielded);
     if (!result || result.getOwner() != rzzOp.getOperation()) {
       return std::nullopt;
     }
-    const auto input =
+    auto input =
         dyn_cast<BlockArgument>(rzzOp.getInputTarget(result.getResultNumber()));
     if (!input || input.getOwner() != ctrlOp.getBody() ||
         input.getArgNumber() >= ctrlOp.getNumTargets()) {
@@ -190,7 +190,7 @@ static LogicalResult tryReplaceMeasuredRZTarget(CtrlOp op, RZOp rzOp,
   if (op.getNumTargets() != 1) {
     return failure();
   }
-  const Value outcome = getPredecessorMeasurementOutcome(op.getInputTarget(0));
+  Value outcome = getPredecessorMeasurementOutcome(op.getInputTarget(0));
   if (!outcome) {
     return failure();
   }
@@ -201,8 +201,8 @@ static LogicalResult tryReplaceMeasuredRZTarget(CtrlOp op, RZOp rzOp,
 
   mqt::hoistSupportingOpsBefore(*op.getBody(), rzOp, op, rewriter);
   rewriter.setInsertionPoint(op);
-  const Value phase = selectScaledAngle(rewriter, op.getLoc(), rzOp.getTheta(),
-                                        outcome, 0.5, -0.5);
+  Value phase = selectScaledAngle(rewriter, op.getLoc(), rzOp.getTheta(),
+                                  outcome, 0.5, -0.5);
   SmallVector<Value> replacements =
       applyConjunctionPhase(rewriter, op.getLoc(), op.getControlsIn(), phase);
   replacements.push_back(op.getInputTarget(0));
@@ -249,17 +249,16 @@ static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
   SmallVector<Value> targets(op.getTargetsIn());
 
   if (bothTargetsMeasured) {
-    const Value parity = arith::XOrIOp::create(
-        rewriter, op.getLoc(), targetOutcomes[0], targetOutcomes[1]);
-    const Value phase = selectScaledAngle(rewriter, op.getLoc(),
-                                          rzzOp.getTheta(), parity, 0.5, -0.5);
+    Value parity = arith::XOrIOp::create(rewriter, op.getLoc(),
+                                         targetOutcomes[0], targetOutcomes[1]);
+    Value phase = selectScaledAngle(rewriter, op.getLoc(), rzzOp.getTheta(),
+                                    parity, 0.5, -0.5);
     controls = applyConjunctionPhase(rewriter, op.getLoc(), controls, phase);
   } else {
     const size_t measuredTarget = targetOutcomes[0] ? 0U : 1U;
     const size_t otherTarget = 1U - measuredTarget;
-    const Value angle =
-        selectScaledAngle(rewriter, op.getLoc(), rzzOp.getTheta(),
-                          targetOutcomes[measuredTarget], -1.0, 1.0);
+    Value angle = selectScaledAngle(rewriter, op.getLoc(), rzzOp.getTheta(),
+                                    targetOutcomes[measuredTarget], -1.0, 1.0);
     std::tie(controls, targets[otherTarget]) = applyControlledRZ(
         rewriter, op.getLoc(), controls, targets[otherTarget], angle);
   }
@@ -409,7 +408,7 @@ struct ReplaceClassicalControls final
 
 protected:
   void runOnOperation() override {
-    const auto op = getOperation();
+    auto op = getOperation();
     auto* ctx = &getContext();
 
     // Define the set of patterns to use.

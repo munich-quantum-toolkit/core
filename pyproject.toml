@@ -304,7 +304,7 @@ environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin", MLIR_DIR="/opt/llv
 test-groups = ["test-base"]
 
 [tool.cibuildwheel.macos]
-environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
+environment = { MACOSX_DEPLOYMENT_TARGET = "13.3" }
 
 [tool.cibuildwheel.windows]
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
@@ -342,6 +342,10 @@ build = [
   "nanobind~=3.0.0",
   "scikit-build-core>=1.0.3",
   "vcs-versioning>=2.3.0",
+]
+cpp-lint = [
+  "cpp-linter==1.13.0",
+  "nanobind~=3.0.0",
 ]
 docs = [
   "furo>=2025.09.25",

@@ -308,9 +308,9 @@ TEST(OpenQASM3EmissionTest, EmitsCatalogHelpersUnderTheirNativeNames) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto qubits = builder.allocQubitRegister(3);
-  const auto q0 = qubits[0];
-  const auto q1 = qubits[1];
-  const auto q2 = qubits[2];
+  auto q0 = qubits[0];
+  auto q1 = qubits[1];
+  auto q2 = qubits[2];
 
   builder.sxdg(q0)
       .r(0.1, 0.2, q0)
@@ -326,9 +326,8 @@ TEST(OpenQASM3EmissionTest, EmitsCatalogHelpersUnderTheirNativeNames) {
       .xx_plus_yy(0.5, 0.6, q0, q1)
       .xx_minus_yy(0.7, 0.8, q0, q1)
       .rccx(q0, q1, q2);
-  builder.ctrl(q0, q1,
-               [&](const Value target) { builder.h(target).x(target); });
-  builder.pow(0.5, q2, [&](const Value target) { builder.z(target); });
+  builder.ctrl(q0, q1, [&](Value target) { builder.h(target).x(target); });
+  builder.pow(0.5, q2, [&](Value target) { builder.z(target); });
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
 
@@ -544,7 +543,7 @@ TEST(OpenQASM3EmissionTest, EmitsPhysicalQubitOperations) {
   context.loadAllAvailableDialects();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto qubit = builder.staticQubit(7);
+  auto qubit = builder.staticQubit(7);
   builder.h(qubit).reset(qubit).barrier(qubit);
   std::ignore = builder.measure(qubit);
   auto moduleOp = builder.finalize();
@@ -653,17 +652,16 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
 
   qc::QCProgramBuilder nonUnitaryBuilder(&context);
   nonUnitaryBuilder.initialize();
-  const auto nonUnitaryQubit = nonUnitaryBuilder.allocQubit();
-  nonUnitaryBuilder.inv(nonUnitaryQubit, [&](const Value target) {
-    nonUnitaryBuilder.reset(target);
-  });
+  auto nonUnitaryQubit = nonUnitaryBuilder.allocQubit();
+  nonUnitaryBuilder.inv(nonUnitaryQubit,
+                        [&](Value target) { nonUnitaryBuilder.reset(target); });
   auto nonUnitaryModule = nonUnitaryBuilder.finalize();
   ASSERT_TRUE(nonUnitaryModule);
   EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*nonUnitaryModule)));
 
   qc::QCProgramBuilder emptyBuilder(&context);
   emptyBuilder.initialize();
-  const auto emptyQubit = emptyBuilder.allocQubit();
+  auto emptyQubit = emptyBuilder.allocQubit();
   emptyBuilder.inv(emptyQubit, [](Value) {});
   auto emptyModule = emptyBuilder.finalize();
   ASSERT_TRUE(emptyModule);
@@ -671,9 +669,9 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
 
   qc::QCProgramBuilder capturedQubitBuilder(&context);
   capturedQubitBuilder.initialize();
-  const auto target = capturedQubitBuilder.allocQubit();
-  const auto captured = capturedQubitBuilder.allocQubit();
-  capturedQubitBuilder.inv(target, [&](const Value argument) {
+  auto target = capturedQubitBuilder.allocQubit();
+  auto captured = capturedQubitBuilder.allocQubit();
+  capturedQubitBuilder.inv(target, [&](Value argument) {
     capturedQubitBuilder.x(argument).x(captured);
   });
   auto capturedQubitModule = capturedQubitBuilder.finalize();
