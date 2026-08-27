@@ -1431,6 +1431,131 @@ TEST_F(QCODDFunctionalityTest, SimulateScfForAndFuncCallWithClassicalValues) {
   expectSimulatesFromZero(mainFunc(*mod), true);
 }
 
+TEST_F(QCODDFunctionalityTest, ScfForCarriesQubitsSimultaneously) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.static 1 : !qco.qubit
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %a, %b = scf.for %iv = %c0 to %c2 step %c1
+            iter_args(%x = %q0, %y = %q1)
+            -> (!qco.qubit, !qco.qubit) {
+          scf.yield %y, %x : !qco.qubit, !qco.qubit
+        }
+        %flipped = qco.x %a : !qco.qubit -> !qco.qubit
+        qco.sink %flipped : !qco.qubit
+        qco.sink %b : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  std::mt19937_64 rng(1);
+  const auto histogram = sample(mainFunc(*mod), *dd, 1, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"01", 1}}));
+}
+
+TEST_F(QCODDFunctionalityTest, ScfForCarriesScalarsSimultaneously) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %zero = arith.constant 0 : i8
+        %one = arith.constant 1 : i8
+        %a, %b = scf.for %iv = %c0 to %c2 step %c1
+            iter_args(%x = %zero, %y = %one) -> (i8, i8) {
+          scf.yield %y, %x : i8, i8
+        }
+        %is_zero = arith.cmpi eq, %a, %zero : i8
+        %out = qco.if %is_zero args(%arg = %q) -> (!qco.qubit) {
+          %flipped = qco.x %arg : !qco.qubit -> !qco.qubit
+          qco.yield %flipped : !qco.qubit
+        } else args(%arg = %q) {
+          qco.yield %arg : !qco.qubit
+        }
+        qco.sink %out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  expectSimulatesFromZero(mainFunc(*mod), true);
+}
+
+TEST_F(QCODDFunctionalityTest, ScfForCarriesRegistersSimultaneously) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %r0 = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %r1 = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %true = arith.constant true
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        cbit.store %true, %r1[%c0] : !cbit.reg<1>
+        %a, %b = scf.for %iv = %c0 to %c2 step %c1
+            iter_args(%x = %r0, %y = %r1) -> (!cbit.reg<1>, !cbit.reg<1>) {
+          scf.yield %y, %x : !cbit.reg<1>, !cbit.reg<1>
+        }
+        %bit = cbit.load %a[%c0] : !cbit.reg<1>
+        %out = qco.if %bit args(%arg = %q) -> (!qco.qubit) {
+          qco.yield %arg : !qco.qubit
+        } else args(%arg = %q) {
+          %flipped = qco.x %arg : !qco.qubit -> !qco.qubit
+          qco.yield %flipped : !qco.qubit
+        }
+        qco.sink %out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  expectSimulatesFromZero(mainFunc(*mod), true);
+}
+
+TEST_F(QCODDFunctionalityTest, ScfForSnapshotsYieldedInductionValue) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %cm1 = arith.constant -1 : index
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %out, %last = scf.for %iv = %c0 to %c2 step %c1
+            iter_args(%qarg = %q, %prev = %cm1) -> (!qco.qubit, index) {
+          %same = arith.cmpi eq, %prev, %iv : index
+          %next = qco.if %same args(%arg = %qarg) -> (!qco.qubit) {
+            %flipped = qco.x %arg : !qco.qubit -> !qco.qubit
+            qco.yield %flipped : !qco.qubit
+          } else args(%arg = %qarg) {
+            qco.yield %arg : !qco.qubit
+          }
+          scf.yield %next, %iv : !qco.qubit, index
+        }
+        qco.sink %out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  expectSimulatesFromZero(mainFunc(*mod), false);
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsInvalidFuncCalls) {
   auto recursive = parseSourceString<ModuleOp>(R"mlir(
     module {

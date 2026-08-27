@@ -121,8 +121,6 @@ struct ClassicalEnv {
   DenseMap<Value, qc::Qubit> deferredMeasurements;
   /// Shared storage preserves CBit register identity across `func.call`.
   DenseMap<Value, std::shared_ptr<RegisterState>> registers;
-
-  LogicalResult bindFrom(Value source, Value dest, Operation* op);
 };
 
 struct DecodedGate {
@@ -419,16 +417,6 @@ static FailureOr<int64_t> lookupIndex(Value value, ClassicalEnv& classical,
   return result->getSExtValue();
 }
 
-LogicalResult ClassicalEnv::bindFrom(Value source, Value dest, Operation* op) {
-  const auto value = scalars.find(source);
-  if (value == scalars.end()) {
-    return op->emitError()
-           << "classical SSA value is not mapped for QCO DD simulation";
-  }
-  scalars[dest] = value->second;
-  return success();
-}
-
 static LogicalResult applyUnsignedIndexCast(Value in, Value out, Operation* op,
                                             ClassicalEnv& classical) {
   auto value = lookupInteger(in, classical, op);
@@ -635,13 +623,15 @@ static FailureOr<LoopRange> resolveLoop(scf::ForOp forOp,
 
 static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
                                     WalkState& walk, Operation* op) {
+  const QubitMap sourceQubits = *walk.qubits;
+  const ClassicalEnv sourceClassical = *walk.classical;
   for (auto [src, dest] : llvm::zip_equal(sources, dests)) {
     if (isa<QubitType>(dest.getType())) {
       if (!isa<QubitType>(src.getType())) {
         return op->emitError()
                << "qubit/classical SSA type mismatch for QCO DD simulation";
       }
-      const auto q = walk.qubits->lookup(src);
+      const auto q = sourceQubits.lookup(src);
       if (!q) {
         return op->emitError()
                << "qubit SSA value is not mapped for QCO DD construction";
@@ -653,14 +643,19 @@ static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
         return op->emitError() << "QCO DD simulation only supports matching "
                                   "CBit register values";
       }
-      const auto it = walk.classical->registers.find(src);
-      if (it == walk.classical->registers.end()) {
+      const auto it = sourceClassical.registers.find(src);
+      if (it == sourceClassical.registers.end()) {
         return op->emitError()
                << "CBit register is not mapped for QCO DD simulation";
       }
       walk.classical->registers[dest] = it->second;
-    } else if (failed(walk.classical->bindFrom(src, dest, op))) {
-      return failure();
+    } else {
+      const auto value = sourceClassical.scalars.find(src);
+      if (value == sourceClassical.scalars.end()) {
+        return op->emitError()
+               << "classical SSA value is not mapped for QCO DD simulation";
+      }
+      walk.classical->scalars[dest] = value->second;
     }
   }
   return success();
@@ -840,14 +835,14 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                   "steps");
             }
             --walk.remainingExecutionSteps;
-            bindInteger(
-                body.getArgument(0),
-                range->induction.trunc(range->induction.getBitWidth() - 1),
-                *walk.classical);
             auto iterArgs = body.getArguments().drop_front();
             if (failed(bindValuePairs(carried, iterArgs, walk, forOp))) {
               return failure();
             }
+            bindInteger(
+                body.getArgument(0),
+                range->induction.trunc(range->induction.getBitWidth() - 1),
+                *walk.classical);
             if (failed(walkBlock(body, walk, state))) {
               return failure();
             }
