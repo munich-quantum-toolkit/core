@@ -26,12 +26,14 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver/Driver.hpp
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver/SessionConfig.hpp)
 
+  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi)
+
   # Add link libraries
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi MQT::CoreQDMICommon
     PRIVATE qdmi::qdmi_project_warnings $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>
-            spdlog::spdlog ${CMAKE_DL_LIBS})
+            ${CMAKE_DL_LIBS})
 
   mqt_get_qdmi_device_targets(QDMI_DEVICE_TARGETS)
 

@@ -11,11 +11,11 @@
 #include "qdmi/driver/Driver.hpp"
 
 #include "DeviceRegistry.hpp"
+#include "Diagnostics.hpp"
 #include "qdmi/common/Common.hpp"
 
 #include <qdmi/client.h>
 #include <qdmi/device.h>
-#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cassert>
@@ -268,9 +268,10 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
       }
 
       if (status == QDMI_ERROR_NOTSUPPORTED) {
-        SPDLOG_INFO(
-            "Device session parameter {} not supported by device (skipped)",
-            qdmi::toString(param));
+        qdmi::detail::emitDiagnostic(qdmi::detail::DiagnosticLevel::Info,
+                                     {"Device session parameter ",
+                                      qdmi::toString(param),
+                                      " not supported by device (skipped)"});
         return;
       }
       library_->device_session_free(deviceSession_);
@@ -838,17 +839,23 @@ void Driver::materializeClientCatalog() {
       try {
         clientDevices.emplace_back(open(id));
       } catch (const std::exception& ex) {
-        std::string library = "<unknown>";
-        {
+        std::string library;
+        try {
           const std::scoped_lock lock(stateMutex_);
           if (const auto definition =
                   std::ranges::find(definitions_, id, &DeviceDefinition::id);
               definition != definitions_.end()) {
             library = definition->library.string();
           }
+        } catch (...) {
+          library.clear();
         }
-        SPDLOG_WARN("Skipping configured QDMI device '{}' from '{}': {}", id,
-                    library, ex.what());
+        const std::string_view libraryText =
+            library.empty() ? "<unknown>" : std::string_view(library);
+        qdmi::detail::emitDiagnostic(qdmi::detail::DiagnosticLevel::Warning,
+                                     {"Skipping configured QDMI device '", id,
+                                      "' from '", libraryText,
+                                      "': ", ex.what()});
       }
     }
     const std::scoped_lock lock(stateMutex_);

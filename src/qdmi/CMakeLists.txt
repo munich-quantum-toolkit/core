@@ -27,10 +27,9 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Client.hpp
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Slurm.hpp)
 
-  target_link_libraries(
-    ${TARGET_NAME}
-    PUBLIC qdmi::qdmi MQT::CoreQDMICommon MQT::CoreQDMIDriver
-    PRIVATE spdlog::spdlog)
+  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi)
+
+  target_link_libraries(${TARGET_NAME} PUBLIC qdmi::qdmi MQT::CoreQDMICommon MQT::CoreQDMIDriver)
 
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
