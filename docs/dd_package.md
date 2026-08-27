@@ -28,134 +28,22 @@ to work with decision diagrams in MQT Core from Python.
 
 ## Quickstart
 
-In its simplest use case, the MQT Core DD package can be used as a classical
-circuit simulator using the {py:func}`~mqt.core.dd.sample` function. The
-underlying simulation approach supports mid-circuit measurements, reset
-operations, as well as classically-controlled operations. For example, the
-following code snippet demonstrates how to simulate the iterative quantum phase
-estimation algorithm shown in
-[the MQT Core IR Quickstart guide](mqt_core_ir).
+MQT DDSIM 2.6 or newer owns high-level decision-diagram circuit simulation. Use
+its `mqt.ddsim.sample` helper for sampling—including dynamic circuits—and
+`mqt.ddsim.simulate_statevector` for a full state vector. MQT Core exposes the
+lower-level DD package operations used to build specialized tools.
+
+The {py:func}`~mqt.core.dd.build_unitary` function constructs the unitary matrix
+representation of a circuit:
 
 ```{code-cell} ipython3
-from mqt.core.dd import sample
-from mqt.core.ir import QuantumComputation
-from mqt.core.ir.operations import OpType
-
-from math import pi
-
-theta = 3 * pi / 8
-precision = 3
-
-# Create an empty quantum computation
-qc = QuantumComputation()
-
-# Counting register
-q = qc.add_qubit_register(1, "q")
-
-# Eigenstate register
-psi = qc.add_qubit_register(1, "psi")
-
-# Classical register for the result, the estimated phase is `0.c_2 c_1 c_0 * pi`
-c = qc.add_classical_register(precision, "c")
-
-# Prepare psi in the eigenstate |1>
-qc.x(psi[0])
-
-for i in range(precision):
-  # Hadamard on the working qubit
-  qc.h(q[0])
-
-  # Controlled phase gate
-  qc.cp(2**(precision - i - 1) * theta, q[0], psi[0])
-
-  # Iterative inverse QFT
-  for j in range(i):
-    qc.if_(op_type=OpType.p, target=q[0], control_bit=c[j], params=[-pi / 2**(i - j)])
-  qc.h(q[0])
-
-  # Measure the result
-  qc.measure(q[0], c[i])
-
-  # Reset the qubit if not finished
-  if i < precision - 1:
-    qc.reset(q[0])
-
-# Run the simulation
-counts = sample(qc, 1024)
-```
-
-```{code-cell} ipython3
----
-tags: [remove-cell]
----
-from pathlib import Path
-from matplotlib import pyplot as plt
-
-def generate_plot(counts: dict[str, int], name: str, light: bool) -> None:
-    if light:
-        plt.style.use('default')
-    else:
-        plt.style.use('dark_background')
-
-    # Create the bar plot
-    fig, ax = plt.subplots()
-    bars = ax.bar(counts.keys(), counts.values(), color='#0065bd')
-
-    # Annotate counts above the bars
-    for bar in bars:
-        height = bar.get_height()
-        ax.annotate(f'{height}',
-                    xy=(bar.get_x() + bar.get_width() / 2, height),
-                    xytext=(0, 3),  # 3 points vertical offset
-                    textcoords="offset points",
-                    ha='center', va='bottom')
-
-    # Set background to transparent
-    fig.patch.set_alpha(0.0)
-    ax.patch.set_alpha(0.0)
-
-    # Remove top and right borders
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-
-    plt.xlabel("Measurement Outcome")
-    plt.ylabel("Counts")
-
-    # export to SVG (ensure the directory exists)
-    Path("_build/html/_images").mkdir(parents=True, exist_ok=True)
-    filename = "_build/html/_images/fig-" + name + ("-light" if light else "-dark") + ".svg"
-    plt.savefig(filename, format="svg")
-
-name = 'qpe'
-generate_plot(counts, name, light=True)
-generate_plot(counts, name, light=False)
-```
-
-```{raw} html
-<img src="_images/fig-qpe-light.svg" class="only-light" style="display: block; margin: auto; width: 75%;" alt="QPE measurement counts">
-<img src="_images/fig-qpe-dark.svg" class="only-dark" style="display: block; margin: auto; width: 75%;" alt="QPE measurement counts">
-```
-
-The {py:func}`~mqt.core.dd.sample` function is a high-level interface to the
-decision diagram package that does not require any knowledge of the underlying
-data structure. In a similar fashion, the
-{py:func}`~mqt.core.dd.simulate_statevector` and
-{py:func}`~mqt.core.dd.build_unitary` functions can be used to perform
-statevector simulation or to construct the unitary matrix representation of a
-quantum circuit, respectively.
-
-```{code-cell} ipython3
-from mqt.core.dd import simulate_statevector
-
 import numpy as np
+
+from mqt.core.ir import QuantumComputation
 
 qc = QuantumComputation(2)
 qc.h(0)
 qc.cx(0, 1)
-
-vec = np.array(simulate_statevector(qc), copy=False)
-with np.printoptions(precision=3, suppress=True):
-  print(vec)
 ```
 
 ```{code-cell} ipython3
@@ -166,15 +54,14 @@ with np.printoptions(precision=3, suppress=True):
   print(unitary)
 ```
 
-Both of these functions are inherently limited in their scalability due to the
-exponential growth of the resulting data structures. MQT Core also allows one to
-work with decision diagrams directly, which is particularly useful for larger
-quantum circuits. To this end, the {py:class}`~mqt.core.dd.DDPackage` class
-provides a low-level interface to the decision diagram package. An instance of
-this class can be used to simulate quantum circuits (see
-{py:func}`~mqt.core.dd.simulate`), construct unitary matrices (see
-{py:func}`~mqt.core.dd.build_functionality`), or perform other operations on
-decision diagrams.
+This function is inherently limited in its scalability due to the exponential
+growth of the resulting data structures. MQT Core also allows one to work with
+decision diagrams directly, which is particularly useful for larger quantum
+circuits. To this end, the {py:class}`~mqt.core.dd.DDPackage` class provides a
+low-level interface to the decision diagram package. An instance of this class
+can be used to simulate quantum circuits (see {py:func}`~mqt.core.dd.simulate`),
+construct unitary matrices (see {py:func}`~mqt.core.dd.build_functionality`), or
+perform other operations on decision diagrams.
 
 ```{code-cell} ipython3
 from mqt.core.dd import DDPackage, simulate

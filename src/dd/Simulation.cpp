@@ -14,6 +14,7 @@
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
+#include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
@@ -26,214 +27,320 @@
 #include <map>
 #include <memory>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace dd {
+namespace {
 
-std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
-                                          const VectorDD& in, Package& dd,
-                                          const std::size_t shots,
-                                          const std::size_t seed) {
-  auto isDynamicCircuit = false;
-  auto hasMeasurements = false;
-  auto measurementsLast = true;
+using MeasurementAssignment = std::pair<qc::Qubit, std::size_t>;
 
-  std::mt19937_64 mt{};
-  if (seed != 0U) {
-    mt.seed(seed);
-  } else {
-    // create and properly seed rng
-    std::array<std::mt19937_64::result_type, std::mt19937_64::state_size>
-        randomData{};
-    std::random_device rd;
-    std::ranges::generate(randomData, [&rd]() { return rd(); });
-    std::seed_seq seeds(std::begin(randomData), std::end(randomData));
-    mt.seed(seeds);
+struct CircuitAnalysis {
+  bool isDynamic = false;
+  bool hasMeasurements = false;
+  std::vector<MeasurementAssignment> terminalMeasurements{};
+};
+
+class VectorRootGuard {
+public:
+  VectorRootGuard(Package& package, VectorDD state)
+      : package(package), state(state) {}
+
+  VectorRootGuard(const VectorRootGuard&) = delete;
+  VectorRootGuard& operator=(const VectorRootGuard&) = delete;
+  VectorRootGuard(VectorRootGuard&&) = delete;
+  VectorRootGuard& operator=(VectorRootGuard&&) = delete;
+
+  ~VectorRootGuard() { package.decRef(state); }
+
+  [[nodiscard]] VectorDD& get() noexcept { return state; }
+
+  [[nodiscard]] VectorDD release() noexcept {
+    const auto released = state;
+    state = VectorDD::zero();
+    return released;
   }
 
-  std::map<qc::Qubit, std::size_t> measurementMap{};
+private:
+  Package& package;
+  VectorDD state;
+};
 
-  // rudimentary check whether circuit is dynamic
-  for (const auto& op : qc) {
-    // if it contains any dynamic circuit primitives, it certainly is dynamic
-    if (op->isIfElseOperation() || op->getType() == qc::Reset) {
-      isDynamicCircuit = true;
-      break;
+[[nodiscard]] CircuitAnalysis
+analyzeCircuit(const qc::QuantumComputation& circuit) {
+  auto analysis = CircuitAnalysis{};
+  auto measurementSeen = false;
+
+  for (const auto& operation : circuit) {
+    if (operation->isIfElseOperation() || operation->getType() == qc::Reset) {
+      analysis.isDynamic = true;
     }
 
-    // once a measurement is encountered we store the corresponding mapping
-    // (qubit -> bit)
-    if (const auto* measure = dynamic_cast<qc::NonUnitaryOperation*>(op.get());
-        measure != nullptr && measure->getType() == qc::Measure) {
-      hasMeasurements = true;
+    if (const auto* measurement =
+            dynamic_cast<const qc::NonUnitaryOperation*>(operation.get());
+        measurement != nullptr && measurement->getType() == qc::Measure) {
+      analysis.hasMeasurements = true;
+      measurementSeen = true;
 
-      const auto& quantum = measure->getTargets();
-      const auto& classic = measure->getClassics();
-
-      for (std::size_t i = 0; i < quantum.size(); ++i) {
-        measurementMap[quantum.at(i)] = classic.at(i);
+      const auto& qubits = measurement->getTargets();
+      const auto& bits = measurement->getClassics();
+      if (qubits.size() != bits.size()) {
+        throw std::invalid_argument(
+            "Measurement targets and classical bits must have equal sizes.");
       }
-    }
-
-    // if an operation happens after a measurement, the resulting circuit can
-    // only be simulated in single shots
-    if (hasMeasurements && (op->isUnitary() || op->isIfElseOperation())) {
-      measurementsLast = false;
-    }
-  }
-
-  if (!measurementsLast) {
-    isDynamicCircuit = true;
-  }
-
-  if (!isDynamicCircuit) {
-    // if all gates are unitary (besides measurements at the end), we just
-    // simulate once and measure all qubits repeatedly
-    auto permutation = qc.initialLayout;
-    auto e = in;
-
-    for (const auto& op : qc) {
-      // simply skip any non-unitary
-      if (!op->isUnitary()) {
-        continue;
-      }
-
-      if (isExecutableVirtually(*op)) {
-        applyVirtualOperation(*op, permutation);
-        continue;
-      }
-
-      e = applyUnitaryOperation(*op, e, dd, permutation);
-    }
-
-    // correct permutation if necessary
-    if (!hasMeasurements) {
-      changePermutation(e, permutation, qc.outputPermutation, dd);
-      e = dd.reduceGarbage(e, qc.getGarbage());
-    }
-
-    // measure all qubits
-    std::map<std::string, std::size_t> counts{};
-    for (std::size_t i = 0U; i < shots; ++i) {
-      // measure all returns a string of the form "q(n-1) ... q(0)"
-      auto measurement = dd.measureAll(e, false, mt);
-      counts.operator[](measurement) += 1U;
-    }
-    // reduce reference count of measured state
-    dd.decRef(e);
-
-    std::map<std::string, std::size_t> actualCounts{};
-    const auto numBits =
-        qc.getClassicalRegisters().empty() ? qc.getNqubits() : qc.getNcbits();
-    for (const auto& [bitstring, count] : counts) {
-      std::string measurement(numBits, '0');
-      if (hasMeasurements) {
-        // if the circuit contains measurements, we only want to return the
-        // measured bits
-        for (const auto& [qubit, bit] : measurementMap) {
-          // measurement map specifies that the circuit `qubit` is measured into
-          // a certain `bit`
-          measurement[numBits - 1U - bit] =
-              bitstring[bitstring.size() - 1U - permutation.at(qubit)];
+      for (std::size_t i = 0U; i < qubits.size(); ++i) {
+        const auto qubit = qubits.at(i);
+        const auto bit = bits.at(i);
+        if (circuit.initialLayout.apply(qubit) >= circuit.getNqubits()) {
+          throw std::out_of_range("Measurement qubit is out of range.");
         }
-      } else {
-        // otherwise, we consider the output permutation for determining where
-        // to measure the qubits to
-        for (const auto& [qubit, bit] : qc.outputPermutation) {
-          measurement[numBits - 1U - bit] =
-              bitstring[bitstring.size() - 1U - qubit];
+        if (bit >= circuit.getNcbits()) {
+          throw std::out_of_range("Measurement bit is out of range.");
         }
+        analysis.terminalMeasurements.emplace_back(qubit, bit);
       }
-      actualCounts[measurement] += count;
+      continue;
     }
-    return actualCounts;
+
+    if (measurementSeen &&
+        (operation->isUnitary() || operation->isIfElseOperation())) {
+      analysis.isDynamic = true;
+    }
   }
 
+  return analysis;
+}
+
+[[nodiscard]] bool
+isExecutableVirtually(const qc::Operation& operation) noexcept {
+  switch (operation.getType()) {
+  case qc::I:
+  case qc::Barrier:
+    return true;
+  case qc::SWAP:
+    return !operation.isControlled();
+  default:
+    return false;
+  }
+}
+
+void applyVirtualOperation(const qc::Operation& operation,
+                           qc::Permutation& permutation) noexcept {
+  if (operation.getType() == qc::SWAP) {
+    const auto& targets = operation.getTargets();
+    std::swap(permutation.at(targets[0U]), permutation.at(targets[1U]));
+  }
+}
+
+void finalizeState(const qc::QuantumComputation& circuit, VectorDD& state,
+                   qc::Permutation& permutation, Package& package) {
+  changePermutation(state, permutation, circuit.outputPermutation, package);
+  state = package.reduceGarbage(state, circuit.getGarbage());
+  if (circuit.hasGlobalPhase()) {
+    state = applyGlobalPhase(state, circuit.getGlobalPhase(), package);
+  }
+}
+
+[[nodiscard]] std::map<std::string, std::size_t>
+sampleState(VectorDD& state, const std::size_t shots, Package& package,
+            std::mt19937_64& rng) {
   std::map<std::string, std::size_t> counts{};
-
-  for (std::size_t i = 0U; i < shots; i++) {
-    std::vector<bool> measurements(qc.getNcbits(), false);
-
-    auto permutation = qc.initialLayout;
-    auto e = in;
-    dd.incRef(e);
-    for (const auto& op : qc) {
-      if (op->isUnitary()) {
-        // SWAP gates can be executed virtually by changing the permutation
-        if (isExecutableVirtually(*op)) {
-          applyVirtualOperation(*op, permutation);
-          continue;
-        }
-
-        e = applyUnitaryOperation(*op, e, dd, permutation);
-        continue;
-      }
-
-      if (op->getType() == qc::OpType::Measure) {
-        const auto& measure = dynamic_cast<const qc::NonUnitaryOperation&>(*op);
-        e = applyMeasurement(measure, e, dd, mt, measurements, permutation);
-        continue;
-      }
-
-      if (op->getType() == qc::OpType::Reset) {
-        const auto& reset = dynamic_cast<const qc::NonUnitaryOperation&>(*op);
-        e = applyReset(reset, e, dd, mt, permutation);
-        continue;
-      }
-
-      if (op->isIfElseOperation()) {
-        const auto& ifElse = dynamic_cast<const qc::IfElseOperation&>(*op);
-        e = applyIfElseOperation(ifElse, e, dd, measurements, permutation);
-        continue;
-      }
-
-      qc::unreachable();
-    }
-
-    // reduce reference count of measured state
-    dd.decRef(e);
-
-    std::string shot(qc.getNcbits(), '0');
-    for (size_t bit = 0U; bit < qc.getNcbits(); ++bit) {
-      if (measurements[bit]) {
-        shot[qc.getNcbits() - bit - 1U] = '1';
-      }
-    }
-    counts[shot]++;
+  for (std::size_t shot = 0U; shot < shots; ++shot) {
+    ++counts[package.measureAll(state, false, rng)];
   }
   return counts;
 }
 
-VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
-                  Package& dd) {
-  auto permutation = qc.initialLayout;
-  auto out = in;
-  for (const auto& op : qc) {
-    if (isExecutableVirtually(*op)) {
-      applyVirtualOperation(*op, permutation);
+[[nodiscard]] std::string formatExplicitMeasurement(
+    const std::string& measuredQubits,
+    const std::vector<MeasurementAssignment>& measurements,
+    const qc::Permutation& permutation, const std::size_t numClassicalBits) {
+  std::string result(numClassicalBits, '0');
+  for (const auto& [qubit, bit] : measurements) {
+    result.at(numClassicalBits - 1U - bit) =
+        measuredQubits.at(measuredQubits.size() - 1U - permutation.at(qubit));
+  }
+  return result;
+}
+
+[[nodiscard]] std::string
+formatImplicitMeasurement(const std::string& measuredQubits,
+                          const qc::QuantumComputation& circuit) {
+  const auto numQubits = circuit.getNqubits();
+  if (measuredQubits.size() > numQubits) {
+    throw std::invalid_argument(
+        "Measured state contains more qubits than the circuit.");
+  }
+  return std::string(numQubits - measuredQubits.size(), '0') + measuredQubits;
+}
+
+void executeStateOperation(const qc::Operation& operation, VectorDD& state,
+                           Package& package, qc::Permutation& permutation,
+                           const std::vector<bool>& measurements) {
+  if (operation.isUnitary()) {
+    if (isExecutableVirtually(operation)) {
+      applyVirtualOperation(operation, permutation);
     } else {
-      out = applyUnitaryOperation(*op, out, dd, permutation);
+      state = applyUnitaryOperation(operation, state, package, permutation);
+    }
+    return;
+  }
+
+  if (operation.isIfElseOperation()) {
+    const auto& ifElse = dynamic_cast<const qc::IfElseOperation&>(operation);
+    state =
+        applyIfElseOperation(ifElse, state, package, measurements, permutation);
+    return;
+  }
+
+  qc::unreachable();
+}
+
+} // namespace
+
+SamplingResult sample(const qc::QuantumComputation& circuit, VectorDD in,
+                      Package& package, const std::size_t shots,
+                      std::mt19937_64& rng) {
+  auto inputRoot = VectorRootGuard(package, in);
+  const auto analysis = analyzeCircuit(circuit);
+
+  if (!analysis.isDynamic) {
+    auto permutation = circuit.initialLayout;
+    auto& state = inputRoot.get();
+
+    for (const auto& operation : circuit) {
+      if (operation->isUnitary()) {
+        executeStateOperation(*operation, state, package, permutation, {});
+      }
+    }
+
+    std::map<std::string, std::size_t> counts{};
+    if (analysis.hasMeasurements) {
+      for (const auto& [rawResult, count] :
+           sampleState(state, shots, package, rng)) {
+        const auto result =
+            formatExplicitMeasurement(rawResult, analysis.terminalMeasurements,
+                                      permutation, circuit.getNcbits());
+        counts[result] += count;
+      }
+      finalizeState(circuit, state, permutation, package);
+    } else {
+      finalizeState(circuit, state, permutation, package);
+      for (const auto& [rawResult, count] :
+           sampleState(state, shots, package, rng)) {
+        counts[formatImplicitMeasurement(rawResult, circuit)] += count;
+      }
+    }
+
+    return {.counts = std::move(counts),
+            .state = inputRoot.release(),
+            .executions = 1U};
+  }
+
+  if (shots == 0U) {
+    return {.counts = {}, .state = inputRoot.release(), .executions = 0U};
+  }
+
+  std::map<std::string, std::size_t> counts{};
+  auto finalState = VectorDD{};
+  for (std::size_t shot = 0U; shot < shots; ++shot) {
+    auto measurements = std::vector<bool>(circuit.getNcbits(), false);
+    auto permutation = circuit.initialLayout;
+    package.incRef(inputRoot.get());
+    auto stateRoot = VectorRootGuard(package, inputRoot.get());
+    auto& state = stateRoot.get();
+
+    for (const auto& operation : circuit) {
+      if (operation->isUnitary() || operation->isIfElseOperation()) {
+        executeStateOperation(*operation, state, package, permutation,
+                              measurements);
+      } else if (operation->getType() == qc::Measure) {
+        const auto& measurement =
+            dynamic_cast<const qc::NonUnitaryOperation&>(*operation);
+        state = applyMeasurement(measurement, state, package, rng, measurements,
+                                 permutation);
+      } else if (operation->getType() == qc::Reset) {
+        const auto& reset =
+            dynamic_cast<const qc::NonUnitaryOperation&>(*operation);
+        state = applyReset(reset, state, package, rng, permutation);
+      } else {
+        qc::unreachable();
+      }
+    }
+
+    std::string result{};
+    if (analysis.hasMeasurements) {
+      result.assign(circuit.getNcbits(), '0');
+      for (std::size_t bit = 0U; bit < measurements.size(); ++bit) {
+        if (measurements.at(bit)) {
+          result.at(measurements.size() - 1U - bit) = '1';
+        }
+      }
+      if (shot + 1U == shots) {
+        finalizeState(circuit, state, permutation, package);
+      }
+    } else {
+      finalizeState(circuit, state, permutation, package);
+      result = formatImplicitMeasurement(package.measureAll(state, false, rng),
+                                         circuit);
+    }
+    ++counts[result];
+
+    if (shot + 1U == shots) {
+      finalState = stateRoot.release();
     }
   }
 
-  changePermutation(out, permutation, qc.outputPermutation, dd);
-  out = dd.reduceGarbage(out, qc.getGarbage());
+  return {
+      .counts = std::move(counts), .state = finalState, .executions = shots};
+}
 
-  // properly account for the global phase of the circuit
-  if (qc.hasGlobalPhase()) {
-    out = applyGlobalPhase(out, qc.getGlobalPhase(), dd);
+std::map<std::string, std::size_t> sample(const qc::QuantumComputation& circuit,
+                                          const VectorDD& in, Package& package,
+                                          const std::size_t shots,
+                                          const std::size_t seed) {
+  std::mt19937_64 rng{};
+  if (seed != 0U) {
+    rng.seed(seed);
+  } else {
+    std::array<std::mt19937_64::result_type, std::mt19937_64::state_size>
+        randomData{};
+    std::random_device randomDevice;
+    std::ranges::generate(randomData,
+                          [&randomDevice]() { return randomDevice(); });
+    std::seed_seq seeds(std::begin(randomData), std::end(randomData));
+    rng.seed(seeds);
   }
 
+  auto result = sample(circuit, in, package, shots, rng);
+  package.decRef(result.state);
+  return std::move(result.counts);
+}
+
+VectorDD simulate(const qc::QuantumComputation& circuit, const VectorDD& in,
+                  Package& package) {
+  auto permutation = circuit.initialLayout;
+  auto out = in;
+  for (const auto& operation : circuit) {
+    if (isExecutableVirtually(*operation)) {
+      applyVirtualOperation(*operation, permutation);
+    } else {
+      out = applyUnitaryOperation(*operation, out, package, permutation);
+    }
+  }
+
+  finalizeState(circuit, out, permutation, package);
   return out;
 }
 
-std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
+std::map<std::string, std::size_t> sample(const qc::QuantumComputation& circuit,
                                           const std::size_t shots,
                                           const std::size_t seed) {
-  const auto nqubits = qc.getNqubits();
-  const auto dd = std::make_unique<Package>(nqubits);
-  return sample(qc, makeZeroState(nqubits, *dd), *dd, shots, seed);
+  const auto nqubits = circuit.getNqubits();
+  const auto package = std::make_unique<Package>(nqubits);
+  return sample(circuit, makeZeroState(nqubits, *package), *package, shots,
+                seed);
 }
 } // namespace dd

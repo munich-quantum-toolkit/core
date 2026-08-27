@@ -511,3 +511,269 @@ TEST_F(DDFunctionality, DynamicCircuitSimulationWithSWAP) {
   EXPECT_EQ(value, shots);
   EXPECT_EQ(key, "11");
 }
+
+TEST_F(DDFunctionality, SamplingRetainsReferencedStateWithGlobalPhase) {
+  QuantumComputation qc(1U);
+  qc.x(0U);
+  qc.gphase(qc::PI_2);
+
+  Package dd(qc.getNqubits());
+  std::mt19937_64 rng(0U);
+  auto result = sample(qc, makeZeroState(qc.getNqubits(), dd), dd, 0U, rng);
+
+  EXPECT_TRUE(result.counts.empty());
+  EXPECT_EQ(result.executions, 1U);
+  const auto amplitudes = result.state.getVector();
+  ASSERT_EQ(amplitudes.size(), 2U);
+  EXPECT_NEAR(amplitudes.at(0U).real(), 0., 1e-12);
+  EXPECT_NEAR(amplitudes.at(0U).imag(), 0., 1e-12);
+  EXPECT_NEAR(amplitudes.at(1U).real(), 0., 1e-12);
+  EXPECT_NEAR(amplitudes.at(1U).imag(), 1., 1e-12);
+
+  const auto& roots = dd.getRootSet<vNode>();
+  ASSERT_EQ(roots.size(), 1U);
+  EXPECT_EQ(roots.at(result.state), 1U);
+  EXPECT_NO_THROW(dd.decRef(result.state));
+  EXPECT_TRUE(roots.empty());
+}
+
+TEST_F(DDFunctionality, SamplingPreservesTerminalMeasurementOrder) {
+  QuantumComputation repeatedQubit(1U, 2U);
+  repeatedQubit.x(0U);
+  repeatedQubit.measure(0U, 0U);
+  repeatedQubit.measure(0U, 1U);
+  EXPECT_EQ(sample(repeatedQubit, 8U, 1U),
+            (std::map<std::string, std::size_t>{{"11", 8U}}));
+
+  QuantumComputation repeatedBit(2U, 1U);
+  repeatedBit.x(0U);
+  repeatedBit.measure(1U, 0U);
+  repeatedBit.measure(0U, 0U);
+  EXPECT_EQ(sample(repeatedBit, 8U, 1U),
+            (std::map<std::string, std::size_t>{{"1", 8U}}));
+}
+
+TEST_F(DDFunctionality, SamplingWithoutMeasurementsUsesQuantumWidth) {
+  QuantumComputation qc(2U, 1U);
+  qc.x(1U);
+
+  EXPECT_EQ(sample(qc, 8U, 1U),
+            (std::map<std::string, std::size_t>{{"10", 8U}}));
+}
+
+TEST_F(DDFunctionality, SamplingUsesOutputPermutation) {
+  QuantumComputation qc(2U);
+  qc.x(0U);
+  qc.outputPermutation = {{0U, 1U}, {1U, 0U}};
+
+  Package dd(qc.getNqubits());
+  std::mt19937_64 rng(17U);
+  auto result = sample(qc, makeZeroState(qc.getNqubits(), dd), dd, 8U, rng);
+
+  EXPECT_EQ(result.counts, (std::map<std::string, std::size_t>{{"10", 8U}}));
+  const auto amplitudes = result.state.getVector();
+  ASSERT_EQ(amplitudes.size(), 4U);
+  EXPECT_NEAR(std::abs(amplitudes.at(2U)), 1., 1e-12);
+  dd.decRef(result.state);
+}
+
+TEST_F(DDFunctionality, SamplingRetainsCanonicalStateAcrossVirtualSwap) {
+  QuantumComputation qc(2U, 2U);
+  qc.x(0U);
+  qc.swap(0U, 1U);
+  qc.measure(0U, 0U);
+  qc.measure(1U, 1U);
+
+  Package dd(qc.getNqubits());
+  std::mt19937_64 rng(17U);
+  auto result = sample(qc, makeZeroState(qc.getNqubits(), dd), dd, 8U, rng);
+
+  EXPECT_EQ(result.counts, (std::map<std::string, std::size_t>{{"10", 8U}}));
+  EXPECT_EQ(result.executions, 1U);
+  const auto amplitudes = result.state.getVector();
+  ASSERT_EQ(amplitudes.size(), 4U);
+  EXPECT_NEAR(std::abs(amplitudes.at(2U)), 1., 1e-12);
+  dd.decRef(result.state);
+}
+
+TEST_F(DDFunctionality, SamplingReducesGarbageInCountsAndRetainedState) {
+  QuantumComputation qc(3U);
+  qc.h(0U);
+  qc.cx(0U, 2U);
+  qc.setLogicalQubitGarbage(2U);
+  qc.outputPermutation = {{0U, 1U}, {1U, 0U}};
+
+  Package dd(qc.getNqubits());
+  std::mt19937_64 rng(17U);
+  auto result = sample(qc, makeZeroState(qc.getNqubits(), dd), dd, 32U, rng);
+
+  EXPECT_EQ(result.executions, 1U);
+  EXPECT_EQ(result.counts.size(), 2U);
+  EXPECT_EQ(result.counts.at("000") + result.counts.at("010"), 32U);
+  const auto amplitudes = result.state.getVector();
+  ASSERT_EQ(amplitudes.size(), 8U);
+  EXPECT_NEAR(std::abs(amplitudes.at(0U)), dd::SQRT2_2, 1e-12);
+  EXPECT_NEAR(std::abs(amplitudes.at(2U)), dd::SQRT2_2, 1e-12);
+  for (const auto index : {1U, 3U, 4U, 5U, 6U, 7U}) {
+    EXPECT_NEAR(std::abs(amplitudes.at(index)), 0., 1e-12);
+  }
+  dd.decRef(result.state);
+}
+
+TEST_F(DDFunctionality, DynamicSamplingRetainsLastStateAndBalancesRoots) {
+  QuantumComputation qc(1U, 1U);
+  qc.x(0U);
+  qc.measure(0U, 0U);
+  qc.reset(0U);
+
+  Package dd(qc.getNqubits());
+  std::mt19937_64 rng(17U);
+  auto result = sample(qc, makeZeroState(qc.getNqubits(), dd), dd, 8U, rng);
+
+  EXPECT_EQ(result.counts, (std::map<std::string, std::size_t>{{"1", 8U}}));
+  EXPECT_EQ(result.executions, 8U);
+  const auto amplitudes = result.state.getVector();
+  ASSERT_EQ(amplitudes.size(), 2U);
+  EXPECT_NEAR(std::abs(amplitudes.at(0U)), 1., 1e-12);
+  EXPECT_NEAR(std::abs(amplitudes.at(1U)), 0., 1e-12);
+  const auto& roots = dd.getRootSet<vNode>();
+  ASSERT_EQ(roots.size(), 1U);
+  EXPECT_EQ(roots.at(result.state), 1U);
+  dd.decRef(result.state);
+  EXPECT_TRUE(roots.empty());
+}
+
+TEST_F(DDFunctionality, DynamicSamplingReusesCallerRandomNumberGenerator) {
+  QuantumComputation qc(1U, 1U);
+  qc.h(0U);
+  qc.measure(0U, 0U);
+  qc.x(0U);
+
+  Package splitPackage(qc.getNqubits());
+  std::mt19937_64 splitRng(0U);
+  auto first = sample(qc, makeZeroState(qc.getNqubits(), splitPackage),
+                      splitPackage, 17U, splitRng);
+  auto second = sample(qc, makeZeroState(qc.getNqubits(), splitPackage),
+                       splitPackage, 23U, splitRng);
+  auto splitCounts = first.counts;
+  for (const auto& [state, count] : second.counts) {
+    splitCounts[state] += count;
+  }
+
+  Package combinedPackage(qc.getNqubits());
+  std::mt19937_64 combinedRng(0U);
+  auto combined = sample(qc, makeZeroState(qc.getNqubits(), combinedPackage),
+                         combinedPackage, 40U, combinedRng);
+
+  EXPECT_EQ(splitCounts, combined.counts);
+  EXPECT_EQ(splitRng, combinedRng);
+  EXPECT_EQ(first.executions, 17U);
+  EXPECT_EQ(second.executions, 23U);
+  EXPECT_EQ(combined.executions, 40U);
+
+  splitPackage.decRef(first.state);
+  splitPackage.decRef(second.state);
+  combinedPackage.decRef(combined.state);
+}
+
+TEST_F(DDFunctionality, ResetWithoutMeasurementsUsesQuantumWidth) {
+  QuantumComputation qc(2U, 1U);
+  qc.x(1U);
+  qc.reset(0U);
+
+  EXPECT_EQ(sample(qc, 8U, 1U),
+            (std::map<std::string, std::size_t>{{"10", 8U}}));
+}
+
+TEST_F(DDFunctionality, PackageAwareSampleConsumesDynamicInput) {
+  QuantumComputation qc(1U, 1U);
+  qc.h(0U);
+  qc.measure(0U, 0U);
+  qc.x(0U);
+
+  Package dd(qc.getNqubits());
+  EXPECT_EQ(sample(qc, makeZeroState(qc.getNqubits(), dd), dd, 8U, 17U).size(),
+            2U);
+  EXPECT_TRUE(dd.getRootSet<vNode>().empty());
+}
+
+TEST_F(DDFunctionality, SamplingReleasesTransferredInputOnAnalysisFailure) {
+  QuantumComputation qc(1U, 1U);
+  qc.measure(0U, 0U);
+  auto& measurement = dynamic_cast<NonUnitaryOperation&>(*qc.at(0U));
+  measurement.getClassics().clear();
+
+  Package dd(qc.getNqubits());
+  std::mt19937_64 rng(17U);
+  EXPECT_THROW(static_cast<void>(
+                   sample(qc, makeZeroState(qc.getNqubits(), dd), dd, 1U, rng)),
+               std::invalid_argument);
+  EXPECT_TRUE(dd.getRootSet<vNode>().empty());
+}
+
+TEST_F(DDFunctionality,
+       SamplingReleasesTransferredInputOnInvalidMeasurementBit) {
+  QuantumComputation qc(1U, 1U);
+  qc.h(0U);
+  qc.measure(0U, 0U);
+  qc.x(0U);
+  auto& measurement = dynamic_cast<NonUnitaryOperation&>(*qc.at(1U));
+  measurement.getClassics().at(0U) = 1U;
+
+  Package dd(qc.getNqubits());
+  std::mt19937_64 rng(17U);
+  EXPECT_THROW(static_cast<void>(
+                   sample(qc, makeZeroState(qc.getNqubits(), dd), dd, 1U, rng)),
+               std::out_of_range);
+  EXPECT_TRUE(dd.getRootSet<vNode>().empty());
+}
+
+TEST_F(DDFunctionality, DynamicSamplingZeroShotsRetainsInput) {
+  QuantumComputation qc(1U, 1U);
+  qc.measure(0U, 0U);
+  qc.x(0U);
+
+  Package dd(qc.getNqubits());
+  std::mt19937_64 rng(0U);
+  const auto input = makeZeroState(qc.getNqubits(), dd);
+  auto result = sample(qc, input, dd, 0U, rng);
+
+  EXPECT_TRUE(result.counts.empty());
+  EXPECT_EQ(result.executions, 0U);
+  EXPECT_EQ(result.state, input);
+  const auto& roots = dd.getRootSet<vNode>();
+  ASSERT_EQ(roots.size(), 1U);
+  EXPECT_EQ(roots.at(result.state), 1U);
+  dd.decRef(result.state);
+}
+
+TEST_F(DDFunctionality, SamplingReusesCallerRandomNumberGenerator) {
+  QuantumComputation qc(1U);
+  qc.h(0U);
+
+  Package splitPackage(qc.getNqubits());
+  std::mt19937_64 splitRng(0U);
+  auto first = sample(qc, makeZeroState(qc.getNqubits(), splitPackage),
+                      splitPackage, 17U, splitRng);
+  auto second = sample(qc, makeZeroState(qc.getNqubits(), splitPackage),
+                       splitPackage, 23U, splitRng);
+  auto splitCounts = first.counts;
+  for (const auto& [state, count] : second.counts) {
+    splitCounts[state] += count;
+  }
+
+  Package combinedPackage(qc.getNqubits());
+  std::mt19937_64 combinedRng(0U);
+  auto combined = sample(qc, makeZeroState(qc.getNqubits(), combinedPackage),
+                         combinedPackage, 40U, combinedRng);
+
+  EXPECT_EQ(splitCounts, combined.counts);
+  EXPECT_EQ(splitRng, combinedRng);
+  EXPECT_EQ(first.executions, 1U);
+  EXPECT_EQ(second.executions, 1U);
+  EXPECT_EQ(combined.executions, 1U);
+
+  splitPackage.decRef(first.state);
+  splitPackage.decRef(second.state);
+  combinedPackage.decRef(combined.state);
+}

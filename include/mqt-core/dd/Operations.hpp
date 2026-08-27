@@ -207,31 +207,17 @@ VectorDD applyIfElseOperation(const qc::IfElseOperation& op, const VectorDD& in,
                               const qc::Permutation& permutation = {});
 
 /**
- * @brief Check whether @p op is virtually executable.
- *
- * @param op The operation in question.
- * @return Whether @p op is virtually executable.
- */
-bool isExecutableVirtually(const qc::Operation& op) noexcept;
-
-/**
- * @brief Apply virtual operation @p op.
- *
- * @param op The virtual operation to apply.
- * @param permutation If suitable, the to be updated permutation.
- */
-void applyVirtualOperation(const qc::Operation& op,
-                           qc::Permutation& permutation) noexcept;
-
-/**
  * @brief Apply global phase to a given DD.
+ *
+ * @details The registered root reference owned by @p in is transferred to this
+ * function. The returned DD owns exactly one registered root reference.
  *
  * @param in The input DD
  * @param phase The phase to apply
  * @param dd The DD package to use
  * @return The output DD
  */
-VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd);
+VectorDD applyGlobalPhase(const VectorDD& in, const fp& phase, Package& dd);
 
 /**
  * @brief Change the permutation of a given DD.

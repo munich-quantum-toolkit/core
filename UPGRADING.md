@@ -75,6 +75,18 @@ factories. Move required implementations to the package that uses them. The
 `BUILD_MQT_CORE_BENCHMARKS` option and its legacy DD evaluation target were also
 removed.
 
+### Circuit simulation helpers
+
+The high-level Python `mqt.core.dd.sample` and
+`mqt.core.dd.simulate_statevector` helpers moved to `mqt.ddsim`. Import the same
+names from `mqt.ddsim>=2.6.0` instead. The package-aware C++ `dd::sample` and
+`dd::simulate` primitives and the Python `mqt.core.dd.simulate` binding remain
+available for callers that manage a DD package and input state directly.
+
+The public `dd::isExecutableVirtually` and `dd::applyVirtualOperation` helpers
+were removed. Virtual execution is an internal detail of Core's circuit
+simulation and has no public replacement.
+
 ### Python 3.11 and split-mode wheels
 
 MQT Core now requires Python 3.11 or newer. Upgrade the Python environment

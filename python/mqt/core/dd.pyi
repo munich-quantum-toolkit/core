@@ -866,51 +866,6 @@ class BasisStates(enum.Enum):
     The superposition state :math:`|L\\rangle = \\frac{1}{\\sqrt{2}} (|0\\rangle + i |1\\rangle)`.
     """
 
-def sample(qc: mqt.core.ir.QuantumComputation, shots: int = 1024, seed: int = 0) -> dict[str, int]:
-    """Sample from the output distribution of a quantum computation.
-
-    This function classically simulates the quantum computation and repeatedly samples from the output distribution.
-    It supports mid-circuit measurements, resets, and classical control.
-
-    Args:
-        qc: The quantum computation.
-        shots: The number of samples to take.
-            If the quantum computation contains no mid-circuit measurements or resets, the circuit is simulated once and the samples are drawn from the final state.
-            Otherwise, the circuit is simulated once for each sample.
-            Defaults to 1024.
-        seed: The seed for the random number generator.
-            If set to a specific non-zero value, the simulation is deterministic.
-            If set to 0, the RNG is randomly seeded.
-            Defaults to 0.
-
-    Returns:
-        A histogram of the samples.
-        Each sample is a bitstring representing the measurement outcomes of the qubits in the quantum computation.
-        The leftmost bit corresponds to the most significant qubit, that is, the qubit with the highest index (big-endian).
-        If the circuit contains measurements, only the qubits that are actively measured are included in the output distribution.
-        Otherwise, all qubits in the circuit are measured.
-    """
-
-def simulate_statevector(qc: mqt.core.ir.QuantumComputation) -> Annotated[NDArray[np.complex128], {"shape": (None,)}]:
-    """Simulate the quantum computation and return the final state vector.
-
-    This function classically simulates the quantum computation and returns the state vector of the final state.
-    It does not support measurements, resets, or classical control.
-
-    Since the state vector is guaranteed to be exponentially large in the number of qubits, this function is only suitable for small quantum computations.
-    Consider using the :func:`~mqt.core.dd.simulate` or the :func:`~mqt.core.dd.sample` functions, which never explicitly construct the state vector, for larger quantum computations.
-
-    Notes:
-        This function internally constructs a :class:`~mqt.core.dd.DDPackage`, creates the zero state, and simulates the quantum computation via the :func:`simulate` function.
-        The state vector is then extracted from the resulting DD via the :meth:`~mqt.core.dd.VectorDD.get_vector` method.
-
-    Args:
-        qc: The quantum computation. Must only contain unitary operations.
-
-    Returns:
-        The state vector of the final state.
-    """
-
 def build_unitary(qc: mqt.core.ir.QuantumComputation) -> Annotated[NDArray[np.complex128], {"shape": (None, None)}]:
     """Build a unitary matrix representation of a quantum computation.
 
@@ -935,8 +890,7 @@ def simulate(qc: mqt.core.ir.QuantumComputation, initial_state: VectorDD, dd_pac
     """Simulate a quantum computation.
 
     This function classically simulates a quantum computation for a given initial state and returns the final state (represented as a DD).
-    Compared to the `sample` function, this function does not support measurements, resets, or classical control.
-    It only supports unitary operations.
+    This function only supports unitary operations; it does not support measurements, resets, or classical control.
 
     The simulation is effectively computed by sequentially applying the operations of the quantum computation to the initial state.
 
