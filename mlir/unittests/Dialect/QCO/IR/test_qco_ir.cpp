@@ -136,6 +136,24 @@ TEST_P(QCOTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+TEST_F(QCOTest, QubitIsVectorElement) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @f(%arg: vector<2x!qco.qubit>) {
+        return
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+
+  auto function = *module->getOps<func::FuncOp>().begin();
+  const auto vectorType =
+      dyn_cast<VectorType>(function.getArgument(0).getType());
+  ASSERT_TRUE(vectorType);
+  EXPECT_TRUE(isa<QubitType>(vectorType.getElementType()));
+}
+
 TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
   EXPECT_DEATH(
       {
