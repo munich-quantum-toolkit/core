@@ -60,8 +60,8 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  * @details Same supported unitary op set as @ref buildFunctionality, plus
  * concrete classical control-flow (`qco.if` / `qco.index_switch` with
  * compile-time or previously recorded classical selectors) and CBit registers
- * (`cbit.alloc` / `cbit.store` / `cbit.load`). Mid-circuit `measure` /
- * `reset` require the RNG overload below. Concrete-bound `scf.for` loops and
+ * (`cbit.alloc` / `cbit.store` / `cbit.load`). Any `measure` or `reset`
+ * requires the RNG overload below. Concrete-bound `scf.for` loops and
  * non-recursive single-block `func.call` are supported independently of RNG.
  * Only qubit-typed linear values are supported (no qtensors). Nested regions
  * are walked; `scf.while` and multi-block function bodies remain unsupported.

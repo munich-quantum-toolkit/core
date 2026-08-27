@@ -567,8 +567,9 @@ def simulate(
             has a live reference in ``dd_package``. Higher wires are preserved. A
             valid input reference is consumed.
         dd_package: DD package with enough qubits for the program.
-        seed: If ``None``, rejects mid-circuit measure/reset. Otherwise seeds the
-            RNG used for collapsing measurements and resets (``0`` = nondeterministic).
+        seed: If ``None``, rejects programs containing measurements or resets.
+            Otherwise seeds the RNG used to collapse them
+            (``0`` = nondeterministic).
 
     Returns:
         Output state DD.
