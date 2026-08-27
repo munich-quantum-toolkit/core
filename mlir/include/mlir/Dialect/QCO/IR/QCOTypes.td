@@ -12,13 +12,14 @@
 include "mlir/Dialect/QCO/IR/QCODialect.td"
 
 include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/BuiltinTypeInterfaces.td"
 
 class QCOType<string name, string typeMnemonic, list<Trait> traits = []>
     : TypeDef<QCODialect, name, traits> {
   let mnemonic = typeMnemonic;
 }
 
-def QubitType : QCOType<"Qubit", "qubit"> {
+def QubitType : QCOType<"Qubit", "qubit", [VectorElementTypeInterface]> {
   let summary = "QCO qubit value type";
   let description = [{
         The `!qco.qubit` type represents an SSA value holding a quantum bit
