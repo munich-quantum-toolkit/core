@@ -180,6 +180,24 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 // Optimization Passes
 //===----------------------------------------------------------------------===//
 
+def PauliTwirl2QGates : Pass<"pauli-twirl-2q-gates", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary = "Apply Pauli twirling to supported two-qubit gates";
+  let description = [{
+    Surrounds each supported two-qubit gate with two single-qubit Pauli gates
+    before and after the gate. The pass selects uniformly from the 16 twirls
+    that preserve the exact gate unitary and inserts a global-phase correction
+    when required. Identity gates remain explicit.
+
+    The pass supports controlled X and Z gates with one control and one target,
+    ECR gates, and iSWAP gates. Gates nested in modifier regions remain
+    unchanged.
+  }];
+  let options = [Option<"seed", "seed", "uint64_t", "42",
+                        "Seed used to select Pauli twirls.">];
+}
+
 def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "This pass attempts to move Hadamard gates as far away from "

@@ -383,6 +383,24 @@ Job Device::submitJob(const std::string& program,
                    custom5);
 }
 
+Job Device::submitJob(const std::string& program,
+                      const QDMI_Program_Format format,
+                      const std::optional<CustomJobParameter>& custom1,
+                      const std::optional<CustomJobParameter>& custom2,
+                      const std::optional<CustomJobParameter>& custom3,
+                      const std::optional<CustomJobParameter>& custom4,
+                      const std::optional<CustomJobParameter>& custom5) const {
+  if (isBinaryProgramFormat(format)) {
+    throw std::invalid_argument(
+        "Binary program formats require exact-byte submission");
+  }
+  rejectUnsupportedProgramFormat(format);
+
+  const auto bytes = std::as_bytes(
+      std::span(program.c_str(), static_cast<size_t>(program.size() + 1)));
+  return submitJob(bytes, format, custom1, custom2, custom3, custom4, custom5);
+}
+
 Job Device::submitJob(const std::span<const std::byte> program,
                       const QDMI_Program_Format format, const size_t numShots,
                       const std::optional<CustomJobParameter>& custom1,
@@ -393,6 +411,19 @@ Job Device::submitJob(const std::span<const std::byte> program,
   rejectUnsupportedProgramFormat(format);
 
   return submitJobImpl(format, program, numShots, custom1, custom2, custom3,
+                       custom4, custom5);
+}
+
+Job Device::submitJob(const std::span<const std::byte> program,
+                      const QDMI_Program_Format format,
+                      const std::optional<CustomJobParameter>& custom1,
+                      const std::optional<CustomJobParameter>& custom2,
+                      const std::optional<CustomJobParameter>& custom3,
+                      const std::optional<CustomJobParameter>& custom4,
+                      const std::optional<CustomJobParameter>& custom5) const {
+  rejectUnsupportedProgramFormat(format);
+
+  return submitJobImpl(format, program, std::nullopt, custom1, custom2, custom3,
                        custom4, custom5);
 }
 
