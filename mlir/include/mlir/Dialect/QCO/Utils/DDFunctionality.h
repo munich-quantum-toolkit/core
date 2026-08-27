@@ -47,6 +47,9 @@ namespace mlir::qco {
  * Measurements, resets, symbolic parameters, and control-flow ops are not
  * supported.
  *
+ * @pre The containing module has passed MLIR verification and
+ * `qco::verifyLinearity`.
+ *
  * @param func The QCO function to construct the functionality for
  * @param dd The DD package to use (must hold at least the function's qubits)
  * @return The matrix DD on success, or failure for unsupported programs
@@ -67,6 +70,9 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  * are walked; `scf.while` and multi-block function bodies remain unsupported.
  * Consumes one reference to @p in regardless of whether simulation succeeds or
  * fails.
+ *
+ * @pre The containing module has passed MLIR verification and
+ * `qco::verifyLinearity`.
  *
  * @param func The QCO function to simulate
  * @param in The input state, which must span at least the function's qubits;
@@ -99,6 +105,9 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * Consumes one reference to @p in regardless of whether simulation succeeds or
  * fails.
  *
+ * @pre The containing module has passed MLIR verification and
+ * `qco::verifyLinearity`.
+ *
  * @param func The QCO function to simulate
  * @param in The input state, which must span at least the function's qubits;
  * higher wires are preserved; one reference is consumed
@@ -121,6 +130,9 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * block measurements that only produce returned CBit cells are sampled from
  * one DD evolution; resets and execution-dependent measurements are executed
  * once per shot.
+ *
+ * @pre The containing module has passed MLIR verification and
+ * `qco::verifyLinearity`.
  *
  * @param func The QCO function to sample
  * @param dd The DD package to use

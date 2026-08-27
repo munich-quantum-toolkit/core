@@ -38,16 +38,13 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
-#include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -117,7 +114,7 @@ struct ClassicalEnv {
   };
   using RegisterState = std::vector<RegisterBit>;
 
-  DenseMap<Value, Attribute> scalars;
+  DenseMap<Value, IntegerAttr> scalars;
   DenseMap<Value, qc::Qubit> deferredMeasurements;
   /// Shared storage preserves CBit register identity across `func.call`.
   DenseMap<Value, std::shared_ptr<RegisterState>> registers;
@@ -383,20 +380,11 @@ lookupInteger(Value value, ClassicalEnv& classical, Operation* op) {
                               "simulation: "
                            << value.getType();
   }
-  const auto attr = dyn_cast<IntegerAttr>(it->second);
-  if (!attr) {
-    return op->emitError()
-           << "classical SSA value is not an integer for QCO DD simulation";
-  }
-  return attr.getValue();
+  return it->second.getValue();
 }
 
 static FailureOr<bool> lookupBool(Value value, ClassicalEnv& classical,
                                   Operation* op) {
-  if (!value.getType().isInteger(1)) {
-    return op->emitError()
-           << "classical i1 SSA value is not mapped for QCO DD simulation";
-  }
   auto result = lookupInteger(value, classical, op);
   if (failed(result)) {
     return failure();
@@ -406,10 +394,6 @@ static FailureOr<bool> lookupBool(Value value, ClassicalEnv& classical,
 
 static FailureOr<int64_t> lookupIndex(Value value, ClassicalEnv& classical,
                                       Operation* op) {
-  if (!isa<IndexType>(value.getType())) {
-    return op->emitError()
-           << "classical index SSA value is not mapped for QCO DD simulation";
-  }
   auto result = lookupInteger(value, classical, op);
   if (failed(result)) {
     return failure();
@@ -627,10 +611,6 @@ static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
   const ClassicalEnv sourceClassical = *walk.classical;
   for (auto [src, dest] : llvm::zip_equal(sources, dests)) {
     if (isa<QubitType>(dest.getType())) {
-      if (!isa<QubitType>(src.getType())) {
-        return op->emitError()
-               << "qubit/classical SSA type mismatch for QCO DD simulation";
-      }
       const auto q = sourceQubits.lookup(src);
       if (!q) {
         return op->emitError()
@@ -638,11 +618,6 @@ static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
       }
       walk.qubits->bind(dest, *q);
     } else if (isa<cbit::RegisterType>(dest.getType())) {
-      if (!isa<cbit::RegisterType>(src.getType()) ||
-          src.getType() != dest.getType()) {
-        return op->emitError() << "QCO DD simulation only supports matching "
-                                  "CBit register values";
-      }
       const auto it = sourceClassical.registers.find(src);
       if (it == sourceClassical.registers.end()) {
         return op->emitError()
@@ -856,10 +831,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<func::CallOp>([&](func::CallOp call) -> LogicalResult {
         auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
             call, call.getCalleeAttr());
-        if (!callee) {
-          return call.emitError() << "func.call callee '" << call.getCallee()
-                                  << "' could not be resolved";
-        }
         if (!callee.getBody().hasOneBlock()) {
           return call.emitError()
                  << "func.call callee must have a single-block body";
@@ -945,26 +916,14 @@ static LogicalResult walkFunction(func::FuncOp func, WalkState& walkState,
 }
 
 static FailureOr<QubitMap> prepare(func::FuncOp func, const dd::Package& dd) {
-  Operation* verificationRoot = func.getOperation();
-  if (auto moduleOp = func->getParentOfType<ModuleOp>()) {
-    verificationRoot = moduleOp.getOperation();
-  }
-  if (failed(verify(verificationRoot))) {
-    return failure();
-  }
   if (!func.getBody().hasOneBlock()) {
     return func.emitError()
            << "QCO DD construction expects a single-block function body";
   }
 
   QubitMap qubits;
-  DenseSet<qc::Qubit> staticQubits;
   for (StaticOp staticOp : func.getBody().front().getOps<StaticOp>()) {
     const auto q = static_cast<qc::Qubit>(staticOp.getIndex());
-    if (!staticQubits.insert(q).second) {
-      return staticOp.emitError()
-             << "duplicate static qubit index " << staticOp.getIndex();
-    }
     qubits.bind(staticOp.getQubit(), q);
     qubits.numQubits = std::max(qubits.numQubits, static_cast<size_t>(q) + 1);
   }
@@ -1106,7 +1065,7 @@ static void analyzeSampling(func::FuncOp func, Block* entry,
     } else if (auto call = dyn_cast<func::CallOp>(op)) {
       auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
           call, call.getCalleeAttr());
-      if (!callee || !callee.getBody().hasOneBlock()) {
+      if (!callee.getBody().hasOneBlock()) {
         plan.dynamic = true;
       } else {
         analyzeSampling(callee, entry, outputs, active, plan);

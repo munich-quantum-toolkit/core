@@ -26,6 +26,15 @@ sampling them demonstrates the behavior end to end.
   additive commits.
 - [x] (2026-08-26 22:29Z) Push normally and inspect hosted checks.
 - [x] (2026-08-26 23:45Z) Confirm replacement hosted checks.
+- [x] (2026-08-27 19:03Z) Merge `main` after PR #2220 added checked QCO
+      linearity boundaries.
+- [x] (2026-08-27 19:07Z) Remove simulator checks and tests that only cover
+  invalid IR.
+- [x] (2026-08-27 19:18Z) Extend the root linearity check to reject duplicate
+      static wire indices and move the regression to the checked program
+      boundary.
+- [x] (2026-08-27 19:34Z) Run focused and full validation for the follow-up
+      cleanup; commit preparation is complete.
 
 ## Surprises & Discoveries
 
@@ -39,6 +48,20 @@ sampling them demonstrates the behavior end to end.
   qubits and `qtensor.alloc` for register declarations. The executor maps only
   scalar allocations; the end-to-end test uses scalar qubits and leaves qtensors
   to #2078.
+- Observation: PR #2220 makes `QCOProgram::fromModule` run both standard MLIR
+  verification and `qco::verifyLinearity`. Evidence: all Python DD entry points
+  receive a `QCOProgram`, so verification in `prepare` repeated the checked
+  ownership boundary.
+- Observation: cleanup is not semantics-neutral for fallback sampling width.
+  Evidence: canonicalization removes a `qco.static` to `x` to `x` to `sink`
+  chain, which changes the inferred sample key from `"0"` to `""`.
+- Observation: the unitary matrix-dimension guard is a runtime capability check,
+  not duplicate IR validation. Evidence: a valid 11-target modifier exceeds the
+  matrix composer limit and reaches an out-of-bounds assertion if the guard is
+  removed.
+- Observation: PR #2220's use-count check alone accepts two distinct
+  `qco.static` values with the same index. Evidence: both values can have one
+  use while still aliasing one physical DD wire.
 
 ## Decision Log
 
@@ -53,6 +76,21 @@ sampling them demonstrates the behavior end to end.
   `qco.alloc`. Rationale: this is the smallest compiler-to-sampler bridge;
   supplied states and qtensors have no demonstrated #2077 consumer. Date/Author:
   2026-08-26, Codex.
+- Decision: treat verified, linear QCO as a precondition of the direct DD C++
+  APIs and retain only supported-subset and runtime-resource diagnostics.
+  Rationale: PR #2220 owns IR validity at `QCOProgram` and compiler boundaries;
+  duplicate validation in the executor adds code without protecting supported
+  callers. Date/Author: 2026-08-27, Codex with user approval.
+- Decision: make static-index uniqueness part of `qco::verifyLinearity` and
+  check it per isolated scope. Rationale: this rejects physical-wire aliases at
+  the same checked boundaries as SSA nonlinearity while allowing independent
+  functions to use the same static index. Date/Author: 2026-08-27, Codex with
+  user approval.
+- Decision: do not run QCO cleanup inside simulation or sampling. Rationale:
+  cleanup can remove all operations on a terminal wire and therefore change the
+  observable fallback bit-string width. Callers can request cleanup explicitly
+  when that transformation matches their intended program semantics.
+  Date/Author: 2026-08-27, Codex with user approval.
 
 ## Outcomes & Retrospective
 
@@ -72,6 +110,13 @@ exposed eight clang-tidy findings and a macOS-only `qco.index_switch` verifier
 crash caused by its `INT64_MIN` tombstone. Small additive follow-ups correct the
 lint and avoid that unrelated verifier path in the maximum-shift test.
 
+After merging `main` at `baecdc55f`, the follow-up cleanup builds successfully,
+stub regeneration is stable, all 4,034 release C++ tests pass (with one
+documented skip), and the focused Python QCO DD suite passes all six tests on
+Python 3.14. The focused QCO utility, QCO IR, and compiler suites pass 125, 488,
+and 137 tests respectively. Independent review found no blocking issue in the
+root static-index validation or the removed simulator-side validity checks.
+
 ## Context and Orientation
 
 `mlir/lib/Dialect/QCO/Utils/DDFunctionality.cpp` prepares and interprets QCO IR.
@@ -82,6 +127,11 @@ runtime scalar attributes and shared CBit register cells.
 provide Python. Focused tests are in
 `mlir/unittests/Dialect/QCO/Utils/test_dd_functionality.cpp` and
 `test/python/test_qco_dd.py`.
+
+The direct C++ DD APIs require a module that has passed standard MLIR
+verification and `qco::verifyLinearity`. The Python bindings meet this
+precondition because they accept `QCOProgram`, whose checked construction is
+implemented in `mlir/lib/Compiler/Programs.cpp`.
 
 The Python surface is exactly:
 
@@ -178,3 +228,7 @@ not modify #2078 or #2079 in this work.
 Revision note (2026-08-26): Replaced the historical first-class-CBit plan with
 this focused, self-contained execution and sampling plan; updated it after the
 engine and focused validation milestones.
+
+Revision note (2026-08-27): Recorded the merged PR #2220 boundary, removed
+duplicate executor validation, and rejected implicit cleanup because it changes
+fallback sampling width.

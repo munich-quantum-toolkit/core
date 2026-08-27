@@ -976,25 +976,6 @@ TEST_F(QCODDFunctionalityTest, SampleHadamardApproximatelyBalanced) {
   EXPECT_NEAR(static_cast<double>(hist->at("0")), shots / 2.0, 150.0);
 }
 
-TEST_F(QCODDFunctionalityTest, SampleRejectsUnmappedTerminalMeasurement) {
-  auto mod = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main(%unmapped: !qco.qubit) {
-        %q = qco.static 0 : !qco.qubit
-        %out, %bit = qco.measure %unmapped : !qco.qubit
-        qco.sink %q : !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                         context.get());
-  ASSERT_TRUE(mod);
-
-  auto dd = std::make_unique<dd::Package>(1);
-  std::mt19937_64 rng(7);
-  EXPECT_TRUE(failed(sample(mainFunc(*mod), *dd, 1, rng)));
-}
-
 TEST_F(QCODDFunctionalityTest, SampleResetUsesDynamicSampling) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q = b.reset(b.x(b.staticQubit(0)));
@@ -1285,6 +1266,8 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
       func.func @main(%qarg: !qco.qubit) {
         %q = qco.static 0 : !qco.qubit
         %q1 = qco.h %qarg : !qco.qubit -> !qco.qubit
+        qco.sink %q : !qco.qubit
+        qco.sink %q1 : !qco.qubit
         return
       }
     }
@@ -1294,6 +1277,8 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
       func.func @main(%qarg: !qco.qubit) {
         %q = qco.static 0 : !qco.qubit
         %q1 = qco.barrier %qarg : !qco.qubit -> !qco.qubit
+        qco.sink %q : !qco.qubit
+        qco.sink %q1 : !qco.qubit
         return
       }
     }
@@ -1306,6 +1291,8 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
           %q1 = qco.x %q_in : !qco.qubit -> !qco.qubit
           qco.yield %q1 : !qco.qubit
         } : {!qco.qubit} -> {!qco.qubit}
+        qco.sink %q : !qco.qubit
+        qco.sink %q_out : !qco.qubit
         return
       }
     }
@@ -1318,6 +1305,8 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
           %t1 = qco.x %t : !qco.qubit -> !qco.qubit
           qco.yield %t1 : !qco.qubit
         } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+        qco.sink %c_out : !qco.qubit
+        qco.sink %t_out : !qco.qubit
         return
       }
     }
@@ -1327,6 +1316,7 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
       func.func @main(%theta: f64) {
         %q = qco.static 0 : !qco.qubit
         %q1 = qco.rz(%theta) %q : !qco.qubit -> !qco.qubit
+        qco.sink %q1 : !qco.qubit
         return
       }
     }
@@ -1347,6 +1337,7 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
           %q1 = qco.rz(%theta) %q_in : !qco.qubit -> !qco.qubit
           qco.yield %q1 : !qco.qubit
         } : {!qco.qubit} -> {!qco.qubit}
+        qco.sink %q_out : !qco.qubit
         return
       }
     }
@@ -1360,6 +1351,8 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
           %t1 = qco.rz(%theta) %t : !qco.qubit -> !qco.qubit
           qco.yield %t1 : !qco.qubit
         } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+        qco.sink %c_out : !qco.qubit
+        qco.sink %t_out : !qco.qubit
         return
       }
     }
@@ -1396,8 +1389,10 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
   auto func = func::FuncOp::create(builder, multi->getLoc(), "main",
                                    builder.getFunctionType({}, {}));
   auto* entry = func.addEntryBlock();
-  func.addBlock();
+  auto* second = func.addBlock();
   builder.setInsertionPointToStart(entry);
+  func::ReturnOp::create(builder, func.getLoc());
+  builder.setInsertionPointToStart(second);
   func::ReturnOp::create(builder, func.getLoc());
   auto dd = std::make_unique<dd::Package>(0);
   EXPECT_TRUE(failed(buildFunctionality(func, *dd)));
@@ -1567,7 +1562,7 @@ TEST_F(QCODDFunctionalityTest, ScfForSnapshotsYieldedInductionValue) {
   expectSimulatesFromZero(mainFunc(*mod), false);
 }
 
-TEST_F(QCODDFunctionalityTest, RejectsInvalidFuncCalls) {
+TEST_F(QCODDFunctionalityTest, RejectsUnsupportedFuncCalls) {
   auto recursive = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @rec(%q: !qco.qubit) -> !qco.qubit {
@@ -1600,28 +1595,6 @@ TEST_F(QCODDFunctionalityTest, RejectsInvalidFuncCalls) {
                                                  context.get());
   ASSERT_TRUE(declaration);
   expectSimulationFails(mainFunc(*declaration), 1);
-
-  auto unresolved =
-      parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main() {
-        %q = qco.static 0 : !qco.qubit
-        %q1 = func.call @missing(%q) : (!qco.qubit) -> !qco.qubit
-        qco.sink %q1 : !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                  ParserConfig(context.get(), false));
-  ASSERT_TRUE(unresolved);
-  expectSimulationFails(mainFunc(*unresolved), 1);
-  auto dd = std::make_unique<dd::Package>(1);
-  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*unresolved), *dd)));
-
-  OwningOpRef<func::FuncOp> standalone(
-      cast<func::FuncOp>(mainFunc(*unresolved)->clone()));
-  expectSimulationFails(*standalone, 1);
-  EXPECT_TRUE(failed(buildFunctionality(*standalone, *dd)));
 }
 
 TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {
@@ -1843,26 +1816,6 @@ TEST_F(QCODDFunctionalityTest,
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 64}}));
   EXPECT_EQ(dd->matrixVectorMultiplication.getStats().lookups,
             singleEvolutionLookups);
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
-}
-
-TEST_F(QCODDFunctionalityTest, SampleRejectsStaticWireAliases) {
-  auto mod = buildModule([](QCOProgramBuilder& b) {
-    auto reg =
-        b.allocClassicalBitRegister(1, {}, cbit::Initialization::Undefined);
-    auto measured = b.staticQubit(0);
-    auto alias = b.staticQubit(0);
-    std::tie(measured, std::ignore) = b.measure(measured, reg, 0);
-    b.sink(measured);
-    alias = b.x(alias);
-    b.sink(alias);
-    return reg;
-  });
-  ASSERT_TRUE(mod);
-
-  auto dd = std::make_unique<dd::Package>(1);
-  std::mt19937_64 rng(11);
-  EXPECT_TRUE(failed(sample(mainFunc(*mod), *dd, 8, rng)));
   EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 

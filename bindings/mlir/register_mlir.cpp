@@ -129,7 +129,8 @@ static void requireValid(const mlir::Program& program) {
   }
 }
 
-[[nodiscard]] mlir::func::FuncOp entryFunc(const mlir::QCOProgram& program) {
+[[nodiscard]] static mlir::func::FuncOp
+entryFunc(const mlir::QCOProgram& program) {
   requireValid(program);
   auto func = mlir::mqt::getEntryPoint(program.module());
   if (!func) {
@@ -138,7 +139,7 @@ static void requireValid(const mlir::Program& program) {
   return func;
 }
 
-[[nodiscard]] std::mt19937_64 makeRng(const uint64_t seed) {
+[[nodiscard]] static std::mt19937_64 makeRng(const uint64_t seed) {
   if (seed == 0) {
     return std::mt19937_64(std::random_device{}());
   }
@@ -148,8 +149,8 @@ static void requireValid(const mlir::Program& program) {
 /// Run @p fn under a diagnostic handler and raise `ValueError` on failure,
 /// appending any emitted MLIR diagnostics to @p message.
 template <typename Fn>
-[[nodiscard]] auto takeFailureOr(mlir::MLIRContext* context,
-                                 const char* message, Fn&& fn) {
+[[nodiscard]] static auto takeFailureOr(mlir::MLIRContext* context,
+                                        const char* message, Fn&& fn) {
   std::string diagnostics;
   const mlir::ScopedDiagnosticHandler handler(
       context, [&](mlir::Diagnostic& diag) {
