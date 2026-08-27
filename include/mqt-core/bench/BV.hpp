@@ -21,7 +21,12 @@
 namespace mqt::bench {
 
 /// Circuit method used for Bernstein--Vazirani.
-enum class BVMethod : uint8_t { Static, Dynamic };
+enum class BVMethod : uint8_t {
+  /// Allocate one query qubit for each hidden bit.
+  Static,
+  /// Measure, reset, and reuse one query qubit for every hidden bit.
+  Dynamic
+};
 
 /// Parameters for one Bernstein--Vazirani benchmark instance.
 struct BVOptions {
@@ -29,6 +34,7 @@ struct BVOptions {
 
   /// Big-endian hidden bitstring.
   std::string hiddenBitstring;
+  /// Qubit-allocation and measurement method.
   BVMethod method = BVMethod::Static;
 };
 

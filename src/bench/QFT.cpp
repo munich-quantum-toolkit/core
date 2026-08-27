@@ -11,16 +11,17 @@
 #include "bench/QFT.hpp"
 
 #include "EvaluationUtils.hpp"
+#include "bench/Evaluation.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
-#include <utility>
+#include <string_view>
 
 namespace mqt::bench {
 
 QFT::QFT(QFTOptions options)
-    : options_(std::move(options)), output_{"result", options_.qubits} {
+    : options_(options), output_{.name = "result", .width = options_.qubits} {
   if (options_.qubits == 0 || options_.qubits > QFTOptions::MAX_QUBITS) {
     throw std::invalid_argument("QFT qubits must be between 1 and 1000000");
   }

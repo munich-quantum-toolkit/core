@@ -42,6 +42,12 @@ simulator support from the pull-request stack that starts at
       branch.
 - [x] (2026-08-23 23:35Z) Ran installation, wheel, notebook, full release, and
       lint validation and completed the stale-name audit.
+- [x] (2026-08-27 16:37Z) Merged current main and reread the expanded root,
+      MLIR, and binding guidance.
+- [x] (2026-08-27 17:20Z) Addressed Damian Rovara's documentation feedback with
+      a clearer benchmark definition, direct notebook CLI cells, and method
+      documentation. Regenerated stubs; the full release build, all 3,899 native
+      tests, the warning-as-error documentation build, and repository lint pass.
 
 ### Surprises & Discoveries
 
@@ -99,16 +105,24 @@ simulator support from the pull-request stack that starts at
 - Decision: Keep DD execution changes above #2077. Rationale: the simulator owns
   execution and returned-register sampling. Date/Author: 2026-08-22 / Lukas
   Burgholzer and Codex.
+- Decision: Do not add a benchmark option that expands registers into separate
+  scalar allocations. Rationale: storage representation does not change the
+  benchmark instance or reference, indexed loops require an indexable value, and
+  scalar expansion would make large structured programs linear in the qubit
+  count. A reusable compiler transformation is the correct owner if a concrete
+  consumer needs this representation. Date/Author: 2026-08-27 / Lukas Burgholzer
+  and Codex.
 
 ### Outcomes & Retrospective
 
 The implementation has one semantic owner and one structured emitter path for
-five families. The complete release build and 4,086 configured C++ tests pass.
-The executable notebook, installed C++ consumer, fresh wheel, launcher, and
-minimum-version Python benchmark tests pass. The separate semantic branch
-validates every family against the #2077-based DD stack. The full Python matrix
-is blocked only by the unrelated missing QDMI device registrations recorded
-above.
+five families. After the current-main merge, the complete release build and all
+3,899 configured native tests pass. The warning-as-error documentation build,
+including the executable notebook, also passes. The installed C++ consumer,
+fresh wheel, launcher, and minimum-version Python benchmark tests pass. The
+separate semantic branch validates every family against the #2077-based DD
+stack. The full Python matrix is blocked only by the unrelated missing QDMI
+device registrations recorded above.
 
 ### Context and Orientation
 

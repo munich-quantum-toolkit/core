@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "bench/Evaluation.hpp"
 #include "bench/QFT.hpp"
 
 #include <gtest/gtest.h>
@@ -28,6 +29,8 @@ TEST(QFT, UsesTheStandardMethodByDefault) {
 }
 
 TEST(QFT, ValidatesTheConfiguredInstance) {
+  /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  constexpr auto invalidMethod = static_cast<QFTMethod>(2);
   EXPECT_THROW(static_cast<void>(QFT{{.qubits = 0, .periodExponent = 0}}),
                std::invalid_argument);
   EXPECT_THROW(static_cast<void>(QFT{{.qubits = QFTOptions::MAX_QUBITS + 1,
@@ -37,10 +40,10 @@ TEST(QFT, ValidatesTheConfiguredInstance) {
                std::invalid_argument);
   EXPECT_THROW(static_cast<void>(QFT{{.qubits = 1075, .periodExponent = 1075}}),
                std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(QFT{{.qubits = 3,
-                                      .periodExponent = 1,
-                                      .method = static_cast<QFTMethod>(2)}}),
-               std::invalid_argument);
+  EXPECT_THROW(
+      static_cast<void>(
+          QFT{{.qubits = 3, .periodExponent = 1, .method = invalidMethod}}),
+      std::invalid_argument);
 }
 
 TEST(QFT, GivesTwoPeaksForPeriodTwo) {

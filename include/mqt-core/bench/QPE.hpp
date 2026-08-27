@@ -37,7 +37,12 @@ private:
 };
 
 /// Circuit method used for quantum phase estimation.
-enum class QPEMethod : uint8_t { Standard, Iterative };
+enum class QPEMethod : uint8_t {
+  /// Estimate all phase bits with one query qubit per bit.
+  Standard,
+  /// Measure and reset one reused query qubit, with feed-forward corrections.
+  Iterative
+};
 
 /// Parameters for one quantum phase-estimation benchmark instance.
 struct QPEOptions {
@@ -47,6 +52,7 @@ struct QPEOptions {
   size_t precision;
   /// Eigenphase in turns.
   Phase phase;
+  /// Full-register or iterative circuit method.
   QPEMethod method = QPEMethod::Standard;
 };
 

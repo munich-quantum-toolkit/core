@@ -24,28 +24,25 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
+#include <ranges>
 
 namespace mqt::bench {
 
 using namespace mlir;
 
-namespace {
-
-[[nodiscard]] Value hiddenBits(qc::QCProgramBuilder& builder,
-                               const BV& benchmark) {
+[[nodiscard]] static Value hiddenBits(qc::QCProgramBuilder& builder,
+                                      const BV& benchmark) {
   SmallVector<bool> bits;
   bits.reserve(benchmark.options().hiddenBitstring.size());
-  for (auto bit = benchmark.options().hiddenBitstring.rbegin();
-       bit != benchmark.options().hiddenBitstring.rend(); ++bit) {
-    bits.push_back(*bit == '1');
+  for (const char bit :
+       benchmark.options().hiddenBitstring | std::views::reverse) {
+    bits.push_back(bit == '1');
   }
   const auto type = RankedTensorType::get({static_cast<int64_t>(bits.size())},
                                           builder.getI1Type());
   const auto value = DenseElementsAttr::get(type, ArrayRef<bool>(bits));
   return arith::ConstantOp::create(builder, value).getResult();
 }
-
-} // namespace
 
 SmallVector<Value> bv(qc::QCProgramBuilder& builder, const BV& benchmark) {
   const auto width = static_cast<int64_t>(benchmark.output().width);

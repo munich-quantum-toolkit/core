@@ -27,8 +27,6 @@
 #include <new>
 #include <optional>
 #include <string>
-#include <string_view>
-#include <utility>
 
 namespace mqt {
 
@@ -48,7 +46,7 @@ namespace {
   }
 
   const auto denominator = value.attr("denominator");
-  uint64_t denominatorValue;
+  uint64_t denominatorValue = 0;
   try {
     denominatorValue = nb::cast<uint64_t>(denominator);
   } catch (const nb::cast_error&) {
@@ -70,6 +68,8 @@ template <class T> [[nodiscard]] nb::object generate(const T& value) {
 
 } // namespace
 
+/// The nanobind module macro requires its module handle by value.
+/// NOLINTNEXTLINE(performance-unnecessary-value-param)
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   m.doc() = "Typed benchmark instances and analytic references.";
 
@@ -90,8 +90,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       .def_ro("success_probability", &bench::Evaluation::successProbability,
               "The observed success probability, when defined.");
 
-  nb::enum_<bench::BVMethod>(m, "BVMethod",
-                             "Circuit method for Bernstein--Vazirani.")
+  nb::enum_<bench::BVMethod>(
+      m, "BVMethod",
+      "Static allocation or dynamic measurement and qubit reuse.")
       .value("STATIC", bench::BVMethod::Static)
       .value("DYNAMIC", bench::BVMethod::Dynamic);
 
@@ -242,7 +243,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
                   "Parse a strict benchmark manifest.");
 
   nb::enum_<bench::QFTMethod>(
-      m, "QFTMethod", "Circuit method for the quantum Fourier transform.")
+      m, "QFTMethod",
+      "Full-register or semiclassical measurement-and-feed-forward method.")
       .value("STANDARD", bench::QFTMethod::Standard)
       .value("SEMICLASSICAL", bench::QFTMethod::Semiclassical);
 
@@ -300,8 +302,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       .def_prop_ro("denominator", &bench::Phase::denominator,
                    "The reduced denominator.");
 
-  nb::enum_<bench::QPEMethod>(m, "QPEMethod",
-                              "Circuit method for phase estimation.")
+  nb::enum_<bench::QPEMethod>(
+      m, "QPEMethod",
+      "Full-register or iterative measurement-and-feed-forward method.")
       .value("STANDARD", bench::QPEMethod::Standard)
       .value("ITERATIVE", bench::QPEMethod::Iterative);
 
@@ -311,8 +314,11 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
           "__init__",
           [](bench::QPEOptions* self, const size_t precision,
              const nb::object& phase, const bench::QPEMethod method) {
-            new (self)
-                bench::QPEOptions{precision, phaseFromPython(phase), method};
+            new (self) bench::QPEOptions{
+                .precision = precision,
+                .phase = phaseFromPython(phase),
+                .method = method,
+            };
           },
           nb::kw_only(), "precision"_a, "phase"_a,
           "method"_a = bench::QPEMethod::Standard,

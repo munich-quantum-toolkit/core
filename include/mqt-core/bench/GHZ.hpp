@@ -20,10 +20,20 @@
 namespace mqt::bench {
 
 /// Entangling topology for GHZ-state preparation.
-enum class GHZTopology : uint8_t { Linear, Star };
+enum class GHZTopology : uint8_t {
+  /// Entangle each qubit with its next neighbor.
+  Linear,
+  /// Entangle every other qubit directly with the first qubit.
+  Star
+};
 
 /// Measurement basis used to verify the prepared GHZ state.
-enum class GHZBasis : uint8_t { Z, X };
+enum class GHZBasis : uint8_t {
+  /// Measure the two computational-basis outcomes.
+  Z,
+  /// Measure the uniform distribution over even-parity outcomes.
+  X
+};
 
 /// Parameters for one GHZ benchmark instance.
 struct GHZOptions {
@@ -32,7 +42,9 @@ struct GHZOptions {
 
   /// Number of qubits. Must be in `[1, MAX_QUBITS]`.
   size_t qubits;
+  /// Entangling topology.
   GHZTopology topology = GHZTopology::Linear;
+  /// Measurement basis used by the program and reference.
   GHZBasis basis = GHZBasis::Z;
 };
 

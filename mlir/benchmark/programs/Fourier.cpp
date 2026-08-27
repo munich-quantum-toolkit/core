@@ -33,12 +33,10 @@ namespace mqt::bench {
 
 using namespace mlir;
 
-namespace {
-
-void phaseRotationLoop(
-    qc::QCProgramBuilder& builder, Value lower, Value upper, const double start,
-    const double factor,
-    const function_ref<void(Value angle, Value index)>& body) {
+static void
+phaseRotationLoop(qc::QCProgramBuilder& builder, Value lower, Value upper,
+                  const double start, const double factor,
+                  const function_ref<void(Value angle, Value index)>& body) {
   auto one = arith::ConstantIndexOp::create(builder, 1).getResult();
   auto first =
       arith::ConstantOp::create(builder, builder.getF64FloatAttr(start))
@@ -55,8 +53,8 @@ void phaseRotationLoop(
   scf::YieldOp::create(builder, ValueRange{next});
 }
 
-[[nodiscard]] Value controlledPhaseAngles(qc::QCProgramBuilder& builder,
-                                          const QPE& benchmark) {
+[[nodiscard]] static Value controlledPhaseAngles(qc::QCProgramBuilder& builder,
+                                                 const QPE& benchmark) {
   const auto& options = benchmark.options();
   const auto denominator = options.phase.denominator();
   auto remainder = options.phase.numerator();
@@ -81,8 +79,8 @@ void phaseRotationLoop(
   return arith::ConstantOp::create(builder, value).getResult();
 }
 
-SmallVector<Value> iterativeQPE(qc::QCProgramBuilder& builder,
-                                const QPE& benchmark) {
+[[nodiscard]] static SmallVector<Value>
+iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
   const auto precision = static_cast<int64_t>(benchmark.options().precision);
   auto query = builder.allocQubit();
   auto ancilla = builder.allocQubit();
@@ -119,8 +117,8 @@ SmallVector<Value> iterativeQPE(qc::QCProgramBuilder& builder,
   return {result};
 }
 
-SmallVector<Value> standardQPE(qc::QCProgramBuilder& builder,
-                               const QPE& benchmark) {
+[[nodiscard]] static SmallVector<Value>
+standardQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
   const auto precision = static_cast<int64_t>(benchmark.options().precision);
   auto query = builder.allocQubitRegisterStorage(precision, "query");
   auto ancilla = builder.allocQubit();
@@ -159,8 +157,8 @@ SmallVector<Value> standardQPE(qc::QCProgramBuilder& builder,
   return {result};
 }
 
-SmallVector<Value> standardQFT(qc::QCProgramBuilder& builder,
-                               const QFT& benchmark) {
+[[nodiscard]] static SmallVector<Value>
+standardQFT(qc::QCProgramBuilder& builder, const QFT& benchmark) {
   const auto& options = benchmark.options();
   const auto qubits = static_cast<int64_t>(options.qubits);
   const auto period = static_cast<int64_t>(options.periodExponent);
@@ -193,8 +191,8 @@ SmallVector<Value> standardQFT(qc::QCProgramBuilder& builder,
   return {result};
 }
 
-SmallVector<Value> semiclassicalQFT(qc::QCProgramBuilder& builder,
-                                    const QFT& benchmark) {
+[[nodiscard]] static SmallVector<Value>
+semiclassicalQFT(qc::QCProgramBuilder& builder, const QFT& benchmark) {
   const auto& options = benchmark.options();
   const auto qubits = static_cast<int64_t>(options.qubits);
   const auto period = static_cast<int64_t>(options.periodExponent);
@@ -227,8 +225,6 @@ SmallVector<Value> semiclassicalQFT(qc::QCProgramBuilder& builder,
   builder.scfFor(active, total, 1, [&](Value step) { round(step, false); });
   return {result};
 }
-
-} // namespace
 
 SmallVector<Value> qpe(qc::QCProgramBuilder& builder, const QPE& benchmark) {
   return benchmark.options().method == QPEMethod::Standard

@@ -318,17 +318,15 @@ public:
   Value measure(Value qubit, Value reg,
                 const std::variant<int64_t, Value>& index);
 
-  /**
-   * @brief Measure a qubit register into an equally sized classical register
-   *
-   * @details Emits a structured loop that loads, measures, and stores each
-   * qubit at the same index.
-   *
-   * @param qubits Qubit-register storage
-   * @param bits Classical output register
-   * @param size Number of qubits and bits
-   * @return Reference to this builder for method chaining
-   */
+  /// Measure a qubit register into an equally sized classical register.
+  ///
+  /// Emits a structured loop that loads, measures, and stores each qubit at the
+  /// same index.
+  ///
+  /// @param qubits Qubit-register storage
+  /// @param bits Classical output register
+  /// @param size Number of qubits and bits
+  /// @return Reference to this builder for method chaining
   QCProgramBuilder& measureQubitRegister(Value qubits, Value bits,
                                          int64_t size);
 

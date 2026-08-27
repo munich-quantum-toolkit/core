@@ -8,10 +8,12 @@
  * Licensed under the MIT License
  */
 
+#include "bench/Evaluation.hpp"
 #include "bench/Grover.hpp"
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -20,7 +22,6 @@
 namespace {
 
 using mqt::bench::Grover;
-using mqt::bench::GroverOptions;
 using mqt::bench::Output;
 
 TEST(Grover, ResolvesTheDefaultIterationCountOnce) {

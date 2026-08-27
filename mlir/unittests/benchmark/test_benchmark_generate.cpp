@@ -42,16 +42,14 @@ namespace mqt::bench {
 
 using namespace mlir;
 
-namespace {
-
-template <class Op> [[nodiscard]] size_t countOps(ModuleOp moduleOp) {
+template <class Op> [[nodiscard]] static size_t countOps(ModuleOp moduleOp) {
   size_t count = 0;
   moduleOp.walk([&](Op) { ++count; });
   return count;
 }
 
 template <class Benchmark>
-void expectValidQCAndJeff(const Benchmark& benchmark) {
+static void expectValidQCAndJeff(const Benchmark& benchmark) {
   auto program = generate(benchmark);
   ASSERT_TRUE(program);
   EXPECT_TRUE(program->isValid());
@@ -146,7 +144,7 @@ TEST(GenerateProgramTest, EmitsStructuredBVWithMethodSpecificResources) {
   checkIndexing(dynamicProgram->module());
 }
 
-[[nodiscard]] DenseElementsAttr angleTable(ModuleOp moduleOp) {
+[[nodiscard]] static DenseElementsAttr angleTable(ModuleOp moduleOp) {
   DenseElementsAttr result;
   moduleOp.walk([&](arith::ConstantOp op) {
     if (const auto table = dyn_cast<DenseElementsAttr>(op.getValue())) {
@@ -331,7 +329,5 @@ TEST(GenerateProgramTest, DoublesQPEPhaseModuloOneWithoutOverflow) {
   EXPECT_DOUBLE_EQ(angles[2], static_cast<double>(2.L * turn));
   EXPECT_DOUBLE_EQ(angles[3], static_cast<double>(4.L * turn));
 }
-
-} // namespace
 
 } // namespace mqt::bench

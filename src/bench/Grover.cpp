@@ -11,21 +11,27 @@
 #include "bench/Grover.hpp"
 
 #include "EvaluationUtils.hpp"
+#include "bench/Evaluation.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <numbers>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace mqt::bench {
 namespace {
 
+/// Extended precision keeps the analytic reference stable near Grover peaks.
+/// NOLINTBEGIN(google-runtime-float)
 [[nodiscard]] long double successProbability(const size_t iterations,
                                              const long double theta) {
-  const auto angle = (2.L * static_cast<long double>(iterations) + 1.L) * theta;
+  const auto angle =
+      ((2.L * static_cast<long double>(iterations)) + 1.L) * theta;
   const auto amplitude = std::sin(angle);
   return amplitude * amplitude;
 }
@@ -33,15 +39,16 @@ namespace {
 [[nodiscard]] size_t resolveIterations(const size_t qubits) {
   const auto states = std::ldexp(1.L, static_cast<int>(qubits));
   const auto theta = std::asin(1.L / std::sqrt(states));
-  const auto target = std::numbers::pi_v<long double> / (4.L * theta) - 0.5L;
+  const auto target = (std::numbers::pi_v<long double> / (4.L * theta)) - 0.5L;
   return static_cast<size_t>(std::floor(target + 0.5L));
 }
+/// NOLINTEND(google-runtime-float)
 
 } // namespace
 
 Grover::Grover(GroverOptions options)
     : options_(std::move(options)),
-      output_{"result", options_.markedBitstring.size()} {
+      output_{.name = "result", .width = options_.markedBitstring.size()} {
   const auto width = options_.markedBitstring.size();
   if (width < 2 || width > 62) {
     throw std::invalid_argument(
@@ -58,12 +65,14 @@ Grover::Grover(GroverOptions options)
         "Grover iterations must fit a signed 32-bit integer");
   }
 
+  /// NOLINTBEGIN(google-runtime-float)
   const auto states = std::ldexp(1.L, static_cast<int>(width));
   const auto theta = std::asin(1.L / std::sqrt(states));
   const auto marked =
       std::clamp(successProbability(*options_.iterations, theta), 0.L, 1.L);
   markedProbability_ = static_cast<double>(marked);
   otherProbability_ = static_cast<double>((1.L - marked) / (states - 1.L));
+  /// NOLINTEND(google-runtime-float)
 }
 
 const GroverOptions& Grover::options() const noexcept { return options_; }

@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -35,7 +36,8 @@ inline void validateOutcome(const std::string_view outcome,
 
 template <class Probability>
 [[nodiscard]] Evaluation
-evaluate(const Output& output, const Counts& counts, Probability&& probability,
+evaluate(const Output& output, const Counts& counts,
+         const Probability& probability,
          const std::optional<std::string_view> successOutcome = std::nullopt) {
   if (counts.empty()) {
     throw std::invalid_argument("counts must not be empty");
@@ -57,6 +59,8 @@ evaluate(const Output& output, const Counts& counts, Probability&& probability,
     throw std::invalid_argument("total shot count must be positive");
   }
 
+  /// Extended precision prevents avoidable loss while summing distributions.
+  /// NOLINTBEGIN(google-runtime-float)
   long double observedDistance = 0.L;
   long double observedIdealMass = 0.L;
   long double coefficient = 0.L;
@@ -77,8 +81,10 @@ evaluate(const Output& output, const Counts& counts, Probability&& probability,
       successOutcome ? std::optional<double>{static_cast<double>(successShots) /
                                              static_cast<double>(totalShots)}
                      : std::nullopt;
-  return {static_cast<double>(totalVariation), static_cast<double>(fidelity),
-          success};
+  /// NOLINTEND(google-runtime-float)
+  return {.totalVariationDistance = static_cast<double>(totalVariation),
+          .squaredHellingerFidelity = static_cast<double>(fidelity),
+          .successProbability = success};
 }
 
 } // namespace mqt::bench::detail

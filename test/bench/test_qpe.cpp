@@ -8,11 +8,13 @@
  * Licensed under the MIT License
  */
 
+#include "bench/Evaluation.hpp"
 #include "bench/QPE.hpp"
 
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstddef>
 #include <numbers>
 #include <stdexcept>
 #include <string>
@@ -47,10 +49,12 @@ TEST(QPE, RejectsUnsupportedPrecision) {
 }
 
 TEST(QPE, RejectsAnUnknownMethod) {
-  EXPECT_THROW(static_cast<void>(QPE{{.precision = 2,
-                                      .phase = Phase(0, 1),
-                                      .method = static_cast<QPEMethod>(2)}}),
-               std::invalid_argument);
+  /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  constexpr auto invalidMethod = static_cast<QPEMethod>(2);
+  EXPECT_THROW(
+      static_cast<void>(
+          QPE{{.precision = 2, .phase = Phase(0, 1), .method = invalidMethod}}),
+      std::invalid_argument);
 }
 
 TEST(QPE, GivesAnExactDistribution) {
@@ -67,8 +71,8 @@ TEST(QPE, GivesAnExactDistribution) {
 
 TEST(QPE, GivesTheInexactDistribution) {
   const QPE qpe{{.precision = 2, .phase = Phase(1, 8)}};
-  const auto high = (2. + std::sqrt(2.)) / 8.;
-  const auto low = (2. - std::sqrt(2.)) / 8.;
+  const auto high = (2. + std::numbers::sqrt2) / 8.;
+  const auto low = (2. - std::numbers::sqrt2) / 8.;
   EXPECT_NEAR(qpe.probability("00"), high, 1e-15);
   EXPECT_NEAR(qpe.probability("01"), high, 1e-15);
   EXPECT_NEAR(qpe.probability("10"), low, 1e-15);
@@ -77,8 +81,8 @@ TEST(QPE, GivesTheInexactDistribution) {
 
 TEST(QPE, WrapsTheDistributionAtOneTurn) {
   const QPE qpe{{.precision = 2, .phase = Phase(7, 8)}};
-  const auto high = (2. + std::sqrt(2.)) / 8.;
-  const auto low = (2. - std::sqrt(2.)) / 8.;
+  const auto high = (2. + std::numbers::sqrt2) / 8.;
+  const auto low = (2. - std::numbers::sqrt2) / 8.;
   EXPECT_NEAR(qpe.probability("00"), high, 1e-15);
   EXPECT_NEAR(qpe.probability("11"), high, 1e-15);
   EXPECT_NEAR(qpe.probability("01"), low, 1e-15);
@@ -87,8 +91,8 @@ TEST(QPE, WrapsTheDistributionAtOneTurn) {
 
 TEST(QPE, UsesTheNegativeHalfTurnRepresentative) {
   const QPE qpe{{.precision = 1, .phase = Phase(7, 8)}};
-  EXPECT_NEAR(qpe.probability("0"), (2. + std::sqrt(2.)) / 4., 1e-15);
-  EXPECT_NEAR(qpe.probability("1"), (2. - std::sqrt(2.)) / 4., 1e-15);
+  EXPECT_NEAR(qpe.probability("0"), (2. + std::numbers::sqrt2) / 4., 1e-15);
+  EXPECT_NEAR(qpe.probability("1"), (2. - std::numbers::sqrt2) / 4., 1e-15);
 }
 
 TEST(QPE, SupportsArbitraryWidthOutcomes) {

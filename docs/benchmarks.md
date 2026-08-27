@@ -8,11 +8,11 @@ mystnb:
 
 # Structured quantum benchmarks
 
-MQT Core defines a benchmark as validated, benchmark-specific parameters plus an
-analytic reference. One instance produces a structured QC program, a resolved
-manifest, and a stable case ID. Each benchmark returns one classical register
-named `result`. Outcome strings are big-endian: the highest-index result bit is
-the leftmost character.
+MQT Core defines each structured quantum benchmark by benchmark-specific
+parameters and an analytic reference. A benchmark instance can produce a
+structured QC program, a resolved manifest, and a stable case ID. The generated
+program returns one classical register named `result`. Outcome strings are
+big-endian: the highest-index result bit is the leftmost character.
 
 ## Discover the catalog
 
@@ -20,28 +20,11 @@ The command-line registry is the current list of available families. Each family
 has its own JSON Schema.
 
 ```{code-cell} ipython3
-import json
-import subprocess
-
-
-def run_bench(*arguments: str) -> dict[str, object]:
-    """Run mqt-core-bench and parse its JSON output."""
-    completed = subprocess.run(
-        ["mqt-core-bench", *arguments],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return json.loads(completed.stdout)
-
-
-catalog = run_bench("list")
-[entry["id"] for entry in catalog["benchmarks"]]
+!mqt-core-bench list
 ```
 
 ```{code-cell} ipython3
-qft_schema = run_bench("describe", "qft")
-qft_schema["properties"]["parameters"]
+!mqt-core-bench describe qft
 ```
 
 ## Configure a typed instance
@@ -74,6 +57,9 @@ Canonical JSON records every resolved default. A manifest also binds the logical
 output, reference descriptor, family-definition version, and case ID.
 
 ```{code-cell} ipython3
+import json
+
+
 request = json.loads(benchmark.request_json)
 manifest = json.loads(benchmark.manifest_json)
 request, {
@@ -127,41 +113,34 @@ import tempfile
 from pathlib import Path
 
 
-with tempfile.TemporaryDirectory() as temporary:
-    root = Path(temporary)
-    request_path = root / "request.json"
-    counts_path = root / "counts.json"
-    request_path.write_text(benchmark.request_json, encoding="utf-8")
-    counts_path.write_text(
-        json.dumps({"schema_version": 1, "counts": {"000": 5, "100": 5}}),
-        encoding="utf-8",
-    )
+temporary = tempfile.TemporaryDirectory()
+root = Path(temporary.name)
+request_path = root / "request.json"
+counts_path = root / "counts.json"
+output_directory = root / "generated"
+request_path.write_text(benchmark.request_json, encoding="utf-8")
+counts_path.write_text(
+    json.dumps({"schema_version": 1, "counts": {"000": 5, "100": 5}}),
+    encoding="utf-8",
+)
+```
 
-    generated = run_bench(
-        "generate",
-        "--request",
-        str(request_path),
-        "--format",
-        "qc",
-        "--output",
-        str(root / "generated"),
-    )
-    result = run_bench(
-        "evaluate",
-        "--manifest",
-        generated["manifest_path"],
-        "--counts",
-        str(counts_path),
-    )
+```{code-cell} ipython3
+!mqt-core-bench generate --request {request_path} --format qc --output {output_directory}
+```
 
-    cli_round_trip = {
-        "program_suffix": Path(generated["program_path"]).suffixes,
-        "case_ids_match": generated["case_id"] == result["case_id"],
-        "shots": result["shots"],
-        "metrics": result["metrics"],
-    }
+```{code-cell} ipython3
+manifest_path = next(output_directory.glob("*.manifest.json"))
+program_path = next(output_directory.glob("*.qc.mlir"))
+program_path.name, manifest_path.name
+```
 
-cli_round_trip
+```{code-cell} ipython3
+!mqt-core-bench evaluate --manifest {manifest_path} --counts {counts_path}
+```
+
+```{code-cell} ipython3
+temporary.cleanup()
 ```
 
 Use `--format jeff` instead of `--format qc` to write a binary `jeff` program.

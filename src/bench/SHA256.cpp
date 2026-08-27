@@ -75,7 +75,7 @@ std::string sha256Hex(const std::string_view input) {
   for (size_t offset = 0; offset < message.size(); offset += 64U) {
     std::array<uint32_t, 64> words{};
     for (size_t index = 0; index < 16U; ++index) {
-      const auto byte = offset + index * 4U;
+      const auto byte = offset + (index * 4U);
       words[index] = (static_cast<uint32_t>(message[byte]) << 24U) |
                      (static_cast<uint32_t>(message[byte + 1U]) << 16U) |
                      (static_cast<uint32_t>(message[byte + 2U]) << 8U) |

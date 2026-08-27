@@ -11,15 +11,17 @@
 #include "bench/GHZ.hpp"
 
 #include "EvaluationUtils.hpp"
+#include "bench/Evaluation.hpp"
 
 #include <cmath>
+#include <cstddef>
 #include <stdexcept>
-#include <utility>
+#include <string_view>
 
 namespace mqt::bench {
 
 GHZ::GHZ(GHZOptions options)
-    : options_(std::move(options)), output_{"result", options_.qubits} {
+    : options_(options), output_{.name = "result", .width = options_.qubits} {
   if (options_.qubits == 0 || options_.qubits > GHZOptions::MAX_QUBITS) {
     throw std::invalid_argument("GHZ qubits must be between 1 and 1000000");
   }

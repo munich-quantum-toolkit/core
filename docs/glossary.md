@@ -212,6 +212,27 @@ linear semantics
   ownership transfers explicit.
 ```
 
+## Quantum benchmark terms
+
+```{glossary}
+:sorted:
+
+iterative quantum phase estimation
+iterative QPE
+iQPE
+  **Preferred term:** iterative quantum phase estimation. **Accepted aliases:**
+  iterative QPE and iQPE. A phase-estimation method that measures, resets, and
+  reuses one query qubit for each output bit. Each round applies corrections
+  controlled by earlier measurement results.
+
+semiclassical quantum Fourier transform
+semiclassical QFT
+  **Preferred term:** semiclassical quantum Fourier transform. **Accepted
+  alias:** semiclassical QFT. A quantum Fourier-transform method that measures,
+  resets, and reuses one qubit for each output bit. Each round applies rotations
+  controlled by earlier measurement results.
+```
+
 ## Index
 
 Every glossary entry appears in the

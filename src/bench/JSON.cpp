@@ -11,6 +11,12 @@
 #include "bench/JSON.hpp"
 
 #include "SHA256.hpp"
+#include "bench/BV.hpp"
+#include "bench/Evaluation.hpp"
+#include "bench/GHZ.hpp"
+#include "bench/Grover.hpp"
+#include "bench/QFT.hpp"
+#include "bench/QPE.hpp"
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 
@@ -33,7 +39,7 @@
 namespace mqt::bench {
 namespace {
 
-using Json = nlohmann::json;
+using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
 
 constexpr uint64_t SCHEMA_VERSION = 1;
 constexpr uint64_t BV_DEFINITION_VERSION = 1;
@@ -77,16 +83,32 @@ struct RegistryEntry {
                                       const Counts& counts);
 
 constexpr std::array<RegistryEntry, 5> REGISTRY{{
-    {"bv", BV_DEFINITION_VERSION, bvSchema, evaluateBV},
-    {"ghz", GHZ_DEFINITION_VERSION, ghzSchema, evaluateGHZ},
-    {"grover", GROVER_DEFINITION_VERSION, groverSchema, evaluateGrover},
-    {"qft", QFT_DEFINITION_VERSION, qftSchema, evaluateQFT},
-    {"qpe", QPE_DEFINITION_VERSION, qpeSchema, evaluateQPE},
+    {.id = "bv",
+     .definitionVersion = BV_DEFINITION_VERSION,
+     .schema = bvSchema,
+     .evaluate = evaluateBV},
+    {.id = "ghz",
+     .definitionVersion = GHZ_DEFINITION_VERSION,
+     .schema = ghzSchema,
+     .evaluate = evaluateGHZ},
+    {.id = "grover",
+     .definitionVersion = GROVER_DEFINITION_VERSION,
+     .schema = groverSchema,
+     .evaluate = evaluateGrover},
+    {.id = "qft",
+     .definitionVersion = QFT_DEFINITION_VERSION,
+     .schema = qftSchema,
+     .evaluate = evaluateQFT},
+    {.id = "qpe",
+     .definitionVersion = QPE_DEFINITION_VERSION,
+     .schema = qpeSchema,
+     .evaluate = evaluateQPE},
 }};
 
 [[nodiscard]] const RegistryEntry*
 findBenchmark(const std::string_view benchmark) {
-  const auto found = std::ranges::find(REGISTRY, benchmark, &RegistryEntry::id);
+  const auto* const found =
+      std::ranges::find(REGISTRY, benchmark, &RegistryEntry::id);
   return found == REGISTRY.end() ? nullptr : &*found;
 }
 
@@ -585,7 +607,7 @@ template <class Benchmark, class ParseParameters>
 [[nodiscard]] Benchmark parseManifest(const std::string_view text,
                                       const std::string_view source,
                                       const std::string_view expectedId,
-                                      ParseParameters&& parseParameters) {
+                                      const ParseParameters& parseParameters) {
   const auto root = manifestEnvelope(text, source);
   requireBenchmark(root, expectedId, source);
   auto benchmark = parseParameters(root.at("parameters"), source);

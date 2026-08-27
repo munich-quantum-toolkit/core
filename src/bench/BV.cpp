@@ -11,15 +11,17 @@
 #include "bench/BV.hpp"
 
 #include "EvaluationUtils.hpp"
+#include "bench/Evaluation.hpp"
 
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace mqt::bench {
 
 BV::BV(BVOptions options)
     : options_(std::move(options)),
-      output_{"result", options_.hiddenBitstring.size()} {
+      output_{.name = "result", .width = options_.hiddenBitstring.size()} {
   const auto width = options_.hiddenBitstring.size();
   if (width == 0 || width > BVOptions::MAX_BITS) {
     throw std::invalid_argument(

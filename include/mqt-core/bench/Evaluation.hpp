@@ -32,9 +32,9 @@ using Counts = std::map<std::string, size_t>;
 /// Comparison of sampled counts with a benchmark's ideal reference.
 struct Evaluation {
   /// Total variation distance. Zero is an exact match.
-  double totalVariationDistance;
+  double totalVariationDistance = 0.;
   /// Squared Hellinger fidelity. One is an exact match.
-  double squaredHellingerFidelity;
+  double squaredHellingerFidelity = 0.;
   /// Observed success probability when the benchmark defines success.
   std::optional<double> successProbability;
 };

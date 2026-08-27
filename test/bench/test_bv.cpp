@@ -9,6 +9,7 @@
  */
 
 #include "bench/BV.hpp"
+#include "bench/Evaluation.hpp"
 
 #include <gtest/gtest.h>
 
@@ -29,6 +30,8 @@ TEST(BV, UsesTheStaticMethodByDefault) {
 }
 
 TEST(BV, ValidatesTheConfiguredInstance) {
+  /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  constexpr auto invalidMethod = static_cast<BVMethod>(2);
   EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = ""}}),
                std::invalid_argument);
   EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = "10x"}}),
@@ -36,9 +39,9 @@ TEST(BV, ValidatesTheConfiguredInstance) {
   EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = std::string(
                                          BVOptions::MAX_BITS + 1, '0')}}),
                std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(BV{{.hiddenBitstring = "1",
-                                     .method = static_cast<BVMethod>(2)}}),
-               std::invalid_argument);
+  EXPECT_THROW(
+      static_cast<void>(BV{{.hiddenBitstring = "1", .method = invalidMethod}}),
+      std::invalid_argument);
 }
 
 TEST(BV, GivesTheHiddenBitstringAsASelectedOutcome) {

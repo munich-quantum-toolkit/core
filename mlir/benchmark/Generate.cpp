@@ -30,9 +30,7 @@ namespace mqt::bench {
 
 using namespace mlir;
 
-namespace {
-
-[[nodiscard]] std::optional<QCProgram> buildProgram(
+[[nodiscard]] static std::optional<QCProgram> buildProgram(
     const llvm::StringRef name,
     const llvm::function_ref<SmallVector<Value>(qc::QCProgramBuilder&)>& emit) {
   auto context = createCompilerContext();
@@ -49,8 +47,6 @@ namespace {
   }
   return program;
 }
-
-} // namespace
 
 std::optional<QCProgram> generate(const BV& benchmark) {
   return buildProgram("bv", [&](qc::QCProgramBuilder& builder) {
@@ -79,11 +75,9 @@ std::optional<QCProgram> generate(const QPE& benchmark) {
       "qpe", [&](qc::QCProgramBuilder& b) { return qpe(b, benchmark); });
 }
 
-namespace {
-
 template <class Benchmark>
-[[nodiscard]] std::optional<GeneratedBenchmark>
-generateRequest(const std::string_view id, Benchmark benchmark) {
+[[nodiscard]] static std::optional<GeneratedBenchmark>
+generateRequest(const std::string_view id, const Benchmark& benchmark) {
   auto program = generate(benchmark);
   if (!program) {
     return std::nullopt;
@@ -95,12 +89,14 @@ generateRequest(const std::string_view id, Benchmark benchmark) {
 using RequestFunction = std::optional<GeneratedBenchmark> (*)(std::string_view,
                                                               std::string_view);
 
+namespace {
 struct RegistryEntry {
   std::string_view id;
   RequestFunction generate;
 };
+} // namespace
 
-const std::array<RegistryEntry, 5> REGISTRY{{
+static const std::array<RegistryEntry, 5> REGISTRY{{
     {"bv",
      [](const std::string_view request, const std::string_view source) {
        return generateRequest("bv", bvFromRequestJSON(request, source));
@@ -123,12 +119,10 @@ const std::array<RegistryEntry, 5> REGISTRY{{
      }},
 }};
 
-} // namespace
-
 std::optional<GeneratedBenchmark> generate(const std::string_view requestJSON,
                                            const std::string_view source) {
   const auto id = benchmarkIdFromRequestJSON(requestJSON, source);
-  const auto found = std::ranges::find(REGISTRY, id, &RegistryEntry::id);
+  const auto* const found = std::ranges::find(REGISTRY, id, &RegistryEntry::id);
   if (found == REGISTRY.end()) {
     return std::nullopt;
   }

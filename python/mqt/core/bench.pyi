@@ -41,7 +41,7 @@ class Evaluation:
         """The observed success probability, when defined."""
 
 class BVMethod(enum.Enum):
-    """Circuit method for Bernstein--Vazirani."""
+    """Static allocation or dynamic measurement and qubit reuse."""
 
     STATIC = 0
 
@@ -231,7 +231,7 @@ class Grover:
         """Parse a strict benchmark manifest."""
 
 class QFTMethod(enum.Enum):
-    """Circuit method for the quantum Fourier transform."""
+    """Full-register or semiclassical measurement-and-feed-forward method."""
 
     STANDARD = 0
 
@@ -307,7 +307,7 @@ class Phase:
         """The reduced denominator."""
 
 class QPEMethod(enum.Enum):
-    """Circuit method for phase estimation."""
+    """Full-register or iterative measurement-and-feed-forward method."""
 
     STANDARD = 0
 

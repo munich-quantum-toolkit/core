@@ -8,13 +8,20 @@
  * Licensed under the MIT License
  */
 
+#include "bench/BV.hpp"
+#include "bench/Evaluation.hpp"
+#include "bench/GHZ.hpp"
+#include "bench/Grover.hpp"
 #include "bench/JSON.hpp"
+#include "bench/QFT.hpp"
+#include "bench/QPE.hpp"
 
 #include <gtest/gtest.h>
 
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -244,10 +251,10 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifestData) {
                 "does not match");
 
   auto changedNumericKind = toManifestJSON(ghz);
-  const auto integerWidth = changedNumericKind.find("\"width\":3");
+  const auto integerWidth = changedNumericKind.find(R"("width":3)");
   ASSERT_NE(integerWidth, std::string::npos);
-  changedNumericKind.replace(integerWidth, std::string("\"width\":3").size(),
-                             "\"width\":3.0");
+  changedNumericKind.replace(integerWidth, std::string(R"("width":3)").size(),
+                             R"("width":3.0)");
   expectInvalid(
       [&] { static_cast<void>(ghzFromManifestJSON(changedNumericKind)); },
       "does not match");
@@ -260,9 +267,9 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifestData) {
                 "case ID");
 
   auto unresolved = toManifestJSON(ghz);
-  const auto basis = unresolved.find("\"basis\":\"z\",");
+  const auto basis = unresolved.find(R"("basis":"z",)");
   ASSERT_NE(basis, std::string::npos);
-  unresolved.erase(basis, std::string("\"basis\":\"z\",").size());
+  unresolved.erase(basis, std::string(R"("basis":"z",)").size());
   expectInvalid([&] { static_cast<void>(ghzFromManifestJSON(unresolved)); },
                 "resolved benchmark instance");
 }
@@ -328,12 +335,17 @@ TEST(BenchmarkJSON, ParsesCountsAndSerializesEvaluations) {
       },
       "must be positive");
   EXPECT_THROW(static_cast<void>(evaluationToJSON(
-                   "not-a-case", 1, Evaluation{0., 1., std::nullopt})),
+                   "not-a-case", 1,
+                   Evaluation{.totalVariationDistance = 0.,
+                              .squaredHellingerFidelity = 1.,
+                              .successProbability = std::nullopt})),
                std::invalid_argument);
   EXPECT_THROW(static_cast<void>(evaluationToJSON(
                    caseId(ghz), 1,
-                   Evaluation{std::numeric_limits<double>::quiet_NaN(), 1.,
-                              std::nullopt})),
+                   Evaluation{.totalVariationDistance =
+                                  std::numeric_limits<double>::quiet_NaN(),
+                              .squaredHellingerFidelity = 1.,
+                              .successProbability = std::nullopt})),
                std::invalid_argument);
 }
 

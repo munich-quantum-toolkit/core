@@ -31,8 +31,8 @@ SmallVector<Value> grover(qc::QCProgramBuilder& b, const Grover& benchmark) {
   b.scfFor(0, search, 1, [&](Value iv) { b.h(b.loadQubit(q.value, iv)); });
 
   const llvm::ArrayRef<Value> qubits(q.qubits);
-  const auto controls = qubits.drop_back();
-  const auto target = qubits.back();
+  auto controls = qubits.drop_back();
+  auto target = qubits.back();
   const auto iterations = static_cast<int64_t>(*options.iterations);
 
   b.scfFor(0, iterations, 1, [&](Value) {

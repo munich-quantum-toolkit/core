@@ -20,7 +20,12 @@
 namespace mqt::bench {
 
 /// Circuit method used for the quantum Fourier transform.
-enum class QFTMethod : uint8_t { Standard, Semiclassical };
+enum class QFTMethod : uint8_t {
+  /// Transform one qubit for each input bit before measurement.
+  Standard,
+  /// Measure and reset one reused qubit, with feed-forward from prior results.
+  Semiclassical
+};
 
 /// Parameters for one quantum Fourier-transform benchmark instance.
 struct QFTOptions {
@@ -31,6 +36,7 @@ struct QFTOptions {
   size_t qubits;
   /// The input period is two raised to this exponent.
   size_t periodExponent;
+  /// Full-register or semiclassical circuit method.
   QFTMethod method = QFTMethod::Standard;
 };
 
