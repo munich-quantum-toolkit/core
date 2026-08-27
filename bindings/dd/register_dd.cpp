@@ -112,13 +112,12 @@ Returns:
 
   m.def(
       "build_unitary",
-      [](const qc::QuantumComputation& qc, const bool recursive = false) {
+      [](const qc::QuantumComputation& qc) {
         const auto dd = std::make_unique<dd::Package>(qc.getNqubits());
-        const auto u = recursive ? buildFunctionalityRecursive(qc, *dd)
-                                 : buildFunctionality(qc, *dd);
+        const auto u = buildFunctionality(qc, *dd);
         return getMatrix(u, qc.getNqubits());
       },
-      "qc"_a, "recursive"_a = false,
+      "qc"_a,
       R"pb(Build a unitary matrix representation of a quantum computation.
 
 This function builds a matrix representation of the unitary representing the functionality of a quantum computation.
@@ -133,10 +132,6 @@ Notes:
 
 Args:
     qc: The quantum computation. Must only contain unitary operations.
-    recursive: Whether to build the unitary matrix recursively.
-        If set to True, the unitary matrix is built recursively by pairwise grouping the operations of the quantum computation.
-        If set to False, the unitary matrix is built by sequentially applying the operations of the quantum computation to the identity matrix.
-        Defaults to False.
 
 Returns:
     The unitary matrix representing the functionality of the quantum computation.)pb");
@@ -159,17 +154,9 @@ Args:
 Returns:
     The final state as a DD. The reference count of the final state is non-zero and must be manually decremented by the caller if it is no longer needed.)pb");
 
-  m.def(
-      "build_functionality",
-      [](const qc::QuantumComputation& qc, dd::Package& p,
-         const bool recursive = false) {
-        if (recursive) {
-          return buildFunctionalityRecursive(qc, p);
-        }
-        return buildFunctionality(qc, p);
-      },
-      "qc"_a, "dd_package"_a, "recursive"_a = false,
-      R"pb(Build a functional representation of a quantum computation.
+  m.def("build_functionality", &dd::buildFunctionality, "qc"_a, "dd_package"_a,
+        nb::keep_alive<0, 2>(),
+        R"pb(Build a functional representation of a quantum computation.
 
 This function builds a matrix DD representation of the unitary representing the functionality of a quantum computation.
 This function does not support measurements, resets, or classical control, as the corresponding operations are non-unitary.
@@ -178,10 +165,6 @@ Args:
     qc: The quantum computation.
         Must only contain unitary operations.
     dd_package: The DD package. Must be configured with a sufficient number of qubits to accommodate the quantum computation.
-    recursive: Whether to build the functionality matrix recursively.
-        If set to True, the functionality matrix is built recursively by pairwise grouping the operations of the quantum computation.
-        If set to False, the functionality matrix is built by sequentially applying the operations of the quantum computation to the identity matrix.
-        Defaults to False.
 
 Returns:
     The functionality as a DD. The reference count of the result is non-zero and must be manually decremented by the caller if it is no longer needed.)pb");

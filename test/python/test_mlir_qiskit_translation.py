@@ -37,6 +37,7 @@ from qiskit.circuit import (
 )
 from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import CASE_DEFAULT, IfElseOp
+from qiskit.circuit.parametervector import ParameterVectorElement
 from qiskit.quantum_info import Operator, random_unitary
 
 from mqt.core.mlir import CompilerTarget, QCProgram, compile_program
@@ -2193,18 +2194,58 @@ def test_direct_symbolic_parameters_round_trip_with_shared_identity() -> None:
     )
 
 
-def test_parameter_vector_elements_fail_import_without_mutation() -> None:
-    """Reject vector elements until the provenance follow-up is applied."""
+def test_sparse_parameter_vector_round_trip_preserves_order_and_binding() -> None:
+    """Preserve a sparse vector's grouping, size, and numeric element order."""
+    vector = ParameterVector("theta", 12)
+    circuit = QuantumCircuit(1, global_phase=vector[0])
+    circuit.rx(vector[10] + vector[2], 0)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    parameters = list(restored.parameters)
+    assert [parameter.index for parameter in parameters] == [0, 2, 10]
+    restored_vector = parameters[0].vector
+    assert len(restored_vector) == len(vector)
+    values = [0.01 * index for index in range(12)]
+    assert Operator(restored.assign_parameters({restored_vector: values}, strict=False)).equiv(
+        Operator(circuit.assign_parameters({vector: values}, strict=False))
+    )
+
+
+def test_parameter_vector_is_shared_across_sibling_blocks() -> None:
+    """Restore one vector across parent and sibling control-flow blocks."""
     vector = ParameterVector("theta", 2)
+    circuit = QuantumCircuit(1, 1)
+    circuit.rz(vector[0], 0)
+    with circuit.if_test((circuit.clbits[0], True)) as else_:
+        circuit.rx(vector[0], 0)
+    with else_:
+        circuit.ry(vector[1], 0)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    root_parameter = restored.data[0].operation.params[0]
+    blocks = restored.data[1].operation.blocks
+    parameters = [root_parameter, *(block.data[0].operation.params[0] for block in blocks)]
+    assert [parameter.index for parameter in parameters] == [0, 0, 1]
+    restored.assign_parameters({parameters[0].vector: [0.25, 0.5]}, inplace=True)
+    assert not restored.parameters
+
+
+def test_distinct_parameter_vectors_with_the_same_name_remain_distinct() -> None:
+    """Keep opaque group identity when vector display names coincide."""
+    first = ParameterVector("theta", 3)
+    second = ParameterVector("theta", 3)
     circuit = QuantumCircuit(1)
-    circuit.rx(vector[0], 0)
-    source_data = list(circuit.data)
+    circuit.rx(first[0], 0)
+    circuit.ry(second[2], 0)
 
-    with pytest.raises(RuntimeError, match="parameter-vector elements are not supported"):
-        QCProgram.from_qiskit(circuit)
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
 
-    assert list(circuit.data) == source_data
-    assert circuit.parameters == {vector[0]}
+    parameters = list(restored.parameters)
+    assert [parameter.index for parameter in parameters] == [0, 2]
+    assert parameters[0].vector.uuid != parameters[1].vector.uuid
+    assert Operator(restored.assign_parameters([0.2, 0.7])).equiv(Operator(circuit.assign_parameters([0.2, 0.7])))
 
 
 def test_standalone_bracket_parameter_names_remain_standalone() -> None:
@@ -2215,13 +2256,93 @@ def test_standalone_bracket_parameter_names_remain_standalone() -> None:
     circuit.rx(theta_ten, 0)
     circuit.ry(theta_two, 0)
 
-    program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit()
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
 
-    assert "mqt.input_group" not in program.ir
+    assert all(not isinstance(parameter, ParameterVectorElement) for parameter in restored.parameters)
     assert {parameter.name for parameter in restored.parameters} == {"theta[2]", "theta[10]"}
     values = [0.1, 0.2]
     assert Operator(restored.assign_parameters(values)).equiv(Operator(circuit.assign_parameters(values)))
+
+
+def test_parameter_vector_element_is_valid_loop_parameter() -> None:
+    """Preserve a vector-element loop symbol as a lexical parameter."""
+    iteration = ParameterVector("iteration", 4)[2]
+    body = QuantumCircuit(1)
+    body.rx(iteration, 0)
+    circuit = QuantumCircuit(1)
+    circuit.for_loop(range(3), iteration, body, [0], [], label=None)
+
+    program = QCProgram.from_qiskit(circuit)
+    assert program.ir.count("mqt.parameter_group") == 1
+    restored_circuits = (
+        program.to_qiskit(),
+        program.to_qco(copy=True).to_qc().to_qiskit(),
+    )
+    for restored in restored_circuits:
+        restored_loop = restored.data[0].operation
+        restored_parameter = restored_loop.params[1]
+        assert restored_parameter.vector.name == "iteration"
+        assert restored_parameter.index == 2
+        assert len(restored_parameter.vector) == 4
+        assert restored_loop.blocks[0].data[0].operation.params[0] == restored_parameter
+        assert not restored.parameters
+
+
+@pytest.mark.parametrize(("size", "index"), [(0, 0), (1, 1)])
+def test_parameter_vector_element_outside_current_size_round_trips(size: int, index: int) -> None:
+    """Preserve a vector element outside its vector's current size."""
+    vector = ParameterVector("theta", size)
+    circuit = QuantumCircuit(1)
+    circuit.rx(ParameterVectorElement(vector, index), 0)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    restored_element = next(iter(restored.parameters))
+    assert restored_element.index == index
+    assert len(restored_element.vector) == size
+
+
+@pytest.mark.parametrize("sizes", [[65_537], [32_769, 32_769]])
+def test_parameter_vector_size_limits_on_import(sizes: list[int]) -> None:
+    """Bound individual and aggregate vector metadata before MLIR creation."""
+    circuit = QuantumCircuit(1)
+    for index, size in enumerate(sizes):
+        circuit.rx(ParameterVector(f"theta{index}", size)[0], 0)
+
+    with pytest.raises(RuntimeError, match="across all distinct"):
+        QCProgram.from_qiskit(circuit)
+
+
+@pytest.mark.parametrize(
+    ("sizes", "shared_group_id", "message"),
+    [
+        ([65_537], None, "across all distinct"),
+        ([32_769, 32_769], None, "across all distinct"),
+        ([1, 2], 0, "conflicting metadata"),
+    ],
+)
+def test_parameter_vector_metadata_is_preflighted(sizes: list[int], shared_group_id: int | None, message: str) -> None:
+    """Validate vector consistency and resource bounds before allocation."""
+    arguments = []
+    gates = []
+    for index, size in enumerate(sizes):
+        arguments.append(
+            f'%theta{index}: f64 {{mqt.input_name = "theta{index}[0]", '
+            f'mqt.parameter_group = {{identity = "group{index if shared_group_id is None else shared_group_id}", '
+            f'name = "theta{index}", index = 0 : i64, size = {size} : i64}}}}'
+        )
+        gates.append(f"    qc.rx(%theta{index}) %q : !qc.qubit")
+    program = QCProgram.from_mlir_str(
+        "module {\n"
+        f"  func.func @main({', '.join(arguments)}) attributes {{mqt.entry_point}} {{\n"
+        "    %q = qc.alloc : !qc.qubit\n" + "\n".join(gates) + "\n    qc.dealloc %q : !qc.qubit\n"
+        "    return\n"
+        "  }\n"
+        "}\n"
+    )
+
+    with pytest.raises(RuntimeError, match=message):
+        program.to_qiskit()
 
 
 def _assign_parameter_values(circuit: QuantumCircuit, values: dict[str, float]) -> QuantumCircuit:

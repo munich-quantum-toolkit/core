@@ -1459,6 +1459,7 @@ struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
     auto newForOp =
         scf::ForOp::create(rewriter, op.getLoc(), op.getLowerBound(),
                            op.getUpperBound(), op.getStep(), initArgs);
+    newForOp->setDiscardableAttrs(op->getDiscardableAttrDictionary());
 
     assignMappedTensors(state, op.getOperation(), registerMap,
                         newForOp.getResults()

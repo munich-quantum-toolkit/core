@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 
+#include <llvm/ADT/StringMap.h>
 #include <nanobind/nanobind.h>
 
 #include <complex>
@@ -52,6 +53,26 @@ validateRegisterLayout(const std::vector<Register>& registers, uint32_t total,
 
 inline constexpr size_t MAX_PARAMETER_EXPRESSION_DEPTH = 64U;
 inline constexpr size_t MAX_PARAMETER_EXPRESSION_NODES = 4096U;
+inline constexpr uint64_t MAX_PARAMETER_GROUP_SIZE = 65'536U;
+
+/** Source-level vector metadata for one scalar parameter. */
+struct ParameterGroup {
+  std::string identity;
+  std::string name;
+  uint64_t index = 0U;
+  uint64_t size = 0U;
+
+  [[nodiscard]] bool operator==(const ParameterGroup&) const = default;
+};
+
+class ParameterGroupRegistry {
+public:
+  void add(const ParameterGroup& group);
+
+private:
+  llvm::StringMap<ParameterGroup> groups;
+  uint64_t totalSize = 0U;
+};
 
 enum class UnaryParameterKind : uint8_t {
   Negate,
@@ -84,6 +105,7 @@ public:
 
   struct Symbol {
     std::string name;
+    std::optional<ParameterGroup> group;
   };
 
   struct Unary {
@@ -103,8 +125,10 @@ public:
     return Parameter(Number{value});
   }
 
-  [[nodiscard]] static Parameter symbol(std::string name) {
-    return Parameter(Symbol{std::move(name)});
+  [[nodiscard]] static Parameter
+  symbol(std::string name, std::optional<ParameterGroup> group = std::nullopt) {
+    return Parameter(
+        Symbol{.name = std::move(name), .group = std::move(group)});
   }
 
   [[nodiscard]] static Parameter unary(const UnaryParameterKind operation,

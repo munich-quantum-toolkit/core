@@ -38,6 +38,7 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
@@ -337,10 +338,38 @@ struct ExportState {
   ExportedParameters parameters;
   std::vector<Parameter> inputParameters;
   llvm::StringSet<> parameterNames;
+  ParameterGroupRegistry parameterGroups;
   size_t nextLoopParameter = 0U;
   uint32_t numQubits = 0;
   uint32_t numClbits = 0;
 };
+
+[[nodiscard]] ParameterGroup parameterGroup(const mlir::Attribute attribute) {
+  const auto metadata = llvm::dyn_cast<mlir::DictionaryAttr>(attribute);
+  if (!metadata || metadata.size() != 4U) {
+    throw std::runtime_error(
+        "Qiskit circuit export requires complete and valid parameter-group "
+        "metadata");
+  }
+  const auto identity = metadata.getAs<mlir::StringAttr>("identity");
+  const auto name = metadata.getAs<mlir::StringAttr>("name");
+  const auto index = metadata.getAs<mlir::IntegerAttr>("index");
+  const auto size = metadata.getAs<mlir::IntegerAttr>("size");
+  if (!identity || !name || !index || !size || identity.getValue().empty() ||
+      identity.getValue().contains('\0') || name.getValue().contains('\0') ||
+      !index.getType().isInteger(64) || index.getInt() < 0 ||
+      !size.getType().isInteger(64) || size.getInt() < 0) {
+    throw std::runtime_error(
+        "Qiskit circuit export requires complete and valid parameter-group "
+        "metadata");
+  }
+  return {
+      .identity = identity.str(),
+      .name = name.str(),
+      .index = static_cast<uint64_t>(index.getInt()),
+      .size = static_cast<uint64_t>(size.getInt()),
+  };
+}
 
 [[nodiscard]] bool parameterUsesName(const Parameter& parameter,
                                      const std::string_view name) {
@@ -438,7 +467,20 @@ void collectParameters(mlir::func::FuncOp function, ExportState& state) {
       throw std::runtime_error(
           "Qiskit circuit export requires unique parameter names");
     }
-    auto parameter = Parameter::symbol(name.str());
+
+    const auto groupAttribute = function.getArgAttr(
+        index, mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr());
+    std::optional<ParameterGroup> group;
+    if (groupAttribute) {
+      group = parameterGroup(groupAttribute);
+      if (name.getValue() !=
+          group->name + "[" + std::to_string(group->index) + "]") {
+        throw std::runtime_error(
+            "Qiskit parameter input name does not match its group and index");
+      }
+      state.parameterGroups.add(*group);
+    }
+    auto parameter = Parameter::symbol(name.str(), std::move(group));
     state.parameters[argument] = parameter;
     state.inputParameters.push_back(std::move(parameter));
   }
@@ -1659,6 +1701,12 @@ collectFor(mlir::scf::ForOp loop, ExportState& state,
   result->kind = ControlFlowKind::For;
   result->loop = {
       .isRange = true, .start = *lower, .stop = *upper, .step = *step};
+  std::optional<ParameterGroup> sourceGroup;
+  if (const auto attribute = loop->getAttr(
+          mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr())) {
+    sourceGroup = parameterGroup(attribute);
+    state.parameterGroups.add(*sourceGroup);
+  }
   std::optional<LoopParameterProjection> projection;
   std::optional<Parameter> loopParameter;
   std::string loopParameterName;
@@ -1678,7 +1726,7 @@ collectFor(mlir::scf::ForOp loop, ExportState& state,
         loopParameterName = "_mqt_loop_" + std::to_string(identity);
       } while (state.parameterNames.contains(loopParameterName));
       state.parameterNames.insert(loopParameterName);
-      loopParameter = Parameter::symbol(loopParameterName);
+      loopParameter = Parameter::symbol(loopParameterName, sourceGroup);
       state.parameters[projection->value] = *loopParameter;
     }
   }

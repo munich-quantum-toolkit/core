@@ -11,6 +11,7 @@
 #include "QiskitTranslation.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringSwitch.h>
 
 // Qiskit requires its umbrella header before the extension function table.
@@ -37,7 +38,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -226,14 +226,40 @@ normalizePythonParameterLeaf(const nb::handle parameter) {
     throw std::runtime_error(
         "Qiskit parameter names cannot contain null characters");
   }
-  auto result = Parameter::symbol(std::move(name));
   const auto vectorElement =
       nb::module_::import_("qiskit.circuit").attr("ParameterVectorElement");
-  if (nb::isinstance(parameter, vectorElement)) {
-    throw std::runtime_error(
-        "Qiskit parameter-vector elements are not supported");
+  if (!nb::isinstance(parameter, vectorElement)) {
+    return Parameter::symbol(std::move(name));
   }
-  return result;
+
+  const auto vector = pythonAttribute(
+      parameter, "vector", "Qiskit parameter-vector element has no vector");
+  auto groupName = pythonStringAttribute(
+      vector, "name", "Qiskit parameter vector has an invalid name");
+  auto groupIdentity =
+      pythonText(pythonAttribute(vector, "uuid",
+                                 "Qiskit parameter vector has no identity"),
+                 "Qiskit parameter vector has an invalid identity");
+  const auto groupIndex = pythonUnsignedAttribute(
+      parameter, "index",
+      "Qiskit parameter-vector element has an invalid index");
+  size_t groupSize = 0U;
+  try {
+    groupSize = nb::len(vector);
+  } catch (const nb::python_error& error) {
+    throwPythonError("Qiskit parameter vector has an invalid size", error);
+  }
+  if (groupIdentity.empty() || groupIdentity.find('\0') != std::string::npos ||
+      groupName.find('\0') != std::string::npos ||
+      name != groupName + "[" + std::to_string(groupIndex) + "]") {
+    throw std::runtime_error(
+        "Qiskit parameter-vector element has invalid group metadata");
+  }
+  return Parameter::symbol(std::move(name),
+                           ParameterGroup{.identity = std::move(groupIdentity),
+                                          .name = std::move(groupName),
+                                          .index = groupIndex,
+                                          .size = groupSize});
 }
 
 struct ParsedParameter {
@@ -1189,13 +1215,13 @@ public:
       break;
     case QkLoopParamKind_Parameter: {
       auto symbol = qk_control_flow_loop_symbol_info(controlFlow_);
-      if (symbol.ty != QkSymbolType_Standalone) {
+      if (symbol.ty != QkSymbolType_Standalone &&
+          symbol.ty != QkSymbolType_Element) {
         if (symbol.name != nullptr) {
           qk_str_free(symbol.name);
         }
         throw std::runtime_error(
-            "Qiskit indexed parameter-vector loop variables are not "
-            "supported");
+            "Qiskit for-loop parameter has an unknown symbol type");
       }
       if (symbol.name == nullptr) {
         throwPythonError("Qiskit failed to read a loop-parameter name");
@@ -1215,9 +1241,13 @@ public:
         if (parameterSymbol == nullptr) {
           throw std::runtime_error("Qiskit for-loop parameter is not a symbol");
         }
-        if (parameterSymbol->name != nativeName) {
+        const auto nativeIsElement = symbol.ty == QkSymbolType_Element;
+        const auto& group = parameterSymbol->group;
+        if (nativeIsElement != group.has_value() ||
+            (group ? group->name : parameterSymbol->name) != nativeName ||
+            (group && group->index != symbol.index)) {
           throw std::runtime_error(
-              "Qiskit Python and native loop-parameter names do not match");
+              "Qiskit Python and native loop-parameter metadata do not match");
         }
         result.parameter = std::move(parameter);
       } catch (const nb::python_error& error) {
@@ -1897,7 +1927,17 @@ private:
   nb::object typesModule_;
 };
 
-using NativeSymbolTable = std::unordered_map<std::string, OwnedParameter>;
+struct NativeSymbol {
+  NativeSymbol(const std::string_view name,
+               std::optional<ParameterGroup> sourceGroup)
+      : group(std::move(sourceGroup)), parameter(name) {}
+
+  std::optional<ParameterGroup> group;
+  OwnedParameter parameter;
+};
+
+using NativeSymbolTable = llvm::StringMap<NativeSymbol>;
+using PythonParameterGroups = llvm::StringMap<nb::object>;
 
 class NativeCircuitWriter final : public CircuitWriter {
 public:
@@ -2073,13 +2113,15 @@ public:
   }
 
   [[nodiscard]] nb::object finish() override {
-    return finishImpl(false, nb::none(), nb::none());
+    PythonParameterGroups groups;
+    return finishImpl(false, nb::none(), nb::none(), groups);
   }
 
 private:
   [[nodiscard]] nb::object finishImpl(const bool rebase,
                                       const nb::handle exactQubits,
-                                      const nb::handle exactClbits) {
+                                      const nb::handle exactClbits,
+                                      PythonParameterGroups& groups) {
     if (circuit_ == nullptr) {
       throw std::runtime_error(
           "Qiskit circuit writer has already been finalized");
@@ -2095,7 +2137,8 @@ private:
         pythonCircuit = rebaseCircuit(pythonCircuit, exactQubits, exactClbits);
       }
       replacePendingControlledUnitaries(pythonCircuit);
-      replacePendingControlFlow(pythonCircuit);
+      restoreParameterGroups(pythonCircuit, *symbols_, groups);
+      replacePendingControlFlow(pythonCircuit, groups);
     } catch (const nb::python_error& error) {
       throwPythonError("Qiskit failed to construct deferred instructions",
                        error);
@@ -2117,6 +2160,45 @@ private:
     std::vector<SwitchCase> switchCases;
     std::vector<std::unique_ptr<CircuitWriter>> blockWriters;
   };
+
+  static void restoreParameterGroups(const nb::handle circuit,
+                                     const NativeSymbolTable& symbols,
+                                     PythonParameterGroups& groups) {
+    if (!std::ranges::any_of(symbols, [](const auto& entry) {
+          return entry.second.group.has_value();
+        })) {
+      return;
+    }
+
+    const auto circuitModule = nb::module_::import_("qiskit.circuit");
+    const auto parameterVector = circuitModule.attr("ParameterVector");
+    const auto parameterVectorElement =
+        circuitModule.attr("ParameterVectorElement");
+    nb::dict replacements;
+    const auto parameters = pythonAttribute(
+        circuit, "parameters", "Qiskit circuit has no parameter collection");
+    for (const nb::handle parameter : nb::iter(parameters)) {
+      const auto name = pythonStringAttribute(
+          parameter, "name", "Qiskit circuit parameter has no name");
+      const auto symbol = symbols.find(name);
+      if (symbol == symbols.end() || !symbol->second.group) {
+        continue;
+      }
+      const auto& metadata = *symbol->second.group;
+      const auto [group, inserted] = groups.try_emplace(metadata.identity);
+      if (inserted) {
+        group->second = parameterVector(metadata.name, metadata.size);
+      }
+      replacements[parameter] =
+          parameterVectorElement(group->second, metadata.index);
+    }
+    if (nb::len(replacements) == 0U) {
+      return;
+    }
+    pythonAttribute(circuit, "assign_parameters",
+                    "Qiskit circuit cannot replace output parameters")(
+        replacements, nb::arg("inplace") = true, nb::arg("flat_input") = true);
+  }
 
   void replacePendingControlledUnitaries(const nb::handle pythonCircuit) const {
     auto data = pythonAttribute(pythonCircuit, "data",
@@ -2183,17 +2265,13 @@ private:
       throw std::runtime_error(
           "Qiskit for-loop parameter has invalid symbol metadata");
     }
-    const auto parameters = pythonAttribute(
-        body, "parameters", "Qiskit circuit has no parameter collection");
-    for (const nb::handle parameter : nb::iter(parameters)) {
-      if (pythonStringAttribute(parameter, "name",
-                                "Qiskit circuit parameter has no name") ==
-          symbol->name) {
-        return nb::borrow<nb::object>(parameter);
-      }
-    }
-    throw std::runtime_error(
-        "Qiskit for-loop parameter is absent from its body");
+    const auto parameterName =
+        symbol->group ? symbol->group->name + "[" +
+                            std::to_string(symbol->group->index) + "]"
+                      : symbol->name;
+    return pythonAttribute(body, "get_parameter",
+                           "Qiskit circuit cannot find its loop parameter")(
+        parameterName);
   }
 
   [[nodiscard]] static nb::object constructControlFlowOperation(
@@ -2239,7 +2317,8 @@ private:
         "Qiskit circuit export encountered an unsupported control-flow kind");
   }
 
-  void replacePendingControlFlow(const nb::handle pythonCircuit) {
+  void replacePendingControlFlow(const nb::handle pythonCircuit,
+                                 PythonParameterGroups& groups) {
     auto data = pythonAttribute(pythonCircuit, "data",
                                 "Qiskit circuit has no instruction data");
     const auto circuitQubits = pythonAttribute(pythonCircuit, "qubits",
@@ -2263,7 +2342,7 @@ private:
               "Qiskit control-flow blocks use an incompatible writer");
         }
         blocks.emplace_back(
-            writer->finishImpl(true, circuitQubits, circuitClbits));
+            writer->finishImpl(true, circuitQubits, circuitClbits, groups));
       }
       pending.blockWriters.clear();
       auto operation = constructControlFlowOperation(pending, blocks, classical,
@@ -2308,8 +2387,8 @@ private:
         throw std::runtime_error(
             "cannot export a symbolic parameter without a name");
       }
-      return symbols_->try_emplace(symbol->name, symbol->name)
-          .first->second.get();
+      return symbols_->try_emplace(symbol->name, symbol->name, symbol->group)
+          .first->second.parameter.get();
     }
 
     auto output = std::make_unique<OwnedParameter>();

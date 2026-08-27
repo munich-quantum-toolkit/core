@@ -37,7 +37,7 @@ releases may include breaking changes.
 #### Import and export
 
 - ✨ Add Qiskit circuit import and target-aware export to the compiler
-  collection ([#2031], [#2133], [#2140], [#2150], [#2175], [#2176])
+  collection ([#2031], [#2133], [#2140], [#2150], [#2175], [#2176], [#2178])
   ([**@burgholzer**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105])
@@ -118,6 +118,8 @@ releases may include breaking changes.
   equivalence-checking transformations to MQT QCEC and mapping transformations
   to MQT QMAP. Remove the public circuit dependency graph and transformations
   without production consumers ([#2262]) ([**@simon1hofmann**])
+- 💥 Remove test-only DD state generators and recursive functionality
+  construction from MQT Core ([#2257]) ([**@simon1hofmann**])
 - 💥 Remove the standalone QIR runner and make the QIR runtime and JIT internal
   DDSIM implementation details ([#2246]) ([**@denialhaag**])
 - 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
@@ -851,6 +853,7 @@ for previous changelogs._
 
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
+[#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
 [#2249]: https://github.com/munich-quantum-toolkit/core/pull/2249
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
@@ -863,6 +866,7 @@ for previous changelogs._
 [#2203]: https://github.com/munich-quantum-toolkit/core/pull/2203
 [#2214]: https://github.com/munich-quantum-toolkit/core/pull/2214
 [#2193]: https://github.com/munich-quantum-toolkit/core/pull/2193
+[#2178]: https://github.com/munich-quantum-toolkit/core/pull/2178
 [#2176]: https://github.com/munich-quantum-toolkit/core/pull/2176
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
 [#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169

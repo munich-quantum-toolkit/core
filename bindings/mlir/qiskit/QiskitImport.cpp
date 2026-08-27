@@ -50,6 +50,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <nanobind/nanobind.h>
@@ -87,6 +88,24 @@ constexpr size_t MAX_EXPANDED_OPERATIONS = 10'000'000U;
 
 [[nodiscard]] mlir::Value floatConstant(mlir::ImplicitLocOpBuilder& builder,
                                         double value);
+
+[[nodiscard]] mlir::DictionaryAttr
+parameterGroupAttribute(mlir::Builder& builder, const ParameterGroup& group) {
+  if (group.index >
+          static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ||
+      group.size > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+    throw std::runtime_error(
+        "Qiskit parameter-vector metadata cannot be represented by MLIR");
+  }
+  return builder.getDictionaryAttr({
+      builder.getNamedAttr("identity", builder.getStringAttr(group.identity)),
+      builder.getNamedAttr("name", builder.getStringAttr(group.name)),
+      builder.getNamedAttr("index", builder.getI64IntegerAttr(
+                                        static_cast<int64_t>(group.index))),
+      builder.getNamedAttr(
+          "size", builder.getI64IntegerAttr(static_cast<int64_t>(group.size))),
+  });
+}
 
 [[noreturn]] void throwImportedParameterExpressionSizeError() {
   throw std::runtime_error(
@@ -137,10 +156,20 @@ void validateParameterImpl(const Parameter& parameter,
       throw std::runtime_error(
           "Qiskit returned a parameter with invalid symbol metadata");
     }
-    if (localParameters.contains(symbol->name)) {
-      return;
-    }
-    if (freeParameters.contains(symbol->name)) {
+    const auto validateKnownSymbol = [&](const ValidationParameters& known) {
+      const auto found = known.find(symbol->name);
+      if (found == known.end()) {
+        return false;
+      }
+      const auto* expected = found->second.getSymbol();
+      if (expected == nullptr || expected->group != symbol->group) {
+        throw std::runtime_error("Qiskit parameter symbol '" + symbol->name +
+                                 "' has conflicting group metadata");
+      }
+      return true;
+    };
+    if (validateKnownSymbol(localParameters) ||
+        validateKnownSymbol(freeParameters)) {
       return;
     }
     throw std::runtime_error("Qiskit parameter symbol '" + symbol->name +
@@ -1148,6 +1177,7 @@ void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
       requireExactLoopParameter(loop.start);
       requireExactLoopParameter(loop.step > 0 ? loop.stop - 1 : loop.stop + 1);
     }
+    auto* const containingBlock = builder.getInsertionBlock();
     builder.scfFor(0, count, 1, [&](const mlir::Value iteration) {
       auto parameters = localParameters;
       if (loop.parameter) {
@@ -1159,6 +1189,15 @@ void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
       }
       translateBlock(*body, parameters);
     });
+    if (loop.parameter) {
+      const auto* symbol = loop.parameter->getSymbol();
+      if (symbol != nullptr && symbol->group) {
+        mlir::cast<mlir::scf::ForOp>(&containingBlock->back())
+            ->setAttr(
+                mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr(),
+                parameterGroupAttribute(builder, *symbol->group));
+      }
+    }
     return;
   }
   case ControlFlowKind::Switch: {
@@ -1911,6 +1950,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   const auto freeParameters = view->parameters();
   ValidationParameters freeParameterSymbols;
   llvm::StringSet<> parameterNames;
+  ParameterGroupRegistry parameterGroups;
   for (const auto& parameter : freeParameters) {
     const auto* symbol = parameter.getSymbol();
     if (symbol == nullptr || symbol->name.empty()) {
@@ -1920,6 +1960,15 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
     if (!parameterNames.insert(symbol->name).second) {
       throw std::runtime_error(
           "Qiskit circuit contains distinct parameters with the same name");
+    }
+    if (symbol->group) {
+      const auto& group = *symbol->group;
+      if (group.index >
+          static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+        throw std::runtime_error(
+            "Qiskit parameter-vector index cannot be represented by MLIR");
+      }
+      parameterGroups.add(group);
     }
     freeParameterSymbols.try_emplace(symbol->name, parameter);
   }
@@ -1963,14 +2012,15 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   GlobalParameters globalParameters;
   for (const auto& parameter : freeParameters) {
     const auto* symbol = parameter.getSymbol();
-    if (symbol == nullptr) {
-      throw std::runtime_error(
-          "Qiskit circuit returned an invalid free parameter");
-    }
-    const llvm::SmallVector<mlir::NamedAttribute> argumentAttributes{
+    llvm::SmallVector<mlir::NamedAttribute> argumentAttributes{
         builder.getNamedAttr(
             mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr(),
             builder.getStringAttr(symbol->name))};
+    if (symbol->group) {
+      argumentAttributes.push_back(builder.getNamedAttr(
+          mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr(),
+          parameterGroupAttribute(builder, *symbol->group)));
+    }
     const auto index = function.getNumArguments();
     // MLIR types are handles. Converting FloatType to Type keeps the same
     // storage and does not slice object state.
