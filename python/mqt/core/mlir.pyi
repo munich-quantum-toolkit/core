@@ -563,7 +563,8 @@ def simulate(
 
     Args:
         program: A QCO program whose entry ``func.func`` is simulated.
-        initial_state: Input state DD with a live reference in ``dd_package``. A
+        initial_state: Input state DD that spans at least the program's qubits and
+            has a live reference in ``dd_package``. Higher wires are preserved. A
             valid input reference is consumed.
         dd_package: DD package with enough qubits for the program.
         seed: If ``None``, rejects mid-circuit measure/reset. Otherwise seeds the
@@ -573,8 +574,8 @@ def simulate(
         Output state DD.
 
     Raises:
-        ValueError: When ``initial_state`` has no live reference in ``dd_package``
-            or the program is unsupported for simulation.
+        ValueError: When ``initial_state`` has no live reference in ``dd_package``,
+            has too few qubits, or the program is unsupported for simulation.
     """
 
 def sample(

@@ -69,8 +69,8 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  * fails.
  *
  * @param func The QCO function to simulate
- * @param in The input state, represented as a vector DD; one reference is
- * consumed
+ * @param in The input state, which must span at least the function's qubits;
+ * higher wires are preserved; one reference is consumed
  * @param dd The DD package to use (must hold at least the function's qubits)
  * @return The output statevector DD on success, or failure for unsupported
  *         programs
@@ -100,7 +100,8 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * fails.
  *
  * @param func The QCO function to simulate
- * @param in The input state; one reference is consumed
+ * @param in The input state, which must span at least the function's qubits;
+ * higher wires are preserved; one reference is consumed
  * @param dd The DD package to use
  * @param rng RNG used for collapsing measurements and resets
  * @return The output statevector DD on success, or failure for unsupported

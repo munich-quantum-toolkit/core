@@ -545,6 +545,17 @@ TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
     EXPECT_TRUE(roots.empty());
   }
 
+  auto twoQubitDd = std::make_unique<dd::Package>(2);
+  EXPECT_TRUE(failed(simulate(mainFunc(*tooWide),
+                              dd::makeZeroState(1, *twoQubitDd), *twoQubitDd)));
+  EXPECT_TRUE(twoQubitDd->getRootSet<dd::vNode>().empty());
+  const auto widerOutput = simulate(
+      mainFunc(*valid), dd::makeZeroState(2, *twoQubitDd), *twoQubitDd);
+  ASSERT_TRUE(succeeded(widerOutput));
+  EXPECT_EQ(widerOutput->getVector().size(), 4U);
+  twoQubitDd->decRef(*widerOutput);
+  EXPECT_TRUE(twoQubitDd->getRootSet<dd::vNode>().empty());
+
   auto zeroQubitDd = std::make_unique<dd::Package>(0);
   EXPECT_TRUE(
       failed(simulate(mainFunc(*valid), dd::VectorDD::one(), *zeroQubitDd)));

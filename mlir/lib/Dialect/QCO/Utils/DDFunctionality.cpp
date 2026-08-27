@@ -1016,6 +1016,14 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
              const QubitMap& preparedQubits, std::mt19937_64* rng,
              const DenseSet<Operation*>* deferredMeasurements = nullptr,
              ClassicalEnv* finalClassical = nullptr) {
+  const size_t inputQubits =
+      in.isTerminal() ? 0U : static_cast<size_t>(in.p->v) + 1U;
+  if (inputQubits < preparedQubits.numQubits) {
+    dd.decRef(in);
+    return func.emitError()
+           << "input state has " << inputQubits << " qubits but function uses "
+           << preparedQubits.numQubits;
+  }
   QubitMap qubits = preparedQubits;
   ClassicalEnv classical;
   WalkState walkState{.qubits = &qubits,
