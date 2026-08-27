@@ -64,6 +64,7 @@
 #include <fstream>
 #include <iosfwd>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -1610,6 +1611,27 @@ barrier q[0], q[1];
   EXPECT_EQ(qc->numGates(), 6);
   EXPECT_EQ(qc->numSingleQubitGates(), 1);
   EXPECT_EQ(qc->numTwoQubitGates(), 3);
+  const std::map<std::string, size_t> expectedCounts{
+      {"ctrl", 3}, {"h", 1}, {"inv", 1}, {"swap", 1}};
+  EXPECT_EQ(qc->gateCounts(), expectedCounts);
+}
+
+/**
+ * @brief Test: static depth tracks dependencies and skips modifier bodies.
+ */
+TEST_F(CompilerPipelineTest, QCProgramStaticDepth) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0];
+x q[1];
+cx q[0], q[1];
+inv @ x q[2];
+barrier q[0], q[1], q[2];
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  EXPECT_EQ(qc->staticDepth(), 2);
 }
 
 /**
@@ -1645,6 +1667,51 @@ switch (selector) {
   EXPECT_EQ(qc->numGates(), 5);
   EXPECT_EQ(qc->numSingleQubitGates(), 2);
   EXPECT_EQ(qc->numTwoQubitGates(), 3);
+  const std::map<std::string, size_t> expectedCounts{
+      {"ctrl", 2}, {"swap", 1}, {"x", 1}, {"z", 1}};
+  EXPECT_EQ(qc->gateCounts(), expectedCounts);
+  EXPECT_EQ(qc->staticDepth(), 3);
+}
+
+/**
+ * @brief Test: static depth takes the maximum SCF branch and one loop body.
+ */
+TEST_F(CompilerPipelineTest, QCProgramStaticDepthInStructuredControlFlow) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+bit condition = measure q[0];
+if (condition) {
+  h q[0];
+  x q[0];
+} else {
+  h q[1];
+}
+cx q[0], q[1];
+for int i in [0:999999] {
+  z q[2];
+}
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  EXPECT_EQ(qc->staticDepth(), 3);
+}
+
+/**
+ * @brief Test: dynamic register indices conservatively alias each element.
+ */
+TEST_F(CompilerPipelineTest, QCProgramStaticDepthWithDynamicIndex) {
+  const std::string qasm = R"(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+h q[0];
+for int i in [0:2] {
+  x q[i];
+}
+)";
+  auto qc = QCProgram::fromQASMString(qasm);
+  ASSERT_TRUE(qc);
+  EXPECT_EQ(qc->staticDepth(), 2);
 }
 
 } // namespace mqt::test::compiler

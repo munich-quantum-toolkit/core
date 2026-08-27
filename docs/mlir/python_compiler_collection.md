@@ -75,11 +75,16 @@ gates without parsing the textual IR:
 print("Gates:", compiled.num_gates())
 print("Single-qubit gates:", compiled.num_single_qubit_gates())
 print("Two-qubit gates:", compiled.num_two_qubit_gates())
+print("Gates by operation:", compiled.gate_counts())
+print("Static gate depth:", compiled.static_depth())
 ```
 
 These counts describe the entry-point IR. A gate in each structured control-flow
 region counts once, regardless of the runtime path or loop iteration count.
 Barriers do not count, and operations inside gate modifiers do not count again.
+The static depth uses the same gate semantics. It takes the maximum depth of
+mutually exclusive branches and includes each loop body once. It does not
+estimate the depth of the executed program.
 
 ## Select an output format
 

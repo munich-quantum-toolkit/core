@@ -406,6 +406,24 @@ class QCProgram(Program):
         are not counted recursively, and barriers are skipped.
         """
 
+    def gate_counts(self) -> dict[str, int]:
+        """Count gates by operation mnemonic.
+
+        The counts use the same static-IR semantics as :meth:`num_gates`. Modifier
+        operations use the ``ctrl``, ``inv``, and ``pow`` mnemonics. Their bodies are
+        not counted recursively, and barriers are skipped.
+        """
+
+    def static_depth(self) -> int:
+        """Calculate the static gate depth of the program.
+
+        The depth describes the entry-point IR rather than runtime execution. Mutually
+        exclusive structured control-flow branches contribute their maximum depth.
+        Each loop region contributes once, regardless of its runtime iteration count.
+        Modifier operations contribute one layer, but their bodies do not contribute
+        again. Barriers and zero-qubit operations do not contribute.
+        """
+
 class QCOProgram(Program):
     """A compiler program in the QCO dialect.
 

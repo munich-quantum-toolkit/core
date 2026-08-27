@@ -37,6 +37,7 @@
 #include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
 #include <kj/array.h>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
@@ -53,10 +54,14 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Region.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Parser/Parser.h>
@@ -68,11 +73,13 @@
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/ModuleTranslation.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -389,6 +396,169 @@ countGatesIf(ModuleOp moduleOp,
   return count;
 }
 
+namespace {
+
+struct RegisterDepths {
+  size_t dynamic = 0;
+  DenseMap<int64_t, size_t> constants;
+
+  void mergeMax(const RegisterDepths& other) {
+    dynamic = std::max(dynamic, other.dynamic);
+    for (const auto& [index, depth] : other.constants) {
+      constants[index] = std::max(constants[index], depth);
+    }
+  }
+
+  [[nodiscard]] size_t maximum() const {
+    auto result = dynamic;
+    for (const auto& entry : constants) {
+      result = std::max(result, entry.second);
+    }
+    return result;
+  }
+};
+
+struct GateDepthState {
+  DenseMap<Value, size_t> values;
+  DenseMap<uint64_t, size_t> staticQubits;
+  DenseMap<Value, RegisterDepths> registers;
+
+  void mergeMax(const GateDepthState& other) {
+    for (const auto& [value, depth] : other.values) {
+      values[value] = std::max(values[value], depth);
+    }
+    for (const auto& [index, depth] : other.staticQubits) {
+      staticQubits[index] = std::max(staticQubits[index], depth);
+    }
+    for (const auto& [value, depths] : other.registers) {
+      registers[value].mergeMax(depths);
+    }
+  }
+
+  [[nodiscard]] size_t maximum() const {
+    size_t result = 0;
+    for (const auto& entry : values) {
+      result = std::max(result, entry.second);
+    }
+    for (const auto& entry : staticQubits) {
+      result = std::max(result, entry.second);
+    }
+    for (const auto& entry : registers) {
+      result = std::max(result, entry.second.maximum());
+    }
+    return result;
+  }
+
+  [[nodiscard]] size_t get(Value qubit) {
+    if (auto staticOp = qubit.getDefiningOp<qc::StaticOp>()) {
+      return staticQubits[staticOp.getIndex()];
+    }
+    if (auto loadOp = qubit.getDefiningOp<memref::LoadOp>();
+        loadOp && isa<qc::QubitType>(loadOp.getType())) {
+      auto& depths = registers[loadOp.getMemref()];
+      if (loadOp.getIndices().size() == 1) {
+        if (const auto index =
+                getConstantIntValue(loadOp.getIndices().front())) {
+          return std::max(depths.dynamic, depths.constants[*index]);
+        }
+      }
+      return depths.maximum();
+    }
+    return values[qubit];
+  }
+
+  void set(Value qubit, const size_t depth) {
+    if (auto staticOp = qubit.getDefiningOp<qc::StaticOp>()) {
+      staticQubits[staticOp.getIndex()] = depth;
+      return;
+    }
+    if (auto loadOp = qubit.getDefiningOp<memref::LoadOp>();
+        loadOp && isa<qc::QubitType>(loadOp.getType())) {
+      auto& depths = registers[loadOp.getMemref()];
+      if (loadOp.getIndices().size() == 1) {
+        if (const auto index =
+                getConstantIntValue(loadOp.getIndices().front())) {
+          depths.constants[*index] = depth;
+          return;
+        }
+      }
+      depths.dynamic = depth;
+      return;
+    }
+    values[qubit] = depth;
+  }
+};
+
+} // namespace
+
+static void updateGateDepth(qc::UnitaryOpInterface gate,
+                            GateDepthState& state) {
+  if (isa<qc::BarrierOp>(gate) || gate.getNumQubits() == 0) {
+    return;
+  }
+  size_t depth = 0;
+  for (const auto qubit : gate.getQubits()) {
+    depth = std::max(depth, state.get(qubit));
+  }
+  ++depth;
+  for (const auto qubit : gate.getQubits()) {
+    state.set(qubit, depth);
+  }
+}
+
+static void calculateRegionDepth(Region& region, GateDepthState& state);
+
+static void calculateOperationDepth(Operation& operation,
+                                    GateDepthState& state) {
+  if (auto gate = dyn_cast<qc::UnitaryOpInterface>(&operation)) {
+    updateGateDepth(gate, state);
+    return;
+  }
+  if (auto ifOp = dyn_cast<scf::IfOp>(&operation)) {
+    GateDepthState merged = state;
+    auto thenState = state;
+    calculateRegionDepth(ifOp.getThenRegion(), thenState);
+    merged.mergeMax(thenState);
+    if (!ifOp.getElseRegion().empty()) {
+      auto elseState = state;
+      calculateRegionDepth(ifOp.getElseRegion(), elseState);
+      merged.mergeMax(elseState);
+    }
+    state = std::move(merged);
+    return;
+  }
+  if (auto switchOp = dyn_cast<scf::IndexSwitchOp>(&operation)) {
+    GateDepthState merged = state;
+    for (auto& region : switchOp->getRegions()) {
+      auto branchState = state;
+      calculateRegionDepth(region, branchState);
+      merged.mergeMax(branchState);
+    }
+    state = std::move(merged);
+    return;
+  }
+  if (auto forOp = dyn_cast<scf::ForOp>(&operation)) {
+    calculateRegionDepth(forOp.getRegion(), state);
+    return;
+  }
+  if (auto whileOp = dyn_cast<scf::WhileOp>(&operation)) {
+    calculateRegionDepth(whileOp.getBefore(), state);
+    calculateRegionDepth(whileOp.getAfter(), state);
+    return;
+  }
+  for (auto& region : operation.getRegions()) {
+    calculateRegionDepth(region, state);
+  }
+}
+
+static void calculateRegionDepth(Region& region, GateDepthState& state) {
+  for (auto& block : region) {
+    for (auto& operation : block) {
+      calculateOperationDepth(operation, state);
+    }
+  }
+}
+
 size_t QCProgram::numGates() const {
   return countGatesIf(mod(), [](qc::UnitaryOpInterface) { return true; });
 }
@@ -401,6 +571,28 @@ size_t QCProgram::numSingleQubitGates() const {
 size_t QCProgram::numTwoQubitGates() const {
   return countGatesIf(
       mod(), [](qc::UnitaryOpInterface op) { return op.isTwoQubit(); });
+}
+
+std::map<std::string, size_t> QCProgram::gateCounts() const {
+  std::map<std::string, size_t> counts;
+  auto entryPoint = mqt::getEntryPoint(mod());
+  entryPoint.walk<WalkOrder::PreOrder>([&](qc::UnitaryOpInterface op) {
+    if (!isa<qc::BarrierOp>(op)) {
+      ++counts[op.getBaseSymbol().str()];
+    }
+    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op) ? WalkResult::skip()
+                                                     : WalkResult::advance();
+  });
+  return counts;
+}
+
+size_t QCProgram::staticDepth() const {
+  GateDepthState state;
+  auto entryPoint = mqt::getEntryPoint(mod());
+  for (auto& region : entryPoint->getRegions()) {
+    calculateRegionDepth(region, state);
+  }
+  return state.maximum();
 }
 
 //===----------------------------------------------------------------------===//

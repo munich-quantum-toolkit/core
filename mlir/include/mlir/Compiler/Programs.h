@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -219,6 +220,27 @@ public:
    * skipped.
    */
   [[nodiscard]] size_t numTwoQubitGates() const;
+
+  /**
+   * @brief Count gates by operation mnemonic.
+   *
+   * @details The counts use the same static-IR semantics as `numGates()`.
+   * Modifier operations use the `ctrl`, `inv`, and `pow` mnemonics. Their
+   * bodies are not counted recursively. Barriers are skipped.
+   */
+  [[nodiscard]] std::map<std::string, size_t> gateCounts() const;
+
+  /**
+   * @brief Calculate the static gate depth of the program.
+   *
+   * @details The depth describes the entry-point IR rather than runtime
+   * execution. Mutually exclusive structured control-flow branches contribute
+   * their maximum depth. Each loop region contributes once, regardless of its
+   * runtime iteration count. Modifier operations contribute one layer, but
+   * their bodies do not contribute again. Barriers and zero-qubit operations
+   * do not contribute.
+   */
+  [[nodiscard]] size_t staticDepth() const;
 };
 
 /**

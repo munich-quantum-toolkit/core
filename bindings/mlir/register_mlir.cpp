@@ -18,6 +18,7 @@
 #include <llvm/Support/Error.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/filesystem.h>  // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/map.h>         // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/optional.h>    // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/pair.h>        // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>      // NOLINT(misc-include-cleaner)
@@ -758,7 +759,31 @@ are not counted recursively, and barriers are skipped.)pb")
 Any operation that implements the ``UnitaryOpInterface`` and acts on two qubits
 is counted. Operations in every structured control-flow region are counted
 once, regardless of how often the region executes. Operations within modifiers
-are not counted recursively, and barriers are skipped.)pb");
+are not counted recursively, and barriers are skipped.)pb")
+      .def(
+          "gate_counts",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.gateCounts();
+          },
+          R"pb(Count gates by operation mnemonic.
+
+The counts use the same static-IR semantics as :meth:`num_gates`. Modifier
+operations use the ``ctrl``, ``inv``, and ``pow`` mnemonics. Their bodies are
+not counted recursively, and barriers are skipped.)pb")
+      .def(
+          "static_depth",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return program.staticDepth();
+          },
+          R"pb(Calculate the static gate depth of the program.
+
+The depth describes the entry-point IR rather than runtime execution. Mutually
+exclusive structured control-flow branches contribute their maximum depth.
+Each loop region contributes once, regardless of its runtime iteration count.
+Modifier operations contribute one layer, but their bodies do not contribute
+again. Barriers and zero-qubit operations do not contribute.)pb");
 
   auto qcoProgram = nb::class_<mlir::QCOProgram, mlir::Program>(
       m, "QCOProgram", R"pb(A compiler program in the QCO dialect.
