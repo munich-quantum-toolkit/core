@@ -14,7 +14,6 @@
 
 #include "qdmi/devices/dd/Device.hpp"
 
-#include "circuit_optimizer/CircuitOptimizer.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
@@ -479,7 +478,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
   return submitProgramAsync([this]() {
     const auto& text = std::get<std::string>(program_);
     auto qc = qasm3::Importer::imports(text);
-    qc::CircuitOptimizer::removeFinalMeasurements(qc);
+    qc.removeFinalMeasurements();
     const auto nQubits = qc.getNqubits();
     dd_ = std::make_unique<dd::Package>(nQubits);
     stateVecDD_ = dd::simulate(qc, dd::makeZeroState(nQubits, *dd_), *dd_);

@@ -6,14 +6,19 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### CircuitOptimizer API reduction
+### CircuitOptimizer removal
 
-MQT Core now limits `qc::CircuitOptimizer` to transformations with shared
-production use:
+MQT Core no longer provides `qc::CircuitOptimizer`. Replace the two generic
+transformations with `QuantumComputation` member calls:
 
-- `singleQubitGateFusion`
-- `removeFinalMeasurements`
-- `flattenOperations`
+- Replace `qc::CircuitOptimizer::flattenOperations(qc, customGatesOnly)` with
+  `qc.flattenOperations(customGatesOnly)`.
+- Replace `qc::CircuitOptimizer::removeFinalMeasurements(qc)` with
+  `qc.removeFinalMeasurements()`.
+
+Include `ir/QuantumComputation.hpp` and link `MQT::CoreIR`. MQT QCEC and MQT
+QMAP each own their single-qubit gate-fusion implementation. MQT Core provides
+no replacement for `singleQubitGateFusion` outside those packages.
 
 MQT QCEC now owns the equivalence-checking transformations `swapReconstruction`,
 `removeDiagonalGatesBeforeMeasure`, `eliminateResets`, `deferMeasurements`,
@@ -36,13 +41,8 @@ The public `removeIdentities`, `removeOperation`, `collectBlocks`, and
 `collectCliffordBlocks` functions have no replacement. Erase operations through
 `QuantumComputation` where needed.
 
-The public default `CircuitOptimizer` constructor is also removed. Call the
-remaining transformations statically; `CircuitOptimizer` is no longer
-instantiable.
-
 The `MQT::CoreCircuitOptimizer` CMake target and the
-`circuit_optimizer/CircuitOptimizer.hpp` header remain available for the three
-shared transformations.
+`circuit_optimizer/CircuitOptimizer.hpp` header are removed.
 
 ### Pruned DD construction helpers
 

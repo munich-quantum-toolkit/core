@@ -1,4 +1,4 @@
-# Reduce CircuitOptimizer to shared transformations
+# Remove CircuitOptimizer and move generic transformations to CoreIR
 
 This ExecPlan is a living document. The sections `Progress`,
 `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
@@ -9,14 +9,14 @@ repository root.
 
 ## Purpose / Big Picture
 
-MQT Core currently exports circuit transformations that only one downstream
-package uses, as well as transformations that no production package uses. This
-change leaves only three transformations with multiple current production
-consumers in MQT Core. QCEC and QMAP receive the transformations that belong to
-their domains, while QMAP and QuSAT receive their own small circuit dependency
-graph builders. Users can verify the result by building the updated downstream
-packages against the reduced Core header and by running each package's focused
-tests.
+MQT Core currently installs a separate shared circuit-optimizer library for only
+three transformations. This change removes that library. The generic in-place
+transformations for flattening compound operations and removing final
+measurements become `QuantumComputation` member functions in `MQT::CoreIR`. QCEC
+and QMAP each receive their own single-qubit gate-fusion function because they
+are its only production users and already contain the helper machinery it needs.
+Users can verify the result by running the CoreIR tests and by building the five
+downstream packages against this Core branch.
 
 ## Progress
 
@@ -41,6 +41,21 @@ tests.
 - [x] (2026-08-26 16:19Z) Installed complete static and shared Core builds and
   compiled and ran an out-of-tree consumer of `MQT::CoreCircuitOptimizer`
   against each installed package.
+- [x] (2026-08-27 10:40Z) Audited the reviewer proposal against every MQT
+  repository and confirmed that Core, QCEC, QMAP, DDSIM, Debugger, and QuSAT
+  are the complete migration set.
+- [x] (2026-08-27 10:47Z) Merged current `origin/main` into the Core pull
+  request branch and preserved both sides of the changelog and upgrade-guide
+  updates.
+- [x] (2026-08-27 11:07Z) Moved flattening and final-measurement removal into
+  `MQT::CoreIR`, moved their tests into the IR test target, and removed the
+  optimizer library, installed header, export, and wheel dependency.
+- [x] (2026-08-27 11:07Z) Removed Core's fusion tests after porting all seven
+      structural cases to QCEC and QMAP and all four DD-equivalence cases to
+      QCEC.
+- [x] (2026-08-27 11:12Z) Built and tested Core and all five downstream
+  migrations, ran each repository's lint hooks, and compiled every affected
+  production target with warnings as errors.
 
 ## Surprises & Discoveries
 
@@ -62,6 +77,14 @@ tests.
   otherwise `prek` asks hooks to process paths that no longer exist. Evidence:
   every individual hook passed before the session reported those missing
   unstaged paths.
+- Observation: QCEC and QMAP already contain dependency-graph and identity
+  cleanup helpers that match the helpers used by single-qubit gate fusion.
+  Evidence: `src/optimizer/EquivalenceCheckingOptimizer.cpp` in QCEC and
+  `src/datastructures/CircuitOptimizations.cpp` in QMAP need only the fusion
+  body and one declaration.
+- Observation: all downstream projects currently pin or accept Core 3.9.x. Their
+  migration pull requests must remain drafts until Core v4 is available; local
+  validation uses this Core checkout directly.
 
 ## Decision Log
 
@@ -69,6 +92,12 @@ tests.
   `flattenOperations` public in Core. Rationale: each has production consumers
   in at least two repositories, and `removeFinalMeasurements` is also used by
   Core's DDSIM QDMI device. Date/Author: 2026-08-26, Codex.
+- Decision: supersede the previous decision and remove `CircuitOptimizer`.
+  Rationale: distributing a shared library for three functions costs more than
+  placing two generic functions on their owning IR type and placing fusion with
+  its two domain owners. The reviewer proposed this ownership split, and the
+  complete consumer audit found no dependency cycle or additional owner.
+  Date/Author: 2026-08-27, Codex.
 - Decision: move `swapReconstruction`, `removeDiagonalGatesBeforeMeasure`,
   `eliminateResets`, `deferMeasurements`, `backpropagateOutputPermutation`, and
   `elidePermutations` to QCEC. Rationale: QCEC is their only current production
@@ -88,10 +117,9 @@ tests.
 
 ## Outcomes & Retrospective
 
-The public optimizer interface now has exactly three methods, and the removed
-domain behavior lives with its only production owner. The migration deletes more
-than four thousand lines from Core without adding a new shared abstraction or
-dependency.
+The first milestone reduced the public optimizer interface to three methods and
+moved domain behavior to its production owners. That migration deleted more than
+four thousand lines from Core without adding a new abstraction or dependency.
 
 Core's 16 optimizer tests and 51 DDSIM QDMI-device tests pass in the release
 build. Complete static and shared builds install successfully, and an
@@ -103,53 +131,69 @@ and focused Clifford tests pass; and QuSAT's full 11-test C++ suite passes.
 QCEC, QMAP, and QuSAT lint sessions pass. DDSIM's production library also builds
 against this reduced Core checkout.
 
-Final staged Core lint and test repetitions pass. Full downstream configurations
-that still use the separately removed `MQT::CoreAlgorithms` or `MQT::CoreNA`
-targets remain outside this issue and are recorded above rather than expanding
-this migration.
+Final staged Core lint and test repetitions passed for that milestone. The final
+milestone removes the last optimizer target and validates the member API across
+the five downstream packages. Core's warning-clean release build passes all 298
+CoreIR tests, including explicit default-constructed empty-circuit contracts,
+and all 51 DDSIM QDMI-device tests. Fresh static and shared package installs
+contain the two member declarations and no optimizer header, library, or
+exported CMake target; a minimal out-of-tree `MQT::CoreIR` consumer compiles,
+links, and runs against both packages.
+
+QCEC passes its 20 focused optimizer tests and all 573 C++ tests. QMAP passes 26
+circuit-optimization, 40 QMapDS, and 11 NASP tests. QuSAT passes all 11 tests.
+DDSIM passes all 28 affected simulator tests and 116 of 117 full-suite tests;
+the single stochastic tolerance miss is unrelated and reproducible without this
+migration. Debugger passes all 149 tests. Each downstream migration passes lint
+and a warnings-as-errors build. Full downstream configurations that still use
+the separately removed `MQT::CoreAlgorithms`, `MQT::CoreNA`, or legacy OpenQASM
+interfaces use temporary, out-of-tree compatibility shims or a stacked draft;
+those migrations remain outside this issue rather than expanding its scope.
 
 ## Context and Orientation
 
 `include/mqt-core/circuit_optimizer/CircuitOptimizer.hpp` is the installed C++
-interface. `src/circuit_optimizer/CircuitOptimizer.cpp` implements all current
-passes. A dependency graph in this code is a vector indexed by qubit; each entry
-lists pointers to the circuit operations that act on that qubit.
-`test/circuit_optimizer/` contains one focused source file for each exported
-transformation.
+interface that this milestone removes.
+`src/circuit_optimizer/CircuitOptimizer.cpp` contains the two generic
+implementations that move into `src/ir/` and the fusion implementation that
+moves to QCEC and QMAP. A dependency graph is a vector indexed by qubit; each
+entry lists pointers to the circuit operations that act on that qubit.
+`test/circuit_optimizer/` contains the focused tests to move or delete.
 
-The `MQT::CoreCircuitOptimizer` CMake target remains installed because Core,
-QCEC, QMAP, DDSIM, and Debugger still use the three shared transformations. The
-transfer is coordinated across separate QCEC, QMAP, and QuSAT branches. Those
-branches must land before or together with the Core removal so no default branch
-is knowingly left unable to build.
+`include/mqt-core/ir/QuantumComputation.hpp` declares the central circuit type,
+and `src/ir/CMakeLists.txt` already collects every source below `src/ir/` into
+`MQT::CoreIR`. The Core pull request can remove the optimizer target before the
+downstream changes merge because each downstream default branch remains pinned
+to Core 3.9.x. Draft downstream pull requests will document their Core v4
+dependency and merge after that release.
 
 ## Plan of Work
 
-First add private QCEC and QMAP optimizer components by moving the exact
-implementations and relevant tests from Core. Replace their production call
-sites while leaving calls to the three shared Core methods unchanged. Replace
-QMAP and QuSAT uses of `constructDAG` with local graph construction and remove
-unneeded `MQT::CoreCircuitOptimizer` links only where no shared method remains.
+First declare `QuantumComputation::flattenOperations(bool)` and
+`QuantumComputation::removeFinalMeasurements()` in
+`include/mqt-core/ir/QuantumComputation.hpp`. Move their exact implementations
+and private helpers to a source below `src/ir/`. Move their tests into
+`test/ir/`, change calls to member syntax, and update the Core DDSIM QDMI device
+to use the member function.
 
-Then replace Core's public graph aliases and generic removal helpers with
-translation-unit-local types and functions. Delete all moved and unused
-implementations from `src/circuit_optimizer/CircuitOptimizer.cpp`, leaving the
-existing implementations of the three retained methods unchanged. Remove the
-test sources whose behavior moved downstream or has no production owner. Keep
-the test sources for the three retained methods.
+Then delete the fusion implementation and its Core tests after QCEC and QMAP
+contain equivalent focused tests. Remove the optimizer header, source target,
+test target, CMake subdirectories, installed export, wheel dependency, and all
+remaining Core links to `MQT::CoreCircuitOptimizer`. Update the changelog and
+upgrade guide to list the member-call replacements and downstream fusion owners.
 
-Finally document the complete name-to-owner migration in the unreleased
-changelog and upgrade guide. Build the focused Core target and the DDSIM QDMI
-device test, then build and test each changed downstream repository against the
-reduced Core checkout. Run the lint session in each changed repository and
-inspect every final diff for unrelated files.
+Finally build the CoreIR and QDMI DDSIM device tests, install static and shared
+Core packages, and confirm that no optimizer target or header remains. Build and
+test draft QCEC, QMAP, QuSAT, DDSIM, and Debugger migrations against this Core
+checkout. Run lint in each changed repository and inspect every final diff for
+unrelated files.
 
 ## Concrete Steps
 
 From the Core repository root, build and run the focused tests with:
 
-    cmake --build --preset release --target mqt-core-circuit-optimizer-test
-    ./build/release/test/circuit_optimizer/mqt-core-circuit-optimizer-test
+    cmake --build --preset release --target mqt-core-ir-test
+    ./build/release/test/ir/mqt-core-ir-test
     cmake --build --preset release --target mqt-core-qdmi-ddsim-device-test
     ./build/release/test/qdmi/devices/dd/mqt-core-qdmi-ddsim-device-test
     uvx nox -s lint
@@ -167,13 +211,13 @@ names and concise pass or failure output in this plan after execution.
 
 ## Validation and Acceptance
 
-The installed Core header must declare exactly
-`singleQubitGateFusion(QuantumComputation&)`,
-`removeFinalMeasurements(QuantumComputation&)`, and
-`flattenOperations(QuantumComputation&, bool)`. The Core optimizer and DDSIM
-QDMI device tests must pass. QCEC, QMAP, and QuSAT must compile without naming
-any removed Core method or DAG alias. DDSIM and Debugger must compile against
-the reduced Core API because they use only retained methods.
+The installed `QuantumComputation` header must declare
+`removeFinalMeasurements()` and `flattenOperations(bool)`, and both methods must
+preserve all existing behavior. No installed optimizer header, CMake target, or
+shared library may remain. The CoreIR and DDSIM QDMI device tests must pass.
+QCEC and QMAP must own and test fusion locally. QCEC, QMAP, QuSAT, DDSIM, and
+Debugger must compile without naming `CircuitOptimizer` or
+`MQT::CoreCircuitOptimizer`.
 
 The migration documentation must list each removed method, state whether it
 moved or has no replacement, and name the owning package for moved behavior. No
@@ -197,17 +241,20 @@ implementation, tests, or CMake target at the start of this work.
 
 ## Interfaces and Dependencies
 
-At completion, `qc::CircuitOptimizer` retains these signatures:
+At completion, `qc::QuantumComputation` provides these signatures through
+`MQT::CoreIR`:
 
-    static void singleQubitGateFusion(QuantumComputation& qc);
-    static void removeFinalMeasurements(QuantumComputation& qc);
-    static void flattenOperations(QuantumComputation& qc,
-                                  bool customGatesOnly = false);
+    void removeFinalMeasurements();
+    void flattenOperations(bool customGatesOnly = false);
 
-`MQT::CoreCircuitOptimizer` continues to depend publicly on `MQT::CoreIR` and
-adds no dependency. QCEC and QMAP may expose no new public API unless an
-existing repository pattern requires it; internal ownership is preferred.
+`qc::CircuitOptimizer` and `MQT::CoreCircuitOptimizer` no longer exist. QCEC
+keeps fusion private in its existing optimizer component. QMAP declares
+`qmap::singleQubitGateFusion(QuantumComputation&)` in its existing circuit
+optimization header because several QMAP translation units use that component.
 
 Revision note: 2026-08-26. Created the initial implementation plan from the
 refreshed production census and issue acceptance criteria. Updated it after the
 four-repository implementation and cross-repository validation pass.
+
+Revision note: 2026-08-27. Replaced the retained-library outcome with the
+reviewer-approved CoreIR member API and coordinated downstream drafts.

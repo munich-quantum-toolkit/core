@@ -8,21 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "circuit_optimizer/CircuitOptimizer.hpp"
-
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
-#include "ir/operations/StandardOperation.hpp"
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <iterator>
-#include <map>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -192,105 +188,24 @@ void flattenCompoundOperation(QuantumComputation& qc, Iterator& it) {
 }
 } // namespace
 
-void CircuitOptimizer::singleQubitGateFusion(QuantumComputation& qc) {
-  static const std::map<OpType, OpType> INVERSE_MAP = {
-      {I, I},   {X, X},   {Y, Y},   {Z, Z},     {H, H},     {S, Sdg},
-      {Sdg, S}, {T, Tdg}, {Tdg, T}, {SX, SXdg}, {SXdg, SX}, {Barrier, Barrier}};
-
-  auto dag = DAG(qc.getHighestPhysicalQubitIndex() + 1);
-
-  for (auto& it : qc) {
-    if (!it->isStandardOperation() || !it->getControls().empty() ||
-        it->getTargets().size() > 1) {
-      addToDag(dag, &it);
-      continue;
-    }
-
-    const auto target = it->getTargets().at(0);
-    if (dag.at(target).empty()) {
-      addToDag(dag, &it);
-      continue;
-    }
-
-    auto dagQubit = dag.at(target);
-    auto* op = dagQubit.back();
-    if (!(*op)->isCompoundOperation() &&
-        (!(*op)->getControls().empty() || (*op)->getTargets().size() > 1)) {
-      addToDag(dag, &it);
-      continue;
-    }
-
-    if ((*op)->isCompoundOperation()) {
-      auto* compop = dynamic_cast<CompoundOperation*>(op->get());
-      std::size_t involvedQubits = 0;
-      for (std::size_t q = 0; q < dag.size(); ++q) {
-        if (compop->actsOn(static_cast<Qubit>(q))) {
-          ++involvedQubits;
-        }
-      }
-      if (involvedQubits > 1) {
-        addToDag(dag, &it);
-        continue;
-      }
-
-      if (compop->empty()) {
-        compop->emplace_back(it->clone());
-        it->setGate(I);
-        continue;
-      }
-
-      auto lastop = --compop->end();
-      const auto inverseIt = INVERSE_MAP.find((*lastop)->getType());
-      if (inverseIt != INVERSE_MAP.end() &&
-          it->getType() == inverseIt->second) {
-        compop->pop_back();
-        it->setGate(I);
-      } else {
-        compop->emplace_back<StandardOperation>(
-            it->getTargets().at(0), it->getType(), it->getParameter());
-        it->setGate(I);
-      }
-      continue;
-    }
-
-    const auto inverseIt = INVERSE_MAP.find((*op)->getType());
-    if (inverseIt != INVERSE_MAP.end() && it->getType() == inverseIt->second) {
-      (*op)->setGate(I);
-      it->setGate(I);
-    } else {
-      auto compop = std::make_unique<CompoundOperation>();
-      compop->emplace_back<StandardOperation>(
-          (*op)->getTargets().at(0), (*op)->getType(), (*op)->getParameter());
-      compop->emplace_back<StandardOperation>(
-          it->getTargets().at(0), it->getType(), it->getParameter());
-      it->setGate(I);
-      (*op) = std::move(compop);
-      dag.at(target).push_back(op);
-    }
-  }
-
-  removeIdentities(qc);
-}
-
-void CircuitOptimizer::removeFinalMeasurements(QuantumComputation& qc) {
-  auto dag = constructDAG(qc);
+void QuantumComputation::removeFinalMeasurements() {
+  auto dag = constructDAG(*this);
   DAGReverseIterators dagIterators{dag.size()};
   for (size_t q = 0; q < dag.size(); ++q) {
     dagIterators.at(q) = dag.at(q).rbegin();
   }
 
   removeFinalMeasurementsRecursive(dag, dagIterators, 0, nullptr);
-  removeIdentities(qc);
+  removeIdentities(*this);
 }
 
-void CircuitOptimizer::flattenOperations(QuantumComputation& qc,
-                                         const bool customGatesOnly) {
-  auto it = qc.begin();
-  while (it != qc.end()) {
+void QuantumComputation::flattenOperations(const bool customGatesOnly) {
+  auto it = begin();
+  while (it != end()) {
     if ((*it)->isCompoundOperation()) {
       auto& op = dynamic_cast<CompoundOperation&>(**it);
       if (!customGatesOnly || op.isCustomGate()) {
-        flattenCompoundOperation(qc, it);
+        flattenCompoundOperation(*this, it);
       } else {
         ++it;
       }

@@ -113,11 +113,11 @@ releases may include breaking changes.
 
 ### Removed
 
-- 💥 Reduce `CircuitOptimizer` to the shared `singleQubitGateFusion`,
-  `removeFinalMeasurements`, and `flattenOperations` transformations. Move
-  equivalence-checking transformations to MQT QCEC and mapping transformations
-  to MQT QMAP. Remove the public circuit dependency graph and transformations
-  without production consumers ([#2262]) ([**@simon1hofmann**])
+- 💥 Remove `CircuitOptimizer`. Move circuit flattening and final-measurement
+  removal to `QuantumComputation`, equivalence-checking transformations to MQT
+  QCEC, and mapping transformations to MQT QMAP. Move single-qubit gate fusion
+  to both downstream packages. Remove the public circuit dependency graph and
+  transformations without production consumers ([#2262]) ([**@simon1hofmann**])
 - 💥 Remove test-only DD state generators and recursive functionality
   construction from MQT Core ([#2257]) ([**@simon1hofmann**])
 - 💥 Remove the standalone QIR runner and make the QIR runtime and JIT internal
