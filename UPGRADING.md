@@ -42,8 +42,9 @@ The public `removeIdentities`, `removeOperation`, `collectBlocks`, and
 `QuantumComputation` where needed.
 
 The `MQT::CoreCircuitOptimizer` CMake target and the
-`circuit_optimizer/CircuitOptimizer.hpp` and generated
-`circuit_optimizer/mqt_core_circuit_optimizer_export.h` headers are removed.
+`circuit_optimizer/CircuitOptimizer.hpp` header are removed. The
+`circuit_optimizer/mqt_core_circuit_optimizer_export.h` header is no longer
+generated or installed.
 
 ### Pruned DD construction helpers
 

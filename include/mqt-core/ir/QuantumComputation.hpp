@@ -460,15 +460,12 @@ public:
 
   void reset();
 
-  /**
-   * @brief Flatten compound operations.
-   * @param customGatesOnly Whether to flatten only custom gates.
-   */
+  /// Flattens compound operations.
+  ///
+  /// \param customGatesOnly Whether to flatten only custom gates.
   void flattenOperations(bool customGatesOnly = false);
 
-  /**
-   * @brief Remove measurements and barriers that form the end of the circuit.
-   */
+  /// Removes measurements and barriers from the end of the circuit.
   void removeFinalMeasurements();
 
   /**

@@ -176,7 +176,7 @@ void flattenCompoundOperation(QuantumComputation& qc, Iterator& it) {
   assert((*it)->isCompoundOperation());
   auto& op = dynamic_cast<CompoundOperation&>(**it);
   auto opIt = op.begin();
-  std::int64_t movedOperations = 0;
+  int64_t movedOperations = 0;
   while (opIt != op.end()) {
     it = qc.insert(it, std::move(*opIt));
     ++opIt;
