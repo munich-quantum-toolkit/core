@@ -1883,6 +1883,33 @@ public:
                                   ValueRange yieldedValues);
 
   //===--------------------------------------------------------------------===//
+  // Additional functions
+  //===--------------------------------------------------------------------===//
+
+  /// Starts a private function and returns its entry-block arguments.
+  ///
+  /// Functions must be defined before operations in `main` and cannot nest.
+  SmallVector<Value> startFunction(StringRef name, TypeRange argTypes,
+                                   TypeRange resultTypes);
+
+  /// Ends the active function and restores the surrounding builder scope.
+  ///
+  /// Every linear value in the function must be returned or consumed.
+  void endFunction(ValueRange returnValues);
+
+  /// Calls a completed function and returns its results.
+  ///
+  /// Linear operands and results are paired by following the callee body.
+  /// Mapping failure is a usage error.
+  SmallVector<Value> call(StringRef callee, ValueRange operands);
+
+  /// Returns the `!qco.qubit` type.
+  Type getQubitType();
+
+  /// Returns `tensor<size x !qco.qubit>`.
+  Type getQubitTensorType(int64_t size);
+
+  //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
 
@@ -2070,6 +2097,9 @@ private:
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.
   void ensureAllocationMode(AllocationMode requestedMode);
+
+  // Insertion point to restore after finishing an additional function.
+  OpBuilder::InsertPoint savedInsertionPoint;
 };
 } // namespace qco
 } // namespace mlir
