@@ -11,8 +11,8 @@
 #include "qdmi/driver/Driver.hpp"
 
 #include "DeviceRegistry.hpp"
-#include "Diagnostics.hpp"
 #include "qdmi/common/Common.hpp"
+#include "qdmi/common/Diagnostics.hpp"
 
 #include <qdmi/client.h>
 #include <qdmi/device.h>
@@ -268,8 +268,7 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
       }
 
       if (status == QDMI_ERROR_NOTSUPPORTED) {
-        qdmi::detail::emitDiagnostic(
-            qdmi::detail::DiagnosticLevel::Info,
+        qdmi::diagnostics::info(
             "Device session parameter {} not supported by device (skipped)",
             qdmi::toString(param));
         return;
@@ -852,8 +851,7 @@ void Driver::materializeClientCatalog() {
         }
         const std::string_view libraryText =
             library.empty() ? "<unknown>" : std::string_view(library);
-        qdmi::detail::emitDiagnostic(
-            qdmi::detail::DiagnosticLevel::Warning,
+        qdmi::diagnostics::warn(
             "Skipping configured QDMI device '{}' from '{}': {}", id,
             libraryText, ex.what());
       }

@@ -10,7 +10,7 @@
 
 #include "qdmi/common/DeviceConfiguration.hpp"
 
-#include "Diagnostics.hpp"
+#include "qdmi/common/Diagnostics.hpp"
 
 #include <qdmi/device.h>
 
@@ -105,7 +105,7 @@ void reportPath(const std::filesystem::path& path,
     std::forward<Reporter>(reporter)(std::string_view(path.native()));
 #endif
   } catch (...) {
-    emitDiagnostic(DiagnosticLevel::Error, fallback);
+    qdmi::diagnostics::error(fallback);
   }
 }
 
@@ -115,23 +115,22 @@ readFile(const std::filesystem::path& path, const bool bundled, int& status) {
   const auto exists = std::filesystem::exists(path, error);
   if (error) {
     status = bundled ? QDMI_ERROR_FATAL : QDMI_ERROR_PERMISSIONDENIED;
-    reportPath(
-        path, "Cannot inspect QDMI device configuration (details unavailable)",
-        [&error](const std::string_view pathText) {
-          const auto message = error.message();
-          emitDiagnostic(DiagnosticLevel::Error,
-                         "Cannot inspect QDMI device configuration '{}': {}",
-                         pathText, message);
-        });
+    reportPath(path,
+               "Cannot inspect QDMI device configuration (details unavailable)",
+               [&error](const std::string_view pathText) {
+                 const auto message = error.message();
+                 qdmi::diagnostics::error(
+                     "Cannot inspect QDMI device configuration '{}': {}",
+                     pathText, message);
+               });
     return std::nullopt;
   }
   if (!exists) {
     status = bundled ? QDMI_ERROR_FATAL : QDMI_ERROR_NOTFOUND;
     reportPath(path, "QDMI device configuration does not exist",
                [](const std::string_view pathText) {
-                 emitDiagnostic(DiagnosticLevel::Error,
-                                "QDMI device configuration '{}' does not exist",
-                                pathText);
+                 qdmi::diagnostics::error(
+                     "QDMI device configuration '{}' does not exist", pathText);
                });
     return std::nullopt;
   }
@@ -143,8 +142,7 @@ readFile(const std::filesystem::path& path, const bool bundled, int& status) {
     reportPath(path, "Cannot read QDMI device configuration",
                [errorNumber](const std::string_view pathText) {
                  const auto* const message = std::strerror(errorNumber);
-                 emitDiagnostic(
-                     DiagnosticLevel::Error,
+                 qdmi::diagnostics::error(
                      "Cannot read QDMI device configuration '{}': {}", pathText,
                      message == nullptr ? "unknown error" : message);
                });
@@ -156,8 +154,7 @@ readFile(const std::filesystem::path& path, const bool bundled, int& status) {
     status = bundled ? QDMI_ERROR_FATAL : QDMI_ERROR_PERMISSIONDENIED;
     reportPath(path, "Failed while reading QDMI device configuration",
                [](const std::string_view pathText) {
-                 emitDiagnostic(
-                     DiagnosticLevel::Error,
+                 qdmi::diagnostics::error(
                      "Failed while reading QDMI device configuration '{}'",
                      pathText);
                });
@@ -218,8 +215,8 @@ loadDeviceConfiguration(const std::optional<std::string>& inlineJson,
   const auto environmentJson = environment(inlineEnvironment);
   const auto environmentFile = environment(fileEnvironment);
   if (environmentJson && environmentFile) {
-    emitDiagnostic(DiagnosticLevel::Error, "Both {} and {} are set",
-                   inlineEnvironment, fileEnvironment);
+    qdmi::diagnostics::error("Both {} and {} are set", inlineEnvironment,
+                             fileEnvironment);
     status = QDMI_ERROR_INVALIDARGUMENT;
     return std::nullopt;
   }
@@ -233,8 +230,7 @@ loadDeviceConfiguration(const std::optional<std::string>& inlineJson,
   }
   const auto directory = moduleDirectory(anchor);
   if (directory.empty()) {
-    emitDiagnostic(DiagnosticLevel::Error,
-                   "Cannot locate the QDMI provider module");
+    qdmi::diagnostics::error("Cannot locate the QDMI provider module");
     status = QDMI_ERROR_FATAL;
     return std::nullopt;
   }

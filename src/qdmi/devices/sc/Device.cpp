@@ -14,12 +14,12 @@
 
 #include "qdmi/devices/sc/Device.hpp"
 
-#include "Diagnostics.hpp"
 #include "mqt_sc_qdmi/constants.h"
 #include "mqt_sc_qdmi/device.h"
 #include "mqt_sc_qdmi/types.h"
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/DeviceConfiguration.hpp"
+#include "qdmi/common/Diagnostics.hpp"
 #include "qdmi/devices/sc/Configuration.hpp"
 
 #include <algorithm>
@@ -169,25 +169,22 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
     const std::string_view source =
         loaded ? std::string_view(loaded->source)
                : std::string_view("selected configuration");
-    qdmi::detail::emitDiagnostic(
-        qdmi::detail::DiagnosticLevel::Error,
+    qdmi::diagnostics::error(
         "Out of memory while initializing SC device from {}", source);
     return QDMI_ERROR_OUTOFMEM;
   } catch (const std::invalid_argument& error) {
     const std::string_view source =
         loaded ? std::string_view(loaded->source)
                : std::string_view("selected configuration");
-    qdmi::detail::emitDiagnostic(qdmi::detail::DiagnosticLevel::Error,
-                                 "Invalid SC device configuration from {}: {}",
-                                 source, error.what());
+    qdmi::diagnostics::error("Invalid SC device configuration from {}: {}",
+                             source, error.what());
     return QDMI_ERROR_INVALIDARGUMENT;
   } catch (const std::exception& error) {
     const std::string_view source =
         loaded ? std::string_view(loaded->source)
                : std::string_view("selected configuration");
-    qdmi::detail::emitDiagnostic(qdmi::detail::DiagnosticLevel::Error,
-                                 "Failed to initialize SC device from {}: {}",
-                                 source, error.what());
+    qdmi::diagnostics::error("Failed to initialize SC device from {}: {}",
+                             source, error.what());
     return QDMI_ERROR_FATAL;
   }
 }

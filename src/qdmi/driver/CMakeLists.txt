@@ -26,8 +26,6 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver/Driver.hpp
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver/SessionConfig.hpp)
 
-  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi)
-
   # Add link libraries
   target_link_libraries(
     ${TARGET_NAME}

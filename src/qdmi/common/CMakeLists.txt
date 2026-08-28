@@ -24,9 +24,8 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}
            FILES
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/Common.hpp
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/DeviceConfiguration.hpp)
-
-  target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi)
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/DeviceConfiguration.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/Diagnostics.hpp)
 
   # Add link libraries
   target_link_libraries(

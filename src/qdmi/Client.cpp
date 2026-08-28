@@ -10,8 +10,8 @@
 
 #include "qdmi/Client.hpp"
 
-#include "Diagnostics.hpp"
 #include "qdmi/common/Common.hpp"
+#include "qdmi/common/Diagnostics.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <qdmi/client.h>
@@ -898,10 +898,8 @@ Session::Session(const SessionConfig& config) {
           session_.get(), param, value->size() + 1, value->c_str()));
       if (status == QDMI_ERROR_NOTSUPPORTED) {
         // Optional parameter not supported by session - skip it
-        qdmi::detail::emitDiagnostic(
-            qdmi::detail::DiagnosticLevel::Info,
-            "Session parameter {} not supported (skipped)",
-            qdmi::toString(param));
+        qdmi::diagnostics::info("Session parameter {} not supported (skipped)",
+                                qdmi::toString(param));
         return;
       }
       if (status == QDMI_SUCCESS) {

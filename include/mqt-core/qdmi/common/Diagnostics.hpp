@@ -16,9 +16,12 @@
 #include <string_view>
 #include <utility>
 
-namespace qdmi::detail {
+namespace qdmi::diagnostics {
 
+/// Severity of a diagnostic.
 enum class DiagnosticLevel : uint8_t { Info, Warning, Error };
+
+namespace detail {
 
 [[nodiscard]] constexpr std::string_view
 diagnosticLevelName(const DiagnosticLevel level) noexcept {
@@ -67,18 +70,38 @@ inline void writeDiagnostic(const DiagnosticLevel level,
 #endif
 }
 
+} // namespace detail
+
 /// Formats and writes one best-effort diagnostic to standard error.
 ///
 /// Writes the unformatted format string if formatting fails.
 template <class... Args>
-void emitDiagnostic(const DiagnosticLevel level,
-                    const std::format_string<Args...> format,
-                    Args&&... args) noexcept {
+void emit(const DiagnosticLevel level, const std::format_string<Args...> format,
+          Args&&... args) noexcept {
   try {
-    writeDiagnostic(level, std::format(format, std::forward<Args>(args)...));
+    detail::writeDiagnostic(level,
+                            std::format(format, std::forward<Args>(args)...));
   } catch (...) {
-    writeDiagnostic(level, format.get());
+    detail::writeDiagnostic(level, format.get());
   }
 }
 
-} // namespace qdmi::detail
+/// Formats and writes an informational diagnostic to standard error.
+template <class... Args>
+void info(const std::format_string<Args...> format, Args&&... args) noexcept {
+  emit(DiagnosticLevel::Info, format, std::forward<Args>(args)...);
+}
+
+/// Formats and writes a warning diagnostic to standard error.
+template <class... Args>
+void warn(const std::format_string<Args...> format, Args&&... args) noexcept {
+  emit(DiagnosticLevel::Warning, format, std::forward<Args>(args)...);
+}
+
+/// Formats and writes an error diagnostic to standard error.
+template <class... Args>
+void error(const std::format_string<Args...> format, Args&&... args) noexcept {
+  emit(DiagnosticLevel::Error, format, std::forward<Args>(args)...);
+}
+
+} // namespace qdmi::diagnostics
