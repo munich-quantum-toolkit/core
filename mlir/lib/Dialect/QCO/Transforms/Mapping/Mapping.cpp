@@ -1259,6 +1259,9 @@ private:
                     [](auto&) { return Direction == WireDirection::Backward; })
                 .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
                     [&](auto&) {
+                      if (indices.size() == 1) {
+                        return true;
+                      }
                       if (visited.insert(op).second) {
                         composites.emplace_back(op, indices);
                       }
