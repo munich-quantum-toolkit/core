@@ -9,6 +9,7 @@
 set(target_name mqt-core-mlir-unittest-optimizations)
 add_executable(
   ${target_name}
+  ConstantPropagation/test_quantumState.cpp
   test_qco_hadamard_lifting.cpp
   test_qco_measurement_lifting.cpp
   test_qco_merge_single_qubit_rotation.cpp
@@ -32,6 +33,10 @@ target_link_libraries(
           MLIRSupport
           LLVMSupport
           MLIRSupportMQT)
+
+# ConstantPropagation unit tests reach into the pass's private headers.
+target_include_directories(
+  ${target_name} PRIVATE ${PROJECT_SOURCE_DIR}/mlir/lib/Dialect/QCO/Transforms/Optimizations)
 
 mqt_mlir_configure_unittest_target(${target_name} REQUIRES_EH)
 
