@@ -8,295 +8,41 @@
  * Licensed under the MIT License
  */
 
-#include "ConstantPropagation/ConstantPropagationLattice.hpp"
-#include "mlir/Analysis/DataFlow/SparseAnalysis.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
-
-using namespace mlir;
+#include <mlir/Dialect/Arith/IR/Arith.h>
 
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_CONSTANTPROPAGATION
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
-static unsigned int maxTrackedAmplitudes = 8;
-static unsigned int maxTrackedHybridStates = 4;
+namespace {
 
-static bool isQubitType(const Type ty) { return isa<QubitType>(ty); }
-
-static bool isClassicalType(const Type ty) { return ty.isIntOrIndexOrFloat(); }
-
-class HybridStateLattice : public dataflow::AbstractSparseLattice {
-public:
-  using AbstractSparseLattice::AbstractSparseLattice;
-
-  explicit HybridStateLattice(const Value anchor)
-      : AbstractSparseLattice(anchor),
-        value(HybridStateSet(maxTrackedAmplitudes, maxTrackedHybridStates)) {}
-
-  explicit HybridStateLattice(const Value anchor, const HybridStateSet& state)
-      : AbstractSparseLattice(anchor), value(state) {}
-
-  const HybridStateSet& getValue() const { return value; }
-
-  ChangeResult join(const AbstractSparseLattice& rhs) override {
-    const auto rhsHS = llvm::cast<HybridStateLattice>(rhs);
-    const HybridStateSet old = value;
-    value.join(rhsHS.getValue());
-    return old == value ? ChangeResult::NoChange : ChangeResult::Change;
-  }
-
-  ChangeResult meet(const AbstractSparseLattice& rhs) override {
-    return join(rhs);
-  }
-
-  void print(raw_ostream& os) const override;
-
-private:
-  HybridStateSet value;
-};
-
-class HybridConstantPropagationAnalysis
-    : public dataflow::SparseForwardDataFlowAnalysis<HybridStateLattice> {
-
-protected:
-  void setToEntryState(HybridStateLattice* lattice) override {}
-
-public:
-  explicit HybridConstantPropagationAnalysis(DataFlowSolver& solver)
-      : SparseForwardDataFlowAnalysis(solver) {}
-
-  void setToEntryState(dataflow::AbstractSparseLattice* lattice) override {
-    const auto newLattice = HybridStateLattice(lattice->getAnchor());
-    propagateIfChanged(lattice, lattice->join(newLattice));
-  }
-
-  LogicalResult
-  visitOperation(Operation* op,
-                 const ArrayRef<const HybridStateLattice*> operands,
-                 const ArrayRef<HybridStateLattice*> results) override {
-    HybridStateSet input = gatherInputState(operands);
-
-    if (input.areStatesTop()) {
-      // TODO: Forward Qubits to results
-      // setAllResults(results, HybridStateSet::top());
-      return success();
-    }
-
-    if (const auto measureOp = dyn_cast<MeasureOp>(op)) {
-      visitMeasureOp(measureOp, input, results);
-      return success();
-    }
-
-    if (const auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
-      return visitUnitaryOp(unitary, input, results);
-    }
-
-    if (const auto ctrlOp = dyn_cast<CtrlOp>(op)) {
-      visitCtrlOp(ctrlOp, input, results);
-      return success();
-    }
-
-    if (llvm::all_of(op->getResultTypes(), isClassicalType)) {
-      return visitClassicalOp(op, input, results);
-    }
-
-    visitFallback(op, input, results);
-    return success();
-  }
-
-private:
-  static HybridStateLattice* asHybrid(dataflow::AbstractSparseLattice* l) {
-    return llvm::cast<HybridStateLattice>(l);
-  }
-
-  static const HybridStateLattice*
-  asHybrid(const dataflow::AbstractSparseLattice* l) {
-    return llvm::cast<HybridStateLattice>(l);
-  }
-
-  static HybridStateSet
-  gatherInputState(const ArrayRef<const HybridStateLattice*> operands) {
-    if (operands.size() == 1) {
-      return operands[0]->getValue();
-    }
-
-    auto result = operands[0]->getValue().mergeStates(operands[1]->getValue());
-    for (unsigned int i = 2; i < operands.size(); ++i) {
-      result = result.mergeStates(operands[i]->getValue());
-    }
-    return result;
-  }
-
-  LogicalResult visitClassicalOp(Operation* op, HybridStateSet& input,
-                                 ArrayRef<HybridStateLattice*> results) {
-    if (input.applyClassicalOperation(op).failed()) {
-      return failure();
-    }
-    for (auto [resLattice, resValue] : llvm::zip(results, op->getResults())) {
-      const auto newLattice = HybridStateLattice(resValue, input);
-      propagateIfChanged(resLattice, resLattice->join(newLattice));
-    }
-    return success();
-  }
-
-  LogicalResult visitUnitaryOp(UnitaryOpInterface unitary,
-                               HybridStateSet& input,
-                               ArrayRef<HybridStateLattice*> results) {
-    if (input.applyUnitaryOperation(&unitary).failed()) {
-      return failure();
-    }
-    for (auto [resLattice, resValue] :
-         llvm::zip(results, unitary->getResults())) {
-      const auto newLattice = HybridStateLattice(resValue, input);
-      propagateIfChanged(resLattice, resLattice->join(newLattice));
-    }
-    return success();
-  }
-
-  void visitMeasureOp(MeasureOp op, const HybridStateSet& input,
-                      ArrayRef<HybridStateLattice*> results) {
-    // HybridStateSet output;
-    // output.states.clear();
-    //
-    // Value inQubit = op.getOperand();
-    // Value outQubit = op.getResult(0);
-    // Value outClassical = op.getResult(1);
-    //
-    // for (const HybridState& state : input.states) {
-    //   auto successors =
-    //       state.quantumState.measure(inQubit, outQubit, op.getContext());
-    //   if (successors.empty()) {
-    //     HybridState next = state;
-    //     next.quantumState.markTop(inQubit);
-    //     output.addState(std::move(next));
-    //     continue;
-    //   }
-    //
-    //   const QuantumComponent* component =
-    //       state.quantumState.getComponent(inQubit);
-    //   double prob0 = 0.0;
-    //   double prob1 = 0.0;
-    //   if (component && !component->isTop) {
-    //     auto idx = component->indexOf(inQubit);
-    //     if (idx) {
-    //       for (const auto& it : component->amplitudes) {
-    //         double p = std::norm(it.second);
-    //         if (((it.first >> *idx) & 1ULL) == 0ULL)
-    //           prob0 += p;
-    //         else
-    //           prob1 += p;
-    //       }
-    //     }
-    //   }
-    //
-    //   for (auto& succ : successors) {
-    //     HybridState next = state;
-    //     next.quantumState = std::move(succ.first);
-    //     next.setClassical(outClassical, succ.second);
-    //     if (isZeroAttribute(succ.second))
-    //       next.probability *= prob0;
-    //     else if (isTrueAttribute(succ.second))
-    //       next.probability *= prob1;
-    //     output.addState(std::move(next));
-    //   }
-    // }
-    //
-    // output.enforceMaxStates(maxTrackedStates);
-    // setAllResults(results, output);
-  }
-
-  void visitCtrlOp(CtrlOp op, const HybridStateSet& input,
-                   ArrayRef<HybridStateLattice*> results) {
-    // Forward target inputs conservatively.
-    // HybridStateSet output;
-    // output.states = input.states;
-    // output.isTop = input.isTop;
-    //
-    // unsigned numResults = op->getNumResults();
-    // unsigned numOperands = op->getNumOperands();
-    // unsigned numControls = numOperands - numResults;
-    // (void)numControls;
-    //
-    // for (HybridState& state : output.states) {
-    //   for (unsigned i = 0; i < numResults; ++i) {
-    //     Value in = op->getOperand(numOperands - numResults + i);
-    //     Value out = op->getResult(i);
-    //     state.quantumState.forwardQubit(in, out);
-    //   }
-    // }
-    //
-    // output.enforceMaxStates(maxTrackedStates);
-    // setAllResults(results, output);
-  }
-
-  void visitFallback(Operation* op, const HybridStateSet& input,
-                     ArrayRef<HybridStateLattice*> results) {
-    for (auto [resLattice, resValue] : llvm::zip(results, op->getResults())) {
-      const auto newLattice = HybridStateLattice(resValue, input);
-      propagateIfChanged(resLattice, resLattice->join(newLattice));
-    }
-  }
-};
-
-struct RemoveAlwaysZeroCtrlPattern : public OpRewritePattern<qco::CtrlOp> {
-  RemoveAlwaysZeroCtrlPattern(MLIRContext* ctx, DataFlowSolver& solver)
-      : OpRewritePattern<qco::CtrlOp>(ctx), solver(solver) {}
-
-  LogicalResult matchAndRewrite(qco::CtrlOp op,
-                                PatternRewriter& rewriter) const override {
-    for (Value ctrl : op.getControlsIn()) {
-      auto* state = solver.lookupState<HybridStateLattice>(ctrl);
-      if (!state)
-        return failure();
-      if (!state->getValue().isAlwaysFalse(ctrl))
-        continue;
-
-      unsigned numResults = op->getNumResults();
-      unsigned numOperands = op->getNumOperands();
-      if (numOperands < numResults)
-        return failure();
-
-      SmallVector<Value> replacements;
-      for (unsigned i = 0; i < numResults; ++i)
-        replacements.push_back(op->getOperand(numOperands - numResults + i));
-
-      rewriter.replaceOp(op, replacements);
-      return success();
-    }
-    return failure();
-  }
-
-private:
-  DataFlowSolver& solver;
-};
-
+/**
+ * @brief Quantum constant propagation.
+ *
+ * Assumes all input qubits start in |0>, propagates the quantum/classical state
+ * through the circuit up to a complexity threshold, and removes operations that
+ * are superfluous given that state.
+ *
+ * The analysis is done as an MLIR `DenseForwardDataFlowAnalysis` over a
+ * `UnionTable` lattice, with a separate rewrite phase driven by the computed
+ * facts.
+ */
 struct ConstantPropagation final
     : impl::ConstantPropagationBase<ConstantPropagation> {
   using ConstantPropagationBase::ConstantPropagationBase;
 
   void runOnOperation() override {
-    const auto op = getOperation();
-
-    DataFlowSolver solver;
-    solver.load<HybridConstantPropagationAnalysis>();
-
-    if (failed(solver.initializeAndRun(op))) {
-      signalPassFailure();
-      return;
-    }
-
-    RewritePatternSet patterns(&getContext());
-    patterns.add<RemoveAlwaysZeroCtrlPattern>(&getContext(), solver);
-
-    if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
-      signalPassFailure();
-    }
+    // TODO(mlir/constant-propagation-v2): implement in stages --
+    //   1. QuantumState, 2. UnionTable/HybridState, 3.
+    //   ConstantPropagationAnalysis,
+    //   4. Decisions + Rewriter + driver, 5. pass-level tests.
   }
 };
+
+} // namespace
 
 } // namespace mlir::qco

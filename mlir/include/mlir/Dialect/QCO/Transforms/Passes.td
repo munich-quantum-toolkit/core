@@ -181,7 +181,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 //===----------------------------------------------------------------------===//
 
 def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect"];
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
   let summary =
       "This pass applies constant propagation to a circuit. It "
       "assumes that all input qubits are |0>. It propagates the "
