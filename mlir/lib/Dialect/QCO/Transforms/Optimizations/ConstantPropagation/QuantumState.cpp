@@ -15,16 +15,16 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Format.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/Value.h>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <complex>
-#include <cstdio>
 #include <map>
 #include <memory>
 #include <optional>
@@ -187,10 +187,18 @@ LogicalResult QuantumState::applyMatrix2Q(const Value in0, const Value in1,
   return success();
 }
 
-void QuantumState::applyGlobalPhase(const double phase,
-                                    const ArrayRef<Value> ctrls) {
+LogicalResult QuantumState::applyControlledPhase(const double phase,
+                                                 const ArrayRef<Value> ctrls) {
+  if (ctrls.empty()) {
+    return failure();
+  }
+  for (const Value c : ctrls) {
+    if (!contains(c)) {
+      return failure();
+    }
+  }
   if (top) {
-    return;
+    return success();
   }
   const uint64_t ctrlMask = maskOf(ctrls);
   const Complex factor = std::exp(Complex{0.0, phase});
@@ -200,6 +208,7 @@ void QuantumState::applyGlobalPhase(const double phase,
     }
   }
   canonicalize();
+  return success();
 }
 
 FailureOr<SmallVector<MeasurementOutcome>>
@@ -377,15 +386,14 @@ void QuantumState::print(raw_ostream& os) const {
     }
     os << "> -> ";
 
-    std::array<char, 32> buf{};
-    std::snprintf(buf.data(), buf.size(), "%.2f", amp.real());
-    const llvm::StringRef real(buf.data());
-    os << (real == "-0.00" ? llvm::StringRef("0.00") : real);
+    SmallString<16> buf;
+    llvm::raw_svector_ostream(buf) << llvm::format("%.2f", amp.real());
+    const llvm::StringRef real(buf);
+    os << (real == "-0.00" ? StringRef("0.00") : real);
 
     if (std::abs(amp.imag()) > MATRIX_TOLERANCE) {
-      os << (amp.imag() > 0 ? " + i" : " - i");
-      std::snprintf(buf.data(), buf.size(), "%.2f", std::abs(amp.imag()));
-      os << buf.data();
+      os << (amp.imag() > 0 ? " + i" : " - i")
+         << llvm::format("%.2f", std::abs(amp.imag()));
     }
   }
 }

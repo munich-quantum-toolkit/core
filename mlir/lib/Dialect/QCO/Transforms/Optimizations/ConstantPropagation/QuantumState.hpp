@@ -130,8 +130,8 @@ public:
    * Qubit ordering follows QCO's @ref Matrix4x4 convention: in0 is the high bit
    * of the 4-dimensional local index, in1 the low bit. When ctrls is non-empty
    * the matrix is applied only on the subspace where every control qubit is
-   * |1>; the rest of the state passes through. Does nothing but the renames when
-   * the state is top.
+   * |1>; the rest of the state passes through. Does nothing but the renames
+   * when the state is top.
    *
    * @param in0 The high bit the matrx is applied to.
    * @param in1 The low bit the matrx is applied to.
@@ -147,15 +147,20 @@ public:
                 const Matrix4x4& matrix, ArrayRef<Value> ctrls = {});
 
   /**
-   * @brief Multiplies the amplitudes by exp(i*phase).
+   * @brief Multiplies by exp(i*phase) the amplitudes where every control is
+   * |1>.
    *
-   * With no controls this adds global phase. With controls, it is a relative
-   * phase applied only where every control qubits are |1>.
+   * This function applies a relative phase when there is a controlled global
+   * phase. An uncontrolled (global) phase is physically unobservable and not
+   * recoverable from an amplitude map, so it is tracked by HybridState instead
+   * and rejected here.
    *
-   * @param phase The phase to add to the quantum state.
-   * @param ctrls The qubits that have to be |1> to apply the matrix.
+   * @param phase The phase to apply.
+   * @param ctrls The qubits that all have to be |1> for the phase to apply.
+   * @return failure() if ctrls is empty or a control is not in this group.
    */
-  void applyGlobalPhase(double phase, ArrayRef<Value> ctrls = {});
+  [[nodiscard("QuantumState::applyControlledPhase called but ignored")]]
+  LogicalResult applyControlledPhase(double phase, ArrayRef<Value> ctrls);
 
   /**
    * @brief Projective measurement of a target in the computational basis.

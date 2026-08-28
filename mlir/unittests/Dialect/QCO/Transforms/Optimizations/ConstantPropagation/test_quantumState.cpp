@@ -238,21 +238,24 @@ TEST_F(QuantumStateTest, topStateStillForwardsQubits) {
 }
 
 //===----------------------------------------------------------------------===//
-// Global phase
+// Controlled phase
 //===----------------------------------------------------------------------===//
 
-TEST_F(QuantumStateTest, globalPhaseMultipliesEveryAmplitude) {
-  auto qs = QuantumState({q[0], q[1], q[2], q[3]}, 4);
-  ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
-  qs.applyGlobalPhase(std::acos(-1.0));
-  EXPECT_EQ(printed(qs), "|0000> -> -0.71, |0001> -> -0.71");
+TEST_F(QuantumStateTest, uncontrolledPhaseIsRejected) {
+  auto qs = QuantumState::singletonZero(q[0], 4);
+  EXPECT_TRUE(qs.applyControlledPhase(std::acos(-1.0), {}).failed());
 }
 
-TEST_F(QuantumStateTest, controleldGlobalPhaseMultipliesNotEveryAmplitude) {
+TEST_F(QuantumStateTest, controlledPhaseAffectsOnlyControlledSubspace) {
   auto qs = QuantumState({q[0], q[1], q[2], q[3]}, 4);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
-  qs.applyGlobalPhase(std::acos(-1.0), {q[0]});
+  ASSERT_TRUE(qs.applyControlledPhase(std::acos(-1.0), {q[0]}).succeeded());
   EXPECT_EQ(printed(qs), "|0000> -> 0.71, |0001> -> -0.71");
+}
+
+TEST_F(QuantumStateTest, controlledPhaseOnQubitNotInGroupFails) {
+  auto qs = QuantumState::singletonZero(q[0], 4);
+  EXPECT_TRUE(qs.applyControlledPhase(1.0, {q[1]}).failed());
 }
 
 //===----------------------------------------------------------------------===//
