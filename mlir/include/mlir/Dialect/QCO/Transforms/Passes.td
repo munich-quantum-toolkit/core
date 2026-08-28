@@ -390,6 +390,26 @@ def AuxiliaryQubitHoisting
                            "mlir::qco::QCODialect"];
 }
 
+def QuantumFunctionBoundaryCommutation
+    : Pass<"quantum-function-boundary-commutation", "mlir::ModuleOp"> {
+  let summary = "Cancel self-inverse gates across a call boundary";
+  let description = [{
+        When the operation producing a qubit argument and the first operation
+        applied to it inside the callee are the same self-inverse single-qubit
+        gate, both are removed and the call is redirected to a copy of the
+        callee without the callee-side gate.
+
+        Copies are cached per callee and per parameter, because the gate removed
+        inside belongs to one specific argument. Running the pass repeatedly can
+        expose further cancellations.
+    }];
+
+  let dependentDialects = ["::mlir::func::FuncDialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::qtensor::QTensorDialect",
+                           "mlir::qco::QCODialect"];
+}
+
 def RemoveDeadGates : Pass<"remove-dead-gates", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Remove quantum gates whose results cannot be observed";
