@@ -12,11 +12,11 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/Sequence.h>
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
-#include <ranges>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -41,14 +41,12 @@ TEST(LayoutTest, ConstructFromPermutation) {
 
 TEST(LayoutDeathTest, RejectDuplicateHardwareIndex) {
   constexpr std::array<size_t, 3> mapping{0, 0, 2};
-  EXPECT_DEATH((void)Layout::fromMapping(mapping),
-               "mapping must be a permutation");
+  EXPECT_DEATH(Layout::fromMapping(mapping), "mapping must be a permutation");
 }
 
 TEST(LayoutDeathTest, RejectOutOfRangeHardwareIndex) {
   constexpr std::array<size_t, 3> mapping{0, 1, 3};
-  EXPECT_DEATH((void)Layout::fromMapping(mapping),
-               "mapping must be a permutation");
+  EXPECT_DEATH(Layout::fromMapping(mapping), "mapping must be a permutation");
 }
 
 TEST(LayoutTest, RandomPlacesEveryProgramOnDistinctHardware) {
@@ -75,9 +73,8 @@ TEST(LayoutTest, RandomLeavesExtraHardwareUnmapped) {
   constexpr size_t nHw = 5;
   const auto layout = Layout::random(nProg, nHw, /*seed=*/0);
 
-  const auto mappedCount =
-      std::ranges::count_if(std::views::iota(size_t{0}, nHw),
-                            [&](size_t hw) { return layout.hasProgramAt(hw); });
+  const auto mappedCount = llvm::count_if(
+      llvm::seq(nHw), [&](size_t hw) { return layout.hasProgramAt(hw); });
   EXPECT_EQ(mappedCount, nProg);
 }
 
@@ -95,9 +92,8 @@ TEST(LayoutTest, HasProgramAtDistinguishesMappedAndUnmapped) {
   constexpr size_t nHw = 4;
   const auto layout = Layout::random(/*nProgramQubits=*/2, nHw, /*seed=*/0);
 
-  const auto mappedCount =
-      std::ranges::count_if(std::views::iota(size_t{0}, nHw),
-                            [&](size_t hw) { return layout.hasProgramAt(hw); });
+  const auto mappedCount = llvm::count_if(
+      llvm::seq(nHw), [&](size_t hw) { return layout.hasProgramAt(hw); });
   EXPECT_EQ(mappedCount, 2);
   EXPECT_EQ(nHw - static_cast<size_t>(mappedCount), 2UL);
 }

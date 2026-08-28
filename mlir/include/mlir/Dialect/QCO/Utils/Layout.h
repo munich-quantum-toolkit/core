@@ -42,7 +42,7 @@ public:
   static Layout random(size_t nProgramQubits, size_t nHardwareQubits,
                        size_t seed);
 
-  /// Construct a layout from a program-to-hardware mapping,
+  /// Construct a layout from a bijective program-to-hardware mapping,
   /// where mapping[prog] = hw.
   /// Sets both `nProgramQubits` and `nHardwareQubits` to `mapping.size()`.
   static Layout fromMapping(ArrayRef<size_t> mapping);
