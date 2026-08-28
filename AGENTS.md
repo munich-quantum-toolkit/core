@@ -28,8 +28,8 @@ MQT Core. The project-wide policy for AI-assisted contributions is
   discard or overwrite changes that are outside the task.
 - Follow the repository's documented development policies and the nearest scoped
   `AGENTS.md`. Use neighboring code as evidence of established practice, not as
-  authority when it conflicts with current policy. Prefer the smallest change
-  that fully solves the problem.
+  authority when it conflicts with current policy.
+- Prefer the smallest change that fully solves the problem.
 - Write code comments, documentation, tests, changelog entries, and public text
   for the final design. Never preserve prompts, review chronology, former names,
   or abandoned approaches unless they remain necessary user-facing context.
@@ -116,20 +116,23 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - Replace `release` with `debug` for a debug build. Consult `CMakePresets.json`
   for other supported configurations.
 
-The C++ code targets C++20 and uses GoogleTest. Write Doxygen comments with
-`///` and follow `docs/development.md`; use `#pragma once` in headers and
-existing project abstractions. Prefer C++20 standard-library facilities over
-custom equivalents. Within `mlir/`, prefer LLVM types such as
-`llvm::SmallVector` and `llvm::function_ref` where appropriate. Do not use
-C-style casts, including casts to `void`; use the appropriate C++ cast or adjust
-the code so that no cast is needed. Use C standard-library typedefs such as
-`size_t` and fixed-width integer types such as `uint64_t` without the `std::`
-namespace qualifier, while directly including the header that provides them. Do
-not use `module` as a C++ variable or parameter name because it conflicts with
-the C++20 keyword. Use `moduleOp` for `mlir::ModuleOp` values. The canonical
-general and MLIR-specific coding policies are documented in
-[`docs/development.md`](docs/development.md) and
-[`docs/mlir/development.md`](docs/mlir/development.md).
+The C++ code targets C++20 and uses GoogleTest. Follow these rules:
+
+- Write Doxygen comments with `///`.
+- Use `#pragma once` in headers and use existing project abstractions.
+- Prefer C++20 standard-library facilities over custom equivalents.
+- Within the `mlir` namespace and its nested namespaces, prefer LLVM types such
+  as `SmallVector` and `function_ref` where appropriate.
+- Do not use C-style casts, including casts to `void`. Use the appropriate C++
+  cast or adjust the code so that no cast is needed.
+- Use C standard-library typedefs such as `size_t` and fixed-width integer types
+  such as `uint64_t` without the `std::` namespace qualifier. Directly include
+  the header that provides each type.
+- Do not use `module` as a C++ variable or parameter name because it conflicts
+  with the C++20 keyword. Use `moduleOp` for `mlir::ModuleOp` values.
+- Follow the canonical general and MLIR-specific coding policies in
+  [`docs/development.md`](docs/development.md) and
+  [`docs/mlir/development.md`](docs/mlir/development.md).
 
 ### Python and Bindings
 
