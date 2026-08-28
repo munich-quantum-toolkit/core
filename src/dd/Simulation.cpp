@@ -40,7 +40,7 @@ using MeasurementAssignment = std::pair<qc::Qubit, std::size_t>;
 struct CircuitAnalysis {
   bool isDynamic = false;
   bool hasMeasurements = false;
-  std::vector<MeasurementAssignment> terminalMeasurements{};
+  std::vector<MeasurementAssignment> terminalMeasurements;
 };
 
 class VectorRootGuard {
@@ -53,6 +53,8 @@ public:
   VectorRootGuard(VectorRootGuard&&) = delete;
   VectorRootGuard& operator=(VectorRootGuard&&) = delete;
 
+  // The guard owns the registered root, so decRef cannot throw here.
+  // NOLINTNEXTLINE(bugprone-exception-escape)
   ~VectorRootGuard() { package.decRef(state); }
 
   [[nodiscard]] VectorDD& get() noexcept { return state; }

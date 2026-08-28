@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "dd/DDDefinitions.hpp"
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
@@ -26,7 +27,9 @@
 
 #include <algorithm>
 #include <array>
+#include <complex>
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <random>
 #include <stdexcept>
