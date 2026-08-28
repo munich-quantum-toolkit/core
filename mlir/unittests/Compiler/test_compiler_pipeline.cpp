@@ -1756,6 +1756,22 @@ TEST_F(CompilerPipelineTest,
   )mlir",
                  CompilerTarget::ClassicalControl::MultiwayBranch,
                  "scf.index_switch");
+
+  expectRejected(R"mlir(
+    module {
+      func.func private @consume(vector<2x!qco.qubit>)
+      func.func @main(%condition: i1, %qubits: vector<2x!qco.qubit>)
+          attributes {mqt.entry_point} {
+        %q = qco.alloc : !qco.qubit
+        scf.if %condition {
+          func.call @consume(%qubits) : (vector<2x!qco.qubit>) -> ()
+        }
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                 CompilerTarget::ClassicalControl::Conditional, "scf.if");
 }
 
 /**
@@ -1899,16 +1915,17 @@ for int i in [0:1] {
   EXPECT_FALSE(program->compileForTarget(target));
   EXPECT_EQ(program->str(), before);
   EXPECT_TRUE(StringRef(diagnostics)
-                  .contains("cannot lower quantum tensor state carried through "
+                  .contains("cannot lower quantum aggregate state carried "
+                            "through "
                             "classical-control construct 'scf.for'"))
       << diagnostics;
 }
 
 /**
- * @brief Test: unsupported quantum tensor state has a stable diagnostic.
+ * @brief Test: unsupported quantum aggregate state has a stable diagnostic.
  */
 TEST_F(CompilerPipelineTest,
-       TargetCompilationRejectsQuantumTensorStructuredControlState) {
+       TargetCompilationRejectsQuantumAggregateStructuredControlState) {
   const auto expectRejected =
       [&](const StringRef source,
           const CompilerTarget::ClassicalControl control,
@@ -1930,7 +1947,7 @@ TEST_F(CompilerPipelineTest,
         EXPECT_EQ(program->str(), before);
         const StringRef message(diagnostics);
         EXPECT_TRUE(
-            message.contains("cannot lower quantum tensor state carried "
+            message.contains("cannot lower quantum aggregate state carried "
                              "through classical-control construct"))
             << diagnostics;
         EXPECT_TRUE(message.contains(operation)) << diagnostics;
@@ -1942,11 +1959,12 @@ TEST_F(CompilerPipelineTest,
           attributes {mqt.entry_point} {
         %q = qco.alloc : !qco.qubit
         %c2 = arith.constant 2 : index
-        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
         %tensor1 = scf.if %condition -> tensor<2x!qco.qubit> {
-          scf.yield %tensor0 : tensor<2x!qco.qubit>
+          %then = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+          scf.yield %then : tensor<2x!qco.qubit>
         } else {
-          scf.yield %tensor0 : tensor<2x!qco.qubit>
+          %else = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+          scf.yield %else : tensor<2x!qco.qubit>
         }
         qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
         qco.sink %q : !qco.qubit
@@ -2052,13 +2070,14 @@ TEST_F(CompilerPipelineTest,
           attributes {mqt.entry_point} {
         %q = qco.alloc : !qco.qubit
         %c2 = arith.constant 2 : index
-        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
         %tensor1 = scf.index_switch %selector -> tensor<2x!qco.qubit>
         case 0 {
-          scf.yield %tensor0 : tensor<2x!qco.qubit>
+          %case = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+          scf.yield %case : tensor<2x!qco.qubit>
         }
         default {
-          scf.yield %tensor0 : tensor<2x!qco.qubit>
+          %default = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+          scf.yield %default : tensor<2x!qco.qubit>
         }
         qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
         qco.sink %q : !qco.qubit

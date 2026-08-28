@@ -89,9 +89,10 @@ requiredClassicalControl(Operation* operation) {
   return false;
 }
 
-[[nodiscard]] static bool isQubitTensor(const Type type) {
-  const auto tensor = llvm::dyn_cast<RankedTensorType>(type);
-  return tensor && llvm::isa<qco::QubitType>(tensor.getElementType());
+[[nodiscard]] static bool isQubitAggregate(const Type type) {
+  auto shaped = llvm::dyn_cast<ShapedType>(type);
+  return shaped && llvm::isa<RankedTensorType, VectorType>(type) &&
+         llvm::isa<qco::QubitType>(shaped.getElementType());
 }
 
 [[nodiscard]] static bool capturesQuantumState(Operation* operation) {
@@ -102,7 +103,7 @@ requiredClassicalControl(Operation* operation) {
     }
     for (Value operand : nested->getOperands()) {
       if (!llvm::isa<qco::QubitType>(operand.getType()) &&
-          !isQubitTensor(operand.getType())) {
+          !isQubitAggregate(operand.getType())) {
         continue;
       }
       const bool definedInside =
@@ -123,7 +124,7 @@ requiredClassicalControl(Operation* operation) {
   bool contains = false;
   operation->walk([&](Operation* nested) {
     const auto isQuantum = [](const Type type) {
-      return llvm::isa<qco::QubitType>(type) || isQubitTensor(type);
+      return llvm::isa<qco::QubitType>(type) || isQubitAggregate(type);
     };
     if (llvm::any_of(nested->getOperandTypes(), isQuantum) ||
         llvm::any_of(nested->getResultTypes(), isQuantum)) {
@@ -135,7 +136,8 @@ requiredClassicalControl(Operation* operation) {
   return contains;
 }
 
-[[nodiscard]] static bool hasUnsupportedQubitTensorState(Operation* operation) {
+[[nodiscard]] static bool
+hasUnsupportedQubitAggregateState(Operation* operation) {
   if (const auto ifOp = llvm::dyn_cast<qco::IfOp>(operation)) {
     return !qco::hasOnlyScalarizableTensorInputs(ifOp);
   }
@@ -144,8 +146,8 @@ requiredClassicalControl(Operation* operation) {
     return false;
   }
 
-  return llvm::any_of(operation->getOperandTypes(), isQubitTensor) ||
-         llvm::any_of(operation->getResultTypes(), isQubitTensor);
+  return llvm::any_of(operation->getOperandTypes(), isQubitAggregate) ||
+         llvm::any_of(operation->getResultTypes(), isQubitAggregate);
 }
 
 namespace {
@@ -198,9 +200,9 @@ private:
   }
 
   [[nodiscard]] LogicalResult verifyOperation(Operation* operation) const {
-    if (hasUnsupportedQubitTensorState(operation)) {
+    if (hasUnsupportedQubitAggregateState(operation)) {
       operation->emitError()
-          << "target compilation cannot lower quantum tensor state carried "
+          << "target compilation cannot lower quantum aggregate state carried "
              "through classical-control construct '"
           << operation->getName() << "'";
       return failure();
