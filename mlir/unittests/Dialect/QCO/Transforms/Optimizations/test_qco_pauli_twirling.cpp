@@ -18,16 +18,19 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <set>
 #include <string>
@@ -49,7 +52,8 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                    scf::SCFDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
     builder.initialize();
@@ -128,6 +132,54 @@ TEST_F(PauliTwirlingTest, SameSeedProducesSameProgram) {
   ASSERT_TRUE(succeeded(runPass(*first, 12345)));
   ASSERT_TRUE(succeeded(runPass(*second, 12345)));
   EXPECT_EQ(print(*first), print(*second));
+}
+
+TEST_F(PauliTwirlingTest, TwirlsGateInsideDeepNonModifierRegions) {
+  constexpr size_t depth = 256;
+  std::string source = R"mlir(
+module {
+  func.func @main() {
+    %q0 = qco.static 0 : !qco.qubit
+    %q1 = qco.static 1 : !qco.qubit
+)mlir";
+  for (size_t i = 0; i < depth; ++i) {
+    source += "    scf.execute_region {\n";
+  }
+  source += R"mlir(
+    %out0, %out1 = qco.ecr %q0, %q1 : !qco.qubit, !qco.qubit
+      -> !qco.qubit, !qco.qubit
+    qco.sink %out0 : !qco.qubit
+    qco.sink %out1 : !qco.qubit
+)mlir";
+  for (size_t i = 0; i < depth; ++i) {
+    source += "      scf.yield\n    }\n";
+  }
+  source += R"mlir(
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  auto function = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(function);
+  auto execute = *function.getOps<scf::ExecuteRegionOp>().begin();
+  for (size_t i = 1; i < depth; ++i) {
+    execute =
+        *execute.getRegion().front().getOps<scf::ExecuteRegionOp>().begin();
+  }
+  Block* innermostBlock = &execute.getRegion().front();
+
+  ASSERT_TRUE(succeeded(runPass(*module, 42)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  const auto pauliCount = llvm::count_if(*innermostBlock, [](Operation& op) {
+    return isa<IdOp, XOp, YOp, ZOp>(op);
+  });
+  EXPECT_EQ(pauliCount, 4);
 }
 
 TEST_F(PauliTwirlingTest, PreservesExistingPhaseWhenRewriting) {

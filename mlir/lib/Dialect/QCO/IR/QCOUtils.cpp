@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -17,6 +18,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MQT/IR/MQTDialect.h>
@@ -26,13 +28,12 @@
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <tuple>
 
 namespace mlir::qco {
 
@@ -52,7 +53,9 @@ LogicalResult verifyLinearity(Operation* root) {
   }
 
   DenseSet<uint64_t> staticIndices;
-  const auto walkResult = root->walk([&](Operation* op) {
+  SmallVector<Operation*> operations{root};
+  for (size_t next = 0; next < operations.size(); ++next) {
+    auto* op = operations[next];
     if (auto staticOp = dyn_cast<StaticOp>(op)) {
       if (entryPoint &&
           (entryPoint.isDeclaration() ||
@@ -61,33 +64,35 @@ LogicalResult verifyLinearity(Operation* root) {
             << "expected static qubits in the entry block of program entry "
                "function @"
             << entryPoint.getSymName();
-        return WalkResult::interrupt();
+        return failure();
       }
       if (!staticIndices.insert(staticOp.getIndex()).second) {
         staticOp.emitError()
             << "expected each static qubit index to identify one linear "
                "value, but found duplicate index "
             << staticOp.getIndex();
-        return WalkResult::interrupt();
+        return failure();
       }
     }
     for (auto result : op->getResults()) {
       if (failed(verifyLinearValue(result))) {
-        return WalkResult::interrupt();
+        return failure();
       }
     }
     for (Region& region : op->getRegions()) {
       for (Block& block : region) {
         for (auto argument : block.getArguments()) {
           if (failed(verifyLinearValue(argument))) {
-            return WalkResult::interrupt();
+            return failure();
           }
+        }
+        for (auto& nestedOp : block) {
+          operations.push_back(&nestedOp);
         }
       }
     }
-    return WalkResult::advance();
-  });
-  return walkResult.wasInterrupted() ? failure() : success();
+  }
+  return success();
 }
 
 /// Returns the wire index for @p wire in @p wireIds, or `std::nullopt` if
@@ -145,16 +150,111 @@ embedUnitaryInBody(UnitaryOpInterface unitary, size_t numTargets,
   return matrix->embedInNqubit(numTargets, *q0, *q1);
 }
 
+bool hasComposableBodyMatrix(Block& block, size_t numTargets) {
+  if (!isModifierMatrixSizeSupported(numTargets) ||
+      block.getNumArguments() != numTargets ||
+      block.getTerminator()->getNumOperands() != numTargets) {
+    return false;
+  }
+
+  if (auto sole = mqt::getSoleBodyUnitary<UnitaryOpInterface>(block);
+      sole && sole.getNumQubits() > 2) {
+    if (sole.getNumQubits() != numTargets ||
+        !sole.hasCompileTimeKnownUnitaryMatrix()) {
+      return false;
+    }
+    const auto inputsMatch =
+        llvm::all_of(llvm::enumerate(sole.getInputQubits()), [&](auto indexed) {
+          return indexed.value() == block.getArgument(indexed.index());
+        });
+    const auto outputsMatch = llvm::all_of(
+        llvm::zip_equal(sole.getOutputQubits(),
+                        block.getTerminator()->getOperands()),
+        [](auto pair) { return std::get<0>(pair) == std::get<1>(pair); });
+    return inputsMatch && outputsMatch;
+  }
+
+  DenseMap<Value, size_t> wireIds;
+  for (size_t i = 0; i < numTargets; ++i) {
+    wireIds[block.getArgument(i)] = i;
+  }
+
+  for (Operation& op : block.without_terminator()) {
+    const bool handled =
+        TypeSwitch<Operation*, bool>(&op)
+            .Case<BarrierOp>([&](BarrierOp barrier) {
+              propagateWireIds(barrier, wireIds);
+              return true;
+            })
+            .Case<GPhaseOp>([](GPhaseOp gphase) {
+              return cast<UnitaryOpInterface>(gphase.getOperation())
+                  .hasCompileTimeKnownUnitaryMatrix();
+            })
+            .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
+              if (unitary.getNumQubits() == 0 || unitary.getNumQubits() > 2 ||
+                  !unitary.hasCompileTimeKnownUnitaryMatrix() ||
+                  llvm::any_of(unitary.getInputQubits(), [&](Value input) {
+                    return !wireIds.contains(input);
+                  })) {
+                return false;
+              }
+              propagateWireIds(unitary, wireIds);
+              return true;
+            })
+            .Default([&](Operation* unknown) {
+              const auto usesQubit = [](Value value) {
+                return isLinearQubitType(value.getType());
+              };
+              return !mqt::containsUnitaryOperation<UnitaryOpInterface>(
+                         unknown) &&
+                     !llvm::any_of(unknown->getOperands(), usesQubit) &&
+                     !llvm::any_of(unknown->getResults(), usesQubit);
+            });
+    if (!handled) {
+      return false;
+    }
+  }
+
+  for (auto [index, yielded] :
+       llvm::enumerate(block.getTerminator()->getOperands())) {
+    const auto wire = lookupWireId(wireIds, yielded);
+    if (!wire.has_value() || *wire != index) {
+      return false;
+    }
+  }
+  return true;
+}
+
 std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
                                                size_t numTargets) {
-  if (numTargets == 0 || numTargets > kMaxModifierTargetQubits ||
-      block.getNumArguments() != numTargets) {
+  if (!hasComposableBodyMatrix(block, numTargets)) {
     return std::nullopt;
+  }
+
+  if (auto sole = mqt::getSoleBodyUnitary<UnitaryOpInterface>(block);
+      sole && sole.getNumQubits() > 2 && sole.getNumQubits() == numTargets) {
+    const auto inputsMatch =
+        llvm::all_of(llvm::enumerate(sole.getInputQubits()), [&](auto indexed) {
+          return indexed.value() == block.getArgument(indexed.index());
+        });
+    const auto outputsMatch = llvm::all_of(
+        llvm::zip_equal(sole.getOutputQubits(),
+                        block.getTerminator()->getOperands()),
+        [](auto pair) { return std::get<0>(pair) == std::get<1>(pair); });
+    if (!inputsMatch || !outputsMatch) {
+      return std::nullopt;
+    }
+    auto matrix = sole.getUnitaryMatrix<DynamicMatrix>();
+    const auto expectedDim = static_cast<int64_t>(1ULL << numTargets);
+    if (!matrix || matrix->rows() != expectedDim ||
+        matrix->cols() != expectedDim) {
+      return std::nullopt;
+    }
+    return matrix;
   }
 
   std::optional<DynamicMatrix> acc;
   Complex global{1.0, 0.0};
-  bool found = false;
 
   DenseMap<Value, size_t> wireIds;
   for (size_t i = 0; i < numTargets; ++i) {
@@ -174,7 +274,6 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
                 return false;
               }
               global *= matrix->value;
-              found = true;
               return true;
             })
             .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
@@ -187,15 +286,16 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
               } else {
                 acc->premultiplyBy(*embedded);
               }
-              found = true;
               propagateWireIds(unitary, wireIds);
               return true;
             })
             .Default([&](Operation* unknown) {
               const auto usesQubit = [](Value value) {
-                return isa<QubitType>(value.getType());
+                return isLinearQubitType(value.getType());
               };
-              return !llvm::any_of(unknown->getOperands(), usesQubit) &&
+              return !mqt::containsUnitaryOperation<UnitaryOpInterface>(
+                         unknown) &&
+                     !llvm::any_of(unknown->getOperands(), usesQubit) &&
                      !llvm::any_of(unknown->getResults(), usesQubit);
             });
 
@@ -204,8 +304,12 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
     }
   }
 
-  if (!found) {
-    return std::nullopt;
+  for (auto [index, yielded] :
+       llvm::enumerate(block.getTerminator()->getOperands())) {
+    const auto wire = lookupWireId(wireIds, yielded);
+    if (!wire.has_value() || *wire != index) {
+      return std::nullopt;
+    }
   }
   if (!acc.has_value()) {
     acc = DynamicMatrix::identity(static_cast<int64_t>(1ULL << numTargets));

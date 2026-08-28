@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
@@ -336,16 +337,35 @@ namespace {
 struct UnrollModifiers final : impl::UnrollModifiersBase<UnrollModifiers> {
 protected:
   void runOnOperation() override {
+    if (failed(qco::verifyLinearity(getOperation()))) {
+      signalPassFailure();
+      return;
+    }
+
+    SmallVector<Operation*> reversePostorder;
+    SmallVector<Operation*> worklist{getOperation()};
+    while (!worklist.empty()) {
+      Operation* op = worklist.pop_back_val();
+      reversePostorder.push_back(op);
+      for (Region& region : op->getRegions()) {
+        for (Block& block : region) {
+          for (Operation& nested : block) {
+            worklist.push_back(&nested);
+          }
+        }
+      }
+    }
+
     SmallVector<Operation*> modifiers;
-    getOperation()->walk([&](Operation* op) {
+    for (Operation* op : llvm::reverse(reversePostorder)) {
       if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qco::CtrlOp, qco::InvOp,
               qco::PowOp>(op)) {
         modifiers.push_back(op);
       }
-    });
+    }
 
-    // The walk visits nested modifiers before their parents, so unrolling the
-    // collected modifiers in order reaches a fixpoint in a single sweep.
+    // Unrolling nested modifiers before their parents reaches a fixpoint in a
+    // single sweep.
     IRRewriter rewriter(&getContext());
     for (auto* modifier : modifiers) {
       llvm::TypeSwitch<Operation*>(modifier)

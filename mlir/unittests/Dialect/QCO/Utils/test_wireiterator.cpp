@@ -17,6 +17,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/Support/LLVM.h>
@@ -262,6 +263,35 @@ TEST_P(WireIteratorTest, FunctionReturnTerminatesTraversal) {
   --it;
   ASSERT_EQ(it.operation(), output.getDefiningOp());
   ASSERT_EQ(it.qubit(), output);
+}
+
+TEST_P(WireIteratorTest, UnknownCarrierTerminatesTraversal) {
+  OpBuilder builder(context.get());
+  const auto location = builder.getUnknownLoc();
+  auto module = ModuleOp::create(location);
+  builder.setInsertionPointToStart(module.getBody());
+  auto function = func::FuncOp::create(builder, location, "main",
+                                       builder.getFunctionType({}, {}));
+  Block* body = function.addEntryBlock();
+  builder.setInsertionPointToStart(body);
+
+  auto source = qco::AllocOp::create(builder, location).getResult();
+  auto carrier = UnrealizedConversionCastOp::create(
+      builder, location, TypeRange{source.getType()}, ValueRange{source});
+  auto carried = carrier.getResult(0);
+  qco::SinkOp::create(builder, location, carried);
+  func::ReturnOp::create(builder, location);
+
+  qco::WireIterator forward(source);
+  ++forward;
+  EXPECT_EQ(forward.operation(), carrier.getOperation());
+  ++forward;
+  EXPECT_EQ(forward, std::default_sentinel);
+
+  qco::WireIterator backward(carried);
+  --backward;
+  EXPECT_EQ(backward.operation(), nullptr);
+  EXPECT_EQ(backward.qubit(), carried);
 }
 
 INSTANTIATE_TEST_SUITE_P(DynamicAndStatic, WireIteratorTest, ::testing::Bool(),

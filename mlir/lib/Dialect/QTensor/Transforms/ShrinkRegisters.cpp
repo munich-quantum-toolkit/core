@@ -10,7 +10,10 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
+#include "mlir/Support/OperationUtils.h"
 
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -21,7 +24,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -32,62 +34,35 @@ namespace mlir::qtensor {
 #include "mlir/Dialect/QTensor/Transforms/Passes.h.inc"
 
 /**
- * @brief Return the unique user of a linear qtensor value.
- */
-[[nodiscard]] static Operation* getLinearTensorUser(Value tensor) {
-  assert(tensor.hasOneUse() && "Expected a linear tensor with exactly one use");
-  return *tensor.getUsers().begin();
-}
-
-/**
  * @brief Mark a single live index.
  */
-[[nodiscard]] static LogicalResult markLiveIndex(const int64_t index,
-                                                 BitVector& liveIndices) {
-  if (index < 0 || std::cmp_greater_equal(index, liveIndices.size())) {
+[[nodiscard]] static LogicalResult
+markLiveIndex(int64_t index, int64_t tensorSize,
+              llvm::SmallDenseSet<int64_t>& liveIndices) {
+  if (index < 0 || index >= tensorSize) {
     return failure();
   }
-  liveIndices.set(static_cast<size_t>(index));
+  liveIndices.insert(index);
   return success();
 }
 
-/**
- * @brief Redirect the tensor operand from @p from to @p to.
- */
-[[nodiscard]] static LogicalResult remapTensorOperand(Operation* op, Value from,
-                                                      Value to) {
-  if (auto extractOp = dyn_cast<ExtractOp>(op)) {
-    if (extractOp.getTensor() != from) {
-      return failure();
-    }
-    extractOp->setOperand(0, to);
-    return success();
-  }
-  if (auto insertOp = dyn_cast<InsertOp>(op)) {
-    if (insertOp.getDest() != from) {
-      return failure();
-    }
-    insertOp->setOperand(1, to);
-    return success();
-  }
-  if (auto deallocOp = dyn_cast<DeallocOp>(op)) {
-    if (deallocOp.getTensor() != from) {
-      return failure();
-    }
-    deallocOp->setOperand(0, to);
-    return success();
-  }
-  return failure();
-}
+struct TensorAccess {
+  Operation* operation;
+  int64_t index;
+};
 
 /**
- * @brief Walk alloc->dealloc and collect all touched indices.
+ * @brief Walk alloc->dealloc and plan all accesses without changing the IR.
  */
-[[nodiscard]] static LogicalResult
-collectLiveIndices(AllocOp allocOp, BitVector& live, DeallocOp& deallocOp) {
+[[nodiscard]] static LogicalResult collectTensorChain(
+    AllocOp allocOp, int64_t tensorSize, llvm::SmallDenseSet<int64_t>& live,
+    SmallVectorImpl<TensorAccess>& accesses, DeallocOp& deallocOp) {
   auto tensor = allocOp.getResult();
   while (true) {
-    auto* user = getLinearTensorUser(tensor);
+    if (!tensor.hasOneUse()) {
+      return failure();
+    }
+    auto* user = *tensor.getUsers().begin();
 
     if (auto currentDealloc = dyn_cast<DeallocOp>(user)) {
       if (currentDealloc.getTensor() != tensor) {
@@ -102,9 +77,10 @@ collectLiveIndices(AllocOp allocOp, BitVector& live, DeallocOp& deallocOp) {
         return failure();
       }
       auto index = getConstantIntValue(extractOp.getIndex());
-      if (!index || failed(markLiveIndex(*index, live))) {
+      if (!index || failed(markLiveIndex(*index, tensorSize, live))) {
         return failure();
       }
+      accesses.push_back({extractOp, *index});
       tensor = extractOp.getOutTensor();
       continue;
     }
@@ -114,9 +90,10 @@ collectLiveIndices(AllocOp allocOp, BitVector& live, DeallocOp& deallocOp) {
         return failure();
       }
       auto index = getConstantIntValue(insertOp.getIndex());
-      if (!index || failed(markLiveIndex(*index, live))) {
+      if (!index || failed(markLiveIndex(*index, tensorSize, live))) {
         return failure();
       }
+      accesses.push_back({insertOp, *index});
       tensor = insertOp.getResult();
       continue;
     }
@@ -141,9 +118,11 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
       return failure();
     }
 
-    BitVector live(static_cast<size_t>(*oldSize), false);
+    llvm::SmallDenseSet<int64_t> live;
+    SmallVector<TensorAccess> accesses;
     DeallocOp oldDeallocOp{};
-    if (failed(collectLiveIndices(allocOp, live, oldDeallocOp))) {
+    if (failed(collectTensorChain(allocOp, *oldSize, live, accesses,
+                                  oldDeallocOp))) {
       return failure();
     }
 
@@ -151,16 +130,26 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
       return failure();
     }
 
-    SmallVector<int64_t> newIndexByOldIndex(static_cast<size_t>(*oldSize), -1);
-    int64_t newSize = 0;
-    for (int64_t index = 0; index < *oldSize; ++index) {
-      if (live.test(static_cast<size_t>(index))) {
-        newIndexByOldIndex[static_cast<size_t>(index)] = newSize++;
-      }
+    SmallVector<int64_t> liveIndices(live.begin(), live.end());
+    llvm::sort(liveIndices);
+    const auto newSize = static_cast<int64_t>(liveIndices.size());
+    DenseMap<int64_t, int64_t> newIndexByOldIndex;
+    for (auto [newIndex, oldIndex] : llvm::enumerate(liveIndices)) {
+      newIndexByOldIndex.try_emplace(oldIndex, static_cast<int64_t>(newIndex));
     }
 
     if (newSize <= 0 || newSize == *oldSize) {
       return failure();
+    }
+
+    SmallVector<int64_t> mappedIndices;
+    mappedIndices.reserve(accesses.size());
+    for (const auto& access : accesses) {
+      const auto mapped = newIndexByOldIndex.find(access.index);
+      if (mapped == newIndexByOldIndex.end()) {
+        return failure();
+      }
+      mappedIndices.push_back(mapped->second);
     }
 
     rewriter.setInsertionPoint(allocOp);
@@ -168,40 +157,14 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         arith::ConstantIndexOp::create(rewriter, allocOp.getLoc(), newSize);
     auto newAlloc =
         AllocOp::create(rewriter, allocOp.getLoc(), size.getResult());
-    newAlloc->setDiscardableAttrs(allocOp->getDiscardableAttrDictionary());
+    rewriter.modifyOpInPlace(newAlloc, [&] {
+      newAlloc->setDiscardableAttrs(allocOp->getDiscardableAttrDictionary());
+    });
 
-    auto oldTensor = allocOp.getResult();
     auto currentTensor = newAlloc.getResult();
-    while (true) {
-      Operation* currentOp = getLinearTensorUser(oldTensor);
-
-      if (auto deallocOp = dyn_cast<DeallocOp>(currentOp)) {
-        if (deallocOp != oldDeallocOp || deallocOp.getTensor() != oldTensor) {
-          return failure();
-        }
-        rewriter.setInsertionPoint(deallocOp);
-        DeallocOp::create(rewriter, deallocOp.getLoc(), currentTensor);
-        rewriter.eraseOp(deallocOp);
-        break;
-      }
-
-      if (auto extractOp = dyn_cast<ExtractOp>(currentOp)) {
-        if (extractOp.getTensor() != oldTensor) {
-          return failure();
-        }
-        const auto oldIndex = *getConstantIntValue(extractOp.getIndex());
-        if (oldIndex < 0 ||
-            std::cmp_greater_equal(oldIndex, newIndexByOldIndex.size())) {
-          return failure();
-        }
-        const auto mappedIndex =
-            newIndexByOldIndex[static_cast<size_t>(oldIndex)];
-        if (mappedIndex < 0) {
-          return failure();
-        }
-        auto oldOutTensor = extractOp.getOutTensor();
-        auto* nextOp = getLinearTensorUser(oldOutTensor);
-
+    for (const auto [access, mappedIndex] :
+         llvm::zip_equal(accesses, mappedIndices)) {
+      if (auto extractOp = dyn_cast<ExtractOp>(access.operation)) {
         rewriter.setInsertionPoint(extractOp);
         auto index = arith::ConstantIndexOp::create(
             rewriter, extractOp.getLoc(), mappedIndex);
@@ -209,50 +172,28 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
                                             currentTensor, index.getResult());
         rewriter.replaceAllUsesWith(extractOp.getResult(),
                                     newExtract.getResult());
-
         currentTensor = newExtract.getOutTensor();
-        if (failed(remapTensorOperand(nextOp, oldOutTensor, oldTensor))) {
-          return failure();
-        }
-        rewriter.eraseOp(extractOp);
         continue;
       }
 
-      if (auto insertOp = dyn_cast<InsertOp>(currentOp)) {
-        if (insertOp.getDest() != oldTensor) {
-          return failure();
-        }
-        const auto oldIndex = *getConstantIntValue(insertOp.getIndex());
-        if (oldIndex < 0 ||
-            std::cmp_greater_equal(oldIndex, newIndexByOldIndex.size())) {
-          return failure();
-        }
-        const auto mappedIndex =
-            newIndexByOldIndex[static_cast<size_t>(oldIndex)];
-        if (mappedIndex < 0) {
-          return failure();
-        }
-        auto oldResultTensor = insertOp.getResult();
-        auto* nextOp = getLinearTensorUser(oldResultTensor);
+      auto insertOp = cast<InsertOp>(access.operation);
+      rewriter.setInsertionPoint(insertOp);
+      auto index = arith::ConstantIndexOp::create(rewriter, insertOp.getLoc(),
+                                                  mappedIndex);
+      auto newInsert =
+          InsertOp::create(rewriter, insertOp.getLoc(), insertOp.getScalar(),
+                           currentTensor, index.getResult());
 
-        rewriter.setInsertionPoint(insertOp);
-        auto index = arith::ConstantIndexOp::create(rewriter, insertOp.getLoc(),
-                                                    mappedIndex);
-        auto newInsert =
-            InsertOp::create(rewriter, insertOp.getLoc(), insertOp.getScalar(),
-                             currentTensor, index.getResult());
-
-        currentTensor = newInsert.getResult();
-        if (failed(remapTensorOperand(nextOp, oldResultTensor, oldTensor))) {
-          return failure();
-        }
-        rewriter.eraseOp(insertOp);
-        continue;
-      }
-
-      return failure();
+      currentTensor = newInsert.getResult();
     }
 
+    rewriter.setInsertionPoint(oldDeallocOp);
+    DeallocOp::create(rewriter, oldDeallocOp.getLoc(), currentTensor);
+
+    rewriter.eraseOp(oldDeallocOp);
+    for (const auto& access : llvm::reverse(accesses)) {
+      rewriter.eraseOp(access.operation);
+    }
     rewriter.eraseOp(allocOp);
     return success();
   }
@@ -262,6 +203,11 @@ struct ShrinkQTensorToFitPass final
     : impl::ShrinkQTensorToFitPassBase<ShrinkQTensorToFitPass> {
 protected:
   void runOnOperation() override {
+    constexpr size_t maxRegionNesting = 64;
+    if (failed(verifyRegionNestingDepth(getOperation(), maxRegionNesting))) {
+      signalPassFailure();
+      return;
+    }
     RewritePatternSet patterns(&getContext());
     patterns.add<ShrinkStaticQTensor>(&getContext());
 

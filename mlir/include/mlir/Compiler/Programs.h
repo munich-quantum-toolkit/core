@@ -13,6 +13,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -34,6 +35,15 @@ class JeffProgram;
 class OpenQASMProgram;
 class QIRProgram;
 class CompilerTarget;
+
+namespace detail {
+
+/// Deserialize the JEFF subset supported by the compiler without allowing the
+/// dependency to terminate on unsupported declarations.
+[[nodiscard]] FailureOr<OwningOpRef<ModuleOp>>
+deserializeJeffFile(MLIRContext* context, const std::filesystem::path& path);
+
+} // namespace detail
 
 /**
  * @brief The QIR profile represented by a QIR program.

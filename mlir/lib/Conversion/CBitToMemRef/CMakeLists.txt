@@ -14,6 +14,7 @@ add_mlir_conversion_library(
   LINK_LIBS
   MLIRArithDialect
   MLIRCBitDialect
+  MLIRControlFlowDialect
   MLIRFuncDialect
   MLIRFuncTransforms
   MLIRMemRefDialect

@@ -32,6 +32,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -40,6 +41,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
@@ -511,6 +513,43 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedReturnedQubit) {
   EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
   EXPECT_TRUE(
       failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUnrepresentableStaticQubitIndex) {
+  expectMlirFails(1, R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.static 4294967296 : !qco.qubit
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir");
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsDuplicateStaticQubitIndices) {
+  expectMlirFails(1, R"mlir(
+    module {
+      func.func @main() {
+        %a = qco.static 0 : !qco.qubit
+        %b = qco.static 0 : !qco.qubit
+        qco.sink %a : !qco.qubit
+        qco.sink %b : !qco.qubit
+        return
+      }
+    }
+  )mlir");
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsExcessiveClassicalRegisterCapacity) {
+  expectMlirFails(1, R"mlir(
+    module {
+      func.func @main() {
+        %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1073741824>
+        return
+      }
+    }
+  )mlir");
 }
 
 TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
@@ -1137,6 +1176,66 @@ TEST_F(QCODDFunctionalityTest, EmbedsWideLocalMatrixWithoutRegisterLimit) {
   expectEqualToQc(mainFunc(*mod), qc);
 }
 
+TEST_F(QCODDFunctionalityTest, RejectsExcessiveRegionNesting) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto qubit = b.staticQubit(0);
+    std::function<Value(size_t, Value)> nest = [&](size_t depth,
+                                                   Value value) -> Value {
+      if (depth == 0) {
+        return b.x(value);
+      }
+      return b.qcoIf(
+          true, value,
+          [&](Value argument) { return nest(depth - 1, argument); },
+          [](Value argument) { return argument; });
+    };
+    qubit = nest(64, qubit);
+    b.sink(qubit);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+  auto dd = std::make_unique<dd::Package>(1);
+
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalOperations) {
+  for (const StringRef source : {
+           R"mlir(module {
+             func.func @main(%c: i1) {
+               %q = qco.static 0 : !qco.qubit
+               %bad = arith.index_castui %c : i1 to index
+               qco.sink %q : !qco.qubit
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%unmapped: i1) {
+               %q = qco.static 0 : !qco.qubit
+               %true = arith.constant true
+               %bad = arith.andi %unmapped, %true : i1
+               qco.sink %q : !qco.qubit
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%unmapped: index) {
+               %q = qco.static 0 : !qco.qubit
+               %one = arith.constant 1 : index
+               %bad = arith.ori %unmapped, %one : index
+               qco.sink %q : !qco.qubit
+               return
+             }
+           })mlir"}) {
+    auto mod = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(mod);
+    auto dd = std::make_unique<dd::Package>(1);
+    std::mt19937_64 rng(1);
+    EXPECT_TRUE(
+        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalControl) {
   for (const StringRef source : {R"mlir(
     module {
@@ -1252,6 +1351,130 @@ TEST_F(QCODDFunctionalityTest, BindsClassicalIndexResults) {
   EXPECT_EQ(out->getVector(), expected.getVector());
   dd->decRef(*out);
   dd->decRef(expected);
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalRegionResults) {
+  for (const StringRef source : {
+           R"mlir(module {
+             func.func @main(%unmapped: i1) {
+               %q = qco.static 0 : !qco.qubit
+               %true = arith.constant true
+               %result, %out = qco.if %true args(%arg = %q)
+                   -> (i1, !qco.qubit) {
+                 qco.yield %unmapped, %arg : i1, !qco.qubit
+               } else args(%arg = %q) {
+                 qco.yield %true, %arg : i1, !qco.qubit
+               }
+               qco.sink %out : !qco.qubit
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%unmapped: index) {
+               %q = qco.static 0 : !qco.qubit
+               %true = arith.constant true
+               %zero = arith.constant 0 : index
+               %result, %out = qco.if %true args(%arg = %q)
+                   -> (index, !qco.qubit) {
+                 qco.yield %unmapped, %arg : index, !qco.qubit
+               } else args(%arg = %q) {
+                 qco.yield %zero, %arg : index, !qco.qubit
+               }
+               qco.sink %out : !qco.qubit
+               return
+             }
+           })mlir"}) {
+    auto mod = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(mod);
+    auto dd = std::make_unique<dd::Package>(1);
+    std::mt19937_64 rng(1);
+    EXPECT_TRUE(
+        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUnmappedLinearRegionValues) {
+  for (const StringRef source : {
+           R"mlir(module {
+             func.func @main(%unmapped: !qco.qubit) {
+               %q = qco.static 0 : !qco.qubit
+               %true = arith.constant true
+               %out = qco.if %true args(%arg = %unmapped) -> (!qco.qubit) {
+                 qco.yield %arg : !qco.qubit
+               } else args(%arg = %unmapped) {
+                 qco.yield %arg : !qco.qubit
+               }
+               qco.sink %q : !qco.qubit
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%unmapped: !qco.qubit) {
+               %q = qco.static 0 : !qco.qubit
+               %true = arith.constant true
+               %out = qco.if %true args(%arg = %q) -> (!qco.qubit) {
+                 qco.yield %unmapped : !qco.qubit
+               } else args(%arg = %q) {
+                 qco.yield %arg : !qco.qubit
+               }
+               qco.sink %out : !qco.qubit
+               return
+             }
+           })mlir"}) {
+    auto mod = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(mod);
+    auto dd = std::make_unique<dd::Package>(1);
+    std::mt19937_64 rng(1);
+    EXPECT_TRUE(
+        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUnmappedMeasurementAndResetQubits) {
+  for (const StringRef source : {R"mlir(module {
+           func.func @main(%unmapped: !qco.qubit) {
+             %q = qco.static 0 : !qco.qubit
+             %out, %bit = qco.measure %unmapped : !qco.qubit
+             qco.sink %q : !qco.qubit
+             return
+           }
+         })mlir",
+                                 R"mlir(module {
+           func.func @main(%unmapped: !qco.qubit) {
+             %q = qco.static 0 : !qco.qubit
+             %out = qco.reset %unmapped : !qco.qubit -> !qco.qubit
+             qco.sink %q : !qco.qubit
+             return
+           }
+         })mlir"}) {
+    auto mod = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(mod);
+    auto dd = std::make_unique<dd::Package>(1);
+    std::mt19937_64 rng(1);
+    EXPECT_TRUE(
+        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsNonlinearQubitsBeforeDDConstruction) {
+  constexpr StringLiteral source = R"mlir(module {
+    func.func @main() {
+      %q = qco.static 0 : !qco.qubit
+      %first, %second = qco.swap %q, %q
+          : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+      qco.sink %first : !qco.qubit
+      qco.sink %second : !qco.qubit
+      return
+    }
+  })mlir";
+  auto mod = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(mod);
+  ASSERT_TRUE(succeeded(verify(*mod)));
+
+  auto dd = std::make_unique<dd::Package>(1);
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
+  EXPECT_TRUE(
+      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, Rejects) {
@@ -1630,6 +1853,34 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedFuncCalls) {
   expectSimulationFails(mainFunc(*declaration), 1);
 }
 
+TEST_F(QCODDFunctionalityTest, RejectsExcessiveFuncCallNesting) {
+  OwningOpRef<ModuleOp> mod = ModuleOp::create(UnknownLoc::get(context.get()));
+  OpBuilder builder(context.get());
+  const auto qubitType = QubitType::get(context.get());
+  const auto functionType = builder.getFunctionType({qubitType}, {qubitType});
+  constexpr size_t numFunctions = 66;
+
+  for (size_t i = 0; i < numFunctions; ++i) {
+    builder.setInsertionPointToEnd(mod->getBody());
+    const std::string name = i == 0 ? "main" : "f" + std::to_string(i);
+    auto function =
+        func::FuncOp::create(builder, mod->getLoc(), name, functionType);
+    Block* entry = function.addEntryBlock();
+    builder.setInsertionPointToStart(entry);
+    Value result = entry->getArgument(0);
+    if (i + 1 < numFunctions) {
+      result = func::CallOp::create(builder, mod->getLoc(),
+                                    "f" + std::to_string(i + 1), qubitType,
+                                    ValueRange{result})
+                   .getResult(0);
+    }
+    func::ReturnOp::create(builder, mod->getLoc(), result);
+  }
+
+  ASSERT_TRUE(succeeded(verify(*mod)));
+  expectSimulationFails(mainFunc(*mod), 1);
+}
+
 TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {
   for (const auto [lower, upper, step, succeeds] :
        {std::tuple<int64_t, int64_t, int64_t, bool>{3, 3, 1, true},
@@ -1746,6 +1997,32 @@ TEST_F(QCODDFunctionalityTest, ScfForSharesExecutionBudget) {
   EXPECT_TRUE(
       failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
   EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+}
+
+TEST_F(QCODDFunctionalityTest, FuncCallsShareExecutionBudgetWithScfFor) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @identity(%q: !qco.qubit) -> !qco.qubit {
+        return %q : !qco.qubit
+      }
+      func.func @main() {
+        %q = qco.static 0 : !qco.qubit
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c5001 = arith.constant 5001 : index
+        %out = scf.for %iv = %c0 to %c5001 step %c1
+            iter_args(%arg = %q) -> !qco.qubit {
+          %next = func.call @identity(%arg) : (!qco.qubit) -> !qco.qubit
+          scf.yield %next : !qco.qubit
+        }
+        qco.sink %out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  expectSimulationFails(mainFunc(*mod), 1);
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateRicherClassicalArithmetic) {

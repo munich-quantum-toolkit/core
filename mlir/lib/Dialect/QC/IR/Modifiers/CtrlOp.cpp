@@ -133,11 +133,12 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
         op->getAttrOfType<DenseI32ArrayAttr>(opSegmentsAttrName);
     auto newSegments = DenseI32ArrayAttr::get(
         rewriter.getContext(), {segmentsAttr[0] - 1, segmentsAttr[1] + 1});
-    op->setAttr(opSegmentsAttrName, newSegments);
-
-    // Add a block argument for the target qubit
-    auto arg = op.getBody()->addArgument(QubitType::get(rewriter.getContext()),
-                                         op.getLoc());
+    rewriter.modifyOpInPlace(op, [&] {
+      op->setAttr(opSegmentsAttrName, newSegments);
+      op.getBody()->addArgument(QubitType::get(rewriter.getContext()),
+                                op.getLoc());
+    });
+    auto arg = op.getBody()->getArguments().back();
 
     // Replace the current GPhaseOp with a PhaseOp
     const OpBuilder::InsertionGuard guard(rewriter);
@@ -156,11 +157,13 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 0) {
+    if (llvm::any_of(*op.getBody(), [](Operation& operation) {
+          return mqt::containsUnitaryOperation<UnitaryOpInterface>(&operation);
+        })) {
       return failure();
     }
 
-    rewriter.eraseOp(op);
+    mqt::inlineModifierBody(op, *op.getBody(), op.getTargets(), rewriter);
     return success();
   }
 };

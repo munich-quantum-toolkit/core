@@ -17,6 +17,7 @@
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
@@ -37,12 +38,16 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Verifier.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/OperationUtils.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
@@ -189,10 +194,21 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     // Switch to entry block
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
 
-    auto nqubits = state.staticQubits.size();
-    auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
-                                        static_cast<int64_t>(nqubits));
-    state.staticQubits.try_emplace(static_cast<int64_t>(nqubits), qubit);
+    const auto index = getConstantIntValue(op.getIndices().front());
+    if (!index) {
+      return rewriter.notifyMatchFailure(
+          op, "expected a prevalidated direct, constant-index register load");
+    }
+    auto& registerElements = state.staticQubitRegisterElements[op.getMemref()];
+    if (const auto it = registerElements.find(*index);
+        it != registerElements.end()) {
+      rewriter.replaceOp(op, it->second);
+      return success();
+    }
+    const auto physicalIndex = state.nextStaticQubitIndex++;
+    auto qubit = createPointerFromIndex(rewriter, op.getLoc(), physicalIndex);
+    state.staticQubits.try_emplace(physicalIndex, qubit);
+    registerElements.try_emplace(*index, qubit);
     rewriter.replaceOp(op, qubit);
 
     return success();
@@ -239,15 +255,13 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-
     const OpBuilder::InsertionGuard guard(rewriter);
 
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
 
-    const auto nqubits = state.staticQubits.size();
-    auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
-                                        static_cast<int64_t>(nqubits));
-    state.staticQubits.try_emplace(static_cast<int64_t>(nqubits), qubit);
+    const auto physicalIndex = state.nextStaticQubitIndex++;
+    auto qubit = createPointerFromIndex(rewriter, op.getLoc(), physicalIndex);
+    state.staticQubits.try_emplace(physicalIndex, qubit);
     rewriter.replaceOp(op, qubit);
 
     return success();
@@ -321,6 +335,28 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     return success();
   }
 };
+
+/** Convert qc.reset to an irreversible QIR reset call. */
+struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ResetOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto* ctx = getContext();
+    const OpBuilder::InsertionGuard guard(rewriter);
+
+    rewriter.setInsertionPoint(state.measurementsBlock->getTerminator());
+    auto fnType = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
+                                              LLVM::LLVMPointerType::get(ctx));
+    auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_RESET, fnType);
+    LLVM::CallOp::create(rewriter, op.getLoc(), fnDecl, adaptor.getOperands());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
 } // namespace
 
 /**
@@ -333,11 +369,87 @@ static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
   patterns.add<ConvertCBitAllocOp, ConvertMemRefAllocOp, ConvertMemRefLoadOp,
                ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCMeasureOp,
-               ConvertQCDeallocOp>(typeConverter, ctx, &state);
+               ConvertQCResetOp, ConvertQCDeallocOp>(typeConverter, ctx,
+                                                     &state);
   patterns.add<RejectCBitLoadOp>(typeConverter, ctx);
 }
 
 namespace {
+
+/// Returns whether two QC references lower to the same Base Profile qubit.
+static bool referencesSameQubit(Value lhs, Value rhs) {
+  if (lhs == rhs) {
+    return true;
+  }
+  auto lhsStatic = lhs.getDefiningOp<StaticOp>();
+  auto rhsStatic = rhs.getDefiningOp<StaticOp>();
+  if (lhsStatic && rhsStatic) {
+    return lhsStatic.getIndex() == rhsStatic.getIndex();
+  }
+  auto lhsLoad = lhs.getDefiningOp<memref::LoadOp>();
+  auto rhsLoad = rhs.getDefiningOp<memref::LoadOp>();
+  if (!lhsLoad || !rhsLoad || lhsLoad.getMemref() != rhsLoad.getMemref()) {
+    return false;
+  }
+  return getConstantIntValue(lhsLoad.getIndices().front()) ==
+         getConstantIntValue(rhsLoad.getIndices().front());
+}
+
+/// Returns whether a unitary touches a qubit already measured or reset.
+static bool touchesIrreversibleQubit(UnitaryOpInterface unitary,
+                                     ArrayRef<Value> irreversibleQubits) {
+  for (auto qubit : unitary.getQubits()) {
+    for (auto irreversibleQubit : irreversibleQubits) {
+      if (referencesSameQubit(qubit, irreversibleQubit)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/// Reject input whose operation order cannot be preserved by the Base block
+/// split.
+static LogicalResult validateBaseOperationOrder(ModuleOp module) {
+  auto entryPoint = mqt::getEntryPoint(module);
+  bool sawIrreversibleOperation = false;
+  SmallVector<Value> irreversibleQubits;
+  for (Operation& operation : entryPoint.getBody().front()) {
+    if (auto measure = dyn_cast<MeasureOp>(operation)) {
+      if (!measure.getResult().use_empty()) {
+        return measure.emitError(
+            "QIR Base Profile only supports measurement results returned "
+            "directly or stored directly in returned CBit registers");
+      }
+      sawIrreversibleOperation = true;
+      irreversibleQubits.push_back(measure.getQubit());
+      continue;
+    }
+    if (auto reset = dyn_cast<ResetOp>(operation)) {
+      sawIrreversibleOperation = true;
+      irreversibleQubits.push_back(reset.getQubit());
+      continue;
+    }
+    if (!sawIrreversibleOperation ||
+        operation.hasTrait<OpTrait::IsTerminator>() ||
+        isa<BarrierOp, IdOp, AllocOp, DeallocOp, cbit::AllocOp, memref::AllocOp,
+            memref::LoadOp, memref::DeallocOp>(operation) ||
+        (isPure(&operation) && isSpeculatable(&operation))) {
+      continue;
+    }
+    if (auto unitary = dyn_cast<UnitaryOpInterface>(operation);
+        unitary && !touchesIrreversibleQubit(unitary, irreversibleQubits)) {
+      continue;
+    }
+    operation.emitError(
+        "QIR Base Profile requires operations with observable effects or "
+        "non-speculatable behavior to precede all measurements and resets")
+        << "; offending operation is '" << operation.getName() << "'";
+    return failure();
+  }
+  return success();
+}
+
 /**
  * @brief Pass for converting QC dialect operations to QIR
  *
@@ -456,11 +568,24 @@ protected:
    */
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
-    auto moduleOp = getOperation();
-    auto entryPoint = mqt::getEntryPoint(moduleOp);
-    if (entryPoint && !entryPoint.getBody().hasOneBlock()) {
-      entryPoint.emitError(
-          "QIR Base Profile requires a single-block entry function");
+    auto original = getOperation();
+    constexpr size_t maxRegionNesting = 64;
+    if (failed(verifyRegionNestingDepth(original, maxRegionNesting))) {
+      signalPassFailure();
+      return;
+    }
+    OwningOpRef<ModuleOp> converted(original.clone());
+    auto moduleOp = *converted;
+    LoweringState state;
+    if (failed(validateQIRConversionInput(moduleOp,
+                                          /*requireSingleBlock=*/true,
+                                          state))) {
+      signalPassFailure();
+      return;
+    }
+    // Result preparation removes the supported direct uses of measurements.
+    if (failed(prepareClassicalResults(moduleOp.getOperation(), state)) ||
+        failed(validateBaseOperationOrder(moduleOp))) {
       signalPassFailure();
       return;
     }
@@ -472,14 +597,6 @@ protected:
     QCToQIRTypeConverter typeConverter(ctx);
 
     target.addLegalDialect<LLVM::LLVMDialect>();
-
-    LoweringState state;
-
-    // Stage 1.0: Prepare classical result registers
-    if (failed(prepareClassicalResults(moduleOp, state))) {
-      signalPassFailure();
-      return;
-    }
 
     // Stage 1.1: Convert func dialect to LLVM
     {
@@ -496,7 +613,7 @@ protected:
 
     auto main = getMainFunction(moduleOp);
     if (!main) {
-      moduleOp->emitError("no main function with mqt.entry_point found");
+      moduleOp.emitError("no main function with mqt.entry_point found");
       signalPassFailure();
       return;
     }
@@ -549,7 +666,15 @@ protected:
     passManager.addPass(createReconcileUnrealizedCastsPass());
     if (passManager.run(moduleOp).failed()) {
       signalPassFailure();
+      return;
     }
+    if (failed(verify(moduleOp)) ||
+        failed(mqt::verifyProgramMetadata(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
+    original->setAttrs(moduleOp->getAttrDictionary());
+    original.getBodyRegion().takeBody(moduleOp.getBodyRegion());
   }
 };
 

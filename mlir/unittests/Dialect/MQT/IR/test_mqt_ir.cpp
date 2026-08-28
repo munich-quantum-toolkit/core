@@ -22,6 +22,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -42,8 +43,8 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                    memref::MemRefDialect, mqt::MQTDialect, qc::QCDialect,
-                    qco::QCODialect, qtensor::QTensorDialect>();
+                    LLVM::LLVMDialect, memref::MemRefDialect, mqt::MQTDialect,
+                    qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect>();
     context = std::make_unique<MLIRContext>(registry);
     context->loadAllAvailableDialects();
   }
@@ -54,7 +55,7 @@ protected:
 };
 
 TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
-  EXPECT_TRUE(parse(R"mlir(
+  auto moduleOp = parse(R"mlir(
     module {
       func.func @qc(%theta: f64 {mqt.input_name = "theta[2]",
           mqt.parameter_group = {identity = "group-id", name = "theta",
@@ -82,7 +83,9 @@ TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
         return
       }
     }
-  )mlir"));
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(mqt::verifyProgramMetadata(*moduleOp)));
 }
 
 TEST_F(MQTIRTest, ManagesAndFindsEntryPoint) {
@@ -122,12 +125,6 @@ TEST_F(MQTIRTest, RejectsInvalidEntryPoints) {
   )mlir"));
   EXPECT_FALSE(parse(R"mlir(
     module {
-      func.func @first() attributes {mqt.entry_point} { return }
-      func.func @second() attributes {mqt.entry_point} { return }
-    }
-  )mlir"));
-  EXPECT_FALSE(parse(R"mlir(
-    module {
       func.func @main() {
         %c0 = "arith.constant"() {mqt.entry_point, value = 0 : i64}
             : () -> i64
@@ -135,6 +132,42 @@ TEST_F(MQTIRTest, RejectsInvalidEntryPoints) {
       }
     }
   )mlir"));
+}
+
+TEST_F(MQTIRTest, AcceptsDefinedLLVMEntryPoint) {
+  auto llvmEntryPoint = parse(R"mlir(
+    module {
+      llvm.func @main() attributes {mqt.entry_point} {
+        llvm.return
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(llvmEntryPoint);
+  EXPECT_TRUE(succeeded(mqt::verifyProgramMetadata(*llvmEntryPoint)));
+}
+
+TEST_F(MQTIRTest, ProgramMetadataRejectsDuplicateEntryPoints) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @first() attributes {mqt.entry_point} { return }
+      func.func @second() attributes {mqt.entry_point} { return }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(failed(mqt::verifyProgramMetadata(*moduleOp)));
+}
+
+TEST_F(MQTIRTest, ProgramMetadataRejectsNonFuncEntryPoint) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      memref.global "private" @storage : memref<1xi8>
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  auto global = moduleOp->lookupSymbol<memref::GlobalOp>("storage");
+  ASSERT_TRUE(global);
+  mqt::setEntryPoint(global);
+  EXPECT_TRUE(failed(mqt::verifyProgramMetadata(*moduleOp)));
 }
 
 TEST_F(MQTIRTest, RejectsInvalidInputNames) {
@@ -155,15 +188,17 @@ TEST_F(MQTIRTest, RejectsInvalidInputNames) {
   )mlir"));
 }
 
-TEST_F(MQTIRTest, RejectsDuplicateInputNames) {
-  EXPECT_FALSE(parse(R"mlir(
+TEST_F(MQTIRTest, ProgramMetadataRejectsDuplicateInputNames) {
+  auto module = parse(R"mlir(
     module {
       func.func @main(%lhs: f64 {mqt.input_name = "theta"},
                       %rhs: i1 {mqt.input_name = "theta"}) {
         return
       }
     }
-  )mlir"));
+  )mlir");
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(failed(mqt::verifyProgramMetadata(*module)));
 }
 
 TEST_F(MQTIRTest, RejectsInvalidInputGroups) {
@@ -201,6 +236,42 @@ TEST_F(MQTIRTest, RejectsInvalidInputGroups) {
                                  index = 0 : i64, size = 1 : i64}}) { return }
     }
   )mlir"));
+}
+
+TEST_F(MQTIRTest, AcceptsParameterGroupsOutsideCurrentVectorSize) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @main(
+          %empty: f64 {mqt.input_name = "theta[0]",
+            mqt.parameter_group = {identity = "empty-vector", name = "theta",
+                                   index = 0 : i64, size = 0 : i64}},
+          %shrunk: f64 {mqt.input_name = "phi[1]",
+            mqt.parameter_group = {identity = "shrunk-vector", name = "phi",
+                                   index = 1 : i64, size = 1 : i64}}) {
+        return
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(mqt::verifyProgramMetadata(*moduleOp)));
+}
+
+TEST_F(MQTIRTest, ProgramMetadataRejectsInconsistentParameterGroups) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @main(
+          %lhs: f64 {mqt.input_name = "theta[0]",
+            mqt.parameter_group = {identity = "group", name = "theta",
+                                   index = 0 : i64, size = 2 : i64}},
+          %rhs: f64 {mqt.input_name = "phi[1]",
+            mqt.parameter_group = {identity = "group", name = "phi",
+                                   index = 1 : i64, size = 3 : i64}}) {
+        return
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(failed(mqt::verifyProgramMetadata(*moduleOp)));
 }
 
 TEST_F(MQTIRTest, RejectsInputMetadataOnOperations) {
@@ -255,7 +326,7 @@ TEST_F(MQTIRTest, RejectsInvalidRegisterNamesAndOwners) {
 }
 
 TEST_F(MQTIRTest, RejectsDuplicateProgramNames) {
-  EXPECT_FALSE(parse(R"mlir(
+  auto duplicateRegisters = parse(R"mlir(
     module {
       func.func @main() {
         %lhs = memref.alloc() {mqt.register_name = "state"}
@@ -265,8 +336,11 @@ TEST_F(MQTIRTest, RejectsDuplicateProgramNames) {
         return
       }
     }
-  )mlir"));
-  EXPECT_FALSE(parse(R"mlir(
+  )mlir");
+  ASSERT_TRUE(duplicateRegisters);
+  EXPECT_TRUE(failed(mqt::verifyProgramMetadata(*duplicateRegisters)));
+
+  auto duplicateInputAndRegister = parse(R"mlir(
     module {
       func.func @main(%arg: f64 {mqt.input_name = "state"}) {
         %reg = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "state"}
@@ -274,7 +348,9 @@ TEST_F(MQTIRTest, RejectsDuplicateProgramNames) {
         return
       }
     }
-  )mlir"));
+  )mlir");
+  ASSERT_TRUE(duplicateInputAndRegister);
+  EXPECT_TRUE(failed(mqt::verifyProgramMetadata(*duplicateInputAndRegister)));
 }
 
 TEST_F(MQTIRTest, RejectsUnknownMQTAttributes) {

@@ -11,6 +11,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -244,11 +245,19 @@ TEST(TargetSynthesisPassContract, FactoriesAreIndependentlyConstructible) {
   fusion->getDependentDialects(fusionDialects);
   EXPECT_TRUE(fusionDialects.getDialectAllocator(
       mlir::arith::ArithDialect::getDialectNamespace()));
+  EXPECT_TRUE(fusionDialects.getDialectAllocator(
+      mlir::qc::QCDialect::getDialectNamespace()));
+  EXPECT_TRUE(fusionDialects.getDialectAllocator(
+      mlir::qco::QCODialect::getDialectNamespace()));
 
   mlir::DialectRegistry synthesisDialects;
   synthesis->getDependentDialects(synthesisDialects);
   EXPECT_TRUE(synthesisDialects.getDialectAllocator(
       mlir::arith::ArithDialect::getDialectNamespace()));
+  EXPECT_TRUE(synthesisDialects.getDialectAllocator(
+      mlir::qc::QCDialect::getDialectNamespace()));
+  EXPECT_TRUE(synthesisDialects.getDialectAllocator(
+      mlir::qco::QCODialect::getDialectNamespace()));
 }
 
 TEST_F(TargetSynthesisTest, TwoQubitGateFusionRequiresStrictImprovement) {
@@ -334,6 +343,76 @@ TEST_F(TargetSynthesisTest, TwoQubitGateFusionLeavesIndividualOpsAlone) {
   EXPECT_EQ(printModule(*module), before);
 }
 
+TEST_F(TargetSynthesisTest, TwoQubitGateFusionHandlesUnusedOutputs) {
+  auto module = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %control = qco.static 0 : !qco.qubit
+        %target = qco.static 1 : !qco.qubit
+        %unused_control, %unused_target = qco.ctrl(%control)
+            targets(%arg = %target) {
+          %body = qco.x %arg : !qco.qubit -> !qco.qubit
+          qco.yield %body : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit})
+          -> ({!qco.qubit}, {!qco.qubit})
+        return
+      }
+    }
+  )mlir",
+                                                  context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*module)));
+  const auto before = printModule(*module);
+
+  EXPECT_TRUE(
+      mlir::failed(runPass(*module, mlir::qco::createFuseTwoQubitGates())));
+  EXPECT_EQ(printModule(*module), before);
+}
+
+TEST_F(TargetSynthesisTest, TwoQubitGateFusionPreservesModifierSupportCalls) {
+  auto module = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @observe()
+      func.func @main() {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.static 1 : !qco.qubit
+        %c0, %t0 = qco.ctrl(%q0) targets(%arg = %q1) {
+          %body = qco.x %arg : !qco.qubit -> !qco.qubit
+          func.call @observe() : () -> ()
+          qco.yield %body : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit})
+          -> ({!qco.qubit}, {!qco.qubit})
+        %c1, %t1 = qco.ctrl(%c0) targets(%arg = %t0) {
+          %body = qco.x %arg : !qco.qubit -> !qco.qubit
+          qco.yield %body : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit})
+          -> ({!qco.qubit}, {!qco.qubit})
+        qco.sink %c1 : !qco.qubit
+        qco.sink %t1 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                                  context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*module)));
+
+  EXPECT_TRUE(
+      mlir::succeeded(runPass(*module, mlir::qco::createFuseTwoQubitGates())));
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(*module)));
+  EXPECT_EQ(countOps<mlir::func::CallOp>(*module), 1U);
+  EXPECT_EQ(countOps<CtrlOp>(*module), 2U);
+  auto main = module->lookupSymbol<mlir::func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto controls = main.getOps<CtrlOp>();
+  ASSERT_FALSE(controls.empty());
+  auto firstControl = *controls.begin();
+  EXPECT_EQ(llvm::range_size(firstControl.getBody()->getOps<XOp>()), 1U);
+  EXPECT_EQ(
+      llvm::range_size(firstControl.getBody()->getOps<mlir::func::CallOp>()),
+      1U);
+}
+
 TEST_F(TargetSynthesisTest,
        TwoQubitGateFusionLeavesRuntimeParameterizedRunsAlone) {
   auto module = mlir::parseSourceString<ModuleOp>(R"mlir(
@@ -375,6 +454,83 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisRemovesOrdinarySwap) {
       runPass(*synthesized, mlir::qco::createVerifyTargetConformance(target))));
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
   expectEquivalent(expected, synthesized);
+}
+
+TEST_F(TargetSynthesisTest,
+       TargetNativeSynthesisPreservesModifierSupportCalls) {
+  auto module = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @observe()
+      func.func @main() {
+        %control = qco.static 0 : !qco.qubit
+        %target = qco.static 1 : !qco.qubit
+        %control_out, %target_out = qco.ctrl(%control)
+            targets(%arg = %target) {
+          func.call @observe() : () -> ()
+          %body = qco.x %arg : !qco.qubit -> !qco.qubit
+          qco.yield %body : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit})
+          -> ({!qco.qubit}, {!qco.qubit})
+        qco.sink %control_out : !qco.qubit
+        qco.sink %target_out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                                  context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*module)));
+  const auto target =
+      valid(Target::create(2, std::nullopt,
+                           std::vector{valid(Operation::create("u", 1, 3)),
+                                       valid(Operation::create("cz", 2, 0))}));
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*module, mlir::qco::createTargetNativeSynthesis(target))));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*module)));
+  EXPECT_EQ(countOps<mlir::func::CallOp>(*module), 1U);
+  module->walk([&](mlir::func::CallOp call) {
+    EXPECT_FALSE(call->getParentOfType<CtrlOp>());
+  });
+  EXPECT_TRUE(mlir::succeeded(
+      runPass(*module, mlir::qco::createVerifyTargetConformance(target))));
+}
+
+TEST_F(TargetSynthesisTest,
+       TargetNativeSynthesisRejectsPostUnitarySupportCallWithoutMutation) {
+  auto module = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @observe()
+      func.func @main() {
+        %control = qco.static 0 : !qco.qubit
+        %target = qco.static 1 : !qco.qubit
+        %control_out, %target_out = qco.ctrl(%control)
+            targets(%arg = %target) {
+          %body = qco.x %arg : !qco.qubit -> !qco.qubit
+          func.call @observe() : () -> ()
+          qco.yield %body : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit})
+          -> ({!qco.qubit}, {!qco.qubit})
+        qco.sink %control_out : !qco.qubit
+        qco.sink %target_out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                                  context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*module)));
+  const auto before = printModule(*module);
+  const auto target =
+      valid(Target::create(2, std::nullopt,
+                           std::vector{valid(Operation::create("u", 1, 3)),
+                                       valid(Operation::create("cz", 2, 0))}));
+
+  const auto diagnostics =
+      expectFailure(*module, mlir::qco::createTargetNativeSynthesis(target));
+  EXPECT_NE(diagnostics.find("cannot move across the unitary operations"),
+            std::string::npos);
+  EXPECT_EQ(printModule(*module), before);
 }
 
 TEST_F(TargetSynthesisTest,

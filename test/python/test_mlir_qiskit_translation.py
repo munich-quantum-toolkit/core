@@ -2318,10 +2318,12 @@ def test_parameter_vector_size_limits_on_import(sizes: list[int]) -> None:
     [
         ([65_537], None, "across all distinct"),
         ([32_769, 32_769], None, "across all distinct"),
-        ([1, 2], 0, "conflicting metadata"),
+        ([1, 2], 0, "inconsistent name or size"),
     ],
 )
-def test_parameter_vector_metadata_is_preflighted(sizes: list[int], shared_group_id: int | None, message: str) -> None:
+def test_parameter_vector_metadata_is_preflighted(
+    sizes: list[int], shared_group_id: int | None, message: str, capfd: pytest.CaptureFixture[str]
+) -> None:
     """Validate vector consistency and resource bounds before allocation."""
     arguments = []
     gates = []
@@ -2332,7 +2334,7 @@ def test_parameter_vector_metadata_is_preflighted(sizes: list[int], shared_group
             f'name = "theta{index}", index = 0 : i64, size = {size} : i64}}}}'
         )
         gates.append(f"    qc.rx(%theta{index}) %q : !qc.qubit")
-    program = QCProgram.from_mlir_str(
+    source = (
         "module {\n"
         f"  func.func @main({', '.join(arguments)}) attributes {{mqt.entry_point}} {{\n"
         "    %q = qc.alloc : !qc.qubit\n" + "\n".join(gates) + "\n    qc.dealloc %q : !qc.qubit\n"
@@ -2340,6 +2342,14 @@ def test_parameter_vector_metadata_is_preflighted(sizes: list[int], shared_group
         "  }\n"
         "}\n"
     )
+
+    if shared_group_id is not None:
+        with pytest.raises(RuntimeError, match="MLIR operation failed"):
+            QCProgram.from_mlir_str(source)
+        assert message in capfd.readouterr().err
+        return
+
+    program = QCProgram.from_mlir_str(source)
 
     with pytest.raises(RuntimeError, match=message):
         program.to_qiskit()

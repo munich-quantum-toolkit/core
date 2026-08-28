@@ -11,9 +11,12 @@
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
@@ -21,6 +24,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
+#include <cstddef>
 #include <utility>
 
 namespace mlir::qco {
@@ -41,14 +45,33 @@ static bool isInverting(Operation* op) { return isa<XOp, YOp>(op); }
  * @return True if the operation is a diagonal gate, false otherwise.
  */
 static bool isDiagonal(Operation* op) {
-  if (op == nullptr) {
-    return false;
+  while (op != nullptr && isa<CtrlOp, InvOp>(op)) {
+    op = mqt::getSoleBodyUnitary<UnitaryOpInterface>(
+        *op->getRegion(0).getBlocks().begin());
   }
-  if (isa<CtrlOp, InvOp>(op)) {
-    return isDiagonal(mqt::getSoleBodyUnitary<UnitaryOpInterface>(
-        *op->getRegion(0).getBlocks().begin()));
+  return op != nullptr && isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);
+}
+
+/// Return whether nested modifier bodies contain only unitaries and yields.
+static bool hasOnlyUnitaryBodyOperations(Operation* root) {
+  SmallVector<Operation*> worklist{root};
+  while (!worklist.empty()) {
+    Operation* operation = worklist.pop_back_val();
+    for (Region& region : operation->getRegions()) {
+      for (Block& block : region) {
+        for (Operation& nested : block) {
+          if (isa<YieldOp>(nested)) {
+            continue;
+          }
+          if (!isa<UnitaryOpInterface>(nested)) {
+            return false;
+          }
+          worklist.push_back(&nested);
+        }
+      }
+    }
   }
-  return isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);
+  return true;
 }
 
 /**
@@ -107,6 +130,12 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
     }
 
     if (!isDiagonal(predecessor)) {
+      return mlir::failure();
+    }
+
+    // Erasing or moving the modifier must not discard or reorder its support
+    // operations relative to the measurement.
+    if (!hasOnlyUnitaryBodyOperations(predecessor)) {
       return mlir::failure();
     }
 
@@ -184,6 +213,10 @@ struct LiftMeasurementsAboveControlsPattern final
       return mlir::failure();
     }
 
+    if (!hasOnlyUnitaryBodyOperations(predecessor)) {
+      return mlir::failure();
+    }
+
     if (llvm::find(predecessorCtrl.getControlsOut(), qubitVariable) ==
         predecessorCtrl.getControlsOut().end()) {
       // The measured qubit is a target, not a control of the gate.
@@ -207,6 +240,16 @@ protected:
   void runOnOperation() override {
     auto op = getOperation();
     auto* ctx = &getContext();
+
+    if (failed(qco::verifyLinearity(op))) {
+      signalPassFailure();
+      return;
+    }
+    constexpr size_t maxRegionNesting = 64;
+    if (failed(verifyRegionNestingDepth(op, maxRegionNesting))) {
+      signalPassFailure();
+      return;
+    }
 
     // Define the set of patterns to use.
     RewritePatternSet patterns(ctx);

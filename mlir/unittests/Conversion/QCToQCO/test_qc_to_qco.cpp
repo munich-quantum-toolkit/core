@@ -10,6 +10,7 @@
 
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
+#include "mlir/Conversion/ConversionUtils.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
@@ -36,6 +37,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -45,6 +47,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Matchers.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Verifier.h>
@@ -52,6 +55,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/DialectConversion.h>
 
 #include <array>
 #include <cstddef>
@@ -107,6 +111,21 @@ static LogicalResult runQCToQCOConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCToQCO());
   return pm.run(module);
+}
+
+TEST(QCToQCOPassContract, IsModuleAnchoredAndDeclaresCreatedDialects) {
+  auto pass = createQCToQCO();
+  ASSERT_TRUE(pass->getOpName());
+  EXPECT_EQ(*pass->getOpName(), ModuleOp::getOperationName());
+
+  DialectRegistry registry;
+  pass->getDependentDialects(registry);
+  EXPECT_TRUE(
+      registry.getDialectAllocator(func::FuncDialect::getDialectNamespace()));
+  EXPECT_TRUE(registry.getDialectAllocator(
+      cf::ControlFlowDialect::getDialectNamespace()));
+  EXPECT_TRUE(
+      registry.getDialectAllocator(scf::SCFDialect::getDialectNamespace()));
 }
 
 namespace {
@@ -220,7 +239,231 @@ public:
   }
 };
 
+class RejectingRegionMovePattern final
+    : public OpConversionPattern<func::FuncOp> {
+public:
+  RejectingRegionMovePattern(TypeConverter& typeConverter, MLIRContext* context,
+                             bool& sourcePreserved)
+      : OpConversionPattern(typeConverter, context),
+        sourcePreserved(sourcePreserved) {}
+
+  LogicalResult
+  matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (!op->hasAttr("test.reject_region_move")) {
+      return failure();
+    }
+    auto module = op->getParentOfType<ModuleOp>();
+    auto destination = module.lookupSymbol<func::FuncOp>("destination");
+    if (!destination) {
+      return failure();
+    }
+
+    const auto result = moveRegion(op.getBody(), destination.getBody(),
+                                   rewriter, getTypeConverter());
+    if (failed(result)) {
+      sourcePreserved = !op.getBody().empty() && destination.getBody().empty();
+    }
+    return result;
+  }
+
+private:
+  bool& sourcePreserved;
+};
+
 } // namespace
+
+TEST_F(QCToQCORegressionTest,
+       DuplicateStaticReferencesShareOneEvolvingQCOValue) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %a = qc.static 0 : !qc.qubit
+        %b = qc.static 0 : !qc.qubit
+        qc.x %a : !qc.qubit
+        qc.h %b : !qc.qubit
+        return
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  auto function = *module->getOps<func::FuncOp>().begin();
+  EXPECT_EQ(llvm::range_size(function.getBody().getOps<qco::StaticOp>()), 1U);
+  auto x = *function.getBody().getOps<qco::XOp>().begin();
+  auto h = *function.getBody().getOps<qco::HOp>().begin();
+  EXPECT_EQ(h.getInputTarget(0), x.getOutputTarget(0));
+}
+
+TEST_F(QCToQCORegressionTest,
+       RejectsStaticUseAfterDeallocationWithoutMutation) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"mlir(
+module {
+  func.func @main() {
+    %a = qc.static 0 : !qc.qubit
+    qc.dealloc %a : !qc.qubit
+    %b = qc.static 0 : !qc.qubit
+    qc.x %b : !qc.qubit
+    return
+  }
+}
+)mlir",
+      R"mlir(
+module {
+  func.func @main() {
+    %a = qc.static 0 : !qc.qubit
+    %b = qc.static 0 : !qc.qubit
+    qc.dealloc %a : !qc.qubit
+    qc.dealloc %b : !qc.qubit
+    return
+  }
+}
+)mlir",
+      R"mlir(
+module {
+  func.func @main() {
+    %a = qc.static 0 : !qc.qubit
+    %b = qc.static 0 : !qc.qubit
+    qc.dealloc %b : !qc.qubit
+    qc.x %a : !qc.qubit
+    return
+  }
+}
+)mlir",
+  });
+
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto module = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    OwningOpRef<ModuleOp> original(module->clone());
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str()).contains("has no live QCO value");
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCToQCOConversion(*module)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+    EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+        module->getOperation(), original->getOperation(),
+        OperationEquivalence::Flags::None));
+  }
+}
+
+TEST_F(QCToQCORegressionTest, RejectedRegionMovePreservesSource) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @destination()
+  func.func @source(%arg: index) attributes {test.reject_region_move} {
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  TypeConverter typeConverter;
+  typeConverter.addConversion([](Type type) -> std::optional<Type> {
+    if (isa<IndexType>(type)) {
+      return std::nullopt;
+    }
+    return type;
+  });
+  ConversionTarget target(context);
+  target.markUnknownOpDynamicallyLegal([](Operation*) { return true; });
+  target.addDynamicallyLegalOp<func::FuncOp>(
+      [](func::FuncOp op) { return !op->hasAttr("test.reject_region_move"); });
+
+  bool sourcePreserved = false;
+  RewritePatternSet patterns(&context);
+  patterns.add<RejectingRegionMovePattern>(typeConverter, &context,
+                                           sourcePreserved);
+  ScopedDiagnosticHandler handler(
+      &context, [](Diagnostic& /*diagnostic*/) { return success(); });
+  EXPECT_TRUE(
+      failed(applyPartialConversion(*module, target, std::move(patterns))));
+  EXPECT_TRUE(sourcePreserved);
+
+  auto sourceFunc = module->lookupSymbol<func::FuncOp>("source");
+  auto destination = module->lookupSymbol<func::FuncOp>("destination");
+  ASSERT_TRUE(sourceFunc);
+  ASSERT_TRUE(destination);
+  EXPECT_FALSE(sourceFunc.getBody().empty());
+  EXPECT_TRUE(destination.getBody().empty());
+}
+
+TEST_F(QCToQCORegressionTest,
+       RejectsPossiblyAliasedDynamicIndicesWithoutMutation) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%i: index, %j: index) attributes {mqt.entry_point} {
+    %reg = memref.alloc() : memref<2x!qc.qubit>
+    %q0 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    %q1 = memref.load %reg[%j] : memref<2x!qc.qubit>
+    qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+    memref.dealloc %reg : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str()).contains("not provably distinct");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(QCToQCORegressionTest, RejectsMixedAllocationModesWithoutMutation) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %static = qc.static 0 : !qc.qubit
+    %dynamic = qc.alloc : !qc.qubit
+    qc.dealloc %dynamic : !qc.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str()).contains("cannot mix static and dynamic");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
 
 TEST_F(QCToQCORegressionTest, PreservesForResultsWithQuantumState) {
   constexpr llvm::StringLiteral source = R"mlir(
@@ -1421,6 +1664,40 @@ module {
   ifOp.getThenRegion().walk([&](qco::AllocOp) { ++allocations; });
   EXPECT_EQ(allocations, 1);
   expectNoQCOperations(*moduleOp);
+}
+
+TEST_F(QCToQCORegressionTest,
+       RejectsConditionallyDeallocatedCapturedRegisterWithoutMutation) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%condition: i1) attributes {mqt.entry_point} {
+    %reg = memref.alloc() : memref<1x!qc.qubit>
+    scf.if %condition {
+      memref.dealloc %reg : memref<1x!qc.qubit>
+    }
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  OwningOpRef<ModuleOp> original(moduleOp->clone());
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("references a qubit register that has no live QTensor "
+                      "value");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      moduleOp->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
 }
 
 TEST_F(QCToQCORegressionTest,

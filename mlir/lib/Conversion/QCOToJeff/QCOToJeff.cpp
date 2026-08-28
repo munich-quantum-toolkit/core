@@ -15,8 +15,10 @@
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/MQT/Utils/GatePowering.h"
+#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -24,6 +26,7 @@
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -38,13 +41,16 @@
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/OperationUtils.h>
 #include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Transforms/RegionUtils.h>
 
@@ -54,6 +60,7 @@
 #include <iterator>
 #include <limits>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -202,6 +209,106 @@ struct LoweringState {
         "cannot mix static and dynamic qubit allocation modes in QCO program");
   }
 };
+
+[[nodiscard]] static LogicalResult validateQCOToJeffInput(ModuleOp module) {
+  if (failed(mqt::verifyProgramMetadata(module)) ||
+      failed(qco::verifyLinearity(module))) {
+    return failure();
+  }
+  func::FuncOp entryPoint;
+  for (auto function : module.getOps<func::FuncOp>()) {
+    if (!mqt::isEntryPoint(function)) {
+      continue;
+    }
+    if (entryPoint) {
+      module.emitError(
+          "qco-to-jeff requires exactly one program entry function");
+      return failure();
+    }
+    entryPoint = function;
+  }
+  if (!entryPoint) {
+    module.emitError(
+        "qco-to-jeff requires a program entry function marked with "
+        "mqt.entry_point");
+    return failure();
+  }
+  if (entryPoint.isExternal() || !entryPoint.getBody().hasOneBlock() ||
+      !isa<func::ReturnOp>(entryPoint.getBody().front().getTerminator())) {
+    entryPoint.emitError(
+        "qco-to-jeff requires a defined, single-block entry function ending "
+        "in func.return");
+    return failure();
+  }
+
+  Operation* staticAllocation = nullptr;
+  Operation* dynamicAllocation = nullptr;
+  DenseSet<int64_t> staticIndices;
+  bool invalid = false;
+  const auto validateType = [&](Type type, Operation* owner) {
+    const auto tensor = dyn_cast<RankedTensorType>(type);
+    if (tensor && isa<QubitType>(tensor.getElementType()) &&
+        tensor.getRank() != 1) {
+      owner->emitError("qco-to-jeff only supports rank-one qco.qubit tensors");
+      invalid = true;
+    }
+  };
+  SmallVector<Operation*> worklist{module.getOperation()};
+  while (!worklist.empty()) {
+    Operation* operation = worklist.pop_back_val();
+    if (auto staticOp = dyn_cast<StaticOp>(operation)) {
+      staticAllocation = operation;
+      if (!staticIndices.insert(staticOp.getIndex()).second) {
+        staticOp.emitError(
+            "qco-to-jeff cannot preserve duplicate static qubit index ")
+            << staticOp.getIndex();
+        invalid = true;
+      }
+    } else if (isa<AllocOp, qtensor::AllocOp>(operation)) {
+      dynamicAllocation = operation;
+    }
+    if (auto control = dyn_cast<CtrlOp>(operation);
+        control &&
+        control.getNumControls() > std::numeric_limits<uint8_t>::max()) {
+      control.emitError(
+          "qco-to-jeff supports at most 255 controls on one operation");
+      invalid = true;
+    }
+    for (const Type type : operation->getOperandTypes()) {
+      validateType(type, operation);
+    }
+    for (const Type type : operation->getResultTypes()) {
+      validateType(type, operation);
+    }
+    if (auto function = dyn_cast<FunctionOpInterface>(operation)) {
+      for (const Type type : function.getArgumentTypes()) {
+        validateType(type, operation);
+      }
+      for (const Type type : function.getResultTypes()) {
+        validateType(type, operation);
+      }
+    }
+    for (Region& region : operation->getRegions()) {
+      for (Block& block : region) {
+        for (BlockArgument argument : block.getArguments()) {
+          validateType(argument.getType(), operation);
+        }
+        for (Operation& nested : block) {
+          worklist.push_back(&nested);
+        }
+      }
+    }
+  }
+  if (invalid) {
+    return failure();
+  }
+  if (staticAllocation && dynamicAllocation) {
+    dynamicAllocation->emitError(
+        "qco-to-jeff cannot mix static and dynamic qubit allocations");
+    return failure();
+  }
+  return success();
+}
 
 /**
  * @brief Base class for conversion patterns that need access to the
@@ -469,25 +576,27 @@ static LogicalResult cleanUp(ModuleOp moduleOp, LoweringState& state) {
     return failure();
   }
 
+  std::optional<uint16_t> entryPoint;
+  uint64_t functionIndex = 0;
   for (auto funcOp : moduleOp.getOps<func::FuncOp>()) {
+    if (funcOp.getSymName() == state.entryPointName) {
+      if (functionIndex > std::numeric_limits<uint16_t>::max()) {
+        return failure();
+      }
+      entryPoint = static_cast<uint16_t>(functionIndex);
+    }
     state.strings.emplace_back(funcOp.getSymName());
+    ++functionIndex;
   }
-
-  auto* const it = llvm::find(state.strings, state.entryPointName);
-  if (it == state.strings.end()) {
+  if (!entryPoint) {
     return failure();
   }
-  const auto distance = std::distance(state.strings.begin(), it);
-  if (std::cmp_greater(distance, std::numeric_limits<uint16_t>::max())) {
-    return failure();
-  }
-  const auto entryPoint = static_cast<uint16_t>(distance);
 
   OpBuilder builder(moduleOp.getContext());
   auto uint16Type = builder.getIntegerType(16, false);
 
   moduleOp->setAttr("jeff.entrypoint",
-                    builder.getIntegerAttr(uint16Type, entryPoint));
+                    builder.getIntegerAttr(uint16Type, *entryPoint));
 
   SmallVector<StringRef> stringRefs;
   stringRefs.reserve(state.strings.size());
@@ -1849,7 +1958,18 @@ struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto moduleOp = getOperation();
+    auto original = getOperation();
+    constexpr size_t maxRegionNesting = 64;
+    if (failed(verifyRegionNestingDepth(original, maxRegionNesting))) {
+      signalPassFailure();
+      return;
+    }
+    OwningOpRef<ModuleOp> converted(original.clone());
+    auto moduleOp = *converted;
+    if (failed(validateQCOToJeffInput(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
       return;
@@ -1860,7 +1980,7 @@ protected:
     QCOToJeffTypeConverter typeConverter(context);
 
     LoweringState state;
-    state.cbitState.recordRegisterUses(moduleOp);
+    state.cbitState.recordRegisterUses(moduleOp.getOperation());
 
     // Configure conversion target
     target.addIllegalDialect<cbit::CBitDialect, QCODialect,
@@ -1967,7 +2087,15 @@ protected:
 
     if (cleanUp(moduleOp, state).failed()) {
       signalPassFailure();
+      return;
     }
+    if (failed(verify(moduleOp)) ||
+        failed(mqt::verifyProgramMetadata(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
+    original->setAttrs(moduleOp->getAttrDictionary());
+    original.getBodyRegion().takeBody(moduleOp.getBodyRegion());
   }
 };
 

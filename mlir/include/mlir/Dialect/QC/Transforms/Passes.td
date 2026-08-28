@@ -19,6 +19,7 @@ def ShrinkQubitRegistersPass
       "Shrink static `qc::QubitType` MemRef registers to accessed indices.";
   let description = [{
     Shrinks one-dimensional static MemRef registers with element type `!qc.qubit` by removing never-read indices and remapping `memref.load` users accordingly.
+    Input may contain at most 64 region-owning operations along any IR path.
   }];
 }
 

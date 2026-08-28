@@ -13,17 +13,24 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Support/OperationUtils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/SCF/Transforms/Patterns.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -58,13 +65,17 @@ struct ConvertAllocOp final : OpConversionPattern<cbit::AllocOp> {
     if (op.getInitialization() == cbit::Initialization::Zero) {
       auto zero = arith::ConstantOp::create(rewriter, op.getLoc(),
                                             rewriter.getBoolAttr(false));
-      for (int64_t index = 0; index < type.getDimSize(0); ++index) {
-        auto indexValue =
-            arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
-        memref::StoreOp::create(rewriter, op.getLoc(), zero.getResult(),
-                                allocation.getResult(),
-                                ValueRange{indexValue.getResult()});
-      }
+      auto lower = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
+      auto upper = arith::ConstantIndexOp::create(rewriter, op.getLoc(),
+                                                  type.getDimSize(0));
+      auto step = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 1);
+      scf::ForOp::create(
+          rewriter, op.getLoc(), lower, upper, step, ValueRange{},
+          [&](OpBuilder& builder, Location location, Value index, ValueRange) {
+            memref::StoreOp::create(builder, location, zero.getResult(),
+                                    allocation.getResult(), ValueRange{index});
+            scf::YieldOp::create(builder, location);
+          });
     }
 
     rewriter.replaceOp(op, allocation.getResult());
@@ -103,7 +114,14 @@ struct ConvertCBitToMemRef final
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto moduleOp = getOperation();
+    auto original = getOperation();
+    constexpr size_t maxRegionNesting = 64;
+    if (failed(verifyRegionNestingDepth(original, maxRegionNesting))) {
+      signalPassFailure();
+      return;
+    }
+    OwningOpRef<ModuleOp> converted(original.clone());
+    auto moduleOp = *converted;
     CBitTypeConverter typeConverter;
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
@@ -131,7 +149,14 @@ protected:
 
     if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
       signalPassFailure();
+      return;
     }
+    if (failed(verify(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
+    original->setAttrs(moduleOp->getAttrDictionary());
+    original.getBodyRegion().takeBody(moduleOp.getBodyRegion());
   }
 };
 } // namespace

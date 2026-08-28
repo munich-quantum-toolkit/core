@@ -19,6 +19,7 @@ def ShrinkQTensorToFitPass : Pass<"qtensor-shrink-to-fit", "mlir::ModuleOp"> {
     Shrinks one-dimensional static qtensors by tracing linear tensor chains from
     `qtensor.dealloc` to `qtensor.alloc` and rebuilding the chain on a compact
     allocation that only keeps accessed indices.
+    Input may contain at most 64 region-owning operations along any IR path.
   }];
 }
 

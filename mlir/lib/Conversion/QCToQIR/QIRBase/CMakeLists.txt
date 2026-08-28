@@ -21,6 +21,7 @@ add_mlir_conversion_library(
   MLIRMQTTransforms
   MLIRLLVMDialect
   MLIRQCDialect
+  MLIRQCODialect
   MLIRArithDialect
   MLIRTransforms
   MLIRFuncDialect

@@ -15,12 +15,15 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -29,15 +32,20 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/OperationUtils.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
+#include <optional>
 #include <utility>
 
 namespace mlir {
@@ -86,6 +94,58 @@ struct LoweringState {
         "cannot mix static and dynamic qubit allocation modes in QCO program");
   }
 };
+
+/** Invalidates cached slots for the same memref in enclosing regions. */
+static void invalidateAncestorQTensorCaches(LoweringState& state,
+                                            Region* region, Value memref) {
+  for (auto* current = region->getParentRegion(); current != nullptr;
+       current = current->getParentRegion()) {
+    if (auto it = state.extractedIndices.find(current);
+        it != state.extractedIndices.end()) {
+      it->second.erase(memref);
+    }
+    if (auto it = state.qubitValues.find(current);
+        it != state.qubitValues.end()) {
+      it->second.erase(memref);
+    }
+  }
+}
+
+template <typename Callback>
+[[nodiscard]] static LogicalResult visitOperations(Operation* root,
+                                                   Callback callback) {
+  SmallVector<Operation*> operations{root};
+  for (size_t next = 0; next < operations.size(); ++next) {
+    auto* operation = operations[next];
+    if (failed(callback(operation))) {
+      return failure();
+    }
+    for (Region& region : operation->getRegions()) {
+      for (Block& block : region) {
+        for (auto& nested : block) {
+          operations.push_back(&nested);
+        }
+      }
+    }
+  }
+  return success();
+}
+
+[[nodiscard]] static LogicalResult
+validateAllocationContracts(Operation* root, LoweringState& state) {
+  return visitOperations(root, [&](Operation* op) {
+    std::optional<AllocationMode> mode;
+    if (isa<qco::StaticOp>(op)) {
+      mode = AllocationMode::Static;
+    } else if (isa<qco::AllocOp, qtensor::AllocOp>(op)) {
+      mode = AllocationMode::Dynamic;
+    }
+    if (mode && failed(state.ensureAllocationMode(*mode, op))) {
+      return failure();
+    }
+    return success();
+  });
+}
 
 /**
  * @brief Base class for conversion patterns that need access to lowering state
@@ -147,6 +207,122 @@ static void inlineRegion(Region& sourceRegion, Region& targetRegion,
   }
   const auto memref = dyn_cast<MemRefType>(type);
   return memref && isa<qc::QubitType>(memref.getElementType());
+}
+
+/// Trace a value-semantics quantum value to its reference-semantics input.
+[[nodiscard]] static Value traceReferenceInput(Value value) {
+  while (auto result = dyn_cast<OpResult>(value)) {
+    Operation* op = result.getOwner();
+    if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
+      value = unitary.getInputForOutput(value);
+      continue;
+    }
+    if (auto measure = dyn_cast<qco::MeasureOp>(op)) {
+      value = measure.getQubitIn();
+      continue;
+    }
+    if (auto reset = dyn_cast<qco::ResetOp>(op)) {
+      value = reset.getQubitIn();
+      continue;
+    }
+    if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
+      if (value != extract.getOutTensor()) {
+        return {};
+      }
+      value = extract.getTensor();
+      continue;
+    }
+    if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
+      value = insert.getDest();
+      continue;
+    }
+    if (auto forOp = dyn_cast<scf::ForOp>(op)) {
+      value = forOp.getTiedLoopInit(result)->get();
+      continue;
+    }
+    if (auto whileOp = dyn_cast<scf::WhileOp>(op)) {
+      value = whileOp.getInits()[result.getResultNumber()];
+      continue;
+    }
+    if (auto ifOp = dyn_cast<qco::IfOp>(op)) {
+      auto* input = ifOp.getTiedQubit(result);
+      if (input == nullptr) {
+        return {};
+      }
+      value = input->get();
+      continue;
+    }
+    if (auto switchOp = dyn_cast<qco::IndexSwitchOp>(op)) {
+      auto* input = switchOp.getTiedTarget(result);
+      if (input == nullptr) {
+        return {};
+      }
+      value = input->get();
+      continue;
+    }
+    return {};
+  }
+  return value;
+}
+
+[[nodiscard]] static LogicalResult
+validateReferencePreservingYield(Operation* terminator, ValueRange yielded,
+                                 ValueRange inputs) {
+  SmallVector<Value> quantumYields;
+  SmallVector<Value> quantumInputs;
+  llvm::copy_if(yielded, std::back_inserter(quantumYields), [](Value value) {
+    return isQuantumStateType(value.getType());
+  });
+  llvm::copy_if(inputs, std::back_inserter(quantumInputs), [](Value value) {
+    return isQuantumStateType(value.getType());
+  });
+  if (quantumYields.size() != quantumInputs.size()) {
+    return terminator->emitOpError(
+        "QCO-to-QC conversion requires quantum region results to match the "
+        "region inputs");
+  }
+  for (auto [yieldedValue, input] :
+       llvm::zip_equal(quantumYields, quantumInputs)) {
+    if (traceReferenceInput(yieldedValue) != input) {
+      return terminator->emitOpError(
+          "QCO-to-QC conversion requires quantum region results to preserve "
+          "input order");
+    }
+  }
+  return success();
+}
+
+[[nodiscard]] static LogicalResult
+validateReferencePreservingYields(Operation* root) {
+  return visitOperations(root, [&](Operation* op) {
+    ValueRange yielded;
+    if (auto yieldOp = dyn_cast<qco::YieldOp>(op)) {
+      yielded = yieldOp.getTargets();
+    } else if (auto yieldOp = dyn_cast<scf::YieldOp>(op)) {
+      if (!isa<scf::ForOp, scf::WhileOp>(op->getParentOp())) {
+        if (llvm::none_of(yieldOp.getResults(), [](Value value) {
+              return isQuantumStateType(value.getType());
+            })) {
+          return success();
+        }
+        yieldOp.emitOpError(
+            "QCO-to-QC conversion supports quantum state in scf.yield only "
+            "for scf.for and scf.while");
+        return failure();
+      }
+      yielded = yieldOp.getResults();
+    } else if (auto conditionOp = dyn_cast<scf::ConditionOp>(op)) {
+      yielded = conditionOp.getArgs();
+    } else {
+      return success();
+    }
+
+    SmallVector<Value> inputs(op->getBlock()->getArguments());
+    if (failed(validateReferencePreservingYield(op, yielded, inputs))) {
+      return failure();
+    }
+    return success();
+  });
 }
 
 [[nodiscard]] static SmallVector<Value>
@@ -337,15 +513,38 @@ struct ConvertQTensorExtractOp final
   }
 };
 
-/**
- * @brief Removes qtensor.insert operations
- */
-struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
-  using OpConversionPattern::OpConversionPattern;
+/** Converts qtensor.insert to an in-place memref.store. */
+struct ConvertQTensorInsertOp final
+    : StatefulOpConversionPattern<qtensor::InsertOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto* region = op->getParentRegion();
+    auto dest = adaptor.getDest();
+    auto index = adaptor.getIndex();
+    auto scalar = adaptor.getScalar();
+    auto& extractedIndices = state.extractedIndices[region][dest];
+    auto& qubitValues = state.qubitValues[region][dest];
+    if (extractedIndices.contains(index) &&
+        qubitValues.lookup(index) == scalar) {
+      rewriter.replaceOp(op, dest);
+      return success();
+    }
+
+    memref::StoreOp::create(rewriter, op.getLoc(), scalar, dest,
+                            ValueRange{index});
+    invalidateAncestorQTensorCaches(state, region, dest);
+
+    // A dynamic index may alias any previously observed slot. Rebuild the
+    // cache conservatively, retaining only the value established by this
+    // store.
+    extractedIndices.clear();
+    qubitValues.clear();
+    extractedIndices.insert(index);
+    qubitValues[index] = scalar;
     rewriter.replaceOp(op, adaptor.getDest());
     return success();
   }
@@ -1174,10 +1373,24 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto moduleOp = getOperation();
+    auto original = getOperation();
+    constexpr size_t maxRegionNesting = 64;
+    if (failed(verifyRegionNestingDepth(original, maxRegionNesting))) {
+      signalPassFailure();
+      return;
+    }
+    OwningOpRef<ModuleOp> converted(original.clone());
+    auto module = *converted;
 
     // Create state object to track the qubit addressing mode
     LoweringState state;
+
+    if (failed(qco::verifyLinearity(module)) ||
+        failed(validateAllocationContracts(module, state)) ||
+        failed(validateReferencePreservingYields(module))) {
+      signalPassFailure();
+      return;
+    }
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
@@ -1207,8 +1420,8 @@ protected:
 
     // Register operation conversion patterns that do not need state tracking
     patterns
-        .add<ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
-             ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOUnitaryOp,
+        .add<ConvertQTensorDeallocOp, ConvertQCOMeasureOp, ConvertQCOResetOp,
+             ConvertQCOUnitaryOp,
              ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
             typeConverter, context);
 
@@ -1224,9 +1437,9 @@ protected:
                  ConvertQCOSCFForOp>(typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
-    patterns.add<ConvertQTensorExtractOp, ConvertQTensorAllocOp,
-                 ConvertQCOAllocOp, ConvertQCOStaticOp, ConvertQCOSinkOp>(
-        typeConverter, context, &state);
+    patterns.add<ConvertQTensorExtractOp, ConvertQTensorInsertOp,
+                 ConvertQTensorAllocOp, ConvertQCOAllocOp, ConvertQCOStaticOp,
+                 ConvertQCOSinkOp>(typeConverter, context, &state);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes
@@ -1251,9 +1464,16 @@ protected:
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
     // Apply the conversion
-    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
+    if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
+      return;
     }
+    if (failed(verify(module))) {
+      signalPassFailure();
+      return;
+    }
+    original->setAttrs(module->getAttrDictionary());
+    original.getBodyRegion().takeBody(module.getBodyRegion());
   }
 };
 

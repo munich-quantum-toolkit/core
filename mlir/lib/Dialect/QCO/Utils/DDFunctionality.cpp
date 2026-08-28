@@ -28,13 +28,18 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/ScopeExit.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -52,6 +57,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -63,6 +69,10 @@
 
 namespace mlir::qco {
 namespace {
+
+constexpr size_t maxCallNesting = 64;
+constexpr size_t maxExecutionSteps = 10'000;
+constexpr size_t maxRegionNesting = 64;
 
 struct QubitMap {
   DenseMap<Value, qc::Qubit> qubits;
@@ -118,6 +128,7 @@ struct ClassicalEnv {
   DenseMap<Value, qc::Qubit> deferredMeasurements;
   /// Shared storage preserves CBit register identity across `func.call`.
   DenseMap<Value, std::shared_ptr<RegisterState>> registers;
+  size_t allocatedRegisterBits = 0;
 };
 
 struct DecodedGate {
@@ -131,7 +142,7 @@ struct WalkState {
   dd::Package* dd;
   std::mt19937_64* rng = nullptr;
   const DenseSet<Operation*>* deferredMeasurements = nullptr;
-  size_t remainingExecutionSteps = 10'000;
+  size_t remainingExecutionSteps = maxExecutionSteps;
   DenseSet<Operation*> activeCalls;
 };
 struct LoopRange {
@@ -201,35 +212,66 @@ decodeStandardGate(UnitaryOpInterface unitary) {
 static dd::mCachedEdge
 buildEmbeddedLocalDD(dd::Package& dd, const DynamicMatrix& local,
                      const DenseMap<qc::Qubit, size_t>& operandForWire,
-                     size_t numOperands, int64_t level, size_t row,
-                     size_t col) {
-  if (level < 0) {
-    return dd::mCachedEdge::terminal(
-        local(static_cast<int64_t>(row), static_cast<int64_t>(col)));
-  }
-  const auto wire = static_cast<qc::Qubit>(level);
-  const auto operand = operandForWire.find(wire);
-  if (operand == operandForWire.end()) {
-    const auto child = buildEmbeddedLocalDD(dd, local, operandForWire,
-                                            numOperands, level - 1, row, col);
-    return dd.makeDDNode<dd::mNode, dd::CachedEdge>(
-        wire, {child, dd::mCachedEdge::zero(), dd::mCachedEdge::zero(), child});
-  }
+                     size_t numOperands, int64_t rootLevel, size_t rootRow,
+                     size_t rootCol) {
+  struct Frame {
+    int64_t level;
+    size_t row;
+    size_t col;
+    SmallVector<dd::mCachedEdge, 4> children;
+  };
 
-  const size_t operandMask = size_t{1} << (numOperands - 1 - operand->second);
-  const auto edge00 = buildEmbeddedLocalDD(dd, local, operandForWire,
-                                           numOperands, level - 1, row, col);
-  const auto edge01 =
-      buildEmbeddedLocalDD(dd, local, operandForWire, numOperands, level - 1,
-                           row, col | operandMask);
-  const auto edge10 =
-      buildEmbeddedLocalDD(dd, local, operandForWire, numOperands, level - 1,
-                           row | operandMask, col);
-  const auto edge11 =
-      buildEmbeddedLocalDD(dd, local, operandForWire, numOperands, level - 1,
-                           row | operandMask, col | operandMask);
-  return dd.makeDDNode<dd::mNode, dd::CachedEdge>(
-      wire, {edge00, edge01, edge10, edge11});
+  SmallVector<Frame> frames{
+      {.level = rootLevel, .row = rootRow, .col = rootCol, .children = {}}};
+  while (!frames.empty()) {
+    Frame& frame = frames.back();
+    std::optional<dd::mCachedEdge> completed;
+    if (frame.level < 0) {
+      completed = dd::mCachedEdge::terminal(local(
+          static_cast<int64_t>(frame.row), static_cast<int64_t>(frame.col)));
+    } else {
+      const auto wire = static_cast<qc::Qubit>(frame.level);
+      const auto operand = operandForWire.find(wire);
+      const size_t childCount = operand == operandForWire.end() ? 1 : 4;
+      if (frame.children.size() < childCount) {
+        size_t childRow = frame.row;
+        size_t childCol = frame.col;
+        if (operand != operandForWire.end()) {
+          const size_t operandMask = size_t{1}
+                                     << (numOperands - 1 - operand->second);
+          const size_t child = frame.children.size();
+          if (child >= 2) {
+            childRow |= operandMask;
+          }
+          if ((child & 1U) != 0U) {
+            childCol |= operandMask;
+          }
+        }
+        frames.push_back({.level = frame.level - 1,
+                          .row = childRow,
+                          .col = childCol,
+                          .children = {}});
+        continue;
+      }
+      if (operand == operandForWire.end()) {
+        const auto child = frame.children.front();
+        completed = dd.makeDDNode<dd::mNode, dd::CachedEdge>(
+            wire,
+            {child, dd::mCachedEdge::zero(), dd::mCachedEdge::zero(), child});
+      } else {
+        completed = dd.makeDDNode<dd::mNode, dd::CachedEdge>(
+            wire, {frame.children[0], frame.children[1], frame.children[2],
+                   frame.children[3]});
+      }
+    }
+
+    frames.pop_back();
+    if (frames.empty()) {
+      return *completed;
+    }
+    frames.back().children.push_back(*completed);
+  }
+  llvm_unreachable("embedded DD construction starts with one frame");
 }
 
 static dd::MatrixDD makeEmbeddedLocalDD(dd::Package& dd,
@@ -415,8 +457,18 @@ static LogicalResult applyUnsignedIndexCast(Value in, Value out, Operation* op,
 
 static LogicalResult allocateRegister(cbit::AllocOp alloc,
                                       ClassicalEnv& classical) {
-  const auto width =
-      static_cast<size_t>(alloc.getResult().getType().getWidth());
+  constexpr size_t maxClassicalRegisterBits = 1U << 20;
+  const auto rawWidth = alloc.getResult().getType().getWidth();
+  if (rawWidth <= 0 ||
+      classical.allocatedRegisterBits > maxClassicalRegisterBits ||
+      static_cast<uint64_t>(rawWidth) >
+          maxClassicalRegisterBits - classical.allocatedRegisterBits) {
+    return alloc.emitError()
+           << "QCO DD simulation supports at most " << maxClassicalRegisterBits
+           << " classical register bits per module";
+  }
+  const auto width = static_cast<size_t>(rawWidth);
+  classical.allocatedRegisterBits += width;
   ClassicalEnv::RegisterBit initialValue;
   if (alloc.getInitialization() == cbit::Initialization::Zero) {
     initialValue.value = false;
@@ -610,30 +662,43 @@ resolveLoop(scf::ForOp forOp, ClassicalEnv& classical, size_t remainingSteps) {
 
 static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
                                     WalkState& walk, Operation* op) {
+  if (sources.size() != dests.size()) {
+    return op->emitError()
+           << "source and destination arity mismatch in QCO DD simulation";
+  }
   const QubitMap sourceQubits = *walk.qubits;
   const ClassicalEnv sourceClassical = *walk.classical;
+
+  // Validate the complete transfer before updating either environment.
   for (auto [src, dest] : llvm::zip_equal(sources, dests)) {
+    if (src.getType() != dest.getType()) {
+      return op->emitError()
+             << "source and destination type mismatch in QCO DD simulation: "
+             << src.getType() << " versus " << dest.getType();
+    }
     if (isa<QubitType>(dest.getType())) {
-      const auto q = sourceQubits.lookup(src);
-      if (!q) {
+      if (!sourceQubits.lookup(src)) {
         return op->emitError()
                << "qubit SSA value is not mapped for QCO DD construction";
       }
-      walk.qubits->bind(dest, *q);
     } else if (isa<cbit::RegisterType>(dest.getType())) {
-      const auto it = sourceClassical.registers.find(src);
-      if (it == sourceClassical.registers.end()) {
+      if (!sourceClassical.registers.contains(src)) {
         return op->emitError()
                << "CBit register is not mapped for QCO DD simulation";
       }
-      walk.classical->registers[dest] = it->second;
+    } else if (!sourceClassical.scalars.contains(src)) {
+      return op->emitError()
+             << "classical SSA value is not mapped for QCO DD simulation";
+    }
+  }
+
+  for (auto [src, dest] : llvm::zip_equal(sources, dests)) {
+    if (isa<QubitType>(dest.getType())) {
+      walk.qubits->bind(dest, *sourceQubits.lookup(src));
+    } else if (isa<cbit::RegisterType>(dest.getType())) {
+      walk.classical->registers[dest] = sourceClassical.registers.at(src);
     } else {
-      const auto value = sourceClassical.scalars.find(src);
-      if (value == sourceClassical.scalars.end()) {
-        return op->emitError()
-               << "classical SSA value is not mapped for QCO DD simulation";
-      }
-      walk.classical->scalars[dest] = value->second;
+      walk.classical->scalars[dest] = sourceClassical.scalars.at(src);
     }
   }
   return success();
@@ -835,12 +900,26 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<func::CallOp>([&](func::CallOp call) -> LogicalResult {
         auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
             call, call.getCalleeAttr());
+        if (!callee) {
+          return call.emitError() << "func.call callee @" << call.getCallee()
+                                  << " could not be resolved";
+        }
         if (!callee.getBody().hasOneBlock()) {
           return call.emitError()
                  << "func.call callee must have a single-block body";
         }
-        auto returnOp =
-            cast<func::ReturnOp>(callee.getBody().front().getTerminator());
+        Block& calleeBody = callee.getBody().front();
+        if (calleeBody.empty()) {
+          return call.emitError() << "func.call callee must end in func.return";
+        }
+        auto returnOp = dyn_cast<func::ReturnOp>(calleeBody.getTerminator());
+        if (!returnOp) {
+          return call.emitError() << "func.call callee must end in func.return";
+        }
+        if (failed(verifyLinearity(callee)) ||
+            failed(verifyRegionNestingDepth(callee, maxRegionNesting))) {
+          return failure();
+        }
         Operation* calleeOp = callee.getOperation();
         if (!walk.activeCalls.insert(calleeOp).second) {
           return call.emitError()
@@ -849,13 +928,23 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         }
         const auto guard =
             llvm::make_scope_exit([&] { walk.activeCalls.erase(calleeOp); });
+        if (walk.activeCalls.size() > maxCallNesting) {
+          return call.emitError()
+                 << "func.call nesting exceeds the limit of " << maxCallNesting;
+        }
+        if (walk.remainingExecutionSteps == 0) {
+          return call.emitError(
+              "QCO DD execution exceeds the limit of 10000 control-flow "
+              "steps");
+        }
+        --walk.remainingExecutionSteps;
 
         if (failed(bindValuePairs(call.getArgOperands(), callee.getArguments(),
                                   walk, call))) {
           return failure();
         }
 
-        if (failed(walkBlock(callee.getBody().front(), walk, state))) {
+        if (failed(walkBlock(calleeBody, walk, state))) {
           return failure();
         }
         return bindValuePairs(returnOp.getOperands(), call.getResults(), walk,
@@ -920,14 +1009,33 @@ static LogicalResult walkFunction(func::FuncOp func, WalkState& walkState,
 }
 
 static FailureOr<QubitMap> prepare(func::FuncOp func, const dd::Package& dd) {
+  if (failed(verifyLinearity(func)) ||
+      failed(verifyRegionNestingDepth(func, maxRegionNesting))) {
+    return failure();
+  }
   if (!func.getBody().hasOneBlock()) {
     return func.emitError()
            << "QCO DD construction expects a single-block function body";
   }
+  Block& body = func.getBody().front();
+  if (body.empty() || !isa<func::ReturnOp>(body.getTerminator())) {
+    return func.emitError()
+           << "QCO DD construction expects the function to end in func.return";
+  }
 
   QubitMap qubits;
-  for (StaticOp staticOp : func.getBody().front().getOps<StaticOp>()) {
-    const auto q = static_cast<qc::Qubit>(staticOp.getIndex());
+  DenseSet<qc::Qubit> staticIndices;
+  for (StaticOp staticOp : body.getOps<StaticOp>()) {
+    const auto index = staticOp.getIndex();
+    if (index > std::numeric_limits<qc::Qubit>::max()) {
+      return staticOp.emitError() << "static qubit index " << index
+                                  << " exceeds the DD qubit-index capacity";
+    }
+    const auto q = static_cast<qc::Qubit>(index);
+    if (!staticIndices.insert(q).second) {
+      return staticOp.emitError() << "duplicate static qubit index " << index
+                                  << " is ambiguous for QCO DD construction";
+    }
     qubits.bind(staticOp.getQubit(), q);
     qubits.numQubits = std::max(qubits.numQubits, static_cast<size_t>(q) + 1);
   }
@@ -941,7 +1049,7 @@ static FailureOr<QubitMap> prepare(func::FuncOp func, const dd::Package& dd) {
     }
     qubits.numQubits = next;
   }
-  for (AllocOp alloc : func.getBody().front().getOps<AllocOp>()) {
+  for (AllocOp alloc : body.getOps<AllocOp>()) {
     qubits.bind(alloc.getResult(), static_cast<qc::Qubit>(qubits.numQubits++));
   }
   if (dd.qubits() < qubits.numQubits) {
@@ -1041,31 +1149,52 @@ static bool isDeferrableMeasurement(MeasureOp measure, Block* entry,
 
 static void analyzeSampling(func::FuncOp func, Block* entry,
                             ArrayRef<Value> outputs,
-                            DenseSet<Operation*>& active, SamplingPlan& plan) {
+                            DenseSet<Operation*>& active, SamplingPlan& plan,
+                            size_t& remainingSteps) {
   Operation* funcOp = func.getOperation();
-  if (!active.insert(funcOp).second) {
+  if (remainingSteps == 0 || active.size() > maxCallNesting ||
+      !active.insert(funcOp).second) {
     plan.dynamic = true;
     return;
   }
-  func.getBody().walk([&](Operation* op) {
-    if (isa<ResetOp>(op)) {
-      plan.dynamic = true;
-    } else if (auto measure = dyn_cast<MeasureOp>(op)) {
-      if (isDeferrableMeasurement(measure, entry, outputs)) {
-        plan.deferredMeasurements.insert(op);
-      } else {
+  SmallVector<Block*> blocks;
+  for (Block& block : func.getBody()) {
+    blocks.push_back(&block);
+  }
+  while (!blocks.empty()) {
+    Block* block = blocks.pop_back_val();
+    for (Operation& operation : *block) {
+      if (remainingSteps == 0) {
         plan.dynamic = true;
+        active.erase(funcOp);
+        return;
       }
-    } else if (auto call = dyn_cast<func::CallOp>(op)) {
-      auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
-          call, call.getCalleeAttr());
-      if (!callee.getBody().hasOneBlock()) {
+      --remainingSteps;
+      Operation* op = &operation;
+      if (isa<ResetOp>(op)) {
         plan.dynamic = true;
-      } else {
-        analyzeSampling(callee, entry, outputs, active, plan);
+      } else if (auto measure = dyn_cast<MeasureOp>(op)) {
+        if (isDeferrableMeasurement(measure, entry, outputs)) {
+          plan.deferredMeasurements.insert(op);
+        } else {
+          plan.dynamic = true;
+        }
+      } else if (auto call = dyn_cast<func::CallOp>(op)) {
+        auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+            call, call.getCalleeAttr());
+        if (!callee || !callee.getBody().hasOneBlock()) {
+          plan.dynamic = true;
+        } else {
+          analyzeSampling(callee, entry, outputs, active, plan, remainingSteps);
+        }
+      }
+      for (Region& region : op->getRegions()) {
+        for (Block& nested : region) {
+          blocks.push_back(&nested);
+        }
       }
     }
-  });
+  }
   active.erase(funcOp);
 }
 
@@ -1088,7 +1217,8 @@ static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {
   }
 
   DenseSet<Operation*> active;
-  analyzeSampling(func, &entry, plan.outputs, active, plan);
+  size_t remainingSteps = maxExecutionSteps;
+  analyzeSampling(func, &entry, plan.outputs, active, plan, remainingSteps);
   return plan;
 }
 

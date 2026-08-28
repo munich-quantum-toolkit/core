@@ -32,6 +32,8 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -822,6 +824,77 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
   EXPECT_EQ(multiOpCtrl, 1U);
   EXPECT_EQ(mchCount, 1U);
   EXPECT_EQ(controlledDcx, 1U);
+}
+
+TEST_F(MultiControlledDecompositionTest, PreservesClassicalBodyCalls) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @observe()
+      func.func @main() {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q2 = qco.alloc : !qco.qubit
+        %c0, %c1, %target = qco.ctrl(%q0, %q1) targets(%arg = %q2) {
+          func.call @observe() : () -> ()
+          %out = qco.x %arg : !qco.qubit -> !qco.qubit
+          qco.yield %out : !qco.qubit
+        } : ({!qco.qubit, !qco.qubit}, {!qco.qubit})
+          -> ({!qco.qubit, !qco.qubit}, {!qco.qubit})
+        qco.sink %c0 : !qco.qubit
+        qco.sink %c1 : !qco.qubit
+        qco.sink %target : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                              context());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(runDecomposeMultiControlled(*moduleOp).succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  size_t calls = 0;
+  moduleOp->walk([&](func::CallOp) { ++calls; });
+  EXPECT_EQ(calls, 1U);
+  expectFullyLowered(*moduleOp);
+}
+
+TEST_F(MultiControlledDecompositionTest,
+       LeavesPostUnitaryClassicalBodyCallInPlace) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @observe()
+      func.func @main() {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q2 = qco.alloc : !qco.qubit
+        %c0, %c1, %target = qco.ctrl(%q0, %q1) targets(%arg = %q2) {
+          %out = qco.x %arg : !qco.qubit -> !qco.qubit
+          func.call @observe() : () -> ()
+          qco.yield %out : !qco.qubit
+        } : ({!qco.qubit, !qco.qubit}, {!qco.qubit})
+          -> ({!qco.qubit, !qco.qubit}, {!qco.qubit})
+        qco.sink %c0 : !qco.qubit
+        qco.sink %c1 : !qco.qubit
+        qco.sink %target : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                              context());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(runDecomposeMultiControlled(*moduleOp).succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  SmallVector<CtrlOp> controls;
+  moduleOp->walk([&](CtrlOp op) { controls.push_back(op); });
+  ASSERT_EQ(controls.size(), 1U);
+  auto& body = controls.front().getBody()->getOperations();
+  auto operation = body.begin();
+  EXPECT_TRUE(isa<XOp>(*operation++));
+  EXPECT_TRUE(isa<func::CallOp>(*operation++));
+  EXPECT_TRUE(isa<YieldOp>(*operation));
 }
 
 TEST_F(MultiControlledDecompositionTest, PhasePiRoutesThroughMcz) {

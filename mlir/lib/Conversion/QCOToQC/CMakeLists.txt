@@ -15,8 +15,10 @@ add_mlir_conversion_library(
   QCOToQCIncGen
   LINK_LIBS
   MLIRCBitDialect
+  MLIRControlFlowDialect
   MLIRQCDialect
   MLIRQCODialect
+  MLIRQCOUtils
   MLIRQTensorDialect
   MLIRArithDialect
   MLIRFuncDialect

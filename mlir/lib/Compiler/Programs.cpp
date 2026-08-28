@@ -10,6 +10,7 @@
 
 #include "mlir/Compiler/Programs.h"
 
+#include "mlir/Compiler/JeffDeserializerError.h"
 #include "mlir/Compiler/TargetCompilation.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
@@ -34,12 +35,17 @@
 #include "mlir/Support/Passes.h"
 
 #include <capnp/common.h>
+#include <capnp/serialize.h>
+#include <jeff.capnp.h>
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
 #include <kj/array.h>
+#include <kj/exception.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/Twine.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -74,6 +80,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -86,6 +93,17 @@
 #include <vector>
 
 namespace mlir {
+
+static void pushNestedOperations(Operation* operation,
+                                 SmallVectorImpl<Operation*>& worklist) {
+  for (Region& region : operation->getRegions()) {
+    for (Block& block : region) {
+      for (Operation& nested : block) {
+        worklist.push_back(&nested);
+      }
+    }
+  }
+}
 
 [[nodiscard]] static std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
@@ -145,11 +163,15 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
  */
 [[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
                                             const StringRef dialect) {
-  auto found = false;
-  mod->walk([&](Operation* operation) {
-    found |= operation->getDialect()->getNamespace() == dialect;
-  });
-  return found;
+  SmallVector<Operation*> worklist{mod};
+  while (!worklist.empty()) {
+    Operation* operation = worklist.pop_back_val();
+    if (operation->getDialect()->getNamespace() == dialect) {
+      return true;
+    }
+    pushNestedOperations(operation, worklist);
+  }
+  return false;
 }
 
 template <class ProgramType, class Parse>
@@ -168,6 +190,9 @@ runPasses(ModuleOp mod,
           const llvm::function_ref<void(OpPassManager&)> populatePasses,
           const StringRef failureMessage, const bool enableTiming = false,
           const bool enableStatistics = false) {
+  if (failed(mqt::verifyProgramMetadata(mod))) {
+    return failure();
+  }
   PassManager pm(mod.getContext());
   if (enableTiming) {
     pm.enableTiming();
@@ -179,7 +204,7 @@ runPasses(ModuleOp mod,
   if (failed(pm.run(mod))) {
     return mod.emitError(failureMessage);
   }
-  return success();
+  return mqt::verifyProgramMetadata(mod);
 }
 
 [[nodiscard]] static LogicalResult runQCOTransformPasses(
@@ -323,7 +348,8 @@ QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
         "cannot construct a QC program with a different MLIR context");
     return std::nullopt;
   }
-  if (failed(verify(*storage.mod))) {
+  if (failed(verify(*storage.mod)) ||
+      failed(mqt::verifyProgramMetadata(*storage.mod))) {
     return std::nullopt;
   }
   if (!moduleUsesDialect(*storage.mod, "qc")) {
@@ -341,7 +367,9 @@ bool QCProgram::cleanup() {
 }
 
 bool QCProgram::normalizeGlobalPhases() {
-  return succeeded(mqt::normalizeGlobalPhases(mod()));
+  return succeeded(mqt::verifyProgramMetadata(mod())) &&
+         succeeded(mqt::normalizeGlobalPhases(mod())) &&
+         succeeded(mqt::verifyProgramMetadata(mod()));
 }
 
 std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
@@ -392,13 +420,23 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
 static size_t
 countGatesIf(ModuleOp moduleOp,
              const llvm::function_ref<bool(qc::UnitaryOpInterface)> predicate) {
-  size_t count = 0;
   auto entryPoint = mqt::getEntryPoint(moduleOp);
-  entryPoint.walk<WalkOrder::PreOrder>([&](qc::UnitaryOpInterface op) {
-    count += !isa<qc::BarrierOp>(op) && predicate(op);
-    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op) ? WalkResult::skip()
-                                                     : WalkResult::advance();
-  });
+  if (!entryPoint) {
+    return 0;
+  }
+  size_t count = 0;
+  SmallVector<Operation*> worklist{entryPoint};
+  while (!worklist.empty()) {
+    Operation* operation = worklist.pop_back_val();
+    auto unitary = dyn_cast<qc::UnitaryOpInterface>(operation);
+    if (unitary) {
+      count += !isa<qc::BarrierOp>(unitary) && predicate(unitary);
+      if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(unitary)) {
+        continue;
+      }
+    }
+    pushNestedOperations(operation, worklist);
+  }
   return count;
 }
 
@@ -454,7 +492,8 @@ QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
         "cannot construct a QCO program with a different MLIR context");
     return std::nullopt;
   }
-  if (failed(verify(*storage.mod))) {
+  if (failed(verify(*storage.mod)) ||
+      failed(mqt::verifyProgramMetadata(*storage.mod))) {
     return std::nullopt;
   }
   if (!moduleUsesDialect(*storage.mod, "qco")) {
@@ -480,21 +519,24 @@ bool QCOProgram::cleanup() {
 }
 
 bool QCOProgram::normalizeGlobalPhases() {
-  if (!hasValidLinearity()) {
+  if (!hasValidLinearity() || failed(mqt::verifyProgramMetadata(mod()))) {
     return false;
   }
-  return succeeded(mqt::normalizeGlobalPhases(mod())) && hasValidLinearity();
+  return succeeded(mqt::normalizeGlobalPhases(mod())) &&
+         succeeded(mqt::verifyProgramMetadata(mod())) && hasValidLinearity();
 }
 
 bool QCOProgram::runPassPipeline(const std::string_view pipeline,
                                  const bool enableTiming,
                                  const bool enableStatistics) {
-  if (!hasValidLinearity()) {
+  if (!hasValidLinearity() || failed(mqt::verifyProgramMetadata(mod()))) {
     return false;
   }
-  return succeeded(::runPassPipeline(mod(), pipeline, enableTiming,
-                                     enableStatistics)) &&
-         hasValidLinearity();
+  if (failed(
+          ::runPassPipeline(mod(), pipeline, enableTiming, enableStatistics))) {
+    return false;
+  }
+  return succeeded(mqt::verifyProgramMetadata(mod())) && hasValidLinearity();
 }
 
 bool QCOProgram::mergeSingleQubitRotationGates() {
@@ -594,38 +636,650 @@ std::optional<JeffProgram> QCOProgram::intoJeff() && {
 // JeffProgram
 //===----------------------------------------------------------------------===//
 
-std::optional<JeffProgram>
-JeffProgram::fromBytes(const std::span<const std::byte> bytes) {
+namespace {
+
+class JeffDeserializerInputVerifier {
+public:
+  JeffDeserializerInputVerifier(MLIRContext* context,
+                                const ::jeff::Module::Reader module)
+      : context(context), module(module), functions(module.getFunctions()),
+        stringsSize(module.getStrings().size()) {}
+
+  [[nodiscard]] LogicalResult verify() {
+    if (module.getVersion() != 0 || module.getVersionMinor() != 3 ||
+        module.getVersionPatch() != 0) {
+      return reject("unsupported jeff version; expected 0.3.0");
+    }
+    if (stringsSize > maxContainerSize) {
+      return reject("jeff module contains too many strings");
+    }
+
+    for (uint64_t functionIndex = 0; functionIndex < functions.size();
+         ++functionIndex) {
+      const auto function = functions[functionIndex];
+      if (function.getName() >= stringsSize) {
+        return reject("jeff function name does not refer to the string table");
+      }
+      if (function.isDeclaration()) {
+        return reject("jeff function declarations are not supported");
+      }
+      const auto definition = function.getDefinition();
+      if (!definition.hasBody()) {
+        return reject("jeff function definition must contain a body");
+      }
+      if (!definition.getBody().hasOperations()) {
+        return reject("jeff function body must contain an operations list");
+      }
+      const auto values = definition.getValues();
+      if (values.size() > maxContainerSize) {
+        return reject("jeff function contains too many values");
+      }
+      for (const auto value : values) {
+        if (failed(verifyType(value.getType()))) {
+          return failure();
+        }
+      }
+      this->values = values;
+      currentFunctionIndex = functionIndex;
+      if (failed(verifyRegion(definition.getBody(), std::nullopt, std::nullopt,
+                              0))) {
+        return failure();
+      }
+    }
+    return success();
+  }
+
+private:
+  static constexpr uint64_t maxContainerSize = 1U << 20;
+  static constexpr uint64_t maxRegionDepth = 64;
+
+  [[nodiscard]] LogicalResult reject(const Twine& message) const {
+    return emitError(UnknownLoc::get(context)) << message;
+  }
+
+  [[nodiscard]] static bool isSupportedIntegerWidth(const uint8_t width) {
+    return width == 1 || width == 8 || width == 16 || width == 32 ||
+           width == 64;
+  }
+
+  [[nodiscard]] static bool
+  isSupportedFloatPrecision(const ::jeff::FloatPrecision precision) {
+    return precision == ::jeff::FloatPrecision::FLOAT32 ||
+           precision == ::jeff::FloatPrecision::FLOAT64;
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyType(const ::jeff::Type::Reader type) const {
+    switch (type.which()) {
+    case ::jeff::Type::QUBIT:
+    case ::jeff::Type::QUREG:
+      return success();
+    case ::jeff::Type::INT:
+      if (isSupportedIntegerWidth(type.getInt())) {
+        return success();
+      }
+      return reject("jeff integer type has an unsupported bit width");
+    case ::jeff::Type::INT_ARRAY:
+      if (isSupportedIntegerWidth(type.getIntArray().getBitwidth())) {
+        return success();
+      }
+      return reject("jeff integer-array type has an unsupported bit width");
+    case ::jeff::Type::FLOAT:
+      if (isSupportedFloatPrecision(type.getFloat())) {
+        return success();
+      }
+      return reject("jeff floating-point type has an unsupported precision");
+    case ::jeff::Type::FLOAT_ARRAY:
+      if (isSupportedFloatPrecision(type.getFloatArray().getPrecision())) {
+        return success();
+      }
+      return reject(
+          "jeff floating-point-array type has an unsupported precision");
+    default:
+      return reject("jeff value has an unknown type");
+    }
+  }
+
+  [[nodiscard]] LogicalResult verifyArity(const ::jeff::Op::Reader operation,
+                                          const uint64_t inputs,
+                                          const uint64_t outputs) const {
+    if (operation.getInputs().size() == inputs &&
+        operation.getOutputs().size() == outputs) {
+      return success();
+    }
+    return reject(Twine("jeff instruction expects ") + Twine(inputs) +
+                  " inputs and " + Twine(outputs) + " outputs");
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyValueIndices(const ::jeff::Op::Reader operation) const {
+    for (const auto input : operation.getInputs()) {
+      if (input >= values.size()) {
+        return reject("jeff instruction input is outside the value table");
+      }
+    }
+    for (const auto output : operation.getOutputs()) {
+      if (output >= values.size()) {
+        return reject("jeff instruction output is outside the value table");
+      }
+    }
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyRegion(const ::jeff::Region::Reader region,
+               const std::optional<uint64_t> expectedSources,
+               const std::optional<uint64_t> expectedTargets,
+               const uint64_t depth) {
+    if (depth > maxRegionDepth) {
+      return reject("jeff structured control flow exceeds the nesting limit");
+    }
+    if (expectedSources && region.getSources().size() != *expectedSources) {
+      return reject("jeff region source count does not match its operation");
+    }
+    if (expectedTargets && region.getTargets().size() != *expectedTargets) {
+      return reject("jeff region target count does not match its operation");
+    }
+    for (const auto source : region.getSources()) {
+      if (source >= values.size()) {
+        return reject("jeff region source is outside the value table");
+      }
+    }
+    for (const auto target : region.getTargets()) {
+      if (target >= values.size()) {
+        return reject("jeff region target is outside the value table");
+      }
+    }
+    if (!region.hasOperations()) {
+      return reject("jeff region must contain an operations list");
+    }
+    const auto operations = region.getOperations();
+    if (operations.size() > maxContainerSize - totalOperations) {
+      return reject("jeff module contains too many operations");
+    }
+    totalOperations += operations.size();
+    for (const auto operation : operations) {
+      if (failed(verifyOperation(operation, depth))) {
+        return failure();
+      }
+    }
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyWellKnownGate(const ::jeff::Op::Reader operation,
+                      const ::jeff::QubitGate::Reader gate) const {
+    const uint64_t controls = gate.getControlQubits();
+    uint64_t targets = 0;
+    uint64_t parameters = 0;
+    switch (gate.getWellKnown()) {
+    case ::jeff::WellKnownGate::X:
+    case ::jeff::WellKnownGate::Y:
+    case ::jeff::WellKnownGate::Z:
+    case ::jeff::WellKnownGate::S:
+    case ::jeff::WellKnownGate::T:
+    case ::jeff::WellKnownGate::H:
+    case ::jeff::WellKnownGate::I:
+      targets = 1;
+      break;
+    case ::jeff::WellKnownGate::R1:
+    case ::jeff::WellKnownGate::RX:
+    case ::jeff::WellKnownGate::RY:
+    case ::jeff::WellKnownGate::RZ:
+      targets = 1;
+      parameters = 1;
+      break;
+    case ::jeff::WellKnownGate::U:
+      targets = 1;
+      parameters = 3;
+      break;
+    case ::jeff::WellKnownGate::SWAP:
+      targets = 2;
+      break;
+    case ::jeff::WellKnownGate::GPHASE:
+      parameters = 1;
+      break;
+    default:
+      return reject("jeff instruction names an unknown well-known gate");
+    }
+    return verifyArity(operation, targets + controls + parameters,
+                       targets + controls);
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyGate(const ::jeff::Op::Reader operation,
+             const ::jeff::QubitGate::Reader gate) const {
+    const uint64_t controls = gate.getControlQubits();
+    switch (gate.which()) {
+    case ::jeff::QubitGate::WELL_KNOWN:
+      return verifyWellKnownGate(operation, gate);
+    case ::jeff::QubitGate::CUSTOM: {
+      const auto custom = gate.getCustom();
+      if (custom.getName() >= stringsSize) {
+        return reject("jeff custom-gate name is outside the string table");
+      }
+      const uint64_t targets = custom.getNumQubits();
+      const uint64_t parameters = custom.getNumParams();
+      return verifyArity(operation, targets + controls + parameters,
+                         targets + controls);
+    }
+    case ::jeff::QubitGate::PPR: {
+      const uint64_t targets = gate.getPpr().getPauliString().size();
+      return verifyArity(operation, targets + controls + 1, targets + controls);
+    }
+    default:
+      return reject("jeff instruction contains an unknown gate kind");
+    }
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyQubitOperation(const ::jeff::Op::Reader operation) const {
+    const auto instruction = operation.getInstruction().getQubit();
+    switch (instruction.which()) {
+    case ::jeff::QubitOp::ALLOC:
+      return verifyArity(operation, 0, 1);
+    case ::jeff::QubitOp::FREE:
+    case ::jeff::QubitOp::FREE_ZERO:
+      return verifyArity(operation, 1, 0);
+    case ::jeff::QubitOp::MEASURE:
+    case ::jeff::QubitOp::RESET:
+      return verifyArity(operation, 1, 1);
+    case ::jeff::QubitOp::MEASURE_ND:
+      return verifyArity(operation, 1, 2);
+    case ::jeff::QubitOp::GATE:
+      return verifyGate(operation, instruction.getGate());
+    default:
+      return reject("jeff instruction contains an unknown qubit operation");
+    }
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyQuregOperation(const ::jeff::Op::Reader operation) const {
+    switch (operation.getInstruction().getQureg().which()) {
+    case ::jeff::QuregOp::ALLOC:
+      return verifyArity(operation, 1, 1);
+    case ::jeff::QuregOp::FREE:
+    case ::jeff::QuregOp::FREE_ZERO:
+      return verifyArity(operation, 1, 0);
+    case ::jeff::QuregOp::EXTRACT_INDEX:
+      return verifyArity(operation, 2, 2);
+    case ::jeff::QuregOp::INSERT_INDEX:
+    case ::jeff::QuregOp::INSERT_SLICE:
+      return verifyArity(operation, 3, 1);
+    case ::jeff::QuregOp::EXTRACT_SLICE:
+      return verifyArity(operation, 3, 2);
+    case ::jeff::QuregOp::LENGTH:
+      return verifyArity(operation, 1, 2);
+    case ::jeff::QuregOp::SPLIT:
+      return verifyArity(operation, 2, 2);
+    case ::jeff::QuregOp::JOIN:
+      return verifyArity(operation, 2, 1);
+    case ::jeff::QuregOp::CREATE:
+      return verifyArity(operation, operation.getInputs().size(), 1);
+    default:
+      return reject("jeff instruction contains an unknown qureg operation");
+    }
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyIntegerOperation(const ::jeff::Op::Reader operation) const {
+    switch (operation.getInstruction().getInt().which()) {
+    case ::jeff::IntOp::CONST1:
+    case ::jeff::IntOp::CONST8:
+    case ::jeff::IntOp::CONST16:
+    case ::jeff::IntOp::CONST32:
+    case ::jeff::IntOp::CONST64:
+      return verifyArity(operation, 0, 1);
+    case ::jeff::IntOp::NOT:
+    case ::jeff::IntOp::ABS:
+      return verifyArity(operation, 1, 1);
+    case ::jeff::IntOp::ADD:
+    case ::jeff::IntOp::SUB:
+    case ::jeff::IntOp::MUL:
+    case ::jeff::IntOp::DIV_S:
+    case ::jeff::IntOp::DIV_U:
+    case ::jeff::IntOp::POW:
+    case ::jeff::IntOp::AND:
+    case ::jeff::IntOp::OR:
+    case ::jeff::IntOp::XOR:
+    case ::jeff::IntOp::MIN_S:
+    case ::jeff::IntOp::MIN_U:
+    case ::jeff::IntOp::MAX_S:
+    case ::jeff::IntOp::MAX_U:
+    case ::jeff::IntOp::REM_S:
+    case ::jeff::IntOp::REM_U:
+    case ::jeff::IntOp::SHL:
+    case ::jeff::IntOp::SHR:
+    case ::jeff::IntOp::EQ:
+    case ::jeff::IntOp::LT_S:
+    case ::jeff::IntOp::LTE_S:
+    case ::jeff::IntOp::LT_U:
+    case ::jeff::IntOp::LTE_U:
+      return verifyArity(operation, 2, 1);
+    default:
+      return reject("jeff instruction contains an unknown integer operation");
+    }
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyIntegerArrayOperation(const ::jeff::Op::Reader operation) const {
+    const auto instruction = operation.getInstruction().getIntArray();
+    switch (instruction.which()) {
+    case ::jeff::IntArrayOp::CONST1:
+    case ::jeff::IntArrayOp::CONST8:
+    case ::jeff::IntArrayOp::CONST16:
+    case ::jeff::IntArrayOp::CONST32:
+    case ::jeff::IntArrayOp::CONST64:
+      return verifyArity(operation, 0, 1);
+    case ::jeff::IntArrayOp::ZERO:
+      if (!isSupportedIntegerWidth(instruction.getZero())) {
+        return reject("jeff integer-array zero has an unsupported bit width");
+      }
+      return verifyArity(operation, 1, 1);
+    case ::jeff::IntArrayOp::GET_INDEX:
+      if (failed(verifyArity(operation, 2, 1))) {
+        return failure();
+      }
+      if (values[operation.getInputs()[0]].getType().which() !=
+          ::jeff::Type::INT_ARRAY) {
+        return reject("jeff integer-array get requires an integer-array input");
+      }
+      return success();
+    case ::jeff::IntArrayOp::SET_INDEX:
+      return verifyArity(operation, 3, 1);
+    case ::jeff::IntArrayOp::LENGTH:
+      return verifyArity(operation, 1, 1);
+    case ::jeff::IntArrayOp::CREATE:
+      if (operation.getInputs().size() == 0) {
+        return reject("jeff integer-array create requires at least one input");
+      }
+      return verifyArity(operation, operation.getInputs().size(), 1);
+    default:
+      return reject(
+          "jeff instruction contains an unknown integer-array operation");
+    }
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyFloatOperation(const ::jeff::Op::Reader operation) const {
+    switch (operation.getInstruction().getFloat().which()) {
+    case ::jeff::FloatOp::CONST32:
+    case ::jeff::FloatOp::CONST64:
+      return verifyArity(operation, 0, 1);
+    case ::jeff::FloatOp::SQRT:
+    case ::jeff::FloatOp::ABS:
+    case ::jeff::FloatOp::CEIL:
+    case ::jeff::FloatOp::FLOOR:
+    case ::jeff::FloatOp::EXP:
+    case ::jeff::FloatOp::LOG:
+    case ::jeff::FloatOp::SIN:
+    case ::jeff::FloatOp::COS:
+    case ::jeff::FloatOp::TAN:
+    case ::jeff::FloatOp::ASIN:
+    case ::jeff::FloatOp::ACOS:
+    case ::jeff::FloatOp::ATAN:
+    case ::jeff::FloatOp::SINH:
+    case ::jeff::FloatOp::COSH:
+    case ::jeff::FloatOp::TANH:
+    case ::jeff::FloatOp::ASINH:
+    case ::jeff::FloatOp::ACOSH:
+    case ::jeff::FloatOp::ATANH:
+    case ::jeff::FloatOp::IS_NAN:
+    case ::jeff::FloatOp::IS_INF:
+      return verifyArity(operation, 1, 1);
+    case ::jeff::FloatOp::ADD:
+    case ::jeff::FloatOp::SUB:
+    case ::jeff::FloatOp::MUL:
+    case ::jeff::FloatOp::POW:
+    case ::jeff::FloatOp::ATAN2:
+    case ::jeff::FloatOp::MAX:
+    case ::jeff::FloatOp::MIN:
+    case ::jeff::FloatOp::EQ:
+    case ::jeff::FloatOp::LT:
+    case ::jeff::FloatOp::LTE:
+      return verifyArity(operation, 2, 1);
+    default:
+      return reject(
+          "jeff instruction contains an unknown floating-point operation");
+    }
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyFloatArrayOperation(const ::jeff::Op::Reader operation) const {
+    const auto instruction = operation.getInstruction().getFloatArray();
+    switch (instruction.which()) {
+    case ::jeff::FloatArrayOp::CONST32:
+    case ::jeff::FloatArrayOp::CONST64:
+      return verifyArity(operation, 0, 1);
+    case ::jeff::FloatArrayOp::ZERO:
+      if (!isSupportedFloatPrecision(instruction.getZero())) {
+        return reject(
+            "jeff floating-point-array zero has an unsupported precision");
+      }
+      return verifyArity(operation, 1, 1);
+    case ::jeff::FloatArrayOp::GET_INDEX:
+      if (failed(verifyArity(operation, 2, 1))) {
+        return failure();
+      }
+      if (values[operation.getInputs()[0]].getType().which() !=
+          ::jeff::Type::FLOAT_ARRAY) {
+        return reject("jeff floating-point-array get requires a "
+                      "floating-point-array input");
+      }
+      return success();
+    case ::jeff::FloatArrayOp::SET_INDEX:
+      return verifyArity(operation, 3, 1);
+    case ::jeff::FloatArrayOp::LENGTH:
+      return verifyArity(operation, 1, 1);
+    case ::jeff::FloatArrayOp::CREATE:
+      if (operation.getInputs().size() == 0) {
+        return reject(
+            "jeff floating-point-array create requires at least one input");
+      }
+      return verifyArity(operation, operation.getInputs().size(), 1);
+    default:
+      return reject("jeff instruction contains an unknown "
+                    "floating-point-array operation");
+    }
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyStructuredControlFlow(const ::jeff::Op::Reader operation,
+                              const uint64_t depth) {
+    const auto instruction = operation.getInstruction().getScf();
+    const uint64_t inputs = operation.getInputs().size();
+    const uint64_t outputs = operation.getOutputs().size();
+    switch (instruction.which()) {
+    case ::jeff::ScfOp::SWITCH: {
+      if (inputs == 0 || outputs != inputs - 1) {
+        return reject("jeff switch shape is unsupported by the deserializer");
+      }
+      const auto switchInstruction = instruction.getSwitch();
+      for (const auto branch : switchInstruction.getBranches()) {
+        if (failed(verifyRegion(branch, inputs - 1, outputs, depth + 1))) {
+          return failure();
+        }
+      }
+      if (switchInstruction.hasDefault() &&
+          failed(verifyRegion(switchInstruction.getDefault(), inputs - 1,
+                              outputs, depth + 1))) {
+        return failure();
+      }
+      return success();
+    }
+    case ::jeff::ScfOp::FOR:
+      if (inputs < 3 || outputs != inputs - 3) {
+        return reject("jeff for-loop shape is unsupported by the deserializer");
+      }
+      return verifyRegion(instruction.getFor(), outputs + 1, outputs,
+                          depth + 1);
+    case ::jeff::ScfOp::WHILE:
+      if (outputs != inputs) {
+        return reject(
+            "jeff while-loop shape is unsupported by the deserializer");
+      }
+      if (failed(verifyRegion(instruction.getWhile().getBefore(), inputs,
+                              outputs + 1, depth + 1))) {
+        return failure();
+      }
+      return verifyRegion(instruction.getWhile().getAfter(), outputs, inputs,
+                          depth + 1);
+    default:
+      return reject(
+          "jeff instruction contains an unknown structured-control-flow "
+          "operation");
+    }
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyFunctionCall(const ::jeff::Op::Reader operation) const {
+    const uint64_t callee = operation.getInstruction().getFunc().getFuncCall();
+    if (callee >= functions.size()) {
+      return reject("jeff call refers to an unknown function");
+    }
+    if (callee > currentFunctionIndex) {
+      return reject("jeff forward function calls are unsupported");
+    }
+    const auto body = functions[callee].getDefinition().getBody();
+    return verifyArity(operation, body.getSources().size(),
+                       body.getTargets().size());
+  }
+
+  [[nodiscard]] LogicalResult
+  verifyOperation(const ::jeff::Op::Reader operation, const uint64_t depth) {
+    if (failed(verifyValueIndices(operation))) {
+      return failure();
+    }
+    switch (operation.getInstruction().which()) {
+    case ::jeff::Op::Instruction::QUBIT:
+      return verifyQubitOperation(operation);
+    case ::jeff::Op::Instruction::QUREG:
+      return verifyQuregOperation(operation);
+    case ::jeff::Op::Instruction::INT:
+      return verifyIntegerOperation(operation);
+    case ::jeff::Op::Instruction::INT_ARRAY:
+      return verifyIntegerArrayOperation(operation);
+    case ::jeff::Op::Instruction::FLOAT:
+      return verifyFloatOperation(operation);
+    case ::jeff::Op::Instruction::FLOAT_ARRAY:
+      return verifyFloatArrayOperation(operation);
+    case ::jeff::Op::Instruction::SCF:
+      return verifyStructuredControlFlow(operation, depth);
+    case ::jeff::Op::Instruction::FUNC:
+      return verifyFunctionCall(operation);
+    default:
+      return reject("jeff instruction has an unknown kind");
+    }
+  }
+
+  MLIRContext* context;
+  ::jeff::Module::Reader module;
+  capnp::List<::jeff::Function>::Reader functions;
+  uint64_t stringsSize;
+  capnp::List<::jeff::Value>::Reader values;
+  uint64_t currentFunctionIndex = 0;
+  uint64_t totalOperations = 0;
+};
+
+} // namespace
+
+[[nodiscard]] static LogicalResult
+verifyJeffDeserializerInput(MLIRContext* context,
+                            kj::ArrayPtr<const capnp::word> words) {
+  capnp::FlatArrayMessageReader message(words);
+  const auto module = message.getRoot<::jeff::Module>();
+  if (!module.hasFunctions()) {
+    return emitError(UnknownLoc::get(context),
+                     "jeff module must contain a functions list");
+  }
+  const auto functions = module.getFunctions();
+  if (functions.size() == 0) {
+    return emitError(UnknownLoc::get(context),
+                     "jeff module must contain at least one function");
+  }
+  constexpr uint64_t maxFunctions =
+      static_cast<uint64_t>(std::numeric_limits<uint16_t>::max()) + 1;
+  if (functions.size() > maxFunctions) {
+    return emitError(UnknownLoc::get(context))
+           << "jeff module contains more than " << maxFunctions << " functions";
+  }
+  if (module.getEntrypoint() >= functions.size()) {
+    return emitError(UnknownLoc::get(context),
+                     "jeff entry point does not refer to a function");
+  }
+
+  return JeffDeserializerInputVerifier(context, module).verify();
+}
+
+[[nodiscard]] static FailureOr<OwningOpRef<ModuleOp>>
+deserializeJeffBytes(MLIRContext* context,
+                     const std::span<const std::byte> bytes) {
+  if (bytes.empty()) {
+    return emitError(UnknownLoc::get(context), "jeff data must not be empty");
+  }
   if (bytes.size() % sizeof(capnp::word) != 0U) {
-    auto context = createCompilerContext();
-    emitError(UnknownLoc::get(context.get()),
-              "jeff data size must be a multiple of the Cap'n Proto word size");
-    return std::nullopt;
+    return emitError(
+        UnknownLoc::get(context),
+        "jeff data size must be a multiple of the Cap'n Proto word size");
   }
 
   auto words = kj::heapArray<capnp::word>(bytes.size() / sizeof(capnp::word));
   std::memcpy(words.begin(), bytes.data(), bytes.size());
 
+  try {
+    if (failed(verifyJeffDeserializerInput(context, words.asPtr()))) {
+      return failure();
+    }
+    auto mod = deserialize(context, words.asPtr());
+    if (!mod) {
+      return emitError(UnknownLoc::get(context),
+                       "failed to deserialize jeff bytes");
+    }
+    return mod;
+  } catch (const kj::Exception& exception) {
+    return emitError(UnknownLoc::get(context))
+           << "failed to parse jeff data: "
+           << exception.getDescription().cStr();
+  } catch (const detail::JeffDeserializerError& exception) {
+    return emitError(UnknownLoc::get(context))
+           << "failed to deserialize jeff data: " << exception.what();
+  }
+}
+
+FailureOr<OwningOpRef<ModuleOp>>
+detail::deserializeJeffFile(MLIRContext* context,
+                            const std::filesystem::path& path) {
+  std::string errorMessage;
+  auto file = openInputFile(path.string(), &errorMessage);
+  if (!file) {
+    return emitError(UnknownLoc::get(context))
+           << "failed to load jeff file '" << path.string()
+           << "': " << errorMessage;
+  }
+
+  const auto buffer = file->getBuffer();
+  return deserializeJeffBytes(
+      context, std::as_bytes(std::span(buffer.data(), buffer.size())));
+}
+
+std::optional<JeffProgram>
+JeffProgram::fromBytes(const std::span<const std::byte> bytes) {
   auto context = createCompilerContext();
-  auto mod = deserialize(context.get(), words.asPtr());
-  if (!mod) {
-    emitError(UnknownLoc::get(context.get()),
-              "failed to deserialize jeff bytes");
+  auto mod = deserializeJeffBytes(context.get(), bytes);
+  if (failed(mod)) {
     return std::nullopt;
   }
-  return JeffProgram({.context = std::move(context), .mod = std::move(mod)});
+  return JeffProgram({.context = std::move(context), .mod = std::move(*mod)});
 }
 
 std::optional<JeffProgram>
 JeffProgram::fromFile(const std::filesystem::path& path) {
   auto context = createCompilerContext();
-  auto mod = deserializeFromFile(context.get(), path.string());
-  if (!mod) {
-    emitError(UnknownLoc::get(context.get()))
-        << "failed to deserialize jeff file '" << path.string() << "'";
+  auto mod = detail::deserializeJeffFile(context.get(), path);
+  if (failed(mod)) {
     return std::nullopt;
   }
-  return JeffProgram({.context = std::move(context), .mod = std::move(mod)});
+  return JeffProgram({.context = std::move(context), .mod = std::move(*mod)});
 }
 
 JeffProgram JeffProgram::copy() const { return JeffProgram(cloneStorage()); }
@@ -754,6 +1408,20 @@ runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
                    const CompilerTarget* const target,
                    const std::string_view qcoPipeline, const bool enableTiming,
                    const bool enableStatistics) {
+  const bool hasValidInput = std::visit(
+      []<typename T>(T& value) {
+        using ProgramType = std::remove_cvref_t<T>;
+        if constexpr (std::is_same_v<ProgramType, OpenQASMProgram>) {
+          return true;
+        } else {
+          return succeeded(verify(value.module())) &&
+                 succeeded(mqt::verifyProgramMetadata(value.module()));
+        }
+      },
+      program);
+  if (!hasValidInput) {
+    return std::nullopt;
+  }
   if (target != nullptr &&
       (output == ProgramFormat::QCImport || output == ProgramFormat::QCO ||
        output == ProgramFormat::Jeff)) {

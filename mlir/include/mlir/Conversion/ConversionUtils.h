@@ -35,13 +35,13 @@ namespace mlir {
 inline LogicalResult moveRegion(Region& source, Region& dest,
                                 ConversionPatternRewriter& rewriter,
                                 const TypeConverter* typeConverter) {
-  rewriter.inlineRegionBefore(source, dest, dest.end());
-  auto* block = &dest.front();
+  auto* block = &source.front();
   TypeConverter::SignatureConversion sc(block->getNumArguments());
   if (failed(
           typeConverter->convertSignatureArgs(block->getArgumentTypes(), sc))) {
     return failure();
   }
+  rewriter.inlineRegionBefore(source, dest, dest.end());
   rewriter.applySignatureConversion(block, sc);
   return success();
 }

@@ -30,11 +30,15 @@
 #include "qco_programs.h"
 #include "qir_programs.h"
 
+#include <capnp/message.h>
+#include <capnp/serialize.h>
 #include <gtest/gtest.h>
+#include <jeff.capnp.h>
 #include <jeff/IR/JeffDialect.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Error.h>
+#include <llvm/Support/Program.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -58,10 +62,12 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
@@ -124,7 +130,7 @@ protected:
                     qtensor::QTensorDialect, arith::ArithDialect,
                     cf::ControlFlowDialect, func::FuncDialect,
                     math::MathDialect, memref::MemRefDialect, scf::SCFDialect,
-                    LLVM::LLVMDialect, jeff::JeffDialect>();
+                    LLVM::LLVMDialect, mlir::jeff::JeffDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -302,6 +308,57 @@ TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
   EXPECT_FALSE(
       QCProgram::fromModule(otherContext, std::move(mismatchedModule)));
 }
+
+TEST(CompilerProgramOwnershipTest,
+     EnforcesProgramMetadataAtImportAndPassBoundaries) {
+  constexpr llvm::StringLiteral validSource = R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %qubit = qc.alloc : !qc.qubit
+      qc.dealloc %qubit : !qc.qubit
+      return
+    }
+    func.func @helper() { return }
+  })mlir";
+  constexpr llvm::StringLiteral duplicateEntryPoints = R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %qubit = qc.alloc : !qc.qubit
+      qc.dealloc %qubit : !qc.qubit
+      return
+    }
+    func.func @other() attributes {mqt.entry_point} { return }
+  })mlir";
+
+  auto program = QCProgram::fromMLIRString(validSource);
+  ASSERT_TRUE(program);
+  auto helper = program->module().lookupSymbol<func::FuncOp>("helper");
+  ASSERT_TRUE(helper);
+  mlir::mqt::setEntryPoint(helper);
+  EXPECT_FALSE(program->cleanup());
+  EXPECT_FALSE(program->normalizeGlobalPhases());
+  EXPECT_FALSE(runDefaultPipeline(CompilerInput{std::move(*program)},
+                                  ProgramFormat::QCImport));
+
+  EXPECT_FALSE(QCProgram::fromMLIRString(duplicateEntryPoints));
+
+  constexpr llvm::StringLiteral validQCOSource = R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %qubit = qco.alloc : !qco.qubit
+      qco.sink %qubit : !qco.qubit
+      return
+    }
+    func.func @helper() { return }
+  })mlir";
+  auto qcoProgram = QCOProgram::fromMLIRString(validQCOSource);
+  ASSERT_TRUE(qcoProgram);
+  helper = qcoProgram->module().lookupSymbol<func::FuncOp>("helper");
+  ASSERT_TRUE(helper);
+  mlir::mqt::setEntryPoint(helper);
+  EXPECT_FALSE(qcoProgram->runPassPipeline("canonicalize"));
+  EXPECT_FALSE(qcoProgram->normalizeGlobalPhases());
+  EXPECT_FALSE(runDefaultPipeline(CompilerInput{std::move(*qcoProgram)},
+                                  ProgramFormat::QCO));
+}
+
 TEST(CompilerProgramOwnershipTest, EnforcesQCOLinearityAtPublicBoundaries) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, QCODialect, func::FuncDialect,
@@ -547,7 +604,7 @@ inspectEntry(const llvm::StringRef ir) {
                   qtensor::QTensorDialect, arith::ArithDialect,
                   cf::ControlFlowDialect, func::FuncDialect, math::MathDialect,
                   memref::MemRefDialect, scf::SCFDialect, tensor::TensorDialect,
-                  ub::UBDialect, LLVM::LLVMDialect, jeff::JeffDialect>();
+                  ub::UBDialect, LLVM::LLVMDialect, mlir::jeff::JeffDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
   auto moduleOp = parseSourceString<ModuleOp>(ir, &context);
@@ -1202,6 +1259,65 @@ TEST_F(CompilerPipelineTest, TypedProgramsNormalizeGlobalPhases) {
   EXPECT_EQ(StringRef(textual->str()).count("qco.gphase"), 1);
 }
 
+[[nodiscard]] static ::jeff::Module::Builder
+initializeCurrentJeffModule(capnp::MallocMessageBuilder& message) {
+  auto module = message.initRoot<::jeff::Module>();
+  module.setVersion(0);
+  module.setVersionMinor(3);
+  module.setVersionPatch(0);
+  return module;
+}
+
+[[nodiscard]] static std::vector<std::byte>
+serializeJeffMessage(capnp::MessageBuilder& message) {
+  const auto words = capnp::messageToFlatArray(message);
+  const auto serialized = words.asBytes();
+  std::vector<std::byte> bytes(serialized.size());
+  std::memcpy(bytes.data(), serialized.begin(), serialized.size());
+  return bytes;
+}
+
+static void expectJeffImportFailure(const std::span<const std::byte> bytes,
+                                    const StringRef stem,
+                                    const StringRef expectedDiagnostic) {
+  EXPECT_FALSE(JeffProgram::fromBytes(bytes));
+
+  const auto path =
+      std::filesystem::path(testing::TempDir()) / (stem + ".jeff").str();
+  std::ofstream output(path, std::ios::binary);
+  if (!bytes.empty()) {
+    output.write(reinterpret_cast<const char*>(bytes.data()),
+                 static_cast<std::streamsize>(bytes.size()));
+  }
+  output.close();
+  ASSERT_TRUE(output.good());
+  EXPECT_FALSE(JeffProgram::fromFile(path));
+
+  const auto errorPath =
+      std::filesystem::path(testing::TempDir()) / (stem + ".stderr").str();
+  const auto executable = StringRef(MQT_CORE_MLIR_MQT_CC);
+  const auto pathString = path.string();
+  const auto errorPathString = errorPath.string();
+  const SmallVector<StringRef> arguments{executable, pathString,
+                                         "--input-format=jeff", "--emit=qco"};
+  const std::array<std::optional<StringRef>, 3> redirects{
+      std::nullopt, std::nullopt, StringRef(errorPathString)};
+  std::string executionError;
+  bool executionFailed = false;
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(executable, arguments, std::nullopt,
+                                      redirects, 10, 0, &executionError,
+                                      &executionFailed),
+            1);
+  EXPECT_FALSE(executionFailed) << executionError;
+
+  std::ifstream errorOutput(errorPath);
+  ASSERT_TRUE(errorOutput.good());
+  const std::string errorText((std::istreambuf_iterator<char>(errorOutput)),
+                              std::istreambuf_iterator<char>());
+  EXPECT_NE(errorText.find(expectedDiagnostic.str()), std::string::npos)
+      << errorText;
+}
+
 /**
  * @brief Test: jeff programs round-trip through their binary APIs
  */
@@ -1243,6 +1359,142 @@ x q;
   const std::vector<std::byte> invalid(1);
   EXPECT_FALSE(JeffProgram::fromBytes(invalid));
   EXPECT_FALSE(jeff.write(path.parent_path() / "missing" / "output.jeff"));
+}
+
+/**
+ * @brief Test: unsupported jeff declarations fail at public import boundaries
+ */
+TEST_F(CompilerPipelineTest, JeffFunctionDeclarationsAreRejected) {
+  capnp::MallocMessageBuilder message;
+  auto module = initializeCurrentJeffModule(message);
+  auto strings = module.initStrings(2);
+  strings.set(0, "main");
+  strings.set(1, "external");
+
+  auto functions = module.initFunctions(2);
+  functions[0].setName(0);
+  auto definition = functions[0].initDefinition();
+  definition.initValues(0);
+  auto body = definition.initBody();
+  body.initSources(0);
+  body.initTargets(0);
+  body.initOperations(0);
+
+  functions[1].setName(1);
+  auto declaration = functions[1].initDeclaration();
+  declaration.initInputs(0);
+  declaration.initOutputs(0);
+  module.setEntrypoint(0);
+
+  expectJeffImportFailure(serializeJeffMessage(message),
+                          "unsupported_declaration",
+                          "jeff function declarations are not supported");
+}
+
+TEST_F(CompilerPipelineTest, MalformedJeffStructuresAreRejected) {
+  expectJeffImportFailure({}, "empty_jeff", "jeff data must not be empty");
+  const std::vector<std::byte> malformed(sizeof(capnp::word));
+  expectJeffImportFailure(malformed, "malformed_jeff",
+                          "failed to parse jeff data");
+
+  {
+    capnp::MallocMessageBuilder message;
+    std::ignore = initializeCurrentJeffModule(message);
+    expectJeffImportFailure(serializeJeffMessage(message), "missing_functions",
+                            "jeff module must contain a functions list");
+  }
+  {
+    capnp::MallocMessageBuilder message;
+    auto module = initializeCurrentJeffModule(message);
+    module.initStrings(1).set(0, "main");
+    auto function = module.initFunctions(1)[0];
+    function.setName(0);
+    std::ignore = function.initDefinition();
+    module.setEntrypoint(0);
+    expectJeffImportFailure(serializeJeffMessage(message), "missing_body",
+                            "jeff function definition must contain a body");
+  }
+  {
+    capnp::MallocMessageBuilder message;
+    auto module = initializeCurrentJeffModule(message);
+    module.initStrings(1).set(0, "main");
+    auto function = module.initFunctions(1)[0];
+    function.setName(0);
+    auto definition = function.initDefinition();
+    definition.initValues(0);
+    auto body = definition.initBody();
+    body.initSources(0);
+    body.initTargets(0);
+    module.setEntrypoint(0);
+    expectJeffImportFailure(
+        serializeJeffMessage(message), "missing_operations",
+        "jeff function body must contain an operations list");
+  }
+}
+
+TEST_F(CompilerPipelineTest, InvalidJeffSemanticsAreRejectedWithoutExiting) {
+  {
+    capnp::MallocMessageBuilder message;
+    auto module = initializeCurrentJeffModule(message);
+    module.initStrings(1).set(0, "main");
+    auto function = module.initFunctions(1)[0];
+    function.setName(0);
+    auto definition = function.initDefinition();
+    definition.initValues(1)[0].initType().setQubit();
+    auto body = definition.initBody();
+    body.initSources(0);
+    body.initTargets(0);
+    auto operation = body.initOperations(1)[0];
+    operation.initInputs(1).set(0, 0);
+    operation.initOutputs(0);
+    operation.initInstruction().initQubit().setFree();
+    module.setEntrypoint(0);
+    expectJeffImportFailure(serializeJeffMessage(message), "undefined_value",
+                            "failed to deserialize jeff data: Value not found");
+  }
+  {
+    capnp::MallocMessageBuilder message;
+    auto module = initializeCurrentJeffModule(message);
+    module.initStrings(1).set(0, "main");
+    auto functions = module.initFunctions(2);
+    for (auto function : functions) {
+      function.setName(0);
+      auto definition = function.initDefinition();
+      definition.initValues(0);
+      auto body = definition.initBody();
+      body.initSources(0);
+      body.initTargets(0);
+      body.initOperations(0);
+    }
+    module.setEntrypoint(0);
+    expectJeffImportFailure(
+        serializeJeffMessage(message), "duplicate_function",
+        "failed to deserialize jeff data: Verification of MLIR module failed");
+  }
+  {
+    capnp::MallocMessageBuilder message;
+    auto module = initializeCurrentJeffModule(message);
+    module.initStrings(1).set(0, "main");
+    auto function = module.initFunctions(1)[0];
+    function.setName(0);
+    auto definition = function.initDefinition();
+    auto values = definition.initValues(2);
+    values[0].initType().setInt(32);
+    values[1].initType().setInt(32);
+    auto body = definition.initBody();
+    body.initSources(1).set(0, 0);
+    body.initTargets(1).set(0, 1);
+    auto operation = body.initOperations(1)[0];
+    auto inputs = operation.initInputs(2);
+    inputs.set(0, 0);
+    inputs.set(1, 0);
+    operation.initOutputs(1).set(0, 1);
+    operation.initInstruction().initIntArray().setGetIndex();
+    module.setEntrypoint(0);
+    expectJeffImportFailure(
+        serializeJeffMessage(message), "invalid_array_type",
+        "jeff integer-array get requires an integer-array input");
+  }
 }
 
 /**
@@ -1938,6 +2190,21 @@ barrier q[0], q[1];
   EXPECT_EQ(qc->numGates(), 6);
   EXPECT_EQ(qc->numSingleQubitGates(), 1);
   EXPECT_EQ(qc->numTwoQubitGates(), 3);
+}
+
+TEST_F(CompilerPipelineTest, QCProgramCountGatesWithoutEntryPoint) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @helper() {
+      %qubit = qc.alloc : !qc.qubit
+      qc.dealloc %qubit : !qc.qubit
+      return
+    }
+  })mlir";
+  auto qc = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(qc);
+  EXPECT_EQ(qc->numGates(), 0);
+  EXPECT_EQ(qc->numSingleQubitGates(), 0);
+  EXPECT_EQ(qc->numTwoQubitGates(), 0);
 }
 
 /**

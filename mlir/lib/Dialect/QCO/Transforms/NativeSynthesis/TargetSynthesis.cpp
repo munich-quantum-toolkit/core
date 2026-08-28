@@ -9,7 +9,10 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
+#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -18,11 +21,14 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
 #include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -35,7 +41,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/TypeID.h>
-#include <mlir/Support/WalkResult.h>
 
 #include <cassert>
 #include <cstddef>
@@ -59,6 +64,21 @@ struct FusableTwoQubitRun {
 };
 
 } // namespace
+
+static Block* getModifierBody(Operation* operation) {
+  if (!isa<CtrlOp, InvOp, PowOp>(operation)) {
+    return nullptr;
+  }
+  return &operation->getRegion(0).front();
+}
+
+static bool hasModifierSupportingOps(Operation* operation) {
+  Block* body = getModifierBody(operation);
+  return body != nullptr &&
+         llvm::any_of(body->without_terminator(), [](Operation& bodyOp) {
+           return mqt::containsSupportingOperation<UnitaryOpInterface>(&bodyOp);
+         });
+}
 
 // --- Run membership ------------------------------------------------------- //
 
@@ -97,7 +117,8 @@ static bool assignTwoQubitOpMatrix(Operation* op, Matrix4x4& matrix) {
 static std::optional<Matrix2x2>
 oneQubitRunMemberMatrix(UnitaryOpInterface unitary) {
   if (!unitary || !unitary.isSingleQubit() ||
-      !isWalkableUnitaryShell(unitary.getOperation())) {
+      !isWalkableUnitaryShell(unitary.getOperation()) ||
+      hasModifierSupportingOps(unitary.getOperation())) {
     return std::nullopt;
   }
   Matrix2x2 matrix;
@@ -111,7 +132,8 @@ oneQubitRunMemberMatrix(UnitaryOpInterface unitary) {
 static std::optional<Matrix4x4>
 twoQubitRunMemberMatrix(UnitaryOpInterface unitary) {
   if (!unitary || !unitary.isTwoQubit() ||
-      !isWalkableUnitaryShell(unitary.getOperation())) {
+      !isWalkableUnitaryShell(unitary.getOperation()) ||
+      hasModifierSupportingOps(unitary.getOperation())) {
     return std::nullopt;
   }
   Matrix4x4 matrix;
@@ -126,8 +148,9 @@ twoQubitRunMemberMatrix(UnitaryOpInterface unitary) {
 /// The sole walkable one- or two-qubit consumer of `wire`, or a null interface.
 /// `wire` is single-use by qubit linearity.
 static UnitaryOpInterface uniqueUnitaryUser(Value wire) {
-  assert(wire.hasOneUse() &&
-         "qubit values are single-use, so a run tail has exactly one user");
+  if (!wire.hasOneUse()) {
+    return {};
+  }
   auto unitary = dyn_cast<UnitaryOpInterface>(*wire.user_begin());
   if (!unitary || !isWalkableUnitaryShell(unitary.getOperation()) ||
       (!unitary.isSingleQubit() && !unitary.isTwoQubit())) {
@@ -161,9 +184,9 @@ static Operation* twoQubitGateAtEndOfOneQChain(Value wire) {
 static bool feedsFromSameTwoQubitRun(UnitaryOpInterface op) {
   Value in0 = op.getInputQubit(0);
   Value in1 = op.getInputQubit(1);
-  assert(in0.hasOneUse() && in1.hasOneUse() &&
-         "qubit values are single-use, so a run member consumes each input "
-         "exactly once");
+  if (!in0.hasOneUse() || !in1.hasOneUse()) {
+    return false;
+  }
   Operation* gate0 = twoQubitGateAtEndOfOneQChain(in0);
   Operation* gate1 = twoQubitGateAtEndOfOneQChain(in1);
   return gate0 != nullptr && gate0 == gate1;
@@ -270,7 +293,7 @@ static void eraseFusableRun(RewriterBase& rewriter,
 /// its two-qubit operation count.
 static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
                                 const Matrix4x4& headMatrix,
-                                const CompilerTarget::SynthesisBasis basis) {
+                                CompilerTarget::SynthesisBasis basis) {
   FusableTwoQubitRun run = scanFusableTwoQubitRun(head, headMatrix);
   if (run.ops.size() < 2) {
     return false;
@@ -304,25 +327,50 @@ namespace {
 struct SynthesisPlan {
   Operation* firstNeed = nullptr;
   Operation* matrixUnavailable = nullptr;
+  Operation* supportNotHoistable = nullptr;
   SmallVector<Operation*> operations;
 };
 
 } // namespace
 
+static SmallVector<Operation*> collectOperationsPostorder(Operation* root) {
+  SmallVector<Operation*> worklist{root};
+  SmallVector<Operation*> reversePostorder;
+  while (!worklist.empty()) {
+    Operation* operation = worklist.pop_back_val();
+    reversePostorder.push_back(operation);
+    for (Region& region : operation->getRegions()) {
+      for (Block& block : region) {
+        for (Operation& nested : block) {
+          worklist.push_back(&nested);
+        }
+      }
+    }
+  }
+  return llvm::to_vector(llvm::reverse(reversePostorder));
+}
+
 static SynthesisPlan planTargetSynthesis(Operation* root,
                                          const CompilerTarget& target) {
   SynthesisPlan plan;
-  root->walk([&](Operation* operation) {
+  for (Operation* operation : collectOperationsPostorder(root)) {
     auto unitary = dyn_cast<UnitaryOpInterface>(operation);
     if (!unitary || !isWalkableUnitaryShell(operation) ||
         (unitary.getNumQubits() != 1 && unitary.getNumQubits() != 2)) {
-      return WalkResult::advance();
+      continue;
     }
     if (!requiresTargetSynthesis(operation, target)) {
-      return WalkResult::advance();
+      continue;
     }
     if (plan.firstNeed == nullptr) {
       plan.firstNeed = operation;
+    }
+
+    if (Block* body = getModifierBody(operation);
+        body != nullptr &&
+        !mqt::canHoistSupportingOps<UnitaryOpInterface>(*body)) {
+      plan.supportNotHoistable = operation;
+      break;
     }
 
     if (unitary.isSingleQubit()) {
@@ -330,31 +378,38 @@ static SynthesisPlan planTargetSynthesis(Operation* root,
       if (unitary.getUnitaryMatrix2x2(matrix) ||
           decomposition::canSynthesizeParameterizedUnitary1Q(operation)) {
         plan.operations.emplace_back(operation);
-        return WalkResult::advance();
+        continue;
       }
     } else {
       Matrix4x4 matrix;
       if (assignTwoQubitOpMatrix(operation, matrix)) {
         plan.operations.emplace_back(operation);
-        return WalkResult::advance();
+        continue;
       }
     }
     plan.matrixUnavailable = operation;
-    return WalkResult::interrupt();
-  });
+    break;
+  }
   return plan;
 }
 
-static void lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
-                                 const CompilerTarget::SynthesisBasis basis) {
-  Operation* const operation = op.getOperation();
+static LogicalResult
+lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
+                     CompilerTarget::SynthesisBasis basis) {
+  Operation* operation = op.getOperation();
+  if (Block* body = getModifierBody(operation);
+      body != nullptr &&
+      failed(mqt::hoistSupportingOpsBefore<UnitaryOpInterface>(*body, operation,
+                                                               rewriter))) {
+    return failure();
+  }
   rewriter.setInsertionPoint(operation);
   if (op.isSingleQubit()) {
     Matrix2x2 matrix;
     if (!op.getUnitaryMatrix2x2(matrix)) {
       decomposition::synthesizeParameterizedUnitary1Q(rewriter, operation,
                                                       basis.singleQubit);
-      return;
+      return success();
     }
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
@@ -366,7 +421,7 @@ static void lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
     decomposition::emitGPhaseIfNeeded(rewriter, operation->getLoc(),
                                       synthesized->globalPhase);
     rewriter.replaceOp(operation, synthesized->qubit);
-    return;
+    return success();
   }
 
   Matrix4x4 matrix;
@@ -388,6 +443,7 @@ static void lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
                                     synthesized.globalPhase);
   rewriter.replaceOp(operation,
                      ValueRange{synthesized.qubit0, synthesized.qubit1});
+  return success();
 }
 
 static LogicalResult fuseTwoQubitGates(ModuleOp moduleOp) {
@@ -396,13 +452,13 @@ static LogicalResult fuseTwoQubitGates(ModuleOp moduleOp) {
       .entangler = CompilerTarget::GateKind::CZ};
 
   SmallVector<Operation*> runHeads;
-  moduleOp.walk([&](Operation* operation) {
+  for (Operation* operation : collectOperationsPostorder(moduleOp)) {
     auto unitary = dyn_cast<UnitaryOpInterface>(operation);
     const auto matrix = twoQubitRunMemberMatrix(unitary);
     if (matrix && !feedsFromSameTwoQubitRun(unitary)) {
       runHeads.emplace_back(operation);
     }
-  });
+  }
 
   bool changed = false;
   IRRewriter rewriter(moduleOp.getContext());
@@ -426,12 +482,22 @@ struct FuseTwoQubitGatesPass final
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(FuseTwoQubitGatesPass)
 
   void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect, arith::ArithDialect>();
+    registry.insert<qc::QCDialect, QCODialect, arith::ArithDialect>();
   }
 
 protected:
   void runOnOperation() override {
     ModuleOp moduleOp = getOperation();
+    constexpr size_t maxRegionNesting = 64;
+    if (failed(verifyRegionNestingDepth(moduleOp, maxRegionNesting))) {
+      signalPassFailure();
+      return;
+    }
+    if (failed(mqt::verifyProgramMetadata(moduleOp)) ||
+        failed(qco::verifyLinearity(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     if (failed(fuseTwoQubitGates(moduleOp))) {
       signalPassFailure();
     }
@@ -446,7 +512,8 @@ struct TargetNativeSynthesisPass final
       : target(targetIn) {}
 
   void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect, arith::ArithDialect, math::MathDialect>();
+    registry.insert<qc::QCDialect, QCODialect, arith::ArithDialect,
+                    math::MathDialect>();
   }
 
 protected:
@@ -455,6 +522,16 @@ protected:
       return;
     }
     ModuleOp moduleOp = getOperation();
+    constexpr size_t maxRegionNesting = 64;
+    if (failed(verifyRegionNestingDepth(moduleOp, maxRegionNesting))) {
+      signalPassFailure();
+      return;
+    }
+    if (failed(mqt::verifyProgramMetadata(moduleOp)) ||
+        failed(qco::verifyLinearity(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     const auto plan = planTargetSynthesis(moduleOp, target);
     if (plan.firstNeed == nullptr) {
       return;
@@ -469,6 +546,14 @@ protected:
       signalPassFailure();
       return;
     }
+    if (plan.supportNotHoistable != nullptr) {
+      plan.supportNotHoistable->emitError()
+          << "target-native synthesis cannot lower modifier because an "
+             "operation in its body cannot move across the unitary "
+             "operations without changing semantics";
+      signalPassFailure();
+      return;
+    }
     if (plan.matrixUnavailable != nullptr) {
       plan.matrixUnavailable->emitError()
           << "target-native synthesis cannot lower operation '"
@@ -480,8 +565,14 @@ protected:
 
     IRRewriter rewriter(&getContext());
     for (Operation* operation : plan.operations) {
-      lowerTargetOperation(rewriter, cast<UnitaryOpInterface>(operation),
-                           *targetBasis);
+      if (failed(lowerTargetOperation(
+              rewriter, cast<UnitaryOpInterface>(operation), *targetBasis))) {
+        operation->emitError()
+            << "target-native synthesis cannot hoist modifier support "
+               "operations without changing semantics";
+        signalPassFailure();
+        return;
+      }
     }
     if (failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
@@ -500,7 +591,7 @@ struct VerifyTargetConformancePass final
 
 protected:
   void runOnOperation() override {
-    WalkResult result = getOperation()->walk([&](Operation* operation) {
+    for (Operation* operation : collectOperationsPostorder(getOperation())) {
       if (auto function = dyn_cast<FunctionOpInterface>(operation);
           function &&
           llvm::any_of(function.getArgumentTypes(), [](const auto type) {
@@ -513,48 +604,48 @@ protected:
         function.emitError()
             << "target conformance requires quantum function inputs to be "
                "assigned to qco.static target sites";
-        return WalkResult::interrupt();
+        signalPassFailure();
+        return;
       }
       if (auto staticOp = dyn_cast<StaticOp>(operation)) {
         const auto site =
             static_cast<CompilerTarget::SiteId>(staticOp.getIndex());
         if (target.vertexForSite(site)) {
-          return WalkResult::advance();
+          continue;
         }
         staticOp.emitError() << "target does not contain static site " << site;
-        return WalkResult::interrupt();
+        signalPassFailure();
+        return;
       }
       if (isa<AllocOp, qtensor::AllocOp>(operation)) {
         operation->emitError()
             << "target conformance requires qubits to be assigned to "
                "qco.static target sites";
-        return WalkResult::interrupt();
+        signalPassFailure();
+        return;
       }
 
       size_t arity = 1;
       size_t parameterCount = 0;
       if (auto unitary = dyn_cast<UnitaryOpInterface>(operation)) {
         if (isExcludedFromTopLevelUnitaryWalk(operation)) {
-          return WalkResult::advance();
+          continue;
         }
         arity = unitary.getNumQubits();
         parameterCount = unitary.getNumParams();
       } else if (!isa<MeasureOp, ResetOp>(operation)) {
-        return WalkResult::advance();
+        continue;
       }
 
       if (target.supports(operation)) {
-        return WalkResult::advance();
+        continue;
       }
 
-      auto diagnostic = operation->emitError()
-                        << "target does not support operation '"
-                        << operation->getName() << "' with arity " << arity
-                        << " and " << parameterCount << " parameter(s)";
-      return WalkResult::interrupt();
-    });
-    if (result.wasInterrupted()) {
+      operation->emitError() << "target does not support operation '"
+                             << operation->getName() << "' with arity " << arity
+                             << " and " << parameterCount << " parameter(s)";
       signalPassFailure();
+      return;
     }
   }
 

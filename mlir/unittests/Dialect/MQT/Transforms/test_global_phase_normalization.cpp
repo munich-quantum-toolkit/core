@@ -33,6 +33,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
@@ -106,6 +107,26 @@ protected:
 
 } // namespace
 
+TEST_F(GlobalPhaseNormalizationTest,
+       CombinesModuleLevelPhasesWithoutTerminator) {
+  OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
+  OpBuilder builder(context.get());
+  builder.setInsertionPointToStart(moduleOp->getBody());
+  const auto loc = moduleOp->getLoc();
+  auto first = mlir::mqt::constantFromScalar(builder, loc, 0.25);
+  qco::GPhaseOp::create(builder, loc, first);
+  auto second = mlir::mqt::constantFromScalar(builder, loc, 0.5);
+  qco::GPhaseOp::create(builder, loc, second);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto phases = llvm::to_vector(moduleOp->getBody()->getOps<qco::GPhaseOp>());
+  ASSERT_EQ(phases.size(), 1);
+  EXPECT_EQ(phases.front()->getNextNode(), nullptr);
+  expectFoldableGlobalPhase(phases.front().getTheta(), 0.75);
+}
+
 TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
   auto moduleOp = parse(R"mlir(
     module {
@@ -128,6 +149,67 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
   EXPECT_EQ(phases.front()->getNextNode(),
             func.getBody().front().getTerminator());
   expectFoldableGlobalPhase(phases.front().getTheta(), 0.75);
+}
+
+TEST_F(GlobalPhaseNormalizationTest, RejectsNonlinearQCOInputWithoutMutation) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @test(%q: !qco.qubit) {
+        %phase = arith.constant 0.25 : f64
+        qco.gphase(%phase)
+        %x = qco.x %q : !qco.qubit -> !qco.qubit
+        %h = qco.h %q : !qco.qubit -> !qco.qubit
+        qco.sink %x : !qco.qubit
+        qco.sink %h : !qco.qubit
+        return
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  OwningOpRef<ModuleOp> before(cast<ModuleOp>((*moduleOp)->clone()));
+
+  EXPECT_TRUE(failed(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      moduleOp->getOperation(), before->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(GlobalPhaseNormalizationTest, CombinesQCAndQCOPhasesIndependently) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @test() {
+        %qc0 = arith.constant 0.25 : f64
+        qc.gphase(%qc0)
+        %qco0 = arith.constant 1.0 : f64
+        qco.gphase(%qco0)
+        %qc1 = arith.constant 0.5 : f64
+        qc.gphase(%qc1)
+        %qco1 = arith.constant -0.25 : f64
+        qco.gphase(%qco1)
+        return
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
+
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto qcPhases =
+      llvm::to_vector(function.getBody().getOps<mlir::qc::GPhaseOp>());
+  auto qcoPhases =
+      llvm::to_vector(function.getBody().getOps<mlir::qco::GPhaseOp>());
+  ASSERT_EQ(qcPhases.size(), 1);
+  ASSERT_EQ(qcoPhases.size(), 1);
+  expectFoldableGlobalPhase(qcPhases.front().getTheta(), 0.75);
+  expectFoldableGlobalPhase(qcoPhases.front().getTheta(), 0.75);
+
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  EXPECT_EQ(llvm::range_size(function.getBody().getOps<mlir::qc::GPhaseOp>()),
+            1);
+  EXPECT_EQ(llvm::range_size(function.getBody().getOps<mlir::qco::GPhaseOp>()),
+            1);
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
@@ -304,6 +386,53 @@ TEST_F(GlobalPhaseNormalizationTest,
   EXPECT_LE(countOperations(), firstRunOperationCount);
 }
 
+TEST_F(GlobalPhaseNormalizationTest,
+       HandlesDeepModifierAndAngleChainsIteratively) {
+  OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
+  OpBuilder builder(context.get());
+  builder.setInsertionPointToStart(moduleOp->getBody());
+  const auto loc = moduleOp->getLoc();
+  const auto qubitType = qco::QubitType::get(context.get());
+  auto function = func::FuncOp::create(
+      builder, loc, "test",
+      builder.getFunctionType({qubitType, builder.getF64Type()}, {qubitType}));
+  auto* entry = function.addEntryBlock();
+  builder.setInsertionPointToStart(entry);
+
+  constexpr std::size_t modifierDepth = 512;
+  constexpr std::size_t angleDepth = 512;
+  auto outer =
+      qco::InvOp::create(builder, loc, ValueRange{function.getArgument(0)});
+  auto* body = &outer.getBodyRegion().emplaceBlock();
+  auto currentQubit = body->addArgument(qubitType, loc);
+  for (std::size_t i = 1; i < modifierDepth; ++i) {
+    builder.setInsertionPointToEnd(body);
+    auto inner = qco::InvOp::create(builder, loc, ValueRange{currentQubit});
+    qco::YieldOp::create(builder, loc, inner.getQubitsOut());
+    body = &inner.getBodyRegion().emplaceBlock();
+    currentQubit = body->addArgument(qubitType, loc);
+  }
+
+  builder.setInsertionPointToEnd(body);
+  Value angle = function.getArgument(1);
+  for (std::size_t i = 0; i < angleDepth; ++i) {
+    auto zero =
+        arith::ConstantOp::create(builder, loc, builder.getF64FloatAttr(0.0));
+    angle = arith::AddFOp::create(builder, loc, angle, zero);
+  }
+  auto z = qco::ZOp::create(builder, loc, currentQubit);
+  qco::GPhaseOp::create(builder, loc, angle);
+  qco::YieldOp::create(builder, loc, ValueRange{z.getOutputTarget(0)});
+
+  builder.setInsertionPointToEnd(entry);
+  func::ReturnOp::create(builder, loc, outer.getQubitsOut());
+
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  auto phases = llvm::to_vector(function.getBody().getOps<qco::GPhaseOp>());
+  ASSERT_EQ(phases.size(), 1);
+  EXPECT_EQ(phases.front().getTheta().getParentBlock(), entry);
+}
+
 TEST_F(GlobalPhaseNormalizationTest, KeepsSCFStyleRegionsIndependent) {
   auto moduleOp = parse(R"mlir(
     module {
@@ -388,6 +517,35 @@ TEST_F(GlobalPhaseNormalizationTest, FractionalPowerRemainsBoundary) {
   EXPECT_EQ(llvm::range_size(pow.getBody()->getOps<qco::GPhaseOp>()), 1);
 }
 
+TEST_F(GlobalPhaseNormalizationTest,
+       IntegralPowerExtractionDoesNotOverflowGlobalPhase) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @test(%q: !qco.qubit) -> !qco.qubit {
+        %exponent = arith.constant 1.7976931348623157E+308 : f64
+        %phase = arith.constant 1.0 : f64
+        %out = qco.pow(%exponent) (%arg = %q) {
+          qco.gphase(%phase)
+          qco.yield %arg : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %out : !qco.qubit
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto phases = llvm::to_vector(function.getBody().getOps<qco::GPhaseOp>());
+  ASSERT_EQ(phases.size(), 1U);
+  const auto phase =
+      mlir::mqt::valueToConstantDouble(phases.front().getTheta());
+  ASSERT_TRUE(phase);
+  EXPECT_TRUE(std::isfinite(*phase));
+}
+
 TEST_F(GlobalPhaseNormalizationTest, DynamicPowerRemainsBoundary) {
   auto moduleOp = parse(R"mlir(
     module {
@@ -409,6 +567,47 @@ TEST_F(GlobalPhaseNormalizationTest, DynamicPowerRemainsBoundary) {
   auto pow = *func.getBody().getOps<qco::PowOp>().begin();
   EXPECT_EQ(llvm::range_size(pow.getBody()->getOps<qco::GPhaseOp>()), 1);
   EXPECT_TRUE(func.getBody().getOps<qco::GPhaseOp>().empty());
+}
+
+TEST_F(GlobalPhaseNormalizationTest, DynamicPhasesUseBoundedRuntimeArithmetic) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @combine(%a: f64, %b: f64) {
+        qco.gphase(%a)
+        qco.gphase(%b)
+        return
+      }
+      func.func @power(%q: !qco.qubit, %phase: f64) -> !qco.qubit {
+        %two = arith.constant 2.0 : f64
+        %out = qco.pow(%two) (%arg = %q) {
+          qco.gphase(%phase)
+          qco.yield %arg : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %out : !qco.qubit
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto combine = moduleOp->lookupSymbol<func::FuncOp>("combine");
+  ASSERT_TRUE(combine);
+  EXPECT_EQ(llvm::range_size(combine.getBody().getOps<qco::GPhaseOp>()), 1U);
+  size_t combineRemainders = 0;
+  combine.walk([&](arith::RemFOp) { ++combineRemainders; });
+  EXPECT_GT(combineRemainders, 0U);
+
+  auto power = moduleOp->lookupSymbol<func::FuncOp>("power");
+  ASSERT_TRUE(power);
+  auto pow = *power.getBody().getOps<qco::PowOp>().begin();
+  EXPECT_EQ(llvm::range_size(pow.getBody()->getOps<qco::GPhaseOp>()), 1U);
+  EXPECT_TRUE(power.getBody().getOps<qco::GPhaseOp>().empty());
+  size_t powerRemainders = 0;
+  pow.walk([&](arith::RemFOp) { ++powerRemainders; });
+  EXPECT_GT(powerRemainders, 0U);
 }
 
 TEST_F(GlobalPhaseNormalizationTest, FactorsControlledPhaseOntoControl) {
@@ -649,15 +848,13 @@ TEST_F(GlobalPhaseNormalizationTest, ZeroControlsReleaseAnUnchangedPhase) {
   EXPECT_EQ(llvm::range_size(function.getBody().getOps<qco::GPhaseOp>()), 1);
 }
 
-TEST_F(GlobalPhaseNormalizationTest,
-       MemoryDependentAngleRemainsInsideModifier) {
+TEST_F(GlobalPhaseNormalizationTest, ImpureAngleRemainsInsideModifier) {
   auto moduleOp = parse(R"mlir(
     module {
-      func.func @test(%q: !qco.qubit, %angles: memref<1xf64>)
-          -> !qco.qubit {
-        %c0 = arith.constant 0 : index
+      func.func private @get_angle() -> f64
+      func.func @test(%q: !qco.qubit) -> !qco.qubit {
         %out = qco.inv (%arg = %q) {
-          %phase = memref.load %angles[%c0] : memref<1xf64>
+          %phase = func.call @get_angle() : () -> f64
           %x = qco.x %arg : !qco.qubit -> !qco.qubit
           qco.gphase(%phase)
           qco.yield %x : !qco.qubit
@@ -670,7 +867,8 @@ TEST_F(GlobalPhaseNormalizationTest,
   ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
   ASSERT_TRUE(verify(*moduleOp).succeeded());
 
-  auto func = *moduleOp->getOps<func::FuncOp>().begin();
+  auto func = moduleOp->lookupSymbol<func::FuncOp>("test");
+  ASSERT_TRUE(func);
   auto inv = *func.getBody().getOps<qco::InvOp>().begin();
   EXPECT_EQ(llvm::range_size(inv.getBody()->getOps<qco::GPhaseOp>()), 1);
   EXPECT_TRUE(func.getBody().getOps<qco::GPhaseOp>().empty());

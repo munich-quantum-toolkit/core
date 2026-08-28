@@ -125,8 +125,8 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
 }
 
 void populateQCOCleanupPipeline(OpPassManager& pm) {
-  pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+  pm.addPass(
+      createCanonicalizerPass(GreedyRewriteConfig{}.setMaxIterations(64)));
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());

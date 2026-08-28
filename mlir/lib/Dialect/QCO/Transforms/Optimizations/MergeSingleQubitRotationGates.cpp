@@ -8,14 +8,19 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/MQT/Utils/Angles.h"
 #include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mlir/Dialect/MQT/Utils/Parameters.h"
+#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
+#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -280,10 +285,13 @@ static ScalarConsts<T> makeConsts(RewriterBase& rewriter, Location loc) {
  *   normalize(a) = a - floor((a + π) / 2π) * 2π
  */
 template <typename T>
-static Val<T> wrapToPi(Val<T> angle, const ScalarConsts<T>& c) {
-  const auto twoPi = c.two * c.pi;
-  const auto floored = ((angle + c.pi) / twoPi).floor();
-  return angle - (floored * twoPi);
+static Val<T> wrapToPi(Val<T> angle, const ScalarConsts<T>& /*c*/) {
+  if constexpr (std::is_same_v<T, double>) {
+    return {mqt::normalizeAngle(angle.v), angle.rewriter, angle.loc};
+  } else {
+    return {mqt::normalizeAngle(*angle.rewriter, angle.loc, angle.v),
+            angle.rewriter, angle.loc};
+  }
 }
 
 /**
@@ -555,7 +563,7 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
         if (!phi || !lambda) {
           return failure();
         }
-        return (*phi + *lambda) / c.two;
+        return (*phi / c.two) + (*lambda / c.two);
       })
       .Default([](auto) -> FailureOr<Val<T>> { return failure(); });
 }
@@ -691,6 +699,7 @@ static Val<Value> sumAngles(Val<Value> lhs, Val<Value> rhs) {
 
 static void emitParameterizedGPhaseIfNeeded(RewriterBase& rewriter,
                                             Location loc, Val<Value> phase) {
+  phase.v = mqt::normalizeAngle(rewriter, loc, phase.v);
   if (!isConstantAngle(phase)) {
     GPhaseOp::create(rewriter, loc, phase.v);
   }
@@ -814,7 +823,7 @@ directZYZAnglesFromGate(UnitaryOpInterface op, RewriterBase& rewriter,
     return {.theta = halfPi,
             .phi = phi,
             .lambda = lambda,
-            .phase = sumAngles(phi, lambda) / consts.two};
+            .phase = (phi / consts.two) + (lambda / consts.two)};
   }
 
   const auto theta = parameter(0);
@@ -995,14 +1004,26 @@ struct MergeSingleQubitRotationGatesPattern final
       if (failed(phase)) {
         return failure();
       }
-      phaseAccum = phaseAccum + *phase;
+      if (!std::isfinite(phase->v)) {
+        return failure();
+      }
+      phaseAccum.v = mqt::normalizeAngle(mqt::normalizeAngle(phaseAccum.v) +
+                                         mqt::normalizeAngle(phase->v));
       qAccum = qAccum ? hamiltonProduct(*qi, *qAccum) : *qi;
+      if (!std::isfinite(qAccum->w.v) || !std::isfinite(qAccum->x.v) ||
+          !std::isfinite(qAccum->y.v) || !std::isfinite(qAccum->z.v)) {
+        return failure();
+      }
     }
 
     const auto [theta, phi, lambda, eulerPhase] =
         anglesFromQuaternion(*qAccum, consts);
-    const auto correction =
-        phaseAccum - ((phi + lambda) / consts.two) + eulerPhase;
+    auto correction = phaseAccum - ((phi + lambda) / consts.two) + eulerPhase;
+    if (!std::isfinite(theta.v) || !std::isfinite(phi.v) ||
+        !std::isfinite(lambda.v) || !std::isfinite(correction.v)) {
+      return failure();
+    }
+    correction.v = mqt::normalizeAngle(correction.v);
 
     for (auto chainOp : llvm::drop_begin(chain)) {
       rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
@@ -1047,7 +1068,8 @@ struct MergeSingleQubitRotationGatesPattern final
         return failure();
       }
       qAccum = qAccum ? hamiltonProduct(*qi, *qAccum) : *qi;
-      phaseAccum = phaseAccum + *phase;
+      const auto boundedPhase = wrapToPi(*phase, consts);
+      phaseAccum = wrapToPi(phaseAccum + boundedPhase, consts);
     }
 
     for (auto chainOp : llvm::drop_begin(chain)) {
@@ -1070,10 +1092,11 @@ struct MergeSingleQubitRotationGatesPattern final
       lambda = lambda + consts.pi;
       eulerPhase = eulerPhase + consts.pi;
     }
-    const RuntimeEulerAngles angles{.theta = theta,
-                                    .phi = phi,
-                                    .lambda = lambda,
-                                    .phase = phaseAccum + eulerPhase};
+    const RuntimeEulerAngles angles{
+        .theta = theta,
+        .phi = phi,
+        .lambda = lambda,
+        .phase = wrapToPi(phaseAccum + eulerPhase, consts)};
     Value qubit = emitRuntimeEulerAngles(
         rewriter, loc, chain.front().getInputQubit(0), angles, basis, consts);
     rewriter.replaceOp(chain.front(), qubit);
@@ -1104,8 +1127,8 @@ struct MergeSingleQubitRotationGatesPattern final
       return failure();
     }
 
-    if (succeeded(tryMergeStaticChain(chain, rewriter))) {
-      return success();
+    if (!hasDynamicParameter(chain)) {
+      return tryMergeStaticChain(chain, rewriter);
     }
     return mergeDynamicChain(chain, rewriter);
   }
@@ -1124,6 +1147,17 @@ protected:
   void runOnOperation() override {
     auto op = getOperation();
     auto* ctx = &getContext();
+
+    constexpr size_t maxRegionNesting = 64;
+    if (failed(verifyRegionNestingDepth(op, maxRegionNesting))) {
+      signalPassFailure();
+      return;
+    }
+    if (failed(mqt::verifyProgramMetadata(op)) ||
+        failed(qco::verifyLinearity(op))) {
+      signalPassFailure();
+      return;
+    }
 
     RewritePatternSet patterns(ctx);
     patterns.add<MergeSingleQubitRotationGatesPattern>(patterns.getContext());

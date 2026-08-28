@@ -11,11 +11,13 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Support/OperationUtils.h"
 
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
+#include <cstddef>
 #include <utility>
 
 namespace mlir::qco {
@@ -54,6 +56,11 @@ struct RemoveDeadGates final : impl::RemoveDeadGatesBase<RemoveDeadGates> {
 
 protected:
   void runOnOperation() override {
+    constexpr size_t maxRegionNesting = 64;
+    if (failed(verifyRegionNestingDepth(getOperation(), maxRegionNesting))) {
+      signalPassFailure();
+      return;
+    }
     RewritePatternSet patterns(&getContext());
     patterns.add<RemoveDeadGatesBeforeSink, RemoveDeadGatesBeforeReset>(
         &getContext());

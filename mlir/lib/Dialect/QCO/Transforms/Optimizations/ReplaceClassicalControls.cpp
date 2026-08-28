@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -195,11 +196,18 @@ static LogicalResult tryReplaceMeasuredRZTarget(CtrlOp op, RZOp rzOp,
     return failure();
   }
   if (areAllMeasured(op.getControlsIn())) {
+    if (failed(
+            mqt::hoistSupportingOpsBefore(*op.getBody(), rzOp, op, rewriter))) {
+      return failure();
+    }
     rewriter.replaceOp(op, op.getInputQubits());
     return success();
   }
 
-  mqt::hoistSupportingOpsBefore(*op.getBody(), rzOp, op, rewriter);
+  if (failed(
+          mqt::hoistSupportingOpsBefore(*op.getBody(), rzOp, op, rewriter))) {
+    return failure();
+  }
   rewriter.setInsertionPoint(op);
   Value phase = selectScaledAngle(rewriter, op.getLoc(), rzOp.getTheta(),
                                   outcome, 0.5, -0.5);
@@ -238,12 +246,19 @@ static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
     return failure();
   }
   if (bothTargetsMeasured && areAllMeasured(op.getControlsIn())) {
+    if (failed(mqt::hoistSupportingOpsBefore(*op.getBody(), rzzOp, op,
+                                             rewriter))) {
+      return failure();
+    }
     replaceRZZCtrlOp(op, *targetResultOrder, op.getControlsIn(),
                      op.getTargetsIn(), rewriter);
     return success();
   }
 
-  mqt::hoistSupportingOpsBefore(*op.getBody(), rzzOp, op, rewriter);
+  if (failed(
+          mqt::hoistSupportingOpsBefore(*op.getBody(), rzzOp, op, rewriter))) {
+    return failure();
+  }
   rewriter.setInsertionPoint(op);
   SmallVector<Value> controls(op.getControlsIn());
   SmallVector<Value> targets(op.getTargetsIn());
@@ -294,6 +309,10 @@ static void trySwapControlAndTargetOfPhaseGate(CtrlOp op,
 
     Value controlOut = op.getControlsOut()[controlIndex];
     Value targetOut = op.getTargetsOut()[0];
+    if (!controlOut.hasOneUse() || !targetOut.hasOneUse()) {
+      ++controlIndex;
+      continue;
+    }
 
     rewriter.modifyOpInPlace(op, [&]() {
       op.getTargetsInMutable()[0].set(control);
@@ -323,6 +342,9 @@ struct ReplaceBasisStateControlsWithIfPattern final
 
   LogicalResult matchAndRewrite(MeasureOp measure,
                                 PatternRewriter& rewriter) const override {
+    if (!measure.getQubitOut().hasOneUse()) {
+      return failure();
+    }
     auto ctrlOp = dyn_cast<CtrlOp>(*measure.getQubitOut().getUsers().begin());
     if (!ctrlOp) {
       return failure();
@@ -410,6 +432,11 @@ protected:
   void runOnOperation() override {
     auto op = getOperation();
     auto* ctx = &getContext();
+    constexpr size_t maxRegionNesting = 64;
+    if (failed(verifyRegionNestingDepth(op, maxRegionNesting))) {
+      signalPassFailure();
+      return;
+    }
 
     // Define the set of patterns to use.
     RewritePatternSet patterns(ctx);

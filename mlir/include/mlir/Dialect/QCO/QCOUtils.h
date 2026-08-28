@@ -22,10 +22,20 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cmath>
 #include <cstddef>
 #include <optional>
 
 namespace mlir::qco {
+
+/// Return false when both parameters fold and their sum is non-finite.
+/// Dynamic parameters remain valid SSA values and may be merged at runtime.
+[[nodiscard]] inline bool constantParameterSumIsFinite(Value lhs, Value rhs) {
+  const auto lhsConstant = mqt::valueToConstantDouble(lhs);
+  const auto rhsConstant = mqt::valueToConstantDouble(rhs);
+  return !lhsConstant || !rhsConstant ||
+         std::isfinite(*lhsConstant + *rhsConstant);
+}
 
 /**
  * @brief Check if given quantum operation is unused (i.e., only used by sinks
@@ -60,9 +70,15 @@ inline bool checkDeadGate(Operation* op) {
 /// the entry block.
 [[nodiscard]] LogicalResult verifyLinearity(Operation* root);
 
-/// Maximum number of modifier targets supported by @ref
-/// composeBodyMatrix.
+/// Maximum number of qubits supported by dense modifier matrix queries.
 inline constexpr size_t kMaxModifierTargetQubits = 10;
+
+/// Return whether a dense modifier matrix fits the supported qubit bound.
+[[nodiscard]] constexpr bool
+isModifierMatrixSizeSupported(size_t numTargets, size_t numControls = 0) {
+  return numTargets <= kMaxModifierTargetQubits &&
+         numControls <= kMaxModifierTargetQubits - numTargets;
+}
 
 /**
  * @brief Composes compile-time unitaries in a modifier body on @p numTargets
@@ -74,6 +90,10 @@ inline constexpr size_t kMaxModifierTargetQubits = 10;
  */
 [[nodiscard]] std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
                                                              size_t numTargets);
+
+/// Return whether @p block has a compile-time-known matrix that
+/// @ref composeBodyMatrix can construct without allocating it.
+[[nodiscard]] bool hasComposableBodyMatrix(Block& block, size_t numTargets);
 
 /**
  * @brief Check whether two parameter values match.
@@ -108,8 +128,13 @@ static bool valuesMatchWithinTolerance(Value lhs, Value rhs) {
 template <typename InverseOpType, typename OpType>
 LogicalResult
 removeInversePairOneTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
+  auto output = op.getOutputQubit(0);
+  if (!output.hasOneUse()) {
+    return failure();
+  }
+
   // Check if the successor is the inverse operation
-  auto nextOp = dyn_cast<InverseOpType>(*op.getOutputQubit(0).user_begin());
+  auto nextOp = dyn_cast<InverseOpType>(*output.user_begin());
   if (!nextOp) {
     return failure();
   }
@@ -138,6 +163,10 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter,
                                         bool symmetric = false,
                                         bool swappedTargets = false) {
   auto output0 = op.getOutputQubit(0);
+  auto output1 = op.getOutputQubit(1);
+  if (!output0.hasOneUse() || !output1.hasOneUse()) {
+    return failure();
+  }
 
   // Check if the successor is the inverse operation
   auto nextOp = dyn_cast<InverseOpType>(*output0.user_begin());
@@ -146,7 +175,7 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter,
   }
 
   // Both qubits have to point to the same successor
-  auto nextOp2 = *op.getOutputQubit(1).user_begin();
+  auto nextOp2 = *output1.user_begin();
   if (nextOp2 != nextOp) {
     return failure();
   }
@@ -173,6 +202,11 @@ template <typename InverseOpType, typename OpType>
 LogicalResult
 removeInversePairThreeTargetZeroParameter(OpType op,
                                           PatternRewriter& rewriter) {
+  if (!llvm::all_of(op.getOutputQubits(),
+                    [](Value output) { return output.hasOneUse(); })) {
+    return failure();
+  }
+
   auto nextOp = dyn_cast<InverseOpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp || op.getOutputQubits() != nextOp.getInputQubits()) {
     return failure();
@@ -199,8 +233,13 @@ removeInversePairThreeTargetZeroParameter(OpType op,
 template <typename SquareOpType, typename OpType>
 LogicalResult mergeOneTargetZeroParameter(OpType op,
                                           PatternRewriter& rewriter) {
+  auto output = op.getOutputQubit(0);
+  if (!output.hasOneUse()) {
+    return failure();
+  }
+
   // Check if the successor is the same operation
-  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  auto nextOp = dyn_cast<OpType>(*output.user_begin());
   if (!nextOp) {
     return failure();
   }
@@ -228,16 +267,28 @@ LogicalResult mergeOneTargetZeroParameter(OpType op,
  */
 template <typename OpType>
 LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
-  // Check if the successor is the same operation
-  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
-  if (!nextOp) {
+  auto output = op.getOutputQubit(0);
+  if (!output.hasOneUse()) {
     return failure();
   }
 
-  // Compute and set the new parameter
+  // Check if the successor is the same operation
+  auto nextOp = dyn_cast<OpType>(*output.user_begin());
+  if (!nextOp || op->getBlock() != nextOp->getBlock()) {
+    return failure();
+  }
+  if (!constantParameterSumIsFinite(op.getOperand(1), nextOp.getOperand(1))) {
+    return failure();
+  }
+
+  // Compute the new parameter where both operands dominate, then move the
+  // merged gate behind it.
+  rewriter.setInsertionPoint(nextOp);
   auto newParameter = arith::AddFOp::create(
       rewriter, op.getLoc(), op.getOperand(1), nextOp.getOperand(1));
-  op->setOperand(1, newParameter.getResult());
+  rewriter.modifyOpInPlace(
+      op, [&] { op->setOperand(1, newParameter.getResult()); });
+  rewriter.moveOpBefore(op, nextOp);
 
   // Replace the second operation with the result of the first operation
   rewriter.replaceOp(nextOp, op.getResult());
@@ -260,19 +311,34 @@ template <typename OpType>
 static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
                                                     PatternRewriter& rewriter,
                                                     bool symmetric = false) {
-
-  // Both qubits have to point to the same successor
-  auto nextOp2 = *op.getOutputQubit(1).user_begin();
-  if (nextOp2 != nextOp) {
+  if (op->getBlock() != nextOp->getBlock()) {
     return failure();
   }
 
   auto output0 = op.getOutputQubit(0);
+  auto output1 = op.getOutputQubit(1);
+  if (!output0.hasOneUse() || !output1.hasOneUse()) {
+    return failure();
+  }
+
+  // Both qubits have to point to the same successor
+  auto nextOp2 = *output1.user_begin();
+  if (nextOp2 != nextOp) {
+    return failure();
+  }
+
   if (symmetric || output0 == nextOp.getInputQubit(0)) {
-    // Compute and set the new parameter
+    if (!constantParameterSumIsFinite(op.getOperand(2), nextOp.getOperand(2))) {
+      return failure();
+    }
+    // Compute the new parameter where both operands dominate, then move the
+    // merged gate behind it.
+    rewriter.setInsertionPoint(nextOp);
     auto newParameter = arith::AddFOp::create(
         rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
-    op->setOperand(2, newParameter.getResult());
+    rewriter.modifyOpInPlace(
+        op, [&] { op->setOperand(2, newParameter.getResult()); });
+    rewriter.moveOpBefore(op, nextOp);
     rewriter.replaceOp(nextOp, nextOp.getInputQubits());
     return success();
   }
@@ -292,8 +358,13 @@ static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
 template <typename OpType>
 LogicalResult mergeTwoTargetOneParameter(OpType op, PatternRewriter& rewriter,
                                          bool symmetric = false) {
+  auto output = op.getOutputQubit(0);
+  if (!output.hasOneUse()) {
+    return failure();
+  }
+
   // Check if the successor is the same operation
-  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  auto nextOp = dyn_cast<OpType>(*output.user_begin());
   if (!nextOp) {
     return failure();
   }
@@ -313,8 +384,13 @@ LogicalResult mergeTwoTargetOneParameter(OpType op, PatternRewriter& rewriter,
  */
 template <typename OpType>
 LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter) {
+  auto output = op.getOutputQubit(0);
+  if (!output.hasOneUse()) {
+    return failure();
+  }
+
   // Check if the successor is the same operation
-  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  auto nextOp = dyn_cast<OpType>(*output.user_begin());
   if (!nextOp) {
     return failure();
   }
