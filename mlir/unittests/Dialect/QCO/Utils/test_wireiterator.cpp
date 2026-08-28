@@ -21,7 +21,9 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
@@ -48,6 +50,20 @@ protected:
   }
 
   std::unique_ptr<MLIRContext> context;
+
+  [[nodiscard]] OwningOpRef<ModuleOp> parseModule(StringRef source) const {
+    return parseSourceString<ModuleOp>(source, context.get());
+  }
+
+  template <typename OpT> [[nodiscard]] static OpT findOp(Operation* root) {
+    OpT found;
+    root->walk([&](OpT op) {
+      if (!found) {
+        found = op;
+      }
+    });
+    return found;
+  }
 };
 
 struct Chain {
@@ -330,4 +346,144 @@ TEST_F(WireIteratorFixture, TraversalTerminatesAtUnknownCarrier) {
   qco::WireIterator backward(carried);
   --backward;
   EXPECT_EQ(backward, std::default_sentinel);
+}
+TEST_F(WireIteratorFixture, CallMappingFollowsNestedReordering) {
+  auto module = parseModule(R"mlir(
+func.func private @swap(%flag: i1, %a: !qco.qubit, %b: !qco.qubit)
+    -> (i1, !qco.qubit, !qco.qubit) {
+  return %flag, %b, %a : i1, !qco.qubit, !qco.qubit
+}
+func.func private @outer(%flag: i1, %a: !qco.qubit, %b: !qco.qubit)
+    -> (i1, !qco.qubit, !qco.qubit) {
+  %r:3 = func.call @swap(%flag, %a, %b)
+      : (i1, !qco.qubit, !qco.qubit)
+      -> (i1, !qco.qubit, !qco.qubit)
+  return %r#0, %r#1, %r#2 : i1, !qco.qubit, !qco.qubit
+}
+func.func @main() {
+  %flag = arith.constant true
+  %a = qco.alloc : !qco.qubit
+  %b = qco.alloc : !qco.qubit
+  %r:3 = func.call @outer(%flag, %a, %b)
+      : (i1, !qco.qubit, !qco.qubit)
+      -> (i1, !qco.qubit, !qco.qubit)
+  qco.sink %r#1 : !qco.qubit
+  qco.sink %r#2 : !qco.qubit
+  return
+}
+)mlir");
+  ASSERT_TRUE(module);
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  auto call = findOp<func::CallOp>(main);
+  SmallVector<Value> allocs;
+  main.walk([&](qco::AllocOp op) { allocs.emplace_back(op.getResult()); });
+  ASSERT_EQ(allocs.size(), 2U);
+
+  qco::CallQubitMapping mapping;
+  auto mapped = mapping.getResultForOperand(call, call.getOperand(1));
+  ASSERT_TRUE(succeeded(mapped));
+  EXPECT_EQ(*mapped, call.getResult(2));
+  mapped = mapping.getResultForOperand(call, call.getOperand(2));
+  ASSERT_TRUE(succeeded(mapped));
+  EXPECT_EQ(*mapped, call.getResult(1));
+
+  qco::WireIterator iterator(allocs[0]);
+  ++iterator;
+  EXPECT_EQ(iterator.qubit(), call.getResult(2));
+  --iterator;
+  EXPECT_EQ(iterator.qubit(), allocs[0]);
+
+  auto swap = module->lookupSymbol<func::FuncOp>("swap");
+  auto returnOp = cast<func::ReturnOp>(swap.getBody().front().getTerminator());
+  returnOp->setOperands(swap.getArguments());
+  mapping.invalidate();
+  mapped = mapping.getResultForOperand(call, call.getOperand(1));
+  ASSERT_TRUE(succeeded(mapped));
+  EXPECT_EQ(*mapped, call.getResult(1));
+}
+
+TEST_F(WireIteratorFixture, CallMappingDistinguishesKeptAndCreatedQubits) {
+  auto module = parseModule(R"mlir(
+func.func private @replace(%old: !qco.qubit) -> !qco.qubit {
+  qco.sink %old : !qco.qubit
+  %new = qco.alloc : !qco.qubit
+  return %new : !qco.qubit
+}
+func.func @main() {
+  %old = qco.alloc : !qco.qubit
+  %new = func.call @replace(%old) : (!qco.qubit) -> !qco.qubit
+  qco.sink %new : !qco.qubit
+  return
+}
+)mlir");
+  ASSERT_TRUE(module);
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  auto call = findOp<func::CallOp>(main);
+  Value old = findOp<qco::AllocOp>(main).getResult();
+
+  qco::CallQubitMapping mapping;
+  auto mapped = mapping.getResultForOperand(call, old);
+  ASSERT_TRUE(succeeded(mapped));
+  EXPECT_FALSE(*mapped);
+
+  qco::WireIterator consumed(old);
+  ++consumed;
+  ASSERT_EQ(consumed.operation(), call);
+  ++consumed;
+  EXPECT_EQ(consumed, std::default_sentinel);
+
+  qco::WireIterator created(call.getResult(0));
+  --created;
+  EXPECT_EQ(created, std::default_sentinel);
+}
+
+TEST_F(WireIteratorFixture, CallMappingFailsClosed) {
+  auto module = parseModule(R"mlir(
+func.func private @external(!qco.qubit) -> !qco.qubit
+func.func private @recursive(%q: !qco.qubit) -> !qco.qubit {
+  %r = func.call @recursive(%q) : (!qco.qubit) -> !qco.qubit
+  return %r : !qco.qubit
+}
+func.func private @unknown(%q: !qco.qubit) -> !qco.qubit {
+  %r = builtin.unrealized_conversion_cast %q : !qco.qubit to !qco.qubit
+  return %r : !qco.qubit
+}
+func.func @main() {
+  %a = qco.alloc : !qco.qubit
+  %x = func.call @external(%a) : (!qco.qubit) -> !qco.qubit
+  qco.sink %x : !qco.qubit
+  %b = qco.alloc : !qco.qubit
+  %y = func.call @recursive(%b) : (!qco.qubit) -> !qco.qubit
+  qco.sink %y : !qco.qubit
+  %c = qco.alloc : !qco.qubit
+  %z = func.call @unknown(%c) : (!qco.qubit) -> !qco.qubit
+  qco.sink %z : !qco.qubit
+  return
+}
+)mlir");
+  ASSERT_TRUE(module);
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  func::CallOp external;
+  func::CallOp recursive;
+  func::CallOp unknown;
+  main.walk([&](func::CallOp call) {
+    if (call.getCallee() == "external") {
+      external = call;
+    } else if (call.getCallee() == "recursive") {
+      recursive = call;
+    } else {
+      unknown = call;
+    }
+  });
+  ASSERT_TRUE(external);
+  ASSERT_TRUE(recursive);
+  ASSERT_TRUE(unknown);
+
+  qco::CallQubitMapping mapping;
+  EXPECT_TRUE(
+      failed(mapping.getResultForOperand(external, external.getOperand(0))));
+  EXPECT_TRUE(
+      failed(mapping.getResultForOperand(recursive, recursive.getOperand(0))));
+  EXPECT_TRUE(
+      failed(mapping.getResultForOperand(unknown, unknown.getOperand(0))));
 }
