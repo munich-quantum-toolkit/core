@@ -1959,6 +1959,44 @@ TEST_P(MappingPassTest, MapClassicalResultCapturedByNestedRegion) {
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
+TEST_P(MappingPassTest, MapOpsWithClassicalDependencyChain) {
+  const auto& target = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> i1 attributes {mqt.entry_point} {
+        %qx = qco.alloc : !qco.qubit
+        %q0_0 = qco.alloc : !qco.qubit
+        %q1_0 = qco.alloc : !qco.qubit
+
+        %q1_1, %classical = qco.measure %q1_0 : !qco.qubit
+
+        %b0 = arith.constant 0 : i1
+        %cond = arith.cmpi "eq", %classical, %b0 : i1
+        %q0_1 = qco.if %cond
+            args(%arg0 = %q0_0) -> (!qco.qubit) {
+          qco.yield %arg0 : !qco.qubit
+        } else args(%arg0 = %q0_0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        
+        qco.sink %qx : !qco.qubit
+        qco.sink %q0_1 : !qco.qubit
+        qco.sink %q1_1 : !qco.qubit
+
+        return %cond : i1
+      }
+    }
+  )mlir";
+
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+}
+
 INSTANTIATE_TEST_SUITE_P(ThreeByThreeSquareGrid, MappingPassTest,
                          testing::Values(getSquareGridTarget(3)));
 INSTANTIATE_TEST_SUITE_P(FourByFourSquareGrid, MappingPassTest,
