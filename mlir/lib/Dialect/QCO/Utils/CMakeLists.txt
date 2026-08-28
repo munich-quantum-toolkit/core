@@ -28,6 +28,7 @@ add_mlir_dialect_library(
   LINK_LIBS
   PUBLIC
   MLIRCBitDialect
+  MLIRFuncDialect
   MLIRMQTUtils
   MLIRQCODialect
   MLIRSCFDialect)
