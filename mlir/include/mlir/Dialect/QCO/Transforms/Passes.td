@@ -370,6 +370,26 @@ def QuantumArgumentPromotion
                            "mlir::qco::QCODialect"];
 }
 
+def AuxiliaryQubitHoisting
+    : Pass<"quantum-auxiliary-qubit-hoisting", "mlir::ModuleOp"> {
+  let summary = "Turn callee-internal qubits into arguments";
+  let description = [{
+        A qubit that a callee allocates and releases itself becomes an extra
+        argument, and its release point becomes a `qco.reset` handed back as an
+        extra result. The caller then owns the allocation and can reuse one
+        qubit across several calls.
+
+        Externally visible functions, declarations, recursive functions, and
+        functions with more than one block are left alone, as are allocations
+        nested inside a region.
+    }];
+
+  let dependentDialects = ["::mlir::func::FuncDialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::qtensor::QTensorDialect",
+                           "mlir::qco::QCODialect"];
+}
+
 def RemoveDeadGates : Pass<"remove-dead-gates", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Remove quantum gates whose results cannot be observed";
