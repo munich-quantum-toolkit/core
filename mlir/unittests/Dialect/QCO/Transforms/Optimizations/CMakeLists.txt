@@ -9,6 +9,7 @@
 set(target_name mqt-core-mlir-unittest-optimizations)
 add_executable(
   ${target_name}
+  ConstantPropagation/test_hybridState.cpp
   ConstantPropagation/test_quantumState.cpp
   test_qco_hadamard_lifting.cpp
   test_qco_measurement_lifting.cpp
