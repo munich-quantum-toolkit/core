@@ -37,6 +37,11 @@ void populateDefaultQCOOptimizationPipeline(mlir::OpPassManager& pm);
 /// Populate the qubit reuse pipeline including its preparation passes.
 void populateQubitReusePipeline(mlir::OpPassManager& pm);
 
+/// Populate @p pm with the interprocedural optimization passes, in the order
+/// they are meant to run. The passes are also registered individually, so a
+/// caller assembling its own pipeline can pick only the ones it wants.
+void populateQuantumIPOPipeline(mlir::OpPassManager& pm);
+
 /// Return whether @p minQubits is valid for multi-controlled decomposition.
 [[nodiscard]] bool isDecomposeMultiControlledConfigValid(uint64_t minQubits);
 
