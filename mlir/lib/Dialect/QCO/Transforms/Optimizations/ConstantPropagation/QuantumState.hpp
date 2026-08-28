@@ -115,9 +115,9 @@ public:
    * @param out The qubit that in is changed to.
    * @param matrix The matrix to apply to the amplitudes of in.
    * @param ctrls The qubits that have to be |1> to apply the matrix.
-   * @return failure() if in is not in this group (a caller/propagation bug -
-   * the interpreter must co-locate a gate's targets before applying it);
-   * success() otherwise.
+   * @return failure() if in or a control is not in this group (a
+   * caller/propagation bug - the interpreter must co-locate a gate's targets and
+   * controls before applying it); success() otherwise.
    */
   [[nodiscard("QuantumState::applyMatrix1Q called but ignored")]] LogicalResult
   applyMatrix1Q(Value in, Value out, const Matrix2x2& matrix,
@@ -139,8 +139,9 @@ public:
    * @param out1 The qubit that in1 is changed to.
    * @param matrix The matrix to apply to the amplitudes of in0 and in1.
    * @param ctrls The qubits that have to be |1> to apply the matrix.
-   * @return failure() if in0 or in1 is not in this group, or they are the same
-   * bit position (a caller/propagation bug); success() otherwise.
+   * @return failure() if in0, in1, or a control is not in this group, or in0 and
+   * in1 are the same bit position (a caller/propagation bug); success()
+   * otherwise.
    */
   [[nodiscard("QuantumState::applyMatrix2Q called but ignored")]] LogicalResult
   applyMatrix2Q(Value in0, Value in1, Value out0, Value out1,

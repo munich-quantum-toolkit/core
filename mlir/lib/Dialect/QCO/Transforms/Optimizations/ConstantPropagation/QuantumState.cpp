@@ -108,6 +108,11 @@ LogicalResult QuantumState::applyMatrix1Q(const Value in, const Value out,
   if (!idx) {
     return failure();
   }
+  for (const Value c : ctrls) {
+    if (!contains(c)) {
+      return failure();
+    }
+  }
   if (top) {
     forwardQubit(in, out);
     return success();
@@ -144,6 +149,11 @@ LogicalResult QuantumState::applyMatrix2Q(const Value in0, const Value in1,
   const auto idx1 = indexOf(in1);
   if (!idx0 || !idx1 || *idx0 == *idx1) {
     return failure();
+  }
+  for (const Value c : ctrls) {
+    if (!contains(c)) {
+      return failure();
+    }
   }
   if (top) {
     forwardQubit(in0, out0);
