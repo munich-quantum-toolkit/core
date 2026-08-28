@@ -201,14 +201,16 @@ TEST_F(QuantumStateTest, controlledGateFires) {
   auto qs = QuantumState({q[0], q[1]}, 4);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(
-      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}).succeeded());
+      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {q[0]})
+          .succeeded());
   EXPECT_EQ(printed(qs), "|11> -> 1.00");
 }
 
 TEST_F(QuantumStateTest, controlledGateDoesNotFire) {
   auto qs = QuantumState({q[0], q[1]}, 4);
   ASSERT_TRUE(
-      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}).succeeded());
+      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {q[0]})
+          .succeeded());
   EXPECT_EQ(printed(qs), "|00> -> 1.00");
 }
 
@@ -216,8 +218,27 @@ TEST_F(QuantumStateTest, controlledGateOnSuperposition) {
   auto qs = QuantumState({q[0], q[1]}, 4);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(
-      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}).succeeded());
+      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {q[0]})
+          .succeeded());
   EXPECT_EQ(printed(qs), "|00> -> 0.71, |11> -> 0.71");
+}
+
+TEST_F(QuantumStateTest, appliedGateRenamesControls) {
+  auto qs = QuantumState({q[0], q[1]}, 4);
+  ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix()).succeeded());
+  ASSERT_TRUE(
+      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {q[2]})
+          .succeeded());
+  EXPECT_FALSE(qs.contains(q[0]));
+  EXPECT_TRUE(qs.contains(q[2]));
+  EXPECT_TRUE(qs.isAlwaysOne(q[1]));
+}
+
+TEST_F(QuantumStateTest, controlInOutLengthMismatchFails) {
+  auto qs = QuantumState({q[0], q[1], q[2], q[3]}, 4);
+  EXPECT_TRUE(
+      qs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix(), {q[1]}, {q[2], q[3]})
+          .failed());
 }
 
 //===----------------------------------------------------------------------===//
@@ -228,7 +249,8 @@ TEST_F(QuantumStateTest, exceedingAmplitudeBudgetBecomesTop) {
   auto qs = QuantumState({q[0], q[1], q[2], q[3]}, 2);
   ASSERT_TRUE(qs.applyMatrix1Q(q[3], q[3], hOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(
-      qs.applyMatrix1Q(q[2], q[2], xOp.getUnitaryMatrix(), {q[3]}).succeeded());
+      qs.applyMatrix1Q(q[2], q[2], xOp.getUnitaryMatrix(), {q[3]}, {q[3]})
+          .succeeded());
   EXPECT_FALSE(qs.isTop());
   ASSERT_TRUE(qs.applyMatrix1Q(q[2], q[2], hOp.getUnitaryMatrix()).succeeded());
   EXPECT_TRUE(qs.isTop());
@@ -269,8 +291,8 @@ TEST_F(QuantumStateTest, controlledPhaseOnQubitNotInGroupFails) {
 //===----------------------------------------------------------------------===//
 
 TEST_F(QuantumStateTest, measureDeterministicZero) {
-  const auto qs = QuantumState::singletonZero(q[0], 2);
-  const auto result = qs.measure(q[0]);
+  auto qs = QuantumState::singletonZero(q[0], 2);
+  const auto result = qs.measure(q[0], q[0]);
   ASSERT_TRUE(succeeded(result));
   const auto& outcomes = *result;
   ASSERT_EQ(outcomes.size(), 1U);
@@ -279,10 +301,19 @@ TEST_F(QuantumStateTest, measureDeterministicZero) {
   EXPECT_TRUE(*outcomes[0].state == qs);
 }
 
+TEST_F(QuantumStateTest, measureRenamesMeasuredQubit) {
+  auto qs = QuantumState::singletonZero(q[0], 2);
+  const auto result = qs.measure(q[0], q[1]);
+  ASSERT_TRUE(succeeded(result));
+  ASSERT_EQ(result->size(), 1U);
+  EXPECT_FALSE(result->front().state->contains(q[0]));
+  EXPECT_TRUE(result->front().state->contains(q[1]));
+}
+
 TEST_F(QuantumStateTest, measureDeterministicOne) {
   auto qs = QuantumState::singletonZero(q[0], 2);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix()).succeeded());
-  const auto result = qs.measure(q[0]);
+  const auto result = qs.measure(q[0], q[0]);
   ASSERT_TRUE(succeeded(result));
   const auto& outcomes = *result;
   ASSERT_EQ(outcomes.size(), 1U);
@@ -295,8 +326,9 @@ TEST_F(QuantumStateTest, measureSuperpositionSplits) {
   auto qs = QuantumState({q[0], q[1]}, 4);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(
-      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}).succeeded());
-  const auto result = qs.measure(q[0]);
+      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {q[0]})
+          .succeeded());
+  const auto result = qs.measure(q[0], q[0]);
   ASSERT_TRUE(succeeded(result));
   const auto& outcomes = *result;
   ASSERT_EQ(outcomes.size(), 2U);
@@ -309,15 +341,15 @@ TEST_F(QuantumStateTest, measureSuperpositionSplits) {
 }
 
 TEST_F(QuantumStateTest, measureQubitNotInGroupFails) {
-  const auto qs = QuantumState::singletonZero(q[0], 2);
-  EXPECT_TRUE(failed(qs.measure(q[1])));
+  auto qs = QuantumState::singletonZero(q[0], 2);
+  EXPECT_TRUE(failed(qs.measure(q[1], q[1])));
 }
 
 TEST_F(QuantumStateTest, measureOnTopStateYieldsNoBranches) {
   auto qs = QuantumState({q[0], q[1], q[2], q[3]}, 1);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(qs.isTop());
-  const auto result = qs.measure(q[0]);
+  const auto result = qs.measure(q[0], q[0]);
   ASSERT_TRUE(succeeded(result));
   EXPECT_TRUE(result->empty());
 }
@@ -327,19 +359,21 @@ TEST_F(QuantumStateTest, measureOnTopStateYieldsNoBranches) {
 //===----------------------------------------------------------------------===//
 
 TEST_F(QuantumStateTest, resetDeterministicZero) {
-  const auto qs = QuantumState::singletonZero(q[0], 2);
-  const auto result = qs.reset(q[0]);
+  auto qs = QuantumState::singletonZero(q[0], 2);
+  const auto result = qs.reset(q[0], q[1]);
   ASSERT_TRUE(succeeded(result));
   const auto& outcomes = *result;
   ASSERT_EQ(outcomes.size(), 1U);
   EXPECT_EQ(outcomes[0].bit, 0U);
   EXPECT_EQ(printed(*outcomes[0].state), "|0> -> 1.00");
+  EXPECT_FALSE(outcomes[0].state->contains(q[0]));
+  EXPECT_TRUE(outcomes[0].state->contains(q[1]));
 }
 
 TEST_F(QuantumStateTest, resetDeterministicOneForcesZero) {
   auto qs = QuantumState::singletonZero(q[0], 2);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix()).succeeded());
-  const auto result = qs.reset(q[0]);
+  const auto result = qs.reset(q[0], q[0]);
   ASSERT_TRUE(succeeded(result));
   const auto& outcomes = *result;
   ASSERT_EQ(outcomes.size(), 1U);
@@ -351,8 +385,8 @@ TEST_F(QuantumStateTest, resetSuperpositionForcesTargetToZero) {
   auto qs = QuantumState({q[0], q[1]}, 4);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(
-      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}).succeeded());
-  const auto result = qs.reset(q[0]);
+      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {q[0]}).succeeded());
+  const auto result = qs.reset(q[0], q[0]);
   ASSERT_TRUE(succeeded(result));
   const auto& outcomes = *result;
   ASSERT_EQ(outcomes.size(), 2U);
@@ -362,15 +396,15 @@ TEST_F(QuantumStateTest, resetSuperpositionForcesTargetToZero) {
 }
 
 TEST_F(QuantumStateTest, resetQubitNotInGroupFails) {
-  const auto qs = QuantumState::singletonZero(q[0], 2);
-  EXPECT_TRUE(failed(qs.reset(q[1])));
+  auto qs = QuantumState::singletonZero(q[0], 2);
+  EXPECT_TRUE(failed(qs.reset(q[1], q[1])));
 }
 
 TEST_F(QuantumStateTest, resetOnTopStateYieldsNoBranches) {
   auto qs = QuantumState({q[0], q[1], q[2], q[3]}, 1);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(qs.isTop());
-  const auto result = qs.reset(q[0]);
+  const auto result = qs.reset(q[0], q[0]);
   ASSERT_TRUE(succeeded(result));
   EXPECT_TRUE(result->empty());
 }
@@ -419,7 +453,7 @@ TEST_F(QuantumStateTest, hasAlwaysZeroAmplitude) {
   auto qs = QuantumState({q[0], q[1]}, 4);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(
-      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}).succeeded());
+      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {q[0]}).succeeded());
   EXPECT_TRUE(qs.hasAlwaysZeroAmplitude({{q[0], false}, {q[1], true}}));
   EXPECT_FALSE(qs.hasAlwaysZeroAmplitude({{q[0], true}, {q[1], true}}));
 }
@@ -432,8 +466,7 @@ TEST_F(QuantumStateTest, equalityIgnoresNegligibleDifferences) {
   auto a = QuantumState({q[0], q[1], q[2], q[3]}, 4);
   const auto b = QuantumState({q[0], q[1], q[2], q[3]}, 4);
   ASSERT_TRUE(a.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
-  ASSERT_TRUE(a.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix())
-                  .succeeded());
+  ASSERT_TRUE(a.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
   EXPECT_TRUE(a == b);
 }
 

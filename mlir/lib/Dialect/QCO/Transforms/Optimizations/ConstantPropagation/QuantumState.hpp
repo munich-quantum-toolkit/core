@@ -103,6 +103,10 @@ public:
   /// not contain from.
   void forwardQubit(Value from, Value to);
 
+  /// @brief forwardQubit for each from[i] -> to[i]. to is empty (no rename) or
+  /// the same length as from.
+  void forwardQubits(ArrayRef<Value> from, ArrayRef<Value> to);
+
   /**
    * @brief Applies a single-qubit unitary to qubit in, renaming it to qubit
    * out.
@@ -114,14 +118,17 @@ public:
    * @param in The qubit to apply the matrix to.
    * @param out The qubit that in is changed to.
    * @param matrix The matrix to apply to the amplitudes of in.
-   * @param ctrls The qubits that have to be |1> to apply the matrix.
+   * @param ctrlsIn The qubits that have to be |1> to apply the matrix.
+   * @param ctrlsOut The controls' post-gate names (empty = unchanged, else same
+   * length as ctrlsIn).
    * @return failure() if in or a control is not in this group (a
-   * caller/propagation bug - the interpreter must co-locate a gate's targets and
-   * controls before applying it); success() otherwise.
+   * caller/propagation bug - the interpreter must co-locate a gate's targets
+   * and controls before applying it), or the control in/out lengths mismatch;
+   * success() otherwise.
    */
   [[nodiscard("QuantumState::applyMatrix1Q called but ignored")]] LogicalResult
   applyMatrix1Q(Value in, Value out, const Matrix2x2& matrix,
-                ArrayRef<Value> ctrls = {});
+                ArrayRef<Value> ctrlsIn = {}, ArrayRef<Value> ctrlsOut = {});
 
   /**
    * @brief Applies a two-qubit unitary to in0 and in1, renaming them to out0,
@@ -138,14 +145,17 @@ public:
    * @param out0 The qubit that in0 is changed to.
    * @param out1 The qubit that in1 is changed to.
    * @param matrix The matrix to apply to the amplitudes of in0 and in1.
-   * @param ctrls The qubits that have to be |1> to apply the matrix.
-   * @return failure() if in0, in1, or a control is not in this group, or in0 and
-   * in1 are the same bit position (a caller/propagation bug); success()
-   * otherwise.
+   * @param ctrlsIn The qubits that have to be |1> to apply the matrix.
+   * @param ctrlsOut The controls' post-gate names (empty = unchanged, else same
+   * length as ctrlsIn).
+   * @return failure() if in0, in1, or a control is not in this group, in0 and
+   * in1 are the same bit position, or the control in/out lengths mismatch (a
+   * caller/propagation bug); success() otherwise.
    */
   [[nodiscard("QuantumState::applyMatrix2Q called but ignored")]] LogicalResult
   applyMatrix2Q(Value in0, Value in1, Value out0, Value out1,
-                const Matrix4x4& matrix, ArrayRef<Value> ctrls = {});
+                const Matrix4x4& matrix, ArrayRef<Value> ctrlsIn = {},
+                ArrayRef<Value> ctrlsOut = {});
 
   /**
    * @brief Multiplies by exp(i*phase) the amplitudes where every control is
@@ -157,37 +167,45 @@ public:
    * and rejected here.
    *
    * @param phase The phase to apply.
-   * @param ctrls The qubits that all have to be |1> for the phase to apply.
-   * @return failure() if ctrls is empty or a control is not in this group.
+   * @param ctrlsIn The qubits that all have to be |1> for the phase to apply.
+   * @param ctrlsOut The controls' post-gate names (empty = unchanged, else same
+   * length as ctrlsIn).
+   * @return failure() if ctrlsIn is empty, a control is not in this group, or
+   * the control in/out lengths mismatch.
    */
   [[nodiscard("QuantumState::applyControlledPhase called but ignored")]]
-  LogicalResult applyControlledPhase(double phase, ArrayRef<Value> ctrls);
+  LogicalResult applyControlledPhase(double phase, ArrayRef<Value> ctrlsIn,
+                                     ArrayRef<Value> ctrlsOut = {});
 
   /**
-   * @brief Projective measurement of a target in the computational basis.
+   * @brief Projective measurement of qubit in in the computational basis.
    *
-   * Each branch's state is re-normalized and keeps the target (now definite).
+   * Each branch's state is re-normalized and holds the measured qubit (now
+   * definite) under its post-measurement name out.
    *
-   * @param target The target that is being measured.
-   * @return failure() if target is not in the group (a caller/propagation bug).
+   * @param in The qubit that is being measured.
+   * @param out The measured qubit's post-measurement name.
+   * @return failure() if in is not in the group (a caller/propagation bug).
    * Otherwise: an empty list if the state is top, one branch if the outcome is
    * deterministic, two branches otherwise.
    */
   [[nodiscard("QuantumState::measure called but ignored")]]
-  FailureOr<SmallVector<MeasurementOutcome>> measure(Value target) const;
+  FailureOr<SmallVector<MeasurementOutcome>> measure(Value in, Value out);
 
   /**
-   * @brief Reset of a target: measure, then force the qubit to |0>.
+   * @brief Reset of qubit in: measure, then force the qubit to |0>.
    *
-   * Each branch's state is re-normalized and keeps the target (now in |0>).
+   * Each branch's state is re-normalized and holds the reset qubit (now |0>)
+   * under its post-reset name out.
    *
-   * @param target The target that is being reset.
-   * @return failure() if target is not in the group (a caller/propagation bug).
+   * @param in The qubit that is being reset.
+   * @param out The reset qubit's post-reset name.
+   * @return failure() if in is not in the group (a caller/propagation bug).
    * Otherwise: an empty list if the state is top, one branch if the outcome is
    * deterministic, two branches otherwise.
    */
   [[nodiscard("QuantumState::reset called but ignored")]]
-  FailureOr<SmallVector<MeasurementOutcome>> reset(Value target) const;
+  FailureOr<SmallVector<MeasurementOutcome>> reset(Value in, Value out);
 
   /**
    * @brief Tensor product of this group with that.

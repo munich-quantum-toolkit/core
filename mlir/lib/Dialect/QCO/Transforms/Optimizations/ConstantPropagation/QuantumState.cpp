@@ -83,6 +83,13 @@ void QuantumState::forwardQubit(const Value from, const Value to) {
   }
 }
 
+void QuantumState::forwardQubits(const ArrayRef<Value> from,
+                                 const ArrayRef<Value> to) {
+  for (const auto [f, t] : llvm::zip(from, to)) {
+    forwardQubit(f, t);
+  }
+}
+
 void QuantumState::canonicalize() {
   if (top) {
     return;
@@ -103,23 +110,25 @@ void QuantumState::canonicalize() {
 
 LogicalResult QuantumState::applyMatrix1Q(const Value in, const Value out,
                                           const Matrix2x2& matrix,
-                                          const ArrayRef<Value> ctrls) {
+                                          const ArrayRef<Value> ctrlsIn,
+                                          const ArrayRef<Value> ctrlsOut) {
   const auto idx = indexOf(in);
-  if (!idx) {
+  if (!idx || ctrlsOut.size() != ctrlsIn.size()) {
     return failure();
   }
-  for (const Value c : ctrls) {
+  for (const Value c : ctrlsIn) {
     if (!contains(c)) {
       return failure();
     }
   }
   if (top) {
     forwardQubit(in, out);
+    forwardQubits(ctrlsIn, ctrlsOut);
     return success();
   }
 
   const uint64_t targetBit = uint64_t{1} << *idx;
-  const uint64_t ctrlMask = maskOf(ctrls);
+  const uint64_t ctrlMask = maskOf(ctrlsIn);
 
   llvm::DenseMap<uint64_t, Complex> result;
   for (const auto& [key, amp] : amplitudes) {
@@ -136,6 +145,7 @@ LogicalResult QuantumState::applyMatrix1Q(const Value in, const Value out,
 
   amplitudes = std::move(result);
   forwardQubit(in, out);
+  forwardQubits(ctrlsIn, ctrlsOut);
   canonicalize();
 
   return success();
@@ -144,13 +154,14 @@ LogicalResult QuantumState::applyMatrix1Q(const Value in, const Value out,
 LogicalResult QuantumState::applyMatrix2Q(const Value in0, const Value in1,
                                           const Value out0, const Value out1,
                                           const Matrix4x4& matrix,
-                                          const ArrayRef<Value> ctrls) {
+                                          const ArrayRef<Value> ctrlsIn,
+                                          const ArrayRef<Value> ctrlsOut) {
   const auto idx0 = indexOf(in0);
   const auto idx1 = indexOf(in1);
-  if (!idx0 || !idx1 || *idx0 == *idx1) {
+  if (!idx0 || !idx1 || *idx0 == *idx1 || ctrlsOut.size() != ctrlsIn.size()) {
     return failure();
   }
-  for (const Value c : ctrls) {
+  for (const Value c : ctrlsIn) {
     if (!contains(c)) {
       return failure();
     }
@@ -158,6 +169,7 @@ LogicalResult QuantumState::applyMatrix2Q(const Value in0, const Value in1,
   if (top) {
     forwardQubit(in0, out0);
     forwardQubit(in1, out1);
+    forwardQubits(ctrlsIn, ctrlsOut);
     return success();
   }
 
@@ -165,7 +177,7 @@ LogicalResult QuantumState::applyMatrix2Q(const Value in0, const Value in1,
   const uint64_t hiBit = uint64_t{1} << *idx0;
   const uint64_t loBit = uint64_t{1} << *idx1;
   const uint64_t bothBits = hiBit | loBit;
-  const uint64_t ctrlMask = maskOf(ctrls);
+  const uint64_t ctrlMask = maskOf(ctrlsIn);
 
   const auto localKey = [&](const uint64_t base, const unsigned local) {
     return base | ((local & 1U) != 0U ? loBit : 0) |
@@ -192,42 +204,49 @@ LogicalResult QuantumState::applyMatrix2Q(const Value in0, const Value in1,
   amplitudes = std::move(result);
   forwardQubit(in0, out0);
   forwardQubit(in1, out1);
+  forwardQubits(ctrlsIn, ctrlsOut);
   canonicalize();
 
   return success();
 }
 
-LogicalResult QuantumState::applyControlledPhase(const double phase,
-                                                 const ArrayRef<Value> ctrls) {
-  if (ctrls.empty()) {
+LogicalResult
+QuantumState::applyControlledPhase(const double phase,
+                                   const ArrayRef<Value> ctrlsIn,
+                                   const ArrayRef<Value> ctrlsOut) {
+  if (ctrlsIn.empty() ||
+      (!ctrlsOut.empty() && ctrlsOut.size() != ctrlsIn.size())) {
     return failure();
   }
-  for (const Value c : ctrls) {
+  for (const Value c : ctrlsIn) {
     if (!contains(c)) {
       return failure();
     }
   }
   if (top) {
+    forwardQubits(ctrlsIn, ctrlsOut);
     return success();
   }
-  const uint64_t ctrlMask = maskOf(ctrls);
+  const uint64_t ctrlMask = maskOf(ctrlsIn);
   const Complex factor = std::exp(Complex{0.0, phase});
   for (auto& [key, amp] : amplitudes) {
     if ((key & ctrlMask) == ctrlMask) {
       amp *= factor;
     }
   }
+  forwardQubits(ctrlsIn, ctrlsOut);
   canonicalize();
   return success();
 }
 
 FailureOr<SmallVector<MeasurementOutcome>>
-QuantumState::measure(const Value target) const {
-  const auto idx = indexOf(target);
+QuantumState::measure(const Value in, const Value out) {
+  const auto idx = indexOf(in);
   if (!idx) {
     return failure();
   }
   if (top) {
+    forwardQubit(in, out);
     return SmallVector<MeasurementOutcome>{};
   }
   const uint64_t targetBit = uint64_t{1} << *idx;
@@ -251,12 +270,14 @@ QuantumState::measure(const Value target) const {
     auto branch =
         std::unique_ptr<QuantumState>(new QuantumState(maxNonzeroAmplitudes));
     branch->qubits = qubits;
+    branch->forwardQubit(in, out);
     const double scale = 1.0 / std::sqrt(probability);
     for (const auto& [key, amp] : amps) {
       branch->amplitudes[key] += amp * scale;
     }
     branch->canonicalize();
-    return MeasurementOutcome{.bit=bit, .probability=probability, .state=std::move(branch)};
+    return MeasurementOutcome{
+        .bit = bit, .probability = probability, .state = std::move(branch)};
   };
 
   SmallVector<MeasurementOutcome> outcomes;
@@ -270,8 +291,8 @@ QuantumState::measure(const Value target) const {
 }
 
 FailureOr<SmallVector<MeasurementOutcome>>
-QuantumState::reset(const Value target) const {
-  auto outcomes = measure(target);
+QuantumState::reset(const Value in, const Value out) {
+  auto outcomes = measure(in, out);
   if (failed(outcomes)) {
     return failure();
   }
@@ -279,7 +300,7 @@ QuantumState::reset(const Value target) const {
     if (outcome.bit == 0 || outcome.state == nullptr) {
       continue;
     }
-    const auto idx = outcome.state->indexOf(target);
+    const auto idx = outcome.state->indexOf(out);
     if (!idx) {
       return failure();
     }
@@ -299,8 +320,7 @@ QuantumState QuantumState::unify(const QuantumState& that) const {
   result.qubits.append(qubits.begin(), qubits.end());
   result.qubits.append(that.qubits.begin(), that.qubits.end());
 
-  if (top || that.top ||
-      result.qubits.size() > MAX_GROUP_QUBITS ||
+  if (top || that.top || result.qubits.size() > MAX_GROUP_QUBITS ||
       amplitudes.size() * that.amplitudes.size() > maxNonzeroAmplitudes) {
     result.markTop();
     return result;
