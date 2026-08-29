@@ -107,7 +107,8 @@ constexpr std::array<RegistryEntry, 5> REGISTRY{{
 
 [[nodiscard]] const RegistryEntry*
 findBenchmark(const std::string_view benchmark) {
-  const auto found = std::ranges::find(REGISTRY, benchmark, &RegistryEntry::id);
+  const auto* const found =
+      std::ranges::find(REGISTRY, benchmark, &RegistryEntry::id);
   return found == REGISTRY.end() ? nullptr : &*found;
 }
 
