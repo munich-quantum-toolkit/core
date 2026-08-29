@@ -138,6 +138,16 @@ public:
   void markStateTop();
 
   /**
+   * @brief Drops every classical fact other does not hold identically.
+   *
+   * Used to build a sound representative when a disjunction of alternatives is
+   * collapsed: only the facts every alternative agrees on may be kept.
+   *
+   * @param other The branch to intersect this one's classical facts with.
+   */
+  void intersectClassical(const HybridState& other);
+
+  /**
    * @brief Combines this subsystem with a disjoint one into a single
    * HybridState.
    *

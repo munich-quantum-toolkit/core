@@ -413,6 +413,20 @@ TEST_F(HybridStateTest, markStateTopKeepsClassicalFacts) {
   EXPECT_TRUE(hs.isClassicalTrue(cA));
 }
 
+TEST_F(HybridStateTest, intersectClassicalKeepsOnlyAgreedFacts) {
+  auto a = make({q[0]});
+  a.setClassical(cA, builder.getBoolAttr(true));
+  a.setClassical(cB, builder.getBoolAttr(true));
+
+  auto b = make({q[0]});
+  b.setClassical(cA, builder.getBoolAttr(true));  // agrees
+  b.setClassical(cB, builder.getBoolAttr(false)); // disagrees
+
+  a.intersectClassical(b);
+  EXPECT_TRUE(a.isClassicalTrue(cA));
+  EXPECT_FALSE(a.getClassical(cB).has_value());
+}
+
 TEST_F(HybridStateTest, forwardValueRenamesQubitAndClassical) {
   auto hs = make({q[0]});
   hs.setClassical(cA, builder.getBoolAttr(true));

@@ -20,6 +20,8 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <optional>
+
 namespace mlir::qco {
 
 /**
@@ -40,78 +42,78 @@ struct SuperfluousResult {
  * @brief The abstract state of a whole program point: a probability
  * distribution over correlated subsystems.
  *
- * A UnionTable is a flat list of HybridState "HybridStates" partitioned into
- * *slots*:
- * - HybridStates in different slots are unentangled **tensor factors**; the
- * full state is their product.
- * - HybridStates in the same slot are **alternatives** of one probabilistic
- *   disjunction; their probabilities sum to one.
+ * A UnionTable is a list of *slots*. Each slot is a non-empty list of
+ * @ref HybridState "HybridStates":
+ * - Slots are unentangled **tensor factors**; the full state is their product.
+ * - The HybridStates within a slot are **alternatives** of one probabilistic
+ *   disjunction; they share a qubit set and their probabilities sum to one.
  *
- * The slot of a qubit-bearing HybridState is every HybridState with the exact
- * same qubit set. Each purely classical HybridState has its own slot.
+ * Qubit sets of different slots are disjoint. A slot with no qubits is a
+ * purely classical factor.
  *
  * Operations take matrix-level arguments (no Operation*); the analysis maps
  * gates to matrices and target/output SSA values. Before a multi-qubit or
- * controlled operation, the touched slots are coalesced into one (alternatives
- * multiply out via HybridState::tensor); if that exceeds maxHybridStates all
- * states in the new slot collapse to top. A target or control value that is
- * absent from the table is a caller/propagation bug and yields failure(); the
- * analysis seeds every qubit before first use.
+ * controlled operation the touched slots are merged into one (alternatives
+ * multiply out via HybridState::tensor); if that exceeds maxHybridStates the
+ * whole table collapses to  allTop. A target or control value absent from the
+ * table is a caller/propagation bug and yields failure(); the analysis seeds
+ * every qubit before first use.
  */
 class UnionTable {
+public:
+  using Slot = SmallVector<HybridState>;
+
+private:
   bool allTop = false;
   size_t maxNonzeroAmplitudes;
   size_t maxHybridStates;
-  SmallVector<HybridState> hybridStates;
+  SmallVector<Slot> slots;
+
+  /// @brief Index of the slot that holds v (as a qubit or a classical key).
+  [[nodiscard("UnionTable::slotIndexContaining called but ignored")]]
+  std::optional<unsigned> slotIndexContaining(Value v) const;
+
+  /// @brief The distinct slot indices touched by any of values, ascending.
+  [[nodiscard("UnionTable::slotsTouchedBy called but ignored")]]
+  SmallVector<unsigned> slotsTouchedBy(ArrayRef<Value> values) const;
 
   /**
-   * @brief Indices of the HybridStates that mention v (as a qubit or as a
-   * classical key), ascending.
+   * @brief Merges every slot touched by values into a single slot.
    *
-   * @param v The value to be checked for
-   * @returns The indices of the states with v
-   */
-  [[nodiscard(
-      "UnionTable::statesWith called but ignored")]] SmallVector<unsigned>
-  statesWith(Value v) const;
-
-  /**
-   * @brief The slot index belongs to (itself included), ascending.
+   * The merged slot's alternatives are the cartesian product of the merged
+   * slots' alternatives, combined with HybridState::tensor (probabilities and
+   * global phases multiply). If the product would exceed maxHybridStates only
+   * the merged slots collapse to a single top state (untouched slots are left
+   * alone). Values absent from the table are ignored.
    *
-   * @param index The index to be checked for
-   * @returns The indices of the slots that index belongs to.
-   */
-  [[nodiscard("UnionTable::slotOf called but ignored")]] SmallVector<unsigned>
-  slotOf(unsigned index) const;
-
-  /**
-   * @brief The distinct slots touched by any of the values, each as an
-   * ascending index list.
-   *
-   * @param values The values whose slots are collected.
-   */
-  [[nodiscard("UnionTable::slotsTouchedBy called but ignored")]] SmallVector<
-      SmallVector<unsigned>>
-  slotsTouchedBy(ArrayRef<Value> values) const;
-
-  /**
-   * @brief Fuses every slot touched by values into a single slot.
-   *
-   * The new slot's alternatives are the cartesian product of the fused slots'
-   * alternatives, combined with HybridState::tensor (probabilities and global
-   * phases multiply). Collapses the table to allTop if the product exceeds
-   * maxHybridStates. Values absent from the table are ignored.
-   *
-   * @param values The values whose entries should be merged.
+   * @param values The values whose slots should be merged.
    */
   void mergeSlots(ArrayRef<Value> values);
+
+  /// @brief A single HybridState standing in for a slot's disjunction: its
+  /// first alternative, keeping only the classical facts every alternative
+  /// agrees on.
+  [[nodiscard("UnionTable::reducedRepresentative called but ignored")]]
+  static HybridState reducedRepresentative(const Slot& slot);
+
+  /**
+   * Combines the alternatives of two slots coming from sibling control-flow
+   * paths: matching configurations are de-duplicated, the result is
+   * renormalized to sum one.
+   */
+  [[nodiscard("UnionTable::mergeAlternatives called but ignored")]]
+  static Slot mergeAlternatives(const Slot& a, const Slot& b);
+
+  /// @brief Order-independent equality of two slots' alternatives.
+  [[nodiscard("UnionTable::sameSlot called but ignored")]]
+  static bool sameSlot(const Slot& a, const Slot& b);
 
 public:
   /**
    * @param maxNonzeroAmplitudes Per-QuantumState amplitude budget before it
    * collapses to top.
-   * @param maxHybridStates Per-UnionTable HybridState budget before the whole
-   * table collapses to allTop.
+   * @param maxHybridStates Per-slot alternative budget before the whole slot
+   * collapses to allTop.
    */
   UnionTable(const size_t maxNonzeroAmplitudes, const size_t maxHybridStates)
       : maxNonzeroAmplitudes(maxNonzeroAmplitudes),
@@ -152,7 +154,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Renames from to to everywhere (qubit or clasical). No-op if from is
+   * @brief Renames from to to everywhere (qubit or classical). No-op if from is
    * not present.
    *
    * @param from The value being replaced.
@@ -184,8 +186,8 @@ public:
    * (nonzero) to apply the matrix.
    * @param negClassicalCtrls The classical values that have to be false (zero)
    * to apply the matrix.
-   * @return failure() if a target/control qubit is not in this state, the
-   * control in/out lengths mismatch, or a classical control is unresolved.
+   * @return failure() if a target/control value is absent, the control in/out
+   * lengths mismatch, or a classical control is unresolved.
    */
   [[nodiscard("UnionTable::applyMatrix1Q called but ignored")]] LogicalResult
   applyMatrix1Q(Value in, Value out, const Matrix2x2& matrix,
@@ -209,8 +211,9 @@ public:
    * (nonzero) to apply the matrix.
    * @param negClassicalCtrls The classical values that have to be false (zero)
    * to apply the matrix.
-   * @return failure() if a target/control qubit is not in this state, the
-   * control in/out lengths mismatch, or a classical control is unresolved.
+   * @return failure() if a target/control value is absent, the two targets
+   * coincide, the control in/out lengths mismatch, or a classical control is
+   * unresolved.
    */
   [[nodiscard("UnionTable::applyMatrix2Q called but ignored")]] LogicalResult
   applyMatrix2Q(Value in0, Value in1, Value out0, Value out1,
@@ -226,14 +229,14 @@ public:
    * phase. With quantum controls: a relative phase on the controlled subspace.
    *
    * @param theta The phase to add.
-   * @param quantumCtrlsIn The qubits that have to be |1> to apply the matrix.
+   * @param quantumCtrlsIn The qubits that have to be |1> for the phase.
    * @param quantumCtrlsOut The qubits that quantumCtrlsIn are changed to.
    * @param posClassicalCtrls The classical values that have to be true
-   * (nonzero) to apply the matrix.
+   * (nonzero) for the phase.
    * @param negClassicalCtrls The classical values that have to be false (zero)
-   * to apply the matrix.
-   * @return failure() if a control qubit is not in this state or a classical
-   * control is unresolved.
+   * for the phase.
+   * @return failure() if a control value is absent, the control in/out lengths
+   * mismatch, or a classical control is unresolved.
    */
   [[nodiscard("UnionTable::addGlobalPhase called but ignored")]] LogicalResult
   addGlobalPhase(double theta, ArrayRef<Value> quantumCtrlsIn = {},
@@ -250,8 +253,7 @@ public:
    *
    * @param in The qubit to be measured.
    * @param out The value to change in to.
-   * @param classicalResult The classical value to save the result of the
-   * measurement in.
+   * @param classicalResult The classical value to record the outcome in.
    * @param posClassicalCtrls The classical values that have to be true
    * (nonzero) to apply the measurement.
    * @param negClassicalCtrls The classical values that have to be false (zero)
@@ -307,6 +309,10 @@ public:
    * @brief Whether the controls can all hold at once somewhere in the
    * distribution.
    *
+   * A conjunction over disjoint factors (each factor must be satisfiable),
+   * disjunction over a slot's alternatives (any alternative suffices). Controls
+   * absent from the table are treated as possibly satisfiable.
+   *
    * @param quantumCtrls The qubits that have to be |1>.
    * @param posClassicalCtrls The classical values that have to be true
    * (nonzero).
@@ -326,8 +332,8 @@ public:
    * @param posClassicalCtrls The classical values that have to be true
    * (nonzero).
    * @param negClassicalCtrls The classical values that have to be false (zero).
-   * @returns Whether the whole operation is superfluous (controls will never be
-   * satisfied), or if there are parts of the controls that are superfluous.
+   * @returns Whether the whole operation is superfluous (controls can never be
+   * satisfied), plus the individual controls that always hold.
    */
   [[nodiscard("UnionTable::getSuperfluousControls called but ignored")]]
   SuperfluousResult
@@ -346,7 +352,7 @@ public:
    * Slots are matched by qubit set. Matching slots merge their alternatives
    * (probability-weighted, deduplicated, renormalized); a classical-only fact
    * survives only if other asserts it too. The table collapses to allTop if the
-   * entanglement structure differs or maxHybridStates is exceeded.
+   * entanglement structure differs or a slot exceeds maxHybridStates.
    *
    * The caller aligns yielded SSA names (via forwardValues) before calling.
    *

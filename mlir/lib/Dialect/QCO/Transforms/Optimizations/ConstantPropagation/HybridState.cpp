@@ -84,6 +84,19 @@ void HybridState::forwardValue(const Value from, const Value to) {
 
 void HybridState::markStateTop() { state.markTop(); }
 
+void HybridState::intersectClassical(const HybridState& other) {
+  SmallVector<Value> disagreeing;
+  for (const auto& [v, attr] : classical) {
+    const auto it = other.classical.find(v);
+    if (it == other.classical.end() || it->second != attr) {
+      disagreeing.push_back(v);
+    }
+  }
+  for (const Value v : disagreeing) {
+    classical.erase(v);
+  }
+}
+
 HybridState HybridState::tensor(const HybridState& other) const {
   HybridState result(state.unify(other.state), maxNonzeroAmplitudes,
                      probability * other.probability);
