@@ -15,11 +15,14 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Format.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -42,11 +45,23 @@ bool ctrlRenameOk(const ArrayRef<Value> ctrlsIn,
 /// @brief Truthiness of a resolved classical constant (non-zero == true), or
 /// nullopt if attr is not an integer/index/bool/float constant.
 std::optional<bool> classicalTruth(const Attribute attr) {
-  if (const auto ia = dyn_cast<IntegerAttr>(attr)) {
+  if (const auto ia = dyn_cast_if_present<IntegerAttr>(attr)) {
     return !ia.getValue().isZero();
   }
-  if (const auto fa = dyn_cast<FloatAttr>(attr)) {
+  if (const auto fa = dyn_cast_if_present<FloatAttr>(attr)) {
     return !fa.getValue().isZero();
+  }
+  return std::nullopt;
+}
+
+/// @brief Numeric value of a resolved classical constant, or nullopt if attr is
+/// not an integer/index/bool/float constant.
+std::optional<double> classicalDouble(const Attribute attr) {
+  if (const auto ia = dyn_cast_if_present<IntegerAttr>(attr)) {
+    return static_cast<double>(ia.getValue().getSExtValue());
+  }
+  if (const auto fa = dyn_cast_if_present<FloatAttr>(attr)) {
+    return fa.getValueAsDouble();
   }
   return std::nullopt;
 }
@@ -161,9 +176,10 @@ LogicalResult HybridState::applyMatrix1Q(
     return failure();
   }
   if (*hold) {
-    return state.applyMatrix1Q(in, out, matrix, quantumCtrlsIn, quantumCtrlsOut);
+    return state.applyMatrix1Q(in, out, matrix, quantumCtrlsIn,
+                               quantumCtrlsOut);
   }
-  // Classical control false: the gate is skipped, only the identities thread on.
+  // Classical control false: only the identities thread on.
   state.forwardQubit(in, out);
   state.forwardQubits(quantumCtrlsIn, quantumCtrlsOut);
   return success();
@@ -195,7 +211,7 @@ HybridState::applyMatrix2Q(const Value in0, const Value in1, const Value out0,
 }
 
 LogicalResult
-HybridState::addGlobalPhase(const double theta,
+HybridState::addGlobalPhase(const Value theta,
                             const ArrayRef<Value> quantumCtrlsIn,
                             const ArrayRef<Value> quantumCtrlsOut,
                             const ArrayRef<Value> posClassicalCtrls,
@@ -207,15 +223,38 @@ HybridState::addGlobalPhase(const double theta,
   if (failed(hold)) {
     return failure();
   }
+  const auto angle = classicalDouble(classical.lookup(theta));
+  if (!angle) {
+    return failure();
+  }
   if (*hold) {
     if (!quantumCtrlsIn.empty()) {
-      return state.applyControlledPhase(theta, quantumCtrlsIn, quantumCtrlsOut);
+      return state.applyControlledPhase(*angle, quantumCtrlsIn,
+                                        quantumCtrlsOut);
     }
-    globalPhase *= std::exp(Complex{0.0, theta});
+    globalPhase *= std::exp(Complex{0.0, *angle});
     return success();
   }
   state.forwardQubits(quantumCtrlsIn, quantumCtrlsOut);
   return success();
+}
+
+void HybridState::propagateClassical(Operation* const op) {
+  SmallVector<Attribute> operands;
+  operands.reserve(op->getNumOperands());
+  for (const Value operand : op->getOperands()) {
+    operands.push_back(classical.lookup(operand));
+  }
+  SmallVector<OpFoldResult> folded;
+  if (failed(op->fold(operands, folded)) ||
+      folded.size() != op->getNumResults()) {
+    return;
+  }
+  for (const auto& [result, foldResult] : llvm::zip(op->getResults(), folded)) {
+    if (const auto attr = dyn_cast<Attribute>(foldResult)) {
+      setClassical(result, attr);
+    }
+  }
 }
 
 //===----------------------------------------------------------------------===//

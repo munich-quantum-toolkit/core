@@ -220,27 +220,39 @@ public:
                               ArrayRef<Value> negClassicalCtrls = {});
 
   /**
-   * @brief Adds a global phase exp(i*theta).
+   * @brief Adds a global phase exp(i*theta), where theta is a classical value
+   * resolved from this branch's constants.
    *
    * Uncontrolled: accumulated into globalPhase. With quantum controls: a
    * relative phase on the subspace where every control is |1>.
    *
-   * @param theta The phase to add.
-   * @param quantumCtrlsIn The qubits that have to be |1> to apply the matrix.
+   * @param theta The classical value holding the rotation angle in radians.
+   * @param quantumCtrlsIn The qubits that have to be |1> to apply the phase.
    * @param quantumCtrlsOut The qubits that quantumCtrlsIn are changed to.
    * @param posClassicalCtrls The classical values that have to be true
-   * (nonzero) to apply the matrix.
+   * (nonzero) to apply the phase.
    * @param negClassicalCtrls The classical values that have to be false (zero)
-   * to apply the matrix.
-   * @return failure() if a control qubit is not in this state or a classical
-   * control is unresolved.
+   * to apply the phase.
+   * @return failure() if a control qubit is not in this state, a classical
+   * control is unresolved, or - when the phase would apply - theta is not a
+   * resolved constant (each indicates a propagation bug).
    */
   [[nodiscard("HybridState::addGlobalPhase called but ignored")]]
-  LogicalResult addGlobalPhase(double theta,
-                               ArrayRef<Value> quantumCtrlsIn = {},
+  LogicalResult addGlobalPhase(Value theta, ArrayRef<Value> quantumCtrlsIn = {},
                                ArrayRef<Value> quantumCtrlsOut = {},
                                ArrayRef<Value> posClassicalCtrls = {},
                                ArrayRef<Value> negClassicalCtrls = {});
+
+  /**
+   * @brief Folds a classical operation using this branch's resolved constants
+   * and records any constant results.
+   *
+   * Operands not resolved in this branch are passed to the folder as unknown; a
+   * result that does not fold to a constant is left untracked.
+   *
+   * @param op The classical operation to fold (its operands and results).
+   */
+  void propagateClassical(Operation* op);
 
   //===--------------------------------------------------------------------===//
   // Measurement / reset

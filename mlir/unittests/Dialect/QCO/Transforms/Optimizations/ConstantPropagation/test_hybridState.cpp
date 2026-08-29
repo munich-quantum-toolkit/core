@@ -226,22 +226,47 @@ TEST_F(HybridStateTest, floatClassicalControlIsSupported) {
 
 TEST_F(HybridStateTest, uncontrolledGlobalPhaseAccumulates) {
   auto hs = make({q[0]});
-  ASSERT_TRUE(hs.addGlobalPhase(std::acos(-1.0)).succeeded());
+  const Value theta = builder.floatConstant(std::acos(-1.0));
+  hs.setClassical(theta, builder.getF64FloatAttr(std::acos(-1.0)));
+  ASSERT_TRUE(hs.addGlobalPhase(theta).succeeded());
   EXPECT_LT(std::abs(hs.getGlobalPhase() - Complex{-1.0, 0.0}), 1e-9);
 }
 
 TEST_F(HybridStateTest, quantumControlledPhaseIsNotGlobal) {
   auto hs = make({q[0], q[1]});
+  const Value theta = builder.floatConstant(std::acos(-1.0));
+  hs.setClassical(theta, builder.getF64FloatAttr(std::acos(-1.0)));
   ASSERT_TRUE(hs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix()).succeeded());
-  ASSERT_TRUE(hs.addGlobalPhase(std::acos(-1.0), {q[0]}).succeeded());
+  ASSERT_TRUE(hs.addGlobalPhase(theta, {q[0]}).succeeded());
   EXPECT_LT(std::abs(hs.getGlobalPhase() - Complex{1.0, 0.0}), 1e-9);
 }
 
 TEST_F(HybridStateTest, globalPhaseSkippedByClassicalControl) {
   auto hs = make({q[0]});
+  const Value theta = builder.floatConstant(std::acos(-1.0));
+  hs.setClassical(theta, builder.getF64FloatAttr(std::acos(-1.0)));
   hs.setClassical(cA, builder.getBoolAttr(false));
-  ASSERT_TRUE(hs.addGlobalPhase(std::acos(-1.0), {}, {}, {cA}).succeeded());
+  ASSERT_TRUE(hs.addGlobalPhase(theta, {}, {}, {cA}).succeeded());
   EXPECT_LT(std::abs(hs.getGlobalPhase() - Complex{1.0, 0.0}), 1e-9);
+}
+
+TEST_F(HybridStateTest, globalPhaseFailsWhenThetaUnresolved) {
+  auto hs = make({q[0]});
+  const Value theta = builder.floatConstant(std::acos(-1.0)); // never seeded
+  EXPECT_TRUE(hs.addGlobalPhase(theta).failed());
+}
+
+TEST_F(HybridStateTest, propagateClassicalFoldsConstants) {
+  auto hs = make({});
+  const Value lhs = builder.intConstant(3);
+  const Value rhs = builder.intConstant(4);
+  hs.setClassical(lhs, builder.getIntegerAttr(lhs.getType(), 3));
+  hs.setClassical(rhs, builder.getIntegerAttr(rhs.getType(), 4));
+  auto add = arith::AddIOp::create(builder, builder.getLoc(), lhs, rhs);
+  hs.propagateClassical(add.getOperation());
+  const auto folded = hs.getClassical(add.getResult());
+  ASSERT_TRUE(folded.has_value());
+  EXPECT_EQ(dyn_cast<IntegerAttr>(*folded).getInt(), 7);
 }
 
 //===----------------------------------------------------------------------===//
