@@ -92,9 +92,10 @@ struct RegistryEntry {
   std::string_view id;
   InstanceFunction generate;
 };
+using Registry = std::array<RegistryEntry, 5>;
 } // namespace
 
-static const std::array<RegistryEntry, 5> REGISTRY{{
+static const Registry REGISTRY{{
     {"bv",
      [](const std::string_view instance, const std::string_view source) {
        return generateInstance("bv", bvFromInstanceJSON(instance, source));
@@ -121,7 +122,8 @@ static const std::array<RegistryEntry, 5> REGISTRY{{
 std::optional<GeneratedBenchmark> generate(const std::string_view instanceJSON,
                                            const std::string_view source) {
   const auto id = benchmarkIdFromInstanceJSON(instanceJSON, source);
-  const auto* const found = std::ranges::find(REGISTRY, id, &RegistryEntry::id);
+  const Registry::const_iterator found =
+      std::ranges::find(REGISTRY, id, &RegistryEntry::id);
   if (found == REGISTRY.end()) {
     return std::nullopt;
   }

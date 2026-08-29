@@ -65,6 +65,7 @@ struct RegistryEntry {
   SchemaFunction schema;
   EvaluationFunction evaluate;
 };
+using Registry = std::array<RegistryEntry, 5>;
 
 [[nodiscard]] std::string evaluateBV(std::string_view manifest,
                                      std::string_view source,
@@ -82,7 +83,7 @@ struct RegistryEntry {
                                       std::string_view source,
                                       const Counts& counts);
 
-constexpr std::array<RegistryEntry, 5> REGISTRY{{
+constexpr Registry REGISTRY{{
     {.id = "bv",
      .definitionVersion = BV_DEFINITION_VERSION,
      .schema = bvSchema,
@@ -107,7 +108,7 @@ constexpr std::array<RegistryEntry, 5> REGISTRY{{
 
 [[nodiscard]] const RegistryEntry*
 findBenchmark(const std::string_view benchmark) {
-  const auto* const found =
+  const Registry::const_iterator found =
       std::ranges::find(REGISTRY, benchmark, &RegistryEntry::id);
   return found == REGISTRY.end() ? nullptr : &*found;
 }
