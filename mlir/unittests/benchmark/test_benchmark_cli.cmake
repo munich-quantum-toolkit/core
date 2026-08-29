@@ -55,8 +55,8 @@ if(NOT schema STREQUAL "https://json-schema.org/draft/2020-12/schema")
   message(FATAL_ERROR "describe did not return a JSON Schema")
 endif()
 
-set(request "${OUTPUT_DIR}/request.json")
-file(WRITE "${request}"
+set(instance "${OUTPUT_DIR}/instance.json")
+file(WRITE "${instance}"
      "{\"schema_version\":1,\"benchmark\":\"ghz\",\"parameters\":{\"qubits\":2}}\n")
 set(qc_directory "${OUTPUT_DIR}/qc")
 run_success(
@@ -64,8 +64,8 @@ run_success(
   generate_output
   "${CLI}"
   generate
-  --request
-  "${request}"
+  --instance
+  "${instance}"
   --format
   qc
   --output
@@ -96,8 +96,8 @@ run_failure(
   "generation beside an existing manifest"
   "${CLI}"
   generate
-  --request
-  "${request}"
+  --instance
+  "${instance}"
   --format
   qc
   --output
@@ -112,8 +112,8 @@ run_failure(
   "generation beside existing outputs"
   "${CLI}"
   generate
-  --request
-  "${request}"
+  --instance
+  "${instance}"
   --format
   qc
   --output
@@ -135,8 +135,8 @@ run_success(
   percent_output
   "${CLI}"
   generate
-  --request
-  "${request}"
+  --instance
+  "${instance}"
   --format
   qc
   --output
@@ -168,8 +168,8 @@ if(NOT evaluated_case_id STREQUAL case_id OR NOT total_variation_distance EQUAL 
 endif()
 
 execute_process(
-  COMMAND "${CLI}" generate --request - --format jeff --output "${qc_directory}"
-  INPUT_FILE "${request}"
+  COMMAND "${CLI}" generate --instance - --format jeff --output "${qc_directory}"
+  INPUT_FILE "${instance}"
   RESULT_VARIABLE jeff_result
   OUTPUT_VARIABLE jeff_output
   ERROR_VARIABLE jeff_error)
@@ -199,8 +199,8 @@ run_failure(
   "invalid output format"
   "${CLI}"
   generate
-  --request
-  "${request}"
+  --instance
+  "${instance}"
   --format
   invalid
   --output
@@ -209,21 +209,21 @@ if(EXISTS "${invalid_format_directory}")
   message(FATAL_ERROR "an invalid output format created its output directory")
 endif()
 
-set(invalid_request "${OUTPUT_DIR}/invalid.json")
+set(invalid_instance "${OUTPUT_DIR}/invalid.json")
 set(invalid_directory "${OUTPUT_DIR}/invalid")
-file(WRITE "${invalid_request}"
+file(WRITE "${invalid_instance}"
      "{\"schema_version\":1,\"benchmark\":\"unknown\",\"parameters\":{}}\n")
 run_failure(
-  "invalid request"
+  "invalid instance"
   "${CLI}"
   generate
-  --request
-  "${invalid_request}"
+  --instance
+  "${invalid_instance}"
   --format
   qc
   --output
   "${invalid_directory}")
 file(GLOB invalid_outputs "${invalid_directory}/*")
 if(invalid_outputs)
-  message(FATAL_ERROR "an invalid request left a final output")
+  message(FATAL_ERROR "an invalid instance left a final output")
 endif()

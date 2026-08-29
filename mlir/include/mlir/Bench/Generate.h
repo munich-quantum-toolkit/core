@@ -46,8 +46,8 @@ struct GeneratedBenchmark {
 /// Generate the QC program for a configured QPE benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const QPE& benchmark);
 
-/// Parse and generate one configured benchmark request.
+/// Parse and generate one configured benchmark instance.
 [[nodiscard]] std::optional<GeneratedBenchmark>
-generate(std::string_view requestJSON, std::string_view source = "<request>");
+generate(std::string_view instanceJSON, std::string_view source = "<instance>");
 
 } // namespace mqt::bench

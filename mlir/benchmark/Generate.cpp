@@ -77,7 +77,7 @@ std::optional<QCProgram> generate(const QPE& benchmark) {
 
 template <class Benchmark>
 [[nodiscard]] static std::optional<GeneratedBenchmark>
-generateRequest(const std::string_view id, const Benchmark& benchmark) {
+generateInstance(const std::string_view id, const Benchmark& benchmark) {
   auto program = generate(benchmark);
   if (!program) {
     return std::nullopt;
@@ -86,47 +86,48 @@ generateRequest(const std::string_view id, const Benchmark& benchmark) {
                             toManifestJSON(benchmark), std::move(*program)};
 }
 
-using RequestFunction = std::optional<GeneratedBenchmark> (*)(std::string_view,
-                                                              std::string_view);
+using InstanceFunction =
+    std::optional<GeneratedBenchmark> (*)(std::string_view, std::string_view);
 
 namespace {
 struct RegistryEntry {
   std::string_view id;
-  RequestFunction generate;
+  InstanceFunction generate;
 };
 } // namespace
 
 static const std::array<RegistryEntry, 5> REGISTRY{{
     {"bv",
-     [](const std::string_view request, const std::string_view source) {
-       return generateRequest("bv", bvFromRequestJSON(request, source));
+     [](const std::string_view instance, const std::string_view source) {
+       return generateInstance("bv", bvFromInstanceJSON(instance, source));
      }},
     {"ghz",
-     [](const std::string_view request, const std::string_view source) {
-       return generateRequest("ghz", ghzFromRequestJSON(request, source));
+     [](const std::string_view instance, const std::string_view source) {
+       return generateInstance("ghz", ghzFromInstanceJSON(instance, source));
      }},
     {"grover",
-     [](const std::string_view request, const std::string_view source) {
-       return generateRequest("grover", groverFromRequestJSON(request, source));
+     [](const std::string_view instance, const std::string_view source) {
+       return generateInstance("grover",
+                               groverFromInstanceJSON(instance, source));
      }},
     {"qft",
-     [](const std::string_view request, const std::string_view source) {
-       return generateRequest("qft", qftFromRequestJSON(request, source));
+     [](const std::string_view instance, const std::string_view source) {
+       return generateInstance("qft", qftFromInstanceJSON(instance, source));
      }},
     {"qpe",
-     [](const std::string_view request, const std::string_view source) {
-       return generateRequest("qpe", qpeFromRequestJSON(request, source));
+     [](const std::string_view instance, const std::string_view source) {
+       return generateInstance("qpe", qpeFromInstanceJSON(instance, source));
      }},
 }};
 
-std::optional<GeneratedBenchmark> generate(const std::string_view requestJSON,
+std::optional<GeneratedBenchmark> generate(const std::string_view instanceJSON,
                                            const std::string_view source) {
-  const auto id = benchmarkIdFromRequestJSON(requestJSON, source);
+  const auto id = benchmarkIdFromInstanceJSON(instanceJSON, source);
   const auto found = std::ranges::find(REGISTRY, id, &RegistryEntry::id);
   if (found == REGISTRY.end()) {
     return std::nullopt;
   }
-  return found->generate(requestJSON, source);
+  return found->generate(instanceJSON, source);
 }
 
 } // namespace mqt::bench

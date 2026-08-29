@@ -217,6 +217,20 @@ linear semantics
 ```{glossary}
 :sorted:
 
+benchmark instance
+  **Preferred term:** benchmark instance. **Accepted alias:** instance when the
+  benchmark context is clear. One validated member of a benchmark family with
+  every default resolved. Its canonical JSON records the family and resolved
+  parameters. It does not request program generation or execution.
+
+benchmark manifest
+manifest
+  **Preferred term:** benchmark manifest. **Accepted alias:** manifest when the
+  benchmark context is clear. A canonical sidecar record generated for a
+  benchmark instance. It records the resolved parameters, case ID, logical
+  outputs, reference model, and benchmark-definition version. It accompanies
+  the generated program but does not identify its file, format, or bytes.
+
 iterative quantum phase estimation
 iterative QPE
 iQPE

@@ -38,7 +38,7 @@ static llvm::cl::OptionCategory benchmarkOptions("Benchmark options");
 static llvm::cl::SubCommand listCommand("list",
                                         "List the available benchmarks");
 static llvm::cl::SubCommand
-    describeCommand("describe", "Describe one benchmark request schema");
+    describeCommand("describe", "Describe one benchmark instance schema");
 static llvm::cl::SubCommand
     generateCommand("generate", "Generate one configured benchmark");
 static llvm::cl::SubCommand
@@ -50,8 +50,8 @@ static llvm::cl::opt<std::string> benchmarkId(llvm::cl::Positional,
                                               llvm::cl::cat(benchmarkOptions),
                                               llvm::cl::sub(describeCommand));
 
-static llvm::cl::opt<std::string> requestPath(
-    "request", llvm::cl::desc("Request JSON file, or '-' for standard input"),
+static llvm::cl::opt<std::string> instancePath(
+    "instance", llvm::cl::desc("Instance JSON file, or '-' for standard input"),
     llvm::cl::value_desc("file|-"), llvm::cl::Required,
     llvm::cl::cat(benchmarkOptions), llvm::cl::sub(generateCommand));
 static llvm::cl::opt<std::string> outputFormat(
@@ -272,9 +272,9 @@ programExtension(const std::string_view format) {
   return 0;
 }
 
-[[nodiscard]] static int generateRequest(const std::string& request,
-                                         const std::string& source) {
-  auto generated = mqt::bench::generate(request, source);
+[[nodiscard]] static int generateInstance(const std::string& instance,
+                                          const std::string& source) {
+  auto generated = mqt::bench::generate(instance, source);
   if (!generated) {
     return 1;
   }
@@ -297,10 +297,10 @@ int main(int argc, char** argv) {
       return 0;
     }
     if (generateCommand) {
-      const auto request = readText(requestPath);
+      const auto instance = readText(instancePath);
       const auto source =
-          requestPath == "-" ? "<stdin>" : requestPath.getValue();
-      return generateRequest(request, source);
+          instancePath == "-" ? "<stdin>" : instancePath.getValue();
+      return generateInstance(instance, source);
     }
     if (evaluateCommand) {
       if (manifestInputPath == "-") {

@@ -13,7 +13,7 @@ MQT Core needs structured quantum workloads whose inputs, expected outputs, and
 generated programs describe the same exact instance. After this work, C++,
 Python, and `mqt-core-bench` users can configure GHZ, Grover, QPE,
 Bernstein--Vazirani (BV), and QFT with family-specific parameters. Each instance
-has an analytic reference, canonical JSON request, self-checking manifest,
+has an analytic reference, canonical JSON instance, self-checking manifest,
 stable case ID, and structured QC or `jeff` program.
 
 The foundation is also the extension path for Daniel Haag's remaining structured
@@ -56,7 +56,7 @@ simulator support from the pull-request stack that starts at
   for all four cases. The draft pull request #44 is not needed.
 - Observation: Loading MLIR objects from two Python extensions creates
   incompatible process-local MLIR type IDs. Evidence: the semantic extension
-  passes canonical request JSON to the existing `mqt.core.mlir` extension, so
+  passes canonical instance JSON to the existing `mqt.core.mlir` extension, so
   one extension owns every returned `QCProgram`.
 - Observation: Exact QPE powers stay finite above 1,024 bits when rational turns
   are reduced before conversion to `double`. Evidence: the precision-1,025
@@ -136,7 +136,7 @@ evaluation callback.
 Structured emitters live in `mlir/benchmark/programs/`. `Fourier.cpp` owns QPE,
 iterative QPE, standard QFT, and semiclassical QFT so their phase-loop rules and
 bit order stay together. `mlir/benchmark/Generate.cpp` contains the private MLIR
-request registry and the typed `generate(...)` overloads declared in
+instance registry and the typed `generate(...)` overloads declared in
 `mlir/include/mlir/Bench/Generate.h`.
 
 `mlir/benchmark/MQTCoreBench.cpp` implements the `list`, `describe`, `generate`,
@@ -144,7 +144,7 @@ and `evaluate` commands. Generation stages both outputs, atomically publishes
 without replacing existing paths, and publishes the manifest last.
 
 Python types live in `bindings/bench/register_bench.cpp`. Their `generate()`
-methods pass canonical request JSON to `_generate_benchmark` in
+methods pass canonical instance JSON to `_generate_benchmark` in
 `bindings/mlir/register_mlir.cpp`. This boundary keeps MLIR objects in the one
 extension that defines them. Generated declarations live in
 `python/mqt/core/bench.pyi`.
@@ -168,7 +168,7 @@ Keep loop bodies structured. Do not add allocation/reset canonicalization or a
 new helper collection.
 
 Make the notebook discover the catalog through the CLI and execute typed
-configuration, request and manifest inspection, reference evaluation, IR
+configuration, instance and manifest inspection, reference evaluation, IR
 generation, and a temporary-directory CLI round trip. Document the five explicit
 extension points for later families.
 
@@ -220,7 +220,7 @@ static or dynamic resources. Large QPE and QFT programs must stay compact and
 finite. Every method must produce valid QC and `jeff` with the existing
 dependency pin.
 
-The CLI must reject malformed requests, unknown IDs, invalid formats, and any
+The CLI must reject malformed instances, unknown IDs, invalid formats, and any
 output collision without changing an existing file. The executed notebook must
 discover all five IDs and complete its CLI round trip. Python must import only
 `mqt.core.bench` and generated programs must support `.ir` and `.to_qco()`.
@@ -252,7 +252,7 @@ The source build exposes `MQT::CoreBenchGenerate` and these typed overloads:
     std::optional<mlir::QCProgram> generate(const QFT&);
     std::optional<mlir::QCProgram> generate(const QPE&);
 
-It also has one generic request overload for the CLI and Python bridge. No
+It also has one generic instance overload for the CLI and Python bridge. No
 public base class, plugin interface, all-family variant, generic option map,
 size-only callback, compatibility alias, or new dependency is part of this
 foundation.

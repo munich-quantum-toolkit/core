@@ -28,11 +28,11 @@
 
 namespace {
 
+using mqt::bench::benchmarkIdFromInstanceJSON;
 using mqt::bench::benchmarkIdFromManifestJSON;
-using mqt::bench::benchmarkIdFromRequestJSON;
 using mqt::bench::BV;
+using mqt::bench::bvFromInstanceJSON;
 using mqt::bench::bvFromManifestJSON;
-using mqt::bench::bvFromRequestJSON;
 using mqt::bench::BVMethod;
 using mqt::bench::caseId;
 using mqt::bench::countsFromJSON;
@@ -42,24 +42,24 @@ using mqt::bench::Evaluation;
 using mqt::bench::evaluationToJSON;
 using mqt::bench::GHZ;
 using mqt::bench::GHZBasis;
+using mqt::bench::ghzFromInstanceJSON;
 using mqt::bench::ghzFromManifestJSON;
-using mqt::bench::ghzFromRequestJSON;
 using mqt::bench::GHZTopology;
 using mqt::bench::Grover;
+using mqt::bench::groverFromInstanceJSON;
 using mqt::bench::groverFromManifestJSON;
-using mqt::bench::groverFromRequestJSON;
 using mqt::bench::listBenchmarksJSON;
 using mqt::bench::Phase;
 using mqt::bench::QFT;
+using mqt::bench::qftFromInstanceJSON;
 using mqt::bench::qftFromManifestJSON;
-using mqt::bench::qftFromRequestJSON;
 using mqt::bench::QFTMethod;
 using mqt::bench::QPE;
+using mqt::bench::qpeFromInstanceJSON;
 using mqt::bench::qpeFromManifestJSON;
-using mqt::bench::qpeFromRequestJSON;
 using mqt::bench::QPEMethod;
+using mqt::bench::toInstanceJSON;
 using mqt::bench::toManifestJSON;
-using mqt::bench::toRequestJSON;
 
 void expectInvalid(const std::function<void()>& operation,
                    const std::string_view diagnostic) {
@@ -72,43 +72,43 @@ void expectInvalid(const std::function<void()>& operation,
   }
 }
 
-TEST(BenchmarkJSON, ParsesRequestsAndSerializesResolvedParameters) {
-  const auto bv = bvFromRequestJSON(
+TEST(BenchmarkJSON, ParsesInstancesAndSerializesResolvedParameters) {
+  const auto bv = bvFromInstanceJSON(
       R"({"schema_version":1,"benchmark":"bv","parameters":{"hidden_bitstring":"101"}})");
   EXPECT_EQ(bv.options().method, BVMethod::Static);
   EXPECT_EQ(
-      toRequestJSON(bv),
+      toInstanceJSON(bv),
       R"({"benchmark":"bv","parameters":{"hidden_bitstring":"101","method":"static"},"schema_version":1})");
 
-  const auto ghz = ghzFromRequestJSON(
+  const auto ghz = ghzFromInstanceJSON(
       R"({"parameters":{"qubits":3},"benchmark":"ghz","schema_version":1})");
   EXPECT_EQ(ghz.options().topology, GHZTopology::Linear);
   EXPECT_EQ(ghz.options().basis, GHZBasis::Z);
   EXPECT_EQ(
-      toRequestJSON(ghz),
+      toInstanceJSON(ghz),
       R"({"benchmark":"ghz","parameters":{"basis":"z","qubits":3,"topology":"linear"},"schema_version":1})");
 
-  const auto grover = groverFromRequestJSON(
+  const auto grover = groverFromInstanceJSON(
       R"({"schema_version":1,"benchmark":"grover","parameters":{"marked_bitstring":"10"}})");
   ASSERT_TRUE(grover.options().iterations);
   EXPECT_EQ(*grover.options().iterations, 1);
   EXPECT_EQ(
-      toRequestJSON(grover),
+      toInstanceJSON(grover),
       R"({"benchmark":"grover","parameters":{"iterations":1,"marked_bitstring":"10"},"schema_version":1})");
 
-  const auto qft = qftFromRequestJSON(
+  const auto qft = qftFromInstanceJSON(
       R"({"schema_version":1,"benchmark":"qft","parameters":{"qubits":4,"period_exponent":2}})");
   EXPECT_EQ(qft.options().method, QFTMethod::Standard);
   EXPECT_EQ(
-      toRequestJSON(qft),
+      toInstanceJSON(qft),
       R"({"benchmark":"qft","parameters":{"method":"standard","period_exponent":2,"qubits":4},"schema_version":1})");
 
-  const auto qpe = qpeFromRequestJSON(
+  const auto qpe = qpeFromInstanceJSON(
       R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":4,"phase":{"numerator":10,"denominator":8},"method":"iterative"}})");
   EXPECT_EQ(qpe.options().phase, Phase(1, 4));
   EXPECT_EQ(qpe.options().method, QPEMethod::Iterative);
   EXPECT_EQ(
-      toRequestJSON(qpe),
+      toInstanceJSON(qpe),
       R"({"benchmark":"qpe","parameters":{"method":"iterative","phase":{"denominator":4,"numerator":1},"precision":4},"schema_version":1})");
 }
 
@@ -161,80 +161,80 @@ TEST(BenchmarkJSON, UsesStableSemanticCaseIds) {
                             "92861a52c5cb7c9c13aeaffffa059a65");
 }
 
-TEST(BenchmarkJSON, RejectsDuplicateUnknownAndMistypedRequestValues) {
+TEST(BenchmarkJSON, RejectsDuplicateUnknownAndMistypedInstanceValues) {
   expectInvalid(
       [] {
-        static_cast<void>(benchmarkIdFromRequestJSON(
+        static_cast<void>(benchmarkIdFromInstanceJSON(
             R"({"schema_version":1,"benchmark":"ghz","benchmark":"qpe","parameters":{"qubits":2}})",
             "duplicate.json"));
       },
       "duplicate key 'benchmark'");
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromRequestJSON(
+        static_cast<void>(ghzFromInstanceJSON(
             R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"qubits":3}})"));
       },
       "duplicate key 'qubits'");
   expectInvalid(
       [] {
-        static_cast<void>(qpeFromRequestJSON(
+        static_cast<void>(qpeFromInstanceJSON(
             R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":4,"numerator":2}}})"));
       },
       "duplicate key 'numerator'");
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromRequestJSON(
+        static_cast<void>(ghzFromInstanceJSON(
             R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2},"extra":true})"));
       },
       "unknown key 'extra'");
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromRequestJSON(
+        static_cast<void>(ghzFromInstanceJSON(
             R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"extra":true}})"));
       },
       "unknown key 'extra'");
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromRequestJSON(
+        static_cast<void>(ghzFromInstanceJSON(
             R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2.5}})"));
       },
       "encoded as an integer");
   expectInvalid(
       [] {
-        static_cast<void>(qpeFromRequestJSON(
+        static_cast<void>(qpeFromInstanceJSON(
             R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":9007199254740993.0,"denominator":9007199254740994}}})"));
       },
       "encoded as an integer");
   expectInvalid(
       [] {
-        static_cast<void>(qpeFromRequestJSON(
+        static_cast<void>(qpeFromInstanceJSON(
             R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":18446744073709551615,"phase":{"numerator":1,"denominator":4}}})"));
       },
       "between 1 and 1000000");
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromRequestJSON(
+        static_cast<void>(ghzFromInstanceJSON(
             R"({"schema_version":1,"benchmark":"ghz","parameters":{"basis":"x","qubits":1076}})"));
       },
       "between 1 and 1075");
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromRequestJSON(
+        static_cast<void>(ghzFromInstanceJSON(
             R"({"schema_version":1,"benchmark":"new","parameters":{}})"));
       },
       "unsupported benchmark 'new'");
   expectInvalid(
       [] {
-        static_cast<void>(qpeFromRequestJSON(
+        static_cast<void>(qpeFromInstanceJSON(
             R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":0}}})"));
       },
       "denominator must not be zero");
 }
 
-TEST(BenchmarkJSON, RejectsARequestForAnotherConcreteType) {
+TEST(BenchmarkJSON, RejectsAnInstanceForAnotherConcreteType) {
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromRequestJSON(
+        static_cast<void>(ghzFromInstanceJSON(
             R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":4}}})"));
       },
       "must be 'ghz'");

@@ -63,7 +63,7 @@ namespace {
 
 template <class T> [[nodiscard]] nb::object generate(const T& value) {
   return nb::module_::import_("mqt.core.mlir")
-      .attr("_generate_benchmark")(bench::toRequestJSON(value));
+      .attr("_generate_benchmark")(bench::toInstanceJSON(value));
 }
 
 } // namespace
@@ -121,9 +121,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
            nb::sig("def generate(self) -> mqt.core.mlir.QCProgram"),
            "Generate the benchmark as a QC program.")
       .def_prop_ro(
-          "request_json",
-          [](const bench::BV& value) { return bench::toRequestJSON(value); },
-          "The canonical request JSON.")
+          "instance_json",
+          [](const bench::BV& value) { return bench::toInstanceJSON(value); },
+          "The canonical instance JSON.")
       .def_prop_ro(
           "manifest_json",
           [](const bench::BV& value) { return bench::toManifestJSON(value); },
@@ -132,9 +132,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
           "case_id",
           [](const bench::BV& value) { return bench::caseId(value); },
           "The stable semantic case ID.")
-      .def_static("from_request_json", &bench::bvFromRequestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<request>",
-                  "Parse a strict benchmark request.")
+      .def_static("from_instance_json", &bench::bvFromInstanceJSON, "json"_a,
+                  nb::kw_only(), "source"_a = "<instance>",
+                  "Parse a strict benchmark instance.")
       .def_static("from_manifest_json", &bench::bvFromManifestJSON, "json"_a,
                   nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
@@ -174,9 +174,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
            nb::sig("def generate(self) -> mqt.core.mlir.QCProgram"),
            "Generate the benchmark as a QC program.")
       .def_prop_ro(
-          "request_json",
-          [](const bench::GHZ& value) { return bench::toRequestJSON(value); },
-          "The canonical request JSON.")
+          "instance_json",
+          [](const bench::GHZ& value) { return bench::toInstanceJSON(value); },
+          "The canonical instance JSON.")
       .def_prop_ro(
           "manifest_json",
           [](const bench::GHZ& value) { return bench::toManifestJSON(value); },
@@ -185,9 +185,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
           "case_id",
           [](const bench::GHZ& value) { return bench::caseId(value); },
           "The stable semantic case ID.")
-      .def_static("from_request_json", &bench::ghzFromRequestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<request>",
-                  "Parse a strict benchmark request.")
+      .def_static("from_instance_json", &bench::ghzFromInstanceJSON, "json"_a,
+                  nb::kw_only(), "source"_a = "<instance>",
+                  "Parse a strict benchmark instance.")
       .def_static("from_manifest_json", &bench::ghzFromManifestJSON, "json"_a,
                   nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
@@ -220,11 +220,11 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
            nb::sig("def generate(self) -> mqt.core.mlir.QCProgram"),
            "Generate the benchmark as a QC program.")
       .def_prop_ro(
-          "request_json",
+          "instance_json",
           [](const bench::Grover& value) {
-            return bench::toRequestJSON(value);
+            return bench::toInstanceJSON(value);
           },
-          "The canonical request JSON.")
+          "The canonical instance JSON.")
       .def_prop_ro(
           "manifest_json",
           [](const bench::Grover& value) {
@@ -235,9 +235,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
           "case_id",
           [](const bench::Grover& value) { return bench::caseId(value); },
           "The stable semantic case ID.")
-      .def_static("from_request_json", &bench::groverFromRequestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<request>",
-                  "Parse a strict benchmark request.")
+      .def_static("from_instance_json", &bench::groverFromInstanceJSON,
+                  "json"_a, nb::kw_only(), "source"_a = "<instance>",
+                  "Parse a strict benchmark instance.")
       .def_static("from_manifest_json", &bench::groverFromManifestJSON,
                   "json"_a, nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
@@ -275,9 +275,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
            nb::sig("def generate(self) -> mqt.core.mlir.QCProgram"),
            "Generate the benchmark as a QC program.")
       .def_prop_ro(
-          "request_json",
-          [](const bench::QFT& value) { return bench::toRequestJSON(value); },
-          "The canonical request JSON.")
+          "instance_json",
+          [](const bench::QFT& value) { return bench::toInstanceJSON(value); },
+          "The canonical instance JSON.")
       .def_prop_ro(
           "manifest_json",
           [](const bench::QFT& value) { return bench::toManifestJSON(value); },
@@ -286,9 +286,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
           "case_id",
           [](const bench::QFT& value) { return bench::caseId(value); },
           "The stable semantic case ID.")
-      .def_static("from_request_json", &bench::qftFromRequestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<request>",
-                  "Parse a strict benchmark request.")
+      .def_static("from_instance_json", &bench::qftFromInstanceJSON, "json"_a,
+                  nb::kw_only(), "source"_a = "<instance>",
+                  "Parse a strict benchmark instance.")
       .def_static("from_manifest_json", &bench::qftFromManifestJSON, "json"_a,
                   nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");
@@ -352,9 +352,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
            nb::sig("def generate(self) -> mqt.core.mlir.QCProgram"),
            "Generate the benchmark as a QC program.")
       .def_prop_ro(
-          "request_json",
-          [](const bench::QPE& value) { return bench::toRequestJSON(value); },
-          "The canonical request JSON.")
+          "instance_json",
+          [](const bench::QPE& value) { return bench::toInstanceJSON(value); },
+          "The canonical instance JSON.")
       .def_prop_ro(
           "manifest_json",
           [](const bench::QPE& value) { return bench::toManifestJSON(value); },
@@ -363,9 +363,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
           "case_id",
           [](const bench::QPE& value) { return bench::caseId(value); },
           "The stable semantic case ID.")
-      .def_static("from_request_json", &bench::qpeFromRequestJSON, "json"_a,
-                  nb::kw_only(), "source"_a = "<request>",
-                  "Parse a strict benchmark request.")
+      .def_static("from_instance_json", &bench::qpeFromInstanceJSON, "json"_a,
+                  nb::kw_only(), "source"_a = "<instance>",
+                  "Parse a strict benchmark instance.")
       .def_static("from_manifest_json", &bench::qpeFromManifestJSON, "json"_a,
                   nb::kw_only(), "source"_a = "<manifest>",
                   "Parse a strict benchmark manifest.");

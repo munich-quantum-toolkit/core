@@ -51,7 +51,7 @@ Python also accepts {py:class}`fractions.Fraction` for QPE phases. It reduces
 the phase modulo one turn before it enters the C++ API. The reduced denominator
 must fit in an unsigned 64-bit integer.
 
-## Inspect the canonical request and manifest
+## Inspect the canonical instance and manifest
 
 Canonical JSON records every resolved default. A manifest also binds the logical
 output, reference descriptor, family-definition version, and case ID.
@@ -60,9 +60,9 @@ output, reference descriptor, family-definition version, and case ID.
 import json
 
 
-request = json.loads(benchmark.request_json)
+instance = json.loads(benchmark.instance_json)
 manifest = json.loads(benchmark.manifest_json)
-request, {
+instance, {
     "case_id": manifest["case_id"],
     "outputs": manifest["outputs"],
     "reference": manifest["reference"],
@@ -115,10 +115,10 @@ from pathlib import Path
 
 temporary = tempfile.TemporaryDirectory()
 root = Path(temporary.name)
-request_path = root / "request.json"
+instance_path = root / "instance.json"
 counts_path = root / "counts.json"
 output_directory = root / "generated"
-request_path.write_text(benchmark.request_json, encoding="utf-8")
+instance_path.write_text(benchmark.instance_json, encoding="utf-8")
 counts_path.write_text(
     json.dumps({"schema_version": 1, "counts": {"000": 5, "100": 5}}),
     encoding="utf-8",
@@ -126,7 +126,7 @@ counts_path.write_text(
 ```
 
 ```{code-cell} ipython3
-!mqt-core-bench generate --request {request_path} --format qc --output {output_directory}
+!mqt-core-bench generate --instance {instance_path} --format qc --output {output_directory}
 ```
 
 ```{code-cell} ipython3
@@ -149,7 +149,7 @@ The output format changes the file name, but not the semantic case ID.
 ## C++ API
 
 The installed `MQT::CoreBench` target provides typed parameters, references,
-evaluation, requests, and manifests.
+evaluation, instances, and manifests.
 
 ```cpp
 #include "bench/Grover.hpp"
@@ -181,7 +181,7 @@ Adding a family requires five explicit extension points:
    `include/mqt-core/bench/` and `src/bench/`.
 2. Add its schema and evaluation callback to the private semantic registry in
    `src/bench/JSON.cpp`.
-3. Add one structured emitter and one request callback to the private MLIR
+3. Add one structured emitter and one instance callback to the private MLIR
    registry in `mlir/benchmark/Generate.cpp`.
 4. Add the explicit Python types in `bindings/bench/register_bench.cpp`.
 5. Test the reference, strict JSON, emitter structure, `jeff` conversion, and
@@ -191,7 +191,7 @@ Do not add a second catalog, a generic option map, or a public base class.
 
 ## Reproducibility contract
 
-Requests reject unknown fields and invalid values. The case ID does not depend
+Instances reject unknown fields and invalid values. The case ID does not depend
 on a path or output format. Parsing a manifest checks its resolved parameters,
 logical output, reference, definition version, and case ID. Before evaluation,
 normalize backend results to the manifest's big-endian `result` order.

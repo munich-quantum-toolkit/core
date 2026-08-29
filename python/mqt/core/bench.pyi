@@ -81,8 +81,8 @@ class BV:
         """Generate the benchmark as a QC program."""
 
     @property
-    def request_json(self) -> str:
-        """The canonical request JSON."""
+    def instance_json(self) -> str:
+        """The canonical instance JSON."""
 
     @property
     def manifest_json(self) -> str:
@@ -93,8 +93,8 @@ class BV:
         """The stable semantic case ID."""
 
     @staticmethod
-    def from_request_json(json: str, *, source: str = "<request>") -> BV:
-        """Parse a strict benchmark request."""
+    def from_instance_json(json: str, *, source: str = "<instance>") -> BV:
+        """Parse a strict benchmark instance."""
 
     @staticmethod
     def from_manifest_json(json: str, *, source: str = "<manifest>") -> BV:
@@ -154,8 +154,8 @@ class GHZ:
         """Generate the benchmark as a QC program."""
 
     @property
-    def request_json(self) -> str:
-        """The canonical request JSON."""
+    def instance_json(self) -> str:
+        """The canonical instance JSON."""
 
     @property
     def manifest_json(self) -> str:
@@ -166,8 +166,8 @@ class GHZ:
         """The stable semantic case ID."""
 
     @staticmethod
-    def from_request_json(json: str, *, source: str = "<request>") -> GHZ:
-        """Parse a strict benchmark request."""
+    def from_instance_json(json: str, *, source: str = "<instance>") -> GHZ:
+        """Parse a strict benchmark instance."""
 
     @staticmethod
     def from_manifest_json(json: str, *, source: str = "<manifest>") -> GHZ:
@@ -211,8 +211,8 @@ class Grover:
         """Generate the benchmark as a QC program."""
 
     @property
-    def request_json(self) -> str:
-        """The canonical request JSON."""
+    def instance_json(self) -> str:
+        """The canonical instance JSON."""
 
     @property
     def manifest_json(self) -> str:
@@ -223,8 +223,8 @@ class Grover:
         """The stable semantic case ID."""
 
     @staticmethod
-    def from_request_json(json: str, *, source: str = "<request>") -> Grover:
-        """Parse a strict benchmark request."""
+    def from_instance_json(json: str, *, source: str = "<instance>") -> Grover:
+        """Parse a strict benchmark instance."""
 
     @staticmethod
     def from_manifest_json(json: str, *, source: str = "<manifest>") -> Grover:
@@ -275,8 +275,8 @@ class QFT:
         """Generate the benchmark as a QC program."""
 
     @property
-    def request_json(self) -> str:
-        """The canonical request JSON."""
+    def instance_json(self) -> str:
+        """The canonical instance JSON."""
 
     @property
     def manifest_json(self) -> str:
@@ -287,8 +287,8 @@ class QFT:
         """The stable semantic case ID."""
 
     @staticmethod
-    def from_request_json(json: str, *, source: str = "<request>") -> QFT:
-        """Parse a strict benchmark request."""
+    def from_instance_json(json: str, *, source: str = "<instance>") -> QFT:
+        """Parse a strict benchmark instance."""
 
     @staticmethod
     def from_manifest_json(json: str, *, source: str = "<manifest>") -> QFT:
@@ -351,8 +351,8 @@ class QPE:
         """Generate the benchmark as a QC program."""
 
     @property
-    def request_json(self) -> str:
-        """The canonical request JSON."""
+    def instance_json(self) -> str:
+        """The canonical instance JSON."""
 
     @property
     def manifest_json(self) -> str:
@@ -363,8 +363,8 @@ class QPE:
         """The stable semantic case ID."""
 
     @staticmethod
-    def from_request_json(json: str, *, source: str = "<request>") -> QPE:
-        """Parse a strict benchmark request."""
+    def from_instance_json(json: str, *, source: str = "<instance>") -> QPE:
+        """Parse a strict benchmark instance."""
 
     @staticmethod
     def from_manifest_json(json: str, *, source: str = "<manifest>") -> QPE:

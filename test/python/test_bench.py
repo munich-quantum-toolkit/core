@@ -60,11 +60,11 @@ def test_ghz_options_reference_and_json_roundtrip() -> None:
     assert evaluation.squared_hellinger_fidelity == pytest.approx(0.5)
     assert evaluation.success_probability is None
 
-    request_copy = bench.GHZ.from_request_json(benchmark.request_json)
+    instance_copy = bench.GHZ.from_instance_json(benchmark.instance_json)
     manifest_copy = bench.GHZ.from_manifest_json(benchmark.manifest_json)
-    assert request_copy.request_json == benchmark.request_json
+    assert instance_copy.instance_json == benchmark.instance_json
     assert manifest_copy.manifest_json == benchmark.manifest_json
-    assert request_copy.case_id == manifest_copy.case_id == benchmark.case_id
+    assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
     assert_generates(benchmark)
 
 
@@ -80,7 +80,7 @@ def test_grover_resolves_iterations_and_reports_success() -> None:
     assert benchmark.evaluate({"10": 20}).success_probability == pytest.approx(1)
 
     copy = bench.Grover.from_manifest_json(benchmark.manifest_json)
-    assert copy.request_json == benchmark.request_json
+    assert copy.instance_json == benchmark.instance_json
     assert copy.case_id == benchmark.case_id
     assert_generates(benchmark)
 
@@ -91,7 +91,7 @@ def test_qft_methods_share_the_periodic_reference() -> None:
         benchmark = bench.QFT(bench.QFTOptions(qubits=3, period_exponent=1, method=method))
         assert benchmark.probability("000") == pytest.approx(0.5)
         assert benchmark.probability("100") == pytest.approx(0.5)
-        assert bench.QFT.from_request_json(benchmark.request_json).case_id == benchmark.case_id
+        assert bench.QFT.from_instance_json(benchmark.instance_json).case_id == benchmark.case_id
         assert_generates(benchmark)
 
 
@@ -107,15 +107,15 @@ def test_qpe_accepts_fraction_and_native_phase() -> None:
     benchmark = bench.QPE(options)
     assert benchmark.probability("00") == pytest.approx((2 + 2**0.5) / 8)
     assert benchmark.probability("01") == pytest.approx((2 + 2**0.5) / 8)
-    assert json.loads(benchmark.request_json)["parameters"]["phase"] == {
+    assert json.loads(benchmark.instance_json)["parameters"]["phase"] == {
         "denominator": 8,
         "numerator": 1,
     }
 
-    request_copy = bench.QPE.from_request_json(benchmark.request_json)
-    assert request_copy.options.phase == Fraction(1, 8)
-    assert request_copy.options.method is bench.QPEMethod.ITERATIVE
-    assert request_copy.case_id == benchmark.case_id
+    instance_copy = bench.QPE.from_instance_json(benchmark.instance_json)
+    assert instance_copy.options.phase == Fraction(1, 8)
+    assert instance_copy.options.method is bench.QPEMethod.ITERATIVE
+    assert instance_copy.case_id == benchmark.case_id
 
     phase = bench.Phase(numerator=9, denominator=8)
     native_options = bench.QPEOptions(precision=3, phase=phase)

@@ -244,8 +244,8 @@ void requireSchemaVersion(const Json& root, const std::string_view source) {
   return benchmark;
 }
 
-[[nodiscard]] Json requestEnvelope(const std::string_view text,
-                                   const std::string_view source) {
+[[nodiscard]] Json instanceEnvelope(const std::string_view text,
+                                    const std::string_view source) {
   auto root = parseJSON(text, source);
   requireObject(root, source, "$");
   rejectUnknownKeys(root, {"schema_version", "benchmark", "parameters"}, source,
@@ -595,8 +595,8 @@ template <class Benchmark>
   return semantic;
 }
 
-[[nodiscard]] Json requestJSON(const std::string_view id,
-                               const Json& parameters) {
+[[nodiscard]] Json instanceJSON(const std::string_view id,
+                                const Json& parameters) {
   return {{"benchmark", std::string(id)},
           {"parameters", parameters},
           {"schema_version", SCHEMA_VERSION}};
@@ -617,9 +617,9 @@ template <class Benchmark, class ParseParameters>
   return benchmark;
 }
 
-[[nodiscard]] Json baseRequestSchema(const std::string_view id,
-                                     const uint64_t definitionVersionValue,
-                                     Json parameters) {
+[[nodiscard]] Json baseInstanceSchema(const std::string_view id,
+                                      const uint64_t definitionVersionValue,
+                                      Json parameters) {
   return {{"$schema", "https://json-schema.org/draft/2020-12/schema"},
           {"additionalProperties", false},
           {"properties",
@@ -632,7 +632,7 @@ template <class Benchmark, class ParseParameters>
 }
 
 [[nodiscard]] Json bvSchema() {
-  return baseRequestSchema(
+  return baseInstanceSchema(
       "bv", BV_DEFINITION_VERSION,
       {{"additionalProperties", false},
        {"properties",
@@ -665,12 +665,12 @@ template <class Benchmark, class ParseParameters>
         {"then",
          {{"properties",
            {{"qubits", {{"maximum", GHZOptions::MAX_X_BASIS_QUBITS}}}}}}}}});
-  return baseRequestSchema("ghz", GHZ_DEFINITION_VERSION,
-                           std::move(parameters));
+  return baseInstanceSchema("ghz", GHZ_DEFINITION_VERSION,
+                            std::move(parameters));
 }
 
 [[nodiscard]] Json groverSchema() {
-  return baseRequestSchema(
+  return baseInstanceSchema(
       "grover", GROVER_DEFINITION_VERSION,
       {{"additionalProperties", false},
        {"properties",
@@ -688,7 +688,7 @@ template <class Benchmark, class ParseParameters>
 }
 
 [[nodiscard]] Json qftSchema() {
-  return baseRequestSchema(
+  return baseInstanceSchema(
       "qft", QFT_DEFINITION_VERSION,
       {{"additionalProperties", false},
        {"properties",
@@ -707,7 +707,7 @@ template <class Benchmark, class ParseParameters>
 }
 
 [[nodiscard]] Json qpeSchema() {
-  return baseRequestSchema(
+  return baseInstanceSchema(
       "qpe", QPE_DEFINITION_VERSION,
       {{"additionalProperties", false},
        {"properties",
@@ -781,9 +781,9 @@ std::string evaluateQPE(const std::string_view manifest,
 
 } // namespace
 
-std::string benchmarkIdFromRequestJSON(const std::string_view json,
-                                       const std::string_view source) {
-  return requireBenchmarkId(requestEnvelope(json, source), source);
+std::string benchmarkIdFromInstanceJSON(const std::string_view json,
+                                        const std::string_view source) {
+  return requireBenchmarkId(instanceEnvelope(json, source), source);
 }
 
 std::string benchmarkIdFromManifestJSON(const std::string_view json,
@@ -811,59 +811,59 @@ std::string describeBenchmarkJSON(const std::string_view benchmark) {
                               std::string(benchmark) + "'");
 }
 
-BV bvFromRequestJSON(const std::string_view json,
-                     const std::string_view source) {
-  const auto root = requestEnvelope(json, source);
+BV bvFromInstanceJSON(const std::string_view json,
+                      const std::string_view source) {
+  const auto root = instanceEnvelope(json, source);
   requireBenchmark(root, "bv", source);
   return parseBVParameters(root.at("parameters"), source);
 }
 
-GHZ ghzFromRequestJSON(const std::string_view json,
-                       const std::string_view source) {
-  const auto root = requestEnvelope(json, source);
+GHZ ghzFromInstanceJSON(const std::string_view json,
+                        const std::string_view source) {
+  const auto root = instanceEnvelope(json, source);
   requireBenchmark(root, "ghz", source);
   return parseGHZParameters(root.at("parameters"), source);
 }
 
-Grover groverFromRequestJSON(const std::string_view json,
-                             const std::string_view source) {
-  const auto root = requestEnvelope(json, source);
+Grover groverFromInstanceJSON(const std::string_view json,
+                              const std::string_view source) {
+  const auto root = instanceEnvelope(json, source);
   requireBenchmark(root, "grover", source);
   return parseGroverParameters(root.at("parameters"), source);
 }
 
-QFT qftFromRequestJSON(const std::string_view json,
-                       const std::string_view source) {
-  const auto root = requestEnvelope(json, source);
+QFT qftFromInstanceJSON(const std::string_view json,
+                        const std::string_view source) {
+  const auto root = instanceEnvelope(json, source);
   requireBenchmark(root, "qft", source);
   return parseQFTParameters(root.at("parameters"), source);
 }
 
-QPE qpeFromRequestJSON(const std::string_view json,
-                       const std::string_view source) {
-  const auto root = requestEnvelope(json, source);
+QPE qpeFromInstanceJSON(const std::string_view json,
+                        const std::string_view source) {
+  const auto root = instanceEnvelope(json, source);
   requireBenchmark(root, "qpe", source);
   return parseQPEParameters(root.at("parameters"), source);
 }
 
-std::string toRequestJSON(const BV& benchmark) {
-  return requestJSON("bv", parametersJSON(benchmark)).dump();
+std::string toInstanceJSON(const BV& benchmark) {
+  return instanceJSON("bv", parametersJSON(benchmark)).dump();
 }
 
-std::string toRequestJSON(const GHZ& benchmark) {
-  return requestJSON("ghz", parametersJSON(benchmark)).dump();
+std::string toInstanceJSON(const GHZ& benchmark) {
+  return instanceJSON("ghz", parametersJSON(benchmark)).dump();
 }
 
-std::string toRequestJSON(const Grover& benchmark) {
-  return requestJSON("grover", parametersJSON(benchmark)).dump();
+std::string toInstanceJSON(const Grover& benchmark) {
+  return instanceJSON("grover", parametersJSON(benchmark)).dump();
 }
 
-std::string toRequestJSON(const QFT& benchmark) {
-  return requestJSON("qft", parametersJSON(benchmark)).dump();
+std::string toInstanceJSON(const QFT& benchmark) {
+  return instanceJSON("qft", parametersJSON(benchmark)).dump();
 }
 
-std::string toRequestJSON(const QPE& benchmark) {
-  return requestJSON("qpe", parametersJSON(benchmark)).dump();
+std::string toInstanceJSON(const QPE& benchmark) {
+  return instanceJSON("qpe", parametersJSON(benchmark)).dump();
 }
 
 BV bvFromManifestJSON(const std::string_view json,
