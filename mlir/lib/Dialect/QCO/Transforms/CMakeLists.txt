@@ -15,10 +15,15 @@ add_mlir_library(
   PUBLIC
   MQTCompilerTarget
   PRIVATE
+  MLIRAnalysis
+  MLIRControlFlowInterfaces
+  MLIRFunctionInterfaces
   MLIRQCODialect
   MLIRQCOUtils
+  MLIRQTensorDialect
   MLIRQTensorUtils
   MLIRArithDialect
+  MLIRFuncDialect
   MLIRMathDialect
   MLIRMQTDialect
   MLIRMQTTransforms

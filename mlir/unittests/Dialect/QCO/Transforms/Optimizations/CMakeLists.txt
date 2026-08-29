@@ -9,6 +9,7 @@
 set(target_name mqt-core-mlir-unittest-optimizations)
 add_executable(
   ${target_name}
+  ConstantPropagation/test_constantPropagationAnalysis.cpp
   ConstantPropagation/test_hybridState.cpp
   ConstantPropagation/test_quantumState.cpp
   ConstantPropagation/test_unionTable.cpp
@@ -23,12 +24,18 @@ add_executable(
 target_link_libraries(
   ${target_name}
   PRIVATE GTest::gtest_main
+          MLIRAnalysis
           MLIRControlFlowDialect
+          MLIRControlFlowInterfaces
+          MLIRFunctionInterfaces
           MLIRQCODDFunctionality
           MLIRQCOProgramBuilder
           MLIRQCOPrograms
           MLIRQCOTransforms
           MLIRQCOUtils
+          MLIRQTensorDialect
+          MLIRArithDialect
+          MLIRFuncDialect
           MLIRParser
           MLIRIR
           MLIRPass

@@ -398,6 +398,10 @@ bool QuantumState::operator==(const QuantumState& that) const {
 }
 
 void QuantumState::print(raw_ostream& os) const {
+  if (top) {
+    os << "<top>";
+    return;
+  }
   if (qubits.empty()) {
     return;
   }
