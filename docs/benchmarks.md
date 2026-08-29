@@ -44,12 +44,15 @@ benchmark = QFT(
         method=QFTMethod.SEMICLASSICAL,
     )
 )
-benchmark.options.method, benchmark.output.name, benchmark.output.width
+print("Method:", benchmark.options.method)
+print("Output:", benchmark.output.name)
+print("Width:", benchmark.output.width)
 ```
 
-Python also accepts {py:class}`fractions.Fraction` for QPE phases. It reduces
-the phase modulo one turn before it enters the C++ API. The reduced denominator
-must fit in an unsigned 64-bit integer.
+Each benchmark family validates the exact types that its options require. For
+example, QPE accepts {py:class}`fractions.Fraction` phases. QPE reduces each
+phase modulo one turn before it enters the C++ API. The reduced denominator must
+fit in an unsigned 64-bit integer.
 
 ## Inspect the canonical instance and manifest
 
@@ -62,11 +65,19 @@ import json
 
 instance = json.loads(benchmark.instance_json)
 manifest = json.loads(benchmark.manifest_json)
-instance, {
-    "case_id": manifest["case_id"],
-    "outputs": manifest["outputs"],
-    "reference": manifest["reference"],
-}
+print("Instance:")
+print(json.dumps(instance, indent=2))
+print("\nManifest summary:")
+print(
+    json.dumps(
+        {
+            "case_id": manifest["case_id"],
+            "outputs": manifest["outputs"],
+            "reference": manifest["reference"],
+        },
+        indent=2,
+    )
+)
 ```
 
 ## Query and evaluate the reference
@@ -74,33 +85,42 @@ instance, {
 For three output bits and period exponent one, QFT has two equal peaks.
 
 ```{code-cell} ipython3
-{outcome: benchmark.probability(outcome) for outcome in ("000", "100", "010")}
+probabilities = {
+    outcome: benchmark.probability(outcome) for outcome in ("000", "100", "010")
+}
+print(json.dumps(probabilities, indent=2))
 ```
 
 ```{code-cell} ipython3
 evaluation = benchmark.evaluate({"000": 500, "100": 500})
-{
-    "total_variation_distance": evaluation.total_variation_distance,
-    "squared_hellinger_fidelity": evaluation.squared_hellinger_fidelity,
-    "success_probability": evaluation.success_probability,
-}
+print(
+    json.dumps(
+        {
+            "total_variation_distance": evaluation.total_variation_distance,
+            "squared_hellinger_fidelity": evaluation.squared_hellinger_fidelity,
+            "success_probability": evaluation.success_probability,
+        },
+        indent=2,
+    )
+)
 ```
 
 Total variation distance zero and squared Hellinger fidelity one identify an
-exact distribution. Bernstein--Vazirani and Grover also report the observed
-success probability.
+exact distribution. Only Bernstein--Vazirani and Grover report a success
+probability because these families define one distinguished success outcome.
 
 ## Generate structured IR
 
-Generation returns the same `QCProgram` type as the MLIR compiler bindings. The
-program can enter the normal compiler pipeline.
+Generation returns a {py:class}`~mqt.core.mlir.QCProgram`, the program type used
+by the [MQT Core MLIR compiler collection](mlir/python_compiler_collection.md).
+The program can enter the normal compiler pipeline.
 
 ```{code-cell} ipython3
 program = benchmark.generate()
 assert program.is_valid
 structured_ir = program.ir
 assert program.copy().to_qco().is_valid
-structured_ir
+print(structured_ir)
 ```
 
 ## Run the command-line workflow
@@ -109,6 +129,8 @@ The CLI writes the program first and its manifest last. A manifest is therefore
 the completion marker. Existing output files always cause an error.
 
 ```{code-cell} ipython3
+:tags: [remove-cell]
+
 import tempfile
 from pathlib import Path
 
@@ -118,6 +140,11 @@ root = Path(temporary.name)
 instance_path = root / "instance.json"
 counts_path = root / "counts.json"
 output_directory = root / "generated"
+```
+
+```{code-cell} ipython3
+:tags: [remove-output]
+
 instance_path.write_text(benchmark.instance_json, encoding="utf-8")
 counts_path.write_text(
     json.dumps({"schema_version": 1, "counts": {"000": 5, "100": 5}}),
@@ -132,7 +159,8 @@ counts_path.write_text(
 ```{code-cell} ipython3
 manifest_path = next(output_directory.glob("*.manifest.json"))
 program_path = next(output_directory.glob("*.qc.mlir"))
-program_path.name, manifest_path.name
+print("Program:", program_path.name)
+print("Manifest:", manifest_path.name)
 ```
 
 ```{code-cell} ipython3
@@ -140,6 +168,8 @@ program_path.name, manifest_path.name
 ```
 
 ```{code-cell} ipython3
+:tags: [remove-cell]
+
 temporary.cleanup()
 ```
 

@@ -19,6 +19,8 @@ from unittest.mock import patch
 
 import pytest
 
+# Import the private module to test its process replacement directly.
+import mqt.core._bench as benchmark_cli  # ruff: ignore[import-private-name]
 from mqt.core import __version__ as mqt_core_version
 
 if TYPE_CHECKING:
@@ -60,6 +62,24 @@ def test_benchmark_cli(script_runner: ScriptRunner) -> None:
     assert '"ghz"' in ret.stdout
     assert '"grover"' in ret.stdout
     assert '"qpe"' in ret.stdout
+
+
+@pytest.mark.parametrize(("platform", "suffix"), [("linux", ""), ("win32", ".exe")])
+def test_benchmark_cli_launcher(platform: str, suffix: str) -> None:
+    """Locate and execute the bundled benchmark driver on each platform."""
+    executable = Path(f"installation/mqt/core/bin/mqt-core-bench{suffix}")
+    with (
+        patch.object(benchmark_cli.sys, "platform", platform),
+        patch.object(benchmark_cli.sys, "argv", ["mqt-core-bench", "list"]),
+        patch.object(benchmark_cli, "distribution") as distribution_mock,
+        patch.object(benchmark_cli.os, "execv") as execv_mock,
+    ):
+        distribution_mock.return_value.locate_file.return_value = executable
+        benchmark_cli.main()
+
+    distribution_mock.assert_called_once_with("mqt-core")
+    distribution_mock.return_value.locate_file.assert_called_once_with(f"mqt/core/bin/mqt-core-bench{suffix}")
+    execv_mock.assert_called_once_with(executable, [str(executable), "list"])
 
 
 def test_cli_include_dir(script_runner: ScriptRunner) -> None:
