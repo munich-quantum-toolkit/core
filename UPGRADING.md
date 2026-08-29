@@ -6,6 +6,18 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Removal of the `spdlog` dependency
+
+MQT Core no longer discovers, downloads, builds, installs, or exports `spdlog`.
+The installed CMake package no longer calls `find_dependency(spdlog)`, and the
+Python wheels no longer contain the `spdlog` headers or shared library. QDMI
+diagnostics continue to use standard error.
+
+Downstream projects that use `spdlog` must declare and package the dependency
+themselves. Stop passing `MQT_CORE_SPDLOG_INSTALL` or `SPDLOG_*` cache variables
+when configuring MQT Core. Configure the downstream project's own `spdlog`
+dependency instead.
+
 ### CircuitOptimizer removal
 
 MQT Core no longer provides `qc::CircuitOptimizer`. Replace the two generic

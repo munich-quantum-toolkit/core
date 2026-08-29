@@ -113,6 +113,9 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove the `spdlog` dependency from MQT Core source builds, installed CMake
+  packages, and Python wheels. QDMI diagnostics continue to be written to
+  standard error ([#2270]) ([**@denialhaag**])
 - 💥 Remove `CircuitOptimizer`. Move circuit flattening and final-measurement
   removal to `QuantumComputation`, equivalence-checking transformations to MQT
   QCEC, and mapping transformations to MQT QMAP. Move single-qubit gate fusion
@@ -851,6 +854,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270
 [#2262]: https://github.com/munich-quantum-toolkit/core/pull/2262
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
