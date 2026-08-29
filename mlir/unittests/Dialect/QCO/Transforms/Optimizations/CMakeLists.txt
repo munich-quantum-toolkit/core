@@ -13,6 +13,7 @@ add_executable(
   ConstantPropagation/test_hybridState.cpp
   ConstantPropagation/test_quantumState.cpp
   ConstantPropagation/test_unionTable.cpp
+  test_qco_constant_propagation.cpp
   test_qco_hadamard_lifting.cpp
   test_qco_measurement_lifting.cpp
   test_qco_merge_single_qubit_rotation.cpp
