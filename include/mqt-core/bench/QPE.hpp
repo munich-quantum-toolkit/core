@@ -36,7 +36,7 @@ private:
   uint64_t denominator_;
 };
 
-/// Circuit method used for quantum phase estimation.
+/// Circuit method used for QPE.
 enum class QPEMethod : uint8_t {
   /// Estimate all phase bits with one query qubit per bit.
   Standard,

@@ -68,8 +68,8 @@ template <class T> [[nodiscard]] nb::object generate(const T& value) {
 
 } // namespace
 
-/// The nanobind module macro requires its module handle by value.
-/// NOLINTNEXTLINE(performance-unnecessary-value-param)
+// The nanobind module macro requires its module handle by value.
+// NOLINTNEXTLINE(performance-unnecessary-value-param)
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   m.doc() = "Typed benchmark instances and analytic references.";
 

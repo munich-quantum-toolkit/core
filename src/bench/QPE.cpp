@@ -71,8 +71,8 @@ struct SignedMagnitude {
   return first == std::string_view::npos ? 0 : bits.size() - first;
 }
 
-/// Extended precision delays overflow and cancellation in the analytic model.
-/// NOLINTBEGIN(google-runtime-float)
+// Extended precision delays overflow and cancellation in the analytic model.
+// NOLINTBEGIN(google-runtime-float)
 [[nodiscard]] long double toLongDouble(const std::string_view bits) {
   long double value = 0.L;
   for (const auto bit : bits) {
@@ -88,7 +88,7 @@ struct SignedMagnitude {
   const auto argument = std::numbers::pi_v<long double> * value;
   return std::sin(argument) / argument;
 }
-/// NOLINTEND(google-runtime-float)
+// NOLINTEND(google-runtime-float)
 
 } // namespace
 
@@ -144,7 +144,7 @@ double QPE::probability(const std::string_view outcome) const {
 
   const auto integerMagnitude = toLongDouble(difference.magnitude);
   const auto denominator = options_.phase.denominator();
-  /// NOLINTBEGIN(google-runtime-float)
+  // NOLINTBEGIN(google-runtime-float)
   long double magnitude = 0.L;
   if (!difference.negative) {
     magnitude = integerMagnitude + (static_cast<long double>(scaledRemainder_) /
@@ -175,7 +175,7 @@ double QPE::probability(const std::string_view outcome) const {
   const auto ratio = numerator / denominatorFactor;
   const auto probability =
       static_cast<double>(std::clamp(ratio * ratio, 0.L, 1.L));
-  /// NOLINTEND(google-runtime-float)
+  // NOLINTEND(google-runtime-float)
   return probability;
 }
 

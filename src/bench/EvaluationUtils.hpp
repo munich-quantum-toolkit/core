@@ -59,8 +59,8 @@ evaluate(const Output& output, const Counts& counts,
     throw std::invalid_argument("total shot count must be positive");
   }
 
-  /// Extended precision prevents avoidable loss while summing distributions.
-  /// NOLINTBEGIN(google-runtime-float)
+  // Extended precision prevents avoidable loss while summing distributions.
+  // NOLINTBEGIN(google-runtime-float)
   long double observedDistance = 0.L;
   long double observedIdealMass = 0.L;
   long double coefficient = 0.L;
@@ -81,7 +81,7 @@ evaluate(const Output& output, const Counts& counts,
       successOutcome ? std::optional<double>{static_cast<double>(successShots) /
                                              static_cast<double>(totalShots)}
                      : std::nullopt;
-  /// NOLINTEND(google-runtime-float)
+  // NOLINTEND(google-runtime-float)
   return {.totalVariationDistance = static_cast<double>(totalVariation),
           .squaredHellingerFidelity = static_cast<double>(fidelity),
           .successProbability = success};

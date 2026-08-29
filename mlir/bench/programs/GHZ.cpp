@@ -29,10 +29,10 @@ SmallVector<Value> ghz(qc::QCProgramBuilder& b, const GHZ& benchmark) {
   auto q = b.allocQubitRegisterStorage(size, "q");
   auto result = b.allocClassicalBitRegister(size, benchmark.output().name);
 
-  auto root = b.loadQubit(q, arith::ConstantIndexOp::create(b, 0).getResult());
+  auto root = b.loadQubit(q, b.indexConstant(0));
   b.h(root);
   if (options.topology == GHZTopology::Linear) {
-    auto one = arith::ConstantIndexOp::create(b, 1).getResult();
+    auto one = b.indexConstant(1);
     b.scfFor(1, size, 1, [&](Value iv) {
       auto previous = arith::SubIOp::create(b, iv, one);
       b.cx(b.loadQubit(q, previous), b.loadQubit(q, iv));

@@ -29,7 +29,7 @@ TEST(QFT, UsesTheStandardMethodByDefault) {
 }
 
 TEST(QFT, ValidatesTheConfiguredInstance) {
-  /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto invalidMethod = static_cast<QFTMethod>(2);
   EXPECT_THROW(static_cast<void>(QFT{{.qubits = 0, .periodExponent = 0}}),
                std::invalid_argument);

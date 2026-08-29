@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-add_library(MQTBenchmarkPrograms STATIC BV.cpp Fourier.cpp GHZ.cpp Grover.cpp)
+add_library(MQTBenchmarkPrograms STATIC BV.cpp GHZ.cpp Grover.cpp QFT.cpp QPE.cpp)
 target_link_libraries(MQTBenchmarkPrograms PUBLIC MQT::CoreBench MLIRQCProgramBuilder
                                                   MLIRArithDialect MLIRTensorDialect)
 mqt_mlir_target_use_project_options(MQTBenchmarkPrograms)

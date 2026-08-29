@@ -47,9 +47,9 @@ TEST(GHZ, RejectsUnsupportedQubitCounts) {
 }
 
 TEST(GHZ, RejectsUnknownEnumValues) {
-  /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto invalidTopology = static_cast<GHZTopology>(2);
-  /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto invalidBasis = static_cast<GHZBasis>(2);
   EXPECT_THROW(
       static_cast<void>(GHZ{{.qubits = 2, .topology = invalidTopology}}),

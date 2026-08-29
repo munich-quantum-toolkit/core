@@ -56,14 +56,14 @@ if(NOT TARGET MQT::ProjectOptions)
   list(APPEND MQT_CORE_TARGETS project_options)
 endif()
 
+# add the benchmark semantic package
+add_subdirectory(bench)
+
 # add the IR package
 add_subdirectory(ir)
 
 # add the QASM package
 add_subdirectory(qasm3)
-
-# add the benchmark semantic package
-add_subdirectory(bench)
 
 # add DD package library
 add_subdirectory(dd)

@@ -19,7 +19,7 @@
 
 namespace mqt::bench {
 
-/// Circuit method used for the quantum Fourier transform.
+/// Circuit method used for the QFT.
 enum class QFTMethod : uint8_t {
   /// Transform one qubit for each input bit before measurement.
   Standard,

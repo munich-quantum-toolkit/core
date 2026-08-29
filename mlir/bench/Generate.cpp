@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Bench/Generate.h"
+#include "mlir/bench/Generate.h"
 
 #include "bench/JSON.hpp"
 #include "mlir/Compiler/Programs.h"
@@ -49,9 +49,8 @@ using namespace mlir;
 }
 
 std::optional<QCProgram> generate(const BV& benchmark) {
-  return buildProgram("bv", [&](qc::QCProgramBuilder& builder) {
-    return bv(builder, benchmark);
-  });
+  return buildProgram(
+      "bv", [&](qc::QCProgramBuilder& b) { return bv(b, benchmark); });
 }
 
 std::optional<QCProgram> generate(const GHZ& benchmark) {
@@ -65,9 +64,8 @@ std::optional<QCProgram> generate(const Grover& benchmark) {
 }
 
 std::optional<QCProgram> generate(const QFT& benchmark) {
-  return buildProgram("qft", [&](qc::QCProgramBuilder& builder) {
-    return qft(builder, benchmark);
-  });
+  return buildProgram(
+      "qft", [&](qc::QCProgramBuilder& b) { return qft(b, benchmark); });
 }
 
 std::optional<QCProgram> generate(const QPE& benchmark) {

@@ -6,8 +6,8 @@
 #
 # Licensed under the MIT License
 
+add_subdirectory(bench)
 add_subdirectory(ir)
 add_subdirectory(dd)
 add_subdirectory(qdmi)
 add_subdirectory(mlir)
-add_subdirectory(bench)

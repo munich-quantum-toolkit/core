@@ -26,8 +26,8 @@
 namespace mqt::bench {
 namespace {
 
-/// Extended precision keeps the analytic reference stable near Grover peaks.
-/// NOLINTBEGIN(google-runtime-float)
+// Extended precision keeps the analytic reference stable near Grover peaks.
+// NOLINTBEGIN(google-runtime-float)
 [[nodiscard]] long double successProbability(const size_t iterations,
                                              const long double theta) {
   const auto angle =
@@ -42,7 +42,7 @@ namespace {
   const auto target = (std::numbers::pi_v<long double> / (4.L * theta)) - 0.5L;
   return static_cast<size_t>(std::floor(target + 0.5L));
 }
-/// NOLINTEND(google-runtime-float)
+// NOLINTEND(google-runtime-float)
 
 } // namespace
 
@@ -65,14 +65,14 @@ Grover::Grover(GroverOptions options)
         "Grover iterations must fit a signed 32-bit integer");
   }
 
-  /// NOLINTBEGIN(google-runtime-float)
+  // NOLINTBEGIN(google-runtime-float)
   const auto states = std::ldexp(1.L, static_cast<int>(width));
   const auto theta = std::asin(1.L / std::sqrt(states));
   const auto marked =
       std::clamp(successProbability(*options_.iterations, theta), 0.L, 1.L);
   markedProbability_ = static_cast<double>(marked);
   otherProbability_ = static_cast<double>((1.L - marked) / (states - 1.L));
-  /// NOLINTEND(google-runtime-float)
+  // NOLINTEND(google-runtime-float)
 }
 
 const GroverOptions& Grover::options() const noexcept { return options_; }

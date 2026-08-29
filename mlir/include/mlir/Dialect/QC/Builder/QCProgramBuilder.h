@@ -134,6 +134,12 @@ public:
    */
   Value intConstant(int64_t value);
 
+  /// Create a constant 64-bit floating-point value.
+  Value floatConstant(double value);
+
+  /// Create a constant index value.
+  Value indexConstant(int64_t value);
+
   //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//
@@ -190,37 +196,34 @@ public:
    */
   Value staticQubit(uint64_t index);
 
-  /**
-   * @brief Allocate a qubit register and eagerly load every element
-   * @details Every allocated qubit is initialized to |0⟩.
-   * @param size Number of qubits (must be positive)
-   * @param name Optional source-level register name
-   * @return A `QubitRegister` containing the backing memref and one reference
-   * for every eagerly loaded element
-   *
-   * @par Example:
-   * ```c++
-   * auto q = builder.allocQubitRegister(3);
-   * ```
-   * ```mlir
-   * %memref = memref.alloc() : memref<3x!qc.qubit>
-   * %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
-   * %q1 = memref.load %memref[%c1] : memref<3x!qc.qubit>
-   * %q2 = memref.load %memref[%c2] : memref<3x!qc.qubit>
-   * ```
-   */
+  /// Allocate a qubit register and eagerly load every element.
+  ///
+  /// Every allocated qubit is initialized to |0⟩.
+  ///
+  /// \param size Number of qubits; must be positive.
+  /// \param name Optional source-level register name.
+  /// \returns A register with its backing memref and loaded qubit references.
+  ///
+  /// ```c++
+  /// auto q = builder.allocQubitRegister(3);
+  /// ```
+  /// ```mlir
+  /// %memref = memref.alloc() : memref<3x!qc.qubit>
+  /// %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
+  /// %q1 = memref.load %memref[%c1] : memref<3x!qc.qubit>
+  /// %q2 = memref.load %memref[%c2] : memref<3x!qc.qubit>
+  /// ```
   QubitRegister allocQubitRegister(int64_t size, StringRef name = {});
 
-  /**
-   * @brief Allocate storage for a qubit register without loading its elements
-   * @param size Number of qubits (must be positive)
-   * @param name Optional source-level register name
-   * @return The memref value representing the qubit register
-   *
-   * @details Every allocated qubit is initialized to |0⟩. The register is
-   * tracked for automatic deallocation and remains intact until an element is
-   * loaded. Use `loadQubit` to obtain references at their points of use.
-   */
+  /// Allocate storage for a qubit register without loading its elements.
+  ///
+  /// Every allocated qubit is initialized to |0⟩. The builder tracks the
+  /// register for automatic deallocation. Use `loadQubit` to obtain references
+  /// at their points of use.
+  ///
+  /// \param size Number of qubits; must be positive.
+  /// \param name Optional source-level register name.
+  /// \returns The memref value that represents the qubit register.
   Value allocQubitRegisterStorage(int64_t size, StringRef name = {});
 
   /**

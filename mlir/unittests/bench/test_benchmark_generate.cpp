@@ -13,10 +13,10 @@
 #include "bench/Grover.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QPE.hpp"
-#include "mlir/Bench/Generate.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/bench/Generate.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>

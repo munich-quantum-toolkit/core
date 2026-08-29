@@ -165,11 +165,11 @@ endif()
 
 if(BUILD_MQT_CORE_BINDINGS)
   set(MQT_CORE_WHEEL_TARGETS
-      mqt-core-ir
-      mqt-core-bench-library
-      mqt-core-dd
       mqt-core-bench
       mqt-core-bench-bindings
+      mqt-core-bench-library
+      mqt-core-ir
+      mqt-core-dd
       mqt-core-ir-bindings
       mqt-core-dd-bindings
       mqt-core-qdmi-bindings

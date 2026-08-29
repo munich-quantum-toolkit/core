@@ -8,11 +8,11 @@
  * Licensed under the MIT License
  */
 
-/// Generates and evaluates structured benchmark instances.
+// Generates and evaluates structured benchmark instances.
 
 #include "bench/JSON.hpp"
-#include "mlir/Bench/Generate.h"
 #include "mlir/Compiler/Programs.h"
+#include "mlir/bench/Generate.h"
 
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/StringExtras.h>
@@ -54,10 +54,12 @@ static llvm::cl::opt<std::string> instancePath(
     "instance", llvm::cl::desc("Instance JSON file, or '-' for standard input"),
     llvm::cl::value_desc("file|-"), llvm::cl::Required,
     llvm::cl::cat(benchmarkOptions), llvm::cl::sub(generateCommand));
+
 static llvm::cl::opt<std::string> outputFormat(
     "format", llvm::cl::desc("Generated program format: qc or jeff"),
     llvm::cl::value_desc("qc|jeff"), llvm::cl::Required,
     llvm::cl::cat(benchmarkOptions), llvm::cl::sub(generateCommand));
+
 static llvm::cl::opt<std::string> outputDirectory(
     "output", llvm::cl::desc("Directory for the program and manifest"),
     llvm::cl::value_desc("directory"), llvm::cl::Required,
@@ -67,6 +69,7 @@ static llvm::cl::opt<std::string> manifestInputPath(
     "manifest", llvm::cl::desc("Benchmark manifest JSON file"),
     llvm::cl::value_desc("file"), llvm::cl::Required,
     llvm::cl::cat(benchmarkOptions), llvm::cl::sub(evaluateCommand));
+
 static llvm::cl::opt<std::string> countsInputPath(
     "counts", llvm::cl::desc("Counts JSON file, or '-' for standard input"),
     llvm::cl::value_desc("file|-"), llvm::cl::Required,

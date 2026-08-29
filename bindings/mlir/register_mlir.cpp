@@ -8,10 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Bench/Generate.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
+#include "mlir/bench/Generate.h"
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 #include "qiskit/Qiskit.h"

@@ -49,7 +49,7 @@ TEST(QPE, RejectsUnsupportedPrecision) {
 }
 
 TEST(QPE, RejectsAnUnknownMethod) {
-  /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   constexpr auto invalidMethod = static_cast<QPEMethod>(2);
   EXPECT_THROW(
       static_cast<void>(

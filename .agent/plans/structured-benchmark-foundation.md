@@ -133,14 +133,14 @@ manifests, and case IDs. `src/bench/JSON.cpp` contains the private semantic
 registry: one entry per ID with a definition version, schema callback, and
 evaluation callback.
 
-Structured emitters live in `mlir/benchmark/programs/`. `Fourier.cpp` owns QPE,
-iterative QPE, standard QFT, and semiclassical QFT so their phase-loop rules and
-bit order stay together. `mlir/benchmark/Generate.cpp` contains the private MLIR
-instance registry and the typed `generate(...)` overloads declared in
-`mlir/include/mlir/Bench/Generate.h`.
+Structured emitters live in `mlir/bench/programs/`. Each benchmark has one
+self-contained source file. `QFT.cpp` and `QPE.cpp` each keep their phase-loop
+rules with the bit order that uses them. `mlir/bench/Generate.cpp` contains the
+private MLIR instance registry and the typed `generate(...)` overloads declared
+in `mlir/include/mlir/bench/Generate.h`.
 
-`mlir/benchmark/MQTCoreBench.cpp` implements the `list`, `describe`, `generate`,
-and `evaluate` commands. Generation stages both outputs, atomically publishes
+`mlir/bench/MQTCoreBench.cpp` implements the `list`, `describe`, `generate`, and
+`evaluate` commands. Generation stages both outputs, atomically publishes
 without replacing existing paths, and publishes the manifest last.
 
 Python types live in `bindings/bench/register_bench.cpp`. Their `generate()`
@@ -184,7 +184,7 @@ Run focused semantic and emitter checks from the repository root:
     cmake --preset release
     cmake --build --preset release --target mqt-core-bench-test mqt-core-mlir-unittests-benchmark mqt-core-bench
     ./build/release/test/bench/mqt-core-bench-test
-    ./build/release/mlir/unittests/benchmark/mqt-core-mlir-unittests-benchmark
+    ./build/release/mlir/unittests/bench/mqt-core-mlir-unittests-benchmark
     ctest --test-dir build/release -R '^mqt-core-mlir-benchmark-cli$' --output-on-failure
 
 Regenerate and test Python:

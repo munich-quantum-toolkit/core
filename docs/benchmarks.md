@@ -169,7 +169,7 @@ target_link_libraries(my-benchmark PRIVATE MQT::CoreBench)
 ```
 
 The source build also provides `MQT::CoreBenchGenerate`. It exposes typed
-`mqt::bench::generate(...)` overloads from `mlir/Bench/Generate.h` and returns a
+`mqt::bench::generate(...)` overloads from `mlir/bench/Generate.h` and returns a
 `mlir::QCProgram`. This target is not installed until MQT Core installs the
 wider MLIR compiler API.
 
@@ -182,7 +182,7 @@ Adding a family requires five explicit extension points:
 2. Add its schema and evaluation callback to the private semantic registry in
    `src/bench/JSON.cpp`.
 3. Add one structured emitter and one instance callback to the private MLIR
-   registry in `mlir/benchmark/Generate.cpp`.
+   registry in `mlir/bench/Generate.cpp`.
 4. Add the explicit Python types in `bindings/bench/register_bench.cpp`.
 5. Test the reference, strict JSON, emitter structure, `jeff` conversion, and
    Python generation.
