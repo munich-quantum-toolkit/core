@@ -104,40 +104,16 @@ public:
   // Constants
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Create a constant bool value
-   * @param value The value to store in the constant
-   * @return The value produced by the constant operation
-   *
-   * @par Example:
-   * ```c++
-   * auto c = builder.boolConstant(true);
-   * ```
-   * ```mlir
-   * %c = arith.constant true : i1
-   * ```
-   */
+  /// Creates an `i1` constant with the given Boolean value.
   Value boolConstant(bool value);
 
-  /**
-   * @brief Create a constant integer value
-   * @param value The value to store in the constant
-   * @return The value produced by the constant operation
-   *
-   * @par Example:
-   * ```c++
-   * auto c = builder.intConstant(1);
-   * ```
-   * ```mlir
-   * %c = arith.constant 1 : i64
-   * ```
-   */
+  /// Creates an `i64` constant with the given integer value.
   Value intConstant(int64_t value);
 
-  /// Create a constant 64-bit floating-point value.
+  /// Creates an `f64` constant with the given floating-point value.
   Value floatConstant(double value);
 
-  /// Create a constant index value.
+  /// Creates an `index` constant with the given integer value.
   Value indexConstant(int64_t value);
 
   //===--------------------------------------------------------------------===//

@@ -49,10 +49,7 @@ print("Output:", benchmark.output.name)
 print("Width:", benchmark.output.width)
 ```
 
-Each benchmark family validates the exact types that its options require. For
-example, QPE accepts {py:class}`fractions.Fraction` phases. QPE reduces each
-phase modulo one turn before it enters the C++ API. The reduced denominator must
-fit in an unsigned 64-bit integer.
+Each benchmark family validates its options when it creates an instance.
 
 ## Inspect the canonical instance and manifest
 
@@ -106,8 +103,8 @@ print(
 ```
 
 Total variation distance zero and squared Hellinger fidelity one identify an
-exact distribution. Only Bernstein--Vazirani and Grover report a success
-probability because these families define one distinguished success outcome.
+exact distribution. Some benchmark families also report a success probability
+for a distinguished success outcome.
 
 ## Generate structured IR
 

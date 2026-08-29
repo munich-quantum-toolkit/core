@@ -27,7 +27,7 @@ enum class QFTMethod : uint8_t {
   Semiclassical
 };
 
-/// Parameters for one quantum Fourier-transform benchmark instance.
+/// Parameters for one QFT benchmark instance.
 struct QFTOptions {
   static constexpr size_t MAX_QUBITS = 1'000'000;
   static constexpr size_t MAX_PERIOD_EXPONENT = 1'074;
