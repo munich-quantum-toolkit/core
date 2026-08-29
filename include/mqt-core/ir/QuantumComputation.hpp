@@ -364,6 +364,14 @@ public:
   /// qubits occurring in the output permutation
   void stripIdleQubits(bool force = false);
 
+  /**
+   * @brief Initializes the input layout and output permutation.
+   * @details If the output permutation is not empty, it must contain every
+   * measured device qubit as a key. Clear the output permutation before this
+   * call to infer it only from measurements.
+   * @throws std::invalid_argument If a measured device qubit is missing from a
+   * non-empty output permutation.
+   */
   void initializeIOMapping();
 
   // this function augments a given circuit by additional registers

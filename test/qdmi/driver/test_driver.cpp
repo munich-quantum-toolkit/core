@@ -1494,6 +1494,23 @@ TEST(DeviceSessionConfigTest, OpenWithBaseUrl) {
   }
 }
 
+TEST(DeviceSessionConfigTest, ReportsSkippedUnsupportedParameter) {
+  const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
+  qdmi::DeviceSessionConfig config;
+  config.baseUrl = "http://localhost:8080";
+
+  testing::internal::CaptureStderr();
+  EXPECT_NO_THROW(
+      { static_cast<void>(openTestDevice(library, prefix, config)); });
+  const auto diagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_THAT(
+      diagnostic,
+      testing::AllOf(
+          testing::HasSubstr("[mqt-core] [info]"),
+          testing::HasSubstr("Device session parameter BASE URL not supported "
+                             "by device (skipped)")));
+}
+
 TEST(DeviceSessionConfigTest, OpenWithCustomParameters) {
   qdmi::DeviceSessionConfig config;
   config.custom3 = "RESONANCE_COCOS_V1";
