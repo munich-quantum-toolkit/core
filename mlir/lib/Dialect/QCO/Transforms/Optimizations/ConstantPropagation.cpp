@@ -38,10 +38,11 @@ namespace {
  * threshold (an MLIR `DenseForwardDataFlowAnalysis` over a `UnionTable`
  * lattice), then removes operations that are superfluous given that state.
  *
- * Rewrites: delete a `qco.ctrl` whose controls can never all hold, and strip
- * the always-satisfied controls from a `qco.ctrl` that keeps at least one live
- * control. Analyze and rewrite alternate until a fixpoint because a removed
- * gate can change a later gate's control facts.
+ * Rewrites: delete a `qco.ctrl` whose controls can never all hold, and remove
+ * the always-satisfied controls from a `qco.ctrl` - rebuilding it with the rest,
+ * or inlining its body when every control was redundant. Analyze and rewrite
+ * alternate until a fixpoint because a removed gate can change a later gate's
+ * control facts. Classical controls are not reasoned about yet.
  */
 struct ConstantPropagation final
     : impl::ConstantPropagationBase<ConstantPropagation> {

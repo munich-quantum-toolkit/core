@@ -92,20 +92,19 @@ TEST_F(ConstantPropagationTest, stripsAlwaysSatisfiedControl) {
   EXPECT_EQ(ctrls.front().getNumControls(), 1U);
 }
 
-TEST_F(ConstantPropagationTest, keepsGateWhenEveryControlRedundant) {
+TEST_F(ConstantPropagationTest, unwrapsGateWhenEveryControlRedundant) {
   auto reg = builder.allocQubitRegister(2);
-  const Value one = builder.x(reg[0]); // always |1>
-  (void)builder.cx(one, reg[1]);
-  const auto module = builder.finalize();
+  const Value one = builder.x(reg[0]);
+  builder.cx(one, reg[1]);
+  auto module = builder.finalize();
 
   ASSERT_TRUE(succeeded(run(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
 
-  // Unwrapping a fully-redundant control to an uncontrolled gate is out of
-  // v2.0 scope: the op is left untouched.
-  auto ctrls = ctrlOps(*module);
-  ASSERT_EQ(ctrls.size(), 1U);
-  EXPECT_EQ(ctrls.front().getNumControls(), 1U);
+  EXPECT_TRUE(ctrlOps(*module).empty());
+  unsigned xGates = 0;
+  module->walk([&](XOp) { ++xGates; });
+  EXPECT_EQ(xGates, 2U);
 }
 
 TEST_F(ConstantPropagationTest, leavesGateAloneWhenStateIsImprecise) {

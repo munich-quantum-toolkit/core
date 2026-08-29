@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/SmallVector.h>
-#include <mlir/Support/LLVM.h>
 
 #include <variant>
 
@@ -27,16 +26,18 @@ namespace mlir::qco {
 struct DropOp {
   CtrlOp op;
 };
-// TODO: To remove all controls
+
 /**
- * @brief A controlled gate and *strict subset* of control qubits that provably
- * always hold: the op is rebuilt with only the remaining controls.
+ * @brief A controlled gate and the control qubits that provably always hold in
+ * the current state.
+ *
+ * If a real control remains, the op is rebuilt with only those. If
+ * dropControlIndices covers *every* control, the gate runs unconditionally and
+ * its body is inlined in place of the op.
  *
  * dropControlIndices indexes into op.getInputControls(). Indices, not values,
- * so an earlier rewrite in the same batch (which may RAUW this op's operands)
- * cannot invalidate the decision. The all-controls-redundant case (which would
- * turn the op into an uncontrolled gate) is out of v2.0 scope and never
- * produced here.
+ * so an earlier rewrite in the same batch cannot invalidate the decision.
+ * Classical controls are not considered yet.
  */
 struct StripControls {
   CtrlOp op;

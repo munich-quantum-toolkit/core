@@ -18,6 +18,8 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Analysis/DataFlowFramework.h>
+#include <mlir/IR/Block.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 
 namespace mlir::qco {
@@ -64,9 +66,9 @@ SmallVector<Decision> collectDecisions(func::FuncOp entry,
         dropIndices.push_back(static_cast<unsigned>(index));
       }
     }
-    // Stripping *every* control would turn this into an uncontrolled gate -
-    // deferred past v2.0. Only rebuild when a real control remains.
-    if (!dropIndices.empty() && dropIndices.size() < controls.size()) {
+    // A strict subset is stripped; all of them means the gate fires
+    // unconditionally and its body is inlined (see applyStrip).
+    if (!dropIndices.empty()) {
       decisions.push_back(StripControls{op, std::move(dropIndices)});
     }
   });
@@ -87,9 +89,13 @@ void applyDrop(const DropOp& drop, IRRewriter& rewriter) {
   rewriter.eraseOp(op);
 }
 
-/// @brief Rebuilds a controlled gate with a subset of its controls. The body
-/// region's block arguments alias the *targets* only, so it moves across
-/// untouched.
+/// @brief Removes always-satisfied controls from a controlled gate.
+///
+/// A CtrlOp's body block arguments alias its *targets* only - controls merely
+/// pass through - so dropping a subset just rebuilds the op around the same
+/// body. Dropping every control means the body runs unconditionally: it is
+/// inlined in place of the op, with the target block arguments bound to the
+/// target operands and the yielded values taking over the op's target results.
 void applyStrip(const StripControls& strip, IRRewriter& rewriter) {
   CtrlOp op = strip.op;
   const auto controlsIn = op.getInputControls();
@@ -106,6 +112,25 @@ void applyStrip(const StripControls& strip, IRRewriter& rewriter) {
   }
 
   rewriter.setInsertionPoint(op);
+
+  if (keptControls.empty()) {
+    Block& body = op.getRegion().front();
+    auto yield = cast<YieldOp>(body.getTerminator());
+    const auto yielded = yield.getOperands();
+    rewriter.inlineBlockBefore(&body, op, op.getInputTargets());
+    for (auto [result, value] :
+         llvm::zip_equal(op.getOutputTargets(), yielded)) {
+      rewriter.replaceAllUsesWith(result, value);
+    }
+    for (auto [result, control] :
+         llvm::zip_equal(op.getOutputControls(), controlsIn)) {
+      rewriter.replaceAllUsesWith(result, control);
+    }
+    rewriter.eraseOp(yield);
+    rewriter.eraseOp(op);
+    return;
+  }
+
   auto newOp =
       CtrlOp::create(rewriter, op.getLoc(), keptControls, op.getInputTargets());
   rewriter.inlineRegionBefore(op.getRegion(), newOp.getRegion(),
