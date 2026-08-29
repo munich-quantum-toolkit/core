@@ -225,8 +225,22 @@ TEST_F(UnionTableTest, resetForcesZero) {
 TEST_F(UnionTableTest, globalPhaseIsRecordedOnce) {
   auto ut = make();
   ut.seedQubit(q[0]);
-  ASSERT_TRUE(ut.addGlobalPhase(std::numbers::pi).succeeded());
+  const Value theta = builder.floatConstant(std::numbers::pi);
+  ut.seedClassical(theta, builder.getF64FloatAttr(std::numbers::pi));
+  ASSERT_TRUE(ut.addGlobalPhase(theta).succeeded());
   EXPECT_NE(printed(ut).find("phase="), std::string::npos);
+}
+
+TEST_F(UnionTableTest, propagateClassicalFoldsAcrossSlots) {
+  auto ut = make();
+  const Value lhs = builder.intConstant(2);
+  const Value rhs = builder.intConstant(5);
+  ut.seedClassical(lhs, builder.getIntegerAttr(lhs.getType(), 2));
+  ut.seedClassical(rhs, builder.getIntegerAttr(rhs.getType(), 5));
+  auto add = arith::AddIOp::create(builder, builder.getLoc(), lhs, rhs);
+  ut.propagateClassical(add.getOperation());
+  EXPECT_TRUE(ut.isTracked(add.getResult()));
+  EXPECT_FALSE(ut.isClassicalAlwaysFalse(add.getResult()));
 }
 
 //===----------------------------------------------------------------------===//

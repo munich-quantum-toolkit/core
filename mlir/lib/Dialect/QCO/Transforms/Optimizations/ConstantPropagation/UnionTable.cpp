@@ -20,6 +20,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/Attributes.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -314,7 +315,7 @@ UnionTable::applyMatrix2Q(const Value in0, const Value in1, const Value out0,
 }
 
 LogicalResult
-UnionTable::addGlobalPhase(const double theta,
+UnionTable::addGlobalPhase(const Value theta,
                            const ArrayRef<Value> quantumCtrlsIn,
                            const ArrayRef<Value> quantumCtrlsOut,
                            const ArrayRef<Value> posClassicalCtrls,
@@ -322,11 +323,13 @@ UnionTable::addGlobalPhase(const double theta,
   if (allTop) {
     return success();
   }
-  if (quantumCtrlsIn.empty() && !quantumCtrlsOut.empty()) {
+  if ((quantumCtrlsIn.empty() && !quantumCtrlsOut.empty()) ||
+      !isTracked(theta)) {
     return failure();
   }
 
-  SmallVector<Value> touched(quantumCtrlsIn.begin(), quantumCtrlsIn.end());
+  SmallVector<Value> touched{theta};
+  touched.append(quantumCtrlsIn.begin(), quantumCtrlsIn.end());
   touched.append(posClassicalCtrls.begin(), posClassicalCtrls.end());
   touched.append(negClassicalCtrls.begin(), negClassicalCtrls.end());
   mergeSlots(touched);
@@ -334,31 +337,46 @@ UnionTable::addGlobalPhase(const double theta,
     return success();
   }
 
-  if (!quantumCtrlsIn.empty() || !posClassicalCtrls.empty() ||
-      !negClassicalCtrls.empty()) {
-    Value anchor;
-    if (!quantumCtrlsIn.empty()) {
-      anchor = quantumCtrlsIn.front();
-    } else {
-      anchor = posClassicalCtrls.empty() ? negClassicalCtrls.front()
-                                         : posClassicalCtrls.front();
-    }
-    for (auto& hs : slots[*slotIndexContaining(anchor)]) {
-      if (failed(hs.addGlobalPhase(theta, quantumCtrlsIn, quantumCtrlsOut,
-                                   posClassicalCtrls, negClassicalCtrls))) {
-        return failure();
-      }
-    }
-    return success();
+  Value anchor = theta;
+  if (!quantumCtrlsIn.empty()) {
+    anchor = quantumCtrlsIn.front();
+  } else if (!posClassicalCtrls.empty()) {
+    anchor = posClassicalCtrls.front();
+  } else if (!negClassicalCtrls.empty()) {
+    anchor = negClassicalCtrls.front();
   }
 
-  if (slots.empty()) {
-    Slot slot;
-    slot.emplace_back(QuantumState(ArrayRef<Value>{}, maxNonzeroAmplitudes),
-                      maxNonzeroAmplitudes, 1.0);
-    slots.push_back(std::move(slot));
+  const auto slot = slotIndexContaining(anchor);
+  if (!slot) {
+    return failure();
   }
-  return slots.front().front().addGlobalPhase(theta);
+  for (auto& hs : slots[*slot]) {
+    if (failed(hs.addGlobalPhase(theta, quantumCtrlsIn, quantumCtrlsOut,
+                                 posClassicalCtrls, negClassicalCtrls))) {
+      return failure();
+    }
+  }
+  return success();
+}
+
+void UnionTable::propagateClassical(Operation* const op) {
+  if (allTop) {
+    return;
+  }
+  const SmallVector<Value> operands(op->getOperands().begin(),
+                                    op->getOperands().end());
+  mergeSlots(operands);
+  if (allTop) {
+    return;
+  }
+  for (const Value operand : operands) {
+    if (const auto slot = slotIndexContaining(operand)) {
+      for (auto& hs : slots[*slot]) {
+        hs.propagateClassical(op);
+      }
+      return;
+    }
+  }
 }
 
 LogicalResult

@@ -65,8 +65,8 @@ public:
 
 private:
   bool allTop = false;
-  size_t maxNonzeroAmplitudes;
-  size_t maxHybridStates;
+  size_t maxNonzeroAmplitudes = 0;
+  size_t maxHybridStates = 0;
   SmallVector<Slot> slots;
 
   /// @brief Index of the slot that holds v (as a qubit or a classical key).
@@ -118,6 +118,13 @@ public:
   UnionTable(const size_t maxNonzeroAmplitudes, const size_t maxHybridStates)
       : maxNonzeroAmplitudes(maxNonzeroAmplitudes),
         maxHybridStates(maxHybridStates) {}
+
+  /**
+   * @brief A zero-budget table (every merge overflows to top). The dataflow
+   * framework needs a default-constructible lattice payload; the analysis
+   * overwrites it with a budgeted table before any real state flows through.
+   */
+  UnionTable() = default;
 
   //===--------------------------------------------------------------------===//
   // Seeding
@@ -223,26 +230,39 @@ public:
                 ArrayRef<Value> negClassicalCtrls = {});
 
   /**
-   * @brief Adds a global phase exp(i*theta).
+   * @brief Adds a global phase exp(i*theta), where theta is a classical value.
    *
-   * Uncontrolled: accumulated into one representative HybridState's global
-   * phase. With quantum controls: a relative phase on the controlled subspace.
+   * The slot holding theta (and any controls) is coalesced, then each
+   * alternative resolves theta from its own constants and applies the phase -
+   * uncontrolled into its global phase, controlled as a relative phase.
    *
-   * @param theta The phase to add.
+   * @param theta The classical value holding the rotation angle in radians.
    * @param quantumCtrlsIn The qubits that have to be |1> for the phase.
    * @param quantumCtrlsOut The qubits that quantumCtrlsIn are changed to.
    * @param posClassicalCtrls The classical values that have to be true
    * (nonzero) for the phase.
    * @param negClassicalCtrls The classical values that have to be false (zero)
    * for the phase.
-   * @return failure() if a control value is absent, the control in/out lengths
-   * mismatch, or a classical control is unresolved.
+   * @return failure() if theta or a control value is absent, the control in/out
+   * lengths mismatch, or theta / a classical control is not a resolved constant
+   * where the phase would apply (each indicating a propagation bug).
    */
   [[nodiscard("UnionTable::addGlobalPhase called but ignored")]] LogicalResult
-  addGlobalPhase(double theta, ArrayRef<Value> quantumCtrlsIn = {},
+  addGlobalPhase(Value theta, ArrayRef<Value> quantumCtrlsIn = {},
                  ArrayRef<Value> quantumCtrlsOut = {},
                  ArrayRef<Value> posClassicalCtrls = {},
                  ArrayRef<Value> negClassicalCtrls = {});
+
+  /**
+   * @brief Folds a classical operation across the distribution.
+   *
+   * Merges the slots of op 's tracked operands, then folds op per alternative
+   * with that alternative's constants, recording any constant results. A result
+   * that does not fold stays untracked.
+   *
+   * @param op The classical operation to propagate.
+   */
+  void propagateClassical(Operation* op);
 
   /**
    * @brief Measures in (renamed to out), recording the outcome in
