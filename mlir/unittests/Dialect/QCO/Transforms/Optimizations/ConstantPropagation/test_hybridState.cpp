@@ -389,6 +389,41 @@ TEST_F(HybridStateTest, equalityConsidersEverything) {
   EXPECT_FALSE(a == c);
 }
 
+TEST_F(HybridStateTest, sameConfigurationIgnoresProbability) {
+  auto a = make({q[0]}, 0.5);
+  const auto b = make({q[0]}, 0.25);
+  EXPECT_TRUE(a.sameConfiguration(b));
+  EXPECT_FALSE(a == b);
+
+  a.setClassical(cA, builder.getBoolAttr(true));
+  EXPECT_FALSE(a.sameConfiguration(b));
+}
+
+TEST_F(HybridStateTest, setProbabilityReplacesTheWeight) {
+  auto hs = make({q[0]}, 0.5);
+  hs.setProbability(0.2);
+  EXPECT_DOUBLE_EQ(hs.getProbability(), 0.2);
+}
+
+TEST_F(HybridStateTest, markStateTopKeepsClassicalFacts) {
+  auto hs = make({q[0]});
+  hs.setClassical(cA, builder.getBoolAttr(true));
+  hs.markStateTop();
+  EXPECT_TRUE(hs.isTop());
+  EXPECT_TRUE(hs.isClassicalTrue(cA));
+}
+
+TEST_F(HybridStateTest, forwardValueRenamesQubitAndClassical) {
+  auto hs = make({q[0]});
+  hs.setClassical(cA, builder.getBoolAttr(true));
+  hs.forwardValue(q[0], q[1]);
+  hs.forwardValue(cA, cB);
+  EXPECT_FALSE(hs.hasQubit(q[0]));
+  EXPECT_TRUE(hs.hasQubit(q[1]));
+  EXPECT_FALSE(hs.getClassical(cA).has_value());
+  EXPECT_TRUE(hs.isClassicalTrue(cB));
+}
+
 TEST_F(HybridStateTest, printIsNonEmpty) {
   auto hs = make({q[0]});
   hs.setClassical(cA, builder.getBoolAttr(false));

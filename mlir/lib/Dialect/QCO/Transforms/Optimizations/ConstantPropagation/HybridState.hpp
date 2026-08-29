@@ -110,11 +110,32 @@ public:
   void setClassical(Value v, Attribute attr);
 
   /**
+   * @brief Renames from to to, whether it is this branch's qubit or one of its
+   * classical keys. No-op if from is not present.
+   *
+   * @param from The value being replaced.
+   * @param to The value it is replaced with.
+   */
+  void forwardValue(Value from, Value to);
+
+  /**
    * @brief Multiplies this branch's probability by factor.
    *
    * @param factor The factor to multiply the probability with.
    */
   void scaleProbability(const double factor) { probability *= factor; }
+
+  /**
+   * @brief Sets this branch's probability (its weight within its slot).
+   *
+   * @param newProbability The new probability.
+   */
+  void setProbability(const double newProbability) {
+    probability = newProbability;
+  }
+
+  /// @brief Collapses this branch's QuantumState to top; classical facts stay.
+  void markStateTop();
 
   /**
    * @brief Combines this subsystem with a disjoint one into a single
@@ -293,7 +314,18 @@ public:
   // Comparison / dump
   //===--------------------------------------------------------------------===//
 
-  /// @brief Structural equality within @ref MATRIX_TOLERANCE (join de-dup).
+  /**
+   * Whether the two branches carry the same state, global phase, and classical
+   * facts - everything except their probability. The de-dup key when merging
+   * alternatives in UnionTable::join.
+   *
+   * @param other The HybridState to compare this one with.
+   */
+  [[nodiscard("HybridState::sameConfiguration called but ignored")]] bool
+  sameConfiguration(const HybridState& other) const;
+
+  /// @brief sameConfiguration and equal probability, both within
+  /// MATRIX_TOLERANCE.
   [[nodiscard("HybridState::== called but ignored")]] bool
   operator==(const HybridState& other) const;
 

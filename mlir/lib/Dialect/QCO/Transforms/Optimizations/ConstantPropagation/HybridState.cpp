@@ -72,6 +72,18 @@ void HybridState::setClassical(const Value v, const Attribute attr) {
   classical[v] = attr;
 }
 
+void HybridState::forwardValue(const Value from, const Value to) {
+  state.forwardQubit(from, to);
+  const auto it = classical.find(from);
+  if (it != classical.end()) {
+    const Attribute attr = it->second;
+    classical.erase(it);
+    classical[to] = attr;
+  }
+}
+
+void HybridState::markStateTop() { state.markTop(); }
+
 HybridState HybridState::tensor(const HybridState& other) const {
   HybridState result(state.unify(other.state), maxNonzeroAmplitudes,
                      probability * other.probability);
@@ -320,9 +332,8 @@ bool HybridState::areControlsSatisfiable(
 // Comparison / dump
 //===----------------------------------------------------------------------===//
 
-bool HybridState::operator==(const HybridState& other) const {
-  if (std::abs(probability - other.probability) > MATRIX_TOLERANCE ||
-      std::abs(globalPhase - other.globalPhase) > MATRIX_TOLERANCE ||
+bool HybridState::sameConfiguration(const HybridState& other) const {
+  if (std::abs(globalPhase - other.globalPhase) > MATRIX_TOLERANCE ||
       classical.size() != other.classical.size() || state != other.state) {
     return false;
   }
@@ -333,6 +344,11 @@ bool HybridState::operator==(const HybridState& other) const {
     }
   }
   return true;
+}
+
+bool HybridState::operator==(const HybridState& other) const {
+  return std::abs(probability - other.probability) <= MATRIX_TOLERANCE &&
+         sameConfiguration(other);
 }
 
 void HybridState::print(raw_ostream& os) const {
