@@ -556,6 +556,30 @@ TEST_F(QFRFunctionality, AvoidStrippingIdleQubitWhenInOutputPermutation) {
   EXPECT_EQ(qc.outputPermutation[1], 0U);
 }
 
+TEST_F(QFRFunctionality, InitializeIOMappingRejectsMissingMeasuredDeviceQubit) {
+  QuantumComputation qc(3U, 2U);
+  qc.measure(0, 1);
+  qc.measure(1, 0);
+  qc.setLogicalQubitGarbage(1);
+  const auto outputPermutation = qc.outputPermutation;
+
+  try {
+    qc.initializeIOMapping();
+    FAIL() << "Expected an invalid_argument exception.";
+  } catch (const std::invalid_argument& e) {
+    EXPECT_STREQ(
+        e.what(),
+        "[initializeIOMapping] Measured device qubit 1 is missing from the "
+        "output permutation. A non-empty output permutation must contain every "
+        "measured device qubit. Set a consistent output permutation or clear "
+        "it before initialization.");
+  } catch (...) {
+    FAIL() << "Expected an invalid_argument exception.";
+  }
+
+  EXPECT_EQ(qc.outputPermutation, outputPermutation);
+}
+
 TEST_F(QFRFunctionality, UpdateOutputPermutation) {
   // Update output permutation if swap gate was applied even if physical qubit
   // index matches logical qubit index

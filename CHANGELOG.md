@@ -143,6 +143,11 @@ releases may include breaking changes.
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
   ([**@burgholzer**])
 
+### Fixed
+
+- 🐛 Validate output permutations before I/O mapping initialization ([#2278])
+  ([**@denialhaag**])
+
 ## [3.9.2] - 2026-08-26
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#392)._
@@ -854,6 +859,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278
 [#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270
 [#2262]: https://github.com/munich-quantum-toolkit/core/pull/2262
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
