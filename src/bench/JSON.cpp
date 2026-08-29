@@ -108,9 +108,12 @@ constexpr Registry REGISTRY{{
 
 [[nodiscard]] const RegistryEntry*
 findBenchmark(const std::string_view benchmark) {
-  const Registry::const_iterator found =
-      std::ranges::find(REGISTRY, benchmark, &RegistryEntry::id);
-  return found == REGISTRY.end() ? nullptr : &*found;
+  for (const auto& entry : REGISTRY) {
+    if (entry.id == benchmark) {
+      return &entry;
+    }
+  }
+  return nullptr;
 }
 
 [[nodiscard]] uint64_t definitionVersion(const std::string_view benchmark) {

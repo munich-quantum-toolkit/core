@@ -19,7 +19,6 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Support/LLVM.h>
 
-#include <algorithm>
 #include <array>
 #include <optional>
 #include <string>
@@ -122,12 +121,12 @@ static const Registry REGISTRY{{
 std::optional<GeneratedBenchmark> generate(const std::string_view instanceJSON,
                                            const std::string_view source) {
   const auto id = benchmarkIdFromInstanceJSON(instanceJSON, source);
-  const Registry::const_iterator found =
-      std::ranges::find(REGISTRY, id, &RegistryEntry::id);
-  if (found == REGISTRY.end()) {
-    return std::nullopt;
+  for (const auto& entry : REGISTRY) {
+    if (entry.id == id) {
+      return entry.generate(instanceJSON, source);
+    }
   }
-  return found->generate(instanceJSON, source);
+  return std::nullopt;
 }
 
 } // namespace mqt::bench
