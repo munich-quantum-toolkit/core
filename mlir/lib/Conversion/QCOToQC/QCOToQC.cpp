@@ -1174,7 +1174,7 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* module = getOperation();
+    auto moduleOp = getOperation();
 
     // Create state object to track the qubit addressing mode
     LoweringState state;
@@ -1251,7 +1251,7 @@ protected:
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
     // Apply the conversion
-    if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
+    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
       signalPassFailure();
     }
   }

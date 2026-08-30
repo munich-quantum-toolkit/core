@@ -204,20 +204,15 @@ static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
 /**
  * @brief Gets the name of the entry point from the module attributes
  */
-static StringRef getEntryPointName(Operation* op) {
-  auto module = dyn_cast<ModuleOp>(op);
-  if (!module) {
-    llvm::reportFatalInternalError("Expected a module operation");
-  }
-
-  auto entryPointAttr = module->getAttr("jeff.entrypoint");
+static StringRef getEntryPointName(ModuleOp moduleOp) {
+  auto entryPointAttr = moduleOp->getAttr("jeff.entrypoint");
   if (!entryPointAttr) {
     llvm::reportFatalInternalError(
         "Module is missing 'jeff.entrypoint' attribute");
   }
   auto entryPoint = cast<IntegerAttr>(entryPointAttr).getUInt();
 
-  auto stringsAttr = module->getAttr("jeff.strings");
+  auto stringsAttr = moduleOp->getAttr("jeff.strings");
   if (!stringsAttr) {
     llvm::reportFatalInternalError(
         "Module is missing 'jeff.strings' attribute");
@@ -234,25 +229,17 @@ static StringRef getEntryPointName(Operation* op) {
 /**
  * @brief Cleans up the module after conversion
  *
- * @param op The module operation to clean up
- * @return LogicalResult Success or failure of the cleanup
+ * @param moduleOp The module operation to clean up
  */
-static LogicalResult cleanUp(Operation* op) {
-  auto module = dyn_cast<ModuleOp>(op);
-  if (!module) {
-    return failure();
-  }
-
-  // Remove module attributes
-  module->removeAttr("jeff.entrypoint");
-  module->removeAttr("jeff.strings");
-  module->removeAttr("jeff.tool");
-  module->removeAttr("jeff.toolVersion");
-  module->removeAttr("jeff.version");
-  module->removeAttr("jeff.versionMinor");
-  module->removeAttr("jeff.versionPatch");
-
-  return success();
+static void cleanUp(ModuleOp moduleOp) {
+  /// Remove module attributes.
+  moduleOp->removeAttr("jeff.entrypoint");
+  moduleOp->removeAttr("jeff.strings");
+  moduleOp->removeAttr("jeff.tool");
+  moduleOp->removeAttr("jeff.toolVersion");
+  moduleOp->removeAttr("jeff.version");
+  moduleOp->removeAttr("jeff.versionMinor");
+  moduleOp->removeAttr("jeff.versionPatch");
 }
 
 /**
@@ -1288,7 +1275,7 @@ struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* module = getOperation();
+    auto moduleOp = getOperation();
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
@@ -1302,7 +1289,7 @@ protected:
                          tensor::TensorDialect, scf::SCFDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return (op.getSymName() != getEntryPointName(module) ||
+      return (op.getSymName() != getEntryPointName(moduleOp) ||
               mqt::isEntryPoint(op)) &&
              typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
@@ -1343,14 +1330,12 @@ protected:
                                                           context);
 
     // Apply the conversion
-    if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
+    if (applyPartialConversion(moduleOp, target, std::move(patterns)).failed()) {
       signalPassFailure();
       return;
     }
 
-    if (cleanUp(module).failed()) {
-      signalPassFailure();
-    }
+    cleanUp(moduleOp);
   }
 };
 
