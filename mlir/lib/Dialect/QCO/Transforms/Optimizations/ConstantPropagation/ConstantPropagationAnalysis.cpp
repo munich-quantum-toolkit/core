@@ -72,6 +72,33 @@ static void ensureSeeded(UnionTable& table, Operation* const op) {
   }
 }
 
+/**
+ * Conservative fallback for an operation whose quantum effect the analysis does
+ * not model - a valid but unsupported construct (`scf.for`, `qco.index_switch`,
+ * ...) or any unrecognized op that touches qubits.
+ */
+static LogicalResult applyUnmodelledOp(UnionTable& table, Operation* const op) {
+  const auto isQubit = [](Value v) { return isa<QubitType>(v.getType()); };
+
+  SmallVector<Value> qubitOperands;
+  for (Value operand : op->getOperands()) {
+    if (isQubit(operand)) {
+      qubitOperands.push_back(operand);
+    }
+  }
+  SmallVector<Value> qubitResults;
+  for (Value result : op->getResults()) {
+    if (isQubit(result)) {
+      qubitResults.push_back(result);
+    }
+  }
+
+  // Thread each qubit through operand -> result. zip() pairs the common prefix
+  table.forwardValues(qubitOperands, qubitResults);
+  table.markQubitsTop(qubitResults);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // UnionTableLattice
 //===----------------------------------------------------------------------===//
@@ -168,10 +195,12 @@ LogicalResult ConstantPropagationAnalysis::visitOperation(
 
   UnionTable table = before.getUnionTable();
   if (failed(applyOperation(table, op, /*quantumControls=*/{}))) {
+    // Valid unsupported ops are absorbed conservatively by applyOperation, so a
+    // failure here means a UnionTable invariant broke - an internal bug, not a
+    // property of the input.
     return op->emitError()
-           << "constant propagation cannot interpret '" << op->getName()
-           << "' (unsupported operation, or a propagation bug left the state "
-              "inconsistent)";
+           << "constant propagation left the abstract state inconsistent at '"
+           << op->getName() << "' (internal error)";
   }
   propagateIfChanged(after, after->setUnionTable(std::move(table)));
   return success();
@@ -221,11 +250,12 @@ LogicalResult ConstantPropagationAnalysis::applyOperation(
       .Case<CtrlOp>([&](const CtrlOp ctrl) {
         return applyCtrl(table, ctrl, quantumControls);
       })
-      .Case<IfOp, IndexSwitchOp>([](Operation*) {
-        // Region-branch ops are routed by the framework
+      .Case<IfOp, IndexSwitchOp>([&](Operation* branch) {
+        // Normally routed by the framework
         // (visitRegionBranchControlFlowTransfer); reaching one here means it is
-        // nested in a modifier body, which the QCO verifier forbids.
-        return failure();
+        // nested in a qco.ctrl / qco.inv / qco.pow body, which the analysis does
+        // not interpret - fall back to the conservative top.
+        return applyUnmodelledOp(table, branch);
       })
       .Case<UnitaryOpInterface>([&](UnitaryOpInterface gate) {
         // Every remaining unitary: base gates, and qco.inv / qco.pow bodies
@@ -235,11 +265,12 @@ LogicalResult ConstantPropagationAnalysis::applyOperation(
       })
       .Default([&](Operation* other) -> LogicalResult {
         // Not a QCO operation. Anything clear of qubits is a classical op to
-        // fold; an unrecognized qubit-touching op is unsupported.
+        // fold; an unrecognized qubit-touching op (e.g. scf.for) is not
+        // modelled, so its qubits collapse to top rather than failing the pass.
         const auto isQubit = [](const Type t) { return isa<QubitType>(t); };
         if (llvm::any_of(other->getOperandTypes(), isQubit) ||
             llvm::any_of(other->getResultTypes(), isQubit)) {
-          return failure();
+          return applyUnmodelledOp(table, other);
         }
         table.propagateClassical(other);
         return success();

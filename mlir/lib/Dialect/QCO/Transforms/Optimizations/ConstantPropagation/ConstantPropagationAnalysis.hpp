@@ -80,9 +80,12 @@ public:
  * folds, control modifiers, and constant/branching `qco.if`.
  *
  * Unsupported constructs (`scf.for`, `qco.index_switch`, and any operation
- * touching qubits that the analysis cannot model) make the pass fail via
- * `emitError`. Precision losses (parametric gates, `qco.inv` / `qco.pow`
- * bodies, non-constant `qco.if`) collapse the affected qubits to top instead.
+ * touching qubits that the analysis cannot model) are handled conservatively:
+ * the qubits they consume or produce collapse to top, everything else keeps its
+ * state. Precision losses (parametric gates, `qco.inv` / `qco.pow` bodies,
+ * non-constant `qco.if`) collapse the affected qubits the same way. The pass
+ * only fails (via `emitError`) if a `UnionTable` invariant breaks - an internal
+ * bug rather than a property of the input.
  *
  * Does not call across a boundary: if the module contains any call, the
  * analysis reports top everywhere. Uncalled helper functions are tolerated -
