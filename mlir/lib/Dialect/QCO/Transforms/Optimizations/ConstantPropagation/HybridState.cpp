@@ -45,6 +45,15 @@ static std::optional<bool> classicalTruth(Attribute attr) {
   return std::nullopt;
 }
 
+/// @brief Whether every quantum control qubit is present in the group. A
+/// missing quantum control is a caller/propagation bug that must fail the gate
+/// even when the classical controls would skip its application.
+static bool quantumControlsPresent(const QuantumState& state,
+                                   ArrayRef<Value> quantumCtrlsIn) {
+  return llvm::all_of(quantumCtrlsIn,
+                      [&](Value qc) { return state.contains(qc); });
+}
+
 /// @brief Numeric value of a resolved classical constant, or nullopt if attr is
 /// not an integer/index/bool/float constant.
 static std::optional<double> classicalDouble(Attribute attr) {
@@ -159,7 +168,8 @@ LogicalResult HybridState::applyMatrix1Q(Value in, Value out,
                                          ArrayRef<Value> quantumCtrlsOut,
                                          ArrayRef<Value> posClassicalCtrls,
                                          ArrayRef<Value> negClassicalCtrls) {
-  if (quantumCtrlsIn.size() != quantumCtrlsOut.size() || !state.contains(in)) {
+  if (quantumCtrlsIn.size() != quantumCtrlsOut.size() || !state.contains(in) ||
+      !quantumControlsPresent(state, quantumCtrlsIn)) {
     return failure();
   }
   const auto hold = classicalControlsHold(posClassicalCtrls, negClassicalCtrls);
@@ -182,8 +192,9 @@ LogicalResult HybridState::applyMatrix2Q(Value in0, Value in1, Value out0,
                                          ArrayRef<Value> quantumCtrlsOut,
                                          ArrayRef<Value> posClassicalCtrls,
                                          ArrayRef<Value> negClassicalCtrls) {
-  if (quantumCtrlsIn.size() != quantumCtrlsOut.size() || !state.contains(in0) ||
-      !state.contains(in1)) {
+  if (quantumCtrlsIn.size() != quantumCtrlsOut.size() || in0 == in1 ||
+      !state.contains(in0) || !state.contains(in1) ||
+      !quantumControlsPresent(state, quantumCtrlsIn)) {
     return failure();
   }
   const auto hold = classicalControlsHold(posClassicalCtrls, negClassicalCtrls);
@@ -205,7 +216,8 @@ LogicalResult HybridState::addGlobalPhase(Value theta,
                                           ArrayRef<Value> quantumCtrlsOut,
                                           ArrayRef<Value> posClassicalCtrls,
                                           ArrayRef<Value> negClassicalCtrls) {
-  if (quantumCtrlsIn.size() != quantumCtrlsOut.size()) {
+  if (quantumCtrlsIn.size() != quantumCtrlsOut.size() ||
+      !quantumControlsPresent(state, quantumCtrlsIn)) {
     return failure();
   }
   const auto hold = classicalControlsHold(posClassicalCtrls, negClassicalCtrls);
