@@ -222,8 +222,8 @@ TEST_F(ConstantPropagationAnalysisTest,
        constantIfIsThreadedThroughBothBranches) {
   auto reg = builder.allocQubitRegister(1);
   builder.qcoIf(
-      true, reg[0], [&](const Value arg) { return builder.x(arg); },
-      [&](const Value arg) { return builder.h(arg); });
+      true, reg[0], [&](Value arg) { return builder.x(arg); },
+      [&](Value arg) { return builder.h(arg); });
   const auto module = builder.finalize();
 
   const std::string dump = analyze(*module);

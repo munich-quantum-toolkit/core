@@ -249,8 +249,8 @@ TEST_F(ConstantPropagationTest, multipleEntryPointsFail) {
 TEST_F(ConstantPropagationTest, runsOnProgramWithConstantIf) {
   auto reg = builder.allocQubitRegister(1);
   builder.qcoIf(
-      true, reg[0], [&](const Value arg) { return builder.x(arg); },
-      [&](const Value arg) { return builder.h(arg); });
+      true, reg[0], [&](Value arg) { return builder.x(arg); },
+      [&](Value arg) { return builder.h(arg); });
   const auto module = builder.finalize();
 
   ASSERT_TRUE(succeeded(run(*module)));
