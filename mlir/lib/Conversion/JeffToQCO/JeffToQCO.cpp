@@ -24,7 +24,6 @@
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -204,26 +203,28 @@ static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
 /**
  * @brief Gets the name of the entry point from the module attributes
  */
-static StringRef getEntryPointName(ModuleOp moduleOp) {
-  auto entryPointAttr = moduleOp->getAttr("jeff.entrypoint");
-  if (!entryPointAttr) {
-    llvm::reportFatalInternalError(
-        "Module is missing 'jeff.entrypoint' attribute");
+static FailureOr<StringRef> getEntryPointName(ModuleOp moduleOp) {
+  auto entryPointAttr = moduleOp->getAttrOfType<IntegerAttr>("jeff.entrypoint");
+  if (!entryPointAttr || !entryPointAttr.getType().isUnsignedInteger()) {
+    return moduleOp.emitError(
+        "requires an unsigned integer 'jeff.entrypoint' attribute");
   }
-  auto entryPoint = cast<IntegerAttr>(entryPointAttr).getUInt();
+  auto entryPoint = entryPointAttr.getUInt();
 
-  auto stringsAttr = moduleOp->getAttr("jeff.strings");
+  auto stringsAttr = moduleOp->getAttrOfType<ArrayAttr>("jeff.strings");
   if (!stringsAttr) {
-    llvm::reportFatalInternalError(
-        "Module is missing 'jeff.strings' attribute");
-  }
-  auto strings = cast<ArrayAttr>(stringsAttr);
-
-  if (entryPoint >= strings.size()) {
-    llvm::reportFatalInternalError("Entry point index is out of bounds");
+    return moduleOp.emitError("requires an array 'jeff.strings' attribute");
   }
 
-  return cast<StringAttr>(strings[entryPoint]).getValue();
+  if (entryPoint >= stringsAttr.size()) {
+    return moduleOp.emitError("'jeff.entrypoint' index is out of bounds");
+  }
+
+  auto name = dyn_cast<StringAttr>(stringsAttr[entryPoint]);
+  if (!name) {
+    return moduleOp.emitError("'jeff.entrypoint' must index a string");
+  }
+  return name.getValue();
 }
 
 /**
@@ -1276,6 +1277,11 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto moduleOp = getOperation();
+    auto entryPointName = getEntryPointName(moduleOp);
+    if (failed(entryPointName)) {
+      signalPassFailure();
+      return;
+    }
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
@@ -1289,8 +1295,7 @@ protected:
                          tensor::TensorDialect, scf::SCFDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return (op.getSymName() != getEntryPointName(moduleOp) ||
-              mqt::isEntryPoint(op)) &&
+      return (op.getSymName() != *entryPointName || mqt::isEntryPoint(op)) &&
              typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
     });
@@ -1330,7 +1335,8 @@ protected:
                                                           context);
 
     // Apply the conversion
-    if (applyPartialConversion(moduleOp, target, std::move(patterns)).failed()) {
+    if (applyPartialConversion(moduleOp, target, std::move(patterns))
+            .failed()) {
       signalPassFailure();
       return;
     }
