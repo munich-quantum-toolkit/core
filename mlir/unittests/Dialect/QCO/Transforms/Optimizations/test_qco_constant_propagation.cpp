@@ -22,6 +22,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -32,11 +33,22 @@ namespace {
 using namespace mlir;
 using namespace mlir::qco;
 
-/// Every qco.ctrl in the module, in walk order.
-SmallVector<CtrlOp> ctrlOps(ModuleOp module) {
-  SmallVector<CtrlOp> ops;
-  module.walk([&](const CtrlOp op) { ops.push_back(op); });
-  return ops;
+/// Number of ops of a given kind anywhere in the module (bodies included).
+template <typename OpT> unsigned countOps(ModuleOp module) {
+  unsigned n = 0;
+  module.walk([&](OpT) { ++n; });
+  return n;
+}
+
+/// The first op of a given kind in walk order, or a null handle if there is
+/// none.
+template <typename OpT> OpT firstOp(ModuleOp module) {
+  OpT found;
+  module.walk([&](OpT op) {
+    found = op;
+    return WalkResult::interrupt();
+  });
+  return found;
 }
 
 class ConstantPropagationTest : public testing::Test {
@@ -67,13 +79,12 @@ protected:
 
 TEST_F(ConstantPropagationTest, dropsGateWithUnsatisfiableControl) {
   auto reg = builder.allocQubitRegister(2);
-  // reg[0] stays |0>, so the controlled X can never fire.
   builder.cx(reg[0], reg[1]);
   const auto module = builder.finalize();
 
   ASSERT_TRUE(succeeded(run(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(ctrlOps(*module).empty());
+  EXPECT_EQ(countOps<CtrlOp>(*module), 0U);
 }
 
 TEST_F(ConstantPropagationTest, stripsAlwaysSatisfiedControl) {
@@ -87,24 +98,21 @@ TEST_F(ConstantPropagationTest, stripsAlwaysSatisfiedControl) {
   ASSERT_TRUE(succeeded(run(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
 
-  auto ctrls = ctrlOps(*module);
-  ASSERT_EQ(ctrls.size(), 1U);
-  EXPECT_EQ(ctrls.front().getNumControls(), 1U);
+  ASSERT_EQ(countOps<CtrlOp>(*module), 1U);
+  EXPECT_EQ(firstOp<CtrlOp>(*module).getNumControls(), 1U);
 }
 
 TEST_F(ConstantPropagationTest, unwrapsGateWhenEveryControlRedundant) {
   auto reg = builder.allocQubitRegister(2);
   const Value one = builder.x(reg[0]);
   builder.cx(one, reg[1]);
-  auto module = builder.finalize();
+  const auto module = builder.finalize();
 
   ASSERT_TRUE(succeeded(run(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
 
-  EXPECT_TRUE(ctrlOps(*module).empty());
-  unsigned xGates = 0;
-  module->walk([&](XOp) { ++xGates; });
-  EXPECT_EQ(xGates, 2U);
+  EXPECT_EQ(countOps<CtrlOp>(*module), 0U);
+  EXPECT_EQ(countOps<XOp>(*module), 2U);
 }
 
 TEST_F(ConstantPropagationTest, leavesGateAloneWhenStateIsImprecise) {
@@ -113,10 +121,99 @@ TEST_F(ConstantPropagationTest, leavesGateAloneWhenStateIsImprecise) {
   builder.cx(sup, reg[1]);
   const auto module = builder.finalize();
 
-  // Budget of one amplitude forces reg[0] to top before the controlled gate.
   ASSERT_TRUE(succeeded(run(*module, 1)));
   EXPECT_TRUE(succeeded(verify(*module)));
-  EXPECT_EQ(ctrlOps(*module).size(), 1U);
+  EXPECT_EQ(countOps<CtrlOp>(*module), 1U);
+}
+
+TEST_F(ConstantPropagationTest, dropsGateWhenOneOfSeveralControlsIsAlwaysZero) {
+  auto reg = builder.allocQubitRegister(3);
+  const Value one = builder.x(reg[0]);
+  const SmallVector<Value> controls{one, reg[1]};
+  builder.mcx(controls, reg[2]);
+  const auto module = builder.finalize();
+
+  ASSERT_TRUE(succeeded(run(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_EQ(countOps<CtrlOp>(*module), 0U);
+  EXPECT_EQ(countOps<XOp>(*module), 1U);
+}
+
+TEST_F(ConstantPropagationTest, stripsTrailingAlwaysOneControl) {
+  auto reg = builder.allocQubitRegister(3);
+  const Value sup = builder.h(reg[0]);
+  const Value one = builder.x(reg[1]);
+  const SmallVector<Value> controls{sup, one};
+  builder.mcx(controls, reg[2]);
+  const auto module = builder.finalize();
+
+  ASSERT_TRUE(succeeded(run(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_EQ(countOps<CtrlOp>(*module), 1U);
+  auto ctrl = firstOp<CtrlOp>(*module);
+  EXPECT_EQ(ctrl.getNumControls(), 1U);
+  EXPECT_TRUE(ctrl.getInputControl(0) == sup);
+  EXPECT_EQ(countOps<XOp>(*module), 2U);
+}
+
+TEST_F(ConstantPropagationTest, stripsAllButOneControl) {
+  auto reg = builder.allocQubitRegister(4);
+  const Value a = builder.x(reg[0]);
+  const Value b = builder.x(reg[1]);
+  const Value sup = builder.h(reg[3]);
+  const SmallVector<Value> controls{a, b, sup};
+  builder.mcx(controls, reg[2]);
+  const auto module = builder.finalize();
+
+  ASSERT_TRUE(succeeded(run(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_EQ(countOps<CtrlOp>(*module), 1U);
+  auto ctrl = firstOp<CtrlOp>(*module);
+  EXPECT_EQ(ctrl.getNumControls(), 1U);
+  EXPECT_TRUE(ctrl.getInputControl(0) == sup);
+}
+
+TEST_F(ConstantPropagationTest, unwrapsMultiControlGateWhenAllControlsRedundant) {
+  auto reg = builder.allocQubitRegister(3);
+  const Value a = builder.x(reg[0]);
+  const Value b = builder.x(reg[1]);
+  const SmallVector<Value> controls{a, b};
+  builder.mcx(controls, reg[2]);
+  const auto module = builder.finalize();
+
+  ASSERT_TRUE(succeeded(run(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  EXPECT_EQ(countOps<CtrlOp>(*module), 0U);
+  EXPECT_EQ(countOps<XOp>(*module), 3U);
+}
+
+TEST_F(ConstantPropagationTest, simplifiesChainOfControlledGates) {
+  auto reg = builder.allocQubitRegister(3);
+  const Value q0 = builder.x(reg[0]);
+  const Value q1 = builder.cx(q0, reg[1]).second;
+  builder.cx(q1, reg[2]);
+  const auto module = builder.finalize();
+
+  ASSERT_TRUE(succeeded(run(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  EXPECT_EQ(countOps<CtrlOp>(*module), 0U);
+  EXPECT_EQ(countOps<XOp>(*module), 3U);
+}
+
+TEST_F(ConstantPropagationTest, noControlledGatesIsNoOp) {
+  auto reg = builder.allocQubitRegister(2);
+  (void)builder.x(reg[0]);
+  (void)builder.h(reg[1]);
+  const auto module = builder.finalize();
+
+  ASSERT_TRUE(succeeded(run(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_EQ(countOps<XOp>(*module), 1U);
+  EXPECT_EQ(countOps<HOp>(*module), 1U);
 }
 
 } // namespace
