@@ -228,22 +228,6 @@ static FailureOr<StringRef> getEntryPointName(ModuleOp moduleOp) {
 }
 
 /**
- * @brief Cleans up the module after conversion
- *
- * @param moduleOp The module operation to clean up
- */
-static void cleanUp(ModuleOp moduleOp) {
-  /// Remove module attributes.
-  moduleOp->removeAttr("jeff.entrypoint");
-  moduleOp->removeAttr("jeff.strings");
-  moduleOp->removeAttr("jeff.tool");
-  moduleOp->removeAttr("jeff.toolVersion");
-  moduleOp->removeAttr("jeff.version");
-  moduleOp->removeAttr("jeff.versionMinor");
-  moduleOp->removeAttr("jeff.versionPatch");
-}
-
-/**
  * @brief Checks if a type is a linear type
  */
 static bool isLinearType(Type t) {
@@ -1341,7 +1325,13 @@ protected:
       return;
     }
 
-    cleanUp(moduleOp);
+    moduleOp->removeAttr("jeff.entrypoint");
+    moduleOp->removeAttr("jeff.strings");
+    moduleOp->removeAttr("jeff.tool");
+    moduleOp->removeAttr("jeff.toolVersion");
+    moduleOp->removeAttr("jeff.version");
+    moduleOp->removeAttr("jeff.versionMinor");
+    moduleOp->removeAttr("jeff.versionPatch");
   }
 };
 

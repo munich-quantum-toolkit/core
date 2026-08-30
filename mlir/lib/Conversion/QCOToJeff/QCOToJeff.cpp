@@ -483,7 +483,6 @@ static LogicalResult cleanUp(ModuleOp moduleOp, LoweringState& state) {
   }
   const auto entryPoint = static_cast<uint16_t>(distance);
 
-  /// Set module attributes.
   OpBuilder builder(moduleOp.getContext());
   auto uint16Type = builder.getIntegerType(16, false);
 
@@ -502,10 +501,8 @@ static LogicalResult cleanUp(ModuleOp moduleOp, LoweringState& state) {
                     builder.getStringAttr(MQT_CORE_VERSION));
 
   moduleOp->setAttr("jeff.version", builder.getIntegerAttr(uint16Type, 0));
-  moduleOp->setAttr("jeff.versionMinor",
-                    builder.getIntegerAttr(uint16Type, 3));
-  moduleOp->setAttr("jeff.versionPatch",
-                    builder.getIntegerAttr(uint16Type, 0));
+  moduleOp->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 3));
+  moduleOp->setAttr("jeff.versionPatch", builder.getIntegerAttr(uint16Type, 0));
 
   return success();
 }
