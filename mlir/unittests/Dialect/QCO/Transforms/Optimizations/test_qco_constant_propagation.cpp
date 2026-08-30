@@ -175,7 +175,8 @@ TEST_F(ConstantPropagationTest, stripsAllButOneControl) {
   EXPECT_TRUE(ctrl.getInputControl(0) == sup);
 }
 
-TEST_F(ConstantPropagationTest, unwrapsMultiControlGateWhenAllControlsRedundant) {
+TEST_F(ConstantPropagationTest,
+       unwrapsMultiControlGateWhenAllControlsRedundant) {
   auto reg = builder.allocQubitRegister(3);
   const Value a = builder.x(reg[0]);
   const Value b = builder.x(reg[1]);

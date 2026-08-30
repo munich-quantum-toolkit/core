@@ -385,7 +385,8 @@ TEST_F(QuantumStateTest, resetSuperpositionForcesTargetToZero) {
   auto qs = QuantumState({q[0], q[1]}, 4);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(
-      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {q[0]}).succeeded());
+      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {q[0]})
+          .succeeded());
   const auto result = qs.reset(q[0], q[0]);
   ASSERT_TRUE(succeeded(result));
   const auto& outcomes = *result;
@@ -453,7 +454,8 @@ TEST_F(QuantumStateTest, hasAlwaysZeroAmplitude) {
   auto qs = QuantumState({q[0], q[1]}, 4);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(
-      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {q[0]}).succeeded());
+      qs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {q[0]})
+          .succeeded());
   EXPECT_TRUE(qs.hasAlwaysZeroAmplitude({{q[0], false}, {q[1], true}}));
   EXPECT_FALSE(qs.hasAlwaysZeroAmplitude({{q[0], true}, {q[1], true}}));
 }

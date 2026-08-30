@@ -185,12 +185,11 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect"];
-  let summary =
-      "This pass applies constant propagation to a circuit. It "
-      "assumes that all input qubits are |0>. It propagates the "
-      "state of the qubits up to a given complexity threshold and "
-      "removes gates which are superfluous considering the current "
-      "state.";
+  let summary = "This pass applies constant propagation to a circuit. It "
+                "assumes that all input qubits are |0>. It propagates the "
+                "state of the qubits up to a given complexity threshold and "
+                "removes gates which are superfluous considering the current "
+                "state.";
   let description = [{
      This pass applies quantum constant propagation. This optimization routine assumes that the input qubits of the
      circuits are |0>. It propagates the qubit states and the state of additional classical values through the circuit.
