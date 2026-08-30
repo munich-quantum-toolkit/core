@@ -195,6 +195,13 @@ TEST_F(QuantumStateTest, applyToQubitNotInGroupFailsEvenWhenTop) {
       qs.applyMatrix1Q(stranger, stranger, xOp.getUnitaryMatrix()).failed());
 }
 
+TEST_F(QuantumStateTest, twoQubitGateWithControlNotInGroupFails) {
+  auto qs = QuantumState({q[0], q[1]}, 4);
+  EXPECT_TRUE(qs.applyMatrix2Q(q[0], q[1], q[0], q[1],
+                               swapOp.getUnitaryMatrix(), {q[2]}, {q[2]})
+                  .failed());
+}
+
 //===----------------------------------------------------------------------===//
 // Controls
 //===----------------------------------------------------------------------===//
@@ -265,6 +272,16 @@ TEST_F(QuantumStateTest, topStateStillForwardsQubits) {
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[1], xOp.getUnitaryMatrix()).succeeded());
   EXPECT_FALSE(qs.contains(q[0]));
   EXPECT_TRUE(qs.contains(q[1]));
+}
+
+TEST_F(QuantumStateTest, groupWiderThanTheIndexTypeIsTop) {
+  auto reg = builder.allocQubitRegister(64);
+  SmallVector<Value> many;
+  for (size_t i = 0; i < 64; ++i) {
+    many.push_back(reg[i]);
+  }
+  const auto qs = QuantumState(many, 4);
+  EXPECT_TRUE(qs.isTop());
 }
 
 //===----------------------------------------------------------------------===//
@@ -483,15 +500,9 @@ TEST_F(QuantumStateTest, topStatesAreEqual) {
   EXPECT_FALSE(a == QuantumState({q[0], q[1], q[2], q[3]}, 4));
 }
 
-TEST_F(QuantumStateTest, groupWiderThanTheIndexTypeIsTop) {
-  auto reg = builder.allocQubitRegister(64);
-  SmallVector<Value> many;
-  for (size_t i = 0; i < 64; ++i) {
-    many.push_back(reg[i]);
-  }
-  const auto qs = QuantumState(many, 4);
-  EXPECT_TRUE(qs.isTop());
-}
+//===----------------------------------------------------------------------===//
+// Printing
+//===----------------------------------------------------------------------===//
 
 TEST_F(QuantumStateTest, printRendersImaginaryAmplitudes) {
   auto qs = QuantumState::singletonZero(q[0], 4);
@@ -499,13 +510,6 @@ TEST_F(QuantumStateTest, printRendersImaginaryAmplitudes) {
   ASSERT_TRUE(
       qs.applyMatrix1Q(q[0], q[0], SOp::getUnitaryMatrix()).succeeded());
   EXPECT_NE(printed(qs).find(" i"), std::string::npos);
-}
-
-TEST_F(QuantumStateTest, twoQubitGateWithControlNotInGroupFails) {
-  auto qs = QuantumState({q[0], q[1]}, 4);
-  EXPECT_TRUE(qs.applyMatrix2Q(q[0], q[1], q[0], q[1],
-                               swapOp.getUnitaryMatrix(), {q[2]}, {q[2]})
-                  .failed());
 }
 
 } // namespace
