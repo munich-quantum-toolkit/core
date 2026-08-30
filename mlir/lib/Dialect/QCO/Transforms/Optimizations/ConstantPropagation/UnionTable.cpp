@@ -60,8 +60,7 @@ std::optional<unsigned> UnionTable::slotIndexContaining(Value v) const {
   return std::nullopt;
 }
 
-SmallVector<unsigned>
-UnionTable::slotsTouchedBy(ArrayRef<Value> values) const {
+SmallVector<unsigned> UnionTable::slotsTouchedBy(ArrayRef<Value> values) const {
   SmallVector<unsigned> result;
   for (Value v : values) {
     if (const auto i = slotIndexContaining(v)) {
@@ -237,8 +236,7 @@ void UnionTable::forwardValue(Value from, Value to) {
   }
 }
 
-void UnionTable::forwardValues(ArrayRef<Value> from,
-                               ArrayRef<Value> to) {
+void UnionTable::forwardValues(ArrayRef<Value> from, ArrayRef<Value> to) {
   for (const auto [f, t] : llvm::zip(from, to)) {
     forwardValue(f, t);
   }
@@ -248,12 +246,12 @@ void UnionTable::forwardValues(ArrayRef<Value> from,
 // Operation propagation
 //===----------------------------------------------------------------------===//
 
-LogicalResult
-UnionTable::applyMatrix1Q(Value in, Value out, const Matrix2x2& matrix,
-                          ArrayRef<Value> quantumCtrlsIn,
-                          ArrayRef<Value> quantumCtrlsOut,
-                          ArrayRef<Value> posClassicalCtrls,
-                          ArrayRef<Value> negClassicalCtrls) {
+LogicalResult UnionTable::applyMatrix1Q(Value in, Value out,
+                                        const Matrix2x2& matrix,
+                                        ArrayRef<Value> quantumCtrlsIn,
+                                        ArrayRef<Value> quantumCtrlsOut,
+                                        ArrayRef<Value> posClassicalCtrls,
+                                        ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
     return success();
   }
@@ -280,11 +278,12 @@ UnionTable::applyMatrix1Q(Value in, Value out, const Matrix2x2& matrix,
   return success();
 }
 
-LogicalResult UnionTable::applyMatrix2Q(
-    Value in0, Value in1, Value out0, Value out1, const Matrix4x4& matrix,
-    ArrayRef<Value> quantumCtrlsIn, ArrayRef<Value> quantumCtrlsOut,
-    ArrayRef<Value> posClassicalCtrls,
-    ArrayRef<Value> negClassicalCtrls) {
+LogicalResult UnionTable::applyMatrix2Q(Value in0, Value in1, Value out0,
+                                        Value out1, const Matrix4x4& matrix,
+                                        ArrayRef<Value> quantumCtrlsIn,
+                                        ArrayRef<Value> quantumCtrlsOut,
+                                        ArrayRef<Value> posClassicalCtrls,
+                                        ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
     return success();
   }
@@ -311,11 +310,11 @@ LogicalResult UnionTable::applyMatrix2Q(
   return success();
 }
 
-LogicalResult
-UnionTable::addGlobalPhase(Value theta, ArrayRef<Value> quantumCtrlsIn,
-                           ArrayRef<Value> quantumCtrlsOut,
-                           ArrayRef<Value> posClassicalCtrls,
-                           ArrayRef<Value> negClassicalCtrls) {
+LogicalResult UnionTable::addGlobalPhase(Value theta,
+                                         ArrayRef<Value> quantumCtrlsIn,
+                                         ArrayRef<Value> quantumCtrlsOut,
+                                         ArrayRef<Value> posClassicalCtrls,
+                                         ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
     return success();
   }
@@ -375,10 +374,10 @@ void UnionTable::propagateClassical(Operation* op) {
   }
 }
 
-LogicalResult
-UnionTable::measureQubit(Value in, Value out, Value classicalResult,
-                         ArrayRef<Value> posClassicalCtrls,
-                         ArrayRef<Value> negClassicalCtrls) {
+LogicalResult UnionTable::measureQubit(Value in, Value out,
+                                       Value classicalResult,
+                                       ArrayRef<Value> posClassicalCtrls,
+                                       ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
     return success();
   }
@@ -539,9 +538,10 @@ bool UnionTable::areControlsSatisfiable(
   return true;
 }
 
-SuperfluousResult UnionTable::getSuperfluousControls(
-    ArrayRef<Value> quantumCtrls, ArrayRef<Value> posClassicalCtrls,
-    ArrayRef<Value> negClassicalCtrls) const {
+SuperfluousResult
+UnionTable::getSuperfluousControls(ArrayRef<Value> quantumCtrls,
+                                   ArrayRef<Value> posClassicalCtrls,
+                                   ArrayRef<Value> negClassicalCtrls) const {
   SuperfluousResult result;
   if (!areControlsSatisfiable(quantumCtrls, posClassicalCtrls,
                               negClassicalCtrls)) {

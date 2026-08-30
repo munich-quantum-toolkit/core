@@ -130,9 +130,7 @@ public:
    *
    * @param newProbability The new probability.
    */
-  void setProbability(double newProbability) {
-    probability = newProbability;
-  }
+  void setProbability(double newProbability) { probability = newProbability; }
 
   /// @brief Collapses this branch's QuantumState to top; classical facts stay.
   void markStateTop();

@@ -58,10 +58,10 @@ releases may include breaking changes.
 
 - ✨ Add passes for quantum-specific interprocedural optimizations ([#2193])
   ([**@DRovara**], [**@burgholzer**])
-- ✨ Add Pauli twirling, quantum loop unrolling, qubit reuse passes, and constant propagation
-  ([#1705], [#1718], [#1755], [#1756], [#1923], [#1924], [#2039], [#2118],
-  [#2216], [#2224], [#2280]) ([**@MatthiasReumann**], [**@DRovara**], [**@burgholzer**],
-  [**@simon1hofmann**], [**@lirem101**])
+- ✨ Add Pauli twirling, quantum loop unrolling, qubit reuse passes, and
+  constant propagation ([#1705], [#1718], [#1755], [#1756], [#1923], [#1924],
+  [#2039], [#2118], [#2216], [#2224], [#2280]) ([**@MatthiasReumann**],
+  [**@DRovara**], [**@burgholzer**], [**@simon1hofmann**], [**@lirem101**])
 - ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
   [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
   [#1748], [#1805], [#1870], [#1904], [#1911], [#1951], [#1997], [#2016],

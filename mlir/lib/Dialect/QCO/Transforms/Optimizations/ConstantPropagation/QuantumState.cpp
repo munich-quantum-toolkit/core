@@ -37,8 +37,7 @@ namespace {
 constexpr unsigned MAX_GROUP_QUBITS = 63;
 } // namespace
 
-QuantumState::QuantumState(ArrayRef<Value> qubits,
-                           size_t maxNonzeroAmplitudes)
+QuantumState::QuantumState(ArrayRef<Value> qubits, size_t maxNonzeroAmplitudes)
     : maxNonzeroAmplitudes(maxNonzeroAmplitudes),
       qubits(qubits.begin(), qubits.end()) {
   if (qubits.size() > MAX_GROUP_QUBITS) {
@@ -83,8 +82,7 @@ void QuantumState::forwardQubit(Value from, Value to) {
   }
 }
 
-void QuantumState::forwardQubits(ArrayRef<Value> from,
-                                 ArrayRef<Value> to) {
+void QuantumState::forwardQubits(ArrayRef<Value> from, ArrayRef<Value> to) {
   for (const auto [f, t] : llvm::zip(from, to)) {
     forwardQubit(f, t);
   }
@@ -209,10 +207,9 @@ LogicalResult QuantumState::applyMatrix2Q(Value in0, Value in1, Value out0,
   return success();
 }
 
-LogicalResult
-QuantumState::applyControlledPhase(double phase,
-                                   ArrayRef<Value> ctrlsIn,
-                                   ArrayRef<Value> ctrlsOut) {
+LogicalResult QuantumState::applyControlledPhase(double phase,
+                                                 ArrayRef<Value> ctrlsIn,
+                                                 ArrayRef<Value> ctrlsOut) {
   if (ctrlsIn.empty() ||
       (!ctrlsOut.empty() && ctrlsOut.size() != ctrlsIn.size())) {
     return failure();

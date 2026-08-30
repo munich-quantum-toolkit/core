@@ -142,8 +142,7 @@ void UnionTableLattice::print(raw_ostream& os) const {
 //===----------------------------------------------------------------------===//
 
 ConstantPropagationAnalysis::ConstantPropagationAnalysis(
-    DataFlowSolver& solver, size_t maxNonzeroAmplitudes,
-    size_t maxHybridStates)
+    DataFlowSolver& solver, size_t maxNonzeroAmplitudes, size_t maxHybridStates)
     : DenseForwardDataFlowAnalysis(solver),
       maxNonzeroAmplitudes(maxNonzeroAmplitudes),
       maxHybridStates(maxHybridStates) {}
@@ -206,8 +205,9 @@ LogicalResult ConstantPropagationAnalysis::visitOperation(
   return success();
 }
 
-LogicalResult ConstantPropagationAnalysis::applyOperation(
-    UnionTable& table, Operation* op, ArrayRef<Value> quantumControls) {
+LogicalResult
+ConstantPropagationAnalysis::applyOperation(UnionTable& table, Operation* op,
+                                            ArrayRef<Value> quantumControls) {
   ensureSeeded(table, op);
 
   return TypeSwitch<Operation*, LogicalResult>(op)
@@ -247,14 +247,13 @@ LogicalResult ConstantPropagationAnalysis::applyOperation(
         return table.addGlobalPhase(gphase.getTheta(), quantumControls,
                                     quantumControls);
       })
-      .Case<CtrlOp>([&](CtrlOp ctrl) {
-        return applyCtrl(table, ctrl, quantumControls);
-      })
+      .Case<CtrlOp>(
+          [&](CtrlOp ctrl) { return applyCtrl(table, ctrl, quantumControls); })
       .Case<IfOp, IndexSwitchOp>([&](Operation* branch) {
         // Normally routed by the framework
         // (visitRegionBranchControlFlowTransfer); reaching one here means it is
-        // nested in a qco.ctrl / qco.inv / qco.pow body, which the analysis does
-        // not interpret - fall back to the conservative top.
+        // nested in a qco.ctrl / qco.inv / qco.pow body, which the analysis
+        // does not interpret - fall back to the conservative top.
         return applyUnmodelledOp(table, branch);
       })
       .Case<UnitaryOpInterface>([&](UnitaryOpInterface gate) {
@@ -277,9 +276,10 @@ LogicalResult ConstantPropagationAnalysis::applyOperation(
       });
 }
 
-LogicalResult ConstantPropagationAnalysis::applyUnitary(
-    UnionTable& table, UnitaryOpInterface gate,
-    ArrayRef<Value> quantumControls) {
+LogicalResult
+ConstantPropagationAnalysis::applyUnitary(UnionTable& table,
+                                          UnitaryOpInterface gate,
+                                          ArrayRef<Value> quantumControls) {
   const auto targetsIn = toVec(gate.getInputTargets());
   const auto targetsOut = toVec(gate.getOutputTargets());
 
