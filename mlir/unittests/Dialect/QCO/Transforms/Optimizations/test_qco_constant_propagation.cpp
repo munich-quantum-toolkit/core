@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -18,9 +19,11 @@
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Pass/PassManager.h>
@@ -207,14 +210,51 @@ TEST_F(ConstantPropagationTest, simplifiesChainOfControlledGates) {
 
 TEST_F(ConstantPropagationTest, noControlledGatesIsNoOp) {
   auto reg = builder.allocQubitRegister(2);
-  (void)builder.x(reg[0]);
-  (void)builder.h(reg[1]);
+  builder.x(reg[0]);
+  builder.h(reg[1]);
   const auto module = builder.finalize();
 
   ASSERT_TRUE(succeeded(run(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
   EXPECT_EQ(countOps<XOp>(*module), 1U);
   EXPECT_EQ(countOps<HOp>(*module), 1U);
+}
+
+TEST_F(ConstantPropagationTest, missingEntryPointIsANoOp) {
+  auto reg = builder.allocQubitRegister(2);
+  Value q0 = builder.x(reg[0]);
+  builder.cx(q0, reg[1]);
+  auto module = builder.finalize();
+
+  mqt::removeEntryPoint(mqt::getEntryPoint(*module).getOperation());
+
+  ASSERT_TRUE(succeeded(run(*module)));
+  EXPECT_EQ(countOps<CtrlOp>(*module), 1U);
+}
+
+TEST_F(ConstantPropagationTest, multipleEntryPointsFail) {
+  auto reg = builder.allocQubitRegister(1);
+  builder.x(reg[0]);
+  auto module = builder.finalize();
+
+  OpBuilder ob(module->getContext());
+  ob.setInsertionPointToEnd(module->getBody());
+  auto second = func::FuncOp::create(ob, module->getLoc(), "second",
+                                     ob.getFunctionType({}, {}));
+  mqt::setEntryPoint(second.getOperation());
+
+  EXPECT_TRUE(failed(run(*module)));
+}
+
+TEST_F(ConstantPropagationTest, runsOnProgramWithConstantIf) {
+  auto reg = builder.allocQubitRegister(1);
+  builder.qcoIf(
+      true, reg[0], [&](const Value arg) { return builder.x(arg); },
+      [&](const Value arg) { return builder.h(arg); });
+  const auto module = builder.finalize();
+
+  ASSERT_TRUE(succeeded(run(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
 }
 
 } // namespace

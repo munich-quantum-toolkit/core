@@ -469,4 +469,35 @@ TEST_F(HybridStateTest, printIsNonEmpty) {
   EXPECT_NE(printed(hs).find("p=1.0000"), std::string::npos);
 }
 
+TEST_F(HybridStateTest, globalPhaseAcceptsIntegerTheta) {
+  auto hs = make({q[0]});
+  Value theta = builder.intConstant(3);
+  hs.setClassical(theta, builder.getIntegerAttr(theta.getType(), 3));
+  ASSERT_TRUE(hs.addGlobalPhase(theta).succeeded());
+  EXPECT_LT(std::abs(hs.getGlobalPhase() - std::polar(1.0, 3.0)), 1e-9);
+}
+
+TEST_F(HybridStateTest,
+       twoQubitGateSkippedByFalseClassicalControlStillForwards) {
+  auto hs = make({q[0], q[1]});
+  ASSERT_TRUE(hs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix()).succeeded());
+
+  hs.setClassical(cA, builder.getBoolAttr(false));
+  ASSERT_TRUE(hs.applyMatrix2Q(q[0], q[1], q[2], q[3], dcxOp.getUnitaryMatrix(),
+                               {}, {}, {cA})
+                  .succeeded());
+  EXPECT_FALSE(hs.hasQubit(q[0]));
+  EXPECT_TRUE(hs.hasQubit(q[2]));
+  EXPECT_TRUE(hs.hasQubit(q[3]));
+  EXPECT_TRUE(hs.isQubitAlwaysZero(q[2]));
+  EXPECT_TRUE(hs.isQubitAlwaysOne(q[3]));
+}
+
+TEST_F(HybridStateTest, unresolvedNegativeClassicalControlFails) {
+  auto hs = make({q[0]});
+  EXPECT_TRUE(
+      hs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix(), {}, {}, {}, {cA})
+          .failed());
+}
+
 } // namespace

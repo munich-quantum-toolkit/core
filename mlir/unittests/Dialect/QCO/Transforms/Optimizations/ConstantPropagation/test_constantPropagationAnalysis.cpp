@@ -13,6 +13,8 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Analysis/DataFlow/ConstantPropagationAnalysis.h>
 #include <mlir/Analysis/DataFlow/DeadCodeAnalysis.h>
@@ -20,6 +22,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
@@ -28,6 +31,7 @@
 #include <mlir/IR/Value.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 using namespace mlir;
@@ -190,6 +194,60 @@ TEST_F(ConstantPropagationAnalysisTest, deterministicMeasurementRecordsBit) {
   EXPECT_EQ(dump.find("<analysis failed>"), std::string::npos);
   EXPECT_NE(dump.find("qco.measure -> "), std::string::npos);
   EXPECT_NE(dump.find("classical:"), std::string::npos);
+}
+
+TEST_F(ConstantPropagationAnalysisTest, resetIsInterpreted) {
+  auto reg = builder.allocQubitRegister(1);
+  Value q0 = builder.x(reg[0]);
+  builder.reset(q0);
+  const auto module = builder.finalize();
+
+  const std::string dump = analyze(*module);
+  EXPECT_EQ(dump.find("<analysis failed>"), std::string::npos);
+  EXPECT_NE(dump.find("qco.reset -> "), std::string::npos);
+}
+
+TEST_F(ConstantPropagationAnalysisTest, globalPhaseIsInterpreted) {
+  auto reg = builder.allocQubitRegister(1);
+  builder.x(reg[0]);
+  builder.gphase(0.5);
+  const auto module = builder.finalize();
+
+  const std::string dump = analyze(*module);
+  EXPECT_EQ(dump.find("<analysis failed>"), std::string::npos);
+  EXPECT_NE(dump.find("qco.gphase -> "), std::string::npos);
+}
+
+TEST_F(ConstantPropagationAnalysisTest,
+       constantIfIsThreadedThroughBothBranches) {
+  auto reg = builder.allocQubitRegister(1);
+  builder.qcoIf(
+      true, reg[0], [&](const Value arg) { return builder.x(arg); },
+      [&](const Value arg) { return builder.h(arg); });
+  const auto module = builder.finalize();
+
+  const std::string dump = analyze(*module);
+  EXPECT_EQ(dump.find("<analysis failed>"), std::string::npos);
+  EXPECT_NE(dump.find("qco.if -> "), std::string::npos);
+}
+
+TEST_F(ConstantPropagationAnalysisTest, classicalArithmeticIsFolded) {
+  auto reg = builder.allocQubitRegister(1);
+  builder.x(reg[0]);
+  auto module = builder.finalize();
+
+  OpBuilder ob(module->getContext());
+  auto entry = *module->getBody()->getOps<func::FuncOp>().begin();
+  ob.setInsertionPointToStart(&entry.getBody().front());
+  Value a =
+      arith::ConstantOp::create(ob, module->getLoc(), ob.getI64IntegerAttr(2));
+  Value b =
+      arith::ConstantOp::create(ob, module->getLoc(), ob.getI64IntegerAttr(3));
+  arith::AddIOp::create(ob, module->getLoc(), a, b);
+
+  const std::string dump = analyze(*module);
+  EXPECT_EQ(dump.find("<analysis failed>"), std::string::npos);
+  EXPECT_NE(dump.find("arith.addi -> "), std::string::npos);
 }
 
 } // namespace

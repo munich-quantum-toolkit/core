@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -479,6 +480,31 @@ TEST_F(QuantumStateTest, topStatesAreEqual) {
   b.markTop();
   EXPECT_TRUE(a == b);
   EXPECT_FALSE(a == QuantumState({q[0], q[1], q[2], q[3]}, 4));
+}
+
+
+TEST_F(QuantumStateTest, groupWiderThanTheIndexTypeIsTop) {
+  auto reg = builder.allocQubitRegister(64);
+  SmallVector<Value> many;
+  for (size_t i = 0; i < 64; ++i) {
+    many.push_back(reg[i]);
+  }
+  const auto qs = QuantumState(many, 4);
+  EXPECT_TRUE(qs.isTop());
+}
+
+TEST_F(QuantumStateTest, printRendersImaginaryAmplitudes) {
+  auto qs = QuantumState::singletonZero(q[0], 4);
+  ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
+  ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], SOp::getUnitaryMatrix()).succeeded());
+  EXPECT_NE(printed(qs).find(" i"), std::string::npos);
+}
+
+TEST_F(QuantumStateTest, twoQubitGateWithControlNotInGroupFails) {
+  auto qs = QuantumState({q[0], q[1]}, 4);
+  EXPECT_TRUE(qs.applyMatrix2Q(q[0], q[1], q[0], q[1],
+                              swapOp.getUnitaryMatrix(), {q[2]})
+                  .failed());
 }
 
 } // namespace

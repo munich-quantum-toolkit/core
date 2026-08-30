@@ -428,4 +428,24 @@ TEST_F(UnionTableTest, markAllTopIsAbsorbing) {
   EXPECT_FALSE(ut.isTracked(q[1]));
 }
 
+TEST_F(UnionTableTest, superfluousControlsListsAlwaysTrueClassicalControl) {
+  auto ut = make();
+  Value c = builder.boolConstant(true);
+  ut.seedClassical(c, builder.getBoolAttr(true));
+
+  const auto result = ut.getSuperfluousControls({}, {c});
+  EXPECT_FALSE(result.completelySuperfluous);
+  EXPECT_TRUE(result.superfluousClassicalValues.contains(c));
+}
+
+TEST_F(UnionTableTest, superfluousControlsListsAlwaysFalseNegativeClassicalControl) {
+  auto ut = make();
+  Value c = builder.boolConstant(false);
+  ut.seedClassical(c, builder.getBoolAttr(false));
+
+  const auto result = ut.getSuperfluousControls({}, {}, {c});
+  EXPECT_FALSE(result.completelySuperfluous);
+  EXPECT_TRUE(result.superfluousClassicalValues.contains(c));
+}
+
 } // namespace

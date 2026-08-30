@@ -30,6 +30,7 @@ target_link_libraries(
           MLIRControlFlowDialect
           MLIRControlFlowInterfaces
           MLIRFunctionInterfaces
+          MLIRMQTDialect
           MLIRQCODDFunctionality
           MLIRQCOProgramBuilder
           MLIRQCOPrograms
