@@ -6,6 +6,79 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Removal of the `spdlog` dependency
+
+MQT Core no longer discovers, downloads, builds, installs, or exports `spdlog`.
+The installed CMake package no longer calls `find_dependency(spdlog)`, and the
+Python wheels no longer contain the `spdlog` headers or shared library. QDMI
+diagnostics continue to use standard error.
+
+Downstream projects that use `spdlog` must declare and package the dependency
+themselves. Stop passing `MQT_CORE_SPDLOG_INSTALL` or `SPDLOG_*` cache variables
+when configuring MQT Core. Configure the downstream project's own `spdlog`
+dependency instead.
+
+### CircuitOptimizer removal
+
+MQT Core no longer provides `qc::CircuitOptimizer`. Replace the two generic
+transformations with `QuantumComputation` member calls:
+
+- Replace `qc::CircuitOptimizer::flattenOperations(qc, customGatesOnly)` with
+  `qc.flattenOperations(customGatesOnly)`.
+- Replace `qc::CircuitOptimizer::removeFinalMeasurements(qc)` with
+  `qc.removeFinalMeasurements()`.
+
+Include `ir/QuantumComputation.hpp` and link `MQT::CoreIR`. MQT QCEC and MQT
+QMAP each own their single-qubit gate-fusion implementation. MQT Core provides
+no replacement for `singleQubitGateFusion` outside those packages.
+
+MQT QCEC now owns the equivalence-checking transformations `swapReconstruction`,
+`removeDiagonalGatesBeforeMeasure`, `eliminateResets`, `deferMeasurements`,
+`backpropagateOutputPermutation`, and `elidePermutations`. Use MQT QCEC's
+equivalence-checking flow for this behavior, or keep a package-specific
+transformation with the consumer that needs it.
+
+MQT QMAP now owns the mapping transformations `decomposeSWAP`, `cancelCNOTs`,
+and `replaceMCXWithMCZ`. Replace calls to the corresponding
+`qc::CircuitOptimizer` methods with `qmap::decomposeSWAP`, `qmap::cancelCNOTs`,
+and `qmap::replaceMCXWithMCZ`, respectively. Include
+`datastructures/CircuitOptimizations.hpp` and link `MQT::QMapDS`.
+
+The public `constructDAG` function and the `DAG`, `DAGIterator`,
+`DAGReverseIterator`, `DAGIterators`, and `DAGReverseIterators` aliases have no
+Core replacement. Build the small traversal structure in the package that
+consumes it. MQT QMAP and MQT QuSAT demonstrate this migration.
+
+The public `removeIdentities`, `removeOperation`, `collectBlocks`, and
+`collectCliffordBlocks` functions have no replacement. Erase operations through
+`QuantumComputation` where needed.
+
+The `MQT::CoreCircuitOptimizer` CMake target and the
+`circuit_optimizer/CircuitOptimizer.hpp` header are removed. The
+`circuit_optimizer/mqt_core_circuit_optimizer_export.h` header is no longer
+generated or installed.
+
+### Pruned DD construction helpers
+
+MQT Core no longer provides `dd::GenerationWireStrategy`,
+`dd::generateExponentialState`, or `dd::generateRandomState`. These APIs
+generated decision diagrams with selected shapes for tests and have no direct
+replacement.
+
+MQT Core also removed `dd::buildFunctionalityRecursive`. The Python
+`mqt.core.dd.build_unitary` and `mqt.core.dd.build_functionality` functions no
+longer accept the `recursive` argument and always use sequential construction.
+Use MQT DDSIM's unitary simulator when recursive pairwise construction is
+required.
+
+The zero, basis, GHZ, W, dense-vector, and sequential circuit constructors
+remain available.
+
+### macOS support
+
+MQT Core no longer supports x86 macOS. Use Apple silicon with macOS 13.3 or
+newer. The new deployment target enables `std::format` in libc++.
+
 ### Removal of CoreAlgorithms
 
 MQT Core no longer installs `MQT::CoreAlgorithms` or the headers below
@@ -31,71 +104,6 @@ to recompile anything.
 The Python bindings depend on `nanobind-backend`, which supplies the
 interpreter-specific nanobind runtime. This dependency does not change the C++
 API or the Python import paths.
-
-### Program serialization for QDMI Qiskit backends
-
-The Qiskit backend no longer decides in its own code how to turn a circuit into
-a program. It takes every program format from a registered _program serializer_,
-and MQT Core registers its own OpenQASM 2 and OpenQASM 3 serializers the same
-way as everyone else.
-
-A serializer takes the circuit and the backend. It returns `str` for a text
-format and `bytes` for a binary format;
-{py:func}`~mqt.core.qdmi.is_binary_program_format` states which kind a format
-carries. Register one at run time:
-
-```python
-import io
-
-from qiskit import qpy
-
-from mqt.core.plugins.qiskit import register_program_serializer
-from mqt.core.qdmi import ProgramFormat
-
-
-def my_qpy_serializer(circuit, backend) -> bytes:
-    buffer = io.BytesIO()
-    qpy.dump(circuit, buffer)
-    return buffer.getvalue()
-
-
-register_program_serializer(ProgramFormat.QPY, my_qpy_serializer)
-```
-
-A package that owns a device advertises its serializer through the
-`mqt.core.qiskit.program_serializers` entry point group instead, so MQT Core
-finds it without importing the package:
-
-```toml
-[project.entry-points."mqt.core.qiskit.program_serializers"]
-IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
-```
-
-`mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` states which
-format the backend picks when a device accepts several. Pass `replace=True` to
-`register_program_serializer` to take over a format that already has a
-serializer, including OpenQASM 2 and OpenQASM 3.
-
-A backend subclass that must represent a device-native operation outside
-Qiskit's standard gate library sets `_EXTRA_GATES`:
-
-```python
-class MyBackend(QDMIBackend):
-    _EXTRA_GATES = {"move": MoveGate()}
-```
-
-MQT Core no longer provides `qiskit_to_iqm_json` or `MoveGate`.
-[QDMI-on-IQM](https://github.com/iqm-finland/QDMI-on-IQM) owns both. Import them
-from `iqm.qdmi` instead:
-
-```python
-from iqm.qdmi.serializers import qiskit_to_iqm_json
-from iqm.qdmi.gates import MoveGate
-```
-
-Installing `iqm-qdmi` is enough to keep submitting IQM JSON. The package
-advertises its serializer through the entry point group described above, so a
-backend over an IQM device needs no code change.
 
 ### Removal of DD approximation and density-matrix support
 
@@ -194,6 +202,22 @@ The CoreIR API cleanup requires the following migrations:
   accessors, and direct `Permutation` iteration, respectively.
 - Construct output-permutation measurements explicitly instead of calling
   `appendMeasurementsAccordingToOutputPermutation()`.
+- Replace direct `Operation::dumpOpenQASM2()`, `dumpOpenQASM3()`, or
+  `dumpOpenQASM()` calls with `OpenQASMSerializer`. The register-map aliases
+  moved from `ir/Register.hpp` to `ir/OpenQASMSerializer.hpp`:
+
+  ```cpp
+  #include "ir/OpenQASMSerializer.hpp"
+
+  qc::OpenQASMSerializer(stream, qc::Format::OpenQASM2)
+      .serialize(operation, qubitMap, bitMap);
+  ```
+
+  Use `qc::Format::OpenQASM3` for OpenQASM 3 output. The relocated maps own
+  their register metadata instead of retaining references to the registers used
+  to construct them. Packages that define custom `Operation` subclasses must own
+  serialization for their extended syntax; in particular, MQT QMAP owns
+  neutral-atom OpenQASM serialization.
 
 The register lookup helpers `getQubitRegister()`, `getPhysicalQubitIndex()`, and
 `physicalQubitIsAncillary()` are now private implementation details.
@@ -232,13 +256,8 @@ Boost.Multiprecision or GMP.
 
 ### QIR execution
 
-The standalone QIR runner now invokes a selected QIR entry point as a
-parameterless `i64` function instead of assuming an `int main(int, char**)`. Use
-`--entry-point` to select among multiple entry points, `--shots` for repeated
-execution, and `--seed` for deterministic sampling.
-
 Dynamic QIR inputs must use the current QIR 2.1 resource-management interface.
-Legacy qir-runner allocator and output overloads are no longer accepted.
+Legacy allocator and output overloads are no longer accepted.
 
 The DDSIM QDMI device now isolates the runtime, simulator state, random-number
 generator, and output sink of every QIR job. Concurrently submitted jobs no
@@ -254,10 +273,9 @@ return `QDMI_ERROR_NOTSUPPORTED`.
 MQT Core now builds its MLIR-based compiler infrastructure unconditionally. LLVM
 22.1+ (including MLIR) is therefore required when building MQT Core from source,
 including as a CMake dependency or Python package. The `BUILD_MQT_CORE_MLIR`
-CMake option has been removed. The QIR runner and QIR support in the DDSIM QDMI
-Device are also built unconditionally, so the `BUILD_MQT_CORE_QIR_RUNNER` and
-`BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` options have been removed. Remove these
-three options from build scripts and presets.
+CMake option has been removed. MQT Core also builds QIR support in the DDSIM
+QDMI device unconditionally, so the `BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` option
+has been removed. Remove both options from build scripts and presets.
 
 We offer pre-built distributions for all supported platforms as part of the
 `setup-mlir` project at
@@ -284,6 +302,84 @@ Known limitations:
 MQT Core no longer provides the `datastructures` (`ds`) sublibrary. MQT QMAP was
 its only consumer. Downstream users must depend on MQT QMAP or provide the
 required data structures directly.
+
+## [3.9.2]
+
+### Optional QDMI shot counts
+
+QDMI jobs whose repetition count is encoded in the program can now omit
+`num_shots`. Existing C++ calls that pass a `size_t` keep the same ABI and
+behavior; new C++ overloads omit the argument, while Python accepts `None` and
+uses it by default.
+
+## [3.9.1]
+
+### Program serializers for the Qiskit backend
+
+The Qiskit backend no longer decides in its own code how to turn a circuit into
+a program. It takes every program format from a registered _program serializer_,
+and MQT Core registers its own OpenQASM 2 and OpenQASM 3 serializers the same
+way as everyone else.
+
+A serializer takes the circuit and the backend. It returns `str` for a text
+format and `bytes` for a binary format;
+{py:func}`~mqt.core.qdmi.is_binary_program_format` states which kind a format
+carries. Register one at run time:
+
+```python
+import io
+
+from qiskit import qpy
+
+from mqt.core.plugins.qiskit import register_program_serializer
+from mqt.core.qdmi import ProgramFormat
+
+
+def my_qpy_serializer(circuit, backend) -> bytes:
+    buffer = io.BytesIO()
+    qpy.dump(circuit, buffer)
+    return buffer.getvalue()
+
+
+register_program_serializer(ProgramFormat.QPY, my_qpy_serializer)
+```
+
+A package that owns a device advertises its serializer through the
+`mqt.core.qiskit.program_serializers` entry point group instead, so MQT Core
+finds it without importing the package:
+
+```toml
+[project.entry-points."mqt.core.qiskit.program_serializers"]
+IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
+```
+
+`mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` states which
+format the backend picks when a device accepts several. Pass `replace=True` to
+`register_program_serializer` to take over a format that already has a
+serializer, including OpenQASM 2 and OpenQASM 3.
+
+A backend subclass that must represent a device-native operation outside
+Qiskit's standard gate library sets `_EXTRA_GATES`:
+
+```python
+class MyBackend(QDMIBackend):
+    _EXTRA_GATES = {"move": MoveGate()}
+```
+
+### IQM JSON serialization moved to QDMI-on-IQM
+
+MQT Core no longer provides `qiskit_to_iqm_json` or `MoveGate`.
+[QDMI-on-IQM](https://github.com/iqm-finland/QDMI-on-IQM) owns both. Import them
+from `iqm.qdmi` instead:
+
+```python
+from iqm.qdmi.serializers import qiskit_to_iqm_json
+from iqm.qdmi.gates import MoveGate
+```
+
+Installing `iqm-qdmi` is enough to keep submitting IQM JSON. The package
+advertises its serializer through the entry point group described above, so a
+backend over an IQM device needs no code change.
 
 ## [3.9.0]
 
@@ -690,7 +786,7 @@ access to QDMI devices.
 Install with Qiskit support: `uv pip install "mqt-core[qiskit]"`
 
 See the
-[Qiskit Backend documentation](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qdmi_backend.html)
+[Qiskit Backend documentation](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/qdmi_backend.html)
 for details.
 
 ### Argument name changes in `QuantumComputation` and `CompoundOperation` dunder methods
@@ -873,7 +969,9 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[3.9.2]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...v3.9.2
+[3.9.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...v3.9.0
 [3.8.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...v3.7.0

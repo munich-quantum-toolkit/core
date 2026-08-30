@@ -592,7 +592,11 @@ c = measure q;
 
 def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> None:
     """Test that submit_job forwards custom job parameters to DDSIM."""
-    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+    job = ddsim_device.submit_job("OPENQASM 3.0; qubit q; bit c = measure q;", ProgramFormat.QASM3, 1, custom1=7)
+    job.wait()
+    assert job.check() == Job.Status.DONE
+
+    with pytest.raises(ValueError, match=r"Setting custom parameter: Invalid argument\."):
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom1="value")
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom2="value")
@@ -621,6 +625,20 @@ c[0] = measure q[0];
     assert job1.num_shots == 10
     assert job2.num_shots == 100
     assert job3.num_shots == 1000
+
+
+def test_device_submit_job_without_shots(ddsim_device: Device) -> None:
+    """Allow devices or custom programs to define their own repetitions."""
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+"""
+
+    job = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3)
+
+    assert job.num_shots == 1024
 
 
 def test_device_retrieve_job_by_id_reports_unsupported_provider(

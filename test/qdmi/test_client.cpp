@@ -906,7 +906,8 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
                   std::string::npos);
     }
   };
-  for (size_t i = 1; i <= 5; ++i) {
+  submitWithCustoms(7, 1);
+  for (size_t i = 2; i <= 5; ++i) {
     submitWithCustoms(std::string("custom"), i);
     submitWithCustoms(42, i);
     submitWithCustoms(3.14, i);
@@ -1150,6 +1151,20 @@ TEST(AuthenticationTest, SessionConstructionWithToken) {
   SessionConfig config3;
   config3.token = "very_long_token_with_special_characters_!@#$%^&*()";
   EXPECT_NO_THROW({ const Session session(config3); });
+}
+
+TEST(AuthenticationTest, ReportsSkippedUnsupportedParameter) {
+  SessionConfig config;
+  config.token = "test-token";
+
+  testing::internal::CaptureStderr();
+  EXPECT_NO_THROW({ const Session session(config); });
+  const auto diagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_THAT(
+      diagnostic,
+      testing::AllOf(testing::HasSubstr("[mqt-core] [info]"),
+                     testing::HasSubstr(
+                         "Session parameter TOKEN not supported (skipped)")));
 }
 
 TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {

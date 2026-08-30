@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "circuit_optimizer/CircuitOptimizer.hpp"
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
@@ -28,7 +27,6 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <iostream>
 #include <memory>
 #include <random>
 #include <stdexcept>
@@ -432,138 +430,6 @@ TEST_F(DDFunctionality, ChangePermutation) {
   EXPECT_TRUE(func.p->e[1].p->e[3].w.exactlyOne());
   EXPECT_TRUE(func.p->e[2].p->e[0].w.exactlyOne());
   EXPECT_TRUE(func.p->e[3].p->e[2].w.exactlyOne());
-}
-
-TEST_F(DDFunctionality, FuseTwoSingleQubitGates) {
-  constexpr std::size_t nq = 1;
-
-  const auto dd = std::make_unique<Package>(nq);
-
-  QuantumComputation qc(nq);
-  qc.x(0);
-  qc.h(0);
-
-  qc.print(std::cout);
-  const MatrixDD baseDD = buildFunctionality(qc, *dd);
-
-  CircuitOptimizer::singleQubitGateFusion(qc);
-  const auto optDD = buildFunctionality(qc, *dd);
-
-  std::cout << "-----------------------------\n";
-  qc.print(std::cout);
-
-  EXPECT_EQ(qc.getNops(), 1);
-  EXPECT_EQ(baseDD, optDD);
-
-  dd->decRef(baseDD);
-  dd->decRef(optDD);
-  dd->garbageCollect(true);
-
-  const auto [vector, matrix, reals] = dd->computeActiveCounts();
-  EXPECT_EQ(vector, 0);
-  EXPECT_EQ(matrix, 0);
-  EXPECT_EQ(reals, 0);
-}
-
-TEST_F(DDFunctionality, FuseThreeSingleQubitGates) {
-  constexpr std::size_t nq = 1;
-
-  const auto dd = std::make_unique<Package>(nq);
-
-  QuantumComputation qc(nq);
-  qc.x(0);
-  qc.h(0);
-  qc.y(0);
-
-  const MatrixDD baseDD = buildFunctionality(qc, *dd);
-
-  std::cout << "-----------------------------\n";
-  qc.print(std::cout);
-
-  CircuitOptimizer::singleQubitGateFusion(qc);
-  const MatrixDD optDD = buildFunctionality(qc, *dd);
-
-  std::cout << "-----------------------------\n";
-  qc.print(std::cout);
-
-  EXPECT_EQ(qc.getNops(), 1);
-  EXPECT_EQ(baseDD, optDD);
-
-  dd->decRef(baseDD);
-  dd->decRef(optDD);
-  dd->garbageCollect(true);
-
-  const auto [vector, matrix, reals] = dd->computeActiveCounts();
-  EXPECT_EQ(vector, 0);
-  EXPECT_EQ(matrix, 0);
-  EXPECT_EQ(reals, 0);
-}
-
-TEST_F(DDFunctionality, FuseNoSingleQubitGates) {
-  constexpr std::size_t nq = 2;
-
-  const auto dd = std::make_unique<Package>(nq);
-
-  QuantumComputation qc(nq);
-  qc.h(0);
-  qc.cx(0, 1);
-  qc.y(0);
-
-  const MatrixDD baseDD = buildFunctionality(qc, *dd);
-
-  std::cout << "-----------------------------\n";
-  qc.print(std::cout);
-
-  CircuitOptimizer::singleQubitGateFusion(qc);
-  const MatrixDD optDD = buildFunctionality(qc, *dd);
-
-  std::cout << "-----------------------------\n";
-  qc.print(std::cout);
-
-  EXPECT_EQ(qc.getNops(), 3);
-  EXPECT_EQ(baseDD, optDD);
-
-  dd->decRef(baseDD);
-  dd->decRef(optDD);
-  dd->garbageCollect(true);
-
-  const auto [vector, matrix, reals] = dd->computeActiveCounts();
-  EXPECT_EQ(vector, 0);
-  EXPECT_EQ(matrix, 0);
-  EXPECT_EQ(reals, 0);
-}
-
-TEST_F(DDFunctionality, FuseSingleQubitGatesAcrossOtherGates) {
-  constexpr std::size_t nq = 2;
-
-  const auto dd = std::make_unique<Package>(nq);
-
-  QuantumComputation qc(nq);
-  qc.h(0);
-  qc.z(1);
-  qc.y(0);
-  const MatrixDD baseDD = buildFunctionality(qc, *dd);
-
-  std::cout << "-----------------------------\n";
-  qc.print(std::cout);
-
-  CircuitOptimizer::singleQubitGateFusion(qc);
-  const auto optDD = buildFunctionality(qc, *dd);
-
-  std::cout << "-----------------------------\n";
-  qc.print(std::cout);
-
-  EXPECT_EQ(qc.getNops(), 2);
-  EXPECT_EQ(baseDD, optDD);
-
-  dd->decRef(baseDD);
-  dd->decRef(optDD);
-  dd->garbageCollect(true);
-
-  const auto [vector, matrix, reals] = dd->computeActiveCounts();
-  EXPECT_EQ(vector, 0);
-  EXPECT_EQ(matrix, 0);
-  EXPECT_EQ(reals, 0);
 }
 
 TEST_F(DDFunctionality, IfElseOperationConditions) {

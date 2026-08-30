@@ -40,6 +40,21 @@ if(TARGET MQT::CoreQDMIDriver)
 
   package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_driver.cpp)
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMI)
+
+  set(DIAGNOSTIC_TARGET_NAME mqt-core-qdmi-driver-diagnostic-test)
+  set(diagnostic_config_file
+      "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/diagnostic-configured-device.json")
+  file(
+    GENERATE
+    OUTPUT "${diagnostic_config_file}"
+    CONTENT
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"broken.diagnostic\", \"library\": \"${CMAKE_CURRENT_BINARY_DIR}/missing-diagnostic-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
+  )
+  package_add_test(${DIAGNOSTIC_TARGET_NAME} MQT::CoreQDMIDriver test_driver_diagnostics.cpp)
+  target_compile_definitions(
+    ${DIAGNOSTIC_TARGET_NAME}
+    PRIVATE "MQT_CORE_QDMI_DIAGNOSTIC_CONFIG_FILE=\"${diagnostic_config_file}\"")
+
   set(config_file "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/configured-devices.json")
   file(
     GENERATE

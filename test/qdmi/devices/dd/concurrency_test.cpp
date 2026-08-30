@@ -15,7 +15,6 @@
 #include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
-#include "qir/helpers/test_utils.hpp"
 
 #include <gtest/gtest.h>
 
@@ -130,7 +129,7 @@ TEST(Concurrency, ConcurrentQIRJobsOwnTheirRuntimeState) {
   constexpr size_t numJobs = 4;
   constexpr size_t shots = 1024;
   const qdmi_test::SessionGuard session{};
-  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  const auto program = qdmi_test::getQIRProgram("BellPairStatic.ll");
   std::vector<std::unique_ptr<qdmi_test::JobGuard>> jobs;
   jobs.reserve(numJobs);
 

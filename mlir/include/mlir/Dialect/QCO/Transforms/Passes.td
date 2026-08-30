@@ -67,6 +67,7 @@ def FuseSingleQubitUnitaryRuns
     : Pass<"fuse-single-qubit-unitary-runs", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect",
+                           "::mlir::math::MathDialect",
                            "::mlir::qtensor::QTensorDialect"];
   let summary = "Fuse single-qubit unitary runs using Euler resynthesis";
   let description = [{
@@ -82,8 +83,9 @@ def FuseSingleQubitUnitaryRuns
     A `gphase` correction is inserted when needed so the rewritten sequence
     matches the composed matrix exactly (not only up to global phase).
 
-    Currently, only operations whose unitary matrix can be obtained at compile
-    time are fused.
+    The pass also composes supported named gates with dynamic `f64` parameters
+    and emits conservative runtime sequences in the requested basis. Dynamic
+    `pow` and arbitrary dynamic unitaries remain unchanged.
   }];
   let options = [Option<
       "basis", "basis", "std::string", "\"zyz\"",
@@ -217,6 +219,23 @@ def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
                         "non-zero probability.">];
 }
 
+def PauliTwirl2QGates : Pass<"pauli-twirl-2q-gates", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary = "Apply Pauli twirling to supported two-qubit gates";
+  let description = [{
+    Surrounds each supported two-qubit gate with two single-qubit Pauli gates
+    before and after the gate. The pass selects uniformly from the 16 twirls
+    that preserve the exact gate unitary and inserts a global-phase correction
+    when required. Identity gates remain explicit.
+
+    The pass supports controlled X and Z gates with one control and one target,
+    ECR gates, and iSWAP gates. Gates nested in modifier regions remain
+    unchanged.
+  }];
+  let options = [Option<"seed", "seed", "uint64_t", "42",
+                        "Seed used to select Pauli twirls.">];
+}
 
 def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];

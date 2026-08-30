@@ -165,8 +165,8 @@ buildControlledPauliModule(MLIRContext* context, size_t numControls,
         for (size_t i = 0; i <= numControls; ++i) {
           wires.push_back(b.staticQubit(i));
         }
-        const auto controls = ValueRange(wires).drop_back();
-        const auto target = wires.back();
+        auto controls = ValueRange(wires).drop_back();
+        auto target = wires.back();
         if (pauli == ControlledPauli::X) {
           b.mcx(controls, target);
         } else {

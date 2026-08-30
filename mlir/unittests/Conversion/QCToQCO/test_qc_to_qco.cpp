@@ -887,8 +887,7 @@ struct NestedModifierCase {
 } // namespace
 
 static void emitStructuredQubitUse(qc::QCProgramBuilder& builder,
-                                   const StructuredKind kind,
-                                   const Value qubit) {
+                                   const StructuredKind kind, Value qubit) {
   switch (kind) {
   case StructuredKind::For:
     builder.scfFor(0, 1, 1, [&](Value) { builder.x(qubit); });
@@ -925,13 +924,13 @@ buildNestedModifierProgram(MLIRContext* context,
   builder.initialize();
   Value target;
   if (registerBacked) {
-    const auto reg = builder.allocQubitRegisterStorage(1);
+    auto reg = builder.allocQubitRegisterStorage(1);
     auto index = arith::ConstantIndexOp::create(builder, 0);
     target = builder.loadQubit(reg, index.getResult());
   } else {
     target = builder.allocQubit();
   }
-  const auto body = [&](const Value argument) {
+  const auto body = [&](Value argument) {
     emitStructuredQubitUse(builder, testCase.structured, argument);
   };
 
@@ -1024,12 +1023,12 @@ buildInvalidNestedRegisterLoadProgram(MLIRContext* context,
                                       const ModifierKind modifier) {
   qc::QCProgramBuilder builder(context);
   builder.initialize();
-  const auto target = builder.allocQubit();
-  const auto reg = builder.allocQubitRegisterStorage(1);
+  auto target = builder.allocQubit();
+  auto reg = builder.allocQubitRegisterStorage(1);
   auto index = arith::ConstantIndexOp::create(builder, 0);
-  const auto body = [&](const Value) {
+  const auto body = [&](Value) {
     builder.scfIf(true, [&] {
-      const auto loaded = builder.loadQubit(reg, index.getResult());
+      auto loaded = builder.loadQubit(reg, index.getResult());
       builder.x(loaded);
     });
   };
@@ -1080,7 +1079,7 @@ namespace {
 enum class CBitModifierBodyOp : std::uint8_t { Alloc, Load, Store };
 } // namespace
 
-static StringRef cbitOperationName(const CBitModifierBodyOp operation) {
+static StringRef cbitOperationName(CBitModifierBodyOp operation) {
   switch (operation) {
   case CBitModifierBodyOp::Alloc:
     return "cbit.alloc";
@@ -1095,14 +1094,14 @@ static StringRef cbitOperationName(const CBitModifierBodyOp operation) {
 static OwningOpRef<ModuleOp>
 buildInvalidCBitModifierProgram(MLIRContext* context,
                                 const ModifierKind modifier,
-                                const CBitModifierBodyOp cbitOperation) {
+                                CBitModifierBodyOp cbitOperation) {
   qc::QCProgramBuilder builder(context);
   builder.initialize();
-  const auto target = builder.allocQubit();
+  auto target = builder.allocQubit();
   auto reg = builder.allocClassicalBitRegister(1);
   auto index = arith::ConstantIndexOp::create(builder, 0);
-  const auto bit = builder.boolConstant(false);
-  const auto body = [&](const Value) {
+  auto bit = builder.boolConstant(false);
+  const auto body = [&](Value) {
     builder.scfIf(true, [&] {
       switch (cbitOperation) {
       case CBitModifierBodyOp::Alloc:
@@ -1179,7 +1178,7 @@ static OwningOpRef<ModuleOp> buildInvalidModifierCaptureProgram(
   Value target;
   Value captured;
   if (registerBacked) {
-    const auto reg = builder.allocQubitRegisterStorage(2);
+    auto reg = builder.allocQubitRegisterStorage(2);
     auto targetIndex = arith::ConstantIndexOp::create(builder, 0);
     auto capturedIndex = arith::ConstantIndexOp::create(builder, 1);
     target = builder.loadQubit(reg, targetIndex.getResult());
@@ -1189,7 +1188,7 @@ static OwningOpRef<ModuleOp> buildInvalidModifierCaptureProgram(
     captured = builder.allocQubit();
   }
 
-  const auto modifierBody = [&](const Value) {
+  const auto modifierBody = [&](Value) {
     if (nested) {
       builder.scfIf(true, [&] { builder.x(captured); });
       return;
@@ -1250,11 +1249,10 @@ buildClassicalCaptureProgram(MLIRContext* context,
                              const ModifierKind modifier) {
   qc::QCProgramBuilder builder(context);
   builder.initialize();
-  const auto target = builder.allocQubit();
-  const auto theta =
-      arith::ConstantOp::create(builder, builder.getF64FloatAttr(0.75))
-          .getResult();
-  const auto modifierBody = [&](const Value argument) {
+  auto target = builder.allocQubit();
+  auto theta = arith::ConstantOp::create(builder, builder.getF64FloatAttr(0.75))
+                   .getResult();
+  const auto modifierBody = [&](Value argument) {
     builder.rx(theta, argument);
   };
 
@@ -1292,9 +1290,9 @@ TEST_F(QCToQCORegressionTest,
        NestedModifiersCarryTheStructuredOperationResultByRegion) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto target = builder.allocQubit();
-  builder.inv(target, [&](const Value outerArgument) {
-    builder.pow(2.0, outerArgument, [&](const Value innerArgument) {
+  auto target = builder.allocQubit();
+  builder.inv(target, [&](Value outerArgument) {
+    builder.pow(2.0, outerArgument, [&](Value innerArgument) {
       builder.scfFor(0, 1, 1, [&](Value) { builder.x(innerArgument); });
     });
   });

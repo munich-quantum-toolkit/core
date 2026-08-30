@@ -22,6 +22,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -158,8 +159,8 @@ static Operation* twoQubitGateAtEndOfOneQChain(Value wire) {
 /// Whether both input wires of `op` come from one earlier two-qubit run, making
 /// `op` a continuation of that run rather than a fresh run start.
 static bool feedsFromSameTwoQubitRun(UnitaryOpInterface op) {
-  const Value in0 = op.getInputQubit(0);
-  const Value in1 = op.getInputQubit(1);
+  Value in0 = op.getInputQubit(0);
+  Value in1 = op.getInputQubit(1);
   assert(in0.hasOneUse() && in1.hasOneUse() &&
          "qubit values are single-use, so a run member consumes each input "
          "exactly once");
@@ -176,8 +177,8 @@ static bool feedsFromSameTwoQubitRun(UnitaryOpInterface op) {
 static void absorbTwoQubitIntoRun(FusableTwoQubitRun& run,
                                   UnitaryOpInterface op,
                                   const Matrix4x4& opMatrix) {
-  const Value in0 = op.getInputQubit(0);
-  const Value in1 = op.getInputQubit(1);
+  Value in0 = op.getInputQubit(0);
+  Value in1 = op.getInputQubit(1);
   size_t id0 = 0;
   size_t id1 = 1;
   if (in0 == run.tailA && in1 == run.tailB) {
@@ -326,7 +327,8 @@ static SynthesisPlan planTargetSynthesis(Operation* root,
 
     if (unitary.isSingleQubit()) {
       Matrix2x2 matrix;
-      if (unitary.getUnitaryMatrix2x2(matrix)) {
+      if (unitary.getUnitaryMatrix2x2(matrix) ||
+          decomposition::canSynthesizeParameterizedUnitary1Q(operation)) {
         plan.operations.emplace_back(operation);
         return WalkResult::advance();
       }
@@ -349,7 +351,11 @@ static void lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
   rewriter.setInsertionPoint(operation);
   if (op.isSingleQubit()) {
     Matrix2x2 matrix;
-    op.getUnitaryMatrix2x2(matrix);
+    if (!op.getUnitaryMatrix2x2(matrix)) {
+      decomposition::synthesizeParameterizedUnitary1Q(rewriter, operation,
+                                                      basis.singleQubit);
+      return;
+    }
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
         /*runSize=*/1, /*hasNonBasisGate=*/true, basis.singleQubit);
@@ -440,7 +446,7 @@ struct TargetNativeSynthesisPass final
       : target(targetIn) {}
 
   void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect, arith::ArithDialect>();
+    registry.insert<QCODialect, arith::ArithDialect, math::MathDialect>();
   }
 
 protected:

@@ -11,6 +11,7 @@
 #include "ir/QuantumComputation.hpp"
 
 #include "ir/Definitions.hpp"
+#include "ir/OpenQASMSerializer.hpp"
 #include "ir/Register.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
@@ -31,7 +32,6 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
-#include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -50,28 +50,6 @@
 namespace qc {
 
 namespace {
-template <class RegisterType>
-void printSortedRegisters(
-    const std::unordered_map<std::string, RegisterType>& registers,
-    const std::string& identifier, std::ostream& of, const bool openQASM3) {
-  // sort regs by start index
-  std::map<size_t, RegisterType> sortedRegs{};
-  for (const auto& [name, reg] : registers) {
-    sortedRegs.emplace(reg.getStartIndex(), reg);
-  }
-
-  for (const auto& r : sortedRegs) {
-    const auto& reg = r.second;
-    if (openQASM3) {
-      of << identifier << "[" << reg.getSize() << "] " << reg.getName()
-         << ";\n";
-    } else {
-      of << identifier << " " << reg.getName() << "[" << reg.getSize()
-         << "];\n";
-    }
-  }
-}
-
 void consolidateRegister(QuantumRegisterMap& regs) {
   bool finished = regs.empty();
   while (!finished) {
@@ -254,6 +232,26 @@ void QuantumComputation::initializeIOMapping() {
   // implies that the j-th (logical) output is obtained from measuring the i-th
   // physical qubit.
   const bool outputPermutationFound = !outputPermutation.empty();
+
+  if (outputPermutationFound) {
+    for (const auto& opIt : ops) {
+      const auto* const op = dynamic_cast<NonUnitaryOperation*>(opIt.get());
+      if (op == nullptr || op->getType() != Measure) {
+        continue;
+      }
+      for (const auto& qubit : op->getTargets()) {
+        if (outputPermutation.find(qubit) == outputPermutation.end()) {
+          throw std::invalid_argument(
+              "[initializeIOMapping] Measured device qubit " +
+              std::to_string(qubit) +
+              " is missing from the output permutation. A non-empty output "
+              "permutation must contain every measured device qubit. Set a "
+              "consistent output permutation or clear it before "
+              "initialization.");
+        }
+      }
+    }
+  }
 
   // track whether the circuit contains measurements at the end of the circuit
   // if it does, then all qubits that are not measured shall be considered
@@ -621,74 +619,8 @@ std::ostream& QuantumComputation::print(std::ostream& os) const {
 }
 
 void QuantumComputation::dumpOpenQASM(std::ostream& of, bool openQASM3) const {
-  // dump initial layout and output permutation
-
-  // since it might happen that the physical qubit indices are not consecutive,
-  // due to qubit removals, we need to adjust them accordingly.
-  Permutation qubitToIndex{};
-
-  Permutation inverseInitialLayout{};
-  Qubit idx = 0;
-  for (const auto& [physical, logical] : initialLayout) {
-    inverseInitialLayout.emplace(logical, idx);
-    qubitToIndex[physical] = idx;
-    ++idx;
-  }
-  of << "// i";
-  for (const auto& [logical, physical] : inverseInitialLayout) {
-    of << " " << static_cast<std::size_t>(physical);
-  }
-  of << "\n";
-
-  Permutation inverseOutputPermutation{};
-  for (const auto& [physical, logical] : outputPermutation) {
-    inverseOutputPermutation.emplace(logical, qubitToIndex[physical]);
-  }
-  of << "// o";
-  for (const auto& [logical, physical] : inverseOutputPermutation) {
-    of << " " << physical;
-  }
-  of << "\n";
-
-  if (openQASM3) {
-    of << "OPENQASM 3.0;\n";
-    of << "include \"stdgates.inc\";\n";
-  } else {
-    of << "OPENQASM 2.0;\n";
-    of << "include \"qelib1.inc\";\n";
-  }
-
-  // combine qregs and ancregs
-  auto combinedRegs = quantumRegisters;
-  for (const auto& reg : ancillaRegisters) {
-    combinedRegs.emplace(reg);
-  }
-  printSortedRegisters(combinedRegs, openQASM3 ? "qubit" : "qreg", of,
-                       openQASM3);
-
-  printSortedRegisters(classicalRegisters, openQASM3 ? "bit" : "creg", of,
-                       openQASM3);
-
-  // build qubit index -> register map
-  QubitIndexToRegisterMap qubitMap{};
-  for (const auto& [_, reg] : combinedRegs) {
-    const auto bound = reg.getStartIndex() + reg.getSize();
-    for (Qubit i = reg.getStartIndex(); i < bound; ++i) {
-      qubitMap.try_emplace(i, reg, reg.toString(i));
-    }
-  }
-  // build classical index -> register map
-  BitIndexToRegisterMap bitMap{};
-  for (const auto& [_, reg] : classicalRegisters) {
-    const auto bound = reg.getStartIndex() + reg.getSize();
-    for (Bit i = reg.getStartIndex(); i < bound; ++i) {
-      bitMap.try_emplace(i, reg, reg.toString(i));
-    }
-  }
-
-  for (const auto& op : ops) {
-    op->dumpOpenQASM(of, qubitMap, bitMap, 0, openQASM3);
-  }
+  OpenQASMSerializer(of, openQASM3 ? Format::OpenQASM3 : Format::OpenQASM2)
+      .serialize(*this);
 }
 
 std::string QuantumComputation::toQASM(const bool qasm3) const {

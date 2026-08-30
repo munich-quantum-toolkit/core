@@ -74,9 +74,9 @@ struct CommuteAdjacentInsertExtractPattern final : OpRewritePattern<InsertOp> {
       return failure();
     }
 
-    const Value tensorBeforeInsert = insert.getDest();
-    const Value tensorAfterExtract = extract.getOutTensor();
-    const Value tensorAfterInsert = insert.getResult();
+    Value tensorBeforeInsert = insert.getDest();
+    Value tensorAfterExtract = extract.getOutTensor();
+    Value tensorAfterInsert = insert.getResult();
 
     rewriter.moveOpAfter(insert, extract);
     rewriter.modifyOpInPlace(extract, [&] {

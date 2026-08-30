@@ -579,6 +579,25 @@ def test_qco_program_runs_textual_pipeline() -> None:
         qco.run_pass_pipeline("not-a-pass")
 
 
+def test_qco_program_runs_pauli_twirling_pass() -> None:
+    """Run default and seeded Pauli twirling on copied QCO programs."""
+    source = compile_program(QASM_STRING, output=OutputFormat.QCO)
+    assert isinstance(source, QCOProgram)
+
+    twirled = source.copy()
+    twirled.run_pass_pipeline("pauli-twirl-2q-gates{seed=6}")
+
+    default_twirled = source.copy()
+    default_twirled.run_pass_pipeline("pauli-twirl-2q-gates")
+    seeded_twirled = source.copy()
+    seeded_twirled.run_pass_pipeline("pauli-twirl-2q-gates{seed=42}")
+
+    assert default_twirled.ir == seeded_twirled.ir
+    assert source.ir.count("qco.id ") == 0
+    assert twirled.ir.count("qco.id ") == 4
+    assert twirled.ir.count("qco.ctrl(") == 1
+
+
 def test_qco_program_reuses_qubits() -> None:
     """Expose the raw and composite qubit-reuse flows."""
     independent_qubits = """
@@ -674,3 +693,11 @@ def test_compile_program_fails_for_missing_file() -> None:
     """A missing known input file extension raises an error."""
     with pytest.raises(RuntimeError, match="does not exist"):
         compile_program("missing_program.qasm")
+
+
+def test_qc_program_num_gates() -> None:
+    """Expose gate counts to Python."""
+    program = QCProgram.from_qasm_str(QASM_STRING)
+    assert program.num_gates() == 2
+    assert program.num_single_qubit_gates() == 1
+    assert program.num_two_qubit_gates() == 1

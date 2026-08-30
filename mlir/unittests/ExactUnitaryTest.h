@@ -36,9 +36,9 @@ inline void expectFullUnitaryEqual(mlir::ModuleOp expectedModule,
                                    mlir::ModuleOp actualModule,
                                    const std::size_t numQubits,
                                    const double tolerance = 1e-12) {
-  const auto expectedFunc =
+  auto expectedFunc =
       *expectedModule.getBody()->getOps<mlir::func::FuncOp>().begin();
-  const auto actualFunc =
+  auto actualFunc =
       *actualModule.getBody()->getOps<mlir::func::FuncOp>().begin();
   auto package = std::make_unique<dd::Package>(numQubits);
   const auto expected = mlir::qco::buildFunctionality(expectedFunc, *package);

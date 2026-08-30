@@ -37,7 +37,7 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
 
   LogicalResult matchAndRewrite(BarrierOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto& qubitsIn = op.getQubitsIn();
+    auto qubitsIn = op.getQubitsIn();
 
     auto anythingToMerge = false;
     DenseMap<size_t, Value> newQubitsOutMap;
@@ -80,7 +80,7 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
 } // namespace
 
 Value BarrierOp::getInputForOutput(Value output) {
-  if (const auto result = dyn_cast<OpResult>(output);
+  if (auto result = dyn_cast<OpResult>(output);
       result && result.getOwner() == getOperation()) {
     return getQubitsIn()[result.getResultNumber()];
   }

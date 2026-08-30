@@ -47,7 +47,7 @@ struct FoldIdentityUnitary final : OpRewritePattern<UnitaryOp> {
 } // namespace
 
 void UnitaryOp::build(OpBuilder& /*builder*/, OperationState& state,
-                      const ValueRange qubits, const ElementsAttr matrix) {
+                      ValueRange qubits, const ElementsAttr matrix) {
   state.addOperands(qubits);
   state.addTypes(qubits.getTypes());
   state.addAttribute(getMatrixAttrName(state.name), matrix);
@@ -61,8 +61,8 @@ LogicalResult UnitaryOp::verify() {
                                        getQubitsIn());
 }
 
-Value UnitaryOp::getInputForOutput(const Value output) {
-  for (const auto [input, candidate] :
+Value UnitaryOp::getInputForOutput(Value output) {
+  for (auto [input, candidate] :
        llvm::zip_equal(getQubitsIn(), getQubitsOut())) {
     if (candidate == output) {
       return input;
@@ -71,8 +71,8 @@ Value UnitaryOp::getInputForOutput(const Value output) {
   llvm::reportFatalUsageError("Given qubit is not an output of UnitaryOp");
 }
 
-Value UnitaryOp::getOutputForInput(const Value input) {
-  for (const auto [candidate, output] :
+Value UnitaryOp::getOutputForInput(Value input) {
+  for (auto [candidate, output] :
        llvm::zip_equal(getQubitsIn(), getQubitsOut())) {
     if (candidate == input) {
       return output;

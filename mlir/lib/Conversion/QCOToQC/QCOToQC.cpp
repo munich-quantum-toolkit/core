@@ -154,7 +154,7 @@ selectConvertedState(ValueRange originalValues, ValueRange convertedValues,
                      const bool selectQuantum) {
   assert(originalValues.size() == convertedValues.size());
   SmallVector<Value> selected;
-  for (const auto [original, converted] :
+  for (auto [original, converted] :
        llvm::zip_equal(originalValues, convertedValues)) {
     if (isQuantumStateType(original.getType()) == selectQuantum) {
       selected.push_back(converted);
@@ -437,7 +437,7 @@ struct ConvertQCOUnitaryOp final : OpConversionPattern<qco::UnitaryOp> {
   LogicalResult
   matchAndRewrite(qco::UnitaryOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto qcQubits = adaptor.getQubitsIn();
+    auto qcQubits = adaptor.getQubitsIn();
     qc::UnitaryOp::create(rewriter, op.getLoc(), op.getMatrix(), qcQubits);
     rewriter.replaceOp(op, qcQubits);
     return success();
@@ -890,6 +890,7 @@ struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
     auto newFor = scf::ForOp::create(
         rewriter, op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
         adaptor.getStep(), classicalInits);
+    newFor->setDiscardableAttrs(op->getDiscardableAttrDictionary());
     // Erase default block
     rewriter.eraseBlock(&newFor.getRegion().front());
 
@@ -1239,12 +1240,12 @@ protected:
     // Conversion of qco types in func.return
     populateReturnOpTypeConversionPattern(patterns, typeConverter);
     target.addDynamicallyLegalOp<func::ReturnOp>(
-        [&](const func::ReturnOp op) { return typeConverter.isLegal(op); });
+        [&](func::ReturnOp op) { return typeConverter.isLegal(op); });
 
     // Conversion of qco types in func.call
     populateCallOpTypeConversionPattern(patterns, typeConverter);
     target.addDynamicallyLegalOp<func::CallOp>(
-        [&](const func::CallOp op) { return typeConverter.isLegal(op); });
+        [&](func::CallOp op) { return typeConverter.isLegal(op); });
 
     // Conversion of qco types in control-flow ops (e.g., cf.br, cf.cond_br)
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);

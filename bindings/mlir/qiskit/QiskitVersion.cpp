@@ -14,7 +14,7 @@
 #include "QiskitTranslation.h" // IWYU pragma: keep
 
 #include <nanobind/nanobind.h>
-#include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner): enables the std::string caster.
+#include <nanobind/stl/string.h>
 
 #include <cstddef>
 #include <exception>
@@ -26,17 +26,18 @@
 
 namespace mqt::bindings::qiskit {
 namespace nb = nanobind;
-namespace {
 
+namespace {
 struct InstalledVersion {
   unsigned int major = 0;
   unsigned int minor = 0;
   unsigned int patch = 0;
   std::string text;
 };
+} // namespace
 
-[[nodiscard]] unsigned int parseComponent(std::string_view text,
-                                          size_t& offset) {
+[[nodiscard]] static unsigned int parseComponent(std::string_view text,
+                                                 size_t& offset) {
   const auto start = offset;
   unsigned int value = 0;
   while (offset < text.size() && text[offset] >= '0' && text[offset] <= '9') {
@@ -55,7 +56,7 @@ struct InstalledVersion {
   return value;
 }
 
-void requireSeparator(const std::string_view text, size_t& offset) {
+static void requireSeparator(const std::string_view text, size_t& offset) {
   if (offset >= text.size() || text[offset] != '.') {
     throw std::runtime_error("invalid Qiskit version '" + std::string(text) +
                              "'");
@@ -63,7 +64,7 @@ void requireSeparator(const std::string_view text, size_t& offset) {
   ++offset;
 }
 
-[[nodiscard]] std::string supportedVersionRanges() {
+[[nodiscard]] static std::string supportedVersionRanges() {
   std::string ranges;
 #define MQT_QISKIT_VERSION(major, minor, suffix, minimumPatch, minimum, range) \
   ranges += ranges.empty() ? (range) : ", " range;
@@ -72,17 +73,16 @@ void requireSeparator(const std::string_view text, size_t& offset) {
   return ranges;
 }
 
-[[nodiscard]] constexpr bool matchesVersion(const InstalledVersion& version,
-                                            const unsigned int expectedMajor,
-                                            const unsigned int expectedMinor,
-                                            const unsigned int minimumPatch) {
+[[nodiscard]] static constexpr bool matchesVersion(
+    const InstalledVersion& version, const unsigned int expectedMajor,
+    const unsigned int expectedMinor, const unsigned int minimumPatch) {
   return version.major == expectedMajor && version.minor == expectedMinor &&
          version.patch >= minimumPatch;
 }
 
 using TranslationFactory = std::unique_ptr<VersionedTranslation> (*)();
 
-[[nodiscard]] TranslationFactory
+[[nodiscard]] static TranslationFactory
 translationFactory(const InstalledVersion& version) {
 #ifdef MQT_QISKIT_CAPI_CANDIDATE_VERSION
   if (version.text == MQT_QISKIT_CAPI_CANDIDATE_VERSION) {
@@ -102,7 +102,7 @@ translationFactory(const InstalledVersion& version) {
   return nullptr;
 }
 
-[[nodiscard]] InstalledVersion inspectInstalledVersion() {
+[[nodiscard]] static InstalledVersion inspectInstalledVersion() {
   std::string text;
   try {
     text = nb::cast<std::string>(
@@ -133,8 +133,6 @@ translationFactory(const InstalledVersion& version) {
       .major = major, .minor = minor, .patch = patch, .text = text};
   return result;
 }
-
-} // namespace
 
 std::unique_ptr<VersionedTranslation> selectTranslation() {
   const auto version = inspectInstalledVersion();

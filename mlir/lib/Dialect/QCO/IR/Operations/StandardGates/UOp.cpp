@@ -117,11 +117,9 @@ void UOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                 const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi,
                 const std::variant<double, Value>& lambda) {
-  const auto thetaOperand =
-      variantToValue(odsBuilder, odsState.location, theta);
-  const auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
-  const auto lambdaOperand =
-      variantToValue(odsBuilder, odsState.location, lambda);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  auto lambdaOperand = variantToValue(odsBuilder, odsState.location, lambda);
   build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand, lambdaOperand);
 }
 

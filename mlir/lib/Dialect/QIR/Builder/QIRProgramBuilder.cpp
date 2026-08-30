@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 
+#include "mlir/Dialect/QIR/QIRDefinitions.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Support/Passes.h"
@@ -79,7 +80,7 @@ void QIRProgramBuilder::initialize(Type returnType) {
   mainFunc = mainFuncOp.getOperation();
 
   // Add entry_point attribute to identify the main function
-  auto entryPointAttr = StringAttr::get(getContext(), "entry_point");
+  auto entryPointAttr = StringAttr::get(getContext(), ::qir::ENTRY_POINT_ATTR);
   mainFuncOp->setAttr("passthrough",
                       ArrayAttr::get(getContext(), {entryPointAttr}));
 

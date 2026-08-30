@@ -598,7 +598,7 @@ TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
   Value referenceControlOutcome;
   std::tie(referenceControl, referenceControlOutcome) =
       referenceBuilder.measure(referenceControl);
-  const auto trueConstant = referenceBuilder.boolConstant(true);
+  auto trueConstant = referenceBuilder.boolConstant(true);
   auto referenceTargetOutcome =
       arith::XOrIOp::create(referenceBuilder, referenceBuilder.getLoc(),
                             rawTargetOutcome, trueConstant);

@@ -1339,6 +1339,29 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   EXPECT_THAT(queryName(probe), testing::HasSubstr("active=1"));
 }
 
+TEST(DeviceRegistrationTest, CustomBinaryJobDoesNotRequireShots) {
+  registerSessionTestDevice();
+  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  constexpr std::array payload{std::byte{0}, std::byte{1}};
+
+  EXPECT_NO_THROW(std::ignore =
+                      device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1));
+  EXPECT_THROW(std::ignore = device.submitJob(
+                   payload, QDMI_PROGRAM_FORMAT_CUSTOM1, size_t{1}),
+               std::runtime_error);
+}
+
+TEST(DeviceRegistrationTest, TextJobDoesNotRequireShots) {
+  registerSessionTestDevice();
+  const auto device = qdmi::Session::openDevice("test.session-overrides");
+
+  EXPECT_NO_THROW(std::ignore = device.submitJob("OPENQASM 2.0;",
+                                                 QDMI_PROGRAM_FORMAT_QASM2));
+  EXPECT_THROW(std::ignore = device.submitJob(std::string{"binary"},
+                                              QDMI_PROGRAM_FORMAT_QPY),
+               std::invalid_argument);
+}
+
 TEST(DeviceRegistrationTest, ConcurrentlyFreesDistinctJobs) {
   constexpr size_t threadCount = 8;
   constexpr size_t jobCount = 64;
@@ -1469,6 +1492,23 @@ TEST(DeviceSessionConfigTest, OpenWithBaseUrl) {
     EXPECT_NO_THROW(
         { static_cast<void>(openTestDevice(lib, prefix, config)); });
   }
+}
+
+TEST(DeviceSessionConfigTest, ReportsSkippedUnsupportedParameter) {
+  const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
+  qdmi::DeviceSessionConfig config;
+  config.baseUrl = "http://localhost:8080";
+
+  testing::internal::CaptureStderr();
+  EXPECT_NO_THROW(
+      { static_cast<void>(openTestDevice(library, prefix, config)); });
+  const auto diagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_THAT(
+      diagnostic,
+      testing::AllOf(
+          testing::HasSubstr("[mqt-core] [info]"),
+          testing::HasSubstr("Device session parameter BASE URL not supported "
+                             "by device (skipped)")));
 }
 
 TEST(DeviceSessionConfigTest, OpenWithCustomParameters) {

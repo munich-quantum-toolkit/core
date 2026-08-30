@@ -255,7 +255,7 @@ UnitaryOpInterface CtrlOp::getBodyUnitary(const size_t i) {
 }
 
 Value CtrlOp::getInputForOutput(Value output) {
-  if (const auto result = dyn_cast<OpResult>(output);
+  if (auto result = dyn_cast<OpResult>(output);
       result && result.getOwner() == getOperation()) {
     return getInputQubit(result.getResultNumber());
   }
@@ -327,14 +327,14 @@ LogicalResult CtrlOp::verify() {
   }
 
   SmallPtrSet<Value, 4> uniqueQubitsIn;
-  for (const auto& control : getInputQubits()) {
+  for (auto control : getInputQubits()) {
     if (!uniqueQubitsIn.insert(control).second) {
       return emitOpError("duplicate qubit found");
     }
   }
 
   SmallPtrSet<Value, 4> uniqueQubitsOut;
-  for (const auto& control : getControlsOut()) {
+  for (auto control : getControlsOut()) {
     if (!uniqueQubitsOut.insert(control).second) {
       return emitOpError("duplicate control qubit found");
     }
