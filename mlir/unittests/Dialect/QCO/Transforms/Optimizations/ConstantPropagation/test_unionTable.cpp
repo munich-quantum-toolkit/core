@@ -438,7 +438,8 @@ TEST_F(UnionTableTest, superfluousControlsListsAlwaysTrueClassicalControl) {
   EXPECT_TRUE(result.superfluousClassicalValues.contains(c));
 }
 
-TEST_F(UnionTableTest, superfluousControlsListsAlwaysFalseNegativeClassicalControl) {
+TEST_F(UnionTableTest,
+       superfluousControlsListsAlwaysFalseNegativeClassicalControl) {
   auto ut = make();
   Value c = builder.boolConstant(false);
   ut.seedClassical(c, builder.getBoolAttr(false));

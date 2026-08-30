@@ -482,7 +482,6 @@ TEST_F(QuantumStateTest, topStatesAreEqual) {
   EXPECT_FALSE(a == QuantumState({q[0], q[1], q[2], q[3]}, 4));
 }
 
-
 TEST_F(QuantumStateTest, groupWiderThanTheIndexTypeIsTop) {
   auto reg = builder.allocQubitRegister(64);
   SmallVector<Value> many;
@@ -496,14 +495,15 @@ TEST_F(QuantumStateTest, groupWiderThanTheIndexTypeIsTop) {
 TEST_F(QuantumStateTest, printRendersImaginaryAmplitudes) {
   auto qs = QuantumState::singletonZero(q[0], 4);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
-  ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], SOp::getUnitaryMatrix()).succeeded());
+  ASSERT_TRUE(
+      qs.applyMatrix1Q(q[0], q[0], SOp::getUnitaryMatrix()).succeeded());
   EXPECT_NE(printed(qs).find(" i"), std::string::npos);
 }
 
 TEST_F(QuantumStateTest, twoQubitGateWithControlNotInGroupFails) {
   auto qs = QuantumState({q[0], q[1]}, 4);
   EXPECT_TRUE(qs.applyMatrix2Q(q[0], q[1], q[0], q[1],
-                              swapOp.getUnitaryMatrix(), {q[2]})
+                               swapOp.getUnitaryMatrix(), {q[2]})
                   .failed());
 }
 
