@@ -46,6 +46,11 @@ public:
 
   using AbstractDenseLattice::AbstractDenseLattice;
 
+  /// @brief LLVM-RTTI hook. The dataflow solver instantiates exactly one dense
+  /// lattice type per analysis, so every AbstractDenseLattice that is handed
+  /// (e.g. in join) is a UnionTableLattice.
+  static bool classof(const AbstractDenseLattice*) { return true; }
+
   ChangeResult join(const AbstractDenseLattice& other) override;
 
   void print(raw_ostream& os) const override;
@@ -111,6 +116,9 @@ class ConstantPropagationAnalysis
   LogicalResult applyCtrl(UnionTable& table, CtrlOp ctrl,
                           ArrayRef<Value> quantumControls);
 
+protected:
+  void setToEntryState(UnionTableLattice* lattice) override;
+
 public:
   ConstantPropagationAnalysis(DataFlowSolver& solver,
                               size_t maxNonzeroAmplitudes,
@@ -126,8 +134,6 @@ public:
                                             std::optional<unsigned> regionTo,
                                             const UnionTableLattice& before,
                                             UnionTableLattice* after) override;
-
-  void setToEntryState(UnionTableLattice* lattice) override;
 };
 
 } // namespace mlir::qco

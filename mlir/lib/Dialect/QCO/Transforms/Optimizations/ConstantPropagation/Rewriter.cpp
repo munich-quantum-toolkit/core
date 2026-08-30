@@ -76,11 +76,9 @@ SmallVector<Decision> collectDecisions(func::FuncOp entry,
   return decisions;
 }
 
-namespace {
-
 /// @brief Erases a never-firing controlled gate: every output qubit is replaced
 /// by the matching input.
-void applyDrop(const DropOp& drop, IRRewriter& rewriter) {
+static void applyDrop(const DropOp& drop, IRRewriter& rewriter) {
   CtrlOp op = drop.op;
   for (auto [in, out] :
        llvm::zip_equal(op.getInputQubits(), op.getOutputQubits())) {
@@ -96,7 +94,7 @@ void applyDrop(const DropOp& drop, IRRewriter& rewriter) {
 /// body. Dropping every control means the body runs unconditionally: it is
 /// inlined in place of the op, with the target block arguments bound to the
 /// target operands and the yielded values taking over the op's target results.
-void applyStrip(const StripControls& strip, IRRewriter& rewriter) {
+static void applyStrip(const StripControls& strip, IRRewriter& rewriter) {
   CtrlOp op = strip.op;
   const auto controlsIn = op.getInputControls();
   const auto isDropped = [&](const size_t index) {
@@ -147,8 +145,6 @@ void applyStrip(const StripControls& strip, IRRewriter& rewriter) {
   }
   rewriter.eraseOp(op);
 }
-
-} // namespace
 
 void applyDecisions(const ArrayRef<Decision> decisions, IRRewriter& rewriter) {
   for (const Decision& decision : decisions) {

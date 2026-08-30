@@ -27,18 +27,18 @@
 #include <cstddef>
 #include <string>
 
-namespace {
-
 using namespace mlir;
 using namespace mlir::qco;
 
 /// Renders a QuantumState through its print() method for readable assertions.
-std::string printed(const QuantumState& qs) {
+static std::string printed(const QuantumState& qs) {
   std::string s;
   llvm::raw_string_ostream os(s);
   qs.print(os);
   return s;
 }
+
+namespace {
 
 class QuantumStateTest : public testing::Test {
 protected:

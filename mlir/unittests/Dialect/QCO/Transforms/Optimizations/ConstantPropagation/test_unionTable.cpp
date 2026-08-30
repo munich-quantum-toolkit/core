@@ -27,17 +27,17 @@
 #include <numbers>
 #include <string>
 
-namespace {
-
 using namespace mlir;
 using namespace mlir::qco;
 
-std::string printed(const UnionTable& ut) {
+static std::string printed(const UnionTable& ut) {
   std::string s;
   llvm::raw_string_ostream os(s);
   ut.print(os);
   return s;
 }
+
+namespace {
 
 class UnionTableTest : public testing::Test {
 protected:

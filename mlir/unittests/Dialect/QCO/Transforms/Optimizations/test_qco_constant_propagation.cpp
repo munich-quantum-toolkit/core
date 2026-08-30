@@ -28,13 +28,11 @@
 
 #include <cstddef>
 
-namespace {
-
 using namespace mlir;
 using namespace mlir::qco;
 
 /// Number of ops of a given kind anywhere in the module (bodies included).
-template <typename OpT> unsigned countOps(ModuleOp module) {
+template <typename OpT> static unsigned countOps(ModuleOp module) {
   unsigned n = 0;
   module.walk([&](OpT) { ++n; });
   return n;
@@ -42,7 +40,7 @@ template <typename OpT> unsigned countOps(ModuleOp module) {
 
 /// The first op of a given kind in walk order, or a null handle if there is
 /// none.
-template <typename OpT> OpT firstOp(ModuleOp module) {
+template <typename OpT> static OpT firstOp(ModuleOp module) {
   OpT found;
   module.walk([&](OpT op) {
     found = op;
@@ -50,6 +48,8 @@ template <typename OpT> OpT firstOp(ModuleOp module) {
   });
   return found;
 }
+
+namespace {
 
 class ConstantPropagationTest : public testing::Test {
 protected:

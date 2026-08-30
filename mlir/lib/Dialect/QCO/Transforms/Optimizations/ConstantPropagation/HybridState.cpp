@@ -33,18 +33,16 @@
 
 namespace mlir::qco {
 
-namespace {
-
 /// @brief Whether ctrlsOut is a valid rename target for ctrlsIn: empty (no
 /// rename), or the same length.
-bool ctrlRenameOk(const ArrayRef<Value> ctrlsIn,
-                  const ArrayRef<Value> ctrlsOut) {
+static bool ctrlRenameOk(const ArrayRef<Value> ctrlsIn,
+                         const ArrayRef<Value> ctrlsOut) {
   return ctrlsOut.empty() || ctrlsOut.size() == ctrlsIn.size();
 }
 
 /// @brief Truthiness of a resolved classical constant (non-zero == true), or
 /// nullopt if attr is not an integer/index/bool/float constant.
-std::optional<bool> classicalTruth(const Attribute attr) {
+static std::optional<bool> classicalTruth(const Attribute attr) {
   if (const auto ia = dyn_cast_if_present<IntegerAttr>(attr)) {
     return !ia.getValue().isZero();
   }
@@ -56,7 +54,7 @@ std::optional<bool> classicalTruth(const Attribute attr) {
 
 /// @brief Numeric value of a resolved classical constant, or nullopt if attr is
 /// not an integer/index/bool/float constant.
-std::optional<double> classicalDouble(const Attribute attr) {
+static std::optional<double> classicalDouble(const Attribute attr) {
   if (const auto ia = dyn_cast_if_present<IntegerAttr>(attr)) {
     return static_cast<double>(ia.getValue().getSExtValue());
   }
@@ -65,7 +63,6 @@ std::optional<double> classicalDouble(const Attribute attr) {
   }
   return std::nullopt;
 }
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // Observers
@@ -386,13 +383,10 @@ bool HybridState::sameConfiguration(const HybridState& other) const {
       classical.size() != other.classical.size() || state != other.state) {
     return false;
   }
-  for (const auto& [v, attr] : classical) {
-    const auto it = other.classical.find(v);
-    if (it == other.classical.end() || it->second != attr) {
-      return false;
-    }
-  }
-  return true;
+  return llvm::all_of(classical, [&](const auto& entry) {
+    const auto it = other.classical.find(entry.first);
+    return it != other.classical.end() && it->second == entry.second;
+  });
 }
 
 bool HybridState::operator==(const HybridState& other) const {

@@ -48,6 +48,7 @@ struct ConstantPropagation final
     : impl::ConstantPropagationBase<ConstantPropagation> {
   using ConstantPropagationBase::ConstantPropagationBase;
 
+protected:
   void runOnOperation() override {
     ModuleOp module = getOperation();
 

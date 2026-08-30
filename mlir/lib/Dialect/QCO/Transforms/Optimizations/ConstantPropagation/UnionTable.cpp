@@ -30,10 +30,9 @@
 
 namespace mlir::qco {
 
-namespace {
 /// The qubit set of a slot, order-normalized, so two slots (from sibling
 /// control-flow paths) can be matched.
-std::vector<const void*> qubitKey(const UnionTable::Slot& slot) {
+static std::vector<const void*> qubitKey(const UnionTable::Slot& slot) {
   std::vector<const void*> key;
   key.reserve(slot.front().getQubits().size());
   for (Value q : slot.front().getQubits()) {
@@ -42,7 +41,6 @@ std::vector<const void*> qubitKey(const UnionTable::Slot& slot) {
   llvm::sort(key);
   return key;
 }
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // Partition helpers

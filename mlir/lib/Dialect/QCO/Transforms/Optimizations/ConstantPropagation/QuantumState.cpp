@@ -196,7 +196,7 @@ LogicalResult QuantumState::applyMatrix2Q(Value in0, Value in1, Value out0,
     const uint64_t base = key & ~bothBits;
     const unsigned col = localCol(key);
     for (unsigned row = 0; row < 4; ++row) {
-      result[localKey(base, row)] += matrix.data[(4 * row) + col] * amp;
+      result[localKey(base, row)] += matrix(row, col) * amp;
     }
   }
 

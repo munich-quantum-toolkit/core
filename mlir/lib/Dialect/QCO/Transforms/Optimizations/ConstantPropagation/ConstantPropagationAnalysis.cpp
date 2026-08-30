@@ -39,17 +39,15 @@
 
 namespace mlir::qco {
 
-namespace {
-
 /// @brief Materializes a value range into an owned vector.
-template <typename Range> SmallVector<Value> toVec(Range&& range) {
+template <typename Range> static SmallVector<Value> toVec(const Range& range) {
   return {range.begin(), range.end()};
 }
 
 /// @brief Whether v is a qubit argument of the entry-point function's entry
 /// block (so its initial state is |0>, per the pass contract). Arguments of any
 /// other function have unknown provenance.
-bool isEntryPointQubitArgument(Value v) {
+static bool isEntryPointQubitArgument(Value v) {
   const auto arg = dyn_cast<BlockArgument>(v);
   if (!arg || !isa<QubitType>(arg.getType())) {
     return false;
@@ -62,7 +60,7 @@ bool isEntryPointQubitArgument(Value v) {
 /// @brief Ensures every qubit operand of op is tracked before use: an
 /// entry-point argument starts in |0>, anything else of unknown provenance
 /// collapses to top.
-void ensureSeeded(UnionTable& table, Operation* const op) {
+static void ensureSeeded(UnionTable& table, Operation* const op) {
   for (Value operand : op->getOperands()) {
     if (!isa<QubitType>(operand.getType()) || table.isTracked(operand)) {
       continue;
@@ -74,14 +72,12 @@ void ensureSeeded(UnionTable& table, Operation* const op) {
   }
 }
 
-} // namespace
-
 //===----------------------------------------------------------------------===//
 // UnionTableLattice
 //===----------------------------------------------------------------------===//
 
 ChangeResult UnionTableLattice::join(const AbstractDenseLattice& other) {
-  const auto& rhs = static_cast<const UnionTableLattice&>(other);
+  const auto& rhs = llvm::cast<UnionTableLattice>(other);
   if (!rhs.initialized) {
     return ChangeResult::NoChange;
   }

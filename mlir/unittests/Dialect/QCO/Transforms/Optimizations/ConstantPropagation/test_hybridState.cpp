@@ -29,19 +29,19 @@
 #include <cstddef>
 #include <string>
 
-namespace {
-
 using namespace mlir;
 using namespace mlir::qco;
 
-constexpr size_t BUDGET = 16;
-
-std::string printed(const HybridState& hs) {
+static std::string printed(const HybridState& hs) {
   std::string s;
   llvm::raw_string_ostream os(s);
   hs.print(os);
   return s;
 }
+
+namespace {
+
+constexpr size_t BUDGET = 16;
 
 class HybridStateTest : public testing::Test {
 protected:
