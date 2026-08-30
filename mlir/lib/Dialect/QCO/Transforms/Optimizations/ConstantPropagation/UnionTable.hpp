@@ -55,9 +55,9 @@ struct SuperfluousResult {
  * gates to matrices and target/output SSA values. Before a multi-qubit or
  * controlled operation the touched slots are merged into one (alternatives
  * multiply out via HybridState::tensor); if that exceeds maxHybridStates the
- * whole table collapses to  allTop. A target or control value absent from the
- * table is a caller/propagation bug and yields failure(); the analysis seeds
- * every qubit before first use.
+ * merged slots collapse to a single top state. A target or control value absent
+ * from the table is a caller/propagation bug and yields failure(); the analysis
+ * seeds every qubit before first use.
  */
 class UnionTable {
 public:
