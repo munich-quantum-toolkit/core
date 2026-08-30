@@ -182,6 +182,42 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 // Optimization Passes
 //===----------------------------------------------------------------------===//
 
+def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary = "This pass applies constant propagation to a circuit. It "
+                "assumes that all input qubits are |0>. It propagates the "
+                "state of the qubits up to a given complexity threshold and "
+                "removes gates which are superfluous considering the current "
+                "state.";
+  let description = [{
+     This pass applies quantum constant propagation. This optimization routine assumes that the input qubits of the
+     circuits are |0>. It propagates the qubit states and the state of additional classical values through the circuit.
+     All quantum instructions are removed which are superfluous considering the current state.
+
+     The qubit states and classical values are stored in hybrid states. Hybrid states are stored in a union table to
+     reduce the amount of complex amplitudes and classical values to track. There is a maximum number of non zero
+     amplitudes that is saved per union table entry. Additionally, there is also a maximum of hybrid states that can be
+     propagated. If the maximum number of amplitudes or the maximum number of hybrid states is exceeded, the propagated
+     state reaches top and no optimization routines are further applied.
+
+     The applied optimization routines are:
+
+     **General Control Reduction**
+     If a controlling qubit is always one, the control is removed.
+     If a controlling qubit is always zero, the complete gate is removed.
+
+  }];
+  let options = [Option<"maximumNonzeroAmplitudes",
+                        "maximum-nonzero-amplitudes", "std::size_t", "4",
+                        "The maximum number of non-zero amplitudes in the "
+                        "tracked quantum states before reaching top.">,
+                 Option<"maximumHybridStates", "maximum-hybrid-states",
+                        "std::size_t", "4",
+                        "The maximum number of hybrid states which have a "
+                        "non-zero probability.">];
+}
+
 def PauliTwirl2QGates : Pass<"pauli-twirl-2q-gates", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect"];

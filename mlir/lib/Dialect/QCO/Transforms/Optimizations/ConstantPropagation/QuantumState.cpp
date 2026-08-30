@@ -1,0 +1,431 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "QuantumState.hpp"
+
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
+
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallString.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Format.h>
+#include <llvm/Support/raw_ostream.h>
+#include <mlir/IR/Value.h>
+
+#include <algorithm>
+#include <cmath>
+#include <complex>
+#include <map>
+#include <memory>
+#include <optional>
+#include <utility>
+
+namespace mlir::qco {
+
+namespace {
+/// Largest number of qubits a group can track (we use uint_64t as datatype).
+constexpr unsigned MAX_GROUP_QUBITS = 63;
+} // namespace
+
+QuantumState::QuantumState(ArrayRef<Value> qubits, size_t maxNonzeroAmplitudes)
+    : maxNonzeroAmplitudes(maxNonzeroAmplitudes),
+      qubits(qubits.begin(), qubits.end()) {
+  if (qubits.size() > MAX_GROUP_QUBITS) {
+    markTop();
+    return;
+  }
+  amplitudes[0] = Complex{1.0, 0.0};
+}
+
+QuantumState QuantumState::singletonZero(Value qubit,
+                                         size_t maxNonzeroAmplitudes) {
+  return {ArrayRef(qubit), maxNonzeroAmplitudes};
+}
+
+std::optional<unsigned> QuantumState::indexOf(Value q) const {
+  for (const auto [idx, qubit] : llvm::enumerate(qubits)) {
+    if (qubit == q) {
+      return static_cast<unsigned>(idx);
+    }
+  }
+  return std::nullopt;
+}
+
+uint64_t QuantumState::maskOf(ArrayRef<Value> values) const {
+  uint64_t mask = 0;
+  for (Value v : values) {
+    if (const auto idx = indexOf(v)) {
+      mask |= uint64_t{1} << *idx;
+    }
+  }
+  return mask;
+}
+
+void QuantumState::markTop() {
+  top = true;
+  amplitudes.clear();
+}
+
+void QuantumState::forwardQubit(Value from, Value to) {
+  if (const auto idx = indexOf(from)) {
+    qubits[*idx] = to;
+  }
+}
+
+void QuantumState::forwardQubits(ArrayRef<Value> from, ArrayRef<Value> to) {
+  for (const auto [f, t] : llvm::zip(from, to)) {
+    forwardQubit(f, t);
+  }
+}
+
+void QuantumState::canonicalize() {
+  if (top) {
+    return;
+  }
+  SmallVector<uint64_t> negligible;
+  for (const auto& [key, amp] : amplitudes) {
+    if (std::abs(amp) <= MATRIX_TOLERANCE) {
+      negligible.push_back(key);
+    }
+  }
+  for (const uint64_t key : negligible) {
+    amplitudes.erase(key);
+  }
+  if (amplitudes.size() > maxNonzeroAmplitudes) {
+    markTop();
+  }
+}
+
+LogicalResult QuantumState::applyMatrix1Q(Value in, Value out,
+                                          const Matrix2x2& matrix,
+                                          ArrayRef<Value> ctrlsIn,
+                                          ArrayRef<Value> ctrlsOut) {
+  const auto idx = indexOf(in);
+  if (!idx || ctrlsOut.size() != ctrlsIn.size()) {
+    return failure();
+  }
+  for (Value c : ctrlsIn) {
+    if (!contains(c)) {
+      return failure();
+    }
+  }
+  if (top) {
+    forwardQubit(in, out);
+    forwardQubits(ctrlsIn, ctrlsOut);
+    return success();
+  }
+
+  const uint64_t targetBit = uint64_t{1} << *idx;
+  const uint64_t ctrlMask = maskOf(ctrlsIn);
+
+  llvm::DenseMap<uint64_t, Complex> result;
+  for (const auto& [key, amp] : amplitudes) {
+    if ((key & ctrlMask) != ctrlMask) {
+      result[key] += amp;
+      continue;
+    }
+    // Scatter this input's matrix column across both output rows.
+    const uint64_t base = key & ~targetBit;
+    const unsigned col = (key & targetBit) != 0 ? 1U : 0U;
+    result[base] += matrix.data[col] * amp;
+    result[base | targetBit] += matrix.data[2 + col] * amp;
+  }
+
+  amplitudes = std::move(result);
+  forwardQubit(in, out);
+  forwardQubits(ctrlsIn, ctrlsOut);
+  canonicalize();
+
+  return success();
+}
+
+LogicalResult QuantumState::applyMatrix2Q(Value in0, Value in1, Value out0,
+                                          Value out1, const Matrix4x4& matrix,
+                                          ArrayRef<Value> ctrlsIn,
+                                          ArrayRef<Value> ctrlsOut) {
+  const auto idx0 = indexOf(in0);
+  const auto idx1 = indexOf(in1);
+  if (!idx0 || !idx1 || *idx0 == *idx1 || ctrlsOut.size() != ctrlsIn.size()) {
+    return failure();
+  }
+  for (Value c : ctrlsIn) {
+    if (!contains(c)) {
+      return failure();
+    }
+  }
+  if (top) {
+    forwardQubit(in0, out0);
+    forwardQubit(in1, out1);
+    forwardQubits(ctrlsIn, ctrlsOut);
+    return success();
+  }
+
+  // QCO convention: the first target is the high bit of the local 4-index.
+  const uint64_t hiBit = uint64_t{1} << *idx0;
+  const uint64_t loBit = uint64_t{1} << *idx1;
+  const uint64_t bothBits = hiBit | loBit;
+  const uint64_t ctrlMask = maskOf(ctrlsIn);
+
+  const auto localKey = [&](uint64_t base, unsigned local) {
+    return base | ((local & 1U) != 0U ? loBit : 0) |
+           ((local & 2U) != 0U ? hiBit : 0);
+  };
+  const auto localCol = [&](uint64_t key) {
+    return ((key & hiBit) != 0 ? 2U : 0U) | ((key & loBit) != 0 ? 1U : 0U);
+  };
+
+  llvm::DenseMap<uint64_t, Complex> result;
+  for (const auto& [key, amp] : amplitudes) {
+    if ((key & ctrlMask) != ctrlMask) {
+      result[key] += amp;
+      continue;
+    }
+    // Scatter this input's matrix column across all four output rows.
+    const uint64_t base = key & ~bothBits;
+    const unsigned col = localCol(key);
+    for (unsigned row = 0; row < 4; ++row) {
+      result[localKey(base, row)] += matrix(row, col) * amp;
+    }
+  }
+
+  amplitudes = std::move(result);
+  forwardQubit(in0, out0);
+  forwardQubit(in1, out1);
+  forwardQubits(ctrlsIn, ctrlsOut);
+  canonicalize();
+
+  return success();
+}
+
+LogicalResult QuantumState::applyControlledPhase(double phase,
+                                                 ArrayRef<Value> ctrlsIn,
+                                                 ArrayRef<Value> ctrlsOut) {
+  if (ctrlsIn.empty() || ctrlsOut.size() != ctrlsIn.size()) {
+    return failure();
+  }
+  for (Value c : ctrlsIn) {
+    if (!contains(c)) {
+      return failure();
+    }
+  }
+  if (top) {
+    forwardQubits(ctrlsIn, ctrlsOut);
+    return success();
+  }
+  const uint64_t ctrlMask = maskOf(ctrlsIn);
+  const Complex factor = std::exp(Complex{0.0, phase});
+  for (auto& [key, amp] : amplitudes) {
+    if ((key & ctrlMask) == ctrlMask) {
+      amp *= factor;
+    }
+  }
+  forwardQubits(ctrlsIn, ctrlsOut);
+  canonicalize();
+  return success();
+}
+
+FailureOr<SmallVector<MeasurementOutcome>> QuantumState::measure(Value in,
+                                                                 Value out) {
+  const auto idx = indexOf(in);
+  if (!idx) {
+    return failure();
+  }
+  if (top) {
+    forwardQubit(in, out);
+    return SmallVector<MeasurementOutcome>{};
+  }
+  const uint64_t targetBit = uint64_t{1} << *idx;
+
+  llvm::DenseMap<uint64_t, Complex> zeroAmps;
+  llvm::DenseMap<uint64_t, Complex> oneAmps;
+  double probZero = 0.0;
+  double probOne = 0.0;
+  for (const auto& [key, amp] : amplitudes) {
+    if ((key & targetBit) == 0) {
+      zeroAmps[key] = amp;
+      probZero += std::norm(amp);
+    } else {
+      oneAmps[key] = amp;
+      probOne += std::norm(amp);
+    }
+  }
+
+  const auto makeBranch = [&](unsigned bit, double probability,
+                              const llvm::DenseMap<uint64_t, Complex>& amps) {
+    auto branch =
+        std::unique_ptr<QuantumState>(new QuantumState(maxNonzeroAmplitudes));
+    branch->qubits = qubits;
+    branch->forwardQubit(in, out);
+    const double scale = 1.0 / std::sqrt(probability);
+    for (const auto& [key, amp] : amps) {
+      branch->amplitudes[key] += amp * scale;
+    }
+    branch->canonicalize();
+    return MeasurementOutcome{
+        .bit = bit, .probability = probability, .state = std::move(branch)};
+  };
+
+  SmallVector<MeasurementOutcome> outcomes;
+  if (!zeroAmps.empty()) {
+    outcomes.push_back(makeBranch(0, probZero, zeroAmps));
+  }
+  if (!oneAmps.empty()) {
+    outcomes.push_back(makeBranch(1, probOne, oneAmps));
+  }
+  return outcomes;
+}
+
+FailureOr<SmallVector<MeasurementOutcome>> QuantumState::reset(Value in,
+                                                               Value out) {
+  auto outcomes = measure(in, out);
+  if (failed(outcomes)) {
+    return failure();
+  }
+  for (auto& outcome : *outcomes) {
+    if (outcome.bit == 0 || outcome.state == nullptr) {
+      continue;
+    }
+    const auto idx = outcome.state->indexOf(out);
+    if (!idx) {
+      return failure();
+    }
+    const uint64_t targetBit = uint64_t{1} << *idx;
+    llvm::DenseMap<uint64_t, Complex> flipped;
+    for (const auto& [key, amp] : outcome.state->amplitudes) {
+      flipped[key & ~targetBit] += amp;
+    }
+    outcome.state->amplitudes = std::move(flipped);
+    outcome.state->canonicalize();
+  }
+  return outcomes;
+}
+
+QuantumState QuantumState::unify(const QuantumState& that) const {
+  QuantumState result(maxNonzeroAmplitudes);
+  result.qubits.append(qubits.begin(), qubits.end());
+  result.qubits.append(that.qubits.begin(), that.qubits.end());
+
+  if (top || that.top || result.qubits.size() > MAX_GROUP_QUBITS ||
+      static_cast<size_t>(amplitudes.size()) * that.amplitudes.size() >
+          maxNonzeroAmplitudes) {
+    result.markTop();
+    return result;
+  }
+
+  const auto shift = qubits.size();
+  for (const auto& [keyA, ampA] : amplitudes) {
+    for (const auto& [keyB, ampB] : that.amplitudes) {
+      result.amplitudes[keyA | keyB << shift] += ampA * ampB;
+    }
+  }
+  result.canonicalize();
+  return result;
+}
+
+bool QuantumState::isAlwaysZero(Value q) const {
+  const auto idx = indexOf(q);
+  if (top || !idx || amplitudes.empty()) {
+    return false;
+  }
+  return llvm::all_of(amplitudes, [&](const auto& entry) {
+    return (entry.first >> *idx & uint64_t{1}) == 0;
+  });
+}
+
+bool QuantumState::isAlwaysOne(Value q) const {
+  const auto idx = indexOf(q);
+  if (top || !idx || amplitudes.empty()) {
+    return false;
+  }
+  return llvm::all_of(amplitudes, [&](const auto& entry) {
+    return (entry.first >> *idx & uint64_t{1}) == 1;
+  });
+}
+
+bool QuantumState::hasAlwaysZeroAmplitude(
+    ArrayRef<std::pair<Value, bool>> basis) const {
+  if (top) {
+    return false;
+  }
+  uint64_t mask = 0;
+  uint64_t wanted = 0;
+  for (const auto& [qubit, one] : basis) {
+    const auto idx = indexOf(qubit);
+    if (!idx) {
+      continue;
+    }
+    mask |= uint64_t{1} << *idx;
+    if (one) {
+      wanted |= uint64_t{1} << *idx;
+    }
+  }
+  return llvm::all_of(amplitudes, [&](const auto& entry) {
+    return (entry.first & mask) != wanted;
+  });
+}
+
+bool QuantumState::operator==(const QuantumState& that) const {
+  if (top || that.top) {
+    return top == that.top;
+  }
+  if (maxNonzeroAmplitudes != that.maxNonzeroAmplitudes ||
+      qubits.size() != that.qubits.size() ||
+      amplitudes.size() != that.amplitudes.size()) {
+    return false;
+  }
+  if (!std::equal(qubits.begin(), qubits.end(), that.qubits.begin())) {
+    return false;
+  }
+  return llvm::all_of(amplitudes, [&](const auto& entry) {
+    const auto it = that.amplitudes.find(entry.first);
+    return it != that.amplitudes.end() &&
+           std::abs(entry.second - it->second) <= MATRIX_TOLERANCE;
+  });
+}
+
+void QuantumState::print(raw_ostream& os) const {
+  if (top) {
+    os << "<top>";
+    return;
+  }
+  if (qubits.empty()) {
+    return;
+  }
+
+  const std::map ordered(amplitudes.begin(), amplitudes.end());
+  bool first = true;
+  for (const auto& [key, amp] : ordered) {
+    if (!first) {
+      os << ", ";
+    }
+    first = false;
+
+    os << '|';
+    for (size_t bit = qubits.size(); bit-- > 0;) {
+      os << (((key >> bit) & uint64_t{1}) != 0 ? '1' : '0');
+    }
+    os << "> -> ";
+
+    SmallString<16> buf;
+    llvm::raw_svector_ostream(buf) << llvm::format("%.2f", amp.real());
+    const llvm::StringRef real(buf);
+    os << (real == "-0.00" ? StringRef("0.00") : real);
+
+    if (std::abs(amp.imag()) > MATRIX_TOLERANCE) {
+      os << (amp.imag() > 0 ? " + i" : " - i")
+         << llvm::format("%.2f", std::abs(amp.imag()));
+    }
+  }
+}
+
+} // namespace mlir::qco
