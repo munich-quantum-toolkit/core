@@ -46,8 +46,8 @@ struct MeasurementOutcome {
  * managed vector.
  *
  * If the number of non-zero amplitudes exceeds the threshold
- * maxNonzeroAmplitudes, or the group holds more than qubits than unsigned
- * int has bits, the state collapses to top.
+ * maxNonzeroAmplitudes, or the group holds more than 63 qubits (the basis
+ * index is a uint64_t), the state collapses to top.
  */
 class QuantumState {
   bool top = false;
@@ -234,7 +234,7 @@ public:
    * group are ignored. Returns true when no non-zero amplitude matches all
    * the (in-group) pairs simultaneously.
    */
-  [[nodiscard("QuantumState::hasZeroAmplitude called but ignored")]] bool
+  [[nodiscard("QuantumState::hasAlwaysZeroAmplitude called but ignored")]] bool
   hasAlwaysZeroAmplitude(ArrayRef<std::pair<Value, bool>> basis) const;
 
   [[nodiscard("QuantumState::== called but ignored")]] bool
