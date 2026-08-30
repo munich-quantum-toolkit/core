@@ -294,7 +294,7 @@ TEST_F(QuantumStateTest, groupWiderThanTheIndexTypeIsTop) {
 // Controlled phase
 //===----------------------------------------------------------------------===//
 
-TEST_F(QuantumStateTest, uncontrolledPhaseSucceeds) {
+TEST_F(QuantumStateTest, uncontrolledPhaseFails) {
   auto qs = QuantumState::singletonZero(q[0], 4);
   EXPECT_TRUE(qs.applyControlledPhase(std::acos(-1.0), {}).failed());
 }
