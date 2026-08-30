@@ -266,7 +266,9 @@ TEST_F(HybridStateTest, propagateClassicalFoldsConstants) {
   hs.propagateClassical(add.getOperation());
   const auto folded = hs.getClassical(add.getResult());
   ASSERT_TRUE(folded.has_value());
-  EXPECT_EQ(dyn_cast<IntegerAttr>(*folded).getInt(), 7);
+  const auto intAttr = dyn_cast<IntegerAttr>(*folded);
+  ASSERT_TRUE(intAttr);
+  EXPECT_EQ(intAttr.getInt(), 7);
 }
 
 //===----------------------------------------------------------------------===//
