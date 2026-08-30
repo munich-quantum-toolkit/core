@@ -181,7 +181,8 @@ TEST_F(QuantumStateTest, applyTwoQubitGateToSameBitFails) {
 TEST_F(QuantumStateTest, applyWithControlNotInGroupFails) {
   auto qs = QuantumState({q[0], q[1]}, 4);
   EXPECT_TRUE(
-      qs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix(), {q[2]}).failed());
+      qs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix(), {q[2]}, {q[2]})
+          .failed());
 }
 
 TEST_F(QuantumStateTest, applyToQubitNotInGroupFailsEvenWhenTop) {
@@ -503,7 +504,7 @@ TEST_F(QuantumStateTest, printRendersImaginaryAmplitudes) {
 TEST_F(QuantumStateTest, twoQubitGateWithControlNotInGroupFails) {
   auto qs = QuantumState({q[0], q[1]}, 4);
   EXPECT_TRUE(qs.applyMatrix2Q(q[0], q[1], q[0], q[1],
-                               swapOp.getUnitaryMatrix(), {q[2]})
+                               swapOp.getUnitaryMatrix(), {q[2]}, {q[2]})
                   .failed());
 }
 
