@@ -79,11 +79,10 @@ public:
  * `emitError`. Precision losses (parametric gates, `qco.inv` / `qco.pow`
  * bodies, non-constant `qco.if`) collapse the affected qubits to top instead.
  *
- * v2.0 does not reason across a call boundary: if the module contains any call,
- * the analysis conservatively reports top everywhere (@ref bailToTop). Uncalled
- * helper functions are tolerated - only the entry-point function's qubit
- * arguments are assumed to be |0>; every other function's are treated as
- * unknown.
+ * Does not call across a boundary: if the module contains any call, the
+ * analysis reports top everywhere. Uncalled helper functions are tolerated -
+ * only the entry-point function's qubit arguments are assumed to be |0>; every
+ * other function's qubits are treated as unknown.
  */
 class ConstantPropagationAnalysis
     : public dataflow::DenseForwardDataFlowAnalysis<UnionTableLattice> {
@@ -106,7 +105,7 @@ class ConstantPropagationAnalysis
   /// otherwise the targets become top (parametric, >2-qubit, dynamic-matrix, or
   /// an unmodelled qco.inv / qco.pow body).
   static LogicalResult applyUnitary(UnionTable& table, UnitaryOpInterface gate,
-                             ArrayRef<Value> quantumControls);
+                                    ArrayRef<Value> quantumControls);
 
   /// @brief Interprets a qco.ctrl body, extending the control context.
   LogicalResult applyCtrl(UnionTable& table, CtrlOp ctrl,
@@ -122,10 +121,11 @@ public:
   LogicalResult visitOperation(Operation* op, const UnionTableLattice& before,
                                UnionTableLattice* after) override;
 
-  void visitRegionBranchControlFlowTransfer(
-      RegionBranchOpInterface branch, std::optional<unsigned> regionFrom,
-      std::optional<unsigned> regionTo, const UnionTableLattice& before,
-      UnionTableLattice* after) override;
+  void visitRegionBranchControlFlowTransfer(RegionBranchOpInterface branch,
+                                            std::optional<unsigned> regionFrom,
+                                            std::optional<unsigned> regionTo,
+                                            const UnionTableLattice& before,
+                                            UnionTableLattice* after) override;
 
   void setToEntryState(UnionTableLattice* lattice) override;
 };
