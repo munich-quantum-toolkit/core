@@ -33,13 +33,6 @@
 
 namespace mlir::qco {
 
-/// @brief Whether ctrlsOut is a valid rename target for ctrlsIn: empty (no
-/// rename), or the same length.
-static bool ctrlRenameOk(const ArrayRef<Value> ctrlsIn,
-                         const ArrayRef<Value> ctrlsOut) {
-  return ctrlsOut.empty() || ctrlsOut.size() == ctrlsIn.size();
-}
-
 /// @brief Truthiness of a resolved classical constant (non-zero == true), or
 /// nullopt if attr is not an integer/index/bool/float constant.
 static std::optional<bool> classicalTruth(const Attribute attr) {
@@ -56,12 +49,15 @@ static std::optional<bool> classicalTruth(const Attribute attr) {
 /// not an integer/index/bool/float constant.
 static std::optional<double> classicalDouble(const Attribute attr) {
   if (const auto ia = dyn_cast_if_present<IntegerAttr>(attr)) {
-    return static_cast<double>(ia.getValue().getSExtValue());
+    if (const std::optional<int64_t> v = ia.getValue().trySExtValue()) {
+      return static_cast<double>(*v);
+    }
+    return {};
   }
   if (const auto fa = dyn_cast_if_present<FloatAttr>(attr)) {
     return fa.getValueAsDouble();
   }
-  return std::nullopt;
+  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -166,7 +162,7 @@ HybridState::applyMatrix1Q(Value in, Value out, const Matrix2x2& matrix,
                            const ArrayRef<Value> quantumCtrlsOut,
                            const ArrayRef<Value> posClassicalCtrls,
                            const ArrayRef<Value> negClassicalCtrls) {
-  if (!ctrlRenameOk(quantumCtrlsIn, quantumCtrlsOut) || !state.contains(in)) {
+  if (quantumCtrlsIn.size() != quantumCtrlsOut.size() || !state.contains(in)) {
     return failure();
   }
   const auto hold = classicalControlsHold(posClassicalCtrls, negClassicalCtrls);
@@ -188,7 +184,7 @@ LogicalResult HybridState::applyMatrix2Q(
     const ArrayRef<Value> quantumCtrlsIn, const ArrayRef<Value> quantumCtrlsOut,
     const ArrayRef<Value> posClassicalCtrls,
     const ArrayRef<Value> negClassicalCtrls) {
-  if (!ctrlRenameOk(quantumCtrlsIn, quantumCtrlsOut) || !state.contains(in0) ||
+  if (quantumCtrlsIn.size() != quantumCtrlsOut.size() || !state.contains(in0) ||
       !state.contains(in1)) {
     return failure();
   }
@@ -211,18 +207,18 @@ HybridState::addGlobalPhase(Value theta, const ArrayRef<Value> quantumCtrlsIn,
                             const ArrayRef<Value> quantumCtrlsOut,
                             const ArrayRef<Value> posClassicalCtrls,
                             const ArrayRef<Value> negClassicalCtrls) {
-  if (!ctrlRenameOk(quantumCtrlsIn, quantumCtrlsOut)) {
+  if (quantumCtrlsIn.size() != quantumCtrlsOut.size()) {
     return failure();
   }
   const auto hold = classicalControlsHold(posClassicalCtrls, negClassicalCtrls);
   if (failed(hold)) {
     return failure();
   }
-  const auto angle = classicalDouble(classical.lookup(theta));
-  if (!angle) {
-    return failure();
-  }
   if (*hold) {
+    const auto angle = classicalDouble(classical.lookup(theta));
+    if (!angle) {
+      return failure();
+    }
     if (!quantumCtrlsIn.empty()) {
       return state.applyControlledPhase(*angle, quantumCtrlsIn,
                                         quantumCtrlsOut);
@@ -405,8 +401,17 @@ void HybridState::print(raw_ostream& os) const {
   os << "]";
   if (!classical.empty()) {
     os << " classical:";
+    SmallVector<std::string> entries;
+    entries.reserve(classical.size());
     for (const auto& [v, attr] : classical) {
-      os << " " << attr;
+      std::string entry;
+      llvm::raw_string_ostream entryOs(entry);
+      entryOs << v << "=" << attr;
+      entries.push_back(std::move(entry));
+    }
+    llvm::sort(entries);
+    for (const auto& entry : entries) {
+      os << " " << entry;
     }
   }
 }
