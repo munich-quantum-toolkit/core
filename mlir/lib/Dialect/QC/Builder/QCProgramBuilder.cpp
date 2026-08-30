@@ -113,8 +113,16 @@ Value QCProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Static);
 
-  auto staticOp = StaticOp::create(*this, index);
-  return staticOp.getQubit();
+  if (const auto it = staticQubits.find(index); it != staticQubits.end()) {
+    return it->second;
+  }
+
+  OpBuilder::InsertionGuard guard(*this);
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(module));
+  setInsertionPointToStart(&mainFunc.getBody().front());
+  auto qubit = StaticOp::create(*this, index).getQubit();
+  staticQubits.try_emplace(index, qubit);
+  return qubit;
 }
 
 QCProgramBuilder::QubitRegister

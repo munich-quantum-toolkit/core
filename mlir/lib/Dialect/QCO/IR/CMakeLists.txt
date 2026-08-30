@@ -30,6 +30,7 @@ add_mlir_dialect_library(
   MLIRQCOMatrix
   PRIVATE
   MLIRCBitDialect
+  MLIRFuncDialect
   MLIRIR
   MLIRArithDialect
   MLIRInferTypeOpInterface

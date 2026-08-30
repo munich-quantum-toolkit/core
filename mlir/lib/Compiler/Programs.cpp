@@ -189,8 +189,11 @@ runPasses(ModuleOp mod,
   if (failed(qco::verifyLinearity(mod))) {
     return failure();
   }
-  return runPasses(mod, populatePasses, failureMessage, enableTiming,
-                   enableStatistics);
+  if (failed(runPasses(mod, populatePasses, failureMessage, enableTiming,
+                       enableStatistics))) {
+    return failure();
+  }
+  return qco::verifyLinearity(mod);
 }
 
 //===----------------------------------------------------------------------===//
@@ -480,7 +483,7 @@ bool QCOProgram::normalizeGlobalPhases() {
   if (!hasValidLinearity()) {
     return false;
   }
-  return succeeded(mqt::normalizeGlobalPhases(mod()));
+  return succeeded(mqt::normalizeGlobalPhases(mod())) && hasValidLinearity();
 }
 
 bool QCOProgram::runPassPipeline(const std::string_view pipeline,
@@ -489,8 +492,9 @@ bool QCOProgram::runPassPipeline(const std::string_view pipeline,
   if (!hasValidLinearity()) {
     return false;
   }
-  return succeeded(
-      ::runPassPipeline(mod(), pipeline, enableTiming, enableStatistics));
+  return succeeded(::runPassPipeline(mod(), pipeline, enableTiming,
+                                     enableStatistics)) &&
+         hasValidLinearity();
 }
 
 bool QCOProgram::mergeSingleQubitRotationGates() {
@@ -555,10 +559,7 @@ bool QCOProgram::decomposeMultiControlled(const uint64_t minQubits) {
 bool QCOProgram::compileForTarget(const CompilerTarget& target,
                                   const bool enableTiming,
                                   const bool enableStatistics) {
-  if (!hasValidLinearity()) {
-    return false;
-  }
-  return succeeded(runPasses(
+  return succeeded(runQCOTransformPasses(
       mod(),
       [&target](OpPassManager& pm) {
         populateTargetCompilationPipeline(pm, target);
