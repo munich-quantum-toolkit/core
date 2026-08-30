@@ -181,8 +181,7 @@ TEST_F(UnionTableTest, classicalControlSkipsGate) {
 TEST_F(UnionTableTest, unresolvedClassicalControlFails) {
   auto ut = make();
   ut.seedQubit(q[0]);
-  const Value c =
-      builder.boolConstant(false);
+  const Value c = builder.boolConstant(false);
   EXPECT_TRUE(ut.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix(), {}, {}, {c})
                   .failed());
 }
