@@ -252,8 +252,8 @@ TEST_F(QuantumStateTest, controlInOutLengthMismatchFails) {
 
 TEST_F(QuantumStateTest, nonEmptyControlInEmptyControlOutFails) {
   auto qs = QuantumState({q[0], q[1]}, 4);
-  EXPECT_TRUE(
-      qs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix(), {q[1]}, {}).failed());
+  EXPECT_TRUE(qs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix(), {q[1]}, {})
+                  .failed());
 }
 
 //===----------------------------------------------------------------------===//
@@ -302,7 +302,8 @@ TEST_F(QuantumStateTest, uncontrolledPhaseSucceeds) {
 TEST_F(QuantumStateTest, controlledPhaseAffectsOnlyControlledSubspace) {
   auto qs = QuantumState({q[0], q[1], q[2], q[3]}, 4);
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
-  ASSERT_TRUE(qs.applyControlledPhase(std::acos(-1.0), {q[0]}, {q[0]}).succeeded());
+  ASSERT_TRUE(
+      qs.applyControlledPhase(std::acos(-1.0), {q[0]}, {q[0]}).succeeded());
   EXPECT_EQ(printed(qs), "|0000> -> 0.71, |0001> -> -0.71");
 }
 
