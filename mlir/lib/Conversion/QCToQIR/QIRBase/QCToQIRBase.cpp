@@ -13,12 +13,12 @@
 #include "mlir/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
@@ -380,11 +380,6 @@ struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
    * @param main The main LLVM function to restructure
    */
   static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
-    if (main.getBlocks().size() > 1) {
-      llvm::reportFatalInternalError(
-          "Modules with multiple blocks are not supported in the Base Profile");
-    }
-
     // Get the existing block
     auto* bodyBlock = &main.front();
     OpBuilder builder(main.getBody());
@@ -462,6 +457,13 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto moduleOp = getOperation();
+    auto entryPoint = mqt::getEntryPoint(moduleOp);
+    if (entryPoint && !entryPoint.getBody().hasOneBlock()) {
+      entryPoint.emitError(
+          "QIR Base Profile requires a single-block entry function");
+      signalPassFailure();
+      return;
+    }
     if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
       return;
