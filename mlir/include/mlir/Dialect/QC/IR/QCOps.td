@@ -89,6 +89,8 @@ def StaticOp : QCOp<"static", [Pure]> {
   let builders = [OpBuilder<(ins "uint64_t":$index), [{
           build($_builder, $_state, QubitType::get($_builder.getContext()), index);
       }]>];
+
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//
