@@ -56,7 +56,8 @@ releases may include breaking changes.
 
 #### Passes and transformations
 
-- Add pass tp remove controlling qubits via constant propagation ([#2280]) ([**@lirem101**])
+- Add pass tp remove controlling qubits via constant propagation ([#2280])
+  ([**@lirem101**])
 - ✨ Add passes for quantum-specific interprocedural optimizations ([#2193])
   ([**@DRovara**], [**@burgholzer**])
 - ✨ Add Pauli twirling, quantum loop unrolling, and qubit reuse passes
