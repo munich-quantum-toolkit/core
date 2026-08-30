@@ -51,6 +51,7 @@ runWithPassManager(ModuleOp mod,
 void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
     registerConvertCBitToMemRef();
+    qco::registerConstantPropagation();
     qco::registerDecomposeMultiControlled();
     qco::registerFuseSingleQubitUnitaryRuns();
     qco::registerHadamardLifting();
