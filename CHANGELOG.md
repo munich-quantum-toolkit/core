@@ -56,6 +56,7 @@ releases may include breaking changes.
 
 #### Passes and transformations
 
+- Add pass tp remove controlling qubits via constant propagation ([#2280]) ([**@lirem101**])
 - ✨ Add passes for quantum-specific interprocedural optimizations ([#2193])
   ([**@DRovara**], [**@burgholzer**])
 - ✨ Add Pauli twirling, quantum loop unrolling, and qubit reuse passes
@@ -859,6 +860,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2280]: https://github.com/munich-quantum-toolkit/core/pull/2280
 [#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278
 [#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270
 [#2262]: https://github.com/munich-quantum-toolkit/core/pull/2262
