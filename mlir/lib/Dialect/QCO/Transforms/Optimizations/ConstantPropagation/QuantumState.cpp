@@ -48,12 +48,12 @@ QuantumState::QuantumState(const ArrayRef<Value> qubits,
   amplitudes[0] = Complex{1.0, 0.0};
 }
 
-QuantumState QuantumState::singletonZero(const Value qubit,
+QuantumState QuantumState::singletonZero(Value qubit,
                                          const size_t maxNonzeroAmplitudes) {
   return {ArrayRef(qubit), maxNonzeroAmplitudes};
 }
 
-std::optional<unsigned> QuantumState::indexOf(const Value q) const {
+std::optional<unsigned> QuantumState::indexOf(Value q) const {
   for (const auto [idx, qubit] : llvm::enumerate(qubits)) {
     if (qubit == q) {
       return static_cast<unsigned>(idx);
@@ -64,7 +64,7 @@ std::optional<unsigned> QuantumState::indexOf(const Value q) const {
 
 uint64_t QuantumState::maskOf(const ArrayRef<Value> values) const {
   uint64_t mask = 0;
-  for (const Value v : values) {
+  for (Value v : values) {
     if (const auto idx = indexOf(v)) {
       mask |= uint64_t{1} << *idx;
     }
@@ -77,7 +77,7 @@ void QuantumState::markTop() {
   amplitudes.clear();
 }
 
-void QuantumState::forwardQubit(const Value from, const Value to) {
+void QuantumState::forwardQubit(Value from, Value to) {
   if (const auto idx = indexOf(from)) {
     qubits[*idx] = to;
   }
@@ -108,7 +108,7 @@ void QuantumState::canonicalize() {
   }
 }
 
-LogicalResult QuantumState::applyMatrix1Q(const Value in, const Value out,
+LogicalResult QuantumState::applyMatrix1Q(Value in, Value out,
                                           const Matrix2x2& matrix,
                                           const ArrayRef<Value> ctrlsIn,
                                           const ArrayRef<Value> ctrlsOut) {
@@ -116,7 +116,7 @@ LogicalResult QuantumState::applyMatrix1Q(const Value in, const Value out,
   if (!idx || ctrlsOut.size() != ctrlsIn.size()) {
     return failure();
   }
-  for (const Value c : ctrlsIn) {
+  for (Value c : ctrlsIn) {
     if (!contains(c)) {
       return failure();
     }
@@ -151,9 +151,8 @@ LogicalResult QuantumState::applyMatrix1Q(const Value in, const Value out,
   return success();
 }
 
-LogicalResult QuantumState::applyMatrix2Q(const Value in0, const Value in1,
-                                          const Value out0, const Value out1,
-                                          const Matrix4x4& matrix,
+LogicalResult QuantumState::applyMatrix2Q(Value in0, Value in1, Value out0,
+                                          Value out1, const Matrix4x4& matrix,
                                           const ArrayRef<Value> ctrlsIn,
                                           const ArrayRef<Value> ctrlsOut) {
   const auto idx0 = indexOf(in0);
@@ -161,7 +160,7 @@ LogicalResult QuantumState::applyMatrix2Q(const Value in0, const Value in1,
   if (!idx0 || !idx1 || *idx0 == *idx1 || ctrlsOut.size() != ctrlsIn.size()) {
     return failure();
   }
-  for (const Value c : ctrlsIn) {
+  for (Value c : ctrlsIn) {
     if (!contains(c)) {
       return failure();
     }
@@ -218,7 +217,7 @@ QuantumState::applyControlledPhase(const double phase,
       (!ctrlsOut.empty() && ctrlsOut.size() != ctrlsIn.size())) {
     return failure();
   }
-  for (const Value c : ctrlsIn) {
+  for (Value c : ctrlsIn) {
     if (!contains(c)) {
       return failure();
     }
@@ -239,8 +238,8 @@ QuantumState::applyControlledPhase(const double phase,
   return success();
 }
 
-FailureOr<SmallVector<MeasurementOutcome>>
-QuantumState::measure(const Value in, const Value out) {
+FailureOr<SmallVector<MeasurementOutcome>> QuantumState::measure(Value in,
+                                                                 Value out) {
   const auto idx = indexOf(in);
   if (!idx) {
     return failure();
@@ -290,8 +289,8 @@ QuantumState::measure(const Value in, const Value out) {
   return outcomes;
 }
 
-FailureOr<SmallVector<MeasurementOutcome>>
-QuantumState::reset(const Value in, const Value out) {
+FailureOr<SmallVector<MeasurementOutcome>> QuantumState::reset(Value in,
+                                                               Value out) {
   auto outcomes = measure(in, out);
   if (failed(outcomes)) {
     return failure();
@@ -336,7 +335,7 @@ QuantumState QuantumState::unify(const QuantumState& that) const {
   return result;
 }
 
-bool QuantumState::isAlwaysZero(const Value q) const {
+bool QuantumState::isAlwaysZero(Value q) const {
   const auto idx = indexOf(q);
   if (top || !idx || amplitudes.empty()) {
     return false;
@@ -346,7 +345,7 @@ bool QuantumState::isAlwaysZero(const Value q) const {
   });
 }
 
-bool QuantumState::isAlwaysOne(const Value q) const {
+bool QuantumState::isAlwaysOne(Value q) const {
   const auto idx = indexOf(q);
   if (top || !idx || amplitudes.empty()) {
     return false;

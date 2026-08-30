@@ -49,7 +49,7 @@ template <typename Range> SmallVector<Value> toVec(Range&& range) {
 /// @brief Whether v is a qubit argument of the entry-point function's entry
 /// block (so its initial state is |0>, per the pass contract). Arguments of any
 /// other function have unknown provenance.
-bool isEntryPointQubitArgument(const Value v) {
+bool isEntryPointQubitArgument(Value v) {
   const auto arg = dyn_cast<BlockArgument>(v);
   if (!arg || !isa<QubitType>(arg.getType())) {
     return false;
@@ -63,7 +63,7 @@ bool isEntryPointQubitArgument(const Value v) {
 /// entry-point argument starts in |0>, anything else of unknown provenance
 /// collapses to top.
 void ensureSeeded(UnionTable& table, Operation* const op) {
-  for (const Value operand : op->getOperands()) {
+  for (Value operand : op->getOperands()) {
     if (!isa<QubitType>(operand.getType()) || table.isTracked(operand)) {
       continue;
     }

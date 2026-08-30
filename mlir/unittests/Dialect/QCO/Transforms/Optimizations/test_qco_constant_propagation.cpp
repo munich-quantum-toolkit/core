@@ -89,8 +89,8 @@ TEST_F(ConstantPropagationTest, dropsGateWithUnsatisfiableControl) {
 
 TEST_F(ConstantPropagationTest, stripsAlwaysSatisfiedControl) {
   auto reg = builder.allocQubitRegister(3);
-  const Value one = builder.x(reg[0]);
-  const Value sup = builder.h(reg[2]);
+  Value one = builder.x(reg[0]);
+  Value sup = builder.h(reg[2]);
   const SmallVector<Value> controls{one, sup};
   builder.mcx(controls, reg[1]);
   const auto module = builder.finalize();
@@ -104,7 +104,7 @@ TEST_F(ConstantPropagationTest, stripsAlwaysSatisfiedControl) {
 
 TEST_F(ConstantPropagationTest, unwrapsGateWhenEveryControlRedundant) {
   auto reg = builder.allocQubitRegister(2);
-  const Value one = builder.x(reg[0]);
+  Value one = builder.x(reg[0]);
   builder.cx(one, reg[1]);
   const auto module = builder.finalize();
 
@@ -117,7 +117,7 @@ TEST_F(ConstantPropagationTest, unwrapsGateWhenEveryControlRedundant) {
 
 TEST_F(ConstantPropagationTest, leavesGateAloneWhenStateIsImprecise) {
   auto reg = builder.allocQubitRegister(2);
-  const Value sup = builder.h(reg[0]);
+  Value sup = builder.h(reg[0]);
   builder.cx(sup, reg[1]);
   const auto module = builder.finalize();
 
@@ -128,7 +128,7 @@ TEST_F(ConstantPropagationTest, leavesGateAloneWhenStateIsImprecise) {
 
 TEST_F(ConstantPropagationTest, dropsGateWhenOneOfSeveralControlsIsAlwaysZero) {
   auto reg = builder.allocQubitRegister(3);
-  const Value one = builder.x(reg[0]);
+  Value one = builder.x(reg[0]);
   const SmallVector<Value> controls{one, reg[1]};
   builder.mcx(controls, reg[2]);
   const auto module = builder.finalize();
@@ -141,8 +141,8 @@ TEST_F(ConstantPropagationTest, dropsGateWhenOneOfSeveralControlsIsAlwaysZero) {
 
 TEST_F(ConstantPropagationTest, stripsTrailingAlwaysOneControl) {
   auto reg = builder.allocQubitRegister(3);
-  const Value sup = builder.h(reg[0]);
-  const Value one = builder.x(reg[1]);
+  Value sup = builder.h(reg[0]);
+  Value one = builder.x(reg[1]);
   const SmallVector<Value> controls{sup, one};
   builder.mcx(controls, reg[2]);
   const auto module = builder.finalize();
@@ -159,9 +159,9 @@ TEST_F(ConstantPropagationTest, stripsTrailingAlwaysOneControl) {
 
 TEST_F(ConstantPropagationTest, stripsAllButOneControl) {
   auto reg = builder.allocQubitRegister(4);
-  const Value a = builder.x(reg[0]);
-  const Value b = builder.x(reg[1]);
-  const Value sup = builder.h(reg[3]);
+  Value a = builder.x(reg[0]);
+  Value b = builder.x(reg[1]);
+  Value sup = builder.h(reg[3]);
   const SmallVector<Value> controls{a, b, sup};
   builder.mcx(controls, reg[2]);
   const auto module = builder.finalize();
@@ -178,8 +178,8 @@ TEST_F(ConstantPropagationTest, stripsAllButOneControl) {
 TEST_F(ConstantPropagationTest,
        unwrapsMultiControlGateWhenAllControlsRedundant) {
   auto reg = builder.allocQubitRegister(3);
-  const Value a = builder.x(reg[0]);
-  const Value b = builder.x(reg[1]);
+  Value a = builder.x(reg[0]);
+  Value b = builder.x(reg[1]);
   const SmallVector<Value> controls{a, b};
   builder.mcx(controls, reg[2]);
   const auto module = builder.finalize();
@@ -193,8 +193,8 @@ TEST_F(ConstantPropagationTest,
 
 TEST_F(ConstantPropagationTest, simplifiesChainOfControlledGates) {
   auto reg = builder.allocQubitRegister(3);
-  const Value q0 = builder.x(reg[0]);
-  const Value q1 = builder.cx(q0, reg[1]).second;
+  Value q0 = builder.x(reg[0]);
+  Value q1 = builder.cx(q0, reg[1]).second;
   builder.cx(q1, reg[2]);
   const auto module = builder.finalize();
 

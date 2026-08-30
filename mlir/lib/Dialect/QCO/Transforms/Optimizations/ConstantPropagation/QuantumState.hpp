@@ -88,7 +88,7 @@ public:
 
   /// @brief Whether QuantumState contains the qubit.
   [[nodiscard("QuantumState::contains called but ignored")]] bool
-  contains(const Value q) const {
+  contains(Value q) const {
     return indexOf(q).has_value();
   }
   /// @brief The bit position of a qubit, if present.

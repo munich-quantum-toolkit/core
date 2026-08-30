@@ -36,7 +36,7 @@ namespace {
 std::vector<const void*> qubitKey(const UnionTable::Slot& slot) {
   std::vector<const void*> key;
   key.reserve(slot.front().getQubits().size());
-  for (const Value q : slot.front().getQubits()) {
+  for (Value q : slot.front().getQubits()) {
     key.push_back(q.getAsOpaquePointer());
   }
   llvm::sort(key);
@@ -48,7 +48,7 @@ std::vector<const void*> qubitKey(const UnionTable::Slot& slot) {
 // Partition helpers
 //===----------------------------------------------------------------------===//
 
-std::optional<unsigned> UnionTable::slotIndexContaining(const Value v) const {
+std::optional<unsigned> UnionTable::slotIndexContaining(Value v) const {
   for (const auto& [i, slot] : llvm::enumerate(slots)) {
     if (slot.front().hasQubit(v)) {
       return static_cast<unsigned>(i);
@@ -65,7 +65,7 @@ std::optional<unsigned> UnionTable::slotIndexContaining(const Value v) const {
 SmallVector<unsigned>
 UnionTable::slotsTouchedBy(const ArrayRef<Value> values) const {
   SmallVector<unsigned> result;
-  for (const Value v : values) {
+  for (Value v : values) {
     if (const auto i = slotIndexContaining(v)) {
       if (!llvm::is_contained(result, *i)) {
         result.push_back(*i);
@@ -196,7 +196,7 @@ bool UnionTable::sameSlot(const Slot& a, const Slot& b) {
 // Seeding
 //===----------------------------------------------------------------------===//
 
-void UnionTable::seedQubit(const Value qubit) {
+void UnionTable::seedQubit(Value qubit) {
   if (allTop || isTracked(qubit)) {
     return;
   }
@@ -206,7 +206,7 @@ void UnionTable::seedQubit(const Value qubit) {
   slots.push_back(std::move(slot));
 }
 
-void UnionTable::seedClassical(const Value value, const Attribute attr) {
+void UnionTable::seedClassical(Value value, const Attribute attr) {
   if (allTop) {
     return;
   }
@@ -223,7 +223,7 @@ void UnionTable::seedClassical(const Value value, const Attribute attr) {
   slots.push_back(std::move(slot));
 }
 
-bool UnionTable::isTracked(const Value v) const {
+bool UnionTable::isTracked(Value v) const {
   return slotIndexContaining(v).has_value();
 }
 
@@ -231,7 +231,7 @@ bool UnionTable::isTracked(const Value v) const {
 // SSA forwarding
 //===----------------------------------------------------------------------===//
 
-void UnionTable::forwardValue(const Value from, const Value to) {
+void UnionTable::forwardValue(Value from, Value to) {
   for (auto& slot : slots) {
     for (auto& hs : slot) {
       hs.forwardValue(from, to);
@@ -250,11 +250,12 @@ void UnionTable::forwardValues(const ArrayRef<Value> from,
 // Operation propagation
 //===----------------------------------------------------------------------===//
 
-LogicalResult UnionTable::applyMatrix1Q(
-    const Value in, const Value out, const Matrix2x2& matrix,
-    const ArrayRef<Value> quantumCtrlsIn, const ArrayRef<Value> quantumCtrlsOut,
-    const ArrayRef<Value> posClassicalCtrls,
-    const ArrayRef<Value> negClassicalCtrls) {
+LogicalResult
+UnionTable::applyMatrix1Q(Value in, Value out, const Matrix2x2& matrix,
+                          const ArrayRef<Value> quantumCtrlsIn,
+                          const ArrayRef<Value> quantumCtrlsOut,
+                          const ArrayRef<Value> posClassicalCtrls,
+                          const ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
     return success();
   }
@@ -281,13 +282,11 @@ LogicalResult UnionTable::applyMatrix1Q(
   return success();
 }
 
-LogicalResult
-UnionTable::applyMatrix2Q(const Value in0, const Value in1, const Value out0,
-                          const Value out1, const Matrix4x4& matrix,
-                          const ArrayRef<Value> quantumCtrlsIn,
-                          const ArrayRef<Value> quantumCtrlsOut,
-                          const ArrayRef<Value> posClassicalCtrls,
-                          const ArrayRef<Value> negClassicalCtrls) {
+LogicalResult UnionTable::applyMatrix2Q(
+    Value in0, Value in1, Value out0, Value out1, const Matrix4x4& matrix,
+    const ArrayRef<Value> quantumCtrlsIn, const ArrayRef<Value> quantumCtrlsOut,
+    const ArrayRef<Value> posClassicalCtrls,
+    const ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
     return success();
   }
@@ -315,8 +314,7 @@ UnionTable::applyMatrix2Q(const Value in0, const Value in1, const Value out0,
 }
 
 LogicalResult
-UnionTable::addGlobalPhase(const Value theta,
-                           const ArrayRef<Value> quantumCtrlsIn,
+UnionTable::addGlobalPhase(Value theta, const ArrayRef<Value> quantumCtrlsIn,
                            const ArrayRef<Value> quantumCtrlsOut,
                            const ArrayRef<Value> posClassicalCtrls,
                            const ArrayRef<Value> negClassicalCtrls) {
@@ -369,7 +367,7 @@ void UnionTable::propagateClassical(Operation* const op) {
   if (allTop) {
     return;
   }
-  for (const Value operand : operands) {
+  for (Value operand : operands) {
     if (const auto slot = slotIndexContaining(operand)) {
       for (auto& hs : slots[*slot]) {
         hs.propagateClassical(op);
@@ -380,8 +378,7 @@ void UnionTable::propagateClassical(Operation* const op) {
 }
 
 LogicalResult
-UnionTable::measureQubit(const Value in, const Value out,
-                         const Value classicalResult,
+UnionTable::measureQubit(Value in, Value out, Value classicalResult,
                          const ArrayRef<Value> posClassicalCtrls,
                          const ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
@@ -409,7 +406,7 @@ UnionTable::measureQubit(const Value in, const Value out,
   return success();
 }
 
-LogicalResult UnionTable::resetQubit(const Value in, const Value out,
+LogicalResult UnionTable::resetQubit(Value in, Value out,
                                      const ArrayRef<Value> posClassicalCtrls,
                                      const ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
@@ -440,7 +437,7 @@ void UnionTable::markQubitsTop(const ArrayRef<Value> qubits) {
     return;
   }
   llvm::DenseSet<unsigned> done;
-  for (const Value q : qubits) {
+  for (Value q : qubits) {
     const auto i = slotIndexContaining(q);
     if (i && done.insert(*i).second) {
       for (auto& hs : slots[*i]) {
@@ -454,7 +451,7 @@ void UnionTable::markQubitsTop(const ArrayRef<Value> qubits) {
 // Queries
 //===----------------------------------------------------------------------===//
 
-bool UnionTable::isQubitAlwaysOne(const Value q) const {
+bool UnionTable::isQubitAlwaysOne(Value q) const {
   if (allTop) {
     return false;
   }
@@ -464,7 +461,7 @@ bool UnionTable::isQubitAlwaysOne(const Value q) const {
          });
 }
 
-bool UnionTable::isQubitAlwaysZero(const Value q) const {
+bool UnionTable::isQubitAlwaysZero(Value q) const {
   if (allTop) {
     return false;
   }
@@ -474,7 +471,7 @@ bool UnionTable::isQubitAlwaysZero(const Value q) const {
          });
 }
 
-bool UnionTable::isClassicalAlwaysTrue(const Value v) const {
+bool UnionTable::isClassicalAlwaysTrue(Value v) const {
   if (allTop) {
     return false;
   }
@@ -484,7 +481,7 @@ bool UnionTable::isClassicalAlwaysTrue(const Value v) const {
          });
 }
 
-bool UnionTable::isClassicalAlwaysFalse(const Value v) const {
+bool UnionTable::isClassicalAlwaysFalse(Value v) const {
   if (allTop) {
     return false;
   }
@@ -507,26 +504,26 @@ bool UnionTable::areControlsSatisfiable(
 
   for (const unsigned si : slotsTouchedBy(all)) {
     const Slot& slot = slots[si];
-    const auto hasClassical = [&](const Value c) {
+    const auto hasClassical = [&](Value c) {
       return llvm::any_of(slot, [&](const HybridState& hs) {
         return hs.getClassical(c).has_value();
       });
     };
 
     SmallVector<Value> quantum;
-    for (const Value c : quantumCtrls) {
+    for (Value c : quantumCtrls) {
       if (slot.front().hasQubit(c)) {
         quantum.push_back(c);
       }
     }
     SmallVector<Value> pos;
-    for (const Value c : posClassicalCtrls) {
+    for (Value c : posClassicalCtrls) {
       if (hasClassical(c)) {
         pos.push_back(c);
       }
     }
     SmallVector<Value> neg;
-    for (const Value c : negClassicalCtrls) {
+    for (Value c : negClassicalCtrls) {
       if (hasClassical(c)) {
         neg.push_back(c);
       }
@@ -553,17 +550,17 @@ SuperfluousResult UnionTable::getSuperfluousControls(
     result.completelySuperfluous = true;
     return result;
   }
-  for (const Value q : quantumCtrls) {
+  for (Value q : quantumCtrls) {
     if (isQubitAlwaysOne(q)) {
       result.superfluousQubits.insert(q);
     }
   }
-  for (const Value p : posClassicalCtrls) {
+  for (Value p : posClassicalCtrls) {
     if (isClassicalAlwaysTrue(p)) {
       result.superfluousClassicalValues.insert(p);
     }
   }
-  for (const Value n : negClassicalCtrls) {
+  for (Value n : negClassicalCtrls) {
     if (isClassicalAlwaysFalse(n)) {
       result.superfluousClassicalValues.insert(n);
     }

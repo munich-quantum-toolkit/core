@@ -142,7 +142,7 @@ TEST_F(ConstantPropagationAnalysisTest, independentGatesStayFactored) {
 
 TEST_F(ConstantPropagationAnalysisTest, entanglingGateMergedFactors) {
   auto reg = builder.allocQubitRegister(2);
-  const Value q0 = builder.x(reg[0]);
+  Value q0 = builder.x(reg[0]);
   builder.dcx(q0, reg[1]);
   const auto module = builder.finalize();
 
@@ -154,7 +154,7 @@ TEST_F(ConstantPropagationAnalysisTest, entanglingGateMergedFactors) {
 
 TEST_F(ConstantPropagationAnalysisTest, controlledGateFires) {
   auto reg = builder.allocQubitRegister(2);
-  const Value q0 = builder.h(reg[0]);
+  Value q0 = builder.h(reg[0]);
   builder.cx(q0, reg[1]);
   const auto module = builder.finalize();
 
@@ -166,7 +166,7 @@ TEST_F(ConstantPropagationAnalysisTest, controlledGateFires) {
 
 TEST_F(ConstantPropagationAnalysisTest, measuringSuperpositionTops) {
   auto reg = builder.allocQubitRegister(1);
-  const Value q0 = builder.h(reg[0]);
+  Value q0 = builder.h(reg[0]);
   builder.measure(q0);
   const auto module = builder.finalize();
 
@@ -182,7 +182,7 @@ TEST_F(ConstantPropagationAnalysisTest, measuringSuperpositionTops) {
 
 TEST_F(ConstantPropagationAnalysisTest, deterministicMeasurementRecordsBit) {
   auto reg = builder.allocQubitRegister(1);
-  const Value q0 = builder.x(reg[0]);
+  Value q0 = builder.x(reg[0]);
   builder.measure(q0);
   const auto module = builder.finalize();
 

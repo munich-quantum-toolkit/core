@@ -91,7 +91,7 @@ public:
     return state.getQubits();
   }
   [[nodiscard("HybridState::hasQubit called but ignored")]] bool
-  hasQubit(const Value q) const {
+  hasQubit(Value q) const {
     return state.contains(q);
   }
   [[nodiscard("HybridState::getClassical called but ignored")]]

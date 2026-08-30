@@ -97,7 +97,7 @@ TEST_F(UnionTableTest, seedQubitCantBeCalledTwice) {
 
 TEST_F(UnionTableTest, seedClassicalRecordsConstant) {
   auto ut = make();
-  const Value c = builder.boolConstant(true);
+  Value c = builder.boolConstant(true);
   ut.seedClassical(c, builder.getBoolAttr(true));
   EXPECT_TRUE(ut.isTracked(c));
   EXPECT_TRUE(ut.isClassicalAlwaysTrue(c));
@@ -171,7 +171,7 @@ TEST_F(UnionTableTest, applyToUnseededQubitFails) {
 TEST_F(UnionTableTest, classicalControlSkipsGate) {
   auto ut = make();
   ut.seedQubit(q[0]);
-  const Value c = builder.boolConstant(false);
+  Value c = builder.boolConstant(false);
   ut.seedClassical(c, builder.getBoolAttr(false));
   ASSERT_TRUE(ut.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix(), {}, {}, {c})
                   .succeeded());
@@ -181,7 +181,7 @@ TEST_F(UnionTableTest, classicalControlSkipsGate) {
 TEST_F(UnionTableTest, unresolvedClassicalControlFails) {
   auto ut = make();
   ut.seedQubit(q[0]);
-  const Value c = builder.boolConstant(false);
+  Value c = builder.boolConstant(false);
   EXPECT_TRUE(ut.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix(), {}, {}, {c})
                   .failed());
 }
@@ -193,7 +193,7 @@ TEST_F(UnionTableTest, unresolvedClassicalControlFails) {
 TEST_F(UnionTableTest, measureDeterministicRecordsBit) {
   auto ut = make();
   ut.seedQubit(q[0]);
-  const Value result = builder.boolConstant(false);
+  Value result = builder.boolConstant(false);
   ASSERT_TRUE(ut.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(ut.measureQubit(q[0], q[0], result).succeeded());
   EXPECT_TRUE(ut.isClassicalAlwaysTrue(result));
@@ -202,7 +202,7 @@ TEST_F(UnionTableTest, measureDeterministicRecordsBit) {
 TEST_F(UnionTableTest, measureSuperpositionTopsTheState) {
   auto ut = make();
   ut.seedQubit(q[0]);
-  const Value result = builder.boolConstant(false);
+  Value result = builder.boolConstant(false);
   ASSERT_TRUE(ut.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(ut.measureQubit(q[0], q[0], result).succeeded());
   EXPECT_TRUE(ut.areStatesAllTop());
@@ -224,7 +224,7 @@ TEST_F(UnionTableTest, resetForcesZero) {
 TEST_F(UnionTableTest, globalPhaseIsRecordedOnce) {
   auto ut = make();
   ut.seedQubit(q[0]);
-  const Value theta = builder.floatConstant(std::numbers::pi);
+  Value theta = builder.floatConstant(std::numbers::pi);
   ut.seedClassical(theta, builder.getF64FloatAttr(std::numbers::pi));
   ASSERT_TRUE(ut.addGlobalPhase(theta).succeeded());
   EXPECT_NE(printed(ut).find("phase="), std::string::npos);
@@ -232,8 +232,8 @@ TEST_F(UnionTableTest, globalPhaseIsRecordedOnce) {
 
 TEST_F(UnionTableTest, propagateClassicalFoldsAcrossSlots) {
   auto ut = make();
-  const Value lhs = builder.intConstant(2);
-  const Value rhs = builder.intConstant(5);
+  Value lhs = builder.intConstant(2);
+  Value rhs = builder.intConstant(5);
   ut.seedClassical(lhs, builder.getIntegerAttr(lhs.getType(), 2));
   ut.seedClassical(rhs, builder.getIntegerAttr(rhs.getType(), 5));
   auto add = arith::AddIOp::create(builder, builder.getLoc(), lhs, rhs);
@@ -265,7 +265,7 @@ TEST_F(UnionTableTest, controlsUnsatisfiableWhenAQubitIsAlwaysZero) {
 
 TEST_F(UnionTableTest, negativeClassicalControlSatisfiedByFalseConstant) {
   auto ut = make();
-  const Value c = builder.boolConstant(false);
+  Value c = builder.boolConstant(false);
   ut.seedClassical(c, builder.getBoolAttr(false));
   EXPECT_FALSE(ut.areControlsSatisfiable({}, {c}));
   EXPECT_TRUE(ut.areControlsSatisfiable({}, {}, {c}));
@@ -354,7 +354,7 @@ TEST_F(UnionTableTest, joinOfDifferentEntanglementStructureTops) {
 }
 
 TEST_F(UnionTableTest, joinKeepsClassicalFactOnlyWhenShared) {
-  const Value c = builder.boolConstant(true);
+  Value c = builder.boolConstant(true);
 
   auto a = make();
   a.seedClassical(c, builder.getBoolAttr(true));

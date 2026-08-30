@@ -188,7 +188,7 @@ TEST_F(QuantumStateTest, applyToQubitNotInGroupFailsEvenWhenTop) {
   ASSERT_TRUE(qs.applyMatrix1Q(q[0], q[0], hOp.getUnitaryMatrix()).succeeded());
   ASSERT_TRUE(qs.isTop());
   EXPECT_TRUE(qs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix()).succeeded());
-  const Value stranger = builder.allocQubit();
+  Value stranger = builder.allocQubit();
   EXPECT_TRUE(
       qs.applyMatrix1Q(stranger, stranger, xOp.getUnitaryMatrix()).failed());
 }
