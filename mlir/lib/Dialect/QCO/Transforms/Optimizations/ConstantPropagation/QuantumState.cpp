@@ -320,7 +320,8 @@ QuantumState QuantumState::unify(const QuantumState& that) const {
   result.qubits.append(that.qubits.begin(), that.qubits.end());
 
   if (top || that.top || result.qubits.size() > MAX_GROUP_QUBITS ||
-      amplitudes.size() * that.amplitudes.size() > maxNonzeroAmplitudes) {
+      static_cast<size_t>(amplitudes.size() * that.amplitudes.size()) >
+          maxNonzeroAmplitudes) {
     result.markTop();
     return result;
   }
