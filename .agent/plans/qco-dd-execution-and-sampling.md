@@ -1,234 +1,109 @@
 # Refocus QCO DD execution and sampling
 
-This ExecPlan is a living document. The sections `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
-be kept up to date as work proceeds. Maintain it according to `.agent/PLANS.md`.
+This living ExecPlan follows `.agent/PLANS.md`; keep it current.
 
 ## Purpose / Big Picture
 
-MQT Core shall execute the supported single-block QCO subset with decision
-diagrams (DDs) and expose only functionality construction, simulation, and
-zero-state sampling. Sampling returns the entry function's CBit register
-results; programs with no CBit result retain final computational-basis sampling.
-Compiling the terminal Bell and adaptive examples below to optimized QCO and
-sampling them demonstrates the behavior end to end.
+PR #2077 exposes DD building, simulation, and sampling of declared CBits or the
+final basis state. QC coalesces static references; QCO owns one root per index.
 
 ## Progress
 
-- [x] (2026-08-26 00:00Z) Preserve the divergent local work and start from PR
-  #2077 commit `97f904f6` without rewriting history.
-- [x] (2026-08-26 22:08Z) Refactor attributes, direct loops, preparation,
-  sampling classification, and the public API.
-- [x] (2026-08-26 22:08Z) Add focused C++ coverage and regenerate stubs through
-  `uvx nox -s stubs`.
-- [x] (2026-08-26 22:17Z) Add the two compiler-to-sampler Python cases.
-- [x] (2026-08-26 22:22Z) Run full local validation and prepare two signed
-  additive commits.
-- [x] (2026-08-26 22:29Z) Push normally and inspect hosted checks.
-- [x] (2026-08-26 23:45Z) Confirm replacement hosted checks.
-- [x] (2026-08-27 19:03Z) Merge `main` after PR #2220 added checked QCO
-      linearity boundaries.
-- [x] (2026-08-27 19:07Z) Remove simulator checks and tests that only cover
-  invalid IR.
-- [x] (2026-08-27 19:18Z) Extend the root linearity check to reject duplicate
-      static wire indices and move the regression to the checked program
-      boundary.
-- [x] (2026-08-27 19:34Z) Run focused and full validation for the follow-up
-      cleanup; commit preparation is complete.
+- [x] (2026-08-26) Implement direct, budgeted, output-aware execution and tests.
+- [x] (2026-08-29) Rebase; replace coalescing with reuse/CSE; enforce QCO roots.
+- [x] (2026-08-29) Add boundary regressions and pass all local validation.
+- [x] (2026-08-30) Rebase onto main after the static-qubit PR merged; drop its
+  superseded commits while retaining DD-specific coverage.
 
 ## Surprises & Discoveries
 
-- Observation: `Operation::fold` may update an operation in place. Evidence:
-  MLIR's `Operation.h` documents empty successful fold results as in-place
-  updates, so execution uses a narrow explicit evaluator.
-- Observation: independent quantum and measurement histograms lose their
-  correlation. Evidence: one shot cannot be reconstructed from two marginal
-  histograms, so `SampleResult` is removed.
-- Observation: optimized OpenQASM emits entry-block `qco.alloc` for scalar
-  qubits and `qtensor.alloc` for register declarations. The executor maps only
-  scalar allocations; the end-to-end test uses scalar qubits and leaves qtensors
-  to #2078.
-- Observation: PR #2220 makes `QCOProgram::fromModule` run both standard MLIR
-  verification and `qco::verifyLinearity`. Evidence: all Python DD entry points
-  receive a `QCOProgram`, so verification in `prepare` repeated the checked
-  ownership boundary.
-- Observation: cleanup is not semantics-neutral for fallback sampling width.
-  Evidence: canonicalization removes a `qco.static` to `x` to `x` to `sink`
-  chain, which changes the inferred sample key from `"0"` to `""`.
-- Observation: the unitary matrix-dimension guard is a runtime capability check,
-  not duplicate IR validation. Evidence: a valid 11-target modifier exceeds the
-  matrix composer limit and reaches an out-of-bounds assertion if the guard is
-  removed.
-- Observation: PR #2220's use-count check alone accepts two distinct
-  `qco.static` values with the same index. Evidence: both values can have one
-  use while still aliasing one physical DD wire.
+- `Operation::fold` mutates and cannot coalesce siblings; hoisting plus CSE can.
+- Greedy rewriting deletes dead operations; preflight precedes static rewriting.
+- Cleanup changes fallback width; split histograms lose correlation. Do neither.
 
 ## Decision Log
 
-- Decision: `sample` concatenates returned CBit registers in `func.return`
-  order, each from bit `N-1` to bit `0`; no CBit result means `measureAll`.
-  Rationale: the program output preserves correlations and matches QCO
-  consumers. Date/Author: 2026-08-26, Codex with user approval.
-- Decision: interpret `scf.for` directly with one 10,000-step budget per
-  execution. Rationale: nested work is bounded without enlarging the IR.
-  Date/Author: 2026-08-26, Codex with user approval.
-- Decision: keep only zero-state sampling and add entry-block scalar
-  `qco.alloc`. Rationale: this is the smallest compiler-to-sampler bridge;
-  supplied states and qtensors have no demonstrated #2077 consumer. Date/Author:
-  2026-08-26, Codex.
-- Decision: treat verified, linear QCO as a precondition of the direct DD C++
-  APIs and retain only supported-subset and runtime-resource diagnostics.
-  Rationale: PR #2220 owns IR validity at `QCOProgram` and compiler boundaries;
-  duplicate validation in the executor adds code without protecting supported
-  callers. Date/Author: 2026-08-27, Codex with user approval.
-- Decision: make static-index uniqueness part of `qco::verifyLinearity` and
-  check it per isolated scope. Rationale: this rejects physical-wire aliases at
-  the same checked boundaries as SSA nonlinearity while allowing independent
-  functions to use the same static index. Date/Author: 2026-08-27, Codex with
-  user approval.
-- Decision: do not run QCO cleanup inside simulation or sampling. Rationale:
-  cleanup can remove all operations on a terminal wire and therefore change the
-  observable fallback bit-string width. Callers can request cleanup explicitly
-  when that transformation matches their intended program semantics.
-  Date/Author: 2026-08-27, Codex with user approval.
+- Decision: hoist pure roots, run CSE, and cache builder indices. Rationale:
+  shared MLIR replaces private logic. Date: 2026-08-29.
+- Decision: with an MQT entry point, every `qco.static` belongs to its entry
+  block with unique indices; helpers take arguments. Verify transforms on both
+  sides. Rationale: one QCO ownership boundary. Date: 2026-08-29.
+- Decision: `sample` encodes returned CBits in return order, MSB-first; no CBit
+  uses `measureAll`; mixed or undefined outputs fail. Loops use widened `APInt`
+  and one 10,000-step budget. Date: 2026-08-26.
 
 ## Outcomes & Retrospective
 
-The focused engine, all 3,872 runnable C++ tests, generated stub, and lint are
-green. The compiler-to-sampler file passes all six tests against an installed
-extension, including the two new cases. The Python Nox matrix passes 725 tests
-on each of Python 3.11 through 3.13 and 736 on Python 3.14; documented skips are
-unchanged. A bare `uv run --no-sync` invocation requires an installed package;
-without one, collection fails, while each Nox environment installs and tests the
-built extension.
-
-Relative to the original PR tip `97f904f6`, the total PR diff shrank from 1,670
-insertions and 238 deletions to 1,668 insertions and 545 deletions. The
-production implementation shrank from 1,232 to 1,229 lines. Generated `mlir.pyi`
-churn accounts for 55 insertions in the final PR diff. The first hosted run
-exposed eight clang-tidy findings and a macOS-only `qco.index_switch` verifier
-crash caused by its `INT64_MIN` tombstone. Small additive follow-ups correct the
-lint and avoid that unrelated verifier path in the maximum-shift test.
-
-After merging `main` at `baecdc55f`, the follow-up cleanup builds successfully,
-stub regeneration is stable, all 4,034 release C++ tests pass (with one
-documented skip), and the focused Python QCO DD suite passes all six tests on
-Python 3.14. The focused QCO utility, QCO IR, and compiler suites pass 125, 488,
-and 137 tests respectively. Independent review found no blocking issue in the
-root static-index validation or the removed simulator-side validity checks.
+OpenQASM avoids duplicate roots; QC cleanup and conversion normalize other IR.
+The private coalescer is gone. Python passes 6 focused and 3,143 matrix tests;
+CTest passes 4,042 tests. Lint, C++ lint, stubs, and builds pass.
 
 ## Context and Orientation
 
-`mlir/lib/Dialect/QCO/Utils/DDFunctionality.cpp` prepares and interprets QCO IR.
-A DD compactly represents a quantum state or operator. `ClassicalEnv` stores
-runtime scalar attributes and shared CBit register cells.
-`mlir/include/mlir/Dialect/QCO/Utils/DDFunctionality.h` is the C++ API;
-`bindings/mlir/register_mlir.cpp` and generated `python/mqt/core/mlir.pyi`
-provide Python. Focused tests are in
-`mlir/unittests/Dialect/QCO/Utils/test_dd_functionality.cpp` and
-`test/python/test_qco_dd.py`.
+`mlir/lib/Dialect/QC/Builder/QCProgramBuilder.cpp` serves OpenQASM import;
+`mlir/lib/Dialect/QC/IR/QubitManagement/DeallocOp.cpp` hoists QC roots;
+`mlir/lib/Conversion/QCToQCO/QCToQCO.cpp` validates and converts them.
+`mlir/lib/Dialect/QCO/IR/QCOUtils.cpp` owns QCO invariants; `Programs.cpp`
+checks public transform boundaries; and
+`mlir/lib/Dialect/QCO/Utils/DDFunctionality.cpp` executes single-block QCO.
 
-The direct C++ DD APIs require a module that has passed standard MLIR
-verification and `qco::verifyLinearity`. The Python bindings meet this
-precondition because they accept `QCOProgram`, whose checked construction is
-implemented in `mlir/lib/Compiler/Programs.cpp`.
-
-The Python surface is exactly:
-
-    build_functionality(program, dd_package) -> MatrixDD
-    simulate(program, initial_state, dd_package, seed=None) -> VectorDD
-    sample(program, dd_package, shots=1024, seed=None) -> dict[str, int]
-
-Follow `AGENTS.md` and `docs/ai_usage.md`. Preserve unrelated work, regenerate
-stubs only through Nox, sign commits, and do not treat this plan as authority
-for GitHub actions.
+The Python API is `build_functionality(program, dd_package) -> MatrixDD`,
+`simulate(program, initial_state, dd_package, seed=None) -> VectorDD`, and
+`sample(program, dd_package, shots=1024, seed=None) -> dict[str, int]`. C++
+keeps matching functions; static sampling evolves once, adaptive control runs
+per shot, and returned CBits share storage across calls.
 
 ## Milestones
 
-### Milestone 1: narrow and correct the engine
+### 1. Canonical QC roots
 
-Store integer and index values as exact-width MLIR attributes. Validate the
-containing module once, then reuse prepared wire mappings per shot. Execute
-single-block calls and positive-step `scf.for` loops directly. Compute loop
-spans in a one-bit-wider `APInt`; decrement the shared budget before each
-iteration. Completion is the focused C++ target building with all
-`QCODDFunctionalityTest` cases passing.
+Cache, hoist, and CSE QC roots; conversion repeats this only after preflight.
+Nested and duplicate inputs must lower to one entry-block root per index.
 
-### Milestone 2: make sampling output-aware
+### 2. Strict QCO ownership
 
-Reject mixed CBit/non-CBit results and undefined returned cells. Defer only
-entry-block measurements whose qubit result reaches only a sink or return and
-whose bit is unused or stored into a returned register that is never loaded,
-called, or otherwise consumed. Static sampling evolves once and maps sampled
-physical wires into returned cells. Resets, callees, nested measurements, and
-execution-dependent measurements run per shot. Completion includes the narrow
-C++/Python APIs and regenerated stub.
+Reject duplicate indices and roots outside the MQT entry, but accept helper
+arguments. Recheck transformations; never canonicalize during DD preparation.
 
-### Milestone 3: prove and publish the stack foundation
+### 3. Execute, sample, and prove the boundary
 
-Compile terminal Bell and adaptive reset programs with
-`OutputFormat.QCO_OPTIMIZED`; expect respectively only `00`/`11` and `00`/`01`,
-with both outcomes present. Finish full validation, add the test and final plan
-outcome in a second signed commit, then push normally and inspect PR №2077
-checks.
-
-## Plan of Work
-
-Keep explicit evaluators only for integer constants, logical operations,
-add/subtract/multiply, shifts, comparisons, select, and unsigned index casts. Do
-not call generic folding. Preserve shared CBit storage across calls. Remove
-history sampling, supplied-state sampling, redundant call-arity checks, and
-their tests. Cover output ordering, constants, undefined cells, static versus
-dynamic measurement classification, extreme loop bounds, shared loop budget, and
-DD reference balance.
-
-PR №2078 remains responsible for runtime bindings, additional scalar types,
-qtensors, and `scf.while`; PR №2079 remains responsible for multi-block CFG
-execution, budgeted CFG transitions, and DD-native deallocation. Neither may
-restore encounter histories, generic folding, or independent loop caps without a
-compiler-produced consumer.
+Retain exact values, direct execution, shared CBits, and one budget. Test
+deferred and adaptive sampling, then run every repository check.
 
 ## Concrete Steps
 
-Run from the repository root:
+From the repository root, run:
 
     cmake --preset release
+    cmake --build --preset release --target mqt-core-mlir-unittest-qc-ir
+    cmake --build --preset release --target mqt-core-mlir-unittest-qc-to-qco
+    cmake --build --preset release --target mqt-core-mlir-unittests-compiler
     cmake --build --preset release --target mqt-core-mlir-unittest-qco-utils
-    ctest --preset release -R QCODDFunctionalityTest --output-on-failure
+    uvx nox -s tests-3.14 -- test/python/test_qco_dd.py -q
     uvx nox -s stubs
-    uv run --no-sync pytest test/python/test_qco_dd.py
     uvx nox -s lint
+    uvx nox -s cpp-lint
     cmake --build --preset release
     ctest --preset release --output-on-failure
     uvx nox -s tests
 
-Before publication, compare the production and total diff with `97f904f6`, count
-generated stub churn separately, fetch the PR branch, and rebase only if it
-advanced. Verify every new commit with `git verify-commit` and push without
-force.
+Only the stubs session may regenerate `python/mqt/core/mlir.pyi`.
 
 ## Validation and Acceptance
 
-The focused C++ suite must show exact 10,000-loop success and 10,001 failure,
-shared nested-loop accounting, returned-register order and MSB-first encoding,
-one evolution for terminal output measurements, per-shot adaptive/callee/nested
-execution, conservative unknown-use handling, and balanced DD roots after
-success, failure, and zero shots. The Python test must compile optimized QCO,
-produce exactly the expected keys, and sum to the requested shots. All commands
-above must exit successfully; hosted checks must validate the pushed SHA.
+Tests prove root normalization and ownership, unchanged fallback width, output
+ordering, both sampling paths, loop budgets, and balanced DD references. Every
+command exits zero. Refetch and verify the recorded SHA and signed commits, then
+publish with exact `--force-with-lease`; never unguarded force.
+
+## Downstream Boundaries
+
+PR #2078 owns bindings, more scalar types, qtensors, and `scf.while`. PR #2079
+owns multi-block control flow, budgeted block transitions, and DD-native
+deallocation. Neither restores histories, supplied-state sampling, generic
+folding, per-loop caps, or simulator canonicalization.
 
 ## Idempotence and Recovery
 
-Configuration, builds, tests, stub generation, lint, fetches, and diff checks
-are repeatable. The original local work has a backup ref and binary patch
-outside this plan. Keep commits additive and use a normal push. If the remote
-advanced, fetch, rebase the unpublished commits, rerun validation, and retry; do
-not modify #2078 or #2079 in this work.
-
-Revision note (2026-08-26): Replaced the historical first-class-CBit plan with
-this focused, self-contained execution and sampling plan; updated it after the
-engine and focused validation milestones.
-
-Revision note (2026-08-27): Recorded the merged PR #2220 boundary, removed
-duplicate executor validation, and rejected implicit cleanup because it changes
-fallback sampling width.
+Builds and checks are repeatable; a backup preserves the old head. If the remote
+advances, rebase and revalidate. Preserve unrelated changes and follow-up PRs.

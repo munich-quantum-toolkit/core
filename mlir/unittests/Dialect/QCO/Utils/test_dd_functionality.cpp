@@ -958,6 +958,21 @@ TEST_F(QCODDFunctionalityTest, SampleUnitaryXIsDeterministic) {
   EXPECT_EQ(hist->begin()->second, shots);
 }
 
+TEST_F(QCODDFunctionalityTest, SamplePreservesDeclaredStaticWidth) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(3);
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(4);
+  std::mt19937_64 rng(1);
+  const auto histogram = sample(mainFunc(*mod), *dd, 8, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"0000", 8}}));
+}
+
 TEST_F(QCODDFunctionalityTest, SampleHadamardApproximatelyBalanced) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q = b.h(b.staticQubit(0));
