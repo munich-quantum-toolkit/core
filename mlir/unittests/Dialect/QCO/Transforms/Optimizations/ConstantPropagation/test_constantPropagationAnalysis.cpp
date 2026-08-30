@@ -229,6 +229,7 @@ TEST_F(ConstantPropagationAnalysisTest,
   const std::string dump = analyze(*module);
   EXPECT_EQ(dump.find("<analysis failed>"), std::string::npos);
   EXPECT_NE(dump.find("qco.if -> "), std::string::npos);
+  EXPECT_NE(dump.find("p=1.0000 [|1> -> 1.00]"), std::string::npos);
 }
 
 TEST_F(ConstantPropagationAnalysisTest, classicalArithmeticIsFolded) {
@@ -247,7 +248,12 @@ TEST_F(ConstantPropagationAnalysisTest, classicalArithmeticIsFolded) {
 
   const std::string dump = analyze(*module);
   EXPECT_EQ(dump.find("<analysis failed>"), std::string::npos);
+  // `addi 2, 3` folds to a classical constant 5, recorded in the lattice as a
+  // resolved value; the state stays precise - not top, not empty.
   EXPECT_NE(dump.find("arith.addi -> "), std::string::npos);
+  EXPECT_NE(dump.find("=5 : i64"), std::string::npos);
+  EXPECT_EQ(dump.find("arith.addi -> <all top>"), std::string::npos);
+  EXPECT_EQ(dump.find("arith.addi -> <empty>"), std::string::npos);
 }
 
 } // namespace
