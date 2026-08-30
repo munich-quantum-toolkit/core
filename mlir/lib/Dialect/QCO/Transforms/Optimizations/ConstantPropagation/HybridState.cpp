@@ -35,7 +35,7 @@ namespace mlir::qco {
 
 /// @brief Truthiness of a resolved classical constant (non-zero == true), or
 /// nullopt if attr is not an integer/index/bool/float constant.
-static std::optional<bool> classicalTruth(const Attribute attr) {
+static std::optional<bool> classicalTruth(Attribute attr) {
   if (const auto ia = dyn_cast_if_present<IntegerAttr>(attr)) {
     return !ia.getValue().isZero();
   }
@@ -47,7 +47,7 @@ static std::optional<bool> classicalTruth(const Attribute attr) {
 
 /// @brief Numeric value of a resolved classical constant, or nullopt if attr is
 /// not an integer/index/bool/float constant.
-static std::optional<double> classicalDouble(const Attribute attr) {
+static std::optional<double> classicalDouble(Attribute attr) {
   if (const auto ia = dyn_cast_if_present<IntegerAttr>(attr)) {
     if (const std::optional<int64_t> v = ia.getValue().trySExtValue()) {
       return static_cast<double>(*v);
@@ -76,7 +76,7 @@ std::optional<Attribute> HybridState::getClassical(Value v) const {
 // Mutation
 //===----------------------------------------------------------------------===//
 
-void HybridState::setClassical(Value v, const Attribute attr) {
+void HybridState::setClassical(Value v, Attribute attr) {
   classical[v] = attr;
 }
 
@@ -121,8 +121,8 @@ HybridState HybridState::tensor(const HybridState& other) const {
 //===----------------------------------------------------------------------===//
 
 FailureOr<bool>
-HybridState::classicalControlsHold(const ArrayRef<Value> pos,
-                                   const ArrayRef<Value> neg) const {
+HybridState::classicalControlsHold(ArrayRef<Value> pos,
+                                   ArrayRef<Value> neg) const {
   for (Value p : pos) {
     const auto attr = getClassical(p);
     if (!attr) {
@@ -158,10 +158,10 @@ HybridState::classicalControlsHold(const ArrayRef<Value> pos,
 
 LogicalResult
 HybridState::applyMatrix1Q(Value in, Value out, const Matrix2x2& matrix,
-                           const ArrayRef<Value> quantumCtrlsIn,
-                           const ArrayRef<Value> quantumCtrlsOut,
-                           const ArrayRef<Value> posClassicalCtrls,
-                           const ArrayRef<Value> negClassicalCtrls) {
+                           ArrayRef<Value> quantumCtrlsIn,
+                           ArrayRef<Value> quantumCtrlsOut,
+                           ArrayRef<Value> posClassicalCtrls,
+                           ArrayRef<Value> negClassicalCtrls) {
   if (quantumCtrlsIn.size() != quantumCtrlsOut.size() || !state.contains(in)) {
     return failure();
   }
@@ -181,9 +181,9 @@ HybridState::applyMatrix1Q(Value in, Value out, const Matrix2x2& matrix,
 
 LogicalResult HybridState::applyMatrix2Q(
     Value in0, Value in1, Value out0, Value out1, const Matrix4x4& matrix,
-    const ArrayRef<Value> quantumCtrlsIn, const ArrayRef<Value> quantumCtrlsOut,
-    const ArrayRef<Value> posClassicalCtrls,
-    const ArrayRef<Value> negClassicalCtrls) {
+    ArrayRef<Value> quantumCtrlsIn, ArrayRef<Value> quantumCtrlsOut,
+    ArrayRef<Value> posClassicalCtrls,
+    ArrayRef<Value> negClassicalCtrls) {
   if (quantumCtrlsIn.size() != quantumCtrlsOut.size() || !state.contains(in0) ||
       !state.contains(in1)) {
     return failure();
@@ -203,10 +203,10 @@ LogicalResult HybridState::applyMatrix2Q(
 }
 
 LogicalResult
-HybridState::addGlobalPhase(Value theta, const ArrayRef<Value> quantumCtrlsIn,
-                            const ArrayRef<Value> quantumCtrlsOut,
-                            const ArrayRef<Value> posClassicalCtrls,
-                            const ArrayRef<Value> negClassicalCtrls) {
+HybridState::addGlobalPhase(Value theta, ArrayRef<Value> quantumCtrlsIn,
+                            ArrayRef<Value> quantumCtrlsOut,
+                            ArrayRef<Value> posClassicalCtrls,
+                            ArrayRef<Value> negClassicalCtrls) {
   if (quantumCtrlsIn.size() != quantumCtrlsOut.size()) {
     return failure();
   }
@@ -230,7 +230,7 @@ HybridState::addGlobalPhase(Value theta, const ArrayRef<Value> quantumCtrlsIn,
   return success();
 }
 
-void HybridState::propagateClassical(Operation* const op) {
+void HybridState::propagateClassical(Operation* op) {
   SmallVector<Attribute> operands;
   operands.reserve(op->getNumOperands());
   for (Value operand : op->getOperands()) {
@@ -254,8 +254,8 @@ void HybridState::propagateClassical(Operation* const op) {
 
 LogicalResult
 HybridState::measureQubit(Value in, Value out, Value classicalResult,
-                          const ArrayRef<Value> posClassicalCtrls,
-                          const ArrayRef<Value> negClassicalCtrls) {
+                          ArrayRef<Value> posClassicalCtrls,
+                          ArrayRef<Value> negClassicalCtrls) {
   if (!state.contains(in)) {
     return failure();
   }
@@ -288,8 +288,8 @@ HybridState::measureQubit(Value in, Value out, Value classicalResult,
 }
 
 LogicalResult HybridState::resetQubit(Value in, Value out,
-                                      const ArrayRef<Value> posClassicalCtrls,
-                                      const ArrayRef<Value> negClassicalCtrls) {
+                                      ArrayRef<Value> posClassicalCtrls,
+                                      ArrayRef<Value> negClassicalCtrls) {
   if (!state.contains(in)) {
     return failure();
   }
@@ -345,8 +345,8 @@ bool HybridState::isClassicalFalse(Value v) const {
 }
 
 bool HybridState::areControlsSatisfiable(
-    const ArrayRef<Value> quantumCtrls, const ArrayRef<Value> posClassicalCtrls,
-    const ArrayRef<Value> negClassicalCtrls) const {
+    ArrayRef<Value> quantumCtrls, ArrayRef<Value> posClassicalCtrls,
+    ArrayRef<Value> negClassicalCtrls) const {
   for (Value pc : posClassicalCtrls) {
     if (isClassicalFalse(pc)) {
       return false;

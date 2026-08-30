@@ -115,7 +115,7 @@ public:
    * @param maxHybridStates Per-slot alternative budget before the whole slot
    * collapses to allTop.
    */
-  UnionTable(const size_t maxNonzeroAmplitudes, const size_t maxHybridStates)
+  UnionTable(size_t maxNonzeroAmplitudes, size_t maxHybridStates)
       : maxNonzeroAmplitudes(maxNonzeroAmplitudes),
         maxHybridStates(maxHybridStates) {}
 

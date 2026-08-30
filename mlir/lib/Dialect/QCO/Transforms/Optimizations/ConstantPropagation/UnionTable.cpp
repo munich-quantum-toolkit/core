@@ -61,7 +61,7 @@ std::optional<unsigned> UnionTable::slotIndexContaining(Value v) const {
 }
 
 SmallVector<unsigned>
-UnionTable::slotsTouchedBy(const ArrayRef<Value> values) const {
+UnionTable::slotsTouchedBy(ArrayRef<Value> values) const {
   SmallVector<unsigned> result;
   for (Value v : values) {
     if (const auto i = slotIndexContaining(v)) {
@@ -82,7 +82,7 @@ HybridState UnionTable::reducedRepresentative(const Slot& slot) {
   return representative;
 }
 
-void UnionTable::mergeSlots(const ArrayRef<Value> values) {
+void UnionTable::mergeSlots(ArrayRef<Value> values) {
   if (allTop) {
     return;
   }
@@ -204,7 +204,7 @@ void UnionTable::seedQubit(Value qubit) {
   slots.push_back(std::move(slot));
 }
 
-void UnionTable::seedClassical(Value value, const Attribute attr) {
+void UnionTable::seedClassical(Value value, Attribute attr) {
   if (allTop) {
     return;
   }
@@ -237,8 +237,8 @@ void UnionTable::forwardValue(Value from, Value to) {
   }
 }
 
-void UnionTable::forwardValues(const ArrayRef<Value> from,
-                               const ArrayRef<Value> to) {
+void UnionTable::forwardValues(ArrayRef<Value> from,
+                               ArrayRef<Value> to) {
   for (const auto [f, t] : llvm::zip(from, to)) {
     forwardValue(f, t);
   }
@@ -250,10 +250,10 @@ void UnionTable::forwardValues(const ArrayRef<Value> from,
 
 LogicalResult
 UnionTable::applyMatrix1Q(Value in, Value out, const Matrix2x2& matrix,
-                          const ArrayRef<Value> quantumCtrlsIn,
-                          const ArrayRef<Value> quantumCtrlsOut,
-                          const ArrayRef<Value> posClassicalCtrls,
-                          const ArrayRef<Value> negClassicalCtrls) {
+                          ArrayRef<Value> quantumCtrlsIn,
+                          ArrayRef<Value> quantumCtrlsOut,
+                          ArrayRef<Value> posClassicalCtrls,
+                          ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
     return success();
   }
@@ -282,9 +282,9 @@ UnionTable::applyMatrix1Q(Value in, Value out, const Matrix2x2& matrix,
 
 LogicalResult UnionTable::applyMatrix2Q(
     Value in0, Value in1, Value out0, Value out1, const Matrix4x4& matrix,
-    const ArrayRef<Value> quantumCtrlsIn, const ArrayRef<Value> quantumCtrlsOut,
-    const ArrayRef<Value> posClassicalCtrls,
-    const ArrayRef<Value> negClassicalCtrls) {
+    ArrayRef<Value> quantumCtrlsIn, ArrayRef<Value> quantumCtrlsOut,
+    ArrayRef<Value> posClassicalCtrls,
+    ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
     return success();
   }
@@ -312,10 +312,10 @@ LogicalResult UnionTable::applyMatrix2Q(
 }
 
 LogicalResult
-UnionTable::addGlobalPhase(Value theta, const ArrayRef<Value> quantumCtrlsIn,
-                           const ArrayRef<Value> quantumCtrlsOut,
-                           const ArrayRef<Value> posClassicalCtrls,
-                           const ArrayRef<Value> negClassicalCtrls) {
+UnionTable::addGlobalPhase(Value theta, ArrayRef<Value> quantumCtrlsIn,
+                           ArrayRef<Value> quantumCtrlsOut,
+                           ArrayRef<Value> posClassicalCtrls,
+                           ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
     return success();
   }
@@ -355,7 +355,7 @@ UnionTable::addGlobalPhase(Value theta, const ArrayRef<Value> quantumCtrlsIn,
   return success();
 }
 
-void UnionTable::propagateClassical(Operation* const op) {
+void UnionTable::propagateClassical(Operation* op) {
   if (allTop) {
     return;
   }
@@ -377,8 +377,8 @@ void UnionTable::propagateClassical(Operation* const op) {
 
 LogicalResult
 UnionTable::measureQubit(Value in, Value out, Value classicalResult,
-                         const ArrayRef<Value> posClassicalCtrls,
-                         const ArrayRef<Value> negClassicalCtrls) {
+                         ArrayRef<Value> posClassicalCtrls,
+                         ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
     return success();
   }
@@ -405,8 +405,8 @@ UnionTable::measureQubit(Value in, Value out, Value classicalResult,
 }
 
 LogicalResult UnionTable::resetQubit(Value in, Value out,
-                                     const ArrayRef<Value> posClassicalCtrls,
-                                     const ArrayRef<Value> negClassicalCtrls) {
+                                     ArrayRef<Value> posClassicalCtrls,
+                                     ArrayRef<Value> negClassicalCtrls) {
   if (allTop) {
     return success();
   }
@@ -430,7 +430,7 @@ LogicalResult UnionTable::resetQubit(Value in, Value out,
   return success();
 }
 
-void UnionTable::markQubitsTop(const ArrayRef<Value> qubits) {
+void UnionTable::markQubitsTop(ArrayRef<Value> qubits) {
   if (allTop) {
     return;
   }
@@ -490,8 +490,8 @@ bool UnionTable::isClassicalAlwaysFalse(Value v) const {
 }
 
 bool UnionTable::areControlsSatisfiable(
-    const ArrayRef<Value> quantumCtrls, const ArrayRef<Value> posClassicalCtrls,
-    const ArrayRef<Value> negClassicalCtrls) const {
+    ArrayRef<Value> quantumCtrls, ArrayRef<Value> posClassicalCtrls,
+    ArrayRef<Value> negClassicalCtrls) const {
   if (allTop) {
     return true;
   }
@@ -540,8 +540,8 @@ bool UnionTable::areControlsSatisfiable(
 }
 
 SuperfluousResult UnionTable::getSuperfluousControls(
-    const ArrayRef<Value> quantumCtrls, const ArrayRef<Value> posClassicalCtrls,
-    const ArrayRef<Value> negClassicalCtrls) const {
+    ArrayRef<Value> quantumCtrls, ArrayRef<Value> posClassicalCtrls,
+    ArrayRef<Value> negClassicalCtrls) const {
   SuperfluousResult result;
   if (!areControlsSatisfiable(quantumCtrls, posClassicalCtrls,
                               negClassicalCtrls)) {
@@ -625,7 +625,7 @@ void UnionTable::join(const UnionTable& other) {
   // A purely classical fact survives only if the other branch asserts the same
   // one; otherwise it becomes unknown (it is simply dropped).
   for (const unsigned mi : myClassical) {
-    const bool inBoth = llvm::any_of(theirClassical, [&](const unsigned ti) {
+    const bool inBoth = llvm::any_of(theirClassical, [&](unsigned ti) {
       return llvm::any_of(other.slots[ti], [&](const HybridState& theirHs) {
         return slots[mi].front().sameConfiguration(theirHs);
       });

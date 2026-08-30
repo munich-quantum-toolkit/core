@@ -97,7 +97,7 @@ static void applyDrop(const DropOp& drop, IRRewriter& rewriter) {
 static void applyStrip(const StripControls& strip, IRRewriter& rewriter) {
   CtrlOp op = strip.op;
   const auto controlsIn = op.getInputControls();
-  const auto isDropped = [&](const size_t index) {
+  const auto isDropped = [&](size_t index) {
     return llvm::is_contained(strip.dropControlIndices,
                               static_cast<unsigned>(index));
   };
@@ -146,7 +146,7 @@ static void applyStrip(const StripControls& strip, IRRewriter& rewriter) {
   rewriter.eraseOp(op);
 }
 
-void applyDecisions(const ArrayRef<Decision> decisions, IRRewriter& rewriter) {
+void applyDecisions(ArrayRef<Decision> decisions, IRRewriter& rewriter) {
   for (const Decision& decision : decisions) {
     if (const auto* drop = std::get_if<DropOp>(&decision)) {
       applyDrop(*drop, rewriter);

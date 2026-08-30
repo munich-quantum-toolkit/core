@@ -68,8 +68,8 @@ protected:
     dcxOp = DCXOp::create(builder, builder.getLoc(), qt, qt, q[0], q[1]);
   }
 
-  static UnionTable make(const size_t maxAmplitudes = 16,
-                         const size_t maxHybridStates = 8) {
+  static UnionTable make(size_t maxAmplitudes = 16,
+                         size_t maxHybridStates = 8) {
     return {maxAmplitudes, maxHybridStates};
   }
 };
@@ -240,6 +240,7 @@ TEST_F(UnionTableTest, propagateClassicalFoldsAcrossSlots) {
   ut.propagateClassical(add.getOperation());
   EXPECT_TRUE(ut.isTracked(add.getResult()));
   EXPECT_FALSE(ut.isClassicalAlwaysFalse(add.getResult()));
+  EXPECT_NE(printed(ut).find('7'), std::string::npos);
 }
 
 //===----------------------------------------------------------------------===//

@@ -37,8 +37,8 @@ namespace {
 constexpr unsigned MAX_GROUP_QUBITS = 63;
 } // namespace
 
-QuantumState::QuantumState(const ArrayRef<Value> qubits,
-                           const size_t maxNonzeroAmplitudes)
+QuantumState::QuantumState(ArrayRef<Value> qubits,
+                           size_t maxNonzeroAmplitudes)
     : maxNonzeroAmplitudes(maxNonzeroAmplitudes),
       qubits(qubits.begin(), qubits.end()) {
   if (qubits.size() > MAX_GROUP_QUBITS) {
@@ -49,7 +49,7 @@ QuantumState::QuantumState(const ArrayRef<Value> qubits,
 }
 
 QuantumState QuantumState::singletonZero(Value qubit,
-                                         const size_t maxNonzeroAmplitudes) {
+                                         size_t maxNonzeroAmplitudes) {
   return {ArrayRef(qubit), maxNonzeroAmplitudes};
 }
 
@@ -62,7 +62,7 @@ std::optional<unsigned> QuantumState::indexOf(Value q) const {
   return std::nullopt;
 }
 
-uint64_t QuantumState::maskOf(const ArrayRef<Value> values) const {
+uint64_t QuantumState::maskOf(ArrayRef<Value> values) const {
   uint64_t mask = 0;
   for (Value v : values) {
     if (const auto idx = indexOf(v)) {
@@ -83,8 +83,8 @@ void QuantumState::forwardQubit(Value from, Value to) {
   }
 }
 
-void QuantumState::forwardQubits(const ArrayRef<Value> from,
-                                 const ArrayRef<Value> to) {
+void QuantumState::forwardQubits(ArrayRef<Value> from,
+                                 ArrayRef<Value> to) {
   for (const auto [f, t] : llvm::zip(from, to)) {
     forwardQubit(f, t);
   }
@@ -110,8 +110,8 @@ void QuantumState::canonicalize() {
 
 LogicalResult QuantumState::applyMatrix1Q(Value in, Value out,
                                           const Matrix2x2& matrix,
-                                          const ArrayRef<Value> ctrlsIn,
-                                          const ArrayRef<Value> ctrlsOut) {
+                                          ArrayRef<Value> ctrlsIn,
+                                          ArrayRef<Value> ctrlsOut) {
   const auto idx = indexOf(in);
   if (!idx || ctrlsOut.size() != ctrlsIn.size()) {
     return failure();
@@ -153,8 +153,8 @@ LogicalResult QuantumState::applyMatrix1Q(Value in, Value out,
 
 LogicalResult QuantumState::applyMatrix2Q(Value in0, Value in1, Value out0,
                                           Value out1, const Matrix4x4& matrix,
-                                          const ArrayRef<Value> ctrlsIn,
-                                          const ArrayRef<Value> ctrlsOut) {
+                                          ArrayRef<Value> ctrlsIn,
+                                          ArrayRef<Value> ctrlsOut) {
   const auto idx0 = indexOf(in0);
   const auto idx1 = indexOf(in1);
   if (!idx0 || !idx1 || *idx0 == *idx1 || ctrlsOut.size() != ctrlsIn.size()) {
@@ -178,11 +178,11 @@ LogicalResult QuantumState::applyMatrix2Q(Value in0, Value in1, Value out0,
   const uint64_t bothBits = hiBit | loBit;
   const uint64_t ctrlMask = maskOf(ctrlsIn);
 
-  const auto localKey = [&](const uint64_t base, const unsigned local) {
+  const auto localKey = [&](uint64_t base, unsigned local) {
     return base | ((local & 1U) != 0U ? loBit : 0) |
            ((local & 2U) != 0U ? hiBit : 0);
   };
-  const auto localCol = [&](const uint64_t key) {
+  const auto localCol = [&](uint64_t key) {
     return ((key & hiBit) != 0 ? 2U : 0U) | ((key & loBit) != 0 ? 1U : 0U);
   };
 
@@ -210,9 +210,9 @@ LogicalResult QuantumState::applyMatrix2Q(Value in0, Value in1, Value out0,
 }
 
 LogicalResult
-QuantumState::applyControlledPhase(const double phase,
-                                   const ArrayRef<Value> ctrlsIn,
-                                   const ArrayRef<Value> ctrlsOut) {
+QuantumState::applyControlledPhase(double phase,
+                                   ArrayRef<Value> ctrlsIn,
+                                   ArrayRef<Value> ctrlsOut) {
   if (ctrlsIn.empty() ||
       (!ctrlsOut.empty() && ctrlsOut.size() != ctrlsIn.size())) {
     return failure();
@@ -264,7 +264,7 @@ FailureOr<SmallVector<MeasurementOutcome>> QuantumState::measure(Value in,
     }
   }
 
-  const auto makeBranch = [&](const unsigned bit, const double probability,
+  const auto makeBranch = [&](unsigned bit, double probability,
                               const llvm::DenseMap<uint64_t, Complex>& amps) {
     auto branch =
         std::unique_ptr<QuantumState>(new QuantumState(maxNonzeroAmplitudes));
@@ -357,7 +357,7 @@ bool QuantumState::isAlwaysOne(Value q) const {
 }
 
 bool QuantumState::hasAlwaysZeroAmplitude(
-    const ArrayRef<std::pair<Value, bool>> basis) const {
+    ArrayRef<std::pair<Value, bool>> basis) const {
   if (top) {
     return false;
   }

@@ -76,8 +76,7 @@ protected:
     dcxOp = DCXOp::create(builder, builder.getLoc(), qt, qt, q[0], q[1]);
   }
 
-  static HybridState make(const ArrayRef<Value> qubits,
-                          const double probability = 1.0) {
+  static HybridState make(ArrayRef<Value> qubits, double probability = 1.0) {
     return HybridState(QuantumState(qubits, BUDGET), BUDGET, probability);
   }
 };
@@ -237,7 +236,7 @@ TEST_F(HybridStateTest, quantumControlledPhaseIsNotGlobal) {
   Value theta = builder.floatConstant(std::acos(-1.0));
   hs.setClassical(theta, builder.getF64FloatAttr(std::acos(-1.0)));
   ASSERT_TRUE(hs.applyMatrix1Q(q[0], q[0], xOp.getUnitaryMatrix()).succeeded());
-  ASSERT_TRUE(hs.addGlobalPhase(theta, {q[0]}).succeeded());
+  ASSERT_TRUE(hs.addGlobalPhase(theta, {q[0]}, {q[0]}).succeeded());
   EXPECT_LT(std::abs(hs.getGlobalPhase() - Complex{1.0, 0.0}), 1e-9);
 }
 

@@ -60,7 +60,7 @@ static bool isEntryPointQubitArgument(Value v) {
 /// @brief Ensures every qubit operand of op is tracked before use: an
 /// entry-point argument starts in |0>, anything else of unknown provenance
 /// collapses to top.
-static void ensureSeeded(UnionTable& table, Operation* const op) {
+static void ensureSeeded(UnionTable& table, Operation* op) {
   for (Value operand : op->getOperands()) {
     if (!isa<QubitType>(operand.getType()) || table.isTracked(operand)) {
       continue;
@@ -77,7 +77,7 @@ static void ensureSeeded(UnionTable& table, Operation* const op) {
  * not model - a valid but unsupported construct (`scf.for`, `qco.index_switch`,
  * ...) or any unrecognized op that touches qubits.
  */
-static LogicalResult applyUnmodelledOp(UnionTable& table, Operation* const op) {
+static LogicalResult applyUnmodelledOp(UnionTable& table, Operation* op) {
   const auto isQubit = [](Value v) { return isa<QubitType>(v.getType()); };
 
   SmallVector<Value> qubitOperands;
@@ -142,8 +142,8 @@ void UnionTableLattice::print(raw_ostream& os) const {
 //===----------------------------------------------------------------------===//
 
 ConstantPropagationAnalysis::ConstantPropagationAnalysis(
-    DataFlowSolver& solver, const size_t maxNonzeroAmplitudes,
-    const size_t maxHybridStates)
+    DataFlowSolver& solver, size_t maxNonzeroAmplitudes,
+    size_t maxHybridStates)
     : DenseForwardDataFlowAnalysis(solver),
       maxNonzeroAmplitudes(maxNonzeroAmplitudes),
       maxHybridStates(maxHybridStates) {}
@@ -207,7 +207,7 @@ LogicalResult ConstantPropagationAnalysis::visitOperation(
 }
 
 LogicalResult ConstantPropagationAnalysis::applyOperation(
-    UnionTable& table, Operation* op, const ArrayRef<Value> quantumControls) {
+    UnionTable& table, Operation* op, ArrayRef<Value> quantumControls) {
   ensureSeeded(table, op);
 
   return TypeSwitch<Operation*, LogicalResult>(op)
@@ -247,7 +247,7 @@ LogicalResult ConstantPropagationAnalysis::applyOperation(
         return table.addGlobalPhase(gphase.getTheta(), quantumControls,
                                     quantumControls);
       })
-      .Case<CtrlOp>([&](const CtrlOp ctrl) {
+      .Case<CtrlOp>([&](CtrlOp ctrl) {
         return applyCtrl(table, ctrl, quantumControls);
       })
       .Case<IfOp, IndexSwitchOp>([&](Operation* branch) {
@@ -267,7 +267,7 @@ LogicalResult ConstantPropagationAnalysis::applyOperation(
         // Not a QCO operation. Anything clear of qubits is a classical op to
         // fold; an unrecognized qubit-touching op (e.g. scf.for) is not
         // modelled, so its qubits collapse to top rather than failing the pass.
-        const auto isQubit = [](const Type t) { return isa<QubitType>(t); };
+        const auto isQubit = [](Type t) { return isa<QubitType>(t); };
         if (llvm::any_of(other->getOperandTypes(), isQubit) ||
             llvm::any_of(other->getResultTypes(), isQubit)) {
           return applyUnmodelledOp(table, other);
@@ -279,7 +279,7 @@ LogicalResult ConstantPropagationAnalysis::applyOperation(
 
 LogicalResult ConstantPropagationAnalysis::applyUnitary(
     UnionTable& table, UnitaryOpInterface gate,
-    const ArrayRef<Value> quantumControls) {
+    ArrayRef<Value> quantumControls) {
   const auto targetsIn = toVec(gate.getInputTargets());
   const auto targetsOut = toVec(gate.getOutputTargets());
 
@@ -303,7 +303,7 @@ LogicalResult ConstantPropagationAnalysis::applyUnitary(
 
 LogicalResult
 ConstantPropagationAnalysis::applyCtrl(UnionTable& table, CtrlOp ctrl,
-                                       const ArrayRef<Value> quantumControls) {
+                                       ArrayRef<Value> quantumControls) {
   Block& body = ctrl.getRegion().front();
 
   table.forwardValues(toVec(ctrl.getInputTargets()),
@@ -327,8 +327,8 @@ ConstantPropagationAnalysis::applyCtrl(UnionTable& table, CtrlOp ctrl,
 }
 
 void ConstantPropagationAnalysis::visitRegionBranchControlFlowTransfer(
-    RegionBranchOpInterface branch, const std::optional<unsigned> regionFrom,
-    const std::optional<unsigned> regionTo, const UnionTableLattice& before,
+    RegionBranchOpInterface branch, std::optional<unsigned> regionFrom,
+    std::optional<unsigned> regionTo, const UnionTableLattice& before,
     UnionTableLattice* after) {
   // nullopt = the parent op; a value = the index of one of `branch`'s regions.
   auto ifOp = dyn_cast<IfOp>(branch.getOperation());

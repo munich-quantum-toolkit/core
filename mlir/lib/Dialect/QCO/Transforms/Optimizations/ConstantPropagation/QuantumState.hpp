@@ -55,7 +55,7 @@ class QuantumState {
   SmallVector<Value> qubits;
   llvm::DenseMap<uint64_t, Complex> amplitudes;
 
-  explicit QuantumState(const size_t maxNonzeroAmplitudes)
+  explicit QuantumState(size_t maxNonzeroAmplitudes)
       : maxNonzeroAmplitudes(maxNonzeroAmplitudes) {}
 
   /// @brief Bitmask of the positions of the given values that are in the group.

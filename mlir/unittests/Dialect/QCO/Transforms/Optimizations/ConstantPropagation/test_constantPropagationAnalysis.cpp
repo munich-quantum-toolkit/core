@@ -39,8 +39,8 @@ using namespace mlir::qco;
 
 /// Runs the analysis over module and returns a "<op-name> -> <lattice>" line
 /// for every operation, in walk order.
-static std::string analyze(ModuleOp module, const size_t maxAmplitudes = 16,
-                           const size_t maxHybridStates = 8) {
+static std::string analyze(ModuleOp module, size_t maxAmplitudes = 16,
+                           size_t maxHybridStates = 8) {
   DataFlowSolver solver;
   solver.load<dataflow::DeadCodeAnalysis>();
   solver.load<dataflow::SparseConstantPropagation>();

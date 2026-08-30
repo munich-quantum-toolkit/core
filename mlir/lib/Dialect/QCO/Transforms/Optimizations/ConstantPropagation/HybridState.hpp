@@ -63,8 +63,8 @@ public:
    * @param maxNonzeroAmplitudes Budget for QuantumStates created here (reset).
    * @param probability This alternative's weight within its slot (1 if sole).
    */
-  HybridState(QuantumState state, const size_t maxNonzeroAmplitudes,
-              const double probability)
+  HybridState(QuantumState state, size_t maxNonzeroAmplitudes,
+              double probability)
       : maxNonzeroAmplitudes(maxNonzeroAmplitudes), probability(probability),
         state(std::move(state)) {}
 
@@ -123,14 +123,14 @@ public:
    *
    * @param factor The factor to multiply the probability with.
    */
-  void scaleProbability(const double factor) { probability *= factor; }
+  void scaleProbability(double factor) { probability *= factor; }
 
   /**
    * @brief Sets this branch's probability (its weight within its slot).
    *
    * @param newProbability The new probability.
    */
-  void setProbability(const double newProbability) {
+  void setProbability(double newProbability) {
     probability = newProbability;
   }
 

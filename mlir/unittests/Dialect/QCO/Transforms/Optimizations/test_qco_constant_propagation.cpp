@@ -70,8 +70,8 @@ protected:
     builder.initialize();
   }
 
-  static LogicalResult run(ModuleOp module, const std::size_t maxAmplitudes = 4,
-                           const std::size_t maxHybridStates = 4) {
+  static LogicalResult run(ModuleOp module, std::size_t maxAmplitudes = 4,
+                           std::size_t maxHybridStates = 4) {
     PassManager pm(module.getContext());
     pm.addPass(createConstantPropagation(
         ConstantPropagationOptions{.maximumNonzeroAmplitudes = maxAmplitudes,
