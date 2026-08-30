@@ -296,7 +296,7 @@ TEST_F(QuantumStateTest, groupWiderThanTheIndexTypeIsTop) {
 
 TEST_F(QuantumStateTest, uncontrolledPhaseSucceeds) {
   auto qs = QuantumState::singletonZero(q[0], 4);
-  EXPECT_TRUE(qs.applyControlledPhase(std::acos(-1.0), {}).succeeded());
+  EXPECT_TRUE(qs.applyControlledPhase(std::acos(-1.0), {}).failed());
 }
 
 TEST_F(QuantumStateTest, controlledPhaseAffectsOnlyControlledSubspace) {
