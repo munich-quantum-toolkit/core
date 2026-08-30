@@ -164,6 +164,14 @@ TEST_F(UnionTableTest, applyToUnseededQubitFails) {
   EXPECT_TRUE(ut.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix()).failed());
 }
 
+TEST_F(UnionTableTest, nonEmptyControlInEmptyControlOutFails) {
+  auto ut = make();
+  ut.seedQubit(q[0]);
+  ut.seedQubit(q[1]);
+  EXPECT_TRUE(
+      ut.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {}).failed());
+}
+
 //===----------------------------------------------------------------------===//
 // Classical controls
 //===----------------------------------------------------------------------===//

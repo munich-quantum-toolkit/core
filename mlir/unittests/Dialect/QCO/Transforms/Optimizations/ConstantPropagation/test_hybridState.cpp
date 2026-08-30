@@ -159,6 +159,12 @@ TEST_F(HybridStateTest, controlInOutLengthMismatchFails) {
           .failed());
 }
 
+TEST_F(HybridStateTest, nonEmptyControlInEmptyControlOutFails) {
+  auto hs = make({q[0], q[1]});
+  EXPECT_TRUE(
+      hs.applyMatrix1Q(q[1], q[1], xOp.getUnitaryMatrix(), {q[0]}, {}).failed());
+}
+
 //===----------------------------------------------------------------------===//
 // Classical controls
 //===----------------------------------------------------------------------===//

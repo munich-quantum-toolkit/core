@@ -210,8 +210,7 @@ LogicalResult QuantumState::applyMatrix2Q(Value in0, Value in1, Value out0,
 LogicalResult QuantumState::applyControlledPhase(double phase,
                                                  ArrayRef<Value> ctrlsIn,
                                                  ArrayRef<Value> ctrlsOut) {
-  if (ctrlsIn.empty() ||
-      (!ctrlsOut.empty() && ctrlsOut.size() != ctrlsIn.size())) {
+  if (ctrlsOut.size() != ctrlsIn.size()) {
     return failure();
   }
   for (Value c : ctrlsIn) {
