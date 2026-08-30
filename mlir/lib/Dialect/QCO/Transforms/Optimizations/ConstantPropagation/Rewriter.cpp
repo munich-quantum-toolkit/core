@@ -31,7 +31,8 @@ SmallVector<Decision> collectDecisions(func::FuncOp entry,
   entry.walk([&](CtrlOp op) {
     // A controlled gate nested in another modifier's body is interpreted by
     // that modifier's handler and not rewritten.
-    if (isa<CtrlOp, InvOp, PowOp>(op->getParentOp())) {
+    if (op->getParentOfType<CtrlOp>() || op->getParentOfType<InvOp>() ||
+        op->getParentOfType<PowOp>()) {
       return;
     }
 
