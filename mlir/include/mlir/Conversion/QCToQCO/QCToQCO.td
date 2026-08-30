@@ -8,7 +8,7 @@
 
 include "mlir/Pass/PassBase.td"
 
-def QCToQCO : Pass<"qc-to-qco"> {
+def QCToQCO : Pass<"qc-to-qco", "mlir::ModuleOp"> {
   let summary = "Convert QC dialect to QCO dialect.";
 
   let description = [{

@@ -464,14 +464,7 @@ static void commitQubits(LoweringState& state, Operation* anchor,
 [[nodiscard]] static LogicalResult normalizeStaticQubits(ModuleOp moduleOp) {
   RewritePatternSet patterns(moduleOp.getContext());
   qc::StaticOp::getCanonicalizationPatterns(patterns, moduleOp.getContext());
-  SmallVector<Operation*> staticOps;
-  moduleOp.walk(
-      [&](qc::StaticOp staticOp) { staticOps.emplace_back(staticOp); });
-  GreedyRewriteConfig config;
-  config.setStrictness(GreedyRewriteStrictness::ExistingOps)
-      .enableFolding(false);
-  if (!staticOps.empty() &&
-      failed(applyOpPatternsGreedily(staticOps, std::move(patterns), config))) {
+  if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
     return failure();
   }
   IRRewriter rewriter(moduleOp.getContext());
@@ -1888,7 +1881,7 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* moduleOp = getOperation();
+    auto moduleOp = getOperation();
 
     LoweringState preflightState;
     if (failed(validateModifierBodies(moduleOp)) ||
@@ -1898,7 +1891,7 @@ protected:
       return;
     }
 
-    if (failed(normalizeStaticQubits(cast<ModuleOp>(moduleOp)))) {
+    if (failed(normalizeStaticQubits(moduleOp))) {
       signalPassFailure();
       return;
     }

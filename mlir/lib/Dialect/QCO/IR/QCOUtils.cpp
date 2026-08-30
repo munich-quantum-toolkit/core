@@ -48,13 +48,7 @@ namespace mlir::qco {
 LogicalResult verifyLinearity(Operation* root) {
   func::FuncOp entryPoint;
   if (auto moduleOp = dyn_cast<ModuleOp>(root)) {
-    for (auto funcOp : moduleOp.getOps<func::FuncOp>()) {
-      if (funcOp->hasAttr(
-              mqt::MQTDialect::EntryPointAttrHelper::getNameStr())) {
-        entryPoint = funcOp;
-        break;
-      }
-    }
+    entryPoint = mqt::getEntryPoint(moduleOp);
   }
 
   DenseSet<uint64_t> staticIndices;

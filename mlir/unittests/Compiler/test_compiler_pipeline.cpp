@@ -388,25 +388,12 @@ TEST(CompilerProgramOwnershipTest, EnforcesQCOLinearityAtPublicBoundaries) {
   main.getBody().front().getTerminator()->erase();
   EXPECT_FALSE(QCOProgram::fromModule(context, std::move(invalidModule)));
 
-  auto nonlinearModule =
-      parseSourceString<ModuleOp>(nonlinearSource, context.get());
-  ASSERT_TRUE(nonlinearModule);
-  EXPECT_FALSE(QCOProgram::fromModule(context, std::move(nonlinearModule)));
-
-  auto aliasedStaticModule =
-      parseSourceString<ModuleOp>(aliasedStaticSource, context.get());
-  ASSERT_TRUE(aliasedStaticModule);
-  EXPECT_FALSE(QCOProgram::fromModule(context, std::move(aliasedStaticModule)));
-
-  auto helperStaticModule =
-      parseSourceString<ModuleOp>(helperStaticSource, context.get());
-  ASSERT_TRUE(helperStaticModule);
-  EXPECT_FALSE(QCOProgram::fromModule(context, std::move(helperStaticModule)));
-
-  auto nestedStaticModule =
-      parseSourceString<ModuleOp>(nestedStaticSource, context.get());
-  ASSERT_TRUE(nestedStaticModule);
-  EXPECT_FALSE(QCOProgram::fromModule(context, std::move(nestedStaticModule)));
+  for (const auto source : {nonlinearSource, aliasedStaticSource,
+                            helperStaticSource, nestedStaticSource}) {
+    auto rejectedModule = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(rejectedModule);
+    EXPECT_FALSE(QCOProgram::fromModule(context, std::move(rejectedModule)));
+  }
 
   auto helperArgumentModule =
       parseSourceString<ModuleOp>(helperArgumentSource, context.get());
