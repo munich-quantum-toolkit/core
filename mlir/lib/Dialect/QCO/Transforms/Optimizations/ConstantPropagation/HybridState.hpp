@@ -151,9 +151,9 @@ public:
    * @brief Combines this subsystem with a disjoint one into a single
    * HybridState.
    *
-   * The qubit sets must be disjointed. Probabilities and global phases
-   * multiply; classical maps merge (other wins on a key collision). Becomes top
-   * if the tensor product exceeds the amplitude budget.
+   * The qubit sets must be disjoint. Probabilities and global phases multiply;
+   * classical maps merge (other wins on a key collision). Becomes top if the
+   * tensor product exceeds the amplitude budget.
    *
    * @param other The Hybrid state to merge this HybridState with.
    */
@@ -304,9 +304,9 @@ public:
   // Queries
   //===--------------------------------------------------------------------===//
 
-  [[nodiscard("HybridState::isAlwaysZero called but ignored")]] bool
+  [[nodiscard("HybridState::isQubitAlwaysZero called but ignored")]] bool
   isQubitAlwaysZero(Value q) const;
-  [[nodiscard("HybridState::isAlwaysOne called but ignored")]] bool
+  [[nodiscard("HybridState::isQubitAlwaysOne called but ignored")]] bool
   isQubitAlwaysOne(Value q) const;
 
   /// @brief Whether v is a known non-zero classical constant in this branch.
