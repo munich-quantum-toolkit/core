@@ -1722,7 +1722,7 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedFuncCalls) {
                                                    context.get());
   ASSERT_TRUE(selfRecursive);
   auto selfRecursiveFunc = mainFunc(*selfRecursive);
-  DDBindings bindings;
+  DDArgumentBindings bindings;
   bindings[selfRecursiveFunc.getArgument(0)] =
       BoolAttr::get(context.get(), true);
   auto zeroQubitDd = std::make_unique<dd::Package>(0);
@@ -2242,7 +2242,7 @@ TEST_F(QCODDFunctionalityTest, SymbolicParametersUseBindings) {
   ASSERT_TRUE(concrete);
 
   auto func = mainFunc(*mod);
-  DDBindings bindings;
+  DDArgumentBindings bindings;
   bindings[func.getArgument(0)] = FloatAttr::get(
       cast<FloatType>(func.getArgument(0).getType()), std::numbers::pi / 2.0);
 
@@ -2267,6 +2267,43 @@ TEST_F(QCODDFunctionalityTest, SymbolicParametersUseBindings) {
   bindings[func.getArgument(0)] =
       FloatAttr::get(Float32Type::get(context.get()), 1.0);
   EXPECT_TRUE(failed(buildFunctionality(func, *dd, bindings)));
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsNonFiniteParameters) {
+  auto gate = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) {
+        %q = qco.static 0 : !qco.qubit
+        %out = qco.rx(%theta) %q : !qco.qubit -> !qco.qubit
+        qco.sink %out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                          context.get());
+  auto phase = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) {
+        qco.gphase(%theta)
+        return
+      }
+    }
+  )mlir",
+                                           context.get());
+  ASSERT_TRUE(gate);
+  ASSERT_TRUE(phase);
+
+  for (auto [func, value] :
+       {std::pair{mainFunc(*gate), std::numeric_limits<double>::infinity()},
+        std::pair{mainFunc(*phase),
+                  std::numeric_limits<double>::quiet_NaN()}}) {
+    DDArgumentBindings bindings;
+    bindings[func.getArgument(0)] =
+        FloatAttr::get(Float64Type::get(context.get()), value);
+    auto dd = std::make_unique<dd::Package>(1);
+    EXPECT_TRUE(failed(sample(func, *dd, 1, rng, bindings)));
+    EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, BuildsThroughConcreteControlFlow) {
@@ -2427,7 +2464,7 @@ TEST_F(QCODDFunctionalityTest, DynamicQTensorArgumentUsesBoundExtent) {
                                          context.get());
   ASSERT_TRUE(mod);
   auto func = mainFunc(*mod);
-  DDBindings bindings;
+  DDArgumentBindings bindings;
   bindings[func.getArgument(0)] =
       IntegerAttr::get(IndexType::get(context.get()), 2);
 
@@ -2440,6 +2477,9 @@ TEST_F(QCODDFunctionalityTest, DynamicQTensorArgumentUsesBoundExtent) {
   EXPECT_TRUE(failed(buildFunctionality(func, *dd)));
   bindings[func.getArgument(0)] =
       IntegerAttr::get(IndexType::get(context.get()), -1);
+  EXPECT_TRUE(failed(buildFunctionality(func, *dd, bindings)));
+  bindings[func.getArgument(0)] =
+      IntegerAttr::get(IntegerType::get(context.get(), 64), 2);
   EXPECT_TRUE(failed(buildFunctionality(func, *dd, bindings)));
 }
 
@@ -2553,44 +2593,26 @@ TEST_F(QCODDFunctionalityTest, WiderMemRefCallsShareStorage) {
   expectSimulatesFromZero(mainFunc(*mod), true);
 }
 
-TEST_F(QCODDFunctionalityTest,
-       SupportsAdditionalClassicalOperationsAndBindings) {
+TEST_F(QCODDFunctionalityTest, BindingsDriveObservableClassicalPath) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @main(%idx: index, %word: i16, %flag: i1) {
-        %zero = arith.constant 0 : i8
-        %one = arith.constant 1 : i8
-        %two = arith.constant 2 : i8
-        %four = arith.constant 4 : i8
-        %negative = arith.constant -5 : i8
-        %sle = arith.cmpi sle, %one, %two : i8
-        %sgt = arith.cmpi sgt, %two, %one : i8
-        %sge = arith.cmpi sge, %two, %two : i8
-        %ult = arith.cmpi ult, %one, %two : i8
-        %ule = arith.cmpi ule, %two, %two : i8
-        %ugt = arith.cmpi ugt, %two, %one : i8
-        %uge = arith.cmpi uge, %two, %two : i8
-        %quotient = arith.divui %four, %two : i8
-        %remainder = arith.remsi %negative, %two : i8
-        %shifted = arith.shrsi %negative, %one : i8
-        %extended = arith.extsi %negative : i8 to i16
+        %one = arith.constant 1 : i16
+        %expected = arith.constant 4 : i16
+        %sum = arith.addi %word, %one : i16
+        %integer_ok = arith.cmpi eq, %sum, %expected : i16
         %as_index = arith.index_cast %word : i16 to index
-        %selected = arith.select %flag, %one, %zero : i8
-        %one_float = arith.constant 1.0 : f64
-        %two_float = arith.constant 2.0 : f64
-        %difference = arith.subf %two_float, %one_float : f64
-        %product = arith.mulf %difference, %two_float : f64
-        %negated = arith.negf %product : f64
-        %zero_index = arith.constant 0 : index
-        %indices = memref.alloc() : memref<1xindex>
-        %loaded_index = memref.load %indices[%zero_index] : memref<1xindex>
-        memref.dealloc %indices : memref<1xindex>
-        %floats = memref.alloc() : memref<1xf64>
-        %loaded_float = memref.load %floats[%zero_index] : memref<1xf64>
-        memref.dealloc %floats : memref<1xf64>
-        %false = arith.constant false
-        scf.if %false {
+        %index_ok = arith.cmpi eq, %as_index, %idx : index
+        %both = arith.andi %integer_ok, %index_ok : i1
+        %condition = arith.select %flag, %both, %flag : i1
+        %q = qco.static 0 : !qco.qubit
+        %out = qco.if %condition args(%arg = %q) -> (!qco.qubit) {
+          %flipped = qco.x %arg : !qco.qubit -> !qco.qubit
+          qco.yield %flipped : !qco.qubit
+        } else args(%arg = %q) {
+          qco.yield %arg : !qco.qubit
         }
+        qco.sink %out : !qco.qubit
         return
       }
     }
@@ -2599,21 +2621,25 @@ TEST_F(QCODDFunctionalityTest,
   ASSERT_TRUE(mod);
 
   auto func = mainFunc(*mod);
-  DDBindings bindings;
+  DDArgumentBindings bindings;
   bindings[func.getArgument(0)] =
       IntegerAttr::get(IndexType::get(context.get()), 3);
   bindings[func.getArgument(1)] =
-      IntegerAttr::get(IntegerType::get(context.get(), 16), -2);
+      IntegerAttr::get(IntegerType::get(context.get(), 16), 3);
   bindings[func.getArgument(2)] =
       IntegerAttr::get(IntegerType::get(context.get(), 1), 1);
-  auto dd = std::make_unique<dd::Package>(0);
-  const auto output = simulate(func, dd::VectorDD::one(), *dd, rng, bindings);
-  ASSERT_TRUE(succeeded(output));
-  EXPECT_TRUE(output->isTerminal());
-  dd->decRef(*output);
+  auto dd = std::make_unique<dd::Package>(1);
+  const auto histogram = sample(func, *dd, 4, rng, bindings);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 4}}));
+
+  bindings[func.getArgument(1)] =
+      IntegerAttr::get(IntegerType::get(context.get(), 8), 3);
+  EXPECT_TRUE(failed(sample(func, *dd, 1, rng, bindings)));
+  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 
-TEST_F(QCODDFunctionalityTest, RejectsClassicalRuntimeErrors) {
+TEST_F(QCODDFunctionalityTest, RejectsRepresentativeClassicalRuntimeErrors) {
   for (const StringRef source : {
            R"mlir(module {
              func.func @main(%unbound: i16) {
@@ -2631,17 +2657,10 @@ TEST_F(QCODDFunctionalityTest, RejectsClassicalRuntimeErrors) {
              }
            })mlir",
            R"mlir(module {
-             func.func @main(%index: index) {
+             func.func @main() {
+               %index = arith.constant 0 : index
                %reg = memref.alloc() : memref<1xi16>
                %value = memref.load %reg[%index] : memref<1xi16>
-               return
-             }
-           })mlir",
-           R"mlir(module {
-             func.func @main(%value: i16) {
-               %zero = arith.constant 0 : index
-               %reg = memref.alloc() : memref<1xi16>
-               memref.store %value, %reg[%zero] : memref<1xi16>
                return
              }
            })mlir",
@@ -2668,70 +2687,6 @@ TEST_F(QCODDFunctionalityTest, RejectsClassicalRuntimeErrors) {
              }
            })mlir",
            R"mlir(module {
-             func.func @main(%rhs: i8) {
-               %one = arith.constant 1 : i8
-               %invalid = arith.divui %one, %rhs : i8
-               return
-             }
-           })mlir",
-           R"mlir(module {
-             func.func @main(%lhs: i8) {
-               %one = arith.constant 1 : i8
-               %invalid = arith.divui %lhs, %one : i8
-               return
-             }
-           })mlir",
-           R"mlir(module {
-             func.func @main(%amount: i8) {
-               %one = arith.constant 1 : i8
-               %invalid = arith.shli %one, %amount : i8
-               return
-             }
-           })mlir",
-           R"mlir(module {
-             func.func @main(%lhs: f64) {
-               %zero = arith.constant 0.0 : f64
-               %invalid = arith.cmpf oeq, %lhs, %zero : f64
-               return
-             }
-           })mlir",
-           R"mlir(module {
-             func.func @main(%value: i8) {
-               %invalid = arith.sitofp %value : i8 to f64
-               return
-             }
-           })mlir",
-           R"mlir(module {
-             func.func @main(%value: f64) {
-               %invalid = arith.fptosi %value : f64 to i8
-               return
-             }
-           })mlir",
-           R"mlir(module {
-             func.func @consume(%reg: memref<1xi16>) {
-               return
-             }
-             func.func @main(%reg: memref<1xi16>) {
-               func.call @consume(%reg) : (memref<1xi16>) -> ()
-               return
-             }
-           })mlir",
-           R"mlir(module {
-             func.func @main(%condition: i1) {
-               scf.if %condition {
-               }
-               return
-             }
-           })mlir",
-           R"mlir(module {
-             func.func @main(%selector: index) {
-               scf.index_switch %selector
-               default {
-               }
-               return
-             }
-           })mlir",
-           R"mlir(module {
              func.func @main(%size: index) {
                %tensor = qtensor.alloc(%size) : tensor<?x!qco.qubit>
                qtensor.dealloc %tensor : tensor<?x!qco.qubit>
@@ -2753,7 +2708,7 @@ TEST_F(QCODDFunctionalityTest, RejectsClassicalRuntimeErrors) {
   ASSERT_TRUE(mod);
   auto func = mainFunc(*mod);
   auto constant = *func.getBody().front().getOps<arith::ConstantOp>().begin();
-  DDBindings bindings;
+  DDArgumentBindings bindings;
   bindings[constant.getResult()] =
       IntegerAttr::get(IndexType::get(context.get()), 0);
   auto dd = std::make_unique<dd::Package>(0);

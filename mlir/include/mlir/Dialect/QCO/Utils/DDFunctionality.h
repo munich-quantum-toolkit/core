@@ -28,11 +28,11 @@ namespace mlir::qco {
 /**
  * @brief Concrete values for symbolic QCO DD inputs.
  *
- * Integer and `f64` attributes bind scalar function arguments. An integer
- * attribute bound to a dynamic one-dimensional qtensor argument gives its
- * runtime extent. Bindings for other values are rejected.
+ * Exactly typed integer, index, and `f64` attributes bind scalar entry-function
+ * arguments. A non-negative index attribute bound to a dynamic one-dimensional
+ * qtensor argument gives its runtime extent. Other bindings are rejected.
  */
-using DDBindings = DenseMap<Value, Attribute>;
+using DDArgumentBindings = DenseMap<Value, Attribute>;
 
 /**
  * @brief Sequentially build a matrix DD for a static unitary QCO `func.func`.
@@ -67,13 +67,13 @@ using DDBindings = DenseMap<Value, Attribute>;
  *
  * @param func The QCO function to construct the functionality for
  * @param dd The DD package to use (must hold at least the function's qubits)
- * @param bindings Concrete scalar values and dynamic QTensor extents for entry
- * arguments
+ * @param argumentBindings Concrete scalar values and dynamic QTensor extents
+ * for entry arguments
  * @return The matrix DD on success, or failure for unsupported programs
  */
-FailureOr<dd::MatrixDD>
-buildFunctionality(func::FuncOp func, dd::Package& dd,
-                   const DDBindings& bindings = DDBindings());
+FailureOr<dd::MatrixDD> buildFunctionality(
+    func::FuncOp func, dd::Package& dd,
+    const DDArgumentBindings& argumentBindings = DDArgumentBindings());
 
 /**
  * @brief Simulate a QCO `func.func` that may contain measurements, resets, and
@@ -86,10 +86,10 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
  * arithmetic, comparisons, casts, shifts, and `arith.select`). Dynamic quantum
  * allocation, qtensors, memrefs, CBit registers, loops, regions, and calls are
  * supported. QTensor sizes and indices must be concrete; dynamic qtensor
- * arguments require an extent in @p bindings. A shared 10000-step budget bounds
- * loop iterations across nested loops and calls. Multi-block function bodies
- * remain unsupported. Allocated wires stay in the returned state after
- * deallocation.
+ * arguments require an extent in @p argumentBindings. A shared 10000-step
+ * budget bounds loop iterations and executed control-flow regions and calls.
+ * Multi-block function bodies remain unsupported. Allocated wires stay in the
+ * returned state after deallocation.
  * Consumes one reference to @p in regardless of success or failure.
  *
  * @pre The containing module has passed MLIR verification and
@@ -100,14 +100,15 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
  * higher wires are preserved; one reference is consumed
  * @param dd The DD package to use
  * @param rng RNG used for collapsing measurements and resets
- * @param bindings Concrete scalar values and dynamic QTensor extents for entry
- * arguments
+ * @param argumentBindings Concrete scalar values and dynamic QTensor extents
+ * for entry arguments
  * @return The output statevector DD on success, or failure for unsupported
  *         programs
  */
-FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
-                                 dd::Package& dd, std::mt19937_64& rng,
-                                 const DDBindings& bindings = DDBindings());
+FailureOr<dd::VectorDD>
+simulate(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
+         std::mt19937_64& rng,
+         const DDArgumentBindings& argumentBindings = DDArgumentBindings());
 
 /**
  * @brief Sample measurement outcomes from a QCO `func.func`.
@@ -129,12 +130,12 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * @param dd The DD package to use
  * @param shots Number of shots
  * @param rng RNG for collapsing measurements and non-collapsing sampling
- * @param bindings Concrete scalar values and dynamic QTensor extents for entry
- * arguments
+ * @param argumentBindings Concrete scalar values and dynamic QTensor extents
+ * for entry arguments
  * @return Histogram of outcome strings on success, or failure for unsupported
  *         programs
  */
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
-       const DDBindings& bindings = DDBindings());
+       const DDArgumentBindings& argumentBindings = DDArgumentBindings());
 } // namespace mlir::qco
