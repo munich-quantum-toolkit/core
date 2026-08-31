@@ -87,6 +87,10 @@ factories. Move required implementations to the package that uses them. The
 `BUILD_MQT_CORE_BENCHMARKS` option and its legacy DD evaluation target were also
 removed.
 
+MQT Core now provides the separate `MQT::CoreBench` library and `mqt-core-bench`
+CLI for typed structured benchmarks. These interfaces are not drop-in
+replacements for the removed factories.
+
 ### Python 3.11 and split-mode wheels
 
 MQT Core now requires Python 3.11 or newer. Upgrade the Python environment

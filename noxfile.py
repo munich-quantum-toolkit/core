@@ -362,6 +362,8 @@ def stubs(session: nox.Session) -> None:
         "--module",
         "mqt.core.ir",
         "--module",
+        "mqt.core.bench",
+        "--module",
         "mqt.core.dd",
         "--module",
         "mqt.core.qdmi",

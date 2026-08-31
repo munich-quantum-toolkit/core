@@ -65,6 +65,7 @@ qiskit = [
 "mqt.ddsim.default" = "mqt.core.plugins.pennylane:DDSIMDevice"
 
 [project.scripts]
+mqt-core-bench = "mqt.core._bench:main"
 mqt-core-cli = "mqt.core.__main__:main"
 
 [project.urls]

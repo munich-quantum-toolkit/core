@@ -88,6 +88,16 @@ Value QCProgramBuilder::intConstant(const int64_t value) {
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
 }
 
+Value QCProgramBuilder::floatConstant(const double value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
+}
+
+Value QCProgramBuilder::indexConstant(const int64_t value) {
+  checkFinalized();
+  return arith::ConstantIndexOp::create(*this, value).getResult();
+}
+
 Value QCProgramBuilder::QubitRegister::operator[](const size_t index) const {
   if (index >= qubits.size()) {
     llvm::reportFatalUsageError("Qubit index out of bounds");
@@ -216,6 +226,14 @@ Value QCProgramBuilder::measure(Value qubit, Value reg,
   auto result = measureOp.getResult();
   storeClassicalBit(result, reg, index);
   return result;
+}
+
+QCProgramBuilder& QCProgramBuilder::measureQubitRegister(Value qubits,
+                                                         Value bits,
+                                                         const int64_t size) {
+  return scfFor(0, size, 1, [&](Value index) {
+    measure(loadQubit(qubits, index), bits, index);
+  });
 }
 
 QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {

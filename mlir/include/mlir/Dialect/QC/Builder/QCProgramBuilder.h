@@ -105,35 +105,17 @@ public:
   // Constants
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Create a constant bool value
-   * @param value The value to store in the constant
-   * @return The value produced by the constant operation
-   *
-   * @par Example:
-   * ```c++
-   * auto c = builder.boolConstant(true);
-   * ```
-   * ```mlir
-   * %c = arith.constant true : i1
-   * ```
-   */
+  /// Creates an `i1` constant with the given Boolean value.
   Value boolConstant(bool value);
 
-  /**
-   * @brief Create a constant integer value
-   * @param value The value to store in the constant
-   * @return The value produced by the constant operation
-   *
-   * @par Example:
-   * ```c++
-   * auto c = builder.intConstant(1);
-   * ```
-   * ```mlir
-   * %c = arith.constant 1 : i64
-   * ```
-   */
+  /// Creates an `i64` constant with the given integer value.
   Value intConstant(int64_t value);
+
+  /// Creates an `f64` constant with the given floating-point value.
+  Value floatConstant(double value);
+
+  /// Creates an `index` constant with the given integer value.
+  Value indexConstant(int64_t value);
 
   //===--------------------------------------------------------------------===//
   // Memory Management
@@ -191,36 +173,34 @@ public:
    */
   Value staticQubit(uint64_t index);
 
-  /**
-   * @brief Allocate a qubit register and eagerly load every element
-   * @param size Number of qubits (must be positive)
-   * @param name Optional source-level register name
-   * @return A `QubitRegister` containing the backing memref and one reference
-   * for every eagerly loaded element
-   *
-   * @par Example:
-   * ```c++
-   * auto q = builder.allocQubitRegister(3);
-   * ```
-   * ```mlir
-   * %memref = memref.alloc() : memref<3x!qc.qubit>
-   * %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
-   * %q1 = memref.load %memref[%c1] : memref<3x!qc.qubit>
-   * %q2 = memref.load %memref[%c2] : memref<3x!qc.qubit>
-   * ```
-   */
+  /// Allocate a qubit register and eagerly load every element.
+  ///
+  /// Every allocated qubit is initialized to |0⟩.
+  ///
+  /// \param size Number of qubits; must be positive.
+  /// \param name Optional source-level register name.
+  /// \returns A register with its backing memref and loaded qubit references.
+  ///
+  /// ```c++
+  /// auto q = builder.allocQubitRegister(3);
+  /// ```
+  /// ```mlir
+  /// %memref = memref.alloc() : memref<3x!qc.qubit>
+  /// %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
+  /// %q1 = memref.load %memref[%c1] : memref<3x!qc.qubit>
+  /// %q2 = memref.load %memref[%c2] : memref<3x!qc.qubit>
+  /// ```
   QubitRegister allocQubitRegister(int64_t size, StringRef name = {});
 
-  /**
-   * @brief Allocate storage for a qubit register without loading its elements
-   * @param size Number of qubits (must be positive)
-   * @param name Optional source-level register name
-   * @return The memref value representing the qubit register
-   *
-   * @details The register is tracked for automatic deallocation and remains
-   * intact until an element is loaded. Use `loadQubit` to obtain references at
-   * their points of use.
-   */
+  /// Allocate storage for a qubit register without loading its elements.
+  ///
+  /// Every allocated qubit is initialized to |0⟩. The builder tracks the
+  /// register for automatic deallocation. Use `loadQubit` to obtain references
+  /// at their points of use.
+  ///
+  /// \param size Number of qubits; must be positive.
+  /// \param name Optional source-level register name.
+  /// \returns The memref value that represents the qubit register.
   Value allocQubitRegisterStorage(int64_t size, StringRef name = {});
 
   /**
@@ -317,6 +297,18 @@ public:
    */
   Value measure(Value qubit, Value reg,
                 const std::variant<int64_t, Value>& index);
+
+  /// Measure a qubit register into an equally sized classical register.
+  ///
+  /// Emits a structured loop that loads, measures, and stores each qubit at the
+  /// same index.
+  ///
+  /// @param qubits Qubit-register storage
+  /// @param bits Classical output register
+  /// @param size Number of qubits and bits
+  /// @return Reference to this builder for method chaining
+  QCProgramBuilder& measureQubitRegister(Value qubits, Value bits,
+                                         int64_t size);
 
   /**
    * @brief Reset a qubit to |0⟩ state
