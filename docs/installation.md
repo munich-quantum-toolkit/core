@@ -382,17 +382,17 @@ guidelines and workflows, see {doc}`contributing`.
    prek install
    ```
 
-6. Install LLVM/MLIR as described below. The default source build requires it.
-   You can skip this step if you disable the MLIR part of MQT Core.
+6. Install LLVM/MLIR as described below. It is required to build MQT Core from
+   source.
 
 (setting-up-mlir)=
 
 ## Setting Up MLIR
 
-MQT Core builds its compiler infrastructure by default. This infrastructure
-requires [MLIR](https://mlir.llvm.org/), which is part of the
-[LLVM](https://llvm.org/) project. Make an MLIR installation available to use
-the default C++ build.
+MQT Core requires [MLIR](https://mlir.llvm.org/), which is part of the
+[LLVM](https://llvm.org/) project, to be available when building from source. To
+successfully build MQT Core, you must make an installation of MLIR available to
+the C++ builds on your platform.
 
 We highly recommend using the prebuilt MLIR distribution provided by the
 [`portable-mlir-toolchain`] project. These can be conveniently installed with
@@ -493,22 +493,6 @@ $env:MLIR_DIR = "C:\path\to\installation\lib\cmake\mlir"
 :::
 
 ::::
-
-### Disabling MLIR
-
-The {code}`BUILD_MQT_CORE_MLIR` option controls both the compiler infrastructure
-and QIR support in the DDSIM QDMI device. It defaults to {code}`ON`, which
-builds both parts. Disable both with:
-
-```console
-cmake -S . -B build -DBUILD_MQT_CORE_MLIR=OFF
-```
-
-This build does not require LLVM/MLIR. It omits the MLIR libraries,
-{code}`mqt-cc`, the {py:mod}`mqt.core.mlir` Python extension, generated MLIR
-documentation, and QIR support in the DDSIM QDMI device. The core IR, decision
-diagram, OpenQASM, and QDMI libraries remain available. The DDSIM QDMI device
-continues to accept OpenQASM 2 and OpenQASM 3 programs.
 
 [`setup-mlir`]: https://github.com/munich-quantum-software/setup-mlir/
 [`portable-mlir-toolchain`]: https://github.com/munich-quantum-software/portable-mlir-toolchain/

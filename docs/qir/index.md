@@ -79,10 +79,9 @@ QIR-Runner Pauli-axis operation named `r` is not part of MQT's QIS.
 
 ### QIR Support in the DDSIM QDMI Device
 
-When {code}`BUILD_MQT_CORE_MLIR=ON`, the QDMI device accepts jobs in the
-following program formats: QASM2, QASM3, QIR Base/Adaptive Profile Module (LLVM
-bitcode), and QIR Base/Adaptive Profile String (LLVM assembly). With this option
-set to {code}`OFF`, the device accepts QASM2 and QASM3 but not QIR.
+The QDMI Device accepts jobs in the following program formats: QASM2, QASM3, QIR
+Base/Adaptive Profile Module (LLVM bitcode), and QIR Base/Adaptive Profile
+String (LLVM assembly).
 
 QDMI C++ applications submit textual programs through the
 `Device::submitJob(const std::string&, ...)` overload, which includes the

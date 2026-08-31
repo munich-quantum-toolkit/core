@@ -11,9 +11,8 @@ simulate quantum programs.
 ## Capabilities
 
 The simulator device supports all operations that our
-[MQT Core IR](../mqt_core_ir.md) supports. It accepts OpenQASM 2 and OpenQASM 3.
-When {code}`BUILD_MQT_CORE_MLIR=ON`, it also accepts textual or binary QIR
-programs using the Base or Adaptive Profile. See
+[MQT Core IR](../mqt_core_ir.md) supports. It accepts OpenQASM 2, OpenQASM 3,
+and textual or binary QIR programs using the Base or Adaptive Profile. See
 [QIR Support in the MQT](../qir/index.md) for the exact QDMI program formats and
 payload contracts.
 
@@ -43,8 +42,6 @@ The device implements the full QDMI job interface (except for the
 `QDMI_JOB_RESULT_SHOTS` result format not supported by the simulator).
 
 ## Compile and execute QIR
-
-This example requires {code}`BUILD_MQT_CORE_MLIR`, which is enabled by default.
 
 The compiler can snapshot the DDSIM device as an all-to-all target, compile a
 program to QIR, and submit the resulting bitcode to the same device:
