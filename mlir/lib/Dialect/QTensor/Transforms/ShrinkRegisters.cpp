@@ -32,8 +32,6 @@ namespace mlir::qtensor {
 #define GEN_PASS_DEF_SHRINKQTENSORTOFITPASS
 #include "mlir/Dialect/QTensor/Transforms/Passes.h.inc"
 
-namespace {
-
 /**
  * @brief Mark a single live index.
  */
@@ -47,10 +45,14 @@ markLiveIndex(int64_t index, int64_t tensorSize,
   return success();
 }
 
+namespace {
+
 struct TensorAccess {
   Operation* operation;
   int64_t index;
 };
+
+} // namespace
 
 /**
  * @brief Walk alloc->dealloc and plan all accesses without changing the IR.
@@ -99,6 +101,8 @@ struct TensorAccess {
     return failure();
   }
 }
+
+namespace {
 
 /**
  * @brief Shrink static qtensors by removing never-accessed indices.
