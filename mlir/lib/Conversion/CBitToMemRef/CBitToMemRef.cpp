@@ -103,7 +103,7 @@ struct ConvertCBitToMemRef final
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* moduleOp = getOperation();
+    auto moduleOp = getOperation();
     CBitTypeConverter typeConverter;
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);

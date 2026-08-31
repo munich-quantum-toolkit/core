@@ -13,6 +13,7 @@
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
@@ -303,21 +304,61 @@ TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
 }
 TEST(CompilerProgramOwnershipTest, EnforcesQCOLinearityAtPublicBoundaries) {
   DialectRegistry registry;
-  registry.insert<QCODialect, func::FuncDialect>();
+  registry.insert<mlir::mqt::MQTDialect, QCODialect, func::FuncDialect,
+                  scf::SCFDialect>();
   auto context = std::make_shared<MLIRContext>(registry);
   context->loadAllAvailableDialects();
 
   constexpr llvm::StringLiteral validSource = R"mlir(module {
-    func.func @main() {
+    func.func @main() attributes {mqt.entry_point} {
       %qubit = qco.alloc : !qco.qubit
       qco.sink %qubit : !qco.qubit
       return
     }
   })mlir";
   constexpr llvm::StringLiteral nonlinearSource = R"mlir(module {
-    func.func @main() {
+    func.func @main() attributes {mqt.entry_point} {
       %qubit = qco.alloc : !qco.qubit
       return
+    }
+  })mlir";
+  constexpr llvm::StringLiteral aliasedStaticSource = R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %q0 = qco.static 0 : !qco.qubit
+      %q1 = qco.static 0 : !qco.qubit
+      qco.sink %q0 : !qco.qubit
+      qco.sink %q1 : !qco.qubit
+      return
+    }
+  })mlir";
+  constexpr llvm::StringLiteral helperStaticSource = R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      return
+    }
+    func.func @helper() {
+      %q = qco.static 1 : !qco.qubit
+      qco.sink %q : !qco.qubit
+      return
+    }
+  })mlir";
+  constexpr llvm::StringLiteral nestedStaticSource = R"mlir(module {
+    func.func @main(%condition: i1) attributes {mqt.entry_point} {
+      scf.if %condition {
+        %q = qco.static 0 : !qco.qubit
+        qco.sink %q : !qco.qubit
+      }
+      return
+    }
+  })mlir";
+  constexpr llvm::StringLiteral helperArgumentSource = R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qco.static 0 : !qco.qubit
+      %result = func.call @helper(%q) : (!qco.qubit) -> !qco.qubit
+      qco.sink %result : !qco.qubit
+      return
+    }
+    func.func @helper(%q: !qco.qubit) -> !qco.qubit {
+      return %q : !qco.qubit
     }
   })mlir";
 
@@ -347,10 +388,17 @@ TEST(CompilerProgramOwnershipTest, EnforcesQCOLinearityAtPublicBoundaries) {
   main.getBody().front().getTerminator()->erase();
   EXPECT_FALSE(QCOProgram::fromModule(context, std::move(invalidModule)));
 
-  auto nonlinearModule =
-      parseSourceString<ModuleOp>(nonlinearSource, context.get());
-  ASSERT_TRUE(nonlinearModule);
-  EXPECT_FALSE(QCOProgram::fromModule(context, std::move(nonlinearModule)));
+  for (const auto source : {nonlinearSource, aliasedStaticSource,
+                            helperStaticSource, nestedStaticSource}) {
+    auto rejectedModule = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(rejectedModule);
+    EXPECT_FALSE(QCOProgram::fromModule(context, std::move(rejectedModule)));
+  }
+
+  auto helperArgumentModule =
+      parseSourceString<ModuleOp>(helperArgumentSource, context.get());
+  ASSERT_TRUE(helperArgumentModule);
+  EXPECT_TRUE(QCOProgram::fromModule(context, std::move(helperArgumentModule)));
 
   auto transformInput = program->copy();
   auto pipelineInput = program->copy();
@@ -437,6 +485,29 @@ h q;
   auto reparsed = parseRecordedModule(roundTrip.str());
   ASSERT_TRUE(reparsed);
   EXPECT_TRUE(mlir::verify(*reparsed).succeeded());
+}
+
+TEST_F(CompilerPipelineTest, ReusesOpenQASMHardwareQubits) {
+  constexpr llvm::StringLiteral qasm = R"(OPENQASM 3.1;
+h $0;
+x $0;
+)";
+
+  auto qcProgram = QCProgram::fromQASMString(qasm.str());
+  ASSERT_TRUE(qcProgram);
+
+  size_t qcStaticOps = 0;
+  qcProgram->module().walk([&](Operation* op) {
+    qcStaticOps += op->getName().getStringRef() == "qc.static";
+  });
+  EXPECT_EQ(qcStaticOps, 1U);
+
+  auto qcoProgram = std::move(*qcProgram).intoQCO();
+  ASSERT_TRUE(qcoProgram);
+
+  size_t qcoStaticOps = 0;
+  qcoProgram->module().walk([&](qco::StaticOp) { ++qcoStaticOps; });
+  EXPECT_EQ(qcoStaticOps, 1U);
 }
 
 namespace {

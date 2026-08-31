@@ -45,7 +45,7 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQASM MQT::CoreQDMICommon
-                                               MQT::CoreQIRJIT MQT::CoreQIRRuntime spdlog::spdlog)
+                                               MQT::CoreQIRJIT MQT::CoreQIRRuntime)
 
   mqt_configure_qdmi_device(${TARGET_NAME} ID mqt.ddsim.default PREFIX ${QDMI_PREFIX})
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})

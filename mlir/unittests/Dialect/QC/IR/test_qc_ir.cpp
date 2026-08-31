@@ -150,6 +150,37 @@ TEST_F(QCTest, QubitIsVectorElement) {
   EXPECT_TRUE(isa<QubitType>(vectorType.getElementType()));
 }
 
+TEST_F(QCTest, CleanupHoistsAndCoalescesStaticQubits) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%condition: i1) {
+        scf.if %condition {
+          %q0 = qc.static 0 : !qc.qubit
+          %q1 = qc.static 1 : !qc.qubit
+          qc.x %q0 : !qc.qubit
+          qc.x %q1 : !qc.qubit
+        } else {
+          %q0 = qc.static 0 : !qc.qubit
+          qc.h %q0 : !qc.qubit
+        }
+        return
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*module)));
+
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  size_t staticOps = 0;
+  module->walk([&](StaticOp op) {
+    ++staticOps;
+    EXPECT_EQ(op->getBlock(), &main.getBody().front());
+  });
+  EXPECT_EQ(staticOps, 2U);
+}
+
 TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
   EXPECT_DEATH(
       {

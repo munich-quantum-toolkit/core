@@ -33,6 +33,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
@@ -42,7 +43,9 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
+#include <mlir/Transforms/CSE.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Transforms/RegionUtils.h>
 
 #include <cassert>
@@ -455,6 +458,19 @@ static void commitQubits(LoweringState& state, Operation* anchor,
                      resolveMappedTensors(state, anchor, registers));
   llvm::append_range(qcoTargets, resolveMappedQubits(state, anchor, qcQubits));
   return qcoTargets;
+}
+
+/// Hoist static qubit references and let CSE coalesce them.
+[[nodiscard]] static LogicalResult normalizeStaticQubits(ModuleOp moduleOp) {
+  RewritePatternSet patterns(moduleOp.getContext());
+  qc::StaticOp::getCanonicalizationPatterns(patterns, moduleOp.getContext());
+  if (failed(applyPatternsGreedily(moduleOp, std::move(patterns)))) {
+    return failure();
+  }
+  IRRewriter rewriter(moduleOp.getContext());
+  DominanceInfo dominance(moduleOp);
+  eliminateCommonSubExpressions(rewriter, dominance, moduleOp);
+  return success();
 }
 
 /** @brief Rejects quantum SSA sources unsupported by the lowering state. */
@@ -1865,7 +1881,20 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* moduleOp = getOperation();
+    auto moduleOp = getOperation();
+
+    LoweringState preflightState;
+    if (failed(validateModifierBodies(moduleOp)) ||
+        failed(validateQuantumValueSources(moduleOp)) ||
+        failed(collectRegisterAccesses(moduleOp, preflightState))) {
+      signalPassFailure();
+      return;
+    }
+
+    if (failed(normalizeStaticQubits(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
 
     // Create state object to track qubit value flow
     LoweringState state;
@@ -1874,9 +1903,7 @@ protected:
     RewritePatternSet patterns(context);
     QCToQCOTypeConverter typeConverter(context);
 
-    if (failed(validateModifierBodies(moduleOp)) ||
-        failed(validateQuantumValueSources(moduleOp)) ||
-        failed(collectRegisterAccesses(moduleOp, state))) {
+    if (failed(collectRegisterAccesses(moduleOp, state))) {
       signalPassFailure();
       return;
     }

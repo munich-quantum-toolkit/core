@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SetVector.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -1405,6 +1406,9 @@ private:
 
   /// Track allocated memrefs for automatic deallocation
   SetVector<Value> allocatedQregs;
+
+  /// Reuse each statically addressed qubit.
+  DenseMap<uint64_t, Value> staticQubits;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;
