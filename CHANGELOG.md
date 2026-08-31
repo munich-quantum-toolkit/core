@@ -136,8 +136,10 @@ releases may include breaking changes.
 - 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
   DD package evaluation. MQT Core provides no direct replacement ([#2214])
   ([**@burgholzer**])
-- 💥 Remove the unowned decision-diagram approximation algorithm and
-  density-matrix support from MQT Core ([#1466], [#2154]) ([**@burgholzer**])
+- 💥 Remove the unowned decision-diagram approximation algorithm and the legacy
+  raw density-matrix and noise APIs. Compiler-backed QCO density simulation
+  remains available through generic matrix DDs ([#1466], [#2154])
+  ([**@burgholzer**])
 - 💥 Make `nlohmann_json` an implementation detail and replace JSON-typed
   decision-diagram statistics APIs with strings and streams ([#2138])
   ([**@denialhaag**])

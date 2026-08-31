@@ -184,6 +184,11 @@ zero_state_dd = dd.zero_state(qc.num_qubits)
 out_state_dd = simulate(qc, zero_state_dd, dd)
 ```
 
+Density simulation uses generic matrix DDs. Construct a pure density operator
+with {py:func}`~mqt.core.mlir.make_density_matrix`, then use
+{py:meth}`~mqt.core.mlir.QCOProgram.simulate_density` or
+{py:meth}`~mqt.core.mlir.QCOProgram.sample_density`.
+
 If the [Graphviz](https://www.graphviz.org/) library is installed, the
 `graphviz` Python package can be used to visualize resulting decision diagram
 via the {py:meth}`~mqt.core.dd.VectorDD.to_dot` method. To directly, generate

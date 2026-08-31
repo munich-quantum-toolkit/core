@@ -764,6 +764,18 @@ TEST_F(QCODDFunctionalityTest, DensityReferencesAreConsumedOnAllPaths) {
   EXPECT_TRUE(roots.empty());
 
   std::mt19937_64 rng(9);
+  auto overWideDd = std::make_unique<dd::Package>(2);
+  auto& overWideRoots = overWideDd->getRootSet<dd::mNode>();
+  EXPECT_TRUE(failed(simulateDensity(
+      mainFunc(*valid), makeZeroDensity(*overWideDd, 2), *overWideDd)));
+  EXPECT_TRUE(overWideRoots.empty());
+  EXPECT_TRUE(failed(sampleDensity(
+      mainFunc(*valid), makeZeroDensity(*overWideDd, 2), *overWideDd, 1, rng)));
+  EXPECT_TRUE(overWideRoots.empty());
+  EXPECT_TRUE(failed(sampleDensity(
+      mainFunc(*valid), makeZeroDensity(*overWideDd, 2), *overWideDd, 0, rng)));
+  EXPECT_TRUE(overWideRoots.empty());
+
   auto histogram =
       sampleDensity(mainFunc(*valid), makeZeroDensity(*dd, 1), *dd, 4, rng);
   ASSERT_TRUE(succeeded(histogram));
@@ -2035,6 +2047,9 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedFuncCalls) {
   auto zeroQubitDd = std::make_unique<dd::Package>(0);
   EXPECT_TRUE(failed(simulate(selfRecursiveFunc, dd::VectorDD::one(),
                               *zeroQubitDd, rng, bindings)));
+  EXPECT_TRUE(failed(simulateDensity(selfRecursiveFunc,
+                                     makeZeroDensity(*zeroQubitDd, 0),
+                                     *zeroQubitDd, bindings)));
 
   auto recursive = parseSourceString<ModuleOp>(R"mlir(
     module {
@@ -3044,10 +3059,16 @@ TEST_F(QCODDFunctionalityTest, DeferredMeasurementsTrackDeallocatedLowerWires) {
   ASSERT_TRUE(mod);
 
   std::mt19937_64 rng(3);
-  auto dd = std::make_unique<dd::Package>(2);
-  const auto histogram = sample(mainFunc(*mod), *dd, 4, rng);
-  ASSERT_TRUE(succeeded(histogram));
-  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 4}}));
+  auto vectorDD = std::make_unique<dd::Package>(2);
+  const auto vectorHistogram = sample(mainFunc(*mod), *vectorDD, 4, rng);
+  ASSERT_TRUE(succeeded(vectorHistogram));
+  EXPECT_EQ(*vectorHistogram, (std::map<std::string, size_t>{{"1", 4}}));
+
+  auto densityDD = std::make_unique<dd::Package>(2);
+  const auto densityHistogram = sampleDensity(
+      mainFunc(*mod), makeZeroDensity(*densityDD, 0), *densityDD, 4, rng);
+  ASSERT_TRUE(succeeded(densityHistogram));
+  EXPECT_EQ(*densityHistogram, (std::map<std::string, size_t>{{"1", 4}}));
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUnboundedStatevectorCapacity) {

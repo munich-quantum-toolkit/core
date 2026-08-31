@@ -1686,6 +1686,7 @@ static LogicalResult deallocateWire(const qc::Qubit wire, WalkState& walk,
   walk.dd->garbageCollect();
   walk.qubits->releaseWire(wire);
   walk.tensors->releaseWire(wire);
+  walk.classical->releaseWire(wire);
   return success();
 }
 
@@ -2619,12 +2620,31 @@ struct DensitySimulationResult {
 };
 } // namespace
 
-static FailureOr<DensitySimulationResult>
-simulateDensityImpl(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
-                    const PreparedState& prepared, std::mt19937_64* rng,
-                    const DDBindings& bindings,
-                    const DenseSet<Operation*>* deferredMeasurements = nullptr,
-                    ClassicalEnv* finalClassical = nullptr) {
+static LogicalResult validateDensityInput(func::FuncOp func,
+                                          const dd::MatrixDD& in,
+                                          const PreparedState& prepared) {
+  if (in.isTerminal() ||
+      static_cast<size_t>(in.p->v) < prepared.qubits.numQubits) {
+    return success();
+  }
+  return func.emitError() << "input density matrix has "
+                          << static_cast<size_t>(in.p->v) + 1U
+                          << " qubits but function uses "
+                          << prepared.qubits.numQubits;
+}
+
+static FailureOr<DensitySimulationResult> simulateDensityImpl(
+    func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
+    const PreparedState& prepared, std::mt19937_64* rng,
+    const DDBindings& bindings,
+    const DenseSet<Operation*>* deferredMeasurements = nullptr,
+    ClassicalEnv* finalClassical = nullptr,
+    const DeallocationMode deallocationMode = DeallocationMode::Apply) {
+  if (failed(validateDensityInput(func, in, prepared))) {
+    dd.decRef(in);
+    return failure();
+  }
+
   QubitMap qubits = prepared.qubits;
   TensorMap tensors = prepared.tensors;
   ClassicalEnv classical;
@@ -2637,7 +2657,9 @@ simulateDensityImpl(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
                       .classical = &classical,
                       .dd = &dd,
                       .rng = rng,
-                      .deferredMeasurements = deferredMeasurements};
+                      .deferredMeasurements = deferredMeasurements,
+                      .deallocationMode = deallocationMode};
+  walkState.activeCalls.insert(func.getOperation());
 
   DensityState state{in};
   if (failed(walkFunction(func, walkState, state))) {
@@ -3013,6 +3035,9 @@ sampleDensity(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
   if (failed(prepared)) {
     return failure();
   }
+  if (failed(validateDensityInput(func, in, *prepared))) {
+    return failure();
+  }
   auto plan = getSamplingPlan(func);
   if (failed(plan)) {
     return failure();
@@ -3036,9 +3061,12 @@ sampleDensity(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
   if (!plan->dynamic) {
     ClassicalEnv classical;
     dd.incRef(in);
-    auto simulated =
-        simulateDensityImpl(func, in, dd, *prepared, nullptr, bindings,
-                            &plan->deferredMeasurements, &classical);
+    const auto deallocationMode = plan->outputs.empty()
+                                      ? DeallocationMode::PreserveDeferred
+                                      : DeallocationMode::PreserveAll;
+    auto simulated = simulateDensityImpl(func, in, dd, *prepared, nullptr,
+                                         bindings, &plan->deferredMeasurements,
+                                         &classical, deallocationMode);
     if (failed(simulated)) {
       return failure();
     }
@@ -3064,8 +3092,10 @@ sampleDensity(func::FuncOp func, const dd::MatrixDD& in, dd::Package& dd,
   for (size_t i = 0; i < shots; ++i) {
     ClassicalEnv classical;
     dd.incRef(in);
-    auto simulated = simulateDensityImpl(func, in, dd, *prepared, &rng,
-                                         bindings, nullptr, &classical);
+    auto simulated = simulateDensityImpl(
+        func, in, dd, *prepared, &rng, bindings, nullptr, &classical,
+        plan->outputs.empty() ? DeallocationMode::Apply
+                              : DeallocationMode::PreserveAll);
     if (failed(simulated)) {
       return failure();
     }

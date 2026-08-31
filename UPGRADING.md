@@ -105,16 +105,19 @@ The Python bindings depend on `nanobind-backend`, which supplies the
 interpreter-specific nanobind runtime. This dependency does not change the C++
 API or the Python import paths.
 
-### Removal of DD approximation and density-matrix support
+### Removal of DD approximation and legacy density/noise APIs
 
 MQT Core no longer provides the decision-diagram approximation algorithm. The
 algorithm had no production owner in the MQT ecosystem. Remove uses of the
 `dd/Approximation.hpp` header, the `dd::ApproximationMetadata` type, and the
 `dd::approximate` function. MQT Core does not provide a replacement.
 
-MQT Core also no longer provides density-matrix decision diagrams or the noise
-operations that depended on them. Consumers must provide this functionality or
-use another implementation.
+MQT Core also no longer provides the legacy raw density-matrix DD types or the
+noise operations that depended on them. Compiler-backed QCO density simulation
+remains available through generic matrix DDs: use
+`mqt.core.mlir.make_density_matrix`, then call `QCOProgram.simulate_density` or
+`QCOProgram.sample_density`. Consumers of the removed raw APIs must migrate to
+QCO or another implementation.
 
 ### Private `nlohmann_json` dependency
 
