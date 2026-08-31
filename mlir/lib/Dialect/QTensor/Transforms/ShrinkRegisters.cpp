@@ -62,6 +62,9 @@ struct TensorAccess {
     SmallVectorImpl<TensorAccess>& accesses, DeallocOp& deallocOp) {
   auto tensor = allocOp.getResult();
   while (true) {
+    if (!tensor.hasOneUse()) {
+      return failure();
+    }
     auto* user = *tensor.getUsers().begin();
 
     if (auto currentDealloc = dyn_cast<DeallocOp>(user)) {
