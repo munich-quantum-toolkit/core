@@ -205,8 +205,7 @@ Python. The compiler pipeline and tools depend directly on
 
 `MLIRQCODDFunctionality` continues to expose
 `mlir::qco::buildFunctionality(func::FuncOp, dd::Package&)` and
-`mlir::qco::simulate(func::FuncOp, const dd::VectorDD&, dd::Package&)` with no
-public API change.
+`mlir::qco::simulate(func::FuncOp, const dd::VectorDD&, dd::Package&, std::mt19937_64&)`.
 
 Revision note (2026-08-11): created this focused plan after the complete
 dependency audit and the user's decision to remove the translator while

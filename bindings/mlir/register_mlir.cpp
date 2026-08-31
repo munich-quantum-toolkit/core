@@ -8,17 +8,27 @@
  * Licensed under the MIT License
  */
 
+#include "dd/Node.hpp"
+#include "dd/Package.hpp"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/bench/Generate.h"
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 #include "qiskit/Qiskit.h"
 
 #include <llvm/Support/Error.h>
+#include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/Support/LogicalResult.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/filesystem.h>
+#include <nanobind/stl/map.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
@@ -32,6 +42,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <random>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -117,6 +128,49 @@ static void requireValid(const mlir::Program& program) {
     throw std::runtime_error(
         "This compiler program has already been consumed.");
   }
+}
+
+[[nodiscard]] static mlir::func::FuncOp
+entryFunc(const mlir::QCOProgram& program) {
+  requireValid(program);
+  auto func = mlir::mqt::getEntryPoint(program.module());
+  if (!func) {
+    throw nb::value_error("QCO program has no func.func entry point");
+  }
+  return func;
+}
+
+[[nodiscard]] static std::mt19937_64 makeRng(const uint64_t seed) {
+  if (seed == 0) {
+    return std::mt19937_64(std::random_device{}());
+  }
+  return std::mt19937_64(seed);
+}
+
+/// Run @p fn under a diagnostic handler and raise `ValueError` on failure,
+/// appending any emitted MLIR diagnostics to @p message.
+template <typename Fn>
+[[nodiscard]] static auto takeFailureOr(mlir::MLIRContext* context,
+                                        const char* message, Fn&& fn) {
+  std::string diagnostics;
+  const mlir::ScopedDiagnosticHandler handler(
+      context, [&](mlir::Diagnostic& diag) {
+        if (!diagnostics.empty()) {
+          diagnostics.push_back('\n');
+        }
+        llvm::raw_string_ostream os(diagnostics);
+        os << diag;
+        return mlir::success();
+      });
+  auto result = std::forward<Fn>(fn)();
+  if (mlir::failed(result)) {
+    std::string full = message;
+    if (!diagnostics.empty()) {
+      full.append(": ").append(diagnostics);
+    }
+    throw nb::value_error(full.c_str());
+  }
+  return *std::move(result);
 }
 
 template <class ProgramType>
@@ -561,6 +615,14 @@ means every operation is native.)pb");
              std::optional<std::string> custom3,
              std::optional<std::string> custom4,
              std::optional<std::string> custom5) {
+            // Keep this preflight at the Python boundary so the public
+            // ValueError does not depend on cross-extension exception
+            // translation.
+            if (deviceConfig && deviceConfigFile) {
+              throw nb::value_error(
+                  "device_config and device_config_file are mutually "
+                  "exclusive");
+            }
             const auto overrides = qdmi::makeDeviceSessionConfig(
                 std::move(baseUrl), std::move(token), std::move(authFile),
                 std::move(authUrl), std::move(username), std::move(password),
@@ -940,6 +1002,93 @@ LLVM bitcode.)pb");
       .def("write_bitcode",
            &BooleanMemberAdapter<&mlir::QIRProgram::writeBitcode>::call,
            "path"_a, "Write this program as LLVM bitcode.");
+
+  nb::module_::import_("mqt.core.dd");
+
+  qcoProgram.def(
+      "build_functionality",
+      [](const mlir::QCOProgram& program, dd::Package& ddPackage) {
+        auto func = entryFunc(program);
+        return takeFailureOr(
+            func.getContext(),
+            "cannot build DD functionality for this QCO program",
+            [&] { return mlir::qco::buildFunctionality(func, ddPackage); });
+      },
+      "dd_package"_a,
+      // Keep the DD package alive while the returned matrix DD is alive.
+      nb::keep_alive<0, 2>(),
+      R"pb(Build a matrix DD for a static unitary QCO program.
+
+Args:
+    dd_package: DD package with enough qubits for the program.
+
+Returns:
+    Matrix DD of the program functionality.
+
+Raises:
+    ValueError: When the program is unsupported for functionality construction.)pb");
+
+  qcoProgram.def(
+      "simulate",
+      [](const mlir::QCOProgram& program, const dd::VectorDD& initialState,
+         dd::Package& ddPackage, const uint64_t seed) {
+        if (dd::VectorDD::trackingRequired(initialState) &&
+            !ddPackage.getRootSet<dd::vNode>().contains(initialState)) {
+          throw nb::value_error(
+              "initial_state must have a live reference in dd_package");
+        }
+        auto func = entryFunc(program);
+        auto rng = makeRng(seed);
+        return takeFailureOr(
+            func.getContext(), "cannot simulate this QCO program", [&] {
+              return mlir::qco::simulate(func, initialState, ddPackage, rng);
+            });
+      },
+      "initial_state"_a, "dd_package"_a, "seed"_a = 0U,
+      // Keep the DD package alive while the returned vector DD is alive.
+      nb::keep_alive<0, 3>(),
+      R"pb(Simulate a QCO program on a DD state.
+
+Args:
+    initial_state: Input state DD that spans at least the program's qubits and
+        has a live reference in ``dd_package``. Higher wires are preserved. A
+        valid input reference is consumed.
+    dd_package: DD package with enough qubits for the program.
+    seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+        value produces reproducible measurement and reset results.
+
+Returns:
+    Output state DD.
+
+Raises:
+    ValueError: When ``initial_state`` has no live reference in ``dd_package``,
+        has too few qubits, or the program is unsupported for simulation.)pb");
+
+  qcoProgram.def(
+      "sample",
+      [](const mlir::QCOProgram& program, dd::Package& ddPackage,
+         const size_t shots, const uint64_t seed) {
+        auto func = entryFunc(program);
+        auto rng = makeRng(seed);
+        return takeFailureOr(
+            func.getContext(), "cannot sample this QCO program",
+            [&] { return mlir::qco::sample(func, ddPackage, shots, rng); });
+      },
+      "dd_package"_a, "shots"_a = 1024U, "seed"_a = 0U,
+      R"pb(Sample the declared outputs of a QCO program.
+
+Args:
+    dd_package: DD package with enough qubits for the program.
+    shots: Number of shots (default 1024).
+    seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+        value produces reproducible results.
+
+Returns:
+    Histogram of returned CBit registers in return order, each MSB first. If
+    no CBit result exists, final ``measureAll`` bitstrings instead.
+
+Raises:
+    ValueError: When the program is unsupported for sampling.)pb");
 
   m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
         "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,
