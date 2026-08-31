@@ -68,7 +68,9 @@ add_mlir_library(
   PUBLIC
   MLIRQCODialect
   MLIRQCOMatrix
+  MLIRArithDialect
   MLIRFuncDialect
+  MLIRSCFDialect
   MQT::CoreDD
   PRIVATE
   MLIRMQTUtils)
