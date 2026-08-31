@@ -18,6 +18,7 @@
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallSet.h>
 #include <llvm/ADT/StringRef.h>
+#include <mlir/Analysis/SliceWalk.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/Attributes.h>
@@ -354,7 +355,7 @@ private:
       }
 
       auto function = dyn_cast<LLVM::LLVMFuncOp>(anchor);
-      bool sawDirectCall = false;
+      bool sawProvenance = false;
       LogicalResult status = success();
       if (function && !function.isExternal() &&
           blockArgument.getOwner() == &function.getBody().front()) {
@@ -369,17 +370,48 @@ private:
                   blockArgument.getArgNumber() >= call.getNumOperands()) {
                 return;
               }
-              sawDirectCall = true;
+              sawProvenance = true;
               status = includeStaticPointer(
                   call.getOperand(blockArgument.getArgNumber()), resource,
                   capacity, module, requireStatic, resolving, aggregates);
             });
+      } else {
+        SmallVector<Value> worklist{pointer};
+        SmallPtrSet<Value, 8> visited;
+        bool unresolvedProvenance = false;
+        while (!worklist.empty() && succeeded(status)) {
+          Value current = worklist.pop_back_val();
+          if (!current) {
+            unresolvedProvenance = true;
+            continue;
+          }
+          if (!visited.insert(current).second) {
+            continue;
+          }
+          if (auto predecessors = getControlFlowPredecessors(current)) {
+            unresolvedProvenance |= predecessors->empty();
+            worklist.append(*predecessors);
+            continue;
+          }
+          if (auto argument = dyn_cast<BlockArgument>(current)) {
+            auto owner =
+                dyn_cast<LLVM::LLVMFuncOp>(argument.getOwner()->getParentOp());
+            if (!owner || argument.getOwner() != &owner.getBody().front()) {
+              unresolvedProvenance = true;
+              continue;
+            }
+          }
+          sawProvenance = true;
+          status = includeStaticPointer(current, resource, capacity, module,
+                                        requireStatic, resolving, aggregates);
+        }
+        sawProvenance &= !unresolvedProvenance;
       }
       resolving.erase(pointer);
       if (failed(status)) {
         return failure();
       }
-      if (sawDirectCall) {
+      if (sawProvenance) {
         return success();
       }
     }

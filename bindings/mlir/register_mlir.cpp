@@ -39,6 +39,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -55,6 +56,16 @@ namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+
+// Keep the catch in this binary: Darwin cannot reliably match standard-library
+// exception RTTI in nanobind's split-mode backend.
+static void translateRuntimeError(const std::exception_ptr& error, void*) {
+  try {
+    std::rethrow_exception(error);
+  } catch (const std::runtime_error& exception) {
+    PyErr_SetString(PyExc_RuntimeError, exception.what());
+  }
+}
 
 template <class T>
 [[nodiscard]] static T takeResult(std::optional<T>&& result) {
@@ -322,6 +333,8 @@ generateBenchmark(const std::string_view instanceSpecificationJSON) {
 }
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+  nb::register_exception_translator(&translateRuntimeError);
+
   m.doc() = "MQT Core MLIR compiler bindings.";
 
   nb::module_::import_("typing");

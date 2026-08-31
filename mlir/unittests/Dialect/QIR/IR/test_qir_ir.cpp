@@ -371,6 +371,117 @@ TEST_F(QIRTest, AdaptiveMetadataScansStaticResourcesInHelperFunctions) {
   EXPECT_TRUE(findModuleFlag(module, "ir_functions"));
 }
 
+TEST_F(QIRTest, MetadataTracesStaticResourcesThroughControlFlowArguments) {
+  OpBuilder builder(context.get());
+  const auto location = builder.getUnknownLoc();
+  auto module = ModuleOp::create(location);
+  builder.setInsertionPointToStart(module.getBody());
+  const auto ptrType = LLVM::LLVMPointerType::get(context.get());
+  const auto voidType = LLVM::LLVMVoidType::get(context.get());
+  auto measure = LLVM::LLVMFuncOp::create(
+      builder, location, QIR_MEASURE,
+      LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType}));
+  auto main = LLVM::LLVMFuncOp::create(
+      builder, location, "main", LLVM::LLVMFunctionType::get(voidType, {}));
+  main->setAttr("passthrough", builder.getStrArrayAttr({"entry_point"}));
+  auto* entry = main.addEntryBlock(builder);
+  auto* left = main.addBlock();
+  auto* right = main.addBlock();
+  auto* join = main.addBlock();
+  for (Block* block : {left, right, join}) {
+    block->addArgument(ptrType, location);
+    block->addArgument(ptrType, location);
+  }
+
+  builder.setInsertionPointToEnd(entry);
+  const auto staticPointer = [&](const int64_t index) -> Value {
+    auto constant = LLVM::ConstantOp::create(builder, location,
+                                             builder.getI64IntegerAttr(index));
+    return LLVM::IntToPtrOp::create(builder, location, ptrType,
+                                    constant.getResult())
+        .getResult();
+  };
+  Value qubit2 = staticPointer(2);
+  Value qubit6 = staticPointer(6);
+  Value result1 = staticPointer(1);
+  Value result4 = staticPointer(4);
+  auto condition =
+      LLVM::ConstantOp::create(builder, location, builder.getBoolAttr(true));
+  LLVM::CondBrOp::create(builder, location, condition.getResult(), left,
+                         ValueRange{qubit2, result1}, right,
+                         ValueRange{qubit6, result4});
+
+  builder.setInsertionPointToEnd(left);
+  LLVM::BrOp::create(builder, location, left->getArguments(), join);
+  builder.setInsertionPointToEnd(right);
+  LLVM::BrOp::create(builder, location, right->getArguments(), join);
+  builder.setInsertionPointToEnd(join);
+  LLVM::CallOp::create(builder, location, measure, join->getArguments());
+  LLVM::ReturnOp::create(builder, location, ValueRange{});
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  PassManager manager(context.get());
+  manager.addPass(qir::createQIRSetAttributesAndMetadata({false}));
+  ASSERT_TRUE(succeeded(manager.run(module)));
+  const auto requiredQubits = findPassthroughEntry(main, "required_num_qubits");
+  const auto requiredResults =
+      findPassthroughEntry(main, "required_num_results");
+  ASSERT_TRUE(requiredQubits);
+  ASSERT_TRUE(requiredResults);
+  EXPECT_EQ(cast<StringAttr>(requiredQubits[1]).getValue(), "7");
+  EXPECT_EQ(cast<StringAttr>(requiredResults[1]).getValue(), "5");
+}
+
+TEST_F(QIRTest, MetadataRequiresAnOriginForLoopCarriedStaticPointers) {
+  for (const bool hasStaticOrigin : {false, true}) {
+    SCOPED_TRACE(testing::Message() << "hasStaticOrigin=" << hasStaticOrigin);
+    OpBuilder builder(context.get());
+    const auto location = builder.getUnknownLoc();
+    auto module = ModuleOp::create(location);
+    builder.setInsertionPointToStart(module.getBody());
+    const auto ptrType = LLVM::LLVMPointerType::get(context.get());
+    const auto voidType = LLVM::LLVMVoidType::get(context.get());
+    auto x = LLVM::LLVMFuncOp::create(
+        builder, location, QIR_X,
+        LLVM::LLVMFunctionType::get(voidType, {ptrType}));
+    auto main = LLVM::LLVMFuncOp::create(
+        builder, location, "main", LLVM::LLVMFunctionType::get(voidType, {}));
+    main->setAttr("passthrough", builder.getStrArrayAttr({"entry_point"}));
+    auto* entry = main.addEntryBlock(builder);
+    auto* loop = main.addBlock();
+    loop->addArgument(ptrType, location);
+    auto* exit = main.addBlock();
+
+    builder.setInsertionPointToEnd(entry);
+    if (hasStaticOrigin) {
+      auto index = LLVM::ConstantOp::create(builder, location,
+                                            builder.getI64IntegerAttr(3));
+      auto qubit = LLVM::IntToPtrOp::create(builder, location, ptrType,
+                                            index.getResult());
+      LLVM::BrOp::create(builder, location, qubit.getResult(), loop);
+    } else {
+      LLVM::BrOp::create(builder, location, exit);
+    }
+    builder.setInsertionPointToEnd(loop);
+    LLVM::CallOp::create(builder, location, x, loop->getArgument(0));
+    LLVM::BrOp::create(builder, location, loop->getArgument(0), loop);
+    builder.setInsertionPointToEnd(exit);
+    LLVM::ReturnOp::create(builder, location, ValueRange{});
+    ASSERT_TRUE(succeeded(verify(module)));
+
+    PassManager manager(context.get());
+    manager.addPass(qir::createQIRSetAttributesAndMetadata({false}));
+    if (!hasStaticOrigin) {
+      EXPECT_TRUE(failed(manager.run(module)));
+      continue;
+    }
+    ASSERT_TRUE(succeeded(manager.run(module)));
+    const auto required = findPassthroughEntry(main, "required_num_qubits");
+    ASSERT_TRUE(required);
+    EXPECT_EQ(cast<StringAttr>(required[1]).getValue(), "4");
+  }
+}
+
 TEST_F(QIRTest, MetadataRejectsMalformedStaticResourcePointersAtomically) {
   for (const bool useNonConstant : {false, true}) {
     SCOPED_TRACE(testing::Message() << "useNonConstant=" << useNonConstant);
