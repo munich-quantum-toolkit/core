@@ -51,6 +51,15 @@
       }
     },
     {
+      "name": "release-no-mlir",
+      "inherits": "release",
+      "displayName": "Release config without MLIR",
+      "cacheVariables": {
+        "BUILD_MQT_CORE_MLIR": "OFF",
+        "CMAKE_DISABLE_FIND_PACKAGE_MLIR": "ON"
+      }
+    },
+    {
       "name": "coverage",
       "inherits": "base-unix",
       "displayName": "Coverage config",
@@ -98,6 +107,10 @@
       "configurePreset": "release"
     },
     {
+      "name": "release-no-mlir",
+      "configurePreset": "release-no-mlir"
+    },
+    {
       "name": "coverage",
       "configurePreset": "coverage"
     },
@@ -132,6 +145,11 @@
       "name": "release",
       "inherits": "base",
       "configurePreset": "release"
+    },
+    {
+      "name": "release-no-mlir",
+      "inherits": "base",
+      "configurePreset": "release-no-mlir"
     },
     {
       "name": "coverage",

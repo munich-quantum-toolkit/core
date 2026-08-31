@@ -125,6 +125,7 @@ TEST(Concurrency, ConcurrentCheckDuringRun) {
   poller.join();
 }
 
+#ifdef BUILD_MQT_CORE_MLIR
 TEST(Concurrency, ConcurrentQIRJobsOwnTheirRuntimeState) {
   constexpr size_t numJobs = 4;
   constexpr size_t shots = 1024;
@@ -153,3 +154,4 @@ TEST(Concurrency, ConcurrentQIRJobsOwnTheirRuntimeState) {
         keys, [](const auto& key) { return key == "00" || key == "11"; }));
   }
 }
+#endif
