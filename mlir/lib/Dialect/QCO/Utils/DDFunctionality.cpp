@@ -198,6 +198,15 @@ struct SamplingPlan {
 };
 } // namespace
 
+static LogicalResult consumeExecutionStep(WalkState& walk, Operation* op) {
+  if (walk.remainingExecutionSteps == 0) {
+    return op->emitError(
+        "QCO DD execution exceeds the limit of 10000 control-flow steps");
+  }
+  --walk.remainingExecutionSteps;
+  return success();
+}
+
 [[nodiscard]] static bool isQTensorType(Type type) {
   const auto tensorType = dyn_cast<RankedTensorType>(type);
   return tensorType && tensorType.getRank() == 1 &&
@@ -1039,8 +1048,8 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
       });
 }
 
-static FailureOr<LoopRange>
-resolveLoop(scf::ForOp forOp, ClassicalEnv& classical, size_t remainingSteps) {
+static FailureOr<LoopRange> resolveLoop(scf::ForOp forOp,
+                                        ClassicalEnv& classical) {
   auto lower = lookupInteger(forOp.getLowerBound(), classical, forOp);
   auto upper = lookupInteger(forOp.getUpperBound(), classical, forOp);
   auto step = lookupInteger(forOp.getStep(), classical, forOp);
@@ -1067,11 +1076,7 @@ resolveLoop(scf::ForOp forOp, ClassicalEnv& classical, size_t remainingSteps) {
   const llvm::APInt span = upperWide - lowerWide;
   const llvm::APInt trips =
       (span + stepWide - llvm::APInt(wideWidth, 1)).udiv(stepWide);
-  const size_t limited = trips.getLimitedValue(remainingSteps + 1);
-  if (limited > remainingSteps) {
-    return forOp.emitError(
-        "QCO DD execution exceeds the limit of 10000 control-flow steps");
-  }
+  const size_t limited = trips.getLimitedValue(MAX_CONTROL_FLOW_STEPS + 1);
   return LoopRange{.induction = lowerWide, .step = stepWide, .trips = limited};
 }
 
@@ -1188,6 +1193,9 @@ applyRegionBranch(ValueRange linearOperands, Block& block,
   if (failed(bindLinearArgs(linearOperands, block, walk, parent))) {
     return failure();
   }
+  if (failed(consumeExecutionStep(walk, parent))) {
+    return failure();
+  }
   if (failed(walkBlock(block, walk, state))) {
     return failure();
   }
@@ -1204,6 +1212,9 @@ static LogicalResult applyScfRegion(Region& region, ValueRange results,
            << "SCF region must contain exactly one block for QCO DD simulation";
   }
   Block& block = region.front();
+  if (failed(consumeExecutionStep(walk, parent))) {
+    return failure();
+  }
   if (failed(walkBlock(block, walk, state))) {
     return failure();
   }
@@ -1527,8 +1538,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                                   walk, state, execute);
           })
       .template Case<scf::ForOp>([&](scf::ForOp forOp) -> LogicalResult {
-        auto range =
-            resolveLoop(forOp, *walk.classical, walk.remainingExecutionSteps);
+        auto range = resolveLoop(forOp, *walk.classical);
         if (failed(range)) {
           return failure();
         }
@@ -1539,12 +1549,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
 
         for (size_t t = 0; t < range->trips;
              ++t, range->induction += range->step) {
-          if (walk.remainingExecutionSteps == 0) {
-            return forOp.emitError(
-                "QCO DD execution exceeds the limit of 10000 control-flow "
-                "steps");
+          if (failed(consumeExecutionStep(walk, forOp))) {
+            return failure();
           }
-          --walk.remainingExecutionSteps;
           auto iterArgs = body.getArguments().drop_front();
           if (failed(bindValuePairs(carried, iterArgs, walk, forOp))) {
             return failure();
@@ -1594,12 +1601,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return bindValuePairs(condition.getArgs(), whileOp.getResults(),
                                   walk, whileOp);
           }
-          if (walk.remainingExecutionSteps == 0) {
-            return whileOp.emitError(
-                "QCO DD execution exceeds the limit of 10000 control-flow "
-                "steps");
+          if (failed(consumeExecutionStep(walk, whileOp))) {
+            return failure();
           }
-          --walk.remainingExecutionSteps;
           if (failed(bindValuePairs(condition.getArgs(), after.getArguments(),
                                     walk, whileOp)) ||
               failed(walkBlock(after, walk, state))) {
@@ -1631,6 +1635,10 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         }
         const auto guard =
             llvm::make_scope_exit([&] { walk.activeCalls.erase(calleeOp); });
+
+        if (failed(consumeExecutionStep(walk, call))) {
+          return failure();
+        }
 
         if (failed(bindValuePairs(call.getArgOperands(), callee.getArguments(),
                                   walk, call))) {
@@ -1880,89 +1888,27 @@ static bool isOutputOnlyRegister(Value reg, ArrayRef<Value> outputs) {
 
 static bool hasOutputOnlyMeasurementResult(MeasureOp measure,
                                            ArrayRef<Value> outputs) {
-  if (measure.getResult().use_empty()) {
-    return false;
-  }
   return llvm::all_of(measure.getResult().getUses(), [&](const OpOperand& use) {
     auto store = dyn_cast<cbit::StoreOp>(use.getOwner());
     return store && isOutputOnlyRegister(store.getReg(), outputs);
   });
 }
 
-static std::optional<size_t> getConstantTensorIndex(Value value) {
-  const auto attr = mqt::valueToConstantAttr(value);
-  const auto integer = attr ? dyn_cast<IntegerAttr>(*attr) : IntegerAttr{};
-  if (!integer || integer.getInt() < 0) {
-    return std::nullopt;
-  }
-  return static_cast<size_t>(integer.getInt());
-}
-
-static bool hasOnlyTerminalQuantumUses(Value value,
-                                       std::optional<size_t> tensorSlot,
-                                       func::FuncOp func,
-                                       ArrayRef<Value> outputs,
-                                       DenseSet<Value>& visited) {
-  if (!visited.insert(value).second) {
-    return true;
-  }
-  return llvm::all_of(value.getUses(), [&](OpOperand& use) {
-    Operation* owner = use.getOwner();
-    if (isa<SinkOp, func::ReturnOp, qtensor::DeallocOp>(owner)) {
-      return true;
-    }
-    if (auto measure = dyn_cast<MeasureOp>(owner)) {
-      return !tensorSlot && measure->getParentOfType<func::FuncOp>() == func &&
-             hasOutputOnlyMeasurementResult(measure, outputs) &&
-             hasOnlyTerminalQuantumUses(measure.getQubitOut(), std::nullopt,
-                                        func, outputs, visited);
-    }
-    if (auto fromElements = dyn_cast<qtensor::FromElementsOp>(owner)) {
-      return !tensorSlot && hasOnlyTerminalQuantumUses(fromElements.getResult(),
-                                                       use.getOperandNumber(),
-                                                       func, outputs, visited);
-    }
-    if (auto insert = dyn_cast<qtensor::InsertOp>(owner)) {
-      const auto index = getConstantTensorIndex(insert.getIndex());
-      if (!index) {
-        return false;
-      }
-      if (use.get() == insert.getScalar()) {
-        return !tensorSlot &&
-               hasOnlyTerminalQuantumUses(insert.getResult(), index, func,
-                                          outputs, visited);
-      }
-      return tensorSlot && *tensorSlot != *index &&
-             hasOnlyTerminalQuantumUses(insert.getResult(), tensorSlot, func,
-                                        outputs, visited);
-    }
-    if (auto extract = dyn_cast<qtensor::ExtractOp>(owner)) {
-      const auto index = getConstantTensorIndex(extract.getIndex());
-      if (!tensorSlot || !index) {
-        return false;
-      }
-      if (*tensorSlot == *index) {
-        return hasOnlyTerminalQuantumUses(extract.getResult(), std::nullopt,
-                                          func, outputs, visited);
-      }
-      return hasOnlyTerminalQuantumUses(extract.getOutTensor(), tensorSlot,
-                                        func, outputs, visited);
-    }
+static bool isDeferrableMeasurement(MeasureOp measure, Block* entry,
+                                    ArrayRef<Value> outputs) {
+  if (measure->getBlock() != entry ||
+      !hasOutputOnlyMeasurementResult(measure, outputs)) {
     return false;
+  }
+  return llvm::all_of(measure.getQubitOut().getUses(), [&](OpOperand& use) {
+    Operation* owner = use.getOwner();
+    return isa<SinkOp>(owner) ||
+           (owner == entry->getTerminator() && isa<func::ReturnOp>(owner));
   });
 }
 
-static bool isDeferrableMeasurement(MeasureOp measure, func::FuncOp func,
-                                    ArrayRef<Value> outputs) {
-  if (!hasOutputOnlyMeasurementResult(measure, outputs)) {
-    return false;
-  }
-  DenseSet<Value> visited;
-  return hasOnlyTerminalQuantumUses(measure.getQubitOut(), std::nullopt, func,
-                                    outputs, visited);
-}
-
-static void analyzeSampling(func::FuncOp func, ArrayRef<Value> outputs,
+static void analyzeSampling(func::FuncOp func, Block* sampledEntry,
+                            ArrayRef<Value> outputs,
                             DenseSet<Operation*>& active, SamplingPlan& plan) {
   Operation* funcOp = func.getOperation();
   if (!active.insert(funcOp).second) {
@@ -1973,7 +1919,7 @@ static void analyzeSampling(func::FuncOp func, ArrayRef<Value> outputs,
     if (isa<ResetOp>(op)) {
       plan.dynamic = true;
     } else if (auto measure = dyn_cast<MeasureOp>(op)) {
-      if (isDeferrableMeasurement(measure, func, outputs)) {
+      if (isDeferrableMeasurement(measure, sampledEntry, outputs)) {
         plan.deferredMeasurements.insert(op);
       } else {
         plan.dynamic = true;
@@ -1985,7 +1931,7 @@ static void analyzeSampling(func::FuncOp func, ArrayRef<Value> outputs,
           !callee.getBody().hasOneBlock()) {
         plan.dynamic = true;
       } else {
-        analyzeSampling(callee, outputs, active, plan);
+        analyzeSampling(callee, sampledEntry, outputs, active, plan);
       }
     }
   });
@@ -2011,7 +1957,7 @@ static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {
   }
 
   DenseSet<Operation*> active;
-  analyzeSampling(func, plan.outputs, active, plan);
+  analyzeSampling(func, &entry, plan.outputs, active, plan);
   return plan;
 }
 

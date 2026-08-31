@@ -1881,6 +1881,39 @@ TEST_F(QCODDFunctionalityTest, ScfForSharesExecutionBudget) {
   EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 
+TEST_F(QCODDFunctionalityTest, ExecutionBudgetIncludesBranchesAndCalls) {
+  for (const StringRef source : {
+           R"mlir(module {
+             func.func @main() {
+               %true = arith.constant true
+               %zero = arith.constant 0 : index
+               %limit = arith.constant 10000 : index
+               %one = arith.constant 1 : index
+               scf.for %i = %zero to %limit step %one {
+                 scf.if %true {
+                 }
+               }
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @noop() {
+               return
+             }
+             func.func @main() {
+               %zero = arith.constant 0 : index
+               %limit = arith.constant 10000 : index
+               %one = arith.constant 1 : index
+               scf.for %i = %zero to %limit step %one {
+                 func.call @noop() : () -> ()
+               }
+               return
+             }
+           })mlir"}) {
+    expectMlirSimulationFails(0, source);
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, SimulateRicherClassicalArithmetic) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q = b.staticQubit(0);
@@ -1981,39 +2014,6 @@ TEST_F(QCODDFunctionalityTest,
   const auto histogram = sample(mainFunc(*mod), *dd, 64, rng);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 64}}));
-  EXPECT_EQ(dd->matrixVectorMultiplication.getStats().lookups,
-            singleEvolutionLookups);
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
-}
-
-TEST_F(QCODDFunctionalityTest, DefersTensorMeasurementDespiteLaterUnrelatedOp) {
-  auto mod = buildModule([](QCOProgramBuilder& b) {
-    auto reg =
-        b.allocClassicalBitRegister(1, {}, cbit::Initialization::Undefined);
-    auto q0 = b.h(b.allocQubit());
-    auto q1 = b.allocQubit();
-    std::tie(q0, std::ignore) = b.measure(q0, reg, 0);
-    auto tensor = b.qtensorFromElements({q0, q1});
-    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
-    tensor = b.qtensorInsert(q0, tensor, 0);
-    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
-    q1 = b.x(q1);
-    tensor = b.qtensorInsert(q1, tensor, 1);
-    b.qtensorDealloc(tensor);
-    return reg;
-  });
-  ASSERT_TRUE(mod);
-
-  std::mt19937_64 rng(11);
-  auto singleDD = std::make_unique<dd::Package>(2);
-  ASSERT_TRUE(succeeded(sample(mainFunc(*mod), *singleDD, 1, rng)));
-  const auto singleEvolutionLookups =
-      singleDD->matrixVectorMultiplication.getStats().lookups;
-
-  auto dd = std::make_unique<dd::Package>(2);
-  const auto histogram = sample(mainFunc(*mod), *dd, 64, rng);
-  ASSERT_TRUE(succeeded(histogram));
-  EXPECT_EQ(histogram->at("0") + histogram->at("1"), 64U);
   EXPECT_EQ(dd->matrixVectorMultiplication.getStats().lookups,
             singleEvolutionLookups);
   EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
