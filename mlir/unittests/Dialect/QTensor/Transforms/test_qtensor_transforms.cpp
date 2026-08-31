@@ -78,4 +78,44 @@ TEST(QTensorTransformsTest, ShrinkToFitPreservesMetadata) {
                 mqt::MQTDialect::RegisterNameAttrHelper::getNameStr()),
             StringAttr::get(&context, "q"));
 }
+
+TEST(QTensorTransformsTest, HugeDeclaredTensorUsesSparseShrinkPlan) {
+  DialectRegistry registry;
+  registry.insert<arith::ArithDialect, func::FuncDialect, mqt::MQTDialect,
+                  qco::QCODialect, qtensor::QTensorDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %c7 = arith.constant 7 : index
+        %huge = arith.constant 1099511627776 : index
+        %reg = qtensor.alloc(%huge) : tensor<1099511627776x!qco.qubit>
+        %rest, %qubit = qtensor.extract %reg[%c7]
+            : tensor<1099511627776x!qco.qubit>
+        %flipped = qco.x %qubit : !qco.qubit -> !qco.qubit
+        %updated = qtensor.insert %flipped into %rest[%c7]
+            : tensor<1099511627776x!qco.qubit>
+        qtensor.dealloc %updated : tensor<1099511627776x!qco.qubit>
+        return
+      }
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  PassManager manager(&context);
+  manager.addPass(qtensor::createShrinkQTensorToFitPass());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  qtensor::AllocOp allocation;
+  moduleOp->walk([&](qtensor::AllocOp op) { allocation = op; });
+  ASSERT_TRUE(allocation);
+  EXPECT_EQ(cast<RankedTensorType>(allocation.getType()).getShape(),
+            ArrayRef<int64_t>{1});
+}
+
 } // namespace
