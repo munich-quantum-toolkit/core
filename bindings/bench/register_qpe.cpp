@@ -20,7 +20,7 @@
 #include <cstdint>
 #include <new>
 
-namespace mqt::bindings {
+namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -143,4 +143,4 @@ void registerQPE(const nb::module_& m) {
                   "Parse a strict benchmark manifest.");
 }
 
-} // namespace mqt::bindings
+} // namespace mqt
