@@ -39,6 +39,7 @@
 #include <jeff/Translation/Serialize.hpp>
 #include <kj/array.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
@@ -86,6 +87,17 @@
 #include <vector>
 
 namespace mlir {
+
+static void pushNestedOperations(Operation* operation,
+                                 SmallVectorImpl<Operation*>& worklist) {
+  for (Region& region : operation->getRegions()) {
+    for (Block& block : region) {
+      for (Operation& nested : block) {
+        worklist.push_back(&nested);
+      }
+    }
+  }
+}
 
 std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
@@ -145,11 +157,15 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
  */
 [[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
                                             const StringRef dialect) {
-  auto found = false;
-  mod->walk([&](Operation* operation) {
-    found |= operation->getDialect()->getNamespace() == dialect;
-  });
-  return found;
+  SmallVector<Operation*> worklist{mod};
+  while (!worklist.empty()) {
+    Operation* operation = worklist.pop_back_val();
+    if (operation->getDialect()->getNamespace() == dialect) {
+      return true;
+    }
+    pushNestedOperations(operation, worklist);
+  }
+  return false;
 }
 
 template <class ProgramType, class Parse>
@@ -392,13 +408,23 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
 static size_t
 countGatesIf(ModuleOp moduleOp,
              const llvm::function_ref<bool(qc::UnitaryOpInterface)> predicate) {
-  size_t count = 0;
   auto entryPoint = mqt::getEntryPoint(moduleOp);
-  entryPoint.walk<WalkOrder::PreOrder>([&](qc::UnitaryOpInterface op) {
-    count += !isa<qc::BarrierOp>(op) && predicate(op);
-    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op) ? WalkResult::skip()
-                                                     : WalkResult::advance();
-  });
+  if (!entryPoint) {
+    return 0;
+  }
+  size_t count = 0;
+  SmallVector<Operation*> worklist{entryPoint};
+  while (!worklist.empty()) {
+    Operation* operation = worklist.pop_back_val();
+    auto unitary = dyn_cast<qc::UnitaryOpInterface>(operation);
+    if (unitary) {
+      count += !isa<qc::BarrierOp>(unitary) && predicate(unitary);
+      if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(unitary)) {
+        continue;
+      }
+    }
+    pushNestedOperations(operation, worklist);
+  }
   return count;
 }
 
