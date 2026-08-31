@@ -181,6 +181,30 @@ TEST_F(QCTest, CleanupHoistsAndCoalescesStaticQubits) {
   EXPECT_EQ(staticOps, 2U);
 }
 
+TEST_F(QCTest, CleanupDoesNotHoistStaticQubitsAcrossIsolationBoundaries) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        "builtin.module"() ({
+          %q = qc.static 0 : !qc.qubit
+          qc.x %q : !qc.qubit
+        }) : () -> ()
+        return
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  StaticOp staticOp;
+  module->walk([&](StaticOp op) { staticOp = op; });
+  ASSERT_TRUE(staticOp);
+  EXPECT_TRUE(isa<ModuleOp>(staticOp->getParentOp()));
+}
+
 TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
   EXPECT_DEATH(
       {
