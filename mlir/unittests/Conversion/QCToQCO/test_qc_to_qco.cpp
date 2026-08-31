@@ -10,6 +10,7 @@
 
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
+#include "mlir/Conversion/ConversionUtils.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
@@ -52,11 +53,13 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/DialectConversion.h>
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <tuple>
@@ -220,7 +223,83 @@ public:
   }
 };
 
+class RejectingRegionMovePattern final
+    : public OpConversionPattern<func::FuncOp> {
+public:
+  RejectingRegionMovePattern(TypeConverter& typeConverter, MLIRContext* context,
+                             bool& sourcePreserved)
+      : OpConversionPattern(typeConverter, context),
+        sourcePreserved(sourcePreserved) {}
+
+  LogicalResult
+  matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (!op->hasAttr("test.reject_region_move")) {
+      return failure();
+    }
+    auto module = op->getParentOfType<ModuleOp>();
+    auto destination = module.lookupSymbol<func::FuncOp>("destination");
+    if (!destination) {
+      return failure();
+    }
+
+    const auto result = moveRegion(op.getBody(), destination.getBody(),
+                                   rewriter, getTypeConverter());
+    if (failed(result)) {
+      sourcePreserved = !op.getBody().empty() && destination.getBody().empty();
+    }
+    return result;
+  }
+
+private:
+  bool& sourcePreserved;
+};
+
 } // namespace
+
+TEST_F(QCToQCORegressionTest, RejectedRegionMovePreservesSource) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @destination()
+  func.func @source(%arg: index) attributes {test.reject_region_move} {
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  TypeConverter typeConverter;
+  typeConverter.addConversion([](Type type) -> std::optional<Type> {
+    if (isa<IndexType>(type)) {
+      return std::nullopt;
+    }
+    return type;
+  });
+  ConversionTarget target(context);
+  target.markUnknownOpDynamicallyLegal([](Operation*) { return true; });
+  target.addDynamicallyLegalOp<func::FuncOp>(
+      [](func::FuncOp op) { return !op->hasAttr("test.reject_region_move"); });
+
+  bool sourcePreserved = false;
+  RewritePatternSet patterns(&context);
+  patterns.add<RejectingRegionMovePattern>(typeConverter, &context,
+                                           sourcePreserved);
+  ScopedDiagnosticHandler handler(
+      &context, [](Diagnostic& /*diagnostic*/) { return success(); });
+  EXPECT_TRUE(
+      failed(applyPartialConversion(*module, target, std::move(patterns))));
+  EXPECT_TRUE(sourcePreserved);
+
+  auto sourceFunc = module->lookupSymbol<func::FuncOp>("source");
+  auto destination = module->lookupSymbol<func::FuncOp>("destination");
+  ASSERT_TRUE(sourceFunc);
+  ASSERT_TRUE(destination);
+  EXPECT_FALSE(sourceFunc.getBody().empty());
+  EXPECT_TRUE(destination.getBody().empty());
+}
 
 TEST_F(QCToQCORegressionTest, PreservesForResultsWithQuantumState) {
   constexpr llvm::StringLiteral source = R"mlir(
