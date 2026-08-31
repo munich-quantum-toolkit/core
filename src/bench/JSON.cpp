@@ -15,6 +15,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
+#include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QPE.hpp"
 
@@ -45,6 +46,7 @@ constexpr uint64_t SCHEMA_VERSION = 1;
 constexpr uint64_t BV_DEFINITION_VERSION = 1;
 constexpr uint64_t GHZ_DEFINITION_VERSION = 1;
 constexpr uint64_t GROVER_DEFINITION_VERSION = 1;
+constexpr uint64_t MULTIPLEXER_DEFINITION_VERSION = 1;
 constexpr uint64_t QFT_DEFINITION_VERSION = 1;
 constexpr uint64_t QPE_DEFINITION_VERSION = 1;
 constexpr std::string_view CASE_DOMAIN = "mqt-core:benchmark-case:v1";
@@ -52,6 +54,7 @@ constexpr std::string_view CASE_DOMAIN = "mqt-core:benchmark-case:v1";
 [[nodiscard]] Json bvInstanceSpecificationSchema();
 [[nodiscard]] Json ghzInstanceSpecificationSchema();
 [[nodiscard]] Json groverInstanceSpecificationSchema();
+[[nodiscard]] Json multiplexerInstanceSpecificationSchema();
 [[nodiscard]] Json qftInstanceSpecificationSchema();
 [[nodiscard]] Json qpeInstanceSpecificationSchema();
 
@@ -65,7 +68,7 @@ struct RegistryEntry {
   InstanceSpecificationSchemaFunction instanceSpecificationSchema;
   EvaluationFunction evaluate;
 };
-using Registry = std::array<RegistryEntry, 5>;
+using Registry = std::array<RegistryEntry, 6>;
 
 [[nodiscard]] std::string evaluateBV(std::string_view manifest,
                                      std::string_view source,
@@ -76,6 +79,9 @@ using Registry = std::array<RegistryEntry, 5>;
 [[nodiscard]] std::string evaluateGrover(std::string_view manifest,
                                          std::string_view source,
                                          const Counts& counts);
+[[nodiscard]] std::string evaluateMultiplexer(std::string_view manifest,
+                                              std::string_view source,
+                                              const Counts& counts);
 [[nodiscard]] std::string evaluateQFT(std::string_view manifest,
                                       std::string_view source,
                                       const Counts& counts);
@@ -96,6 +102,10 @@ constexpr Registry REGISTRY{{
      .definitionVersion = GROVER_DEFINITION_VERSION,
      .instanceSpecificationSchema = groverInstanceSpecificationSchema,
      .evaluate = evaluateGrover},
+    {.id = "multiplexer",
+     .definitionVersion = MULTIPLEXER_DEFINITION_VERSION,
+     .instanceSpecificationSchema = multiplexerInstanceSpecificationSchema,
+     .evaluate = evaluateMultiplexer},
     {.id = "qft",
      .definitionVersion = QFT_DEFINITION_VERSION,
      .instanceSpecificationSchema = qftInstanceSpecificationSchema,
@@ -384,6 +394,19 @@ void requireBenchmark(const Json& root, const std::string_view expected,
   }
 }
 
+[[nodiscard]] Multiplexer
+parseMultiplexerParameters(const Json& parameters,
+                           const std::string_view source) {
+  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
+  try {
+    return Multiplexer({.qubits = sizeValue(required(parameters, "qubits",
+                                                     source, "$/parameters"),
+                                            source, "$/parameters/qubits")});
+  } catch (const std::invalid_argument& error) {
+    fail(source, "$/parameters", error.what());
+  }
+}
+
 [[nodiscard]] QFT parseQFTParameters(const Json& parameters,
                                      const std::string_view source) {
   rejectUnknownKeys(parameters, {"qubits", "period_exponent", "method"}, source,
@@ -490,6 +513,10 @@ void requireBenchmark(const Json& root, const std::string_view expected,
           {"marked_bitstring", options.markedBitstring}};
 }
 
+[[nodiscard]] Json parametersJSON(const Multiplexer& benchmark) {
+  return {{"qubits", benchmark.options().qubits}};
+}
+
 [[nodiscard]] Json parametersJSON(const QFT& benchmark) {
   const auto& options = benchmark.options();
   return {{"method", methodName(options.method)},
@@ -529,6 +556,14 @@ void requireBenchmark(const Json& root, const std::string_view expected,
           {"outcome_order", "big_endian"},
           {"output", benchmark.output().name},
           {"success_outcome", benchmark.options().markedBitstring},
+          {"version", 1}};
+}
+
+[[nodiscard]] Json referenceJSON(const Multiplexer& benchmark) {
+  return {{"kind", "analytic"},
+          {"model", "uniformly_controlled_ry_zero_input"},
+          {"outcome_order", "big_endian"},
+          {"output", benchmark.output().name},
           {"version", 1}};
 }
 
@@ -572,6 +607,12 @@ void requireBenchmark(const Json& root, const std::string_view expected,
 
 [[nodiscard]] Json semanticJSON(const Grover& benchmark) {
   return semanticJSON("grover", GROVER_DEFINITION_VERSION,
+                      parametersJSON(benchmark), benchmark.output(),
+                      referenceJSON(benchmark));
+}
+
+[[nodiscard]] Json semanticJSON(const Multiplexer& benchmark) {
+  return semanticJSON("multiplexer", MULTIPLEXER_DEFINITION_VERSION,
                       parametersJSON(benchmark), benchmark.output(),
                       referenceJSON(benchmark));
 }
@@ -694,6 +735,19 @@ baseInstanceSpecificationSchema(const std::string_view id,
        {"type", "object"}});
 }
 
+[[nodiscard]] Json multiplexerInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema(
+      "multiplexer", MULTIPLEXER_DEFINITION_VERSION,
+      {{"additionalProperties", false},
+       {"properties",
+        {{"qubits",
+          {{"maximum", MultiplexerOptions::MAX_QUBITS},
+           {"minimum", 2},
+           {"type", "integer"}}}}},
+       {"required", {"qubits"}},
+       {"type", "object"}});
+}
+
 [[nodiscard]] Json qftInstanceSpecificationSchema() {
   return baseInstanceSpecificationSchema(
       "qft", QFT_DEFINITION_VERSION,
@@ -764,6 +818,13 @@ std::string evaluateGrover(const std::string_view manifest,
                            const std::string_view source,
                            const Counts& counts) {
   return evaluateBenchmark(groverFromManifestJSON(manifest, source), counts);
+}
+
+std::string evaluateMultiplexer(const std::string_view manifest,
+                                const std::string_view source,
+                                const Counts& counts) {
+  return evaluateBenchmark(multiplexerFromManifestJSON(manifest, source),
+                           counts);
 }
 
 std::string evaluateQFT(const std::string_view manifest,
@@ -841,6 +902,14 @@ Grover groverFromInstanceSpecificationJSON(const std::string_view json,
   return parseGroverParameters(root.at("parameters"), source);
 }
 
+Multiplexer
+multiplexerFromInstanceSpecificationJSON(const std::string_view json,
+                                         const std::string_view source) {
+  const auto root = instanceSpecificationEnvelope(json, source);
+  requireBenchmark(root, "multiplexer", source);
+  return parseMultiplexerParameters(root.at("parameters"), source);
+}
+
 QFT qftFromInstanceSpecificationJSON(const std::string_view json,
                                      const std::string_view source) {
   const auto root = instanceSpecificationEnvelope(json, source);
@@ -867,6 +936,11 @@ std::string toInstanceSpecificationJSON(const Grover& benchmark) {
   return instanceSpecificationJSON("grover", parametersJSON(benchmark)).dump();
 }
 
+std::string toInstanceSpecificationJSON(const Multiplexer& benchmark) {
+  return instanceSpecificationJSON("multiplexer", parametersJSON(benchmark))
+      .dump();
+}
+
 std::string toInstanceSpecificationJSON(const QFT& benchmark) {
   return instanceSpecificationJSON("qft", parametersJSON(benchmark)).dump();
 }
@@ -888,6 +962,12 @@ GHZ ghzFromManifestJSON(const std::string_view json,
 Grover groverFromManifestJSON(const std::string_view json,
                               const std::string_view source) {
   return parseManifest<Grover>(json, source, "grover", parseGroverParameters);
+}
+
+Multiplexer multiplexerFromManifestJSON(const std::string_view json,
+                                        const std::string_view source) {
+  return parseManifest<Multiplexer>(json, source, "multiplexer",
+                                    parseMultiplexerParameters);
 }
 
 QFT qftFromManifestJSON(const std::string_view json,
@@ -912,6 +992,10 @@ std::string toManifestJSON(const Grover& benchmark) {
   return manifestJSON(benchmark).dump();
 }
 
+std::string toManifestJSON(const Multiplexer& benchmark) {
+  return manifestJSON(benchmark).dump();
+}
+
 std::string toManifestJSON(const QFT& benchmark) {
   return manifestJSON(benchmark).dump();
 }
@@ -929,6 +1013,10 @@ std::string caseId(const GHZ& benchmark) {
 }
 
 std::string caseId(const Grover& benchmark) {
+  return semanticCaseId(semanticJSON(benchmark));
+}
+
+std::string caseId(const Multiplexer& benchmark) {
   return semanticCaseId(semanticJSON(benchmark));
 }
 

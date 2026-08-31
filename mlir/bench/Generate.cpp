@@ -62,6 +62,12 @@ std::optional<QCProgram> generate(const Grover& benchmark) {
       "grover", [&](qc::QCProgramBuilder& b) { return grover(b, benchmark); });
 }
 
+std::optional<QCProgram> generate(const Multiplexer& benchmark) {
+  return buildProgram("multiplexer", [&](qc::QCProgramBuilder& b) {
+    return multiplexer(b, benchmark);
+  });
+}
+
 std::optional<QCProgram> generate(const QFT& benchmark) {
   return buildProgram(
       "qft", [&](qc::QCProgramBuilder& b) { return qft(b, benchmark); });
@@ -91,7 +97,7 @@ struct RegistryEntry {
   std::string_view id;
   GenerateFunction generate;
 };
-using Registry = std::array<RegistryEntry, 5>;
+using Registry = std::array<RegistryEntry, 6>;
 } // namespace
 
 static const Registry REGISTRY{{
@@ -112,6 +118,13 @@ static const Registry REGISTRY{{
         const std::string_view source) {
        return generateInstance("grover",
                                groverFromInstanceSpecificationJSON(
+                                   instanceSpecificationJSON, source));
+     }},
+    {"multiplexer",
+     [](const std::string_view instanceSpecificationJSON,
+        const std::string_view source) {
+       return generateInstance("multiplexer",
+                               multiplexerFromInstanceSpecificationJSON(
                                    instanceSpecificationJSON, source));
      }},
     {"qft",

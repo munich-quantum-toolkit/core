@@ -45,19 +45,32 @@ endif()
 
 run_success("benchmark listing" list_output "${CLI}" list)
 string(JSON benchmark_count LENGTH "${list_output}" benchmarks)
-if(NOT benchmark_count EQUAL 5)
-  message(FATAL_ERROR "list returned ${benchmark_count} benchmarks instead of 5")
+if(NOT benchmark_count EQUAL 6)
+  message(FATAL_ERROR "list returned ${benchmark_count} benchmarks instead of 6")
 endif()
 
-run_success("QPE description" describe_output "${CLI}" describe qpe)
+run_success("multiplexer description" describe_output "${CLI}" describe multiplexer)
 string(JSON schema GET "${describe_output}" "$schema")
 if(NOT schema STREQUAL "https://json-schema.org/draft/2020-12/schema")
   message(FATAL_ERROR "describe did not return a JSON Schema")
 endif()
+string(
+  JSON
+  minimum_qubits
+  GET
+  "${describe_output}"
+  properties
+  parameters
+  properties
+  qubits
+  minimum)
+if(NOT minimum_qubits EQUAL 2)
+  message(FATAL_ERROR "multiplexer schema returned minimum ${minimum_qubits} instead of 2")
+endif()
 
 set(instance_specification "${OUTPUT_DIR}/instance-specification.json")
 file(WRITE "${instance_specification}"
-     "{\"schema_version\":1,\"benchmark\":\"ghz\",\"parameters\":{\"qubits\":2}}\n")
+     "{\"schema_version\":1,\"benchmark\":\"multiplexer\",\"parameters\":{\"qubits\":2}}\n")
 set(qc_directory "${OUTPUT_DIR}/qc")
 run_success(
   "QC generation"
@@ -77,11 +90,11 @@ if(NOT EXISTS "${program_path}" OR NOT EXISTS "${manifest_path}")
   message(FATAL_ERROR "generate did not publish both output files")
 endif()
 get_filename_component(program_name "${program_path}" NAME)
-if(NOT program_name MATCHES "^ghz-sha256-[0-9a-f]+\\.qc\\.mlir$")
+if(NOT program_name MATCHES "^multiplexer-sha256-[0-9a-f]+\\.qc\\.mlir$")
   message(FATAL_ERROR "unexpected program name: ${program_name}")
 endif()
 get_filename_component(manifest_name "${manifest_path}" NAME)
-if(NOT manifest_name MATCHES "^ghz-sha256-[0-9a-f]+\\.qc\\.manifest\\.json$")
+if(NOT manifest_name MATCHES "^multiplexer-sha256-[0-9a-f]+\\.qc\\.manifest\\.json$")
   message(FATAL_ERROR "unexpected manifest name: ${manifest_name}")
 endif()
 file(SHA256 "${program_path}" original_program_hash)
@@ -148,7 +161,7 @@ if(NOT EXISTS "${percent_program_path}" OR NOT EXISTS "${percent_manifest_path}"
 endif()
 
 set(counts "${OUTPUT_DIR}/counts.json")
-file(WRITE "${counts}" "{\"schema_version\":1,\"counts\":{\"00\":5,\"11\":5}}\n")
+file(WRITE "${counts}" "{\"schema_version\":1,\"counts\":{\"00\":10}}\n")
 execute_process(
   COMMAND "${CLI}" evaluate --manifest "${manifest_path}" --counts -
   INPUT_FILE "${counts}"

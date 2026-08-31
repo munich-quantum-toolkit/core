@@ -11,6 +11,7 @@
 #include "bench/BV.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
+#include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QPE.hpp"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
@@ -65,6 +66,7 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
       BV{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}});
   expectValidQCAndJeff(GHZ{{.qubits = 3}});
   expectValidQCAndJeff(Grover{{.markedBitstring = "101"}});
+  expectValidQCAndJeff(Multiplexer{{.qubits = 3}});
   expectValidQCAndJeff(QFT{{.qubits = 3, .periodExponent = 1}});
   expectValidQCAndJeff(QFT{
       {.qubits = 3, .periodExponent = 1, .method = QFTMethod::Semiclassical}});
@@ -78,6 +80,9 @@ TEST(GenerateProgramTest, OmitsAllocationAdjacentResets) {
   EXPECT_EQ(countOps<qc::ResetOp>(
                 generate(Grover{{.markedBitstring = "101"}})->module()),
             0U);
+  EXPECT_EQ(
+      countOps<qc::ResetOp>(generate(Multiplexer{{.qubits = 3}})->module()),
+      0U);
   EXPECT_EQ(
       countOps<qc::ResetOp>(generate(BV{{.hiddenBitstring = "101"}})->module()),
       0U);
@@ -195,6 +200,215 @@ TEST(GenerateProgramTest, EmitsDirectGroverOracleWithBigEndianMarkedState) {
     EXPECT_EQ(index.value(), 1);
   });
   EXPECT_EQ(markedStateFlips, 2U);
+}
+
+TEST(GenerateProgramTest, EmitsStructuredQuantumMultiplexer) {
+  auto program = generate(Multiplexer{{.qubits = 3}});
+  ASSERT_TRUE(program);
+  auto moduleOp = program->module();
+
+  EXPECT_EQ(countOps<scf::ForOp>(moduleOp), 4U);
+  EXPECT_EQ(countOps<scf::IfOp>(moduleOp), 2U);
+  EXPECT_EQ(countOps<qc::CtrlOp>(moduleOp), 1U);
+  EXPECT_EQ(countOps<qc::RYOp>(moduleOp), 1U);
+  EXPECT_EQ(countOps<qc::ResetOp>(moduleOp), 0U);
+  EXPECT_EQ(countOps<tensor::ExtractOp>(moduleOp), 0U);
+
+  scf::ForOp stateLoop;
+  moduleOp.walk([&](scf::ForOp loop) {
+    if (!loop.getInitArgs().empty()) {
+      stateLoop = loop;
+    }
+  });
+  ASSERT_TRUE(stateLoop);
+  ASSERT_EQ(stateLoop.getInitArgs().size(), 1U);
+  auto lower =
+      stateLoop.getLowerBound().getDefiningOp<arith::ConstantIndexOp>();
+  auto upper =
+      stateLoop.getUpperBound().getDefiningOp<arith::ConstantIndexOp>();
+  auto step = stateLoop.getStep().getDefiningOp<arith::ConstantIndexOp>();
+  ASSERT_TRUE(lower);
+  ASSERT_TRUE(upper);
+  ASSERT_TRUE(step);
+  EXPECT_EQ(lower.value(), 0);
+  EXPECT_EQ(upper.value(), 4);
+  EXPECT_EQ(step.value(), 1);
+  auto firstAngle =
+      stateLoop.getInitArgs().front().getDefiningOp<arith::ConstantOp>();
+  ASSERT_TRUE(firstAngle);
+  EXPECT_DOUBLE_EQ(cast<FloatAttr>(firstAngle.getValue()).getValueAsDouble(),
+                   0.);
+
+  auto yield = cast<scf::YieldOp>(stateLoop.getBody()->getTerminator());
+  ASSERT_EQ(yield.getResults().size(), 1U);
+  auto advance = yield.getResults().front().getDefiningOp<arith::AddFOp>();
+  ASSERT_TRUE(advance);
+  EXPECT_EQ(advance.getLhs(), stateLoop.getRegionIterArg(0));
+  auto increment = advance.getRhs().getDefiningOp<arith::ConstantOp>();
+  ASSERT_TRUE(increment);
+  EXPECT_DOUBLE_EQ(cast<FloatAttr>(increment.getValue()).getValueAsDouble(),
+                   std::numbers::pi / 4.);
+
+  qc::CtrlOp controlledRotation;
+  stateLoop.walk([&](qc::CtrlOp op) { controlledRotation = op; });
+  ASSERT_TRUE(controlledRotation);
+  EXPECT_EQ(controlledRotation.getNumControls(), 2U);
+  ASSERT_EQ(controlledRotation.getNumBodyUnitaries(), 1U);
+
+  SmallVector<scf::ForOp> flipLoops;
+  for (auto loop : stateLoop.getBody()->getOps<scf::ForOp>()) {
+    flipLoops.push_back(loop);
+  }
+  ASSERT_EQ(flipLoops.size(), 2U);
+  ASSERT_EQ(flipLoops.front()->getBlock(), controlledRotation->getBlock());
+  ASSERT_EQ(flipLoops.back()->getBlock(), controlledRotation->getBlock());
+  EXPECT_TRUE(flipLoops.front()->isBeforeInBlock(controlledRotation));
+  EXPECT_TRUE(controlledRotation->isBeforeInBlock(flipLoops.back()));
+  for (auto loop : flipLoops) {
+    auto bitLower =
+        loop.getLowerBound().getDefiningOp<arith::ConstantIndexOp>();
+    auto bitUpper =
+        loop.getUpperBound().getDefiningOp<arith::ConstantIndexOp>();
+    auto bitStep = loop.getStep().getDefiningOp<arith::ConstantIndexOp>();
+    ASSERT_TRUE(bitLower);
+    ASSERT_TRUE(bitUpper);
+    ASSERT_TRUE(bitStep);
+    EXPECT_EQ(bitLower.value(), 0);
+    EXPECT_EQ(bitUpper.value(), 2);
+    EXPECT_EQ(bitStep.value(), 1);
+  }
+
+  Value controlsStorage;
+  for (size_t index = 0; index < controlledRotation.getNumControls(); ++index) {
+    auto controlLoad =
+        controlledRotation.getControl(index).getDefiningOp<memref::LoadOp>();
+    ASSERT_TRUE(controlLoad);
+    if (!controlsStorage) {
+      controlsStorage = controlLoad.getMemref();
+    } else {
+      EXPECT_EQ(controlLoad.getMemref(), controlsStorage);
+    }
+    auto controlIndex = controlLoad.getIndices()
+                            .front()
+                            .getDefiningOp<arith::ConstantIndexOp>();
+    ASSERT_TRUE(controlIndex);
+    EXPECT_EQ(controlIndex.value(), static_cast<int64_t>(index));
+  }
+  ASSERT_TRUE(controlsStorage);
+  EXPECT_TRUE(controlledRotation.getTarget(0).getDefiningOp<qc::AllocOp>());
+
+  auto rotation =
+      dyn_cast<qc::RYOp>(controlledRotation.getBodyUnitary(0).getOperation());
+  ASSERT_TRUE(rotation);
+  EXPECT_EQ(rotation.getTheta(), stateLoop.getRegionIterArg(0));
+
+  size_t checkedConditionals = 0;
+  stateLoop.walk([&](scf::IfOp conditional) {
+    auto bitLoop = conditional->getParentOfType<scf::ForOp>();
+    ASSERT_TRUE(bitLoop);
+    EXPECT_EQ(bitLoop->getParentOfType<scf::ForOp>(), stateLoop);
+    auto comparison = conditional.getCondition().getDefiningOp<arith::CmpIOp>();
+    ASSERT_TRUE(comparison);
+    EXPECT_EQ(comparison.getPredicate(), arith::CmpIPredicate::eq);
+    auto bit = comparison.getLhs().getDefiningOp<arith::AndIOp>();
+    ASSERT_TRUE(bit);
+    auto zero = comparison.getRhs().getDefiningOp<arith::ConstantIndexOp>();
+    auto mask = bit.getRhs().getDefiningOp<arith::ConstantIndexOp>();
+    ASSERT_TRUE(zero);
+    ASSERT_TRUE(mask);
+    EXPECT_EQ(zero.value(), 0);
+    EXPECT_EQ(mask.value(), 1);
+    auto shifted = bit.getLhs().getDefiningOp<arith::ShRSIOp>();
+    ASSERT_TRUE(shifted);
+    EXPECT_EQ(shifted.getLhs(), stateLoop.getInductionVar());
+    EXPECT_EQ(shifted.getRhs(), bitLoop.getInductionVar());
+
+    qc::XOp flip;
+    conditional.walk([&](qc::XOp op) { flip = op; });
+    ASSERT_TRUE(flip);
+    auto load = flip.getQubit(0).getDefiningOp<memref::LoadOp>();
+    ASSERT_TRUE(load);
+    EXPECT_EQ(load.getMemref(), controlsStorage);
+    EXPECT_EQ(load.getIndices().front(), bitLoop.getInductionVar());
+    ++checkedConditionals;
+  });
+  EXPECT_EQ(checkedConditionals, 2U);
+
+  size_t targetMeasurements = 0;
+  size_t controlMeasurements = 0;
+  Value resultRegister;
+  moduleOp.walk([&](qc::MeasureOp measure) {
+    ASSERT_FALSE(measure.getResult().use_empty());
+    auto store = dyn_cast<cbit::StoreOp>(*measure.getResult().user_begin());
+    ASSERT_TRUE(store);
+    if (!resultRegister) {
+      resultRegister = store.getReg();
+    } else {
+      EXPECT_EQ(store.getReg(), resultRegister);
+    }
+    if (auto loop = measure->getParentOfType<scf::ForOp>()) {
+      auto measurementLower =
+          loop.getLowerBound().getDefiningOp<arith::ConstantIndexOp>();
+      auto measurementUpper =
+          loop.getUpperBound().getDefiningOp<arith::ConstantIndexOp>();
+      auto measurementStep =
+          loop.getStep().getDefiningOp<arith::ConstantIndexOp>();
+      ASSERT_TRUE(measurementLower);
+      ASSERT_TRUE(measurementUpper);
+      ASSERT_TRUE(measurementStep);
+      EXPECT_EQ(measurementLower.value(), 0);
+      EXPECT_EQ(measurementUpper.value(), 2);
+      EXPECT_EQ(measurementStep.value(), 1);
+
+      auto controlLoad = measure.getQubit().getDefiningOp<memref::LoadOp>();
+      ASSERT_TRUE(controlLoad);
+      EXPECT_EQ(controlLoad.getMemref(), controlsStorage);
+      EXPECT_EQ(controlLoad.getIndices().front(), loop.getInductionVar());
+
+      auto resultIndex = store.getIndex().getDefiningOp<arith::AddIOp>();
+      ASSERT_TRUE(resultIndex);
+      EXPECT_EQ(resultIndex.getLhs(), loop.getInductionVar());
+      auto offset =
+          resultIndex.getRhs().getDefiningOp<arith::ConstantIndexOp>();
+      ASSERT_TRUE(offset);
+      EXPECT_EQ(offset.value(), 1);
+      ++controlMeasurements;
+      return;
+    }
+    EXPECT_EQ(measure.getQubit(), controlledRotation.getTarget(0));
+    auto resultIndex = store.getIndex().getDefiningOp<arith::ConstantIndexOp>();
+    ASSERT_TRUE(resultIndex);
+    EXPECT_EQ(resultIndex.value(), 0);
+    ++targetMeasurements;
+  });
+  EXPECT_EQ(targetMeasurements, 1U);
+  EXPECT_EQ(controlMeasurements, 1U);
+}
+
+TEST(GenerateProgramTest, KeepsLargeQuantumMultiplexerStructured) {
+  auto program =
+      generate(Multiplexer{{.qubits = MultiplexerOptions::MAX_QUBITS}});
+  ASSERT_TRUE(program);
+  scf::ForOp stateLoop;
+  program->module().walk([&](scf::ForOp loop) {
+    if (!loop.getInitArgs().empty()) {
+      stateLoop = loop;
+    }
+  });
+  ASSERT_TRUE(stateLoop);
+  auto upper =
+      stateLoop.getUpperBound().getDefiningOp<arith::ConstantIndexOp>();
+  ASSERT_TRUE(upper);
+  EXPECT_EQ(upper.value(), int64_t{1} << (MultiplexerOptions::MAX_QUBITS - 1));
+
+  size_t operations = 0;
+  program->module().walk([&](Operation*) { ++operations; });
+  EXPECT_LT(operations, 150U);
+
+  auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
+                                     ProgramFormat::Jeff);
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(std::holds_alternative<JeffProgram>(*compiled));
 }
 
 TEST(GenerateProgramTest, KeepsStandardQPEPowerAndResultOrderAligned) {

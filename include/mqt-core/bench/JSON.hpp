@@ -14,6 +14,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
+#include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QPE.hpp"
 #include "bench/mqt_core_bench_export.h"
@@ -51,6 +52,10 @@ describeBenchmarkJSON(std::string_view benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT Grover groverFromInstanceSpecificationJSON(
     std::string_view json,
     std::string_view source = "<instance-specification>");
+[[nodiscard]] MQT_CORE_BENCH_EXPORT Multiplexer
+multiplexerFromInstanceSpecificationJSON(
+    std::string_view json,
+    std::string_view source = "<instance-specification>");
 [[nodiscard]] MQT_CORE_BENCH_EXPORT QFT qftFromInstanceSpecificationJSON(
     std::string_view json,
     std::string_view source = "<instance-specification>");
@@ -65,6 +70,8 @@ toInstanceSpecificationJSON(const GHZ& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
 toInstanceSpecificationJSON(const Grover& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+toInstanceSpecificationJSON(const Multiplexer& benchmark);
+[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
 toInstanceSpecificationJSON(const QFT& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
 toInstanceSpecificationJSON(const QPE& benchmark);
@@ -74,6 +81,8 @@ toInstanceSpecificationJSON(const QPE& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT GHZ ghzFromManifestJSON(
     std::string_view json, std::string_view source = "<manifest>");
 [[nodiscard]] MQT_CORE_BENCH_EXPORT Grover groverFromManifestJSON(
+    std::string_view json, std::string_view source = "<manifest>");
+[[nodiscard]] MQT_CORE_BENCH_EXPORT Multiplexer multiplexerFromManifestJSON(
     std::string_view json, std::string_view source = "<manifest>");
 [[nodiscard]] MQT_CORE_BENCH_EXPORT QFT qftFromManifestJSON(
     std::string_view json, std::string_view source = "<manifest>");
@@ -87,6 +96,8 @@ toManifestJSON(const GHZ& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
 toManifestJSON(const Grover& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+toManifestJSON(const Multiplexer& benchmark);
+[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
 toManifestJSON(const QFT& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
 toManifestJSON(const QPE& benchmark);
@@ -95,6 +106,8 @@ toManifestJSON(const QPE& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const BV& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const GHZ& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const Grover& benchmark);
+[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
+caseId(const Multiplexer& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const QFT& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const QPE& benchmark);
 
