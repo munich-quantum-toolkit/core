@@ -661,7 +661,7 @@ private:
 
     // Create and save static qubit operations.
     rewriter.setInsertionPointToStart(&body.front());
-    for (size_t hw = 0; hw < layout.nqubits(); ++hw) {
+    for (size_t hw = 0; hw < layout.nHardwareQubits(); ++hw) {
       const auto site = target->siteForVertex(hw);
       auto op = StaticOp::create(rewriter, body.getLoc(), site);
       staticQubits.emplace_back(op.getQubit());
@@ -713,7 +713,7 @@ private:
     // Create sinks for remaining, unused, static qubits.
 
     rewriter.setInsertionPoint(body.back().getTerminator());
-    for (size_t prog = wires.size(); prog < layout.nqubits(); ++prog) {
+    for (size_t prog = wires.size(); prog < layout.nHardwareQubits(); ++prog) {
       const auto hw = layout.getHardwareIndex(prog);
       auto qubit = staticQubits[hw];
 
@@ -754,7 +754,8 @@ private:
       trials.emplace_back(
           RoutingBundle{.wires = wires,
                         .infos = infos,
-                        .layout = Layout::random(target->numQubits(), rng())});
+                        .layout = Layout::random(target->numQubits(),
+                                                 target->numQubits(), rng())});
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
