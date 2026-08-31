@@ -830,6 +830,27 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIndexSwitch) {
   dd->decRef(zero);
 }
 
+TEST_F(QCODDFunctionalityTest, SimulateExtUI) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.x(b.staticQubit(0));
+    Value bit;
+    std::tie(q, bit) = b.measure(q);
+    auto extended = arith::ExtUIOp::create(b, b.getI8Type(), bit).getResult();
+    auto one = arith::ConstantIntOp::create(b, 1, 8).getResult();
+    auto condition =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq, extended, one)
+            .getResult();
+    q = b.qcoIf(
+        condition, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  expectSimulatesFromZero(mainFunc(*mod), false);
+}
+
 TEST_F(QCODDFunctionalityTest, SimulateAndiOriShliClassical) {
   // Pack two measure bits (from |1>,|0>) as index = bit0 | (bit1 << 1) = 1,
   // then switch case 1 applies X on an idle |0> target → |1>.

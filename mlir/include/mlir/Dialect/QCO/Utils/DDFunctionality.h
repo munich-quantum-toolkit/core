@@ -64,7 +64,7 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  * `qco.measure` / `qco.reset` (collapsing via @p rng) and `qco.if` /
  * `qco.index_switch` when the branch selector is a concrete classical SSA value
  * (`arith.constant` integer/index, a prior measurement, a `cbit.load`,
- * `arith.index_castui`, `arith.cmpi`, `arith.select`,
+ * `arith.extui`, `arith.index_castui`, `arith.cmpi`, `arith.select`,
  * `arith.addi` / `subi` / `muli`, or `andi` / `ori` / `xori` / `shli` /
  * `shrui` on those values). The simulation tracks CBit initialization, loads,
  * and stores. Only qubit-typed linear values are supported (no qtensors).

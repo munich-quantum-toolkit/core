@@ -561,6 +561,10 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
         return applyUnsignedIndexCast(cast.getIn(), cast.getOut(), cast,
                                       classical);
       })
+      .Case<arith::ExtUIOp>([&](arith::ExtUIOp cast) {
+        return applyUnsignedIndexCast(cast.getIn(), cast.getOut(), cast,
+                                      classical);
+      })
       .Default([](Operation* unsupported) {
         return unsupported->emitError()
                << "unsupported classical op for QCO DD simulation: "
@@ -685,9 +689,10 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::AddIOp,
                      arith::SubIOp, arith::MulIOp, arith::ShLIOp,
                      arith::ShRUIOp, arith::CmpIOp, arith::SelectOp,
-                     arith::IndexCastUIOp>([&](Operation* classicalOp) {
-        return applyClassicalOp(*classicalOp, *walk.classical);
-      })
+                     arith::IndexCastUIOp, arith::ExtUIOp>(
+          [&](Operation* classicalOp) {
+            return applyClassicalOp(*classicalOp, *walk.classical);
+          })
       .template Case<func::ReturnOp>([&](func::ReturnOp returnOp) {
         return validateReturn(returnOp, *walk.qubits);
       })
