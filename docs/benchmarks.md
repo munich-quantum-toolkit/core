@@ -34,14 +34,14 @@ uniform superposition of multiples of two. Both circuit methods use the same
 logical output and reference.
 
 ```{code-cell} ipython3
-from mqt.core.bench import QFT, QFTMethod, QFTOptions
+from mqt.core.bench import qft
 
 
-benchmark = QFT(
-    QFTOptions(
+benchmark = qft.QFT(
+    qft.Options(
         qubits=3,
         period_exponent=1,
-        method=QFTMethod.SEMICLASSICAL,
+        method=qft.Method.SEMICLASSICAL,
     )
 )
 print("Method:", benchmark.options.method)
@@ -213,7 +213,9 @@ Adding a family requires five explicit extension points:
    semantic registry in `src/bench/JSON.cpp`.
 3. Add one structured emitter and one generation callback to the private MLIR
    registry in `mlir/bench/Generate.cpp`.
-4. Add the explicit Python types in `bindings/bench/register_bench.cpp`.
+4. Add the explicit Python types in a family registration source under
+   `bindings/bench/`, register its direct submodule in `register_bench.cpp`, and
+   add the source to `bindings/bench/CMakeLists.txt`.
 5. Test the reference, strict instance specification JSON, emitter structure,
    `jeff` conversion, and Python generation.
 

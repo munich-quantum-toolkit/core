@@ -7,10 +7,13 @@
 # Licensed under the MIT License
 
 if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
+  set(BENCH_SOURCES register_bench.cpp register_bv.cpp register_ghz.cpp register_grover.cpp
+                    register_qft.cpp register_qpe.cpp)
+
   add_mqt_python_binding(
     CORE
     ${MQT_CORE_TARGET_NAME}-bench-bindings
-    register_bench.cpp
+    ${BENCH_SOURCES}
     MODULE_NAME
     bench
     INSTALL_DIR
@@ -18,11 +21,12 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
     LINK_LIBS
     MQT::CoreBench)
 
-  # install the Python stub file in editable mode for better IDE support
+  # install the Python stub files in editable mode for better IDE support
   if(SKBUILD_STATE STREQUAL "editable")
+    file(GLOB_RECURSE BENCH_PYI_FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/bench/*.pyi)
     install(
-      FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/bench.pyi
-      DESTINATION .
+      FILES ${BENCH_PYI_FILES}
+      DESTINATION ./bench
       COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
   endif()
 endif()
