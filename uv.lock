@@ -1612,18 +1612,18 @@ provides-extras = ["pennylane", "qiskit"]
 [package.metadata.requires-dev]
 build = [
     { name = "cmake", specifier = ">=4.4.1" },
-    { name = "nanobind", specifier = "~=3.0.0" },
+    { name = "nanobind", specifier = "~=3.0.1" },
     { name = "scikit-build-core", specifier = ">=1.0.3" },
     { name = "vcs-versioning", specifier = ">=2.3.0" },
 ]
 cpp-lint = [
     { name = "cpp-linter", specifier = "==1.13.0" },
-    { name = "nanobind", specifier = "~=3.0.0" },
+    { name = "nanobind", specifier = "~=3.0.1" },
 ]
 dev = [
     { name = "cmake", specifier = ">=4.4.1" },
     { name = "lit", specifier = ">=18.1.8" },
-    { name = "nanobind", specifier = "~=3.0.0" },
+    { name = "nanobind", specifier = "~=3.0.1" },
     { name = "nox", specifier = ">=2025.11.12" },
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1" },
     { name = "numpy", marker = "python_full_version >= '3.14'", specifier = ">=2.3.2" },
