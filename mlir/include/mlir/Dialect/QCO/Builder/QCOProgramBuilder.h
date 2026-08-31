@@ -1975,12 +1975,6 @@ private:
   int64_t tensorCounter = 0;
 
   struct QubitDenseMapInfo {
-    static Qubit getEmptyKey() {
-      return Qubit{llvm::DenseMapInfo<Value>::getEmptyKey()};
-    }
-    static Qubit getTombstoneKey() {
-      return Qubit{llvm::DenseMapInfo<Value>::getTombstoneKey()};
-    }
     static unsigned getHashValue(const Qubit& qubit) {
       return llvm::DenseMapInfo<Value>::getHashValue(qubit.value);
     }
@@ -2057,12 +2051,6 @@ private:
   static void checkQubitType(ValueRange values);
 
   struct TensorDenseMapInfo {
-    static Tensor getEmptyKey() {
-      return {llvm::DenseMapInfo<Value>::getEmptyKey()};
-    }
-    static Tensor getTombstoneKey() {
-      return {llvm::DenseMapInfo<Value>::getTombstoneKey()};
-    }
     static unsigned getHashValue(const Tensor& tensor) {
       return llvm::DenseMapInfo<Value>::getHashValue(tensor.value);
     }

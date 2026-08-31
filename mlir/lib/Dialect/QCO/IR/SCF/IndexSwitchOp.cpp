@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "RegionBranchCompat.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
@@ -65,19 +64,17 @@ void IndexSwitchOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 // Adapted from
-// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.1/mlir/lib/Dialect/SCF/IR/SCF.cpp
+// https://github.com/llvm/llvm-project/blob/llvmorg-23.1.0/mlir/lib/Dialect/SCF/IR/SCF.cpp
 
 void IndexSwitchOp::getSuccessorRegions(
     RegionBranchPoint point, SmallVectorImpl<RegionSuccessor>& regions) {
   if (!point.isParent()) {
-    regions.push_back(
-        detail::makeRegionSuccessor(getOperation(), getResults()));
+    regions.push_back(RegionSuccessor(getOperation()));
     return;
   }
 
   for (Region* region : getRegions()) {
-    regions.push_back(
-        detail::makeRegionSuccessor(region, region->getArguments()));
+    regions.push_back(RegionSuccessor(region));
   }
 }
 
@@ -117,8 +114,7 @@ void IndexSwitchOp::getEntrySuccessorRegions(
   auto arg = dyn_cast_or_null<IntegerAttr>(adaptor.getArg());
   if (!arg) {
     for (Region* region : getRegions()) {
-      regions.push_back(
-          detail::makeRegionSuccessor(region, region->getArguments()));
+      regions.push_back(RegionSuccessor(region));
     }
     return;
   }
@@ -128,19 +124,17 @@ void IndexSwitchOp::getEntrySuccessorRegions(
 
   const auto* it = llvm::find(getCases(), arg.getInt());
   if (it == getCases().end()) {
-    regions.push_back(detail::makeRegionSuccessor(
-        &getDefaultRegion(), getDefaultRegion().getArguments()));
+    regions.push_back(RegionSuccessor(&getDefaultRegion()));
     return;
   }
 
   const auto caseIndex = std::distance(getCases().begin(), it);
   auto& caseRegion = getCaseRegions()[caseIndex];
-  regions.push_back(
-      detail::makeRegionSuccessor(&caseRegion, caseRegion.getArguments()));
+  regions.push_back(RegionSuccessor(&caseRegion));
 }
 
 ValueRange IndexSwitchOp::getSuccessorInputs(RegionSuccessor successor) {
-  if (detail::isOperationSuccessor(successor)) {
+  if (successor.isOperation()) {
     return getResults();
   }
   return successor.getSuccessor()->getArguments();

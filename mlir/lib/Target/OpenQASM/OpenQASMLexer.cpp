@@ -122,16 +122,16 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("duration", TokenKind::Duration)
       .Case("true", TokenKind::True)
       .Case("false", TokenKind::False)
-      .Cases("defcalgrammar", "def", "cal", "defcal",
+      .Cases({"defcalgrammar", "def", "cal", "defcal"},
              TokenKind::UnsupportedKeyword)
-      .Cases("extern", "box", "let", "break", "continue",
+      .Cases({"extern", "box", "let", "break", "continue"},
              TokenKind::UnsupportedKeyword)
-      .Cases("end", "return", TokenKind::UnsupportedKeyword)
-      .Cases("pragma", "input", "readonly", "mutable",
+      .Cases({"end", "return"}, TokenKind::UnsupportedKeyword)
+      .Cases({"pragma", "input", "readonly", "mutable"},
              TokenKind::UnsupportedKeyword)
-      .Cases("complex", "array", "void", "stretch",
+      .Cases({"complex", "array", "void", "stretch"},
              TokenKind::UnsupportedKeyword)
-      .Cases("durationof", "delay", "im", TokenKind::UnsupportedKeyword)
+      .Cases({"durationof", "delay", "im"}, TokenKind::UnsupportedKeyword)
       .Default(TokenKind::Identifier);
 }
 

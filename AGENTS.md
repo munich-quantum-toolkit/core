@@ -11,7 +11,7 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - `bindings/` contains the nanobind-based Python bindings, and
   `python/mqt/core/` contains the Python package and generated type stubs.
 - `mlir/` contains the MQT MLIR dialects, transformations, tools, and unit
-  tests. Building it requires LLVM/MLIR 22.1 or newer.
+  tests. Building it requires LLVM/MLIR 23.1 or newer.
 - `test/` contains the C++ and Python tests. C++ tests generally mirror the
   corresponding component under `src/`.
 - `docs/` contains the Sphinx and MyST documentation; `json/` contains schemas

@@ -116,7 +116,7 @@ private:
     };
     const auto createBoolFlag = [&](LLVM::ModFlagBehavior behavior,
                                     StringRef name, bool value) {
-      return createFlag(behavior, name, rewriter.getBoolAttr(value));
+      return createI32Flag(behavior, name, value ? 1 : 0);
     };
 
     const SmallVector<Attribute> attributes{
@@ -145,10 +145,9 @@ private:
                        "dynamic_result_management", metadata.useDynamicResult)};
 
     if (useAdaptive) {
-      flags.emplace_back(
-          createFlag(LLVM::ModFlagBehavior::Error, "backwards_branching",
-                     rewriter.getIntegerAttr(rewriter.getIntegerType(2),
-                                             metadata.backwardsBranching)));
+      flags.emplace_back(createI32Flag(LLVM::ModFlagBehavior::Error,
+                                       "backwards_branching",
+                                       metadata.backwardsBranching));
       flags.emplace_back(createBoolFlag(LLVM::ModFlagBehavior::Error, "arrays",
                                         metadata.useArrays));
       if (metadata.usesIRFunctions) {

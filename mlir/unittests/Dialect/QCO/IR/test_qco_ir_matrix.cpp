@@ -517,7 +517,7 @@ TEST_F(QCOMatrixTest, InvCtrlTwoOpMatrix) {
 TEST_F(QCOMatrixTest, InverseGphaseBarrierXOpMatrix) {
   DynamicMatrix body;
   body.assignFrom(XOp::getUnitaryMatrix());
-  body *= std::exp(Complex{0.0, 0.25});
+  body *= std::exp(qco::Complex{0.0, 0.25});
   assertInvBodyAdjoint(context.get(), inverseGphaseBarrierX, body);
 }
 

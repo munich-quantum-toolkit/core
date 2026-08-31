@@ -51,7 +51,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: ${{ matrix.setup-mlir }}
-      llvm-version: 22.1.8
+      llvm-version: 23.1.0
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
@@ -78,7 +78,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.8
+      llvm-version: 23.1.0
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
@@ -105,7 +105,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.8
+      llvm-version: 23.1.0
       mlir-debug: ${{ matrix.preset == 'debug-windows' }}
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
@@ -119,7 +119,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@063c90c8e7e094bfffb73f8436eb55341c1e820f # v2.3.0
     with:
       setup-mlir: true
-      llvm-version: 22.1.8
+      llvm-version: 23.1.0
     permissions:
       contents: read
       id-token: write
@@ -140,7 +140,7 @@ jobs:
       # according to MQT Core's clang-tidy configuration.
       cpp-linter-ignore-extra: "vendor/**"
       setup-mlir: true
-      llvm-version: 22.1.8
+      llvm-version: 23.1.0
     permissions:
       contents: read
       pull-requests: write # Needed to post review comments
@@ -157,7 +157,7 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
-      llvm-version: 22.1.8
+      llvm-version: 23.1.0
     permissions:
       contents: read
 
@@ -180,7 +180,7 @@ jobs:
       enable-ty: true
       enable-mypy: false
       setup-mlir: true
-      llvm-version: 22.1.8
+      llvm-version: 23.1.0
     permissions:
       contents: read
 
@@ -211,7 +211,7 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
-      llvm-version: 22.1.8
+      llvm-version: 23.1.0
     permissions:
       contents: read
 

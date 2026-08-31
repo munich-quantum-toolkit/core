@@ -26,7 +26,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       setup-z3: true
       setup-mlir: true
-      llvm-version: "22.1.8"
+      llvm-version: "23.1.0"
     permissions:
       contents: read
 

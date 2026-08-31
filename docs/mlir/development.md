@@ -5,7 +5,7 @@ LLVM guidance that most often affect design, review, tests, and debugging. MQT
 Core is an MLIR consumer, so this policy is normative for this repository even
 where existing code differs.
 
-Reviewed against LLVM and MLIR **22.1.8**. Revisit this page and the MLIR
+Reviewed against LLVM and MLIR **23.1.0**. Revisit this page and the MLIR
 clang-tidy configuration on every major LLVM/MLIR upgrade.
 
 ## C++ const and IR handles
