@@ -201,8 +201,8 @@ decodeStandardGate(UnitaryOpInterface unitary) {
 static dd::mCachedEdge
 buildEmbeddedLocalDD(dd::Package& dd, const DynamicMatrix& local,
                      const DenseMap<qc::Qubit, size_t>& operandForWire,
-                     const size_t numOperands, const int64_t level,
-                     const size_t row, const size_t col) {
+                     size_t numOperands, int64_t level, size_t row,
+                     size_t col) {
   if (level < 0) {
     return dd::mCachedEdge::terminal(
         local(static_cast<int64_t>(row), static_cast<int64_t>(col)));
@@ -234,8 +234,8 @@ buildEmbeddedLocalDD(dd::Package& dd, const DynamicMatrix& local,
 
 static dd::MatrixDD makeEmbeddedLocalDD(dd::Package& dd,
                                         const DynamicMatrix& local,
-                                        const size_t numQubits,
-                                        const ArrayRef<qc::Qubit> wires) {
+                                        size_t numQubits,
+                                        ArrayRef<qc::Qubit> wires) {
   DenseMap<qc::Qubit, size_t> operandForWire;
   for (auto [operand, wire] : llvm::enumerate(wires)) {
     operandForWire[wire] = operand;
@@ -275,7 +275,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
   if (failed(wiresOr)) {
     return failure();
   }
-  const ArrayRef<qc::Qubit> wires = *wiresOr;
+  ArrayRef<qc::Qubit> wires = *wiresOr;
   if (wires.size() >= 63 ||
       local.rows() != static_cast<int64_t>(size_t{1} << wires.size())) {
     return unitary.emitError()
@@ -568,9 +568,8 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
       });
 }
 
-static FailureOr<LoopRange> resolveLoop(scf::ForOp forOp,
-                                        ClassicalEnv& classical,
-                                        const size_t remainingSteps) {
+static FailureOr<LoopRange>
+resolveLoop(scf::ForOp forOp, ClassicalEnv& classical, size_t remainingSteps) {
   auto lower = lookupInteger(forOp.getLowerBound(), classical, forOp);
   auto upper = lookupInteger(forOp.getUpperBound(), classical, forOp);
   auto step = lookupInteger(forOp.getStep(), classical, forOp);
@@ -1012,7 +1011,7 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
   return simulateImpl(func, in, dd, *qubits, &rng);
 }
 
-static bool isOutputOnlyRegister(Value reg, const ArrayRef<Value> outputs) {
+static bool isOutputOnlyRegister(Value reg, ArrayRef<Value> outputs) {
   return llvm::is_contained(outputs, reg) &&
          llvm::all_of(reg.getUses(), [reg](const OpOperand& use) {
            if (auto store = dyn_cast<cbit::StoreOp>(use.getOwner())) {
@@ -1023,7 +1022,7 @@ static bool isOutputOnlyRegister(Value reg, const ArrayRef<Value> outputs) {
 }
 
 static bool isDeferrableMeasurement(MeasureOp measure, Block* entry,
-                                    const ArrayRef<Value> outputs) {
+                                    ArrayRef<Value> outputs) {
   return measure->getBlock() == entry &&
          llvm::all_of(measure.getQubitOut().getUses(),
                       [](const OpOperand& use) {
@@ -1036,7 +1035,7 @@ static bool isDeferrableMeasurement(MeasureOp measure, Block* entry,
 }
 
 static void analyzeSampling(func::FuncOp func, Block* entry,
-                            const ArrayRef<Value> outputs,
+                            ArrayRef<Value> outputs,
                             DenseSet<Operation*>& active, SamplingPlan& plan) {
   Operation* funcOp = func.getOperation();
   if (!active.insert(funcOp).second) {
@@ -1088,10 +1087,9 @@ static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {
   return plan;
 }
 
-static FailureOr<std::string> encodeOutcome(const ArrayRef<Value> outputs,
+static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
                                             const ClassicalEnv& classical,
-                                            const StringRef basis,
-                                            const size_t numQubits) {
+                                            StringRef basis, size_t numQubits) {
   if (outputs.empty()) {
     return basis.str();
   }
@@ -1119,10 +1117,8 @@ static FailureOr<std::string> encodeOutcome(const ArrayRef<Value> outputs,
   return outcome;
 }
 
-FailureOr<std::map<std::string, size_t>> sample(func::FuncOp func,
-                                                dd::Package& dd,
-                                                const size_t shots,
-                                                std::mt19937_64& rng) {
+FailureOr<std::map<std::string, size_t>>
+sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng) {
   auto qubits = prepare(func, dd);
   if (failed(qubits)) {
     return failure();
@@ -1139,7 +1135,7 @@ FailureOr<std::map<std::string, size_t>> sample(func::FuncOp func,
 
   const size_t numQubits = qubits->numQubits;
   const auto record = [&](const ClassicalEnv& classical,
-                          const StringRef basis) -> LogicalResult {
+                          StringRef basis) -> LogicalResult {
     auto outcome = encodeOutcome(plan->outputs, classical, basis, numQubits);
     if (failed(outcome)) {
       return failure();
