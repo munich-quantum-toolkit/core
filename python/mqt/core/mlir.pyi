@@ -473,10 +473,7 @@ class QCOProgram(Program):
         """
 
     def build_functionality(
-        self,
-        dd_package: mqt.core.dd.DDPackage,
-        *,
-        bindings: Mapping[int, bool | int | float] = {},
+        self, dd_package: mqt.core.dd.DDPackage, *, bindings: Mapping[int, bool | int | float] = {}
     ) -> mqt.core.dd.MatrixDD:
         """Build a matrix DD for a static unitary QCO program.
 
