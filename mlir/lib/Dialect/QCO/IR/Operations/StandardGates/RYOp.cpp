@@ -47,8 +47,7 @@ struct MergeSubsequentRY final : OpRewritePattern<RYOp> {
 
 void RYOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  const auto thetaOperand =
-      variantToValue(odsBuilder, odsState.location, theta);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 

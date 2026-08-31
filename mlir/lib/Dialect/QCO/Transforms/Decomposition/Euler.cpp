@@ -14,9 +14,11 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -28,6 +30,27 @@
 #include <optional>
 
 namespace mlir::qco::decomposition {
+
+bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
+  return TypeSwitch<Operation*, bool>(op)
+      .Case<RZOp>([&](auto) {
+        return basis == SingleQubitBasis::ZYZ ||
+               basis == SingleQubitBasis::ZXZ ||
+               basis == SingleQubitBasis::XZX ||
+               basis == SingleQubitBasis::ZSXX;
+      })
+      .Case<RYOp>([&](auto) {
+        return basis == SingleQubitBasis::ZYZ || basis == SingleQubitBasis::XYX;
+      })
+      .Case<RXOp>([&](auto) {
+        return basis == SingleQubitBasis::ZXZ ||
+               basis == SingleQubitBasis::XZX || basis == SingleQubitBasis::XYX;
+      })
+      .Case<UOp>([&](auto) { return basis == SingleQubitBasis::U; })
+      .Case<SXOp, XOp>([&](auto) { return basis == SingleQubitBasis::ZSXX; })
+      .Case<ROp>([&](auto) { return basis == SingleQubitBasis::R; })
+      .Default([](auto) { return false; });
+}
 
 /**
  * @brief Wraps `angle` into `[-pi, pi)`, mapping `+pi` (within tolerance) to

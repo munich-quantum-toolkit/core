@@ -732,7 +732,7 @@ struct DropUnusedPowQubits final : OpRewritePattern<PowOp> {
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     auto* body = op.getBody();
-    const auto qubits = op.getQubitsIn();
+    auto qubits = op.getQubitsIn();
     return qco::detail::dropUnusedQubits(
         op, *body, qubits,
         [&](ValueRange narrowedQubits, ArrayRef<size_t> used) -> Operation* {
@@ -777,7 +777,7 @@ Value PowOp::getOutputQubit(const size_t i) {
 }
 
 Value PowOp::getInputForOutput(Value output) {
-  if (const auto result = dyn_cast<OpResult>(output);
+  if (auto result = dyn_cast<OpResult>(output);
       result && result.getOwner() == getOperation()) {
     return getInputQubit(result.getResultNumber());
   }
@@ -821,7 +821,7 @@ void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
                   const std::variant<double, Value>& exponent,
                   function_ref<Value(Value)> bodyBuilder) {
-  const auto expValue = variantToValue(odsBuilder, odsState.location, exponent);
+  auto expValue = variantToValue(odsBuilder, odsState.location, exponent);
   build(odsBuilder, odsState, qubit.getType(), expValue, qubit);
   auto& block = odsState.regions.front()->emplaceBlock();
   block.addArgument(QubitType::get(odsBuilder.getContext()), odsState.location);
@@ -857,7 +857,7 @@ LogicalResult PowOp::verify() {
   }
 
   SmallPtrSet<Value, 4> uniqueQubitsIn;
-  for (const auto& target : getQubitsIn()) {
+  for (auto target : getQubitsIn()) {
     if (!uniqueQubitsIn.insert(target).second) {
       return emitOpError("duplicate qubit found");
     }

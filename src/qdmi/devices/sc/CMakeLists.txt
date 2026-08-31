@@ -67,8 +67,7 @@ if(NOT TARGET ${TARGET_NAME})
            ${QDMI_HDRS})
 
   # add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon MQT::CoreQDMIScDeviceConfig
-                                               spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon MQT::CoreQDMIScDeviceConfig)
 
   mqt_configure_qdmi_device(
     ${TARGET_NAME}

@@ -84,11 +84,11 @@ protected:
 
 } // namespace
 
-static LogicalResult runQCToQIRBaseConversion(ModuleOp module) {
-  PassManager pm(module.getContext());
+static LogicalResult runQCToQIRBaseConversion(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createQCToQIRBase());
-  return pm.run(module);
+  return pm.run(moduleOp);
 }
 
 static void expectFollowingXIsUncontrolled(
@@ -99,8 +99,8 @@ static void expectFollowingXIsUncontrolled(
                       LLVM::LLVMDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto control = builder.allocQubit();
-  const auto target = builder.allocQubit();
+  auto control = builder.allocQubit();
+  auto target = builder.allocQubit();
   buildModifier(builder, control, target);
   builder.x(target);
   auto moduleOp = builder.finalize();
@@ -121,16 +121,48 @@ static void expectFollowingXIsUncontrolled(
 
 TEST(QCToQIRBaseNativeTest, EmptyCtrlDoesNotControlFollowingGate) {
   expectFollowingXIsUncontrolled(
-      [](qc::QCProgramBuilder& builder, const Value control,
-         const Value target) { builder.ctrl(control, target, [](Value) {}); });
+      [](qc::QCProgramBuilder& builder, Value control, Value target) {
+        builder.ctrl(control, target, [](Value) {});
+      });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsMultiBlockEntryFunctionWithoutMutation) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  auto entryPoint = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(entryPoint);
+  auto* extraBlock = &entryPoint.getBody().emplaceBlock();
+  builder.setInsertionPointToEnd(extraBlock);
+  auto status =
+      arith::ConstantIntOp::create(builder, builder.getUnknownLoc(), 0, 64);
+  func::ReturnOp::create(builder, builder.getUnknownLoc(), status.getResult());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "QIR Base Profile requires a single-block entry function");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+  EXPECT_EQ(entryPoint.getBlocks().size(), 2);
 }
 
 TEST(QCToQIRBaseNativeTest, ControlledBarrierDoesNotControlFollowingGate) {
-  expectFollowingXIsUncontrolled([](qc::QCProgramBuilder& builder,
-                                    const Value control, const Value target) {
-    builder.ctrl(control, target,
-                 [&](const Value bodyTarget) { builder.barrier(bodyTarget); });
-  });
+  expectFollowingXIsUncontrolled(
+      [](qc::QCProgramBuilder& builder, Value control, Value target) {
+        builder.ctrl(control, target,
+                     [&](Value bodyTarget) { builder.barrier(bodyTarget); });
+      });
 }
 
 TEST(QCToQIRBaseNativeTest, LowersControlFlowAssertions) {
@@ -194,10 +226,10 @@ TEST(QCToQIRBaseNativeTest, SelectsControlledSpecializationsByArity) {
                       LLVM::LLVMDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto control0 = builder.allocQubit();
-  const auto control1 = builder.allocQubit();
-  const auto control2 = builder.allocQubit();
-  const auto target = builder.allocQubit();
+  auto control0 = builder.allocQubit();
+  auto control1 = builder.allocQubit();
+  auto control2 = builder.allocQubit();
+  auto target = builder.allocQubit();
   builder.crx(0.25, control0, target);
   builder.mcrx(0.5, {control0, control1}, target);
   builder.mcrx(0.75, {control0, control1, control2}, target);
@@ -219,7 +251,7 @@ TEST(QCToQIRBaseNativeTest, RecordsReturnedRegisterMeasurement) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1, "named_result");
   builder.measure(q, c, 0);
   builder.retype(c.getType());
@@ -239,12 +271,10 @@ TEST(QCToQIRBaseNativeTest, RecordsReturnedRegistersInResultOrder) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto firstQubit = builder.allocQubit();
-  const auto secondQubit = builder.allocQubit();
-  const auto firstRegister =
-      builder.allocClassicalBitRegister(1, "first_result");
-  const auto secondRegister =
-      builder.allocClassicalBitRegister(1, "second_result");
+  auto firstQubit = builder.allocQubit();
+  auto secondQubit = builder.allocQubit();
+  auto firstRegister = builder.allocClassicalBitRegister(1, "first_result");
+  auto secondRegister = builder.allocClassicalBitRegister(1, "second_result");
   builder.measure(firstQubit, firstRegister, 0);
   builder.measure(secondQubit, secondRegister, 0);
   builder.retype({secondRegister.getType(), firstRegister.getType()});
@@ -313,7 +343,7 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1);
   builder.measure(q, c, 0);
   builder.storeClassicalBit(builder.boolConstant(false), c, 0);
@@ -341,7 +371,7 @@ TEST(QCToQIRBaseNativeTest, RejectsUnsupportedIntegerMemref) {
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   const auto type = MemRefType::get({1}, builder.getI8Type());
-  const auto memref = memref::AllocOp::create(builder, type).getResult();
+  auto memref = memref::AllocOp::create(builder, type).getResult();
   builder.retype(type);
   auto module = builder.finalize(memref);
   ASSERT_TRUE(module);
@@ -365,7 +395,7 @@ TEST(QCToQIRBaseNativeTest, RejectsDynamicClassicalRegisterIndex) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  const auto q = builder.allocQubit();
+  auto q = builder.allocQubit();
   auto c = builder.allocClassicalBitRegister(1);
   auto unknown = LLVM::UndefOp::create(builder, builder.getI64Type());
   auto index = arith::IndexCastOp::create(builder, builder.getIndexType(),

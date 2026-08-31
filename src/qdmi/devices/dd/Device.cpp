@@ -14,17 +14,16 @@
 
 #include "qdmi/devices/dd/Device.hpp"
 
-#include "circuit_optimizer/CircuitOptimizer.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/QuantumComputation.hpp"
+#include "mlir/Dialect/QIR/Execution/JIT/Session.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
 #include "mqt_ddsim_qdmi/device.h"
 #include "qasm3/Importer.hpp"
 #include "qdmi/common/Common.hpp"
-#include "qir/jit/Session.hpp"
-#include "qir/runtime/Runtime.hpp"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/FormatVariadic.h>
@@ -405,6 +404,15 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
       numShots_ = *static_cast<const size_t*>(value);
     }
     return QDMI_SUCCESS;
+  case QDMI_DEVICE_JOB_PARAMETER_CUSTOM1:
+    if (value == nullptr) {
+      return QDMI_SUCCESS;
+    }
+    if (size != sizeof(int) || *static_cast<const int*>(value) <= 0) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    seed_ = *static_cast<const int*>(value);
+    return QDMI_SUCCESS;
   default:
     return QDMI_ERROR_NOTSUPPORTED;
   }
@@ -461,7 +469,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
   return submitProgramAsync([this]() {
     const auto& text = std::get<std::string>(program_);
     const auto qc = qasm3::Importer::imports(text);
-    counts_ = dd::sample(qc, numShots_);
+    counts_ = dd::sample(qc, numShots_,
+                         seed_.has_value() ? static_cast<size_t>(*seed_) : 0U);
   });
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
@@ -469,7 +478,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
   return submitProgramAsync([this]() {
     const auto& text = std::get<std::string>(program_);
     auto qc = qasm3::Importer::imports(text);
-    qc::CircuitOptimizer::removeFinalMeasurements(qc);
+    qc.removeFinalMeasurements();
     const auto nQubits = qc.getNqubits();
     dd_ = std::make_unique<dd::Package>(nQubits);
     stateVecDD_ = dd::simulate(qc, dd::makeZeroState(nQubits, *dd_), *dd_);
@@ -490,6 +499,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
         program_);
     auto jitSession = qir::JitSession(irBytes, "QDMI job");
     auto& runtime = jitSession.runtime();
+    if (seed_.has_value()) {
+      runtime.seed(static_cast<uint64_t>(*seed_));
+    }
     std::ostringstream output;
     runtime.setOstream(output);
     runtime.outputProgramHeader();
@@ -523,9 +535,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
                                  p.size());
         },
         program_);
-    const qir::SessionOptions options{.execution =
-                                          qir::Execution::StateExtraction};
-    auto jitSession = qir::JitSession(irBytes, "QDMI job", options);
+    auto jitSession =
+        qir::JitSession(irBytes, "QDMI job", qir::Execution::StateExtraction);
     auto& runtime = jitSession.runtime();
     std::ostringstream output;
     runtime.setOstream(output);

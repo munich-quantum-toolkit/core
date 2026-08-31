@@ -150,7 +150,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
   LogicalResult matchAndRewrite(MeasureOp op,
                                 PatternRewriter& rewriter) const override {
     // A Hadamard gate needs to be in front of the measurement
-    const auto qubitInMeasurement = op.getQubitIn();
+    auto qubitInMeasurement = op.getQubitIn();
     auto* predecessor = qubitInMeasurement.getDefiningOp();
     auto hadamardGate = dyn_cast<HOp>(predecessor);
     if (!hadamardGate) {
@@ -158,7 +158,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     }
 
     // The Hadamard gate must be successor of the target of a CNOT
-    const auto inQubitHadamard = hadamardGate.getInputQubit(0);
+    auto inQubitHadamard = hadamardGate.getInputQubit(0);
     predecessor = inQubitHadamard.getDefiningOp();
     auto cnotGate = dyn_cast<CtrlOp>(predecessor);
     if (!cnotGate) {
@@ -186,9 +186,9 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     }
 
     // Save all SSA values that will be needed after in-place modifications.
-    const Value origTgtIn = cnotGate.getInputTarget(0);
-    const Value origCtrlIn = cnotGate.getInputControl(controlIndex);
-    const Value origCtrlOut = cnotGate.getOutputControl(controlIndex);
+    Value origTgtIn = cnotGate.getInputTarget(0);
+    Value origCtrlIn = cnotGate.getInputControl(controlIndex);
+    Value origCtrlOut = cnotGate.getOutputControl(controlIndex);
 
     // Add Hadamard gates before the CNOT.
     rewriter.setInsertionPoint(cnotGate);
@@ -226,7 +226,7 @@ struct HadamardLifting final : impl::HadamardLiftingBase<HadamardLifting> {
 
 protected:
   void runOnOperation() override {
-    const auto op = getOperation();
+    auto op = getOperation();
     auto* ctx = &getContext();
 
     // Define the set of patterns to use.

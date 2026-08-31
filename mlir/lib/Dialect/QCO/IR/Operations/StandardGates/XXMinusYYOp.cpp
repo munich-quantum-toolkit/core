@@ -51,9 +51,8 @@ void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                         Value qubit0In, Value qubit1In,
                         const std::variant<double, Value>& theta,
                         const std::variant<double, Value>& beta) {
-  const auto thetaOperand =
-      variantToValue(odsBuilder, odsState.location, theta);
-  const auto betaOperand = variantToValue(odsBuilder, odsState.location, beta);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  auto betaOperand = variantToValue(odsBuilder, odsState.location, beta);
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
 }
 

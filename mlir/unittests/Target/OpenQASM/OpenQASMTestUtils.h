@@ -50,7 +50,7 @@ h q;
 bit[2] c = measure q;
 )qasm";
 
-inline std::optional<APInt> evaluateConstantInteger(const Value value) {
+inline std::optional<APInt> evaluateConstantInteger(Value value) {
   APInt constant;
   if (matchPattern(value, m_ConstantInt(&constant))) {
     return constant;
@@ -140,7 +140,7 @@ inline SmallVector<std::optional<Value>> returnedBitValues(ModuleOp moduleOp) {
   }
 
   SmallVector<std::optional<Value>> values;
-  for (const auto operand : result.getOperands()) {
+  for (auto operand : result.getOperands()) {
     const auto registerType = dyn_cast<cbit::RegisterType>(operand.getType());
     auto allocation = operand.getDefiningOp<cbit::AllocOp>();
     if (!registerType || !allocation) {

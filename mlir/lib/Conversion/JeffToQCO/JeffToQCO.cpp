@@ -24,7 +24,6 @@
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -204,55 +203,28 @@ static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
 /**
  * @brief Gets the name of the entry point from the module attributes
  */
-static StringRef getEntryPointName(Operation* op) {
-  auto module = dyn_cast<ModuleOp>(op);
-  if (!module) {
-    llvm::reportFatalInternalError("Expected a module operation");
+static FailureOr<StringRef> getEntryPointName(ModuleOp moduleOp) {
+  auto entryPointAttr = moduleOp->getAttrOfType<IntegerAttr>("jeff.entrypoint");
+  if (!entryPointAttr || !entryPointAttr.getType().isUnsignedInteger()) {
+    return moduleOp.emitError(
+        "requires an unsigned integer 'jeff.entrypoint' attribute");
   }
+  auto entryPoint = entryPointAttr.getUInt();
 
-  auto entryPointAttr = module->getAttr("jeff.entrypoint");
-  if (!entryPointAttr) {
-    llvm::reportFatalInternalError(
-        "Module is missing 'jeff.entrypoint' attribute");
-  }
-  auto entryPoint = cast<IntegerAttr>(entryPointAttr).getUInt();
-
-  auto stringsAttr = module->getAttr("jeff.strings");
+  auto stringsAttr = moduleOp->getAttrOfType<ArrayAttr>("jeff.strings");
   if (!stringsAttr) {
-    llvm::reportFatalInternalError(
-        "Module is missing 'jeff.strings' attribute");
-  }
-  auto strings = cast<ArrayAttr>(stringsAttr);
-
-  if (entryPoint >= strings.size()) {
-    llvm::reportFatalInternalError("Entry point index is out of bounds");
+    return moduleOp.emitError("requires an array 'jeff.strings' attribute");
   }
 
-  return cast<StringAttr>(strings[entryPoint]).getValue();
-}
-
-/**
- * @brief Cleans up the module after conversion
- *
- * @param op The module operation to clean up
- * @return LogicalResult Success or failure of the cleanup
- */
-static LogicalResult cleanUp(Operation* op) {
-  auto module = dyn_cast<ModuleOp>(op);
-  if (!module) {
-    return failure();
+  if (entryPoint >= stringsAttr.size()) {
+    return moduleOp.emitError("'jeff.entrypoint' index is out of bounds");
   }
 
-  // Remove module attributes
-  module->removeAttr("jeff.entrypoint");
-  module->removeAttr("jeff.strings");
-  module->removeAttr("jeff.tool");
-  module->removeAttr("jeff.toolVersion");
-  module->removeAttr("jeff.version");
-  module->removeAttr("jeff.versionMinor");
-  module->removeAttr("jeff.versionPatch");
-
-  return success();
+  auto name = dyn_cast<StringAttr>(stringsAttr[entryPoint]);
+  if (!name) {
+    return moduleOp.emitError("'jeff.entrypoint' must index a string");
+  }
+  return name.getValue();
 }
 
 /**
@@ -351,7 +323,7 @@ struct ConvertJeffIntArraySetIndexOpToCBit final
   LogicalResult
   matchAndRewrite(jeff::IntArraySetIndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto reg = adaptor.getInArray();
+    auto reg = adaptor.getInArray();
     if (!isa<cbit::RegisterType>(reg.getType())) {
       return failure();
     }
@@ -372,7 +344,7 @@ struct ConvertJeffIntArrayGetIndexOpToCBit final
   LogicalResult
   matchAndRewrite(jeff::IntArrayGetIndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto reg = adaptor.getInArray();
+    auto reg = adaptor.getInArray();
     if (!isa<cbit::RegisterType>(reg.getType())) {
       return failure();
     }
@@ -1288,7 +1260,12 @@ struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* module = getOperation();
+    auto moduleOp = getOperation();
+    auto entryPointName = getEntryPointName(moduleOp);
+    if (failed(entryPointName)) {
+      signalPassFailure();
+      return;
+    }
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
@@ -1302,8 +1279,7 @@ protected:
                          tensor::TensorDialect, scf::SCFDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return (op.getSymName() != getEntryPointName(module) ||
-              mqt::isEntryPoint(op)) &&
+      return (op.getSymName() != *entryPointName || mqt::isEntryPoint(op)) &&
              typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
     });
@@ -1343,14 +1319,19 @@ protected:
                                                           context);
 
     // Apply the conversion
-    if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
+    if (applyPartialConversion(moduleOp, target, std::move(patterns))
+            .failed()) {
       signalPassFailure();
       return;
     }
 
-    if (cleanUp(module).failed()) {
-      signalPassFailure();
-    }
+    moduleOp->removeAttr("jeff.entrypoint");
+    moduleOp->removeAttr("jeff.strings");
+    moduleOp->removeAttr("jeff.tool");
+    moduleOp->removeAttr("jeff.toolVersion");
+    moduleOp->removeAttr("jeff.version");
+    moduleOp->removeAttr("jeff.versionMinor");
+    moduleOp->removeAttr("jeff.versionPatch");
   }
 };
 

@@ -15,19 +15,80 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MQT/IR/MQTDialect.h>
 #include <mlir/Dialect/QCO/IR/QCODialect.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 
 namespace mlir::qco {
+
+[[nodiscard]] static LogicalResult verifyLinearValue(Value value) {
+  if (!isLinearQubitType(value.getType()) || value.hasOneUse()) {
+    return success();
+  }
+  return emitError(value.getLoc())
+         << "expected linear QCO value to have exactly one use, but found "
+         << value.getNumUses();
+}
+
+LogicalResult verifyLinearity(Operation* root) {
+  func::FuncOp entryPoint;
+  if (auto moduleOp = dyn_cast<ModuleOp>(root)) {
+    entryPoint = mqt::getEntryPoint(moduleOp);
+  }
+
+  DenseSet<uint64_t> staticIndices;
+  const auto walkResult = root->walk([&](Operation* op) {
+    if (auto staticOp = dyn_cast<StaticOp>(op)) {
+      if (entryPoint &&
+          (entryPoint.isDeclaration() ||
+           staticOp->getBlock() != &entryPoint.getBody().front())) {
+        staticOp.emitError()
+            << "expected static qubits in the entry block of program entry "
+               "function @"
+            << entryPoint.getSymName();
+        return WalkResult::interrupt();
+      }
+      if (!staticIndices.insert(staticOp.getIndex()).second) {
+        staticOp.emitError()
+            << "expected each static qubit index to identify one linear "
+               "value, but found duplicate index "
+            << staticOp.getIndex();
+        return WalkResult::interrupt();
+      }
+    }
+    for (auto result : op->getResults()) {
+      if (failed(verifyLinearValue(result))) {
+        return WalkResult::interrupt();
+      }
+    }
+    for (Region& region : op->getRegions()) {
+      for (Block& block : region) {
+        for (auto argument : block.getArguments()) {
+          if (failed(verifyLinearValue(argument))) {
+            return WalkResult::interrupt();
+          }
+        }
+      }
+    }
+    return WalkResult::advance();
+  });
+  return walkResult.wasInterrupted() ? failure() : success();
+}
 
 /// Returns the wire index for @p wire in @p wireIds, or `std::nullopt` if
 /// untracked.

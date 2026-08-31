@@ -53,8 +53,7 @@ void IndexSwitchOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   const auto buildRegion = [&](Region& region,
                                function_ref<Value(Value)> bodyBuilder) {
     auto& block = region.emplaceBlock();
-    const auto blockArgument =
-        block.addArgument(target.getType(), odsState.location);
+    auto blockArgument = block.addArgument(target.getType(), odsState.location);
     odsBuilder.setInsertionPointToStart(&block);
     YieldOp::create(odsBuilder, odsState.location, bodyBuilder(blockArgument));
   };
@@ -201,9 +200,9 @@ LogicalResult IndexSwitchOp::verify() {
     }
   }
 
-  const auto targets = getTargets();
+  auto targets = getTargets();
   const auto ntargets = targets.size();
-  const auto results = getLinearResults();
+  auto results = getLinearResults();
   const auto nresults = results.size();
 
   for (Region* region : getRegions()) {
@@ -224,7 +223,7 @@ LogicalResult IndexSwitchOp::verify() {
   }
 
   SmallPtrSet<Value, 4> visited;
-  for (const auto target : targets) {
+  for (auto target : targets) {
     if (!visited.insert(target).second) {
       return emitOpError("The operation requires unique values as targets.");
     }
@@ -309,7 +308,7 @@ IndexSwitchOp::replaceWithAdditionalTargets(RewriterBase& rewriter,
     return *this;
   }
 
-  const auto targets = getTargets();
+  auto targets = getTargets();
   const auto nregions = getNumRegions();
 
   SmallVector<Value> newTargets;

@@ -223,7 +223,7 @@ TEST_F(ErrorHandling, CustomEnums) {
 
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                 j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM1, 0, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
+            QDMI_SUCCESS);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                 j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM2, 0, nullptr),
             QDMI_ERROR_NOTSUPPORTED);

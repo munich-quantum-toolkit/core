@@ -108,7 +108,7 @@ static Value measureToRegister(qco::QCOProgramBuilder& b, ValueRange qubits) {
 
 static Value powDcx(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+  auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
     auto [q0, q1] = b.dcx(qubits[0], qubits[1]);
     return SmallVector{q0, q1};
   });
@@ -117,7 +117,7 @@ static Value powDcx(qco::QCOProgramBuilder& b) {
 
 static Value powInvDcx(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  const auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+  auto powOut = b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
     auto inner = b.inv({qubits[0], qubits[1]}, [&](ValueRange invArgs) {
       auto [q0, q1] = b.dcx(invArgs[0], invArgs[1]);
       return SmallVector{q0, q1};
@@ -129,7 +129,7 @@ static Value powInvDcx(qco::QCOProgramBuilder& b) {
 
 static Value ctrlPowDcx(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  const auto& [controlsOut, targetsOut] =
+  auto [controlsOut, targetsOut] =
       b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
         auto inner =
             b.pow(2.0, {targets[0], targets[1]}, [&](ValueRange powArgs) {
@@ -144,7 +144,7 @@ static Value ctrlPowDcx(qco::QCOProgramBuilder& b) {
 
 static Value ctrlPowInvDcx(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  const auto& [controlsOut, targetsOut] =
+  auto [controlsOut, targetsOut] =
       b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
         auto inner =
             b.pow(2.0, {targets[0], targets[1]}, [&](ValueRange powArgs) {
@@ -163,7 +163,7 @@ static Value ctrlPowInvDcx(qco::QCOProgramBuilder& b) {
 
 static Value powU(qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto powOut =
+  auto powOut =
       b.pow(3.0, q[0], [&](Value qubit) { return b.u(0.1, 0.2, 0.3, qubit); });
   return b.measure(powOut).second;
 }
@@ -354,17 +354,65 @@ static Value nestedWhileOpIfOp(qco::QCOProgramBuilder& b) {
   return b.measure(res[0]).second;
 }
 
-static LogicalResult convertQCOToJeff(ModuleOp module) {
-  PassManager pm(module.getContext());
+static LogicalResult convertQCOToJeff(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createQCOToJeff());
-  return pm.run(module);
+  return pm.run(moduleOp);
 }
 
-static LogicalResult convertJeffToQCO(ModuleOp module) {
-  PassManager pm(module.getContext());
+static LogicalResult convertJeffToQCO(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
   pm.addPass(createJeffToQCO());
-  return pm.run(module);
+  return pm.run(moduleOp);
+}
+
+TEST(JeffRoundTripRegressionTest, RejectsInvalidJeffModuleMetadata) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, func::FuncDialect, jeff::JeffDialect,
+                  qco::QCODialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  OpBuilder builder(&context);
+
+  const auto rejects = [&](const ArrayRef<NamedAttribute> attributes,
+                           const StringRef expected) {
+    auto moduleOp = ModuleOp::create(builder.getUnknownLoc());
+    moduleOp->setAttrs(builder.getDictionaryAttr(attributes));
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      std::string message;
+      llvm::raw_string_ostream stream(message);
+      diagnostic.print(stream);
+      sawExpectedDiagnostic |= StringRef(message).contains(expected);
+      return success();
+    });
+    EXPECT_TRUE(failed(convertJeffToQCO(moduleOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  };
+
+  const auto uint16Type = builder.getIntegerType(16, false);
+  const auto entryPoint = builder.getNamedAttr(
+      "jeff.entrypoint", builder.getIntegerAttr(uint16Type, 0));
+  const auto strings =
+      builder.getNamedAttr("jeff.strings", builder.getStrArrayAttr({"main"}));
+  rejects({}, "requires an unsigned integer 'jeff.entrypoint' attribute");
+  rejects(
+      {builder.getNamedAttr("jeff.entrypoint", builder.getStringAttr("main"))},
+      "requires an unsigned integer 'jeff.entrypoint' attribute");
+  rejects(
+      {builder.getNamedAttr("jeff.entrypoint", builder.getI16IntegerAttr(0))},
+      "requires an unsigned integer 'jeff.entrypoint' attribute");
+  rejects({entryPoint}, "requires an array 'jeff.strings' attribute");
+  rejects({builder.getNamedAttr("jeff.entrypoint",
+                                builder.getIntegerAttr(uint16Type, 1)),
+           strings},
+          "'jeff.entrypoint' index is out of bounds");
+  rejects(
+      {entryPoint, builder.getNamedAttr(
+                       "jeff.strings",
+                       builder.getArrayAttr({builder.getI32IntegerAttr(0)}))},
+      "'jeff.entrypoint' must index a string");
 }
 
 TEST(JeffRoundTripRegressionTest, RestoresStatusResultAtEndOfEntryPoint) {

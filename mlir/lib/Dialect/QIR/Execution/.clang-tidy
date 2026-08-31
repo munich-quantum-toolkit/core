@@ -1,0 +1,6 @@
+InheritParentConfig: true
+
+CheckOptions:
+  # The QIR runtime follows the external QIR ABI's identifier conventions.
+  - key: readability-identifier-naming.VariableCase
+    value: CamelCase

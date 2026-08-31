@@ -436,17 +436,17 @@ static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
 }
 
 /**
- * @brief Updates all `jeff.yield` operations in @p module to use the latest
+ * @brief Updates all `jeff.yield` operations in @p moduleOp to use the latest
  * classical-bit-register array values.
  */
-static void patchCregYields(Operation* module, LoweringState& state) {
-  module->walk([&](jeff::YieldOp yieldOp) {
+static void patchCregYields(ModuleOp moduleOp, LoweringState& state) {
+  moduleOp->walk([&](jeff::YieldOp yieldOp) {
     auto* values = state.cbitState.getRegionValues(yieldOp->getParentRegion());
     if (values == nullptr) {
       return;
     }
     for (auto& operand : yieldOp->getOpOperands()) {
-      const auto reg = state.cbitState.getRegisterForAlias(operand.get());
+      auto reg = state.cbitState.getRegisterForAlias(operand.get());
       if (!reg) {
         continue;
       }
@@ -460,21 +460,16 @@ static void patchCregYields(Operation* module, LoweringState& state) {
 /**
  * @brief Cleans up the module after conversion
  *
- * @param op The module operation to clean up
+ * @param moduleOp The module operation to clean up
  * @param state The lowering state
  * @return LogicalResult Success or failure of the cleanup
  */
-static LogicalResult cleanUp(Operation* op, LoweringState& state) {
+static LogicalResult cleanUp(ModuleOp moduleOp, LoweringState& state) {
   if (state.entryPointName.empty()) {
     return failure();
   }
 
-  auto module = dyn_cast<ModuleOp>(op);
-  if (!module) {
-    return failure();
-  }
-
-  for (auto funcOp : module.getOps<func::FuncOp>()) {
+  for (auto funcOp : moduleOp.getOps<func::FuncOp>()) {
     state.strings.emplace_back(funcOp.getSymName());
   }
 
@@ -488,26 +483,26 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   }
   const auto entryPoint = static_cast<uint16_t>(distance);
 
-  // Set module attributes
-  OpBuilder builder(module.getContext());
+  OpBuilder builder(moduleOp.getContext());
   auto uint16Type = builder.getIntegerType(16, false);
 
-  module->setAttr("jeff.entrypoint",
-                  builder.getIntegerAttr(uint16Type, entryPoint));
+  moduleOp->setAttr("jeff.entrypoint",
+                    builder.getIntegerAttr(uint16Type, entryPoint));
 
   SmallVector<StringRef> stringRefs;
   stringRefs.reserve(state.strings.size());
   for (const auto& str : state.strings) {
     stringRefs.emplace_back(str);
   }
-  module->setAttr("jeff.strings", builder.getStrArrayAttr(stringRefs));
+  moduleOp->setAttr("jeff.strings", builder.getStrArrayAttr(stringRefs));
 
-  module->setAttr("jeff.tool", builder.getStringAttr("mqt-cc"));
-  module->setAttr("jeff.toolVersion", builder.getStringAttr(MQT_CORE_VERSION));
+  moduleOp->setAttr("jeff.tool", builder.getStringAttr("mqt-cc"));
+  moduleOp->setAttr("jeff.toolVersion",
+                    builder.getStringAttr(MQT_CORE_VERSION));
 
-  module->setAttr("jeff.version", builder.getIntegerAttr(uint16Type, 0));
-  module->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 3));
-  module->setAttr("jeff.versionPatch", builder.getIntegerAttr(uint16Type, 0));
+  moduleOp->setAttr("jeff.version", builder.getIntegerAttr(uint16Type, 0));
+  moduleOp->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 3));
+  moduleOp->setAttr("jeff.versionPatch", builder.getIntegerAttr(uint16Type, 0));
 
   return success();
 }
@@ -534,7 +529,7 @@ static LogicalResult moveRegion(Region& source, Region& dest,
     auto newArg = newBlock->addArgument(
         typeConverter->convertType(value.getType()), value.getLoc());
     mapping.map(value, newArg);
-    if (const auto reg = state.cbitState.findRegister(value)) {
+    if (auto reg = state.cbitState.findRegister(value)) {
       state.cbitState.setCurrentValue(reg, newArg, &dest);
       state.cbitState.addAlias(newArg, reg);
     }
@@ -598,7 +593,7 @@ struct ConvertCBitStoreOpToJeff final
   matchAndRewrite(cbit::StoreOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState().cbitState;
-    const auto reg = state.resolveRegisterUse(op, op->getOperand(1));
+    auto reg = state.resolveRegisterUse(op, op->getOperand(1));
     auto array = state.getCurrentValue(reg, op);
     if (!array) {
       return rewriter.notifyMatchFailure(op, "unknown classical register");
@@ -624,7 +619,7 @@ struct ConvertCBitLoadOpToJeff final
   matchAndRewrite(cbit::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState().cbitState;
-    const auto reg = state.resolveRegisterUse(op, op->getOperand(0));
+    auto reg = state.resolveRegisterUse(op, op->getOperand(0));
     auto array = state.getCurrentValue(reg, op);
     if (!array) {
       return rewriter.notifyMatchFailure(op, "unknown classical register");
@@ -1414,7 +1409,7 @@ struct ConvertQCOIfOpToJeff final : RegionMovingConversionPattern<IfOp> {
     auto& state = getState();
     for (auto value : aboveValues) {
       Value remappedValue;
-      if (const auto creg = state.cbitState.findRegister(value)) {
+      if (auto creg = state.cbitState.findRegister(value)) {
         remappedValue = state.cbitState.getCurrentValue(creg, op);
         if (!remappedValue) {
           return rewriter.notifyMatchFailure(op, "unknown classical register");
@@ -1454,8 +1449,8 @@ struct ConvertQCOIfOpToJeff final : RegionMovingConversionPattern<IfOp> {
 
     // Update tensor values
     const auto numResults = op.getNumResults();
-    for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
-      if (const auto creg = state.cbitState.findRegister(value)) {
+    for (auto [i, value] : llvm::enumerate(aboveValues)) {
+      if (auto creg = state.cbitState.findRegister(value)) {
         state.cbitState.setCurrentValue(
             creg, jeffSwitch.getResult(numResults + i), op);
       }
@@ -1515,7 +1510,7 @@ struct ConvertSCFForOpToJeff final : RegionMovingConversionPattern<scf::ForOp> {
     auto& state = getState();
     for (auto value : aboveValues) {
       Value remappedValue;
-      if (const auto creg = state.cbitState.findRegister(value)) {
+      if (auto creg = state.cbitState.findRegister(value)) {
         remappedValue = state.cbitState.getCurrentValue(creg, op);
         if (!remappedValue) {
           return rewriter.notifyMatchFailure(op, "unknown classical register");
@@ -1538,8 +1533,8 @@ struct ConvertSCFForOpToJeff final : RegionMovingConversionPattern<scf::ForOp> {
 
     // Update tensor values
     const auto numResults = op.getNumResults();
-    for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
-      if (const auto creg = state.cbitState.findRegister(value)) {
+    for (auto [i, value] : llvm::enumerate(aboveValues)) {
+      if (auto creg = state.cbitState.findRegister(value)) {
         state.cbitState.setCurrentValue(creg, jeffFor.getResult(numResults + i),
                                         op);
       }
@@ -1600,7 +1595,7 @@ struct ConvertSCFWhileOpToJeff final
     auto& state = getState();
     for (auto value : aboveValues) {
       Value remappedValue;
-      if (const auto creg = state.cbitState.findRegister(value)) {
+      if (auto creg = state.cbitState.findRegister(value)) {
         remappedValue = state.cbitState.getCurrentValue(creg, op);
         if (!remappedValue) {
           return rewriter.notifyMatchFailure(op, "unknown classical register");
@@ -1626,8 +1621,8 @@ struct ConvertSCFWhileOpToJeff final
 
     // Update tensor values
     const auto numResults = op.getNumResults();
-    for (const auto& [i, value] : llvm::enumerate(aboveValues)) {
-      if (const auto creg = state.cbitState.findRegister(value)) {
+    for (auto [i, value] : llvm::enumerate(aboveValues)) {
+      if (auto creg = state.cbitState.findRegister(value)) {
         state.cbitState.setCurrentValue(
             creg, jeffWhile.getResult(numResults + i), op);
       }
@@ -1709,10 +1704,10 @@ struct ConvertFuncReturnOpToJeff final
     auto& state = getState().cbitState;
     SmallVector<Value> returnValues;
     returnValues.reserve(op.getNumOperands());
-    for (const auto& [operand, adapted] :
+    for (auto [operand, adapted] :
          llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
-      const auto reg = state.findRegister(operand);
-      const auto current = reg ? state.getCurrentValue(reg, op) : Value{};
+      auto reg = state.findRegister(operand);
+      auto current = reg ? state.getCurrentValue(reg, op) : Value{};
       returnValues.push_back(current ? rewriter.getRemappedValue(current)
                                      : adapted);
     }
@@ -1854,8 +1849,8 @@ struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* moduleOp = getOperation();
-    if (failed(mqt::normalizeGlobalPhases(cast<ModuleOp>(moduleOp)))) {
+    auto moduleOp = getOperation();
+    if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
       return;
     }

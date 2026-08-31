@@ -406,7 +406,7 @@ struct DropUnusedInvQubits final : OpRewritePattern<InvOp> {
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
     auto* body = op.getBody();
-    const auto qubits = op.getQubitsIn();
+    auto qubits = op.getQubitsIn();
     return qco::detail::dropUnusedQubits(
         op, *body, qubits,
         [&](ValueRange narrowedQubits, ArrayRef<size_t> used) -> Operation* {
@@ -433,7 +433,7 @@ UnitaryOpInterface InvOp::getBodyUnitary(const size_t i) {
 }
 
 Value InvOp::getInputForOutput(Value output) {
-  if (const auto result = dyn_cast<OpResult>(output);
+  if (auto result = dyn_cast<OpResult>(output);
       result && result.getOwner() == getOperation()) {
     return getInputQubit(result.getResultNumber());
   }
@@ -497,7 +497,7 @@ LogicalResult InvOp::verify() {
   }
 
   SmallPtrSet<Value, 4> uniqueQubitsIn;
-  for (const auto& target : getQubitsIn()) {
+  for (auto target : getQubitsIn()) {
     if (!uniqueQubitsIn.insert(target).second) {
       return emitOpError("duplicate qubit found");
     }

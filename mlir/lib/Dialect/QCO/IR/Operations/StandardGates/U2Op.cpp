@@ -99,9 +99,8 @@ struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
 void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& phi,
                  const std::variant<double, Value>& lambda) {
-  const auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
-  const auto lambdaOperand =
-      variantToValue(odsBuilder, odsState.location, lambda);
+  auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  auto lambdaOperand = variantToValue(odsBuilder, odsState.location, lambda);
   build(odsBuilder, odsState, qubitIn, phiOperand, lambdaOperand);
 }
 

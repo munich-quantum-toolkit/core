@@ -353,7 +353,7 @@ struct DropUnusedInvQubits final : OpRewritePattern<InvOp> {
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
     auto* body = op.getBody();
-    const auto qubits = op.getQubits();
+    auto qubits = op.getQubits();
     return qc::detail::dropUnusedQubits(
         op, *body, qubits,
         [&](ValueRange narrowedQubits, ArrayRef<size_t> used) {

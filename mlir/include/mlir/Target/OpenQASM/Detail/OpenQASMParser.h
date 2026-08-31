@@ -1714,10 +1714,9 @@ private:
   }
 
   // Parser collaborators are mandatory and outlive this single parse.
-  Lexer& lexer; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  Sink& sink;   // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
-  llvm::BumpPtrAllocator&
-      allocator; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+  Lexer& lexer;
+  Sink& sink;
+  llvm::BumpPtrAllocator& allocator;
   Token currentToken;
   Token nextToken;
   size_t blockDepth = 0;

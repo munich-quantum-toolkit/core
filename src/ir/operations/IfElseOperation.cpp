@@ -200,52 +200,6 @@ IfElseOperation::print(std::ostream& os, const Permutation& permutation,
   return os;
 }
 
-void IfElseOperation::dumpOpenQASM(std::ostream& of,
-                                   const QubitIndexToRegisterMap& qubitMap,
-                                   const BitIndexToRegisterMap& bitMap,
-                                   const std::size_t indent,
-                                   const bool openQASM3) const {
-  of << std::string(indent * OUTPUT_INDENT_SIZE, ' ');
-  of << "if (";
-  if (controlRegister_.has_value()) {
-    assert(!controlBit_.has_value());
-    of << controlRegister_->getName() << ' ' << comparisonKind_ << ' '
-       << expectedValueRegister_;
-  } else if (controlBit_.has_value()) {
-    of << (!expectedValueBit_ ? "!" : "") << bitMap.at(*controlBit_).second;
-  }
-  of << ") ";
-  of << "{\n";
-  if (thenOp_) {
-    thenOp_->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
-  }
-  if (!elseOp_) {
-    of << "}\n";
-    return;
-  }
-  of << "}";
-  if (openQASM3) {
-    of << " else {\n";
-    elseOp_->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
-  } else {
-    of << '\n' << "if (";
-    if (controlRegister_.has_value()) {
-      assert(!controlBit_.has_value());
-      of << controlRegister_->getName() << ' '
-         << getInvertedComparisonKind(comparisonKind_) << ' '
-         << expectedValueRegister_;
-    }
-    if (controlBit_.has_value()) {
-      assert(!controlRegister_.has_value());
-      of << (expectedValueBit_ ? "!" : "") << bitMap.at(*controlBit_).second;
-    }
-    of << ") ";
-    of << "{\n";
-    elseOp_->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
-  }
-  of << "}\n";
-}
-
 /**
  * @brief Canonicalizes the IfElseOperation by normalizing its internal
  * representation.
