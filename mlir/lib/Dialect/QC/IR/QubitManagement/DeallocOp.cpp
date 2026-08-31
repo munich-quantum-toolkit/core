@@ -53,7 +53,9 @@ struct HoistStaticQubit final : OpRewritePattern<StaticOp> {
   LogicalResult matchAndRewrite(StaticOp op,
                                 PatternRewriter& rewriter) const override {
     auto funcOp = op->getParentOfType<func::FuncOp>();
-    if (!funcOp || op->getBlock() == &funcOp.getBody().front()) {
+    if (!funcOp ||
+        op->getParentWithTrait<OpTrait::IsIsolatedFromAbove>() != funcOp ||
+        op->getBlock() == &funcOp.getBody().front()) {
       return failure();
     }
     rewriter.moveOpBefore(op, &funcOp.getBody().front(),
