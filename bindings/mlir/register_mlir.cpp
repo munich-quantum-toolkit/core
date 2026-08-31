@@ -1126,7 +1126,11 @@ Raises:
       [](const dd::VectorDD& state, const size_t numQubits,
          dd::Package& ddPackage) {
         requireLiveReference(state, ddPackage, "state");
-        return mlir::qco::makeDensityMatrix(state, numQubits, ddPackage);
+        try {
+          return mlir::qco::makeDensityMatrix(state, numQubits, ddPackage);
+        } catch (const std::invalid_argument& error) {
+          throw nb::value_error(error.what());
+        }
       },
       "state"_a, "num_qubits"_a, "dd_package"_a, nb::keep_alive<0, 3>(),
       R"pb(Construct ``|psi><psi|`` from a pure DD state.
