@@ -1733,7 +1733,12 @@ static FailureOr<PreparedState> prepare(func::FuncOp func,
   PreparedState prepared;
   QubitMap& qubits = prepared.qubits;
   for (StaticOp staticOp : func.getBody().front().getOps<StaticOp>()) {
-    const auto q = static_cast<qc::Qubit>(staticOp.getIndex());
+    const auto index = static_cast<size_t>(staticOp.getIndex());
+    if (index >= dd::Package::MAX_POSSIBLE_QUBITS) {
+      return staticOp.emitError()
+             << "static qubit index exceeds the supported qubit range";
+    }
+    const auto q = static_cast<qc::Qubit>(index);
     qubits.bind(staticOp.getQubit(), q);
     qubits.numQubits = std::max(qubits.numQubits, static_cast<size_t>(q) + 1);
   }
