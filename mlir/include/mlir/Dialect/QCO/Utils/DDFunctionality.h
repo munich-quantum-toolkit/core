@@ -35,6 +35,20 @@ namespace mlir::qco {
 using DDBindings = DenseMap<Value, Attribute>;
 
 /**
+ * @brief Determine the DD package capacity required by a concrete QCO function.
+ *
+ * @details Counts static/input wires and statically sized entry-block quantum
+ * allocations. Dynamic QTensor extents, allocations outside the entry block,
+ * and calls that may allocate qubits are rejected because their peak capacity
+ * cannot be determined without executing the program.
+ *
+ * @param func The QCO function to inspect
+ * @return The required number of DD wires, or failure when the capacity cannot
+ *         be determined statically
+ */
+FailureOr<size_t> getNumQubits(func::FuncOp func);
+
+/**
  * @brief Sequentially build a matrix DD for a static unitary QCO `func.func`.
  *
  * @details Walks the concrete control-flow path through @p func, maps
@@ -144,6 +158,24 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
                                  const DDBindings& bindings = DDBindings());
 
 /**
+ * @brief Simulate a QCO function for state extraction.
+ *
+ * @details Terminal measurements that only populate returned CBit registers
+ * are deferred and do not collapse the returned state. Quantum deallocations
+ * are treated as lifetime markers so the complete circuit state is retained.
+ * Mid-circuit measurements and resets are executed with @p rng. Use
+ * @ref getNumQubits to size @p dd; programs whose peak capacity cannot be
+ * determined statically are rejected.
+ *
+ * @param func The QCO function to simulate
+ * @param dd The DD package to use
+ * @param rng RNG used for non-terminal measurements and resets
+ * @return The output statevector DD on success
+ */
+FailureOr<dd::VectorDD> simulateStatevector(func::FuncOp func, dd::Package& dd,
+                                            std::mt19937_64& rng);
+
+/**
  * @brief Sample measurement outcomes from a QCO `func.func`.
  *
  * @details Starts from the all-zero state. If the entry function returns CBit
@@ -153,9 +185,11 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * basis sampling via `Package::measureAll` (qubit `n-1` … `0`). Terminal entry-
  * block measurements that only produce returned CBit cells are sampled from
  * one DD evolution; resets and execution-dependent measurements are executed
- * once per shot. Deallocated separable QTensor wires are omitted from fallback
- * basis outcomes. Multi-block functions are executed once per shot and support
- * fallback-basis sampling only, not CBit return values.
+ * once per shot. With returned CBit registers, deallocations needed to encode
+ * the result are treated as lifetime markers. Deallocated separable QTensor
+ * wires are omitted from fallback-basis outcomes. Multi-block functions are
+ * executed once per shot and support fallback-basis sampling only, not CBit
+ * return values.
  *
  * @pre The containing module has passed MLIR verification and
  * `qco::verifyLinearity`.
@@ -172,6 +206,27 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
        const DDBindings& bindings = DDBindings());
+
+/**
+ * @brief Sample every allocated qubit of a QCO function.
+ *
+ * @details Same as @ref sample, but when the function has no returned CBit
+ * registers, quantum deallocations are treated as end-of-program lifetime
+ * markers. This preserves the full-width output distribution expected by
+ * external circuit formats that lower terminal cleanup to `qtensor.dealloc`.
+ *
+ * @param func The QCO function to sample
+ * @param dd The DD package to use
+ * @param shots Number of shots
+ * @param rng RNG for collapsing measurements and non-collapsing sampling
+ * @param bindings Concrete values for symbolic function arguments
+ * @return Histogram of full-width outcome strings on success, or failure for
+ *         unsupported programs
+ */
+FailureOr<std::map<std::string, size_t>>
+sampleAllQubits(func::FuncOp func, dd::Package& dd, size_t shots,
+                std::mt19937_64& rng,
+                const DDBindings& bindings = DDBindings());
 
 /**
  * @brief Sample measurement outcomes from a QCO `func.func` on a given input.

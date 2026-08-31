@@ -184,6 +184,28 @@ struct ClassicalEnv {
   /// Shared storage preserves caller-visible writes through `func.call`.
   DenseMap<Value, std::shared_ptr<SmallVector<Scalar>>> memrefs;
 
+  void releaseWire(const qc::Qubit released) {
+    for (auto& [value, wire] : deferredMeasurements) {
+      (void)value;
+      if (wire > released) {
+        --wire;
+      }
+    }
+
+    DenseSet<RegisterState*> updated;
+    for (auto& [value, reg] : registers) {
+      (void)value;
+      if (!updated.insert(reg.get()).second) {
+        continue;
+      }
+      for (auto& cell : *reg) {
+        if (cell.deferredWire && *cell.deferredWire > released) {
+          --*cell.deferredWire;
+        }
+      }
+    }
+  }
+
   LogicalResult bindFrom(Value source, Value dest, Operation* op) {
     const auto it = values.find(source);
     if (it == values.end()) {
@@ -200,6 +222,12 @@ struct DecodedGate {
   std::vector<dd::fp> params;
 };
 
+enum class DeallocationMode : std::uint8_t {
+  Apply,
+  PreserveAll,
+  PreserveDeferred,
+};
+
 struct WalkState {
   QubitMap* qubits;
   TensorMap* tensors;
@@ -207,6 +235,7 @@ struct WalkState {
   dd::Package* dd;
   std::mt19937_64* rng = nullptr;
   const DenseSet<Operation*>* deferredMeasurements = nullptr;
+  DeallocationMode deallocationMode = DeallocationMode::Apply;
   size_t remainingExecutionSteps = MAX_CONTROL_FLOW_STEPS;
   DenseSet<Operation*> activeCalls;
 };
@@ -1542,6 +1571,7 @@ static LogicalResult deallocateWire(const qc::Qubit wire, WalkState& walk,
   state = reduced;
   walk.qubits->releaseWire(wire);
   walk.tensors->releaseWire(wire);
+  walk.classical->releaseWire(wire);
   return success();
 }
 
@@ -1664,6 +1694,19 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             }
             TensorSlots slots = *tracked;
             walk.tensors->erase(dealloc.getTensor());
+            const bool containsDeferredMeasurement =
+                llvm::any_of(slots, [&](const std::optional<qc::Qubit> wire) {
+                  return wire &&
+                         llvm::any_of(walk.classical->deferredMeasurements,
+                                      [&](const auto& measurement) {
+                                        return measurement.second == *wire;
+                                      });
+                });
+            if (walk.deallocationMode == DeallocationMode::PreserveAll ||
+                (walk.deallocationMode == DeallocationMode::PreserveDeferred &&
+                 containsDeferredMeasurement)) {
+              return success();
+            }
             if constexpr (std::is_same_v<StateDD, dd::VectorDD>) {
               SmallVector<qc::Qubit> wires;
               for (const auto wire : slots) {
@@ -2114,6 +2157,140 @@ prepare(func::FuncOp func, const dd::Package& dd, const DDBindings& bindings,
   return prepared;
 }
 
+static bool mayAllocateQubits(func::FuncOp func, DenseSet<Operation*>& active) {
+  if (!active.insert(func).second) {
+    return true;
+  }
+  const auto activeGuard = llvm::make_scope_exit([&] { active.erase(func); });
+
+  bool allocation = false;
+  func.walk([&](Operation* op) {
+    if (allocation || isa<AllocOp, qtensor::AllocOp>(op)) {
+      allocation = true;
+      return;
+    }
+    auto call = dyn_cast<func::CallOp>(op);
+    if (!call) {
+      return;
+    }
+    auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+        call, call.getCalleeAttr());
+    allocation =
+        !callee || callee.isDeclaration() || mayAllocateQubits(callee, active);
+  });
+  return allocation;
+}
+
+FailureOr<size_t> getNumQubits(func::FuncOp func) {
+  if (func.isDeclaration()) {
+    return func.emitError() << "QCO DD capacity requires a function body";
+  }
+
+  constexpr size_t maxQubits = dd::Package::MAX_POSSIBLE_QUBITS;
+  size_t required = 0;
+  LogicalResult result = success();
+  const auto addQubits = [&](const size_t count, Operation* op) {
+    if (failed(result)) {
+      return;
+    }
+    if (count > maxQubits - required) {
+      result = op->emitError()
+               << "QCO function exceeds the supported qubit range";
+      return;
+    }
+    required += count;
+  };
+
+  func.walk([&](StaticOp staticOp) {
+    if (failed(result)) {
+      return;
+    }
+    const auto index = static_cast<size_t>(staticOp.getIndex());
+    if (index >= maxQubits) {
+      result = staticOp.emitError()
+               << "static qubit index exceeds the supported qubit range";
+      return;
+    }
+    required = std::max(required, index + 1U);
+  });
+
+  if (required == 0) {
+    for (Value arg : func.getArguments()) {
+      if (isa<QubitType>(arg.getType())) {
+        addQubits(1, func);
+        continue;
+      }
+      if (!isQTensorType(arg.getType())) {
+        continue;
+      }
+      const auto type = cast<RankedTensorType>(arg.getType());
+      if (type.isDynamicDim(0)) {
+        return func.emitError()
+               << "dynamic qtensor arguments prevent static DD capacity "
+                  "calculation";
+      }
+      addQubits(static_cast<size_t>(type.getDimSize(0)), func);
+    }
+  }
+
+  Block* entry = &func.getBody().front();
+  func.walk([&](AllocOp alloc) {
+    if (alloc->getBlock() != entry) {
+      result = alloc.emitError()
+               << "quantum allocations outside the entry block prevent "
+                  "static DD capacity calculation";
+      return;
+    }
+    addQubits(1, alloc);
+  });
+  func.walk([&](qtensor::AllocOp alloc) {
+    if (failed(result)) {
+      return;
+    }
+    if (alloc->getBlock() != entry) {
+      result = alloc.emitError()
+               << "quantum allocations outside the entry block prevent "
+                  "static DD capacity calculation";
+      return;
+    }
+    const auto attr = mqt::valueToConstantAttr(alloc.getSize());
+    const auto integer = attr ? dyn_cast<IntegerAttr>(*attr) : IntegerAttr{};
+    if (!integer) {
+      result = alloc.emitError()
+               << "dynamic qtensor allocation prevents static DD capacity "
+                  "calculation";
+      return;
+    }
+    const int64_t count = integer.getInt();
+    if (count <= 0) {
+      result = alloc.emitError()
+               << "qtensor allocation size must be a positive integer";
+      return;
+    }
+    addQubits(static_cast<size_t>(count), alloc);
+  });
+
+  DenseSet<Operation*> active;
+  func.walk([&](func::CallOp call) {
+    if (failed(result)) {
+      return;
+    }
+    auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+        call, call.getCalleeAttr());
+    if (!callee || callee.isDeclaration() ||
+        mayAllocateQubits(callee, active)) {
+      result = call.emitError()
+               << "calls that may allocate qubits prevent static DD capacity "
+                  "calculation";
+    }
+  });
+
+  if (failed(result)) {
+    return failure();
+  }
+  return required;
+}
+
 FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd,
                                            const DDBindings& bindings) {
   auto prepared = prepare(func, dd, bindings, /*bindEntryAllocations=*/true);
@@ -2131,6 +2308,7 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd,
                       .classical = &classical,
                       .dd = &dd,
                       .rng = nullptr};
+  walkState.activeCalls.insert(func.getOperation());
 
   dd::MatrixDD state =
       qubits.numQubits == 0
@@ -2150,7 +2328,9 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
              const PreparedState& prepared, std::mt19937_64* rng,
              const DDBindings& bindings,
              const DenseSet<Operation*>* deferredMeasurements = nullptr,
-             ClassicalEnv* finalClassical = nullptr) {
+             ClassicalEnv* finalClassical = nullptr,
+             const DeallocationMode deallocationMode = DeallocationMode::Apply,
+             const bool validateQuantumReturn = true) {
   const size_t inputQubits =
       in.isTerminal() ? 0U : static_cast<size_t>(in.p->v) + 1U;
   if (inputQubits < prepared.qubits.numQubits) {
@@ -2172,10 +2352,15 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
                       .classical = &classical,
                       .dd = &dd,
                       .rng = rng,
-                      .deferredMeasurements = deferredMeasurements};
+                      .deferredMeasurements = deferredMeasurements,
+                      .deallocationMode = deallocationMode};
+  walkState.activeCalls.insert(func.getOperation());
 
   dd::VectorDD state = in;
-  if (failed(walkFunction(func, walkState, state))) {
+  auto returnOp = walkFunctionBody(func, walkState, state);
+  if (failed(returnOp) ||
+      (validateQuantumReturn &&
+       failed(validateReturn(*returnOp, qubits, tensors)))) {
     dd.decRef(state);
     return failure();
   }
@@ -2183,6 +2368,16 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
     *finalClassical = std::move(classical);
   }
   return state;
+}
+
+FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
+                                 dd::Package& dd, const DDBindings& bindings) {
+  auto prepared = prepare(func, dd, bindings);
+  if (failed(prepared)) {
+    dd.decRef(in);
+    return failure();
+  }
+  return simulateImpl(func, in, dd, *prepared, nullptr, bindings);
 }
 
 FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
@@ -2207,11 +2402,13 @@ static bool isOutputOnlyRegister(Value reg, ArrayRef<Value> outputs) {
 }
 
 static bool hasOutputOnlyMeasurementResult(MeasureOp measure,
-                                           ArrayRef<Value> outputs) {
-  if (measure.getResult().use_empty()) {
-    return false;
+                                           ArrayRef<Value> outputs,
+                                           const bool allowUnusedResult) {
+  Value result = measure.getResult();
+  if (result.use_empty()) {
+    return allowUnusedResult;
   }
-  return llvm::all_of(measure.getResult().getUses(), [&](const OpOperand& use) {
+  return llvm::all_of(result.getUses(), [&](const OpOperand& use) {
     auto store = dyn_cast<cbit::StoreOp>(use.getOwner());
     return store && isOutputOnlyRegister(store.getReg(), outputs);
   });
@@ -2230,6 +2427,7 @@ static bool hasOnlyTerminalQuantumUses(Value value,
                                        std::optional<size_t> tensorSlot,
                                        func::FuncOp func,
                                        ArrayRef<Value> outputs,
+                                       const bool allowUnusedResult,
                                        DenseSet<Value>& visited) {
   if (!visited.insert(value).second) {
     return true;
@@ -2241,14 +2439,17 @@ static bool hasOnlyTerminalQuantumUses(Value value,
     }
     if (auto measure = dyn_cast<MeasureOp>(owner)) {
       return !tensorSlot && measure->getParentOfType<func::FuncOp>() == func &&
-             hasOutputOnlyMeasurementResult(measure, outputs) &&
+             hasOutputOnlyMeasurementResult(measure, outputs,
+                                            allowUnusedResult) &&
              hasOnlyTerminalQuantumUses(measure.getQubitOut(), std::nullopt,
-                                        func, outputs, visited);
+                                        func, outputs, allowUnusedResult,
+                                        visited);
     }
     if (auto fromElements = dyn_cast<qtensor::FromElementsOp>(owner)) {
-      return !tensorSlot && hasOnlyTerminalQuantumUses(fromElements.getResult(),
-                                                       use.getOperandNumber(),
-                                                       func, outputs, visited);
+      return !tensorSlot &&
+             hasOnlyTerminalQuantumUses(fromElements.getResult(),
+                                        use.getOperandNumber(), func, outputs,
+                                        allowUnusedResult, visited);
     }
     if (auto insert = dyn_cast<qtensor::InsertOp>(owner)) {
       const auto index = getConstantTensorIndex(insert.getIndex());
@@ -2258,11 +2459,11 @@ static bool hasOnlyTerminalQuantumUses(Value value,
       if (use.get() == insert.getScalar()) {
         return !tensorSlot &&
                hasOnlyTerminalQuantumUses(insert.getResult(), index, func,
-                                          outputs, visited);
+                                           outputs, allowUnusedResult, visited);
       }
       return tensorSlot && *tensorSlot != *index &&
              hasOnlyTerminalQuantumUses(insert.getResult(), tensorSlot, func,
-                                        outputs, visited);
+                                        outputs, allowUnusedResult, visited);
     }
     if (auto extract = dyn_cast<qtensor::ExtractOp>(owner)) {
       const auto index = getConstantTensorIndex(extract.getIndex());
@@ -2271,27 +2472,31 @@ static bool hasOnlyTerminalQuantumUses(Value value,
       }
       if (*tensorSlot == *index) {
         return hasOnlyTerminalQuantumUses(extract.getResult(), std::nullopt,
-                                          func, outputs, visited);
+                                          func, outputs, allowUnusedResult,
+                                          visited);
       }
       return hasOnlyTerminalQuantumUses(extract.getOutTensor(), tensorSlot,
-                                        func, outputs, visited);
+                                        func, outputs, allowUnusedResult,
+                                        visited);
     }
     return false;
   });
 }
 
 static bool isDeferrableMeasurement(MeasureOp measure, func::FuncOp func,
-                                    ArrayRef<Value> outputs) {
-  if (!hasOutputOnlyMeasurementResult(measure, outputs)) {
+                                    ArrayRef<Value> outputs,
+                                    const bool allowUnusedResult) {
+  if (!hasOutputOnlyMeasurementResult(measure, outputs, allowUnusedResult)) {
     return false;
   }
   DenseSet<Value> visited;
   return hasOnlyTerminalQuantumUses(measure.getQubitOut(), std::nullopt, func,
-                                    outputs, visited);
+                                    outputs, allowUnusedResult, visited);
 }
 
 static void analyzeSampling(func::FuncOp func, ArrayRef<Value> outputs,
-                            DenseSet<Operation*>& active, SamplingPlan& plan) {
+                            DenseSet<Operation*>& active, SamplingPlan& plan,
+                            const bool allowUnusedMeasurementResults) {
   Operation* funcOp = func.getOperation();
   if (!active.insert(funcOp).second) {
     plan.dynamic = true;
@@ -2301,7 +2506,8 @@ static void analyzeSampling(func::FuncOp func, ArrayRef<Value> outputs,
     if (isa<ResetOp>(op)) {
       plan.dynamic = true;
     } else if (auto measure = dyn_cast<MeasureOp>(op)) {
-      if (isDeferrableMeasurement(measure, func, outputs)) {
+      if (isDeferrableMeasurement(measure, func, outputs,
+                                  allowUnusedMeasurementResults)) {
         plan.deferredMeasurements.insert(op);
       } else {
         plan.dynamic = true;
@@ -2313,17 +2519,23 @@ static void analyzeSampling(func::FuncOp func, ArrayRef<Value> outputs,
           !callee.getBody().hasOneBlock()) {
         plan.dynamic = true;
       } else {
-        analyzeSampling(callee, outputs, active, plan);
+        // A callee return is not terminal for the entry function. Without
+        // following call-result dataflow, unused measurement results in
+        // callees must remain collapsing.
+        analyzeSampling(callee, outputs, active, plan,
+                        /*allowUnusedMeasurementResults=*/false);
       }
     }
   });
   active.erase(funcOp);
 }
 
-static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {
+static FailureOr<SamplingPlan>
+getSamplingPlan(func::FuncOp func, const bool validateHistogramOutputs = true,
+                const bool allowUnusedMeasurementResults = false) {
   Block& entry = func.getBody().front();
   SamplingPlan plan;
-  if (!func.getBody().hasOneBlock()) {
+  if (validateHistogramOutputs && !func.getBody().hasOneBlock()) {
     if (llvm::any_of(func.getFunctionType().getResults(),
                      [](Type type) { return isa<cbit::RegisterType>(type); })) {
       return func.emitError()
@@ -2334,29 +2546,59 @@ static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {
     return plan;
   }
 
-  auto returnOp = dyn_cast<func::ReturnOp>(entry.getTerminator());
-  if (!returnOp) {
+  if (validateHistogramOutputs && !isa<func::ReturnOp>(entry.getTerminator())) {
     return func.emitError()
            << "single-block QCO DD sampling requires func.return";
   }
 
   bool hasOther = false;
-  for (Value value : returnOp.getOperands()) {
-    if (isa<cbit::RegisterType>(value.getType())) {
-      plan.outputs.push_back(value);
-    } else {
-      hasOther = true;
+  func.getBody().walk([&](func::ReturnOp returnOp) {
+    for (Value value : returnOp.getOperands()) {
+      if (isa<cbit::RegisterType>(value.getType())) {
+        plan.outputs.push_back(value);
+      } else {
+        hasOther = true;
+      }
     }
-  }
-  if (!plan.outputs.empty() && hasOther) {
-    return returnOp.emitError()
+  });
+  if (validateHistogramOutputs && !plan.outputs.empty() && hasOther) {
+    return entry.getTerminator()->emitError()
            << "QCO DD sampling does not support mixed CBit and non-CBit "
               "results";
   }
 
   DenseSet<Operation*> active;
-  analyzeSampling(func, plan.outputs, active, plan);
+  analyzeSampling(func, plan.outputs, active, plan,
+                  allowUnusedMeasurementResults);
   return plan;
+}
+
+FailureOr<dd::VectorDD> simulateStatevector(func::FuncOp func, dd::Package& dd,
+                                            std::mt19937_64& rng) {
+  const auto requiredQubits = getNumQubits(func);
+  if (failed(requiredQubits)) {
+    return failure();
+  }
+  if (dd.qubits() < *requiredQubits) {
+    return func.emitError()
+           << "DD package has " << dd.qubits()
+           << " qubits but function requires " << *requiredQubits;
+  }
+  const DDBindings bindings;
+  auto prepared = prepare(func, dd, bindings);
+  if (failed(prepared)) {
+    return failure();
+  }
+  auto plan = getSamplingPlan(func, /*validateHistogramOutputs=*/false,
+                              /*allowUnusedMeasurementResults=*/true);
+  if (failed(plan)) {
+    return failure();
+  }
+  return simulateImpl(func, dd::makeZeroState(prepared->qubits.numQubits, dd),
+                      dd, *prepared, &rng, bindings,
+                      &plan->deferredMeasurements, nullptr,
+                      DeallocationMode::PreserveAll,
+                      /*validateQuantumReturn=*/false);
 }
 
 static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
@@ -2390,8 +2632,8 @@ static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
 
 static FailureOr<std::map<std::string, size_t>>
 sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
-           const size_t shots, std::mt19937_64& rng,
-           const DDBindings& bindings) {
+           const size_t shots, std::mt19937_64& rng, const DDBindings& bindings,
+           const bool preserveDeallocatedQubits = false) {
   const auto inputGuard = llvm::make_scope_exit([&] { dd.decRef(in); });
   auto prepared = prepare(func, dd, bindings);
   if (failed(prepared)) {
@@ -2428,8 +2670,14 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
   if (!plan->dynamic) {
     ClassicalEnv classical;
     dd.incRef(in);
-    auto state = simulateImpl(func, in, dd, *prepared, nullptr, bindings,
-                              &plan->deferredMeasurements, &classical);
+    const auto deallocationMode =
+        preserveDeallocatedQubits || !plan->outputs.empty()
+            ? DeallocationMode::PreserveAll
+            : DeallocationMode::PreserveDeferred;
+    auto state =
+        simulateImpl(func, in, dd, *prepared, nullptr, bindings,
+                     &plan->deferredMeasurements, &classical, deallocationMode,
+                     /*validateQuantumReturn=*/!preserveDeallocatedQubits);
     if (failed(state)) {
       return failure();
     }
@@ -2445,8 +2693,12 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
   for (size_t i = 0; i < shots; ++i) {
     ClassicalEnv classical;
     dd.incRef(in);
-    auto state = simulateImpl(func, in, dd, *prepared, &rng, bindings, nullptr,
-                              &classical);
+    auto state = simulateImpl(
+        func, in, dd, *prepared, &rng, bindings, nullptr, &classical,
+        preserveDeallocatedQubits || !plan->outputs.empty()
+            ? DeallocationMode::PreserveAll
+            : DeallocationMode::Apply,
+        /*validateQuantumReturn=*/!preserveDeallocatedQubits);
     if (failed(state)) {
       return failure();
     }
@@ -2476,6 +2728,18 @@ sample(func::FuncOp func, dd::Package& dd, const size_t shots,
   }
   return sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, dd), dd,
                     shots, rng, bindings);
+}
+
+FailureOr<std::map<std::string, size_t>>
+sampleAllQubits(func::FuncOp func, dd::Package& dd, const size_t shots,
+                std::mt19937_64& rng, const DDBindings& bindings) {
+  auto prepared = prepare(func, dd, bindings);
+  if (failed(prepared)) {
+    return failure();
+  }
+  return sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, dd), dd,
+                    shots, rng, bindings,
+                    /*preserveDeallocatedQubits=*/true);
 }
 
 } // namespace mlir::qco

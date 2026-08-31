@@ -2205,6 +2205,127 @@ TEST_F(QCODDFunctionalityTest, DefersTensorMeasurementDespiteLaterUnrelatedOp) {
   EXPECT_EQ(dd->matrixVectorMultiplication.getStats().lookups,
             singleEvolutionLookups);
   EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+
+  auto stateDD = std::make_unique<dd::Package>(2);
+  auto expected = dd::makeZeroState(2, *stateDD);
+  expected = stateDD->applyOperation(
+      stateDD->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::H), 0),
+      expected);
+  expected = stateDD->applyOperation(
+      stateDD->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 1),
+      expected);
+  auto state = simulateStatevector(mainFunc(*mod), *stateDD, rng);
+  ASSERT_TRUE(succeeded(state));
+  EXPECT_EQ(state->getVector(), expected.getVector());
+  stateDD->decRef(*state);
+  stateDD->decRef(expected);
+}
+
+TEST_F(QCODDFunctionalityTest,
+       StatevectorAllowsMixedClassicalAndNonClassicalResults) {
+  auto mod = buildModule([](QCOProgramBuilder& b) -> SmallVector<Value> {
+    auto reg =
+        b.allocClassicalBitRegister(1, {}, cbit::Initialization::Undefined);
+    auto q = b.h(b.staticQubit(0));
+    std::tie(q, std::ignore) = b.measure(q, reg, 0);
+    b.sink(q);
+    return {reg, b.intConstant(0)};
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  auto expected = dd::makeZeroState(1, *dd);
+  expected = dd->applyOperation(
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::H), 0),
+      expected);
+  std::mt19937_64 rng(19);
+  auto state = simulateStatevector(mainFunc(*mod), *dd, rng);
+  ASSERT_TRUE(succeeded(state));
+  EXPECT_EQ(state->getVector(), expected.getVector());
+  dd->decRef(*state);
+  dd->decRef(expected);
+}
+
+TEST_F(QCODDFunctionalityTest,
+       StatevectorPreservesDeallocatedWiresBelowQuantumResults) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto low = b.qtensorAlloc(1);
+    auto high = b.x(b.allocQubit());
+    b.qtensorDealloc(low);
+    return high;
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  std::mt19937_64 rng(23);
+  auto state = simulateStatevector(mainFunc(*mod), *dd, rng);
+  ASSERT_TRUE(succeeded(state));
+  auto expected = dd::makeZeroState(2, *dd);
+  expected = dd->applyOperation(
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 1),
+      expected);
+  EXPECT_EQ(state->getVector(), expected.getVector());
+  dd->decRef(*state);
+  dd->decRef(expected);
+}
+
+TEST_F(QCODDFunctionalityTest,
+       SampleAllQubitsPreservesDeallocatedWiresBelowQuantumResults) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto low = b.qtensorAlloc(1);
+    auto high = b.x(b.allocQubit());
+    b.qtensorDealloc(low);
+    return high;
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  std::mt19937_64 rng(27);
+  const auto histogram = sampleAllQubits(mainFunc(*mod), *dd, 4, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"10", 4}}));
+}
+
+TEST_F(QCODDFunctionalityTest, UnusedMeasurementDoesNotRetainDeallocatedWire) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto tensor = b.qtensorAlloc(1);
+    Value q;
+    std::tie(tensor, q) = b.qtensorExtract(tensor, 0);
+    std::tie(q, std::ignore) = b.measure(q);
+    tensor = b.qtensorInsert(q, tensor, 0);
+    b.qtensorDealloc(tensor);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(29);
+  const auto histogram = sample(mainFunc(*mod), *dd, 4, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"", 4}}));
+}
+
+TEST_F(QCODDFunctionalityTest,
+       StatevectorDefersTerminalMeasurementWithUnusedResult) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto q = b.h(b.staticQubit(0));
+    std::tie(q, std::ignore) = b.measure(q);
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  auto expected = dd::makeZeroState(1, *dd);
+  expected = dd->applyOperation(
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::H), 0),
+      expected);
+  std::mt19937_64 rng(30);
+  auto state = simulateStatevector(mainFunc(*mod), *dd, rng);
+  ASSERT_TRUE(succeeded(state));
+  EXPECT_EQ(state->getVector(), expected.getVector());
+  dd->decRef(*state);
+  dd->decRef(expected);
 }
 
 TEST_F(QCODDFunctionalityTest, SampleDefersAllocatedQubitMeasurement) {
@@ -2333,9 +2454,7 @@ TEST_F(QCODDFunctionalityTest,
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @measure(%q: !qco.qubit) -> !qco.qubit {
-        cf.br ^measure(%q : !qco.qubit)
-      ^measure(%arg: !qco.qubit):
-        %q1, %bit = qco.measure %arg : !qco.qubit
+        %q1, %bit = qco.measure %q : !qco.qubit
         return %q1 : !qco.qubit
       }
       func.func @main() {
@@ -2365,6 +2484,15 @@ TEST_F(QCODDFunctionalityTest,
   EXPECT_EQ(dd->matrixVectorMultiplication.getStats().lookups,
             perShotLookups * 128U);
   EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+
+  auto stateDD = std::make_unique<dd::Package>(1);
+  auto state = simulateStatevector(mainFunc(*mod), *stateDD, rng);
+  ASSERT_TRUE(succeeded(state));
+  const auto vector = state->getVector();
+  ASSERT_EQ(vector.size(), 2U);
+  EXPECT_NEAR(std::norm(vector[0]), 0.5, 1e-12);
+  EXPECT_NEAR(std::norm(vector[1]), 0.5, 1e-12);
+  stateDD->decRef(*state);
 }
 
 TEST_F(QCODDFunctionalityTest, SampleExecutesNestedMeasurementPerShot) {
@@ -2612,6 +2740,148 @@ TEST_F(QCODDFunctionalityTest, RejectsEntangledQTensorDeallocation) {
   EXPECT_TRUE(failed(sample(mainFunc(*mod), *dd, 1, rng)));
 }
 
+TEST_F(QCODDFunctionalityTest,
+       SampleAllQubitsPreservesDeallocatedEntangledWires) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto tensor = b.qtensorAlloc(2);
+    Value q0;
+    Value q1;
+    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    q0 = b.h(q0);
+    std::tie(q0, q1) = b.cx(q0, q1);
+    tensor = b.qtensorInsert(q0, tensor, 0);
+    tensor = b.qtensorInsert(q1, tensor, 1);
+    b.qtensorDealloc(tensor);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  std::mt19937_64 rng(3);
+  const auto histogram = sampleAllQubits(mainFunc(*mod), *dd, 64, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(histogram->at("00") + histogram->at("11"), 64U);
+}
+
+TEST_F(QCODDFunctionalityTest,
+       ClassicalOnlySamplingTreatsDeallocationAsLifetimeMarker) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto tensor = b.qtensorAlloc(2);
+    Value q0;
+    Value q1;
+    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    q0 = b.h(q0);
+    std::tie(q0, q1) = b.cx(q0, q1);
+    tensor = b.qtensorInsert(q0, tensor, 0);
+    tensor = b.qtensorInsert(q1, tensor, 1);
+    b.qtensorDealloc(tensor);
+    return b.allocClassicalBitRegister(1);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(2);
+  std::mt19937_64 rng(3);
+  const auto histogram = sample(mainFunc(*mod), *dd, 4, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"0", 4}}));
+}
+
+TEST_F(QCODDFunctionalityTest,
+       CBitSamplingPreservesUnrelatedEntangledDeallocation) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto reg =
+        b.allocClassicalBitRegister(1, {}, cbit::Initialization::Undefined);
+    auto measured = b.allocQubit();
+    std::tie(measured, std::ignore) = b.measure(measured, reg, 0);
+
+    auto tensor = b.qtensorAlloc(2);
+    Value q0;
+    Value q1;
+    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    q0 = b.h(q0);
+    std::tie(q0, q1) = b.cx(q0, q1);
+    tensor = b.qtensorInsert(q0, tensor, 0);
+    tensor = b.qtensorInsert(q1, tensor, 1);
+    b.qtensorDealloc(tensor);
+    b.sink(measured);
+    return reg;
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(3);
+  std::mt19937_64 rng(31);
+  const auto histogram = sample(mainFunc(*mod), *dd, 4, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"0", 4}}));
+}
+
+TEST_F(QCODDFunctionalityTest, DeferredMeasurementsTrackDeallocatedLowerWires) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto low = b.qtensorAlloc(1);
+    auto high = b.qtensorAlloc(1);
+    auto reg =
+        b.allocClassicalBitRegister(1, {}, cbit::Initialization::Undefined);
+    Value measured;
+    std::tie(high, measured) = b.qtensorExtract(high, 0);
+    measured = b.x(measured);
+    std::tie(measured, std::ignore) = b.measure(measured, reg, 0);
+    high = b.qtensorInsert(measured, high, 0);
+    b.qtensorDealloc(low);
+    b.qtensorDealloc(high);
+    return reg;
+  });
+  ASSERT_TRUE(mod);
+
+  std::mt19937_64 rng(3);
+  auto dd = std::make_unique<dd::Package>(2);
+  const auto histogram = sample(mainFunc(*mod), *dd, 4, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 4}}));
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUnboundedStatevectorCapacity) {
+  auto nested = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %condition = arith.constant true
+        scf.if %condition {
+          %q = qco.alloc : !qco.qubit
+          qco.sink %q : !qco.qubit
+        }
+        return
+      }
+    }
+  )mlir",
+                                            context.get());
+  auto called = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @allocate() {
+        %q = qco.alloc : !qco.qubit
+        qco.sink %q : !qco.qubit
+        return
+      }
+      func.func @main() {
+        func.call @allocate() : () -> ()
+        return
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(nested);
+  ASSERT_TRUE(called);
+
+  EXPECT_TRUE(failed(getNumQubits(mainFunc(*nested))));
+  EXPECT_TRUE(failed(getNumQubits(mainFunc(*called))));
+
+  auto dd = std::make_unique<dd::Package>(2);
+  std::mt19937_64 rng(37);
+  EXPECT_TRUE(failed(simulateStatevector(mainFunc(*nested), *dd, rng)));
+  EXPECT_TRUE(failed(simulateStatevector(mainFunc(*called), *dd, rng)));
+}
+
 TEST_F(QCODDFunctionalityTest, DynamicAllocationsAndQTensorBookkeeping) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q0 = b.x(b.allocQubit());
@@ -2705,7 +2975,12 @@ TEST_F(QCODDFunctionalityTest, RejectsQTensorBeyondQubitRange) {
   ASSERT_TRUE(mod);
 
   auto dd = std::make_unique<dd::Package>(1);
-  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
+  const auto func = mainFunc(*mod);
+  EXPECT_TRUE(failed(getNumQubits(func)));
+  EXPECT_TRUE(failed(buildFunctionality(func, *dd)));
+
+  std::mt19937_64 rng(7);
+  EXPECT_TRUE(failed(simulateStatevector(func, *dd, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, QTensorFlowsThroughLoopAndCall) {
