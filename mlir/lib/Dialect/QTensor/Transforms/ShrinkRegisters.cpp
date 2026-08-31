@@ -32,6 +32,8 @@ namespace mlir::qtensor {
 #define GEN_PASS_DEF_SHRINKQTENSORTOFITPASS
 #include "mlir/Dialect/QTensor/Transforms/Passes.h.inc"
 
+namespace {
+
 /**
  * @brief Mark a single live index.
  */
@@ -58,9 +60,6 @@ struct TensorAccess {
     SmallVectorImpl<TensorAccess>& accesses, DeallocOp& deallocOp) {
   auto tensor = allocOp.getResult();
   while (true) {
-    if (!tensor.hasOneUse()) {
-      return failure();
-    }
     auto* user = *tensor.getUsers().begin();
 
     if (auto currentDealloc = dyn_cast<DeallocOp>(user)) {
@@ -100,8 +99,6 @@ struct TensorAccess {
     return failure();
   }
 }
-
-namespace {
 
 /**
  * @brief Shrink static qtensors by removing never-accessed indices.
