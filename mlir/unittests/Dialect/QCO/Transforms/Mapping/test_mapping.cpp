@@ -1978,7 +1978,7 @@ TEST_P(MappingPassTest, MapOpsWithClassicalDependencyChain) {
         } else args(%arg0 = %q0_0) {
           qco.yield %arg0 : !qco.qubit
         }
-        
+
         qco.sink %qx : !qco.qubit
         qco.sink %q0_1 : !qco.qubit
         qco.sink %q1_1 : !qco.qubit
