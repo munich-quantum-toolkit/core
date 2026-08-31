@@ -275,7 +275,7 @@ return `QDMI_ERROR_NOTSUPPORTED`.
 ### LLVM/MLIR enabled by default
 
 MQT Core now builds its MLIR-based compiler infrastructure by default. This
-configuration requires LLVM 22.1+ with MLIR and includes QIR support in the
+configuration requires LLVM 23.1+ with MLIR and includes QIR support in the
 DDSIM QDMI device. Set `BUILD_MQT_CORE_MLIR=OFF` to build the core IR, decision
 diagram, OpenQASM, and QDMI libraries without LLVM/MLIR or DDSIM QIR support.
 The DDSIM device continues to support OpenQASM 2 and OpenQASM 3 programs.

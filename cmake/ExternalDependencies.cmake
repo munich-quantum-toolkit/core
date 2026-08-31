@@ -26,7 +26,7 @@ if(BUILD_MQT_CORE_MLIR)
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
-    GIT_TAG 66c92d058cb498f5c12628f6a2d2a290480d700b)
+    GIT_TAG 7e11628de13d87798474386721c08f218b5f277e)
   function(_mqt_core_make_jeff_available)
     # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option
     # and defines a global `check` target when it is enabled. Do not let an embedding project's test

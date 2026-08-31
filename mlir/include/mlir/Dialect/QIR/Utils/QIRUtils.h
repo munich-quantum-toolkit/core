@@ -44,7 +44,7 @@ namespace mlir::qir {
 
 /// Normalize QIR profile module flags after MLIR-to-LLVM translation.
 ///
-/// MLIR 22 translates integer-valued `llvm.module_flags` attributes to i32
+/// MLIR translates integer-valued `llvm.module_flags` attributes to i32
 /// metadata and only supports array-valued flags for LLVM's own CG profile.
 /// QIR instead requires i1/i2 capability flags and metadata tuples describing
 /// the integer and floating-point widths used by Adaptive Profile classical

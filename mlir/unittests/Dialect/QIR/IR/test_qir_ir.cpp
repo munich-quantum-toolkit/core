@@ -249,7 +249,7 @@ TEST_F(QIRTest, BaseBuilderUsesGenericSpecializationForThreeControls) {
                       StringAttr::get(context.get(), "base_profile")})));
 }
 
-TEST_F(QIRTest, UsesQIR21ModuleFlagWidths) {
+TEST_F(QIRTest, UsesTranslationCompatibleModuleFlagWidths) {
   const auto build = [&](const QIRProgramBuilder::Profile profile) {
     return QIRProgramBuilder::build(
         context.get(),
@@ -261,7 +261,11 @@ TEST_F(QIRTest, UsesQIR21ModuleFlagWidths) {
   const auto baseDynamicQubits =
       findModuleFlag(base.get(), "dynamic_qubit_management");
   ASSERT_TRUE(baseDynamicQubits);
-  EXPECT_TRUE(isa<BoolAttr>(baseDynamicQubits.getValue()));
+  const auto baseDynamicQubitsValue =
+      dyn_cast<IntegerAttr>(baseDynamicQubits.getValue());
+  ASSERT_TRUE(baseDynamicQubitsValue);
+  EXPECT_EQ(baseDynamicQubitsValue.getType(),
+            IntegerType::get(context.get(), 32));
   EXPECT_FALSE(findModuleFlag(base.get(), "backwards_branching"));
 
   auto adaptive = build(QIRProgramBuilder::Profile::Adaptive);
@@ -272,10 +276,13 @@ TEST_F(QIRTest, UsesQIR21ModuleFlagWidths) {
   const auto backwardsBranchingValue =
       dyn_cast<IntegerAttr>(backwardsBranching.getValue());
   ASSERT_TRUE(backwardsBranchingValue);
-  EXPECT_EQ(backwardsBranchingValue.getType().getIntOrFloatBitWidth(), 2U);
+  EXPECT_EQ(backwardsBranchingValue.getType(),
+            IntegerType::get(context.get(), 32));
   const auto arrays = findModuleFlag(adaptive.get(), "arrays");
   ASSERT_TRUE(arrays);
-  EXPECT_TRUE(isa<BoolAttr>(arrays.getValue()));
+  const auto arraysValue = dyn_cast<IntegerAttr>(arrays.getValue());
+  ASSERT_TRUE(arraysValue);
+  EXPECT_EQ(arraysValue.getType(), IntegerType::get(context.get(), 32));
 }
 
 TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
@@ -355,7 +362,7 @@ TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
                                  "multiple_return_points"}) {
     const auto moduleFlag = findModuleFlag(moduleOp, flag);
     ASSERT_TRUE(moduleFlag) << flag;
-    EXPECT_EQ(moduleFlag.getValue(), builder.getBoolAttr(true)) << flag;
+    EXPECT_EQ(moduleFlag.getValue(), builder.getI32IntegerAttr(1)) << flag;
   }
 
   ASSERT_TRUE(attachAttributes(false).succeeded());
