@@ -277,11 +277,6 @@ LogicalResult MQTDialect::verifyRegionResultAttribute(
          << "' is not valid on a region result";
 }
 
-bool mlir::mqt::isEntryPoint(Operation* operation) {
-  return operation != nullptr &&
-         operation->hasAttr(MQTDialect::EntryPointAttrHelper::getNameStr());
-}
-
 void mlir::mqt::setEntryPoint(Operation* operation) {
   operation->setAttr(MQTDialect::EntryPointAttrHelper::getNameStr(),
                      UnitAttr::get(operation->getContext()));
@@ -289,13 +284,4 @@ void mlir::mqt::setEntryPoint(Operation* operation) {
 
 void mlir::mqt::removeEntryPoint(Operation* operation) {
   operation->removeAttr(MQTDialect::EntryPointAttrHelper::getNameStr());
-}
-
-func::FuncOp mlir::mqt::getEntryPoint(ModuleOp moduleOp) {
-  for (auto function : moduleOp.getOps<func::FuncOp>()) {
-    if (isEntryPoint(function)) {
-      return function;
-    }
-  }
-  return nullptr;
 }

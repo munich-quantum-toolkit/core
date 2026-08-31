@@ -8,7 +8,7 @@
 
 [build-system]
 requires = [
-  "nanobind~=3.0.0",
+  "nanobind~=3.0.1",
   "scikit-build-core>=1.0.3",
   "vcs-versioning>=2.3.0",
 ]
@@ -339,13 +339,13 @@ exclude = [
 [dependency-groups]
 build = [
   "cmake>=4.4.1",
-  "nanobind~=3.0.0",
+  "nanobind~=3.0.1",
   "scikit-build-core>=1.0.3",
   "vcs-versioning>=2.3.0",
 ]
 cpp-lint = [
   "cpp-linter==1.13.0",
-  "nanobind~=3.0.0",
+  "nanobind~=3.0.1",
 ]
 docs = [
   "furo>=2025.09.25",

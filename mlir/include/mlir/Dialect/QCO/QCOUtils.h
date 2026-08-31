@@ -55,7 +55,9 @@ inline bool checkDeadGate(Operation* op) {
          isa<QubitType>(shapedType.getElementType());
 }
 
-/// Verify that every linear QCO value under @p root has exactly one use.
+/// Verify that every linear QCO value under @p root has exactly one use, each
+/// static qubit index names one value, and program-level static roots belong to
+/// the entry block.
 [[nodiscard]] LogicalResult verifyLinearity(Operation* root);
 
 /// Maximum number of modifier targets supported by @ref

@@ -21,6 +21,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/Passes.h"
@@ -259,6 +260,50 @@ module {
   EXPECT_TRUE(sawLoop);
 
   expectNoQCOperations(*module);
+}
+
+TEST_F(QCToQCORegressionTest, CoalescesStaticQubitsAcrossRegions) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%condition: i1) attributes {mqt.entry_point} {
+    scf.if %condition {
+      %then0 = qc.static 0 : !qc.qubit
+      %then1 = qc.static 1 : !qc.qubit
+      %then2 = qc.static 2 : !qc.qubit
+      qc.x %then0 : !qc.qubit
+      qc.x %then1 : !qc.qubit
+      qc.x %then2 : !qc.qubit
+    } else {
+      %else0 = qc.static 0 : !qc.qubit
+      %else1 = qc.static 1 : !qc.qubit
+      qc.h %else0 : !qc.qubit
+      qc.h %else1 : !qc.qubit
+    }
+    %after0 = qc.static 0 : !qc.qubit
+    %after1 = qc.static 1 : !qc.qubit
+    qc.z %after0 : !qc.qubit
+    qc.z %after1 : !qc.qubit
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  size_t staticOps = 0;
+  moduleOp->walk([&](qco::StaticOp op) {
+    ++staticOps;
+    EXPECT_EQ(op->getBlock(), &main.getBody().front());
+  });
+  EXPECT_EQ(staticOps, 3U);
+  expectNoQCOperations(*moduleOp);
 }
 
 TEST_F(QCToQCORegressionTest, PreservesWhileConditionArgumentsAndOrdering) {

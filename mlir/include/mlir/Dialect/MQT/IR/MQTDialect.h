@@ -24,7 +24,10 @@
 
 namespace mlir::mqt {
 /// Return whether an operation is the program entry point.
-[[nodiscard]] bool isEntryPoint(Operation* operation);
+[[nodiscard]] inline bool isEntryPoint(Operation* operation) {
+  return operation != nullptr &&
+         operation->hasAttr(MQTDialect::EntryPointAttrHelper::getNameStr());
+}
 
 /// Mark an operation as the program entry point.
 void setEntryPoint(Operation* operation);
@@ -33,5 +36,12 @@ void setEntryPoint(Operation* operation);
 void removeEntryPoint(Operation* operation);
 
 /// Return the program entry point, or null if the module has none.
-[[nodiscard]] func::FuncOp getEntryPoint(ModuleOp moduleOp);
+[[nodiscard]] inline func::FuncOp getEntryPoint(ModuleOp moduleOp) {
+  for (auto function : moduleOp.getOps<func::FuncOp>()) {
+    if (isEntryPoint(function)) {
+      return function;
+    }
+  }
+  return nullptr;
+}
 } // namespace mlir::mqt

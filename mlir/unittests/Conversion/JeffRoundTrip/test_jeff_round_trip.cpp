@@ -354,17 +354,65 @@ static Value nestedWhileOpIfOp(qco::QCOProgramBuilder& b) {
   return b.measure(res[0]).second;
 }
 
-static LogicalResult convertQCOToJeff(ModuleOp module) {
-  PassManager pm(module.getContext());
+static LogicalResult convertQCOToJeff(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createQCOToJeff());
-  return pm.run(module);
+  return pm.run(moduleOp);
 }
 
-static LogicalResult convertJeffToQCO(ModuleOp module) {
-  PassManager pm(module.getContext());
+static LogicalResult convertJeffToQCO(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
   pm.addPass(createJeffToQCO());
-  return pm.run(module);
+  return pm.run(moduleOp);
+}
+
+TEST(JeffRoundTripRegressionTest, RejectsInvalidJeffModuleMetadata) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, func::FuncDialect, jeff::JeffDialect,
+                  qco::QCODialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  OpBuilder builder(&context);
+
+  const auto rejects = [&](const ArrayRef<NamedAttribute> attributes,
+                           const StringRef expected) {
+    auto moduleOp = ModuleOp::create(builder.getUnknownLoc());
+    moduleOp->setAttrs(builder.getDictionaryAttr(attributes));
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      std::string message;
+      llvm::raw_string_ostream stream(message);
+      diagnostic.print(stream);
+      sawExpectedDiagnostic |= StringRef(message).contains(expected);
+      return success();
+    });
+    EXPECT_TRUE(failed(convertJeffToQCO(moduleOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  };
+
+  const auto uint16Type = builder.getIntegerType(16, false);
+  const auto entryPoint = builder.getNamedAttr(
+      "jeff.entrypoint", builder.getIntegerAttr(uint16Type, 0));
+  const auto strings =
+      builder.getNamedAttr("jeff.strings", builder.getStrArrayAttr({"main"}));
+  rejects({}, "requires an unsigned integer 'jeff.entrypoint' attribute");
+  rejects(
+      {builder.getNamedAttr("jeff.entrypoint", builder.getStringAttr("main"))},
+      "requires an unsigned integer 'jeff.entrypoint' attribute");
+  rejects(
+      {builder.getNamedAttr("jeff.entrypoint", builder.getI16IntegerAttr(0))},
+      "requires an unsigned integer 'jeff.entrypoint' attribute");
+  rejects({entryPoint}, "requires an array 'jeff.strings' attribute");
+  rejects({builder.getNamedAttr("jeff.entrypoint",
+                                builder.getIntegerAttr(uint16Type, 1)),
+           strings},
+          "'jeff.entrypoint' index is out of bounds");
+  rejects(
+      {entryPoint, builder.getNamedAttr(
+                       "jeff.strings",
+                       builder.getArrayAttr({builder.getI32IntegerAttr(0)}))},
+      "'jeff.entrypoint' must index a string");
 }
 
 TEST(JeffRoundTripRegressionTest, RestoresStatusResultAtEndOfEntryPoint) {

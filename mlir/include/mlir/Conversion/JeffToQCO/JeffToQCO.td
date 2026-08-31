@@ -8,7 +8,7 @@
 
 include "mlir/Pass/PassBase.td"
 
-def JeffToQCO : Pass<"jeff-to-qco"> {
+def JeffToQCO : Pass<"jeff-to-qco", "mlir::ModuleOp"> {
   let summary = "Convert `jeff` operations to QCO operations";
 
   let description = [{

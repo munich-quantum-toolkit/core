@@ -8,7 +8,7 @@
 
 include "mlir/Pass/PassBase.td"
 
-def ConvertCBitToMemRef : Pass<"convert-cbit-to-memref"> {
+def ConvertCBitToMemRef : Pass<"convert-cbit-to-memref", "mlir::ModuleOp"> {
   let summary = "Lower CBit registers to memrefs";
 
   let description = [{

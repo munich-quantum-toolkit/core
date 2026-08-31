@@ -24,6 +24,7 @@ add_mlir_dialect_library(
   LINK_LIBS
   PRIVATE
   MLIRCBitDialect
+  MLIRFuncDialect
   MLIRIR
   MLIRInferTypeOpInterface
   MLIRMQTUtils
