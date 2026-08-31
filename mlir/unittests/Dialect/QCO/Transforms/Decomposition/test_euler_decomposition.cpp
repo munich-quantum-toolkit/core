@@ -132,7 +132,7 @@ static SmallVector<Value> measureAndReturn(QCOProgramBuilder& b,
   const Matrix2x2 su2 = RZOp::unitaryMatrix(dist(rng)) *
                         RYOp::unitaryMatrix(dist(rng)) *
                         RZOp::unitaryMatrix(dist(rng));
-  const Complex globalPhase = std::polar(1.0, dist(rng));
+  const qco::Complex globalPhase = std::polar(1.0, dist(rng));
   return Matrix2x2::fromElements(
       globalPhase * su2(0, 0), globalPhase * su2(0, 1), globalPhase * su2(1, 0),
       globalPhase * su2(1, 1));
@@ -513,7 +513,7 @@ TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
 
 TEST(EulerAnglesCoverageTest, ParamsZYZUsesOffDiagonal01When10IsNearZero) {
   Matrix2x2 matrix = RXOp::unitaryMatrix(0.4);
-  matrix(1, 0) = Complex{0.0, 0.0};
+  matrix(1, 0) = qco::Complex{0.0, 0.0};
   ASSERT_GT(std::abs(matrix(0, 1)), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
   const EulerAngles angles = anglesFromUnitary(matrix, ZYZ);
   EXPECT_TRUE(std::isfinite(angles.theta));
@@ -576,7 +576,7 @@ TEST(EulerAnglesCoverageTest, Mod2PiMapsPiBoundaryThroughSynthesis) {
   TestFixture fx;
   fx.setUp();
   constexpr double eps = 0.5 * mlir::mqt::PARAMETER_COMPARISON_TOLERANCE;
-  const Complex global = std::polar(1.0, std::numbers::pi - eps);
+  const qco::Complex global = std::polar(1.0, std::numbers::pi - eps);
   const Matrix2x2 matrix = Matrix2x2::fromElements(global, 0, 0, global);
   expectSynthesizedMatrix(fx.ctx(), matrix, U,
                           [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
@@ -589,7 +589,7 @@ TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
   TestFixture fx;
   fx.setUp();
   const Matrix2x2 matrix = Matrix2x2::fromElements(
-      Complex{std::numeric_limits<double>::quiet_NaN(), 0}, 0, 0, 1);
+      qco::Complex{std::numeric_limits<double>::quiet_NaN(), 0}, 0, 0, 1);
   EXPECT_NO_FATAL_FAILURE(std::ignore =
                               synthesizeMatrix(fx.ctx(), matrix, ZYZ));
 }

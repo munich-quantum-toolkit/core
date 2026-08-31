@@ -10,7 +10,7 @@
 set(MQT_MLIR_SOURCE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/mlir/include")
 set(MQT_MLIR_BUILD_INCLUDE_DIR "${PROJECT_BINARY_DIR}/mlir/include")
 set(MQT_MLIR_MIN_VERSION
-    "22.1"
+    "23.1"
     CACHE STRING "Minimum required MLIR version")
 
 # Attempt to load MLIR_DIR from a local .env file for developer convenience.

@@ -23,8 +23,9 @@
 #include <string>
 #include <utility>
 
-using namespace mlir::qco;
 using namespace std::complex_literals;
+
+namespace mlir::qco {
 
 static_assert(SupportedMatrix<Matrix1x1>);
 static_assert(SupportedMatrix<Matrix2x2>);
@@ -1037,3 +1038,5 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<EigenDecompositionMatrixCase>& info) {
       return info.param.name;
     });
+
+} // namespace mlir::qco

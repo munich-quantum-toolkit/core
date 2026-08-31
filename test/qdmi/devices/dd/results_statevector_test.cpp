@@ -106,6 +106,7 @@ TEST(ResultsStatevector, HistogramRequestsInvalidWithShotsZero) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
+#ifdef BUILD_MQT_CORE_MLIR
 TEST(ResultsStatevector, QIRBaseStringYieldsBellState) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
@@ -126,3 +127,4 @@ TEST(ResultsStatevector, QIRBaseStringYieldsBellState) {
   EXPECT_NEAR(std::abs(vec[2]), 0.0, 1e-6);
   EXPECT_NEAR(std::abs(vec[3]), invSqrt2, 1e-6);
 }
+#endif

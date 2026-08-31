@@ -33,6 +33,7 @@ self
 :hidden:
 
 installation
+benchmarks
 mqt_core_ir
 dd_package
 mlir/index

@@ -100,8 +100,8 @@ allToAllCouplingCount(const size_t numSites) {
 isSwapInvariantOperation(const llvm::StringRef operationName) {
   const auto canonicalName = operationName.trim().lower();
   return llvm::StringSwitch<bool>(canonicalName)
-      .Cases("cz", "swap", "iswap", true)
-      .Cases("rxx", "ryy", "rzz", true)
+      .Cases({"cz", "swap", "iswap"}, true)
+      .Cases({"rxx", "ryy", "rzz"}, true)
       .Default(false);
 }
 

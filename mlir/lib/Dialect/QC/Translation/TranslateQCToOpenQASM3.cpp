@@ -104,18 +104,18 @@ struct GateCall {
 
 [[nodiscard]] static bool isReservedOpenQASMIdentifier(const StringRef value) {
   return llvm::StringSwitch<bool>(value)
-      .Cases("OPENQASM", "include", "input", "output", "const", true)
-      .Cases("let", "fixed", "gate", "def", "extern", true)
-      .Cases("defcalgrammar", "defcal", "cal", "opaque", "box", true)
-      .Cases("delay", "reset", "measure", "barrier", true)
-      .Cases("ctrl", "negctrl", "inv", "pow", true)
-      .Cases("if", "else", "while", "for", "in", true)
-      .Cases("break", "continue", "end", "return", true)
-      .Cases("switch", "case", "default", true)
-      .Cases("qubit", "qreg", "creg", "bit", "bool", true)
-      .Cases("int", "uint", "float", "angle", "complex", true)
-      .Cases("array", "duration", "stretch", "readonly", "mutable", true)
-      .Cases("sizeof", "durationof", "true", "false", true)
+      .Cases({"OPENQASM", "include", "input", "output", "const"}, true)
+      .Cases({"let", "fixed", "gate", "def", "extern"}, true)
+      .Cases({"defcalgrammar", "defcal", "cal", "opaque", "box"}, true)
+      .Cases({"delay", "reset", "measure", "barrier"}, true)
+      .Cases({"ctrl", "negctrl", "inv", "pow"}, true)
+      .Cases({"if", "else", "while", "for", "in"}, true)
+      .Cases({"break", "continue", "end", "return"}, true)
+      .Cases({"switch", "case", "default"}, true)
+      .Cases({"qubit", "qreg", "creg", "bit", "bool"}, true)
+      .Cases({"int", "uint", "float", "angle", "complex"}, true)
+      .Cases({"array", "duration", "stretch", "readonly", "mutable"}, true)
+      .Cases({"sizeof", "durationof", "true", "false"}, true)
       .Default(false);
 }
 
@@ -729,10 +729,10 @@ private:
 
   [[nodiscard]] static StringRef binaryOperator(const StringRef name) {
     return llvm::StringSwitch<StringRef>(name)
-        .Cases("arith.addi", "arith.addf", "+")
-        .Cases("arith.subi", "arith.subf", "-")
-        .Cases("arith.muli", "arith.mulf", "*")
-        .Cases("arith.divsi", "arith.divf", "/")
+        .Cases({"arith.addi", "arith.addf"}, "+")
+        .Cases({"arith.subi", "arith.subf"}, "-")
+        .Cases({"arith.muli", "arith.mulf"}, "*")
+        .Cases({"arith.divsi", "arith.divf"}, "/")
         .Case("arith.remsi", "%")
         .Case("arith.andi", "&&")
         .Case("arith.ori", "||")

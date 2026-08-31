@@ -19,6 +19,9 @@ import mqt.core.dd
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
 
+def _generate_benchmark(instance_specification_json: str) -> QCProgram:
+    """Generate the QC program described by an instance specification."""
+
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
 

@@ -15,6 +15,7 @@
 #include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mlir/bench/Generate.h"
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 #include "qiskit/Qiskit.h"
@@ -311,11 +312,24 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
                                              enableTiming, enableStatistics));
 }
 
+[[nodiscard]] static mlir::QCProgram
+generateBenchmark(const std::string_view instanceSpecificationJSON) {
+  auto generated = bench::generate(instanceSpecificationJSON);
+  if (!generated) {
+    throw std::runtime_error("failed to generate benchmark");
+  }
+  return std::move(generated->program);
+}
+
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   m.doc() = "MQT Core MLIR compiler bindings.";
 
   nb::module_::import_("typing");
   nb::module_::import_("mqt.core.qdmi");
+
+  m.def("_generate_benchmark", &generateBenchmark,
+        "instance_specification_json"_a,
+        "Generate the QC program described by an instance specification.");
 
   nb::enum_<mlir::QIRProfile>(m, "QIRProfile", "QIR target profiles.")
       .value("BASE", mlir::QIRProfile::Base, "The QIR Base Profile.")
