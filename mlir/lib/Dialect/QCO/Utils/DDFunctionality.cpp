@@ -1932,7 +1932,7 @@ static bool hasOnlyTerminalQuantumUses(Value value,
       }
       if (use.get() == insert.getScalar()) {
         return !tensorSlot &&
-               hasOnlyTerminalQuantumUses(insert.getResult(), *index, func,
+               hasOnlyTerminalQuantumUses(insert.getResult(), index, func,
                                           outputs, visited);
       }
       return tensorSlot && *tensorSlot != *index &&

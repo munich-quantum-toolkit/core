@@ -2442,7 +2442,7 @@ TEST_F(QCODDFunctionalityTest, RejectsQTensorBeyondQubitRange) {
                                          context.get());
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(dd::Package::MAX_POSSIBLE_QUBITS);
+  auto dd = std::make_unique<dd::Package>(1);
   EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
 }
 
