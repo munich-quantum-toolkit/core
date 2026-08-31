@@ -180,6 +180,42 @@ TEST_F(QIRTest, BuilderReturnsCompleteClassicalRegister) {
   EXPECT_FALSE(returnedRegister.array);
 }
 
+TEST_F(QIRTest, ReusedIrreversibleDeclarationsPreservePassthroughIdempotently) {
+  OpBuilder builder(context.get());
+  const auto location = builder.getUnknownLoc();
+  auto moduleOp = ModuleOp::create(location);
+  builder.setInsertionPointToStart(moduleOp.getBody());
+  const auto ptrType = LLVM::LLVMPointerType::get(context.get());
+  const auto voidType = LLVM::LLVMVoidType::get(context.get());
+  const auto nounwind = builder.getStringAttr("nounwind");
+  const auto targetCPU = builder.getStrArrayAttr({"target-cpu", "generic"});
+
+  for (const StringRef name : {StringRef(QIR_MEASURE), StringRef(QIR_RESET)}) {
+    const SmallVector<Type> parameters(name == QIR_MEASURE ? 2 : 1, ptrType);
+    const auto functionType = LLVM::LLVMFunctionType::get(voidType, parameters);
+    auto declaration =
+        LLVM::LLVMFuncOp::create(builder, location, name, functionType);
+    declaration->setAttr("passthrough",
+                         builder.getArrayAttr({nounwind, targetCPU}));
+
+    EXPECT_EQ(
+        getOrCreateFunctionDeclaration(builder, moduleOp, name, functionType),
+        declaration);
+    EXPECT_EQ(
+        getOrCreateFunctionDeclaration(builder, moduleOp, name, functionType),
+        declaration);
+
+    const auto passthrough =
+        declaration->getAttrOfType<ArrayAttr>("passthrough");
+    ASSERT_TRUE(passthrough);
+    ASSERT_EQ(passthrough.size(), 3U);
+    EXPECT_EQ(passthrough[0], nounwind);
+    EXPECT_EQ(passthrough[1], targetCPU);
+    EXPECT_EQ(llvm::count(passthrough, builder.getStringAttr("irreversible")),
+              1);
+  }
+}
+
 TEST_F(QIRTest, AdaptiveBuilderSelectsControlledSpecializationsByArity) {
   auto module = QIRProgramBuilder::build(
       context.get(),

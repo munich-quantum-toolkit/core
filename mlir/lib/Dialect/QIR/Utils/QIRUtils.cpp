@@ -282,15 +282,26 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
     builder.setInsertionPointToEnd(moduleOp.getBody());
 
     fnDecl = LLVM::LLVMFuncOp::create(builder, op->getLoc(), fnName, fnType);
-
-    // Add irreversible attribute to irreversible quantum operations
-    if (fnName == QIR_MEASURE || fnName == QIR_RESET) {
-      fnDecl->setAttr("passthrough",
-                      builder.getStrArrayAttr({::qir::IRREVERSIBLE_ATTR}));
-    }
   }
 
-  return cast<LLVM::LLVMFuncOp>(fnDecl);
+  auto function = cast<LLVM::LLVMFuncOp>(fnDecl);
+  if (fnName != QIR_MEASURE && fnName != QIR_RESET) {
+    return function;
+  }
+
+  const auto irreversible = builder.getStringAttr(::qir::IRREVERSIBLE_ATTR);
+  const auto passthrough = function->getAttrOfType<ArrayAttr>("passthrough");
+  if (passthrough && llvm::is_contained(passthrough, irreversible)) {
+    return function;
+  }
+
+  SmallVector<Attribute> entries;
+  if (passthrough) {
+    entries.append(passthrough.begin(), passthrough.end());
+  }
+  entries.push_back(irreversible);
+  function->setAttr("passthrough", builder.getArrayAttr(entries));
+  return function;
 }
 
 LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
