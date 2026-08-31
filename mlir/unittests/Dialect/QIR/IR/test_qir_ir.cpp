@@ -24,6 +24,7 @@
 #include <llvm/IR/Metadata.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
@@ -38,7 +39,9 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -60,6 +63,20 @@ static LLVM::ModuleFlagAttr findModuleFlag(ModuleOp moduleOp,
     }
   });
   return result;
+}
+
+static size_t countPassthroughEntries(LLVM::LLVMFuncOp function,
+                                      StringRef name) {
+  const auto passthrough = function->getAttrOfType<ArrayAttr>("passthrough");
+  if (!passthrough) {
+    return 0;
+  }
+  return llvm::count_if(passthrough, [&](Attribute attribute) {
+    const auto pair = dyn_cast<ArrayAttr>(attribute);
+    const auto key =
+        pair && pair.size() == 2 ? dyn_cast<StringAttr>(pair[0]) : StringAttr{};
+    return key && key.getValue() == name;
+  });
 }
 
 namespace {
@@ -214,6 +231,112 @@ TEST_F(QIRTest, ReusedIrreversibleDeclarationsPreservePassthroughIdempotently) {
     EXPECT_EQ(llvm::count(passthrough, builder.getStringAttr("irreversible")),
               1);
   }
+}
+
+TEST_F(QIRTest, MetadataPassRequiresExactlyOneEntryPointAtomically) {
+  for (const size_t numEntryPoints : {0U, 2U}) {
+    SCOPED_TRACE(testing::Message() << "numEntryPoints=" << numEntryPoints);
+    OpBuilder builder(context.get());
+    const auto location = builder.getUnknownLoc();
+    auto module = ModuleOp::create(location);
+    builder.setInsertionPointToStart(module.getBody());
+    const auto functionType =
+        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
+    for (size_t i = 0; i < std::max<size_t>(numEntryPoints, 1); ++i) {
+      auto function = LLVM::LLVMFuncOp::create(
+          builder, location, "function" + std::to_string(i), functionType);
+      if (i < numEntryPoints) {
+        function->setAttr("passthrough",
+                          builder.getStrArrayAttr({"entry_point"}));
+      }
+      auto* block = function.addEntryBlock(builder);
+      builder.setInsertionPointToEnd(block);
+      LLVM::ReturnOp::create(builder, location, ValueRange{});
+      builder.setInsertionPointToEnd(module.getBody());
+    }
+    ASSERT_TRUE(succeeded(verify(module)));
+
+    std::string before;
+    llvm::raw_string_ostream(before) << module;
+    PassManager manager(context.get());
+    manager.addPass(qir::createQIRSetAttributesAndMetadata({false}));
+    EXPECT_TRUE(failed(manager.run(module)));
+    std::string after;
+    llvm::raw_string_ostream(after) << module;
+    EXPECT_EQ(after, before);
+  }
+}
+
+TEST_F(QIRTest, PreservesUnrelatedModuleFlags) {
+  OpBuilder builder(context.get());
+  const auto location = builder.getUnknownLoc();
+  auto module = ModuleOp::create(location);
+  builder.setInsertionPointToStart(module.getBody());
+  const auto unrelated =
+      LLVM::ModuleFlagAttr::get(context.get(), LLVM::ModFlagBehavior::Warning,
+                                builder.getStringAttr("Debug Info Version"),
+                                builder.getI32IntegerAttr(3));
+  const auto staleQIR = LLVM::ModuleFlagAttr::get(
+      context.get(), LLVM::ModFlagBehavior::Error,
+      builder.getStringAttr("qir_major_version"), builder.getI32IntegerAttr(1));
+  LLVM::ModuleFlagsOp::create(builder, location,
+                              builder.getArrayAttr({unrelated, staleQIR}));
+  const auto functionType =
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
+  auto main = LLVM::LLVMFuncOp::create(builder, location, "main", functionType);
+  main->setAttr("passthrough", builder.getStrArrayAttr({"entry_point"}));
+  auto* block = main.addEntryBlock(builder);
+  builder.setInsertionPointToEnd(block);
+  LLVM::ReturnOp::create(builder, location, ValueRange{});
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  PassManager manager(context.get());
+  manager.addPass(qir::createQIRSetAttributesAndMetadata({false}));
+  ASSERT_TRUE(succeeded(manager.run(module)));
+  const auto preserved = findModuleFlag(module, "Debug Info Version");
+  ASSERT_TRUE(preserved);
+  EXPECT_EQ(preserved.getBehavior(), LLVM::ModFlagBehavior::Warning);
+  EXPECT_EQ(cast<IntegerAttr>(preserved.getValue()).getInt(), 3);
+  const auto qirMajor = findModuleFlag(module, "qir_major_version");
+  ASSERT_TRUE(qirMajor);
+  EXPECT_EQ(cast<IntegerAttr>(qirMajor.getValue()).getInt(), 2);
+}
+
+TEST_F(QIRTest, PreservesUnrelatedFunctionPassthroughAttributesIdempotently) {
+  OpBuilder builder(context.get());
+  const auto location = builder.getUnknownLoc();
+  auto module = ModuleOp::create(location);
+  builder.setInsertionPointToStart(module.getBody());
+  const auto functionType =
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
+  auto main = LLVM::LLVMFuncOp::create(builder, location, "main", functionType);
+  const auto nounwind = builder.getStringAttr("nounwind");
+  const auto target = builder.getStrArrayAttr({"target-cpu", "generic"});
+  main->setAttr(
+      "passthrough",
+      builder.getArrayAttr(
+          {builder.getStringAttr("entry_point"), nounwind, target,
+           builder.getStrArrayAttr({"qir_profiles", "stale_profile"})}));
+  auto* block = main.addEntryBlock(builder);
+  builder.setInsertionPointToEnd(block);
+  LLVM::ReturnOp::create(builder, location, ValueRange{});
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  const auto runPass = [&] {
+    PassManager manager(context.get());
+    manager.addPass(qir::createQIRSetAttributesAndMetadata({false}));
+    return manager.run(module);
+  };
+  ASSERT_TRUE(succeeded(runPass()));
+  auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
+  ASSERT_TRUE(passthrough);
+  EXPECT_TRUE(llvm::is_contained(passthrough, nounwind));
+  EXPECT_TRUE(llvm::is_contained(passthrough, target));
+  EXPECT_EQ(countPassthroughEntries(main, "qir_profiles"), 1U);
+  const auto afterFirstRun = passthrough;
+
+  ASSERT_TRUE(succeeded(runPass()));
+  EXPECT_EQ(main->getAttrOfType<ArrayAttr>("passthrough"), afterFirstRun);
 }
 
 TEST_F(QIRTest, AdaptiveBuilderSelectsControlledSpecializationsByArity) {
