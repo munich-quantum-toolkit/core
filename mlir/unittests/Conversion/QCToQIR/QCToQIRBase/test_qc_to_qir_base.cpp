@@ -84,11 +84,11 @@ protected:
 
 } // namespace
 
-static LogicalResult runQCToQIRBaseConversion(ModuleOp module) {
-  PassManager pm(module.getContext());
+static LogicalResult runQCToQIRBaseConversion(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createQCToQIRBase());
-  return pm.run(module);
+  return pm.run(moduleOp);
 }
 
 static void expectFollowingXIsUncontrolled(
@@ -124,6 +124,37 @@ TEST(QCToQIRBaseNativeTest, EmptyCtrlDoesNotControlFollowingGate) {
       [](qc::QCProgramBuilder& builder, Value control, Value target) {
         builder.ctrl(control, target, [](Value) {});
       });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsMultiBlockEntryFunctionWithoutMutation) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  auto entryPoint = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(entryPoint);
+  auto* extraBlock = &entryPoint.getBody().emplaceBlock();
+  builder.setInsertionPointToEnd(extraBlock);
+  auto status =
+      arith::ConstantIntOp::create(builder, builder.getUnknownLoc(), 0, 64);
+  func::ReturnOp::create(builder, builder.getUnknownLoc(), status.getResult());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "QIR Base Profile requires a single-block entry function");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+  EXPECT_EQ(entryPoint.getBlocks().size(), 2);
 }
 
 TEST(QCToQIRBaseNativeTest, ControlledBarrierDoesNotControlFollowingGate) {
