@@ -648,7 +648,11 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
   EXPECT_TRUE(target.supports(gphase));
   EXPECT_TRUE(target.supports(cx, {10, 20}));
   EXPECT_FALSE(target.supports(cx, {20, 10}));
+  EXPECT_TRUE(target.supports(measure, {10}));
+  EXPECT_TRUE(target.supports(reset, {10}));
   EXPECT_FALSE(target.supports(nullptr));
+  EXPECT_FALSE(target.supports(nullptr, {10}));
+  EXPECT_FALSE(target.supports(moduleOp->getOperation(), {10}));
 
   const auto closed = valid(Target::create(
       2, Connectivity::allToAll(), NativeOperations::fromOperations({})));

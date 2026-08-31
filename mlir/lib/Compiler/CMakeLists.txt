@@ -11,6 +11,7 @@ add_mlir_library(
   MQTCompilerTarget
   PARTIAL_SOURCES_INTENDED
   Target.cpp
+  TargetCost.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler
   LINK_LIBS
@@ -21,8 +22,15 @@ add_mlir_library(
 
 mqt_mlir_target_use_project_options(MQTCompilerTarget)
 
-target_sources(MQTCompilerTarget PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-                                        FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/Target.h)
+target_sources(
+  MQTCompilerTarget
+  PUBLIC FILE_SET
+         HEADERS
+         BASE_DIRS
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+         FILES
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/Target.h
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/TargetCost.h)
 
 # Build the optional QDMI-to-compiler-target adapter
 set(LLVM_REQUIRES_EH ON)

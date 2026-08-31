@@ -98,15 +98,7 @@ static bool isExecutable(Region& body,
         const auto siteB = m.at(unitaryOp.getInputQubit(1));
         const auto vertexA = target.vertexForSite(siteA);
         const auto vertexB = target.vertexForSite(siteB);
-        std::array sites{siteA, siteB};
-        const auto supported =
-            target.supports(&op)
-                ? target.supports(&op, sites)
-                : !target.synthesisBasis() ||
-                      target.supports(target.synthesisBasis()->entangler,
-                                      sites);
-        if (!vertexA || !vertexB || !target.areAdjacent(*vertexA, *vertexB) ||
-            !supported) {
+        if (!vertexA || !vertexB || !target.areAdjacent(*vertexA, *vertexB)) {
           llvm::dbgs() << "The two-qubit gate (" << siteA << ", " << siteB
                        << ") is not executable: \n";
           unitaryOp->dump();
@@ -351,145 +343,6 @@ class MappingPassTest : public MappingPassFixture,
 
 }; // namespace
 
-TEST_F(MappingPassFixture, MapOneWayCXInNativeDirection) {
-  using Operation = CompilerTarget::Operation;
-  using SiteTuple = CompilerTarget::SiteTuple;
-
-  std::vector cxSites{llvm::cantFail(SiteTuple::create({0, 1}))};
-  std::vector operations{
-      llvm::cantFail(Operation::create("cx", 2, 0, std::move(cxSites)))};
-  const auto target = llvm::cantFail(
-      CompilerTarget::create(2, std::nullopt, std::move(operations)));
-
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  auto targetQubit = builder.allocQubit();
-  auto controlQubit = builder.allocQubit();
-  std::tie(controlQubit, targetQubit) = builder.cx(controlQubit, targetQubit);
-  builder.sink(controlQubit);
-  builder.sink(targetQubit);
-
-  auto module = builder.finalize();
-  ASSERT_TRUE(runPass(module.get(), target,
-                      MappingPassOptions{.ntrials = 1, .seed = 42})
-                  .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
-
-  CtrlOp cx;
-  module->walk([&](CtrlOp op) { cx = op; });
-  ASSERT_TRUE(cx);
-  auto mappedControl = cx.getInputControl(0).getDefiningOp<StaticOp>();
-  auto mappedTarget = cx.getInputTarget(0).getDefiningOp<StaticOp>();
-  ASSERT_TRUE(mappedControl);
-  ASSERT_TRUE(mappedTarget);
-  EXPECT_EQ(mappedControl.getIndex(), 0);
-  EXPECT_EQ(mappedTarget.getIndex(), 1);
-
-  size_t numSwaps = 0;
-  module->walk([&](SWAPOp) { ++numSwaps; });
-  EXPECT_EQ(numSwaps, 0);
-}
-
-TEST_F(MappingPassFixture, OrientRoutedSWAPForOneWayEntangler) {
-  using Operation = CompilerTarget::Operation;
-  using SiteTuple = CompilerTarget::SiteTuple;
-
-  std::vector cxSites{llvm::cantFail(SiteTuple::create({1, 0})),
-                      llvm::cantFail(SiteTuple::create({2, 1}))};
-  std::vector operations{
-      llvm::cantFail(Operation::create("u", 1, 3)),
-      llvm::cantFail(Operation::create("cx", 2, 0, std::move(cxSites)))};
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
-      std::move(operations)));
-
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  SmallVector<Value> qubits{builder.allocQubit(), builder.allocQubit(),
-                            builder.allocQubit()};
-  std::tie(qubits[0], qubits[1]) = builder.rxx(0.25, qubits[0], qubits[1]);
-  std::tie(qubits[1], qubits[2]) = builder.rzx(0.5, qubits[1], qubits[2]);
-  std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
-  for (const auto qubit : qubits) {
-    builder.sink(qubit);
-  }
-
-  auto module = builder.finalize();
-  ASSERT_TRUE(runPass(module.get(), target, MappingPassOptions{.ntrials = 1})
-                  .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
-
-  size_t numSwaps = 0;
-  module->walk([&](SWAPOp) { ++numSwaps; });
-  EXPECT_GT(numSwaps, 0);
-}
-
-TEST_F(MappingPassFixture, RejectSWAPWithoutSupportedEntanglerDirection) {
-  using Operation = CompilerTarget::Operation;
-  using SiteTuple = CompilerTarget::SiteTuple;
-
-  std::vector cxSites{llvm::cantFail(SiteTuple::create({0, 1}))};
-  std::vector operations{
-      llvm::cantFail(Operation::create("u", 1, 3)),
-      llvm::cantFail(Operation::create("cx", 2, 0, std::move(cxSites)))};
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
-      std::move(operations)));
-
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  SmallVector<Value> qubits{builder.allocQubit(), builder.allocQubit(),
-                            builder.allocQubit()};
-  std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
-  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
-  std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
-  for (const auto qubit : qubits) {
-    builder.sink(qubit);
-  }
-
-  auto module = builder.finalize();
-  EXPECT_TRUE(failed(
-      runPass(module.get(), target,
-              MappingPassOptions{.niterations = 1, .ntrials = 1, .seed = 42})));
-}
-
-TEST_F(MappingPassFixture, CoalesceEquivalentDirectionalLookahead) {
-  using Operation = CompilerTarget::Operation;
-  using SiteTuple = CompilerTarget::SiteTuple;
-
-  std::vector cxSites{llvm::cantFail(SiteTuple::create({0, 1})),
-                      llvm::cantFail(SiteTuple::create({1, 2}))};
-  std::vector operations{
-      llvm::cantFail(Operation::create("u", 1, 3)),
-      llvm::cantFail(Operation::create("cx", 2, 0, std::move(cxSites)))};
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
-      std::move(operations)));
-
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  SmallVector<Value> qubits{builder.allocQubit(), builder.allocQubit(),
-                            builder.allocQubit()};
-  for (size_t i = 0; i < 8; ++i) {
-    std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
-  }
-  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
-  std::tie(qubits[1], qubits[0]) = builder.cx(qubits[1], qubits[0]);
-  for (const auto qubit : qubits) {
-    builder.sink(qubit);
-  }
-
-  auto module = builder.finalize();
-  ASSERT_TRUE(
-      runPass(module.get(), target,
-              MappingPassOptions{.niterations = 1, .ntrials = 1, .seed = 42})
-          .succeeded());
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
-}
-
 TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   constexpr int64_t size = 3;
 
@@ -579,6 +432,165 @@ TEST_F(MappingPassFixture,
   ASSERT_TRUE(measurement);
   ASSERT_TRUE(measurement.getQubitOut().hasOneUse());
   EXPECT_TRUE(isa<SWAPOp>(*measurement.getQubitOut().getUsers().begin()));
+}
+
+TEST_F(MappingPassFixture, PrefersNativeDirectionWhenRouting) {
+  using Operation = CompilerTarget::Operation;
+  using SiteTuple = CompilerTarget::SiteTuple;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
+      std::vector{
+          llvm::cantFail(Operation::create("u", 1, 3)),
+          llvm::cantFail(Operation::create(
+              "cx", 2, 0,
+              std::vector{llvm::cantFail(SiteTuple::create({1, 0})),
+                          llvm::cantFail(SiteTuple::create({1, 2}))}))}));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize(SmallVector<Type>(3, builder.getI1Type()));
+  SmallVector<Value> qubits(3);
+  SmallVector<Value> bits(3);
+  for (auto& qubit : qubits) {
+    qubit = builder.allocQubit();
+  }
+  std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
+  std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
+  std::tie(qubits[2], qubits[1]) = builder.cx(qubits[2], qubits[1]);
+  for (size_t i = 0; i < qubits.size(); ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+    builder.sink(qubits[i]);
+  }
+  auto module = builder.finalize(bits);
+
+  ASSERT_TRUE(
+      runPass(module.get(), target,
+              MappingPassOptions{.niterations = 1, .ntrials = 1, .seed = 42})
+          .succeeded());
+  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
+
+  DenseMap<Value, CompilerTarget::SiteId> sites;
+  size_t numControls = 0;
+  size_t numSwaps = 0;
+  for (mlir::Operation& operation :
+       getEntryPoint(module.get()).getFunctionBody().getOps()) {
+    if (auto staticOp = dyn_cast<StaticOp>(operation)) {
+      sites.try_emplace(staticOp.getQubit(), staticOp.getIndex());
+      continue;
+    }
+    if (auto unitary = dyn_cast<UnitaryOpInterface>(operation)) {
+      if (isa<CtrlOp>(operation)) {
+        ++numControls;
+        const std::array orderedSites{sites.at(unitary.getInputQubit(0)),
+                                      sites.at(unitary.getInputQubit(1))};
+        EXPECT_TRUE(target.supports(&operation, orderedSites))
+            << "control " << numControls << " uses sites " << orderedSites[0]
+            << " -> " << orderedSites[1];
+      }
+      if (isa<SWAPOp>(operation)) {
+        ++numSwaps;
+      }
+      for (const auto [input, output] : llvm::zip_equal(
+               unitary.getInputQubits(), unitary.getOutputQubits())) {
+        const auto site = sites.at(input);
+        sites.try_emplace(output, site);
+      }
+      continue;
+    }
+    if (auto measure = dyn_cast<MeasureOp>(operation)) {
+      const auto site = sites.at(measure.getQubitIn());
+      sites.try_emplace(measure.getQubitOut(), site);
+    }
+  }
+  EXPECT_EQ(numControls, 3);
+  EXPECT_EQ(numSwaps, 1);
+}
+
+TEST_F(MappingPassFixture, MapsAllToAllGateToNativeDirection) {
+  using Operation = CompilerTarget::Operation;
+  using SiteTuple = CompilerTarget::SiteTuple;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::nullopt,
+      std::vector{
+          llvm::cantFail(Operation::create("u", 1, 3)),
+          llvm::cantFail(Operation::create(
+              "cx", 2, 0,
+              std::vector{llvm::cantFail(SiteTuple::create({1, 0})),
+                          llvm::cantFail(SiteTuple::create({2, 0})),
+                          llvm::cantFail(SiteTuple::create({2, 1}))}))}));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize(SmallVector<Type>(2, builder.getI1Type()));
+  auto q0 = builder.allocQubit();
+  auto q1 = builder.allocQubit();
+  std::tie(q0, q1) = builder.cx(q0, q1);
+  auto [q0Out, b0] = builder.measure(q0);
+  auto [q1Out, b1] = builder.measure(q1);
+  builder.sink(q0Out);
+  builder.sink(q1Out);
+  auto module = builder.finalize({b0, b1});
+
+  ASSERT_TRUE(
+      runPass(module.get(), target,
+              MappingPassOptions{.niterations = 1, .ntrials = 1, .seed = 42})
+          .succeeded());
+
+  DenseMap<Value, CompilerTarget::SiteId> sites;
+  bool foundControl = false;
+  for (mlir::Operation& operation :
+       getEntryPoint(module.get()).getFunctionBody().getOps()) {
+    if (auto staticOp = dyn_cast<StaticOp>(operation)) {
+      sites.try_emplace(staticOp.getQubit(), staticOp.getIndex());
+      continue;
+    }
+    if (auto unitary = dyn_cast<UnitaryOpInterface>(operation)) {
+      if (isa<CtrlOp>(operation)) {
+        foundControl = true;
+        const std::array orderedSites{sites.at(unitary.getInputQubit(0)),
+                                      sites.at(unitary.getInputQubit(1))};
+        EXPECT_TRUE(target.supports(&operation, orderedSites));
+      }
+      for (const auto [input, output] : llvm::zip_equal(
+               unitary.getInputQubits(), unitary.getOutputQubits())) {
+        sites.try_emplace(output, sites.at(input));
+      }
+      continue;
+    }
+    if (auto measure = dyn_cast<MeasureOp>(operation)) {
+      sites.try_emplace(measure.getQubitOut(), sites.at(measure.getQubitIn()));
+    }
+  }
+  EXPECT_TRUE(foundControl);
+}
+
+TEST_F(MappingPassFixture, RejectsUnreachableAllToAllGate) {
+  using Operation = CompilerTarget::Operation;
+  using SiteTuple = CompilerTarget::SiteTuple;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::nullopt,
+      std::vector{
+          llvm::cantFail(Operation::create("u", 1, 3)),
+          llvm::cantFail(Operation::create(
+              "cx", 2, 0,
+              std::vector{llvm::cantFail(SiteTuple::create({0, 1}))}))}));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize(SmallVector<Type>(3, builder.getI1Type()));
+  SmallVector<Value> qubits(3);
+  SmallVector<Value> bits(3);
+  for (auto& qubit : qubits) {
+    qubit = builder.allocQubit();
+  }
+  std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
+  std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
+  for (size_t i = 0; i < qubits.size(); ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+    builder.sink(qubits[i]);
+  }
+  auto module = builder.finalize(bits);
+
+  EXPECT_TRUE(failed(
+      runPass(module.get(), target,
+              MappingPassOptions{.niterations = 1, .ntrials = 1, .seed = 42})));
 }
 
 TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
