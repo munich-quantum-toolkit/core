@@ -343,6 +343,12 @@ private:
       return remember(0);
     case frontend::ExpressionKind::Cast:
       return remember(unary(1));
+    case frontend::ExpressionKind::BitVectorCast: {
+      const auto& bitVector =
+          program.bitVectorExpressions.at(expression.bitVector);
+      return remember(add(bitVectorExpressionEmissionCost(expression.bitVector),
+                          4 * static_cast<size_t>(bitVector.width)));
+    }
     case frontend::ExpressionKind::Negate:
       if (expression.type == frontend::ScalarType::Float ||
           expression.type == frontend::ScalarType::Angle) {
@@ -1261,6 +1267,19 @@ private:
       return emitScalarCast(opBuilder, loc, operand,
                             program.expressions.at(expression.lhs).type,
                             expression.type);
+    }
+    case frontend::ExpressionKind::BitVectorCast: {
+      auto value = emitBitVectorExpression(opBuilder, expression.bitVector);
+      auto packed = ensurePacked(opBuilder, value);
+      if (value.width == 64) {
+        return packed;
+      }
+      auto resultType = opBuilder.getI64Type();
+      return expression.signedBitVectorCast
+                 ? arith::ExtSIOp::create(opBuilder, loc, resultType, packed)
+                       .getResult()
+                 : arith::ExtUIOp::create(opBuilder, loc, resultType, packed)
+                       .getResult();
     }
     case frontend::ExpressionKind::Negate: {
       auto operand = emitExpression(opBuilder, expression.lhs, gateParameters);

@@ -66,6 +66,8 @@ struct Expr {
     Float,
     Bool,
     Identifier,
+    IntCast,
+    UintCast,
     AngleCast,
     Index,
     Neg,
@@ -1604,7 +1606,10 @@ private:
       }
       advance();
       return expr;
+    case TokenKind::Int:
+    case TokenKind::Uint:
     case TokenKind::Angle: {
+      const auto type = current().kind;
       advance();
       const Expr* size = nullptr;
       if (current().kind == TokenKind::LBracket) {
@@ -1621,7 +1626,9 @@ private:
       if (failed(operand) || failed(expect(TokenKind::RParen))) {
         return failure();
       }
-      expr->kind = Expr::Kind::AngleCast;
+      expr->kind = type == TokenKind::Int    ? Expr::Kind::IntCast
+                   : type == TokenKind::Uint ? Expr::Kind::UintCast
+                                             : Expr::Kind::AngleCast;
       expr->lhs = size;
       expr->rhs = *operand;
       return expr;

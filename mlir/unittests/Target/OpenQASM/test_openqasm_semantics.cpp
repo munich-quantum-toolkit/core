@@ -525,6 +525,9 @@ TEST(OpenQASMFrontendTest, RejectsMutableGlobalCapturesInGateBodies) {
       std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
           {"mutable-capture",
            "OPENQASM 3.1; float theta = 0.5; gate g q { rx(theta) q; }"},
+          {"bit-register-capture",
+           "OPENQASM 3.1; bit[2] c; c[0] = true; c[1] = false; "
+           "gate g q { rz(uint[2](c)) q; }"},
           {"declaration", "OPENQASM 3.1; gate g q { int i = 0; }"},
           {"measurement", "OPENQASM 3.1; bit c; gate g q { measure q -> c; }"},
           {"reset", "OPENQASM 3.1; gate g q { reset q; }"},
@@ -619,6 +622,43 @@ bit[2] target;
 target[popcount(source)] = true;
 qubit q;
 if (target[popcount(source)]) { x q; }
+output bit out;
+out = true;
+)qasm";
+  auto preserved = oq3::frontend::analyzeOpenQASM(noMutation);
+  EXPECT_TRUE(preserved) << preserved.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, InvalidatesBitRegisterCastIndexFactsOnBitMutation) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+bit[2] source;
+source[0] = true;
+source[1] = false;
+bit[2] target;
+target[uint[2](source)] = true;
+source[0] = false;
+qubit q;
+if (target[uint[2](source)]) { x q; }
+output bit out;
+out = true;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_FALSE(analyzed);
+  ASSERT_FALSE(analyzed.diagnostics.empty());
+  EXPECT_NE(analyzed.diagnostics.front().message.find("uninitialized bit"),
+            std::string::npos);
+
+  constexpr llvm::StringLiteral noMutation = R"qasm(
+OPENQASM 3.1;
+bit[2] source;
+source[0] = true;
+source[1] = false;
+bit[2] target;
+target[uint[2](source)] = true;
+qubit q;
+if (target[uint[2](source)]) { x q; }
 output bit out;
 out = true;
 )qasm";
@@ -1668,6 +1708,67 @@ if(c==1180591620717411303433) x q[0];
     return c.kind == oq3::frontend::ConditionKind::RegisterComparison &&
            c.expected[70];
   }));
+}
+
+TEST(OpenQASMFrontendTest, PromotesNarrowUnsignedBitRegisterCastToInt) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit[2] q;
+bit[2] value = measure q;
+if (uint[2](value) < -1) {}
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  const auto comparison =
+      llvm::find_if(analyzed.program->conditions, [](const auto& condition) {
+        return condition.kind == oq3::frontend::ConditionKind::Comparison;
+      });
+  ASSERT_NE(comparison, analyzed.program->conditions.end());
+  EXPECT_EQ(analyzed.program->expressions[comparison->comparisonLhs].type,
+            oq3::frontend::ScalarType::Int);
+  EXPECT_EQ(analyzed.program->expressions[comparison->comparisonRhs].type,
+            oq3::frontend::ScalarType::Int);
+}
+
+TEST(OpenQASMFrontendTest, RejectsInvalidSizedBitRegisterCasts) {
+  struct InvalidCast {
+    llvm::StringRef source;
+    llvm::StringRef diagnostic;
+  };
+  constexpr auto invalidCasts = std::to_array<InvalidCast>({
+      {.source = "OPENQASM 3.1; qubit[2] q; bit[2] value = measure q; "
+                 "uint result = uint[3](value);",
+       .diagnostic = "must match the bit-register width"},
+      {.source = "OPENQASM 3.1; qubit[65] q; bit[65] value = measure q; "
+                 "uint result = uint[65](value);",
+       .diagnostic = "supports widths from 1 through 64"},
+      {.source = "OPENQASM 3.1; bit[2] value; "
+                 "uint result = uint[2](value);",
+       .diagnostic = "has not been initialized"},
+      {.source = "OPENQASM 3.1; int value = 1; "
+                 "int result = int[2](value);",
+       .diagnostic = "requires a bit register"},
+      {.source = "OPENQASM 3.1; bit[2] value; "
+                 "uint result = uint(value);",
+       .diagnostic = "requires an explicit width"},
+      {.source = "OPENQASM 3.1; uint width = 2; bit[2] value; "
+                 "uint result = uint[width](value);",
+       .diagnostic = "must be a constant integer expression"},
+      {.source = "OPENQASM 3.1; bit[2] value; "
+                 "uint result = uint[true](value);",
+       .diagnostic = "must be an integer expression"},
+  });
+
+  for (const auto& invalid : invalidCasts) {
+    SCOPED_TRACE(invalid.source.str());
+    auto analyzed = oq3::frontend::analyzeOpenQASM(invalid.source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find(invalid.diagnostic),
+              std::string::npos)
+        << analyzed.diagnostics.front().message;
+  }
 }
 
 TEST(OpenQASMFrontendTest,

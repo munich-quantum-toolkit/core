@@ -105,6 +105,7 @@ enum class ExpressionKind : uint8_t {
   GateParameter,
   Variable,
   Cast,
+  BitVectorCast,
   Negate,
   ArcCos,
   ArcSin,
@@ -135,6 +136,7 @@ struct ScalarExpression {
   ExpressionId lhs = 0;
   ExpressionId rhs = 0;
   BitVectorExpressionId bitVector = 0;
+  bool signedBitVectorCast = false;
 };
 
 enum class BitVectorExpressionKind : uint8_t {

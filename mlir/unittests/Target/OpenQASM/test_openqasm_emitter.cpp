@@ -47,6 +47,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <numbers>
 #include <string>
 #include <variant>
@@ -1315,6 +1316,103 @@ if (c == 18446744073709551616) x q[0];
   moduleOp->walk([&](cbit::CompareOp op) { comparison = op; });
   ASSERT_TRUE(comparison);
   EXPECT_EQ(comparison.getRhs(), llvm::APInt(65, 1).shl(64));
+}
+
+TEST(OpenQASMTargetTest, EmitsSizedBitRegisterCastCondition) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+
+bit[2] syndrome;
+qubit[2] q;
+
+syndrome[0] = measure q[0];
+syndrome[1] = measure q[1];
+
+if (uint[2](syndrome) == 3) {
+  x q[0];
+}
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  size_t conditionalGates = 0;
+  moduleOp->walk([&](qc::XOp operation) {
+    conditionalGates += operation->getParentOfType<scf::IfOp>() != nullptr;
+  });
+  EXPECT_EQ(conditionalGates, 1);
+}
+
+TEST(OpenQASMTargetTest, EmitsBitRegisterCastsWithSpecifiedBitOrder) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+bit[3] unsigned_bits;
+unsigned_bits[0] = true;
+unsigned_bits[1] = true;
+unsigned_bits[2] = false;
+bit[3] signed_bits;
+signed_bits[0] = true;
+signed_bits[1] = false;
+signed_bits[2] = true;
+output uint unsigned_value;
+unsigned_value = uint[3](unsigned_bits);
+output int signed_value;
+signed_value = int[3](signed_bits);
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  PassManager canonicalizer(&context);
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
+  func::ReturnOp result;
+  moduleOp->walk([&](func::ReturnOp operation) { result = operation; });
+  ASSERT_TRUE(result);
+  ASSERT_EQ(result.getNumOperands(), 2);
+  const auto unsignedValue = evaluateConstantInteger(result.getOperand(0));
+  const auto signedValue = evaluateConstantInteger(result.getOperand(1));
+  ASSERT_TRUE(unsignedValue);
+  ASSERT_TRUE(signedValue);
+  EXPECT_EQ(unsignedValue->getZExtValue(), 3);
+  EXPECT_EQ(signedValue->getSExtValue(), -3);
+}
+
+TEST(OpenQASMTargetTest, Emits64BitRegisterCasts) {
+  std::string source = "OPENQASM 3.1; bit[64] bits;";
+  for (size_t bit = 0; bit < 64; ++bit) {
+    source += "bits[" + std::to_string(bit) +
+              "] = " + (bit == 63 ? "true;" : "false;");
+  }
+  source += R"qasm(
+output uint unsigned_value;
+unsigned_value = uint[64](bits);
+output int signed_value;
+signed_value = int[64](bits);
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  PassManager canonicalizer(&context);
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
+  func::ReturnOp result;
+  moduleOp->walk([&](func::ReturnOp operation) { result = operation; });
+  ASSERT_TRUE(result);
+  ASSERT_EQ(result.getNumOperands(), 2);
+  const auto unsignedValue = evaluateConstantInteger(result.getOperand(0));
+  const auto signedValue = evaluateConstantInteger(result.getOperand(1));
+  ASSERT_TRUE(unsignedValue);
+  ASSERT_TRUE(signedValue);
+  EXPECT_EQ(unsignedValue->getZExtValue(), uint64_t{1} << 63U);
+  EXPECT_EQ(signedValue->getSExtValue(), std::numeric_limits<int64_t>::min());
 }
 
 TEST(OpenQASMTargetTest, ZeroInitializesUnmeasuredOpenQASM2Registers) {

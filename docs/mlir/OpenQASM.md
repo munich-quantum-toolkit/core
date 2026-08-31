@@ -38,7 +38,7 @@ mqt-cc --input-format=qasm program.txt
 | OpenQASM concept           | Support and restrictions                                                                                                                                                                                                                              |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Versions and includes      | Versionless input and versions 3.0 and 3.1 use the maintained OpenQASM profile. `stdgates.inc`, `qelib1.inc`, and nested textual includes are supported.                                                                                              |
-| Classical types            | Unsized `bit`, `bool`, `int`, `uint`, and `float` declarations are supported. Initialized compile-time `angle[N]` values support widths 1 through 52. Other width-qualified numeric types, arrays, complex values, and aliases are not yet supported. |
+| Classical types            | Unsized `bit`, `bool`, `int`, `uint`, and `float` declarations are supported. Initialized compile-time `angle[N]` values support widths 1 through 52. Other sized numeric declarations, arrays, complex values, and aliases are not yet supported.    |
 | Outputs                    | Explicit `output` declarations are preserved in source order. Without any explicit output, global classical variables become outputs.                                                                                                                 |
 | Gates                      | Language gates, the standard libraries, custom gates, broadcasting, and `inv`, `ctrl`, `negctrl`, and `pow` modifiers are supported. Recursive custom gates are rejected.                                                                             |
 | Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC target rejects programs that mix logical allocation with physical qubits.                                                                                      |
@@ -46,6 +46,11 @@ mqt-cc --input-format=qasm program.txt
 | Structured control         | `if`, inclusive `for`, `while`, and `switch` lower to SCF operations. Switch controls and case labels must be integers; labels must be unique constant expressions.                                                                                   |
 | Dynamic indexing           | Classical bit indices can be dynamic and receive runtime bounds checks. A nonconstant qubit index must be a proven affine expression as described below.                                                                                              |
 | Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, input declarations, arbitrary arrays, `break`, and `continue` are diagnosed.                                                                                                                |
+
+Sized `uint[N](bits)` and `int[N](bits)` casts accept an initialized `bit[N]`
+register when the constant width is 1 through 64. Bit zero is the least
+significant bit. Signed casts use two's-complement representation, with bit
+`N - 1` as the sign bit.
 
 Syntax and semantic diagnostics retain source locations and include stacks.
 Runtime integer preconditions and classical-index bounds are represented
@@ -195,9 +200,9 @@ rejected instead of being approximated. Integer sign extension and truncation
 are also rejected because OpenQASM scalar casts have different value semantics.
 Direct `cbit.cmp` operations retain their unsigned register semantics.
 
-Emitted scalar casts use standard OpenQASM conversion syntax. The MQT Core
-frontend does not yet parse that syntax, so cast-containing output is outside
-the current MQT strict round-trip subset.
+Emitted scalar casts use unsized standard OpenQASM conversion syntax. The MQT
+Core frontend does not yet support these runtime casts, so cast-containing
+output is outside the current MQT strict round-trip subset.
 
 ### Export limitations
 

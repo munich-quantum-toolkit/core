@@ -857,6 +857,9 @@ private:
       return true;
     case ExpressionKind::PopCount:
       return sameBitVectorExpression(left.bitVector, right.bitVector);
+    case ExpressionKind::BitVectorCast:
+      return left.signedBitVectorCast == right.signedBitVectorCast &&
+             sameBitVectorExpression(left.bitVector, right.bitVector);
     case ExpressionKind::Cast:
     case ExpressionKind::Negate:
     case ExpressionKind::ArcCos:
@@ -917,7 +920,8 @@ private:
         value.kind == ExpressionKind::GateParameter) {
       return;
     }
-    if (value.kind == ExpressionKind::PopCount) {
+    if (value.kind == ExpressionKind::PopCount ||
+        value.kind == ExpressionKind::BitVectorCast) {
       collectBitVectorDependencies(value.bitVector, dependencies);
       return;
     }
@@ -1293,6 +1297,30 @@ private:
     return expression.integer;
   }
 
+  [[nodiscard]] FailureOr<uint64_t>
+  bitVectorCastWidth(std::optional<SyntaxExpressionId> size,
+                     SMLoc location) const {
+    if (!size) {
+      return fail(location, "bit-register cast requires an explicit width");
+    }
+    if (!isConstantExpression(*size)) {
+      return fail(location,
+                  "bit-register cast width must be a constant integer "
+                  "expression");
+    }
+    MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(*size));
+    if (!isInteger(constant.type)) {
+      return fail(location,
+                  "bit-register cast width must be an integer expression");
+    }
+    const auto width = asSigned(constant);
+    if (!width || *width < 1 || *width > 64) {
+      return fail(location,
+                  "bit-register cast supports widths from 1 through 64");
+    }
+    return static_cast<uint64_t>(*width);
+  }
+
   [[nodiscard]] bool expressionProducesBool(const SyntaxExpressionId id) const {
     const auto& expression = syntax.expressions[id];
     switch (expression.kind) {
@@ -1410,6 +1438,10 @@ private:
         MQT_OQ3_TRY_ASSIGN(operand, evaluateConstant(*expression.rhs));
         return convertToFixedAngle(operand, width, expression.location);
       }
+      case Expr::Kind::IntCast:
+      case Expr::Kind::UintCast:
+        return fail(expression.location,
+                    "bit-register casts are not compile-time constants");
       case Expr::Kind::Neg: {
         MQT_OQ3_TRY_ASSIGN(operand, evaluateConstant(*expression.lhs));
         if (operand.type == ScalarType::Bool) {
@@ -1720,6 +1752,10 @@ private:
         MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(id));
         return constant.type;
       }
+      case Expr::Kind::IntCast:
+        return ScalarType::Int;
+      case Expr::Kind::UintCast:
+        return ScalarType::Uint;
       case Expr::Kind::Neg: {
         MQT_OQ3_TRY_ASSIGN(type, constantExpressionType(*expression.lhs));
         if (type == ScalarType::Bool) {
@@ -2150,6 +2186,8 @@ private:
         return true;
       case Expr::Kind::Index:
       case Expr::Kind::PopCount:
+      case Expr::Kind::IntCast:
+      case Expr::Kind::UintCast:
       case Expr::Kind::RotateLeft:
       case Expr::Kind::RotateRight:
         return false;
@@ -2194,6 +2232,11 @@ private:
         return fail(
             expression.location,
             "bit-vector expression requires a bit register, not scalar bit");
+      }
+      if (insideGate) {
+        return fail(expression.location,
+                    "gate definitions cannot capture outer bit register '" +
+                        expression.identifier + "'");
       }
       const auto width = program.registers[reg].width;
       for (uint64_t bit = 0; bit < width; ++bit) {
@@ -2243,6 +2286,30 @@ private:
                             .type = ScalarType::Uint,
                             .bitVector = bitVector});
     }
+    if (expression.kind == Expr::Kind::IntCast ||
+        expression.kind == Expr::Kind::UintCast) {
+      MQT_OQ3_TRY_ASSIGN(
+          width, bitVectorCastWidth(expression.lhs, expression.location));
+      MQT_OQ3_TRY_ASSIGN(bitVector,
+                         analyzeBitVectorExpression(*expression.rhs));
+      const auto operandWidth = program.bitVectorExpressions[bitVector].width;
+      if (width != operandWidth) {
+        return fail(expression.location,
+                    Twine("bit-register cast width must match the bit-register "
+                          "width (cast width ") +
+                        Twine(width) + ", bit-register width " +
+                        Twine(operandWidth) + ")");
+      }
+      const bool isSigned = expression.kind == Expr::Kind::IntCast;
+      return addExpression(
+          {.kind = ExpressionKind::BitVectorCast,
+           /// The QC frontend uses 64-bit machine integers.
+           /// C99-style integer promotion therefore converts
+           /// every narrower fixed-width integer to signed int.
+           .type = isSigned || width < 64 ? ScalarType::Int : ScalarType::Uint,
+           .bitVector = bitVector,
+           .signedBitVectorCast = isSigned});
+    }
     if (expression.kind == Expr::Kind::Identifier) {
       const auto* symbol = lookup(expression.identifier);
       if (symbol == nullptr) {
@@ -2271,6 +2338,9 @@ private:
 
     auto kind = ExpressionKind::Constant;
     switch (expression.kind) {
+    case Expr::Kind::IntCast:
+    case Expr::Kind::UintCast:
+      llvm_unreachable("handled bit-register cast");
     case Expr::Kind::AngleCast:
       return fail(expression.location,
                   "runtime angle conversions are not supported");
@@ -3855,6 +3925,8 @@ private:
     case Expr::Kind::Int:
     case Expr::Kind::Float:
     case Expr::Kind::Bool:
+    case Expr::Kind::IntCast:
+    case Expr::Kind::UintCast:
     case Expr::Kind::AngleCast:
     case Expr::Kind::Neg:
     case Expr::Kind::BitNot:

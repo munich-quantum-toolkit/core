@@ -561,6 +561,9 @@ OPENQASM 3.1;
 const uint WIDTH = 8;
 const angle[WIDTH] fixed = angle[WIDTH](pi / 2);
 angle machine = angle(tau / 4);
+bit[2] value;
+if (uint[2](value) == 3) {}
+if (int[2](value) == -1) {}
 )qasm";
 
   auto parsed = oq3::frontend::parseOpenQASM(source);
