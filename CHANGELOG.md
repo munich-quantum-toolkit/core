@@ -38,7 +38,7 @@ releases may include breaking changes.
   `f64` SSA, CBit registers, one-dimensional memrefs, dynamic quantum allocation
   and qtensors, dense multi-wire embedding, output-aware multi-shot sampling,
   and Python bindings ([#1915], [#1973], [#2077], [#2078])
-  ([**@simon1hofmann**])
+  ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
   compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
   [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
