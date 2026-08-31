@@ -17,7 +17,7 @@ big-endian: the highest-index result bit is the leftmost character.
 ## Discover the catalog
 
 The command-line registry is the current list of available families. Each family
-has its own JSON Schema.
+has its own instance specification schema.
 
 ```{code-cell} ipython3
 !mqt-core-bench list
@@ -51,19 +51,20 @@ print("Width:", benchmark.output.width)
 
 Each benchmark family validates its options when it creates an instance.
 
-## Inspect the canonical instance and manifest
+## Inspect the canonical instance specification and manifest
 
-Canonical JSON records every resolved default. A manifest also binds the logical
-output, reference descriptor, family-definition version, and case ID.
+A canonical instance specification records every resolved default. A manifest
+also binds the logical output, reference descriptor, family-definition version,
+and case ID.
 
 ```{code-cell} ipython3
 import json
 
 
-instance = json.loads(benchmark.instance_json)
+instance_specification = json.loads(benchmark.instance_specification_json)
 manifest = json.loads(benchmark.manifest_json)
-print("Instance:")
-print(json.dumps(instance, indent=2))
+print("Instance specification:")
+print(json.dumps(instance_specification, indent=2))
 print("\nManifest summary:")
 print(
     json.dumps(
@@ -134,7 +135,7 @@ from pathlib import Path
 
 temporary = tempfile.TemporaryDirectory()
 root = Path(temporary.name)
-instance_path = root / "instance.json"
+instance_specification_path = root / "instance-specification.json"
 counts_path = root / "counts.json"
 output_directory = root / "generated"
 ```
@@ -142,7 +143,9 @@ output_directory = root / "generated"
 ```{code-cell} ipython3
 :tags: [remove-output]
 
-instance_path.write_text(benchmark.instance_json, encoding="utf-8")
+instance_specification_path.write_text(
+    benchmark.instance_specification_json, encoding="utf-8"
+)
 counts_path.write_text(
     json.dumps({"schema_version": 1, "counts": {"000": 5, "100": 5}}),
     encoding="utf-8",
@@ -150,7 +153,7 @@ counts_path.write_text(
 ```
 
 ```{code-cell} ipython3
-!mqt-core-bench generate --instance {instance_path} --format qc --output {output_directory}
+!mqt-core-bench generate --instance-specification {instance_specification_path} --format qc --output {output_directory}
 ```
 
 ```{code-cell} ipython3
@@ -176,7 +179,7 @@ The output format changes the file name, but not the semantic case ID.
 ## C++ API
 
 The installed `MQT::CoreBench` target provides typed parameters, references,
-evaluation, instances, and manifests.
+evaluation, instances, instance specifications, and manifests.
 
 ```cpp
 #include "bench/Grover.hpp"
@@ -206,19 +209,20 @@ Adding a family requires five explicit extension points:
 
 1. Add typed options, validation, an analytic reference, and evaluation under
    `include/mqt-core/bench/` and `src/bench/`.
-2. Add its schema and evaluation callback to the private semantic registry in
-   `src/bench/JSON.cpp`.
-3. Add one structured emitter and one instance callback to the private MLIR
+2. Add its instance specification schema and evaluation callback to the private
+   semantic registry in `src/bench/JSON.cpp`.
+3. Add one structured emitter and one generation callback to the private MLIR
    registry in `mlir/bench/Generate.cpp`.
 4. Add the explicit Python types in `bindings/bench/register_bench.cpp`.
-5. Test the reference, strict JSON, emitter structure, `jeff` conversion, and
-   Python generation.
+5. Test the reference, strict instance specification JSON, emitter structure,
+   `jeff` conversion, and Python generation.
 
 Do not add a second catalog, a generic option map, or a public base class.
 
 ## Reproducibility contract
 
-Instances reject unknown fields and invalid values. The case ID does not depend
-on a path or output format. Parsing a manifest checks its resolved parameters,
-logical output, reference, definition version, and case ID. Before evaluation,
-normalize backend results to the manifest's big-endian `result` order.
+Instance specifications reject unknown fields and invalid values. The case ID
+does not depend on a path or output format. Parsing a manifest checks its
+resolved parameters, logical output, reference, definition version, and case ID.
+Before evaluation, normalize backend results to the manifest's big-endian
+`result` order.

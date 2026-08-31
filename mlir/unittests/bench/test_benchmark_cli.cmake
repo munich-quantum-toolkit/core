@@ -55,8 +55,8 @@ if(NOT schema STREQUAL "https://json-schema.org/draft/2020-12/schema")
   message(FATAL_ERROR "describe did not return a JSON Schema")
 endif()
 
-set(instance "${OUTPUT_DIR}/instance.json")
-file(WRITE "${instance}"
+set(instance_specification "${OUTPUT_DIR}/instance-specification.json")
+file(WRITE "${instance_specification}"
      "{\"schema_version\":1,\"benchmark\":\"ghz\",\"parameters\":{\"qubits\":2}}\n")
 set(qc_directory "${OUTPUT_DIR}/qc")
 run_success(
@@ -64,8 +64,8 @@ run_success(
   generate_output
   "${CLI}"
   generate
-  --instance
-  "${instance}"
+  --instance-specification
+  "${instance_specification}"
   --format
   qc
   --output
@@ -96,8 +96,8 @@ run_failure(
   "generation beside an existing manifest"
   "${CLI}"
   generate
-  --instance
-  "${instance}"
+  --instance-specification
+  "${instance_specification}"
   --format
   qc
   --output
@@ -112,8 +112,8 @@ run_failure(
   "generation beside existing outputs"
   "${CLI}"
   generate
-  --instance
-  "${instance}"
+  --instance-specification
+  "${instance_specification}"
   --format
   qc
   --output
@@ -135,8 +135,8 @@ run_success(
   percent_output
   "${CLI}"
   generate
-  --instance
-  "${instance}"
+  --instance-specification
+  "${instance_specification}"
   --format
   qc
   --output
@@ -168,8 +168,8 @@ if(NOT evaluated_case_id STREQUAL case_id OR NOT total_variation_distance EQUAL 
 endif()
 
 execute_process(
-  COMMAND "${CLI}" generate --instance - --format jeff --output "${qc_directory}"
-  INPUT_FILE "${instance}"
+  COMMAND "${CLI}" generate --instance-specification - --format jeff --output "${qc_directory}"
+  INPUT_FILE "${instance_specification}"
   RESULT_VARIABLE jeff_result
   OUTPUT_VARIABLE jeff_output
   ERROR_VARIABLE jeff_error)
@@ -199,8 +199,8 @@ run_failure(
   "invalid output format"
   "${CLI}"
   generate
-  --instance
-  "${instance}"
+  --instance-specification
+  "${instance_specification}"
   --format
   invalid
   --output
@@ -209,21 +209,21 @@ if(EXISTS "${invalid_format_directory}")
   message(FATAL_ERROR "an invalid output format created its output directory")
 endif()
 
-set(invalid_instance "${OUTPUT_DIR}/invalid.json")
+set(invalid_instance_specification "${OUTPUT_DIR}/invalid-instance-specification.json")
 set(invalid_directory "${OUTPUT_DIR}/invalid")
-file(WRITE "${invalid_instance}"
+file(WRITE "${invalid_instance_specification}"
      "{\"schema_version\":1,\"benchmark\":\"unknown\",\"parameters\":{}}\n")
 run_failure(
-  "invalid instance"
+  "invalid instance specification"
   "${CLI}"
   generate
-  --instance
-  "${invalid_instance}"
+  --instance-specification
+  "${invalid_instance_specification}"
   --format
   qc
   --output
   "${invalid_directory}")
 file(GLOB invalid_outputs "${invalid_directory}/*")
 if(invalid_outputs)
-  message(FATAL_ERROR "an invalid instance left a final output")
+  message(FATAL_ERROR "an invalid instance specification left a final output")
 endif()

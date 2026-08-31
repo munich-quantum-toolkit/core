@@ -220,8 +220,17 @@ linear semantics
 benchmark instance
   **Preferred term:** benchmark instance. **Accepted alias:** instance when the
   benchmark context is clear. One validated member of a benchmark family with
-  every default resolved. Its canonical JSON records the family and resolved
-  parameters. It does not request program generation or execution.
+  every default resolved. It owns a logical output and analytic reference and
+  can be used to generate a program or manifest.
+
+benchmark instance specification
+instance specification
+  **Preferred term:** benchmark instance specification. **Accepted alias:**
+  instance specification when the benchmark context is clear. A strict JSON
+  document that names a benchmark family and provides the parameters used to
+  construct an instance. Input can omit documented defaults; the canonical form
+  records every resolved default. It specifies configuration. It does not
+  request program generation or execution.
 
 benchmark manifest
 manifest

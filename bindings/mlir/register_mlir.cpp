@@ -259,8 +259,8 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
 }
 
 [[nodiscard]] static mlir::QCProgram
-generateBenchmark(const std::string_view instance) {
-  auto generated = bench::generate(instance);
+generateBenchmark(const std::string_view instanceSpecificationJSON) {
+  auto generated = bench::generate(instanceSpecificationJSON);
   if (!generated) {
     throw std::runtime_error("failed to generate benchmark");
   }
@@ -273,8 +273,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   nb::module_::import_("typing");
   nb::module_::import_("mqt.core.qdmi");
 
-  m.def("_generate_benchmark", &generateBenchmark, "instance_json"_a,
-        "Generate a typed benchmark instance as a QC program.");
+  m.def("_generate_benchmark", &generateBenchmark,
+        "instance_specification_json"_a,
+        "Generate the QC program described by an instance specification.");
 
   nb::enum_<mlir::QIRProfile>(m, "QIRProfile", "QIR target profiles.")
       .value("BASE", mlir::QIRProfile::Base, "The QIR Base Profile.")

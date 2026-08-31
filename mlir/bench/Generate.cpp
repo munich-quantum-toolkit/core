@@ -83,47 +83,59 @@ generateInstance(const std::string_view id, const Benchmark& benchmark) {
                             toManifestJSON(benchmark), std::move(*program)};
 }
 
-using InstanceFunction =
+using GenerateFunction =
     std::optional<GeneratedBenchmark> (*)(std::string_view, std::string_view);
 
 namespace {
 struct RegistryEntry {
   std::string_view id;
-  InstanceFunction generate;
+  GenerateFunction generate;
 };
 using Registry = std::array<RegistryEntry, 5>;
 } // namespace
 
 static const Registry REGISTRY{{
     {"bv",
-     [](const std::string_view instance, const std::string_view source) {
-       return generateInstance("bv", bvFromInstanceJSON(instance, source));
+     [](const std::string_view instanceSpecificationJSON,
+        const std::string_view source) {
+       return generateInstance("bv", bvFromInstanceSpecificationJSON(
+                                         instanceSpecificationJSON, source));
      }},
     {"ghz",
-     [](const std::string_view instance, const std::string_view source) {
-       return generateInstance("ghz", ghzFromInstanceJSON(instance, source));
+     [](const std::string_view instanceSpecificationJSON,
+        const std::string_view source) {
+       return generateInstance("ghz", ghzFromInstanceSpecificationJSON(
+                                          instanceSpecificationJSON, source));
      }},
     {"grover",
-     [](const std::string_view instance, const std::string_view source) {
+     [](const std::string_view instanceSpecificationJSON,
+        const std::string_view source) {
        return generateInstance("grover",
-                               groverFromInstanceJSON(instance, source));
+                               groverFromInstanceSpecificationJSON(
+                                   instanceSpecificationJSON, source));
      }},
     {"qft",
-     [](const std::string_view instance, const std::string_view source) {
-       return generateInstance("qft", qftFromInstanceJSON(instance, source));
+     [](const std::string_view instanceSpecificationJSON,
+        const std::string_view source) {
+       return generateInstance("qft", qftFromInstanceSpecificationJSON(
+                                          instanceSpecificationJSON, source));
      }},
     {"qpe",
-     [](const std::string_view instance, const std::string_view source) {
-       return generateInstance("qpe", qpeFromInstanceJSON(instance, source));
+     [](const std::string_view instanceSpecificationJSON,
+        const std::string_view source) {
+       return generateInstance("qpe", qpeFromInstanceSpecificationJSON(
+                                          instanceSpecificationJSON, source));
      }},
 }};
 
-std::optional<GeneratedBenchmark> generate(const std::string_view instanceJSON,
-                                           const std::string_view source) {
-  const auto id = benchmarkIdFromInstanceJSON(instanceJSON, source);
+std::optional<GeneratedBenchmark>
+generate(const std::string_view instanceSpecificationJSON,
+         const std::string_view source) {
+  const auto id = benchmarkIdFromInstanceSpecificationJSON(
+      instanceSpecificationJSON, source);
   for (const auto& entry : REGISTRY) {
     if (entry.id == id) {
-      return entry.generate(instanceJSON, source);
+      return entry.generate(instanceSpecificationJSON, source);
     }
   }
   return std::nullopt;

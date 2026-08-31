@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-// Generates and evaluates structured benchmark instances.
+// Generates configured benchmarks and evaluates their results.
 
 #include "bench/JSON.hpp"
 #include "mlir/Compiler/Programs.h"
@@ -38,7 +38,8 @@ static llvm::cl::OptionCategory benchmarkOptions("Benchmark options");
 static llvm::cl::SubCommand listCommand("list",
                                         "List the available benchmarks");
 static llvm::cl::SubCommand
-    describeCommand("describe", "Describe one benchmark instance schema");
+    describeCommand("describe",
+                    "Describe one benchmark instance specification schema");
 static llvm::cl::SubCommand
     generateCommand("generate", "Generate one configured benchmark");
 static llvm::cl::SubCommand
@@ -50,8 +51,10 @@ static llvm::cl::opt<std::string> benchmarkId(llvm::cl::Positional,
                                               llvm::cl::cat(benchmarkOptions),
                                               llvm::cl::sub(describeCommand));
 
-static llvm::cl::opt<std::string> instancePath(
-    "instance", llvm::cl::desc("Instance JSON file, or '-' for standard input"),
+static llvm::cl::opt<std::string> instanceSpecificationPath(
+    "instance-specification",
+    llvm::cl::desc(
+        "Instance specification JSON file, or '-' for standard input"),
     llvm::cl::value_desc("file|-"), llvm::cl::Required,
     llvm::cl::cat(benchmarkOptions), llvm::cl::sub(generateCommand));
 
@@ -275,9 +278,10 @@ programExtension(const std::string_view format) {
   return 0;
 }
 
-[[nodiscard]] static int generateInstance(const std::string& instance,
-                                          const std::string& source) {
-  auto generated = mqt::bench::generate(instance, source);
+[[nodiscard]] static int
+generateFromInstanceSpecification(const std::string& instanceSpecification,
+                                  const std::string& source) {
+  auto generated = mqt::bench::generate(instanceSpecification, source);
   if (!generated) {
     return 1;
   }
@@ -300,10 +304,11 @@ int main(int argc, char** argv) {
       return 0;
     }
     if (generateCommand) {
-      const auto instance = readText(instancePath);
-      const auto source =
-          instancePath == "-" ? "<stdin>" : instancePath.getValue();
-      return generateInstance(instance, source);
+      const auto instanceSpecification = readText(instanceSpecificationPath);
+      const auto source = instanceSpecificationPath == "-"
+                              ? "<stdin>"
+                              : instanceSpecificationPath.getValue();
+      return generateFromInstanceSpecification(instanceSpecification, source);
     }
     if (evaluateCommand) {
       if (manifestInputPath == "-") {

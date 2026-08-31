@@ -49,20 +49,20 @@ constexpr uint64_t QFT_DEFINITION_VERSION = 1;
 constexpr uint64_t QPE_DEFINITION_VERSION = 1;
 constexpr std::string_view CASE_DOMAIN = "mqt-core:benchmark-case:v1";
 
-[[nodiscard]] Json bvSchema();
-[[nodiscard]] Json ghzSchema();
-[[nodiscard]] Json groverSchema();
-[[nodiscard]] Json qftSchema();
-[[nodiscard]] Json qpeSchema();
+[[nodiscard]] Json bvInstanceSpecificationSchema();
+[[nodiscard]] Json ghzInstanceSpecificationSchema();
+[[nodiscard]] Json groverInstanceSpecificationSchema();
+[[nodiscard]] Json qftInstanceSpecificationSchema();
+[[nodiscard]] Json qpeInstanceSpecificationSchema();
 
-using SchemaFunction = Json (*)();
+using InstanceSpecificationSchemaFunction = Json (*)();
 using EvaluationFunction = std::string (*)(std::string_view, std::string_view,
                                            const Counts&);
 
 struct RegistryEntry {
   std::string_view id;
   uint64_t definitionVersion;
-  SchemaFunction schema;
+  InstanceSpecificationSchemaFunction instanceSpecificationSchema;
   EvaluationFunction evaluate;
 };
 using Registry = std::array<RegistryEntry, 5>;
@@ -86,23 +86,23 @@ using Registry = std::array<RegistryEntry, 5>;
 constexpr Registry REGISTRY{{
     {.id = "bv",
      .definitionVersion = BV_DEFINITION_VERSION,
-     .schema = bvSchema,
+     .instanceSpecificationSchema = bvInstanceSpecificationSchema,
      .evaluate = evaluateBV},
     {.id = "ghz",
      .definitionVersion = GHZ_DEFINITION_VERSION,
-     .schema = ghzSchema,
+     .instanceSpecificationSchema = ghzInstanceSpecificationSchema,
      .evaluate = evaluateGHZ},
     {.id = "grover",
      .definitionVersion = GROVER_DEFINITION_VERSION,
-     .schema = groverSchema,
+     .instanceSpecificationSchema = groverInstanceSpecificationSchema,
      .evaluate = evaluateGrover},
     {.id = "qft",
      .definitionVersion = QFT_DEFINITION_VERSION,
-     .schema = qftSchema,
+     .instanceSpecificationSchema = qftInstanceSpecificationSchema,
      .evaluate = evaluateQFT},
     {.id = "qpe",
      .definitionVersion = QPE_DEFINITION_VERSION,
-     .schema = qpeSchema,
+     .instanceSpecificationSchema = qpeInstanceSpecificationSchema,
      .evaluate = evaluateQPE},
 }};
 
@@ -249,8 +249,9 @@ void requireSchemaVersion(const Json& root, const std::string_view source) {
   return benchmark;
 }
 
-[[nodiscard]] Json instanceEnvelope(const std::string_view text,
-                                    const std::string_view source) {
+[[nodiscard]] Json
+instanceSpecificationEnvelope(const std::string_view text,
+                              const std::string_view source) {
   auto root = parseJSON(text, source);
   requireObject(root, source, "$");
   rejectUnknownKeys(root, {"schema_version", "benchmark", "parameters"}, source,
@@ -600,8 +601,8 @@ template <class Benchmark>
   return semantic;
 }
 
-[[nodiscard]] Json instanceJSON(const std::string_view id,
-                                const Json& parameters) {
+[[nodiscard]] Json instanceSpecificationJSON(const std::string_view id,
+                                             const Json& parameters) {
   return {{"benchmark", std::string(id)},
           {"parameters", parameters},
           {"schema_version", SCHEMA_VERSION}};
@@ -622,9 +623,10 @@ template <class Benchmark, class ParseParameters>
   return benchmark;
 }
 
-[[nodiscard]] Json baseInstanceSchema(const std::string_view id,
-                                      const uint64_t definitionVersionValue,
-                                      Json parameters) {
+[[nodiscard]] Json
+baseInstanceSpecificationSchema(const std::string_view id,
+                                const uint64_t definitionVersionValue,
+                                Json parameters) {
   return {{"$schema", "https://json-schema.org/draft/2020-12/schema"},
           {"additionalProperties", false},
           {"properties",
@@ -636,8 +638,8 @@ template <class Benchmark, class ParseParameters>
           {"x-mqt-definition-version", definitionVersionValue}};
 }
 
-[[nodiscard]] Json bvSchema() {
-  return baseInstanceSchema(
+[[nodiscard]] Json bvInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema(
       "bv", BV_DEFINITION_VERSION,
       {{"additionalProperties", false},
        {"properties",
@@ -651,7 +653,7 @@ template <class Benchmark, class ParseParameters>
        {"type", "object"}});
 }
 
-[[nodiscard]] Json ghzSchema() {
+[[nodiscard]] Json ghzInstanceSpecificationSchema() {
   Json parameters{
       {"additionalProperties", false},
       {"properties",
@@ -670,12 +672,12 @@ template <class Benchmark, class ParseParameters>
         {"then",
          {{"properties",
            {{"qubits", {{"maximum", GHZOptions::MAX_X_BASIS_QUBITS}}}}}}}}});
-  return baseInstanceSchema("ghz", GHZ_DEFINITION_VERSION,
-                            std::move(parameters));
+  return baseInstanceSpecificationSchema("ghz", GHZ_DEFINITION_VERSION,
+                                         std::move(parameters));
 }
 
-[[nodiscard]] Json groverSchema() {
-  return baseInstanceSchema(
+[[nodiscard]] Json groverInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema(
       "grover", GROVER_DEFINITION_VERSION,
       {{"additionalProperties", false},
        {"properties",
@@ -692,8 +694,8 @@ template <class Benchmark, class ParseParameters>
        {"type", "object"}});
 }
 
-[[nodiscard]] Json qftSchema() {
-  return baseInstanceSchema(
+[[nodiscard]] Json qftInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema(
       "qft", QFT_DEFINITION_VERSION,
       {{"additionalProperties", false},
        {"properties",
@@ -711,8 +713,8 @@ template <class Benchmark, class ParseParameters>
        {"type", "object"}});
 }
 
-[[nodiscard]] Json qpeSchema() {
-  return baseInstanceSchema(
+[[nodiscard]] Json qpeInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema(
       "qpe", QPE_DEFINITION_VERSION,
       {{"additionalProperties", false},
        {"properties",
@@ -786,9 +788,11 @@ std::string evaluateQPE(const std::string_view manifest,
 
 } // namespace
 
-std::string benchmarkIdFromInstanceJSON(const std::string_view json,
-                                        const std::string_view source) {
-  return requireBenchmarkId(instanceEnvelope(json, source), source);
+std::string
+benchmarkIdFromInstanceSpecificationJSON(const std::string_view json,
+                                         const std::string_view source) {
+  return requireBenchmarkId(instanceSpecificationEnvelope(json, source),
+                            source);
 }
 
 std::string benchmarkIdFromManifestJSON(const std::string_view json,
@@ -810,65 +814,65 @@ std::string listBenchmarksJSON() {
 
 std::string describeBenchmarkJSON(const std::string_view benchmark) {
   if (const auto* entry = findBenchmark(benchmark)) {
-    return entry->schema().dump();
+    return entry->instanceSpecificationSchema().dump();
   }
   throw std::invalid_argument("unsupported benchmark '" +
                               std::string(benchmark) + "'");
 }
 
-BV bvFromInstanceJSON(const std::string_view json,
-                      const std::string_view source) {
-  const auto root = instanceEnvelope(json, source);
+BV bvFromInstanceSpecificationJSON(const std::string_view json,
+                                   const std::string_view source) {
+  const auto root = instanceSpecificationEnvelope(json, source);
   requireBenchmark(root, "bv", source);
   return parseBVParameters(root.at("parameters"), source);
 }
 
-GHZ ghzFromInstanceJSON(const std::string_view json,
-                        const std::string_view source) {
-  const auto root = instanceEnvelope(json, source);
+GHZ ghzFromInstanceSpecificationJSON(const std::string_view json,
+                                     const std::string_view source) {
+  const auto root = instanceSpecificationEnvelope(json, source);
   requireBenchmark(root, "ghz", source);
   return parseGHZParameters(root.at("parameters"), source);
 }
 
-Grover groverFromInstanceJSON(const std::string_view json,
-                              const std::string_view source) {
-  const auto root = instanceEnvelope(json, source);
+Grover groverFromInstanceSpecificationJSON(const std::string_view json,
+                                           const std::string_view source) {
+  const auto root = instanceSpecificationEnvelope(json, source);
   requireBenchmark(root, "grover", source);
   return parseGroverParameters(root.at("parameters"), source);
 }
 
-QFT qftFromInstanceJSON(const std::string_view json,
-                        const std::string_view source) {
-  const auto root = instanceEnvelope(json, source);
+QFT qftFromInstanceSpecificationJSON(const std::string_view json,
+                                     const std::string_view source) {
+  const auto root = instanceSpecificationEnvelope(json, source);
   requireBenchmark(root, "qft", source);
   return parseQFTParameters(root.at("parameters"), source);
 }
 
-QPE qpeFromInstanceJSON(const std::string_view json,
-                        const std::string_view source) {
-  const auto root = instanceEnvelope(json, source);
+QPE qpeFromInstanceSpecificationJSON(const std::string_view json,
+                                     const std::string_view source) {
+  const auto root = instanceSpecificationEnvelope(json, source);
   requireBenchmark(root, "qpe", source);
   return parseQPEParameters(root.at("parameters"), source);
 }
 
-std::string toInstanceJSON(const BV& benchmark) {
-  return instanceJSON("bv", parametersJSON(benchmark)).dump();
+std::string toInstanceSpecificationJSON(const BV& benchmark) {
+  return instanceSpecificationJSON("bv", parametersJSON(benchmark)).dump();
 }
 
-std::string toInstanceJSON(const GHZ& benchmark) {
-  return instanceJSON("ghz", parametersJSON(benchmark)).dump();
+std::string toInstanceSpecificationJSON(const GHZ& benchmark) {
+  return instanceSpecificationJSON("ghz", parametersJSON(benchmark)).dump();
 }
 
-std::string toInstanceJSON(const Grover& benchmark) {
-  return instanceJSON("grover", parametersJSON(benchmark)).dump();
+std::string toInstanceSpecificationJSON(const Grover& benchmark) {
+  return instanceSpecificationJSON("grover", parametersJSON(benchmark)).dump();
 }
 
-std::string toInstanceJSON(const QFT& benchmark) {
-  return instanceJSON("qft", parametersJSON(benchmark)).dump();
+std::string toInstanceSpecificationJSON(const QFT& benchmark) {
+  return instanceSpecificationJSON("qft", parametersJSON(benchmark)).dump();
 }
 
-std::string toInstanceJSON(const QPE& benchmark) {
-  return instanceJSON("qpe", parametersJSON(benchmark)).dump();
+std::string toInstanceSpecificationJSON(const QPE& benchmark) {
+  return instanceSpecificationJSON("qpe", parametersJSON(benchmark)).dump();
 }
 
 BV bvFromManifestJSON(const std::string_view json,

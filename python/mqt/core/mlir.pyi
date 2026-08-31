@@ -18,8 +18,8 @@ import qiskit.circuit
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
 
-def _generate_benchmark(instance_json: str) -> QCProgram:
-    """Generate a typed benchmark instance as a QC program."""
+def _generate_benchmark(instance_specification_json: str) -> QCProgram:
+    """Generate the QC program described by an instance specification."""
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""

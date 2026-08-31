@@ -24,10 +24,11 @@
 
 namespace mqt::bench {
 
-/// Return the benchmark ID from a strict instance.
+/// Return the benchmark ID from a strict instance specification.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-benchmarkIdFromInstanceJSON(std::string_view json,
-                            std::string_view source = "<instance>");
+benchmarkIdFromInstanceSpecificationJSON(
+    std::string_view json,
+    std::string_view source = "<instance-specification>");
 
 /// Return the benchmark ID from a strict manifest envelope.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
@@ -37,31 +38,36 @@ benchmarkIdFromManifestJSON(std::string_view json,
 /// Return the fixed benchmark registry as canonical JSON.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string listBenchmarksJSON();
 
-/// Return the instance schema for a benchmark as canonical JSON.
+/// Return the instance specification schema for a benchmark as canonical JSON.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
 describeBenchmarkJSON(std::string_view benchmark);
 
-[[nodiscard]] MQT_CORE_BENCH_EXPORT BV bvFromInstanceJSON(
-    std::string_view json, std::string_view source = "<instance>");
-[[nodiscard]] MQT_CORE_BENCH_EXPORT GHZ ghzFromInstanceJSON(
-    std::string_view json, std::string_view source = "<instance>");
-[[nodiscard]] MQT_CORE_BENCH_EXPORT Grover groverFromInstanceJSON(
-    std::string_view json, std::string_view source = "<instance>");
-[[nodiscard]] MQT_CORE_BENCH_EXPORT QFT qftFromInstanceJSON(
-    std::string_view json, std::string_view source = "<instance>");
-[[nodiscard]] MQT_CORE_BENCH_EXPORT QPE qpeFromInstanceJSON(
-    std::string_view json, std::string_view source = "<instance>");
+[[nodiscard]] MQT_CORE_BENCH_EXPORT BV bvFromInstanceSpecificationJSON(
+    std::string_view json,
+    std::string_view source = "<instance-specification>");
+[[nodiscard]] MQT_CORE_BENCH_EXPORT GHZ ghzFromInstanceSpecificationJSON(
+    std::string_view json,
+    std::string_view source = "<instance-specification>");
+[[nodiscard]] MQT_CORE_BENCH_EXPORT Grover groverFromInstanceSpecificationJSON(
+    std::string_view json,
+    std::string_view source = "<instance-specification>");
+[[nodiscard]] MQT_CORE_BENCH_EXPORT QFT qftFromInstanceSpecificationJSON(
+    std::string_view json,
+    std::string_view source = "<instance-specification>");
+[[nodiscard]] MQT_CORE_BENCH_EXPORT QPE qpeFromInstanceSpecificationJSON(
+    std::string_view json,
+    std::string_view source = "<instance-specification>");
 
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toInstanceJSON(const BV& benchmark);
+toInstanceSpecificationJSON(const BV& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toInstanceJSON(const GHZ& benchmark);
+toInstanceSpecificationJSON(const GHZ& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toInstanceJSON(const Grover& benchmark);
+toInstanceSpecificationJSON(const Grover& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toInstanceJSON(const QFT& benchmark);
+toInstanceSpecificationJSON(const QFT& benchmark);
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toInstanceJSON(const QPE& benchmark);
+toInstanceSpecificationJSON(const QPE& benchmark);
 
 [[nodiscard]] MQT_CORE_BENCH_EXPORT BV bvFromManifestJSON(
     std::string_view json, std::string_view source = "<manifest>");

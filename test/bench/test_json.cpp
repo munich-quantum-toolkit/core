@@ -28,10 +28,10 @@
 
 namespace {
 
-using mqt::bench::benchmarkIdFromInstanceJSON;
+using mqt::bench::benchmarkIdFromInstanceSpecificationJSON;
 using mqt::bench::benchmarkIdFromManifestJSON;
 using mqt::bench::BV;
-using mqt::bench::bvFromInstanceJSON;
+using mqt::bench::bvFromInstanceSpecificationJSON;
 using mqt::bench::bvFromManifestJSON;
 using mqt::bench::BVMethod;
 using mqt::bench::caseId;
@@ -42,23 +42,23 @@ using mqt::bench::Evaluation;
 using mqt::bench::evaluationToJSON;
 using mqt::bench::GHZ;
 using mqt::bench::GHZBasis;
-using mqt::bench::ghzFromInstanceJSON;
+using mqt::bench::ghzFromInstanceSpecificationJSON;
 using mqt::bench::ghzFromManifestJSON;
 using mqt::bench::GHZTopology;
 using mqt::bench::Grover;
-using mqt::bench::groverFromInstanceJSON;
+using mqt::bench::groverFromInstanceSpecificationJSON;
 using mqt::bench::groverFromManifestJSON;
 using mqt::bench::listBenchmarksJSON;
 using mqt::bench::Phase;
 using mqt::bench::QFT;
-using mqt::bench::qftFromInstanceJSON;
+using mqt::bench::qftFromInstanceSpecificationJSON;
 using mqt::bench::qftFromManifestJSON;
 using mqt::bench::QFTMethod;
 using mqt::bench::QPE;
-using mqt::bench::qpeFromInstanceJSON;
+using mqt::bench::qpeFromInstanceSpecificationJSON;
 using mqt::bench::qpeFromManifestJSON;
 using mqt::bench::QPEMethod;
-using mqt::bench::toInstanceJSON;
+using mqt::bench::toInstanceSpecificationJSON;
 using mqt::bench::toManifestJSON;
 
 void expectInvalid(const std::function<void()>& operation,
@@ -72,43 +72,44 @@ void expectInvalid(const std::function<void()>& operation,
   }
 }
 
-TEST(BenchmarkJSON, ParsesInstancesAndSerializesResolvedParameters) {
-  const auto bv = bvFromInstanceJSON(
+TEST(BenchmarkJSON,
+     ParsesInstanceSpecificationsAndSerializesResolvedParameters) {
+  const auto bv = bvFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"bv","parameters":{"hidden_bitstring":"101"}})");
   EXPECT_EQ(bv.options().method, BVMethod::Static);
   EXPECT_EQ(
-      toInstanceJSON(bv),
+      toInstanceSpecificationJSON(bv),
       R"({"benchmark":"bv","parameters":{"hidden_bitstring":"101","method":"static"},"schema_version":1})");
 
-  const auto ghz = ghzFromInstanceJSON(
+  const auto ghz = ghzFromInstanceSpecificationJSON(
       R"({"parameters":{"qubits":3},"benchmark":"ghz","schema_version":1})");
   EXPECT_EQ(ghz.options().topology, GHZTopology::Linear);
   EXPECT_EQ(ghz.options().basis, GHZBasis::Z);
   EXPECT_EQ(
-      toInstanceJSON(ghz),
+      toInstanceSpecificationJSON(ghz),
       R"({"benchmark":"ghz","parameters":{"basis":"z","qubits":3,"topology":"linear"},"schema_version":1})");
 
-  const auto grover = groverFromInstanceJSON(
+  const auto grover = groverFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"grover","parameters":{"marked_bitstring":"10"}})");
   ASSERT_TRUE(grover.options().iterations);
   EXPECT_EQ(*grover.options().iterations, 1);
   EXPECT_EQ(
-      toInstanceJSON(grover),
+      toInstanceSpecificationJSON(grover),
       R"({"benchmark":"grover","parameters":{"iterations":1,"marked_bitstring":"10"},"schema_version":1})");
 
-  const auto qft = qftFromInstanceJSON(
+  const auto qft = qftFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"qft","parameters":{"qubits":4,"period_exponent":2}})");
   EXPECT_EQ(qft.options().method, QFTMethod::Standard);
   EXPECT_EQ(
-      toInstanceJSON(qft),
+      toInstanceSpecificationJSON(qft),
       R"({"benchmark":"qft","parameters":{"method":"standard","period_exponent":2,"qubits":4},"schema_version":1})");
 
-  const auto qpe = qpeFromInstanceJSON(
+  const auto qpe = qpeFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":4,"phase":{"numerator":10,"denominator":8},"method":"iterative"}})");
   EXPECT_EQ(qpe.options().phase, Phase(1, 4));
   EXPECT_EQ(qpe.options().method, QPEMethod::Iterative);
   EXPECT_EQ(
-      toInstanceJSON(qpe),
+      toInstanceSpecificationJSON(qpe),
       R"({"benchmark":"qpe","parameters":{"method":"iterative","phase":{"denominator":4,"numerator":1},"precision":4},"schema_version":1})");
 }
 
@@ -161,80 +162,81 @@ TEST(BenchmarkJSON, UsesStableSemanticCaseIds) {
                             "92861a52c5cb7c9c13aeaffffa059a65");
 }
 
-TEST(BenchmarkJSON, RejectsDuplicateUnknownAndMistypedInstanceValues) {
+TEST(BenchmarkJSON,
+     RejectsDuplicateUnknownAndMistypedInstanceSpecificationValues) {
   expectInvalid(
       [] {
-        static_cast<void>(benchmarkIdFromInstanceJSON(
+        static_cast<void>(benchmarkIdFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"ghz","benchmark":"qpe","parameters":{"qubits":2}})",
             "duplicate.json"));
       },
       "duplicate key 'benchmark'");
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromInstanceJSON(
+        static_cast<void>(ghzFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"qubits":3}})"));
       },
       "duplicate key 'qubits'");
   expectInvalid(
       [] {
-        static_cast<void>(qpeFromInstanceJSON(
+        static_cast<void>(qpeFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":4,"numerator":2}}})"));
       },
       "duplicate key 'numerator'");
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromInstanceJSON(
+        static_cast<void>(ghzFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2},"extra":true})"));
       },
       "unknown key 'extra'");
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromInstanceJSON(
+        static_cast<void>(ghzFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2,"extra":true}})"));
       },
       "unknown key 'extra'");
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromInstanceJSON(
+        static_cast<void>(ghzFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"ghz","parameters":{"qubits":2.5}})"));
       },
       "encoded as an integer");
   expectInvalid(
       [] {
-        static_cast<void>(qpeFromInstanceJSON(
+        static_cast<void>(qpeFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":9007199254740993.0,"denominator":9007199254740994}}})"));
       },
       "encoded as an integer");
   expectInvalid(
       [] {
-        static_cast<void>(qpeFromInstanceJSON(
+        static_cast<void>(qpeFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":18446744073709551615,"phase":{"numerator":1,"denominator":4}}})"));
       },
       "between 1 and 1000000");
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromInstanceJSON(
+        static_cast<void>(ghzFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"ghz","parameters":{"basis":"x","qubits":1076}})"));
       },
       "between 1 and 1075");
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromInstanceJSON(
+        static_cast<void>(ghzFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"new","parameters":{}})"));
       },
       "unsupported benchmark 'new'");
   expectInvalid(
       [] {
-        static_cast<void>(qpeFromInstanceJSON(
+        static_cast<void>(qpeFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":0}}})"));
       },
       "denominator must not be zero");
 }
 
-TEST(BenchmarkJSON, RejectsAnInstanceForAnotherConcreteType) {
+TEST(BenchmarkJSON, RejectsAnInstanceSpecificationForAnotherConcreteType) {
   expectInvalid(
       [] {
-        static_cast<void>(ghzFromInstanceJSON(
+        static_cast<void>(ghzFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"qpe","parameters":{"precision":2,"phase":{"numerator":1,"denominator":4}}})"));
       },
       "must be 'ghz'");
