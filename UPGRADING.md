@@ -268,34 +268,6 @@ must mark its first measurement boundary as `irreversible`, and no quantum work
 may follow that boundary. Adaptive-format statevector requests continue to
 return `QDMI_ERROR_NOTSUPPORTED`.
 
-### LLVM/MLIR enabled by default
-
-MQT Core now builds its MLIR-based compiler infrastructure by default. This
-configuration requires LLVM 22.1+ with MLIR and includes QIR support in the
-DDSIM QDMI device. Set `BUILD_MQT_CORE_MLIR=OFF` to build the core IR, decision
-diagram, OpenQASM, and QDMI libraries without LLVM/MLIR or DDSIM QIR support.
-The DDSIM device continues to support OpenQASM 2 and OpenQASM 3 programs.
-
-We offer pre-built distributions for all supported platforms as part of the
-`setup-mlir` project at
-[munich-quantum-software/setup-mlir](https://github.com/munich-quantum-software/setup-mlir).
-Please follow the instructions there to install the distribution for your
-platform. You can then point CMake to the installation directory using the
-`-DMLIR_DIR=/path/to/mlir/installation/lib/cmake/mlir` option.
-
-For local development, you can configure `MLIR_DIR` once in a repository-local
-`.env` file (for example, `MLIR_DIR=/path/to/installation/lib/cmake/mlir`). MQT
-Core's CMake setup will pick this up automatically when `MLIR_DIR` is not
-otherwise provided.
-
-Known limitations when MLIR is enabled:
-
-- Our pre-built distributions are incompatible with GCC on macOS. Use
-  (Apple)Clang instead or compile LLVM from source using your preferred
-  compiler.
-- AppleClang 17+ is required to build the MLIR part of MQT Core due to some
-  C++20 features that older versions do not support fully.
-
 ### Removal of the `datastructures` (sub)library
 
 MQT Core no longer provides the `datastructures` (`ds`) sublibrary. MQT QMAP was
