@@ -32,12 +32,9 @@ releases may include breaking changes.
   instance specifications, analytic references, deterministic manifests, and
   C++, Python, and command-line interfaces ([#2135]) ([**@denialhaag**],
   [**@burgholzer**])
-- ✨ Add decision diagram-based construction, simulation, and sampling for QCO
-  programs, including mid-circuit `measure` / `reset`, concrete QCO and SCF
-  control flow, non-recursive calls, bound parameters, classical integer and
-  `f64` SSA, CBit registers, one-dimensional memrefs, dynamic quantum allocation
-  and qtensors, dense multi-wire embedding, output-aware multi-shot sampling,
-  and Python bindings ([#1915], [#1973], [#2077], [#2078])
+- ✨ Add decision diagram-based construction, simulation, and output-aware
+  sampling for QCO programs, with C++ and Python APIs and support for classical
+  control flow and dynamic quantum data ([#1915], [#1973], [#2077], [#2078])
   ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
   compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
