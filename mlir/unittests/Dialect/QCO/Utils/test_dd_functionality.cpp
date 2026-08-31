@@ -1974,6 +1974,39 @@ TEST_F(QCODDFunctionalityTest,
   EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 
+TEST_F(QCODDFunctionalityTest, DefersTensorMeasurementDespiteLaterUnrelatedOp) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto reg =
+        b.allocClassicalBitRegister(1, {}, cbit::Initialization::Undefined);
+    auto q0 = b.h(b.allocQubit());
+    auto q1 = b.allocQubit();
+    std::tie(q0, std::ignore) = b.measure(q0, reg, 0);
+    auto tensor = b.qtensorFromElements({q0, q1});
+    std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+    tensor = b.qtensorInsert(q0, tensor, 0);
+    std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+    q1 = b.x(q1);
+    tensor = b.qtensorInsert(q1, tensor, 1);
+    b.qtensorDealloc(tensor);
+    return reg;
+  });
+  ASSERT_TRUE(mod);
+
+  std::mt19937_64 rng(11);
+  auto singleDD = std::make_unique<dd::Package>(2);
+  ASSERT_TRUE(succeeded(sample(mainFunc(*mod), *singleDD, 1, rng)));
+  const auto singleEvolutionLookups =
+      singleDD->matrixVectorMultiplication.getStats().lookups;
+
+  auto dd = std::make_unique<dd::Package>(2);
+  const auto histogram = sample(mainFunc(*mod), *dd, 64, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(histogram->at("0") + histogram->at("1"), 64U);
+  EXPECT_EQ(dd->matrixVectorMultiplication.getStats().lookups,
+            singleEvolutionLookups);
+  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+}
+
 TEST_F(QCODDFunctionalityTest, SampleDefersAllocatedQubitMeasurement) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto reg =
@@ -2396,6 +2429,21 @@ TEST_F(QCODDFunctionalityTest, DynamicQTensorArgumentUsesBoundExtent) {
   bindings[func.getArgument(0)] =
       IntegerAttr::get(IndexType::get(context.get()), -1);
   EXPECT_TRUE(failed(buildFunctionality(func, *dd, bindings)));
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsQTensorBeyondQubitRange) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%qubits: tensor<65537x!qco.qubit>) {
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(dd::Package::MAX_POSSIBLE_QUBITS);
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
 }
 
 TEST_F(QCODDFunctionalityTest, QTensorFlowsThroughLoopAndCall) {

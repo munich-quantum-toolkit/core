@@ -1738,10 +1738,14 @@ static FailureOr<PreparedState> prepare(func::FuncOp func,
     qubits.numQubits = std::max(qubits.numQubits, static_cast<size_t>(q) + 1);
   }
   if (qubits.numQubits == 0) {
-    qc::Qubit next = 0;
+    size_t next = 0;
     for (Value arg : func.getArguments()) {
       if (isa<QubitType>(arg.getType())) {
-        qubits.bind(arg, next++);
+        if (next >= dd::Package::MAX_POSSIBLE_QUBITS) {
+          return func.emitError()
+                 << "QCO function exceeds the supported qubit range";
+        }
+        qubits.bind(arg, static_cast<qc::Qubit>(next++));
       } else if (isQTensorType(arg.getType())) {
         const auto type = cast<RankedTensorType>(arg.getType());
         int64_t size = type.getDimSize(0);
@@ -1757,15 +1761,20 @@ static FailureOr<PreparedState> prepare(func::FuncOp func,
                    << "dynamic qtensor extent must be non-negative";
           }
         }
+        const auto count = static_cast<size_t>(size);
+        if (count > dd::Package::MAX_POSSIBLE_QUBITS - next) {
+          return func.emitError()
+                 << "QCO function exceeds the supported qubit range";
+        }
         TensorSlots slots;
-        slots.reserve(static_cast<size_t>(size));
-        for (int64_t i = 0; i < size; ++i) {
-          slots.emplace_back(next++);
+        slots.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+          slots.emplace_back(static_cast<qc::Qubit>(next++));
         }
         prepared.tensors.bind(arg, std::move(slots));
       }
     }
-    qubits.numQubits = static_cast<size_t>(next);
+    qubits.numQubits = next;
   }
   if (bindEntryAllocations) {
     for (AllocOp alloc : func.getBody().front().getOps<AllocOp>()) {
@@ -1872,21 +1881,91 @@ static bool isOutputOnlyRegister(Value reg, ArrayRef<Value> outputs) {
          });
 }
 
-static bool isDeferrableMeasurement(MeasureOp measure, Block* entry,
-                                    ArrayRef<Value> outputs) {
-  return measure->getBlock() == entry &&
-         llvm::all_of(measure.getQubitOut().getUses(),
-                      [](const OpOperand& use) {
-                        return isa<SinkOp, func::ReturnOp>(use.getOwner());
-                      }) &&
-         llvm::all_of(measure.getResult().getUses(), [&](const OpOperand& use) {
-           auto store = dyn_cast<cbit::StoreOp>(use.getOwner());
-           return store && isOutputOnlyRegister(store.getReg(), outputs);
-         });
+static bool hasOutputOnlyMeasurementResult(MeasureOp measure,
+                                           ArrayRef<Value> outputs) {
+  if (measure.getResult().use_empty()) {
+    return false;
+  }
+  return llvm::all_of(measure.getResult().getUses(), [&](const OpOperand& use) {
+    auto store = dyn_cast<cbit::StoreOp>(use.getOwner());
+    return store && isOutputOnlyRegister(store.getReg(), outputs);
+  });
 }
 
-static void analyzeSampling(func::FuncOp func, Block* entry,
-                            ArrayRef<Value> outputs,
+static std::optional<size_t> getConstantTensorIndex(Value value) {
+  const auto attr = mqt::valueToConstantAttr(value);
+  const auto integer = attr ? dyn_cast<IntegerAttr>(*attr) : IntegerAttr{};
+  if (!integer || integer.getInt() < 0) {
+    return std::nullopt;
+  }
+  return static_cast<size_t>(integer.getInt());
+}
+
+static bool hasOnlyTerminalQuantumUses(Value value,
+                                       std::optional<size_t> tensorSlot,
+                                       func::FuncOp func,
+                                       ArrayRef<Value> outputs,
+                                       DenseSet<Value>& visited) {
+  if (!visited.insert(value).second) {
+    return true;
+  }
+  return llvm::all_of(value.getUses(), [&](OpOperand& use) {
+    Operation* owner = use.getOwner();
+    if (isa<SinkOp, func::ReturnOp, qtensor::DeallocOp>(owner)) {
+      return true;
+    }
+    if (auto measure = dyn_cast<MeasureOp>(owner)) {
+      return !tensorSlot && measure->getParentOfType<func::FuncOp>() == func &&
+             hasOutputOnlyMeasurementResult(measure, outputs) &&
+             hasOnlyTerminalQuantumUses(measure.getQubitOut(), std::nullopt,
+                                        func, outputs, visited);
+    }
+    if (auto fromElements = dyn_cast<qtensor::FromElementsOp>(owner)) {
+      return !tensorSlot && hasOnlyTerminalQuantumUses(fromElements.getResult(),
+                                                       use.getOperandNumber(),
+                                                       func, outputs, visited);
+    }
+    if (auto insert = dyn_cast<qtensor::InsertOp>(owner)) {
+      const auto index = getConstantTensorIndex(insert.getIndex());
+      if (!index) {
+        return false;
+      }
+      if (use.get() == insert.getScalar()) {
+        return !tensorSlot &&
+               hasOnlyTerminalQuantumUses(insert.getResult(), *index, func,
+                                          outputs, visited);
+      }
+      return tensorSlot && *tensorSlot != *index &&
+             hasOnlyTerminalQuantumUses(insert.getResult(), tensorSlot, func,
+                                        outputs, visited);
+    }
+    if (auto extract = dyn_cast<qtensor::ExtractOp>(owner)) {
+      const auto index = getConstantTensorIndex(extract.getIndex());
+      if (!tensorSlot || !index) {
+        return false;
+      }
+      if (*tensorSlot == *index) {
+        return hasOnlyTerminalQuantumUses(extract.getResult(), std::nullopt,
+                                          func, outputs, visited);
+      }
+      return hasOnlyTerminalQuantumUses(extract.getOutTensor(), tensorSlot,
+                                        func, outputs, visited);
+    }
+    return false;
+  });
+}
+
+static bool isDeferrableMeasurement(MeasureOp measure, func::FuncOp func,
+                                    ArrayRef<Value> outputs) {
+  if (!hasOutputOnlyMeasurementResult(measure, outputs)) {
+    return false;
+  }
+  DenseSet<Value> visited;
+  return hasOnlyTerminalQuantumUses(measure.getQubitOut(), std::nullopt, func,
+                                    outputs, visited);
+}
+
+static void analyzeSampling(func::FuncOp func, ArrayRef<Value> outputs,
                             DenseSet<Operation*>& active, SamplingPlan& plan) {
   Operation* funcOp = func.getOperation();
   if (!active.insert(funcOp).second) {
@@ -1897,7 +1976,7 @@ static void analyzeSampling(func::FuncOp func, Block* entry,
     if (isa<ResetOp>(op)) {
       plan.dynamic = true;
     } else if (auto measure = dyn_cast<MeasureOp>(op)) {
-      if (isDeferrableMeasurement(measure, entry, outputs)) {
+      if (isDeferrableMeasurement(measure, func, outputs)) {
         plan.deferredMeasurements.insert(op);
       } else {
         plan.dynamic = true;
@@ -1905,10 +1984,11 @@ static void analyzeSampling(func::FuncOp func, Block* entry,
     } else if (auto call = dyn_cast<func::CallOp>(op)) {
       auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
           call, call.getCalleeAttr());
-      if (!callee.getBody().hasOneBlock()) {
+      if (!callee || callee.isDeclaration() ||
+          !callee.getBody().hasOneBlock()) {
         plan.dynamic = true;
       } else {
-        analyzeSampling(callee, entry, outputs, active, plan);
+        analyzeSampling(callee, outputs, active, plan);
       }
     }
   });
@@ -1934,7 +2014,7 @@ static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {
   }
 
   DenseSet<Operation*> active;
-  analyzeSampling(func, &entry, plan.outputs, active, plan);
+  analyzeSampling(func, plan.outputs, active, plan);
   return plan;
 }
 
