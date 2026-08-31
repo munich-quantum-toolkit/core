@@ -132,7 +132,6 @@ def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure]> {
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
   let hasFolder = 1;
-  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//

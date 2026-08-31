@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <mlir/Dialect/QCO/IR/QCOOps.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
@@ -92,6 +93,12 @@ struct CommuteAdjacentInsertExtractPattern final : OpRewritePattern<InsertOp> {
 } // namespace
 
 LogicalResult InsertOp::verify() {
+  if (getOperation()->getParentOfType<qco::CtrlOp>() ||
+      getOperation()->getParentOfType<qco::InvOp>() ||
+      getOperation()->getParentOfType<qco::PowOp>()) {
+    return emitOpError("cannot access a qubit tensor inside a QCO modifier");
+  }
+
   auto dstDim = getDest().getType().getDimSize(0);
   auto index = getConstantIntValue(getIndex());
 
