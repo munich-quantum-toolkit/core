@@ -449,7 +449,15 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
         CompilerTarget.Site(20, "q1"),
     ]
     site_tuple = CompilerTarget.SiteTuple([10, 20], duration=10, fidelity=0.99)
-    operation = CompilerTarget.Operation("cx", 2, 0, site_tuples=[site_tuple], duration=20, fidelity=0.98)
+    operation = CompilerTarget.Operation(
+        "cx",
+        2,
+        0,
+        site_tuples=[site_tuple],
+        duration=20,
+        fidelity=0.98,
+        applicable_site_tuples=[[10, 20]],
+    )
     fixed_zero = CompilerTarget.OperationArity.fixed(0)
     variadic = CompilerTarget.OperationArity.variadic(2)
     global_phase = CompilerTarget.Operation("gphase", fixed_zero, 1)
@@ -486,6 +494,14 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     assert site_tuple.sites == [10, 20]
     assert len(operation.site_tuples) == 1
     assert operation.site_tuples[0].sites == [10, 20]
+    assert operation.has_explicit_applicability
+    assert operation.applicable_site_tuples == [[10, 20]]
+    assert not CompilerTarget.Operation("x", 1, 0).has_explicit_applicability
+    explicitly_unavailable = CompilerTarget.Operation("ecr", 2, 0, applicable_site_tuples=[])
+    assert explicitly_unavailable.has_explicit_applicability
+    assert explicitly_unavailable.applicable_site_tuples == []
+    assert targets[2].supports_operation("cx", 2, sites=[10, 20])
+    assert not targets[2].supports_operation("cx", 2, sites=[20, 10])
     assert operation.arity.kind == CompilerTarget.OperationArityKind.FIXED
     assert operation.arity.value == 2
     assert global_phase.arity.kind == CompilerTarget.OperationArityKind.FIXED

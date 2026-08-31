@@ -187,7 +187,7 @@ class CompilerTarget:
             """Whether this arity accepts a concrete width."""
 
     class Operation:
-        """A homogeneous target-wide operation capability and its calibration."""
+        """A target operation capability, applicability, and calibration."""
 
         def __init__(
             self,
@@ -197,6 +197,7 @@ class CompilerTarget:
             site_tuples: Sequence[CompilerTarget.SiteTuple] | None = None,
             duration: int | None = None,
             fidelity: float | None = None,
+            applicable_site_tuples: Sequence[Sequence[int]] | None = None,
         ) -> None: ...
         @property
         def name(self) -> str:
@@ -215,8 +216,16 @@ class CompilerTarget:
             """The number of real-valued parameters."""
 
         @property
+        def has_explicit_applicability(self) -> bool:
+            """Whether applicability is explicitly enumerated."""
+
+        @property
         def site_tuples(self) -> list[CompilerTarget.SiteTuple]:
             """Ordered site-specific calibration data."""
+
+        @property
+        def applicable_site_tuples(self) -> list[list[int]]:
+            """The exact ordered tuples with operation support, if explicit."""
 
         @property
         def duration(self) -> int | None:
@@ -385,7 +394,13 @@ class CompilerTarget:
     def synthesis_basis(self) -> CompilerTarget.SynthesisBasis | None:
         """A complete target-wide synthesis basis, if available."""
 
-    def supports_operation(self, name: str, arity: int, num_parameters: int | None = None) -> bool:
+    def supports_operation(
+        self,
+        name: str,
+        arity: int,
+        num_parameters: int | None = None,
+        sites: Sequence[int] | None = None,
+    ) -> bool:
         """Whether the target supports an operation."""
 
 class Program:

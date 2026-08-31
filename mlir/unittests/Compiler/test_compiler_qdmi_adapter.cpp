@@ -159,15 +159,23 @@ TEST(CompilerQDMIAdapterTest, SnapshotsHomogeneousHigherArityOperation) {
   EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0));
 }
 
-TEST(CompilerQDMIAdapterTest, RejectsDirectionalOperationWithoutReverseSites) {
+TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
       MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG};
   const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
-  auto target = mlir::compilerTargetFromDevice(device);
-  ASSERT_FALSE(target);
-  const auto message = llvm::toString(target.takeError());
-  EXPECT_NE(message.find("both orientations"), std::string::npos);
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+
+  ASSERT_EQ(target.couplings().size(), 1);
+  const auto& cx = findOperation(target, "cx");
+  EXPECT_TRUE(cx.hasExplicitSiteTuples());
+  ASSERT_EQ(cx.siteTuples().size(), 1);
+  EXPECT_EQ(cx.siteTuples()[0].sites(),
+            (llvm::ArrayRef<CompilerTarget::SiteId>{0, 1}));
+  EXPECT_FALSE(cx.siteTuples()[0].duration());
+  EXPECT_FALSE(cx.siteTuples()[0].fidelity());
+  EXPECT_TRUE(target.supports(CompilerTarget::GateKind::CX, {0, 1}));
+  EXPECT_FALSE(target.supports(CompilerTarget::GateKind::CX, {1, 0}));
 }
 
 TEST(CompilerQDMIAdapterTest,
@@ -180,6 +188,7 @@ TEST(CompilerQDMIAdapterTest,
 
   ASSERT_EQ(target.couplings().size(), 1);
   const auto& cx = findOperation(target, "cx");
+  EXPECT_TRUE(cx.hasExplicitSiteTuples());
   ASSERT_EQ(cx.siteTuples().size(), 2);
   EXPECT_EQ(cx.siteTuples()[0].sites(),
             (llvm::ArrayRef<CompilerTarget::SiteId>{0, 1}));
