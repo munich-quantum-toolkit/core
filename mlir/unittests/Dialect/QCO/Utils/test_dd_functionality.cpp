@@ -516,6 +516,18 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedReturnedQubit) {
       failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
 }
 
+TEST_F(QCODDFunctionalityTest, RejectsStaticQubitBeyondDDRange) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    b.sink(b.staticQubit(dd::Package::MAX_POSSIBLE_QUBITS));
+    return b.intConstant(0);
+  });
+
+  auto dd = std::make_unique<dd::Package>(1);
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
+  EXPECT_TRUE(
+      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+}
+
 TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
   auto valid = buildModule([](QCOProgramBuilder& b) {
     auto q = b.x(b.staticQubit(0));
