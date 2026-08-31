@@ -19,14 +19,18 @@
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/QuantumComputation.hpp"
+#ifdef BUILD_MQT_CORE_MLIR
 #include "mlir/Dialect/QIR/Execution/JIT/Session.h"
 #include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
+#endif
 #include "mqt_ddsim_qdmi/device.h"
 #include "qasm3/Importer.hpp"
 #include "qdmi/common/Common.hpp"
 
+#ifdef BUILD_MQT_CORE_MLIR
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/FormatVariadic.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -146,10 +150,12 @@ constexpr auto OPERATION_ADDRESSES = makeOperationAddresses(OPERATIONS);
 constexpr std::array SUPPORTED_PROGRAM_FORMATS = {
     QDMI_PROGRAM_FORMAT_QASM2,
     QDMI_PROGRAM_FORMAT_QASM3,
+#ifdef BUILD_MQT_CORE_MLIR
     QDMI_PROGRAM_FORMAT_QIRBASESTRING,
     QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
     QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
     QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+#endif
 };
 
 } // namespace
@@ -362,12 +368,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
       if (IS_INVALID_ARGUMENT(format, QDMI_PROGRAM_FORMAT)) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
-      if (format != QDMI_PROGRAM_FORMAT_QASM2 &&
-          format != QDMI_PROGRAM_FORMAT_QASM3 &&
-          format != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
-          format != QDMI_PROGRAM_FORMAT_QIRBASESTRING &&
-          format != QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE &&
-          format != QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING) {
+      if (std::ranges::find(SUPPORTED_PROGRAM_FORMATS, format) ==
+          SUPPORTED_PROGRAM_FORMATS.end()) {
         return QDMI_ERROR_NOTSUPPORTED;
       }
       format_ = format;
@@ -484,6 +486,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
     stateVecDD_ = dd::simulate(qc, dd::makeZeroState(nQubits, *dd_), *dd_);
   });
 }
+#ifdef BUILD_MQT_CORE_MLIR
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgram() -> QDMI_STATUS {
   return numShots_ > 0 ? submitQIRProgramSampling()
                        : submitQIRProgramStateExtraction();
@@ -549,6 +552,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
     stateVecDD_ = state.edge;
   });
 }
+#endif
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   if (status_.load() != QDMI_JOB_STATUS_CREATED) {
     return QDMI_ERROR_BADSTATE;
@@ -558,14 +562,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
       format_ == QDMI_PROGRAM_FORMAT_QASM3) {
     return submitQASMProgram();
   }
-  if (format_ == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
-      format_ == QDMI_PROGRAM_FORMAT_QIRBASESTRING ||
-      format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE ||
-      format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING) {
-    return submitQIRProgram();
-  }
+#ifdef BUILD_MQT_CORE_MLIR
+  return submitQIRProgram();
+#else
   // Format is validated against the allowed set at setParameter time.
   qdmi::unreachable();
+#endif
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::cancel() -> QDMI_STATUS {
   const auto s = status_.load();

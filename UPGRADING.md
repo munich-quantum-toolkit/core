@@ -268,14 +268,13 @@ must mark its first measurement boundary as `irreversible`, and no quantum work
 may follow that boundary. Adaptive-format statevector requests continue to
 return `QDMI_ERROR_NOTSUPPORTED`.
 
-### LLVM/MLIR required for all source builds
+### LLVM/MLIR enabled by default
 
-MQT Core now builds its MLIR-based compiler infrastructure unconditionally. LLVM
-22.1+ (including MLIR) is therefore required when building MQT Core from source,
-including as a CMake dependency or Python package. The `BUILD_MQT_CORE_MLIR`
-CMake option has been removed. MQT Core also builds QIR support in the DDSIM
-QDMI device unconditionally, so the `BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` option
-has been removed. Remove both options from build scripts and presets.
+MQT Core now builds its MLIR-based compiler infrastructure by default. This
+configuration requires LLVM 22.1+ with MLIR and includes QIR support in the
+DDSIM QDMI device. Set `BUILD_MQT_CORE_MLIR=OFF` to build the core IR, decision
+diagram, OpenQASM, and QDMI libraries without LLVM/MLIR or DDSIM QIR support.
+The DDSIM device continues to support OpenQASM 2 and OpenQASM 3 programs.
 
 We offer pre-built distributions for all supported platforms as part of the
 `setup-mlir` project at
@@ -289,13 +288,13 @@ For local development, you can configure `MLIR_DIR` once in a repository-local
 Core's CMake setup will pick this up automatically when `MLIR_DIR` is not
 otherwise provided.
 
-Known limitations:
+Known limitations when MLIR is enabled:
 
 - Our pre-built distributions are incompatible with GCC on macOS. Use
   (Apple)Clang instead or compile LLVM from source using your preferred
   compiler.
-- AppleClang 17+ is required to build MQT Core due to some C++20 features that
-  are not yet properly supported by older versions.
+- AppleClang 17+ is required to build the MLIR part of MQT Core due to some
+  C++20 features that older versions do not support fully.
 
 ### Removal of the `datastructures` (sub)library
 
