@@ -359,6 +359,74 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   size_t numSwaps = 0;
   m->walk([&](SWAPOp) { ++numSwaps; });
   EXPECT_GT(numSwaps, 0);
+
+  size_t numMeasurements = 0;
+  size_t numMeasurementsAfterSwap = 0;
+  m->walk([&](MeasureOp op) {
+    ++numMeasurements;
+    if (op.getQubitIn().getDefiningOp<SWAPOp>()) {
+      ++numMeasurementsAfterSwap;
+    }
+    const bool hasOneUse = op.getQubitOut().hasOneUse();
+    EXPECT_TRUE(hasOneUse);
+    if (hasOneUse) {
+      EXPECT_TRUE(isa<SinkOp>(*op.getQubitOut().getUsers().begin()));
+    }
+  });
+  EXPECT_EQ(numMeasurements, size);
+  EXPECT_GT(numMeasurementsAfterSwap, 0);
+}
+
+TEST_F(MappingPassFixture, KeepTerminalResetsAfterRoutingSwaps) {
+  constexpr int64_t size = 3;
+
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
+      std::vector<CompilerTarget::Operation>{}));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  SmallVector<Value> qubits(size);
+  for (int64_t i = 0; i < size; ++i) {
+    qubits[i] = builder.allocQubit();
+  }
+
+  qubits[0] = builder.x(qubits[0]);
+  std::tie(qubits[0], qubits[1]) = builder.rxx(0.25, qubits[0], qubits[1]);
+  std::tie(qubits[1], qubits[2]) = builder.rzx(0.5, qubits[1], qubits[2]);
+  std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
+
+  for (Value& qubit : qubits) {
+    qubit = builder.reset(qubit);
+    builder.sink(qubit);
+  }
+
+  auto m = builder.finalize();
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+
+  size_t numSwaps = 0;
+  m->walk([&](SWAPOp) { ++numSwaps; });
+  EXPECT_GT(numSwaps, 0);
+
+  size_t numResets = 0;
+  size_t numResetsAfterSwap = 0;
+  m->walk([&](ResetOp op) {
+    ++numResets;
+    if (op.getQubitIn().getDefiningOp<SWAPOp>()) {
+      ++numResetsAfterSwap;
+    }
+    const bool hasOneUse = op.getQubitOut().hasOneUse();
+    EXPECT_TRUE(hasOneUse);
+    if (hasOneUse) {
+      EXPECT_TRUE(isa<SinkOp>(*op.getQubitOut().getUsers().begin()));
+    }
+  });
+  EXPECT_EQ(numResets, size);
+  EXPECT_GT(numResetsAfterSwap, 0);
 }
 
 TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {

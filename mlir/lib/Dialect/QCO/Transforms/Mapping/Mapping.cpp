@@ -1602,7 +1602,19 @@ private:
         // must ensure the insertion point is before the multi-qubit gates.
 
         for (auto& it : wires) {
-          std::advance(it, it == std::default_sentinel ? -2 : -1);
+          if (it != std::default_sentinel) {
+            std::advance(it, -1);
+            continue;
+          }
+          std::advance(it, -2);
+          // Keep a terminal irreversible suffix after routing SWAPs. Moving a
+          // logical state through a SWAP and then measuring/resetting that
+          // state is equivalent, while routing the collapsed/reset state would
+          // introduce a mid-circuit irreversible operation unnecessarily.
+          while (it.operation() != nullptr &&
+                 isa<MeasureOp, ResetOp>(it.operation())) {
+            std::advance(it, -1);
+          }
         }
       }
 
