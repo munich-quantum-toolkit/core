@@ -90,10 +90,7 @@ void WireIterator::forward() {
         .Case<IndexSwitchOp>([&](IndexSwitchOp op) {
           qubit_ = op.getTiedResult(&(*qubit_.use_begin()));
         })
-        .Default([&](Operation* op) {
-          llvm::reportFatalInternalError("unknown op in def-use chain: " +
-                                         op->getName().getStringRef());
-        });
+        .Default([&](Operation*) { isFinal_ = true; });
   }
 }
 
@@ -125,6 +122,7 @@ void WireIterator::backward() {
   }
 
   // Find the input from the output qubit SSA value.
+  bool reachedBoundary = false;
   TypeSwitch<Operation*>(op_)
       .Case<UnitaryOpInterface>(
           [&](UnitaryOpInterface op) { qubit_ = op.getInputForOutput(qubit_); })
@@ -163,10 +161,13 @@ void WireIterator::backward() {
         }
         llvm::reportFatalInternalError("expected result lookup");
       })
-      .Default([&](Operation* op) {
-        llvm::reportFatalInternalError("unknown op in def-use chain: " +
-                                       op->getName().getStringRef());
-      });
+      .Default([&](Operation*) { reachedBoundary = true; });
+
+  if (reachedBoundary) {
+    op_ = nullptr;
+    isFinal_ = false;
+    return;
+  }
 
   // Get the operation that produces the qubit value.
   // If the current qubit SSA value is a BlockArgument (no defining op), the
