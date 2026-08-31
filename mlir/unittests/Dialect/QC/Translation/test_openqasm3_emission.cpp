@@ -27,12 +27,15 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <array>
+#include <cstddef>
 #include <string>
 #include <tuple>
 
@@ -643,6 +646,72 @@ TEST(OpenQASM3EmissionTest, LeavesDestinationEmptyOnFailure) {
   llvm::raw_string_ostream stream(output);
   EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp, stream)));
   EXPECT_TRUE(output.empty());
+}
+
+TEST(OpenQASM3EmissionTest, RejectsExcessiveExpressionNesting) {
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  OpBuilder builder(&context);
+  const auto location = builder.getUnknownLoc();
+  auto moduleOp = ModuleOp::create(location);
+  auto function =
+      func::FuncOp::create(builder, location, "main",
+                           builder.getFunctionType({}, {builder.getI64Type()}));
+  moduleOp.push_back(function);
+  Block* body = function.addEntryBlock();
+  builder.setInsertionPointToStart(body);
+  Value one = arith::ConstantOp::create(builder, location,
+                                        builder.getI64IntegerAttr(1));
+  Value value = one;
+  for (size_t i = 0; i < 256; ++i) {
+    value = arith::AddIOp::create(builder, location, value, one);
+  }
+  func::ReturnOp::create(builder, location, value);
+  ASSERT_TRUE(succeeded(verify(moduleOp)));
+
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(moduleOp)));
+}
+
+TEST(OpenQASM3EmissionTest, RejectsExcessiveExpressionExpansion) {
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  OpBuilder builder(&context);
+  const auto location = builder.getUnknownLoc();
+  auto moduleOp = ModuleOp::create(location);
+  auto function =
+      func::FuncOp::create(builder, location, "main",
+                           builder.getFunctionType({}, {builder.getI64Type()}));
+  moduleOp.push_back(function);
+  Block* body = function.addEntryBlock();
+  builder.setInsertionPointToStart(body);
+  Value value = arith::ConstantOp::create(builder, location,
+                                          builder.getI64IntegerAttr(1));
+  for (size_t i = 0; i < 16; ++i) {
+    value = arith::AddIOp::create(builder, location, value, value);
+  }
+  func::ReturnOp::create(builder, location, value);
+  ASSERT_TRUE(succeeded(verify(moduleOp)));
+
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(moduleOp)));
+}
+
+TEST(OpenQASM3EmissionTest, RejectsExcessiveClassicalRegisterWidth) {
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  constexpr StringLiteral source = R"mlir(module {
+    func.func @main() {
+      %bits = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1073741824>
+      return
+    }
+  })mlir";
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
 }
 
 TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {

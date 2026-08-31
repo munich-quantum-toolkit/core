@@ -22,6 +22,7 @@
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringExtras.h>
@@ -179,6 +180,13 @@ private:
   size_t nextScalar = 0;
   size_t nextLoop = 0;
   size_t nextHelper = 0;
+  size_t expressionNesting = 0;
+  size_t expressionWork = 0;
+  size_t numClassicalBits = 0;
+
+  static constexpr size_t maxExpressionNesting = 256;
+  static constexpr size_t maxExpressionWork = 4096;
+  static constexpr size_t maxClassicalBits = 1U << 20;
 
   [[nodiscard]] static LogicalResult fail(Operation* operation,
                                           const Twine& message) {
@@ -294,6 +302,14 @@ private:
       }
       if (auto alloc = dyn_cast<cbit::AllocOp>(&operation)) {
         const auto type = alloc.getResult().getType();
+        const auto width = type.getWidth();
+        if (width <= 0 || static_cast<uint64_t>(width) >
+                              maxClassicalBits - numClassicalBits) {
+          return fail(alloc, "total classical register width exceeds the "
+                             "supported limit of " +
+                                 Twine(maxClassicalBits) + " bits");
+        }
+        numClassicalBits += static_cast<size_t>(width);
         const bool isOutput = returnedRegisters.contains(alloc.getResult());
         const auto name = alloc->getAttrOfType<StringAttr>(
             mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
@@ -301,7 +317,7 @@ private:
         Resource resource{.kind = ResourceKind::Bit,
                           .name = isOutput ? outputName(requested)
                                            : uniqueName("c", nextBit),
-                          .width = type.getWidth(),
+                          .width = width,
                           .output = isOutput,
                           .initialization = alloc.getInitialization()};
         resources.try_emplace(alloc.getResult(), std::move(resource));
@@ -550,6 +566,22 @@ private:
   }
 
   [[nodiscard]] FailureOr<std::string> emitExpression(Value value) {
+    if (expressionNesting == 0) {
+      expressionWork = 0;
+    }
+    ++expressionNesting;
+    ++expressionWork;
+    auto depthGuard = llvm::make_scope_exit([&] { --expressionNesting; });
+    if (expressionNesting > maxExpressionNesting) {
+      return failExpression(value, "expression nesting exceeds the supported "
+                                   "maximum of " +
+                                       Twine(maxExpressionNesting));
+    }
+    if (expressionWork > maxExpressionWork) {
+      return failExpression(value, "expression expansion exceeds the supported "
+                                   "maximum of " +
+                                       Twine(maxExpressionWork) + " values");
+    }
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
     }
@@ -583,8 +615,11 @@ private:
     const auto name = operation->getName().getStringRef();
     if (name == "arith.remf") {
       auto lhs = emitExpression(operation->getOperand(0));
+      if (failed(lhs)) {
+        return failure();
+      }
       auto rhs = emitExpression(operation->getOperand(1));
-      if (failed(lhs) || failed(rhs)) {
+      if (failed(rhs)) {
         return failure();
       }
       return (Twine("mod(") + *lhs + ", " + *rhs + ")").str();
@@ -679,8 +714,11 @@ private:
   [[nodiscard]] FailureOr<std::string>
   emitBinary(Value lhsValue, const StringRef operation, Value rhsValue) {
     auto lhs = emitExpression(lhsValue);
+    if (failed(lhs)) {
+      return failure();
+    }
     auto rhs = emitExpression(rhsValue);
-    if (failed(lhs) || failed(rhs)) {
+    if (failed(rhs)) {
       return failure();
     }
     return (Twine("(") + *lhs + " " + operation + " " + *rhs + ")").str();
