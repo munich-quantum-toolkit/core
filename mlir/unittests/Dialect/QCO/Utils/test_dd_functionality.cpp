@@ -520,6 +520,14 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedReturnedQubit) {
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsStaticQubitBeyondDDRange) {
+  auto boundary = buildModule([](QCOProgramBuilder& b) {
+    b.sink(b.staticQubit(dd::Package::MAX_POSSIBLE_QUBITS - 1U));
+    return b.intConstant(0);
+  });
+  const auto numQubits = getNumQubits(mainFunc(*boundary));
+  ASSERT_TRUE(succeeded(numQubits));
+  EXPECT_EQ(*numQubits, dd::Package::MAX_POSSIBLE_QUBITS);
+
   auto mod = buildModule([](QCOProgramBuilder& b) {
     b.sink(b.staticQubit(dd::Package::MAX_POSSIBLE_QUBITS));
     return b.intConstant(0);
