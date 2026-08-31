@@ -14,6 +14,8 @@ final basis state. QC coalesces static references; QCO owns one root per index.
 - [x] (2026-08-29) Add boundary regressions and pass all local validation.
 - [x] (2026-08-30) Rebase onto main after the static-qubit PR merged; drop its
   superseded commits while retaining DD-specific coverage.
+- [x] (2026-08-31) Move the Python DD operations onto `QCOProgram` and require
+  an RNG in the public C++ simulation API.
 
 ## Surprises & Discoveries
 
@@ -47,11 +49,11 @@ CTest passes 4,042 tests. Lint, C++ lint, stubs, and builds pass.
 checks public transform boundaries; and
 `mlir/lib/Dialect/QCO/Utils/DDFunctionality.cpp` executes single-block QCO.
 
-The Python API is `build_functionality(program, dd_package) -> MatrixDD`,
-`simulate(program, initial_state, dd_package, seed=None) -> VectorDD`, and
-`sample(program, dd_package, shots=1024, seed=None) -> dict[str, int]`. C++
-keeps matching functions; static sampling evolves once, adaptive control runs
-per shot, and returned CBits share storage across calls.
+The Python API is `program.build_functionality(dd_package) -> MatrixDD`,
+`program.simulate(initial_state, dd_package, seed=0) -> VectorDD`, and
+`program.sample(dd_package, shots=1024, seed=0) -> dict[str, int]`. The public
+C++ simulation function always receives an RNG. Static sampling evolves once,
+adaptive control runs per shot, and returned CBits share storage across calls.
 
 ## Milestones
 

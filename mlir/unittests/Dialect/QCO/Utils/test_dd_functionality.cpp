@@ -58,6 +58,7 @@ namespace {
 class QCODDFunctionalityTest : public testing::Test {
 protected:
   std::unique_ptr<MLIRContext> context;
+  std::mt19937_64 rng{0};
 
   void SetUp() override {
     DialectRegistry registry;
@@ -83,8 +84,7 @@ protected:
 
   /// Compare `mlir::qco::{buildFunctionality,simulate}` to
   /// `dd::{buildFunctionality,simulate}` on an equivalent circuit.
-  static void expectEqualToQc(func::FuncOp func,
-                              const qc::QuantumComputation& qc) {
+  void expectEqualToQc(func::FuncOp func, const qc::QuantumComputation& qc) {
     const auto numQubits = qc.getNqubits();
     auto dd = std::make_unique<dd::Package>(numQubits);
 
@@ -98,7 +98,7 @@ protected:
     const auto fromQcSim =
         dd::simulate(qc, dd::makeZeroState(numQubits, *dd), *dd);
     const auto fromQcoSim =
-        simulate(func, dd::makeZeroState(numQubits, *dd), *dd);
+        simulate(func, dd::makeZeroState(numQubits, *dd), *dd, rng);
     ASSERT_TRUE(succeeded(fromQcoSim));
     EXPECT_EQ(fromQcoSim->getVector(), fromQcSim.getVector());
     dd->decRef(*fromQcoSim);
@@ -112,7 +112,7 @@ protected:
     EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
   }
 
-  static void expectSimulatesFromZero(func::FuncOp func, bool expectedOne) {
+  void expectSimulatesFromZero(func::FuncOp func, bool expectedOne) {
     auto dd = std::make_unique<dd::Package>(1);
     auto expected = dd::makeZeroState(1, *dd);
     if (expectedOne) {
@@ -120,21 +120,21 @@ protected:
           dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
           expected);
     }
-    const auto out = simulate(func, dd::makeZeroState(1, *dd), *dd);
+    const auto out = simulate(func, dd::makeZeroState(1, *dd), *dd, rng);
     ASSERT_TRUE(succeeded(out));
     EXPECT_EQ(out->getVector(), expected.getVector());
     dd->decRef(*out);
     dd->decRef(expected);
   }
 
-  static void expectSimulationFails(func::FuncOp func, size_t numQubits) {
+  void expectSimulationFails(func::FuncOp func, size_t numQubits) {
     auto dd = std::make_unique<dd::Package>(numQubits);
-    EXPECT_TRUE(failed(simulate(func, dd::makeZeroState(numQubits, *dd), *dd)));
-    std::mt19937_64 rng(1);
+    EXPECT_TRUE(
+        failed(simulate(func, dd::makeZeroState(numQubits, *dd), *dd, rng)));
     EXPECT_TRUE(failed(sample(func, *dd, 1, rng)));
   }
 
-  void expectMlirSimulationFails(size_t numQubits, StringRef mlirCode) const {
+  void expectMlirSimulationFails(size_t numQubits, StringRef mlirCode) {
     auto mod = parseSourceString<ModuleOp>(mlirCode, context.get());
     ASSERT_TRUE(mod);
     expectSimulationFails(mainFunc(*mod), numQubits);
@@ -486,13 +486,13 @@ TEST_F(QCODDFunctionalityTest, ReturnedQubitsMustPreserveWireOrder) {
   ASSERT_TRUE(succeeded(canonicalFunctionality));
   dd->decRef(*canonicalFunctionality);
   const auto canonicalSimulation =
-      simulate(mainFunc(*canonical), dd::makeZeroState(2, *dd), *dd);
+      simulate(mainFunc(*canonical), dd::makeZeroState(2, *dd), *dd, rng);
   ASSERT_TRUE(succeeded(canonicalSimulation));
   dd->decRef(*canonicalSimulation);
 
   EXPECT_TRUE(failed(buildFunctionality(mainFunc(*swapped), *dd)));
-  EXPECT_TRUE(
-      failed(simulate(mainFunc(*swapped), dd::makeZeroState(2, *dd), *dd)));
+  EXPECT_TRUE(failed(
+      simulate(mainFunc(*swapped), dd::makeZeroState(2, *dd), *dd, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUnmappedReturnedQubit) {
@@ -509,7 +509,8 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedReturnedQubit) {
   ASSERT_TRUE(mod);
   auto dd = std::make_unique<dd::Package>(1);
   EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
-  EXPECT_TRUE(failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
+  EXPECT_TRUE(
+      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
 }
 
 TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
@@ -532,7 +533,7 @@ TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
   auto& roots = dd->getRootSet<dd::vNode>();
   for (size_t i = 0; i < 3; ++i) {
     const auto output =
-        simulate(mainFunc(*valid), dd::makeZeroState(1, *dd), *dd);
+        simulate(mainFunc(*valid), dd::makeZeroState(1, *dd), *dd, rng);
     ASSERT_TRUE(succeeded(output));
     EXPECT_EQ(roots.size(), 1U);
     EXPECT_EQ(roots.at(*output), 1U);
@@ -540,25 +541,26 @@ TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
     EXPECT_TRUE(roots.empty());
   }
   for (size_t i = 0; i < 3; ++i) {
-    EXPECT_TRUE(
-        failed(simulate(mainFunc(*tooWide), dd::makeZeroState(1, *dd), *dd)));
+    EXPECT_TRUE(failed(
+        simulate(mainFunc(*tooWide), dd::makeZeroState(1, *dd), *dd, rng)));
     EXPECT_TRUE(roots.empty());
   }
 
   auto twoQubitDd = std::make_unique<dd::Package>(2);
-  EXPECT_TRUE(failed(simulate(mainFunc(*tooWide),
-                              dd::makeZeroState(1, *twoQubitDd), *twoQubitDd)));
+  EXPECT_TRUE(
+      failed(simulate(mainFunc(*tooWide), dd::makeZeroState(1, *twoQubitDd),
+                      *twoQubitDd, rng)));
   EXPECT_TRUE(twoQubitDd->getRootSet<dd::vNode>().empty());
   const auto widerOutput = simulate(
-      mainFunc(*valid), dd::makeZeroState(2, *twoQubitDd), *twoQubitDd);
+      mainFunc(*valid), dd::makeZeroState(2, *twoQubitDd), *twoQubitDd, rng);
   ASSERT_TRUE(succeeded(widerOutput));
   EXPECT_EQ(widerOutput->getVector().size(), 4U);
   twoQubitDd->decRef(*widerOutput);
   EXPECT_TRUE(twoQubitDd->getRootSet<dd::vNode>().empty());
 
   auto zeroQubitDd = std::make_unique<dd::Package>(0);
-  EXPECT_TRUE(
-      failed(simulate(mainFunc(*valid), dd::VectorDD::one(), *zeroQubitDd)));
+  EXPECT_TRUE(failed(
+      simulate(mainFunc(*valid), dd::VectorDD::one(), *zeroQubitDd, rng)));
   EXPECT_TRUE(zeroQubitDd->getRootSet<dd::vNode>().empty());
 }
 
@@ -1242,9 +1244,6 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
     ASSERT_TRUE(mod);
     auto dd = std::make_unique<dd::Package>(1);
     EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
-    // Three-arg simulate has no RNG and must reject measure/reset.
-    EXPECT_TRUE(
-        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
   }
 
   {
@@ -1256,8 +1255,6 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
     ASSERT_TRUE(mod);
     auto dd = std::make_unique<dd::Package>(1);
     EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
-    EXPECT_TRUE(
-        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
   }
 
   {
@@ -1273,7 +1270,7 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
     auto dd = std::make_unique<dd::Package>(1);
     EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
     EXPECT_TRUE(
-        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
+        failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
   }
 
   expectMlirFails(1, R"mlir(
@@ -1634,8 +1631,8 @@ TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {
       expectSimulatesFromZero(mainFunc(*mod), false);
     } else {
       auto dd = std::make_unique<dd::Package>(1);
-      EXPECT_TRUE(
-          failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
+      EXPECT_TRUE(failed(
+          simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
     }
   }
 
@@ -1725,7 +1722,8 @@ TEST_F(QCODDFunctionalityTest, ScfForSharesExecutionBudget) {
   ASSERT_TRUE(mod);
 
   auto dd = std::make_unique<dd::Package>(1);
-  EXPECT_TRUE(failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd)));
+  EXPECT_TRUE(
+      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
   EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 

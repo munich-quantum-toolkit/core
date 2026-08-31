@@ -991,7 +991,7 @@ LLVM bitcode.)pb");
 
   nb::module_::import_("mqt.core.dd");
 
-  m.def(
+  qcoProgram.def(
       "build_functionality",
       [](const mlir::QCOProgram& program, dd::Package& ddPackage) {
         auto func = entryFunc(program);
@@ -1000,14 +1000,12 @@ LLVM bitcode.)pb");
             "cannot build DD functionality for this QCO program",
             [&] { return mlir::qco::buildFunctionality(func, ddPackage); });
       },
-      "program"_a, "dd_package"_a,
-      // Keep the DD package alive while the returned matrix DD is alive
-      // (arg index 2; free-function equivalent of method keep_alive<0, 1>).
+      "dd_package"_a,
+      // Keep the DD package alive while the returned matrix DD is alive.
       nb::keep_alive<0, 2>(),
       R"pb(Build a matrix DD for a static unitary QCO program.
 
 Args:
-    program: A QCO program whose entry ``func.func`` is used to build a matrix DD.
     dd_package: DD package with enough qubits for the program.
 
 Returns:
@@ -1016,7 +1014,7 @@ Returns:
 Raises:
     ValueError: When the program is unsupported for functionality construction.)pb");
 
-  m.def(
+  qcoProgram.def(
       "simulate",
       [](const mlir::QCOProgram& program, const dd::VectorDD& initialState,
          dd::Package& ddPackage, const uint64_t seed) {
@@ -1032,13 +1030,12 @@ Raises:
               return mlir::qco::simulate(func, initialState, ddPackage, rng);
             });
       },
-      "program"_a, "initial_state"_a, "dd_package"_a, "seed"_a = 0U,
+      "initial_state"_a, "dd_package"_a, "seed"_a = 0U,
       // Keep the DD package alive while the returned vector DD is alive.
       nb::keep_alive<0, 3>(),
       R"pb(Simulate a QCO program on a DD state.
 
 Args:
-    program: A QCO program whose entry ``func.func`` is simulated.
     initial_state: Input state DD that spans at least the program's qubits and
         has a live reference in ``dd_package``. Higher wires are preserved. A
         valid input reference is consumed.
@@ -1053,7 +1050,7 @@ Raises:
     ValueError: When ``initial_state`` has no live reference in ``dd_package``,
         has too few qubits, or the program is unsupported for simulation.)pb");
 
-  m.def(
+  qcoProgram.def(
       "sample",
       [](const mlir::QCOProgram& program, dd::Package& ddPackage,
          const size_t shots, const uint64_t seed) {
@@ -1063,11 +1060,10 @@ Raises:
             func.getContext(), "cannot sample this QCO program",
             [&] { return mlir::qco::sample(func, ddPackage, shots, rng); });
       },
-      "program"_a, "dd_package"_a, "shots"_a = 1024U, "seed"_a = 0U,
+      "dd_package"_a, "shots"_a = 1024U, "seed"_a = 0U,
       R"pb(Sample the declared outputs of a QCO program.
 
 Args:
-    program: A QCO program whose entry ``func.func`` is sampled.
     dd_package: DD package with enough qubits for the program.
     shots: Number of shots (default 1024).
     seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other

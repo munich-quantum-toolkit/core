@@ -57,34 +57,6 @@ namespace mlir::qco {
 FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
 
 /**
- * @brief Simulate a QCO `func.func` on a given input state without stochastic
- * collapse.
- *
- * @details Same supported unitary op set as @ref buildFunctionality, plus
- * concrete classical control-flow (`qco.if` / `qco.index_switch` with
- * compile-time or previously recorded classical selectors) and CBit registers
- * (`cbit.alloc` / `cbit.store` / `cbit.load`). Any `measure` or `reset`
- * requires the RNG overload below. Concrete-bound `scf.for` loops and
- * non-recursive single-block `func.call` are supported independently of RNG.
- * Only qubit-typed linear values are supported (no qtensors). Nested regions
- * are walked; `scf.while` and multi-block function bodies remain unsupported.
- * Consumes one reference to @p in regardless of whether simulation succeeds or
- * fails.
- *
- * @pre The containing module has passed MLIR verification and
- * `qco::verifyLinearity`.
- *
- * @param func The QCO function to simulate
- * @param in The input state, which must span at least the function's qubits;
- * higher wires are preserved; one reference is consumed
- * @param dd The DD package to use (must hold at least the function's qubits)
- * @return The output statevector DD on success, or failure for unsupported
- *         programs
- */
-FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
-                                 dd::Package& dd);
-
-/**
  * @brief Simulate a QCO `func.func` that may contain measurements, resets, and
  * concrete control-flow.
  *
@@ -95,13 +67,11 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * `arith.index_castui`, `arith.cmpi`, `arith.select`,
  * `arith.addi` / `subi` / `muli`, or `andi` / `ori` / `xori` / `shli` /
  * `shrui` on those values). The simulation tracks CBit initialization, loads,
- * and stores. Deterministic control-flow without measure/reset also works on
- * the non-RNG overload. Only qubit-typed linear values are supported (no
- * qtensors). Nested regions are walked; direct `scf.for` execution with
- * concrete positive steps and non-recursive single-block `func.call` are
- * supported. A shared 10000-step budget bounds loop iterations across nested
- * loops and calls; `scf.while` and multi-block function bodies remain
- * unsupported.
+ * and stores. Only qubit-typed linear values are supported (no qtensors).
+ * Nested regions are walked; direct `scf.for` execution with concrete positive
+ * steps and non-recursive single-block `func.call` are supported. A shared
+ * 10000-step budget bounds loop iterations across nested loops and calls;
+ * `scf.while` and multi-block function bodies remain unsupported.
  * Consumes one reference to @p in regardless of whether simulation succeeds or
  * fails.
  *

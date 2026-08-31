@@ -1003,16 +1003,6 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 }
 
 FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
-                                 dd::Package& dd) {
-  auto qubits = prepare(func, dd);
-  if (failed(qubits)) {
-    dd.decRef(in);
-    return failure();
-  }
-  return simulateImpl(func, in, dd, *qubits, nullptr);
-}
-
-FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
                                  dd::Package& dd, std::mt19937_64& rng) {
   auto qubits = prepare(func, dd);
   if (failed(qubits)) {
