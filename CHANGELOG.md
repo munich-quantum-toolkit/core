@@ -116,8 +116,8 @@ releases may include breaking changes.
   ([**@burgholzer**], [**@denialhaag**])
 - 🔧 Build the LLVM/MLIR 23.1 compiler infrastructure and DDSIM QIR support by
   default, with one build option for source builds that omit both parts
-  ([#1356], [#1549], [#1953], [#2284]) ([**@burgholzer**], [**@denialhaag**],
-  [**@simon1hofmann**])
+  ([#1356], [#1549], [#1953], [#2284], [#2298]) ([**@burgholzer**],
+  [**@denialhaag**], [**@simon1hofmann**])
 
 ### Removed
 
@@ -867,6 +867,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2298]: https://github.com/munich-quantum-toolkit/core/pull/2298
 [#2284]: https://github.com/munich-quantum-toolkit/core/pull/2284
 [#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278
 [#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270
