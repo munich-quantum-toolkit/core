@@ -42,6 +42,7 @@
 #include <cstdint>
 #include <memory>
 #include <numbers>
+#include <random>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -285,9 +286,10 @@ static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
   }
 
   const auto dd = std::make_unique<dd::Package>(numQubits);
+  std::mt19937_64 rng(0);
   for (const auto& basisState : basisStates) {
-    const auto decomposedOutput =
-        simulate(funcOp, dd::makeBasisState(numQubits, basisState, *dd), *dd);
+    const auto decomposedOutput = simulate(
+        funcOp, dd::makeBasisState(numQubits, basisState, *dd), *dd, rng);
     ASSERT_TRUE(succeeded(decomposedOutput));
     dd->incRef(*decomposedOutput);
     const auto referenceOutput = dd::simulate(
@@ -329,8 +331,9 @@ expectMatchesReferenceOnCoherentState(func::FuncOp funcOp,
   expectFullyDecomposed(funcOp);
 
   const auto dd = std::make_unique<dd::Package>(numQubits);
+  std::mt19937_64 rng(0);
   const auto decomposedOutput = simulate(
-      funcOp, makeCoherentControlInput(numControls, targetOne, *dd), *dd);
+      funcOp, makeCoherentControlInput(numControls, targetOne, *dd), *dd, rng);
   ASSERT_TRUE(succeeded(decomposedOutput));
   dd->incRef(*decomposedOutput);
   const auto referenceOutput = dd::simulate(
