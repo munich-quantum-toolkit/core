@@ -2493,4 +2493,260 @@ TEST_F(QCODDFunctionalityTest, WiderMemRefCallsShareStorage) {
   expectSimulatesFromZero(mainFunc(*mod), true);
 }
 
+TEST_F(QCODDFunctionalityTest,
+       SupportsAdditionalClassicalOperationsAndBindings) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%idx: index, %word: i16, %flag: i1) {
+        %zero = arith.constant 0 : i8
+        %one = arith.constant 1 : i8
+        %two = arith.constant 2 : i8
+        %four = arith.constant 4 : i8
+        %negative = arith.constant -5 : i8
+        %sle = arith.cmpi sle, %one, %two : i8
+        %sgt = arith.cmpi sgt, %two, %one : i8
+        %sge = arith.cmpi sge, %two, %two : i8
+        %ult = arith.cmpi ult, %one, %two : i8
+        %ule = arith.cmpi ule, %two, %two : i8
+        %ugt = arith.cmpi ugt, %two, %one : i8
+        %uge = arith.cmpi uge, %two, %two : i8
+        %quotient = arith.divui %four, %two : i8
+        %remainder = arith.remsi %negative, %two : i8
+        %shifted = arith.shrsi %negative, %one : i8
+        %extended = arith.extsi %negative : i8 to i16
+        %as_index = arith.index_cast %word : i16 to index
+        %selected = arith.select %flag, %one, %zero : i8
+        %one_float = arith.constant 1.0 : f64
+        %two_float = arith.constant 2.0 : f64
+        %difference = arith.subf %two_float, %one_float : f64
+        %product = arith.mulf %difference, %two_float : f64
+        %negated = arith.negf %product : f64
+        %zero_index = arith.constant 0 : index
+        %indices = memref.alloc() : memref<1xindex>
+        %loaded_index = memref.load %indices[%zero_index] : memref<1xindex>
+        memref.dealloc %indices : memref<1xindex>
+        %floats = memref.alloc() : memref<1xf64>
+        %loaded_float = memref.load %floats[%zero_index] : memref<1xf64>
+        memref.dealloc %floats : memref<1xf64>
+        %false = arith.constant false
+        scf.if %false {
+        }
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  auto func = mainFunc(*mod);
+  DDBindings bindings;
+  bindings[func.getArgument(0)] =
+      IntegerAttr::get(IndexType::get(context.get()), 3);
+  bindings[func.getArgument(1)] =
+      IntegerAttr::get(IntegerType::get(context.get(), 16), -2);
+  bindings[func.getArgument(2)] =
+      IntegerAttr::get(IntegerType::get(context.get(), 1), 1);
+  auto dd = std::make_unique<dd::Package>(0);
+  const auto output = simulate(func, dd::VectorDD::one(), *dd, rng, bindings);
+  ASSERT_TRUE(succeeded(output));
+  EXPECT_TRUE(output->isTerminal());
+  dd->decRef(*output);
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsClassicalRuntimeErrors) {
+  for (const StringRef source : {
+           R"mlir(module {
+             func.func @main(%unbound: i16) {
+               %true = arith.constant true
+               %zero = arith.constant 0 : i16
+               %selected = arith.select %true, %unbound, %zero : i16
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%reg: memref<1xi16>) {
+               %zero = arith.constant 0 : index
+               %value = memref.load %reg[%zero] : memref<1xi16>
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%index: index) {
+               %reg = memref.alloc() : memref<1xi16>
+               %value = memref.load %reg[%index] : memref<1xi16>
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%value: i16) {
+               %zero = arith.constant 0 : index
+               %reg = memref.alloc() : memref<1xi16>
+               memref.store %value, %reg[%zero] : memref<1xi16>
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main() {
+               %negative = arith.constant -1 : index
+               %reg = memref.alloc(%negative) : memref<?xi16>
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main() {
+               %zero = arith.constant 0 : i8
+               %one = arith.constant 1 : i8
+               %invalid = arith.divui %one, %zero : i8
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main() {
+               %huge = arith.constant 1.0e+300 : f64
+               %invalid = arith.fptosi %huge : f64 to i8
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%rhs: i8) {
+               %one = arith.constant 1 : i8
+               %invalid = arith.divui %one, %rhs : i8
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%lhs: i8) {
+               %one = arith.constant 1 : i8
+               %invalid = arith.divui %lhs, %one : i8
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%amount: i8) {
+               %one = arith.constant 1 : i8
+               %invalid = arith.shli %one, %amount : i8
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%lhs: f64) {
+               %zero = arith.constant 0.0 : f64
+               %invalid = arith.cmpf oeq, %lhs, %zero : f64
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%value: i8) {
+               %invalid = arith.sitofp %value : i8 to f64
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%value: f64) {
+               %invalid = arith.fptosi %value : f64 to i8
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @consume(%reg: memref<1xi16>) {
+               return
+             }
+             func.func @main(%reg: memref<1xi16>) {
+               func.call @consume(%reg) : (memref<1xi16>) -> ()
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%condition: i1) {
+               scf.if %condition {
+               }
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%selector: index) {
+               scf.index_switch %selector
+               default {
+               }
+               return
+             }
+           })mlir",
+           R"mlir(module {
+             func.func @main(%size: index) {
+               %tensor = qtensor.alloc(%size) : tensor<?x!qco.qubit>
+               qtensor.dealloc %tensor : tensor<?x!qco.qubit>
+               return
+             }
+           })mlir"}) {
+    expectMlirSimulationFails(0, source);
+  }
+
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %zero = arith.constant 0 : index
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  auto func = mainFunc(*mod);
+  auto constant = *func.getBody().front().getOps<arith::ConstantOp>().begin();
+  DDBindings bindings;
+  bindings[constant.getResult()] =
+      IntegerAttr::get(IndexType::get(context.get()), 0);
+  auto dd = std::make_unique<dd::Package>(0);
+  EXPECT_TRUE(failed(simulate(func, dd::VectorDD::one(), *dd, rng, bindings)));
+  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+}
+
+TEST_F(QCODDFunctionalityTest, BuildFunctionalityRestrictsRuntimeAllocations) {
+  auto topLevel = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q = qco.alloc : !qco.qubit
+        %out = qco.x %q : !qco.qubit -> !qco.qubit
+        qco.sink %out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                              context.get());
+  auto nested = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %true = arith.constant true
+        scf.if %true {
+          %q = qco.alloc : !qco.qubit
+          qco.sink %q : !qco.qubit
+        }
+        return
+      }
+    }
+  )mlir",
+                                            context.get());
+  auto tensor = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %one = arith.constant 1 : index
+        %tensor = qtensor.alloc(%one) : tensor<?x!qco.qubit>
+        qtensor.dealloc %tensor : tensor<?x!qco.qubit>
+        return
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(topLevel);
+  ASSERT_TRUE(nested);
+  ASSERT_TRUE(tensor);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  const auto functionality = buildFunctionality(mainFunc(*topLevel), *dd);
+  ASSERT_TRUE(succeeded(functionality));
+  dd->decRef(*functionality);
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*nested), *dd)));
+  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*tensor), *dd)));
+}
+
 } // namespace
