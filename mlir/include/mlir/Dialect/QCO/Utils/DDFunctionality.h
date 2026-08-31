@@ -67,7 +67,8 @@ using DDBindings = DenseMap<Value, Attribute>;
  *
  * @param func The QCO function to construct the functionality for
  * @param dd The DD package to use (must hold at least the function's qubits)
- * @param bindings Concrete values for symbolic function arguments
+ * @param bindings Concrete scalar values and dynamic QTensor extents for entry
+ * arguments
  * @return The matrix DD on success, or failure for unsupported programs
  */
 FailureOr<dd::MatrixDD>
@@ -99,7 +100,8 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
  * higher wires are preserved; one reference is consumed
  * @param dd The DD package to use
  * @param rng RNG used for collapsing measurements and resets
- * @param bindings Concrete values for symbolic function arguments
+ * @param bindings Concrete scalar values and dynamic QTensor extents for entry
+ * arguments
  * @return The output statevector DD on success, or failure for unsupported
  *         programs
  */
@@ -127,7 +129,8 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * @param dd The DD package to use
  * @param shots Number of shots
  * @param rng RNG for collapsing measurements and non-collapsing sampling
- * @param bindings Concrete values for symbolic function arguments
+ * @param bindings Concrete scalar values and dynamic QTensor extents for entry
+ * arguments
  * @return Histogram of outcome strings on success, or failure for unsupported
  *         programs
  */
