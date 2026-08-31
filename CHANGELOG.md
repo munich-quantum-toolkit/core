@@ -28,6 +28,10 @@ releases may include breaking changes.
   [#2149], [#2150], [#2158], [#2210], [#2211], [#2220]) ([**@burgholzer**],
   [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
   [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
+- ✨ Add a library for typed structured quantum benchmarks with versioned
+  instance specifications, analytic references, deterministic manifests, and
+  C++, Python, and command-line interfaces ([#2135]) ([**@denialhaag**],
+  [**@burgholzer**])
 - ✨ Add decision diagram-based construction, simulation, and sampling for QCO
   programs, including mid-circuit `measure` / `reset`, concrete `if` /
   `index_switch` / `scf.for` / `func.call`, classical SSA and CBit registers,
@@ -900,6 +904,7 @@ for previous changelogs._
 [#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
 [#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
 [#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136
+[#2135]: https://github.com/munich-quantum-toolkit/core/pull/2135
 [#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
