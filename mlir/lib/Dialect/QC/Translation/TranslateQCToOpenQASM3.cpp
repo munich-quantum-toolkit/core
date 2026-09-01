@@ -184,9 +184,9 @@ private:
   size_t expressionWork = 0;
   size_t numClassicalBits = 0;
 
-  static constexpr size_t maxExpressionNesting = 256;
-  static constexpr size_t maxExpressionWork = 4096;
-  static constexpr size_t maxClassicalBits = 1U << 20;
+  static constexpr size_t MAX_EXPRESSION_NESTING = 256;
+  static constexpr size_t MAX_EXPRESSION_WORK = 4096;
+  static constexpr size_t MAX_CLASSICAL_BITS = 1U << 20;
 
   [[nodiscard]] static LogicalResult fail(Operation* operation,
                                           const Twine& message) {
@@ -304,10 +304,10 @@ private:
         const auto type = alloc.getResult().getType();
         const auto width = type.getWidth();
         if (width <= 0 || static_cast<uint64_t>(width) >
-                              maxClassicalBits - numClassicalBits) {
+                              MAX_CLASSICAL_BITS - numClassicalBits) {
           return fail(alloc, "total classical register width exceeds the "
                              "supported limit of " +
-                                 Twine(maxClassicalBits) + " bits");
+                                 Twine(MAX_CLASSICAL_BITS) + " bits");
         }
         numClassicalBits += static_cast<size_t>(width);
         const bool isOutput = returnedRegisters.contains(alloc.getResult());
@@ -572,15 +572,15 @@ private:
     ++expressionNesting;
     ++expressionWork;
     auto depthGuard = llvm::make_scope_exit([&] { --expressionNesting; });
-    if (expressionNesting > maxExpressionNesting) {
+    if (expressionNesting > MAX_EXPRESSION_NESTING) {
       return failExpression(value, "expression nesting exceeds the supported "
                                    "maximum of " +
-                                       Twine(maxExpressionNesting));
+                                       Twine(MAX_EXPRESSION_NESTING));
     }
-    if (expressionWork > maxExpressionWork) {
+    if (expressionWork > MAX_EXPRESSION_WORK) {
       return failExpression(value, "expression expansion exceeds the supported "
                                    "maximum of " +
-                                       Twine(maxExpressionWork) + " values");
+                                       Twine(MAX_EXPRESSION_WORK) + " values");
     }
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
