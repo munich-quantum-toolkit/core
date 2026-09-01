@@ -29,9 +29,10 @@ has its own instance specification schema.
 
 ## Configure a typed instance
 
-Python exposes benchmark-specific option types. The QFT input below is the
-uniform superposition of multiples of two. Both circuit methods use the same
-logical output and reference.
+Python exposes each benchmark through a family-specific type. Parameterized
+families also expose option types. The QFT input below is the uniform
+superposition of multiples of two. Both circuit methods use the same logical
+output and reference.
 
 ```{code-cell} ipython3
 from mqt.core.bench import qft
@@ -49,7 +50,8 @@ print("Output:", benchmark.output.name)
 print("Width:", benchmark.output.width)
 ```
 
-Each benchmark family validates its options when it creates an instance.
+Each family validates its instance when it creates one. Fixed families need no
+options.
 
 ## Inspect the canonical instance specification and manifest
 
@@ -211,9 +213,10 @@ Adding a family requires five extension points:
    `include/mqt-core/bench/BenchmarkFamilies.inc`. Its expansions provide the
    public JSON declarations and the synchronized semantic and MLIR registry
    glue.
-2. Add typed options, validation, an analytic reference, and evaluation under
-   `include/mqt-core/bench/` and `src/bench/`. Add the family-specific parameter
-   JSON, reference JSON, parser, and schema body to `src/bench/JSON.cpp`.
+2. Add the typed instance, any options and validation, an analytic reference,
+   and evaluation under `include/mqt-core/bench/` and `src/bench/`. Add the
+   family-specific parameter JSON, reference JSON, parser, and schema body to
+   `src/bench/JSON.cpp`.
 3. Declare and implement the structured emitter under `mlir/bench/`, add its
    source to the program library, and declare the typed `generate(...)`
    overload. The catalog supplies the generation wrapper and JSON dispatch row.

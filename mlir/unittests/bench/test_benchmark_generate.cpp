@@ -15,6 +15,7 @@
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QPE.hpp"
+#include "bench/Teleportation.hpp"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/bench/Generate.h"
 
@@ -47,6 +48,7 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
   expectValidQCAndJeff(QPE{{.precision = 3, .phase = Phase(3, 8)}});
   expectValidQCAndJeff(QPE{
       {.precision = 3, .phase = Phase(3, 8), .method = QPEMethod::Iterative}});
+  expectValidQCAndJeff(Teleportation{});
 }
 
 TEST(GenerateProgramTest, OmitsAllocationAdjacentResets) {
@@ -68,6 +70,8 @@ TEST(GenerateProgramTest, OmitsAllocationAdjacentResets) {
       test::countOps<qc::ResetOp>(
           generate(QPE{{.precision = 3, .phase = Phase(3, 8)}})->module()),
       0U);
+  EXPECT_EQ(
+      test::countOps<qc::ResetOp>(generate(Teleportation{})->module()), 0U);
 
   EXPECT_GT(
       test::countOps<qc::ResetOp>(
