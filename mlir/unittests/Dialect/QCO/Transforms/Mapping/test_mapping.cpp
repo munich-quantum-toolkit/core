@@ -377,9 +377,8 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   EXPECT_GT(numMeasurementsAfterSwap, 0);
 }
 
-TEST_F(MappingPassFixture, KeepTerminalResetsAfterRoutingSwaps) {
-  constexpr int64_t size = 3;
-
+TEST_F(MappingPassFixture,
+       KeepClassicallyDependentMeasurementBeforeRoutingSwaps) {
   const auto target = llvm::cantFail(CompilerTarget::create(
       3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
       std::vector<CompilerTarget::Operation>{}));
@@ -387,46 +386,32 @@ TEST_F(MappingPassFixture, KeepTerminalResetsAfterRoutingSwaps) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
 
-  SmallVector<Value> qubits(size);
-  for (int64_t i = 0; i < size; ++i) {
-    qubits[i] = builder.allocQubit();
-  }
+  auto q0 = builder.allocQubit();
+  auto q1 = builder.allocQubit();
+  auto q2 = builder.allocQubit();
+  std::tie(q0, q1) = builder.cx(q0, q1);
+  std::tie(q0, q2) = builder.cx(q0, q2);
 
-  qubits[0] = builder.x(qubits[0]);
-  std::tie(qubits[0], qubits[1]) = builder.rxx(0.25, qubits[0], qubits[1]);
-  std::tie(qubits[1], qubits[2]) = builder.rzx(0.5, qubits[1], qubits[2]);
-  std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
-
-  for (Value& qubit : qubits) {
-    qubit = builder.reset(qubit);
-    builder.sink(qubit);
-  }
+  Value bit;
+  std::tie(q0, bit) = builder.measure(q0);
+  builder.sink(q0);
+  auto angle = arith::UIToFPOp::create(builder, builder.getF64Type(), bit);
+  q1 = builder.rz(angle, q1);
+  std::tie(q1, q2) = builder.cx(q1, q2);
+  builder.sink(q1);
+  builder.sink(q2);
 
   auto m = builder.finalize();
   ASSERT_TRUE(
-      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1, .seed = 0})
+          .succeeded());
   ASSERT_TRUE(succeeded(verify(*m)));
-  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 
-  size_t numSwaps = 0;
-  m->walk([&](SWAPOp) { ++numSwaps; });
-  EXPECT_GT(numSwaps, 0);
-
-  size_t numResets = 0;
-  size_t numResetsAfterSwap = 0;
-  m->walk([&](ResetOp op) {
-    ++numResets;
-    if (op.getQubitIn().getDefiningOp<SWAPOp>()) {
-      ++numResetsAfterSwap;
-    }
-    const bool hasOneUse = op.getQubitOut().hasOneUse();
-    EXPECT_TRUE(hasOneUse);
-    if (hasOneUse) {
-      EXPECT_TRUE(isa<SinkOp>(*op.getQubitOut().getUsers().begin()));
-    }
-  });
-  EXPECT_EQ(numResets, size);
-  EXPECT_GT(numResetsAfterSwap, 0);
+  MeasureOp measurement;
+  m->walk([&](MeasureOp op) { measurement = op; });
+  ASSERT_TRUE(measurement);
+  ASSERT_TRUE(measurement.getQubitOut().hasOneUse());
+  EXPECT_TRUE(isa<SWAPOp>(*measurement.getQubitOut().getUsers().begin()));
 }
 
 TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
