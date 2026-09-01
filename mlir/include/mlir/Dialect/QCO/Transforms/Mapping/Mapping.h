@@ -22,6 +22,9 @@ class CompilerTarget;
 
 namespace qco {
 
+/// Create a deterministic placement pass for a compiler target.
+std::unique_ptr<Pass> createPlacementPass(const CompilerTarget& target);
+
 /**
  * @brief Create a mapping pass instance for a compiler target.
  * @returns a pass object.

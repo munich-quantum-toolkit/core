@@ -40,7 +40,10 @@ compilation to an existing QCO program. Compilation runs in place. If a pass
 fails, earlier passes may already have changed the program. Copy the program
 before compilation if the caller must preserve the input. For pass-level
 benchmarking, the C++ API exposes separate factories for pre-routing
-optimization, mapping, native synthesis, and conformance verification.
+optimization, deterministic placement, topology-aware mapping, native synthesis,
+and conformance verification. Target compilation uses compact placement on
+all-to-all targets and the mapper only when the target has an explicit coupling
+graph.
 
 Target compilation preserves quantum operations even when their final qubit
 values are not measured or returned. This supports measurement-free programs,
