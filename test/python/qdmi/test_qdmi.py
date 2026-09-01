@@ -220,16 +220,16 @@ def test_device_min_atom_distance(device: Device) -> None:
 @pytest.mark.parametrize("value_type", [str, bool, int, float, bytes])
 def test_device_custom_property_unsupported(device: Device, value_type: CustomValueType) -> None:
     """Test typed custom device queries for unsupported slots."""
-    assert device.query_custom_property(CustomProperty.CUSTOM1, value_type) is None
+    assert device.query_custom_property(CustomProperty.CUSTOM2, value_type) is None
 
 
 def test_device_custom_property_type_overloads(device: Device) -> None:
     """Test that each explicit value type produces a correspondingly typed result."""
-    string_value: str | None = device.query_custom_property(CustomProperty.CUSTOM1, str)
-    bool_value: bool | None = device.query_custom_property(CustomProperty.CUSTOM1, bool)
-    int_value: int | None = device.query_custom_property(CustomProperty.CUSTOM1, int)
-    float_value: float | None = device.query_custom_property(CustomProperty.CUSTOM1, float)
-    bytes_value: bytes | None = device.query_custom_property(CustomProperty.CUSTOM1, bytes)
+    string_value: str | None = device.query_custom_property(CustomProperty.CUSTOM2, str)
+    bool_value: bool | None = device.query_custom_property(CustomProperty.CUSTOM2, bool)
+    int_value: int | None = device.query_custom_property(CustomProperty.CUSTOM2, int)
+    float_value: float | None = device.query_custom_property(CustomProperty.CUSTOM2, float)
+    bytes_value: bytes | None = device.query_custom_property(CustomProperty.CUSTOM2, bytes)
     assert all(value is None for value in (string_value, bool_value, int_value, float_value, bytes_value))
 
 
