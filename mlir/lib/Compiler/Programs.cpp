@@ -88,17 +88,6 @@
 
 namespace mlir {
 
-static void pushNestedOperations(Operation* operation,
-                                 SmallVectorImpl<Operation*>& worklist) {
-  for (Region& region : operation->getRegions()) {
-    for (Block& block : region) {
-      for (Operation& nested : block) {
-        worklist.push_back(&nested);
-      }
-    }
-  }
-}
-
 std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
   registry.insert<cbit::CBitDialect, mqt::MQTDialect, qc::QCDialect,
@@ -157,15 +146,13 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
  */
 [[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
                                             const StringRef dialect) {
-  SmallVector<Operation*> worklist{mod};
-  while (!worklist.empty()) {
-    Operation* operation = worklist.pop_back_val();
-    if (operation->getDialect()->getNamespace() == dialect) {
-      return true;
-    }
-    pushNestedOperations(operation, worklist);
-  }
-  return false;
+  return mod
+      ->walk([&](Operation* operation) {
+        return operation->getDialect()->getNamespace() == dialect
+                   ? WalkResult::interrupt()
+                   : WalkResult::advance();
+      })
+      .wasInterrupted();
 }
 
 template <class ProgramType, class Parse>
@@ -413,20 +400,11 @@ countGatesIf(ModuleOp moduleOp,
     return 0;
   }
   size_t count = 0;
-  SmallVector<Operation*> worklist{entryPoint};
-  while (!worklist.empty()) {
-    Operation* operation = worklist.pop_back_val();
-    auto unitary = dyn_cast<qc::UnitaryOpInterface>(operation);
-    if (unitary) {
-      if (!isa<qc::BarrierOp>(unitary) && predicate(unitary)) {
-        ++count;
-      }
-      if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(unitary)) {
-        continue;
-      }
-    }
-    pushNestedOperations(operation, worklist);
-  }
+  entryPoint.walk<WalkOrder::PreOrder>([&](qc::UnitaryOpInterface op) {
+    count += !isa<qc::BarrierOp>(op) && predicate(op);
+    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op) ? WalkResult::skip()
+                                                     : WalkResult::advance();
+  });
   return count;
 }
 
