@@ -1,4 +1,4 @@
-# Audit and harden MLIR contracts
+# Audit MLIR contracts
 
 This ExecPlan is a living document. The sections Progress, Surprises &
 Discoveries, Decision Log, and Outcomes & Retrospective are updated while the
@@ -6,16 +6,42 @@ work proceeds. This plan is maintained in accordance with .agent/PLANS.md.
 
 ## Purpose / Big Picture
 
-Complete GitHub issue #2255 as one reviewable change. Every MQT-owned MLIR pass,
-handwritten verifier entrypoint, rewrite/conversion pattern, and dialect
-registration surface is audited. Unsupported but structurally valid input must
-produce a diagnostic rather than crash or partially mutate the IR; successful
-passes must return verifier-valid and semantically faithful IR; verifiers must
-own only local invariants; patterns must report match success and failure
-truthfully; and every dialect a pass can create must be registered.
+Complete GitHub issue #2255 as a dispositioned audit, not as one bulk code
+change. Every MQT-owned MLIR pass, handwritten verifier entrypoint,
+rewrite/conversion pattern, and dialect registration surface is audited. A
+dialect-IR finding is retained only when the input passes every applicable
+validator and a baseline reproducer shows a crash, wrong output, partial
+mutation, unbounded resource use, or another stated contract violation.
 
-The observable result is a focused regression for each confirmed objective
-violation, plus a green complete MLIR test label and repository lint checks.
+Applicable validation includes MLIR structural verification and MQT-owned
+whole-program checks such as QCO linearity and MQT program metadata. Individual
+passes may assume those invariants. External input, verifier, conversion, and
+shared resource-owning boundaries remain responsible for the checks they own.
+
+The observable result is a complete census with each finding accepted, narrowed,
+rejected, or deferred. Accepted findings land only in focused pull requests
+after human review, with a regression that demonstrates the supported contract.
+
+## Revised Audit Rules
+
+- Identify the owner of each invariant before proposing a fix. Dialect verifiers
+  own dialect validity; ingestion and conversion boundaries own malformed
+  external input; passes own only failures reachable from valid IR.
+- Require an executed baseline reproducer. A hypothetical stack, crash, or
+  compatibility concern is not a defect without evidence that the supported path
+  can reach it.
+- Verify pass inputs and outputs in tests. Do not add whole-IR verification or
+  one-use guards to each pass solely to tolerate invalid dialect IR.
+- Keep invalid-IR tests at the verifier or ingestion boundary that owns the
+  invariant. Do not duplicate them across transformation passes.
+- Follow the repository rule that recursion must be bounded. For an established
+  MLIR walk, require evidence that a proposed replacement enforces a documented
+  bound or fixes a supported-path failure; an arbitrary-depth passing test does
+  not establish that the replacement improves the contract.
+- Prefer an upstream dependency fix when the defect belongs upstream. Do not add
+  a local workaround until an observable MQT failure justifies it.
+- Stop the audit at the finding ledger. A human selects findings for separate,
+  focused implementation pull requests.
 
 ## Progress
 
@@ -81,6 +107,19 @@ violation, plus a green complete MLIR test label and repository lint checks.
       Python/Qiskit metadata regressions, repository lint, and diff checks.
       Reconfirmed that standalone C++ lint cannot start because clang-tidy 22 is
       unavailable on this host.
+- [x] (2026-09-01) Reconciled the audit with the first 16 focused replacement
+      pull requests: seven merged, six open, and three closed without merge.
+- [x] (2026-09-01) Narrowed `#2300` to its demonstrated missing-entry-point
+      defect and removed the speculative program-sized traversal worklists.
+- [x] (2026-09-01) Withdrew `#2303`, `#2305`, and `#2306` after review. Marked
+      `#2309` for withdrawal because its regressions use invalid QCO IR.
+- [x] (2026-09-01) Revised the audit rules so passes may assume input accepted
+      by all owning verifiers, and so each retained finding requires a
+      valid-input baseline reproducer at the correct ownership boundary.
+- [x] (2026-09-01) Reclassified the same invalid-input pattern across the full
+      snapshot: generic pass-entry metadata/linearity checks, defensive QCO
+      one-use guards, and their invalid-IR regressions are not actionable
+      findings.
 
 ## Surprises & Discoveries
 
@@ -104,9 +143,11 @@ violation, plus a green complete MLIR test label and repository lint checks.
 - Observation: loop-unroll verification of a temporary clone must retain its
   parent module so sibling symbol references resolve, while verifying only the
   transformed operation because the temporary module is intentionally partial.
-- Observation: recursive walkers and expansion-producing passes needed explicit
-  depth, iteration, or resource budgets. Deep but valid nested regions also
-  required iterative traversal tests.
+- Observation: expansion-producing work reachable from valid input can require
+  explicit limits, and repository policy treats unbounded recursion as a
+  correctness risk. The proposed `#2300` worklists increased memory use, while
+  the `#2306` depth-256 regression also passed the old MLIR walk. Neither change
+  demonstrated a better bound for a supported path.
 - Observation: QCO DD sampling performs a recursive interprocedural analysis
   before execution, so bounding only the runtime walker is insufficient. The
   sampling analysis and runtime now share the 64-call/region-nesting policy and
@@ -150,12 +191,22 @@ violation, plus a green complete MLIR test label and repository lint checks.
 - Observation: OpenQASM output growth is governed by aggregate classical width,
   not only per-register widths. DD construction likewise needs QCO linearity
   verification in the shared preparation path, not only at selected callers.
+- Observation: MLIR structural verification does not enforce QCO or QTensor
+  linearity. Several original tests therefore called structurally verified IR
+  valid even though the owning QCO validator rejected it.
+- Observation: the QTensor one-use guard rejected during `#2295` review was
+  proposed again in `#2303`. A focused extraction must check earlier review
+  decisions before treating residual snapshot code as a new finding.
+- Observation: the macOS exception workaround in `#2305` had no demonstrated
+  user-visible failure. Dependency-boundary concerns should remain upstream
+  candidates until an MQT reproducer exists.
 
 ## Decision Log
 
-- Decision: complete all of #2255 in one PR, while keeping each regression and
-  source fix narrow. Rationale: the user explicitly requested one comprehensive
-  audit; separable tests keep the large scope reviewable. Date/Author:
+- Superseded decision: complete all of #2255 in one PR, while keeping each
+  regression and source fix narrow. Rationale: the user explicitly requested one
+  comprehensive audit; separable tests were expected to keep the large scope
+  reviewable. Superseded by focused delivery on 2026-09-01. Date/Author:
   2026-08-27, Codex.
 - Decision: reject unsupported semantic shapes during a read-only preflight
   unless the target dialect can preserve them. Rationale: a diagnostic is safer
@@ -199,28 +250,114 @@ violation, plus a green complete MLIR test label and repository lint checks.
   both phases traverse user-controlled interprocedural control flow and must
   fail or conservatively select dynamic sampling before exhausting host
   resources. Date/Author: 2026-08-31, Codex.
+- Decision: supersede the original one-pull-request delivery. The audit records
+  findings; each accepted finding is reviewed and implemented separately.
+  Rationale: focused review accepted useful fixes and exposed speculative or
+  wrongly owned changes that a bulk implementation hid. Date/Author: 2026-09-01,
+  Codex.
+- Decision: treat input accepted by all applicable dialect and program
+  validators as the precondition for transformation passes. Do not add
+  pass-local verification or invalid-IR regressions for those same invariants.
+  Rationale: QCO and QTensor validity have owning validators, and duplicating
+  their checks across passes creates code and tests for unsupported programs.
+  Date/Author: 2026-09-01, Codex.
+- Decision: require a demonstrated supported-path failure or a documented,
+  measurable bound improvement before replacing native MLIR traversal. Require
+  an observable MQT failure before adding a local dependency workaround.
+  Rationale: `#2305` and `#2306` did not reproduce an MQT defect, while the
+  original `#2300` worklists increased memory use without enforcing a stated
+  limit. Date/Author: 2026-09-01, Codex.
 
 ## Outcomes & Retrospective
 
-The refreshed census and implementation are complete: 27 pass implementations,
-26 handwritten verifier entrypoints, 236 patterns (124 conversion and 112
-canonicalization/optimization), and seven registration surfaces. Confirmed
-defects covered valid-input crashes, partial mutation, invalid or lossy
-successful output, non-local verification, undeclared dialects,
-recursion/resource exhaustion, false rewrite results, isolation-breaking motion,
-missed folded constants, numeric overflow/non-finite values, and duplicated or
-stale conversion state.
+The census is complete: 27 pass implementations, 26 handwritten verifier
+entrypoints, 236 patterns (124 conversion and 112
+canonicalization/optimization), and seven registration surfaces. The original
+implementation snapshot is not an accepted set of fixes. It contains useful
+findings, already merged findings, and changes later rejected as speculative or
+wrongly owned. The branch remains a historical audit artifact and is not
+intended to merge in bulk.
 
-After rebasing onto origin/main at 35d3dc2cb87dc9ed4904e9db7eb43257ad3d4527, the
-complete release build and all 3,133 tests in the mqt-mlir-unittests label pass.
-Current focused checks are green at QC IR 347/347, QC-to-QCO 176/176, QCO-to-QC
-147/147, QCO utilities 149/149, and JeFF round-trip 152/152. The six QCO DD
-Python 3.13 tests, five focused Python/Qiskit parameter-vector tests, repository
-lint, and git diff checks also pass. The only unavailable check is standalone
-C++ lint: `uvx nox -s cpp-lint` aborts before analysis with
-`clang-tidy 22 is required` because that binary is absent from the host.
-Pre-rebase focused-suite counts remain recorded below as historical checkpoints
-rather than current per-suite totals.
+As of 2026-09-01, seven focused replacements have merged: `#2291`, `#2293`,
+`#2294`, `#2295`, `#2296`, `#2301`, and `#2304`. Six remain open: `#2290`,
+`#2300`, `#2302`, `#2307`, `#2308`, and `#2309`. Three closed without merge:
+`#2303`, `#2305`, and `#2306`. Review narrowed `#2300` to the demonstrated
+missing-entry-point case. `#2309` remains open but should be withdrawn because
+its pass-local check and regressions target invalid QCO IR.
+
+The original branch passed its recorded build, test, lint, and diff checks.
+Those results prove internal consistency only; they do not establish that each
+change protects a supported contract. The review dispositions and revised audit
+rules now control which findings remain actionable.
+
+## Focused Finding Reconciliation
+
+Merged findings:
+
+- `#2291`: preserve static-qubit isolation during cleanup.
+- `#2293`: make MLIR region moves failure-atomic.
+- `#2294`: preserve attributes on reused QIR declarations.
+- `#2295`: make QTensor shrinking sparse and atomic. Review removed the
+  redundant one-use guard because QTensor linearity owns that invariant.
+- `#2296`: stop QCO wire traversal at unknown carriers.
+- `#2301`: keep terminal measurements after routing swaps.
+- `#2304`: bound OpenQASM export resource use.
+
+Open findings:
+
+- `#2290`: harden MLIR constant folding.
+- `#2300`: handle gate counts without an entry point. Review removed manual
+  program-sized worklists and restored native MLIR traversal.
+- `#2302`: make QIR metadata attachment idempotent.
+- `#2307`: bound CBit zero-initialization lowering. Review approved the focused
+  resource-boundary change.
+- `#2308`: preserve QTensor insert updates in QCO-to-QC.
+- `#2309`: reject nonlinear Hadamard-lifting inputs safely. Withdraw this
+  finding: its tests use invalid QCO IR, and Hadamard lifting may assume QCO
+  linearity.
+
+Closed findings:
+
+- `#2303`: redundant QTensor one-use handling for invalid IR.
+- `#2305`: no demonstrated MQT failure justified a local nanobind workaround;
+  revisit upstream if a concrete failure appears.
+- `#2306`: the proposed depth-256 regression also passed the existing MLIR walk
+  and did not demonstrate a supported bound. Revisit recursion policy in one
+  shared change if native MLIR walks need an explicit repository-wide limit.
+
+Broader snapshot changes withdrawn by the revised invariant:
+
+- Drop generic metadata or QCO-linearity input checks added to
+  `NormalizeGlobalPhases`, `UnrollModifiers`, QCO-to-QC, QCO-to-jeff, Mapping,
+  `FuseSingleQubitUnitaryRuns`, `TargetSynthesis`, `HadamardLifting`,
+  `MeasurementLifting`, `MergeSingleQubitRotationGates`, and QIR Common. Keep
+  target-specific support and representability checks in those components.
+- Drop branch-only defensive one-use fallbacks in `QCOUtils.h`, QCO barrier and
+  rotation canonicalization, Mapping, two-qubit target synthesis, Hadamard
+  lifting, and classical-control replacement. Their zero-use or multi-use inputs
+  violate QCO linearity.
+- Drop the matching pass and pattern regressions that construct nonlinear QCO or
+  QTensor programs. This includes the unused-output canonicalization, synthesis,
+  Hadamard-lifting, and classical-control tests, plus nonlinear-input tests for
+  modifier unrolling, normalization, mapping, measurement lifting, single-qubit
+  fusion, rotation merging, and QCO conversions.
+- Drop the `NormalizeGlobalPhases` TableGen promise that the pass diagnoses QCO
+  linearity. The owning validator, not this pass, defines that contract.
+- Do not count duplicate program-entry rejection in QCO-to-jeff or QIR Common as
+  a conversion finding. Keep target-specific entry existence and shape checks.
+  The exactly-one-QIR-entry rule in `#2302` remains at its owning QIR metadata
+  boundary.
+- Repair the QCO-to-jeff mixed-allocation reproducer before extracting that
+  valid target limitation. Its current fixture leaves quantum values unused; the
+  corrected fixture must sink them and pass QCO linearity first.
+
+The revised invariant retains owning and output-side checks. Keep
+`mqt::verifyProgramMetadata`, `qco::verifyLinearity`, compiler and external
+ingestion boundaries, resource and nesting limits reachable from valid IR,
+target-representability preflights, and clone/lower/verify/commit checks that
+validate newly produced IR before mutation is committed. Pass tests may call the
+applicable validators before and after the pass without adding those checks to
+each pass implementation.
 
 ## Context and Orientation
 
@@ -267,37 +404,39 @@ recorded as clean, affected directly, or affected through a shared fix.
 
 ### Milestone 2: Prove objective violations
 
-For each candidate, construct the smallest verified or locally accepted IR that
-reaches it. Discard structurally unreachable findings. Keep valid-input crashes,
+For each candidate, construct the smallest input accepted by MLIR structural
+verification and every applicable MQT-owned validator. Discard invalid-dialect
+inputs and structurally unreachable findings. Keep valid-input crashes,
 invalid/lossy successful output, non-local verifier assumptions, partial
-mutation, false rewrite contracts, missing registrations, and unbounded work.
-The milestone is complete when each retained case has a failing baseline
-reproducer and a named ownership boundary for the fix.
+mutation, false rewrite contracts, missing registrations, and demonstrated
+unbounded work. The milestone is complete when each retained case has an
+executed failing baseline reproducer and a named ownership boundary.
 
-### Milestone 3: Harden contracts with focused regressions
+### Milestone 3: Review and extract accepted findings
 
-Put validation before the first mutation or lower a clone and commit only after
-verification. Replace process termination with operation/pass diagnostics, make
-verifier checks local, register produced dialects, bound recursive or expanding
-work, and use MLIR constant matching rather than producer-specific casts. Add
-direct GoogleTests beside existing coverage. The milestone is complete when
-every retained case passes and successful output verifies.
+Record the evidence, owner, risk, and minimal proposed remedy for each retained
+finding. Stop the audit before implementation. After human selection, implement
+one finding per focused pull request and add the smallest regression that fails
+on the baseline and protects the supported contract. The milestone is complete
+when every finding is accepted, narrowed, rejected, or deferred.
 
-### Milestone 4: Whole-suite closure and PR handoff
+### Milestone 4: Reconcile focused outcomes
 
-Build the final tree, run all mqt-mlir-unittests, run both lint sessions and
-diff checks, then inspect status/name/stat output for unrelated or generated
-files. Record exact results here. The milestone is complete when the branch is
-PR-ready and no known #2255 contract defect remains.
+Update this ledger after each focused review or merge. Record accepted,
+narrowed, rejected, deferred, and superseded findings. Do not infer that a green
+bulk branch validates every proposed contract. The milestone is complete when
+the ledger matches GitHub and no rejected snapshot change remains listed as an
+actionable defect.
 
 ## Plan of Work
 
 Maintain the complete census while inspecting implementation and declaration
-pairs. Validate candidates with direct tests rather than changing code from
-search results alone. Apply the smallest fix at the owning boundary and keep
-failure atomic. Re-run the narrow binary immediately after each cluster, then
-perform a second read-only review of high-risk conversion state and semantic
-preflights. Finish with the full labeled suite, lint, and diff audit.
+pairs. For every candidate, identify the owning contract and run the applicable
+validators before writing a reproducer. Record and discard candidates that need
+invalid dialect IR. Require evidence before changing native traversal or adding
+a dependency workaround. Stop at the ledger. For a human-selected finding, start
+a focused branch from current `main`, implement only that finding, and run its
+narrow test and lint checks before handoff.
 
 ## Concrete Steps
 
@@ -322,13 +461,14 @@ Run the complete checks after focused suites are green:
 
 ## Validation and Acceptance
 
-Acceptance requires a named, fully dispositioned census; a regression for every
-confirmed objective violation; no process termination or partial mutation for
-unsupported valid input; verifier-valid successful output; truthful pattern
-results; complete dialect registration; bounded recursion/resource use; and a
-green full mqt-mlir-unittests label. Lint results and any environment-only
-limitation must be recorded exactly. No generated, unrelated, or style-only file
-may remain in the diff.
+Audit acceptance requires a named, fully dispositioned census and executed
+evidence for every retained finding. Dialect-IR reproducers must pass all owning
+validators before a pass runs. Invalid-IR cases must be assigned to their
+verifier or ingestion boundary instead of duplicated in passes. Each accepted
+implementation pull request must leave verifier-valid output, pass its focused
+regression and lint checks, and contain no generated, unrelated, or style-only
+change. Record exact check results and environment-only limits on that focused
+pull request, not as proof for the bulk snapshot.
 
 ## Idempotence and Recovery
 
@@ -344,6 +484,9 @@ state.
 Initial baseline: baecdc55f130a26a21222d6fe5c613db7eee3633 from origin/main.
 
 Refreshed base: 35d3dc2cb87dc9ed4904e9db7eb43257ad3d4527 from origin/main.
+
+Reconciliation base: 30bb9d1f8e9d81840aa42f47c3e577b8c76c4d63 from origin/main,
+including merged focused replacements through `#2301`.
 
 Pre-rebase focused checkpoint:
 
@@ -394,9 +537,9 @@ dependency. The Python API is unchanged. C++ API additions are limited to shared
 helper declarations; no existing public API is removed or changed.
 
 Revision note: expanded the initial QIR Base investigation into the requested
-complete #2255 contract audit; replaced the stale mid-audit disposition with the
-full pass, verifier, pattern, and registration census; the final review also
-closed the QIR Base/Mapping irreversible-ordering interaction. The origin/main
-refresh added one canonicalization pattern to the census, closed
-HoistStaticQubit's isolation boundary, aligned program-wide static-qubit
-identity and DD analysis/runtime bounds, and refreshed the full-suite evidence.
+complete `#2255` contract audit and recorded the full pass, verifier, pattern,
+and registration census. The first focused review wave showed that the original
+acceptance gate over-weighted malformed-IR defenses and hypothetical failures.
+This revision makes all owning validators and an executed supported-path
+reproducer mandatory, records merged and closed outcomes, and treats the bulk
+implementation as a historical snapshot rather than an approved change set.
