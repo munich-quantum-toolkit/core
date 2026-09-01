@@ -800,87 +800,52 @@ static LogicalResult foldClassicalOp(Operation& op, ClassicalEnv& classical) {
            << "QCO DD simulation only supports integer, index, and f64 values";
   }
 
-  const auto lookupOperands =
-      [&](Operation& candidate) -> FailureOr<SmallVector<Attribute>> {
+  // Fold a clone because some arithmetic folders canonicalize in place.
+  Operation* clone = op.clone();
+  const auto destroyClone = llvm::make_scope_exit([&] { clone->destroy(); });
+  Attribute result;
+  for (unsigned attempt = 0; attempt < 2 && !result; ++attempt) {
     SmallVector<Attribute> operands;
-    operands.reserve(candidate.getNumOperands());
-    for (Value operand : candidate.getOperands()) {
+    operands.reserve(clone->getNumOperands());
+    for (Value operand : clone->getOperands()) {
       auto attr = lookupAttribute(operand, classical, &op);
       if (failed(attr)) {
         return failure();
       }
-      const auto typed = dyn_cast<TypedAttr>(*attr);
-      if (!typed || typed.getType() != operand.getType()) {
-        return op.emitError()
-               << "classical SSA value has a mismatched runtime attribute";
-      }
       operands.push_back(*attr);
     }
-    return operands;
-  };
 
-  auto operands = lookupOperands(op);
-  if (failed(operands)) {
-    return failure();
-  }
-
-  if (isa<arith::ShLIOp, arith::ShRUIOp, arith::ShRSIOp>(op)) {
-    const auto lhs = dyn_cast<IntegerAttr>((*operands)[0]);
-    const auto rhs = dyn_cast<IntegerAttr>((*operands)[1]);
-    if (!lhs || !rhs) {
-      return op.emitError() << "expected integer shift operands";
+    if (isa<arith::ShLIOp, arith::ShRUIOp, arith::ShRSIOp>(op)) {
+      const auto lhs = cast<IntegerAttr>(operands[0]);
+      const auto rhs = cast<IntegerAttr>(operands[1]);
+      if (rhs.getValue().uge(lhs.getValue().getBitWidth())) {
+        return op.emitError()
+               << "shift amount out of range for QCO DD simulation";
+      }
     }
-    if (rhs.getValue().uge(lhs.getValue().getBitWidth())) {
-      return op.emitError()
-             << "shift amount out of range for QCO DD simulation";
-    }
-  }
 
-  // Fold a clone because some arithmetic folders canonicalize in place.
-  Operation* clone = op.clone();
-  const auto destroyClone = llvm::make_scope_exit([&] { clone->destroy(); });
-  for (unsigned attempt = 0; attempt < 2; ++attempt) {
     SmallVector<OpFoldResult, 1> results;
-    if (failed(clone->fold(*operands, results))) {
-      return op.emitError()
-             << "could not evaluate classical op during QCO DD simulation";
+    if (failed(clone->fold(operands, results))) {
+      break;
     }
-
-    Attribute result;
     if (results.size() == 1) {
       result = dyn_cast_if_present<Attribute>(results.front());
       if (!result) {
-        const auto value = dyn_cast_if_present<Value>(results.front());
-        if (value && value != clone->getResult(0)) {
-          auto attr = lookupAttribute(value, classical, &op);
-          if (failed(attr)) {
-            return failure();
-          }
-          result = *attr;
+        const auto value = cast<Value>(results.front());
+        if (value != clone->getResult(0)) {
+          return classical.bindFrom(value, op.getResult(0), &op);
         }
       }
+    } else if (!results.empty()) {
+      break;
     }
-    if (result) {
-      const auto typed = dyn_cast<TypedAttr>(result);
-      if (!typed || typed.getType() != op.getResult(0).getType()) {
-        return op.emitError()
-               << "folded classical value has a mismatched result type";
-      }
-      classical.values[op.getResult(0)] = result;
-      return success();
-    }
-    if (attempt == 0 && (results.empty() || results.size() == 1)) {
-      operands = lookupOperands(*clone);
-      if (failed(operands)) {
-        return failure();
-      }
-      continue;
-    }
+  }
+  if (!result) {
     return op.emitError()
            << "could not evaluate classical op during QCO DD simulation";
   }
-  return op.emitError()
-         << "could not evaluate classical op during QCO DD simulation";
+  classical.values[op.getResult(0)] = result;
+  return success();
 }
 
 static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {

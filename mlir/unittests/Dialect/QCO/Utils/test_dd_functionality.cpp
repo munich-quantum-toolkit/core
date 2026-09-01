@@ -2395,6 +2395,21 @@ TEST_F(QCODDFunctionalityTest, StandardScfRegionsAndWhileCarryValues) {
   expectEqualToQc(mainFunc(*mod), qc);
 }
 
+TEST_F(QCODDFunctionalityTest, RejectsMultiBlockScfExecuteRegion) {
+  expectMlirSimulationFails(0, R"mlir(
+    module {
+      func.func @main() {
+        scf.execute_region {
+          scf.yield
+        ^next:
+          scf.yield
+        }
+        return
+      }
+    }
+  )mlir");
+}
+
 TEST_F(QCODDFunctionalityTest, DynamicAllocationsAndQTensorBookkeeping) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q0 = b.x(b.allocQubit());
