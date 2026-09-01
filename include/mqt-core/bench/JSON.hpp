@@ -42,61 +42,20 @@ benchmarkIdFromManifestJSON(std::string_view json,
 [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
 describeBenchmarkJSON(std::string_view benchmark);
 
-[[nodiscard]] MQT_CORE_BENCH_EXPORT BV bvFromInstanceSpecificationJSON(
-    std::string_view json,
-    std::string_view source = "<instance-specification>");
-[[nodiscard]] MQT_CORE_BENCH_EXPORT GHZ ghzFromInstanceSpecificationJSON(
-    std::string_view json,
-    std::string_view source = "<instance-specification>");
-[[nodiscard]] MQT_CORE_BENCH_EXPORT Grover groverFromInstanceSpecificationJSON(
-    std::string_view json,
-    std::string_view source = "<instance-specification>");
-[[nodiscard]] MQT_CORE_BENCH_EXPORT QFT qftFromInstanceSpecificationJSON(
-    std::string_view json,
-    std::string_view source = "<instance-specification>");
-[[nodiscard]] MQT_CORE_BENCH_EXPORT QPE qpeFromInstanceSpecificationJSON(
-    std::string_view json,
-    std::string_view source = "<instance-specification>");
-
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toInstanceSpecificationJSON(const BV& benchmark);
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toInstanceSpecificationJSON(const GHZ& benchmark);
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toInstanceSpecificationJSON(const Grover& benchmark);
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toInstanceSpecificationJSON(const QFT& benchmark);
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toInstanceSpecificationJSON(const QPE& benchmark);
-
-[[nodiscard]] MQT_CORE_BENCH_EXPORT BV bvFromManifestJSON(
-    std::string_view json, std::string_view source = "<manifest>");
-[[nodiscard]] MQT_CORE_BENCH_EXPORT GHZ ghzFromManifestJSON(
-    std::string_view json, std::string_view source = "<manifest>");
-[[nodiscard]] MQT_CORE_BENCH_EXPORT Grover groverFromManifestJSON(
-    std::string_view json, std::string_view source = "<manifest>");
-[[nodiscard]] MQT_CORE_BENCH_EXPORT QFT qftFromManifestJSON(
-    std::string_view json, std::string_view source = "<manifest>");
-[[nodiscard]] MQT_CORE_BENCH_EXPORT QPE qpeFromManifestJSON(
-    std::string_view json, std::string_view source = "<manifest>");
-
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toManifestJSON(const BV& benchmark);
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toManifestJSON(const GHZ& benchmark);
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toManifestJSON(const Grover& benchmark);
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toManifestJSON(const QFT& benchmark);
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string
-toManifestJSON(const QPE& benchmark);
-
-/// Return the stable semantic case ID of a benchmark instance.
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const BV& benchmark);
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const GHZ& benchmark);
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const Grover& benchmark);
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const QFT& benchmark);
-[[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const QPE& benchmark);
+/// Family-specific JSON conversions and stable semantic case IDs.
+#define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
+  [[nodiscard]] MQT_CORE_BENCH_EXPORT TYPE                                     \
+  STEM##FromInstanceSpecificationJSON(std::string_view json,                   \
+                                      std::string_view source =                \
+                                          "<instance-specification>");         \
+  [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string toInstanceSpecificationJSON( \
+      const TYPE& benchmark);                                                  \
+  [[nodiscard]] MQT_CORE_BENCH_EXPORT TYPE STEM##FromManifestJSON(             \
+      std::string_view json, std::string_view source = "<manifest>");          \
+  [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string toManifestJSON(              \
+      const TYPE& benchmark);                                                  \
+  [[nodiscard]] MQT_CORE_BENCH_EXPORT std::string caseId(const TYPE& benchmark);
+#include "bench/BenchmarkFamilies.inc"
 
 /// Parse sampled outcomes from a strict counts document.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT Counts
