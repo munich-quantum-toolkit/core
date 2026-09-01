@@ -387,39 +387,6 @@ module {
   EXPECT_TRUE(destination.getBody().empty());
 }
 
-TEST_F(QCToQCORegressionTest,
-       RejectsPossiblyAliasedDynamicIndicesWithoutMutation) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main(%i: index, %j: index) attributes {mqt.entry_point} {
-    %reg = memref.alloc() : memref<2x!qc.qubit>
-    %q0 = memref.load %reg[%i] : memref<2x!qc.qubit>
-    %q1 = memref.load %reg[%j] : memref<2x!qc.qubit>
-    qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
-    memref.dealloc %reg : memref<2x!qc.qubit>
-    return
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  OwningOpRef<ModuleOp> original(module->clone());
-
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str()).contains("not provably distinct");
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQCOConversion(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
 TEST_F(QCToQCORegressionTest, RejectsMixedAllocationModesWithoutMutation) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {

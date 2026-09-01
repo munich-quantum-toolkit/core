@@ -108,7 +108,7 @@ after human review, with a regression that demonstrates the supported contract.
       Reconfirmed that standalone C++ lint cannot start because clang-tidy 22 is
       unavailable on this host.
 - [x] (2026-09-01) Reconciled the audit with the first 16 focused replacement
-      pull requests: eight merged, four open, and four closed without merge.
+      pull requests: ten merged, two open, and four closed without merge.
 - [x] (2026-09-01) Narrowed `#2300` to its demonstrated missing-entry-point
       defect and removed the speculative program-sized traversal worklists.
 - [x] (2026-09-01) Withdrew `#2303`, `#2305`, `#2306`, and `#2309` after review.
@@ -121,13 +121,30 @@ after human review, with a regression that demonstrates the supported contract.
       one-use guards, and their invalid-IR regressions are not actionable
       findings.
 - [x] (2026-09-01) Merged current `main` at
-      de8a8a619fb69c1f6ef7d01f61911838324fc9b4, including the accepted CBit
-      resource-boundary fix from `#2307`, and reclassified every residual file
+      6b95f1c434a319fb66e946309e17df771a4e3be2, including the accepted fixes
+      from `#2300`, `#2307`, and `#2308`, and reclassified every residual file
       and test hunk against the revised invariant.
 - [x] (2026-09-01) Pruned merged and focused duplicates, closed findings,
       malformed-IR defenses, generic pass-entry validation, the unsupported
       shared depth policy, and unproved traversal replacements. The remaining
       implementation snapshot contains only valid, uniquely retained findings.
+- [x] (2026-09-01) Independently cross-reviewed the retained compiler,
+      conversion, dialect, pass, and QIR slices. Repaired one nonlinear matrix
+      fixture, removed malformed QIR ABI defenses, corrected recursive QIR
+      provenance, and cleared the surviving changed-line lint findings.
+- [x] (2026-09-01) Removed the final unsupported findings: a QC register-alias
+      proof that rejected valid benchmark programs and a registration-only
+      assertion without an executed failure case.
+- [x] (2026-09-01) Reduced the latest-main delta from the historical 118 files
+      and 14,011 changed lines to 79 files and 11,167 changed lines. The 2,844
+      removed lines are merged/focused duplicates, closed findings, invalid-IR
+      handling, speculative traversal/depth policies, and their tests.
+- [x] (2026-09-01) Built the reconciled branch with LLVM/MLIR 23.1.0 and passed
+      all 3,111 tests in the `mqt-mlir-unittests` label, repository lint, and
+      diff checks. Standalone C++ lint cannot start because this host lacks
+      clang-tidy 22. The focused Python metadata session builds and reaches the
+      expected diagnostics, but this Apple host cannot translate their C++
+      exceptions through nanobind.
 
 ## Surprises & Discoveries
 
@@ -151,6 +168,10 @@ after human review, with a regression that demonstrates the supported contract.
 - Observation: loop-unroll verification of a temporary clone must retain its
   parent module so sibling symbol references resolve, while verifying only the
   transformed operation because the temporary module is intentionally partial.
+- Observation: failure to prove two dynamic QC register indices distinct does
+  not prove they alias. Rejecting that case broke
+  `GeneratesEveryBenchmarkMethodAsQCAndJeff`; retain only the established checks
+  for operands known to be identical.
 - Observation: expansion-producing work reachable from valid input can require
   explicit limits, and repository policy treats unbounded recursion as a
   correctness risk. The proposed `#2300` worklists increased memory use, while
@@ -287,12 +308,12 @@ wrongly owned. The historical commits preserve that snapshot. The current branch
 removes rejected and separately owned code and keeps only valid residual
 findings for review; it is still not intended to merge in bulk.
 
-As of 2026-09-01, eight focused replacements have merged: `#2291`, `#2293`,
-`#2294`, `#2295`, `#2296`, `#2301`, `#2304`, and `#2307`. Four remain open:
-`#2290`, `#2300`, `#2302`, and `#2308`. Four closed without merge: `#2303`,
-`#2305`, `#2306`, and `#2309`. Review narrowed `#2300` to the demonstrated
-missing-entry-point case and rejected `#2309` because its pass-local check and
-regressions target invalid QCO IR.
+As of 2026-09-01, ten focused replacements have merged: `#2291`, `#2293`,
+`#2294`, `#2295`, `#2296`, `#2300`, `#2301`, `#2304`, `#2307`, and `#2308`. Two
+remain open: `#2290` and `#2302`. Four closed without merge: `#2303`, `#2305`,
+`#2306`, and `#2309`. Review narrowed `#2290` to constant-like folding and
+`#2300` to the demonstrated missing-entry-point case. Review rejected `#2309`
+because its pass-local check and regressions target invalid QCO IR.
 
 The original branch passed its recorded build, test, lint, and diff checks.
 Those results prove internal consistency only; they do not establish that each
@@ -309,17 +330,17 @@ Merged findings:
 - `#2295`: make QTensor shrinking sparse and atomic. Review removed the
   redundant one-use guard because QTensor linearity owns that invariant.
 - `#2296`: stop QCO wire traversal at unknown carriers.
+- `#2300`: handle gate counts without an entry point. Review removed manual
+  program-sized worklists and restored native MLIR traversal.
 - `#2301`: keep terminal measurements after routing swaps.
 - `#2304`: bound OpenQASM export resource use.
 - `#2307`: bound CBit zero-initialization lowering.
+- `#2308`: preserve QTensor insert updates in QCO-to-QC.
 
 Open findings:
 
 - `#2290`: harden MLIR constant folding.
-- `#2300`: handle gate counts without an entry point. Review removed manual
-  program-sized worklists and restored native MLIR traversal.
 - `#2302`: make QIR metadata attachment idempotent.
-- `#2308`: preserve QTensor insert updates in QCO-to-QC.
 
 Closed findings:
 
@@ -374,7 +395,7 @@ is `9fcc02eb67586628d8244b425d032630313a86f2`. These commits preserve every
 removed implementation and reproducer. The current delta keeps code and tests
 only for the valid findings listed below. All residual production, test,
 TableGen, CMake, binding, documentation, and tool changes were reread against
-current `main` at `de8a8a619fb69c1f6ef7d01f61911838324fc9b4`.
+current `main` at `6b95f1c434a319fb66e946309e17df771a4e3be2`.
 
 The retained items below are findings, not approval of the historical
 implementation. Each needs a focused extraction from current `main`, a minimal
@@ -416,15 +437,15 @@ valid-input regression, and its own review.
   `RejectsMixedAllocationModesWithoutMutation`, plus output atomicity. `#2308`
   exclusively owns `PreservesQTensorInsertSlotUpdates` and
   `InvalidatesQTensorCacheAcrossLoopSlotSwap`.
-- QC-to-QCO retains dynamic register-index aliasing, mixed allocation, static
-  reference identity and lifetime, conditional captured-register lifetime,
-  ordered QTensor materialization, fallible live-value lookup, and output
-  linearity/atomicity. Evidence:
+- QC-to-QCO retains mixed allocation, static reference identity and lifetime,
+  conditional captured-register lifetime, ordered QTensor materialization,
+  fallible live-value lookup, and output linearity/atomicity. Evidence:
   `DuplicateStaticReferencesShareOneEvolvingQCOValue`,
   `RejectsStaticUseAfterDeallocationWithoutMutation`,
-  `RejectsPossiblyAliasedDynamicIndicesWithoutMutation`,
   `RejectsMixedAllocationModesWithoutMutation`, and
-  `RejectsConditionallyDeallocatedCapturedRegisterWithoutMutation`.
+  `RejectsConditionallyDeallocatedCapturedRegisterWithoutMutation`. Unknown
+  dynamic register-index relationships remain accepted; only operands known to
+  be identical are rejected by the established conversion checks.
 - QIR Adaptive retains entry shape and reserved-symbol checks, entry-only
   QC/CBit/MemRef restrictions, the aggregate classical-result budget, release
   placement, one-epilogue return lowering, supported control-flow and allocation
@@ -686,20 +707,24 @@ Pre-rebase focused checkpoint:
     Decomposition and native synthesis: 242/242
     QTensor transforms:   3/3
 
-Latest full closure transcript:
+Final reconciled closure transcript:
+
+    cmake --preset release \
+      -DMLIR_DIR=/private/tmp/mqt-llvm-23.1.0/lib/cmake/mlir \
+      -DLLVM_DIR=/private/tmp/mqt-llvm-23.1.0/lib/cmake/llvm
+    # configured successfully with LLVM/MLIR 23.1.0
 
     cmake --build build/release --parallel 8
     # completed successfully
 
     ctest --test-dir build/release -L mqt-mlir-unittests --output-on-failure --parallel 8
-    100% tests passed, 0 tests failed out of 3133
-
-    uvx nox -s tests-3.13 -- test/python/test_qco_dd.py
-    6 passed
+    100% tests passed, 0 tests failed out of 3111
 
     uvx nox -s tests-3.13 -- test/python/test_mlir_qiskit_translation.py -k \
-      'parameter_vector_element_outside_current_size_round_trips or parameter_vector_metadata_is_preflighted'
-    5 passed
+      parameter_vector_metadata_is_preflighted
+    # package built with LLVM/MLIR 23.1.0 and all three cases emitted their
+    # expected diagnostics; this Apple host then failed to translate the C++
+    # exceptions through nanobind
 
     uvx nox -s lint
     nox > Session lint was successful

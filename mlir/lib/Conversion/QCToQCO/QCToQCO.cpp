@@ -25,7 +25,6 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/MathExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -83,103 +82,9 @@ struct RegisterAccess {
 
 /** @brief Indices already used for one register by a quantum operation. */
 struct SeenRegisterIndices {
-  SmallVector<Value, 4> values;
+  DenseMap<int64_t, Value> constants;
+  llvm::SmallDenseSet<Value, 4> dynamicValues;
 };
-
-/** @brief A register index represented as one SSA value plus a constant. */
-struct AffineRegisterIndex {
-  Value base;
-  int64_t offset;
-};
-
-} // namespace
-
-/** @brief Peels constant additions and subtractions from a register index. */
-[[nodiscard]] static AffineRegisterIndex decomposeRegisterIndex(Value index) {
-  if (const auto constant = getConstantIntValue(index)) {
-    return {.base = {}, .offset = *constant};
-  }
-
-  int64_t offset = 0;
-  while (true) {
-    Value next;
-    int64_t nextOffset = 0;
-    if (auto add = index.getDefiningOp<arith::AddIOp>()) {
-      if (const auto lhs = getConstantIntValue(add.getLhs())) {
-        next = add.getRhs();
-        if (llvm::AddOverflow(offset, *lhs, nextOffset) != 0) {
-          break;
-        }
-      } else if (const auto rhs = getConstantIntValue(add.getRhs())) {
-        next = add.getLhs();
-        if (llvm::AddOverflow(offset, *rhs, nextOffset) != 0) {
-          break;
-        }
-      } else {
-        break;
-      }
-    } else if (auto sub = index.getDefiningOp<arith::SubIOp>()) {
-      const auto rhs = getConstantIntValue(sub.getRhs());
-      if (!rhs || llvm::SubOverflow(offset, *rhs, nextOffset) != 0) {
-        break;
-      }
-      next = sub.getLhs();
-    } else {
-      break;
-    }
-    index = next;
-    offset = nextOffset;
-  }
-  return {.base = index, .offset = offset};
-}
-
-/** @brief Checks whether a constant is outside a constant-bounded loop IV. */
-[[nodiscard]] static bool
-isOutsideForInductionRange(int64_t constant, const AffineRegisterIndex& index) {
-  auto argument = dyn_cast<BlockArgument>(index.base);
-  if (!argument) {
-    return false;
-  }
-  auto forOp = dyn_cast_or_null<scf::ForOp>(argument.getOwner()->getParentOp());
-  if (!forOp || forOp.getInductionVar() != argument) {
-    return false;
-  }
-
-  const auto lower = getConstantIntValue(forOp.getLowerBound());
-  const auto upper = getConstantIntValue(forOp.getUpperBound());
-  const auto step = getConstantIntValue(forOp.getStep());
-  if (!lower || !upper || !step || *step <= 0) {
-    return false;
-  }
-
-  int64_t adjustedLower = 0;
-  int64_t adjustedUpper = 0;
-  if (llvm::AddOverflow(*lower, index.offset, adjustedLower) != 0 ||
-      llvm::AddOverflow(*upper, index.offset, adjustedUpper) != 0) {
-    return false;
-  }
-  return adjustedLower >= adjustedUpper || constant < adjustedLower ||
-         constant >= adjustedUpper;
-}
-
-/** @brief Proves two supported register-index expressions are distinct. */
-[[nodiscard]] static bool areProvablyDistinctRegisterIndices(Value lhs,
-                                                             Value rhs) {
-  const auto lhsIndex = decomposeRegisterIndex(lhs);
-  const auto rhsIndex = decomposeRegisterIndex(rhs);
-  if (lhsIndex.base == rhsIndex.base) {
-    return lhsIndex.offset != rhsIndex.offset;
-  }
-  if (!lhsIndex.base) {
-    return isOutsideForInductionRange(lhsIndex.offset, rhsIndex);
-  }
-  if (!rhsIndex.base) {
-    return isOutsideForInductionRange(rhsIndex.offset, lhsIndex);
-  }
-  return false;
-}
-
-namespace {
 
 /** @brief Qubit allocation mode */
 enum class AllocationMode : std::uint8_t {
@@ -798,32 +703,25 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       }
 
       auto& seen = registerIndices[access->second.reg];
-      for (auto previous : seen.values) {
-        if (areProvablyDistinctRegisterIndices(previous,
-                                               access->second.index)) {
-          continue;
-        }
-        const auto previousConstant = getConstantIntValue(previous);
-        const auto currentConstant = getConstantIntValue(access->second.index);
-        if (previousConstant && currentConstant &&
-            *previousConstant == *currentConstant) {
+      if (const auto constant = getConstantIntValue(access->second.index)) {
+        const auto [it, inserted] =
+            seen.constants.try_emplace(*constant, access->second.index);
+        if (!inserted &&
+            isEqualConstantIntOrValue(it->second, access->second.index)) {
           operation->emitOpError(
               "requires distinct qubit operands; register-backed operands "
               "have the same constant index");
           return WalkResult::interrupt();
         }
-        if (previous == access->second.index) {
-          operation->emitOpError(
-              "requires distinct qubit operands; register-backed operands "
-              "use the same dynamic index");
-          return WalkResult::interrupt();
-        }
+        continue;
+      }
+
+      if (!seen.dynamicValues.insert(access->second.index).second) {
         operation->emitOpError(
-            "requires distinct qubit operands; register-backed indices are "
-            "not provably distinct");
+            "requires distinct qubit operands; register-backed operands use "
+            "the same dynamic index");
         return WalkResult::interrupt();
       }
-      seen.values.push_back(access->second.index);
     }
     return WalkResult::advance();
   });

@@ -217,14 +217,6 @@ module {
       OperationEquivalence::Flags::None));
 }
 
-TEST_F(QuantumLoopUnrollTest, DeclaresMaterializedArithDependency) {
-  auto pass = createQuantumLoopUnroll({});
-  DialectRegistry registry;
-  pass->getDependentDialects(registry);
-  EXPECT_TRUE(
-      registry.getDialectAllocator(arith::ArithDialect::getDialectNamespace()));
-}
-
 TEST_F(QuantumLoopUnrollTest, NoOp) {
   auto m = getGHZ(context.get(), 2);
   auto mClone = m->clone();
