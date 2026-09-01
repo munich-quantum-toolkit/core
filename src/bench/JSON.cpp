@@ -69,8 +69,8 @@ struct RegistryEntry {
 };
 constexpr std::array REGISTRY{
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
-  RegistryEntry{.id = ID,                                                      \
-                .definitionVersion = DEFINITION_VERSION,                       \
+  RegistryEntry{.id = (ID),                                                    \
+                .definitionVersion = (DEFINITION_VERSION),                     \
                 .instanceSpecificationSchema =                                 \
                     STEM##InstanceSpecificationSchema,                         \
                 .evaluate = evaluate##TYPE},
