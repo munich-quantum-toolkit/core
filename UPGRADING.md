@@ -6,6 +6,11 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### macOS support
+
+MQT Core no longer supports x86 macOS. Use Apple silicon with macOS 13.3 or
+newer. The new deployment target enables `std::format` in libc++.
+
 ### Removal of the QIR stack
 
 MQT Core no longer provides the QIR runtime, JIT, or standalone runner. Remove

@@ -52,10 +52,10 @@ jobs:
         include:
           - runs-on: macos-26
             compiler: clang
-            preset: debug
-          - runs-on: macos-26-intel
-            compiler: clang
             preset: release
+          - runs-on: macos-26
+            compiler: clang
+            preset: debug
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       runs-on: ${{ matrix.runs-on }}
@@ -118,14 +118,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on:
-          [
-            ubuntu-24.04,
-            ubuntu-24.04-arm,
-            macos-26,
-            macos-26-intel,
-            windows-2025,
-          ]
+        runs-on: [ubuntu-24.04, ubuntu-24.04-arm, macos-26, windows-2025]
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       runs-on: ${{ matrix.runs-on }}
@@ -173,7 +166,6 @@ jobs:
             ubuntu-24.04,
             ubuntu-24.04-arm,
             macos-26,
-            macos-26-intel,
             windows-2025,
             windows-11-arm,
           ]

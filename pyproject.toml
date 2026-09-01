@@ -287,7 +287,7 @@ before-test = "uvx sccache --show-stats"
 environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin" }
 
 [tool.cibuildwheel.macos]
-environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
+environment = { MACOSX_DEPLOYMENT_TARGET = "13.3" }
 
 [tool.cibuildwheel.windows]
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
