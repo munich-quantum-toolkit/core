@@ -205,21 +205,26 @@ wider MLIR compiler API.
 
 ## Add a benchmark
 
-Adding a family requires five explicit extension points:
+Adding a family requires five extension points:
 
-1. Add typed options, validation, an analytic reference, and evaluation under
-   `include/mqt-core/bench/` and `src/bench/`.
-2. Add its instance specification schema and evaluation callback to the private
-   semantic registry in `src/bench/JSON.cpp`.
-3. Add one structured emitter and one generation callback to the private MLIR
-   registry in `mlir/bench/Generate.cpp`.
+1. Add one `(TYPE, STEM, ID, DEFINITION_VERSION)` row to
+   `include/mqt-core/bench/BenchmarkFamilies.inc`. Its expansions provide the
+   public JSON declarations and the synchronized semantic and MLIR registry
+   glue.
+2. Add typed options, validation, an analytic reference, and evaluation under
+   `include/mqt-core/bench/` and `src/bench/`. Add the family-specific parameter
+   JSON, reference JSON, parser, and schema body to `src/bench/JSON.cpp`.
+3. Declare and implement the structured emitter under `mlir/bench/`, add its
+   source to the program library, and declare the typed `generate(...)`
+   overload. The catalog supplies the generation wrapper and JSON dispatch row.
 4. Add the explicit Python types in a family registration source under
    `bindings/bench/`, register its direct submodule in `register_bench.cpp`, and
    add the source to `bindings/bench/CMakeLists.txt`.
 5. Test the reference, strict instance specification JSON, emitter structure,
    `jeff` conversion, and Python generation.
 
-Do not add a second catalog, a generic option map, or a public base class.
+`BenchmarkFamilies.inc` is the sole family catalog. Do not add a private family
+list, a generic option map, or a public base class.
 
 ## Reproducibility contract
 

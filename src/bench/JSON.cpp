@@ -42,18 +42,20 @@ namespace {
 using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
 
 constexpr uint64_t SCHEMA_VERSION = 1;
-constexpr uint64_t BV_DEFINITION_VERSION = 1;
-constexpr uint64_t GHZ_DEFINITION_VERSION = 1;
-constexpr uint64_t GROVER_DEFINITION_VERSION = 1;
-constexpr uint64_t QFT_DEFINITION_VERSION = 1;
-constexpr uint64_t QPE_DEFINITION_VERSION = 1;
 constexpr std::string_view CASE_DOMAIN = "mqt-core:benchmark-case:v1";
 
-[[nodiscard]] Json bvInstanceSpecificationSchema();
-[[nodiscard]] Json ghzInstanceSpecificationSchema();
-[[nodiscard]] Json groverInstanceSpecificationSchema();
-[[nodiscard]] Json qftInstanceSpecificationSchema();
-[[nodiscard]] Json qpeInstanceSpecificationSchema();
+template <class Benchmark> struct BenchmarkMetadata;
+
+#define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
+  template <> struct BenchmarkMetadata<TYPE> {                                 \
+    static constexpr std::string_view id = ID;                                 \
+    static constexpr uint64_t definitionVersion = DEFINITION_VERSION;          \
+  };                                                                           \
+  [[nodiscard]] Json STEM##InstanceSpecificationSchema();                      \
+  [[nodiscard]] std::string evaluate##TYPE(std::string_view manifest,          \
+                                           std::string_view source,            \
+                                           const Counts& counts);
+#include "bench/BenchmarkFamilies.inc"
 
 using InstanceSpecificationSchemaFunction = Json (*)();
 using EvaluationFunction = std::string (*)(std::string_view, std::string_view,
@@ -65,46 +67,25 @@ struct RegistryEntry {
   InstanceSpecificationSchemaFunction instanceSpecificationSchema;
   EvaluationFunction evaluate;
 };
-using Registry = std::array<RegistryEntry, 5>;
-
-[[nodiscard]] std::string evaluateBV(std::string_view manifest,
-                                     std::string_view source,
-                                     const Counts& counts);
-[[nodiscard]] std::string evaluateGHZ(std::string_view manifest,
-                                      std::string_view source,
-                                      const Counts& counts);
-[[nodiscard]] std::string evaluateGrover(std::string_view manifest,
-                                         std::string_view source,
-                                         const Counts& counts);
-[[nodiscard]] std::string evaluateQFT(std::string_view manifest,
-                                      std::string_view source,
-                                      const Counts& counts);
-[[nodiscard]] std::string evaluateQPE(std::string_view manifest,
-                                      std::string_view source,
-                                      const Counts& counts);
-
-constexpr Registry REGISTRY{{
-    {.id = "bv",
-     .definitionVersion = BV_DEFINITION_VERSION,
-     .instanceSpecificationSchema = bvInstanceSpecificationSchema,
-     .evaluate = evaluateBV},
-    {.id = "ghz",
-     .definitionVersion = GHZ_DEFINITION_VERSION,
-     .instanceSpecificationSchema = ghzInstanceSpecificationSchema,
-     .evaluate = evaluateGHZ},
-    {.id = "grover",
-     .definitionVersion = GROVER_DEFINITION_VERSION,
-     .instanceSpecificationSchema = groverInstanceSpecificationSchema,
-     .evaluate = evaluateGrover},
-    {.id = "qft",
-     .definitionVersion = QFT_DEFINITION_VERSION,
-     .instanceSpecificationSchema = qftInstanceSpecificationSchema,
-     .evaluate = evaluateQFT},
-    {.id = "qpe",
-     .definitionVersion = QPE_DEFINITION_VERSION,
-     .instanceSpecificationSchema = qpeInstanceSpecificationSchema,
-     .evaluate = evaluateQPE},
-}};
+constexpr std::array REGISTRY{
+#define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
+  RegistryEntry{.id = (ID),                                                    \
+                .definitionVersion = (DEFINITION_VERSION),                     \
+                .instanceSpecificationSchema =                                 \
+                    STEM##InstanceSpecificationSchema,                         \
+                .evaluate = evaluate##TYPE},
+#include "bench/BenchmarkFamilies.inc"
+};
+static_assert(
+    [] {
+      for (size_t index = 1; index < REGISTRY.size(); ++index) {
+        if (REGISTRY[index - 1].id >= REGISTRY[index].id) {
+          return false;
+        }
+      }
+      return true;
+    }(),
+    "benchmark IDs must be unique and in lexical order");
 
 [[nodiscard]] const RegistryEntry*
 findBenchmark(const std::string_view benchmark) {
@@ -560,30 +541,12 @@ void requireBenchmark(const Json& root, const std::string_view expected,
           {"reference", reference}};
 }
 
-[[nodiscard]] Json semanticJSON(const BV& benchmark) {
-  return semanticJSON("bv", BV_DEFINITION_VERSION, parametersJSON(benchmark),
-                      benchmark.output(), referenceJSON(benchmark));
-}
-
-[[nodiscard]] Json semanticJSON(const GHZ& benchmark) {
-  return semanticJSON("ghz", GHZ_DEFINITION_VERSION, parametersJSON(benchmark),
-                      benchmark.output(), referenceJSON(benchmark));
-}
-
-[[nodiscard]] Json semanticJSON(const Grover& benchmark) {
-  return semanticJSON("grover", GROVER_DEFINITION_VERSION,
+template <class Benchmark>
+[[nodiscard]] Json semanticJSON(const Benchmark& benchmark) {
+  using Metadata = BenchmarkMetadata<Benchmark>;
+  return semanticJSON(Metadata::id, Metadata::definitionVersion,
                       parametersJSON(benchmark), benchmark.output(),
                       referenceJSON(benchmark));
-}
-
-[[nodiscard]] Json semanticJSON(const QFT& benchmark) {
-  return semanticJSON("qft", QFT_DEFINITION_VERSION, parametersJSON(benchmark),
-                      benchmark.output(), referenceJSON(benchmark));
-}
-
-[[nodiscard]] Json semanticJSON(const QPE& benchmark) {
-  return semanticJSON("qpe", QPE_DEFINITION_VERSION, parametersJSON(benchmark),
-                      benchmark.output(), referenceJSON(benchmark));
 }
 
 [[nodiscard]] std::string semanticCaseId(const Json& semantic) {
@@ -601,20 +564,29 @@ template <class Benchmark>
   return semantic;
 }
 
-[[nodiscard]] Json instanceSpecificationJSON(const std::string_view id,
-                                             const Json& parameters) {
-  return {{"benchmark", std::string(id)},
-          {"parameters", parameters},
+template <class Benchmark>
+[[nodiscard]] Json instanceSpecificationJSON(const Benchmark& benchmark) {
+  return {{"benchmark", std::string(BenchmarkMetadata<Benchmark>::id)},
+          {"parameters", parametersJSON(benchmark)},
           {"schema_version", SCHEMA_VERSION}};
+}
+
+template <class Benchmark, class ParseParameters>
+[[nodiscard]] Benchmark
+parseInstanceSpecification(const std::string_view text,
+                           const std::string_view source,
+                           const ParseParameters& parseParameters) {
+  const auto root = instanceSpecificationEnvelope(text, source);
+  requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source);
+  return parseParameters(root.at("parameters"), source);
 }
 
 template <class Benchmark, class ParseParameters>
 [[nodiscard]] Benchmark parseManifest(const std::string_view text,
                                       const std::string_view source,
-                                      const std::string_view expectedId,
                                       const ParseParameters& parseParameters) {
   const auto root = manifestEnvelope(text, source);
-  requireBenchmark(root, expectedId, source);
+  requireBenchmark(root, BenchmarkMetadata<Benchmark>::id, source);
   auto benchmark = parseParameters(root.at("parameters"), source);
   if (root.dump() != manifestJSON(benchmark).dump()) {
     fail(source, "$",
@@ -623,24 +595,22 @@ template <class Benchmark, class ParseParameters>
   return benchmark;
 }
 
-[[nodiscard]] Json
-baseInstanceSpecificationSchema(const std::string_view id,
-                                const uint64_t definitionVersionValue,
-                                Json parameters) {
+template <class Benchmark>
+[[nodiscard]] Json baseInstanceSpecificationSchema(Json parameters) {
+  using Metadata = BenchmarkMetadata<Benchmark>;
   return {{"$schema", "https://json-schema.org/draft/2020-12/schema"},
           {"additionalProperties", false},
           {"properties",
-           {{"benchmark", {{"const", std::string(id)}}},
+           {{"benchmark", {{"const", std::string(Metadata::id)}}},
             {"parameters", std::move(parameters)},
             {"schema_version", {{"const", SCHEMA_VERSION}}}}},
           {"required", {"schema_version", "benchmark", "parameters"}},
           {"type", "object"},
-          {"x-mqt-definition-version", definitionVersionValue}};
+          {"x-mqt-definition-version", Metadata::definitionVersion}};
 }
 
 [[nodiscard]] Json bvInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema(
-      "bv", BV_DEFINITION_VERSION,
+  return baseInstanceSpecificationSchema<BV>(
       {{"additionalProperties", false},
        {"properties",
         {{"hidden_bitstring",
@@ -672,13 +642,11 @@ baseInstanceSpecificationSchema(const std::string_view id,
         {"then",
          {{"properties",
            {{"qubits", {{"maximum", GHZOptions::MAX_X_BASIS_QUBITS}}}}}}}}});
-  return baseInstanceSpecificationSchema("ghz", GHZ_DEFINITION_VERSION,
-                                         std::move(parameters));
+  return baseInstanceSpecificationSchema<GHZ>(std::move(parameters));
 }
 
 [[nodiscard]] Json groverInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema(
-      "grover", GROVER_DEFINITION_VERSION,
+  return baseInstanceSpecificationSchema<Grover>(
       {{"additionalProperties", false},
        {"properties",
         {{"iterations",
@@ -695,8 +663,7 @@ baseInstanceSpecificationSchema(const std::string_view id,
 }
 
 [[nodiscard]] Json qftInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema(
-      "qft", QFT_DEFINITION_VERSION,
+  return baseInstanceSpecificationSchema<QFT>(
       {{"additionalProperties", false},
        {"properties",
         {{"method",
@@ -714,8 +681,7 @@ baseInstanceSpecificationSchema(const std::string_view id,
 }
 
 [[nodiscard]] Json qpeInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema(
-      "qpe", QPE_DEFINITION_VERSION,
+  return baseInstanceSpecificationSchema<QPE>(
       {{"additionalProperties", false},
        {"properties",
         {{"method",
@@ -750,31 +716,14 @@ template <class Benchmark>
   return evaluationToJSON(caseId(benchmark), shots, benchmark.evaluate(counts));
 }
 
-std::string evaluateBV(const std::string_view manifest,
-                       const std::string_view source, const Counts& counts) {
-  return evaluateBenchmark(bvFromManifestJSON(manifest, source), counts);
-}
-
-std::string evaluateGHZ(const std::string_view manifest,
-                        const std::string_view source, const Counts& counts) {
-  return evaluateBenchmark(ghzFromManifestJSON(manifest, source), counts);
-}
-
-std::string evaluateGrover(const std::string_view manifest,
-                           const std::string_view source,
-                           const Counts& counts) {
-  return evaluateBenchmark(groverFromManifestJSON(manifest, source), counts);
-}
-
-std::string evaluateQFT(const std::string_view manifest,
-                        const std::string_view source, const Counts& counts) {
-  return evaluateBenchmark(qftFromManifestJSON(manifest, source), counts);
-}
-
-std::string evaluateQPE(const std::string_view manifest,
-                        const std::string_view source, const Counts& counts) {
-  return evaluateBenchmark(qpeFromManifestJSON(manifest, source), counts);
-}
+#define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
+  std::string evaluate##TYPE(const std::string_view manifest,                  \
+                             const std::string_view source,                    \
+                             const Counts& counts) {                           \
+    return evaluateBenchmark(STEM##FromManifestJSON(manifest, source),         \
+                             counts);                                          \
+  }
+#include "bench/BenchmarkFamilies.inc"
 
 [[nodiscard]] bool validCaseId(const std::string_view value) {
   constexpr std::string_view prefix = "sha256-";
@@ -820,125 +769,26 @@ std::string describeBenchmarkJSON(const std::string_view benchmark) {
                               std::string(benchmark) + "'");
 }
 
-BV bvFromInstanceSpecificationJSON(const std::string_view json,
-                                   const std::string_view source) {
-  const auto root = instanceSpecificationEnvelope(json, source);
-  requireBenchmark(root, "bv", source);
-  return parseBVParameters(root.at("parameters"), source);
-}
-
-GHZ ghzFromInstanceSpecificationJSON(const std::string_view json,
-                                     const std::string_view source) {
-  const auto root = instanceSpecificationEnvelope(json, source);
-  requireBenchmark(root, "ghz", source);
-  return parseGHZParameters(root.at("parameters"), source);
-}
-
-Grover groverFromInstanceSpecificationJSON(const std::string_view json,
-                                           const std::string_view source) {
-  const auto root = instanceSpecificationEnvelope(json, source);
-  requireBenchmark(root, "grover", source);
-  return parseGroverParameters(root.at("parameters"), source);
-}
-
-QFT qftFromInstanceSpecificationJSON(const std::string_view json,
-                                     const std::string_view source) {
-  const auto root = instanceSpecificationEnvelope(json, source);
-  requireBenchmark(root, "qft", source);
-  return parseQFTParameters(root.at("parameters"), source);
-}
-
-QPE qpeFromInstanceSpecificationJSON(const std::string_view json,
-                                     const std::string_view source) {
-  const auto root = instanceSpecificationEnvelope(json, source);
-  requireBenchmark(root, "qpe", source);
-  return parseQPEParameters(root.at("parameters"), source);
-}
-
-std::string toInstanceSpecificationJSON(const BV& benchmark) {
-  return instanceSpecificationJSON("bv", parametersJSON(benchmark)).dump();
-}
-
-std::string toInstanceSpecificationJSON(const GHZ& benchmark) {
-  return instanceSpecificationJSON("ghz", parametersJSON(benchmark)).dump();
-}
-
-std::string toInstanceSpecificationJSON(const Grover& benchmark) {
-  return instanceSpecificationJSON("grover", parametersJSON(benchmark)).dump();
-}
-
-std::string toInstanceSpecificationJSON(const QFT& benchmark) {
-  return instanceSpecificationJSON("qft", parametersJSON(benchmark)).dump();
-}
-
-std::string toInstanceSpecificationJSON(const QPE& benchmark) {
-  return instanceSpecificationJSON("qpe", parametersJSON(benchmark)).dump();
-}
-
-BV bvFromManifestJSON(const std::string_view json,
-                      const std::string_view source) {
-  return parseManifest<BV>(json, source, "bv", parseBVParameters);
-}
-
-GHZ ghzFromManifestJSON(const std::string_view json,
-                        const std::string_view source) {
-  return parseManifest<GHZ>(json, source, "ghz", parseGHZParameters);
-}
-
-Grover groverFromManifestJSON(const std::string_view json,
-                              const std::string_view source) {
-  return parseManifest<Grover>(json, source, "grover", parseGroverParameters);
-}
-
-QFT qftFromManifestJSON(const std::string_view json,
-                        const std::string_view source) {
-  return parseManifest<QFT>(json, source, "qft", parseQFTParameters);
-}
-
-QPE qpeFromManifestJSON(const std::string_view json,
-                        const std::string_view source) {
-  return parseManifest<QPE>(json, source, "qpe", parseQPEParameters);
-}
-
-std::string toManifestJSON(const BV& benchmark) {
-  return manifestJSON(benchmark).dump();
-}
-
-std::string toManifestJSON(const GHZ& benchmark) {
-  return manifestJSON(benchmark).dump();
-}
-
-std::string toManifestJSON(const Grover& benchmark) {
-  return manifestJSON(benchmark).dump();
-}
-
-std::string toManifestJSON(const QFT& benchmark) {
-  return manifestJSON(benchmark).dump();
-}
-
-std::string toManifestJSON(const QPE& benchmark) {
-  return manifestJSON(benchmark).dump();
-}
-
-std::string caseId(const BV& benchmark) {
-  return semanticCaseId(semanticJSON(benchmark));
-}
-
-std::string caseId(const GHZ& benchmark) {
-  return semanticCaseId(semanticJSON(benchmark));
-}
-
-std::string caseId(const Grover& benchmark) {
-  return semanticCaseId(semanticJSON(benchmark));
-}
-
-std::string caseId(const QFT& benchmark) {
-  return semanticCaseId(semanticJSON(benchmark));
-}
-
-std::string caseId(const QPE& benchmark) {
-  return semanticCaseId(semanticJSON(benchmark));
-}
+#define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
+  TYPE STEM##FromInstanceSpecificationJSON(const std::string_view json,        \
+                                           const std::string_view source) {    \
+    return parseInstanceSpecification<TYPE>(json, source,                      \
+                                            parse##TYPE##Parameters);          \
+  }                                                                            \
+  std::string toInstanceSpecificationJSON(const TYPE& benchmark) {             \
+    return instanceSpecificationJSON(benchmark).dump();                        \
+  }                                                                            \
+  TYPE STEM##FromManifestJSON(const std::string_view json,                     \
+                              const std::string_view source) {                 \
+    return parseManifest<TYPE>(json, source, parse##TYPE##Parameters);         \
+  }                                                                            \
+  std::string toManifestJSON(const TYPE& benchmark) {                          \
+    return manifestJSON(benchmark).dump();                                     \
+  }                                                                            \
+  std::string caseId(const TYPE& benchmark) {                                  \
+    return semanticCaseId(semanticJSON(benchmark));                            \
+  }
+#include "bench/BenchmarkFamilies.inc"
 
 Counts countsFromJSON(const std::string_view json,
                       const std::string_view source) {
