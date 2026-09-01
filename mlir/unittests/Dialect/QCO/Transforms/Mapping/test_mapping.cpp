@@ -359,6 +359,59 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   size_t numSwaps = 0;
   m->walk([&](SWAPOp) { ++numSwaps; });
   EXPECT_GT(numSwaps, 0);
+
+  size_t numMeasurements = 0;
+  size_t numMeasurementsAfterSwap = 0;
+  m->walk([&](MeasureOp op) {
+    ++numMeasurements;
+    if (op.getQubitIn().getDefiningOp<SWAPOp>()) {
+      ++numMeasurementsAfterSwap;
+    }
+    const bool hasOneUse = op.getQubitOut().hasOneUse();
+    EXPECT_TRUE(hasOneUse);
+    if (hasOneUse) {
+      EXPECT_TRUE(isa<SinkOp>(*op.getQubitOut().getUsers().begin()));
+    }
+  });
+  EXPECT_EQ(numMeasurements, size);
+  EXPECT_GT(numMeasurementsAfterSwap, 0);
+}
+
+TEST_F(MappingPassFixture,
+       KeepClassicallyDependentMeasurementBeforeRoutingSwaps) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
+      std::vector<CompilerTarget::Operation>{}));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  auto q0 = builder.allocQubit();
+  auto q1 = builder.allocQubit();
+  auto q2 = builder.allocQubit();
+  std::tie(q0, q1) = builder.cx(q0, q1);
+  std::tie(q0, q2) = builder.cx(q0, q2);
+
+  Value bit;
+  std::tie(q0, bit) = builder.measure(q0);
+  builder.sink(q0);
+  auto angle = arith::UIToFPOp::create(builder, builder.getF64Type(), bit);
+  q1 = builder.rz(angle, q1);
+  std::tie(q1, q2) = builder.cx(q1, q2);
+  builder.sink(q1);
+  builder.sink(q2);
+
+  auto m = builder.finalize();
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1, .seed = 0})
+          .succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+
+  MeasureOp measurement;
+  m->walk([&](MeasureOp op) { measurement = op; });
+  ASSERT_TRUE(measurement);
+  ASSERT_TRUE(measurement.getQubitOut().hasOneUse());
+  EXPECT_TRUE(isa<SWAPOp>(*measurement.getQubitOut().getUsers().begin()));
 }
 
 TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
