@@ -13,13 +13,15 @@ def ConvertCBitToMemRef : Pass<"convert-cbit-to-memref", "mlir::ModuleOp"> {
 
   let description = [{
     This pass explicitly lowers CBit register types and operations to memrefs.
-    A zero-initialized register becomes an allocation followed by one false
-    store for each element. An undefined register becomes an allocation only.
+    A zero-initialized register becomes an allocation followed by a loop that
+    stores false to each element. An undefined register becomes an allocation
+    only.
     The pass also converts function signatures, calls, returns, branches, and
     structural SCF operation types. It does not infer CBit registers from
     existing memrefs.
   }];
 
   let dependentDialects = ["mlir::arith::ArithDialect",
-                           "mlir::memref::MemRefDialect"];
+                           "mlir::memref::MemRefDialect",
+                           "mlir::scf::SCFDialect"];
 }
