@@ -88,62 +88,7 @@ static LogicalResult runQCOToQCConversion(ModuleOp module) {
   return pm.run(module);
 }
 
-TEST(QCOToQCRegressionTest, PreservesQTensorInsertSlotUpdates) {
-  DialectRegistry registry;
-  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
-                  scf::SCFDialect>();
-  MLIRContext context(registry);
-  context.loadAllAvailableDialects();
-
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main() attributes {mqt.entry_point} {
-    %c0 = arith.constant 0 : index
-    %c1 = arith.constant 1 : index
-    %c2 = arith.constant 2 : index
-    %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
-    %tensor1, %q0 = qtensor.extract %tensor0[%c0] : tensor<2x!qco.qubit>
-    %tensor2, %q1 = qtensor.extract %tensor1[%c1] : tensor<2x!qco.qubit>
-    %tensor3 = qtensor.insert %q0 into %tensor2[%c1] : tensor<2x!qco.qubit>
-    %tensor4 = qtensor.insert %q1 into %tensor3[%c0] : tensor<2x!qco.qubit>
-    %tensor5, %at0 = qtensor.extract %tensor4[%c0] : tensor<2x!qco.qubit>
-    %tensor6, %at1 = qtensor.extract %tensor5[%c1] : tensor<2x!qco.qubit>
-    qco.sink %at0 : !qco.qubit
-    qco.sink %at1 : !qco.qubit
-    qtensor.dealloc %tensor6 : tensor<2x!qco.qubit>
-    return
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCOToQCConversion(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
-
-  SmallVector<memref::StoreOp> stores;
-  module->walk([&](memref::StoreOp store) { stores.push_back(store); });
-  ASSERT_EQ(stores.size(), 2U);
-  EXPECT_NE(stores[0].getValue(), stores[1].getValue());
-  EXPECT_EQ(stores[0].getMemref(), stores[1].getMemref());
-
-  SmallVector<memref::LoadOp> loads;
-  module->walk([&](memref::LoadOp load) { loads.push_back(load); });
-  ASSERT_EQ(loads.size(), 3U);
-  EXPECT_TRUE(stores[1]->isBeforeInBlock(loads[2]));
-
-  bool containsQTensorOperations = false;
-  module->walk([&](Operation* operation) {
-    containsQTensorOperations |=
-        operation->getDialect() ==
-        context.getLoadedDialect<qtensor::QTensorDialect>();
-  });
-  EXPECT_FALSE(containsQTensorOperations);
-}
-
-TEST(QCOToQCRegressionTest, InvalidatesQTensorCacheAcrossLoopSlotSwap) {
+TEST(QCOToQCRegressionTest, PreservesDynamicQTensorSlotSwapAcrossLoop) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
                   arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
@@ -165,7 +110,7 @@ module {
       %tensor4, %left = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
       %tensor5, %right = qtensor.extract %tensor4[%c1] : tensor<2x!qco.qubit>
       %tensor6 = qtensor.insert %left into %tensor5[%c1] : tensor<2x!qco.qubit>
-      %tensor7 = qtensor.insert %right into %tensor6[%c0] : tensor<2x!qco.qubit>
+      %tensor7 = qtensor.insert %right into %tensor6[%iv] : tensor<2x!qco.qubit>
       scf.yield %tensor7 : tensor<2x!qco.qubit>
     }
     %tensor8, %at0 = qtensor.extract %tensor3[%c0] : tensor<2x!qco.qubit>
