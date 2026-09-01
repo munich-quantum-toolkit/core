@@ -14,7 +14,8 @@ add_executable(
   test_benchmark_generate_grover.cpp
   test_benchmark_generate_multiplexer.cpp
   test_benchmark_generate_qft.cpp
-  test_benchmark_generate_qpe.cpp)
+  test_benchmark_generate_qpe.cpp
+  test_benchmark_generate_teleportation.cpp)
 
 target_link_libraries(mqt-core-mlir-unittests-benchmark PRIVATE GTest::gtest_main
                                                                 MQT::CoreBenchGenerate)
