@@ -20,7 +20,6 @@
 #include <llvm/Support/Error.h>
 
 #include <cassert>
-#include <optional>
 #include <string>
 
 using mlir::CompilerTarget;
@@ -82,18 +81,21 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CZ);
 }
 
-TEST(CompilerQDMIAdapterTest, PreservesMissingTargetFactsAsUnknown) {
+TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
   const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   EXPECT_EQ(target.numSites(), 65535);
   EXPECT_EQ(target.connectivityKind(),
-            CompilerTarget::Connectivity::Kind::Unknown);
+            CompilerTarget::Connectivity::Kind::AllToAll);
   EXPECT_EQ(target.nativeOperationsKind(),
-            CompilerTarget::NativeOperations::Kind::Unknown);
-  EXPECT_EQ(target.supportsOperation("h", 1, 0), std::nullopt);
-  EXPECT_EQ(target.supportsOperation("cx", 2, 0), std::nullopt);
-  EXPECT_EQ(target.supportsOperation("measure", 1, 0), std::nullopt);
+            CompilerTarget::NativeOperations::Kind::Explicit);
+  EXPECT_EQ(target.supportsOperation("h", 1, 0), true);
+  EXPECT_EQ(target.supportsOperation("cx", 2, 0), true);
+  EXPECT_EQ(target.supportsOperation("cswap", 3, 0), true);
+  EXPECT_EQ(target.supportsOperation("measure", 1, 0), true);
+  EXPECT_EQ(target.supportsOperation("reset", 1, 0), true);
+  EXPECT_EQ(target.supportsOperation("barrier", 0, 0), false);
 }
 
 TEST(CompilerQDMIAdapterTest, ListsRegisteredDeviceIds) {

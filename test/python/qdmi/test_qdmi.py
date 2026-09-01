@@ -552,23 +552,7 @@ h q[0];
 cx q[0], q[1];
 c = measure q;
 """
-    operations = []
-    for operation in ddsim_device.operations():
-        arity = operation.qubits_num()
-        if arity is None or arity == 0:
-            continue
-        operations.append(
-            CompilerTarget.Operation(
-                name=operation.name(),
-                arity=arity,
-                num_parameters=operation.parameters_num(),
-            )
-        )
-    target = CompilerTarget(
-        ddsim_device.qubits_num(),
-        connectivity=CompilerTarget.Connectivity.all_to_all(),
-        native_operations=CompilerTarget.NativeOperations(operations),
-    )
+    target = CompilerTarget.from_device(ddsim_device)
     program = compile_program(qasm3_program, output=OutputFormat.QIR_BASE, target=target)
     assert ProgramFormat.QIR_BASE_STRING in ddsim_device.supported_program_formats()
 
