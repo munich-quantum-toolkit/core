@@ -12,7 +12,10 @@
 
 #include "dd/Package_fwd.hpp"
 
+#include <llvm/ADT/DenseMap.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
@@ -23,6 +26,15 @@
 namespace mlir::qco {
 
 /**
+ * @brief Concrete values for symbolic QCO DD inputs.
+ *
+ * Exactly typed integer, index, and `f64` attributes bind scalar entry-function
+ * arguments. A non-negative index attribute bound to a dynamic one-dimensional
+ * qtensor argument gives its runtime extent. Other bindings are rejected.
+ */
+using DDArgumentBindings = DenseMap<Value, Attribute>;
+
+/**
  * @brief Sequentially build a matrix DD for a static unitary QCO `func.func`.
  *
  * @details Walks the entry block of @p func, maps `qco.static` SSA values to
@@ -31,30 +43,37 @@ namespace mlir::qco {
  * wires, and applies unitary operations via decision-diagram multiplication.
  *
  * Supported programs:
- * - Standard single-, two-, and three-qubit gates with compile-time constant
+ * - Standard single-, two-, and three-qubit gates with constant or bound
  *   parameters (sparse DD path)
  * - `ctrl` with a sole standard-gate body (same sparse path)
  * - Other `UnitaryOpInterface` ops with a compile-time known matrix (`inv`,
  *   compound `ctrl`, ...), including `gphase` and `barrier`
+ * - QTensor bookkeeping over existing input wires
+ * - Concrete QCO and SCF control flow and non-recursive single-block calls
+ * - Concrete integer, index, and `f64` arithmetic and one-dimensional memrefs
+ *   of those scalar types
  * - `qco.static` establishes the wire map (or qubit-typed `func` args if none),
- *   followed by entry-block `qco.alloc`; `sink` is ignored; `arith.constant`
- *   is ignored for matrix construction; `func.return` accepts qubit results
- *   only in canonical wire order
+ *   followed by entry-block `qco.alloc`; `sink` is ignored; returned qubits
+ *   and qtensors must preserve canonical wire order
  *
  * Known one-, two-, and three-qubit matrices are constructed directly as DD
  * gates. Larger compile-time unitaries are embedded directly into a DD over
  * their target wires, so idle register qubits do not enlarge the local matrix.
- * Measurements, resets, symbolic parameters, and control-flow ops are not
- * supported.
+ * Measurements, resets, unbound parameters, and non-concrete control flow are
+ * not supported.
  *
  * @pre The containing module has passed MLIR verification and
  * `qco::verifyLinearity`.
  *
  * @param func The QCO function to construct the functionality for
  * @param dd The DD package to use (must hold at least the function's qubits)
+ * @param argumentBindings Concrete scalar values and dynamic QTensor extents
+ * for entry arguments
  * @return The matrix DD on success, or failure for unsupported programs
  */
-FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
+FailureOr<dd::MatrixDD> buildFunctionality(
+    func::FuncOp func, dd::Package& dd,
+    const DDArgumentBindings& argumentBindings = DDArgumentBindings());
 
 /**
  * @brief Simulate a QCO `func.func` that may contain measurements, resets, and
@@ -63,17 +82,15 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  * @details Supports the unitary op set of @ref buildFunctionality, plus
  * `qco.measure` / `qco.reset` (collapsing via @p rng) and `qco.if` /
  * `qco.index_switch` when the branch selector is a concrete classical SSA value
- * (`arith.constant` integer/index, a prior measurement, a `cbit.load`,
- * `arith.extui`, `arith.index_castui`, `arith.cmpi`, `arith.select`,
- * `arith.addi` / `subi` / `muli`, or `andi` / `ori` / `xori` / `shli` /
- * `shrui` on those values). The simulation tracks CBit initialization, loads,
- * and stores. Only qubit-typed linear values are supported (no qtensors).
- * Nested regions are walked; direct `scf.for` execution with concrete positive
- * steps and non-recursive single-block `func.call` are supported. A shared
- * 10000-step budget bounds loop iterations across nested loops and calls;
- * `scf.while` and multi-block function bodies remain unsupported.
- * Consumes one reference to @p in regardless of whether simulation succeeds or
- * fails.
+ * (`arith.constant`, a prior measurement, integer and `f64`
+ * arithmetic, comparisons, casts, shifts, and `arith.select`). Dynamic quantum
+ * allocation, qtensors, memrefs, CBit registers, loops, regions, and calls are
+ * supported. QTensor sizes and indices must be concrete; dynamic qtensor
+ * arguments require an extent in @p argumentBindings. A shared 10000-step
+ * budget bounds loop iterations and executed control-flow regions and calls.
+ * Multi-block function bodies remain unsupported. Allocated wires stay in the
+ * returned state after deallocation.
+ * Consumes one reference to @p in regardless of success or failure.
  *
  * @pre The containing module has passed MLIR verification and
  * `qco::verifyLinearity`.
@@ -83,11 +100,15 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd);
  * higher wires are preserved; one reference is consumed
  * @param dd The DD package to use
  * @param rng RNG used for collapsing measurements and resets
+ * @param argumentBindings Concrete scalar values and dynamic QTensor extents
+ * for entry arguments
  * @return The output statevector DD on success, or failure for unsupported
  *         programs
  */
-FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
-                                 dd::Package& dd, std::mt19937_64& rng);
+FailureOr<dd::VectorDD>
+simulate(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
+         std::mt19937_64& rng,
+         const DDArgumentBindings& argumentBindings = DDArgumentBindings());
 
 /**
  * @brief Sample measurement outcomes from a QCO `func.func`.
@@ -99,7 +120,8 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * basis sampling via `Package::measureAll` (qubit `n-1` … `0`). Terminal entry-
  * block measurements that only produce returned CBit cells are sampled from
  * one DD evolution; resets and execution-dependent measurements are executed
- * once per shot.
+ * once per shot. Dynamically allocated wires are included in fallback basis
+ * outcomes even after deallocation.
  *
  * @pre The containing module has passed MLIR verification and
  * `qco::verifyLinearity`.
@@ -108,10 +130,12 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
  * @param dd The DD package to use
  * @param shots Number of shots
  * @param rng RNG for collapsing measurements and non-collapsing sampling
+ * @param argumentBindings Concrete scalar values and dynamic QTensor extents
+ * for entry arguments
  * @return Histogram of outcome strings on success, or failure for unsupported
  *         programs
  */
 FailureOr<std::map<std::string, size_t>>
-sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng);
-
+sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
+       const DDArgumentBindings& argumentBindings = DDArgumentBindings());
 } // namespace mlir::qco

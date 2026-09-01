@@ -32,11 +32,10 @@ releases may include breaking changes.
   instance specifications, analytic references, deterministic manifests, and
   C++, Python, and command-line interfaces ([#2135]) ([**@denialhaag**],
   [**@burgholzer**])
-- ✨ Add decision diagram-based construction, simulation, and sampling for QCO
-  programs, including mid-circuit `measure` / `reset`, concrete `if` /
-  `index_switch` / `scf.for` / `func.call`, classical SSA and CBit registers,
-  dense multi-wire embedding, output-aware multi-shot sampling, and Python
-  bindings ([#1915], [#1973], [#2077]) ([**@simon1hofmann**])
+- ✨ Add decision diagram-based construction, simulation, and output-aware
+  sampling for QCO programs, with C++ and Python APIs and support for classical
+  control flow and dynamic quantum data ([#1915], [#1973], [#2077], [#2078])
+  ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
   compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
   [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
@@ -922,6 +921,7 @@ for previous changelogs._
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2082]: https://github.com/munich-quantum-toolkit/core/pull/2082
+[#2078]: https://github.com/munich-quantum-toolkit/core/pull/2078
 [#2077]: https://github.com/munich-quantum-toolkit/core/pull/2077
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2066]: https://github.com/munich-quantum-toolkit/core/pull/2066
