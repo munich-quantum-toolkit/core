@@ -711,9 +711,6 @@ static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
   }
   int64_t size = type.getDimSize(0);
   if (type.isDynamicDim(0)) {
-    if (alloc.getDynamicSizes().size() != 1) {
-      return alloc.emitError() << "dynamic 1-D memref requires one size";
-    }
     auto dynamicSize =
         lookupIndex(alloc.getDynamicSizes()[0], classical, alloc);
     if (failed(dynamicSize)) {
@@ -761,30 +758,6 @@ static LogicalResult applyMemRefLoad(memref::LoadOp load,
 }
 
 template <typename OpTy, typename Combine>
-static LogicalResult applyBinaryInteger(OpTy op, ClassicalEnv& classical,
-                                        Combine combine) {
-  auto lhs = lookupInteger(op.getLhs(), classical, op);
-  auto rhs = lookupInteger(op.getRhs(), classical, op);
-  if (failed(lhs) || failed(rhs)) {
-    return failure();
-  }
-  return bindInteger(op.getResult(), combine(*lhs, *rhs), classical);
-}
-
-template <typename OpTy, typename Combine>
-static LogicalResult applyBinaryFloat(OpTy op, ClassicalEnv& classical,
-                                      Combine combine) {
-  auto lhs = lookupFloat(op.getLhs(), classical, op);
-  auto rhs = lookupFloat(op.getRhs(), classical, op);
-  if (failed(lhs) || failed(rhs)) {
-    return failure();
-  }
-  classical.values[op.getResult()] =
-      FloatAttr::get(op.getResult().getType(), combine(*lhs, *rhs));
-  return success();
-}
-
-template <typename OpTy, typename Combine>
 static LogicalResult applyDivision(OpTy op, ClassicalEnv& classical,
                                    Combine combine) {
   auto rhs = lookupInteger(op.getRhs(), classical, op);
@@ -799,20 +772,6 @@ static LogicalResult applyDivision(OpTy op, ClassicalEnv& classical,
     return failure();
   }
   return bindInteger(op.getResult(), combine(*lhs, *rhs), classical);
-}
-
-template <typename OpTy, typename Shift>
-static LogicalResult applyShift(OpTy op, ClassicalEnv& classical, Shift shift) {
-  auto lhs = lookupInteger(op.getLhs(), classical, op);
-  auto rhs = lookupInteger(op.getRhs(), classical, op);
-  if (failed(lhs) || failed(rhs)) {
-    return failure();
-  }
-  if (rhs->uge(lhs->getBitWidth())) {
-    return op.emitError() << "shift amount out of range for QCO DD simulation";
-  }
-  return bindInteger(op.getResult(), shift(*lhs, rhs->getZExtValue()),
-                     classical);
 }
 
 static LogicalResult applyIntegerCast(Value in, Value out, Operation* op,
@@ -832,6 +791,98 @@ static LogicalResult applyIntegerCast(Value in, Value out, Operation* op,
   return bindInteger(out, *value, classical);
 }
 
+static LogicalResult foldClassicalOp(Operation& op, ClassicalEnv& classical) {
+  if (llvm::any_of(op.getOperandTypes(),
+                   [](Type type) { return !isSupportedClassicalType(type); }) ||
+      llvm::any_of(op.getResultTypes(),
+                   [](Type type) { return !isSupportedClassicalType(type); })) {
+    return op.emitError()
+           << "QCO DD simulation only supports integer, index, and f64 values";
+  }
+
+  const auto lookupOperands =
+      [&](Operation& candidate) -> FailureOr<SmallVector<Attribute>> {
+    SmallVector<Attribute> operands;
+    operands.reserve(candidate.getNumOperands());
+    for (Value operand : candidate.getOperands()) {
+      auto attr = lookupAttribute(operand, classical, &op);
+      if (failed(attr)) {
+        return failure();
+      }
+      const auto typed = dyn_cast<TypedAttr>(*attr);
+      if (!typed || typed.getType() != operand.getType()) {
+        return op.emitError()
+               << "classical SSA value has a mismatched runtime attribute";
+      }
+      operands.push_back(*attr);
+    }
+    return operands;
+  };
+
+  auto operands = lookupOperands(op);
+  if (failed(operands)) {
+    return failure();
+  }
+
+  if (isa<arith::ShLIOp, arith::ShRUIOp, arith::ShRSIOp>(op)) {
+    const auto lhs = dyn_cast<IntegerAttr>((*operands)[0]);
+    const auto rhs = dyn_cast<IntegerAttr>((*operands)[1]);
+    if (!lhs || !rhs) {
+      return op.emitError() << "expected integer shift operands";
+    }
+    if (rhs.getValue().uge(lhs.getValue().getBitWidth())) {
+      return op.emitError()
+             << "shift amount out of range for QCO DD simulation";
+    }
+  }
+
+  // Fold a clone because some arithmetic folders canonicalize in place.
+  Operation* clone = op.clone();
+  const auto destroyClone = llvm::make_scope_exit([&] { clone->destroy(); });
+  for (unsigned attempt = 0; attempt < 2; ++attempt) {
+    SmallVector<OpFoldResult, 1> results;
+    if (failed(clone->fold(*operands, results))) {
+      return op.emitError()
+             << "could not evaluate classical op during QCO DD simulation";
+    }
+
+    Attribute result;
+    if (results.size() == 1) {
+      result = dyn_cast_if_present<Attribute>(results.front());
+      if (!result) {
+        const auto value = dyn_cast_if_present<Value>(results.front());
+        if (value && value != clone->getResult(0)) {
+          auto attr = lookupAttribute(value, classical, &op);
+          if (failed(attr)) {
+            return failure();
+          }
+          result = *attr;
+        }
+      }
+    }
+    if (result) {
+      const auto typed = dyn_cast<TypedAttr>(result);
+      if (!typed || typed.getType() != op.getResult(0).getType()) {
+        return op.emitError()
+               << "folded classical value has a mismatched result type";
+      }
+      classical.values[op.getResult(0)] = result;
+      return success();
+    }
+    if (attempt == 0 && (results.empty() || results.size() == 1)) {
+      operands = lookupOperands(*clone);
+      if (failed(operands)) {
+        return failure();
+      }
+      continue;
+    }
+    return op.emitError()
+           << "could not evaluate classical op during QCO DD simulation";
+  }
+  return op.emitError()
+         << "could not evaluate classical op during QCO DD simulation";
+}
+
 static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
   const auto isUnsupportedFloat = [](Type type) {
     return isa<FloatType>(type) && !type.isF64();
@@ -842,101 +893,41 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
            << "QCO DD simulation only supports f64 classical values";
   }
   return TypeSwitch<Operation*, LogicalResult>(&op)
-      .Case<arith::AndIOp>([&](auto value) {
-        return applyBinaryInteger(
-            value, classical,
-            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
-              return lhs & rhs;
-            });
-      })
-      .Case<arith::OrIOp>([&](auto value) {
-        return applyBinaryInteger(
-            value, classical,
-            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
-              return lhs | rhs;
-            });
-      })
-      .Case<arith::XOrIOp>([&](auto value) {
-        return applyBinaryInteger(
-            value, classical,
-            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
-              return lhs ^ rhs;
-            });
-      })
-      .Case<arith::AddIOp>([&](auto value) {
-        return applyBinaryInteger(
-            value, classical,
-            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
-              return lhs + rhs;
-            });
-      })
-      .Case<arith::SubIOp>([&](auto value) {
-        return applyBinaryInteger(
-            value, classical,
-            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
-              return lhs - rhs;
-            });
-      })
-      .Case<arith::MulIOp>([&](auto value) {
-        return applyBinaryInteger(
-            value, classical,
-            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
-              return lhs * rhs;
-            });
-      })
-      .Case<arith::DivUIOp>([&](auto value) {
+      .Case<arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::AddIOp,
+            arith::SubIOp, arith::MulIOp, arith::ShLIOp, arith::ShRUIOp,
+            arith::ShRSIOp, arith::CmpIOp, arith::AddFOp, arith::SubFOp,
+            arith::MulFOp, arith::DivFOp, arith::RemFOp, arith::NegFOp,
+            arith::CmpFOp, arith::SIToFPOp, arith::UIToFPOp>(
+          [&](Operation* foldable) {
+            return foldClassicalOp(*foldable, classical);
+          })
+      .Case<arith::DivUIOp>([&](arith::DivUIOp value) {
         return applyDivision(
             value, classical,
             [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
               return lhs.udiv(rhs);
             });
       })
-      .Case<arith::DivSIOp>([&](auto value) {
+      .Case<arith::DivSIOp>([&](arith::DivSIOp value) {
         return applyDivision(
             value, classical,
             [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
               return lhs.sdiv(rhs);
             });
       })
-      .Case<arith::RemUIOp>([&](auto value) {
+      .Case<arith::RemUIOp>([&](arith::RemUIOp value) {
         return applyDivision(
             value, classical,
             [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
               return lhs.urem(rhs);
             });
       })
-      .Case<arith::RemSIOp>([&](auto value) {
+      .Case<arith::RemSIOp>([&](arith::RemSIOp value) {
         return applyDivision(
             value, classical,
             [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
               return lhs.srem(rhs);
             });
-      })
-      .Case<arith::ShLIOp>([&](auto value) {
-        return applyShift(
-            value, classical,
-            [](const llvm::APInt& lhs, uint64_t rhs) { return lhs.shl(rhs); });
-      })
-      .Case<arith::ShRUIOp>([&](auto value) {
-        return applyShift(
-            value, classical,
-            [](const llvm::APInt& lhs, uint64_t rhs) { return lhs.lshr(rhs); });
-      })
-      .Case<arith::ShRSIOp>([&](auto value) {
-        return applyShift(
-            value, classical,
-            [](const llvm::APInt& lhs, uint64_t rhs) { return lhs.ashr(rhs); });
-      })
-      .Case<arith::CmpIOp>([&](arith::CmpIOp cmp) -> LogicalResult {
-        auto lhs = lookupInteger(cmp.getLhs(), classical, cmp);
-        auto rhs = lookupInteger(cmp.getRhs(), classical, cmp);
-        if (failed(lhs) || failed(rhs)) {
-          return failure();
-        }
-        classical.values[cmp.getResult()] = BoolAttr::get(
-            cmp.getContext(),
-            arith::applyCmpPredicate(cmp.getPredicate(), *lhs, *rhs));
-        return success();
       })
       .Case<arith::SelectOp>([&](arith::SelectOp select) -> LogicalResult {
         auto condition = lookupBool(select.getCondition(), classical, select);
@@ -967,60 +958,6 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
         return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
                                 false);
       })
-      .Case<arith::AddFOp>([&](auto value) {
-        return applyBinaryFloat(
-            value, classical, [](double lhs, double rhs) { return lhs + rhs; });
-      })
-      .Case<arith::SubFOp>([&](auto value) {
-        return applyBinaryFloat(
-            value, classical, [](double lhs, double rhs) { return lhs - rhs; });
-      })
-      .Case<arith::MulFOp>([&](auto value) {
-        return applyBinaryFloat(
-            value, classical, [](double lhs, double rhs) { return lhs * rhs; });
-      })
-      .Case<arith::DivFOp>([&](auto value) {
-        return applyBinaryFloat(
-            value, classical, [](double lhs, double rhs) { return lhs / rhs; });
-      })
-      .Case<arith::RemFOp>([&](auto value) {
-        return applyBinaryFloat(value, classical, [](double lhs, double rhs) {
-          return std::fmod(lhs, rhs);
-        });
-      })
-      .Case<arith::NegFOp>([&](arith::NegFOp neg) -> LogicalResult {
-        auto value = lookupFloat(neg.getOperand(), classical, neg);
-        if (failed(value)) {
-          return failure();
-        }
-        classical.values[neg.getResult()] =
-            FloatAttr::get(neg.getType(), -*value);
-        return success();
-      })
-      .Case<arith::CmpFOp>([&](arith::CmpFOp cmp) -> LogicalResult {
-        auto lhs = lookupFloat(cmp.getLhs(), classical, cmp);
-        auto rhs = lookupFloat(cmp.getRhs(), classical, cmp);
-        if (failed(lhs) || failed(rhs)) {
-          return failure();
-        }
-        classical.values[cmp.getResult()] = BoolAttr::get(
-            cmp.getContext(),
-            arith::applyCmpPredicate(cmp.getPredicate(), llvm::APFloat(*lhs),
-                                     llvm::APFloat(*rhs)));
-        return success();
-      })
-      .Case<arith::SIToFPOp, arith::UIToFPOp>(
-          [&](Operation* castOp) -> LogicalResult {
-            auto value =
-                lookupInteger(castOp->getOperand(0), classical, castOp);
-            if (failed(value)) {
-              return failure();
-            }
-            classical.values[castOp->getResult(0)] = FloatAttr::get(
-                castOp->getResult(0).getType(),
-                value->roundToDouble(isa<arith::SIToFPOp>(castOp)));
-            return success();
-          })
       .Case<arith::FPToSIOp, arith::FPToUIOp>(
           [&](Operation* castOp) -> LogicalResult {
             auto value = lookupFloat(castOp->getOperand(0), classical, castOp);
@@ -1082,17 +1019,6 @@ static FailureOr<LoopRange> resolveLoop(scf::ForOp forOp,
 
 static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
                                     WalkState& walk, Operation* op);
-
-static LogicalResult bindLinearArgs(ValueRange operands, Block& block,
-                                    WalkState& walk, Operation* op) {
-  for (Value arg : block.getArguments()) {
-    if (!isa<QubitType>(arg.getType()) && !isQTensorType(arg.getType())) {
-      return op->emitError()
-             << "unsupported linear region argument for QCO DD simulation";
-    }
-  }
-  return bindValuePairs(operands, block.getArguments(), walk, op);
-}
 
 static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
                                     WalkState& walk, Operation* op) {
@@ -1160,10 +1086,6 @@ static LogicalResult bindYieldResults(YieldOp yield,
                                       ValueRange linearResults,
                                       WalkState& walk) {
   const size_t numClassical = classicalResults.size();
-  if (yield.getNumOperands() != numClassical + linearResults.size()) {
-    return yield.emitError()
-           << "yield operand count does not match operation results";
-  }
   if (failed(bindValuePairs(yield.getOperands().take_front(numClassical),
                             classicalResults, walk, yield))) {
     return failure();
@@ -1190,7 +1112,8 @@ static LogicalResult
 applyRegionBranch(ValueRange linearOperands, Block& block,
                   ValueRange classicalResults, ValueRange linearResults,
                   WalkState& walk, StateDD& state, Operation* parent) {
-  if (failed(bindLinearArgs(linearOperands, block, walk, parent))) {
+  if (failed(
+          bindValuePairs(linearOperands, block.getArguments(), walk, parent))) {
     return failure();
   }
   if (failed(consumeExecutionStep(walk, parent))) {
@@ -1229,9 +1152,6 @@ static LogicalResult applyScfRegion(Region& region, ValueRange results,
 static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
                                                  dd::VectorDD& state,
                                                  Operation* op) {
-  if (count == 0) {
-    return op->emitError() << "quantum allocation size must be positive";
-  }
   if (walk.qubits->numQubits > walk.dd->qubits() ||
       count > walk.dd->qubits() - walk.qubits->numQubits) {
     return op->emitError() << "DD package has " << walk.dd->qubits()
@@ -1395,18 +1315,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         return storeRegister(store, *walk.classical);
       })
       .template Case<memref::DeallocOp>([](auto) { return success(); })
-      .template Case<
-          arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::AddIOp,
-          arith::SubIOp, arith::MulIOp, arith::DivUIOp, arith::DivSIOp,
-          arith::RemUIOp, arith::RemSIOp, arith::ShLIOp, arith::ShRUIOp,
-          arith::ShRSIOp, arith::CmpIOp, arith::SelectOp, arith::ExtUIOp,
-          arith::ExtSIOp, arith::IndexCastUIOp, arith::IndexCastOp,
-          arith::TruncIOp, arith::AddFOp, arith::SubFOp, arith::MulFOp,
-          arith::DivFOp, arith::RemFOp, arith::NegFOp, arith::CmpFOp,
-          arith::SIToFPOp, arith::UIToFPOp, arith::FPToSIOp, arith::FPToUIOp>(
-          [&](Operation* classicalOp) {
-            return applyClassicalOp(*classicalOp, *walk.classical);
-          })
       .template Case<func::ReturnOp>([&](func::ReturnOp returnOp) {
         return validateReturn(returnOp, *walk.qubits, *walk.tensors);
       })
@@ -1471,9 +1379,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return failure();
         }
         Block* block = *condition ? ifOp.thenBlock() : ifOp.elseBlock();
-        if (block == nullptr) {
-          return ifOp.emitError() << "selected qco.if region is empty";
-        }
         return applyRegionBranch(ifOp.getQubits(), *block,
                                  ifOp.getClassicalResults(),
                                  ifOp.getLinearResults(), walk, state, ifOp);
@@ -1491,10 +1396,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                 block = switchOp.getCaseBlock(i);
                 break;
               }
-            }
-            if (block == nullptr) {
-              return switchOp.emitError()
-                     << "selected qco.index_switch region is empty";
             }
             return applyRegionBranch(
                 switchOp.getTargets(), *block, switchOp.getClassicalResults(),
@@ -1572,11 +1473,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         return bindValuePairs(carried, forOp.getResults(), walk, forOp);
       })
       .template Case<scf::WhileOp>([&](scf::WhileOp whileOp) -> LogicalResult {
-        if (!whileOp.getBefore().hasOneBlock() ||
-            !whileOp.getAfter().hasOneBlock()) {
-          return whileOp.emitError()
-                 << "scf.while regions must contain one block";
-        }
         Block& before = whileOp.getBefore().front();
         Block& after = whileOp.getAfter().front();
         SmallVector<Value> carried(whileOp.getInits().begin(),
@@ -1587,11 +1483,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
               failed(walkBlock(before, walk, state))) {
             return failure();
           }
-          auto condition = dyn_cast<scf::ConditionOp>(before.getTerminator());
-          if (!condition) {
-            return whileOp.emitError()
-                   << "scf.while before region missing scf.condition";
-          }
+          auto condition = whileOp.getConditionOp();
           auto value =
               lookupBool(condition.getCondition(), *walk.classical, whileOp);
           if (failed(value)) {
@@ -1609,11 +1501,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
               failed(walkBlock(after, walk, state))) {
             return failure();
           }
-          auto yield = dyn_cast<scf::YieldOp>(after.getTerminator());
-          if (!yield) {
-            return whileOp.emitError()
-                   << "scf.while after region missing scf.yield";
-          }
+          auto yield = whileOp.getYieldOp();
           carried.assign(yield.getOperands().begin(),
                          yield.getOperands().end());
         }

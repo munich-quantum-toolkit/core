@@ -162,8 +162,22 @@ c[1] = measure q;
             1,
             {"00", "01"},
         ),
+        (
+            """
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+bit repeat = measure q;
+while (repeat) { h q; repeat = measure q; }
+output bit out;
+out = measure q;
+""",
+            1,
+            {"0"},
+        ),
     ],
-    ids=["terminal-bell", "adaptive-reset"],
+    ids=["terminal-bell", "adaptive-reset", "while-reset"],
 )
 def test_compiler_to_sampler_outputs(source: str, num_qubits: int, expected: set[str]) -> None:
     """Compile optimized QCO and sample the declared CBit output."""
@@ -175,22 +189,3 @@ def test_compiler_to_sampler_outputs(source: str, num_qubits: int, expected: set
 
     assert set(counts) == expected
     assert sum(counts.values()) == shots
-
-
-def test_compiler_to_sampler_while_reset() -> None:
-    """An imported measurement-controlled while loop terminates at zero."""
-    source = """
-OPENQASM 3.0;
-include "stdgates.inc";
-qubit q;
-h q;
-bit repeat = measure q;
-while (repeat) { h q; repeat = measure q; }
-output bit out;
-out = measure q;
-"""
-    program = compile_program(source, output=OutputFormat.QCO_OPTIMIZED)
-    package = DDPackage(1)
-    shots = 256
-
-    assert program.sample(package, shots=shots, seed=17) == {"0": shots}
