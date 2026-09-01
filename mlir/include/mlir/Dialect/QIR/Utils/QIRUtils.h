@@ -143,8 +143,7 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, Location loc,
  * @brief Find the main LLVM function
  *
  * @details
- * Searches first for the MQT program entry-point marker. It also accepts the
- * lowered QIR `entry_point` passthrough attribute.
+ * Searches for the QIR `entry_point` passthrough attribute.
  *
  * @param op The module operation to search in
  * @return The main LLVM function, or nullptr unless exactly one exists

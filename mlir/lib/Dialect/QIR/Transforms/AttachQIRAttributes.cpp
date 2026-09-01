@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QIR/QIRDefinitions.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
@@ -123,10 +122,7 @@ private:
       return createI32Flag(behavior, name, value ? 1 : 0);
     };
 
-    const auto isQIRFunctionAttribute = [](Attribute attribute) {
-      if (const auto name = dyn_cast<StringAttr>(attribute)) {
-        return name.getValue() == StringRef(::qir::ENTRY_POINT_ATTR);
-      }
+    const auto isQIRFunctionMetadata = [](Attribute attribute) {
       const auto pair = dyn_cast<ArrayAttr>(attribute);
       const auto key = pair && pair.size() == 2 ? dyn_cast<StringAttr>(pair[0])
                                                 : StringAttr{};
@@ -140,10 +136,9 @@ private:
     if (const auto passthrough = main.getPassthroughAttr()) {
       attributes.append(passthrough.begin(), passthrough.end());
     }
-    llvm::erase_if(attributes, isQIRFunctionAttribute);
+    llvm::erase_if(attributes, isQIRFunctionMetadata);
     attributes.append(
-        {rewriter.getStringAttr(::qir::ENTRY_POINT_ATTR),
-         rewriter.getStrArrayAttr(
+        {rewriter.getStrArrayAttr(
              {::qir::OUTPUT_LABELING_SCHEMA_ATTR, ::qir::LABELED_SCHEMA}),
          rewriter.getStrArrayAttr(
              {::qir::QIR_PROFILES_ATTR,
@@ -154,7 +149,6 @@ private:
              {"required_num_results", std::to_string(metadata.numResults)})});
 
     main.setPassthroughAttr(rewriter.getArrayAttr(attributes));
-    mqt::removeEntryPoint(main);
 
     rewriter.setInsertionPointToEnd(m.getBody());
 
