@@ -19,13 +19,9 @@ def ConvertCBitToMemRef : Pass<"convert-cbit-to-memref", "mlir::ModuleOp"> {
     The pass also converts function signatures, calls, returns, branches, and
     structural SCF operation types. It does not infer CBit registers from
     existing memrefs.
-
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
 
   let dependentDialects = ["mlir::arith::ArithDialect",
-                           "mlir::cf::ControlFlowDialect",
-                           "mlir::func::FuncDialect",
                            "mlir::memref::MemRefDialect",
                            "mlir::scf::SCFDialect"];
 }

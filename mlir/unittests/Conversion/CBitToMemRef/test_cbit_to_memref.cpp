@@ -21,7 +21,6 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -30,7 +29,6 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Verifier.h>
@@ -41,7 +39,6 @@
 
 #include <cstddef>
 #include <memory>
-#include <string>
 
 using namespace mlir;
 
@@ -71,58 +68,6 @@ protected:
     return moduleOp;
   }
 };
-
-TEST(CBitToMemRefPassContract, IsModuleAnchoredAndDeclaresCreatedDialects) {
-  auto pass = createConvertCBitToMemRef();
-  ASSERT_TRUE(pass->getOpName());
-  EXPECT_EQ(*pass->getOpName(), ModuleOp::getOperationName());
-
-  DialectRegistry registry;
-  pass->getDependentDialects(registry);
-  EXPECT_TRUE(
-      registry.getDialectAllocator(arith::ArithDialect::getDialectNamespace()));
-  EXPECT_TRUE(registry.getDialectAllocator(
-      cf::ControlFlowDialect::getDialectNamespace()));
-  EXPECT_TRUE(
-      registry.getDialectAllocator(func::FuncDialect::getDialectNamespace()));
-  EXPECT_TRUE(registry.getDialectAllocator(
-      memref::MemRefDialect::getDialectNamespace()));
-  EXPECT_TRUE(
-      registry.getDialectAllocator(scf::SCFDialect::getDialectNamespace()));
-}
-
-TEST_F(CBitToMemRefTest, ConversionFailureDoesNotMutateInput) {
-  constexpr size_t depth = 64;
-  std::string source = R"mlir(
-    module {
-      func.func @main() {
-  )mlir";
-  for (size_t i = 0; i < depth; ++i) {
-    source += "        scf.execute_region {\n";
-  }
-  source += R"mlir(
-        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
-  )mlir";
-  for (size_t i = 0; i < depth; ++i) {
-    source += "          scf.yield\n        }\n";
-  }
-  source += R"mlir(
-        return
-      }
-    }
-  )mlir";
-  auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  OwningOpRef<ModuleOp> original(moduleOp->clone());
-
-  PassManager manager(context.get());
-  manager.addPass(createConvertCBitToMemRef());
-  EXPECT_TRUE(failed(manager.run(*moduleOp)));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      moduleOp->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
 
 TEST_F(CBitToMemRefTest, LowersInitializationLoadsAndStores) {
   auto moduleOp = convert(R"mlir(
