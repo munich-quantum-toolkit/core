@@ -787,22 +787,18 @@ private:
       --iterator;
     }
 
-    while (Operation* operation = iterator.operation()) {
-      assert(operation->getBlock() == boundary->getBlock());
-      if (operation->isBeforeInBlock(boundary)) {
-        break;
-      }
+    while (iterator.operation() != nullptr &&
+           !iterator.operation()->isBeforeInBlock(boundary)) {
+      assert(iterator.operation()->getBlock() == boundary->getBlock());
       --iterator;
     }
 
     Value value = iterator.qubit();
     assert(value && "expected a qubit value before the composite boundary");
     assert(value.hasOneUse() && "expected linear qubit use at boundary");
-    Operation* consumer = value.use_begin()->getOwner();
-    while (consumer->getBlock() != boundary->getBlock()) {
-      consumer = consumer->getParentOp();
-      assert(consumer != nullptr && "expected consumer in boundary block");
-    }
+    Operation* consumer = boundary->getBlock()->findAncestorOpInBlock(
+        *value.use_begin()->getOwner());
+    assert(consumer != nullptr && "expected consumer in boundary block");
     assert((consumer == boundary || boundary->isBeforeInBlock(consumer) ||
             isa<SinkOp>(consumer)) &&
            "selected qubit value does not cross composite boundary");

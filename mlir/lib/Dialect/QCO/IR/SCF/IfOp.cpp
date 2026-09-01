@@ -334,12 +334,6 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
   }
 };
 
-} // namespace
-
-namespace mlir::qco {
-
-namespace {
-
 struct QTensorAccess {
   qtensor::ExtractOp extract;
   qtensor::InsertOp insert;
@@ -438,14 +432,6 @@ static void moveScalarizedQTensorBranch(IfOp oldIf, Block* oldBlock,
   assert(carriedIndex == carriedArguments.size());
   rewriter.mergeBlocks(oldBlock, newBlock, argumentReplacements);
 
-  for (auto [indexPosition, index] : llvm::enumerate(indices)) {
-    auto access = accesses.accesses.find(index);
-    if (access != accesses.accesses.end()) {
-      rewriter.replaceAllUsesWith(access->second.extract.getResult(),
-                                  scalarArguments[indexPosition]);
-    }
-  }
-
   SmallVector<Value> scalarYields;
   scalarYields.reserve(indices.size());
   for (auto [indexPosition, index] : llvm::enumerate(indices)) {
@@ -453,6 +439,8 @@ static void moveScalarizedQTensorBranch(IfOp oldIf, Block* oldBlock,
     if (access == accesses.accesses.end()) {
       scalarYields.push_back(scalarArguments[indexPosition]);
     } else {
+      rewriter.replaceAllUsesWith(access->second.extract.getResult(),
+                                  scalarArguments[indexPosition]);
       scalarYields.push_back(access->second.insert.getScalar());
     }
   }
@@ -478,8 +466,6 @@ static void moveScalarizedQTensorBranch(IfOp oldIf, Block* oldBlock,
     rewriter.eraseOp(operation);
   }
 }
-
-} // namespace mlir::qco
 
 namespace {
 
@@ -511,18 +497,11 @@ struct ScalarizeQTensorInputs final : OpRewritePattern<IfOp> {
         continue;
       }
 
-      SmallVector<int64_t> accessedIndices;
-      accessedIndices.reserve(thenAccesses->accesses.size() +
-                              elseAccesses->accesses.size());
-      for (int64_t index : thenAccesses->accesses.keys()) {
-        accessedIndices.push_back(index);
-      }
-      for (int64_t index : elseAccesses->accesses.keys()) {
-        if (!thenAccesses->accesses.contains(index)) {
-          accessedIndices.push_back(index);
-        }
-      }
+      SmallVector<int64_t> accessedIndices(thenAccesses->accesses.keys());
+      llvm::append_range(accessedIndices, elseAccesses->accesses.keys());
       llvm::sort(accessedIndices);
+      accessedIndices.erase(llvm::unique(accessedIndices),
+                            accessedIndices.end());
       ArrayRef<int64_t> indices(accessedIndices);
 
       rewriter.setInsertionPoint(op);
@@ -542,13 +521,8 @@ struct ScalarizeQTensorInputs final : OpRewritePattern<IfOp> {
         qTensorWithoutScalars = extract.getOutTensor();
       }
 
-      SmallVector<Value> newQubits;
-      newQubits.reserve(oldQubits.size() - 1 + scalarInputs.size());
-      for (auto [oldIndex, qubit] : llvm::enumerate(oldQubits)) {
-        if (oldIndex != qTensorIndex) {
-          newQubits.push_back(qubit);
-        }
-      }
+      SmallVector<Value> newQubits(oldQubits);
+      newQubits.erase(newQubits.begin() + qTensorIndex);
       llvm::append_range(newQubits, scalarInputs);
 
       auto newIf = IfOp::create(
@@ -581,16 +555,12 @@ struct ScalarizeQTensorInputs final : OpRewritePattern<IfOp> {
                 .getResult();
       }
 
-      SmallVector<Value> replacements;
-      replacements.reserve(op.getNumResults());
-      llvm::append_range(replacements, newIf.getClassicalResults());
-      size_t newLinearIndex = 0;
-      for (size_t oldIndex : llvm::seq(oldQubits.size())) {
-        replacements.push_back(
-            oldIndex == qTensorIndex
-                ? updatedQTensor
-                : newIf.getLinearResults()[newLinearIndex++]);
-      }
+      SmallVector<Value> replacements(
+          newIf.getLinearResults().drop_back(indices.size()));
+      replacements.insert(replacements.begin() + qTensorIndex, updatedQTensor);
+      replacements.insert(replacements.begin(),
+                          newIf.getClassicalResults().begin(),
+                          newIf.getClassicalResults().end());
       rewriter.replaceOp(op, replacements);
       return success();
     }

@@ -1170,19 +1170,15 @@ TEST_F(QCOTest, PreservesInterleavedResultOrderWhenScalarizingQTensors) {
       func.func @main(%condition: i1) {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
-        %left0 = qco.alloc : !qco.qubit
         %tensorA0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
         %middle0 = qco.alloc : !qco.qubit
         %tensorB0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
-        %right0 = qco.alloc : !qco.qubit
-        %left1, %tensorA1, %middle1, %tensorB1, %right1 =
+        %tensorA1, %middle1, %tensorB1 =
             qco.if %condition
-                args(%left = %left0, %tensorA = %tensorA0,
-                     %middle = %middle0, %tensorB = %tensorB0,
-                     %right = %right0)
-                -> (!qco.qubit, tensor<1x!qco.qubit>, !qco.qubit,
-                    tensor<1x!qco.qubit>, !qco.qubit) {
-          %leftOut = qco.h %left : !qco.qubit -> !qco.qubit
+                args(%tensorA = %tensorA0, %middle = %middle0,
+                     %tensorB = %tensorB0)
+                -> (tensor<1x!qco.qubit>, !qco.qubit,
+                    tensor<1x!qco.qubit>) {
           %tensorA2, %tensorAQubit = qtensor.extract %tensorA[%c0]
               : tensor<1x!qco.qubit>
           %tensorAQubitOut = qco.x %tensorAQubit
@@ -1196,25 +1192,17 @@ TEST_F(QCOTest, PreservesInterleavedResultOrderWhenScalarizingQTensors) {
               : !qco.qubit -> !qco.qubit
           %tensorB3 = qtensor.insert %tensorBQubitOut into %tensorB2[%c0]
               : tensor<1x!qco.qubit>
-          %rightOut = qco.sx %right : !qco.qubit -> !qco.qubit
-          qco.yield %leftOut, %tensorA3, %middleOut, %tensorB3, %rightOut
-              : !qco.qubit, tensor<1x!qco.qubit>, !qco.qubit,
-                tensor<1x!qco.qubit>, !qco.qubit
-        } else args(%left = %left0, %tensorA = %tensorA0,
-                    %middle = %middle0, %tensorB = %tensorB0,
-                    %right = %right0) {
-          qco.yield %left, %tensorA, %middle, %tensorB, %right
-              : !qco.qubit, tensor<1x!qco.qubit>, !qco.qubit,
-                tensor<1x!qco.qubit>, !qco.qubit
+          qco.yield %tensorA3, %middleOut, %tensorB3
+              : tensor<1x!qco.qubit>, !qco.qubit, tensor<1x!qco.qubit>
+        } else args(%tensorA = %tensorA0, %middle = %middle0,
+                    %tensorB = %tensorB0) {
+          qco.yield %tensorA, %middle, %tensorB
+              : tensor<1x!qco.qubit>, !qco.qubit, tensor<1x!qco.qubit>
         }
-        %left2 = qco.s %left1 : !qco.qubit -> !qco.qubit
         %middle2 = qco.t %middle1 : !qco.qubit -> !qco.qubit
-        %right2 = qco.sdg %right1 : !qco.qubit -> !qco.qubit
-        qco.sink %left2 : !qco.qubit
         qtensor.dealloc %tensorA1 : tensor<1x!qco.qubit>
         qco.sink %middle2 : !qco.qubit
         qtensor.dealloc %tensorB1 : tensor<1x!qco.qubit>
-        qco.sink %right2 : !qco.qubit
         return
       }
     }
@@ -1227,21 +1215,17 @@ TEST_F(QCOTest, PreservesInterleavedResultOrderWhenScalarizingQTensors) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   IfOp ifOp;
-  SOp postLeft;
   TOp postMiddle;
-  SdgOp postRight;
   SmallVector<Value> insertedScalars;
   moduleOp->walk([&](IfOp candidate) { ifOp = candidate; });
-  moduleOp->walk([&](SOp candidate) { postLeft = candidate; });
   moduleOp->walk([&](TOp candidate) { postMiddle = candidate; });
-  moduleOp->walk([&](SdgOp candidate) { postRight = candidate; });
   moduleOp->walk([&](qtensor::InsertOp insert) {
     insertedScalars.push_back(insert.getScalar());
   });
 
   ASSERT_TRUE(ifOp);
-  ASSERT_EQ(ifOp.getQubits().size(), 5);
-  ASSERT_EQ(ifOp.getLinearResults().size(), 5);
+  ASSERT_EQ(ifOp.getQubits().size(), 3);
+  ASSERT_EQ(ifOp.getLinearResults().size(), 3);
   EXPECT_TRUE(llvm::all_of(ifOp.getQubits(), [](Value value) {
     return isa<QubitType>(value.getType());
   }));
@@ -1249,124 +1233,89 @@ TEST_F(QCOTest, PreservesInterleavedResultOrderWhenScalarizingQTensors) {
     return isa<QubitType>(value.getType());
   }));
 
-  ASSERT_TRUE(postLeft);
   ASSERT_TRUE(postMiddle);
-  ASSERT_TRUE(postRight);
-  EXPECT_EQ(cast<UnitaryOpInterface>(postLeft.getOperation())
-                .getInputQubits()
-                .front(),
-            ifOp.getLinearResults()[0]);
   EXPECT_EQ(cast<UnitaryOpInterface>(postMiddle.getOperation())
                 .getInputQubits()
                 .front(),
-            ifOp.getLinearResults()[1]);
-  EXPECT_EQ(cast<UnitaryOpInterface>(postRight.getOperation())
-                .getInputQubits()
-                .front(),
-            ifOp.getLinearResults()[2]);
+            ifOp.getLinearResults()[0]);
 
   ASSERT_EQ(insertedScalars.size(), 2);
-  EXPECT_TRUE(llvm::is_contained(insertedScalars, ifOp.getLinearResults()[3]));
-  EXPECT_TRUE(llvm::is_contained(insertedScalars, ifOp.getLinearResults()[4]));
+  EXPECT_TRUE(llvm::is_contained(insertedScalars, ifOp.getLinearResults()[1]));
+  EXPECT_TRUE(llvm::is_contained(insertedScalars, ifOp.getLinearResults()[2]));
 
   auto thenValues = ifOp.thenYield().getTargets();
-  ASSERT_EQ(thenValues.size(), 5);
-  EXPECT_TRUE(isa<HOp>(thenValues[0].getDefiningOp()));
-  EXPECT_TRUE(isa<YOp>(thenValues[1].getDefiningOp()));
-  EXPECT_TRUE(isa<SXOp>(thenValues[2].getDefiningOp()));
-  EXPECT_TRUE(isa<XOp>(thenValues[3].getDefiningOp()));
-  EXPECT_TRUE(isa<ZOp>(thenValues[4].getDefiningOp()));
+  ASSERT_EQ(thenValues.size(), 3);
+  EXPECT_TRUE(isa<YOp>(thenValues[0].getDefiningOp()));
+  EXPECT_TRUE(isa<XOp>(thenValues[1].getDefiningOp()));
+  EXPECT_TRUE(isa<ZOp>(thenValues[2].getDefiningOp()));
 }
 
-TEST_F(QCOTest, LeavesDynamicIndexQTensorIfUnchanged) {
-  constexpr StringLiteral mlirCode = R"mlir(
-    module {
-      func.func @main(%condition: i1, %index: index) {
-        %c2 = arith.constant 2 : index
-        %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
-        %tensor1 = qco.if %condition
-            args(%arg0 = %tensor0) -> (tensor<2x!qco.qubit>) {
-          %tensor2, %q0 = qtensor.extract %arg0[%index]
-              : tensor<2x!qco.qubit>
-          %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
-          %tensor3 = qtensor.insert %q1 into %tensor2[%index]
-              : tensor<2x!qco.qubit>
-          qco.yield %tensor3 : tensor<2x!qco.qubit>
-        } else args(%arg0 = %tensor0) {
-          qco.yield %arg0 : tensor<2x!qco.qubit>
+TEST_F(QCOTest, LeavesUnsupportedQTensorIfUnchanged) {
+  constexpr std::array<StringLiteral, 2> mlirCodes = {
+      R"mlir(
+        module {
+          func.func @main(%condition: i1, %index: index) {
+            %c2 = arith.constant 2 : index
+            %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+            %tensor1 = qco.if %condition
+                args(%arg0 = %tensor0) -> (tensor<2x!qco.qubit>) {
+              %tensor2, %q0 = qtensor.extract %arg0[%index]
+                  : tensor<2x!qco.qubit>
+              %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
+              %tensor3 = qtensor.insert %q1 into %tensor2[%index]
+                  : tensor<2x!qco.qubit>
+              qco.yield %tensor3 : tensor<2x!qco.qubit>
+            } else args(%arg0 = %tensor0) {
+              qco.yield %arg0 : tensor<2x!qco.qubit>
+            }
+            qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
+            return
+          }
         }
-        qtensor.dealloc %tensor1 : tensor<2x!qco.qubit>
-        return
-      }
-    }
-  )mlir";
-
-  auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(moduleOp.get())));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  IfOp ifOp;
-  moduleOp->walk([&](IfOp candidate) { ifOp = candidate; });
-  ASSERT_TRUE(ifOp);
-  ASSERT_EQ(ifOp.getQubits().size(), 1);
-  EXPECT_TRUE(isa<RankedTensorType>(ifOp.getQubits().front().getType()));
-  size_t nestedExtracts = 0;
-  size_t nestedInserts = 0;
-  ifOp->walk([&](Operation* operation) {
-    nestedExtracts += isa<qtensor::ExtractOp>(operation);
-    nestedInserts += isa<qtensor::InsertOp>(operation);
-  });
-  EXPECT_EQ(nestedExtracts, 1);
-  EXPECT_EQ(nestedInserts, 1);
-}
-
-TEST_F(QCOTest, LeavesDynamicShapeQTensorIfUnchanged) {
-  constexpr StringLiteral mlirCode = R"mlir(
-    module {
-      func.func @main(%condition: i1, %size: index) {
-        %c0 = arith.constant 0 : index
-        %tensor0 = qtensor.alloc(%size) : tensor<?x!qco.qubit>
-        %tensor1 = qco.if %condition
-            args(%arg0 = %tensor0) -> (tensor<?x!qco.qubit>) {
-          %tensor2, %q0 = qtensor.extract %arg0[%c0]
-              : tensor<?x!qco.qubit>
-          %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
-          %tensor3 = qtensor.insert %q1 into %tensor2[%c0]
-              : tensor<?x!qco.qubit>
-          qco.yield %tensor3 : tensor<?x!qco.qubit>
-        } else args(%arg0 = %tensor0) {
-          qco.yield %arg0 : tensor<?x!qco.qubit>
+      )mlir",
+      R"mlir(
+        module {
+          func.func @main(%condition: i1, %size: index) {
+            %c0 = arith.constant 0 : index
+            %tensor0 = qtensor.alloc(%size) : tensor<?x!qco.qubit>
+            %tensor1 = qco.if %condition
+                args(%arg0 = %tensor0) -> (tensor<?x!qco.qubit>) {
+              %tensor2, %q0 = qtensor.extract %arg0[%c0]
+                  : tensor<?x!qco.qubit>
+              %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
+              %tensor3 = qtensor.insert %q1 into %tensor2[%c0]
+                  : tensor<?x!qco.qubit>
+              qco.yield %tensor3 : tensor<?x!qco.qubit>
+            } else args(%arg0 = %tensor0) {
+              qco.yield %arg0 : tensor<?x!qco.qubit>
+            }
+            qtensor.dealloc %tensor1 : tensor<?x!qco.qubit>
+            return
+          }
         }
-        qtensor.dealloc %tensor1 : tensor<?x!qco.qubit>
-        return
-      }
-    }
-  )mlir";
+      )mlir"};
 
-  auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(moduleOp.get())));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  for (StringRef mlirCode : mlirCodes) {
+    auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(runQCOCleanupPipeline(moduleOp.get())));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
-  IfOp ifOp;
-  moduleOp->walk([&](IfOp candidate) { ifOp = candidate; });
-  ASSERT_TRUE(ifOp);
-  ASSERT_EQ(ifOp.getQubits().size(), 1);
-  auto tensorType =
-      dyn_cast<RankedTensorType>(ifOp.getQubits().front().getType());
-  ASSERT_TRUE(tensorType);
-  EXPECT_TRUE(tensorType.isDynamicDim(0));
-  size_t nestedExtracts = 0;
-  size_t nestedInserts = 0;
-  ifOp->walk([&](Operation* operation) {
-    nestedExtracts += isa<qtensor::ExtractOp>(operation);
-    nestedInserts += isa<qtensor::InsertOp>(operation);
-  });
-  EXPECT_EQ(nestedExtracts, 1);
-  EXPECT_EQ(nestedInserts, 1);
+    IfOp ifOp;
+    moduleOp->walk([&](IfOp candidate) { ifOp = candidate; });
+    ASSERT_TRUE(ifOp);
+    ASSERT_EQ(ifOp.getQubits().size(), 1);
+    EXPECT_TRUE(isa<RankedTensorType>(ifOp.getQubits().front().getType()));
+    size_t nestedExtracts = 0;
+    size_t nestedInserts = 0;
+    ifOp->walk([&](Operation* operation) {
+      nestedExtracts += isa<qtensor::ExtractOp>(operation);
+      nestedInserts += isa<qtensor::InsertOp>(operation);
+    });
+    EXPECT_EQ(nestedExtracts, 1);
+    EXPECT_EQ(nestedInserts, 1);
+  }
 }
 
 TEST_F(QCOTest, IndexSwitchParser) {

@@ -670,37 +670,25 @@ TEST_P(MappingPassTest, MapScalarAllocation) {
 }
 
 TEST_F(MappingPassFixture, ExpandNonAdjacentTwoQubitIfOnLineTarget) {
-  constexpr StringLiteral source = R"mlir(
-    module {
-      func.func @main(%condition: i1)
-          attributes {mqt.entry_point} {
-        %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.alloc : !qco.qubit
-        %q2 = qco.alloc : !qco.qubit
-        %a0, %a1 = qco.swap %q0, %q1
-            : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
-        %b1, %b2 = qco.swap %a1, %q2
-            : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
-        %next0, %next2 = qco.if %condition
-            args(%arg0 = %a0, %arg2 = %b2)
-            -> (!qco.qubit, !qco.qubit) {
-          %then0, %then2 = qco.swap %arg0, %arg2
-              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
-          qco.yield %then0, %then2 : !qco.qubit, !qco.qubit
-        } else args(%arg0 = %a0, %arg2 = %b2) {
-          qco.yield %arg0, %arg2 : !qco.qubit, !qco.qubit
-        }
-        qco.sink %next0 : !qco.qubit
-        qco.sink %b1 : !qco.qubit
-        qco.sink %next2 : !qco.qubit
-        return
-      }
-    }
-  )mlir";
-
-  auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  Value q0 = builder.allocQubit();
+  Value q1 = builder.allocQubit();
+  Value q2 = builder.allocQubit();
+  std::tie(q0, q1) = builder.swap(q0, q1);
+  std::tie(q1, q2) = builder.swap(q1, q2);
+  SmallVector<Value> conditionalInputs{q0, q2};
+  auto conditionalResults = builder.qcoIf(
+      true, conditionalInputs,
+      [&](ValueRange args) {
+        auto [then0, then2] = builder.swap(args[0], args[1]);
+        return SmallVector<Value>{then0, then2};
+      },
+      [](ValueRange args) { return llvm::to_vector(args); });
+  builder.sink(conditionalResults[0]);
+  builder.sink(q1);
+  builder.sink(conditionalResults[1]);
+  auto moduleOp = builder.finalize();
 
   const auto target = llvm::cantFail(CompilerTarget::create(
       3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}}));
