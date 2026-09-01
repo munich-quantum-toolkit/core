@@ -17,6 +17,7 @@
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QIR/QIRDefinitions.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
@@ -576,6 +577,7 @@ protected:
       signalPassFailure();
       return;
     }
+    auto entryPointName = mqt::getEntryPoint(moduleOp).getSymNameAttr();
     // Result preparation removes the supported direct uses of measurements.
     if (failed(prepareClassicalResults(moduleOp.getOperation(), state)) ||
         failed(validateBaseOperationOrder(moduleOp))) {
@@ -604,12 +606,15 @@ protected:
       }
     }
 
-    auto main = getMainFunction(moduleOp);
+    auto main = moduleOp.lookupSymbol<LLVM::LLVMFuncOp>(entryPointName);
     if (!main) {
       moduleOp.emitError("no main function with mqt.entry_point found");
       signalPassFailure();
       return;
     }
+    main.setPassthroughAttr(
+        ArrayAttr::get(ctx, {StringAttr::get(ctx, ::qir::ENTRY_POINT_ATTR)}));
+    mqt::removeEntryPoint(main);
 
     // Stage 2: Create block structure
     ensureBlocks(main, state);

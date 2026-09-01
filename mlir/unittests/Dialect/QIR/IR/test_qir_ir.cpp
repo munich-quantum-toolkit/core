@@ -35,10 +35,12 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <iosfwd>
@@ -78,6 +80,13 @@ static ArrayAttr findPassthroughEntry(LLVM::LLVMFuncOp function,
     }
   }
   return {};
+}
+
+static LogicalResult attachQIRMetadata(ModuleOp module,
+                                       bool useAdaptive = false) {
+  PassManager manager(module.getContext());
+  manager.addPass(qir::createQIRSetAttributesAndMetadata({useAdaptive}));
+  return manager.run(module);
 }
 
 namespace {
@@ -232,6 +241,89 @@ TEST_F(QIRTest, ReusedIrreversibleDeclarationsPreservePassthroughIdempotently) {
     EXPECT_EQ(llvm::count(passthrough, builder.getStringAttr("irreversible")),
               1);
   }
+}
+
+TEST_F(QIRTest, MetadataPassRequiresExactlyOneEntryPointAtomically) {
+  for (const size_t numEntryPoints : {0U, 2U}) {
+    SCOPED_TRACE(testing::Message() << "numEntryPoints=" << numEntryPoints);
+    OpBuilder builder(context.get());
+    const auto location = builder.getUnknownLoc();
+    auto module = ModuleOp::create(location);
+    builder.setInsertionPointToStart(module.getBody());
+    const auto functionType =
+        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
+    for (size_t i = 0; i < std::max<size_t>(numEntryPoints, 1); ++i) {
+      auto function = LLVM::LLVMFuncOp::create(
+          builder, location, "function" + std::to_string(i), functionType);
+      if (i < numEntryPoints) {
+        function->setAttr("passthrough",
+                          builder.getStrArrayAttr({"entry_point"}));
+      }
+      auto* block = function.addEntryBlock(builder);
+      builder.setInsertionPointToEnd(block);
+      LLVM::ReturnOp::create(builder, location, ValueRange{});
+      builder.setInsertionPointToEnd(module.getBody());
+    }
+    ASSERT_TRUE(succeeded(verify(module)));
+
+    OwningOpRef<ModuleOp> before = cast<ModuleOp>(module->clone());
+    EXPECT_TRUE(failed(attachQIRMetadata(module)));
+    EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+        module, before->getOperation(), OperationEquivalence::Flags::None));
+  }
+}
+
+TEST_F(QIRTest, PreservesUnrelatedMetadataIdempotently) {
+  OpBuilder builder(context.get());
+  const auto location = builder.getUnknownLoc();
+  auto module = ModuleOp::create(location);
+  builder.setInsertionPointToStart(module.getBody());
+  const auto unrelated =
+      LLVM::ModuleFlagAttr::get(context.get(), LLVM::ModFlagBehavior::Warning,
+                                builder.getStringAttr("Debug Info Version"),
+                                builder.getI32IntegerAttr(3));
+  const auto staleQIR = LLVM::ModuleFlagAttr::get(
+      context.get(), LLVM::ModFlagBehavior::Error,
+      builder.getStringAttr("qir_major_version"), builder.getI32IntegerAttr(1));
+  LLVM::ModuleFlagsOp::create(builder, location,
+                              builder.getArrayAttr({unrelated, staleQIR}));
+  const auto functionType =
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
+  auto main = LLVM::LLVMFuncOp::create(builder, location, "main", functionType);
+  const auto nounwind = builder.getStringAttr("nounwind");
+  const auto target = builder.getStrArrayAttr({"target-cpu", "generic"});
+  const auto staleProfile =
+      builder.getStrArrayAttr({"qir_profiles", "stale_profile"});
+  main.setPassthroughAttr(builder.getArrayAttr(
+      {builder.getStringAttr("entry_point"), nounwind, target, staleProfile}));
+  auto* block = main.addEntryBlock(builder);
+  builder.setInsertionPointToEnd(block);
+  LLVM::ReturnOp::create(builder, location, ValueRange{});
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  ASSERT_TRUE(succeeded(attachQIRMetadata(module)));
+  const auto preserved = findModuleFlag(module, "Debug Info Version");
+  ASSERT_TRUE(preserved);
+  EXPECT_EQ(preserved.getBehavior(), LLVM::ModFlagBehavior::Warning);
+  EXPECT_EQ(cast<IntegerAttr>(preserved.getValue()).getInt(), 3);
+  const auto qirMajor = findModuleFlag(module, "qir_major_version");
+  ASSERT_TRUE(qirMajor);
+  EXPECT_EQ(cast<IntegerAttr>(qirMajor.getValue()).getInt(), 2);
+
+  const auto passthrough = main.getPassthroughAttr();
+  ASSERT_TRUE(passthrough);
+  EXPECT_TRUE(llvm::is_contained(passthrough, nounwind));
+  EXPECT_TRUE(llvm::is_contained(passthrough, target));
+  const auto baseProfile =
+      builder.getStrArrayAttr({"qir_profiles", "base_profile"});
+  EXPECT_EQ(llvm::count(passthrough, baseProfile), 1U);
+  EXPECT_FALSE(llvm::is_contained(passthrough, staleProfile));
+
+  OwningOpRef<ModuleOp> afterFirstRun = cast<ModuleOp>(module->clone());
+  ASSERT_TRUE(succeeded(attachQIRMetadata(module)));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module, afterFirstRun->getOperation(),
+      OperationEquivalence::Flags::None));
 }
 
 TEST_F(QIRTest, BaseMetadataRejectsDynamicResourcesAtomically) {
@@ -1064,16 +1156,7 @@ TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
   builder.setInsertionPointToEnd(caseBlock);
   LLVM::ReturnOp::create(builder, location, doubled);
 
-  const auto attachAttributes = [&](const bool useAdaptive) {
-    return runWithPassManager(
-        moduleOp,
-        [&](OpPassManager& manager) {
-          manager.addPass(
-              qir::createQIRSetAttributesAndMetadata({useAdaptive}));
-        },
-        "Failed to attach QIR attributes.");
-  };
-  ASSERT_TRUE(attachAttributes(true).succeeded());
+  ASSERT_TRUE(attachQIRMetadata(moduleOp, true).succeeded());
   const auto integerTypes =
       moduleOp->getAttrOfType<ArrayAttr>("qir.int_computations");
   ASSERT_TRUE(integerTypes);
@@ -1094,7 +1177,7 @@ TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
     EXPECT_EQ(moduleFlag.getValue(), builder.getI32IntegerAttr(1)) << flag;
   }
 
-  ASSERT_TRUE(attachAttributes(false).succeeded());
+  ASSERT_TRUE(attachQIRMetadata(moduleOp).succeeded());
   EXPECT_FALSE(moduleOp->hasAttr("qir.int_computations"));
   EXPECT_FALSE(moduleOp->hasAttr("qir.float_computations"));
   EXPECT_FALSE(findModuleFlag(moduleOp, "ir_functions"));

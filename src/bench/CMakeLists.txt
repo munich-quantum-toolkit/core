@@ -7,7 +7,8 @@
 # Licensed under the MIT License
 
 if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-library)
-  file(GLOB_RECURSE BENCH_HEADERS ${MQT_CORE_INCLUDE_BUILD_DIR}/bench/*.hpp)
+  file(GLOB_RECURSE BENCH_HEADERS ${MQT_CORE_INCLUDE_BUILD_DIR}/bench/*.hpp
+       ${MQT_CORE_INCLUDE_BUILD_DIR}/bench/*.inc)
   file(GLOB_RECURSE BENCH_SOURCES *.cpp)
 
   add_mqt_core_library(${MQT_CORE_TARGET_NAME}-bench-library ALIAS_NAME Bench)

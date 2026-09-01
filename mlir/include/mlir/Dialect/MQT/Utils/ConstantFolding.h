@@ -21,7 +21,7 @@ namespace mlir::mqt {
 /// Convert a floating-point or integer attribute to a double.
 [[nodiscard]] std::optional<double> attributeToDouble(Attribute attr);
 
-/// Convert a direct arithmetic constant to a double.
+/// Convert a direct constant-like value to a double.
 [[nodiscard]] std::optional<double> valueToDouble(Value value);
 
 /**

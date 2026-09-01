@@ -47,30 +47,13 @@ using namespace mlir;
   return program;
 }
 
-std::optional<QCProgram> generate(const BV& benchmark) {
-  return buildProgram(
-      "bv", [&](qc::QCProgramBuilder& b) { return bv(b, benchmark); });
-}
-
-std::optional<QCProgram> generate(const GHZ& benchmark) {
-  return buildProgram(
-      "ghz", [&](qc::QCProgramBuilder& b) { return ghz(b, benchmark); });
-}
-
-std::optional<QCProgram> generate(const Grover& benchmark) {
-  return buildProgram(
-      "grover", [&](qc::QCProgramBuilder& b) { return grover(b, benchmark); });
-}
-
-std::optional<QCProgram> generate(const QFT& benchmark) {
-  return buildProgram(
-      "qft", [&](qc::QCProgramBuilder& b) { return qft(b, benchmark); });
-}
-
-std::optional<QCProgram> generate(const QPE& benchmark) {
-  return buildProgram(
-      "qpe", [&](qc::QCProgramBuilder& b) { return qpe(b, benchmark); });
-}
+#define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
+  std::optional<QCProgram> generate(const TYPE& benchmark) {                   \
+    return buildProgram(ID, [&](qc::QCProgramBuilder& builder) {               \
+      return STEM(builder, benchmark);                                         \
+    });                                                                        \
+  }
+#include "bench/BenchmarkFamilies.inc"
 
 template <class Benchmark>
 [[nodiscard]] static std::optional<GeneratedBenchmark>
@@ -91,42 +74,18 @@ struct RegistryEntry {
   std::string_view id;
   GenerateFunction generate;
 };
-using Registry = std::array<RegistryEntry, 5>;
 } // namespace
 
-static const Registry REGISTRY{{
-    {"bv",
-     [](const std::string_view instanceSpecificationJSON,
-        const std::string_view source) {
-       return generateInstance("bv", bvFromInstanceSpecificationJSON(
-                                         instanceSpecificationJSON, source));
-     }},
-    {"ghz",
-     [](const std::string_view instanceSpecificationJSON,
-        const std::string_view source) {
-       return generateInstance("ghz", ghzFromInstanceSpecificationJSON(
-                                          instanceSpecificationJSON, source));
-     }},
-    {"grover",
-     [](const std::string_view instanceSpecificationJSON,
-        const std::string_view source) {
-       return generateInstance("grover",
-                               groverFromInstanceSpecificationJSON(
-                                   instanceSpecificationJSON, source));
-     }},
-    {"qft",
-     [](const std::string_view instanceSpecificationJSON,
-        const std::string_view source) {
-       return generateInstance("qft", qftFromInstanceSpecificationJSON(
-                                          instanceSpecificationJSON, source));
-     }},
-    {"qpe",
-     [](const std::string_view instanceSpecificationJSON,
-        const std::string_view source) {
-       return generateInstance("qpe", qpeFromInstanceSpecificationJSON(
-                                          instanceSpecificationJSON, source));
-     }},
-}};
+#define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)               \
+  RegistryEntry{ID, [](const std::string_view instanceSpecificationJSON,       \
+                       const std::string_view source) {                        \
+                  return generateInstance(                                     \
+                      ID, STEM##FromInstanceSpecificationJSON(                 \
+                              instanceSpecificationJSON, source));             \
+                }},
+static const std::array REGISTRY{
+#include "bench/BenchmarkFamilies.inc"
+};
 
 std::optional<GeneratedBenchmark>
 generate(const std::string_view instanceSpecificationJSON,

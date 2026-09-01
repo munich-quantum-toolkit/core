@@ -18,6 +18,7 @@
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QIR/QIRDefinitions.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <llvm/ADT/SmallPtrSet.h>
@@ -749,6 +750,7 @@ protected:
       signalPassFailure();
       return;
     }
+    auto entryPointName = mqt::getEntryPoint(moduleOp).getSymNameAttr();
     if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
       return;
@@ -790,12 +792,15 @@ protected:
       }
     }
 
-    auto main = getMainFunction(moduleOp);
+    auto main = moduleOp.lookupSymbol<LLVM::LLVMFuncOp>(entryPointName);
     if (!main) {
       moduleOp.emitError("no main function with mqt.entry_point found");
       signalPassFailure();
       return;
     }
+    main.setPassthroughAttr(
+        ArrayAttr::get(ctx, {StringAttr::get(ctx, ::qir::ENTRY_POINT_ATTR)}));
+    mqt::removeEntryPoint(main);
 
     // Stage 3: Create block structure
     ensureBlocks(main, state);

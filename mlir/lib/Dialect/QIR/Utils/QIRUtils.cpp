@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QIR/QIRDefinitions.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -241,23 +240,20 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
     return nullptr;
   }
 
-  for (auto funcOp : moduleOp.getOps<LLVM::LLVMFuncOp>()) {
-    if (mqt::isEntryPoint(funcOp)) {
-      return funcOp;
-    }
-    auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
-    if (!passthrough) {
+  LLVM::LLVMFuncOp main;
+  const auto entryPoint =
+      StringAttr::get(op->getContext(), ::qir::ENTRY_POINT_ATTR);
+  for (auto function : moduleOp.getOps<LLVM::LLVMFuncOp>()) {
+    const auto passthrough = function.getPassthroughAttr();
+    if (!passthrough || !llvm::is_contained(passthrough, entryPoint)) {
       continue;
     }
-    if (llvm::any_of(passthrough, [](Attribute attr) {
-          const auto strAttr = dyn_cast<StringAttr>(attr);
-          return strAttr &&
-                 strAttr.getValue().compare(::qir::ENTRY_POINT_ATTR) == 0;
-        })) {
-      return funcOp;
+    if (main) {
+      return nullptr;
     }
+    main = function;
   }
-  return nullptr;
+  return main;
 }
 
 LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
