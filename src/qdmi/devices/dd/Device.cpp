@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file Device.cpp
- * @brief The MQT QDMI device implementation for its DD-based simulator.
- */
+/// @file Device.cpp
+/// The MQT QDMI device implementation for its DD-based simulator.
 
 #include "qdmi/devices/dd/Device.hpp"
 

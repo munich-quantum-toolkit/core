@@ -183,9 +183,7 @@ template <class ProgramType>
   return std::move(program);
 }
 
-/**
- * @brief Check whether @p input unambiguously looks like source text.
- */
+/// Check whether @p input unambiguously looks like source text.
 [[nodiscard]] static bool isSourceString(const std::string_view input) {
   auto source = input;
   while (!source.empty() &&
@@ -198,9 +196,7 @@ template <class ProgramType>
           std::isspace(static_cast<unsigned char>(source[6])) != 0);
 }
 
-/**
- * @brief Construct a frontend program from a file path.
- */
+/// Construct a frontend program from a file path.
 [[nodiscard]] static mlir::CompilerInput
 programFromPath(const std::filesystem::path& path) {
   if (path.empty()) {
@@ -236,9 +232,7 @@ programFromPath(const std::filesystem::path& path) {
                            "' has unsupported extension '" + extension + "'.");
 }
 
-/**
- * @brief Construct a frontend program from a string containing source or path.
- */
+/// Construct a frontend program from a string containing source or path.
 [[nodiscard]] static mlir::CompilerInput
 programFromString(const std::string& input) {
   if (isSourceString(input)) {
@@ -250,13 +244,11 @@ programFromString(const std::string& input) {
   return programFromPath(std::filesystem::path(input));
 }
 
-/**
- * @brief Convert a Python object to a compiler program.
- *
- * @details Program objects are copied by default so the high-level entry point
- * behaves like a conventional compiler function. Set @p inplace to transfer
- * ownership from a program object instead.
- */
+/// Convert a Python object to a compiler program.
+///
+/// Program objects are copied by default so the high-level entry point
+/// behaves like a conventional compiler function. Set @p inplace to transfer
+/// ownership from a program object instead.
 [[nodiscard]] static mlir::CompilerInput
 programFromInput(const nb::object& program, const bool inplace) {
   if (nb::isinstance<nb::str>(program)) {
@@ -299,9 +291,7 @@ programFromInput(const nb::object& program, const bool inplace) {
                            " is not supported.");
 }
 
-/**
- * @brief Run the coordinated default pipeline and return a typed program.
- */
+/// Run the coordinated default pipeline and return a typed program.
 [[nodiscard]] static mlir::CompilerProgram
 compileProgram(const nb::object& program, const mlir::ProgramFormat output,
                const bool inplace, const mlir::CompilerTarget* const target,

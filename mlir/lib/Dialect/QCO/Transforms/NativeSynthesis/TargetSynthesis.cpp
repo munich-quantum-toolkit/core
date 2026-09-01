@@ -50,7 +50,7 @@ using decomposition::emitUnitary2QWeyl;
 
 namespace {
 
-/** Composed unitary and metadata for a fusable two-qubit run. */
+/// Composed unitary and metadata for a fusable two-qubit run.
 struct FusableTwoQubitRun {
   SmallVector<Operation*, 8> ops; ///< Members in program order.
   Matrix4x4 composed = Matrix4x4::identity();
@@ -306,16 +306,6 @@ static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
                                          const CompilerTarget& target) {
   if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
     return failure();
-  }
-  SmallVector<CtrlOp> emptyControls;
-  moduleOp.walk([&](CtrlOp op) {
-    if (llvm::hasSingleElement(*op.getBody())) {
-      emptyControls.push_back(op);
-    }
-  });
-  IRRewriter rewriter(moduleOp.getContext());
-  for (auto op : llvm::reverse(emptyControls)) {
-    rewriter.replaceOp(op, op.getOperands());
   }
   if (target.supportsOperation("gphase", 0, 1)) {
     return success();

@@ -775,7 +775,7 @@ TEST_P(OperationTest, MeanShuttlingSpeed) {
 TEST_P(OperationTest, UnsupportedCustomPropertyReturnsNullopt) {
   for (const auto& operation : operations) {
     EXPECT_EQ(operation.queryCustomProperty<std::vector<std::byte>>(
-                  CustomProperty::Custom1),
+                  CustomProperty::Custom2),
               std::nullopt);
   }
 }

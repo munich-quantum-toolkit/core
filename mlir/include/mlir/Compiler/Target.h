@@ -28,17 +28,15 @@ namespace mlir {
 
 class Operation;
 
-/**
- * @brief Immutable description of an MLIR compiler target.
- *
- * @details Hardware sites retain their target-defined nonnegative i64
- * identifiers. Routing algorithms use dense zero-based vertices in site order.
- * Connectivity is either all-to-all or explicitly enumerated. Native-operation
- * support is either unrestricted or explicitly enumerated.
- *
- * Compiler targets have shared immutable storage, making copies cheap while
- * preserving validated topology and capability caches.
- */
+/// Immutable description of an MLIR compiler target.
+///
+/// Hardware sites retain their target-defined nonnegative i64
+/// identifiers. Routing algorithms use dense zero-based vertices in site order.
+/// Connectivity is either all-to-all or explicitly enumerated. Native-operation
+/// support is either unrestricted or explicitly enumerated.
+///
+/// Compiler targets have shared immutable storage, making copies cheap while
+/// preserving validated topology and capability caches.
 class CompilerTarget {
 public:
   using SiteId = int64_t;
@@ -71,16 +69,12 @@ public:
     llvm::SmallVector<Coupling> couplings_;
   };
 
-  /**
-   * @brief Unit shared by all raw timing metadata on a target.
-   *
-   * @details A raw duration denotes `value * scaleFactor()` units.
-   */
+  /// Unit shared by all raw timing metadata on a target.
+  ///
+  /// A raw duration denotes `value * scaleFactor()` units.
   class DurationUnit {
   public:
-    /**
-     * @brief Create a validated duration unit.
-     */
+    /// Create a validated duration unit.
     [[nodiscard]] static llvm::Expected<DurationUnit>
     create(std::string unit, double scaleFactor);
 
@@ -97,14 +91,10 @@ public:
     double scaleFactor_;
   };
 
-  /**
-   * @brief A hardware site and its optional target metadata.
-   */
+  /// A hardware site and its optional target metadata.
   class Site {
   public:
-    /**
-     * @brief Create validated hardware-site metadata.
-     */
+    /// Create validated hardware-site metadata.
     [[nodiscard]] static llvm::Expected<Site>
     create(SiteId id, std::optional<std::string> name = std::nullopt,
            std::optional<uint64_t> t1 = std::nullopt,
@@ -132,14 +122,10 @@ public:
     std::optional<uint64_t> t2_;
   };
 
-  /**
-   * @brief Calibration data for an ordered tuple of hardware sites.
-   */
+  /// Calibration data for an ordered tuple of hardware sites.
   class SiteTuple {
   public:
-    /**
-     * @brief Create validated calibration data for a site tuple.
-     */
+    /// Create validated calibration data for a site tuple.
     [[nodiscard]] static llvm::Expected<SiteTuple>
     create(std::vector<SiteId> sites,
            std::optional<uint64_t> duration = std::nullopt,
@@ -163,19 +149,15 @@ public:
     std::optional<double> fidelity_;
   };
 
-  /**
-   * @brief An operation capability described by a target.
-   *
-   * @details The reported name is retained verbatim while
-   * @ref canonicalName contains its normalized compiler spelling. Operations
-   * are available throughout the target; site tuples carry optional
-   * site-specific calibration data only.
-   */
+  /// An operation capability described by a target.
+  ///
+  /// The reported name is retained verbatim while
+  /// @ref canonicalName contains its normalized compiler spelling. Operations
+  /// are available throughout the target; site tuples carry optional
+  /// site-specific calibration data only.
   class Operation {
   public:
-    /**
-     * @brief The accepted number of qubits for an operation capability.
-     */
+    /// The accepted number of qubits for an operation capability.
     class Arity {
     public:
       enum class Kind : uint8_t { Fixed, Variadic };
@@ -205,18 +187,14 @@ public:
       size_t value_;
     };
 
-    /**
-     * @brief Create a validated operation capability.
-     */
+    /// Create a validated operation capability.
     [[nodiscard]] static llvm::Expected<Operation>
     create(std::string name, size_t arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
            std::optional<double> fidelity = std::nullopt);
 
-    /**
-     * @brief Create a validated operation capability.
-     */
+    /// Create a validated operation capability.
     [[nodiscard]] static llvm::Expected<Operation>
     create(std::string name, Arity arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
@@ -285,9 +263,7 @@ public:
     llvm::SmallVector<Operation> operations_;
   };
 
-  /**
-   * @brief Recognized native gate capability independent of synthesis code.
-   */
+  /// Recognized native gate capability independent of synthesis code.
   enum class GateKind : uint8_t {
     U,
     X,
@@ -306,9 +282,7 @@ public:
     ECR,
   };
 
-  /**
-   * @brief Recognized globally usable single-qubit synthesis basis.
-   */
+  /// Recognized globally usable single-qubit synthesis basis.
   enum class SingleQubitBasis : uint8_t {
     U,    ///< `U(theta, phi, lambda)`.
     ZSXX, ///< `RZ` / `SX` / `X` synthesis via a ZYZ decomposition.
@@ -319,9 +293,7 @@ public:
     ZXZ,  ///< `RZ(phi) * RX(theta) * RZ(lambda)`.
   };
 
-  /**
-   * @brief One single-qubit basis and entangler usable across the target.
-   */
+  /// One single-qubit basis and entangler usable across the target.
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
     GateKind entangler;
@@ -330,33 +302,25 @@ public:
                            const SynthesisBasis&) = default;
   };
 
-  /**
-   * @brief Create an unnamed target with dense site IDs `0..numSites-1`.
-   */
+  /// Create an unnamed target with dense site IDs `0..numSites-1`.
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   create(size_t numSites, Connectivity connectivity,
          NativeOperations nativeOperations,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
-  /**
-   * @brief Create a named target with dense site IDs `0..numSites-1`.
-   */
+  /// Create a named target with dense site IDs `0..numSites-1`.
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   create(std::string name, size_t numSites, Connectivity connectivity,
          NativeOperations nativeOperations,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
-  /**
-   * @brief Create an unnamed target from detailed sites.
-   */
+  /// Create an unnamed target from detailed sites.
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   create(std::vector<Site> sites, Connectivity connectivity,
          NativeOperations nativeOperations,
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
-  /**
-   * @brief Create a named target from detailed sites.
-   */
+  /// Create a named target from detailed sites.
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   create(std::string name, std::vector<Site> sites, Connectivity connectivity,
          NativeOperations nativeOperations,
@@ -392,30 +356,20 @@ public:
   /// Return the connectivity kind.
   [[nodiscard]] Connectivity::Kind connectivityKind() const noexcept;
 
-  /**
-   * @brief Return sorted canonical undirected couplings in target site IDs.
-   */
+  /// Return sorted canonical undirected couplings in target site IDs.
   [[nodiscard]] llvm::ArrayRef<Coupling> couplings() const noexcept;
 
-  /**
-   * @brief Return whether two valid dense compiler vertices are adjacent.
-   */
+  /// Return whether two valid dense compiler vertices are adjacent.
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;
 
-  /**
-   * @brief Return the cached shortest-path distance between valid vertices.
-   */
+  /// Return the cached shortest-path distance between valid vertices.
   [[nodiscard]] size_t distanceBetween(size_t source, size_t target) const;
 
-  /**
-   * @brief Invoke @p callback for every neighbour of a valid dense vertex.
-   */
+  /// Invoke @p callback for every neighbour of a valid dense vertex.
   void forEachNeighbour(size_t vertex,
                         llvm::function_ref<void(size_t)> callback) const;
 
-  /**
-   * @brief Return the maximum degree of the target's routing topology.
-   */
+  /// Return the maximum degree of the target's routing topology.
   [[nodiscard]] size_t maxDegree() const noexcept;
 
   /// Return the native-operation support kind.

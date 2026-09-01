@@ -418,7 +418,7 @@ TEST(CompilerProgramOwnershipTest, EnforcesQCOLinearityAtPublicBoundaries) {
                                   ProgramFormat::QCO));
 }
 
-/** @brief Raw QCO stops before the registered default optimization pipeline. */
+/// Raw QCO stops before the registered default optimization pipeline.
 TEST_F(CompilerPipelineTest, RawAndOptimizedQCOAreDistinctCheckpoints) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -457,9 +457,7 @@ h q;
   EXPECT_FALSE(std::get<QCOProgram>(*result).str().empty());
 }
 
-/**
- * @brief Test: typed programs transfer ownership between compiler dialects
- */
+/// Test: typed programs transfer ownership between compiler dialects
 TEST_F(CompilerPipelineTest, TypedProgramsComposeWithoutImplicitCopies) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -996,9 +994,7 @@ INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMJeffBoundaryTest,
 
 } // namespace
 
-/**
- * @brief Test: typed programs import MLIR and OpenQASM from their public APIs
- */
+/// Test: typed programs import MLIR and OpenQASM from their public APIs
 TEST_F(CompilerPipelineTest, TypedProgramImportsAndCopies) {
   const std::string mlir = R"(module {
   %0 = qc.alloc : !qc.qubit
@@ -1040,9 +1036,7 @@ h q;
   EXPECT_FALSE(QCOProgram::fromMLIRString(mlir));
 }
 
-/**
- * @brief Test: QCO imports require each linear value to have one use.
- */
+/// Test: QCO imports require each linear value to have one use.
 TEST_F(CompilerPipelineTest, QCOProgramImportsEnforceLinearity) {
   const std::string valid = R"mlir(module {
     func.func @main() {
@@ -1089,9 +1083,7 @@ TEST_F(CompilerPipelineTest, QCOProgramImportsEnforceLinearity) {
   EXPECT_FALSE(QCOProgram::fromMLIRFile(path));
 }
 
-/**
- * @brief Test: typed programs emit OpenQASM directly and through the pipeline.
- */
+/// Test: typed programs emit OpenQASM directly and through the pipeline.
 TEST_F(CompilerPipelineTest, TypedProgramsEmitOpenQASM) {
   const std::string qasm = R"(OPENQASM 3.1;
 include "stdgates.inc";
@@ -1160,9 +1152,7 @@ TEST_F(CompilerPipelineTest, TypedOpenQASMExportReportsUnsupportedQC) {
   EXPECT_FALSE(program->toOpenQASM3());
 }
 
-/**
- * @brief Test: typed programs expose idempotent global-phase normalization.
- */
+/// Test: typed programs expose idempotent global-phase normalization.
 TEST_F(CompilerPipelineTest, TypedProgramsNormalizeGlobalPhases) {
   const std::string qcSource = R"mlir(module {
     func.func @test(%q: !qc.qubit) {
@@ -1204,9 +1194,7 @@ TEST_F(CompilerPipelineTest, TypedProgramsNormalizeGlobalPhases) {
   EXPECT_EQ(StringRef(textual->str()).count("qco.gphase"), 1);
 }
 
-/**
- * @brief Test: jeff programs round-trip through their binary APIs
- */
+/// Test: jeff programs round-trip through their binary APIs
 TEST_F(CompilerPipelineTest, JeffProgramsRoundTripThroughBytesAndFiles) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -1247,9 +1235,7 @@ x q;
   EXPECT_FALSE(jeff.write(path.parent_path() / "missing" / "output.jeff"));
 }
 
-/**
- * @brief Test: QCO and QIR typed programs retain their respective semantics
- */
+/// Test: QCO and QIR typed programs retain their respective semantics
 TEST_F(CompilerPipelineTest, QCOAndQIRProgramsImportCopyAndOptimize) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -1303,9 +1289,7 @@ h q;
       base->writeBitcode(bitcodePath.parent_path() / "missing" / "output.bc"));
 }
 
-/**
- * @brief Test: QCO program APIs configure and execute their associated passes.
- */
+/// Test: QCO program APIs configure and execute their associated passes.
 TEST_F(CompilerPipelineTest, QCOProgramOptimizationAPIs) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -1338,9 +1322,7 @@ cx q[0], q[2];
   EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
 }
 
-/**
- * @brief Test: target compilation decomposes, maps, synthesizes, and verifies.
- */
+/// Test: target compilation decomposes, maps, synthesizes, and verifies.
 TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   auto qc = QCProgram::fromQASMString(qasm::multipleControlledX);
   ASSERT_TRUE(qc);
@@ -1570,9 +1552,7 @@ TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
   EXPECT_FALSE(main.getArgument(0).use_empty());
 }
 
-/**
- * @brief Test: all-to-all target compilation uses compact placement.
- */
+/// Test: all-to-all target compilation uses compact placement.
 TEST_F(CompilerPipelineTest, QCOProgramUsesCompactAllToAllPlacement) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -1614,9 +1594,7 @@ c = measure q;
   EXPECT_EQ(numSwaps, 0);
 }
 
-/**
- * @brief Test: target compilation retains unobserved quantum operations.
- */
+/// Test: target compilation retains unobserved quantum operations.
 TEST_F(CompilerPipelineTest, QCOProgramPreservesUnobservedQuantumOperations) {
   constexpr llvm::StringLiteral source = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -1651,9 +1629,7 @@ h q[1];
   EXPECT_EQ(staticQubits, 2U);
 }
 
-/**
- * @brief Test: the default pipeline accepts an optional compiler target.
- */
+/// Test: the default pipeline accepts an optional compiler target.
 TEST_F(CompilerPipelineTest, DefaultPipelineCompilesForTarget) {
   auto input = QCProgram::fromQASMString(qasm::multipleControlledX);
   ASSERT_TRUE(input);
@@ -1692,9 +1668,7 @@ TEST_F(CompilerPipelineTest, DefaultPipelineCompilesForTarget) {
   EXPECT_TRUE(qir.llvmIR());
 }
 
-/**
- * @brief Test: QCO programs expose the raw and composite qubit-reuse flows.
- */
+/// Test: QCO programs expose the raw and composite qubit-reuse flows.
 TEST_F(CompilerPipelineTest, QCOProgramQubitReuseAPIs) {
   const auto countAllocations = [](const QCOProgram& program) {
     const auto ir = program.str();
@@ -1728,9 +1702,7 @@ TEST_F(CompilerPipelineTest, QCOProgramQubitReuseAPIs) {
   EXPECT_NE(compositeQCO->str().find("qco.reset"), std::string::npos);
 }
 
-/**
- * @brief Test: default compilation returns the requested typed program format
- */
+/// Test: default compilation returns the requested typed program format
 TEST_F(CompilerPipelineTest, DefaultPipelineSelectsRequestedProgramFormats) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -1835,11 +1807,9 @@ h q;
   EXPECT_TRUE(std::holds_alternative<QCProgram>(*fromJeff));
 }
 
-/**
- * @brief Test: QCOProgram::decomposeMultiControlled runs the pass on MCX.
- *
- * @details Correctness of the decomposition is tested in a dedicated suite.
- */
+/// Test: QCOProgram::decomposeMultiControlled runs the pass on MCX.
+///
+/// Correctness of the decomposition is tested in a dedicated suite.
 TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
   auto module = mlir::qc::QCProgramBuilder::build(
       context.get(), mlir::qc::multipleControlledX);
@@ -1988,9 +1958,7 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(mlir::qir::singleControlledXOnIndividualQubits),
             true, "reuse-qubits,mqt-qco-default"}));
 
-/**
- * @brief Test: gate counting respects modifiers and skips barriers.
- */
+/// Test: gate counting respects modifiers and skips barriers.
 TEST_F(CompilerPipelineTest, QCProgramCountGates) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -2026,9 +1994,8 @@ TEST_F(CompilerPipelineTest, QCProgramCountGatesWithoutEntryPoint) {
   EXPECT_EQ(qc->numTwoQubitGates(), 0);
 }
 
-/**
- * @brief Test: gate counting includes each structured control-flow region once.
- */
+/// Test: gate counting includes each structured control-flow region
+/// once.
 TEST_F(CompilerPipelineTest, QCProgramCountGatesInStructuredControlFlow) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
