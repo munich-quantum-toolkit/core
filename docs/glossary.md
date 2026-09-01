@@ -248,14 +248,6 @@ iQPE
   reuses one query qubit for each output bit. Each round applies corrections
   controlled by earlier measurement results.
 
-quantum multiplexer
-uniformly controlled one-qubit gate
-  **Preferred term:** quantum multiplexer. **Accepted alias:** uniformly
-  controlled one-qubit gate. A gate block in which the basis state of k control
-  qubits selects one of 2^k one-qubit operations on a target. The structured
-  benchmark uses evenly spaced Y rotations as the selected operations. See the
-  [uniformly controlled gate construction](https://arxiv.org/abs/quant-ph/0410066).
-
 semiclassical quantum Fourier transform
 semiclassical QFT
   **Preferred term:** semiclassical quantum Fourier transform. **Accepted

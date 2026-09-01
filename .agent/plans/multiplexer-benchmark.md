@@ -28,8 +28,8 @@ states without expanding them into 64 copies in the host process.
       command-line registration, and MLIR tests.
 - [x] (2026-09-01) Added the Python family binding and its focused behavior
       tests.
-- [x] (2026-09-01) Added the public glossary terms and folded this change into
-      the existing structured-benchmark changelog entry.
+- [x] (2026-09-01) Folded this change into the existing structured-benchmark
+      changelog entry.
 - [x] (2026-09-01) Validated the final implementation on the cleanup base. The
       41 C++ benchmark tests, 12 MLIR generation tests, MLIR CLI test, 21
       focused Python tests, stub session, generated MLIR documentation, and
@@ -139,10 +139,9 @@ Register `mqt.core.bench.multiplexer` through
 `bindings/bench/register_bench.cpp`. Add the family behavior test, regenerate
 stubs, and add the family to the command-line test.
 
-Define quantum multiplexer and uniformly controlled one-qubit gate in
-`docs/glossary.md`. Add pull request 2299 to the existing unreleased
-structured-benchmark entry in `CHANGELOG.md`; do not add a second entry for an
-extension to an unreleased feature.
+Add pull request 2299 to the existing unreleased structured-benchmark entry in
+`CHANGELOG.md`; do not add a second entry for an extension to an unreleased
+feature.
 
 ## Milestones
 
@@ -156,8 +155,7 @@ MLIR tests must generate the family as valid QC and `jeff`, omit redundant
 resets, and keep the 31-qubit operation count bounded.
 
 The public-interface milestone supplies the Python submodule, generated stubs,
-command-line registration, glossary terms, changelog update, and focused family
-behavior test.
+command-line registration, changelog update, and focused family behavior test.
 
 ## Concrete Steps
 
