@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QIR/QIRDefinitions.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -241,23 +240,20 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
     return nullptr;
   }
 
-  for (auto funcOp : moduleOp.getOps<LLVM::LLVMFuncOp>()) {
-    if (mqt::isEntryPoint(funcOp)) {
-      return funcOp;
-    }
-    auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
-    if (!passthrough) {
+  LLVM::LLVMFuncOp main;
+  const auto entryPoint =
+      StringAttr::get(op->getContext(), ::qir::ENTRY_POINT_ATTR);
+  for (auto function : moduleOp.getOps<LLVM::LLVMFuncOp>()) {
+    const auto passthrough = function.getPassthroughAttr();
+    if (!passthrough || !llvm::is_contained(passthrough, entryPoint)) {
       continue;
     }
-    if (llvm::any_of(passthrough, [](Attribute attr) {
-          const auto strAttr = dyn_cast<StringAttr>(attr);
-          return strAttr &&
-                 strAttr.getValue().compare(::qir::ENTRY_POINT_ATTR) == 0;
-        })) {
-      return funcOp;
+    if (main) {
+      return nullptr;
     }
+    main = function;
   }
-  return nullptr;
+  return main;
 }
 
 LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
@@ -282,15 +278,26 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
     builder.setInsertionPointToEnd(moduleOp.getBody());
 
     fnDecl = LLVM::LLVMFuncOp::create(builder, op->getLoc(), fnName, fnType);
-
-    // Add irreversible attribute to irreversible quantum operations
-    if (fnName == QIR_MEASURE || fnName == QIR_RESET) {
-      fnDecl->setAttr("passthrough",
-                      builder.getStrArrayAttr({::qir::IRREVERSIBLE_ATTR}));
-    }
   }
 
-  return cast<LLVM::LLVMFuncOp>(fnDecl);
+  auto function = cast<LLVM::LLVMFuncOp>(fnDecl);
+  if (fnName != QIR_MEASURE && fnName != QIR_RESET) {
+    return function;
+  }
+
+  const auto irreversible = builder.getStringAttr(::qir::IRREVERSIBLE_ATTR);
+  const auto passthrough = function->getAttrOfType<ArrayAttr>("passthrough");
+  if (passthrough && llvm::is_contained(passthrough, irreversible)) {
+    return function;
+  }
+
+  SmallVector<Attribute> entries;
+  if (passthrough) {
+    entries.append(passthrough.begin(), passthrough.end());
+  }
+  entries.push_back(irreversible);
+  function->setAttr("passthrough", builder.getArrayAttr(entries));
+  return function;
 }
 
 LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,

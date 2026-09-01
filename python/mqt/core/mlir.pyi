@@ -15,8 +15,12 @@ from typing import Literal, Unpack, overload
 
 import qiskit.circuit
 
+import mqt.core.dd
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
+
+def _generate_benchmark(instance_specification_json: str) -> QCProgram:
+    """Generate the QC program described by an instance specification."""
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -469,6 +473,57 @@ class QCOProgram(Program):
         """Serialize this program as ``jeff``.
 
         Set ``copy=True`` to preserve it.
+        """
+
+    def build_functionality(self, dd_package: mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD:
+        """Build a matrix DD for a static unitary QCO program.
+
+        Args:
+            dd_package: DD package with enough qubits for the program.
+
+        Returns:
+            Matrix DD of the program functionality.
+
+        Raises:
+            ValueError: When the program is unsupported for functionality construction.
+        """
+
+    def simulate(
+        self, initial_state: mqt.core.dd.VectorDD, dd_package: mqt.core.dd.DDPackage, seed: int = 0
+    ) -> mqt.core.dd.VectorDD:
+        """Simulate a QCO program on a DD state.
+
+        Args:
+            initial_state: Input state DD that spans at least the program's qubits and
+                has a live reference in ``dd_package``. Higher wires are preserved. A
+                valid input reference is consumed.
+            dd_package: DD package with enough qubits for the program.
+            seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+                value produces reproducible measurement and reset results.
+
+        Returns:
+            Output state DD.
+
+        Raises:
+            ValueError: When ``initial_state`` has no live reference in ``dd_package``,
+                has too few qubits, or the program is unsupported for simulation.
+        """
+
+    def sample(self, dd_package: mqt.core.dd.DDPackage, shots: int = 1024, seed: int = 0) -> dict[str, int]:
+        """Sample the declared outputs of a QCO program.
+
+        Args:
+            dd_package: DD package with enough qubits for the program.
+            shots: Number of shots (default 1024).
+            seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+                value produces reproducible results.
+
+        Returns:
+            Histogram of returned CBit registers in return order, each MSB first. If
+            no CBit result exists, final ``measureAll`` bitstrings instead.
+
+        Raises:
+            ValueError: When the program is unsupported for sampling.
         """
 
 class JeffProgram(Program):

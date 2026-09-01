@@ -203,6 +203,10 @@ nonempty `scf.yield`, and `arith.select` are outside the export subset.
 Multi-operation modifier bodies must have a target qubit and cannot capture
 additional qubits from an enclosing scope.
 
+Export accepts an expression nesting depth of at most 256 and an expansion
+budget of 4,096 values per expression. The total width of classical registers is
+limited to 1,048,576 bits.
+
 The exporter does not reconstruct the runtime checks created for dynamic indices
 or checked integer arithmetic. Surviving assertions, checked-index control flow,
 or live poison values cause an explicit diagnostic. Programs with static qubit

@@ -50,6 +50,7 @@ function(mqt_mlir_configure_unittest_target target_name)
   mqt_mlir_target_use_project_options(${target_name})
 endfunction()
 
+add_subdirectory(bench)
 add_subdirectory(programs)
 add_subdirectory(Compiler)
 add_subdirectory(Dialect)

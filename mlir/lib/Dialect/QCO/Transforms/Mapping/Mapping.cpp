@@ -661,7 +661,7 @@ private:
 
     // Create and save static qubit operations.
     rewriter.setInsertionPointToStart(&body.front());
-    for (size_t hw = 0; hw < layout.nqubits(); ++hw) {
+    for (size_t hw = 0; hw < layout.nHardwareQubits(); ++hw) {
       const auto site = target->siteForVertex(hw);
       auto op = StaticOp::create(rewriter, body.getLoc(), site);
       staticQubits.emplace_back(op.getQubit());
@@ -713,7 +713,7 @@ private:
     // Create sinks for remaining, unused, static qubits.
 
     rewriter.setInsertionPoint(body.back().getTerminator());
-    for (size_t prog = wires.size(); prog < layout.nqubits(); ++prog) {
+    for (size_t prog = wires.size(); prog < layout.nHardwareQubits(); ++prog) {
       const auto hw = layout.getHardwareIndex(prog);
       auto qubit = staticQubits[hw];
 
@@ -754,7 +754,8 @@ private:
       trials.emplace_back(
           RoutingBundle{.wires = wires,
                         .infos = infos,
-                        .layout = Layout::random(target->numQubits(), rng())});
+                        .layout = Layout::random(target->numQubits(),
+                                                 target->numQubits(), rng())});
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
@@ -1617,11 +1618,63 @@ private:
         // At this point the wire iterators either point to
         // std::default_sentinel or a multi-qubit gate (incl. barriers) of
         // the current or subsequent layers. The former must be decremented
-        // twice (sentinel → sink → unitary/static). For the latter, we
-        // must ensure the insertion point is before the multi-qubit gates.
+        // twice (sentinel → sink → final op). For the latter, we must ensure
+        // the insertion point is before the multi-qubit gates.
 
+        Operation* latest = nullptr;
+        bool comparable = true;
+        for (WireIterator it : wires) {
+          if (it == std::default_sentinel) {
+            std::advance(it, -2);
+            while (isa_and_nonnull<MeasureOp>(it.operation())) {
+              std::advance(it, -1);
+            }
+          } else {
+            std::advance(it, -1);
+          }
+
+          Operation* operation = it.operation();
+          if (operation == nullptr) {
+            continue;
+          }
+          if (latest != nullptr &&
+              operation->getBlock() != latest->getBlock()) {
+            comparable = false;
+            break;
+          }
+          if (latest == nullptr || latest->isBeforeInBlock(operation)) {
+            latest = operation;
+          }
+        }
+
+        // Keep terminal measurements after routing SWAPs. A measurement can
+        // only move past the routing frontier if doing so does not move it past
+        // a classical use of its result.
         for (auto& it : wires) {
-          std::advance(it, it == std::default_sentinel ? -2 : -1);
+          if (it != std::default_sentinel) {
+            std::advance(it, -1);
+            continue;
+          }
+
+          std::advance(it, -2);
+          if (!comparable) {
+            continue;
+          }
+          while (auto measure = dyn_cast_or_null<MeasureOp>(it.operation())) {
+            if (latest != nullptr &&
+                llvm::any_of(measure.getResult().getUsers(),
+                             [&](Operation* user) {
+                               while (user != nullptr &&
+                                      user->getBlock() != latest->getBlock()) {
+                                 user = user->getParentOp();
+                               }
+                               return user == nullptr || user == latest ||
+                                      user->isBeforeInBlock(latest);
+                             })) {
+              break;
+            }
+            std::advance(it, -1);
+          }
         }
       }
 

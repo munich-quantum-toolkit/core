@@ -8,7 +8,7 @@
 
 [build-system]
 requires = [
-  "nanobind~=3.0.0",
+  "nanobind~=3.0.1",
   "scikit-build-core>=1.0.3",
   "vcs-versioning>=2.3.0",
 ]
@@ -65,6 +65,7 @@ qiskit = [
 "mqt.ddsim.default" = "mqt.core.plugins.pennylane:DDSIMDevice"
 
 [project.scripts]
+mqt-core-bench = "mqt.core._bench:main"
 mqt-core-cli = "mqt.core.__main__:main"
 
 [project.urls]
@@ -294,10 +295,10 @@ test-command = "python -c \"import mqt.core.dd, mqt.core.ir, mqt.core.mlir, mqt.
 [tool.cibuildwheel.linux]
 before-all = """
 uv tool install sccache>=0.10.0
-curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/download/v1.4.2/setup-mlir.sh | bash -s -- -v 22.1.8 -p /opt/llvm-22.1.8
+curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/download/v1.4.2/setup-mlir.sh | bash -s -- -v 23.1.0 -p /opt/llvm-23.1.0
 """
 before-test = "uvx sccache --show-stats"
-environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin", MLIR_DIR="/opt/llvm-22.1.8/lib/cmake/mlir" }
+environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin", MLIR_DIR="/opt/llvm-23.1.0/lib/cmake/mlir" }
 # QIR-Runner's Linux wheels require a newer glibc than the manylinux_2_28
 # containers used to build and test MQT Core's broadly compatible wheels.
 test-groups = ["test-base"]
@@ -338,13 +339,13 @@ exclude = [
 [dependency-groups]
 build = [
   "cmake>=4.4.1",
-  "nanobind~=3.0.0",
+  "nanobind~=3.0.1",
   "scikit-build-core>=1.0.3",
   "vcs-versioning>=2.3.0",
 ]
 cpp-lint = [
   "cpp-linter==1.13.0",
-  "nanobind~=3.0.0",
+  "nanobind~=3.0.1",
 ]
 docs = [
   "furo>=2025.09.25",

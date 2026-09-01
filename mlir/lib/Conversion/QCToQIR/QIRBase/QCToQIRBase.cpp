@@ -17,6 +17,7 @@
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QIR/QIRDefinitions.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
@@ -458,12 +459,18 @@ protected:
     MLIRContext* ctx = &getContext();
     auto moduleOp = getOperation();
     auto entryPoint = mqt::getEntryPoint(moduleOp);
-    if (entryPoint && !entryPoint.getBody().hasOneBlock()) {
+    if (!entryPoint) {
+      moduleOp->emitError("no main function with mqt.entry_point found");
+      signalPassFailure();
+      return;
+    }
+    if (!entryPoint.getBody().hasOneBlock()) {
       entryPoint.emitError(
           "QIR Base Profile requires a single-block entry function");
       signalPassFailure();
       return;
     }
+    auto entryPointName = entryPoint.getSymNameAttr();
     if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
       return;
@@ -494,12 +501,15 @@ protected:
       }
     }
 
-    auto main = getMainFunction(moduleOp);
+    auto main = moduleOp.lookupSymbol<LLVM::LLVMFuncOp>(entryPointName);
     if (!main) {
       moduleOp->emitError("no main function with mqt.entry_point found");
       signalPassFailure();
       return;
     }
+    main.setPassthroughAttr(
+        ArrayAttr::get(ctx, {StringAttr::get(ctx, ::qir::ENTRY_POINT_ATTR)}));
+    mqt::removeEntryPoint(main);
 
     // Stage 2: Create block structure
     ensureBlocks(main, state);

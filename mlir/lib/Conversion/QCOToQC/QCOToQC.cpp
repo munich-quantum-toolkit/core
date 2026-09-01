@@ -64,10 +64,7 @@ enum class AllocationMode : std::uint8_t {
  * catch cases of mixed allocation modes being used, which is not supported.
  */
 struct LoweringState {
-  /// Per-region map from from QC registers to its already extracted indices
-  DenseMap<Region*, DenseMap<Value, SetVector<Value>>> extractedIndices;
-  /// Per-region map from a register to its QC qubit indices and the qubit
-  /// values
+  /// Per-region map from a register's indices to its loaded qubit values.
   DenseMap<Region*, DenseMap<Value, DenseMap<Value, Value>>> qubitValues;
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -313,39 +310,45 @@ struct ConvertQTensorExtractOp final
   LogicalResult
   matchAndRewrite(qtensor::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    auto* region = op->getParentRegion();
-    auto memref = adaptor.getTensor();
-    auto index = adaptor.getIndex();
-
-    // Reuse the already existing extracted qubit if it exists
-    auto& extractedIndices = state.extractedIndices[region][memref];
-    auto& qubitValues = state.qubitValues[region][memref];
-    if (extractedIndices.contains(index)) {
-      rewriter.replaceOp(op, {memref, qubitValues[index]});
+    auto& qubitValues =
+        getState().qubitValues[op->getParentRegion()][adaptor.getTensor()];
+    if (auto qubit = qubitValues.lookup(adaptor.getIndex())) {
+      rewriter.replaceOp(op, {adaptor.getTensor(), qubit});
       return success();
     }
 
-    auto load = memref::LoadOp::create(rewriter, op.getLoc(), memref, index)
+    auto load = memref::LoadOp::create(rewriter, op.getLoc(),
+                                       adaptor.getTensor(), adaptor.getIndex())
                     .getResult();
-    // Store the extracted qubit and index
-    extractedIndices.insert(index);
-    qubitValues[index] = load;
-
-    rewriter.replaceOp(op, {memref, load});
+    qubitValues[adaptor.getIndex()] = load;
+    rewriter.replaceOp(op, {adaptor.getTensor(), load});
     return success();
   }
 };
 
-/**
- * @brief Removes qtensor.insert operations
- */
-struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
-  using OpConversionPattern::OpConversionPattern;
+/** Converts qtensor.insert to an in-place memref.store. */
+struct ConvertQTensorInsertOp final
+    : StatefulOpConversionPattern<qtensor::InsertOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto& qubitValues =
+        state.qubitValues[op->getParentRegion()][adaptor.getDest()];
+    if (qubitValues.lookup(adaptor.getIndex()) == adaptor.getScalar()) {
+      rewriter.replaceOp(op, adaptor.getDest());
+      return success();
+    }
+
+    memref::StoreOp::create(rewriter, op.getLoc(), adaptor.getScalar(),
+                            adaptor.getDest(), ValueRange{adaptor.getIndex()});
+    for (auto& caches : llvm::make_second_range(state.qubitValues)) {
+      caches.erase(adaptor.getDest());
+    }
+    state.qubitValues[op->getParentRegion()][adaptor.getDest()]
+                     [adaptor.getIndex()] = adaptor.getScalar();
     rewriter.replaceOp(op, adaptor.getDest());
     return success();
   }
@@ -1207,8 +1210,8 @@ protected:
 
     // Register operation conversion patterns that do not need state tracking
     patterns
-        .add<ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
-             ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOUnitaryOp,
+        .add<ConvertQTensorDeallocOp, ConvertQCOMeasureOp, ConvertQCOResetOp,
+             ConvertQCOUnitaryOp,
              ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
             typeConverter, context);
 
@@ -1224,9 +1227,9 @@ protected:
                  ConvertQCOSCFForOp>(typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
-    patterns.add<ConvertQTensorExtractOp, ConvertQTensorAllocOp,
-                 ConvertQCOAllocOp, ConvertQCOStaticOp, ConvertQCOSinkOp>(
-        typeConverter, context, &state);
+    patterns.add<ConvertQTensorExtractOp, ConvertQTensorInsertOp,
+                 ConvertQTensorAllocOp, ConvertQCOAllocOp, ConvertQCOStaticOp,
+                 ConvertQCOSinkOp>(typeConverter, context, &state);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes

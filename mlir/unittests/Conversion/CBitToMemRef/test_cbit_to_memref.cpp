@@ -24,6 +24,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -103,10 +104,34 @@ TEST_F(CBitToMemRefTest, LowersInitializationLoadsAndStores) {
   moduleOp->walk([&](memref::StoreOp) { ++stores; });
   moduleOp->walk([&](memref::LoadOp) { ++loads; });
   EXPECT_EQ(allocations, 2);
-  EXPECT_EQ(stores, 3);
+  EXPECT_EQ(stores, 2);
   EXPECT_EQ(loads, 1);
   ASSERT_TRUE(registerName);
   EXPECT_EQ(registerName.getValue(), "result");
+}
+
+TEST_F(CBitToMemRefTest, LargeZeroInitializationProducesBoundedIR) {
+  auto moduleOp = convert(R"mlir(
+    module {
+      func.func @main() {
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1000000000>
+        return
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  SmallVector<scf::ForOp> loops;
+  moduleOp->walk([&](scf::ForOp loop) { loops.emplace_back(loop); });
+  ASSERT_EQ(loops.size(), 1);
+  EXPECT_EQ(getConstantIntValue(loops.front().getLowerBound()), 0);
+  EXPECT_EQ(getConstantIntValue(loops.front().getUpperBound()), 1000000000);
+  EXPECT_EQ(getConstantIntValue(loops.front().getStep()), 1);
+
+  size_t stores = 0;
+  loops.front().getBody()->walk([&](memref::StoreOp) { ++stores; });
+  EXPECT_EQ(stores, 1);
 }
 
 TEST_F(CBitToMemRefTest, ConvertsFunctionSignaturesCallsAndReturns) {

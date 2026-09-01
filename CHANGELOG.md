@@ -28,8 +28,14 @@ releases may include breaking changes.
   [#2149], [#2150], [#2158], [#2210], [#2211], [#2220]) ([**@burgholzer**],
   [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
   [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
-- ✨ Add decision diagram-based construction, simulation, and sampling for QCO
-  programs ([#1915], [#1973]) ([**@simon1hofmann**])
+- ✨ Add a library for typed structured quantum benchmarks with versioned
+  instance specifications, analytic references, deterministic manifests, and
+  C++, Python, and command-line interfaces ([#2135], [#2315])
+  ([**@burgholzer**], [**@denialhaag**])
+- ✨ Add decision diagram-based construction, simulation, and output-aware
+  sampling for QCO programs, with C++ and Python APIs and support for classical
+  control flow and dynamic quantum data ([#1915], [#1973], [#2077], [#2078])
+  ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
   compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
   [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
@@ -64,8 +70,8 @@ releases may include breaking changes.
   [**@simon1hofmann**])
 - ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
   [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
-  [#1748], [#1805], [#1870], [#1904], [#1911], [#1951], [#1997], [#2016],
-  [#2060]) ([**@MatthiasReumann**], [**@burgholzer**])
+  [#1748], [#1805], [#1870], [#1904], [#1911], [#1951], [#1956], [#1997],
+  [#2016], [#2060]) ([**@MatthiasReumann**], [**@burgholzer**], [**@rturrado**])
 - ✨ Add modifier and global-phase normalization passes ([#1986], [#1995],
   [#2015]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add single-qubit optimization passes for unitary fusion, Hadamard lifting,
@@ -112,6 +118,10 @@ releases may include breaking changes.
   [#1549], [#1953]) ([**@burgholzer**], [**@denialhaag**])
 - ♻️ Improve the backward traversal logic for the `WireIterator` class ([#2184])
   ([**@MatthiasReumann**])
+- 🔧 Build the LLVM/MLIR 23.1 compiler infrastructure and DDSIM QIR support by
+  default, with one build option for source builds that omit both parts
+  ([#1356], [#1549], [#1953], [#2284], [#2298]) ([**@burgholzer**],
+  [**@denialhaag**], [**@simon1hofmann**])
 
 ### Removed
 
@@ -861,6 +871,9 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2315]: https://github.com/munich-quantum-toolkit/core/pull/2315
+[#2298]: https://github.com/munich-quantum-toolkit/core/pull/2298
+[#2284]: https://github.com/munich-quantum-toolkit/core/pull/2284
 [#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278
 [#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270
 [#2262]: https://github.com/munich-quantum-toolkit/core/pull/2262
@@ -900,6 +913,7 @@ for previous changelogs._
 [#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
 [#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
 [#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136
+[#2135]: https://github.com/munich-quantum-toolkit/core/pull/2135
 [#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
@@ -914,6 +928,8 @@ for previous changelogs._
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2082]: https://github.com/munich-quantum-toolkit/core/pull/2082
+[#2078]: https://github.com/munich-quantum-toolkit/core/pull/2078
+[#2077]: https://github.com/munich-quantum-toolkit/core/pull/2077
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2066]: https://github.com/munich-quantum-toolkit/core/pull/2066
 [#2060]: https://github.com/munich-quantum-toolkit/core/pull/2060
@@ -972,6 +988,7 @@ for previous changelogs._
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965
 [#1961]: https://github.com/munich-quantum-toolkit/core/pull/1961
 [#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957
+[#1956]: https://github.com/munich-quantum-toolkit/core/pull/1956
 [#1953]: https://github.com/munich-quantum-toolkit/core/pull/1953
 [#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
 [#1951]: https://github.com/munich-quantum-toolkit/core/pull/1951

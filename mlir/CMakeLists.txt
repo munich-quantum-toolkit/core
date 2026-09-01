@@ -38,6 +38,7 @@ function(mqt_mlir_target_use_project_options target_name)
 endfunction()
 
 # add main library code
+add_subdirectory(bench)
 add_subdirectory(include)
 add_subdirectory(lib)
 add_subdirectory(tools)

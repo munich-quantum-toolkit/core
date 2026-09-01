@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "RegionBranchCompat.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
@@ -90,29 +89,25 @@ void IfOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 // Adjusted from
-// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.1/mlir/lib/Dialect/SCF/IR/SCF.cpp
+// https://github.com/llvm/llvm-project/blob/llvmorg-23.1.0/mlir/lib/Dialect/SCF/IR/SCF.cpp
 
 void IfOp::getSuccessorRegions(RegionBranchPoint point,
                                SmallVectorImpl<RegionSuccessor>& regions) {
   // The `then` and the `else` region branch back to the parent operation or
   // one of the recursive parent operations (early exit case).
   if (!point.isParent()) {
-    regions.push_back(
-        detail::makeRegionSuccessor(getOperation(), getResults()));
+    regions.push_back(RegionSuccessor(getOperation()));
     return;
   }
 
-  regions.push_back(detail::makeRegionSuccessor(
-      &getThenRegion(), getThenRegion().getArguments()));
+  regions.push_back(RegionSuccessor(&getThenRegion()));
 
   // If the else region is empty, execution continues after the parent op.
   Region* elseRegion = &getElseRegion();
   if (elseRegion->empty()) {
-    regions.push_back(detail::makeRegionSuccessor(
-        getOperation(), getOperation()->getResults()));
+    regions.push_back(RegionSuccessor(getOperation()));
   } else {
-    regions.push_back(
-        detail::makeRegionSuccessor(elseRegion, elseRegion->getArguments()));
+    regions.push_back(RegionSuccessor(elseRegion));
   }
 }
 
@@ -121,24 +116,21 @@ void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
   FoldAdaptor adaptor(operands, *this);
   auto boolAttr = dyn_cast_or_null<BoolAttr>(adaptor.getCondition());
   if (!boolAttr || boolAttr.getValue()) {
-    regions.push_back(detail::makeRegionSuccessor(
-        &getThenRegion(), getThenRegion().getArguments()));
+    regions.push_back(RegionSuccessor(&getThenRegion()));
   }
 
   // If the else region is empty, execution continues after the parent op.
   if (!boolAttr || !boolAttr.getValue()) {
     if (!getElseRegion().empty()) {
-      regions.push_back(detail::makeRegionSuccessor(
-          &getElseRegion(), getElseRegion().getArguments()));
+      regions.push_back(RegionSuccessor(&getElseRegion()));
     } else {
-      regions.push_back(
-          detail::makeRegionSuccessor(getOperation(), getResults()));
+      regions.push_back(RegionSuccessor(getOperation()));
     }
   }
 }
 
 ValueRange IfOp::getSuccessorInputs(RegionSuccessor successor) {
-  if (detail::isOperationSuccessor(successor)) {
+  if (successor.isOperation()) {
     return getResults();
   }
   return successor.getSuccessor()->getArguments();

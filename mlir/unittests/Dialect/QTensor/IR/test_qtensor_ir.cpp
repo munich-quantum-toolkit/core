@@ -273,6 +273,35 @@ TEST_F(QTensorTest, InsertOpIndexAtDimFailsVerification) {
   EXPECT_TRUE(verify(*module).failed());
 }
 
+TEST_F(QTensorTest, NestedRegisterAccessInsideModifierFailsVerification) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto tensor = builder.qtensorAlloc(1);
+  const auto target = builder.allocQubit();
+  const auto condition = builder.boolConstant(true);
+  auto index = arith::ConstantIndexOp::create(builder, 0);
+  Operation* extractOperation = nullptr;
+  Operation* insertOperation = nullptr;
+
+  qco::InvOp::create(builder, target, [&](Value argument) {
+    return qco::IfOp::create(builder, condition, argument,
+                             [&](Value nestedArgument) {
+                               auto extract = ExtractOp::create(
+                                   builder, tensor, index.getResult());
+                               auto insert = InsertOp::create(
+                                   builder, extract.getResult(),
+                                   extract.getOutTensor(), index.getResult());
+                               extractOperation = extract;
+                               insertOperation = insert;
+                               return nestedArgument;
+                             })
+        .getResult(0);
+  });
+
+  EXPECT_TRUE(verify(extractOperation).failed());
+  EXPECT_TRUE(verify(insertOperation).failed());
+}
+
 } // namespace
 
 // ============================================================================

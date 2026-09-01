@@ -80,11 +80,13 @@ if(NOT TARGET ${TARGET_NAME})
     INSTALL_DIR
     .
     LINK_LIBS
+    MQT::CoreBenchGenerate
     MQTCompilerQDMIAdapter
     MQTCompilerPipeline
     MLIRMQTDialect
     MLIRMQTUtils
-    MLIRQCTranslationSupport)
+    MLIRQCTranslationSupport
+    MLIRQCODDFunctionality)
 
   if(MQT_QISKIT_CAPI_CANDIDATE_VERSION)
     target_compile_definitions(

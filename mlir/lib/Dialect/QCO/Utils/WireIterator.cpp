@@ -81,6 +81,7 @@ void WireIterator::forward() {
   }
 
   // Find the output from the input qubit SSA value.
+  pos_ = Position::Between;
   TypeSwitch<Operation*>(op_)
       .Case<UnitaryOpInterface>(
           [&](UnitaryOpInterface op) { qubit_ = op.getOutputForInput(qubit_); })
@@ -102,11 +103,7 @@ void WireIterator::forward() {
       .Case<IndexSwitchOp>([&](IndexSwitchOp op) {
         qubit_ = op.getTiedResult(&(*qubit_.use_begin()));
       })
-      .Default([&](Operation* const op) {
-        const auto name = op->getName().getStringRef();
-        llvm::reportFatalInternalError("unknown op: " + name);
-      });
-  pos_ = Position::Between;
+      .Default([&](Operation* const op) { pos_ = Position::Tail; });
 }
 
 void WireIterator::backward() {
@@ -134,6 +131,7 @@ void WireIterator::backward() {
 
   // Tails only consume, not produce values.
   if (pos_ != Position::Tail) {
+    bool unknown = false;
     // Find the input from the output qubit SSA value.
     TypeSwitch<Operation*>(op_)
         .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
@@ -174,10 +172,12 @@ void WireIterator::backward() {
           }
           llvm::reportFatalInternalError("expected result lookup");
         })
-        .Default([&](Operation* const op) {
-          const auto name = op->getName().getStringRef();
-          llvm::reportFatalInternalError("unknown op: " + name);
-        });
+        .Default([&](Operation* const op) { unknown = true; });
+
+    if (unknown) {
+      pos_ = Position::BeforeHead;
+      return;
+    }
   }
 
   // Get the operation that produces the qubit value.

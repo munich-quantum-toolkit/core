@@ -134,10 +134,12 @@ static auto entangledMatrixCases() {
       },
       []() {
         return Matrix4x4::kron(HOp::getUnitaryMatrix(),
-                               Complex{0.0, 1.0} * ZOp::getUnitaryMatrix()) *
+                               qco::Complex{0.0, 1.0} *
+                                   ZOp::getUnitaryMatrix()) *
                TWO_QUBIT_CONTROLLED_X01 *
-               Matrix4x4::kron(Complex{0.0, 1.0} * XOp::getUnitaryMatrix(),
-                               Complex{0.0, 1.0} * YOp::getUnitaryMatrix());
+               Matrix4x4::kron(qco::Complex{0.0, 1.0} * XOp::getUnitaryMatrix(),
+                               qco::Complex{0.0, 1.0} *
+                                   YOp::getUnitaryMatrix());
       });
 }
 

@@ -34,6 +34,10 @@ use. They can be selected independently before making MQT Core available:
 - {code}`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`
 - {code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`
 
+The {code}`BUILD_MQT_CORE_MLIR` option controls the MLIR compiler infrastructure
+and QIR support in the DDSIM device. A build with this option set to {code}`OFF`
+retains the DDSIM device's OpenQASM 2 and OpenQASM 3 support.
+
 For example, an embedded simulator consumer can enable only the DDSIM device,
 while CUDA-Q can enable the DDSIM and superconducting devices used by its
 integration tests.

@@ -11,6 +11,15 @@
       }
     },
     {
+      "name": "base-no-mlir",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "BUILD_MQT_CORE_MLIR": "OFF",
+        "CMAKE_DISABLE_FIND_PACKAGE_MLIR": "ON"
+      }
+    },
+    {
       "name": "base-unix",
       "hidden": true,
       "inherits": "base",
@@ -21,6 +30,11 @@
       },
       "description": "Default configuration for Linux and macOS builds. Uses the Ninja generator",
       "generator": "Ninja"
+    },
+    {
+      "name": "base-unix-no-mlir",
+      "hidden": true,
+      "inherits": ["base-unix", "base-no-mlir"]
     },
     {
       "name": "base-windows",
@@ -34,6 +48,11 @@
       "description": "Default configuration for Windows builds. Uses the default generator"
     },
     {
+      "name": "base-windows-no-mlir",
+      "hidden": true,
+      "inherits": ["base-windows", "base-no-mlir"]
+    },
+    {
       "name": "debug",
       "inherits": "base-unix",
       "displayName": "Debug config",
@@ -43,9 +62,25 @@
       }
     },
     {
+      "name": "debug-no-mlir",
+      "inherits": "base-unix-no-mlir",
+      "displayName": "Debug config without MLIR",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
       "name": "release",
       "inherits": "base-unix",
       "displayName": "Release config",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "release-no-mlir",
+      "inherits": "base-unix-no-mlir",
+      "displayName": "Release config without MLIR",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
@@ -80,9 +115,25 @@
       }
     },
     {
+      "name": "debug-windows-no-mlir",
+      "inherits": "base-windows-no-mlir",
+      "displayName": "Windows Debug config without MLIR",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
       "name": "release-windows",
       "inherits": "base-windows",
       "displayName": "Windows Release config",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "release-windows-no-mlir",
+      "inherits": "base-windows-no-mlir",
+      "displayName": "Windows Release config without MLIR",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
@@ -94,8 +145,16 @@
       "configurePreset": "debug"
     },
     {
+      "name": "debug-no-mlir",
+      "configurePreset": "debug-no-mlir"
+    },
+    {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "release-no-mlir",
+      "configurePreset": "release-no-mlir"
     },
     {
       "name": "coverage",
@@ -111,8 +170,18 @@
       "configuration": "Debug"
     },
     {
+      "name": "debug-windows-no-mlir",
+      "configurePreset": "debug-windows-no-mlir",
+      "configuration": "Debug"
+    },
+    {
       "name": "release-windows",
       "configurePreset": "release-windows",
+      "configuration": "Release"
+    },
+    {
+      "name": "release-windows-no-mlir",
+      "configurePreset": "release-windows-no-mlir",
       "configuration": "Release"
     }
   ],
@@ -129,9 +198,19 @@
       "configurePreset": "debug"
     },
     {
+      "name": "debug-no-mlir",
+      "inherits": "base",
+      "configurePreset": "debug-no-mlir"
+    },
+    {
       "name": "release",
       "inherits": "base",
       "configurePreset": "release"
+    },
+    {
+      "name": "release-no-mlir",
+      "inherits": "base",
+      "configurePreset": "release-no-mlir"
     },
     {
       "name": "coverage",
@@ -145,9 +224,21 @@
       "configuration": "Debug"
     },
     {
+      "name": "debug-windows-no-mlir",
+      "inherits": "base",
+      "configurePreset": "debug-windows-no-mlir",
+      "configuration": "Debug"
+    },
+    {
       "name": "release-windows",
       "inherits": "base",
       "configurePreset": "release-windows",
+      "configuration": "Release"
+    },
+    {
+      "name": "release-windows-no-mlir",
+      "inherits": "base",
+      "configurePreset": "release-windows-no-mlir",
       "configuration": "Release"
     }
   ]

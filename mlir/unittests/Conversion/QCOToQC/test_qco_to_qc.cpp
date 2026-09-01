@@ -22,6 +22,8 @@
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -84,6 +86,63 @@ static LogicalResult runQCOToQCConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCOToQC());
   return pm.run(module);
+}
+
+TEST(QCOToQCRegressionTest, PreservesDynamicQTensorSlotSwapAcrossLoop) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c2 = arith.constant 2 : index
+    %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+    %tensor1, %before = qtensor.extract %tensor0[%c0] : tensor<2x!qco.qubit>
+    %tensor2 = qtensor.insert %before into %tensor1[%c0] : tensor<2x!qco.qubit>
+    %tensor3 = scf.for %iv = %c0 to %c1 step %c1
+        iter_args(%tensor = %tensor2) -> (tensor<2x!qco.qubit>) {
+      %tensor4, %left = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+      %tensor5, %right = qtensor.extract %tensor4[%c1] : tensor<2x!qco.qubit>
+      %tensor6 = qtensor.insert %left into %tensor5[%c1] : tensor<2x!qco.qubit>
+      %tensor7 = qtensor.insert %right into %tensor6[%iv] : tensor<2x!qco.qubit>
+      scf.yield %tensor7 : tensor<2x!qco.qubit>
+    }
+    %tensor8, %at0 = qtensor.extract %tensor3[%c0] : tensor<2x!qco.qubit>
+    %tensor9, %at1 = qtensor.extract %tensor8[%c1] : tensor<2x!qco.qubit>
+    qco.sink %at0 : !qco.qubit
+    qco.sink %at1 : !qco.qubit
+    qtensor.dealloc %tensor9 : tensor<2x!qco.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  auto function = *module->getOps<func::FuncOp>().begin();
+  auto loops = llvm::to_vector(function.getBody().getOps<scf::ForOp>());
+  ASSERT_EQ(loops.size(), 1U);
+  EXPECT_EQ(llvm::range_size(loops[0].getBody()->getOps<memref::StoreOp>()),
+            2U);
+
+  SmallVector<memref::LoadOp> loadsBeforeLoop;
+  SmallVector<memref::LoadOp> loadsAfterLoop;
+  for (auto load : function.getBody().front().getOps<memref::LoadOp>()) {
+    (load->isBeforeInBlock(loops[0]) ? loadsBeforeLoop : loadsAfterLoop)
+        .push_back(load);
+  }
+  EXPECT_EQ(loadsBeforeLoop.size(), 1U);
+  EXPECT_EQ(loadsAfterLoop.size(), 2U);
 }
 
 TEST(QCOToQCRegressionTest, RetainsQubitRegisterName) {

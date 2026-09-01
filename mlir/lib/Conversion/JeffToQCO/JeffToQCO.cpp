@@ -179,6 +179,27 @@ createGateFromJeffArity(JeffOpType& op, ConversionPatternRewriter& rewriter,
       std::make_index_sequence<NumParams>{});
 }
 
+/// Convert a jeff index operand to the MLIR index type.
+///
+/// QCO-to-jeff conversion narrows SCF induction variables to i32. When the
+/// converted jeff loop is converted back to QCO, the new SCF induction
+/// variable has index type again. Reuse that value directly because its bounds
+/// came from i32 values, so the intermediate narrowing is lossless.
+static Value toIndex(Location loc, Value value,
+                     ConversionPatternRewriter& rewriter) {
+  if (auto castOp = value.getDefiningOp<arith::IndexCastOp>()) {
+    const auto input = castOp.getIn();
+    const auto blockArgument = dyn_cast<BlockArgument>(input);
+    if (isa<IndexType>(input.getType()) && value.getType().isInteger(32) &&
+        blockArgument && blockArgument.getArgNumber() == 0 &&
+        isa<scf::ForOp>(blockArgument.getOwner()->getParentOp())) {
+      return input;
+    }
+  }
+  return arith::IndexCastOp::create(rewriter, loc, rewriter.getIndexType(),
+                                    value);
+}
+
 /**
  * @brief Creates a qco.barrier operation from a jeff.custom operation
  *
@@ -327,8 +348,7 @@ struct ConvertJeffIntArraySetIndexOpToCBit final
     if (!isa<cbit::RegisterType>(reg.getType())) {
       return failure();
     }
-    auto index = arith::IndexCastOp::create(
-        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
+    auto index = toIndex(op.getLoc(), adaptor.getIndex(), rewriter);
     cbit::StoreOp::create(rewriter, op.getLoc(), adaptor.getValue(), reg,
                           index);
     rewriter.replaceOp(op, reg);
@@ -348,8 +368,7 @@ struct ConvertJeffIntArrayGetIndexOpToCBit final
     if (!isa<cbit::RegisterType>(reg.getType())) {
       return failure();
     }
-    auto index = arith::IndexCastOp::create(
-        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
+    auto index = toIndex(op.getLoc(), adaptor.getIndex(), rewriter);
     rewriter.replaceOpWithNewOp<cbit::LoadOp>(op, op.getType(), reg, index);
     return success();
   }
@@ -383,10 +402,7 @@ struct ConvertJeffQuregAllocOpToQCO final
                                        rewriter.getIndexAttr(*sizeValue))
                  .getResult();
     } else {
-      size = arith::IndexCastOp::create(rewriter, op.getLoc(),
-                                        rewriter.getIndexType(),
-                                        adaptor.getNumQubits())
-                 .getResult();
+      size = toIndex(op.getLoc(), adaptor.getNumQubits(), rewriter);
     }
     rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, tensorType, size);
     return success();
@@ -413,10 +429,9 @@ struct ConvertJeffQuregExtractIndexOpToQCO final
   LogicalResult
   matchAndRewrite(jeff::QuregExtractIndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto index = arith::IndexCastOp::create(
-        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
+    auto index = toIndex(op.getLoc(), adaptor.getIndex(), rewriter);
     rewriter.replaceOpWithNewOp<qtensor::ExtractOp>(op, adaptor.getInQreg(),
-                                                    index.getResult());
+                                                    index);
     return success();
   }
 };
@@ -440,10 +455,9 @@ struct ConvertJeffQuregInsertIndexOpToQCO final
   LogicalResult
   matchAndRewrite(jeff::QuregInsertIndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto index = arith::IndexCastOp::create(
-        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
-    rewriter.replaceOpWithNewOp<qtensor::InsertOp>(
-        op, adaptor.getInQubit(), adaptor.getInQreg(), index.getResult());
+    auto index = toIndex(op.getLoc(), adaptor.getIndex(), rewriter);
+    rewriter.replaceOpWithNewOp<qtensor::InsertOp>(op, adaptor.getInQubit(),
+                                                   adaptor.getInQreg(), index);
     return success();
   }
 };
@@ -1031,14 +1045,10 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
   matchAndRewrite(jeff::ForOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto loc = op.getLoc();
-    auto indexType = rewriter.getIndexType();
 
-    auto start = arith::IndexCastOp::create(rewriter, loc, indexType,
-                                            adaptor.getStart());
-    auto stop =
-        arith::IndexCastOp::create(rewriter, loc, indexType, adaptor.getStop());
-    auto step =
-        arith::IndexCastOp::create(rewriter, loc, indexType, adaptor.getStep());
+    auto start = toIndex(loc, adaptor.getStart(), rewriter);
+    auto stop = toIndex(loc, adaptor.getStop(), rewriter);
+    auto step = toIndex(loc, adaptor.getStep(), rewriter);
 
     auto scfFor = scf::ForOp::create(rewriter, loc, start, stop, step,
                                      adaptor.getInValues());

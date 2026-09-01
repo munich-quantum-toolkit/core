@@ -17,7 +17,6 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
-#include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
@@ -35,8 +34,7 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   const auto hasNonUnitaryOperation =
       body.walk([](Operation* operation) {
             return isa<cbit::AllocOp, cbit::LoadOp, cbit::StoreOp, AllocOp,
-                       SinkOp, StaticOp, MeasureOp, ResetOp, qtensor::ExtractOp,
-                       qtensor::InsertOp>(operation)
+                       SinkOp, StaticOp, MeasureOp, ResetOp>(operation)
                        ? WalkResult::interrupt()
                        : WalkResult::advance();
           })

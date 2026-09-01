@@ -44,7 +44,7 @@ namespace mlir::qir {
 
 /// Normalize QIR profile module flags after MLIR-to-LLVM translation.
 ///
-/// MLIR 22 translates integer-valued `llvm.module_flags` attributes to i32
+/// MLIR translates integer-valued `llvm.module_flags` attributes to i32
 /// metadata and only supports array-valued flags for LLVM's own CG profile.
 /// QIR instead requires i1/i2 capability flags and metadata tuples describing
 /// the integer and floating-point widths used by Adaptive Profile classical
@@ -143,11 +143,10 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, Location loc,
  * @brief Find the main LLVM function
  *
  * @details
- * Searches first for the MQT program entry-point marker. It also accepts the
- * lowered QIR `entry_point` passthrough attribute.
+ * Searches for the QIR `entry_point` passthrough attribute.
  *
  * @param op The module operation to search in
- * @return The main LLVM function, or nullptr if not found
+ * @return The main LLVM function, or nullptr unless exactly one exists
  */
 LLVM::LLVMFuncOp getMainFunction(Operation* op);
 

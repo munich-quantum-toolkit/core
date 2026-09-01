@@ -39,6 +39,7 @@
 #include <jeff/Translation/Serialize.hpp>
 #include <kj/array.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
@@ -87,7 +88,7 @@
 
 namespace mlir {
 
-[[nodiscard]] static std::shared_ptr<MLIRContext> createCompilerContext() {
+std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
   registry.insert<cbit::CBitDialect, mqt::MQTDialect, qc::QCDialect,
                   qco::QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
@@ -145,11 +146,13 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
  */
 [[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
                                             const StringRef dialect) {
-  auto found = false;
-  mod->walk([&](Operation* operation) {
-    found |= operation->getDialect()->getNamespace() == dialect;
-  });
-  return found;
+  return mod
+      ->walk([&](Operation* operation) {
+        return operation->getDialect()->getNamespace() == dialect
+                   ? WalkResult::interrupt()
+                   : WalkResult::advance();
+      })
+      .wasInterrupted();
 }
 
 template <class ProgramType, class Parse>
@@ -392,8 +395,11 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
 static size_t
 countGatesIf(ModuleOp moduleOp,
              const llvm::function_ref<bool(qc::UnitaryOpInterface)> predicate) {
-  size_t count = 0;
   auto entryPoint = mqt::getEntryPoint(moduleOp);
+  if (!entryPoint) {
+    return 0;
+  }
+  size_t count = 0;
   entryPoint.walk<WalkOrder::PreOrder>([&](qc::UnitaryOpInterface op) {
     count += !isa<qc::BarrierOp>(op) && predicate(op);
     return isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op) ? WalkResult::skip()

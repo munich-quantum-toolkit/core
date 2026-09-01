@@ -212,6 +212,50 @@ linear semantics
   ownership transfers explicit.
 ```
 
+## Quantum benchmark terms
+
+```{glossary}
+:sorted:
+
+benchmark instance
+  **Preferred term:** benchmark instance. **Accepted alias:** instance when the
+  benchmark context is clear. One validated member of a benchmark family with
+  every default resolved. It owns a logical output and analytic reference and
+  can be used to generate a program or manifest.
+
+benchmark instance specification
+instance specification
+  **Preferred term:** benchmark instance specification. **Accepted alias:**
+  instance specification when the benchmark context is clear. A strict JSON
+  document that names a benchmark family and provides the parameters used to
+  construct an instance. Input can omit documented defaults; the canonical form
+  records every resolved default. It specifies configuration. It does not
+  request program generation or execution.
+
+benchmark manifest
+manifest
+  **Preferred term:** benchmark manifest. **Accepted alias:** manifest when the
+  benchmark context is clear. A canonical sidecar record generated for a
+  benchmark instance. It records the resolved parameters, case ID, logical
+  outputs, reference model, and benchmark-definition version. It accompanies
+  the generated program but does not identify its file, format, or bytes.
+
+iterative quantum phase estimation
+iterative QPE
+iQPE
+  **Preferred term:** iterative quantum phase estimation. **Accepted aliases:**
+  iterative QPE and iQPE. A phase-estimation method that measures, resets, and
+  reuses one query qubit for each output bit. Each round applies corrections
+  controlled by earlier measurement results.
+
+semiclassical quantum Fourier transform
+semiclassical QFT
+  **Preferred term:** semiclassical quantum Fourier transform. **Accepted
+  alias:** semiclassical QFT. A quantum Fourier-transform method that measures,
+  resets, and reuses one qubit for each output bit. Each round applies rotations
+  controlled by earlier measurement results.
+```
+
 ## Index
 
 Every glossary entry appears in the
