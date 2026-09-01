@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QIR/QIRDefinitions.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
@@ -74,15 +73,19 @@ struct QIRSetAttributesAndMetadata final
 
 protected:
   void runOnOperation() override {
-    IRRewriter rewriter(&getContext());
     auto main = getMainFunction(getOperation());
     if (!main) {
+      getOperation().emitError(
+          "QIR metadata attachment requires exactly one entry point");
+      signalPassFailure();
       return;
     }
+
     Metadata metadata = useAdaptive ? getAdaptive(main) : getBase(main);
     if (useAdaptive) {
       collectOptionalFeatures(getOperation(), main, metadata);
     }
+    IRRewriter rewriter(&getContext());
     setMetadata(main, metadata, rewriter);
   }
 
@@ -119,30 +122,45 @@ private:
       return createI32Flag(behavior, name, value ? 1 : 0);
     };
 
-    const SmallVector<Attribute> attributes{
-        rewriter.getStringAttr(::qir::ENTRY_POINT_ATTR),
-        rewriter.getStrArrayAttr(
-            {::qir::OUTPUT_LABELING_SCHEMA_ATTR, ::qir::LABELED_SCHEMA}),
-        rewriter.getStrArrayAttr(
-            {::qir::QIR_PROFILES_ATTR,
-             useAdaptive ? ::qir::ADAPTIVE_PROFILE : ::qir::BASE_PROFILE}),
-        rewriter.getStrArrayAttr(
-            {"required_num_qubits", std::to_string(metadata.numQubits)}),
-        rewriter.getStrArrayAttr(
-            {"required_num_results", std::to_string(metadata.numResults)})};
+    const auto isQIRFunctionMetadata = [](Attribute attribute) {
+      const auto pair = dyn_cast<ArrayAttr>(attribute);
+      const auto key = pair && pair.size() == 2 ? dyn_cast<StringAttr>(pair[0])
+                                                : StringAttr{};
+      return key &&
+             (key.getValue() == StringRef(::qir::OUTPUT_LABELING_SCHEMA_ATTR) ||
+              key.getValue() == StringRef(::qir::QIR_PROFILES_ATTR) ||
+              key.getValue() == "required_num_qubits" ||
+              key.getValue() == "required_num_results");
+    };
+    SmallVector<Attribute> attributes;
+    if (const auto passthrough = main.getPassthroughAttr()) {
+      attributes.append(passthrough.begin(), passthrough.end());
+    }
+    llvm::erase_if(attributes, isQIRFunctionMetadata);
+    attributes.append(
+        {rewriter.getStrArrayAttr(
+             {::qir::OUTPUT_LABELING_SCHEMA_ATTR, ::qir::LABELED_SCHEMA}),
+         rewriter.getStrArrayAttr(
+             {::qir::QIR_PROFILES_ATTR,
+              useAdaptive ? ::qir::ADAPTIVE_PROFILE : ::qir::BASE_PROFILE}),
+         rewriter.getStrArrayAttr(
+             {"required_num_qubits", std::to_string(metadata.numQubits)}),
+         rewriter.getStrArrayAttr(
+             {"required_num_results", std::to_string(metadata.numResults)})});
 
-    main->setAttr("passthrough", rewriter.getArrayAttr(attributes));
-    mqt::removeEntryPoint(main);
+    main.setPassthroughAttr(rewriter.getArrayAttr(attributes));
 
     rewriter.setInsertionPointToEnd(m.getBody());
 
-    SmallVector<Attribute> flags{
-        createI32Flag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2),
-        createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 1),
-        createBoolFlag(LLVM::ModFlagBehavior::Error, "dynamic_qubit_management",
-                       metadata.useDynamicQubit),
-        createBoolFlag(LLVM::ModFlagBehavior::Error,
-                       "dynamic_result_management", metadata.useDynamicResult)};
+    SmallVector<Attribute> flags = collectUnrelatedModuleFlags(m, rewriter);
+    flags.append(
+        {createI32Flag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2),
+         createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 1),
+         createBoolFlag(LLVM::ModFlagBehavior::Error,
+                        "dynamic_qubit_management", metadata.useDynamicQubit),
+         createBoolFlag(LLVM::ModFlagBehavior::Error,
+                        "dynamic_result_management",
+                        metadata.useDynamicResult)});
 
     if (useAdaptive) {
       flags.emplace_back(createI32Flag(LLVM::ModFlagBehavior::Error,
@@ -164,7 +182,6 @@ private:
       }
     }
 
-    removeExistingModuleFlags(m, rewriter);
     const auto setTypes = [&](const StringRef name,
                               const llvm::SmallSet<std::string, 4>& types) {
       if (types.empty()) {
@@ -181,13 +198,32 @@ private:
                                 rewriter.getArrayAttr(flags));
   }
 
-  /// Remove existing module flag operations from module.
-  /// Note that this might also erase non-QIR module flag operations, but for
-  /// now, we assume that there are no others.
-  static void removeExistingModuleFlags(ModuleOp m, IRRewriter& rewriter) {
-    SmallVector<Operation*> flagOps;
-    m->walk([&](LLVM::ModuleFlagsOp op) { flagOps.emplace_back(op); });
-    llvm::for_each(flagOps, [&](Operation* op) { rewriter.eraseOp(op); });
+  static bool isQIRModuleFlag(StringRef key) {
+    return key == "qir_major_version" || key == "qir_minor_version" ||
+           key == "dynamic_qubit_management" ||
+           key == "dynamic_result_management" || key == "backwards_branching" ||
+           key == "arrays" || key == "ir_functions" ||
+           key == "multiple_target_branching" ||
+           key == "multiple_return_points" || key == "int_computations" ||
+           key == "float_computations";
+  }
+
+  /// Remove existing top-level QIR module flags and return every unrelated
+  /// flag unchanged.
+  static SmallVector<Attribute>
+  collectUnrelatedModuleFlags(ModuleOp moduleOp, IRRewriter& rewriter) {
+    SmallVector<Attribute> preserved;
+    for (auto flagsOp :
+         llvm::make_early_inc_range(moduleOp.getOps<LLVM::ModuleFlagsOp>())) {
+      for (const auto flag :
+           flagsOp.getFlags().getAsRange<LLVM::ModuleFlagAttr>()) {
+        if (!isQIRModuleFlag(flag.getKey().getValue())) {
+          preserved.emplace_back(flag);
+        }
+      }
+      rewriter.eraseOp(flagsOp);
+    }
+    return preserved;
   }
 
   /// Count the number of uniquely indexed qubit pointers.
