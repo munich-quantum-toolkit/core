@@ -114,22 +114,6 @@ def QuantumLoopUnroll
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
 
-def PlacementPass : Pass<"place-qubits", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect"];
-  let summary = "Assign dynamic program qubits to static target sites";
-  let description = [{
-    Assigns top-level scalar and tensor-backed dynamically allocated qubits to
-    static sites of a `CompilerTarget`. Program qubits use the first target
-    sites, in target order. The result is deterministic and does not
-    materialize unused target sites.
-
-    The pass performs placement only. It does not inspect connectivity, insert
-    routing operations, or guarantee that multi-qubit operations satisfy a
-    target's coupling constraints. Tensor-backed qubits must all be extracted
-    before any qubit is inserted into the tensor again.
-  }];
-}
-
 def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Place and route a program for an explicit target topology";
@@ -140,7 +124,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     operations pass through, and every two-qubit operation is routed to
     adjacent target vertices. Higher-arity unitaries must be decomposed before
     mapping. Target-defined site identifiers are retained in the resulting
-    `qco.static` operations. Use `place-qubits` when routing is unnecessary.
+    `qco.static` operations.
 
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
     mapping, which is referred to as the initial layout. The layout covers the

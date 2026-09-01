@@ -39,6 +39,9 @@ current behavior.
   deterministic, and failure-atomicity tests plus target-pipeline coverage.
 - [x] (2026-09-01 11:45Z) Updated pass and user documentation and validated the
   focused binaries, MLIR docs, C++ lint, and full repository lint.
+- [x] (2026-09-01 12:45Z) Removed the unusable targetless TableGen factory and
+      command-line registration after review; placement is now constructible
+      only through its target-bound C++ factory.
 
 ## Surprises & Discoveries
 
@@ -58,14 +61,22 @@ current behavior.
   reported `No source files need checking` after its successful lint build. The
   modified translation units were instead checked directly with `clang-tidy` and
   line filters from the same `build/cpp-lint` compilation database.
+- Observation: A TableGen pass declaration necessarily generates a targetless
+  factory and command-line registration, but placement cannot run without a
+  `CompilerTarget`. Evidence: the generated default constructor left the target
+  empty and could only terminate through `reportFatalUsageError`.
 
 ## Decision Log
 
-- Decision: Add a dedicated `place-qubits` pass and keep `place-and-route` as
-  the routing pass. Rationale: Placement and routing are established compiler
-  stages with different information requirements. A separate pass removes the
-  topology-dependent router from all-to-all compilation. Date/Author: 2026-09-01
-  / OpenAI Codex.
+- Decision: Add a dedicated target-bound placement pass and keep
+  `place-and-route` as the routing pass. Rationale: Placement and routing are
+  established compiler stages with different information requirements. A
+  separate pass removes the topology-dependent router from all-to-all
+  compilation. Date/Author: 2026-09-01 / OpenAI Codex.
+- Decision: Implement placement directly as a `PassWrapper` and expose only
+  `createPlacementPass(const CompilerTarget&)`. Rationale: placement has no
+  valid targetless form, so TableGen would create an unusable public API and
+  command-line registration. Date/Author: 2026-09-01 / OpenAI Codex.
 - Decision: Share internal allocation discovery and rewriting rather than
   invoking one pass from another. Rationale: The router must retain the wire and
   layout state returned by placement, which a nested pass invocation cannot
@@ -119,11 +130,12 @@ acts on connected sites. A target with all-to-all connectivity needs placement
 but not routing. An explicit topology is a listed set of connected site pairs
 and requires the router.
 
-`mlir/include/mlir/Dialect/QCO/Transforms/Passes.td` declares generated MLIR
-passes and their documentation.
-`mlir/include/mlir/Dialect/QCO/Transforms/Mapping/Mapping.h` declares the
-target-aware pass factories. `mlir/lib/Compiler/TargetCompilation.cpp` builds
-the target compilation pipeline. Direct mapping tests live in
+`mlir/include/mlir/Dialect/QCO/Transforms/Passes.td` declares the generated
+mapping pass and its documentation. The target-bound placement pass is private
+to `Mapping.cpp`. `mlir/include/mlir/Dialect/QCO/Transforms/Mapping/Mapping.h`
+declares the target-aware pass factories.
+`mlir/lib/Compiler/TargetCompilation.cpp` builds the target compilation
+pipeline. Direct mapping tests live in
 `mlir/unittests/Dialect/QCO/Transforms/Mapping/test_mapping.cpp`, and end-to-end
 target pipeline tests live in
 `mlir/unittests/Compiler/test_compiler_pipeline.cpp`.
@@ -139,12 +151,13 @@ namespace. Keep the code internal. Rename the rewrite to `applyPlacement` and
 pass the immutable `CompilerTarget` explicitly. The function returns the wire
 state required by the existing router.
 
-Add a generated `PlacementPass` definition in `Passes.td` and implement it in
-`Mapping.cpp`. The pass obtains the entry function, discovers the dynamic
-qubits, checks that the target has enough sites, constructs the identity mapping
-`0..numProgramQubits-1`, applies placement, and returns. The pass must validate
-all conditions before applying the first rewrite so failures leave the module
-unchanged. Declare a target-aware `createPlacementPass` factory in `Mapping.h`.
+Add a target-bound `PlacementPass` in `Mapping.cpp` and expose only its
+`createPlacementPass(const CompilerTarget&)` factory in `Mapping.h`. The pass
+obtains the entry function, discovers the dynamic qubits, checks that the target
+has enough sites, constructs the identity mapping `0..numProgramQubits-1`,
+applies placement, and returns. The pass must validate all conditions before
+applying the first rewrite so failures leave the module unchanged. Do not
+register a targetless command-line form.
 
 Change `MappingPass` to reject a target without an explicit topology before it
 discovers or changes the program. Keep its higher-arity operation diagnostic,
@@ -166,9 +179,10 @@ non-explicit target without mutation. Extend the compiler pipeline test with an
 all-to-all target larger than its two-qubit program and assert that target
 compilation emits only the used static sites and no routing swaps.
 
-Update the TableGen pass description to state the exact contracts and build the
-generated MLIR pass documentation. Do not add a standalone changelog entry
-because MQT Core v4 target compilation is unreleased.
+Update the mapping pass description and the target-bound factory documentation
+to state the exact contracts, then build the generated MLIR pass documentation.
+Do not add a standalone changelog entry because MQT Core v4 target compilation
+is unreleased.
 
 ## Concrete Steps
 
@@ -256,9 +270,9 @@ The final public C++ factory is:
     std::unique_ptr<Pass>
     createPlacementPass(const CompilerTarget& target);
 
-The generated pass is named `PlacementPass` and uses the command-line argument
-`place-qubits`. It has no options. `MappingPass` keeps its existing factory and
-options. Both implementations use the existing `CompilerTarget`, `Layout`,
+The placement implementation is an internal `PassWrapper` with no targetless
+factory or command-line registration. `MappingPass` keeps its existing factory
+and options. Both implementations use the existing `CompilerTarget`, `Layout`,
 `WireIterator`, `TensorIterator`, QCO, QTensor, and MLIR rewrite APIs. No new
 dependency is added.
 
@@ -270,3 +284,6 @@ connectivity.
 Plan revision 2026-09-01 11:45Z: Recorded the completed implementation,
 validation workaround for an uncommitted diff, test counts, and the remaining
 pull request 2218 rebase adaptation.
+
+Plan revision 2026-09-01 12:45Z: Recorded the review-driven removal of the
+unsafe targetless placement factory and command-line registration.

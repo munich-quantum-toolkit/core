@@ -66,7 +66,6 @@ namespace mlir::qco {
 using namespace mlir::qtensor;
 
 #define GEN_PASS_DEF_MAPPINGPASS
-#define GEN_PASS_DEF_PLACEMENTPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
@@ -319,17 +318,19 @@ applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
 
 namespace {
 
-struct PlacementPass : impl::PlacementPassBase<PlacementPass> {
-  PlacementPass() = default;
+struct PlacementPass final
+    : PassWrapper<PlacementPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PlacementPass)
+
   explicit PlacementPass(const CompilerTarget& compilerTarget)
       : target(compilerTarget) {}
 
+  void getDependentDialects(DialectRegistry& registry) const override {
+    registry.insert<QCODialect>();
+  }
+
 protected:
   void runOnOperation() override {
-    if (!target) {
-      llvm::reportFatalUsageError("No compiler target specified!");
-    }
-
     auto moduleOp = getOperation();
     auto func = mqt::getEntryPoint(moduleOp);
     if (!func) {
@@ -340,7 +341,7 @@ protected:
 
     auto computation = discoverComputation(func);
     if (failed(computation) ||
-        failed(checkCapacity(func, *target, *computation))) {
+        failed(checkCapacity(func, target, *computation))) {
       signalPassFailure();
       return;
     }
@@ -348,12 +349,12 @@ protected:
     const auto layout = Layout::fromMapping(
         llvm::to_vector(llvm::seq(computation->wires.size())));
     IRRewriter rewriter(&getContext());
-    applyPlacement(func.getFunctionBody(), *target, layout, *computation,
+    applyPlacement(func.getFunctionBody(), target, layout, *computation,
                    rewriter);
   }
 
 private:
-  std::optional<CompilerTarget> target;
+  CompilerTarget target;
 };
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
