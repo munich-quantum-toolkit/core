@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -16,6 +17,7 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -29,17 +31,19 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <tuple>
 
 using namespace mlir;
+using namespace mlir::qco;
 
 namespace {
 class DriversTest : public testing::Test {
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<qco::QCODialect, scf::SCFDialect, arith::ArithDialect,
+    registry.insert<QCODialect, scf::SCFDialect, arith::ArithDialect,
                     func::FuncDialect>();
 
     context = std::make_unique<MLIRContext>();
@@ -52,7 +56,7 @@ protected:
 } // namespace
 
 TEST_F(DriversTest, ProgramGraphWalkTooFewWires) {
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
 
   const auto q00 = builder.allocQubit();
@@ -62,18 +66,16 @@ TEST_F(DriversTest, ProgramGraphWalkTooFewWires) {
   [[maybe_unused]] auto mod = builder.finalize();
 
   // Collect just one wire.
-  SmallVector<qco::WireIterator> wires;
+  SmallVector<WireIterator> wires;
   wires.emplace_back(q00);
 
-  auto res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyMap&, qco::ReleasedOps&) {
-        return WalkResult::skip();
-      });
+  auto res = walkProgramGraph<WireDirection::Forward>(
+      wires, [&](const ReadyMap&, ReleasedOps&) { return WalkResult::skip(); });
   ASSERT_TRUE(res.failed());
 }
 
 TEST_F(DriversTest, ProgramGraphWalkRetainsUnreleasedReadyOperations) {
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
 
   const auto q00 = builder.allocQubit();
@@ -92,7 +94,7 @@ TEST_F(DriversTest, ProgramGraphWalkRetainsUnreleasedReadyOperations) {
 
   [[maybe_unused]] auto mod = builder.finalize();
 
-  SmallVector<qco::WireIterator> wires;
+  SmallVector<WireIterator> wires;
   wires.emplace_back(q00);
   wires.emplace_back(q10);
   wires.emplace_back(q20);
@@ -104,8 +106,8 @@ TEST_F(DriversTest, ProgramGraphWalkRetainsUnreleasedReadyOperations) {
 
   size_t iteration = 0;
   bool observedDeferredOp = false;
-  auto res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyMap& ready, qco::ReleasedOps& released) {
+  auto res = walkProgramGraph<WireDirection::Forward>(
+      wires, [&](const ReadyMap& ready, ReleasedOps& released) {
         DenseSet<Operation*> layer;
         for (Operation* op : ready.keys()) {
           layer.insert(op);
@@ -131,7 +133,7 @@ TEST_F(DriversTest, ProgramGraphWalkRetainsUnreleasedReadyOperations) {
 }
 
 TEST_F(DriversTest, ProgramGraphWalk) {
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
 
   const auto q00 = builder.allocQubit();
@@ -170,10 +172,8 @@ TEST_F(DriversTest, ProgramGraphWalk) {
       })[0];
 
   const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
-  const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
-      identity};
-  auto q06 = builder.qcoIndexSwitch(0, q05, SmallVector<int64_t>{0}, caseBodies,
-                                    identity)[0];
+  const auto q06 = builder.qcoIndexSwitch(0, q05, SmallVector<int64_t>{0},
+                                          {identity}, identity)[0];
 
   builder.measure(q06);
   builder.measure(forResults[1]);
@@ -181,28 +181,29 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   builder.measure(forResults[3]);
 
   auto mod = builder.finalize();
-  auto func = *(mod->getOps<func::FuncOp>().begin());
+  auto func = mqt::getEntryPoint(*mod);
 
   // Collect wires.
-  SmallVector<qco::WireIterator> wires;
-  for (qco::AllocOp op : func.getOps<qco::AllocOp>()) {
+  SmallVector<WireIterator> wires;
+  for (AllocOp op : func.getOps<AllocOp>()) {
     wires.emplace_back(op.getResult());
   }
 
-  // Unit-test supporting datastructure.
+  // Store each ready layer for test assertions.
   SmallVector<DenseSet<Operation*>> readyPerLayer;
 
-  // Forward pass.
-  auto res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyMap& ready, qco::ReleasedOps& released) {
-        DenseSet<Operation*> layer;
-        for (Operation* op : ready.keys()) {
-          layer.insert(op);
-          released.emplace_back(op);
-        }
-        readyPerLayer.emplace_back(layer);
-        return WalkResult::advance();
-      });
+  const auto callback = [&](const ReadyMap& ready, ReleasedOps& released) {
+    DenseSet<Operation*> layer;
+    for (Operation* op : ready.keys()) {
+      layer.insert(op);
+      released.emplace_back(op);
+    }
+    readyPerLayer.emplace_back(layer);
+    return WalkResult::advance();
+  };
+
+  // Run a forward pass.
+  auto res = walkProgramGraph<WireDirection::Forward>(wires, callback);
 
   ASSERT_TRUE(res.succeeded());
   ASSERT_GE(readyPerLayer.size(), 4);
@@ -212,18 +213,15 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   ASSERT_TRUE(readyPerLayer[2].contains(q04.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[3].contains(forResults[0].getDefiningOp()));
 
-  // Backward pass.
+  ASSERT_TRUE(llvm::all_of(wires, [](const WireIterator& it) {
+    return it == std::default_sentinel;
+  }));
+
+  llvm::for_each(wires, [](WireIterator& it) { --it; });
+
+  // Run a backward pass.
   readyPerLayer.clear();
-  res = qco::walkProgramGraph<qco::WireDirection::Backward>(
-      wires, [&](const qco::ReadyMap& ready, qco::ReleasedOps& released) {
-        DenseSet<Operation*> layer;
-        for (Operation* op : ready.keys()) {
-          layer.insert(op);
-          released.emplace_back(op);
-        }
-        readyPerLayer.emplace_back(layer);
-        return WalkResult::advance();
-      });
+  res = walkProgramGraph<WireDirection::Backward>(wires, callback);
 
   ASSERT_TRUE(res.succeeded());
   ASSERT_GE(readyPerLayer.size(), 4);
@@ -233,10 +231,16 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   ASSERT_TRUE(readyPerLayer[3].contains(q02.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[3].contains(q21.getDefiningOp()));
 
-  // Forward, but instead of releasing all, we use ::skip().
+  ASSERT_TRUE(llvm::all_of(wires, [](const WireIterator& it) {
+    return it == std::default_sentinel;
+  }));
+
+  llvm::for_each(wires, [](WireIterator& it) { ++it; });
+
+  // Run a forward pass with WalkResult::skip().
   readyPerLayer.clear();
-  res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyMap& ready, qco::ReleasedOps&) {
+  res = walkProgramGraph<WireDirection::Forward>(
+      wires, [&](const ReadyMap& ready, ReleasedOps&) {
         DenseSet<Operation*> layer;
         for (Operation* op : ready.keys()) {
           layer.insert(op);
@@ -253,10 +257,12 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   ASSERT_TRUE(readyPerLayer[2].contains(q04.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[3].contains(forResults[0].getDefiningOp()));
 
-  // Backward, but stop after first layer.
+  llvm::for_each(wires, [](WireIterator& it) { --it; });
+
+  // Run a backward pass that stops after the first layer.
   readyPerLayer.clear();
-  res = qco::walkProgramGraph<qco::WireDirection::Backward>(
-      wires, [&](const qco::ReadyMap& ready, qco::ReleasedOps& released) {
+  res = walkProgramGraph<WireDirection::Backward>(
+      wires, [&](const ReadyMap& ready, ReleasedOps& released) {
         DenseSet<Operation*> layer;
         for (Operation* op : ready.keys()) {
           layer.insert(op);
@@ -270,15 +276,15 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   ASSERT_EQ(readyPerLayer.size(), 1);
   ASSERT_TRUE(readyPerLayer[0].contains(forResults[0].getDefiningOp()));
 
-  // Forward, but start at block arguments.
+  // Run a forward pass that starts at block arguments.
   wires.clear();
   for (Value arg : blockArgs) {
     wires.emplace_back(arg);
   }
 
   readyPerLayer.clear();
-  res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyMap& ready, qco::ReleasedOps& released) {
+  res = walkProgramGraph<WireDirection::Forward>(
+      wires, [&](const ReadyMap& ready, ReleasedOps& released) {
         DenseSet<Operation*> layer;
         for (Operation* op : ready.keys()) {
           layer.insert(op);
