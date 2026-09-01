@@ -12,6 +12,7 @@
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -228,6 +229,10 @@ protected:
   void runOnOperation() override {
     auto op = getOperation();
     auto* ctx = &getContext();
+    if (failed(qco::verifyLinearity(op))) {
+      signalPassFailure();
+      return;
+    }
 
     // Define the set of patterns to use.
     RewritePatternSet patterns(ctx);
