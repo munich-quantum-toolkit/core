@@ -353,12 +353,14 @@ protected:
   void runOnOperation() override {
     constexpr size_t maxSearchOption = 4096;
     auto mod = getOperation();
-    if (!std::isfinite(alpha) || !(alpha > 0)) {
+    const auto alphaValue = alpha.getValue();
+    const auto lambdaValue = lambda.getValue();
+    if (!std::isfinite(alphaValue) || !(alphaValue > 0)) {
       mod.emitError() << "requires finite alpha > 0";
       signalPassFailure();
       return;
     }
-    if (!std::isfinite(lambda)) {
+    if (!std::isfinite(lambdaValue)) {
       mod.emitError() << "requires finite lambda";
       signalPassFailure();
       return;

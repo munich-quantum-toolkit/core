@@ -136,7 +136,7 @@ after human review, with a regression that demonstrates the supported contract.
       proof that rejected valid benchmark programs and a registration-only
       assertion without an executed failure case.
 - [x] (2026-09-01) Reduced the latest-main delta from the historical 118 files
-      and 14,011 changed lines to 79 files and 11,167 changed lines. The 2,844
+      and 14,011 changed lines to 79 files and 11,169 changed lines. The 2,842
       removed lines are merged/focused duplicates, closed findings, invalid-IR
       handling, speculative traversal/depth policies, and their tests.
 - [x] (2026-09-01) Built the reconciled branch with LLVM/MLIR 23.1.0 and passed
