@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Analysis/SliceAnalysis.h>
@@ -21,7 +20,6 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cassert>
-#include <cstddef>
 #include <optional>
 #include <utility>
 
@@ -157,11 +155,6 @@ protected:
   void runOnOperation() override {
     auto op = getOperation();
     auto* ctx = &getContext();
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(op, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
 
     // Define the set of patterns to use.
     RewritePatternSet patterns(ctx);

@@ -360,28 +360,6 @@ TEST_F(QCOTest, BarrierRejectsMismatchedInputAndOutputArity) {
                                            context.get()));
 }
 
-TEST_F(QCOTest, BarrierCanonicalizationHandlesUnusedOutput) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main() {
-        %qubit = qco.static 0 : !qco.qubit
-        %unused = qco.barrier %qubit : !qco.qubit -> !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                            context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-
-  PassManager manager(context.get());
-  manager.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(succeeded(manager.run(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-  auto function = *module->getOps<func::FuncOp>().begin();
-  EXPECT_EQ(range_size(function.getOps<BarrierOp>()), 0U);
-}
-
 TEST_F(QCOTest, BarrierCanonicalizationPreservesPartialOverlap) {
   auto module = parseSourceString<ModuleOp>(R"mlir(
     module {
@@ -448,50 +426,6 @@ TEST_F(QCOTest, BarrierCanonicalizationMergesIdenticalSuccessors) {
   ASSERT_EQ(barriers.size(), 1U);
   EXPECT_EQ(barriers[0].getQubitsIn()[0], statics[0].getQubit());
   EXPECT_EQ(barriers[0].getQubitsIn()[1], statics[1].getQubit());
-}
-
-TEST_F(QCOTest, GateCanonicalizationHandlesUnusedOutput) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main() {
-        %qubit = qco.static 0 : !qco.qubit
-        %theta = arith.constant 0.25 : f64
-        %unused = qco.rz(%theta) %qubit : !qco.qubit -> !qco.qubit
-
-        %r_qubit = qco.static 1 : !qco.qubit
-        %phi = arith.constant 0.25 : f64
-        %unused_r = qco.r(%theta, %phi) %r_qubit
-          : !qco.qubit -> !qco.qubit
-
-        %rxx_q0 = qco.static 2 : !qco.qubit
-        %rxx_q1 = qco.static 3 : !qco.qubit
-        %unused_rxx0, %unused_rxx1 = qco.rxx(%theta) %rxx_q0, %rxx_q1
-          : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
-
-        %rccx_q0 = qco.static 4 : !qco.qubit
-        %rccx_q1 = qco.static 5 : !qco.qubit
-        %rccx_q2 = qco.static 6 : !qco.qubit
-        %unused_rccx0, %unused_rccx1, %unused_rccx2 =
-          qco.rccx %rccx_q0, %rccx_q1, %rccx_q2
-          : !qco.qubit, !qco.qubit, !qco.qubit
-            -> !qco.qubit, !qco.qubit, !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                            context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-
-  PassManager manager(context.get());
-  manager.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(succeeded(manager.run(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-  auto function = *module->getOps<func::FuncOp>().begin();
-  EXPECT_EQ(range_size(function.getOps<RZOp>()), 0U);
-  EXPECT_EQ(range_size(function.getOps<ROp>()), 0U);
-  EXPECT_EQ(range_size(function.getOps<RXXOp>()), 0U);
-  EXPECT_EQ(range_size(function.getOps<RCCXOp>()), 0U);
 }
 
 TEST_F(QCOTest, CtrlRejectsMismatchedInputAndOutputArity) {
@@ -3560,33 +3494,6 @@ static LogicalResult runUnrollModifiers(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
   return pm.run(moduleOp);
-}
-
-TEST_F(QCOTest, UnrollModifiersRejectsNonLinearBodyAtomically) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main() {
-        %qubit = qco.alloc : !qco.qubit
-        %out = qco.inv (%arg = %qubit) {
-          %first = qco.x %arg : !qco.qubit -> !qco.qubit
-          %unused = qco.h %first : !qco.qubit -> !qco.qubit
-          qco.yield %first : !qco.qubit
-        } : {!qco.qubit} -> {!qco.qubit}
-        qco.sink %out : !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                            context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  std::string before;
-  llvm::raw_string_ostream(before) << *module;
-
-  EXPECT_TRUE(failed(runUnrollModifiers(*module)));
-  std::string after;
-  llvm::raw_string_ostream(after) << *module;
-  EXPECT_EQ(after, before);
 }
 
 /// Unrolls @p program and checks that it matches @p reference.

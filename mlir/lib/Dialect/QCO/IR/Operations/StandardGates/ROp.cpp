@@ -77,9 +77,6 @@ struct MergeSubsequentR final : OpRewritePattern<ROp> {
 
   LogicalResult matchAndRewrite(ROp op,
                                 PatternRewriter& rewriter) const override {
-    if (!op.getOutputQubit(0).hasOneUse()) {
-      return failure();
-    }
     auto nextOp = dyn_cast<ROp>(*op.getOutputQubit(0).user_begin());
     if (!nextOp || op->getBlock() != nextOp->getBlock()) {
       return failure();

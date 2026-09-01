@@ -13,8 +13,6 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Index/IR/IndexDialect.h>
-#include <mlir/Dialect/Index/IR/IndexOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -41,8 +39,7 @@ protected:
   std::unique_ptr<ImplicitLocOpBuilder> builder;
 
   void SetUp() override {
-    context.loadDialect<arith::ArithDialect, func::FuncDialect,
-                        index::IndexDialect>();
+    context.loadDialect<arith::ArithDialect, func::FuncDialect>();
 
     auto loc = FileLineColLoc::get(&context, "<utils-test-builder>", 1, 1);
     module = ModuleOp::create(loc);
@@ -64,13 +61,6 @@ TEST_F(ConstantFoldingTest, valueToDouble) {
 
 TEST_F(ConstantFoldingTest, valueToDoubleCastFromInteger) {
   auto op = arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(42));
-  const auto stdValue = mlir::mqt::valueToDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, 42.0);
-}
-
-TEST_F(ConstantFoldingTest, valueToDoubleConstantLike) {
-  auto op = index::ConstantOp::create(*builder, 42);
   const auto stdValue = mlir::mqt::valueToDouble(op.getResult());
   ASSERT_TRUE(stdValue.has_value());
   EXPECT_DOUBLE_EQ(*stdValue, 42.0);
@@ -260,17 +250,4 @@ TEST_F(ConstantFoldingTest, valueToConstantDoubleSharedOperandsFailure) {
     ASSERT_NE(it, cache.end());
     EXPECT_FALSE(it->second.has_value());
   }
-}
-
-TEST_F(ConstantFoldingTest, valueToConstantAttrHandlesDeepExpressions) {
-  constexpr int depth = 10000;
-  Value value = arith::ConstantIntOp::create(*builder, 1, 64);
-  Value zero = arith::ConstantIntOp::create(*builder, 0, 64);
-  for (int i = 0; i < depth; ++i) {
-    value = arith::AddIOp::create(*builder, value, zero);
-  }
-
-  const auto folded = mlir::mqt::valueToConstantAttr(value);
-  ASSERT_TRUE(folded);
-  EXPECT_EQ(cast<IntegerAttr>(*folded).getInt(), 1);
 }

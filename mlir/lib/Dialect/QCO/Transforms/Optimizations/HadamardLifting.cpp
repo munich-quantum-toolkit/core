@@ -8,28 +8,21 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <cstddef>
 #include <numbers>
-#include <optional>
 #include <utility>
 
 namespace mlir::qco {
@@ -111,12 +104,8 @@ struct LiftHadamardsAbovePauliGatesPattern final
       return failure();
     }
 
-    // op needs to be directly in front of a Hadamard gate
-    auto output = op.getOutputQubit(0);
-    if (!output.hasOneUse()) {
-      return failure();
-    }
-    auto hadamardGate = dyn_cast<HOp>(*output.getUsers().begin());
+    // op needs to be in front of a Hadamard gate
+    auto hadamardGate = dyn_cast<HOp>(*op->getUsers().begin());
 
     if (!hadamardGate) {
       return failure();
@@ -164,7 +153,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     auto qubitInMeasurement = op.getQubitIn();
     auto* predecessor = qubitInMeasurement.getDefiningOp();
     auto hadamardGate = dyn_cast<HOp>(predecessor);
-    if (!hadamardGate || !hadamardGate.getOutputQubit(0).hasOneUse()) {
+    if (!hadamardGate) {
       return failure();
     }
 
@@ -172,7 +161,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     auto inQubitHadamard = hadamardGate.getInputQubit(0);
     predecessor = inQubitHadamard.getDefiningOp();
     auto cnotGate = dyn_cast<CtrlOp>(predecessor);
-    if (!cnotGate || !inQubitHadamard.hasOneUse()) {
+    if (!cnotGate) {
       return failure();
     }
     if (auto innerUnitary =
@@ -184,22 +173,22 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
 
     // Find a control qubit not followed by a measurement.
     // If there is no such control, the transformation cannot be applied.
-    std::optional<unsigned int> controlIndex;
+    unsigned int controlIndex = 0;
     for (unsigned int i = 0; i < cnotGate.getNumControls(); i++) {
-      auto output = cnotGate.getOutputControl(i);
-      if (output.hasOneUse() && !isa<MeasureOp>(*output.getUsers().begin())) {
+      if (isa<MeasureOp>(*cnotGate.getOutputControl(i).getUsers().begin())) {
+        if (i == cnotGate.getNumControls() - 1) {
+          return failure();
+        }
+      } else {
         controlIndex = i;
         break;
       }
     }
-    if (!controlIndex) {
-      return failure();
-    }
 
     // Save all SSA values that will be needed after in-place modifications.
     Value origTgtIn = cnotGate.getInputTarget(0);
-    Value origCtrlIn = cnotGate.getInputControl(*controlIndex);
-    Value origCtrlOut = cnotGate.getOutputControl(*controlIndex);
+    Value origCtrlIn = cnotGate.getInputControl(controlIndex);
+    Value origCtrlOut = cnotGate.getOutputControl(controlIndex);
 
     // Add Hadamard gates before the CNOT.
     rewriter.setInsertionPoint(cnotGate);
@@ -208,7 +197,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
 
     // Rewire the CNOT operands in-place so that the roles are swapped
     rewriter.modifyOpInPlace(cnotGate, [&]() {
-      cnotGate->setOperand(*controlIndex, h1.getOutputTarget(0));
+      cnotGate->setOperand(controlIndex, h1.getOutputTarget(0));
       cnotGate->setOperand(cnotGate.getNumControls(), h2.getOutputTarget(0));
     });
 
@@ -239,16 +228,6 @@ protected:
   void runOnOperation() override {
     auto op = getOperation();
     auto* ctx = &getContext();
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(op, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
-    if (failed(mqt::verifyProgramMetadata(op)) ||
-        failed(qco::verifyLinearity(op))) {
-      signalPassFailure();
-      return;
-    }
 
     // Define the set of patterns to use.
     RewritePatternSet patterns(ctx);

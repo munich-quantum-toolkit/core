@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -309,10 +308,6 @@ static void trySwapControlAndTargetOfPhaseGate(CtrlOp op,
 
     Value controlOut = op.getControlsOut()[controlIndex];
     Value targetOut = op.getTargetsOut()[0];
-    if (!controlOut.hasOneUse() || !targetOut.hasOneUse()) {
-      ++controlIndex;
-      continue;
-    }
 
     rewriter.modifyOpInPlace(op, [&]() {
       op.getTargetsInMutable()[0].set(control);
@@ -342,9 +337,6 @@ struct ReplaceBasisStateControlsWithIfPattern final
 
   LogicalResult matchAndRewrite(MeasureOp measure,
                                 PatternRewriter& rewriter) const override {
-    if (!measure.getQubitOut().hasOneUse()) {
-      return failure();
-    }
     auto ctrlOp = dyn_cast<CtrlOp>(*measure.getQubitOut().getUsers().begin());
     if (!ctrlOp) {
       return failure();
@@ -432,11 +424,6 @@ protected:
   void runOnOperation() override {
     auto op = getOperation();
     auto* ctx = &getContext();
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(op, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
 
     // Define the set of patterns to use.
     RewritePatternSet patterns(ctx);

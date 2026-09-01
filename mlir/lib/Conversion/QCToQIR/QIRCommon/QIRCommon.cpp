@@ -56,22 +56,6 @@ namespace mlir {
 using namespace qc;
 using namespace qir;
 
-template <typename Callback>
-static void walkOperationsIteratively(Operation* root, Callback&& callback) {
-  SmallVector<Operation*> worklist{root};
-  while (!worklist.empty()) {
-    Operation* operation = worklist.pop_back_val();
-    callback(operation);
-    for (Region& region : operation->getRegions()) {
-      for (Block& block : region) {
-        for (Operation& nested : block) {
-          worklist.push_back(&nested);
-        }
-      }
-    }
-  }
-}
-
 LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
                                                   Operation* op) {
   if (allocationMode == AllocationMode::Unset) {
@@ -454,9 +438,6 @@ Value getResultPtr(LoweringState& state, Operation* op,
 LogicalResult validateQIRConversionInput(ModuleOp moduleOp,
                                          bool requireSingleBlock,
                                          LoweringState& state) {
-  if (failed(mqt::verifyProgramMetadata(moduleOp))) {
-    return failure();
-  }
   for (Operation& operation : moduleOp.getBody()->getOperations()) {
     const auto symbol = SymbolTable::getSymbolName(&operation);
     if (!symbol || !symbol.getValue().starts_with("__quantum__")) {
@@ -474,18 +455,7 @@ LogicalResult validateQIRConversionInput(ModuleOp moduleOp,
            << "QIR conversion reserves runtime symbol " << symbol.getValue()
            << " for a function declaration";
   }
-  func::FuncOp entryPoint;
-  for (auto function : moduleOp.getOps<func::FuncOp>()) {
-    if (!mqt::isEntryPoint(function)) {
-      continue;
-    }
-    if (entryPoint) {
-      moduleOp.emitError("QIR conversion requires exactly one program entry "
-                         "function marked with mqt.entry_point");
-      return failure();
-    }
-    entryPoint = function;
-  }
+  auto entryPoint = mqt::getEntryPoint(moduleOp);
   if (!entryPoint) {
     moduleOp.emitError(
         "QIR conversion requires a program entry function marked with "
@@ -515,7 +485,7 @@ LogicalResult validateQIRConversionInput(ModuleOp moduleOp,
   }
 
   bool invalid = false;
-  walkOperationsIteratively(moduleOp, [&](Operation* operation) {
+  moduleOp.walk([&](Operation* operation) {
     if (invalid || operation == moduleOp || operation == entryPoint) {
       return;
     }
@@ -537,7 +507,7 @@ LogicalResult validateQIRConversionInput(ModuleOp moduleOp,
   }
 
   if (requireSingleBlock) {
-    walkOperationsIteratively(moduleOp, [&](Operation* operation) {
+    moduleOp.walk([&](Operation* operation) {
       if (invalid || operation == moduleOp || isa<CtrlOp>(operation) ||
           !isa<RegionBranchOpInterface>(operation)) {
         return;
@@ -551,7 +521,7 @@ LogicalResult validateQIRConversionInput(ModuleOp moduleOp,
       return failure();
     }
 
-    walkOperationsIteratively(entryPoint, [&](Operation* operation) {
+    entryPoint.walk([&](Operation* operation) {
       if (invalid || operation == entryPoint) {
         return;
       }
@@ -578,7 +548,7 @@ LogicalResult validateQIRConversionInput(ModuleOp moduleOp,
     }
   }
 
-  walkOperationsIteratively(entryPoint, [&](Operation* operation) {
+  entryPoint.walk([&](Operation* operation) {
     if (auto op = dyn_cast<memref::AllocOp>(operation)) {
       const auto type = op.getType();
       if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
@@ -605,14 +575,14 @@ LogicalResult validateQIRConversionInput(ModuleOp moduleOp,
   if (!requireSingleBlock) {
     Operation* staticAllocation = nullptr;
     Operation* dynamicAllocation = nullptr;
-    walkOperationsIteratively(entryPoint, [&](Operation* operation) {
+    entryPoint.walk([&](Operation* operation) {
       if (isa<StaticOp>(operation)) {
         staticAllocation = operation;
       } else if (isa<AllocOp, memref::AllocOp>(operation)) {
         dynamicAllocation = operation;
       }
     });
-    if (staticAllocation && dynamicAllocation) {
+    if (staticAllocation != nullptr && dynamicAllocation != nullptr) {
       dynamicAllocation->emitError(
           "QIR Adaptive Profile conversion cannot mix static and dynamic "
           "qubit allocations");
@@ -623,7 +593,7 @@ LogicalResult validateQIRConversionInput(ModuleOp moduleOp,
 
   SmallVector<std::pair<Value, int64_t>> loadedRegisterElements;
   uint64_t freshStaticQubitIds = 0;
-  walkOperationsIteratively(entryPoint, [&](Operation* operation) {
+  entryPoint.walk([&](Operation* operation) {
     if (auto op = dyn_cast<StaticOp>(operation)) {
       const auto rawIndex = op.getIndex();
       if (rawIndex >=
@@ -688,7 +658,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
   constexpr uint64_t maxClassicalResultSlots = 1U << 20;
   uint64_t numClassicalResultSlots = 0;
   bool exceedsResultLimit = false;
-  walkOperationsIteratively(moduleOp, [&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     auto allocOp = dyn_cast<cbit::AllocOp>(operation);
     if (!allocOp || exceedsResultLimit) {
       return;
@@ -721,7 +691,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
   SmallVector<cbit::StoreOp> consumedStores;
   SmallVector<ReturnRewrite> returnRewrites;
   SmallVector<func::FuncOp> entryPoints;
-  walkOperationsIteratively(moduleOp, [&](Operation* operation) {
+  moduleOp->walk([&](Operation* operation) {
     if (auto function = dyn_cast<func::FuncOp>(operation);
         function && mqt::isEntryPoint(function)) {
       entryPoints.push_back(function);
@@ -729,7 +699,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
   });
   for (auto funcOp : entryPoints) {
 
-    walkOperationsIteratively(funcOp, [&](Operation* operation) {
+    funcOp.walk([&](Operation* operation) {
       if (operation->getParentOfType<func::FuncOp>() != funcOp) {
         return;
       }
@@ -765,7 +735,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       state.returnedCregs.push_back(registerIndex);
     };
 
-    walkOperationsIteratively(funcOp, [&](Operation* operation) {
+    funcOp.walk([&](Operation* operation) {
       if (operation->getParentOfType<func::FuncOp>() != funcOp) {
         return;
       }
@@ -797,7 +767,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
     });
 
     if (returnRewrites.size() > 1) {
-      auto recordedReturn =
+      auto* recordedReturn =
           llvm::find_if(returnRewrites, [](const ReturnRewrite& rewrite) {
             return rewrite.recordsClassicalOutput;
           });
@@ -809,7 +779,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       }
     }
 
-    walkOperationsIteratively(funcOp, [&](Operation* operation) {
+    funcOp.walk([&](Operation* operation) {
       if (operation->getParentOfType<func::FuncOp>() != funcOp) {
         return;
       }

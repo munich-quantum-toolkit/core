@@ -128,13 +128,8 @@ static bool valuesMatchWithinTolerance(Value lhs, Value rhs) {
 template <typename InverseOpType, typename OpType>
 LogicalResult
 removeInversePairOneTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
-  auto output = op.getOutputQubit(0);
-  if (!output.hasOneUse()) {
-    return failure();
-  }
-
   // Check if the successor is the inverse operation
-  auto nextOp = dyn_cast<InverseOpType>(*output.user_begin());
+  auto nextOp = dyn_cast<InverseOpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
   }
@@ -163,10 +158,6 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter,
                                         bool symmetric = false,
                                         bool swappedTargets = false) {
   auto output0 = op.getOutputQubit(0);
-  auto output1 = op.getOutputQubit(1);
-  if (!output0.hasOneUse() || !output1.hasOneUse()) {
-    return failure();
-  }
 
   // Check if the successor is the inverse operation
   auto nextOp = dyn_cast<InverseOpType>(*output0.user_begin());
@@ -175,7 +166,7 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter,
   }
 
   // Both qubits have to point to the same successor
-  auto nextOp2 = *output1.user_begin();
+  auto nextOp2 = *op.getOutputQubit(1).user_begin();
   if (nextOp2 != nextOp) {
     return failure();
   }
@@ -202,11 +193,6 @@ template <typename InverseOpType, typename OpType>
 LogicalResult
 removeInversePairThreeTargetZeroParameter(OpType op,
                                           PatternRewriter& rewriter) {
-  if (!llvm::all_of(op.getOutputQubits(),
-                    [](Value output) { return output.hasOneUse(); })) {
-    return failure();
-  }
-
   auto nextOp = dyn_cast<InverseOpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp || op.getOutputQubits() != nextOp.getInputQubits()) {
     return failure();
@@ -233,13 +219,8 @@ removeInversePairThreeTargetZeroParameter(OpType op,
 template <typename SquareOpType, typename OpType>
 LogicalResult mergeOneTargetZeroParameter(OpType op,
                                           PatternRewriter& rewriter) {
-  auto output = op.getOutputQubit(0);
-  if (!output.hasOneUse()) {
-    return failure();
-  }
-
   // Check if the successor is the same operation
-  auto nextOp = dyn_cast<OpType>(*output.user_begin());
+  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
   }
@@ -267,13 +248,8 @@ LogicalResult mergeOneTargetZeroParameter(OpType op,
  */
 template <typename OpType>
 LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
-  auto output = op.getOutputQubit(0);
-  if (!output.hasOneUse()) {
-    return failure();
-  }
-
   // Check if the successor is the same operation
-  auto nextOp = dyn_cast<OpType>(*output.user_begin());
+  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp || op->getBlock() != nextOp->getBlock()) {
     return failure();
   }
@@ -316,13 +292,9 @@ static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
   }
 
   auto output0 = op.getOutputQubit(0);
-  auto output1 = op.getOutputQubit(1);
-  if (!output0.hasOneUse() || !output1.hasOneUse()) {
-    return failure();
-  }
 
   // Both qubits have to point to the same successor
-  auto nextOp2 = *output1.user_begin();
+  auto nextOp2 = *op.getOutputQubit(1).user_begin();
   if (nextOp2 != nextOp) {
     return failure();
   }
@@ -358,13 +330,8 @@ static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
 template <typename OpType>
 LogicalResult mergeTwoTargetOneParameter(OpType op, PatternRewriter& rewriter,
                                          bool symmetric = false) {
-  auto output = op.getOutputQubit(0);
-  if (!output.hasOneUse()) {
-    return failure();
-  }
-
   // Check if the successor is the same operation
-  auto nextOp = dyn_cast<OpType>(*output.user_begin());
+  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
   }
@@ -384,13 +351,8 @@ LogicalResult mergeTwoTargetOneParameter(OpType op, PatternRewriter& rewriter,
  */
 template <typename OpType>
 LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter) {
-  auto output = op.getOutputQubit(0);
-  if (!output.hasOneUse()) {
-    return failure();
-  }
-
   // Check if the successor is the same operation
-  auto nextOp = dyn_cast<OpType>(*output.user_begin());
+  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
   }

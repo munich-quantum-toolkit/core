@@ -71,14 +71,6 @@ static SmallVector<Value> getQubitValues(ValueRange values) {
       values, [](Value value) { return isa<QubitType>(value.getType()); }));
 }
 
-TEST(MappingPassContract, DeclaresSCFDependency) {
-  auto pass = createMappingPass();
-  DialectRegistry registry;
-  pass->getDependentDialects(registry);
-  EXPECT_TRUE(
-      registry.getDialectAllocator(scf::SCFDialect::getDialectNamespace()));
-}
-
 /// Return true, if the operations within a region fulfill the given coupling
 /// constraints.
 static bool isExecutable(Region& body,
@@ -540,38 +532,6 @@ module {
       OperationEquivalence::Flags::None));
 }
 
-TEST_F(MappingPassFixture, NonlinearQubitFailsWithoutMutation) {
-  constexpr StringLiteral source = R"mlir(
-module {
-  func.func @main() attributes {mqt.entry_point} {
-    %q0 = qco.alloc : !qco.qubit
-    %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
-    %q2 = qco.x %q0 : !qco.qubit -> !qco.qubit
-    qco.sink %q1 : !qco.qubit
-    qco.sink %q2 : !qco.qubit
-    return
-  }
-}
-)mlir";
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  OwningOpRef<ModuleOp> original(module->clone());
-  const auto target = llvm::cantFail(CompilerTarget::create(1));
-
-  std::string diagnostics;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    diagnostics += diagnostic.str();
-    return success();
-  });
-  EXPECT_TRUE(failed(runPass(*module, target, MappingPassOptions{})));
-  EXPECT_TRUE(StringRef(diagnostics).contains("exactly one use"))
-      << diagnostics;
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
 TEST_F(MappingPassFixture, UnsupportedWhileTensorFlowFailsWithoutMutation) {
   constexpr StringLiteral source = R"mlir(
 module {
@@ -661,34 +621,6 @@ module {
       OperationEquivalence::Flags::None));
 }
 
-TEST_F(MappingPassFixture, DuplicateEntryPointsFailWithoutMutation) {
-  constexpr StringLiteral source = R"mlir(
-module {
-  func.func @first() attributes {mqt.entry_point} { return }
-  func.func @second() attributes {mqt.entry_point} { return }
-}
-)mlir";
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  OwningOpRef<ModuleOp> original(module->clone());
-  const auto target = llvm::cantFail(CompilerTarget::create(1));
-
-  std::string diagnostics;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    diagnostics += diagnostic.str();
-    return success();
-  });
-  EXPECT_TRUE(failed(runPass(*module, target, MappingPassOptions{})));
-  EXPECT_TRUE(
-      StringRef(diagnostics)
-          .contains("module must contain at most one program entry point"))
-      << diagnostics;
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
 TEST_F(MappingPassFixture, UnsupportedQuantumRegionFailsWithoutMutation) {
   constexpr StringLiteral source = R"mlir(
 module {
@@ -718,57 +650,6 @@ module {
       StringRef(diagnostics)
           .contains("target mapping does not support quantum operations nested "
                     "in scf.execute_region"))
-      << diagnostics;
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
-TEST_F(MappingPassFixture, DeepStructuredNestingFailsWithoutMutation) {
-  constexpr size_t depth = 65;
-  std::string source = R"mlir(
-module {
-  func.func @main() attributes {mqt.entry_point} {
-    %q = qco.alloc : !qco.qubit
-    %lb = arith.constant 0 : index
-    %ub = arith.constant 1 : index
-    %step = arith.constant 1 : index
-)mlir";
-  for (size_t i = 0; i < depth; ++i) {
-    const auto input = i == 0 ? "%q" : "%arg" + std::to_string(i - 1);
-    source += "    %out" + std::to_string(i) + " = scf.for %iv" +
-              std::to_string(i) + " = %lb to %ub step %step iter_args(%arg" +
-              std::to_string(i) + " = " + input + " ) -> (!qco.qubit) {\n";
-  }
-  source += "      %leaf = qco.h %arg" + std::to_string(depth - 1) +
-            " : !qco.qubit -> !qco.qubit\n";
-  for (size_t i = depth; i-- > 0;) {
-    const auto yielded =
-        i + 1 == depth ? "%leaf" : "%out" + std::to_string(i + 1);
-    source += "      scf.yield " + yielded + " : !qco.qubit\n    }\n";
-  }
-  source += R"mlir(
-    qco.sink %out0 : !qco.qubit
-    return
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  OwningOpRef<ModuleOp> original(module->clone());
-  const auto target = llvm::cantFail(CompilerTarget::create(1));
-
-  std::string diagnostics;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    diagnostics += diagnostic.str();
-    return success();
-  });
-  EXPECT_TRUE(failed(runPass(*module, target, MappingPassOptions{})));
-  EXPECT_TRUE(
-      StringRef(diagnostics)
-          .contains("supports at most 64 nested quantum structured operations"))
       << diagnostics;
   EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
       module->getOperation(), original->getOperation(),

@@ -14,6 +14,7 @@
 #include "mlir/Dialect/MQT/Utils/Parameters.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>

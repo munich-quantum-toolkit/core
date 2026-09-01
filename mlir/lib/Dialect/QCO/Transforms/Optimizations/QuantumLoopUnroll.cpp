@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -26,6 +25,9 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
+#include <cstdint>
+#include <utility>
+
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_QUANTUMLOOPUNROLL
@@ -33,8 +35,8 @@ namespace mlir::qco {
 
 /// Keep verifier-valid loop bounds from turning this optimization into an
 /// unbounded allocation request.
-static constexpr uint64_t kMaxQuantumLoopUnrollFactor = 4096;
-static constexpr uint64_t kMaxQuantumLoopExpandedOperations = 100000;
+static constexpr uint64_t K_MAX_QUANTUM_LOOP_UNROLL_FACTOR = 4096;
+static constexpr uint64_t K_MAX_QUANTUM_LOOP_EXPANDED_OPERATIONS = 100000;
 
 /**
  * @brief Predicate for quantum loops.
@@ -62,26 +64,11 @@ static bool isQuantumLoop(scf::ForOp loop) {
  */
 static SmallVector<scf::ForOp> collectQuantumLoops(FunctionOpInterface func) {
   SmallVector<scf::ForOp> loops;
-  SmallVector<std::pair<Operation*, bool>> worklist;
-  worklist.emplace_back(func.getOperation(), false);
-  while (!worklist.empty()) {
-    const auto [operation, visited] = worklist.pop_back_val();
-    if (visited) {
-      if (auto loop = dyn_cast<scf::ForOp>(operation);
-          loop && isQuantumLoop(loop)) {
-        loops.emplace_back(loop);
-      }
-      continue;
+  func.walk<WalkOrder::PostOrder>([&](scf::ForOp loop) {
+    if (isQuantumLoop(loop)) {
+      loops.emplace_back(loop);
     }
-    worklist.emplace_back(operation, true);
-    for (Region& region : operation->getRegions()) {
-      for (Block& block : region) {
-        for (Operation& nested : block) {
-          worklist.emplace_back(&nested, false);
-        }
-      }
-    }
-  }
+  });
   return loops;
 }
 
@@ -103,10 +90,12 @@ static LogicalResult verifyUnrollExpansionBudget(FunctionOpInterface func,
 
   while (!worklist.empty()) {
     const auto [operation, multiplier] = worklist.pop_back_val();
-    if (multiplier > kMaxQuantumLoopExpandedOperations - projectedOperations) {
+    if (multiplier >
+        K_MAX_QUANTUM_LOOP_EXPANDED_OPERATIONS - projectedOperations) {
       return operation->emitError()
              << "quantum loop unrolling would exceed the limit of "
-             << kMaxQuantumLoopExpandedOperations << " projected operations";
+             << K_MAX_QUANTUM_LOOP_EXPANDED_OPERATIONS
+             << " projected operations";
     }
     projectedOperations += multiplier;
 
@@ -125,22 +114,23 @@ static LogicalResult verifyUnrollExpansionBudget(FunctionOpInterface func,
             // complete budget before every subsequent unrolling round.
             factor = 1;
           } else {
-            factor =
-                tripCount->getLimitedValue(kMaxQuantumLoopUnrollFactor + 1);
+            factor = tripCount->getLimitedValue(
+                K_MAX_QUANTUM_LOOP_UNROLL_FACTOR + 1);
           }
         } else {
           factor = static_cast<uint64_t>(unrollFactor);
         }
-        if (factor > kMaxQuantumLoopUnrollFactor) {
-          return loop.emitError()
-                 << "quantum loop unroll factor " << factor
-                 << " exceeds the limit of " << kMaxQuantumLoopUnrollFactor;
+        if (factor > K_MAX_QUANTUM_LOOP_UNROLL_FACTOR) {
+          return loop.emitError() << "quantum loop unroll factor " << factor
+                                  << " exceeds the limit of "
+                                  << K_MAX_QUANTUM_LOOP_UNROLL_FACTOR;
         }
         if (factor != 0 &&
-            nestedMultiplier > kMaxQuantumLoopExpandedOperations / factor) {
+            nestedMultiplier >
+                K_MAX_QUANTUM_LOOP_EXPANDED_OPERATIONS / factor) {
           return loop.emitError()
                  << "quantum loop unrolling would exceed the limit of "
-                 << kMaxQuantumLoopExpandedOperations
+                 << K_MAX_QUANTUM_LOOP_EXPANDED_OPERATIONS
                  << " projected operations";
         }
         nestedMultiplier *= factor;
@@ -241,10 +231,11 @@ protected:
       signalPassFailure();
       return;
     }
-    if (unrollFactor > static_cast<int64_t>(kMaxQuantumLoopUnrollFactor)) {
+    if (std::cmp_greater(static_cast<int64_t>(unrollFactor),
+                         K_MAX_QUANTUM_LOOP_UNROLL_FACTOR)) {
       getOperation()->emitError()
           << "quantum loop unroll factor " << Twine(unrollFactor)
-          << " exceeds the limit of " << kMaxQuantumLoopUnrollFactor;
+          << " exceeds the limit of " << K_MAX_QUANTUM_LOOP_UNROLL_FACTOR;
       signalPassFailure();
       return;
     }
@@ -262,11 +253,6 @@ protected:
       return;
     }
 
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(getOperation(), maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
     if (failed(verifyUnrollExpansionBudget(getOperation(), unrollFactor))) {
       signalPassFailure();
       return;

@@ -26,12 +26,9 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
-#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
@@ -52,15 +49,6 @@ using namespace mlir::qco;
 
 /// A constant for the value of \f$\pi\f$.
 constexpr double PI = std::numbers::pi;
-
-TEST(MergeSingleQubitRotationGatesPassContract, DeclaresProducedDialects) {
-  auto pass = createMergeSingleQubitRotationGates();
-  DialectRegistry registry;
-  pass->getDependentDialects(registry);
-  EXPECT_TRUE(registry.getDialectAllocator("qc"));
-  EXPECT_TRUE(
-      registry.getDialectAllocator(qco::QCODialect::getDialectNamespace()));
-}
 
 class MergeSingleQubitRotationGatesTest : public ::testing::Test {
 protected:
@@ -326,40 +314,6 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRXRXGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RXOp>(), 0);
   EXPECT_EQ(countOps<GPhaseOp>(), 0);
-}
-
-TEST_F(MergeSingleQubitRotationGatesTest,
-       RejectsNonlinearQubitWithoutMutation) {
-  constexpr StringLiteral source = R"mlir(
-module {
-  func.func @main() {
-    %theta0 = arith.constant 0.25 : f64
-    %theta1 = arith.constant 0.5 : f64
-    %q0 = qco.static 0 : !qco.qubit
-    %q1 = qco.rx(%theta0) %q0 : !qco.qubit -> !qco.qubit
-    %q2 = qco.ry(%theta1) %q0 : !qco.qubit -> !qco.qubit
-    qco.sink %q1 : !qco.qubit
-    qco.sink %q2 : !qco.qubit
-    return
-  }
-}
-)mlir";
-  module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  OwningOpRef<ModuleOp> original(module->clone());
-
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str()).contains("exactly one use");
-    return success();
-  });
-  EXPECT_TRUE(failed(runMergePass(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
 }
 
 /**
@@ -1264,27 +1218,4 @@ TEST_F(MergeSingleQubitRotationGatesTest,
     ASSERT_TRUE(constant);
     EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*constant));
   });
-}
-
-TEST_F(MergeSingleQubitRotationGatesTest, StopsAtFunctionCallBoundary) {
-  constexpr StringLiteral source = R"mlir(
-module {
-  func.func private @opaque(!qco.qubit) -> !qco.qubit
-  func.func @main() attributes {mqt.entry_point} {
-    %q0 = qco.static 0 : !qco.qubit
-    %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
-    %q2 = func.call @opaque(%q1) : (!qco.qubit) -> !qco.qubit
-    %q3 = qco.x %q2 : !qco.qubit -> !qco.qubit
-    qco.sink %q3 : !qco.qubit
-    return
-  }
-}
-)mlir";
-  module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-
-  EXPECT_TRUE(succeeded(runMergePass(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-  EXPECT_EQ(countOps<func::CallOp>(), 1);
 }

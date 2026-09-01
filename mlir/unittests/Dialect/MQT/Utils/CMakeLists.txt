@@ -8,9 +8,8 @@
 
 set(mqt_utils_target mqt-core-mlir-unittests-mqt-utils)
 add_executable(${mqt_utils_target} test_constant_folding.cpp test_gate_powering.cpp)
-target_link_libraries(
-  ${mqt_utils_target} PRIVATE GTest::gtest_main MLIRArithDialect MLIRFuncDialect MLIRIndexDialect
-                              MLIRIR MLIRMQTUtils)
+target_link_libraries(${mqt_utils_target} PRIVATE GTest::gtest_main MLIRArithDialect
+                                                  MLIRFuncDialect MLIRIR MLIRMQTUtils)
 mqt_mlir_configure_unittest_target(${mqt_utils_target})
 
 gtest_discover_tests(${mqt_utils_target} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)

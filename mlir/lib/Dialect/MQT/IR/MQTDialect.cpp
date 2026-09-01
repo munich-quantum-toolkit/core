@@ -16,7 +16,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringSet.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -27,11 +26,15 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 
+#include <cstdint>
 #include <string>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::mqt;
@@ -40,8 +43,8 @@ using namespace mlir::mqt;
 
 void MQTDialect::initialize() {}
 
-[[nodiscard]] static LogicalResult verifyEntryPoint(Operation* operation,
-                                                    NamedAttribute attribute) {
+[[nodiscard]] static LogicalResult
+verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
   if (!isa<UnitAttr>(attribute.getValue())) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
@@ -62,7 +65,7 @@ void MQTDialect::initialize() {}
 }
 
 [[nodiscard]] static LogicalResult verifyName(Operation* operation,
-                                              NamedAttribute attribute) {
+                                              const NamedAttribute attribute) {
   const auto name = dyn_cast<StringAttr>(attribute.getValue());
   if (!name) {
     return operation->emitError()
@@ -82,8 +85,8 @@ void MQTDialect::initialize() {}
   return success();
 }
 
-[[nodiscard]] static LogicalResult verifyParameterGroup(Operation* operation,
-                                                        Attribute attribute) {
+[[nodiscard]] static LogicalResult
+verifyParameterGroup(Operation* operation, const Attribute attribute) {
   const auto group = dyn_cast<DictionaryAttr>(attribute);
   const auto identity = group ? group.getAs<StringAttr>("identity") : nullptr;
   const auto groupName = group ? group.getAs<StringAttr>("name") : nullptr;
@@ -112,7 +115,7 @@ void MQTDialect::initialize() {}
 
 [[nodiscard]] static LogicalResult
 verifyInputGroup(FunctionOpInterface function, Operation* operation,
-                 unsigned argIndex, Attribute attribute) {
+                 const unsigned argIndex, const Attribute attribute) {
   const auto inputName = function.getArgAttrOfType<StringAttr>(
       argIndex, MQTDialect::InputNameAttrHelper::getNameStr());
   if (!inputName) {
@@ -152,7 +155,7 @@ verifyInputGroup(FunctionOpInterface function, Operation* operation,
 }
 
 [[nodiscard]] static LogicalResult
-verifyRegisterName(Operation* operation, NamedAttribute attribute) {
+verifyRegisterName(Operation* operation, const NamedAttribute attribute) {
   if (failed(verifyName(operation, attribute))) {
     return failure();
   }
@@ -173,8 +176,9 @@ verifyRegisterName(Operation* operation, NamedAttribute attribute) {
   return success();
 }
 
-LogicalResult MQTDialect::verifyOperationAttribute(Operation* operation,
-                                                   NamedAttribute attribute) {
+LogicalResult
+MQTDialect::verifyOperationAttribute(Operation* operation,
+                                     const NamedAttribute attribute) {
   if (attribute.getName() == EntryPointAttrHelper::getNameStr()) {
     return verifyEntryPoint(operation, attribute);
   }
@@ -198,10 +202,9 @@ LogicalResult MQTDialect::verifyOperationAttribute(Operation* operation,
          << "unknown MQT attribute '" << attribute.getName().getValue() << "'";
 }
 
-LogicalResult MQTDialect::verifyRegionArgAttribute(Operation* operation,
-                                                   unsigned regionIndex,
-                                                   unsigned argIndex,
-                                                   NamedAttribute attribute) {
+LogicalResult MQTDialect::verifyRegionArgAttribute(
+    Operation* operation, const unsigned regionIndex, const unsigned argIndex,
+    const NamedAttribute attribute) {
   const auto attributeName = attribute.getName();
   if (attributeName != InputNameAttrHelper::getNameStr() &&
       attributeName != ParameterGroupAttrHelper::getNameStr()) {
@@ -229,7 +232,7 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(Operation* operation,
 
 LogicalResult MQTDialect::verifyRegionResultAttribute(
     Operation* operation, unsigned /*regionIndex*/, unsigned /*resultIndex*/,
-    NamedAttribute attribute) {
+    const NamedAttribute attribute) {
   return operation->emitError()
          << "attribute '" << attribute.getName().getValue()
          << "' is not valid on a region result";
@@ -283,38 +286,29 @@ verifyProgramNames(FunctionOpInterface function) {
 
 LogicalResult mlir::mqt::verifyProgramMetadata(ModuleOp moduleOp) {
   Operation* entryPoint = nullptr;
-  SmallVector<Operation*> worklist;
-  for (Operation& operation : moduleOp.getBody()->getOperations()) {
-    worklist.push_back(&operation);
-  }
-  while (!worklist.empty()) {
-    Operation* operation = worklist.pop_back_val();
+  const auto walkResult = moduleOp.walk([&](Operation* operation) {
     if (isEntryPoint(operation)) {
       auto function = dyn_cast<FunctionOpInterface>(operation);
       if (!function || operation->getParentOp() != moduleOp.getOperation() ||
           function.getFunctionBody().empty()) {
-        return operation->emitError(
+        operation->emitError(
             "program entry point must be a defined module-level function");
+        return WalkResult::interrupt();
       }
       if (entryPoint != nullptr) {
-        return operation->emitError(
+        operation->emitError(
             "module must contain at most one program entry point");
+        return WalkResult::interrupt();
       }
       entryPoint = operation;
     }
     if (auto function = dyn_cast<FunctionOpInterface>(operation);
         function && failed(verifyProgramNames(function))) {
-      return failure();
+      return WalkResult::interrupt();
     }
-    for (Region& region : operation->getRegions()) {
-      for (Block& block : region) {
-        for (Operation& nested : block) {
-          worklist.push_back(&nested);
-        }
-      }
-    }
-  }
-  return success();
+    return WalkResult::advance();
+  });
+  return walkResult.wasInterrupted() ? failure() : success();
 }
 
 void mlir::mqt::setEntryPoint(Operation* operation) {

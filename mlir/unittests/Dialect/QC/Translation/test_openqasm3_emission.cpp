@@ -714,30 +714,6 @@ TEST(OpenQASM3EmissionTest, RejectsExcessiveClassicalRegisterWidth) {
   EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
 }
 
-TEST(OpenQASM3EmissionTest, RejectsExcessiveRegionNesting) {
-  std::string source = "module { func.func @main() { ";
-  for (size_t i = 0; i < 64; ++i) {
-    source += "scf.execute_region { ";
-  }
-  source += "scf.yield ";
-  for (size_t i = 0; i < 64; ++i) {
-    source += "} ";
-    if (i + 1 < 64) {
-      source += "scf.yield ";
-    }
-  }
-  source += "return } }";
-
-  DialectRegistry registry = emissionDialects();
-  MLIRContext context(registry);
-  context.loadAllAvailableDialects();
-  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
-}
-
 TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
   DialectRegistry registry = emissionDialects();
   MLIRContext context(registry);

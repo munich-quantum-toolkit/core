@@ -16,11 +16,9 @@
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
 
@@ -451,31 +449,6 @@ static ModuleOp createJeffMetadataModule(MLIRContext& context,
   return module;
 }
 
-TEST(JeffRoundTripRegressionTest, ConversionPassesDeclareModuleContracts) {
-  auto toQCO = createJeffToQCO();
-  ASSERT_TRUE(toQCO->getOpName());
-  EXPECT_EQ(*toQCO->getOpName(), ModuleOp::getOperationName());
-
-  auto toJeff = createQCOToJeff();
-  ASSERT_TRUE(toJeff->getOpName());
-  EXPECT_EQ(*toJeff->getOpName(), ModuleOp::getOperationName());
-  DialectRegistry toQCORegistry;
-  toQCO->getDependentDialects(toQCORegistry);
-  EXPECT_TRUE(toQCORegistry.getDialectAllocator(
-      func::FuncDialect::getDialectNamespace()));
-  EXPECT_TRUE(toQCORegistry.getDialectAllocator(
-      qco::QCODialect::getDialectNamespace()));
-
-  DialectRegistry registry;
-  toJeff->getDependentDialects(registry);
-  EXPECT_TRUE(
-      registry.getDialectAllocator(arith::ArithDialect::getDialectNamespace()));
-  EXPECT_TRUE(
-      registry.getDialectAllocator(qc::QCDialect::getDialectNamespace()));
-  EXPECT_TRUE(
-      registry.getDialectAllocator(qco::QCODialect::getDialectNamespace()));
-}
-
 TEST(JeffRoundTripRegressionTest, RejectsMalformedJeffMetadataBeforeMutation) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
@@ -547,50 +520,17 @@ TEST(JeffRoundTripRegressionTest,
   mlir::mqt::setEntryPoint(main);
   auto* block = main.addEntryBlock();
   builder.setInsertionPointToEnd(block);
-  qco::AllocOp::create(builder, builder.getUnknownLoc());
-  qco::StaticOp::create(builder, builder.getUnknownLoc(), 0);
+  auto dynamic = qco::AllocOp::create(builder, builder.getUnknownLoc());
+  auto staticQubit = qco::StaticOp::create(builder, builder.getUnknownLoc(), 0);
+  qco::SinkOp::create(builder, builder.getUnknownLoc(), dynamic.getResult());
+  qco::SinkOp::create(builder, builder.getUnknownLoc(),
+                      staticQubit.getResult());
   func::ReturnOp::create(builder, builder.getUnknownLoc());
   ASSERT_TRUE(succeeded(verify(module)));
   auto before = module.clone();
 
   EXPECT_TRUE(failed(convertQCOToJeffDirect(module)));
   EXPECT_TRUE(isEquivalentToClone(module, before));
-}
-
-TEST(JeffRoundTripRegressionTest,
-     RejectsDuplicateStaticQubitIndicesBeforeMutation) {
-  DialectRegistry registry;
-  registry.insert<mlir::mqt::MQTDialect, func::FuncDialect, qco::QCODialect>();
-  MLIRContext context(registry);
-  context.loadAllAvailableDialects();
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main() attributes {mqt.entry_point} {
-    %first = qco.static 0 : !qco.qubit
-    %second = qco.static 0 : !qco.qubit
-    qco.sink %first : !qco.qubit
-    qco.sink %second : !qco.qubit
-    return
-  }
-}
-)mlir";
-  auto module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  auto before = module->clone();
-
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |=
-        StringRef(message).contains("found duplicate index 0");
-    return success();
-  });
-  EXPECT_TRUE(failed(convertQCOToJeffDirect(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
-  EXPECT_TRUE(isEquivalentToClone(*module, before));
 }
 
 TEST(JeffRoundTripRegressionTest, RejectsRankZeroQubitTensorBeforeMutation) {

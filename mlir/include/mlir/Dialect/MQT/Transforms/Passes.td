@@ -51,8 +51,7 @@ def UnrollModifiers : Pass<"unroll-modifiers", "mlir::ModuleOp"> {
     them. Modifiers nested in a `pow` body are unrolled either way.
 
     If a modifier cannot be unrolled, the modifier is left untouched. Such
-    modifiers are skipped silently. The pass fails before mutation when QCO
-    linearity is violated.
+    modifiers are skipped silently; the pass never fails.
   }];
 }
 

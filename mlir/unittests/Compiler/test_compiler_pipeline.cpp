@@ -2192,21 +2192,6 @@ barrier q[0], q[1];
   EXPECT_EQ(qc->numTwoQubitGates(), 3);
 }
 
-TEST_F(CompilerPipelineTest, QCProgramCountGatesWithoutEntryPoint) {
-  constexpr llvm::StringLiteral source = R"mlir(module {
-    func.func @helper() {
-      %qubit = qc.alloc : !qc.qubit
-      qc.dealloc %qubit : !qc.qubit
-      return
-    }
-  })mlir";
-  auto qc = QCProgram::fromMLIRString(source);
-  ASSERT_TRUE(qc);
-  EXPECT_EQ(qc->numGates(), 0);
-  EXPECT_EQ(qc->numSingleQubitGates(), 0);
-  EXPECT_EQ(qc->numTwoQubitGates(), 0);
-}
-
 /**
  * @brief Test: gate counting includes each structured control-flow region once.
  */

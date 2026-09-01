@@ -9,7 +9,6 @@
  */
 
 #include "Support/IRVerification.h"
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -21,11 +20,8 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -52,8 +48,8 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<mlir::mqt::MQTDialect, QCODialect, arith::ArithDialect,
-                    func::FuncDialect, memref::MemRefDialect>();
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                    memref::MemRefDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
 
@@ -84,91 +80,6 @@ protected:
 };
 
 } // namespace
-
-TEST(HadamardLiftingPassContract, DeclaresProducedDialects) {
-  auto pass = createHadamardLifting();
-  DialectRegistry registry;
-  pass->getDependentDialects(registry);
-  EXPECT_TRUE(
-      registry.getDialectAllocator(arith::ArithDialect::getDialectNamespace()));
-  EXPECT_TRUE(registry.getDialectAllocator("qc"));
-  EXPECT_TRUE(
-      registry.getDialectAllocator(qco::QCODialect::getDialectNamespace()));
-}
-
-TEST_F(QCOHadamardLiftingTest, RejectsInvalidProgramMetadataWithoutMutation) {
-  auto input = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @first() attributes {mqt.entry_point} {
-        %q = qco.static 0 : !qco.qubit
-        %y = qco.y %q : !qco.qubit -> !qco.qubit
-        %h = qco.h %y : !qco.qubit -> !qco.qubit
-        qco.sink %h : !qco.qubit
-        return
-      }
-      func.func @second() attributes {mqt.entry_point} {
-        return
-      }
-    }
-  )mlir",
-                                           &context);
-  ASSERT_TRUE(input);
-  ASSERT_TRUE(succeeded(verify(*input)));
-  OwningOpRef<ModuleOp> original(input->clone());
-
-  EXPECT_TRUE(failed(runHadamardLiftingPass(*input)));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      input->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
-TEST_F(QCOHadamardLiftingTest, HandlesUnusedPauliOutput) {
-  auto input = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main() {
-        %q = qco.static 0 : !qco.qubit
-        %unused = qco.x %q : !qco.qubit -> !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                           &context);
-  ASSERT_TRUE(input);
-  ASSERT_TRUE(succeeded(verify(*input)));
-  OwningOpRef<ModuleOp> original(input->clone());
-  EXPECT_TRUE(failed(runHadamardLiftingPass(*input)));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      input->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
-TEST_F(QCOHadamardLiftingTest, HandlesUnusedCnotControlOutput) {
-  auto input = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main() {
-        %control = qco.static 0 : !qco.qubit
-        %target = qco.static 1 : !qco.qubit
-        %unused, %target_out = qco.ctrl(%control) targets(%arg = %target) {
-          %body = qco.x %arg : !qco.qubit -> !qco.qubit
-          qco.yield %body : !qco.qubit
-        } : ({!qco.qubit}, {!qco.qubit})
-          -> ({!qco.qubit}, {!qco.qubit})
-        %hadamard = qco.h %target_out : !qco.qubit -> !qco.qubit
-        %measured, %result = qco.measure %hadamard : !qco.qubit
-        qco.sink %measured : !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                           &context);
-  ASSERT_TRUE(input);
-  ASSERT_TRUE(succeeded(verify(*input)));
-  OwningOpRef<ModuleOp> original(input->clone());
-  EXPECT_TRUE(failed(runHadamardLiftingPass(*input)));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      input->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
 
 // ##################################################
 // # Raise Hadamard over uncontrolled Pauli gate Tests

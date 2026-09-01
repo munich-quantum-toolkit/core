@@ -29,17 +29,14 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/IR/Visitors.h>
-#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -1083,15 +1080,6 @@ static SmallVector<Value> singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {
 // FuseSingleQubitUnitaryRuns tests
 //===----------------------------------------------------------------------===//
 
-TEST(FuseSingleQubitUnitaryRunsTest, DeclaresProducedDialects) {
-  auto pass = qco::createFuseSingleQubitUnitaryRuns({});
-  DialectRegistry registry;
-  pass->getDependentDialects(registry);
-  EXPECT_TRUE(registry.getDialectAllocator("qc"));
-  EXPECT_TRUE(
-      registry.getDialectAllocator(qco::QCODialect::getDialectNamespace()));
-}
-
 TEST(FuseSingleQubitUnitaryRunsTest, InvalidBasisFailsPass) {
   TestFixture fx;
   fx.setUp();
@@ -1099,39 +1087,6 @@ TEST(FuseSingleQubitUnitaryRunsTest, InvalidBasisFailsPass) {
       QCOProgramBuilder::build(fx.ctx(), &singleQubitRunWithSingleQubitGate);
   ASSERT_TRUE(owned);
   EXPECT_TRUE(failed(runFuse(*owned, "not-a-basis")));
-}
-
-TEST(FuseSingleQubitUnitaryRunsTest, RejectsNonlinearQubitWithoutMutation) {
-  TestFixture fx;
-  fx.setUp();
-  constexpr StringLiteral source = R"mlir(
-module {
-  func.func @main() {
-    %q0 = qco.static 0 : !qco.qubit
-    %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
-    %q2 = qco.x %q0 : !qco.qubit -> !qco.qubit
-    qco.sink %q1 : !qco.qubit
-    qco.sink %q2 : !qco.qubit
-    return
-  }
-}
-)mlir";
-  auto module = parseSourceString<ModuleOp>(source, fx.ctx());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  OwningOpRef<ModuleOp> original(module->clone());
-
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(fx.ctx(), [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str()).contains("exactly one use");
-    return success();
-  });
-  EXPECT_TRUE(failed(runFuse(*module, "zyz")));
-  EXPECT_TRUE(sawExpectedDiagnostic);
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
 }
 
 TEST(FuseSingleQubitUnitaryRunsTest, IgnoresDynamicPowerExponent) {
@@ -1540,33 +1495,6 @@ TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossBoundariesAllBases) {
                          expectFusePreserved(funcOp, original, basis);
                        });
   }
-}
-
-TEST(FuseSingleQubitUnitaryRunsTest, StopsAtFunctionCallBoundary) {
-  TestFixture fx;
-  fx.setUp();
-  constexpr StringLiteral source = R"mlir(
-module {
-  func.func private @opaque(!qco.qubit) -> !qco.qubit
-  func.func @main() attributes {mqt.entry_point} {
-    %q0 = qco.static 0 : !qco.qubit
-    %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
-    %q2 = func.call @opaque(%q1) : (!qco.qubit) -> !qco.qubit
-    %q3 = qco.x %q2 : !qco.qubit -> !qco.qubit
-    qco.sink %q3 : !qco.qubit
-    return
-  }
-}
-)mlir";
-  auto module = parseSourceString<ModuleOp>(source, fx.ctx());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-
-  EXPECT_TRUE(succeeded(runFuse(*module, "u")));
-  EXPECT_TRUE(succeeded(verify(*module)));
-  auto main = module->lookupSymbol<func::FuncOp>("main");
-  ASSERT_TRUE(main);
-  EXPECT_EQ(countOps<func::CallOp>(main), 1U);
 }
 
 TEST(FuseSingleQubitUnitaryRunsTest, EliminatesIdentityInvMultiOpBody) {

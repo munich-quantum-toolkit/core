@@ -16,7 +16,6 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Support/Passes.h"
@@ -108,23 +107,6 @@ static bool isEquivalentToClone(ModuleOp module, ModuleOp clone) {
   return OperationEquivalence::isEquivalentTo(
       module.getOperation(), clone.getOperation(),
       OperationEquivalence::Flags::None);
-}
-
-TEST(QCToQIRAdaptiveNativeTest, DeclaresModuleRootAndProducedDialects) {
-  auto pass = createQCToQIRAdaptive();
-  ASSERT_TRUE(pass->getOpName());
-  EXPECT_EQ(*pass->getOpName(), ModuleOp::getOperationName());
-
-  DialectRegistry registry;
-  pass->getDependentDialects(registry);
-  EXPECT_TRUE(
-      registry.getDialectAllocator(arith::ArithDialect::getDialectNamespace()));
-  EXPECT_TRUE(registry.getDialectAllocator(
-      cf::ControlFlowDialect::getDialectNamespace()));
-  EXPECT_TRUE(
-      registry.getDialectAllocator(qc::QCDialect::getDialectNamespace()));
-  EXPECT_TRUE(
-      registry.getDialectAllocator(qco::QCODialect::getDialectNamespace()));
 }
 
 TEST(QCToQIRAdaptiveNativeTest,

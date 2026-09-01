@@ -140,30 +140,6 @@ static Value composedBodyWithNestedPow(QCOProgramBuilder& b) {
   return b.measure(powOut).second;
 }
 
-static Value buildAlternatingModifierNesting(QCOProgramBuilder& builder,
-                                             Value qubit, size_t depth) {
-  if (depth == 0) {
-    return builder.x(qubit);
-  }
-  if (depth % 3 == 0) {
-    return builder
-        .ctrl(ValueRange{}, qubit,
-              [&](Value argument) {
-                return buildAlternatingModifierNesting(builder, argument,
-                                                       depth - 1);
-              })
-        .second;
-  }
-  if (depth % 3 == 1) {
-    return builder.inv(qubit, [&](Value argument) {
-      return buildAlternatingModifierNesting(builder, argument, depth - 1);
-    });
-  }
-  return builder.pow(1.0, qubit, [&](Value argument) {
-    return buildAlternatingModifierNesting(builder, argument, depth - 1);
-  });
-}
-
 template <typename GateOp, typename Builder>
 static void assertCanonicalizedPowMatrixMatches(MLIRContext* context,
                                                 Builder&& build) {
@@ -418,32 +394,6 @@ TEST_F(QCOMatrixTest, DenseUnitaryComposesThroughModifiers) {
       DynamicMatrix(SOp::getUnitaryMatrix().adjoint())));
 }
 
-TEST_F(QCOMatrixTest, DeeplyNestedModifierMatrixQueriesFailSafely) {
-  constexpr size_t nestingDepth = 67;
-  auto module = QCOProgramBuilder::build(
-      context.get(), [&](QCOProgramBuilder& builder) -> Value {
-        auto qubit = buildAlternatingModifierNesting(
-            builder, builder.allocQubit(), nestingDepth);
-        return builder.measure(qubit).second;
-      });
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-
-  auto inverse = firstInvOp(*module);
-  auto controls = inverse.getBody()->getOps<CtrlOp>();
-  ASSERT_FALSE(controls.empty());
-  auto control = *controls.begin();
-  auto powers = control.getBody()->getOps<PowOp>();
-  ASSERT_FALSE(powers.empty());
-  auto power = *powers.begin();
-
-  EXPECT_FALSE(inverse.hasCompileTimeKnownUnitaryMatrix());
-  EXPECT_FALSE(inverse.getUnitaryMatrix());
-  EXPECT_FALSE(control.hasCompileTimeKnownUnitaryMatrix());
-  EXPECT_FALSE(control.getUnitaryMatrix());
-  EXPECT_FALSE(power.hasCompileTimeKnownUnitaryMatrix());
-  EXPECT_FALSE(power.getUnitaryMatrix());
-}
 /// @}
 
 /// \name QCO/Modifiers/CtrlOp.cpp
@@ -906,16 +856,18 @@ TEST_F(QCOMatrixTest, ComposeNTargetRejectsRuntimeUnitaryMatrix) {
 TEST_F(QCOMatrixTest, ComposeBodyMatrixRejectsNestedUnknownUnitary) {
   constexpr auto mlirCode = R"mlir(
     module {
-      func.func @test() -> !qco.qubit {
-        %condition = arith.constant true
+      func.func @test(%condition: i1) -> !qco.qubit {
         %q_in = qco.alloc : !qco.qubit
         %q_out = qco.inv (%q = %q_in) {
           %q_1 = qco.h %q : !qco.qubit -> !qco.qubit
-          scf.if %condition {
-            %nested = qco.x %q_1 : !qco.qubit -> !qco.qubit
-            scf.yield
+          %q_2 = qco.if %condition args(%nested_arg = %q_1)
+              -> (!qco.qubit) {
+            %nested = qco.x %nested_arg : !qco.qubit -> !qco.qubit
+            qco.yield %nested : !qco.qubit
+          } else args(%nested_arg = %q_1) {
+            qco.yield %nested_arg : !qco.qubit
           }
-          qco.yield %q_1 : !qco.qubit
+          qco.yield %q_2 : !qco.qubit
         } : {!qco.qubit} -> {!qco.qubit}
         return %q_out : !qco.qubit
       }
@@ -924,6 +876,8 @@ TEST_F(QCOMatrixTest, ComposeBodyMatrixRejectsNestedUnknownUnitary) {
 
   auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
   ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
   EXPECT_FALSE(
       composeBodyMatrix(*firstInvOp(*moduleOp).getBody(), 1).has_value());
 }

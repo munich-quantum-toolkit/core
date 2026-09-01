@@ -31,10 +31,6 @@ namespace qco::detail {
 [[nodiscard]] LogicalResult verifyModifierBody(Operation* modifierOp,
                                                Block& body);
 
-/** @brief Return whether matrix queries may safely recurse through a modifier.
- */
-[[nodiscard]] bool isModifierMatrixNestingSupported(Operation* modifierOp);
-
 /**
  * @brief Return the positions of the qubits that the body of a modifier uses.
  *

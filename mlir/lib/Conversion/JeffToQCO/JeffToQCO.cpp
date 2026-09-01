@@ -46,7 +46,6 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/OperationUtils.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cstddef>
@@ -1314,11 +1313,6 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto original = getOperation();
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(original, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
     OwningOpRef<ModuleOp> converted(original.clone());
     auto module = *converted;
     const auto entryPointName = validateJeffEntryPoint(module);

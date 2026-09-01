@@ -26,7 +26,6 @@ def QIRCleanupPass : Pass<"qir-cleanup", "mlir::ModuleOp"> {
   let description = [{
     Removes redundant QIR runtime qubit-array allocation/release pairs that do
     not contribute to observable behavior, and keeps QIR modules compact.
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
 }
 

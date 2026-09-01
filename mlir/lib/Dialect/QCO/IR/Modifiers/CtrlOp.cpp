@@ -38,8 +38,6 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
 static void inlineCtrlBody(CtrlOp op, PatternRewriter& rewriter) {
   auto* body = op.getBody();
   auto* terminator = body->getTerminator();
@@ -52,6 +50,8 @@ static void inlineCtrlBody(CtrlOp op, PatternRewriter& rewriter) {
   rewriter.eraseOp(terminator);
   rewriter.replaceOp(op, outputs);
 }
+
+namespace {
 
 /**
  * @brief Merge nested control modifiers into a single one.
@@ -374,16 +374,14 @@ void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 bool CtrlOp::hasCompileTimeKnownUnitaryMatrix() {
-  if (!isModifierMatrixSizeSupported(getNumTargets(), getNumControls()) ||
-      !detail::isModifierMatrixNestingSupported(getOperation())) {
+  if (!isModifierMatrixSizeSupported(getNumTargets(), getNumControls())) {
     return false;
   }
   return hasComposableBodyMatrix(*getBody(), getNumTargets());
 }
 
 std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
-  if (!isModifierMatrixSizeSupported(getNumTargets(), getNumControls()) ||
-      !detail::isModifierMatrixNestingSupported(getOperation())) {
+  if (!isModifierMatrixSizeSupported(getNumTargets(), getNumControls())) {
     return std::nullopt;
   }
 

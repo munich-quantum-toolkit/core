@@ -27,7 +27,6 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/MathExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -48,7 +47,6 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/OperationUtils.h>
 #include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/CSE.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -94,6 +92,8 @@ struct AffineRegisterIndex {
   int64_t offset;
 };
 
+} // namespace
+
 /** @brief Peels constant additions and subtractions from a register index. */
 [[nodiscard]] static AffineRegisterIndex decomposeRegisterIndex(Value index) {
   if (const auto constant = getConstantIntValue(index)) {
@@ -107,12 +107,12 @@ struct AffineRegisterIndex {
     if (auto add = index.getDefiningOp<arith::AddIOp>()) {
       if (const auto lhs = getConstantIntValue(add.getLhs())) {
         next = add.getRhs();
-        if (llvm::AddOverflow(offset, *lhs, nextOffset)) {
+        if (llvm::AddOverflow(offset, *lhs, nextOffset) != 0) {
           break;
         }
       } else if (const auto rhs = getConstantIntValue(add.getRhs())) {
         next = add.getLhs();
-        if (llvm::AddOverflow(offset, *rhs, nextOffset)) {
+        if (llvm::AddOverflow(offset, *rhs, nextOffset) != 0) {
           break;
         }
       } else {
@@ -120,7 +120,7 @@ struct AffineRegisterIndex {
       }
     } else if (auto sub = index.getDefiningOp<arith::SubIOp>()) {
       const auto rhs = getConstantIntValue(sub.getRhs());
-      if (!rhs || llvm::SubOverflow(offset, *rhs, nextOffset)) {
+      if (!rhs || llvm::SubOverflow(offset, *rhs, nextOffset) != 0) {
         break;
       }
       next = sub.getLhs();
@@ -154,8 +154,8 @@ isOutsideForInductionRange(int64_t constant, const AffineRegisterIndex& index) {
 
   int64_t adjustedLower = 0;
   int64_t adjustedUpper = 0;
-  if (llvm::AddOverflow(*lower, index.offset, adjustedLower) ||
-      llvm::AddOverflow(*upper, index.offset, adjustedUpper)) {
+  if (llvm::AddOverflow(*lower, index.offset, adjustedLower) != 0 ||
+      llvm::AddOverflow(*upper, index.offset, adjustedUpper) != 0) {
     return false;
   }
   return adjustedLower >= adjustedUpper || constant < adjustedLower ||
@@ -178,6 +178,8 @@ isOutsideForInductionRange(int64_t constant, const AffineRegisterIndex& index) {
   }
   return false;
 }
+
+namespace {
 
 /** @brief Qubit allocation mode */
 enum class AllocationMode : std::uint8_t {
@@ -228,7 +230,7 @@ struct LoweringState {
   DenseMap<Region*, DenseMap<Value, Value>> qubitMap;
 
   /// Per-region canonical QC reference for each physical static-qubit index.
-  DenseMap<Region*, DenseMap<int64_t, Value>> staticQubitKeys;
+  DenseMap<Region*, DenseMap<uint64_t, Value>> staticQubitKeys;
 
   /// Per-region map from stable register identifiers to their latest QTensor
   /// SSA values.
@@ -276,16 +278,18 @@ struct LoweringState {
   }
 };
 
+} // namespace
+
 [[nodiscard]] static LogicalResult
 validateAllocationMode(Operation* root, LoweringState& state) {
   const auto result = root->walk([&](Operation* op) {
     std::optional<AllocationMode> mode;
     if (auto staticOp = dyn_cast<qc::StaticOp>(op)) {
       mode = AllocationMode::Static;
-    } else if (isa<qc::AllocOp>(op)) {
-      mode = AllocationMode::Dynamic;
     } else if (auto alloc = dyn_cast<memref::AllocOp>(op);
-               alloc && isa<qc::QubitType>(alloc.getType().getElementType())) {
+               isa<qc::AllocOp>(op) ||
+               (alloc &&
+                isa<qc::QubitType>(alloc.getType().getElementType()))) {
       mode = AllocationMode::Dynamic;
     }
     if (mode && failed(state.ensureAllocationMode(*mode, op))) {
@@ -295,6 +299,8 @@ validateAllocationMode(Operation* root, LoweringState& state) {
   });
   return success(!result.wasInterrupted());
 }
+
+namespace {
 
 /**
  * @brief Base class for conversion patterns that need access to lowering state
@@ -2178,11 +2184,6 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto original = getOperation();
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(original, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
     OwningOpRef<ModuleOp> converted(original.clone());
     auto moduleOp = *converted;
 

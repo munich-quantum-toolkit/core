@@ -18,7 +18,6 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MQT/IR/MQTDialect.h>
@@ -28,12 +27,15 @@
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <tuple>
+#include <ranges>
 
 namespace mlir::qco {
 
@@ -53,9 +55,7 @@ LogicalResult verifyLinearity(Operation* root) {
   }
 
   DenseSet<uint64_t> staticIndices;
-  SmallVector<Operation*> operations{root};
-  for (size_t next = 0; next < operations.size(); ++next) {
-    auto* op = operations[next];
+  const auto walkResult = root->walk([&](Operation* op) {
     if (auto staticOp = dyn_cast<StaticOp>(op)) {
       if (entryPoint &&
           (entryPoint.isDeclaration() ||
@@ -64,35 +64,33 @@ LogicalResult verifyLinearity(Operation* root) {
             << "expected static qubits in the entry block of program entry "
                "function @"
             << entryPoint.getSymName();
-        return failure();
+        return WalkResult::interrupt();
       }
       if (!staticIndices.insert(staticOp.getIndex()).second) {
         staticOp.emitError()
             << "expected each static qubit index to identify one linear "
                "value, but found duplicate index "
             << staticOp.getIndex();
-        return failure();
+        return WalkResult::interrupt();
       }
     }
     for (auto result : op->getResults()) {
       if (failed(verifyLinearValue(result))) {
-        return failure();
+        return WalkResult::interrupt();
       }
     }
     for (Region& region : op->getRegions()) {
       for (Block& block : region) {
         for (auto argument : block.getArguments()) {
           if (failed(verifyLinearValue(argument))) {
-            return failure();
+            return WalkResult::interrupt();
           }
-        }
-        for (auto& nestedOp : block) {
-          operations.push_back(&nestedOp);
         }
       }
     }
-  }
-  return success();
+    return WalkResult::advance();
+  });
+  return walkResult.wasInterrupted() ? failure() : success();
 }
 
 /// Returns the wire index for @p wire in @p wireIds, or `std::nullopt` if
@@ -215,14 +213,12 @@ bool hasComposableBodyMatrix(Block& block, size_t numTargets) {
     }
   }
 
-  for (auto [index, yielded] :
-       llvm::enumerate(block.getTerminator()->getOperands())) {
-    const auto wire = lookupWireId(wireIds, yielded);
-    if (!wire.has_value() || *wire != index) {
-      return false;
-    }
-  }
-  return true;
+  const auto yielded = block.getTerminator()->getOperands();
+  return std::ranges::all_of(
+      std::views::iota(size_t{0}, numTargets), [&](const size_t index) {
+        const auto wire = lookupWireId(wireIds, yielded[index]);
+        return wire.has_value() && *wire == index;
+      });
 }
 
 std::optional<DynamicMatrix> composeBodyMatrix(Block& block,

@@ -30,7 +30,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/APInt.h>
@@ -39,7 +38,6 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/ScopeExit.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -52,8 +50,10 @@
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
 #include <cmath>
@@ -74,7 +74,6 @@ namespace {
 
 constexpr size_t MAX_CALL_NESTING = 64;
 constexpr size_t MAX_CONTROL_FLOW_STEPS = 10'000;
-constexpr size_t MAX_REGION_NESTING = 64;
 
 struct QubitMap {
   DenseMap<Value, qc::Qubit> qubits;
@@ -1495,9 +1494,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         }
         auto returnOp =
             cast<func::ReturnOp>(callee.getBody().front().getTerminator());
-        if (failed(verifyRegionNestingDepth(callee, MAX_REGION_NESTING))) {
-          return failure();
-        }
         Operation* calleeOp = callee.getOperation();
         if (!walk.activeCalls.insert(calleeOp).second) {
           return call.emitError()
@@ -1597,9 +1593,6 @@ static FailureOr<PreparedState>
 prepare(func::FuncOp func, const dd::Package& dd,
         const DDArgumentBindings& argumentBindings,
         bool bindEntryAllocations = false) {
-  if (failed(verifyRegionNestingDepth(func, MAX_REGION_NESTING))) {
-    return failure();
-  }
   if (!func.getBody().hasOneBlock()) {
     return func.emitError()
            << "QCO DD construction expects a single-block function body";
@@ -1796,44 +1789,33 @@ static void analyzeSampling(func::FuncOp func, Block* sampledEntry,
     return;
   }
   const auto guard = llvm::make_scope_exit([&] { active.erase(funcOp); });
-  SmallVector<Block*> blocks;
-  for (Block& block : func.getBody()) {
-    blocks.push_back(&block);
-  }
-  while (!blocks.empty()) {
-    Block* block = blocks.pop_back_val();
-    for (Operation& operation : *block) {
-      if (remainingSteps == 0) {
+  func.getBody().walk([&](Operation* op) {
+    if (remainingSteps == 0) {
+      plan.dynamic = true;
+      return WalkResult::interrupt();
+    }
+    --remainingSteps;
+    if (isa<ResetOp>(op)) {
+      plan.dynamic = true;
+    } else if (auto measure = dyn_cast<MeasureOp>(op)) {
+      if (isDeferrableMeasurement(measure, sampledEntry, outputs)) {
+        plan.deferredMeasurements.insert(op);
+      } else {
         plan.dynamic = true;
-        return;
       }
-      --remainingSteps;
-      Operation* op = &operation;
-      if (isa<ResetOp>(op)) {
+    } else if (auto call = dyn_cast<func::CallOp>(op)) {
+      auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+          call, call.getCalleeAttr());
+      if (!callee || callee.isDeclaration() ||
+          !callee.getBody().hasOneBlock()) {
         plan.dynamic = true;
-      } else if (auto measure = dyn_cast<MeasureOp>(op)) {
-        if (isDeferrableMeasurement(measure, sampledEntry, outputs)) {
-          plan.deferredMeasurements.insert(op);
-        } else {
-          plan.dynamic = true;
-        }
-      } else if (auto call = dyn_cast<func::CallOp>(op)) {
-        auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
-            call, call.getCalleeAttr());
-        if (!callee || !callee.getBody().hasOneBlock()) {
-          plan.dynamic = true;
-        } else {
-          analyzeSampling(callee, sampledEntry, outputs, active, plan,
-                          remainingSteps);
-        }
-      }
-      for (Region& region : op->getRegions()) {
-        for (Block& nested : region) {
-          blocks.push_back(&nested);
-        }
+      } else {
+        analyzeSampling(callee, sampledEntry, outputs, active, plan,
+                        remainingSteps);
       }
     }
-  }
+    return WalkResult::advance();
+  });
 }
 
 static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {

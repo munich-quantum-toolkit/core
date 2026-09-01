@@ -12,7 +12,6 @@
 
 #include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -23,7 +22,6 @@
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
@@ -37,6 +35,7 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Dominance.h>
 #include <mlir/IR/Location.h>
@@ -388,11 +387,6 @@ protected:
 
     IRRewriter rewriter(&getContext());
 
-    if (failed(mqt::verifyProgramMetadata(mod))) {
-      signalPassFailure();
-      return;
-    }
-
     auto entryPoint = mqt::getEntryPoint(mod);
     if (!entryPoint) {
       mod.emitError() << "does not contain an entry point function";
@@ -400,14 +394,7 @@ protected:
       return;
     }
 
-    if (failed(qco::verifyLinearity(entryPoint)) ||
-        failed(validateMappingInput(entryPoint))) {
-      signalPassFailure();
-      return;
-    }
-
-    // Include the module and function operations in the shared depth bound.
-    if (failed(verifyRegionNestingDepth(mod, maxRegionNesting + 2))) {
+    if (failed(validateMappingInput(entryPoint))) {
       signalPassFailure();
       return;
     }
@@ -474,9 +461,6 @@ protected:
   }
 
 private:
-  static constexpr size_t maxStructuredNesting = 64;
-  static constexpr size_t maxRegionNesting = 64;
-
   /// Return whether a type carries value-semantics quantum state.
   static bool isQuantumType(Type type) {
     if (isa<QubitType>(type)) {
@@ -499,15 +483,7 @@ private:
 
   /// Follow one tensor init through a while's before region to its result.
   static FailureOr<WhileTensorTrace> traceWhileTensorInit(scf::WhileOp whileOp,
-                                                          size_t initIndex,
-                                                          size_t nesting = 0) {
-    if (nesting > maxStructuredNesting) {
-      whileOp.emitError() << "target mapping supports at most "
-                          << maxStructuredNesting
-                          << " nested quantum structured operations";
-      return failure();
-    }
-
+                                                          size_t initIndex) {
     Block* beforeBody = whileOp.getBeforeBody();
     if (initIndex >= beforeBody->getNumArguments()) {
       whileOp.emitError(
@@ -519,12 +495,6 @@ private:
     Value current = beforeBody->getArgument(initIndex);
     DenseSet<Value> visited;
     while (visited.insert(current).second) {
-      if (!current.hasOneUse()) {
-        whileOp.emitError(
-            "target mapping requires linear scf.while tensor flow");
-        return failure();
-      }
-
       OpOperand& use = *current.use_begin();
       Operation* user = use.getOwner();
       if (auto condition = dyn_cast<scf::ConditionOp>(user)) {
@@ -563,8 +533,8 @@ private:
       } else if (auto forOp = dyn_cast<scf::ForOp>(user)) {
         next = forOp.getTiedLoopResult(&use);
       } else if (auto nestedWhile = dyn_cast<scf::WhileOp>(user)) {
-        auto nestedTrace = traceWhileTensorInit(
-            nestedWhile, use.getOperandNumber(), nesting + 1);
+        auto nestedTrace =
+            traceWhileTensorInit(nestedWhile, use.getOperandNumber());
         if (failed(nestedTrace)) {
           return failure();
         }
@@ -671,89 +641,56 @@ private:
           "results; allocate qubits in the entry function body");
     }
 
-    struct PendingOperation {
-      Operation* op;
-      size_t structuredNesting;
-      size_t regionNesting;
-      Operation* unsupportedRegion;
-    };
-
-    SmallVector<PendingOperation> pending;
-    for (Block& block : func.getBody()) {
-      for (Operation& op : block) {
-        pending.push_back({&op, 0, 0, nullptr});
+    const WalkResult validation = func.walk([&](Operation* op) {
+      if (op == func.getOperation()) {
+        return WalkResult::advance();
       }
-    }
-
-    while (!pending.empty()) {
-      auto [op, structuredNesting, regionNesting, unsupportedRegion] =
-          pending.pop_back_val();
       if (isa<StaticOp>(op)) {
-        return op->emitError()
-               << "target mapping requires dynamically allocated qubits; "
-                  "static qubits are already placed";
+        op->emitError() << "target mapping requires dynamically allocated "
+                           "qubits; static qubits are already placed";
+        return WalkResult::interrupt();
       }
       const bool carriesQuantum =
           llvm::any_of(op->getOperandTypes(), isQuantumType) ||
           llvm::any_of(op->getResultTypes(), isQuantumType);
       if (carriesQuantum && !isSupportedQuantumCarrier(op)) {
-        return op->emitError()
-               << "target mapping does not support quantum values carried by "
-               << op->getName();
+        op->emitError()
+            << "target mapping does not support quantum values carried by "
+            << op->getName();
+        return WalkResult::interrupt();
       }
 
-      if (unsupportedRegion && carriesQuantum) {
-        return unsupportedRegion->emitError()
-               << "target mapping does not support quantum operations nested "
-                  "in "
-               << unsupportedRegion->getName();
+      if (carriesQuantum) {
+        for (Operation* parent = op->getParentOp();
+             parent != nullptr && parent != func.getOperation();
+             parent = parent->getParentOp()) {
+          if (parent->getNumRegions() != 0 &&
+              !isSupportedStructuredOperation(parent) &&
+              !isa<UnitaryOpInterface>(parent)) {
+            parent->emitError()
+                << "target mapping does not support quantum operations nested "
+                   "in "
+                << parent->getName();
+            return WalkResult::interrupt();
+          }
+        }
       }
 
       if (auto whileOp = dyn_cast<scf::WhileOp>(op);
           whileOp && failed(validateWhileTensorFlow(whileOp))) {
-        return failure();
-      }
-
-      const bool structured =
-          carriesQuantum && isSupportedStructuredOperation(op);
-      const size_t childStructuredNesting =
-          structuredNesting + static_cast<size_t>(structured);
-      if (childStructuredNesting > maxStructuredNesting) {
-        return op->emitError()
-               << "target mapping supports at most " << maxStructuredNesting
-               << " nested quantum structured operations";
-      }
-      const size_t childRegionNesting =
-          regionNesting + static_cast<size_t>(op->getNumRegions() != 0);
-      if (childRegionNesting > maxRegionNesting) {
-        return op->emitError()
-               << "target mapping supports at most " << maxRegionNesting
-               << " nested operations with regions";
+        return WalkResult::interrupt();
       }
 
       // Mapping treats a unitary, including a modifier, as one routing node.
       // Its region is the implementation of that node rather than nested
       // structured control flow to route independently.
       if (isa<UnitaryOpInterface>(op)) {
-        continue;
+        return WalkResult::skip();
       }
+      return WalkResult::advance();
+    });
 
-      Operation* childUnsupportedRegion = unsupportedRegion;
-      if (!childUnsupportedRegion && op->getNumRegions() != 0 &&
-          !isSupportedStructuredOperation(op) && !isa<func::FuncOp>(op)) {
-        childUnsupportedRegion = op;
-      }
-      for (Region& region : op->getRegions()) {
-        for (Block& block : region) {
-          for (Operation& nested : block) {
-            pending.push_back({&nested, childStructuredNesting,
-                               childRegionNesting, childUnsupportedRegion});
-          }
-        }
-      }
-    }
-
-    return success();
+    return validation.wasInterrupted() ? failure() : success();
   }
 
   /// Return the qubit values in `values`, preserving their relative order.
@@ -912,34 +849,26 @@ private:
   static FailureOr<Computation> discoverComputation(func::FuncOp func) {
     Computation computation;
 
-    SmallVector<Operation*> operations;
-    for (Block& block : func.getBody()) {
-      for (Operation& operation : block) {
-        operations.push_back(&operation);
-      }
-    }
-    for (size_t next = 0; next < operations.size(); ++next) {
-      Operation* op = operations[next];
+    const auto discovery = func.walk([&](Operation* op) {
       if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
-        if (!isa<BarrierOp>(op) && unitary.getNumQubits() > 2) {
+        if (isa<BarrierOp>(op)) {
+          return WalkResult::advance();
+        }
+        if (unitary.getNumQubits() > 2) {
           unitary.emitError()
               << "cannot route an operation acting on "
               << unitary.getNumQubits()
               << " qubits; decompose it to one- and two-qubit operations "
                  "first";
-          return failure();
+          return WalkResult::interrupt();
         }
-        computation.hasTwoQubitOperations |=
-            !isa<BarrierOp>(op) && unitary.getNumQubits() == 2;
+        computation.hasTwoQubitOperations |= unitary.getNumQubits() == 2;
       }
 
-      if (isa<AllocOp, qtensor::AllocOp>(op)) {
-        if (op->getParentRegion() != &func.getFunctionBody()) {
-          op->emitError()
-              << "target mapping requires dynamic qubit allocations in the "
-                 "entry function body";
-          return failure();
-        }
+      if (!isa<AllocOp, qtensor::AllocOp>(op)) {
+        return WalkResult::advance();
+      }
+      if (op->getParentRegion() == &func.getFunctionBody()) {
         TypeSwitch<Operation*>(op)
             .Case<AllocOp>([&](AllocOp alloc) {
               computation.scalarAllocations.emplace_back(alloc);
@@ -948,15 +877,17 @@ private:
               computation.tensorAllocations.emplace_back(
                   TensorAllocation{.allocation = alloc});
             });
+        return WalkResult::advance();
       }
 
-      for (Region& region : op->getRegions()) {
-        for (Block& block : region) {
-          for (Operation& nested : block) {
-            operations.push_back(&nested);
-          }
-        }
-      }
+      op->emitError()
+          << "target mapping requires dynamic qubit allocations in the entry "
+             "function body";
+      return WalkResult::interrupt();
+    });
+
+    if (discovery.wasInterrupted()) {
+      return failure();
     }
 
     for (auto alloc : computation.scalarAllocations) {

@@ -18,7 +18,6 @@
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <llvm/ADT/SmallPtrSet.h>
@@ -46,7 +45,6 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/OperationUtils.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
@@ -123,6 +121,31 @@ convertQubitMemRefAllocOp(memref::AllocOp op, memref::AllocOp::Adaptor adaptor,
 
   rewriter.replaceOp(op, array);
   return success();
+}
+
+static bool canReleaseInOutputBlock(Operation* release,
+                                    const LoweringState& state) {
+  Block* releaseBlock = release->getBlock();
+  SmallVector<Block*> worklist;
+  for (Block* successor : releaseBlock->getSuccessors()) {
+    worklist.push_back(successor);
+  }
+  SmallPtrSet<Block*, 8> visited;
+  while (!worklist.empty()) {
+    Block* block = worklist.pop_back_val();
+    if (block == releaseBlock) {
+      return false;
+    }
+    if (!visited.insert(block).second) {
+      continue;
+    }
+    for (Block* successor : block->getSuccessors()) {
+      worklist.push_back(successor);
+    }
+  }
+
+  const DominanceInfo dominance(state.outputBlock->getParentOp());
+  return dominance.dominates(release, state.outputBlock->getTerminator());
 }
 
 namespace {
@@ -304,31 +327,6 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     return success();
   }
 };
-
-static bool canReleaseInOutputBlock(Operation* release,
-                                    const LoweringState& state) {
-  Block* releaseBlock = release->getBlock();
-  SmallVector<Block*> worklist;
-  for (Block* successor : releaseBlock->getSuccessors()) {
-    worklist.push_back(successor);
-  }
-  SmallPtrSet<Block*, 8> visited;
-  while (!worklist.empty()) {
-    Block* block = worklist.pop_back_val();
-    if (block == releaseBlock) {
-      return false;
-    }
-    if (!visited.insert(block).second) {
-      continue;
-    }
-    for (Block* successor : block->getSuccessors()) {
-      worklist.push_back(successor);
-    }
-  }
-
-  const DominanceInfo dominance(state.outputBlock->getParentOp());
-  return dominance.dominates(release, state.outputBlock->getTerminator());
-}
 
 /**
  * @brief Converts memref.dealloc to QIR qubit-array release
@@ -743,11 +741,6 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto original = getOperation();
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(original, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
     OwningOpRef<ModuleOp> converted(original.clone());
     auto moduleOp = *converted;
     LoweringState state;

@@ -13,7 +13,7 @@ include "mlir/Pass/PassBase.td"
 
 def MergeSingleQubitRotationGates
     : Pass<"merge-single-qubit-rotation-gates", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qc::QCDialect", "mlir::qco::QCODialect",
+  let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect",
                            "::mlir::math::MathDialect"];
   let summary = "Merge single-qubit gates using quaternion-based fusion";
@@ -60,14 +60,12 @@ def MergeSingleQubitRotationGates
     the implementation directly invokes the shared global-phase normalization
     utility to combine, normalize, and remove trivial corrections in their
     respective scopes.
-
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
 }
 
 def FuseSingleQubitUnitaryRuns
     : Pass<"fuse-single-qubit-unitary-runs", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qc::QCDialect", "mlir::qco::QCODialect",
+  let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect",
                            "::mlir::math::MathDialect",
                            "::mlir::qtensor::QTensorDialect"];
@@ -88,8 +86,6 @@ def FuseSingleQubitUnitaryRuns
     The pass also composes supported named gates with dynamic `f64` parameters
     and emits conservative runtime sequences in the requested basis. Dynamic
     `pow` and arbitrary dynamic unitaries remain unchanged.
-
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
   let options = [Option<
       "basis", "basis", "std::string", "\"zyz\"",
@@ -108,8 +104,6 @@ def QuantumLoopUnroll
 
     Because the pass uses the `mlir::loopUnrollByFactor` utility internally, the same assumptions and restrictions hold for both.
     See the [MLIR documentation](https://mlir.llvm.org/doxygen/include_2mlir_2Dialect_2SCF_2Utils_2Utils_8h.html) for more information.
-
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
   let options = [Option<"unrollFactor", "unroll-factor", "int64_t",
                         /*default=*/"-1",
@@ -123,8 +117,7 @@ def QuantumLoopUnroll
 //===----------------------------------------------------------------------===//
 
 def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qc::QCDialect", "mlir::qco::QCODialect",
-                           "mlir::scf::SCFDialect"];
+  let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "This pass ensures that a program meets the connectivity "
                 "constraints of a target architecture.";
   let description = [{
@@ -170,25 +163,24 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     potentially find a more optimal solution. This is behavior is controlled by the `niterations` parameter.
 
     The pass option `ntrials` determines how many random initial layouts the pass explores. If compiled with multi-threading on, these trials will be executed in parallel.
-
-    Within the entry-point body, any IR path may contain at most 64
-    region-owning operations.
   }];
-  let options =
-      [Option<"nlookahead", "nlookahead", "std::size_t", "1",
-              "The number of lookahead steps. Must be <= 4096.">,
-       Option<"alpha", "alpha", "float", "1.0F",
-              "The alpha factor in the cost function. Must be finite and > 0.">,
-       Option<"lambda", "lambda", "float", "0.5F",
-              "The lambda factor in the cost function. Must be finite.">,
-       Option<"niterations", "niterations", "std::size_t", "1",
-              "The number of forwards and backwards traversal to "
-              "improve the initial layout. Must be in [1, 4096].">,
-       Option<"ntrials", "ntrials", "std::size_t", "4",
-              "The number of (possibly parallel) random trials of "
-              "the forwards and backwards mechanism. Must be in [1, 4096].">,
-       Option<"seed", "seed", "std::size_t", "42",
-              "A seed used for randomization.">];
+  let options = [Option<"nlookahead", "nlookahead", "std::size_t", "1",
+                        "The number of lookahead steps. Must be <= 4096.">,
+                 Option<"alpha", "alpha", "float", "1.0F",
+                        "The alpha factor in the cost function. Must be finite "
+                        "and > 0.">,
+                 Option<"lambda", "lambda", "float", "0.5F",
+                        "The lambda factor in the cost function. Must be "
+                        "finite.">,
+                 Option<"niterations", "niterations", "std::size_t", "1",
+                        "The number of forwards and backwards traversal to "
+                        "improve the initial layout. Must be in [1, 4096].">,
+                 Option<"ntrials", "ntrials", "std::size_t", "4",
+                        "The number of (possibly parallel) random trials of "
+                        "the forwards and backwards mechanism. Must be in [1, "
+                        "4096].">,
+                 Option<"seed", "seed", "std::size_t", "42",
+                        "A seed used for randomization.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
                               "The number of inserted SWAPs">];
 }
@@ -216,8 +208,7 @@ def PauliTwirl2QGates : Pass<"pauli-twirl-2q-gates", "mlir::ModuleOp"> {
 }
 
 def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qc::QCDialect", "mlir::qco::QCODialect",
-                           "::mlir::arith::ArithDialect"];
+  let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "This pass attempts to move Hadamard gates as far away from "
                 "measurements as possible by commuting them "
                 "with Pauli gates. This is done in order to apply measurement "
@@ -274,7 +265,6 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
 
     Afterward the measurement lifting routine could transform the CNOT into a classically controlled Pauli-X.
 
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
 }
 
@@ -292,8 +282,6 @@ def MeasurementLifting : Pass<"measurement-lifting", "mlir::ModuleOp"> {
     also move before `x` and `y`, with the classical result inverted.
 
     Earlier measurements enable qubit reuse and subsequent optimizations.
-
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
 }
 
@@ -321,8 +309,6 @@ def ReplaceClassicalControls
 
     Replacing quantum controls with classical conditions reduces quantum
     interactions and can enable qubit reuse and subsequent optimizations.
-
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
 }
 
@@ -344,8 +330,6 @@ def ReuseQubits : Pass<"reuse-qubits", "mlir::ModuleOp"> {
     Only single-qubit allocations are considered for reuse, no `qtensor` allocations.
 
     Use the `mqt-qubit-reuse` pipeline to run the preparation passes followed by this pass.
-
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
 }
 
@@ -362,8 +346,6 @@ def RemoveDeadGates : Pass<"remove-dead-gates", "mlir::ModuleOp"> {
     measurement-free programs may intentionally represent state preparation or
     larger quantum building blocks. The `mqt-qubit-reuse` pipeline runs this
     pass before attempting to reuse qubits.
-
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
 }
 
@@ -407,8 +389,6 @@ def DecomposeMultiControlled
     Intermediate building blocks may be left as `qco.ctrl` / `qco.rccx` when
     `min-qubits` keeps them; the greedy rewriter lowers further when the
     threshold allows.
-
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
   let options = [Option<
       "minQubits", "min-qubits", "uint64_t", "3",

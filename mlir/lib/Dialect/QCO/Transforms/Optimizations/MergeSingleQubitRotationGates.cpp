@@ -8,19 +8,15 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/MQT/Utils/Angles.h"
 #include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mlir/Dialect/MQT/Utils/Parameters.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -1147,17 +1143,6 @@ protected:
   void runOnOperation() override {
     auto op = getOperation();
     auto* ctx = &getContext();
-
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(op, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
-    if (failed(mqt::verifyProgramMetadata(op)) ||
-        failed(qco::verifyLinearity(op))) {
-      signalPassFailure();
-      return;
-    }
 
     RewritePatternSet patterns(ctx);
     patterns.add<MergeSingleQubitRotationGatesPattern>(patterns.getContext());

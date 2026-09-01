@@ -8,17 +8,13 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
 #include <mlir/Dialect/Math/IR/Math.h>   // IWYU pragma: keep (Passes.h.inc)
@@ -201,17 +197,6 @@ protected:
       moduleOp.emitError()
           << "Invalid single-qubit synthesis basis '" << basis
           << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx, r.";
-      signalPassFailure();
-      return;
-    }
-
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(moduleOp, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
-    if (failed(mqt::verifyProgramMetadata(moduleOp)) ||
-        failed(qco::verifyLinearity(moduleOp))) {
       signalPassFailure();
       return;
     }

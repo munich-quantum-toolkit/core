@@ -17,9 +17,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -31,7 +29,6 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 
-#include <cstddef>
 #include <numbers>
 #include <tuple>
 
@@ -696,38 +693,6 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-TEST_F(QCOMeasurementLiftingTest, RejectsNonlinearQubitWithoutMutation) {
-  program = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main() {
-        %qubit = qco.alloc : !qco.qubit
-        %phase = qco.z %qubit : !qco.qubit -> !qco.qubit
-        %measured, %bit = qco.measure %phase : !qco.qubit
-        %other = qco.x %phase : !qco.qubit -> !qco.qubit
-        qco.sink %measured : !qco.qubit
-        qco.sink %other : !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                        &context);
-  ASSERT_TRUE(program);
-  ASSERT_TRUE(succeeded(verify(*program)));
-  OwningOpRef<ModuleOp> original(program->clone());
-
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str()).contains("exactly one use");
-    return success();
-  });
-  EXPECT_TRUE(failed(runMeasurementLiftingPass(*program)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      program->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
 TEST_F(QCOMeasurementLiftingTest,
        PreservesModifierSupportOperationsWhenRefusingLift) {
   auto module = parseSourceString<ModuleOp>(R"mlir(
@@ -756,47 +721,5 @@ module {
   EXPECT_TRUE(succeeded(manager.run(*module)));
   EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
       module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
-TEST_F(QCOMeasurementLiftingTest, DeepModifierNestingFailsWithoutMutation) {
-  OpBuilder builder(&context);
-  OwningOpRef moduleOp = ModuleOp::create(builder.getUnknownLoc());
-  builder.setInsertionPointToStart(moduleOp->getBody());
-  const auto loc = moduleOp->getLoc();
-  const auto qubitType = QubitType::get(&context);
-  auto function = func::FuncOp::create(
-      builder, loc, "test",
-      builder.getFunctionType({qubitType}, {qubitType, builder.getI1Type()}));
-  auto* entry = function.addEntryBlock();
-  builder.setInsertionPointToStart(entry);
-
-  constexpr std::size_t modifierDepth = 512;
-  auto outer = InvOp::create(builder, loc, ValueRange{function.getArgument(0)});
-  auto* body = &outer.getBodyRegion().emplaceBlock();
-  auto currentQubit = body->addArgument(qubitType, loc);
-  for (std::size_t i = 1; i < modifierDepth; ++i) {
-    builder.setInsertionPointToEnd(body);
-    auto inner = InvOp::create(builder, loc, ValueRange{currentQubit});
-    YieldOp::create(builder, loc, inner.getQubitsOut());
-    body = &inner.getBodyRegion().emplaceBlock();
-    currentQubit = body->addArgument(qubitType, loc);
-  }
-  builder.setInsertionPointToEnd(body);
-  auto z = ZOp::create(builder, loc, currentQubit);
-  YieldOp::create(builder, loc, ValueRange{z.getOutputTarget(0)});
-
-  builder.setInsertionPointToEnd(entry);
-  auto measurement = MeasureOp::create(builder, loc, outer.getQubitsOut()[0]);
-  func::ReturnOp::create(
-      builder, loc,
-      ValueRange{measurement.getQubitOut(), measurement.getResult()});
-  OwningOpRef<ModuleOp> original(moduleOp->clone());
-
-  PassManager manager(&context);
-  manager.addPass(createMeasurementLifting());
-  EXPECT_TRUE(failed(manager.run(*moduleOp)));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      moduleOp->getOperation(), original->getOperation(),
       OperationEquivalence::Flags::None));
 }

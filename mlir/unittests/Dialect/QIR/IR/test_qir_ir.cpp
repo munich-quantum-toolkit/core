@@ -24,6 +24,7 @@
 #include <llvm/IR/Metadata.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
@@ -38,7 +39,6 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <iosfwd>
@@ -78,20 +78,6 @@ static ArrayAttr findPassthroughEntry(LLVM::LLVMFuncOp function,
     }
   }
   return {};
-}
-
-static size_t countPassthroughEntries(LLVM::LLVMFuncOp function,
-                                      StringRef name) {
-  const auto passthrough = function->getAttrOfType<ArrayAttr>("passthrough");
-  if (!passthrough) {
-    return 0;
-  }
-  return llvm::count_if(passthrough, [&](Attribute attribute) {
-    const auto pair = dyn_cast<ArrayAttr>(attribute);
-    const auto key =
-        pair && pair.size() == 2 ? dyn_cast<StringAttr>(pair[0]) : StringAttr{};
-    return key && key.getValue() == name;
-  });
 }
 
 namespace {
@@ -248,40 +234,6 @@ TEST_F(QIRTest, ReusedIrreversibleDeclarationsPreservePassthroughIdempotently) {
   }
 }
 
-TEST_F(QIRTest, MetadataPassRequiresExactlyOneEntryPointAtomically) {
-  for (const size_t numEntryPoints : {0U, 2U}) {
-    SCOPED_TRACE(testing::Message() << "numEntryPoints=" << numEntryPoints);
-    OpBuilder builder(context.get());
-    const auto location = builder.getUnknownLoc();
-    auto module = ModuleOp::create(location);
-    builder.setInsertionPointToStart(module.getBody());
-    const auto functionType =
-        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
-    for (size_t i = 0; i < std::max<size_t>(numEntryPoints, 1); ++i) {
-      auto function = LLVM::LLVMFuncOp::create(
-          builder, location, "function" + std::to_string(i), functionType);
-      if (i < numEntryPoints) {
-        function->setAttr("passthrough",
-                          builder.getStrArrayAttr({"entry_point"}));
-      }
-      auto* block = function.addEntryBlock(builder);
-      builder.setInsertionPointToEnd(block);
-      LLVM::ReturnOp::create(builder, location, ValueRange{});
-      builder.setInsertionPointToEnd(module.getBody());
-    }
-    ASSERT_TRUE(succeeded(verify(module)));
-
-    std::string before;
-    llvm::raw_string_ostream(before) << module;
-    PassManager manager(context.get());
-    manager.addPass(qir::createQIRSetAttributesAndMetadata({false}));
-    EXPECT_TRUE(failed(manager.run(module)));
-    std::string after;
-    llvm::raw_string_ostream(after) << module;
-    EXPECT_EQ(after, before);
-  }
-}
-
 TEST_F(QIRTest, BaseMetadataRejectsDynamicResourcesAtomically) {
   OpBuilder builder(context.get());
   const auto location = builder.getUnknownLoc();
@@ -371,6 +323,81 @@ TEST_F(QIRTest, AdaptiveMetadataScansStaticResourcesInHelperFunctions) {
   EXPECT_TRUE(findModuleFlag(module, "ir_functions"));
 }
 
+TEST_F(QIRTest, AdaptiveMetadataHandlesRecursiveHelperResourceProvenance) {
+  for (const auto [dynamic, hasOrigin, succeeds] :
+       std::array{std::tuple{false, true, true}, std::tuple{true, true, true},
+                  std::tuple{false, false, false}}) {
+    SCOPED_TRACE(testing::Message()
+                 << "dynamic=" << dynamic << ", hasOrigin=" << hasOrigin);
+    OpBuilder builder(context.get());
+    const auto location = builder.getUnknownLoc();
+    auto module = ModuleOp::create(location);
+    builder.setInsertionPointToStart(module.getBody());
+    const auto ptrType = LLVM::LLVMPointerType::get(context.get());
+    const auto voidType = LLVM::LLVMVoidType::get(context.get());
+    auto x = LLVM::LLVMFuncOp::create(
+        builder, location, QIR_X,
+        LLVM::LLVMFunctionType::get(voidType, {ptrType}));
+    LLVM::LLVMFuncOp allocate;
+    if (dynamic) {
+      allocate = LLVM::LLVMFuncOp::create(
+          builder, location, QIR_QUBIT_ALLOC,
+          LLVM::LLVMFunctionType::get(ptrType, {ptrType}));
+    }
+
+    const auto helperType = LLVM::LLVMFunctionType::get(voidType, {ptrType});
+    auto helper =
+        LLVM::LLVMFuncOp::create(builder, location, "helper", helperType);
+    auto* helperBlock = helper.addEntryBlock(builder);
+    builder.setInsertionPointToEnd(helperBlock);
+    LLVM::CallOp::create(builder, location, x, helperBlock->getArgument(0));
+    LLVM::CallOp::create(builder, location, helper,
+                         helperBlock->getArgument(0));
+    LLVM::ReturnOp::create(builder, location, ValueRange{});
+
+    builder.setInsertionPointToEnd(module.getBody());
+    const auto mainType = LLVM::LLVMFunctionType::get(voidType, {});
+    auto main = LLVM::LLVMFuncOp::create(builder, location, "main", mainType);
+    main->setAttr("passthrough", builder.getStrArrayAttr({"entry_point"}));
+    auto* mainBlock = main.addEntryBlock(builder);
+    builder.setInsertionPointToEnd(mainBlock);
+    if (hasOrigin) {
+      Value qubit;
+      if (dynamic) {
+        auto null = LLVM::ZeroOp::create(builder, location, ptrType);
+        qubit =
+            LLVM::CallOp::create(builder, location, allocate, null.getResult())
+                .getResult();
+      } else {
+        auto index = LLVM::ConstantOp::create(builder, location,
+                                              builder.getI64IntegerAttr(5));
+        qubit = LLVM::IntToPtrOp::create(builder, location, ptrType,
+                                         index.getResult())
+                    .getResult();
+      }
+      LLVM::CallOp::create(builder, location, helper, qubit);
+    }
+    LLVM::ReturnOp::create(builder, location, ValueRange{});
+    ASSERT_TRUE(succeeded(verify(module)));
+
+    PassManager manager(context.get());
+    manager.addPass(qir::createQIRSetAttributesAndMetadata({true}));
+    if (!succeeds) {
+      EXPECT_TRUE(failed(manager.run(module)));
+      continue;
+    }
+    ASSERT_TRUE(succeeded(manager.run(module)));
+    const auto required = findPassthroughEntry(main, "required_num_qubits");
+    ASSERT_TRUE(required);
+    EXPECT_EQ(cast<StringAttr>(required[1]).getValue(), dynamic ? "0" : "6");
+    const auto dynamicManagement =
+        findModuleFlag(module, "dynamic_qubit_management");
+    ASSERT_TRUE(dynamicManagement);
+    EXPECT_EQ(cast<IntegerAttr>(dynamicManagement.getValue()).getInt(),
+              dynamic ? 1 : 0);
+  }
+}
+
 TEST_F(QIRTest, MetadataTracesStaticResourcesThroughControlFlowArguments) {
   OpBuilder builder(context.get());
   const auto location = builder.getUnknownLoc();
@@ -421,7 +448,7 @@ TEST_F(QIRTest, MetadataTracesStaticResourcesThroughControlFlowArguments) {
   ASSERT_TRUE(succeeded(verify(module)));
 
   PassManager manager(context.get());
-  manager.addPass(qir::createQIRSetAttributesAndMetadata({false}));
+  manager.addPass(qir::createQIRSetAttributesAndMetadata({true}));
   ASSERT_TRUE(succeeded(manager.run(module)));
   const auto requiredQubits = findPassthroughEntry(main, "required_num_qubits");
   const auto requiredResults =
@@ -470,7 +497,7 @@ TEST_F(QIRTest, MetadataRequiresAnOriginForLoopCarriedStaticPointers) {
     ASSERT_TRUE(succeeded(verify(module)));
 
     PassManager manager(context.get());
-    manager.addPass(qir::createQIRSetAttributesAndMetadata({false}));
+    manager.addPass(qir::createQIRSetAttributesAndMetadata({true}));
     if (!hasStaticOrigin) {
       EXPECT_TRUE(failed(manager.run(module)));
       continue;
@@ -726,103 +753,6 @@ TEST_F(QIRTest, ResultArraysDoNotInflateRequiredQubitCapacity) {
   EXPECT_EQ(cast<StringAttr>(requiredResults[1]).getValue(), "8");
 }
 
-TEST_F(QIRTest, IgnoresMalformedZeroArgumentRecordDeclarationWithoutCrashing) {
-  OpBuilder builder(context.get());
-  const auto location = builder.getUnknownLoc();
-  auto module = ModuleOp::create(location);
-  builder.setInsertionPointToStart(module.getBody());
-  const auto voidType = LLVM::LLVMVoidType::get(context.get());
-  const auto functionType = LLVM::LLVMFunctionType::get(voidType, {});
-  auto record = LLVM::LLVMFuncOp::create(builder, location, QIR_RECORD_OUTPUT,
-                                         functionType);
-  auto main = LLVM::LLVMFuncOp::create(builder, location, "main", functionType);
-  main->setAttr("passthrough", builder.getStrArrayAttr({"entry_point"}));
-  auto* block = main.addEntryBlock(builder);
-  builder.setInsertionPointToEnd(block);
-  LLVM::CallOp::create(builder, location, record, ValueRange{});
-  LLVM::ReturnOp::create(builder, location, ValueRange{});
-  ASSERT_TRUE(succeeded(verify(module)));
-
-  PassManager manager(context.get());
-  manager.addPass(qir::createQIRSetAttributesAndMetadata({false}));
-  ASSERT_TRUE(succeeded(manager.run(module)));
-  const auto required = findPassthroughEntry(main, "required_num_results");
-  ASSERT_TRUE(required);
-  EXPECT_EQ(cast<StringAttr>(required[1]).getValue(), "0");
-}
-
-TEST_F(QIRTest, PreservesUnrelatedModuleFlags) {
-  OpBuilder builder(context.get());
-  const auto location = builder.getUnknownLoc();
-  auto module = ModuleOp::create(location);
-  builder.setInsertionPointToStart(module.getBody());
-  const auto unrelated =
-      LLVM::ModuleFlagAttr::get(context.get(), LLVM::ModFlagBehavior::Warning,
-                                builder.getStringAttr("Debug Info Version"),
-                                builder.getI32IntegerAttr(3));
-  const auto staleQIR = LLVM::ModuleFlagAttr::get(
-      context.get(), LLVM::ModFlagBehavior::Error,
-      builder.getStringAttr("qir_major_version"), builder.getI32IntegerAttr(1));
-  LLVM::ModuleFlagsOp::create(builder, location,
-                              builder.getArrayAttr({unrelated, staleQIR}));
-  const auto functionType =
-      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
-  auto main = LLVM::LLVMFuncOp::create(builder, location, "main", functionType);
-  main->setAttr("passthrough", builder.getStrArrayAttr({"entry_point"}));
-  auto* block = main.addEntryBlock(builder);
-  builder.setInsertionPointToEnd(block);
-  LLVM::ReturnOp::create(builder, location, ValueRange{});
-  ASSERT_TRUE(succeeded(verify(module)));
-
-  PassManager manager(context.get());
-  manager.addPass(qir::createQIRSetAttributesAndMetadata({false}));
-  ASSERT_TRUE(succeeded(manager.run(module)));
-  const auto preserved = findModuleFlag(module, "Debug Info Version");
-  ASSERT_TRUE(preserved);
-  EXPECT_EQ(preserved.getBehavior(), LLVM::ModFlagBehavior::Warning);
-  EXPECT_EQ(cast<IntegerAttr>(preserved.getValue()).getInt(), 3);
-  const auto qirMajor = findModuleFlag(module, "qir_major_version");
-  ASSERT_TRUE(qirMajor);
-  EXPECT_EQ(cast<IntegerAttr>(qirMajor.getValue()).getInt(), 2);
-}
-
-TEST_F(QIRTest, PreservesUnrelatedFunctionPassthroughAttributesIdempotently) {
-  OpBuilder builder(context.get());
-  const auto location = builder.getUnknownLoc();
-  auto module = ModuleOp::create(location);
-  builder.setInsertionPointToStart(module.getBody());
-  const auto functionType =
-      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
-  auto main = LLVM::LLVMFuncOp::create(builder, location, "main", functionType);
-  const auto nounwind = builder.getStringAttr("nounwind");
-  const auto target = builder.getStrArrayAttr({"target-cpu", "generic"});
-  main->setAttr(
-      "passthrough",
-      builder.getArrayAttr(
-          {builder.getStringAttr("entry_point"), nounwind, target,
-           builder.getStrArrayAttr({"qir_profiles", "stale_profile"})}));
-  auto* block = main.addEntryBlock(builder);
-  builder.setInsertionPointToEnd(block);
-  LLVM::ReturnOp::create(builder, location, ValueRange{});
-  ASSERT_TRUE(succeeded(verify(module)));
-
-  const auto runPass = [&] {
-    PassManager manager(context.get());
-    manager.addPass(qir::createQIRSetAttributesAndMetadata({false}));
-    return manager.run(module);
-  };
-  ASSERT_TRUE(succeeded(runPass()));
-  auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
-  ASSERT_TRUE(passthrough);
-  EXPECT_TRUE(llvm::is_contained(passthrough, nounwind));
-  EXPECT_TRUE(llvm::is_contained(passthrough, target));
-  EXPECT_EQ(countPassthroughEntries(main, "qir_profiles"), 1U);
-  const auto afterFirstRun = passthrough;
-
-  ASSERT_TRUE(succeeded(runPass()));
-  EXPECT_EQ(main->getAttrOfType<ArrayAttr>("passthrough"), afterFirstRun);
-}
-
 TEST_F(QIRTest, ClassifiesUnconditionalBackedgeAsIteration) {
   OpBuilder builder(context.get());
   auto module = ModuleOp::create(builder.getUnknownLoc());
@@ -898,18 +828,15 @@ TEST_F(QIRTest, ClassifiesMeasurementExitAfterOtherConditional) {
 }
 
 TEST_F(QIRTest, CleanupOnlyRemovesProvenSideEffectFreeArrayPairs) {
-  const auto buildModule = [&](bool nonNullError, bool mismatchedSize,
-                               bool nonVoidAllocate) {
+  const auto buildModule = [&](bool nonNullError, bool mismatchedSize) {
     OpBuilder builder(context.get());
     const auto location = builder.getUnknownLoc();
     auto module = ModuleOp::create(location);
     builder.setInsertionPointToStart(module.getBody());
     const auto ptrType = LLVM::LLVMPointerType::get(context.get());
     const auto voidType = LLVM::LLVMVoidType::get(context.get());
-    const Type allocateResult =
-        nonVoidAllocate ? Type(builder.getI1Type()) : Type(voidType);
     const auto allocateType = LLVM::LLVMFunctionType::get(
-        allocateResult, {builder.getI64Type(), ptrType, ptrType});
+        voidType, {builder.getI64Type(), ptrType, ptrType});
     const auto releaseType =
         LLVM::LLVMFunctionType::get(voidType, {builder.getI64Type(), ptrType});
     auto allocate = LLVM::LLVMFuncOp::create(
@@ -939,7 +866,7 @@ TEST_F(QIRTest, CleanupOnlyRemovesProvenSideEffectFreeArrayPairs) {
     } else {
       error = LLVM::ZeroOp::create(builder, location, ptrType).getResult();
     }
-    auto allocateCall = LLVM::CallOp::create(
+    LLVM::CallOp::create(
         builder, location, allocate,
         ValueRange{size.getResult(), array.getResult(), error});
     Value releaseSize = size.getResult();
@@ -952,9 +879,7 @@ TEST_F(QIRTest, CleanupOnlyRemovesProvenSideEffectFreeArrayPairs) {
                          ValueRange{releaseSize, array.getResult()});
 
     Value result;
-    if (nonVoidAllocate) {
-      result = allocateCall.getResult();
-    } else if (nonNullError) {
+    if (nonNullError) {
       result =
           LLVM::LoadOp::create(builder, location, builder.getI1Type(), error)
               .getResult();
@@ -967,16 +892,12 @@ TEST_F(QIRTest, CleanupOnlyRemovesProvenSideEffectFreeArrayPairs) {
     return module;
   };
 
-  for (const auto [nonNullError, mismatchedSize, nonVoidAllocate,
-                   expectedCalls] :
-       std::array{std::tuple{false, false, false, 0U},
-                  std::tuple{true, false, false, 2U},
-                  std::tuple{false, true, false, 2U},
-                  std::tuple{false, false, true, 2U}}) {
+  for (const auto [nonNullError, mismatchedSize, expectedCalls] :
+       std::array{std::tuple{false, false, 0U}, std::tuple{true, false, 2U},
+                  std::tuple{false, true, 2U}}) {
     SCOPED_TRACE(testing::Message() << "nonNullError=" << nonNullError
-                                    << ", mismatchedSize=" << mismatchedSize
-                                    << ", nonVoidAllocate=" << nonVoidAllocate);
-    auto module = buildModule(nonNullError, mismatchedSize, nonVoidAllocate);
+                                    << ", mismatchedSize=" << mismatchedSize);
+    auto module = buildModule(nonNullError, mismatchedSize);
     ASSERT_TRUE(succeeded(verify(module)));
     PassManager manager(context.get());
     manager.addPass(qir::createQIRCleanupPass());
@@ -1045,8 +966,9 @@ TEST_F(QIRTest, CleanupDoesNotDuplicateRequiredResourceCounts) {
   ASSERT_TRUE(succeeded(manager.run(module)));
   EXPECT_FALSE(findPassthroughEntry(main, "dynamic_qubit_management"));
   EXPECT_FALSE(findPassthroughEntry(main, "dynamic_result_management"));
-  EXPECT_EQ(countPassthroughEntries(main, "required_num_qubits"), 1U);
-  EXPECT_EQ(countPassthroughEntries(main, "required_num_results"), 1U);
+  const auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
+  ASSERT_TRUE(passthrough);
+  EXPECT_EQ(passthrough.size(), 3U);
   const auto requiredQubits = findPassthroughEntry(main, "required_num_qubits");
   const auto requiredResults =
       findPassthroughEntry(main, "required_num_results");

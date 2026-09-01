@@ -941,8 +941,7 @@ void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
 // This structural query deliberately avoids constructing the body matrix or
 // running the eigensolver.
 bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
-  if (!isModifierMatrixSizeSupported(getNumTargets()) ||
-      !detail::isModifierMatrixNestingSupported(getOperation())) {
+  if (!isModifierMatrixSizeSupported(getNumTargets())) {
     return false;
   }
   return getExponentValue().has_value() &&
@@ -965,8 +964,7 @@ bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
  * not fully compile-time known, or `V` is not unitary.
  */
 std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
-  if (!isModifierMatrixSizeSupported(getNumTargets()) ||
-      !detail::isModifierMatrixNestingSupported(getOperation())) {
+  if (!isModifierMatrixSizeSupported(getNumTargets())) {
     return std::nullopt;
   }
   const auto exponent = getExponentValue();

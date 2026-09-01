@@ -14,7 +14,6 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
@@ -1164,15 +1163,15 @@ static void appendSp22PRx(CircuitPlan& plan, size_t m, double sign) {
 /// SP22 Theorem 2: expand `Q_m` into single-controlled CRX only.
 static CircuitPlan buildSp22Q(size_t m) {
   CircuitPlan q;
-  for (size_t level = m; level > 1; --level) {
-    appendSp22PRx(q, level - 1, 1.0);
-    q.append({.kind = PlanOpKind::CRX,
-              .wires = {0, level - 1},
-              .angle = std::ldexp(K_PI, -static_cast<int>(level - 2))});
+  if (m < 2) {
+    return q; // Q_1 = Q_0 = I
   }
-  for (size_t level = 2; level <= m; ++level) {
-    appendSp22PRx(q, level - 1, -1.0);
-  }
+  appendSp22PRx(q, m - 1, 1.0);
+  q.append({.kind = PlanOpKind::CRX,
+            .wires = {0, m - 1},
+            .angle = std::ldexp(K_PI, -static_cast<int>(m - 2))});
+  appendPlanOps(q, buildSp22Q(m - 1));
+  appendSp22PRx(q, m - 1, -1.0);
   return q;
 }
 
@@ -1429,12 +1428,6 @@ protected:
     if (minQubits < 3) {
       getOperation().emitError()
           << "decompose-multi-controlled requires min-qubits >= 3";
-      signalPassFailure();
-      return;
-    }
-
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(getOperation(), maxRegionNesting))) {
       signalPassFailure();
       return;
     }

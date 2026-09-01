@@ -19,7 +19,9 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <array>
 #include <cstdint>
@@ -217,25 +219,13 @@ protected:
       const std::array<Twirl, 16>* table;
     };
     SmallVector<Candidate> gates;
-    SmallVector<Operation*> worklist{getOperation()};
-    while (!worklist.empty()) {
-      Operation* op = worklist.pop_back_val();
+    getOperation().walk<WalkOrder::PreOrder>([&](Operation* op) {
       if (const auto* table = getTwirlTable(op)) {
         gates.push_back({.gate = cast<UnitaryOpInterface>(op), .table = table});
       }
-      if (isa<CtrlOp, InvOp, PowOp>(op)) {
-        continue;
-      }
-      SmallVector<Operation*> nested;
-      for (Region& region : op->getRegions()) {
-        for (Block& block : region) {
-          for (Operation& operation : block) {
-            nested.push_back(&operation);
-          }
-        }
-      }
-      worklist.append(nested.rbegin(), nested.rend());
-    }
+      return isa<CtrlOp, InvOp, PowOp>(op) ? WalkResult::skip()
+                                           : WalkResult::advance();
+    });
 
     IRRewriter rewriter(&getContext());
     std::mt19937_64 rng(seed);

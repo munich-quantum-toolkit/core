@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/MQT/Utils/Angles.h"
@@ -17,7 +16,6 @@
 #include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
@@ -39,6 +37,7 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <optional>
@@ -203,6 +202,8 @@ struct PhaseContribution final {
 
 using PhaseContributions = std::array<std::optional<PhaseContribution>, 2>;
 
+} // namespace
+
 [[nodiscard]] static constexpr std::size_t
 getDialectIndex(PhaseDialect dialect) {
   return static_cast<std::size_t>(dialect);
@@ -218,44 +219,52 @@ static void addContribution(PhaseContributions& contributions,
   aggregate = std::move(contribution);
 }
 
-} // namespace
+/// Collect a pure, body-local dependency slice in topological order.
+static bool collectHoistableSlice(Value value, Block& body,
+                                  SmallPtrSetImpl<Operation*>& visiting,
+                                  SmallPtrSetImpl<Operation*>& collected,
+                                  SmallVectorImpl<Operation*>& ordered) {
+  if (auto blockArg = dyn_cast<BlockArgument>(value)) {
+    return blockArg.getOwner() != &body;
+  }
+
+  auto* definingOp = value.getDefiningOp();
+  if (definingOp == nullptr || definingOp->getBlock() != &body) {
+    return true;
+  }
+  if (collected.contains(definingOp)) {
+    return true;
+  }
+  if (!visiting.insert(definingOp).second || definingOp->getNumRegions() != 0 ||
+      !isPure(definingOp) || !isSpeculatable(definingOp)) {
+    return false;
+  }
+  for (auto operand : definingOp->getOperands()) {
+    if (!collectHoistableSlice(operand, body, visiting, collected, ordered)) {
+      return false;
+    }
+  }
+  visiting.erase(definingOp);
+  collected.insert(definingOp);
+  ordered.push_back(definingOp);
+  return true;
+}
 
 /// Make all dynamic leaves of @p expression available before @p modifier.
 static bool hoistExpressionBefore(const PhaseExpression& expression,
                                   Block& body, Operation* modifier,
                                   RewriterBase& rewriter) {
+  SmallPtrSet<Operation*, 8> visiting;
   SmallPtrSet<Operation*, 8> collected;
-  SmallVector<Value, 8> worklist;
   SmallVector<Operation*, 8> ordered;
   bool hoistable = true;
-  expression.forEachValue([&](Value value) { worklist.push_back(value); });
-  while (hoistable && !worklist.empty()) {
-    auto value = worklist.pop_back_val();
-    if (auto blockArg = dyn_cast<BlockArgument>(value)) {
-      if (blockArg.getOwner() == &body) {
-        hoistable = false;
-      }
-      continue;
-    }
-
-    auto* definingOp = value.getDefiningOp();
-    if (definingOp == nullptr || definingOp->getBlock() != &body ||
-        !collected.insert(definingOp).second) {
-      continue;
-    }
-    if (definingOp->getNumRegions() != 0 || !isPure(definingOp) ||
-        !isSpeculatable(definingOp)) {
+  expression.forEachValue([&](Value value) {
+    if (hoistable &&
+        !collectHoistableSlice(value, body, visiting, collected, ordered)) {
       hoistable = false;
-      continue;
     }
-    llvm::append_range(worklist, definingOp->getOperands());
-  }
+  });
   if (hoistable) {
-    for (auto& op : body) {
-      if (collected.contains(&op)) {
-        ordered.push_back(&op);
-      }
-    }
     for (auto* op : ordered) {
       rewriter.moveOpBefore(op, modifier);
     }
@@ -269,40 +278,24 @@ class GlobalPhaseNormalizer final {
 public:
   explicit GlobalPhaseNormalizer(MLIRContext* context) : rewriter(context) {}
 
-  void normalize(Region& root) {
-    struct RegionWorkItem {
-      Region* region;
-      Operation* extractionBoundary;
-    };
-    struct BlockWorkItem {
-      Block* block;
-      Operation* extractionBoundary;
-    };
+  void normalize(Region& root) { normalizeRegion(root, nullptr); }
 
-    SmallVector<RegionWorkItem> regionWorklist{{&root, nullptr}};
-    SmallVector<BlockWorkItem> blocks;
-    while (!regionWorklist.empty()) {
-      auto [region, extractionBoundary] = regionWorklist.pop_back_val();
-      for (auto& block : *region) {
-        blocks.push_back({&block, extractionBoundary});
-        for (auto& op : block) {
-          auto* nestedBoundary = getExtractionBoundary(&op);
-          for (auto& nested : op.getRegions()) {
-            regionWorklist.push_back({&nested, nestedBoundary});
-          }
+private:
+  void normalizeRegion(Region& region, Operation* extractionBoundary) {
+    for (auto& block : region) {
+      for (auto& op : block) {
+        auto* nestedBoundary = getExtractionBoundary(&op);
+        for (auto& nested : op.getRegions()) {
+          normalizeRegion(nested, nestedBoundary);
         }
       }
-    }
-
-    for (auto [block, extractionBoundary] : llvm::reverse(blocks)) {
-      auto contributions = normalizeBlock(*block, extractionBoundary);
+      auto contributions = normalizeBlock(block, extractionBoundary);
       if (extractionBoundary != nullptr) {
         applyExtractionBoundary(extractionBoundary, std::move(contributions));
       }
     }
   }
 
-private:
   [[nodiscard]] static Operation* getExtractionBoundary(Operation* op) {
     if (isa<qc::InvOp, qco::InvOp, qc::CtrlOp, qco::CtrlOp>(op)) {
       return op;
@@ -566,10 +559,6 @@ protected:
 } // namespace
 
 LogicalResult normalizeGlobalPhases(ModuleOp moduleOp) {
-  if (failed(verifyProgramMetadata(moduleOp)) ||
-      failed(qco::verifyLinearity(moduleOp))) {
-    return failure();
-  }
   GlobalPhaseNormalizer normalizer(moduleOp.getContext());
   normalizer.normalize(moduleOp.getRegion());
   return success();

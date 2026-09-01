@@ -11,20 +11,18 @@
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <cstddef>
 #include <utility>
 
 namespace mlir::qco {
@@ -45,33 +43,26 @@ static bool isInverting(Operation* op) { return isa<XOp, YOp>(op); }
  * @return True if the operation is a diagonal gate, false otherwise.
  */
 static bool isDiagonal(Operation* op) {
-  while (op != nullptr && isa<CtrlOp, InvOp>(op)) {
-    op = mqt::getSoleBodyUnitary<UnitaryOpInterface>(
-        *op->getRegion(0).getBlocks().begin());
+  if (op == nullptr) {
+    return false;
   }
-  return op != nullptr && isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);
+  if (isa<CtrlOp, InvOp>(op)) {
+    return isDiagonal(mqt::getSoleBodyUnitary<UnitaryOpInterface>(
+        *op->getRegion(0).getBlocks().begin()));
+  }
+  return isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);
 }
 
 /// Return whether nested modifier bodies contain only unitaries and yields.
 static bool hasOnlyUnitaryBodyOperations(Operation* root) {
-  SmallVector<Operation*> worklist{root};
-  while (!worklist.empty()) {
-    Operation* operation = worklist.pop_back_val();
-    for (Region& region : operation->getRegions()) {
-      for (Block& block : region) {
-        for (Operation& nested : block) {
-          if (isa<YieldOp>(nested)) {
-            continue;
-          }
-          if (!isa<UnitaryOpInterface>(nested)) {
-            return false;
-          }
-          worklist.push_back(&nested);
-        }
-      }
-    }
-  }
-  return true;
+  return !root->walk([&](Operation* operation) {
+                if (operation == root || isa<YieldOp>(operation) ||
+                    isa<UnitaryOpInterface>(operation)) {
+                  return WalkResult::advance();
+                }
+                return WalkResult::interrupt();
+              })
+              .wasInterrupted();
 }
 
 /**
@@ -240,16 +231,6 @@ protected:
   void runOnOperation() override {
     auto op = getOperation();
     auto* ctx = &getContext();
-
-    if (failed(qco::verifyLinearity(op))) {
-      signalPassFailure();
-      return;
-    }
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(op, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
 
     // Define the set of patterns to use.
     RewritePatternSet patterns(ctx);

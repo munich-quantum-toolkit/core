@@ -538,16 +538,14 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 bool InvOp::hasCompileTimeKnownUnitaryMatrix() {
-  if (!isModifierMatrixSizeSupported(getNumTargets()) ||
-      !detail::isModifierMatrixNestingSupported(getOperation())) {
+  if (!isModifierMatrixSizeSupported(getNumTargets())) {
     return false;
   }
   return hasComposableBodyMatrix(*getBody(), getNumTargets());
 }
 
 std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
-  if (!isModifierMatrixSizeSupported(getNumTargets()) ||
-      !detail::isModifierMatrixNestingSupported(getOperation())) {
+  if (!isModifierMatrixSizeSupported(getNumTargets())) {
     return std::nullopt;
   }
   // Compose the complete body so pass-through targets are represented too.

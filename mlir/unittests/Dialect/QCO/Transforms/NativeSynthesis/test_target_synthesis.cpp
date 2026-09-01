@@ -11,7 +11,6 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
 #include "mlir/Compiler/Target.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -245,19 +244,11 @@ TEST(TargetSynthesisPassContract, FactoriesAreIndependentlyConstructible) {
   fusion->getDependentDialects(fusionDialects);
   EXPECT_TRUE(fusionDialects.getDialectAllocator(
       mlir::arith::ArithDialect::getDialectNamespace()));
-  EXPECT_TRUE(fusionDialects.getDialectAllocator(
-      mlir::qc::QCDialect::getDialectNamespace()));
-  EXPECT_TRUE(fusionDialects.getDialectAllocator(
-      mlir::qco::QCODialect::getDialectNamespace()));
 
   mlir::DialectRegistry synthesisDialects;
   synthesis->getDependentDialects(synthesisDialects);
   EXPECT_TRUE(synthesisDialects.getDialectAllocator(
       mlir::arith::ArithDialect::getDialectNamespace()));
-  EXPECT_TRUE(synthesisDialects.getDialectAllocator(
-      mlir::qc::QCDialect::getDialectNamespace()));
-  EXPECT_TRUE(synthesisDialects.getDialectAllocator(
-      mlir::qco::QCODialect::getDialectNamespace()));
 }
 
 TEST_F(TargetSynthesisTest, TwoQubitGateFusionRequiresStrictImprovement) {
@@ -340,32 +331,6 @@ TEST_F(TargetSynthesisTest, TwoQubitGateFusionLeavesIndividualOpsAlone) {
       mlir::succeeded(runPass(*module, mlir::qco::createFuseTwoQubitGates())));
   EXPECT_EQ(countOps<SWAPOp>(*module), 1U);
   EXPECT_EQ(countOps<CtrlOp>(*module), 0U);
-  EXPECT_EQ(printModule(*module), before);
-}
-
-TEST_F(TargetSynthesisTest, TwoQubitGateFusionHandlesUnusedOutputs) {
-  auto module = mlir::parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main() {
-        %control = qco.static 0 : !qco.qubit
-        %target = qco.static 1 : !qco.qubit
-        %unused_control, %unused_target = qco.ctrl(%control)
-            targets(%arg = %target) {
-          %body = qco.x %arg : !qco.qubit -> !qco.qubit
-          qco.yield %body : !qco.qubit
-        } : ({!qco.qubit}, {!qco.qubit})
-          -> ({!qco.qubit}, {!qco.qubit})
-        return
-      }
-    }
-  )mlir",
-                                                  context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(mlir::succeeded(mlir::verify(*module)));
-  const auto before = printModule(*module);
-
-  EXPECT_TRUE(
-      mlir::failed(runPass(*module, mlir::qco::createFuseTwoQubitGates())));
   EXPECT_EQ(printModule(*module), before);
 }
 

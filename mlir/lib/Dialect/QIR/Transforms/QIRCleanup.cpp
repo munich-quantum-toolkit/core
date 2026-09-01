@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -25,30 +24,12 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <cstddef>
 #include <utility>
 
 namespace mlir::qir {
 
 #define GEN_PASS_DEF_QIRCLEANUPPASS
 #include "mlir/Dialect/QIR/Transforms/Passes.h.inc"
-
-template <typename Callback>
-static void walkQIRCleanupOperationsIteratively(Operation* root,
-                                                Callback&& callback) {
-  SmallVector<Operation*> worklist{root};
-  while (!worklist.empty()) {
-    Operation* operation = worklist.pop_back_val();
-    callback(operation);
-    for (Region& region : operation->getRegions()) {
-      for (Block& block : region) {
-        for (Operation& nested : block) {
-          worklist.push_back(&nested);
-        }
-      }
-    }
-  }
-}
 
 [[nodiscard]] static StringAttr getMetadataKey(const Attribute attr) {
   auto pair = dyn_cast<ArrayAttr>(attr);
@@ -73,11 +54,7 @@ static void walkQIRCleanupOperationsIteratively(Operation* root,
 
 [[nodiscard]] static bool moduleHasDynamicQubitRuntimeCalls(ModuleOp module) {
   bool found = false;
-  walkQIRCleanupOperationsIteratively(module, [&](Operation* operation) {
-    auto callOp = dyn_cast<LLVM::CallOp>(operation);
-    if (!callOp) {
-      return;
-    }
+  module.walk([&](LLVM::CallOp callOp) {
     const auto callee = getCalleeName(callOp);
     found |= callee == QIR_QUBIT_ALLOC || callee == QIR_QUBIT_ARRAY_ALLOC;
   });
@@ -86,11 +63,7 @@ static void walkQIRCleanupOperationsIteratively(Operation* root,
 
 [[nodiscard]] static bool moduleHasDynamicResultRuntimeCalls(ModuleOp module) {
   bool found = false;
-  walkQIRCleanupOperationsIteratively(module, [&](Operation* operation) {
-    auto callOp = dyn_cast<LLVM::CallOp>(operation);
-    if (!callOp) {
-      return;
-    }
+  module.walk([&](LLVM::CallOp callOp) {
     const auto callee = getCalleeName(callOp);
     found |= callee == QIR_RESULT_ALLOC || callee == QIR_RESULT_ARRAY_ALLOC;
   });
@@ -178,10 +151,7 @@ struct RemoveDeadQubitArrayPair final : OpRewritePattern<LLVM::CallOp> {
 
   LogicalResult matchAndRewrite(LLVM::CallOp releaseCall,
                                 PatternRewriter& rewriter) const override {
-    if (getCalleeName(releaseCall) != QIR_QUBIT_ARRAY_RELEASE ||
-        releaseCall.getNumOperands() != 2 || releaseCall.getNumResults() != 0 ||
-        !releaseCall.getOperand(0).getType().isInteger(64) ||
-        !isa<LLVM::LLVMPointerType>(releaseCall.getOperand(1).getType())) {
+    if (getCalleeName(releaseCall) != QIR_QUBIT_ARRAY_RELEASE) {
       return failure();
     }
 
@@ -202,10 +172,6 @@ struct RemoveDeadQubitArrayPair final : OpRewritePattern<LLVM::CallOp> {
       }
 
       if (getCalleeName(callOp) != QIR_QUBIT_ARRAY_ALLOC ||
-          callOp.getNumOperands() != 3 || callOp.getNumResults() != 0 ||
-          !callOp.getOperand(0).getType().isInteger(64) ||
-          !isa<LLVM::LLVMPointerType>(callOp.getOperand(1).getType()) ||
-          !isa<LLVM::LLVMPointerType>(callOp.getOperand(2).getType()) ||
           callOp.getOperand(1) != allocaOp.getResult() ||
           !callOp.getOperand(2).getDefiningOp<LLVM::ZeroOp>()) {
         return failure();
@@ -246,11 +212,6 @@ struct QIRCleanupPass final : impl::QIRCleanupPassBase<QIRCleanupPass> {
 protected:
   void runOnOperation() override {
     auto module = getOperation();
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(module, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
     RewritePatternSet patterns(&getContext());
     patterns.add<RemoveDeadQubitArrayPair>(&getContext());
 

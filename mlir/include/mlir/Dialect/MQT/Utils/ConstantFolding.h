@@ -21,11 +21,11 @@ namespace mlir::mqt {
 /// Convert a floating-point or integer attribute to a double.
 [[nodiscard]] std::optional<double> attributeToDouble(Attribute attr);
 
-/// Convert a direct constant-like value to a double.
+/// Convert a direct arithmetic constant to a double.
 [[nodiscard]] std::optional<double> valueToDouble(Value value);
 
 /**
- * Iteratively constant-fold a pure SSA expression DAG to an attribute.
+ * Recursively constant-fold a pure SSA expression DAG to an attribute.
  *
  * The cache memoizes successful and failed evaluations so shared operands are
  * resolved once.
@@ -37,10 +37,10 @@ namespace mlir::mqt {
 valueToConstantAttr(Value value,
                     DenseMap<Value, std::optional<Attribute>>& cache);
 
-/// Iteratively constant-fold a pure SSA expression DAG to an attribute.
+/// Recursively constant-fold a pure SSA expression DAG to an attribute.
 [[nodiscard]] std::optional<Attribute> valueToConstantAttr(Value value);
 
-/// Iteratively constant-fold a pure SSA expression DAG to a double.
+/// Recursively constant-fold a pure SSA expression DAG to a double.
 [[nodiscard]] std::optional<double> valueToConstantDouble(Value value);
 
 } // namespace mlir::mqt

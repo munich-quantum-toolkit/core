@@ -99,10 +99,7 @@ template <typename UnitaryInterface>
                                               const size_t index) {
   auto unitaries = llvm::make_filter_range(
       block, [](Operation& op) { return isa<UnitaryInterface>(op); });
-  auto it = unitaries.begin();
-  for (size_t i = 0; i < index && it != unitaries.end(); ++i) {
-    ++it;
-  }
+  auto it = std::next(unitaries.begin(), static_cast<std::ptrdiff_t>(index));
   if (it == unitaries.end()) {
     llvm::reportFatalUsageError("Unitary index out of bounds");
   }
@@ -111,43 +108,22 @@ template <typename UnitaryInterface>
 
 template <typename UnitaryInterface>
 [[nodiscard]] bool containsUnitaryOperation(Operation* operation) {
-  SmallVector<Operation*> worklist{operation};
-  while (!worklist.empty()) {
-    Operation* current = worklist.pop_back_val();
-    if (isa<UnitaryInterface>(current)) {
-      return true;
-    }
-    for (Region& region : current->getRegions()) {
-      for (Block& block : region) {
-        for (Operation& nested : block) {
-          worklist.push_back(&nested);
-        }
-      }
-    }
-  }
-  return false;
+  bool found = false;
+  operation->walk(
+      [&](Operation* nested) { found |= isa<UnitaryInterface>(nested); });
+  return found;
 }
 
 /// Return whether @p operation or one of its nested operations is neither a
 /// unitary nor a terminator.
 template <typename UnitaryInterface>
 [[nodiscard]] bool containsSupportingOperation(Operation* operation) {
-  SmallVector<Operation*> worklist{operation};
-  while (!worklist.empty()) {
-    Operation* current = worklist.pop_back_val();
-    if (!isa<UnitaryInterface>(current) &&
-        !current->hasTrait<OpTrait::IsTerminator>()) {
-      return true;
-    }
-    for (Region& region : current->getRegions()) {
-      for (Block& block : region) {
-        for (Operation& nested : block) {
-          worklist.push_back(&nested);
-        }
-      }
-    }
-  }
-  return false;
+  bool found = false;
+  operation->walk([&](Operation* nested) {
+    found |= !isa<UnitaryInterface>(nested) &&
+             !nested->hasTrait<OpTrait::IsTerminator>();
+  });
+  return found;
 }
 
 /// Return whether top-level supporting operations may move before a modifier

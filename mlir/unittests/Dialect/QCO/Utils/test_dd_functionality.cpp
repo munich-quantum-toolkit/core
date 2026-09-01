@@ -44,7 +44,6 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <limits>
 #include <map>
 #include <memory>
@@ -1167,29 +1166,6 @@ TEST_F(QCODDFunctionalityTest, EmbedsWideLocalMatrixWithoutRegisterLimit) {
   qc.rz(-0.4, 8);
   qc.h(12);
   expectEqualToQc(mainFunc(*mod), qc);
-}
-
-TEST_F(QCODDFunctionalityTest, RejectsExcessiveRegionNesting) {
-  auto mod = buildModule([](QCOProgramBuilder& b) {
-    auto qubit = b.staticQubit(0);
-    std::function<Value(size_t, Value)> nest = [&](size_t depth,
-                                                   Value value) -> Value {
-      if (depth == 0) {
-        return b.x(value);
-      }
-      return b.qcoIf(
-          true, value,
-          [&](Value argument) { return nest(depth - 1, argument); },
-          [](Value argument) { return argument; });
-    };
-    qubit = nest(64, qubit);
-    b.sink(qubit);
-    return b.intConstant(0);
-  });
-  ASSERT_TRUE(mod);
-  auto dd = std::make_unique<dd::Package>(1);
-
-  EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUnsupportedOrUnboundClassicalOperations) {

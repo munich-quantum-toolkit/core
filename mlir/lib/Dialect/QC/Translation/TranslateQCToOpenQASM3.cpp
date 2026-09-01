@@ -17,7 +17,6 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Support/OperationUtils.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
 #include <llvm/ADT/APInt.h>
@@ -136,8 +135,7 @@ public:
   explicit OpenQASMEmitter(ModuleOp moduleOp) : moduleOp(moduleOp) {}
 
   [[nodiscard]] FailureOr<std::string> emit() {
-    if (failed(verifyRegionNestingDepth(moduleOp, maxRegionNesting)) ||
-        failed(verify(moduleOp)) || failed(preflight()) ||
+    if (failed(verify(moduleOp)) || failed(preflight()) ||
         failed(collectProgramShape())) {
       return failure();
     }
@@ -186,7 +184,6 @@ private:
   size_t expressionWork = 0;
   size_t numClassicalBits = 0;
 
-  static constexpr size_t maxRegionNesting = 64;
   static constexpr size_t MAX_EXPRESSION_NESTING = 256;
   static constexpr size_t MAX_EXPRESSION_WORK = 4096;
   static constexpr size_t MAX_CLASSICAL_BITS = 1U << 20;

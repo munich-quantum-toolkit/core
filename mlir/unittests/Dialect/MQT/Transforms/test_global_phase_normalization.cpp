@@ -33,7 +33,6 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
@@ -149,30 +148,6 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
   EXPECT_EQ(phases.front()->getNextNode(),
             func.getBody().front().getTerminator());
   expectFoldableGlobalPhase(phases.front().getTheta(), 0.75);
-}
-
-TEST_F(GlobalPhaseNormalizationTest, RejectsNonlinearQCOInputWithoutMutation) {
-  auto moduleOp = parse(R"mlir(
-    module {
-      func.func @test(%q: !qco.qubit) {
-        %phase = arith.constant 0.25 : f64
-        qco.gphase(%phase)
-        %x = qco.x %q : !qco.qubit -> !qco.qubit
-        %h = qco.h %q : !qco.qubit -> !qco.qubit
-        qco.sink %x : !qco.qubit
-        qco.sink %h : !qco.qubit
-        return
-      }
-    }
-  )mlir");
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  OwningOpRef<ModuleOp> before(cast<ModuleOp>((*moduleOp)->clone()));
-
-  EXPECT_TRUE(failed(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      moduleOp->getOperation(), before->getOperation(),
-      OperationEquivalence::Flags::None));
 }
 
 TEST_F(GlobalPhaseNormalizationTest, CombinesQCAndQCOPhasesIndependently) {
@@ -384,53 +359,6 @@ TEST_F(GlobalPhaseNormalizationTest,
   EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(1)));
   EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(2)));
   EXPECT_LE(countOperations(), firstRunOperationCount);
-}
-
-TEST_F(GlobalPhaseNormalizationTest,
-       HandlesDeepModifierAndAngleChainsIteratively) {
-  OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
-  OpBuilder builder(context.get());
-  builder.setInsertionPointToStart(moduleOp->getBody());
-  const auto loc = moduleOp->getLoc();
-  const auto qubitType = qco::QubitType::get(context.get());
-  auto function = func::FuncOp::create(
-      builder, loc, "test",
-      builder.getFunctionType({qubitType, builder.getF64Type()}, {qubitType}));
-  auto* entry = function.addEntryBlock();
-  builder.setInsertionPointToStart(entry);
-
-  constexpr std::size_t modifierDepth = 512;
-  constexpr std::size_t angleDepth = 512;
-  auto outer =
-      qco::InvOp::create(builder, loc, ValueRange{function.getArgument(0)});
-  auto* body = &outer.getBodyRegion().emplaceBlock();
-  auto currentQubit = body->addArgument(qubitType, loc);
-  for (std::size_t i = 1; i < modifierDepth; ++i) {
-    builder.setInsertionPointToEnd(body);
-    auto inner = qco::InvOp::create(builder, loc, ValueRange{currentQubit});
-    qco::YieldOp::create(builder, loc, inner.getQubitsOut());
-    body = &inner.getBodyRegion().emplaceBlock();
-    currentQubit = body->addArgument(qubitType, loc);
-  }
-
-  builder.setInsertionPointToEnd(body);
-  Value angle = function.getArgument(1);
-  for (std::size_t i = 0; i < angleDepth; ++i) {
-    auto zero =
-        arith::ConstantOp::create(builder, loc, builder.getF64FloatAttr(0.0));
-    angle = arith::AddFOp::create(builder, loc, angle, zero);
-  }
-  auto z = qco::ZOp::create(builder, loc, currentQubit);
-  qco::GPhaseOp::create(builder, loc, angle);
-  qco::YieldOp::create(builder, loc, ValueRange{z.getOutputTarget(0)});
-
-  builder.setInsertionPointToEnd(entry);
-  func::ReturnOp::create(builder, loc, outer.getQubitsOut());
-
-  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
-  auto phases = llvm::to_vector(function.getBody().getOps<qco::GPhaseOp>());
-  ASSERT_EQ(phases.size(), 1);
-  EXPECT_EQ(phases.front().getTheta().getParentBlock(), entry);
 }
 
 TEST_F(GlobalPhaseNormalizationTest, KeepsSCFStyleRegionsIndependent) {

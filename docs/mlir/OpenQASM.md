@@ -203,8 +203,6 @@ nonempty `scf.yield`, and `arith.select` are outside the export subset.
 Multi-operation modifier bodies must have a target qubit and cannot capture
 additional qubits from an enclosing scope.
 
-Export accepts at most 64 region-owning operations along any IR path.
-
 Export accepts an expression nesting depth of at most 256 and an expansion
 budget of 4,096 values per expression. The total width of classical registers is
 limited to 1,048,576 bits.

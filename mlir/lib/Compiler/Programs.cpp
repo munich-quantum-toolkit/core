@@ -94,17 +94,6 @@
 
 namespace mlir {
 
-static void pushNestedOperations(Operation* operation,
-                                 SmallVectorImpl<Operation*>& worklist) {
-  for (Region& region : operation->getRegions()) {
-    for (Block& block : region) {
-      for (Operation& nested : block) {
-        worklist.push_back(&nested);
-      }
-    }
-  }
-}
-
 std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
   registry.insert<cbit::CBitDialect, mqt::MQTDialect, qc::QCDialect,
@@ -163,15 +152,11 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
  */
 [[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
                                             const StringRef dialect) {
-  SmallVector<Operation*> worklist{mod};
-  while (!worklist.empty()) {
-    Operation* operation = worklist.pop_back_val();
-    if (operation->getDialect()->getNamespace() == dialect) {
-      return true;
-    }
-    pushNestedOperations(operation, worklist);
-  }
-  return false;
+  auto found = false;
+  mod->walk([&](Operation* operation) {
+    found |= operation->getDialect()->getNamespace() == dialect;
+  });
+  return found;
 }
 
 template <class ProgramType, class Parse>
@@ -420,23 +405,13 @@ std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
 static size_t
 countGatesIf(ModuleOp moduleOp,
              const llvm::function_ref<bool(qc::UnitaryOpInterface)> predicate) {
-  auto entryPoint = mqt::getEntryPoint(moduleOp);
-  if (!entryPoint) {
-    return 0;
-  }
   size_t count = 0;
-  SmallVector<Operation*> worklist{entryPoint};
-  while (!worklist.empty()) {
-    Operation* operation = worklist.pop_back_val();
-    auto unitary = dyn_cast<qc::UnitaryOpInterface>(operation);
-    if (unitary) {
-      count += !isa<qc::BarrierOp>(unitary) && predicate(unitary);
-      if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(unitary)) {
-        continue;
-      }
-    }
-    pushNestedOperations(operation, worklist);
-  }
+  auto entryPoint = mqt::getEntryPoint(moduleOp);
+  entryPoint.walk<WalkOrder::PreOrder>([&](qc::UnitaryOpInterface op) {
+    count += static_cast<size_t>(!isa<qc::BarrierOp>(op) && predicate(op));
+    return isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(op) ? WalkResult::skip()
+                                                     : WalkResult::advance();
+  });
   return count;
 }
 
@@ -650,7 +625,7 @@ public:
         module.getVersionPatch() != 0) {
       return reject("unsupported jeff version; expected 0.3.0");
     }
-    if (stringsSize > maxContainerSize) {
+    if (stringsSize > MAX_CONTAINER_SIZE) {
       return reject("jeff module contains too many strings");
     }
 
@@ -671,7 +646,7 @@ public:
         return reject("jeff function body must contain an operations list");
       }
       const auto values = definition.getValues();
-      if (values.size() > maxContainerSize) {
+      if (values.size() > MAX_CONTAINER_SIZE) {
         return reject("jeff function contains too many values");
       }
       for (const auto value : values) {
@@ -690,8 +665,8 @@ public:
   }
 
 private:
-  static constexpr uint64_t maxContainerSize = 1U << 20;
-  static constexpr uint64_t maxRegionDepth = 64;
+  static constexpr uint64_t MAX_CONTAINER_SIZE = 1U << 20;
+  static constexpr uint64_t MAX_REGION_DEPTH = 64;
 
   [[nodiscard]] LogicalResult reject(const Twine& message) const {
     return emitError(UnknownLoc::get(context)) << message;
@@ -771,7 +746,7 @@ private:
                const std::optional<uint64_t> expectedSources,
                const std::optional<uint64_t> expectedTargets,
                const uint64_t depth) {
-    if (depth > maxRegionDepth) {
+    if (depth > MAX_REGION_DEPTH) {
       return reject("jeff structured control flow exceeds the nesting limit");
     }
     if (expectedSources && region.getSources().size() != *expectedSources) {
@@ -794,7 +769,7 @@ private:
       return reject("jeff region must contain an operations list");
     }
     const auto operations = region.getOperations();
-    if (operations.size() > maxContainerSize - totalOperations) {
+    if (operations.size() > MAX_CONTAINER_SIZE - totalOperations) {
       return reject("jeff module contains too many operations");
     }
     totalOperations += operations.size();

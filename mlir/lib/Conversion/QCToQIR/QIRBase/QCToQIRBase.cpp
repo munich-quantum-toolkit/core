@@ -17,7 +17,6 @@
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
@@ -47,7 +46,6 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/OperationUtils.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
@@ -374,8 +372,6 @@ static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
   patterns.add<RejectCBitLoadOp>(typeConverter, ctx);
 }
 
-namespace {
-
 /// Returns whether two QC references lower to the same Base Profile qubit.
 static bool referencesSameQubit(Value lhs, Value rhs) {
   if (lhs == rhs) {
@@ -449,6 +445,8 @@ static LogicalResult validateBaseOperationOrder(ModuleOp module) {
   }
   return success();
 }
+
+namespace {
 
 /**
  * @brief Pass for converting QC dialect operations to QIR
@@ -569,11 +567,6 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto original = getOperation();
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(original, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
     OwningOpRef<ModuleOp> converted(original.clone());
     auto moduleOp = *converted;
     LoweringState state;

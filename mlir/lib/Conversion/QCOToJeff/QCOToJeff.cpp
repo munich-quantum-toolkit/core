@@ -15,10 +15,8 @@
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/MQT/Utils/GatePowering.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -26,7 +24,6 @@
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -50,7 +47,6 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/OperationUtils.h>
 #include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Transforms/RegionUtils.h>
 
@@ -210,23 +206,10 @@ struct LoweringState {
   }
 };
 
+} // namespace
+
 [[nodiscard]] static LogicalResult validateQCOToJeffInput(ModuleOp module) {
-  if (failed(mqt::verifyProgramMetadata(module)) ||
-      failed(qco::verifyLinearity(module))) {
-    return failure();
-  }
-  func::FuncOp entryPoint;
-  for (auto function : module.getOps<func::FuncOp>()) {
-    if (!mqt::isEntryPoint(function)) {
-      continue;
-    }
-    if (entryPoint) {
-      module.emitError(
-          "qco-to-jeff requires exactly one program entry function");
-      return failure();
-    }
-    entryPoint = function;
-  }
+  auto entryPoint = mqt::getEntryPoint(module);
   if (!entryPoint) {
     module.emitError(
         "qco-to-jeff requires a program entry function marked with "
@@ -243,7 +226,6 @@ struct LoweringState {
 
   Operation* staticAllocation = nullptr;
   Operation* dynamicAllocation = nullptr;
-  DenseSet<int64_t> staticIndices;
   bool invalid = false;
   const auto validateType = [&](Type type, Operation* owner) {
     const auto tensor = dyn_cast<RankedTensorType>(type);
@@ -253,17 +235,9 @@ struct LoweringState {
       invalid = true;
     }
   };
-  SmallVector<Operation*> worklist{module.getOperation()};
-  while (!worklist.empty()) {
-    Operation* operation = worklist.pop_back_val();
-    if (auto staticOp = dyn_cast<StaticOp>(operation)) {
+  module.walk([&](Operation* operation) {
+    if (isa<StaticOp>(operation)) {
       staticAllocation = operation;
-      if (!staticIndices.insert(staticOp.getIndex()).second) {
-        staticOp.emitError(
-            "qco-to-jeff cannot preserve duplicate static qubit index ")
-            << staticOp.getIndex();
-        invalid = true;
-      }
     } else if (isa<AllocOp, qtensor::AllocOp>(operation)) {
       dynamicAllocation = operation;
     }
@@ -293,22 +267,21 @@ struct LoweringState {
         for (BlockArgument argument : block.getArguments()) {
           validateType(argument.getType(), operation);
         }
-        for (Operation& nested : block) {
-          worklist.push_back(&nested);
-        }
       }
     }
-  }
+  });
   if (invalid) {
     return failure();
   }
-  if (staticAllocation && dynamicAllocation) {
+  if (staticAllocation != nullptr && dynamicAllocation != nullptr) {
     dynamicAllocation->emitError(
         "qco-to-jeff cannot mix static and dynamic qubit allocations");
     return failure();
   }
   return success();
 }
+
+namespace {
 
 /**
  * @brief Base class for conversion patterns that need access to the
@@ -1959,11 +1932,6 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto original = getOperation();
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(original, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
     OwningOpRef<ModuleOp> converted(original.clone());
     auto moduleOp = *converted;
     if (failed(validateQCOToJeffInput(moduleOp))) {

@@ -46,9 +46,6 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
 
     BarrierOp nextBarrier;
     for (Value output : outputs) {
-      if (!output.hasOneUse()) {
-        return failure();
-      }
       auto user = dyn_cast<BarrierOp>(*output.getUsers().begin());
       if (!user || user->getBlock() != op->getBlock() ||
           (nextBarrier && user != nextBarrier)) {

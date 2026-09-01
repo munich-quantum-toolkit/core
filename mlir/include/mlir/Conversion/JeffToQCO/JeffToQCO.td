@@ -14,8 +14,6 @@ def JeffToQCO : Pass<"jeff-to-qco", "mlir::ModuleOp"> {
   let description = [{
     This pass converts all operations from the `jeff` dialect to their equivalent operations in the QCO dialect.
     It ensures that the returned module is a valid QCO module.
-    Input may contain at most 64 region-owning operations along any IR path.
-
     Note that this pass is still in development as QCO and `jeff` do not have full feature parity yet.
 
     Known limitations:

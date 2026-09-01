@@ -104,48 +104,6 @@ class QCOReplaceClassicalControlsRZZTest
 
 } // namespace
 
-TEST_F(QCOReplaceClassicalControlsTest, HandlesUnusedMeasurementOutput) {
-  auto input = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main() {
-        %q = qco.static 0 : !qco.qubit
-        %unused, %result = qco.measure %q : !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                           &context);
-  ASSERT_TRUE(input);
-  ASSERT_TRUE(succeeded(verify(*input)));
-  EXPECT_TRUE(succeeded(runReplaceClassicalControlsPass(*input)));
-  EXPECT_TRUE(succeeded(verify(*input)));
-}
-
-TEST_F(QCOReplaceClassicalControlsTest, HandlesUnusedControlledPhaseOutput) {
-  auto input = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @main() {
-        %control = qco.static 0 : !qco.qubit
-        %target = qco.static 1 : !qco.qubit
-        %measured, %result = qco.measure %target : !qco.qubit
-        %unused, %target_out = qco.ctrl(%control)
-            targets(%arg = %measured) {
-          %body = qco.z %arg : !qco.qubit -> !qco.qubit
-          qco.yield %body : !qco.qubit
-        } : ({!qco.qubit}, {!qco.qubit})
-          -> ({!qco.qubit}, {!qco.qubit})
-        qco.sink %target_out : !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                           &context);
-  ASSERT_TRUE(input);
-  ASSERT_TRUE(succeeded(verify(*input)));
-  EXPECT_TRUE(succeeded(runReplaceClassicalControlsPass(*input)));
-  EXPECT_TRUE(succeeded(verify(*input)));
-}
-
 TEST_F(QCOReplaceClassicalControlsTest,
        AllMeasuredFastPathsPreserveClassicalBodyCalls) {
   programBuilder.initialize();

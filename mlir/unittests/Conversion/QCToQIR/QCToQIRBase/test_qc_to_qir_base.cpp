@@ -16,7 +16,6 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Support/Passes.h"
@@ -328,21 +327,6 @@ TEST(QCToQIRBaseNativeTest, RejectsLiveMeasurementResultUseWithoutMutation) {
   EXPECT_TRUE(isEquivalentToClone(*module, before));
 }
 
-TEST(QCToQIRBaseNativeTest, DeclaresModuleRootAndProducedDialects) {
-  auto pass = createQCToQIRBase();
-  ASSERT_TRUE(pass->getOpName());
-  EXPECT_EQ(*pass->getOpName(), ModuleOp::getOperationName());
-
-  DialectRegistry registry;
-  pass->getDependentDialects(registry);
-  EXPECT_TRUE(
-      registry.getDialectAllocator(arith::ArithDialect::getDialectNamespace()));
-  EXPECT_TRUE(
-      registry.getDialectAllocator(qc::QCDialect::getDialectNamespace()));
-  EXPECT_TRUE(
-      registry.getDialectAllocator(qco::QCODialect::getDialectNamespace()));
-}
-
 TEST(QCToQIRBaseNativeTest, RejectsExcessiveClassicalResultCapacityAtomically) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
@@ -358,38 +342,6 @@ TEST(QCToQIRBaseNativeTest, RejectsExcessiveClassicalResultCapacityAtomically) {
 
   EXPECT_TRUE(failed(runQCToQIRBasePass(*module)));
   EXPECT_TRUE(isEquivalentToClone(*module, before));
-}
-
-TEST(QCToQIRBaseNativeTest, RejectsMultiBlockEntryBeforeMutation) {
-  MLIRContext context;
-  context.loadDialect<mlir::mqt::MQTDialect, func::FuncDialect,
-                      cf::ControlFlowDialect>();
-  OpBuilder builder(&context);
-  auto module = ModuleOp::create(builder.getUnknownLoc());
-  builder.setInsertionPointToStart(module.getBody());
-  auto main = func::FuncOp::create(builder, builder.getUnknownLoc(), "main",
-                                   builder.getFunctionType({}, {}));
-  mlir::mqt::setEntryPoint(main);
-  auto* entry = main.addEntryBlock();
-  auto* exit = main.addBlock();
-  builder.setInsertionPointToEnd(entry);
-  cf::BranchOp::create(builder, builder.getUnknownLoc(), exit);
-  builder.setInsertionPointToEnd(exit);
-  func::ReturnOp::create(builder, builder.getUnknownLoc());
-  ASSERT_TRUE(succeeded(verify(module)));
-  auto before = module.clone();
-
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream(message) << diagnostic;
-    sawExpectedDiagnostic |=
-        StringRef(message).contains("requires a single-block entry function");
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQIRBasePass(module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
-  EXPECT_TRUE(isEquivalentToClone(module, before));
 }
 
 TEST(QCToQIRBaseNativeTest, RejectsMultiBlockEntryFunctionWithoutMutation) {

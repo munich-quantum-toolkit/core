@@ -17,13 +17,11 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -38,7 +36,6 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/OperationUtils.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
@@ -95,45 +92,11 @@ struct LoweringState {
   }
 };
 
-/** Invalidates cached slots for the same memref in enclosing regions. */
-static void invalidateAncestorQTensorCaches(LoweringState& state,
-                                            Region* region, Value memref) {
-  for (auto* current = region->getParentRegion(); current != nullptr;
-       current = current->getParentRegion()) {
-    if (auto it = state.extractedIndices.find(current);
-        it != state.extractedIndices.end()) {
-      it->second.erase(memref);
-    }
-    if (auto it = state.qubitValues.find(current);
-        it != state.qubitValues.end()) {
-      it->second.erase(memref);
-    }
-  }
-}
-
-template <typename Callback>
-[[nodiscard]] static LogicalResult visitOperations(Operation* root,
-                                                   Callback callback) {
-  SmallVector<Operation*> operations{root};
-  for (size_t next = 0; next < operations.size(); ++next) {
-    auto* operation = operations[next];
-    if (failed(callback(operation))) {
-      return failure();
-    }
-    for (Region& region : operation->getRegions()) {
-      for (Block& block : region) {
-        for (auto& nested : block) {
-          operations.push_back(&nested);
-        }
-      }
-    }
-  }
-  return success();
-}
+} // namespace
 
 [[nodiscard]] static LogicalResult
 validateAllocationContracts(Operation* root, LoweringState& state) {
-  return visitOperations(root, [&](Operation* op) {
+  const auto result = root->walk([&](Operation* op) {
     std::optional<AllocationMode> mode;
     if (isa<qco::StaticOp>(op)) {
       mode = AllocationMode::Static;
@@ -141,11 +104,14 @@ validateAllocationContracts(Operation* root, LoweringState& state) {
       mode = AllocationMode::Dynamic;
     }
     if (mode && failed(state.ensureAllocationMode(*mode, op))) {
-      return failure();
+      return WalkResult::interrupt();
     }
-    return success();
+    return WalkResult::advance();
   });
+  return failure(result.wasInterrupted());
 }
+
+namespace {
 
 /**
  * @brief Base class for conversion patterns that need access to lowering state
@@ -294,7 +260,7 @@ validateReferencePreservingYield(Operation* terminator, ValueRange yielded,
 
 [[nodiscard]] static LogicalResult
 validateReferencePreservingYields(Operation* root) {
-  return visitOperations(root, [&](Operation* op) {
+  const auto result = root->walk([&](Operation* op) {
     ValueRange yielded;
     if (auto yieldOp = dyn_cast<qco::YieldOp>(op)) {
       yielded = yieldOp.getTargets();
@@ -303,26 +269,27 @@ validateReferencePreservingYields(Operation* root) {
         if (llvm::none_of(yieldOp.getResults(), [](Value value) {
               return isQuantumStateType(value.getType());
             })) {
-          return success();
+          return WalkResult::advance();
         }
         yieldOp.emitOpError(
             "QCO-to-QC conversion supports quantum state in scf.yield only "
             "for scf.for and scf.while");
-        return failure();
+        return WalkResult::interrupt();
       }
       yielded = yieldOp.getResults();
     } else if (auto conditionOp = dyn_cast<scf::ConditionOp>(op)) {
       yielded = conditionOp.getArgs();
     } else {
-      return success();
+      return WalkResult::advance();
     }
 
     SmallVector<Value> inputs(op->getBlock()->getArguments());
     if (failed(validateReferencePreservingYield(op, yielded, inputs))) {
-      return failure();
+      return WalkResult::interrupt();
     }
-    return success();
+    return WalkResult::advance();
   });
+  return failure(result.wasInterrupted());
 }
 
 [[nodiscard]] static SmallVector<Value>
@@ -513,38 +480,15 @@ struct ConvertQTensorExtractOp final
   }
 };
 
-/** Converts qtensor.insert to an in-place memref.store. */
-struct ConvertQTensorInsertOp final
-    : StatefulOpConversionPattern<qtensor::InsertOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+/**
+ * @brief Removes qtensor.insert operations
+ */
+struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    auto* region = op->getParentRegion();
-    auto dest = adaptor.getDest();
-    auto index = adaptor.getIndex();
-    auto scalar = adaptor.getScalar();
-    auto& extractedIndices = state.extractedIndices[region][dest];
-    auto& qubitValues = state.qubitValues[region][dest];
-    if (extractedIndices.contains(index) &&
-        qubitValues.lookup(index) == scalar) {
-      rewriter.replaceOp(op, dest);
-      return success();
-    }
-
-    memref::StoreOp::create(rewriter, op.getLoc(), scalar, dest,
-                            ValueRange{index});
-    invalidateAncestorQTensorCaches(state, region, dest);
-
-    // A dynamic index may alias any previously observed slot. Rebuild the
-    // cache conservatively, retaining only the value established by this
-    // store.
-    extractedIndices.clear();
-    qubitValues.clear();
-    extractedIndices.insert(index);
-    qubitValues[index] = scalar;
     rewriter.replaceOp(op, adaptor.getDest());
     return success();
   }
@@ -1374,19 +1318,13 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto original = getOperation();
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(original, maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
     OwningOpRef<ModuleOp> converted(original.clone());
     auto module = *converted;
 
     // Create state object to track the qubit addressing mode
     LoweringState state;
 
-    if (failed(qco::verifyLinearity(module)) ||
-        failed(validateAllocationContracts(module, state)) ||
+    if (failed(validateAllocationContracts(module, state)) ||
         failed(validateReferencePreservingYields(module))) {
       signalPassFailure();
       return;
@@ -1420,8 +1358,8 @@ protected:
 
     // Register operation conversion patterns that do not need state tracking
     patterns
-        .add<ConvertQTensorDeallocOp, ConvertQCOMeasureOp, ConvertQCOResetOp,
-             ConvertQCOUnitaryOp,
+        .add<ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
+             ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOUnitaryOp,
              ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
             typeConverter, context);
 
@@ -1437,9 +1375,9 @@ protected:
                  ConvertQCOSCFForOp>(typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
-    patterns.add<ConvertQTensorExtractOp, ConvertQTensorInsertOp,
-                 ConvertQTensorAllocOp, ConvertQCOAllocOp, ConvertQCOStaticOp,
-                 ConvertQCOSinkOp>(typeConverter, context, &state);
+    patterns.add<ConvertQTensorExtractOp, ConvertQTensorAllocOp,
+                 ConvertQCOAllocOp, ConvertQCOStaticOp, ConvertQCOSinkOp>(
+        typeConverter, context, &state);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes

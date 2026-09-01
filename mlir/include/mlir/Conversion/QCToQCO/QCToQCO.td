@@ -14,12 +14,8 @@ def QCToQCO : Pass<"qc-to-qco", "mlir::ModuleOp"> {
   let description = [{
     This pass converts all operations from the QC dialect to their equivalent operations in the QCO dialect.
     It handles the transformation of qubit references in QC to qubit values in QCO, ensuring that the semantics of quantum operations are preserved during the conversion process.
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
 
-  let dependentDialects = ["mlir::arith::ArithDialect",
-                           "mlir::cf::ControlFlowDialect",
-                           "mlir::func::FuncDialect", "mlir::qco::QCODialect",
-                           "mlir::qtensor::QTensorDialect",
-                           "mlir::scf::SCFDialect"];
+  let dependentDialects = ["mlir::arith::ArithDialect", "mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect"];
 }

@@ -108,7 +108,7 @@ after human review, with a regression that demonstrates the supported contract.
       Reconfirmed that standalone C++ lint cannot start because clang-tidy 22 is
       unavailable on this host.
 - [x] (2026-09-01) Reconciled the audit with the first 16 focused replacement
-      pull requests: seven merged, five open, and four closed without merge.
+      pull requests: eight merged, four open, and four closed without merge.
 - [x] (2026-09-01) Narrowed `#2300` to its demonstrated missing-entry-point
       defect and removed the speculative program-sized traversal worklists.
 - [x] (2026-09-01) Withdrew `#2303`, `#2305`, `#2306`, and `#2309` after review.
@@ -120,6 +120,14 @@ after human review, with a regression that demonstrates the supported contract.
       snapshot: generic pass-entry metadata/linearity checks, defensive QCO
       one-use guards, and their invalid-IR regressions are not actionable
       findings.
+- [x] (2026-09-01) Merged current `main` at
+      de8a8a619fb69c1f6ef7d01f61911838324fc9b4, including the accepted CBit
+      resource-boundary fix from `#2307`, and reclassified every residual file
+      and test hunk against the revised invariant.
+- [x] (2026-09-01) Pruned merged and focused duplicates, closed findings,
+      malformed-IR defenses, generic pass-entry validation, the unsupported
+      shared depth policy, and unproved traversal replacements. The remaining
+      implementation snapshot contains only valid, uniquely retained findings.
 
 ## Surprises & Discoveries
 
@@ -275,12 +283,13 @@ entrypoints, 236 patterns (124 conversion and 112
 canonicalization/optimization), and seven registration surfaces. The original
 implementation snapshot is not an accepted set of fixes. It contains useful
 findings, already merged findings, and changes later rejected as speculative or
-wrongly owned. The branch remains a historical audit artifact and is not
-intended to merge in bulk.
+wrongly owned. The historical commits preserve that snapshot. The current branch
+removes rejected and separately owned code and keeps only valid residual
+findings for review; it is still not intended to merge in bulk.
 
-As of 2026-09-01, seven focused replacements have merged: `#2291`, `#2293`,
-`#2294`, `#2295`, `#2296`, `#2301`, and `#2304`. Five remain open: `#2290`,
-`#2300`, `#2302`, `#2307`, and `#2308`. Four closed without merge: `#2303`,
+As of 2026-09-01, eight focused replacements have merged: `#2291`, `#2293`,
+`#2294`, `#2295`, `#2296`, `#2301`, `#2304`, and `#2307`. Four remain open:
+`#2290`, `#2300`, `#2302`, and `#2308`. Four closed without merge: `#2303`,
 `#2305`, `#2306`, and `#2309`. Review narrowed `#2300` to the demonstrated
 missing-entry-point case and rejected `#2309` because its pass-local check and
 regressions target invalid QCO IR.
@@ -302,6 +311,7 @@ Merged findings:
 - `#2296`: stop QCO wire traversal at unknown carriers.
 - `#2301`: keep terminal measurements after routing swaps.
 - `#2304`: bound OpenQASM export resource use.
+- `#2307`: bound CBit zero-initialization lowering.
 
 Open findings:
 
@@ -309,8 +319,6 @@ Open findings:
 - `#2300`: handle gate counts without an entry point. Review removed manual
   program-sized worklists and restored native MLIR traversal.
 - `#2302`: make QIR metadata attachment idempotent.
-- `#2307`: bound CBit zero-initialization lowering. Review approved the focused
-  resource-boundary change.
 - `#2308`: preserve QTensor insert updates in QCO-to-QC.
 
 Closed findings:
@@ -357,6 +365,181 @@ target-representability preflights, and clone/lower/verify/commit checks that
 validate newly produced IR before mutation is committed. Pass tests may call the
 applicable validators before and after the pass without adding those checks to
 each pass implementation.
+
+## Complete Residual Snapshot Disposition
+
+The original implementation is preserved at
+`0141a0b4f8bbf63608f74fdd5b8608e2f2c40e95`. The last pre-reconciliation snapshot
+is `9fcc02eb67586628d8244b425d032630313a86f2`. These commits preserve every
+removed implementation and reproducer. The current delta keeps code and tests
+only for the valid findings listed below. All residual production, test,
+TableGen, CMake, binding, documentation, and tool changes were reread against
+current `main` at `de8a8a619fb69c1f6ef7d01f61911838324fc9b4`.
+
+The retained items below are findings, not approval of the historical
+implementation. Each needs a focused extraction from current `main`, a minimal
+valid-input regression, and its own review.
+
+### Compiler and external-input boundaries
+
+- Retain compiler-owned program metadata validation at QC/QCO import and at
+  public pipeline input and output. The historical evidence is
+  `EnforcesProgramMetadataAtImportAndPassBoundaries`, the `mqt-cc`
+  duplicate-entry case, and `test_parameter_vector_metadata_is_preflighted`. The
+  compiler is the owner; individual passes are not.
+- Retain the finding that malformed serialized JeFF input must not terminate the
+  process. `JeffFunctionDeclarationsAreRejected`,
+  `MalformedJeffStructuresAreRejected`, and
+  `InvalidJeffSemanticsAreRejectedWithoutExiting` exercise byte, file, and
+  command-line imports. Any extraction must minimize the local preflight and
+  fatal-error bridge and prefer an upstream fix where possible.
+- Keep `#2300` as the sole owner of `QCProgramCountGatesWithoutEntryPoint`. The
+  manual compiler worklists are not part of that finding.
+
+### Conversion boundaries
+
+- JeFF-to-QCO retains schema-correct function-index entry-point decoding, target
+  entry-shape validation, status-result restoration, and
+  clone/lower/output-verify/commit atomicity. Evidence:
+  `RejectsMalformedJeffMetadataBeforeMutation`,
+  `RejectsUnsupportedQCOEntryShapeBeforeMutation`,
+  `RejectsStaleEntryPointMetadataAfterJeffConversion`,
+  `RestoresStatusResultAtEndOfEntryPoint`, and the no-mutation assertion in
+  `RejectsClassicalIfResultsPrecisely`.
+- QCO-to-JeFF retains target-specific entry shape, allocation-mode, rank-one
+  tensor, and 255-control limits, schema-correct function-index serialization,
+  and output atomicity. The mixed-allocation fixture must be repaired to sink
+  every quantum value before extraction. Drop the duplicate-static fixture: the
+  owning QCO validator already rejects it.
+- QCO-to-QC retains the valid target limitations demonstrated by
+  `RejectsYieldPermutationWithoutMutation` and
+  `RejectsMixedAllocationModesWithoutMutation`, plus output atomicity. `#2308`
+  exclusively owns `PreservesQTensorInsertSlotUpdates` and
+  `InvalidatesQTensorCacheAcrossLoopSlotSwap`.
+- QC-to-QCO retains dynamic register-index aliasing, mixed allocation, static
+  reference identity and lifetime, conditional captured-register lifetime,
+  ordered QTensor materialization, fallible live-value lookup, and output
+  linearity/atomicity. Evidence:
+  `DuplicateStaticReferencesShareOneEvolvingQCOValue`,
+  `RejectsStaticUseAfterDeallocationWithoutMutation`,
+  `RejectsPossiblyAliasedDynamicIndicesWithoutMutation`,
+  `RejectsMixedAllocationModesWithoutMutation`, and
+  `RejectsConditionallyDeallocatedCapturedRegisterWithoutMutation`.
+- QIR Adaptive retains entry shape and reserved-symbol checks, entry-only
+  QC/CBit/MemRef restrictions, the aggregate classical-result budget, release
+  placement, one-epilogue return lowering, supported control-flow and allocation
+  limits, global-phase lowering, and atomic output verification. The historical
+  tests cover missing entries, `__quantum__` collisions,
+  static/dynamic/conditional/repeated releases, nested and inconsistent returns,
+  path-dependent classical output, helper-function QC, mixed allocation,
+  controlled global phase, non-hoistable phase, rank-zero loads, and excessive
+  classical capacity.
+- QIR Base retains entry and resource-shape validation, supported control-flow
+  and MemRef restrictions, static-ID/register-element accounting, reset and
+  irreversible-order rules, and atomic output verification. The historical tests
+  cover same-qubit and aliased-static ordering, independent qubits and global
+  phase, sparse and exhausted static IDs, repeated/dynamic/rank-zero loads,
+  multi-block/backedge/structured/affine/helper control flow, preserved
+  non-control regions, entry arguments, and excessive classical capacity.
+
+### Owning verifiers and metadata
+
+- Retain non-local program metadata checks only in `mqt::verifyProgramMetadata`.
+  Evidence: `AcceptsDefinedLLVMEntryPoint`,
+  `ProgramMetadataRejectsDuplicateEntryPoints`,
+  `ProgramMetadataRejectsNonFuncEntryPoint`,
+  `ProgramMetadataRejectsDuplicateInputNames`,
+  `ProgramMetadataRejectsInconsistentParameterGroups`, and
+  `AcceptsParameterGroupsOutsideCurrentVectorSize`.
+- Retain owning QC/QCO operation-verifier findings for yield parentage, modifier
+  operand/result arity, duplicate yields, captured quantum values, barrier
+  arity, and direct or folded non-finite phase angles. Keep only the smallest
+  verifier-level assertion for each invariant when extracted.
+- Retain bounded, failure-returning matrix queries and their semantic
+  correctness findings: pass-through targets, yield permutations, a sole
+  wider-than-two-qubit operation, unknown nested unitaries, excessive control
+  width, and finite large integral powers. Drop the arbitrary 64-modifier-depth
+  policy.
+- Retain finite and bounded angle arithmetic at the owning numeric helpers and
+  valid-output transformations. Historical evidence includes
+  `IntegralPowerExtractionDoesNotOverflowGlobalPhase`,
+  `DynamicPhasesUseBoundedRuntimeArithmetic`,
+  `HugeFiniteStaticPhasesProduceVerifiedOutput`,
+  `DynamicMaxPhasesRemainFiniteAfterFusion`, and the QC/QCO verifier tests for
+  non-finite phase angles.
+- `#2302` owns exactly-one-entry and idempotent passthrough/module-flag
+  metadata. Separate retained metadata findings cover static-resource provenance
+  and capacity, malformed or unknown origins, sparse qubit/result capacities,
+  all `inttoptr` users, result arrays that must not inflate qubit capacity,
+  malformed record declarations, and CFG-sensitive feature classification.
+- QIR cleanup retains nested runtime-call discovery, deduplicated required
+  resource counts, and proven side-effect-free array alloc/release matching.
+  Evidence: `CleanupFindsRuntimeCallsNestedInFunctions`,
+  `CleanupDoesNotDuplicateRequiredResourceCounts`, and
+  `CleanupOnlyRemovesProvenSideEffectFreeArrayPairs`.
+
+### Valid transformation and resource findings
+
+- NormalizeGlobalPhases retains terminatorless module blocks, independent QC/QCO
+  aggregation, impure extraction boundaries, and finite static/dynamic angle
+  arithmetic. Drop its pass-local program and linearity validation and
+  iterative-traversal claim. The dedicated
+  `.agent/audits/global-phase-normalization.md` remains the assertion-level
+  audit for that pass.
+- Modifier canonicalization and decomposition retain classical support
+  operations or refuse a rewrite before mutation. Evidence spans the QC/QCO
+  modifier canonicalizer tests, `PreservesClassicalBodyCalls`,
+  `LeavesPostUnitaryClassicalBodyCallInPlace`,
+  `PreservesModifierSupportOperationsWhenRefusingLift`,
+  `AllMeasuredFastPathsPreserveClassicalBodyCalls`, and the two
+  `PartialMeasured...RefusesUnsafeSupportingOpHoist` tests.
+- Mapping retains option and target validation, target-specific representability
+  checks, the classical-only no-op, clone/verify/commit atomicity, its own
+  bounded structured recursion, and terminal reset routing. `#2301` already owns
+  terminal measurement routing. Drop generic metadata/linearity validation and
+  nonlinear-input tests.
+- Target synthesis retains support-call preservation and atomic refusal. Drop
+  unused-output handling because those fixtures violate QCO linearity.
+- Quantum-loop unrolling retains the factor 4096 and projected-operation 100,000
+  resource limits, identity-yield correctness, required Arith dependency,
+  sibling-symbol-safe verification, and clone/verify/commit atomicity. Evidence
+  is the `Excessive...`, `NestedExpansion...`, `PreservesYieldOnlyPermutation`,
+  `DynamicTripCountFailureIsAtomic`, and
+  `UnrollsFunctionWithSiblingSymbolReference` tests. Drop the generic
+  64-region-depth guard.
+- DD execution retains its public-boundary aggregate classical-bit cap, shared
+  10,000-step sampling/execution budget, and explicit call/region nesting
+  limits. Evidence: `RejectsExcessiveClassicalRegisterCapacity`,
+  `RejectsExcessiveRegionNesting`, and `RejectsExcessiveFuncCallNesting`.
+- The JeFF deserializer's own depth and aggregate-size limits remain valid
+  because serialized bytes are untrusted external input. This does not justify
+  the same 64-region precheck in each transformation pass.
+
+### Changes withdrawn from every area
+
+- Remove pass-entry `verifyProgramMetadata`, `verifyLinearity`, and generic
+  whole-module verification when they only repeat the declared input invariant.
+  Retain output verification and checks at compiler, external-input, or
+  target-representability boundaries.
+- Remove defensive `hasOneUse()` branches added solely for zero-use or multi-use
+  QCO/QTensor programs. The owning linearity validator rejects those programs
+  before a pass runs.
+- Remove every matching invalid-input regression, including nonlinear QCO
+  conversion, normalization, unrolling, mapping, synthesis, lifting, merging,
+  and classical-control fixtures; duplicate-static and static-reacquisition
+  QCO-to-QC fixtures; unused-output gate and barrier canonicalization fixtures;
+  and all additions from closed `#2303` and `#2309`.
+- Remove the shared `verifyRegionNestingDepth(..., 64)` helper, pass-entry
+  calls, TableGen promises, dependencies, documentation, and deep-region tests.
+  Keep only bounds owned by an actual recursive resource boundary.
+- Remove manual worklists that merely replace native MLIR walks. `#2300` and
+  `#2306` established no supported-path failure or better finite bound.
+- Remove registration-only assertions and dependency additions unless an
+  executed reproducer demonstrates an unloaded-dialect failure.
+- Remove branch copies of all merged or focused findings. Their implementation
+  and regression live in `#2290`, `#2291`, `#2293`, `#2294`, `#2295`, `#2296`,
+  `#2300`, `#2301`, `#2302`, `#2304`, `#2307`, and `#2308`. Remove all code from
+  closed `#2303`, `#2305`, `#2306`, and `#2309`.
 
 ## Context and Orientation
 

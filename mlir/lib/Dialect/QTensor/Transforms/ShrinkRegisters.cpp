@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
@@ -47,6 +46,7 @@ markLiveIndex(int64_t index, int64_t tensorSize,
 }
 
 namespace {
+
 struct TensorAccess {
   Operation* operation;
   int64_t index;
@@ -203,11 +203,6 @@ struct ShrinkQTensorToFitPass final
     : impl::ShrinkQTensorToFitPassBase<ShrinkQTensorToFitPass> {
 protected:
   void runOnOperation() override {
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(getOperation(), maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
     RewritePatternSet patterns(&getContext());
     patterns.add<ShrinkStaticQTensor>(&getContext());
 

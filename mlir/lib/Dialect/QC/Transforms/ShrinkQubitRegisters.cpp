@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Transforms/Passes.h"
-#include "mlir/Support/OperationUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -157,11 +156,6 @@ struct ShrinkQubitRegistersPass final
     : impl::ShrinkQubitRegistersPassBase<ShrinkQubitRegistersPass> {
 protected:
   void runOnOperation() override {
-    constexpr size_t maxRegionNesting = 64;
-    if (failed(verifyRegionNestingDepth(getOperation(), maxRegionNesting))) {
-      signalPassFailure();
-      return;
-    }
     RewritePatternSet patterns(&getContext());
     patterns.add<ShrinkQubitRegister>(&getContext());
 

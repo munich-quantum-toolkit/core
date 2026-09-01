@@ -14,15 +14,8 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
   let description = [{
     This pass converts all operations from the QCO dialect to their equivalent operations in the QC dialect.
     It handles the transformation of qubit values in QCO to qubit references in QC, ensuring that the semantics of quantum operations are preserved during the conversion process.
-
-    Every physical static-qubit identity must have at most one live QCO wire.
-    A static index may be reacquired after its previous wire is explicitly sunk
-    earlier in the same block.
-    Input may contain at most 64 region-owning operations along any IR path.
   }];
 
-  let dependentDialects = ["mlir::cf::ControlFlowDialect",
-                           "mlir::func::FuncDialect",
-                           "mlir::memref::MemRefDialect", "mlir::qc::QCDialect",
-                           "mlir::scf::SCFDialect"];
+  let dependentDialects = ["mlir::memref::MemRefDialect",
+                           "mlir::qc::QCDialect"];
 }

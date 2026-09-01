@@ -37,7 +37,6 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -112,21 +111,6 @@ static LogicalResult runQCToQCOConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCToQCO());
   return pm.run(module);
-}
-
-TEST(QCToQCOPassContract, IsModuleAnchoredAndDeclaresCreatedDialects) {
-  auto pass = createQCToQCO();
-  ASSERT_TRUE(pass->getOpName());
-  EXPECT_EQ(*pass->getOpName(), ModuleOp::getOperationName());
-
-  DialectRegistry registry;
-  pass->getDependentDialects(registry);
-  EXPECT_TRUE(
-      registry.getDialectAllocator(func::FuncDialect::getDialectNamespace()));
-  EXPECT_TRUE(registry.getDialectAllocator(
-      cf::ControlFlowDialect::getDialectNamespace()));
-  EXPECT_TRUE(
-      registry.getDialectAllocator(scf::SCFDialect::getDialectNamespace()));
 }
 
 namespace {

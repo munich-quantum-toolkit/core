@@ -24,7 +24,6 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
     - The input entry function must consist of a single block.
       Multi-block input functions are currently not supported.
     - QC, CBit, and MemRef operations must occur only in the entry function.
-    - Input may contain at most 64 region-owning operations along any IR path.
     - The total width of all `cbit.alloc` operations must not exceed 1,048,576
       (`1 << 20`) classical result slots per module.
     - Existing `__quantum__` runtime symbols must be Func or LLVM function
@@ -55,7 +54,5 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
       built-in conversions; other dialects are preserved.
   }];
 
-  let dependentDialects = ["mlir::arith::ArithDialect",
-                           "mlir::LLVM::LLVMDialect", "mlir::qc::QCDialect",
-                           "mlir::qco::QCODialect"];
+  let dependentDialects = ["mlir::LLVM::LLVMDialect"];
 }

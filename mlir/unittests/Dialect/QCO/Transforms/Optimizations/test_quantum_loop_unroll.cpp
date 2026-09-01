@@ -32,10 +32,8 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <string>
 #include <tuple>
 
 using namespace mlir;
@@ -297,47 +295,6 @@ module {
     }
     qco.sink %out0 : !qco.qubit
     qco.sink %out1 : !qco.qubit
-    return
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  OwningOpRef<ModuleOp> original(module->clone());
-
-  EXPECT_TRUE(failed(runPass(module, QuantumLoopUnrollOptions{})));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
-TEST_F(QuantumLoopUnrollTest, DeepRegionNestingFailureIsAtomic) {
-  constexpr size_t depth = 64;
-  std::string source = R"mlir(
-module {
-  func.func @main() {
-    %q = qco.static 0 : !qco.qubit
-    %lb = arith.constant 0 : index
-    %ub = arith.constant 1 : index
-    %step = arith.constant 1 : index
-)mlir";
-  for (size_t i = 0; i < depth; ++i) {
-    source += "    scf.execute_region {\n";
-  }
-  source += R"mlir(
-    %out = scf.for %iv = %lb to %ub step %step
-        iter_args(%arg = %q) -> (!qco.qubit) {
-      %next = qco.x %arg : !qco.qubit -> !qco.qubit
-      scf.yield %next : !qco.qubit
-    }
-    qco.sink %out : !qco.qubit
-)mlir";
-  for (size_t i = 0; i < depth; ++i) {
-    source += "      scf.yield\n    }\n";
-  }
-  source += R"mlir(
     return
   }
 }
