@@ -11,10 +11,16 @@
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -23,19 +29,232 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/DialectImplementation.h> // IWYU pragma: keep
 #include <mlir/IR/Operation.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cmath>
+#include <cstdint>
+#include <optional>
 #include <string>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::mqt;
 
 #include "mlir/Dialect/MQT/IR/MQTDialect.cpp.inc"
+#include "mlir/Dialect/MQT/IR/MQTEnums.cpp.inc"
 
-void MQTDialect::initialize() {}
+void MQTDialect::initialize() {
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "mlir/Dialect/MQT/IR/MQTAttributes.cpp.inc"
+      >();
+}
+
+#define GET_ATTRDEF_CLASSES
+#include "mlir/Dialect/MQT/IR/MQTAttributes.cpp.inc"
+
+LogicalResult
+DurationUnitAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
+                         const StringAttr unit, const FloatAttr scaleFactor) {
+  if (unit.getValue().trim().empty()) {
+    return emitError() << "duration unit must not be empty";
+  }
+  if (!scaleFactor.getType().isF64()) {
+    return emitError() << "duration scale factor must be an f64 value";
+  }
+  const auto value = scaleFactor.getValueAsDouble();
+  if (!std::isfinite(value) || value <= 0.) {
+    return emitError() << "duration scale factor must be positive and finite";
+  }
+  return success();
+}
+
+LogicalResult
+SiteAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
+                 const int64_t id, const StringAttr name,
+                 const std::optional<uint64_t> t1,
+                 const std::optional<uint64_t> t2) {
+  if (id < 0) {
+    return emitError() << "compiler target site ID must be nonnegative";
+  }
+  if (name && name.getValue().empty()) {
+    return emitError()
+           << "compiler target site name must not be empty when present";
+  }
+  if (t1 == 0 || t2 == 0) {
+    return emitError()
+           << "compiler target site coherence times must be positive";
+  }
+  return success();
+}
+
+LogicalResult
+CouplingAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
+                     const int64_t source, const int64_t target) {
+  if (source < 0 || target < 0) {
+    return emitError() << "compiler target coupling sites must be nonnegative";
+  }
+  if (source == target) {
+    return emitError() << "compiler target coupling must join distinct sites";
+  }
+  return success();
+}
+
+[[nodiscard]] static LogicalResult
+verifyFidelity(const function_ref<InFlightDiagnostic()>& emitError,
+               const FloatAttr fidelity, const StringRef description) {
+  if (!fidelity) {
+    return success();
+  }
+  if (!fidelity.getType().isF64()) {
+    return emitError() << description << " must be an f64 value";
+  }
+  const auto value = fidelity.getValueAsDouble();
+  if (!std::isfinite(value) || value < 0. || value > 1.) {
+    return emitError() << description << " must be finite and in [0, 1]";
+  }
+  return success();
+}
+
+LogicalResult
+SiteTupleAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
+                      const ArrayRef<int64_t> sites,
+                      const std::optional<uint64_t> /*duration*/,
+                      const FloatAttr fidelity) {
+  llvm::SmallDenseSet<int64_t> seen;
+  seen.reserve(sites.size());
+  for (const int64_t site : sites) {
+    if (site < 0) {
+      return emitError()
+             << "compiler target site tuple contains a negative site ID";
+    }
+    if (!seen.insert(site).second) {
+      return emitError()
+             << "compiler target site tuple contains a duplicate site";
+    }
+  }
+  return verifyFidelity(emitError, fidelity,
+                        "compiler target site-tuple fidelity");
+}
+
+LogicalResult NativeOperationAttr::verify(
+    const function_ref<InFlightDiagnostic()> emitError, const StringAttr name,
+    const uint64_t arity, const uint64_t /*numParameters*/,
+    const ArrayRef<SiteTupleAttr> siteTuples,
+    const std::optional<uint64_t> /*duration*/, const FloatAttr fidelity) {
+  if (name.getValue().trim().empty()) {
+    return emitError() << "compiler target operation name must not be empty";
+  }
+  if (arity == 0) {
+    return emitError() << "compiler target operation arity must be positive";
+  }
+  if (failed(verifyFidelity(emitError, fidelity,
+                            "compiler target operation fidelity"))) {
+    return failure();
+  }
+
+  SmallVector<ArrayRef<int64_t>> seen;
+  seen.reserve(siteTuples.size());
+  for (const SiteTupleAttr siteTuple : siteTuples) {
+    if (siteTuple.getSites().size() != arity) {
+      return emitError()
+             << "compiler target operation site tuple does not match its arity";
+    }
+    if (llvm::is_contained(seen, siteTuple.getSites())) {
+      return emitError()
+             << "compiler target operation contains a duplicate site tuple";
+    }
+    seen.emplace_back(siteTuple.getSites());
+  }
+  return success();
+}
+
+LogicalResult CompilationTargetAttr::verify(
+    const function_ref<InFlightDiagnostic()> emitError, const StringAttr name,
+    const ArrayRef<SiteAttr> sites, const DurationUnitAttr durationUnit,
+    const ConnectivityKind connectivity, const ArrayRef<CouplingAttr> couplings,
+    const NativeOperationsKind nativeOperations,
+    const ArrayRef<NativeOperationAttr> operations) {
+  if (name && name.getValue().empty()) {
+    return emitError() << "compiler target name must not be empty when present";
+  }
+  if (sites.empty()) {
+    return emitError() << "compiler target must contain at least one site";
+  }
+
+  llvm::SmallDenseSet<int64_t> siteIds;
+  siteIds.reserve(sites.size());
+  for (const SiteAttr site : sites) {
+    if (!siteIds.insert(site.getId()).second) {
+      return emitError() << "compiler target contains duplicate site IDs";
+    }
+  }
+
+  if (connectivity != ConnectivityKind::Explicit && !couplings.empty()) {
+    return emitError()
+           << "compiler target couplings require explicit connectivity";
+  }
+  if (connectivity == ConnectivityKind::Explicit) {
+    llvm::SmallDenseSet<std::pair<int64_t, int64_t>> seen;
+    for (const CouplingAttr coupling : couplings) {
+      auto source = coupling.getSource();
+      auto target = coupling.getTarget();
+      if (!siteIds.contains(source) || !siteIds.contains(target)) {
+        return emitError()
+               << "compiler target coupling references an unknown site";
+      }
+      if (target < source) {
+        std::swap(source, target);
+      }
+      if (!seen.insert({source, target}).second) {
+        return emitError() << "compiler target contains a duplicate coupling";
+      }
+    }
+  }
+
+  if (nativeOperations != NativeOperationsKind::Explicit &&
+      !operations.empty()) {
+    return emitError()
+           << "compiler target operations require explicit native operations";
+  }
+  for (const NativeOperationAttr operation : operations) {
+    if (operation.getArity() > sites.size()) {
+      return emitError()
+             << "compiler target operation arity exceeds its site count";
+    }
+    for (const SiteTupleAttr siteTuple : operation.getSiteTuples()) {
+      if (llvm::any_of(siteTuple.getSites(), [&](const int64_t site) {
+            return !siteIds.contains(site);
+          })) {
+        return emitError() << "compiler target operation site tuple references "
+                              "an unknown site";
+      }
+    }
+  }
+
+  const bool hasTiming =
+      llvm::any_of(sites,
+                   [](const SiteAttr site) {
+                     return site.getT1().has_value() ||
+                            site.getT2().has_value();
+                   }) ||
+      llvm::any_of(operations, [](const NativeOperationAttr operation) {
+        return operation.getDuration().has_value() ||
+               llvm::any_of(operation.getSiteTuples(),
+                            [](const SiteTupleAttr siteTuple) {
+                              return siteTuple.getDuration().has_value();
+                            });
+      });
+  if (hasTiming && !durationUnit) {
+    return emitError()
+           << "compiler target timing metadata requires a duration unit";
+  }
+  return success();
+}
 
 [[nodiscard]] static LogicalResult
 verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {

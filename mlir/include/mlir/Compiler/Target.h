@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
+
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -26,6 +28,7 @@
 
 namespace mlir {
 
+class MLIRContext;
 class Operation;
 
 /**
@@ -47,7 +50,7 @@ public:
   /// Target connectivity knowledge.
   class Connectivity {
   public:
-    enum class Kind : uint8_t { Unknown, AllToAll, Explicit };
+    using Kind = mqt::ConnectivityKind;
 
     /// Create unknown connectivity.
     Connectivity() noexcept;
@@ -223,7 +226,7 @@ public:
   /// Native-operation knowledge.
   class NativeOperations {
   public:
-    enum class Kind : uint8_t { Unknown, Unrestricted, Explicit };
+    using Kind = mqt::NativeOperationsKind;
 
     /// Create unknown native-operation support.
     NativeOperations() noexcept;
@@ -327,6 +330,10 @@ public:
          Connectivity connectivity = {}, NativeOperations nativeOperations = {},
          std::optional<DurationUnit> durationUnit = std::nullopt);
 
+  /// Reconstruct a validated compiler target from its MLIR attribute.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  create(mqt::CompilationTargetAttr attribute);
+
   /// Copying shares immutable storage; rvalues copy and keep the source valid.
   CompilerTarget(const CompilerTarget&) noexcept = default;
   CompilerTarget& operator=(const CompilerTarget&) noexcept = default;
@@ -414,6 +421,10 @@ public:
 
   /// Return one complete globally usable synthesis basis, if available.
   [[nodiscard]] std::optional<SynthesisBasis> synthesisBasis() const noexcept;
+
+  /// Materialize the source target facts as a typed MLIR attribute.
+  [[nodiscard]] mqt::CompilationTargetAttr
+  materialize(MLIRContext& context) const;
 
 private:
   struct Storage;
