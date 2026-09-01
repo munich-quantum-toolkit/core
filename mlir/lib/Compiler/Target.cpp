@@ -13,8 +13,6 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -36,6 +34,8 @@
 #include <optional>
 #include <string>
 #include <system_error>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -245,7 +245,7 @@ llvm::Expected<CompilerTarget::SiteTuple>
 CompilerTarget::SiteTuple::create(std::vector<SiteId> sites,
                                   const std::optional<uint64_t> duration,
                                   const std::optional<double> fidelity) {
-  llvm::SmallDenseSet<SiteId> uniqueSites;
+  std::unordered_set<SiteId> uniqueSites;
   for (const auto site : sites) {
     if (site < 0) {
       return invalidTarget(
@@ -404,7 +404,7 @@ struct CompilerTarget::Storage {
   std::optional<DurationUnit> durationUnit;
   std::vector<Site> sites;
   SmallVector<SiteId> siteIds;
-  DenseMap<SiteId, size_t> siteToVertex;
+  std::unordered_map<SiteId, size_t> siteToVertex;
   Connectivity::Kind connectivityKind;
   SmallVector<Coupling> couplings;
   SmallVector<SmallVector<size_t, 4>> adjacency;

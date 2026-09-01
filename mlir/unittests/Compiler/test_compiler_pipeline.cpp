@@ -220,8 +220,9 @@ makeCZTarget(std::initializer_list<NameAndCount> singleQubitGates) {
         llvm::cantFail(Operation::create(name.str(), 1, numParameters)));
   }
   operations.emplace_back(llvm::cantFail(Operation::create("cz", 2, 0)));
-  return llvm::cantFail(
-      CompilerTarget::create(2, std::nullopt, std::move(operations)));
+  return llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations(operations)));
 }
 
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
@@ -1480,8 +1481,9 @@ TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
       llvm::cantFail(Operation::create("cz", 2, 0)),
       llvm::cantFail(Operation::create("ctrl", 2, 0)),
   };
-  const auto target = llvm::cantFail(
-      CompilerTarget::create(2, std::nullopt, std::move(operations)));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations(operations)));
   ASSERT_TRUE(target.synthesisBasis());
   ASSERT_EQ(target.synthesisBasis()->singleQubit,
             CompilerTarget::SingleQubitBasis::ZSXX);

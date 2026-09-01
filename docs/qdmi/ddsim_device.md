@@ -43,10 +43,10 @@ The device implements the full QDMI job interface (except for the
 
 ## Compile and execute QIR
 
-QDMI v1.3 cannot report the DDSIM device's all-to-all topology. State this
-temporary topology workaround and an explicit DDSIM synthesis basis when
-compiling a program to QIR. QDMI v1.4 will remove the topology workaround.
-Submit the resulting bitcode to the same device:
+QDMI v1.3 cannot compactly report the DDSIM device's all-to-all topology or the
+site applicability of every operation. State the topology and reconstruct the
+fixed-arity operation list from the device metadata when compiling a program to
+QIR. Submit the resulting bitcode to the same device:
 
 ```python
 from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
@@ -54,15 +54,23 @@ from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
 device = open_device("mqt.ddsim.default")
+operations = []
+for operation in device.operations():
+    arity = operation.qubits_num()
+    if arity is None or arity == 0:
+        continue
+    operations.append(
+        CompilerTarget.Operation(
+            name=operation.name(),
+            arity=arity,
+            num_parameters=operation.parameters_num(),
+        )
+    )
+
 target = CompilerTarget(
     device.qubits_num(),
     connectivity=CompilerTarget.Connectivity.all_to_all(),
-    native_operations=CompilerTarget.NativeOperations([
-        CompilerTarget.Operation("u", 1, 3),
-        CompilerTarget.Operation("cx", 2, 0),
-        CompilerTarget.Operation("measure", 1, 0),
-        CompilerTarget.Operation("reset", 1, 0),
-    ]),
+    native_operations=CompilerTarget.NativeOperations(operations),
 )
 program = compile_program(
     "bell.qasm",

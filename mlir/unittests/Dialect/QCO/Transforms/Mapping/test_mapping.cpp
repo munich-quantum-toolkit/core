@@ -488,11 +488,24 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
 TEST_F(MappingPassFixture, UnknownConnectivityIsNeededOnlyForTwoQubitOps) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
-  builder.sink(builder.allocQubit());
+  auto qubit = builder.allocQubit();
+  Value condition;
+  std::tie(qubit, condition) = builder.measure(qubit);
+  SmallVector<Value> qubits{qubit};
+  qubits = builder.qcoIf(
+      condition, qubits,
+      [&](ValueRange args) {
+        return SmallVector<Value>{builder.x(args.front())};
+      },
+      [&](ValueRange args) {
+        return SmallVector<Value>{builder.h(args.front())};
+      });
+  builder.sink(qubits.front());
   auto moduleOp = builder.finalize();
   const auto target = llvm::cantFail(CompilerTarget::create(2));
 
   EXPECT_TRUE(succeeded(runPass(moduleOp.get(), target, MappingPassOptions{})));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 
   QCOProgramBuilder twoQubitBuilder(context.get());
   twoQubitBuilder.initialize();
