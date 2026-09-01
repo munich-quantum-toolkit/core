@@ -41,6 +41,14 @@ namespace mlir::qir {
 #define GEN_PASS_DEF_QIRSETATTRIBUTESANDMETADATA
 #include "mlir/Dialect/QIR/Transforms/Passes.h.inc"
 
+[[nodiscard]] static bool hasQIREntryPointAttribute(LLVM::LLVMFuncOp function) {
+  const auto passthrough = function->getAttrOfType<ArrayAttr>("passthrough");
+  return passthrough && llvm::any_of(passthrough, [](Attribute attribute) {
+           const auto name = dyn_cast<StringAttr>(attribute);
+           return name && name.getValue() == StringRef(::qir::ENTRY_POINT_ATTR);
+         });
+}
+
 namespace {
 
 /// State object for tracking QIR metadata during conversion
@@ -64,14 +72,6 @@ struct Metadata {
   bool usesMultipleTargetBranching{false};
   bool usesMultipleReturnPoints{false};
 };
-
-[[nodiscard]] static bool hasQIREntryPointAttribute(LLVM::LLVMFuncOp function) {
-  const auto passthrough = function->getAttrOfType<ArrayAttr>("passthrough");
-  return passthrough && llvm::any_of(passthrough, [](Attribute attribute) {
-           const auto name = dyn_cast<StringAttr>(attribute);
-           return name && name.getValue() == StringRef(::qir::ENTRY_POINT_ATTR);
-         });
-}
 
 /**
  * @brief Attaches the required attributes to the function marked as
