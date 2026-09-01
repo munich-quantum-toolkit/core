@@ -17,13 +17,11 @@
 #include "mqt_ddsim_qdmi/device.h"
 
 #include <gtest/gtest.h>
-#ifdef BUILD_MQT_CORE_MLIR
 #include <llvm/AsmParser/Parser.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
-#endif
 
 #include <algorithm>
 #include <cstddef>
@@ -91,7 +89,6 @@ protected:
   }
 };
 
-#ifdef BUILD_MQT_CORE_MLIR
 class QIRHistogramTestModule : public HistogramTest {
 protected:
   static std::string getProgram(const std::string_view file) {
@@ -113,7 +110,6 @@ protected:
 };
 
 class QIRHistogramTestString : public HistogramTest {};
-#endif
 
 } // namespace
 
@@ -123,7 +119,40 @@ TEST_F(HistogramTest, QASM3Program) {
   checkHistogram(runProgram(format, program));
 }
 
-#ifdef BUILD_MQT_CORE_MLIR
+TEST_F(HistogramTest, QASM3ProgramWithoutMeasurements) {
+  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM3;
+  constexpr std::string_view program = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+cx q[0], q[1];
+)qasm";
+  checkHistogram(runProgram(format, program));
+}
+
+TEST_F(HistogramTest, QASM2Program) {
+  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM2;
+  constexpr std::string_view program = qdmi_test::QASM2_BELL_SAMPLING;
+  checkHistogram(runProgram(format, program));
+}
+
+TEST_F(HistogramTest, QASM3MultipleRegistersFollowQiskitOrder) {
+  constexpr std::string_view program = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+bit[2] c0;
+bit c1;
+qubit[3] q;
+x q[0];
+x q[2];
+c0[0] = measure q[0];
+c0[1] = measure q[1];
+c1 = measure q[2];
+)qasm";
+  const auto [keys, values] = runProgram(QDMI_PROGRAM_FORMAT_QASM3, program);
+  EXPECT_EQ(keys, std::vector<std::string>{"101"});
+  EXPECT_EQ(values, std::vector<size_t>{NUM_SHOTS});
+}
+
 TEST_F(QIRHistogramTestModule, BaseStatic) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
   checkHistogram(runProgram(format, getProgram("BellPairStatic.ll")));
@@ -168,7 +197,6 @@ TEST_F(QIRHistogramTestString, AdaptiveRecordOutputs) {
   checkSmokeHistogram(
       runProgram(format, qdmi_test::getQIRProgram("AdaptiveRecordOutputs.ll")));
 }
-#endif
 
 TEST_F(HistogramTest, SeedReproducesQASMSampling) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QASM3;
@@ -176,13 +204,11 @@ TEST_F(HistogramTest, SeedReproducesQASMSampling) {
   EXPECT_EQ(runProgram(format, program, 7), runProgram(format, program, 7));
 }
 
-#ifdef BUILD_MQT_CORE_MLIR
 TEST_F(QIRHistogramTestString, SeedReproducesQIRSampling) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
   const auto program = qdmi_test::getQIRProgram("BellPairStatic.ll");
   EXPECT_EQ(runProgram(format, program, 7), runProgram(format, program, 7));
 }
-#endif
 
 TEST(ResultsSampling, BufferTooSmallErrors) {
   const qdmi_test::SessionGuard s{};

@@ -8,14 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "dd/FunctionalityConstruction.hpp"
+#include "dd/DDDefinitions.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Node.hpp"
+#include "dd/Operations.hpp"
 #include "dd/Package.hpp"
-#include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
-#include "ir/QuantumComputation.hpp"
-#include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
@@ -45,6 +43,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <map>
 #include <memory>
@@ -59,6 +58,13 @@ using namespace mlir;
 using namespace qco;
 
 namespace {
+
+struct ReferenceGate {
+  dd::GateType type;
+  dd::Targets targets;
+  std::vector<dd::fp> params;
+  dd::Controls controls;
+};
 
 class QCODDFunctionalityTest : public testing::Test {
 protected:
@@ -89,27 +95,33 @@ protected:
                                     std::forward<BuildFn>(buildFn));
   }
 
-  /// Compare `mlir::qco::{buildFunctionality,simulate}` to
-  /// `dd::{buildFunctionality,simulate}` on an equivalent circuit.
-  void expectEqualToQc(func::FuncOp func, const qc::QuantumComputation& qc) {
-    const auto numQubits = qc.getNqubits();
+  static void
+  expectEqualToReference(func::FuncOp func, const size_t numQubits,
+                         const std::initializer_list<ReferenceGate> gates) {
     auto dd = std::make_unique<dd::Package>(numQubits);
 
-    const auto fromQcFn = dd::buildFunctionality(qc, *dd);
+    auto referenceFn = dd::MatrixDD::one();
+    auto referenceSim = dd::makeZeroState(numQubits, *dd);
+    for (const auto& gate : gates) {
+      const auto operation = dd::getGateDD(*dd, gate.type, gate.params,
+                                           gate.controls, gate.targets);
+      referenceFn = dd->applyOperation(operation, referenceFn);
+      referenceSim = dd->applyOperation(operation, referenceSim);
+    }
+
     const auto fromQcoFn = buildFunctionality(func, *dd);
     ASSERT_TRUE(succeeded(fromQcoFn));
-    EXPECT_TRUE(*fromQcoFn == fromQcFn);
+    EXPECT_TRUE(*fromQcoFn == referenceFn);
     dd->decRef(*fromQcoFn);
-    dd->decRef(fromQcFn);
+    dd->decRef(referenceFn);
 
-    const auto fromQcSim =
-        dd::simulate(qc, dd::makeZeroState(numQubits, *dd), *dd);
+    std::mt19937_64 rng(0);
     const auto fromQcoSim =
         simulate(func, dd::makeZeroState(numQubits, *dd), *dd, rng);
     ASSERT_TRUE(succeeded(fromQcoSim));
-    EXPECT_EQ(fromQcoSim->getVector(), fromQcSim.getVector());
+    EXPECT_EQ(fromQcoSim->getVector(), referenceSim.getVector());
     dd->decRef(*fromQcoSim);
-    dd->decRef(fromQcSim);
+    dd->decRef(referenceSim);
   }
 
   void expectMlirFails(size_t numQubits, StringRef mlirCode) const {
@@ -124,7 +136,7 @@ protected:
     auto expected = dd::makeZeroState(1, *dd);
     if (expectedOne) {
       expected = dd->applyOperation(
-          dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+          dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
           expected);
     }
     const auto out = simulate(func, dd::makeZeroState(1, *dd), *dd, rng);
@@ -148,7 +160,7 @@ protected:
   }
 };
 
-TEST_F(QCODDFunctionalityTest, MatchesQuantumComputation) {
+TEST_F(QCODDFunctionalityTest, ExercisesStandardGatePaths) {
   // Every `decodeStandardGate` branch once (distinct angles catch param-order
   // bugs), plus barrier / sparse ctrl / inv / sink.
   constexpr double theta = 0.31;
@@ -203,40 +215,40 @@ TEST_F(QCODDFunctionalityTest, MatchesQuantumComputation) {
   });
   ASSERT_TRUE(mod);
 
-  qc::QuantumComputation qc(3);
-  qc.i(0);
-  qc.x(0);
-  qc.y(0);
-  qc.z(0);
-  qc.h(0);
-  qc.s(0);
-  qc.sdg(0);
-  qc.t(0);
-  qc.tdg(0);
-  qc.sx(0);
-  qc.sxdg(0);
-  qc.rx(theta, 0);
-  qc.ry(theta, 0);
-  qc.rz(theta, 0);
-  qc.p(theta, 0);
-  qc.r(theta, phi, 0);
-  qc.u2(phi, lambda, 0);
-  qc.u(theta, phi, lambda, 0);
-  qc.swap(0, 1);
-  qc.iswap(0, 1);
-  qc.dcx(0, 1);
-  qc.ecr(0, 1);
-  qc.rxx(theta, 0, 1);
-  qc.ryy(theta, 0, 1);
-  qc.rzz(theta, 0, 1);
-  qc.rzx(theta, 0, 1);
-  qc.xx_plus_yy(theta, beta, 0, 1);
-  qc.xx_minus_yy(theta, beta, 0, 1);
-  qc.cx(0, 1);
-  qc.cp(std::numbers::pi / 5.0, 1, 2);
-  qc.mcx({0, 1}, 2);
-  qc.sdg(2);
-  expectEqualToQc(mainFunc(*mod), qc);
+  expectEqualToReference(
+      mainFunc(*mod), 3,
+      {{dd::GateType::I, {0}},
+       {dd::GateType::X, {0}},
+       {dd::GateType::Y, {0}},
+       {dd::GateType::Z, {0}},
+       {dd::GateType::H, {0}},
+       {dd::GateType::S, {0}},
+       {dd::GateType::Sdg, {0}},
+       {dd::GateType::T, {0}},
+       {dd::GateType::Tdg, {0}},
+       {dd::GateType::SX, {0}},
+       {dd::GateType::SXdg, {0}},
+       {dd::GateType::RX, {0}, {theta}},
+       {dd::GateType::RY, {0}, {theta}},
+       {dd::GateType::RZ, {0}, {theta}},
+       {dd::GateType::P, {0}, {theta}},
+       {dd::GateType::R, {0}, {theta, phi}},
+       {dd::GateType::U2, {0}, {phi, lambda}},
+       {dd::GateType::U, {0}, {theta, phi, lambda}},
+       {dd::GateType::SWAP, {0, 1}},
+       {dd::GateType::iSWAP, {0, 1}},
+       {dd::GateType::DCX, {0, 1}},
+       {dd::GateType::ECR, {0, 1}},
+       {dd::GateType::RXX, {0, 1}, {theta}},
+       {dd::GateType::RYY, {0, 1}, {theta}},
+       {dd::GateType::RZZ, {0, 1}, {theta}},
+       {dd::GateType::RZX, {0, 1}, {theta}},
+       {dd::GateType::XXplusYY, {0, 1}, {theta, beta}},
+       {dd::GateType::XXminusYY, {0, 1}, {theta, beta}},
+       {dd::GateType::X, {1}, {}, {{0}}},
+       {dd::GateType::P, {2}, {std::numbers::pi / 5.0}, {{1}}},
+       {dd::GateType::X, {2}, {}, {{0}, {1}}},
+       {dd::GateType::Sdg, {2}}});
 }
 
 TEST_F(QCODDFunctionalityTest, Rccx) {
@@ -260,10 +272,9 @@ TEST_F(QCODDFunctionalityTest, Rccx) {
   });
   ASSERT_TRUE(mod);
 
-  qc::QuantumComputation qc(4);
-  qc.rccx(2, 0, 3);
-  qc.crccx(1, 2, 0, 3);
-  expectEqualToQc(mainFunc(*mod), qc);
+  expectEqualToReference(mainFunc(*mod), 4,
+                         {{dd::GateType::RCCX, {2, 0, 3}},
+                          {dd::GateType::RCCX, {2, 0, 3}, {}, {{1}}}});
 }
 
 TEST_F(QCODDFunctionalityTest, DensePaths) {
@@ -282,11 +293,10 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
       return b.intConstant(0);
     });
     ASSERT_TRUE(mod);
-    qc::QuantumComputation qc(3);
-    qc.x(1);
-    qc.ct(2, 0);
-    qc.ch(2, 0);
-    expectEqualToQc(mainFunc(*mod), qc);
+    expectEqualToReference(mainFunc(*mod), 3,
+                           {{dd::GateType::X, {1}},
+                            {dd::GateType::T, {0}, {}, {{2}}},
+                            {dd::GateType::H, {0}, {}, {{2}}}});
   }
   {
     auto mod = buildModule([](QCOProgramBuilder& b) {
@@ -301,9 +311,7 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
       return b.intConstant(0);
     });
     ASSERT_TRUE(mod);
-    qc::QuantumComputation qc(2);
-    qc.swap(0, 1);
-    expectEqualToQc(mainFunc(*mod), qc);
+    expectEqualToReference(mainFunc(*mod), 2, {{dd::GateType::SWAP, {0, 1}}});
   }
   {
     auto mod = buildModule([](QCOProgramBuilder& b) {
@@ -319,11 +327,10 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
       return b.intConstant(0);
     });
     ASSERT_TRUE(mod);
-    qc::QuantumComputation qc(3);
-    qc.rx(-0.2, 0);
-    qc.ry(-0.3, 1);
-    qc.rz(-0.4, 2);
-    expectEqualToQc(mainFunc(*mod), qc);
+    expectEqualToReference(mainFunc(*mod), 3,
+                           {{dd::GateType::RX, {0}, {-0.2}},
+                            {dd::GateType::RY, {1}, {-0.3}},
+                            {dd::GateType::RZ, {2}, {-0.4}}});
   }
   {
     auto mod = buildModule([](QCOProgramBuilder& b) {
@@ -341,11 +348,10 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
       return b.intConstant(0);
     });
     ASSERT_TRUE(mod);
-    qc::QuantumComputation qc(4);
-    qc.rx(-0.2, 0);
-    qc.ry(-0.3, 1);
-    qc.rz(-0.4, 2);
-    expectEqualToQc(mainFunc(*mod), qc);
+    expectEqualToReference(mainFunc(*mod), 4,
+                           {{dd::GateType::RX, {0}, {-0.2}},
+                            {dd::GateType::RY, {1}, {-0.3}},
+                            {dd::GateType::RZ, {2}, {-0.4}}});
   }
   {
     // Four-qubit dense `inv` on a non-contiguous wire subset (idle q3).
@@ -368,12 +374,11 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
       return b.intConstant(0);
     });
     ASSERT_TRUE(mod);
-    qc::QuantumComputation qc(5);
-    qc.rx(-0.2, 0);
-    qc.ry(-0.3, 1);
-    qc.rz(-0.4, 2);
-    qc.h(4);
-    expectEqualToQc(mainFunc(*mod), qc);
+    expectEqualToReference(mainFunc(*mod), 5,
+                           {{dd::GateType::RX, {0}, {-0.2}},
+                            {dd::GateType::RY, {1}, {-0.3}},
+                            {dd::GateType::RZ, {2}, {-0.4}},
+                            {dd::GateType::H, {4}}});
   }
 }
 
@@ -456,9 +461,7 @@ TEST_F(QCODDFunctionalityTest, FuncArgs) {
                                          context.get());
   ASSERT_TRUE(mod);
 
-  qc::QuantumComputation qc(1);
-  qc.h(0);
-  expectEqualToQc(mainFunc(*mod), qc);
+  expectEqualToReference(mainFunc(*mod), 1, {{dd::GateType::H, {0}}});
 }
 
 TEST_F(QCODDFunctionalityTest, ReturnedQubitsMustPreserveWireOrder) {
@@ -601,16 +604,16 @@ TEST_F(QCODDFunctionalityTest,
 
   auto dd = std::make_unique<dd::Package>(3);
   auto input = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 1),
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 1),
       dd::makeZeroState(2, *dd));
   const auto output = simulate(mainFunc(*mod), input, *dd, rng);
   ASSERT_TRUE(succeeded(output));
 
   auto expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 1),
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 1),
       dd::makeZeroState(3, *dd));
   expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 2),
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 2),
       expected);
   EXPECT_EQ(output->getVector(), expected.getVector());
   dd->decRef(*output);
@@ -632,7 +635,7 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureCollapsesLikePackage) {
   std::mt19937_64 refRng(seed);
   auto ref = dd::makeZeroState(1, *dd);
   ref = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::H), 0), ref);
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::H), 0), ref);
   static_cast<void>(dd->measureOneCollapsing(ref, 0, refRng));
   const auto expected = ref.getVector();
 
@@ -685,12 +688,8 @@ TEST_F(QCODDFunctionalityTest, SimulateIfConstantBranches) {
   ASSERT_TRUE(thenMod);
   ASSERT_TRUE(elseMod);
 
-  qc::QuantumComputation thenQc(1);
-  thenQc.x(0);
-  expectEqualToQc(mainFunc(*thenMod), thenQc);
-
-  const qc::QuantumComputation elseQc(1);
-  expectEqualToQc(mainFunc(*elseMod), elseQc);
+  expectEqualToReference(mainFunc(*thenMod), 1, {{dd::GateType::X, {0}}});
+  expectEqualToReference(mainFunc(*elseMod), 1, {});
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateIndexSwitchBranches) {
@@ -717,12 +716,8 @@ TEST_F(QCODDFunctionalityTest, SimulateIndexSwitchBranches) {
   ASSERT_TRUE(caseMod);
   ASSERT_TRUE(defaultMod);
 
-  qc::QuantumComputation caseQc(1);
-  caseQc.x(0);
-  expectEqualToQc(mainFunc(*caseMod), caseQc);
-
-  const qc::QuantumComputation defaultQc(1);
-  expectEqualToQc(mainFunc(*defaultMod), defaultQc);
+  expectEqualToReference(mainFunc(*caseMod), 1, {{dd::GateType::X, {0}}});
+  expectEqualToReference(mainFunc(*defaultMod), 1, {});
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIf) {
@@ -742,7 +737,7 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIf) {
   auto dd = std::make_unique<dd::Package>(1);
   std::mt19937_64 rng(99);
   auto one = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
       dd::makeZeroState(1, *dd));
   const auto out =
       simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
@@ -782,7 +777,7 @@ TEST_F(QCODDFunctionalityTest, SimulateCBitConditionAndMeasurementUpdate) {
   std::mt19937_64 rng(99);
   auto zero = dd::makeZeroState(1, *dd);
   auto one = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
       dd::makeZeroState(1, *dd));
 
   const auto zeroOut =
@@ -915,10 +910,10 @@ TEST_F(QCODDFunctionalityTest, SimulateAndiOriShliClassical) {
   // Final computational basis: |1>|0>|1> after measures and case-1 X on q2.
   auto expected = dd::makeZeroState(3, *dd);
   expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
       expected);
   expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 2),
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 2),
       expected);
 
   const auto out =
@@ -952,7 +947,7 @@ TEST_F(QCODDFunctionalityTest, AcceptsLargestValidShift) {
       simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
   ASSERT_TRUE(succeeded(out));
   auto expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
       dd::makeZeroState(1, *dd));
   EXPECT_EQ(out->getVector(), expected.getVector());
   dd->decRef(*out);
@@ -1154,12 +1149,11 @@ TEST_F(QCODDFunctionalityTest, EmbedsWideLocalMatrixWithoutRegisterLimit) {
   });
   ASSERT_TRUE(mod);
 
-  qc::QuantumComputation qc(13);
-  qc.rx(-0.2, 0);
-  qc.ry(-0.3, 4);
-  qc.rz(-0.4, 8);
-  qc.h(12);
-  expectEqualToQc(mainFunc(*mod), qc);
+  expectEqualToReference(mainFunc(*mod), 13,
+                         {{dd::GateType::RX, {0}, {-0.2}},
+                          {dd::GateType::RY, {4}, {-0.3}},
+                          {dd::GateType::RZ, {8}, {-0.4}},
+                          {dd::GateType::H, {12}}});
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUnsupportedOrUnboundClassicalOperations) {
@@ -1283,7 +1277,7 @@ TEST_F(QCODDFunctionalityTest, BindsClassicalIfResults) {
       simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
   ASSERT_TRUE(succeeded(out));
   auto expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
       dd::makeZeroState(1, *dd));
   EXPECT_EQ(out->getVector(), expected.getVector());
   dd->decRef(*out);
@@ -1325,7 +1319,7 @@ TEST_F(QCODDFunctionalityTest, BindsClassicalIndexResults) {
       simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
   ASSERT_TRUE(succeeded(out));
   auto expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(qc::OpType::X), 0),
+      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
       dd::makeZeroState(1, *dd));
   EXPECT_EQ(out->getVector(), expected.getVector());
   dd->decRef(*out);
@@ -2352,12 +2346,11 @@ TEST_F(QCODDFunctionalityTest, BuildsThroughConcreteControlFlow) {
   });
   ASSERT_TRUE(mod);
 
-  qc::QuantumComputation qc(1);
-  qc.x(0);
-  qc.z(0);
-  qc.h(0);
-  qc.h(0);
-  expectEqualToQc(mainFunc(*mod), qc);
+  expectEqualToReference(mainFunc(*mod), 1,
+                         {{dd::GateType::X, {0}},
+                          {dd::GateType::Z, {0}},
+                          {dd::GateType::H, {0}},
+                          {dd::GateType::H, {0}}});
 }
 
 TEST_F(QCODDFunctionalityTest, StructuredScfAndWhileCarryValues) {
@@ -2419,11 +2412,9 @@ TEST_F(QCODDFunctionalityTest, StructuredScfAndWhileCarryValues) {
                                          context.get());
   ASSERT_TRUE(mod);
 
-  qc::QuantumComputation qc(1);
-  qc.x(0);
-  qc.z(0);
-  qc.x(0);
-  expectEqualToQc(mainFunc(*mod), qc);
+  expectEqualToReference(
+      mainFunc(*mod), 1,
+      {{dd::GateType::X, {0}}, {dd::GateType::Z, {0}}, {dd::GateType::X, {0}}});
 }
 
 TEST_F(QCODDFunctionalityTest, DynamicAllocationsAndQTensorBookkeeping) {
@@ -2897,9 +2888,7 @@ TEST_F(QCODDFunctionalityTest, InterpretsMinMaxAndCommonMathOperations) {
   });
   ASSERT_TRUE(mod);
 
-  qc::QuantumComputation qc(1);
-  qc.x(0);
-  expectEqualToQc(mainFunc(*mod), qc);
+  expectEqualToReference(mainFunc(*mod), 1, {{dd::GateType::X, {0}}});
 }
 
 TEST_F(QCODDFunctionalityTest, StatevectorSupportsTerminalMeasurements) {

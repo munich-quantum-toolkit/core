@@ -22,7 +22,79 @@
 #include <complex>
 #include <cstddef>
 #include <numbers>
+#include <string_view>
 #include <vector>
+
+namespace {
+
+void expectBellState(const QDMI_Program_Format format,
+                     const std::string_view program) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  ASSERT_EQ(qdmi_test::setProgram(j.job, format, program), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+
+  const auto vec = qdmi_test::getDenseState(j.job);
+  ASSERT_EQ(vec.size(), 4U);
+  constexpr double invSqrt2 = 1.0 / std::numbers::sqrt2;
+  EXPECT_NEAR(std::abs(vec[0]), invSqrt2, 1e-6);
+  EXPECT_NEAR(std::abs(vec[1]), 0.0, 1e-6);
+  EXPECT_NEAR(std::abs(vec[2]), 0.0, 1e-6);
+  EXPECT_NEAR(std::abs(vec[3]), invSqrt2, 1e-6);
+}
+
+} // namespace
+
+TEST(ResultsStatevector, QASM2YieldsBellState) {
+  expectBellState(QDMI_PROGRAM_FORMAT_QASM2, qdmi_test::QASM2_BELL_STATE);
+}
+
+TEST(ResultsStatevector, QASM2IgnoresFinalMeasurements) {
+  expectBellState(QDMI_PROGRAM_FORMAT_QASM2, qdmi_test::QASM2_BELL_SAMPLING);
+}
+
+TEST(ResultsStatevector, QASM3YieldsBellState) {
+  expectBellState(QDMI_PROGRAM_FORMAT_QASM3, qdmi_test::QASM3_BELL_STATE);
+}
+
+TEST(ResultsStatevector, QASM3IgnoresFinalMeasurements) {
+  expectBellState(QDMI_PROGRAM_FORMAT_QASM3, qdmi_test::QASM3_BELL_SAMPLING);
+}
+
+TEST(ResultsStatevector, EmptyQASM3YieldsVacuumState) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  ASSERT_EQ(
+      qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3, "OPENQASM 3.0;"),
+      QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+
+  const auto vec = qdmi_test::getDenseState(j.job);
+  ASSERT_EQ(vec.size(), 1U);
+  EXPECT_EQ(vec.front(), std::complex<double>(1.0, 0.0));
+
+  const size_t keysSize =
+      qdmi_test::querySize(j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS);
+  ASSERT_EQ(keysSize, 1U);
+  std::vector<char> keys(keysSize);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, keys.size(),
+                keys.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(keys.front(), '\0');
+
+  const size_t valuesSize =
+      qdmi_test::querySize(j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES);
+  ASSERT_EQ(valuesSize, sizeof(std::complex<double>));
+  std::complex<double> value;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, sizeof(value),
+                &value, nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(value, std::complex<double>(1.0, 0.0));
+}
 
 TEST(ResultsStatevector, DenseNormalizedAndBufferTooSmall) {
   const qdmi_test::SessionGuard s{};
@@ -106,7 +178,6 @@ TEST(ResultsStatevector, HistogramRequestsInvalidWithShotsZero) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-#ifdef BUILD_MQT_CORE_MLIR
 TEST(ResultsStatevector, QIRBaseStringYieldsBellState) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
@@ -127,4 +198,3 @@ TEST(ResultsStatevector, QIRBaseStringYieldsBellState) {
   EXPECT_NEAR(std::abs(vec[2]), 0.0, 1e-6);
   EXPECT_NEAR(std::abs(vec[3]), invSqrt2, 1e-6);
 }
-#endif

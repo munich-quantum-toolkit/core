@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Test the quantum computation IR."""
+"""Test the QDMI Python bindings."""
 
 from __future__ import annotations
 
@@ -766,6 +766,22 @@ h q[0];
 cx q[0], q[1];
 """
     return ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=0)
+
+
+def test_empty_qasm_program_has_a_zero_width_vacuum_result(ddsim_device: Device) -> None:
+    """Return the zero-qubit vacuum for an empty QASM program."""
+    program = "OPENQASM 3.0;"
+
+    sample_job = ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=4)
+    sample_job.wait()
+    assert sample_job.get_counts() == {"": 4}
+
+    state_job = ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=0)
+    state_job.wait()
+    assert state_job.get_dense_statevector() == [1 + 0j]
+    assert state_job.get_dense_probabilities() == [1.0]
+    assert state_job.get_sparse_statevector() == {"": 1 + 0j}
+    assert state_job.get_sparse_probabilities() == {"": 1.0}
 
 
 def test_simulator_job_get_dense_state_vector_returns_valid_state(simulator_job: Job) -> None:

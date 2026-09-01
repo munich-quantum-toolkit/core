@@ -315,3 +315,20 @@ TEST_F(ErrorHandling, MalformedProgramFailsForBothModes) {
     EXPECT_EQ(js, QDMI_JOB_STATUS_FAILED);
   }
 }
+
+TEST_F(ErrorHandling, QASM3PartiallyInitializedOutputFails) {
+  constexpr std::string_view program = R"qasm(OPENQASM 3.0;
+bit[2] c;
+qubit[2] q;
+c[0] = measure q[0];
+)qasm";
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3, program),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 1), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+  QDMI_Job_Status status{};
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(j.job, &status), QDMI_SUCCESS);
+  EXPECT_EQ(status, QDMI_JOB_STATUS_FAILED);
+}

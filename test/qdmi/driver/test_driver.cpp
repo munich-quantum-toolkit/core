@@ -57,7 +57,7 @@ MATCHER_P2(IsBetween, a, b,
 } // namespace
 } // namespace testing
 
-namespace qc {
+namespace {
 
 namespace {
 
@@ -840,8 +840,12 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
   EXPECT_EQ(ret, QDMI_SUCCESS);
   EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
 }
-constexpr std::array DEVICES{"MQT SC Default QDMI Device",
-                             "MQT Core DDSIM QDMI Device"};
+constexpr std::array DEVICES{
+    "MQT SC Default QDMI Device",
+#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
+    "MQT Core DDSIM QDMI Device",
+#endif
+};
 
 namespace {
 void registerSessionTestDevice() {
@@ -897,10 +901,12 @@ TEST(ConfiguredDriverTest, ExposesWorkingDefinitionsAndIsolatesFailures) {
 
   std::vector<std::string> names;
   std::ranges::transform(devices, std::back_inserter(names), queryName);
-  EXPECT_THAT(names,
-              testing::UnorderedElementsAre("IQM Emerald", "IQM Garnet",
-                                            "MQT SC Default QDMI Device",
-                                            "MQT Core DDSIM QDMI Device"));
+  std::vector<std::string> expectedNames{"IQM Emerald", "IQM Garnet",
+                                         "MQT SC Default QDMI Device"};
+#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
+  expectedNames.emplace_back("MQT Core DDSIM QDMI Device");
+#endif
+  EXPECT_THAT(names, testing::UnorderedElementsAreArray(expectedNames));
   QDMI_session_free(session);
 }
 
@@ -1681,4 +1687,4 @@ INSTANTIATE_TEST_SUITE_P(
       std::erase(name, ')');
       return name;
     });
-} // namespace qc
+} // namespace

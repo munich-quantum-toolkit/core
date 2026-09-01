@@ -15,14 +15,10 @@
 #pragma once
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
-#include "ir/Definitions.hpp"
-#include "ir/operations/Control.hpp"
-#include "ir/operations/NonUnitaryOperation.hpp"
-#include "ir/operations/OpType.hpp"
-#include "ir/operations/StandardOperation.hpp"
 #include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
 
 #include <array>
@@ -199,7 +195,7 @@ public:
   struct QState {
     std::unique_ptr<dd::Package> dd;
     dd::vEdge edge;
-    dd::Qubit numQubits;
+    size_t numQubits;
 
     QState()
         : dd(std::make_unique<dd::Package>()), edge(dd::vEdge::one()),
@@ -228,19 +224,20 @@ public:
 private:
   friend class JitSession;
 
-  static constexpr uintptr_t MIN_DYN_QUBIT_ADDRESS = 0x10000;
+  static constexpr uintptr_t MIN_DYN_QUBIT_ADDRESS =
+      dd::Package::MAX_POSSIBLE_QUBITS;
   enum class ResourceMode : uint8_t { UNKNOWN, DYNAMIC, STATIC };
 
   ResourceMode qubitMode;
-  std::unordered_map<const Qubit*, qc::Qubit> qRegister;
+  std::unordered_map<const Qubit*, dd::Qubit> qRegister;
   // swap gates are not executed, they are tracked here
-  std::vector<qc::Qubit> qubitPermutation;
+  std::vector<dd::Qubit> qubitPermutation;
   static constexpr uintptr_t MIN_DYN_RESULT_ADDRESS = 0x10000;
   ResourceMode resultMode;
   std::unordered_map<Result*, ResultStruct> rRegister;
   std::string measurements;
   uintptr_t currentMaxQubitAddress;
-  qc::Qubit currentMaxQubitId;
+  size_t currentMaxQubitId;
   uintptr_t currentMaxResultAddress;
   QState qState;
   std::mt19937_64 mt;
@@ -250,17 +247,25 @@ private:
   OutputSchema outputSchema = OutputSchema::Labeled;
   std::vector<std::pair<std::string, std::string>> metadata;
 
-  auto enlargeState(std::uint64_t maxQubit) -> void;
+  auto enlargeState(size_t maxQubit) -> void;
+  static auto staticQubitId(const Qubit* qubit) -> dd::Qubit {
+    const auto id = reinterpret_cast<uintptr_t>(qubit);
+    if (id >= dd::Package::MAX_POSSIBLE_QUBITS) {
+      throw std::out_of_range(
+          "Static QIR qubit ID exceeds the supported qubit range");
+    }
+    return static_cast<dd::Qubit>(id);
+  }
   static auto bind(Runtime* runtime) noexcept -> Runtime*;
   auto translateAddresses(std::span<Qubit* const> qubits)
-      -> std::vector<qc::Qubit>;
+      -> std::vector<dd::Qubit>;
 
-  template <qc::OpType Op, typename... Args>
-  auto createOperation(Args&... args) -> qc::StandardOperation {
-    static_assert(qc::isSingleQubitGate(Op) || qc::isTwoQubitGate(Op) ||
-                      qc::isThreeQubitGate(Op),
-                  "Op must be a one-, two-, or three-qubit gate.");
-    const auto& params = Utils::packOfType<qc::fp>(args...);
+  template <dd::GateType Gate, typename... Args>
+  auto createGateDD(Args&... args) -> dd::MatrixDD {
+    static_assert(dd::isSingleQubitGate(Gate) || dd::isTwoQubitGate(Gate) ||
+                      dd::isThreeQubitGate(Gate),
+                  "Gate must be a one-, two-, or three-qubit gate.");
+    const auto& params = Utils::packOfType<dd::fp>(args...);
     const auto& qubits = Utils::packOfType<Qubit*>(args...);
     static_assert(
         std::tuple_size_v<std::remove_reference_t<decltype(params)>> +
@@ -273,29 +278,25 @@ private:
     for (std::size_t i = 0; i < addresses.size(); ++i) {
       addresses[i] = qubitPermutation[addresses[i]];
     }
-    // store parameters into vector (without copying)
-    const std::vector<qc::fp> paramVec(params.data(),
-                                       params.data() + params.size());
+    const std::vector<dd::fp> paramVec(params.begin(), params.end());
     // split addresses into control and target; also see static_assert above
-    constexpr uint8_t t = qc::isSingleQubitGate(Op)  ? 1
-                          : qc::isTwoQubitGate(Op)   ? 2
-                          : qc::isThreeQubitGate(Op) ? 3
-                                                     : 0;
+    constexpr uint8_t t = dd::isSingleQubitGate(Gate)  ? 1
+                          : dd::isTwoQubitGate(Gate)   ? 2
+                          : dd::isThreeQubitGate(Gate) ? 3
+                                                       : 0;
     static_assert(
         std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> >= t,
         "Not enough qubits provided for the operation.");
     if constexpr (std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> >
                   t) { // create controlled operation
-      const auto& controls =
-          qc::Controls(addresses.cbegin(), addresses.cend() - t);
-      const auto& targets = qc::Targets(addresses.data() + (qubits.size() - t),
-                                        addresses.data() + qubits.size());
-      return {controls, targets, Op, paramVec};
+      const dd::Controls controls(addresses.cbegin(), addresses.cend() - t);
+      const dd::Targets targets(addresses.cend() - t, addresses.cend());
+      return dd::getGateDD(*qState.dd, Gate, paramVec, controls, targets);
     }
     // std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> == t //
     // create uncontrolled operation
-    const auto targets = qc::Targets(addresses.data(), addresses.data() + t);
-    return {targets, Op, paramVec};
+    const dd::Targets targets(addresses.cbegin(), addresses.cend());
+    return dd::getGateDD(*qState.dd, Gate, paramVec, {}, targets);
   }
 
   // Helper function to output a type (bool, int...) to @c os, honoring the
@@ -321,22 +322,21 @@ public:
 
   auto reset() -> void;
   auto seed(uint64_t randomSeed) -> void;
-  template <qc::OpType Op, typename... Args>
+  template <dd::GateType Gate, typename... Args>
   auto apply(Args&&... args) -> void {
-    if constexpr (Op == qc::SWAP && sizeof...(Args) == 2) {
+    if constexpr (Gate == dd::GateType::SWAP && sizeof...(Args) == 2) {
       swap(std::forward<Args>(args)...);
     } else {
-      const qc::StandardOperation& operation =
-          createOperation<Op>(std::forward<Args>(args)...);
-      qState.edge = applyUnitaryOperation(operation, qState.edge, *qState.dd);
+      qState.edge = qState.dd->applyOperation(
+          createGateDD<Gate>(std::forward<Args>(args)...), qState.edge);
     }
   }
-  auto applyGlobalPhase(qc::fp phase) -> void {
+  auto applyGlobalPhase(dd::fp phase) -> void {
     qState.edge = dd::applyGlobalPhase(qState.edge, phase, *qState.dd);
   }
   /// Apply a gate with a runtime-sized control set, as required by generic
   /// controlled QIS specializations.
-  auto apply(qc::OpType op, std::span<const qc::fp> params,
+  auto apply(dd::GateType gate, std::span<const dd::fp> params,
              std::span<Qubit* const> controls, std::span<Qubit* const> targets)
       -> void;
   template <typename... Args> auto measure(Args... args) -> void {
@@ -372,18 +372,22 @@ public:
     for (std::size_t i = 0; i < targets.size(); ++i) {
       targets[i] = qubitPermutation[targets[i]];
     }
-    const qc::NonUnitaryOperation resetOp(
-        {targets.data(), targets.data() + SIZE}, qc::Reset);
-    qState.edge = applyReset(resetOp, qState.edge, *qState.dd, mt);
+    for (const auto target : targets) {
+      if (qState.dd->measureOneCollapsing(qState.edge, target, mt) == '1') {
+        qState.edge = qState.dd->applyOperation(
+            dd::getGateDD(*qState.dd, dd::GateType::X, {}, {}, {target}),
+            qState.edge);
+      }
+    }
   }
   auto swap(Qubit* qubit1, Qubit* qubit2) -> void;
   auto qAlloc() -> Qubit*;
   auto qFree(Qubit* qubit) -> void;
   template <size_t SIZE>
   auto translateAddresses(std::array<Qubit*, SIZE> qubits)
-      -> std::array<qc::Qubit, SIZE> {
+      -> std::array<dd::Qubit, SIZE> {
     // extract addresses from opaque qubit pointers
-    std::array<qc::Qubit, SIZE> qubitIds{};
+    std::array<dd::Qubit, SIZE> qubitIds{};
     if (qubitMode != ResourceMode::STATIC) {
       // qubitMode == ResourceMode::DYNAMIC or ResourceMode::UNKNOWN
       try {
@@ -409,11 +413,8 @@ public:
     }
     // qubitMode might have changed to STATIC
     if (qubitMode == ResourceMode::STATIC) {
-      Utils::transform(
-          [](const auto q) {
-            return static_cast<qc::Qubit>(reinterpret_cast<uintptr_t>(q));
-          },
-          qubits, qubitIds);
+      Utils::transform([](const auto q) { return staticQubitId(q); }, qubits,
+                       qubitIds);
     }
     const auto maxQubit = *std::max_element(qubitIds.cbegin(), qubitIds.cend());
     enlargeState(maxQubit);

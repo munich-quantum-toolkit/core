@@ -17,9 +17,6 @@
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
-#include "ir/Definitions.hpp"
-#include "ir/operations/Control.hpp"
-#include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
@@ -74,12 +71,12 @@ namespace {
 constexpr size_t MAX_CONTROL_FLOW_STEPS = 10'000;
 
 struct QubitMap {
-  DenseMap<Value, qc::Qubit> qubits;
+  DenseMap<Value, dd::Qubit> qubits;
   size_t numQubits = 0;
 
-  void bind(Value value, qc::Qubit q) { qubits[value] = q; }
+  void bind(Value value, dd::Qubit q) { qubits[value] = q; }
 
-  [[nodiscard]] std::optional<qc::Qubit> lookup(Value value) const {
+  [[nodiscard]] std::optional<dd::Qubit> lookup(Value value) const {
     const auto it = qubits.find(value);
     if (it == qubits.end()) {
       return std::nullopt;
@@ -100,9 +97,9 @@ struct QubitMap {
     return success();
   }
 
-  FailureOr<SmallVector<qc::Qubit>> lookupRange(ValueRange values,
+  FailureOr<SmallVector<dd::Qubit>> lookupRange(ValueRange values,
                                                 Operation* op) const {
-    SmallVector<qc::Qubit> out;
+    SmallVector<dd::Qubit> out;
     out.reserve(values.size());
     for (Value value : values) {
       const auto q = lookup(value);
@@ -117,7 +114,7 @@ struct QubitMap {
 };
 
 /// Physical wires stored at each tensor index; extracted positions are empty.
-using TensorSlots = SmallVector<std::optional<qc::Qubit>>;
+using TensorSlots = SmallVector<std::optional<dd::Qubit>>;
 using TensorState = std::shared_ptr<TensorSlots>;
 
 struct TensorMap {
@@ -144,13 +141,13 @@ struct TensorMap {
 struct ClassicalEnv {
   struct RegisterBit {
     std::optional<bool> value;
-    std::optional<qc::Qubit> deferredWire;
+    std::optional<dd::Qubit> deferredWire;
   };
   using RegisterState = std::vector<RegisterBit>;
   using MemRefState = SmallVector<Attribute>;
 
   DenseMap<Value, Attribute> values;
-  DenseMap<Value, qc::Qubit> deferredMeasurements;
+  DenseMap<Value, dd::Qubit> deferredMeasurements;
   Operation** deferredMeasurementUse = nullptr;
   /// Shared storage preserves CBit register identity across `func.call`.
   DenseMap<Value, std::shared_ptr<RegisterState>> registers;
@@ -174,7 +171,7 @@ struct ClassicalEnv {
 };
 
 struct DecodedGate {
-  qc::OpType type = qc::OpType::None;
+  dd::GateType type = dd::GateType::None;
   std::vector<dd::fp> params;
 };
 
@@ -185,12 +182,12 @@ struct WalkState {
   dd::Package* dd;
   std::mt19937_64* rng = nullptr;
   const DenseSet<Operation*>* deferredMeasurements = nullptr;
-  DenseSet<qc::Qubit>* deferredMeasuredWires = nullptr;
+  DenseSet<dd::Qubit>* deferredMeasuredWires = nullptr;
   size_t remainingExecutionSteps = MAX_CONTROL_FLOW_STEPS;
   DenseSet<Operation*> activeCalls;
 };
 
-using RuntimeValue = std::variant<qc::Qubit, TensorState, Attribute,
+using RuntimeValue = std::variant<dd::Qubit, TensorState, Attribute,
                                   std::shared_ptr<ClassicalEnv::RegisterState>,
                                   std::shared_ptr<ClassicalEnv::MemRefState>>;
 struct LoopRange {
@@ -254,39 +251,12 @@ resolveDouble(Value value, const ClassicalEnv& classical, Operation* op) {
 static FailureOr<std::optional<DecodedGate>>
 decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
   Operation* op = unitary.getOperation();
-  const auto type =
-      TypeSwitch<Operation*, qc::OpType>(op)
-          .Case<IdOp>([](auto) { return qc::OpType::I; })
-          .Case<XOp>([](auto) { return qc::OpType::X; })
-          .Case<YOp>([](auto) { return qc::OpType::Y; })
-          .Case<ZOp>([](auto) { return qc::OpType::Z; })
-          .Case<HOp>([](auto) { return qc::OpType::H; })
-          .Case<SOp>([](auto) { return qc::OpType::S; })
-          .Case<SdgOp>([](auto) { return qc::OpType::Sdg; })
-          .Case<TOp>([](auto) { return qc::OpType::T; })
-          .Case<TdgOp>([](auto) { return qc::OpType::Tdg; })
-          .Case<SXOp>([](auto) { return qc::OpType::SX; })
-          .Case<SXdgOp>([](auto) { return qc::OpType::SXdg; })
-          .Case<RXOp>([](auto) { return qc::OpType::RX; })
-          .Case<RYOp>([](auto) { return qc::OpType::RY; })
-          .Case<RZOp>([](auto) { return qc::OpType::RZ; })
-          .Case<POp>([](auto) { return qc::OpType::P; })
-          .Case<ROp>([](auto) { return qc::OpType::R; })
-          .Case<U2Op>([](auto) { return qc::OpType::U2; })
-          .Case<UOp>([](auto) { return qc::OpType::U; })
-          .Case<SWAPOp>([](auto) { return qc::OpType::SWAP; })
-          .Case<iSWAPOp>([](auto) { return qc::OpType::iSWAP; })
-          .Case<DCXOp>([](auto) { return qc::OpType::DCX; })
-          .Case<ECROp>([](auto) { return qc::OpType::ECR; })
-          .Case<RCCXOp>([](auto) { return qc::OpType::RCCX; })
-          .Case<RXXOp>([](auto) { return qc::OpType::RXX; })
-          .Case<RYYOp>([](auto) { return qc::OpType::RYY; })
-          .Case<RZZOp>([](auto) { return qc::OpType::RZZ; })
-          .Case<RZXOp>([](auto) { return qc::OpType::RZX; })
-          .Case<XXPlusYYOp>([](auto) { return qc::OpType::XXplusYY; })
-          .Case<XXMinusYYOp>([](auto) { return qc::OpType::XXminusYY; })
-          .Default([](auto) { return qc::OpType::None; });
-  if (type == qc::OpType::None) {
+  TypeSwitch<Operation*, dd::GateType> typeSwitch(op);
+#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+  typeSwitch.Case<KEY##Op>([](auto) { return dd::GateType::OP; });
+#include "mlir/Conversion/GateTable.def"
+  const auto type = typeSwitch.Default(dd::GateType::None);
+  if (type == dd::GateType::None) {
     return std::optional<DecodedGate>{std::nullopt};
   }
   DecodedGate decoded{.type = type, .params = {}};
@@ -306,14 +276,14 @@ decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
 
 static dd::mCachedEdge
 buildEmbeddedLocalDD(dd::Package& dd, const DynamicMatrix& local,
-                     const DenseMap<qc::Qubit, size_t>& operandForWire,
+                     const DenseMap<dd::Qubit, size_t>& operandForWire,
                      size_t numOperands, int64_t level, size_t row,
                      size_t col) {
   if (level < 0) {
     return dd::mCachedEdge::terminal(
         local(static_cast<int64_t>(row), static_cast<int64_t>(col)));
   }
-  const auto wire = static_cast<qc::Qubit>(level);
+  const auto wire = static_cast<dd::Qubit>(level);
   const auto operand = operandForWire.find(wire);
   if (operand == operandForWire.end()) {
     const auto child = buildEmbeddedLocalDD(dd, local, operandForWire,
@@ -341,8 +311,8 @@ buildEmbeddedLocalDD(dd::Package& dd, const DynamicMatrix& local,
 static dd::MatrixDD makeEmbeddedLocalDD(dd::Package& dd,
                                         const DynamicMatrix& local,
                                         size_t numQubits,
-                                        ArrayRef<qc::Qubit> wires) {
-  DenseMap<qc::Qubit, size_t> operandForWire;
+                                        ArrayRef<dd::Qubit> wires) {
+  DenseMap<dd::Qubit, size_t> operandForWire;
   for (auto [operand, wire] : llvm::enumerate(wires)) {
     operandForWire[wire] = operand;
   }
@@ -388,7 +358,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
   if (failed(wiresOr)) {
     return failure();
   }
-  ArrayRef<qc::Qubit> wires = *wiresOr;
+  ArrayRef<dd::Qubit> wires = *wiresOr;
   if (wires.size() >= 63 ||
       local.rows() != static_cast<int64_t>(size_t{1} << wires.size())) {
     return unitary.emitError()
@@ -438,7 +408,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
 template <typename StateDD>
 static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
                                           const DecodedGate& gate,
-                                          const qc::Controls& controls,
+                                          const dd::Controls& controls,
                                           WalkState& walk, StateDD& state) {
   SmallVector<Value> targetVals;
   for (size_t i = 0; i < unitary.getNumTargets(); ++i) {
@@ -449,8 +419,8 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
     return failure();
   }
   state = walk.dd->applyOperation(
-      getStandardOperationDD(*walk.dd, gate.type, gate.params, controls,
-                             {targets->begin(), targets->end()}),
+      dd::getGateDD(*walk.dd, gate.type, gate.params, controls,
+                    {targets->begin(), targets->end()}),
       state);
   return walk.qubits->remapUnitary(unitary);
 }
@@ -458,7 +428,7 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
 static LogicalResult validateReturn(func::ReturnOp returnOp,
                                     const QubitMap& qubits,
                                     const TensorMap& tensors) {
-  qc::Qubit expected = 0;
+  dd::Qubit expected = 0;
   for (Value value : returnOp.getOperands()) {
     if (isQTensorType(value.getType())) {
       const auto slots = tensors.lookup(value);
@@ -1053,7 +1023,7 @@ static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
 
   for (auto [value, dest] : llvm::zip_equal(values, dests)) {
     if (isa<QubitType>(dest.getType())) {
-      walk.qubits->bind(dest, std::get<qc::Qubit>(value));
+      walk.qubits->bind(dest, std::get<dd::Qubit>(value));
     } else if (isQTensorType(dest.getType())) {
       walk.tensors->bind(dest, std::get<TensorState>(value));
     } else if (isa<cbit::RegisterType>(dest.getType())) {
@@ -1062,9 +1032,9 @@ static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
     } else if (isa<MemRefType>(dest.getType())) {
       walk.classical->memrefs[dest] =
           std::get<std::shared_ptr<ClassicalEnv::MemRefState>>(value);
-    } else if (std::holds_alternative<qc::Qubit>(value)) {
+    } else if (std::holds_alternative<dd::Qubit>(value)) {
       walk.classical->values.erase(dest);
-      walk.classical->deferredMeasurements[dest] = std::get<qc::Qubit>(value);
+      walk.classical->deferredMeasurements[dest] = std::get<dd::Qubit>(value);
     } else {
       walk.classical->deferredMeasurements.erase(dest);
       walk.classical->values[dest] = std::get<Attribute>(value);
@@ -1159,7 +1129,7 @@ static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
   TensorSlots slots;
   slots.reserve(count);
   for (size_t i = 0; i < count; ++i) {
-    slots.emplace_back(static_cast<qc::Qubit>(first + i));
+    slots.emplace_back(static_cast<dd::Qubit>(first + i));
   }
   walk.qubits->numQubits += count;
   return slots;
@@ -1176,7 +1146,7 @@ static LogicalResult checkDeferredMeasurementUse(UnitaryOpInterface unitary,
   if (failed(wires)) {
     return failure();
   }
-  if (llvm::none_of(*wires, [&](qc::Qubit wire) {
+  if (llvm::none_of(*wires, [&](dd::Qubit wire) {
         return walk.deferredMeasuredWires->contains(wire);
       })) {
     return success();
@@ -1245,7 +1215,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             }
             TensorSlots slots;
             slots.reserve(wires->size());
-            for (const qc::Qubit wire : *wires) {
+            for (const dd::Qubit wire : *wires) {
               slots.emplace_back(wire);
             }
             walk.tensors->bind(fromElements.getResult(),
@@ -1365,7 +1335,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           if (bit == '1') {
             state = walk.dd->applyOperation(
                 walk.dd->makeGateDD(
-                    dd::opToSingleQubitGateMatrix(qc::OpType::X), *q),
+                    dd::opToSingleQubitGateMatrix(dd::GateType::X), *q),
                 state);
           }
           walk.qubits->bind(resetOp.getQubitOut(), *q);
@@ -1553,8 +1523,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             if (failed(controlQubits)) {
               return failure();
             }
-            qc::Controls controls;
-            for (qc::Qubit q : *controlQubits) {
+            dd::Controls controls;
+            for (dd::Qubit q : *controlQubits) {
               controls.emplace(q);
             }
             return applyDecodedStandard(ctrlOp, **decoded, controls, walk,
@@ -1641,7 +1611,7 @@ prepare(func::FuncOp func, dd::Package& dd,
       return staticOp.emitError()
              << "static qubit index exceeds the supported qubit range";
     }
-    const auto q = static_cast<qc::Qubit>(index);
+    const auto q = static_cast<dd::Qubit>(index);
     qubits.bind(staticOp.getQubit(), q);
     qubits.numQubits = std::max(qubits.numQubits, static_cast<size_t>(q) + 1);
   }
@@ -1653,7 +1623,7 @@ prepare(func::FuncOp func, dd::Package& dd,
           return func.emitError()
                  << "QCO function exceeds the supported qubit range";
         }
-        qubits.bind(arg, static_cast<qc::Qubit>(next++));
+        qubits.bind(arg, static_cast<dd::Qubit>(next++));
       } else if (isQTensorType(arg.getType())) {
         const auto type = cast<RankedTensorType>(arg.getType());
         int64_t size = type.getDimSize(0);
@@ -1677,7 +1647,7 @@ prepare(func::FuncOp func, dd::Package& dd,
         TensorSlots slots;
         slots.reserve(count);
         for (size_t i = 0; i < count; ++i) {
-          slots.emplace_back(static_cast<qc::Qubit>(next++));
+          slots.emplace_back(static_cast<dd::Qubit>(next++));
         }
         prepared.tensors.bind(arg,
                               std::make_shared<TensorSlots>(std::move(slots)));
@@ -1692,7 +1662,7 @@ prepare(func::FuncOp func, dd::Package& dd,
                << "QCO function exceeds the supported qubit range";
       }
       qubits.bind(alloc.getResult(),
-                  static_cast<qc::Qubit>(qubits.numQubits++));
+                  static_cast<dd::Qubit>(qubits.numQubits++));
     }
   }
   if (dd.qubits() < qubits.numQubits) {
@@ -1737,7 +1707,7 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
              const PreparedState& prepared, std::mt19937_64* rng,
              const DenseSet<Operation*>* deferredMeasurements = nullptr,
              ClassicalEnv* finalClassical = nullptr,
-             DenseSet<qc::Qubit>* deferredMeasuredWires = nullptr,
+             DenseSet<dd::Qubit>* deferredMeasuredWires = nullptr,
              Operation** deferredMeasurementUse = nullptr,
              bool validateQuantumReturn = true) {
   const size_t inputQubits =
@@ -1878,7 +1848,7 @@ simulateStatevector(func::FuncOp func, dd::Package& dd,
            << "statevector extraction supports only terminal measurements "
               "that assemble returned CBit registers";
   }
-  DenseSet<qc::Qubit> measuredWires;
+  DenseSet<dd::Qubit> measuredWires;
   Operation* deferredMeasurementUse = nullptr;
   auto state = simulateImpl(
       func, dd::makeZeroState(prepared->qubits.numQubits, dd), dd, *prepared,
@@ -1955,7 +1925,7 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 
   if (!plan->dynamic) {
     ClassicalEnv classical;
-    DenseSet<qc::Qubit> measuredWires;
+    DenseSet<dd::Qubit> measuredWires;
     Operation* deferredMeasurementUse = nullptr;
     dd.incRef(in);
     auto state = simulateImpl(func, in, dd, prepared, nullptr,

@@ -41,7 +41,6 @@ from qiskit.circuit.parametervector import ParameterVectorElement
 from qiskit.quantum_info import Operator, random_unitary
 
 from mqt.core.mlir import CompilerTarget, QCProgram, compile_program
-from mqt.core.plugins.qiskit import qiskit_to_mqt
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -2866,15 +2865,11 @@ def test_target_aware_qiskit_export_rejects_dynamic_qubits(allocation: str) -> N
         program.to_qiskit(target=target)
 
 
-def test_unknown_version_is_rejected_without_affecting_existing_conversion(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Keep direct version dispatch independent of existing conversion."""
+def test_unknown_version_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject unsupported Qiskit versions."""
     monkeypatch.setattr(qiskit, "__version__", "2.6.0")
     with pytest.raises(RuntimeError, match=r"installed version '2\.6\.0'.*>=2\.5\.0,<2\.6\.0"):
         QCProgram.from_qiskit(QuantumCircuit(1))
-
-    assert qiskit_to_mqt(QuantumCircuit(1)).num_qubits == 1
 
 
 def test_mlir_binding_import_does_not_import_qiskit() -> None:

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from mqt.core.dd import DDPackage, MatrixDD
+from mqt.core.dd import Control, DDPackage, MatrixDD
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -118,6 +118,28 @@ def test_controlled_single_qubit_gate(gate_matrices: dict[str, npt.NDArray[np.co
                     if c < i - 1:
                         target = np.kron(np.eye(2 ** (i - c - 1)), target).astype(np.complex128)
                     assert np.allclose(arr, target)
+
+
+def test_dd_owned_control_type(gate_matrices: dict[str, npt.NDArray[np.complex128]]) -> None:
+    """Expose controls as DD-owned binding types."""
+    p = DDPackage(2)
+    x_matrix = gate_matrices["X"]
+
+    positive = p.controlled_single_qubit_gate(x_matrix, 1, 0)
+    multi_positive = p.multi_controlled_single_qubit_gate(x_matrix, {1}, 0)
+    assert np.allclose(positive.get_matrix(2), multi_positive.get_matrix(2))
+
+    control = Control(1, Control.Type.Neg)
+    assert control == Control(1, Control.Type.Neg)
+    assert len({control, Control(1, Control.Type.Neg)}) == 1
+    assert repr(control) == 'Control(qubit=1, type_="Neg")'
+
+    negative = p.controlled_single_qubit_gate(x_matrix, control, 0)
+    expected = np.array(
+        [[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+        dtype=np.complex128,
+    )
+    assert np.allclose(negative.get_matrix(2), expected)
 
 
 def test_two_qubit_gate() -> None:

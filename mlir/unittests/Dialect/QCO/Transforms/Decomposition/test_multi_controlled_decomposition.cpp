@@ -8,14 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "dd/FunctionalityConstruction.hpp"
+#include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
-#include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
-#include "ir/Definitions.hpp"
-#include "ir/QuantumComputation.hpp"
-#include "ir/operations/Control.hpp"
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -121,8 +117,30 @@ static constexpr std::array<size_t, 34> K_EXPECTED_MCX_CX = {
 }
 
 namespace {
-
 enum class ControlledPauli : uint8_t { X, Z };
+} // namespace
+
+[[nodiscard]] static dd::Controls makeControls(size_t numControls) {
+  dd::Controls controls;
+  for (size_t i = 0; i < numControls; ++i) {
+    controls.emplace(static_cast<dd::Qubit>(i));
+  }
+  return controls;
+}
+
+[[nodiscard]] static dd::GateMatrix pauliMatrix(ControlledPauli pauli) {
+  return dd::opToSingleQubitGateMatrix(
+      pauli == ControlledPauli::X ? dd::GateType::X : dd::GateType::Z);
+}
+
+[[nodiscard]] static dd::MatrixDD
+makeControlledGateDD(dd::Package& package, size_t numControls,
+                     const dd::GateMatrix& matrix) {
+  return package.makeGateDD(matrix, makeControls(numControls),
+                            static_cast<dd::Qubit>(numControls));
+}
+
+namespace {
 
 class MultiControlledDecompositionTest : public testing::Test {
 protected:
@@ -237,22 +255,10 @@ static void expectImplementsControlledPauli(func::FuncOp funcOp,
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
-  qc::QuantumComputation referenceQc(numQubits);
-  qc::Controls controls;
-  for (size_t i = 0; i < numControls; ++i) {
-    controls.emplace(static_cast<qc::Qubit>(i));
-  }
-  const auto target = static_cast<qc::Qubit>(numControls);
-  if (pauli == ControlledPauli::X) {
-    referenceQc.mcx(controls, target);
-  } else {
-    referenceQc.mcz(controls, target);
-  }
-
-  const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
+  const auto referenceDD =
+      makeControlledGateDD(*dd, numControls, pauliMatrix(pauli));
   EXPECT_EQ(*decomposedDD, referenceDD);
   dd->decRef(*decomposedDD);
-  dd->decRef(referenceDD);
 }
 
 static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
@@ -261,18 +267,6 @@ static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
-
-  qc::QuantumComputation referenceQc(numQubits);
-  qc::Controls controls;
-  for (size_t i = 0; i < numControls; ++i) {
-    controls.emplace(static_cast<qc::Qubit>(i));
-  }
-  const auto target = static_cast<qc::Qubit>(numControls);
-  if (pauli == ControlledPauli::X) {
-    referenceQc.mcx(controls, target);
-  } else {
-    referenceQc.mcz(controls, target);
-  }
 
   std::vector<std::vector<bool>> basisStates;
   basisStates.emplace_back(numQubits, true);
@@ -286,14 +280,16 @@ static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
   }
 
   const auto dd = std::make_unique<dd::Package>(numQubits);
+  const auto referenceGate =
+      makeControlledGateDD(*dd, numControls, pauliMatrix(pauli));
+  dd->incRef(referenceGate);
   std::mt19937_64 rng(0);
   for (const auto& basisState : basisStates) {
     const auto decomposedOutput = simulate(
         funcOp, dd::makeBasisState(numQubits, basisState, *dd), *dd, rng);
     ASSERT_TRUE(succeeded(decomposedOutput));
-    dd->incRef(*decomposedOutput);
-    const auto referenceOutput = dd::simulate(
-        referenceQc, dd::makeBasisState(numQubits, basisState, *dd), *dd);
+    const auto referenceOutput = dd->applyOperation(
+        referenceGate, dd::makeBasisState(numQubits, basisState, *dd));
     EXPECT_EQ(decomposedOutput->p, referenceOutput.p);
     EXPECT_NEAR(dd::RealNumber::val(decomposedOutput->w.r),
                 dd::RealNumber::val(referenceOutput.w.r), 1e-11);
@@ -302,30 +298,24 @@ static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
     dd->decRef(*decomposedOutput);
     dd->decRef(referenceOutput);
   }
+  dd->decRef(referenceGate);
 }
 
 [[nodiscard]] static dd::VectorDD
 makeCoherentControlInput(size_t numControls, bool targetOne, dd::Package& dd) {
   const auto numQubits = numControls + 1;
   const auto coherentControl = numControls / 2;
-  qc::QuantumComputation preparationQc(numQubits);
-  for (size_t control = 0; control < numControls; ++control) {
-    if (control == coherentControl) {
-      preparationQc.h(static_cast<qc::Qubit>(control));
-    } else {
-      preparationQc.x(static_cast<qc::Qubit>(control));
-    }
-  }
-  if (targetOne) {
-    preparationQc.x(static_cast<qc::Qubit>(numControls));
-  }
-  return dd::simulate(preparationQc, dd::makeZeroState(numQubits, dd), dd);
+  std::vector<dd::BasisStates> basisState(numQubits, dd::BasisStates::one);
+  basisState[coherentControl] = dd::BasisStates::plus;
+  basisState[numControls] =
+      targetOne ? dd::BasisStates::one : dd::BasisStates::zero;
+  return dd::makeBasisState(numQubits, basisState, dd);
 }
 
 static void
-expectMatchesReferenceOnCoherentState(func::FuncOp funcOp,
-                                      const qc::QuantumComputation& referenceQc,
-                                      size_t numControls, bool targetOne) {
+expectMatchesReferenceOnCoherentState(func::FuncOp funcOp, size_t numControls,
+                                      bool targetOne,
+                                      const dd::GateMatrix& referenceMatrix) {
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
@@ -335,9 +325,9 @@ expectMatchesReferenceOnCoherentState(func::FuncOp funcOp,
   const auto decomposedOutput = simulate(
       funcOp, makeCoherentControlInput(numControls, targetOne, *dd), *dd, rng);
   ASSERT_TRUE(succeeded(decomposedOutput));
-  dd->incRef(*decomposedOutput);
-  const auto referenceOutput = dd::simulate(
-      referenceQc, makeCoherentControlInput(numControls, targetOne, *dd), *dd);
+  const auto referenceOutput = dd->applyOperation(
+      makeControlledGateDD(*dd, numControls, referenceMatrix),
+      makeCoherentControlInput(numControls, targetOne, *dd));
 
   EXPECT_EQ(decomposedOutput->p, referenceOutput.p);
   EXPECT_NEAR(dd::RealNumber::val(decomposedOutput->w.r),
@@ -352,31 +342,15 @@ expectMatchesReferenceOnCoherentState(func::FuncOp funcOp,
 static void expectMatchesControlledPauliOnCoherentState(func::FuncOp funcOp,
                                                         size_t numControls,
                                                         ControlledPauli pauli) {
-  const auto numQubits = numControls + 1;
-  qc::QuantumComputation referenceQc(numQubits);
-  qc::Controls controls;
-  for (size_t i = 0; i < numControls; ++i) {
-    controls.emplace(static_cast<qc::Qubit>(i));
-  }
-  const auto target = static_cast<qc::Qubit>(numControls);
-  if (pauli == ControlledPauli::X) {
-    referenceQc.mcx(controls, target);
-  } else {
-    referenceQc.mcz(controls, target);
-  }
-  expectMatchesReferenceOnCoherentState(funcOp, referenceQc, numControls,
-                                        pauli == ControlledPauli::Z);
+  expectMatchesReferenceOnCoherentState(
+      funcOp, numControls, pauli == ControlledPauli::Z, pauliMatrix(pauli));
 }
 
 static void expectMatchesMcpOnCoherentState(func::FuncOp funcOp,
                                             size_t numControls, double theta) {
-  qc::QuantumComputation referenceQc(numControls + 1);
-  qc::Controls controls;
-  for (size_t i = 0; i < numControls; ++i) {
-    controls.emplace(static_cast<qc::Qubit>(i));
-  }
-  referenceQc.mcp(theta, controls, static_cast<qc::Qubit>(numControls));
-  expectMatchesReferenceOnCoherentState(funcOp, referenceQc, numControls, true);
+  expectMatchesReferenceOnCoherentState(
+      funcOp, numControls, true,
+      dd::opToSingleQubitGateMatrix(dd::GateType::P, {theta}));
 }
 
 static void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
@@ -389,17 +363,11 @@ static void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
-  qc::QuantumComputation referenceQc(numQubits);
-  qc::Controls controls;
-  for (size_t i = 0; i < numControls; ++i) {
-    controls.emplace(static_cast<qc::Qubit>(i));
-  }
-  referenceQc.mcp(theta, controls, static_cast<qc::Qubit>(numControls));
-
-  const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
+  const auto referenceDD = makeControlledGateDD(
+      *dd, numControls,
+      dd::opToSingleQubitGateMatrix(dd::GateType::P, {theta}));
   EXPECT_EQ(*decomposedDD, referenceDD);
   dd->decRef(*decomposedDD);
-  dd->decRef(referenceDD);
 }
 
 /// Count `CtrlOp`s whose control operand count is at least @p minControlCount.
@@ -694,12 +662,10 @@ TEST_F(MultiControlledDecompositionTest, DecomposesSingleControlledSwap) {
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
-  qc::QuantumComputation referenceQc(numQubits);
-  referenceQc.cswap(0, 1, 2);
-  const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
+  const auto referenceDD = dd->makeTwoQubitGateDD(
+      dd::opToTwoQubitGateMatrix(dd::GateType::SWAP), dd::Control{0}, 1, 2);
   EXPECT_EQ(*decomposedDD, referenceDD);
   dd->decRef(*decomposedDD);
-  dd->decRef(referenceDD);
 }
 
 TEST_F(MultiControlledDecompositionTest, DecomposesMultipleControlledSwap) {
@@ -723,12 +689,11 @@ TEST_F(MultiControlledDecompositionTest, DecomposesMultipleControlledSwap) {
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
-  qc::QuantumComputation referenceQc(numQubits);
-  referenceQc.mcswap({0, 1}, 2, 3);
-  const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
+  const auto referenceDD =
+      dd->makeTwoQubitGateDD(dd::opToTwoQubitGateMatrix(dd::GateType::SWAP),
+                             dd::Controls{{0}, {1}}, 2, 3);
   EXPECT_EQ(*decomposedDD, referenceDD);
   dd->decRef(*decomposedDD);
-  dd->decRef(referenceDD);
 }
 
 TEST_F(MultiControlledDecompositionTest,

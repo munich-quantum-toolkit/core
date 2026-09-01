@@ -30,7 +30,7 @@ forms the backbone of the quantum software tools developed as part of the
 
 ## Key Features
 
-- Fully fledged intermediate representation (IR) for quantum computations.
+- An MLIR-based compiler collection for quantum programs.
 - A state-of-the-art decision diagram (DD) package for quantum computing.
 - A QIR runtime based on the decision diagram package.
 
@@ -97,14 +97,18 @@ uv pip install mqt.core
 The following code gives an example on the usage:
 
 ```python3
-from mqt.core.ir import QuantumComputation
+from mqt.core.mlir import compile_program
 
-qc = QuantumComputation(2, 2)
-qc.h(0)
-qc.cx(0, 1)
-qc.measure(range(2), range(2))
+program = compile_program("""OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] result;
+h q[0];
+cx q[0], q[1];
+result = measure q;
+""")
 
-print(qc)
+print(program.ir)
 ```
 
 **Detailed documentation and examples are available at

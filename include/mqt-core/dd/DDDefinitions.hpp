@@ -14,14 +14,16 @@
 
 #pragma once
 
-#include "ir/Definitions.hpp"
-
 #include <array>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <map>
 #include <numbers>
+#include <set>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -36,6 +38,67 @@ namespace dd {
  * Beware of the increased memory footprint of matrix nodes.
  */
 using Qubit = std::uint16_t;
+
+/// Qubit indices targeted by an operation.
+using Targets = std::vector<Qubit>;
+
+/// A control qubit and its polarity.
+struct Control {
+  /// Control polarity.
+  enum class Type : bool {
+    /// Positive controls trigger on \f$\ket{1}\f$.
+    Pos = true,
+    /// Negative controls trigger on \f$\ket{0}\f$.
+    Neg = false
+  };
+
+  /// Control qubit index.
+  Qubit qubit{};
+  /// Control polarity.
+  Type type = Type::Pos;
+
+  /// Allow implicit conversion from a qubit index.
+  /// NOLINTBEGIN(google-explicit-constructor)
+  Control(const Qubit q = {}, const Type t = Type::Pos) : qubit(q), type(t) {}
+  /// NOLINTEND(google-explicit-constructor)
+
+  [[nodiscard]] std::string toString() const {
+    std::ostringstream oss{};
+    oss << "Control(qubit=" << qubit << ", type_=\""
+        << (type == Type::Pos ? "Pos" : "Neg") << "\")";
+    return oss.str();
+  }
+};
+
+inline bool operator<(const Control& lhs, const Control& rhs) {
+  return lhs.qubit < rhs.qubit ||
+         (lhs.qubit == rhs.qubit && lhs.type < rhs.type);
+}
+
+inline bool operator==(const Control& lhs, const Control& rhs) {
+  return lhs.qubit == rhs.qubit && lhs.type == rhs.type;
+}
+
+/// Compare controls by qubit index.
+struct CompareControl {
+  using is_transparent [[maybe_unused]] = void;
+
+  bool operator()(const Control& lhs, const Control& rhs) const {
+    return lhs < rhs;
+  }
+  bool operator()(const Qubit lhs, const Control& rhs) const {
+    return lhs < rhs.qubit;
+  }
+  bool operator()(const Control& lhs, const Qubit rhs) const {
+    return lhs.qubit < rhs;
+  }
+};
+
+/// Controls sorted by qubit index and polarity.
+using Controls = std::set<Control, CompareControl>;
+
+/// Map logical qubit indices to physical qubit indices.
+using Permutation = std::map<Qubit, Qubit>;
 
 /**
  * @brief Floating point type to use for computations
@@ -65,12 +128,23 @@ static constexpr fp PI = std::numbers::pi;
 static constexpr auto PI_2 = PI / 2;
 static constexpr fp PI_4 = PI / 4;
 
+/// Combine two hashes with the Boost hash-combine formula.
+[[nodiscard]] constexpr std::size_t
+combineHash(const std::size_t lhs, const std::size_t rhs) noexcept {
+  return lhs ^ (rhs + 0x9e3779b97f4a7c15ULL + (lhs << 6) + (lhs >> 2));
+}
+
+/// Add an integer to a hash.
+constexpr void hashCombine(std::size_t& hash, const std::size_t with) noexcept {
+  hash = combineHash(hash, with);
+}
+
 static constexpr std::uint64_t SERIALIZATION_VERSION = 1;
 
 struct PairHash {
   std::size_t
   operator()(const std::pair<std::size_t, std::size_t>& p) const noexcept {
-    return qc::combineHash(p.first, p.second);
+    return combineHash(p.first, p.second);
   }
 };
 
@@ -151,3 +225,10 @@ template <typename T>
 concept IsMatrix = std::is_same_v<T, mNode>;
 
 } // namespace dd
+
+template <> struct std::hash<dd::Control> {
+  std::size_t operator()(const dd::Control& control) const noexcept {
+    return std::hash<dd::Qubit>{}(control.qubit) ^
+           std::hash<dd::Control::Type>{}(control.type);
+  }
+};
