@@ -147,7 +147,7 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, Location loc,
  * lowered QIR `entry_point` passthrough attribute.
  *
  * @param op The module operation to search in
- * @return The main LLVM function, or nullptr if not found
+ * @return The main LLVM function, or nullptr unless exactly one exists
  */
 LLVM::LLVMFuncOp getMainFunction(Operation* op);
 

@@ -32,7 +32,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -40,14 +39,6 @@
 namespace mlir::qir {
 #define GEN_PASS_DEF_QIRSETATTRIBUTESANDMETADATA
 #include "mlir/Dialect/QIR/Transforms/Passes.h.inc"
-
-[[nodiscard]] static bool hasQIREntryPointAttribute(LLVM::LLVMFuncOp function) {
-  const auto passthrough = function->getAttrOfType<ArrayAttr>("passthrough");
-  return passthrough && llvm::any_of(passthrough, [](Attribute attribute) {
-           const auto name = dyn_cast<StringAttr>(attribute);
-           return name && name.getValue() == StringRef(::qir::ENTRY_POINT_ATTR);
-         });
-}
 
 namespace {
 
@@ -83,22 +74,14 @@ struct QIRSetAttributesAndMetadata final
 
 protected:
   void runOnOperation() override {
-    SmallVector<LLVM::LLVMFuncOp> entryPoints;
-    for (auto function : getOperation().getOps<LLVM::LLVMFuncOp>()) {
-      if (mqt::isEntryPoint(function) || hasQIREntryPointAttribute(function)) {
-        entryPoints.push_back(function);
-      }
-    }
-    if (entryPoints.size() != 1) {
-      getOperation().emitError()
-          << "QIR metadata attachment requires exactly one entry point, but "
-             "found "
-          << entryPoints.size();
+    auto main = getMainFunction(getOperation());
+    if (!main) {
+      getOperation().emitError(
+          "QIR metadata attachment requires exactly one entry point");
       signalPassFailure();
       return;
     }
 
-    auto main = entryPoints.front();
     Metadata metadata = useAdaptive ? getAdaptive(main) : getBase(main);
     if (useAdaptive) {
       collectOptionalFeatures(getOperation(), main, metadata);
@@ -154,13 +137,10 @@ private:
               key.getValue() == "required_num_results");
     };
     SmallVector<Attribute> attributes;
-    if (const auto passthrough =
-            main->getAttrOfType<ArrayAttr>("passthrough")) {
-      llvm::copy_if(passthrough, std::back_inserter(attributes),
-                    [&](Attribute attribute) {
-                      return !isQIRFunctionAttribute(attribute);
-                    });
+    if (const auto passthrough = main.getPassthroughAttr()) {
+      attributes.append(passthrough.begin(), passthrough.end());
     }
+    llvm::erase_if(attributes, isQIRFunctionAttribute);
     attributes.append(
         {rewriter.getStringAttr(::qir::ENTRY_POINT_ATTR),
          rewriter.getStrArrayAttr(
@@ -173,22 +153,20 @@ private:
          rewriter.getStrArrayAttr(
              {"required_num_results", std::to_string(metadata.numResults)})});
 
-    main->setAttr("passthrough", rewriter.getArrayAttr(attributes));
+    main.setPassthroughAttr(rewriter.getArrayAttr(attributes));
     mqt::removeEntryPoint(main);
 
     rewriter.setInsertionPointToEnd(m.getBody());
 
     SmallVector<Attribute> flags = collectUnrelatedModuleFlags(m, rewriter);
-    flags.emplace_back(
-        createI32Flag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2));
-    flags.emplace_back(
-        createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 1));
-    flags.emplace_back(createBoolFlag(LLVM::ModFlagBehavior::Error,
-                                      "dynamic_qubit_management",
-                                      metadata.useDynamicQubit));
-    flags.emplace_back(createBoolFlag(LLVM::ModFlagBehavior::Error,
-                                      "dynamic_result_management",
-                                      metadata.useDynamicResult));
+    flags.append(
+        {createI32Flag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2),
+         createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 1),
+         createBoolFlag(LLVM::ModFlagBehavior::Error,
+                        "dynamic_qubit_management", metadata.useDynamicQubit),
+         createBoolFlag(LLVM::ModFlagBehavior::Error,
+                        "dynamic_result_management",
+                        metadata.useDynamicResult)});
 
     if (useAdaptive) {
       flags.emplace_back(createI32Flag(LLVM::ModFlagBehavior::Error,
