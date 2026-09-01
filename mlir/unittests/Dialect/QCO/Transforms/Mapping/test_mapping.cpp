@@ -513,7 +513,8 @@ TEST_F(MappingPassFixture, PlaceTensorOnFirstTargetSites) {
                     llvm::cantFail(CompilerTarget::Site::create(19)),
                     llvm::cantFail(CompilerTarget::Site::create(42)),
                     llvm::cantFail(CompilerTarget::Site::create(81))};
-  const auto target = llvm::cantFail(CompilerTarget::create(std::move(sites)));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      std::move(sites), CompilerTarget::Connectivity::allToAll()));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize({builder.getI1Type(), builder.getI1Type()});
@@ -591,8 +592,10 @@ TEST_F(MappingPassFixture, RejectOversizedPlacementBeforeMutation) {
   });
   EXPECT_TRUE(failed(runPlacement(moduleOp.get(), target)));
   EXPECT_EQ(printModule(moduleOp.get()), before);
-  EXPECT_TRUE(StringRef(diagnostics)
-                  .contains("requires 2 qubits, but the target supports 1"));
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains(
+              "requires 2 program qubits, but the target site count is 1"));
 }
 
 TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
@@ -635,26 +638,29 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
   EXPECT_EQ(numSinks, numStatics);
 }
 
-TEST_F(MappingPassFixture, UnknownConnectivityIsNeededOnlyForTwoQubitOps) {
+TEST_F(MappingPassFixture,
+       UnknownConnectivityRejectsMultiSiteUnitaryBeforeMutation) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
-  auto qubit = builder.allocQubit();
+  SmallVector<Value> qubits{builder.allocQubit(), builder.allocQubit()};
+  qubits = builder.barrier(qubits);
   Value condition;
-  std::tie(qubit, condition) = builder.measure(qubit);
-  SmallVector<Value> qubits{qubit};
-  qubits = builder.qcoIf(
-      condition, qubits,
+  std::tie(qubits[0], condition) = builder.measure(qubits[0]);
+  SmallVector<Value> controlled{qubits[0]};
+  controlled = builder.qcoIf(
+      condition, controlled,
       [&](ValueRange args) {
         return SmallVector<Value>{builder.x(args.front())};
       },
       [&](ValueRange args) {
         return SmallVector<Value>{builder.h(args.front())};
       });
-  builder.sink(qubits.front());
+  builder.sink(controlled.front());
+  builder.sink(qubits[1]);
   auto moduleOp = builder.finalize();
   const auto target = llvm::cantFail(CompilerTarget::create(2));
 
-  EXPECT_TRUE(succeeded(runPass(moduleOp.get(), target, MappingPassOptions{})));
+  EXPECT_TRUE(succeeded(runPlacement(moduleOp.get(), target)));
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 
   QCOProgramBuilder twoQubitBuilder(context.get());
@@ -665,17 +671,19 @@ TEST_F(MappingPassFixture, UnknownConnectivityIsNeededOnlyForTwoQubitOps) {
   twoQubitBuilder.sink(first);
   twoQubitBuilder.sink(second);
   auto twoQubitModule = twoQubitBuilder.finalize();
+  const auto before = printModule(twoQubitModule.get());
 
   std::string diagnostics;
   ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
     diagnostics += diagnostic.str();
     return success();
   });
-  EXPECT_TRUE(
-      failed(runPass(twoQubitModule.get(), target, MappingPassOptions{})));
-  EXPECT_TRUE(
-      StringRef(diagnostics)
-          .contains("place-and-route requires known target connectivity"));
+  EXPECT_TRUE(failed(runPlacement(twoQubitModule.get(), target)));
+  EXPECT_EQ(printModule(twoQubitModule.get()), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("target placement requires known connectivity for "
+                            "an operation with "
+                            "arity 2"));
 }
 
 TEST_P(MappingPassTest, FailNoEntryPoint) {

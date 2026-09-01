@@ -60,8 +60,13 @@ unrestricted, and an explicit list.
 - [x] (2026-09-01 11:23Z) Diagnosed the Windows ARM failure as two parallel
       `mqt-cc` tests sharing one scratch directory. Isolated the invalid-input
       test and repeated both tests concurrently 100 times.
-- [ ] Rebase this pull request onto the independent placement-pass change after
-      that change merges, then rerun final validation.
+- [x] (2026-09-01 14:58Z) Archived the pre-integration head and rebased onto the
+      merged placement pass. Target compilation now maps explicit connectivity,
+      places all-to-all targets, and places unknown connectivity only when no
+      non-barrier multi-site operation remains.
+- [x] (2026-09-01 15:07Z) Ran the final native, Python, documentation, stub,
+      lint, and C++ lint validation and prepared the signed rebased head for
+      publication.
 
 ## Surprises & Discoveries
 
@@ -86,13 +91,12 @@ unrestricted, and an explicit list.
   values, while `CompilerTarget::SiteId` intentionally accepts every nonnegative
   `int64_t` value.
 - Observation: Unknown connectivity is sufficient for a program containing no
-  multi-site operation, including structured control flow. Evidence: such a
-  program cannot change its layout, so branch reconciliation would only query
-  topology unnecessarily.
-- Observation: The mapping pass owns both static placement and topology-aware
-  routing. Skipping it for unknown connectivity leaves dynamic allocations that
-  the target-conformance pass rejects. Evidence: `VerifyTargetConformancePass`
-  rejects `qco.alloc` and `qtensor.alloc`.
+  non-barrier multi-site operation, including structured control flow. Evidence:
+  such a program cannot change its layout, so branch reconciliation would only
+  query topology unnecessarily.
+- Observation: Placement does not need a coupling graph. Evidence: the merged
+  placement pass replaces dynamic allocations with target sites without using
+  routing data, while the mapping pass requires explicit connectivity.
 - Observation: The Windows ARM failure was a test-data race, not a compiler
   regression. Evidence: the QIR and invalid-input CTest scripts used the same
   output directory while the QIR script removed that directory at startup.
@@ -113,39 +117,37 @@ unrestricted, and an explicit list.
   needs that fact. Rationale: program requirements are stage-relative; a
   classical or single-site program does not need native-operation or topology
   claims. Date/Author: 2026-08-23, Codex.
-- Decision: Keep the DDSIM snapshot unknown and state its known simulator facts
-  at the compiler call site. Rationale: interpreting unavailable QDMI v1.3
-  properties as unrestricted would weaken the target contract for every
-  provider. Date/Author: 2026-08-23, Codex.
 - Decision: Use sentinel-free standard containers for site IDs. Rationale: this
   preserves the documented public domain instead of introducing an arbitrary
   range restriction to accommodate an implementation detail. Date/Author:
   2026-09-01, Lukas Burgholzer with Codex assistance.
-- Decision: Skip structured-control-flow topology reconciliation only for
-  unknown connectivity after the pass has established that no multi-site
-  operation remains. Rationale: the layouts cannot diverge in that case, while
-  all-to-all and explicit topologies retain their existing reconciliation.
-  Date/Author: 2026-09-01, Lukas Burgholzer with Codex assistance.
+- Decision: Route explicit connectivity through the mapping pass and route
+  all-to-all or unknown connectivity through the placement pass. The placement
+  pass rejects unknown connectivity before mutation when a non-barrier
+  multi-site operation remains. Rationale: placement needs only target sites,
+  while routing needs a coupling graph. Keeping the guard in the placement pass
+  also protects direct pass users. Date/Author: 2026-09-01, Lukas Burgholzer
+  with Codex assistance.
 - Decision: Supersede the call-site DDSIM workaround with an exact namespaced
   marker in the bundled device's first custom property. Rationale: QDMI 1.3
   cannot enumerate the simulator's all-to-all topology or homogeneous operation
   support compactly, while an exact marker lets only an explicit provider claim
   those facts. Date/Author: 2026-09-01, Lukas Burgholzer with Codex assistance.
-- Decision: Split topology-free placement from routing in an independent pull
-  request, then rebase this pull request onto it. Rationale: target compilation
-  must still assign static sites when topology is unknown, but the placement
-  stage does not need a coupling graph. The separate base keeps this pull
-  request and its history reviewable. Date/Author: 2026-09-01, Lukas Burgholzer
-  with Codex assistance.
+- Decision: Build on the independently merged topology-free placement pass.
+  Rationale: target compilation must still assign static sites when topology is
+  unknown, but the placement stage does not need a coupling graph. The separate
+  prerequisite kept each change reviewable. Date/Author: 2026-09-01, Lukas
+  Burgholzer with Codex assistance.
 
 ## Outcomes & Retrospective
 
 The context-free target contract is implemented in pull request #2218. DDSIM now
 exposes enough exact metadata for `CompilerTarget.from_device` under QDMI 1.3,
 and the direct path compiles and executes QIR. The compiler and focused Python
-tests pass. The placement and routing split remains in an independent
-prerequisite pull request. Durable archive branches preserve both published
-heads from before the rescope and from before the latest `main` refresh.
+tests pass. Target compilation uses the merged placement pass for all-to-all and
+safe unknown-connectivity programs, while explicit coupling graphs use the
+mapping pass. Durable archive branches preserve the published heads from before
+the rescope, `main` refresh, and placement integration.
 
 ## Context and Orientation
 
@@ -172,6 +174,11 @@ to unknown. Rename target `numQubits()` to `numSites()` and operation
 bindings, and tests to use the new vocabulary and to handle unknown facts before
 querying routes or operation support.
 
+Use deterministic placement for all-to-all connectivity and for unknown
+connectivity when no non-barrier multi-site operation remains. Use the mapping
+pass only for an explicit coupling graph. Validate unknown connectivity in the
+placement pass before it changes the program.
+
 Keep site identifiers, ordered operation site tuples, timing units, T1/T2 data,
 and fidelity values unchanged. Add no technology enum and no generic property
 container. Add the pull request reference to the existing general Compiler
@@ -195,8 +202,11 @@ targets when those sources change. All commands are repeatable.
 Target tests must prove that unknown topology is distinct from all-to-all and
 explicit topology, and that unknown native operations are distinct from all and
 an explicit list. Existing explicit target mapping and synthesis tests must
-still pass. The build must contain no old public `numQubits()` or operation
-qubit-count references. `uvx nox -s lint` and `git diff --check` must pass.
+still pass. Placement must accept barriers and single-site operations with
+unknown connectivity, reject a multi-site unitary without changing the input,
+and place all-to-all programs compactly. The build must contain no old public
+`numQubits()` or operation qubit-count references. `uvx nox -s lint` and
+`git diff --check` must pass.
 
 ## Idempotence and Recovery
 
@@ -217,3 +227,7 @@ Use LLVM containers already linked by the compiler. Do not add dependencies. The
 public target keeps shared immutable storage. Connectivity and native operation
 state are context-free C++ values so the later MLIR attribute layer can
 materialize them without making `CompilerTarget` depend on an MLIR context.
+
+Plan revision note (2026-09-01): Updated the plan after the independent
+placement pass merged. The final design delegates topology-free work to that
+pass and keeps routing confined to explicit connectivity.

@@ -38,6 +38,8 @@
 namespace mlir {
 
 /// Target facts that QDMI v1.3 cannot encode compactly.
+/// TODO(#2093): Remove this compatibility marker when QDMI standardizes
+/// explicit unrestricted connectivity and operation applicability.
 constexpr std::string_view ALL_TO_ALL_HOMOGENEOUS_METADATA =
     "mqt.compiler-target.v1:all-to-all-homogeneous";
 

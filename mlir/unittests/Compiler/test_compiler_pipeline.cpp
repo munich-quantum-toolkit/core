@@ -1625,7 +1625,9 @@ h q[0];
 reset q[0];
 h q[1];
 )";
-  const auto target = llvm::cantFail(CompilerTarget::create(3));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, CompilerTarget::Connectivity{},
+                             CompilerTarget::NativeOperations::unrestricted()));
 
   auto qc = QCProgram::fromQASMString(source);
   ASSERT_TRUE(qc);

@@ -60,7 +60,8 @@ benchmarking, the C++ API exposes separate factories for pre-routing
 optimization, deterministic placement, topology-aware mapping, native synthesis,
 and conformance verification. Target compilation uses compact placement on
 all-to-all targets and the mapper only when the target has an explicit coupling
-graph.
+graph. A target with unknown connectivity can use compact placement only when no
+non-barrier multi-site operation remains.
 
 Target compilation preserves quantum operations even when their final qubit
 values are not measured or returned. This supports measurement-free programs,

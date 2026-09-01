@@ -23,6 +23,8 @@ class CompilerTarget;
 namespace qco {
 
 /// Create a deterministic placement pass for a compiler target.
+/// Unknown connectivity requires a program without non-barrier multi-site
+/// operations.
 std::unique_ptr<Pass> createPlacementPass(const CompilerTarget& target);
 
 /// Create a mapping pass for a compiler target with explicit topology.

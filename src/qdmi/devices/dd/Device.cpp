@@ -223,7 +223,9 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                     prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
                     OPERATION_ADDRESSES, prop, size, value, sizeRet)
-  /// Advertise compiler-target facts that QDMI v1.3 cannot encode compactly.
+  /// Target facts that QDMI v1.3 cannot encode compactly.
+  /// TODO(#2093): Remove this compatibility marker when QDMI standardizes
+  /// explicit unrestricted connectivity and operation applicability.
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_CUSTOM1,
                       "mqt.compiler-target.v1:all-to-all-homogeneous", prop,
                       size, value, sizeRet)
