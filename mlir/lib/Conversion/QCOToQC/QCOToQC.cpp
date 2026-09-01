@@ -85,6 +85,20 @@ struct LoweringState {
     return op->emitOpError(
         "cannot mix static and dynamic qubit allocation modes in QCO program");
   }
+
+  /// Invalidates cached slots for the same memref in enclosing regions.
+  void invalidateAncestorQTensorCaches(Region* region, Value memref) {
+    for (auto* current = region->getParentRegion(); current != nullptr;
+         current = current->getParentRegion()) {
+      if (auto it = extractedIndices.find(current);
+          it != extractedIndices.end()) {
+        it->second.erase(memref);
+      }
+      if (auto it = qubitValues.find(current); it != qubitValues.end()) {
+        it->second.erase(memref);
+      }
+    }
+  }
 };
 
 /**
@@ -337,16 +351,38 @@ struct ConvertQTensorExtractOp final
   }
 };
 
-/**
- * @brief Removes qtensor.insert operations
- */
-struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
-  using OpConversionPattern::OpConversionPattern;
+/** Converts qtensor.insert to an in-place memref.store. */
+struct ConvertQTensorInsertOp final
+    : StatefulOpConversionPattern<qtensor::InsertOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOp(op, adaptor.getDest());
+    auto& state = getState();
+    auto* region = op->getParentRegion();
+    auto dest = adaptor.getDest();
+    auto index = adaptor.getIndex();
+    auto scalar = adaptor.getScalar();
+    auto& extractedIndices = state.extractedIndices[region][dest];
+    auto& qubitValues = state.qubitValues[region][dest];
+    if (extractedIndices.contains(index) &&
+        qubitValues.lookup(index) == scalar) {
+      rewriter.replaceOp(op, dest);
+      return success();
+    }
+
+    memref::StoreOp::create(rewriter, op.getLoc(), scalar, dest,
+                            ValueRange{index});
+    state.invalidateAncestorQTensorCaches(region, dest);
+
+    // A dynamic index may alias any previously observed slot. Rebuild the
+    // cache conservatively, retaining only the value established by this store.
+    extractedIndices.clear();
+    qubitValues.clear();
+    extractedIndices.insert(index);
+    qubitValues[index] = scalar;
+    rewriter.replaceOp(op, dest);
     return success();
   }
 };
@@ -1207,8 +1243,8 @@ protected:
 
     // Register operation conversion patterns that do not need state tracking
     patterns
-        .add<ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
-             ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOUnitaryOp,
+        .add<ConvertQTensorDeallocOp, ConvertQCOMeasureOp, ConvertQCOResetOp,
+             ConvertQCOUnitaryOp,
              ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
             typeConverter, context);
 
@@ -1224,9 +1260,9 @@ protected:
                  ConvertQCOSCFForOp>(typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
-    patterns.add<ConvertQTensorExtractOp, ConvertQTensorAllocOp,
-                 ConvertQCOAllocOp, ConvertQCOStaticOp, ConvertQCOSinkOp>(
-        typeConverter, context, &state);
+    patterns.add<ConvertQTensorExtractOp, ConvertQTensorInsertOp,
+                 ConvertQTensorAllocOp, ConvertQCOAllocOp, ConvertQCOStaticOp,
+                 ConvertQCOSinkOp>(typeConverter, context, &state);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes
