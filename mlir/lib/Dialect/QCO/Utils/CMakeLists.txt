@@ -70,6 +70,7 @@ add_mlir_library(
   MLIRQCOMatrix
   MLIRArithDialect
   MLIRFuncDialect
+  MLIRMathDialect
   MLIRSCFDialect
   MQT::CoreDD
   PRIVATE

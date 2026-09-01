@@ -41,6 +41,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -131,8 +132,6 @@ struct TensorMap {
     return it == tensors.end() ? nullptr : it->second;
   }
 
-  void erase(Value value) { tensors.erase(value); }
-
   [[nodiscard]] TensorMap clone() const {
     TensorMap copy;
     for (const auto& [value, slots] : tensors) {
@@ -152,6 +151,7 @@ struct ClassicalEnv {
 
   DenseMap<Value, Attribute> values;
   DenseMap<Value, qc::Qubit> deferredMeasurements;
+  Operation** deferredMeasurementUse = nullptr;
   /// Shared storage preserves CBit register identity across `func.call`.
   DenseMap<Value, std::shared_ptr<RegisterState>> registers;
   /// Shared storage preserves caller-visible writes through `func.call`.
@@ -160,6 +160,11 @@ struct ClassicalEnv {
   LogicalResult bindFrom(Value source, Value dest, Operation* op) {
     const auto it = values.find(source);
     if (it == values.end()) {
+      if (deferredMeasurements.contains(source) &&
+          deferredMeasurementUse != nullptr) {
+        *deferredMeasurementUse = op;
+        return failure();
+      }
       return op->emitError()
              << "classical SSA value is not mapped for QCO DD simulation";
     }
@@ -180,6 +185,7 @@ struct WalkState {
   dd::Package* dd;
   std::mt19937_64* rng = nullptr;
   const DenseSet<Operation*>* deferredMeasurements = nullptr;
+  DenseSet<qc::Qubit>* deferredMeasuredWires = nullptr;
   size_t remainingExecutionSteps = MAX_CONTROL_FLOW_STEPS;
   DenseSet<Operation*> activeCalls;
 };
@@ -217,6 +223,11 @@ static FailureOr<Attribute>
 lookupAttribute(Value value, const ClassicalEnv& classical, Operation* op) {
   const auto it = classical.values.find(value);
   if (it == classical.values.end()) {
+    if (classical.deferredMeasurements.contains(value) &&
+        classical.deferredMeasurementUse != nullptr) {
+      *classical.deferredMeasurementUse = op;
+      return failure();
+    }
     return op->emitError()
            << "classical SSA value is not mapped for QCO DD simulation";
   }
@@ -662,6 +673,10 @@ static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical) {
     return failure();
   }
   const auto& cell = (*regIt->second)[*index];
+  if (cell.deferredWire && classical.deferredMeasurementUse != nullptr) {
+    *classical.deferredMeasurementUse = load.getOperation();
+    return failure();
+  }
   if (!cell.value) {
     return load.emitError() << "read from an undefined CBit register element";
   }
@@ -862,7 +877,11 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
             arith::SubIOp, arith::MulIOp, arith::ShLIOp, arith::ShRUIOp,
             arith::ShRSIOp, arith::CmpIOp, arith::AddFOp, arith::SubFOp,
             arith::MulFOp, arith::DivFOp, arith::RemFOp, arith::NegFOp,
-            arith::CmpFOp, arith::SIToFPOp, arith::UIToFPOp>(
+            arith::CmpFOp, arith::SIToFPOp, arith::UIToFPOp, arith::MaxSIOp,
+            arith::MinSIOp, arith::MaxUIOp, arith::MinUIOp, arith::MaximumFOp,
+            arith::MinimumFOp, arith::MaxNumFOp, arith::MinNumFOp, math::AbsFOp,
+            math::CeilOp, math::CosOp, math::ExpOp, math::FloorOp, math::LogOp,
+            math::SinOp, math::SqrtOp, math::TanOp, math::PowFOp>(
           [&](Operation* foldable) {
             return foldClassicalOp(*foldable, classical);
           })
@@ -1019,6 +1038,11 @@ static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
       }
       values.emplace_back(it->second);
     } else {
+      if (const auto deferred = walk.classical->deferredMeasurements.find(src);
+          deferred != walk.classical->deferredMeasurements.end()) {
+        values.emplace_back(deferred->second);
+        continue;
+      }
       const auto value = walk.classical->values.find(src);
       if (value == walk.classical->values.end()) {
         return op->emitError()
@@ -1039,7 +1063,11 @@ static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
     } else if (isa<MemRefType>(dest.getType())) {
       walk.classical->memrefs[dest] =
           std::get<std::shared_ptr<ClassicalEnv::MemRefState>>(value);
+    } else if (std::holds_alternative<qc::Qubit>(value)) {
+      walk.classical->values.erase(dest);
+      walk.classical->deferredMeasurements[dest] = std::get<qc::Qubit>(value);
     } else {
+      walk.classical->deferredMeasurements.erase(dest);
       walk.classical->values[dest] = std::get<Attribute>(value);
     }
   }
@@ -1061,6 +1089,10 @@ static LogicalResult bindYieldResults(YieldOp yield,
 
 template <typename StateDD>
 static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state);
+
+template <typename StateDD>
+static FailureOr<func::ReturnOp>
+walkFunctionBody(func::FuncOp func, WalkState& walk, StateDD& state);
 
 template <typename StateDD>
 static LogicalResult walkBlock(Block& block, WalkState& walk, StateDD& state) {
@@ -1095,33 +1127,26 @@ template <typename StateDD>
 static LogicalResult applyScfRegion(Region& region, ValueRange results,
                                     WalkState& walk, StateDD& state,
                                     Operation* parent) {
-  if (!region.hasOneBlock()) {
-    return parent->emitError()
-           << "SCF region must contain exactly one block for QCO DD simulation";
-  }
-  Block& block = region.front();
   if (failed(consumeExecutionStep(walk, parent))) {
     return failure();
   }
+  Block& block = region.front();
   if (failed(walkBlock(block, walk, state))) {
     return failure();
   }
-  auto yield = dyn_cast<scf::YieldOp>(block.getTerminator());
-  if (!yield || yield.getNumOperands() != results.size()) {
-    return parent->emitError()
-           << "SCF region must yield one value for each result";
-  }
+  auto yield = cast<scf::YieldOp>(block.getTerminator());
   return bindValuePairs(yield.getOperands(), results, walk, parent);
 }
 
 static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
                                                  dd::VectorDD& state,
                                                  Operation* op) {
-  if (walk.qubits->numQubits > walk.dd->qubits() ||
-      count > walk.dd->qubits() - walk.qubits->numQubits) {
-    return op->emitError() << "DD package has " << walk.dd->qubits()
-                           << " qubits but allocation requires "
-                           << walk.qubits->numQubits + count;
+  if (count > dd::Package::MAX_POSSIBLE_QUBITS - walk.qubits->numQubits) {
+    return op->emitError() << "QCO function exceeds the supported qubit range";
+  }
+  const size_t required = walk.qubits->numQubits + count;
+  if (walk.dd->qubits() < required) {
+    walk.dd->resize(required);
   }
 
   const size_t first = walk.qubits->numQubits;
@@ -1141,10 +1166,31 @@ static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
   return slots;
 }
 
+static LogicalResult checkDeferredMeasurementUse(UnitaryOpInterface unitary,
+                                                 WalkState& walk) {
+  if (walk.deferredMeasuredWires == nullptr ||
+      isa<BarrierOp>(unitary.getOperation())) {
+    return success();
+  }
+  auto wires = walk.qubits->lookupRange(unitary.getInputQubits(),
+                                        unitary.getOperation());
+  if (failed(wires)) {
+    return failure();
+  }
+  if (llvm::none_of(*wires, [&](qc::Qubit wire) {
+        return walk.deferredMeasuredWires->contains(wire);
+      })) {
+    return success();
+  }
+  *walk.classical->deferredMeasurementUse = unitary.getOperation();
+  return failure();
+}
+
 template <typename StateDD>
 static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
   return TypeSwitch<Operation*, LogicalResult>(&op)
-      .template Case<StaticOp, SinkOp>([](auto) { return success(); })
+      .template Case<StaticOp, SinkOp, qtensor::DeallocOp>(
+          [](auto) { return success(); })
       .template Case<arith::ConstantOp>([&](arith::ConstantOp constant) {
         return recordConstant(constant, *walk.classical);
       })
@@ -1252,15 +1298,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             walk.tensors->bind(insert.getResult(), input);
             return success();
           })
-      .template Case<qtensor::DeallocOp>(
-          [&](qtensor::DeallocOp dealloc) -> LogicalResult {
-            if (!walk.tensors->lookup(dealloc.getTensor())) {
-              return dealloc.emitError()
-                     << "qtensor is not mapped for QCO DD simulation";
-            }
-            walk.tensors->erase(dealloc.getTensor());
-            return success();
-          })
       .template Case<memref::AllocOp>([&](memref::AllocOp alloc) {
         return applyMemRefAlloc(alloc, *walk.classical);
       })
@@ -1280,9 +1317,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         return storeRegister(store, *walk.classical);
       })
       .template Case<memref::DeallocOp>([](auto) { return success(); })
-      .template Case<func::ReturnOp>([&](func::ReturnOp returnOp) {
-        return validateReturn(returnOp, *walk.qubits, *walk.tensors);
-      })
       .template Case<MeasureOp>([&](MeasureOp measureOp) -> LogicalResult {
         if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
           return measureOp.emitError()
@@ -1303,6 +1337,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           }
           if (deferred) {
             walk.classical->deferredMeasurements[measureOp.getResult()] = *q;
+            walk.deferredMeasuredWires->insert(*q);
             walk.qubits->bind(measureOp.getQubitOut(), *q);
             return success();
           }
@@ -1398,11 +1433,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return applyScfRegion(*selected, switchOp.getResults(), walk, state,
                                   switchOp);
           })
-      .template Case<scf::ExecuteRegionOp>(
-          [&](scf::ExecuteRegionOp execute) -> LogicalResult {
-            return applyScfRegion(execute.getRegion(), execute.getResults(),
-                                  walk, state, execute);
-          })
       .template Case<scf::ForOp>([&](scf::ForOp forOp) -> LogicalResult {
         auto range = resolveLoop(forOp, *walk.classical);
         if (failed(range)) {
@@ -1474,12 +1504,13 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<func::CallOp>([&](func::CallOp call) -> LogicalResult {
         auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
             call, call.getCalleeAttr());
-        if (!callee.getBody().hasOneBlock()) {
-          return call.emitError()
-                 << "func.call callee must have a single-block body";
+        if (!callee) {
+          return call.emitError() << "func.call callee '" << call.getCallee()
+                                  << "' could not be resolved";
         }
-        auto returnOp =
-            cast<func::ReturnOp>(callee.getBody().front().getTerminator());
+        if (callee.isDeclaration()) {
+          return call.emitError() << "func.call callee must have a body";
+        }
         Operation* calleeOp = callee.getOperation();
         if (!walk.activeCalls.insert(calleeOp).second) {
           return call.emitError()
@@ -1498,13 +1529,19 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           return failure();
         }
 
-        if (failed(walkBlock(callee.getBody().front(), walk, state))) {
+        auto returnOp = walkFunctionBody(callee, walk, state);
+        if (failed(returnOp)) {
           return failure();
         }
-        return bindValuePairs(returnOp.getOperands(), call.getResults(), walk,
+
+        /// Map callee return operands onto call results via the return op.
+        return bindValuePairs(returnOp->getOperands(), call.getResults(), walk,
                               call);
       })
       .template Case<CtrlOp>([&](CtrlOp ctrlOp) -> LogicalResult {
+        if (failed(checkDeferredMeasurementUse(ctrlOp, walk))) {
+          return failure();
+        }
         if (auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(
                 *ctrlOp.getBody())) {
           auto decoded = decodeStandardGate(inner, *walk.classical);
@@ -1529,6 +1566,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       })
       .template Case<UnitaryOpInterface>(
           [&](UnitaryOpInterface unitary) -> LogicalResult {
+            if (failed(checkDeferredMeasurementUse(unitary, walk))) {
+              return failure();
+            }
             auto decoded = decodeStandardGate(unitary, *walk.classical);
             if (failed(decoded)) {
               return failure();
@@ -1539,8 +1579,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return applyUnitaryMatrix(unitary, walk, state);
           })
       .Default([&](Operation* unsupported) -> LogicalResult {
-        if (unsupported->getName().getDialectNamespace() ==
-            arith::ArithDialect::getDialectNamespace()) {
+        const StringRef dialect = unsupported->getName().getDialectNamespace();
+        if (dialect == arith::ArithDialect::getDialectNamespace() ||
+            dialect == math::MathDialect::getDialectNamespace()) {
           return applyClassicalOp(*unsupported, *walk.classical);
         }
         return unsupported->emitError()
@@ -1550,17 +1591,26 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
 }
 
 template <typename StateDD>
-static LogicalResult walkFunction(func::FuncOp func, WalkState& walkState,
-                                  StateDD& state) {
-  walkState.activeCalls.insert(func.getOperation());
-  // Function bodies include `func.return` as terminator; region walks skip
-  // `qco.yield` and bind it separately.
-  for (Operation& op : func.getBody().front()) {
-    if (failed(applyOp(op, walkState, state))) {
-      return failure();
-    }
+static FailureOr<func::ReturnOp>
+walkFunctionBody(func::FuncOp func, WalkState& walk, StateDD& state) {
+  if (!func.getBody().hasOneBlock()) {
+    return func.emitError() << "QCO DD execution requires one-block functions";
   }
-  return success();
+  Block& block = func.getBody().front();
+  if (failed(walkBlock(block, walk, state))) {
+    return failure();
+  }
+  return cast<func::ReturnOp>(block.getTerminator());
+}
+
+template <typename StateDD>
+static LogicalResult walkFunction(func::FuncOp func, WalkState& walk,
+                                  StateDD& state) {
+  auto returnOp = walkFunctionBody(func, walk, state);
+  if (failed(returnOp)) {
+    return failure();
+  }
+  return validateReturn(*returnOp, *walk.qubits, *walk.tensors);
 }
 
 namespace {
@@ -1568,16 +1618,46 @@ struct PreparedState {
   QubitMap qubits;
   TensorMap tensors;
   ClassicalEnv classical;
+  size_t knownAllocations = 0;
 };
 } // namespace
 
+static size_t countKnownAllocations(func::FuncOp func,
+                                    const ClassicalEnv& classical) {
+  size_t count = 0;
+  func.walk([&](Operation* op) {
+    size_t allocation = isa<AllocOp>(op) ? 1U : 0U;
+    if (auto alloc = dyn_cast<qtensor::AllocOp>(op)) {
+      const auto type = cast<RankedTensorType>(alloc.getType());
+      if (!type.isDynamicDim(0)) {
+        allocation = static_cast<size_t>(type.getDimSize(0));
+      } else {
+        Attribute size;
+        if (const auto it = classical.values.find(alloc.getSize());
+            it != classical.values.end()) {
+          size = it->second;
+        } else if (const auto folded =
+                       mqt::valueToConstantAttr(alloc.getSize())) {
+          size = *folded;
+        }
+        if (const auto integer = dyn_cast_if_present<IntegerAttr>(size)) {
+          const int64_t value = integer.getValue().getSExtValue();
+          allocation = value > 0 ? static_cast<size_t>(value) : 0U;
+        }
+      }
+    }
+    count += std::min(allocation, dd::Package::MAX_POSSIBLE_QUBITS - count);
+  });
+  return count;
+}
+
 static FailureOr<PreparedState>
-prepare(func::FuncOp func, const dd::Package& dd,
+prepare(func::FuncOp func, dd::Package& dd,
         const DDArgumentBindings& argumentBindings,
         bool bindEntryAllocations = false) {
-  if (!func.getBody().hasOneBlock()) {
+  if (func.isDeclaration() || !func.getBody().hasOneBlock()) {
     return func.emitError()
-           << "QCO DD construction expects a single-block function body";
+           << "QCO DD execution requires a one-block function body";
   }
 
   PreparedState prepared;
@@ -1646,9 +1726,11 @@ prepare(func::FuncOp func, const dd::Package& dd,
                   static_cast<qc::Qubit>(qubits.numQubits++));
     }
   }
+  if (!bindEntryAllocations) {
+    prepared.knownAllocations = countKnownAllocations(func, prepared.classical);
+  }
   if (dd.qubits() < qubits.numQubits) {
-    return func.emitError() << "DD package has " << dd.qubits()
-                            << " qubits but function uses " << qubits.numQubits;
+    dd.resize(qubits.numQubits);
   }
   return prepared;
 }
@@ -1669,6 +1751,7 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
                       .classical = &classical,
                       .dd = &dd,
                       .rng = nullptr};
+  walkState.activeCalls.insert(func.getOperation());
 
   dd::MatrixDD state =
       qubits.numQubits == 0
@@ -1687,7 +1770,10 @@ static FailureOr<dd::VectorDD>
 simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
              const PreparedState& prepared, std::mt19937_64* rng,
              const DenseSet<Operation*>* deferredMeasurements = nullptr,
-             ClassicalEnv* finalClassical = nullptr) {
+             ClassicalEnv* finalClassical = nullptr,
+             DenseSet<qc::Qubit>* deferredMeasuredWires = nullptr,
+             Operation** deferredMeasurementUse = nullptr,
+             bool validateQuantumReturn = true) {
   const size_t inputQubits =
       in.isTerminal() ? 0U : static_cast<size_t>(in.p->v) + 1U;
   if (inputQubits < prepared.qubits.numQubits) {
@@ -1696,19 +1782,32 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
            << "input state has " << inputQubits << " qubits but function uses "
            << prepared.qubits.numQubits;
   }
+  if (prepared.knownAllocations <=
+      dd::Package::MAX_POSSIBLE_QUBITS - inputQubits) {
+    const size_t required = inputQubits + prepared.knownAllocations;
+    if (dd.qubits() < required) {
+      dd.resize(required);
+    }
+  }
   QubitMap qubits = prepared.qubits;
   qubits.numQubits = inputQubits;
   TensorMap tensors = prepared.tensors.clone();
   ClassicalEnv classical = prepared.classical;
+  classical.deferredMeasurementUse = deferredMeasurementUse;
   WalkState walkState{.qubits = &qubits,
                       .tensors = &tensors,
                       .classical = &classical,
                       .dd = &dd,
                       .rng = rng,
-                      .deferredMeasurements = deferredMeasurements};
+                      .deferredMeasurements = deferredMeasurements,
+                      .deferredMeasuredWires = deferredMeasuredWires};
+  walkState.activeCalls.insert(func.getOperation());
 
   dd::VectorDD state = in;
-  if (failed(walkFunction(func, walkState, state))) {
+  auto returnOp = walkFunctionBody(func, walkState, state);
+  if (failed(returnOp) ||
+      (validateQuantumReturn &&
+       failed(validateReturn(*returnOp, qubits, tensors)))) {
     dd.decRef(state);
     return failure();
   }
@@ -1729,72 +1828,63 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
   return simulateImpl(func, in, dd, *prepared, &rng);
 }
 
-static bool isOutputOnlyRegister(Value reg, ArrayRef<Value> outputs) {
-  return llvm::is_contained(outputs, reg) &&
-         llvm::all_of(reg.getUses(), [reg](const OpOperand& use) {
-           if (auto store = dyn_cast<cbit::StoreOp>(use.getOwner())) {
-             return store.getReg() == reg;
-           }
-           return isa<func::ReturnOp>(use.getOwner());
-         });
-}
-
-static bool hasOutputOnlyMeasurementResult(MeasureOp measure,
-                                           ArrayRef<Value> outputs) {
-  return llvm::all_of(measure.getResult().getUses(), [&](const OpOperand& use) {
-    auto store = dyn_cast<cbit::StoreOp>(use.getOwner());
-    return store && isOutputOnlyRegister(store.getReg(), outputs);
-  });
-}
-
-static bool isDeferrableMeasurement(MeasureOp measure, Block* entry,
-                                    ArrayRef<Value> outputs) {
-  if (measure->getBlock() != entry ||
-      !hasOutputOnlyMeasurementResult(measure, outputs)) {
-    return false;
+static bool mayMeasureOrReset(func::FuncOp func, DenseSet<Operation*>& active) {
+  if (!active.insert(func).second) {
+    return true;
   }
-  return llvm::all_of(measure.getQubitOut().getUses(), [&](OpOperand& use) {
-    Operation* owner = use.getOwner();
-    return isa<SinkOp>(owner) ||
-           (owner == entry->getTerminator() && isa<func::ReturnOp>(owner));
+  const auto guard = llvm::make_scope_exit([&] { active.erase(func); });
+  bool found = false;
+  func.getBody().walk([&](Operation* op) {
+    if (found || isa<MeasureOp, ResetOp>(op)) {
+      found = true;
+      return;
+    }
+    auto call = dyn_cast<func::CallOp>(op);
+    if (!call) {
+      return;
+    }
+    auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+        call, call.getCalleeAttr());
+    found =
+        !callee || callee.isDeclaration() || mayMeasureOrReset(callee, active);
   });
+  return found;
 }
 
-static void analyzeSampling(func::FuncOp func, Block* sampledEntry,
-                            ArrayRef<Value> outputs,
-                            DenseSet<Operation*>& active, SamplingPlan& plan) {
-  Operation* funcOp = func.getOperation();
-  if (!active.insert(funcOp).second) {
-    plan.dynamic = true;
-    return;
-  }
+static void analyzeSampling(func::FuncOp func, SamplingPlan& plan) {
   func.getBody().walk([&](Operation* op) {
     if (isa<ResetOp>(op)) {
       plan.dynamic = true;
-    } else if (auto measure = dyn_cast<MeasureOp>(op)) {
-      if (isDeferrableMeasurement(measure, sampledEntry, outputs)) {
-        plan.deferredMeasurements.insert(op);
-      } else {
-        plan.dynamic = true;
-      }
-    } else if (auto call = dyn_cast<func::CallOp>(op)) {
-      auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
-          call, call.getCalleeAttr());
-      if (!callee || callee.isDeclaration() ||
-          !callee.getBody().hasOneBlock()) {
-        plan.dynamic = true;
-      } else {
-        analyzeSampling(callee, sampledEntry, outputs, active, plan);
-      }
+      return;
+    }
+    if (isa<MeasureOp>(op)) {
+      plan.deferredMeasurements.insert(op);
+      return;
+    }
+    auto call = dyn_cast<func::CallOp>(op);
+    if (!call) {
+      return;
+    }
+    auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+        call, call.getCalleeAttr());
+    DenseSet<Operation*> active;
+    if (!callee || callee.isDeclaration() ||
+        mayMeasureOrReset(callee, active)) {
+      plan.dynamic = true;
     }
   });
-  active.erase(funcOp);
 }
 
-static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {
+static FailureOr<SamplingPlan>
+getSamplingPlan(func::FuncOp func, bool statevectorAnalysis = false) {
   Block& entry = func.getBody().front();
-  auto returnOp = cast<func::ReturnOp>(entry.getTerminator());
   SamplingPlan plan;
+  auto returnOp = dyn_cast<func::ReturnOp>(entry.getTerminator());
+  if (!returnOp) {
+    return func.emitError()
+           << "single-block QCO DD execution requires func.return";
+  }
+
   bool hasOther = false;
   for (Value value : returnOp.getOperands()) {
     if (isa<cbit::RegisterType>(value.getType())) {
@@ -1803,15 +1893,43 @@ static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {
       hasOther = true;
     }
   }
-  if (!plan.outputs.empty() && hasOther) {
+  if (!statevectorAnalysis && !plan.outputs.empty() && hasOther) {
     return returnOp.emitError()
            << "QCO DD sampling does not support mixed CBit and non-CBit "
               "results";
   }
 
-  DenseSet<Operation*> active;
-  analyzeSampling(func, &entry, plan.outputs, active, plan);
+  analyzeSampling(func, plan);
   return plan;
+}
+
+FailureOr<dd::VectorDD> simulateStatevector(func::FuncOp func,
+                                            dd::Package& dd) {
+  auto prepared = prepare(func, dd, DDArgumentBindings{});
+  if (failed(prepared)) {
+    return failure();
+  }
+  auto plan = getSamplingPlan(func, /*statevectorAnalysis=*/true);
+  if (failed(plan)) {
+    return failure();
+  }
+  if (plan->dynamic) {
+    return func.emitError()
+           << "statevector extraction supports only terminal measurements "
+              "that assemble returned CBit registers";
+  }
+  DenseSet<qc::Qubit> measuredWires;
+  Operation* deferredMeasurementUse = nullptr;
+  auto state = simulateImpl(
+      func, dd::makeZeroState(prepared->qubits.numQubits, dd), dd, *prepared,
+      nullptr, &plan->deferredMeasurements, nullptr, &measuredWires,
+      &deferredMeasurementUse, /*validateQuantumReturn=*/false);
+  if (failed(state) && deferredMeasurementUse != nullptr) {
+    return deferredMeasurementUse->emitError()
+           << "statevector extraction cannot use a measurement result or "
+              "measured qubit before program end";
+  }
+  return state;
 }
 
 static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
@@ -1843,16 +1961,21 @@ static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
   return outcome;
 }
 
-FailureOr<std::map<std::string, size_t>>
-sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
-       const DDArgumentBindings& argumentBindings) {
-  auto prepared = prepare(func, dd, argumentBindings);
-  if (failed(prepared)) {
-    return failure();
-  }
+static FailureOr<std::map<std::string, size_t>>
+sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
+           size_t shots, std::mt19937_64& rng, const PreparedState& prepared) {
+  const auto inputGuard = llvm::make_scope_exit([&] { dd.decRef(in); });
   auto plan = getSamplingPlan(func);
   if (failed(plan)) {
     return failure();
+  }
+
+  const size_t inputQubits =
+      in.isTerminal() ? 0U : static_cast<size_t>(in.p->v) + 1U;
+  if (inputQubits < prepared.qubits.numQubits) {
+    return func.emitError()
+           << "input state has " << inputQubits << " qubits but function uses "
+           << prepared.qubits.numQubits;
   }
 
   std::map<std::string, size_t> counts;
@@ -1860,7 +1983,6 @@ sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
     return counts;
   }
 
-  const size_t numQubits = prepared->qubits.numQubits;
   const auto record = [&](const ClassicalEnv& classical,
                           StringRef basis) -> LogicalResult {
     auto outcome = encodeOutcome(plan->outputs, classical, basis);
@@ -1873,25 +1995,31 @@ sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
 
   if (!plan->dynamic) {
     ClassicalEnv classical;
-    auto state =
-        simulateImpl(func, dd::makeZeroState(numQubits, dd), dd, *prepared,
-                     nullptr, &plan->deferredMeasurements, &classical);
-    if (failed(state)) {
+    DenseSet<qc::Qubit> measuredWires;
+    Operation* deferredMeasurementUse = nullptr;
+    dd.incRef(in);
+    auto state = simulateImpl(func, in, dd, prepared, nullptr,
+                              &plan->deferredMeasurements, &classical,
+                              &measuredWires, &deferredMeasurementUse);
+    if (succeeded(state)) {
+      const auto guard = llvm::make_scope_exit([&] { dd.decRef(*state); });
+      for (size_t i = 0; i < shots; ++i) {
+        if (failed(record(classical, dd.measureAll(*state, false, rng)))) {
+          return failure();
+        }
+      }
+      return counts;
+    }
+    if (deferredMeasurementUse == nullptr) {
       return failure();
     }
-    const auto guard = llvm::make_scope_exit([&] { dd.decRef(*state); });
-    for (size_t i = 0; i < shots; ++i) {
-      if (failed(record(classical, dd.measureAll(*state, false, rng)))) {
-        return failure();
-      }
-    }
-    return counts;
   }
 
   for (size_t i = 0; i < shots; ++i) {
     ClassicalEnv classical;
-    auto state = simulateImpl(func, dd::makeZeroState(numQubits, dd), dd,
-                              *prepared, &rng, nullptr, &classical);
+    dd.incRef(in);
+    auto state =
+        simulateImpl(func, in, dd, prepared, &rng, nullptr, &classical);
     if (failed(state)) {
       return failure();
     }
@@ -1904,6 +2032,17 @@ sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
     }
   }
   return counts;
+}
+
+FailureOr<std::map<std::string, size_t>>
+sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
+       const DDArgumentBindings& argumentBindings) {
+  auto prepared = prepare(func, dd, argumentBindings);
+  if (failed(prepared)) {
+    return failure();
+  }
+  return sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, dd), dd,
+                    shots, rng, *prepared);
 }
 
 } // namespace mlir::qco
