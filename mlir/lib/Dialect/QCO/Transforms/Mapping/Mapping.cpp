@@ -1951,21 +1951,61 @@ private:
         // At this point the wire iterators either point to
         // std::default_sentinel or a multi-qubit gate (incl. barriers) of
         // the current or subsequent layers. The former must be decremented
-        // twice (sentinel → sink → unitary/static). For the latter, we
-        // must ensure the insertion point is before the multi-qubit gates.
+        // twice (sentinel → sink → final op). For the latter, we must ensure
+        // the insertion point is before the multi-qubit gates.
 
+        Operation* latest = nullptr;
+        bool comparable = true;
+        for (WireIterator it : wires) {
+          if (it == std::default_sentinel) {
+            std::advance(it, -2);
+            while (isa_and_nonnull<MeasureOp, ResetOp>(it.operation())) {
+              std::advance(it, -1);
+            }
+          } else {
+            std::advance(it, -1);
+          }
+
+          Operation* operation = it.operation();
+          if (operation == nullptr) {
+            continue;
+          }
+          if (latest != nullptr &&
+              operation->getBlock() != latest->getBlock()) {
+            comparable = false;
+            break;
+          }
+          if (latest == nullptr || latest->isBeforeInBlock(operation)) {
+            latest = operation;
+          }
+        }
+
+        // Keep terminal measurements and resets after routing SWAPs. A
+        // measurement can only move past the routing frontier if doing so does
+        // not move it past a classical use of its result.
         for (auto& it : wires) {
           if (it != std::default_sentinel) {
             std::advance(it, -1);
             continue;
           }
           std::advance(it, -2);
-          // Keep a terminal irreversible suffix after routing SWAPs. Moving a
-          // logical state through a SWAP and then measuring/resetting that
-          // state is equivalent, while routing the collapsed/reset state would
-          // introduce a mid-circuit irreversible operation unnecessarily.
-          while (it.operation() != nullptr &&
-                 isa<MeasureOp, ResetOp>(it.operation())) {
+          if (!comparable) {
+            continue;
+          }
+          while (isa_and_nonnull<MeasureOp, ResetOp>(it.operation())) {
+            auto measure = dyn_cast<MeasureOp>(it.operation());
+            if (measure && latest != nullptr &&
+                llvm::any_of(measure.getResult().getUsers(),
+                             [&](Operation* user) {
+                               while (user != nullptr &&
+                                      user->getBlock() != latest->getBlock()) {
+                                 user = user->getParentOp();
+                               }
+                               return user == nullptr || user == latest ||
+                                      user->isBeforeInBlock(latest);
+                             })) {
+              break;
+            }
             std::advance(it, -1);
           }
         }
