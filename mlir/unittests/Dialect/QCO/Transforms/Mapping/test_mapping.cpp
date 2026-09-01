@@ -29,6 +29,7 @@
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/LogicalResult.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -65,6 +66,14 @@
 using namespace mlir;
 using namespace mlir::qco;
 using mlir::mqt::getEntryPoint;
+
+static std::string printModule(ModuleOp moduleOp) {
+  std::string result;
+  llvm::raw_string_ostream stream(result);
+  moduleOp.print(stream);
+  stream.flush();
+  return result;
+}
 
 static SmallVector<Value> getQubitValues(ValueRange values) {
   return to_vector(llvm::make_filter_range(
@@ -320,6 +329,13 @@ protected:
     return applyPatternsGreedily(m, std::move(patterns));
   }
 
+  static LogicalResult runPlacement(ModuleOp moduleOp,
+                                    const CompilerTarget& target) {
+    PassManager pm(moduleOp->getContext());
+    pm.addPass(createPlacementPass(target));
+    return pm.run(moduleOp);
+  }
+
   std::unique_ptr<MLIRContext> context;
 };
 
@@ -435,7 +451,8 @@ TEST_F(MappingPassFixture, QuantumVectorSignatureFailsWithoutMutation) {
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
   OwningOpRef<ModuleOp> original(module->clone());
-  const auto target = llvm::cantFail(CompilerTarget::create(2));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, std::vector<CompilerTarget::Coupling>{{0, 1}}));
 
   std::string diagnostics;
   ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
@@ -470,7 +487,8 @@ TEST_F(MappingPassFixture, MultiBlockInputFailsWithoutMutation) {
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
   OwningOpRef<ModuleOp> original(module->clone());
-  const auto target = llvm::cantFail(CompilerTarget::create(2));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, std::vector<CompilerTarget::Coupling>{{0, 1}}));
 
   EXPECT_TRUE(failed(runPass(*module, target, MappingPassOptions{})));
   EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
@@ -491,7 +509,8 @@ TEST_F(MappingPassFixture, ClassicalOnlyInputIsUnchanged) {
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
   OwningOpRef<ModuleOp> original(module->clone());
-  const auto target = llvm::cantFail(CompilerTarget::create(2));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, std::vector<CompilerTarget::Coupling>{{0, 1}}));
 
   ASSERT_TRUE(succeeded(runPass(*module, target, MappingPassOptions{})));
   EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
@@ -515,7 +534,8 @@ module {
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
   OwningOpRef<ModuleOp> original(module->clone());
-  const auto target = llvm::cantFail(CompilerTarget::create(1));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, std::vector<CompilerTarget::Coupling>{}));
 
   std::string diagnostics;
   ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
@@ -557,7 +577,8 @@ module {
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
   OwningOpRef<ModuleOp> original(module->clone());
-  const auto target = llvm::cantFail(CompilerTarget::create(2));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, std::vector<CompilerTarget::Coupling>{{0, 1}}));
 
   std::string diagnostics;
   ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
@@ -603,7 +624,8 @@ module {
   ASSERT_TRUE(succeeded(verify(*module)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*module)));
   OwningOpRef<ModuleOp> original(module->clone());
-  const auto target = llvm::cantFail(CompilerTarget::create(1));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, std::vector<CompilerTarget::Coupling>{}));
 
   std::string diagnostics;
   ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
@@ -638,7 +660,8 @@ module {
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
   OwningOpRef<ModuleOp> original(module->clone());
-  const auto target = llvm::cantFail(CompilerTarget::create(1));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, std::vector<CompilerTarget::Coupling>{}));
 
   std::string diagnostics;
   ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
@@ -845,7 +868,7 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   EXPECT_EQ(numStatics, 3);
 }
 
-TEST_F(MappingPassFixture, MapNoncontiguousTargetWithUnusedSites) {
+TEST_F(MappingPassFixture, PlaceNoncontiguousTargetCompactly) {
   std::vector<CompilerTarget::Site> sites;
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(7)));
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(19)));
@@ -860,25 +883,106 @@ TEST_F(MappingPassFixture, MapNoncontiguousTargetWithUnusedSites) {
   builder.sink(qubit);
   auto module = builder.finalize(bit);
 
-  PassManager pm(module->getContext());
-  pm.addPass(createMappingPass(target, MappingPassOptions{.ntrials = 1}));
-  ASSERT_TRUE(pm.run(module.get()).succeeded());
+  ASSERT_TRUE(runPlacement(module.get(), target).succeeded());
   ASSERT_TRUE(succeeded(verify(*module)));
   EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
 
-  const DenseSet<CompilerTarget::SiteId> expectedSites{7, 19, 42};
   size_t numAllocations = 0;
-  size_t numStatics = 0;
+  SmallVector<int64_t> staticSites;
   size_t numSinks = 0;
   module->walk([&](AllocOp) { ++numAllocations; });
-  module->walk([&](StaticOp op) {
-    ++numStatics;
-    EXPECT_TRUE(expectedSites.contains(op.getIndex()));
-  });
+  module->walk([&](StaticOp op) { staticSites.emplace_back(op.getIndex()); });
   module->walk([&](SinkOp) { ++numSinks; });
   EXPECT_EQ(numAllocations, 0);
-  EXPECT_EQ(numStatics, 3);
-  EXPECT_EQ(numSinks, 3);
+  EXPECT_EQ(staticSites, (SmallVector<int64_t>{7}));
+  EXPECT_EQ(numSinks, 1);
+}
+
+TEST_F(MappingPassFixture, PlaceTensorOnFirstTargetSites) {
+  std::vector sites{llvm::cantFail(CompilerTarget::Site::create(7)),
+                    llvm::cantFail(CompilerTarget::Site::create(19)),
+                    llvm::cantFail(CompilerTarget::Site::create(42)),
+                    llvm::cantFail(CompilerTarget::Site::create(81))};
+  const auto target = llvm::cantFail(CompilerTarget::create(std::move(sites)));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize({builder.getI1Type(), builder.getI1Type()});
+  Value tensor = builder.qtensorAlloc(2);
+  Value first;
+  Value second;
+  std::tie(tensor, first) = builder.qtensorExtract(tensor, 0);
+  std::tie(tensor, second) = builder.qtensorExtract(tensor, 1);
+  std::tie(first, second) = builder.cx(first, second);
+  Value firstBit;
+  Value secondBit;
+  std::tie(first, firstBit) = builder.measure(first);
+  std::tie(second, secondBit) = builder.measure(second);
+  tensor = builder.qtensorInsert(first, tensor, 0);
+  tensor = builder.qtensorInsert(second, tensor, 1);
+  builder.qtensorDealloc(tensor);
+  auto moduleOp = builder.finalize({firstBit, secondBit});
+
+  ASSERT_TRUE(runPlacement(moduleOp.get(), target).succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(moduleOp.get()), target));
+
+  SmallVector<int64_t> staticSites;
+  size_t tensorOperations = 0;
+  size_t swaps = 0;
+  moduleOp->walk([&](Operation* operation) {
+    if (auto staticOp = dyn_cast<StaticOp>(operation)) {
+      staticSites.emplace_back(staticOp.getIndex());
+    }
+    tensorOperations += isa<qtensor::AllocOp, qtensor::ExtractOp,
+                            qtensor::InsertOp, qtensor::DeallocOp>(operation);
+    swaps += isa<SWAPOp>(operation);
+  });
+  EXPECT_EQ(staticSites, (SmallVector<int64_t>{7, 19}));
+  EXPECT_EQ(tensorOperations, 0);
+  EXPECT_EQ(swaps, 0);
+}
+
+TEST_F(MappingPassFixture, RejectNonExplicitTopologyBeforeMutation) {
+  const auto target = llvm::cantFail(CompilerTarget::create(2));
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto qubit = builder.h(builder.allocQubit());
+  builder.sink(qubit);
+  auto moduleOp = builder.finalize();
+  const auto before = printModule(moduleOp.get());
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPass(moduleOp.get(), target, MappingPassOptions{})));
+  EXPECT_EQ(printModule(moduleOp.get()), before);
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains("place-and-route requires an explicit target topology"));
+}
+
+TEST_F(MappingPassFixture, RejectOversizedPlacementBeforeMutation) {
+  const auto target = llvm::cantFail(CompilerTarget::create(1));
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto first = builder.allocQubit();
+  auto second = builder.allocQubit();
+  builder.sink(first);
+  builder.sink(second);
+  auto moduleOp = builder.finalize();
+  const auto before = printModule(moduleOp.get());
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPlacement(moduleOp.get(), target)));
+  EXPECT_EQ(printModule(moduleOp.get()), before);
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("requires 2 qubits, but the target supports 1"));
 }
 
 TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
@@ -1060,11 +1164,10 @@ TEST_P(MappingPassTest, FailNestedScalarAllocation) {
     return success();
   });
   EXPECT_TRUE(failed(runPass(m.get(), target, MappingPassOptions{})));
-  EXPECT_TRUE(
-      StringRef(diagnostics)
-          .contains(
-              "target mapping requires dynamic qubit allocations in the entry "
-              "function body"))
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("target placement requires dynamic qubit "
+                            "allocations in the entry "
+                            "function body"))
       << diagnostics;
 }
 
@@ -1099,11 +1202,10 @@ TEST_P(MappingPassTest, FailNestedTensorAllocation) {
     return success();
   });
   EXPECT_TRUE(failed(runPass(m.get(), target, MappingPassOptions{})));
-  EXPECT_TRUE(
-      StringRef(diagnostics)
-          .contains(
-              "target mapping requires dynamic qubit allocations in the entry "
-              "function body"))
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("target placement requires dynamic qubit "
+                            "allocations in the entry "
+                            "function body"))
       << diagnostics;
 }
 

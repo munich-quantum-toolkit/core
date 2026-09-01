@@ -10,6 +10,7 @@
 
 #include "mlir/Compiler/TargetCompilation.h"
 
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
@@ -25,7 +26,11 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   populateDecomposeMultiControlledPipeline(pm, 3);
   populateDefaultQCOOptimizationPipeline(pm);
   pm.addPass(qco::createFuseTwoQubitGates());
-  pm.addPass(qco::createMappingPass(target, qco::MappingPassOptions{}));
+  if (target.hasExplicitTopology()) {
+    pm.addPass(qco::createMappingPass(target, qco::MappingPassOptions{}));
+  } else {
+    pm.addPass(qco::createPlacementPass(target));
+  }
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createTargetNativeSynthesis(target));
   pm.addPass(createCSEPass());

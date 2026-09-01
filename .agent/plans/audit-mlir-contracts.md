@@ -121,9 +121,10 @@ after human review, with a regression that demonstrates the supported contract.
       one-use guards, and their invalid-IR regressions are not actionable
       findings.
 - [x] (2026-09-01) Merged current `main` at
-      6b95f1c434a319fb66e946309e17df771a4e3be2, including the accepted fixes
-      from `#2300`, `#2307`, and `#2308`, and reclassified every residual file
-      and test hunk against the revised invariant.
+      b74fbb2806abb8db01557846ec94d34af8d07ef0, including the accepted fixes
+      from `#2300`, `#2307`, and `#2308` and the placement/routing split in
+      `#2316`, and reclassified every residual file and test hunk against the
+      revised invariant.
 - [x] (2026-09-01) Pruned merged and focused duplicates, closed findings,
       malformed-IR defenses, generic pass-entry validation, the unsupported
       shared depth policy, and unproved traversal replacements. The remaining
@@ -136,7 +137,7 @@ after human review, with a regression that demonstrates the supported contract.
       proof that rejected valid benchmark programs and a registration-only
       assertion without an executed failure case.
 - [x] (2026-09-01) Reduced the latest-main delta from the historical 118 files
-      and 14,011 changed lines to 77 files and 10,932 changed lines. The 3,079
+      and 14,011 changed lines to 77 files and 10,961 changed lines. The 3,050
       removed lines are merged/focused duplicates, closed findings, invalid-IR
       handling, speculative traversal/depth policies, and their tests.
 - [x] (2026-09-01) Built the reconciled branch with LLVM/MLIR 23.1.0 and passed
@@ -405,7 +406,7 @@ removed implementation and reproducer. The current delta keeps code and tests
 only for valid, unextracted findings. The ledger below also preserves ownership
 of extracted findings. All residual production, test, TableGen, CMake, binding,
 documentation, and tool changes were reread against current `main` at
-`edd2659cea830513f90990e8b88cb14911da32bc`.
+`b74fbb2806abb8db01557846ec94d34af8d07ef0`.
 
 The items below are findings, not approval of the historical implementation.
 Each unextracted finding needs a focused extraction from current `main`, a

@@ -118,15 +118,14 @@ def QuantumLoopUnroll
 
 def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
-  let summary = "This pass ensures that a program meets the connectivity "
-                "constraints of a target architecture.";
+  let summary = "Place and route a program for an explicit target topology";
   let description = [{
     This pass maps top-level scalar and tensor-backed dynamically allocated
     qubits in a quantum program to the static sites of a `CompilerTarget`. It
-    uses only the target's undirected coupling topology: arbitrary one-qubit
-    operations pass through, and every two-qubit operation is routed to adjacent
-    target vertices. Higher-arity unitaries must be decomposed before mapping.
-    Target-defined site identifiers are retained in the resulting
+    requires an explicit undirected coupling topology: arbitrary one-qubit
+    operations pass through, and every two-qubit operation is routed to
+    adjacent target vertices. Higher-arity unitaries must be decomposed before
+    mapping. Target-defined site identifiers are retained in the resulting
     `qco.static` operations.
 
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
