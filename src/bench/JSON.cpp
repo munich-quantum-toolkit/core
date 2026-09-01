@@ -18,6 +18,7 @@
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QPE.hpp"
+#include "bench/Teleportation.hpp"
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 
@@ -461,6 +462,13 @@ parseMultiplexerParameters(const Json& parameters,
   }
 }
 
+[[nodiscard]] Teleportation
+parseTeleportationParameters(const Json& parameters,
+                             const std::string_view source) {
+  rejectUnknownKeys(parameters, {}, source, "$/parameters");
+  return Teleportation{};
+}
+
 [[nodiscard]] std::string_view topologyName(const GHZTopology topology) {
   return topology == GHZTopology::Linear ? "linear" : "star";
 }
@@ -534,6 +542,10 @@ parseMultiplexerParameters(const Json& parameters,
   };
 }
 
+[[nodiscard]] Json parametersJSON(const Teleportation&) {
+  return Json::object();
+}
+
 [[nodiscard]] Json referenceJSON(const BV& benchmark) {
   return {
       {"kind", "analytic"},
@@ -590,6 +602,16 @@ parseMultiplexerParameters(const Json& parameters,
   return {
       {"kind", "analytic"},
       {"model", "qpe_dirichlet"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"version", 1},
+  };
+}
+
+[[nodiscard]] Json referenceJSON(const Teleportation& benchmark) {
+  return {
+      {"kind", "analytic"},
+      {"model", "teleportation"},
       {"outcome_order", "big_endian"},
       {"output", benchmark.output().name},
       {"version", 1},
@@ -912,6 +934,14 @@ template <class Benchmark>
           },
       },
       {"required", {"precision", "phase"}},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json teleportationInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<Teleportation>({
+      {"additionalProperties", false},
+      {"properties", Json::object()},
       {"type", "object"},
   });
 }
