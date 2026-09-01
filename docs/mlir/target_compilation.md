@@ -34,14 +34,23 @@ metadata are unknown unless the caller states them:
 target = CompilerTarget(
     3,
     connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
-    native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    native_operations=CompilerTarget.NativeOperations([
+        CompilerTarget.Operation("u", arity=1, num_parameters=3),
+        CompilerTarget.Operation("cx", arity=2, num_parameters=0),
+        CompilerTarget.Operation("measure", arity=1, num_parameters=0),
+        CompilerTarget.Operation("reset", arity=1, num_parameters=0),
+    ]),
 )
 ```
 
 Use `CompilerTarget.Connectivity.all_to_all()` for an all-to-all target. An
-empty `CompilerTarget.NativeOperations([])` means that no operation is native.
-The default-constructed metadata objects mean that the corresponding support is
-unknown; target compilation rejects an unknown property when a pass needs it.
+empty `CompilerTarget.NativeOperations([])` reports that no quantum operation is
+native. It can be used with passes that need only topology, but target
+compilation cannot lower quantum operations without a synthesis basis. Use
+`CompilerTarget.NativeOperations.unrestricted()` only when the target accepts
+every operation. The default-constructed metadata objects mean that the
+corresponding support is unknown; target compilation rejects an unknown property
+when a pass needs it.
 
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` to apply target
 compilation to an existing QCO program. Compilation runs in place. If a pass

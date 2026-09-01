@@ -137,6 +137,26 @@ TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
   EXPECT_EQ(neighbours, (std::vector<size_t>{0, 2}));
 }
 
+TEST(CompilerTargetTest, PreservesFullNonnegativeSiteIdDomain) {
+  constexpr auto maxSite = std::numeric_limits<SiteId>::max();
+  constexpr auto nextSite = maxSite - 1;
+  auto siteTuple = valid(SiteTuple::create({maxSite, nextSite}));
+  std::vector sites{valid(Site::create(maxSite)),
+                    valid(Site::create(nextSite))};
+  const auto target = valid(Target::create(
+      std::move(sites), Connectivity::fromCouplings({{maxSite, nextSite}}),
+      NativeOperations::fromOperations(
+          {valid(Operation::create("cx", 2, 0, {std::move(siteTuple)}))})));
+
+  EXPECT_EQ(target.siteIds(), (llvm::ArrayRef<SiteId>{maxSite, nextSite}));
+  EXPECT_EQ(target.vertexForSite(maxSite), 0);
+  EXPECT_EQ(target.vertexForSite(nextSite), 1);
+  EXPECT_EQ(target.couplings(),
+            (llvm::ArrayRef<Coupling>{{nextSite, maxSite}}));
+  EXPECT_EQ(target.operations().front().siteTuples().front().sites(),
+            (llvm::ArrayRef<SiteId>{maxSite, nextSite}));
+}
+
 TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
   std::vector sites{valid(Site::create(7)), valid(Site::create(2)),
                     valid(Site::create(11))};

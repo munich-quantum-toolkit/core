@@ -1517,38 +1517,42 @@ private:
     // using the restore (scf::ForOp, scf::While), converge (IfOp), and vote
     // and restore (IndexSwitchOp) strategies.
 
-    Layout exit =
-        TypeSwitch<Operation*, Layout>(op)
-            .Case<scf::ForOp>([&](scf::ForOp) {
-              const auto swaps = restore(children[0].layout, parent.layout);
-              insertSWAPs<Mode>(swaps, children[0], totalStats, rewriter);
-              return parent.layout;
-            })
-            .template Case<scf::WhileOp>([&](scf::WhileOp) {
-              const auto swaps = restore(children[1].layout, parent.layout);
-              insertSWAPs<Mode>(swaps, children[1], totalStats, rewriter);
-              // The scf::YieldOp is the terminator in the before region and
-              // thus determines the final output layout.
-              return children[0].layout;
-            })
-            .template Case<IfOp>([&](IfOp) {
-              const auto [convergedLayout, fst, snd] =
-                  converge(children[0].layout, children[1].layout);
-              insertSWAPs<Mode>(fst, children[0], totalStats, rewriter);
-              insertSWAPs<Mode>(snd, children[1], totalStats, rewriter);
-              return convergedLayout;
-            })
-            .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
-              auto compromise = driveby(map_range(
-                  children, [](const RoutingBundle& b) -> const Layout& {
-                    return b.layout;
-                  }));
-              for (RoutingBundle& child : children) {
-                const auto swaps = restore(child.layout, compromise);
-                insertSWAPs<Mode>(swaps, child, totalStats, rewriter);
-              }
-              return compromise;
-            });
+    Layout exit = parent.layout;
+    if (target->connectivityKind() !=
+        CompilerTarget::Connectivity::Kind::Unknown) {
+      exit =
+          TypeSwitch<Operation*, Layout>(op)
+              .Case<scf::ForOp>([&](scf::ForOp) {
+                const auto swaps = restore(children[0].layout, parent.layout);
+                insertSWAPs<Mode>(swaps, children[0], totalStats, rewriter);
+                return parent.layout;
+              })
+              .template Case<scf::WhileOp>([&](scf::WhileOp) {
+                const auto swaps = restore(children[1].layout, parent.layout);
+                insertSWAPs<Mode>(swaps, children[1], totalStats, rewriter);
+                // The scf::YieldOp is the terminator in the before region and
+                // thus determines the final output layout.
+                return children[0].layout;
+              })
+              .template Case<IfOp>([&](IfOp) {
+                const auto [convergedLayout, fst, snd] =
+                    converge(children[0].layout, children[1].layout);
+                insertSWAPs<Mode>(fst, children[0], totalStats, rewriter);
+                insertSWAPs<Mode>(snd, children[1], totalStats, rewriter);
+                return convergedLayout;
+              })
+              .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
+                auto compromise = driveby(map_range(
+                    children, [](const RoutingBundle& b) -> const Layout& {
+                      return b.layout;
+                    }));
+                for (RoutingBundle& child : children) {
+                  const auto swaps = restore(child.layout, compromise);
+                  insertSWAPs<Mode>(swaps, child, totalStats, rewriter);
+                }
+                return compromise;
+              });
+    }
 
     if constexpr (Mode == RoutingMode::Hot) {
       // Realign terminator values to ensure that i-th input qubit and the
