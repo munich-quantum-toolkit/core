@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -55,105 +54,39 @@ valueToConstantAttr(Value value,
     return it->second;
   }
 
-  struct Frame {
-    Value value;
-    Operation* operation;
-    unsigned nextOperand = 0;
-  };
-
-  SmallVector<Frame> worklist;
-  llvm::SmallDenseSet<Value> active;
-  const auto schedule = [&](Value candidate) {
-    if (cache.contains(candidate)) {
-      return;
-    }
-    Attribute attr;
-    if (matchPattern(candidate, m_Constant(&attr))) {
-      cache[candidate] = attr;
-      return;
-    }
-    Operation* operation = candidate.getDefiningOp();
-    if (operation == nullptr || operation->getNumRegions() != 0 ||
-        !isPure(operation)) {
-      cache[candidate] = std::nullopt;
-      return;
-    }
-    active.insert(candidate);
-    worklist.push_back({candidate, operation});
-  };
-
-  schedule(value);
-  while (!worklist.empty()) {
-    auto& frame = worklist.back();
-    bool scheduledOperand = false;
-    while (frame.nextOperand < frame.operation->getNumOperands()) {
-      Value operand = frame.operation->getOperand(frame.nextOperand++);
-      if (cache.contains(operand)) {
-        continue;
-      }
-      if (active.contains(operand)) {
-        cache[operand] = std::nullopt;
-        continue;
-      }
-      schedule(operand);
-      scheduledOperand = true;
-      break;
-    }
-    if (scheduledOperand) {
-      continue;
-    }
-
-    SmallVector<Attribute> operands;
-    operands.reserve(frame.operation->getNumOperands());
-    bool failedOperand = false;
-    for (Value operand : frame.operation->getOperands()) {
-      const auto it = cache.find(operand);
-      if (it == cache.end() || !it->second) {
-        failedOperand = true;
-        break;
-      }
-      operands.push_back(*it->second);
-    }
-    if (failedOperand) {
-      active.erase(frame.value);
-      cache[frame.value] = std::nullopt;
-      worklist.pop_back();
-      continue;
-    }
-
-    SmallVector<OpFoldResult, 1> results;
-    if (failed(frame.operation->fold(operands, results)) ||
-        results.size() != 1) {
-      active.erase(frame.value);
-      cache[frame.value] = std::nullopt;
-      worklist.pop_back();
-      continue;
-    }
-    if (auto resultAttr = dyn_cast_if_present<Attribute>(results.front())) {
-      active.erase(frame.value);
-      cache[frame.value] = resultAttr;
-      worklist.pop_back();
-      continue;
-    }
-
-    auto resultValue = dyn_cast_if_present<Value>(results.front());
-    if (!resultValue || resultValue == frame.value ||
-        active.contains(resultValue)) {
-      active.erase(frame.value);
-      cache[frame.value] = std::nullopt;
-      worklist.pop_back();
-      continue;
-    }
-    if (!cache.contains(resultValue)) {
-      schedule(resultValue);
-      continue;
-    }
-    active.erase(frame.value);
-    cache[frame.value] = cache.lookup(resultValue);
-    worklist.pop_back();
+  Attribute attr;
+  if (matchPattern(value, m_Constant(&attr))) {
+    return cache[value] = attr;
   }
 
-  return cache.lookup(value);
+  Operation* operation = value.getDefiningOp();
+  if (operation == nullptr || operation->getNumRegions() != 0 ||
+      !isPure(operation)) {
+    return cache[value] = std::nullopt;
+  }
+
+  SmallVector<Attribute> operands;
+  operands.reserve(operation->getNumOperands());
+  for (Value operand : operation->getOperands()) {
+    const auto folded = valueToConstantAttr(operand, cache);
+    if (!folded) {
+      return cache[value] = std::nullopt;
+    }
+    operands.push_back(*folded);
+  }
+
+  SmallVector<OpFoldResult, 1> results;
+  if (failed(operation->fold(operands, results)) || results.size() != 1) {
+    return cache[value] = std::nullopt;
+  }
+  std::optional<Attribute> folded;
+  if (auto resultAttr = dyn_cast_if_present<Attribute>(results.front())) {
+    folded = resultAttr;
+  } else if (auto resultValue = dyn_cast_if_present<Value>(results.front())) {
+    /* Identity-style folds can return an existing SSA value. */
+    folded = valueToConstantAttr(resultValue, cache);
+  }
+  return cache[value] = folded;
 }
 
 std::optional<Attribute> valueToConstantAttr(Value value) {

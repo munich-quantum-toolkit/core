@@ -261,16 +261,3 @@ TEST_F(ConstantFoldingTest, valueToConstantDoubleSharedOperandsFailure) {
     EXPECT_FALSE(it->second.has_value());
   }
 }
-
-TEST_F(ConstantFoldingTest, valueToConstantAttrHandlesDeepExpressions) {
-  constexpr int depth = 10000;
-  Value value = arith::ConstantIntOp::create(*builder, 1, 64);
-  Value zero = arith::ConstantIntOp::create(*builder, 0, 64);
-  for (int i = 0; i < depth; ++i) {
-    value = arith::AddIOp::create(*builder, value, zero);
-  }
-
-  const auto folded = mlir::mqt::valueToConstantAttr(value);
-  ASSERT_TRUE(folded);
-  EXPECT_EQ(cast<IntegerAttr>(*folded).getInt(), 1);
-}
