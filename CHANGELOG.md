@@ -12,10 +12,12 @@ releases may include breaking changes.
 
 ### Removed
 
-- 💥 Remove the optional MLIR compiler subsystem and the entire MQT Core QIR
-  execution stack, including the runtime, JIT, standalone runner, DDSIM
-  integration, build integration, tests, and documentation. ([#2314])
-  ([**@denialhaag**])
+- 💥 Remove MQT Core's optional MLIR stack, including its dialects, conversions,
+  passes, tools, build integration, tests, documentation, and dependency on
+  LLVM. ([#2314]) ([**@denialhaag**])
+- 💥 Remove the entire MQT Core QIR stack, including its runtime, JIT,
+  standalone runner, DDSIM integration, build integration, tests, and
+  documentation. ([#2314]) ([**@denialhaag**])
 
 ## [3.9.2] - 2026-08-26
 

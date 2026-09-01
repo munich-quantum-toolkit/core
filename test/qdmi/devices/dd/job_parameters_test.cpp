@@ -140,7 +140,7 @@ TEST(JobParameters, ProgramFormatSupport) {
               QDMI_SUCCESS);
   }
 
-  // Unsupported → NOTSUPPORTED
+  // Not supported
   for (QDMI_Program_Format fmt : {
            QDMI_PROGRAM_FORMAT_QIRBASESTRING,
            QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
