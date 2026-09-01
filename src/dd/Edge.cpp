@@ -83,7 +83,8 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
 
 template <class Node> auto Edge<Node>::size() const -> std::size_t {
   static constexpr std::size_t NODECOUNT_BUCKETS = 200000U;
-  static std::unordered_set<const Node*> visited{NODECOUNT_BUCKETS};
+  static thread_local std::unordered_set<const Node*> visited{
+      NODECOUNT_BUCKETS};
   visited.max_load_factor(10);
   visited.clear();
   return size(visited);

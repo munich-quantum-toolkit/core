@@ -20,7 +20,6 @@
 #include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
 
-#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <ios>
@@ -44,10 +43,11 @@ Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
 
   if (numQubits == 0U) {
     auto dataPtr = std::make_unique<std::complex<dd::fp>>(m.w);
-    auto* data = dataPtr.release();
+    auto* const data = dataPtr.get();
     const nb::capsule owner(data, [](void* ptr) noexcept {
       delete static_cast<std::complex<dd::fp>*>(ptr);
     });
+    [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
     return Matrix(data, {1, 1}, owner);
   }
 
@@ -60,10 +60,11 @@ Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
         dataPtr[(i * dim) + j] = c;
       },
       numQubits, threshold);
-  auto* data = dataPtr.release();
+  auto* const data = dataPtr.get();
   const nb::capsule owner(data, [](void* ptr) noexcept {
     delete[] static_cast<std::complex<dd::fp>*>(ptr);
   });
+  [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
   return Matrix(data, {dim, dim}, owner);
 }
 

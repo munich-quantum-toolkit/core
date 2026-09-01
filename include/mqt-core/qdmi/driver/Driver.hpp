@@ -15,10 +15,12 @@
 #include <qdmi/client.h>
 #include <qdmi/device.h>
 
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -215,6 +217,8 @@ private:
   QDMI_Device_Session deviceSession_ = nullptr;
   /// Client-facing wrappers for direct child devices.
   std::vector<std::unique_ptr<QDMI_Device_impl_d>> childDevices_;
+  /// Guards the owned job wrappers.
+  std::mutex jobsMutex_;
   /**
    * @brief Map of jobs to their corresponding unique pointers of
    * QDMI_Job_impl_d objects.
@@ -444,6 +448,15 @@ class Driver final : public Singleton<Driver> {
   /// @brief Private constructor to enforce the singleton pattern.
   Driver();
 
+  /// Guards all mutable driver state below.
+  mutable std::mutex stateMutex_;
+
+  /// Wakes callers waiting for a persistent device to finish opening.
+  std::condition_variable stateChanged_;
+
+  /// Ensures that the configured client catalog is materialized once.
+  std::once_flag clientCatalogOnce_;
+
   /**
    * @brief Vector of unique pointers to QDMI_Device_impl_d objects.
    */
@@ -461,11 +474,11 @@ class Driver final : public Singleton<Driver> {
   /// @brief Materialized devices exposed through the client API.
   std::vector<QDMI_Device> clientDevices_;
 
-  /// @brief Whether the configured client device catalog has been opened.
-  bool clientCatalogMaterialized_ = false;
-
   /// @brief Opened devices indexed by their stable registration ID.
   std::unordered_map<std::string, QDMI_Device> openedDevices_;
+
+  /// @brief Device IDs whose persistent sessions are being opened.
+  std::unordered_set<std::string> openingDeviceIds_;
 
   /**
    * @brief Map of sessions to their corresponding unique pointers to

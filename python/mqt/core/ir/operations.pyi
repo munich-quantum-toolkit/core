@@ -357,7 +357,7 @@ class Control:
         type_: The type of the control.
     """
 
-    def __init__(self, qubit: int, type_: Type = ...) -> None: ...
+    def __init__(self, qubit: int, type_: Control.Type = ...) -> None: ...
 
     class Type(enum.Enum):
         """Enumeration of control types."""

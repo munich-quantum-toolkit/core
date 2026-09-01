@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <numeric>
 #include <ostream>
 #include <stdexcept>
@@ -53,6 +54,7 @@ struct Variable {
   static inline std::unordered_map<std::string, std::size_t> registered{};
   static inline std::unordered_map<std::size_t, std::string> names{};
   static inline std::size_t nextId{};
+  static inline std::mutex registryMutex{};
   // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
   /**
@@ -65,7 +67,7 @@ struct Variable {
    * @brief Get the name of the variable.
    * @return Name of the variable.
    */
-  [[nodiscard]] std::string getName() const noexcept;
+  [[nodiscard]] std::string getName() const;
 
   /**
    * @brief Check whether this variable's id is equal to another variable's id.
@@ -109,7 +111,7 @@ private:
  * @brief Hash function for the Variable struct.
  */
 template <> struct std::hash<sym::Variable> {
-  std::size_t operator()(const sym::Variable& var) const noexcept {
+  std::size_t operator()(const sym::Variable& var) const {
     return std::hash<std::string>()(var.getName());
   }
 };

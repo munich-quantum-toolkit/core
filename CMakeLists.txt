@@ -48,13 +48,8 @@ if(BUILD_MQT_CORE_BINDINGS)
       ON
       CACHE BOOL "Prevent multiple searches for Python and instead cache the results.")
 
-  if(DISABLE_GIL)
-    message(STATUS "Disabling Python GIL")
-    add_compile_definitions(Py_GIL_DISABLED)
-  endif()
-
   # top-level call to find Python
-  find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module
+  find_package(Python 3.11 REQUIRED COMPONENTS Interpreter Development.Module
                                                ${SKBUILD_SABI_COMPONENT})
 endif()
 

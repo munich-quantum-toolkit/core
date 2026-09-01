@@ -17,6 +17,24 @@ configurations.
 The bundled DDSIM QDMI device no longer accepts QIR Base or Adaptive Profile
 programs in string or module form. Use QASM2 or QASM3 with this device.
 
+### Python 3.11 and split-mode wheels
+
+MQT Core now requires Python 3.11 or newer. Upgrade the Python environment
+before installing this release.
+
+MQT Core now uses nanobind 3 split mode. One `cp311-abi3` wheel supports
+GIL-enabled CPython 3.11 and newer. Free-threaded support starts with CPython
+3.15 and uses a separate `cp315-abi3t` wheel. MQT Core no longer publishes
+free-threaded CPython 3.13 or 3.14 wheels.
+
+nanobind 3 changes the nanobind ABI. Rebuild downstream native Python extensions
+that use MQT Core's nanobind-bound C++ types. Pure Python consumers do not need
+to recompile anything.
+
+The Python bindings depend on `nanobind-backend`, which supplies the
+interpreter-specific nanobind runtime. This dependency does not change the C++
+API or the Python import paths.
+
 ## [3.9.2]
 
 ### Optional QDMI shot counts
