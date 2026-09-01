@@ -19,5 +19,5 @@ add_test(
   COMMAND
     ${CMAKE_COMMAND} "-DMQT_CC=$<TARGET_FILE:mqt-cc>"
     "-DNONLINEAR_QCO_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/nonlinear.qco.mlir"
-    "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/output-$<CONFIG>" -P
+    "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/invalid-output-$<CONFIG>" -P
     "${CMAKE_CURRENT_SOURCE_DIR}/verify_invalid_mlir.cmake")
