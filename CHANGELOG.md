@@ -114,9 +114,6 @@ releases may include breaking changes.
 - 💥 Update QIR execution for QIR 2.1, isolated runtimes, deterministic QDMI
   sampling, and safe statevector extraction ([#2035], [#2036], [#2246])
   ([**@burgholzer**], [**@denialhaag**])
-- 💥 Require LLVM/MLIR 22.1 and QIR support in every MQT Core source build,
-  build MLIR by default, and remove the corresponding build options ([#1356],
-  [#1549], [#1953]) ([**@burgholzer**], [**@denialhaag**])
 - 🔧 Build the LLVM/MLIR 23.1 compiler infrastructure and DDSIM QIR support by
   default, with one build option for source builds that omit both parts
   ([#1356], [#1549], [#1953], [#2284], [#2298]) ([**@burgholzer**],
