@@ -70,11 +70,297 @@ using namespace mlir::qtensor;
 
 namespace {
 
+using Wires = SmallVector<WireIterator>;
+
+struct WireInfos {
+  /// Return the mapped wire index of a program index.
+  [[nodiscard]] size_t lookupIndex(const size_t prog) const {
+    assert(containsProgram(prog) && "program index is not mapped");
+    return programToIndex_[prog];
+  }
+
+  /// Return the mapped program index of a wire index.
+  [[nodiscard]] size_t lookupProgram(const size_t index) const {
+    return indexToProgram_[index];
+  }
+
+  /// Bidirectionally map a wire index to a program index.
+  /// Overwrites existing mappings.
+  void insertOrUpdate(const size_t index, const size_t prog) {
+    if (index >= indexToProgram_.size()) {
+      indexToProgram_.resize(index + 1);
+    }
+    if (prog >= programToIndex_.size()) {
+      programToIndex_.resize(prog + 1);
+    }
+    indexToProgram_[index] = prog;
+    programToIndex_[prog] = index;
+    programs_.insert(prog);
+  }
+
+  /// Return whether a program index has a corresponding wire.
+  [[nodiscard]] bool containsProgram(const size_t prog) const {
+    return programs_.contains(prog);
+  }
+
+  /// Swap two program indices.
+  void swap(const size_t prog0, const size_t prog1) {
+    const auto i0 = lookupIndex(prog0);
+    const auto i1 = lookupIndex(prog1);
+    std::swap(programToIndex_[prog0], programToIndex_[prog1]);
+    std::swap(indexToProgram_[i0], indexToProgram_[i1]);
+  }
+
+  /// Return the number of index-wire mappings.
+  [[nodiscard]] size_t size() const { return indexToProgram_.size(); }
+
+private:
+  /// Maps the i-th wire index to a program index.
+  SmallVector<size_t> indexToProgram_;
+  /// Maps a program index to the i-th wire index.
+  SmallVector<size_t> programToIndex_;
+  /// Program indices that have corresponding wires.
+  DenseSet<size_t> programs_;
+};
+
+struct TensorAllocation {
+  qtensor::AllocOp allocation;
+  SmallVector<Operation*> operations;
+};
+
+struct Computation {
+  Wires wires;
+  WireInfos infos;
+  SmallVector<AllocOp> scalarAllocations;
+  SmallVector<TensorAllocation> tensorAllocations;
+};
+
+} // namespace
+
+/// Verify that every non-barrier unitary can be routed by the mapping pass.
+static LogicalResult validateRoutingOperations(func::FuncOp func) {
+  const auto result =
+      func.walk([](UnitaryOpInterface unitary) {
+        if (isa<BarrierOp>(unitary) || unitary.getNumQubits() <= 2) {
+          return WalkResult::advance();
+        }
+        unitary.emitError()
+            << "cannot route an operation acting on " << unitary.getNumQubits()
+            << " qubits; decompose it to one- and two-qubit operations first";
+        return WalkResult::interrupt();
+      });
+  return result.wasInterrupted() ? failure() : success();
+}
+
+/// Discover the dynamic qubit roots of the entry function.
+///
+/// Scalar `qco.alloc` operations define program qubits directly. For
+/// `qtensor` allocations, placement assumes an extraction and insertion phase
+/// where the i-th extract defines the i-th tensor-backed program qubit. Thus,
+/// supported tensor programs have the following structure:
+///
+///   T ⨉ [qtensor::AllocOp]
+/// → N ⨉ [qtensor::ExtractOp]
+/// → (Computation)
+/// → N ⨉ [qtensor::InsertOp]
+/// → T ⨉ [qtensor::DeallocOp]
+///
+/// If any of the above assumptions are violated, the function returns
+/// failure without changing the IR.
+static FailureOr<Computation> discoverComputation(func::FuncOp func) {
+  Computation computation;
+
+  const auto discovery = func.walk([&](Operation* op) {
+    if (!isa<AllocOp, qtensor::AllocOp>(op)) {
+      return WalkResult::advance();
+    }
+    if (op->getParentRegion() == &func.getFunctionBody()) {
+      TypeSwitch<Operation*>(op)
+          .Case<AllocOp>([&](AllocOp alloc) {
+            computation.scalarAllocations.emplace_back(alloc);
+          })
+          .Case<qtensor::AllocOp>([&](qtensor::AllocOp alloc) {
+            computation.tensorAllocations.emplace_back(
+                TensorAllocation{.allocation = alloc});
+          });
+      return WalkResult::advance();
+    }
+
+    op->emitError()
+        << "target placement requires dynamic qubit allocations in the entry "
+           "function body";
+    return WalkResult::interrupt();
+  });
+
+  if (discovery.wasInterrupted()) {
+    return failure();
+  }
+
+  for (auto alloc : computation.scalarAllocations) {
+    const auto index = computation.wires.size();
+    computation.wires.emplace_back(alloc.getResult());
+    computation.infos.insertOrUpdate(index, index);
+  }
+
+  for (auto& tensor : computation.tensorAllocations) {
+    bool isInitPhase = true;
+    TensorIterator it(tensor.allocation.getResult());
+    for (; it != std::default_sentinel; ++it) {
+      Operation* operation = it.operation();
+      tensor.operations.emplace_back(operation);
+
+      if (auto extract = dyn_cast<ExtractOp>(operation)) {
+        if (!isInitPhase) {
+          return func.emitError() << "must extract and insert all qubits at "
+                                     "once";
+        }
+
+        auto qubit = extract.getResult();
+        const auto index = computation.wires.size();
+
+        computation.wires.emplace_back(qubit);
+        computation.infos.insertOrUpdate(index, index);
+        continue;
+      }
+
+      if (isa<InsertOp>(operation)) {
+        isInitPhase = false;
+      }
+    }
+  }
+
+  return computation;
+}
+
+/// Check that the target has one site for every discovered program qubit.
+static LogicalResult checkCapacity(func::FuncOp func,
+                                   const CompilerTarget& target,
+                                   const Computation& computation) {
+  if (computation.wires.size() <= target.numQubits()) {
+    return success();
+  }
+  return func.emitError() << "requires " << computation.wires.size()
+                          << " qubits, but the target supports "
+                          << target.numQubits();
+}
+
+/// Replace dynamic qubit roots with the target sites selected by `layout`.
+///
+/// Analogously to `discoverComputation`, the i-th extract operation defines
+/// the i-th program qubit. The function assumes that discovery and capacity
+/// checks succeeded.
+static std::pair<Wires, WireInfos>
+applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
+               Computation& computation, IRRewriter& rewriter) {
+  SmallVector<Value> staticQubits;
+  staticQubits.reserve(layout.nHardwareQubits());
+
+  rewriter.setInsertionPointToStart(&body.front());
+  for (size_t hw = 0; hw < layout.nHardwareQubits(); ++hw) {
+    auto op =
+        StaticOp::create(rewriter, body.getLoc(), target.siteForVertex(hw));
+    staticQubits.emplace_back(op.getQubit());
+    rewriter.setInsertionPointAfter(op);
+  }
+
+  Wires wires;
+  WireInfos infos;
+
+  for (auto alloc : computation.scalarAllocations) {
+    const auto prog = wires.size();
+    auto qubit = staticQubits[layout.getHardwareIndex(prog)];
+
+    rewriter.replaceAllUsesWith(alloc.getResult(), qubit);
+    rewriter.eraseOp(alloc);
+
+    wires.emplace_back(qubit);
+    infos.insertOrUpdate(prog, prog);
+  }
+
+  for (auto& tensor : computation.tensorAllocations) {
+    for (Operation* operation : tensor.operations) {
+      TypeSwitch<Operation*>(operation)
+          .Case<ExtractOp>([&](auto op) {
+            const auto prog = wires.size();
+            auto qubit = staticQubits[layout.getHardwareIndex(prog)];
+
+            rewriter.replaceAllUsesWith(op.getResult(), qubit);
+            rewriter.replaceAllUsesWith(op.getOutTensor(), op.getTensor());
+            rewriter.eraseOp(op);
+
+            wires.emplace_back(qubit);
+            infos.insertOrUpdate(prog, prog);
+          })
+          .Case<InsertOp>([&](auto op) {
+            rewriter.setInsertionPointAfter(op);
+            SinkOp::create(rewriter, op.getLoc(), op.getScalar());
+            rewriter.replaceAllUsesWith(op.getResult(), op.getDest());
+            rewriter.eraseOp(op);
+          })
+          .Case<DeallocOp>([&](auto op) { rewriter.eraseOp(op); });
+    }
+
+    rewriter.eraseOp(tensor.allocation);
+  }
+
+  rewriter.setInsertionPoint(body.back().getTerminator());
+  for (size_t prog = wires.size(); prog < layout.nHardwareQubits(); ++prog) {
+    const auto hw = layout.getHardwareIndex(prog);
+    auto qubit = staticQubits[hw];
+
+    wires.emplace_back(qubit);
+    infos.insertOrUpdate(prog, prog);
+    SinkOp::create(rewriter, body.getLoc(), qubit);
+  }
+
+  return {wires, infos};
+}
+
+namespace {
+
+struct PlacementPass final
+    : PassWrapper<PlacementPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PlacementPass)
+
+  explicit PlacementPass(const CompilerTarget& compilerTarget)
+      : target(compilerTarget) {}
+
+  void getDependentDialects(DialectRegistry& registry) const override {
+    registry.insert<QCODialect>();
+  }
+
+protected:
+  void runOnOperation() override {
+    auto moduleOp = getOperation();
+    auto func = mqt::getEntryPoint(moduleOp);
+    if (!func) {
+      moduleOp.emitError() << "does not contain an entry point function";
+      signalPassFailure();
+      return;
+    }
+
+    auto computation = discoverComputation(func);
+    if (failed(computation) ||
+        failed(checkCapacity(func, target, *computation))) {
+      signalPassFailure();
+      return;
+    }
+
+    const auto layout = Layout::fromMapping(
+        llvm::to_vector(llvm::seq(computation->wires.size())));
+    IRRewriter rewriter(&getContext());
+    applyPlacement(func.getFunctionBody(), target, layout, *computation,
+                   rewriter);
+  }
+
+private:
+  CompilerTarget target;
+};
+
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
   using IndexPairType = std::pair<size_t, size_t>;
   using Window = SmallVector<IndexPairType>;
-  using Wires = SmallVector<WireIterator>;
 
   enum class RoutingMode : bool { Cold, Hot };
 
@@ -83,70 +369,6 @@ private:
     Operation* op = nullptr;
     /// Indices into a wire vector, where the order of indices has no meaning.
     SmallVector<size_t> indices;
-  };
-
-  struct WireInfos {
-    /// Return the mapped wire index of a program index.
-    [[nodiscard]] size_t lookupIndex(const size_t prog) const {
-      assert(containsProgram(prog) && "program index is not mapped");
-      return programToIndex_[prog];
-    }
-
-    /// Return the mapped program index of a wire index.
-    [[nodiscard]] size_t lookupProgram(const size_t index) const {
-      return indexToProgram_[index];
-    }
-
-    /// Bidirectionally map a wire index to a program index.
-    /// Overwrites existing mappings.
-    void insertOrUpdate(const size_t index, const size_t prog) {
-      if (index >= indexToProgram_.size()) {
-        indexToProgram_.resize(index + 1);
-      }
-      if (prog >= programToIndex_.size()) {
-        programToIndex_.resize(prog + 1);
-      }
-      indexToProgram_[index] = prog;
-      programToIndex_[prog] = index;
-      programs_.insert(prog);
-    }
-
-    /// Return whether a program index has a corresponding wire.
-    [[nodiscard]] bool containsProgram(const size_t prog) const {
-      return programs_.contains(prog);
-    }
-
-    /// Swap two program indices.
-    void swap(const size_t prog0, const size_t prog1) {
-      const auto i0 = lookupIndex(prog0);
-      const auto i1 = lookupIndex(prog1);
-      std::swap(programToIndex_[prog0], programToIndex_[prog1]);
-      std::swap(indexToProgram_[i0], indexToProgram_[i1]);
-    }
-
-    /// Return the number of index-wire mappings.
-    [[nodiscard]] size_t size() const { return indexToProgram_.size(); }
-
-  private:
-    /// Maps the i-th wire index to a program index.
-    SmallVector<size_t> indexToProgram_;
-    /// Maps a program index to the i-th wire index.
-    SmallVector<size_t> programToIndex_;
-    /// Program indices that have corresponding wires.
-    DenseSet<size_t> programs_;
-  };
-
-  struct TensorAllocation {
-    qtensor::AllocOp allocation;
-    SmallVector<Operation*> operations;
-  };
-
-  struct Computation {
-    Wires wires;
-    WireInfos infos;
-    SmallVector<AllocOp> scalarAllocations;
-    SmallVector<TensorAllocation> tensorAllocations;
-    bool hasTwoQubitOperations{false};
   };
 
   /// Statistics collected while routing.
@@ -354,43 +576,46 @@ protected:
       llvm::reportFatalUsageError("No compiler target specified!");
     }
 
-    IRRewriter rewriter(&getContext());
-
-    auto mod = getOperation();
-    auto func = mqt::getEntryPoint(mod);
-    if (!func) {
-      mod.emitError() << "does not contain an entry point function";
+    auto moduleOp = getOperation();
+    if (!target->hasExplicitTopology()) {
+      moduleOp.emitError()
+          << "place-and-route requires an explicit target topology";
       signalPassFailure();
       return;
     }
 
-    auto comp = discoverComputation(func);
-    if (failed(comp)) {
+    auto func = mqt::getEntryPoint(moduleOp);
+    if (!func) {
+      moduleOp.emitError() << "does not contain an entry point function";
+      signalPassFailure();
+      return;
+    }
+
+    if (failed(validateRoutingOperations(func))) {
+      signalPassFailure();
+      return;
+    }
+
+    auto computation = discoverComputation(func);
+    if (failed(computation) ||
+        failed(checkCapacity(func, *target, *computation))) {
       signalPassFailure();
       return;
     }
 
     auto& body = func.getFunctionBody();
-    auto& wires = comp->wires;
-    auto& infos = comp->infos;
-
-    if (wires.size() > target->numQubits()) {
-      func.emitError()
-          << "requires " + Twine(wires.size()) +
-                 " qubits. However, the architecture only supports " +
-                 Twine(target->numQubits()) + " qubits.";
-      signalPassFailure();
-      return;
-    }
-
+    auto& wires = computation->wires;
+    auto& infos = computation->infos;
     auto layout = generateLayout(wires, infos);
     if (failed(layout)) {
-      func->emitError() << "failed to refine random initial layouts.";
+      func.emitError() << "failed to refine random initial layouts";
       signalPassFailure();
       return;
     }
 
-    std::tie(wires, infos) = std::move(place(body, *layout, *comp, rewriter));
+    IRRewriter rewriter(&getContext());
+    std::tie(wires, infos) = std::move(
+        applyPlacement(body, *target, *layout, *computation, rewriter));
 
     RoutingBundle bundle{.wires = std::move(wires),
                          .infos = std::move(infos),
@@ -551,181 +776,6 @@ private:
     return newWhileOp;
   }
 
-  /// Return the wires of a dynamic computation.
-  /// Scalar `qco.alloc` operations define program qubits directly. For
-  /// `qtensor` allocations, the mapping pass assumes an extraction and
-  /// insertion phase where the i-th extract defines the i-th tensor-backed
-  /// program qubit. Thus, supported tensor programs have the following
-  /// structure:
-  ///
-  ///   T ⨉ [qtensor::AllocOp]
-  /// → N ⨉ [qtensor::ExtractOp]
-  /// → (Computation)
-  /// → N ⨉ [qtensor::InsertOp]
-  /// → T ⨉ [qtensor::DeallocOp]
-  ///
-  /// If any of the above assumptions are violated, the function returns
-  /// failure.
-  static FailureOr<Computation> discoverComputation(func::FuncOp func) {
-    Computation computation;
-
-    const auto discovery = func.walk([&](Operation* op) {
-      if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
-        if (isa<BarrierOp>(op)) {
-          return WalkResult::advance();
-        }
-        if (unitary.getNumQubits() > 2) {
-          unitary.emitError()
-              << "cannot route an operation acting on "
-              << unitary.getNumQubits()
-              << " qubits; decompose it to one- and two-qubit operations "
-                 "first";
-          return WalkResult::interrupt();
-        }
-        computation.hasTwoQubitOperations |= unitary.getNumQubits() == 2;
-      }
-
-      if (!isa<AllocOp, qtensor::AllocOp>(op)) {
-        return WalkResult::advance();
-      }
-      if (op->getParentRegion() == &func.getFunctionBody()) {
-        TypeSwitch<Operation*>(op)
-            .Case<AllocOp>([&](AllocOp alloc) {
-              computation.scalarAllocations.emplace_back(alloc);
-            })
-            .Case<qtensor::AllocOp>([&](qtensor::AllocOp alloc) {
-              computation.tensorAllocations.emplace_back(
-                  TensorAllocation{.allocation = alloc});
-            });
-        return WalkResult::advance();
-      }
-
-      op->emitError()
-          << "target mapping requires dynamic qubit allocations in the entry "
-             "function body";
-      return WalkResult::interrupt();
-    });
-
-    if (discovery.wasInterrupted()) {
-      return failure();
-    }
-
-    for (auto alloc : computation.scalarAllocations) {
-      const auto index = computation.wires.size();
-      computation.wires.emplace_back(alloc.getResult());
-      computation.infos.insertOrUpdate(index, index);
-    }
-
-    for (auto& tensor : computation.tensorAllocations) {
-      bool isInitPhase = true;
-      TensorIterator it(tensor.allocation.getResult());
-      for (; it != std::default_sentinel; ++it) {
-        Operation* const operation = it.operation();
-        tensor.operations.emplace_back(operation);
-
-        if (auto extract = dyn_cast<ExtractOp>(operation)) {
-          if (!isInitPhase) {
-            return func.emitError()
-                   << "must extract and insert all qubits at once.";
-          }
-
-          auto qubit = extract.getResult();
-          const auto index = computation.wires.size();
-
-          computation.wires.emplace_back(qubit);
-          computation.infos.insertOrUpdate(index, index);
-
-          continue;
-        }
-
-        if (isa<InsertOp>(operation)) {
-          isInitPhase = false;
-          continue;
-        }
-      }
-    }
-
-    return computation;
-  }
-
-  /// Perform placement by replacing dynamic qubits with static target sites
-  /// and extending control-flow operations with target sites used for routing.
-  ///
-  /// Analogously to the discoverComputation function, the i-th extract
-  /// operation defines the i-th program qubit.
-  std::pair<Wires, WireInfos> place(Region& body, const Layout& layout,
-                                    Computation& computation,
-                                    IRRewriter& rewriter) {
-    SmallVector<Value> staticQubits;
-    staticQubits.reserve(target->numQubits());
-
-    // Create and save static qubit operations.
-    rewriter.setInsertionPointToStart(&body.front());
-    for (size_t hw = 0; hw < layout.nHardwareQubits(); ++hw) {
-      const auto site = target->siteForVertex(hw);
-      auto op = StaticOp::create(rewriter, body.getLoc(), site);
-      staticQubits.emplace_back(op.getQubit());
-      rewriter.setInsertionPointAfter(op);
-    }
-
-    Wires wires;
-    WireInfos infos;
-
-    for (auto alloc : computation.scalarAllocations) {
-      const auto prog = wires.size();
-      const auto hw = layout.getHardwareIndex(prog);
-      auto qubit = staticQubits[hw];
-
-      rewriter.replaceAllUsesWith(alloc.getResult(), qubit);
-      rewriter.eraseOp(alloc);
-
-      wires.emplace_back(qubit);
-      infos.insertOrUpdate(prog, prog);
-    }
-
-    for (auto& tensor : computation.tensorAllocations) {
-      for (Operation* const operation : tensor.operations) {
-        TypeSwitch<Operation*>(operation)
-            .Case<ExtractOp>([&](auto op) {
-              const auto prog = wires.size();
-              const auto hw = layout.getHardwareIndex(prog);
-              auto qubit = staticQubits[hw];
-
-              rewriter.replaceAllUsesWith(op.getResult(), qubit);
-              rewriter.replaceAllUsesWith(op.getOutTensor(), op.getTensor());
-              rewriter.eraseOp(op);
-
-              wires.emplace_back(qubit);
-              infos.insertOrUpdate(prog, prog);
-            })
-            .Case<InsertOp>([&](auto op) {
-              rewriter.setInsertionPointAfter(op);
-              SinkOp::create(rewriter, op.getLoc(), op.getScalar());
-              rewriter.replaceAllUsesWith(op.getResult(), op.getDest());
-              rewriter.eraseOp(op);
-            })
-            .Case<DeallocOp>([&](auto op) { rewriter.eraseOp(op); });
-      }
-
-      rewriter.eraseOp(tensor.allocation);
-    }
-
-    // Create sinks for remaining, unused, static qubits.
-
-    rewriter.setInsertionPoint(body.back().getTerminator());
-    for (size_t prog = wires.size(); prog < layout.nHardwareQubits(); ++prog) {
-      const auto hw = layout.getHardwareIndex(prog);
-      auto qubit = staticQubits[hw];
-
-      wires.emplace_back(qubit);
-      infos.insertOrUpdate(prog, prog);
-
-      SinkOp::create(rewriter, body.getLoc(), qubit);
-    }
-
-    return {wires, infos};
-  }
-
   /// Execute `ntrials` many (parallel) initial layout refinement trials and
   /// return the heuristically best one.
   ///
@@ -735,11 +785,6 @@ private:
   /// finally find the trial with the fewest SWAPs on the final backwards pass
   /// and return the respective layout.
   FailureOr<Layout> generateLayout(const Wires& wires, const WireInfos& infos) {
-    if (!target->hasExplicitTopology()) {
-      return Layout::fromMapping(
-          llvm::to_vector(llvm::seq(target->numQubits())));
-    }
-
     std::mt19937_64 rng{seed};
 
     struct Trial {
@@ -1681,6 +1726,10 @@ private:
 };
 
 } // namespace
+
+std::unique_ptr<Pass> createPlacementPass(const CompilerTarget& target) {
+  return std::make_unique<PlacementPass>(target);
+}
 
 std::unique_ptr<Pass> createMappingPass(const CompilerTarget& target,
                                         MappingPassOptions options) {
