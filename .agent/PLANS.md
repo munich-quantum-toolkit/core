@@ -180,8 +180,8 @@ the rules for generated files, secrets, AI disclosure, authorization, and human
 review. An ExecPlan does not itself authorize external GitHub actions.
 
 Use the exact Core commands relevant to the change. For example, name the
-applicable CMake preset and focused C++ or MLIR test binary; for Python changes,
-name the relevant `pytest` or Nox command; for documentation, include the Nox
+applicable CMake preset and focused C++ test binary; for Python changes, name
+the relevant `pytest` or Nox command; for documentation, include the Nox
 documentation command. End with `uvx nox -s lint` unless an existing, documented
 limitation prevents it, and record the limitation and its evidence.
 

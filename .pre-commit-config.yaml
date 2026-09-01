@@ -85,7 +85,6 @@ repos:
     rev: v1.49.0
     hooks:
       - id: typos
-        exclude: ^vendor/
         priority: 3
 
   ## Check license headers
@@ -93,7 +92,6 @@ repos:
     rev: v2.9.0
     hooks:
       - id: license-tools
-        exclude: ^vendor/
         priority: 4
 
   ## Format BibTeX files with bibtex-tidy
@@ -149,12 +147,6 @@ repos:
     hooks:
       - id: clang-format
         types_or: [c++, c, cuda]
-        exclude: ^vendor/
-        priority: 5
-      - id: clang-format
-        name: clang-format (TableGen)
-        types_or: [file]
-        files: \.td$
         priority: 5
 
   ## Format and lint Python files with ruff
