@@ -14,7 +14,6 @@
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
 
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/Twine.h>
@@ -27,9 +26,11 @@
 #include <exception>
 #include <limits>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -124,14 +125,14 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
     return error;
   }
 
-  llvm::DenseSet<CompilerTarget::SiteId> knownSites;
+  std::unordered_set<CompilerTarget::SiteId> knownSites;
   knownSites.reserve(deviceSites.size());
   for (const auto& site : deviceSites) {
     knownSites.insert(site.id());
   }
 
   if (arity == 1) {
-    llvm::DenseSet<CompilerTarget::SiteId> supportedSites;
+    std::unordered_set<CompilerTarget::SiteId> supportedSites;
     supportedSites.reserve(flattenedSites.size());
     for (const auto& site : flattenedSites) {
       auto siteId = checkedSiteId(site.getIndex());
@@ -151,10 +152,8 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
         "the operation is not available on every device site");
   }
 
-  llvm::DenseSet<CompilerTarget::Coupling> reportedTuples;
-  llvm::DenseSet<CompilerTarget::Coupling> supportedCouplings;
-  reportedTuples.reserve(flattenedSites.size() / arity);
-  supportedCouplings.reserve(flattenedSites.size() / arity);
+  std::set<CompilerTarget::Coupling> reportedTuples;
+  std::set<CompilerTarget::Coupling> supportedCouplings;
   for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
     auto first = checkedSiteId(flattenedSites[offset].getIndex());
     if (!first) {
@@ -181,8 +180,7 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
     const auto expected = allToAllCouplingCount(knownSites.size());
     coversTarget = expected && supportedCouplings.size() == *expected;
   } else {
-    llvm::DenseSet<CompilerTarget::Coupling> expectedCouplings;
-    expectedCouplings.reserve(couplings->size());
+    std::set<CompilerTarget::Coupling> expectedCouplings;
     for (const auto& [first, second] : *couplings) {
       expectedCouplings.insert(canonicalCoupling(first, second));
     }

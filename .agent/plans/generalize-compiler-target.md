@@ -40,6 +40,19 @@ unrestricted, and an explicit list.
 - [x] (2026-08-23 17:33Z) Published the signed change as pull request #2218.
 - [x] (2026-08-23 17:55Z) Kept the DDSIM QDMI snapshot fail-closed and made its
       QIR example state the simulator's unrestricted facts explicitly.
+- [x] (2026-09-01 05:42Z) Archived the exact published head, rebased the signed
+      commits onto current `main`, and reconciled post-branch compiler tests
+      with the explicit connectivity and operation states.
+- [x] (2026-09-01 05:50Z) Addressed the substantive review findings: preserved
+      the full nonnegative site-ID domain, avoided topology reconciliation for
+      single-site control flow with unknown connectivity, and documented a
+      truthful explicit DDSIM operation set.
+- [x] (2026-09-01 06:11Z) Regenerated bindings and ran 139 compiler, 83 mapping,
+      25 target-synthesis, and focused Python QIR tests; built the
+      documentation; and ran full repository lint plus changed-file C++ lint.
+- [x] (2026-09-01 08:41Z) Archived the pre-refresh heads, rebased onto `main` at
+      `30bb9d1f8`, adapted the newly merged mapping regression test to the
+      three-state target API, and reran the affected builds and tests.
 
 ## Surprises & Discoveries
 
@@ -59,6 +72,14 @@ unrestricted, and an explicit list.
 - Observation: QDMI v1.3 has no compact representation for all-to-all
   connectivity or unrestricted operations. Evidence: the DDSIM device omits both
   optional lists because enumerating all pairs of 65,535 sites is not practical.
+- Observation: LLVM dense containers reserve sentinel values inside the key
+  domain. Evidence: `DenseMapInfo<int64_t>` reserves the two largest signed
+  values, while `CompilerTarget::SiteId` intentionally accepts every nonnegative
+  `int64_t` value.
+- Observation: Unknown connectivity is sufficient for a program containing no
+  multi-site operation, including structured control flow. Evidence: such a
+  program cannot change its layout, so branch reconciliation would only query
+  topology unnecessarily.
 
 ## Decision Log
 
@@ -80,12 +101,23 @@ unrestricted, and an explicit list.
   at the compiler call site. Rationale: interpreting unavailable QDMI v1.3
   properties as unrestricted would weaken the target contract for every
   provider. Date/Author: 2026-08-23, Codex.
+- Decision: Use sentinel-free standard containers for site IDs. Rationale: this
+  preserves the documented public domain instead of introducing an arbitrary
+  range restriction to accommodate an implementation detail. Date/Author:
+  2026-09-01, Lukas Burgholzer with Codex assistance.
+- Decision: Skip structured-control-flow topology reconciliation only for
+  unknown connectivity after the pass has established that no multi-site
+  operation remains. Rationale: the layouts cannot diverge in that case, while
+  all-to-all and explicit topologies retain their existing reconciliation.
+  Date/Author: 2026-09-01, Lukas Burgholzer with Codex assistance.
 
 ## Outcomes & Retrospective
 
 The context-free target contract is implemented in pull request #2218. The
 compiler, mapping, synthesis, and focused Python suites pass. Generated stubs
-are current. Focused clang-tidy, full lint, and final diff checks pass.
+are current. Documentation, changed-file C++ lint, full repository lint, and
+final diff checks pass. Durable archive branches preserve both published heads
+from before the rescope and from before the latest `main` refresh.
 
 ## Context and Orientation
 
