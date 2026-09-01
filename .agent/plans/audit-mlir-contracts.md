@@ -136,15 +136,18 @@ after human review, with a regression that demonstrates the supported contract.
       proof that rejected valid benchmark programs and a registration-only
       assertion without an executed failure case.
 - [x] (2026-09-01) Reduced the latest-main delta from the historical 118 files
-      and 14,011 changed lines to 79 files and 11,169 changed lines. The 2,842
+      and 14,011 changed lines to 77 files and 10,932 changed lines. The 3,079
       removed lines are merged/focused duplicates, closed findings, invalid-IR
       handling, speculative traversal/depth policies, and their tests.
 - [x] (2026-09-01) Built the reconciled branch with LLVM/MLIR 23.1.0 and passed
       all 3,111 tests in the `mqt-mlir-unittests` label, repository lint, and
-      diff checks. Standalone C++ lint cannot start because this host lacks
-      clang-tidy 22. The focused Python metadata session builds and reaches the
+      diff checks. The focused Python metadata session builds and reaches the
       expected diagnostics, but this Apple host cannot translate their C++
       exceptions through nanobind.
+- [x] (2026-09-01) Recorded `#2290` and `#2302` as merged and extracted five
+      more valid findings into open `#2318` through `#2322`. Removed the five
+      duplicate implementations and regressions from this branch while keeping
+      their complete ownership and evidence in this ledger.
 
 ## Surprises & Discoveries
 
@@ -308,12 +311,13 @@ wrongly owned. The historical commits preserve that snapshot. The current branch
 removes rejected and separately owned code and keeps only valid residual
 findings for review; it is still not intended to merge in bulk.
 
-As of 2026-09-01, ten focused replacements have merged: `#2291`, `#2293`,
-`#2294`, `#2295`, `#2296`, `#2300`, `#2301`, `#2304`, `#2307`, and `#2308`. Two
-remain open: `#2290` and `#2302`. Four closed without merge: `#2303`, `#2305`,
-`#2306`, and `#2309`. Review narrowed `#2290` to constant-like folding and
-`#2300` to the demonstrated missing-entry-point case. Review rejected `#2309`
-because its pass-local check and regressions target invalid QCO IR.
+As of 2026-09-01, twelve focused replacements have merged: `#2290`, `#2291`,
+`#2293`, `#2294`, `#2295`, `#2296`, `#2300`, `#2301`, `#2302`, `#2304`, `#2307`,
+and `#2308`. Five remain open: `#2318`, `#2319`, `#2320`, `#2321`, and `#2322`.
+Four closed without merge: `#2303`, `#2305`, `#2306`, and `#2309`. Review
+narrowed `#2290` to constant-like folding and `#2300` to the demonstrated
+missing-entry-point case. Review rejected `#2309` because its pass-local check
+and regressions target invalid QCO IR.
 
 The original branch passed its recorded build, test, lint, and diff checks.
 Those results prove internal consistency only; they do not establish that each
@@ -324,6 +328,7 @@ rules now control which findings remain actionable.
 
 Merged findings:
 
+- `#2290`: harden MLIR constant folding.
 - `#2291`: preserve static-qubit isolation during cleanup.
 - `#2293`: make MLIR region moves failure-atomic.
 - `#2294`: preserve attributes on reused QIR declarations.
@@ -333,14 +338,18 @@ Merged findings:
 - `#2300`: handle gate counts without an entry point. Review removed manual
   program-sized worklists and restored native MLIR traversal.
 - `#2301`: keep terminal measurements after routing swaps.
+- `#2302`: make QIR metadata attachment idempotent.
 - `#2304`: bound OpenQASM export resource use.
 - `#2307`: bound CBit zero-initialization lowering.
 - `#2308`: preserve QTensor insert updates in QCO-to-QC.
 
 Open findings:
 
-- `#2290`: harden MLIR constant folding.
-- `#2302`: make QIR metadata attachment idempotent.
+- `#2318`: preserve QIR runtime management metadata.
+- `#2319`: preserve modifier effects during measurement lifting.
+- `#2320`: preserve yield permutations when unrolling loops.
+- `#2321`: avoid releasing static QIR qubits.
+- `#2322`: preserve dominance when merging QCO parameters.
 
 Closed findings:
 
@@ -393,13 +402,15 @@ The original implementation is preserved at
 `0141a0b4f8bbf63608f74fdd5b8608e2f2c40e95`. The last pre-reconciliation snapshot
 is `9fcc02eb67586628d8244b425d032630313a86f2`. These commits preserve every
 removed implementation and reproducer. The current delta keeps code and tests
-only for the valid findings listed below. All residual production, test,
-TableGen, CMake, binding, documentation, and tool changes were reread against
-current `main` at `6b95f1c434a319fb66e946309e17df771a4e3be2`.
+only for valid, unextracted findings. The ledger below also preserves ownership
+of extracted findings. All residual production, test, TableGen, CMake, binding,
+documentation, and tool changes were reread against current `main` at
+`edd2659cea830513f90990e8b88cb14911da32bc`.
 
-The retained items below are findings, not approval of the historical
-implementation. Each needs a focused extraction from current `main`, a minimal
-valid-input regression, and its own review.
+The items below are findings, not approval of the historical implementation.
+Each unextracted finding needs a focused extraction from current `main`, a
+minimal valid-input regression, and its own review. Implementations and tests
+assigned to focused pull requests are absent from `#2287`.
 
 ### Compiler and external-input boundaries
 
@@ -451,10 +462,12 @@ valid-input regression, and its own review.
   placement, one-epilogue return lowering, supported control-flow and allocation
   limits, global-phase lowering, and atomic output verification. The historical
   tests cover missing entries, `__quantum__` collisions,
-  static/dynamic/conditional/repeated releases, nested and inconsistent returns,
+  dynamic/conditional/repeated releases, nested and inconsistent returns,
   path-dependent classical output, helper-function QC, mixed allocation,
   controlled global phase, non-hoistable phase, rank-zero loads, and excessive
-  classical capacity.
+  classical capacity. `#2321` exclusively owns suppression of static-qubit
+  releases and `DoesNotReleaseStaticQubits`; that implementation and test are
+  absent from `#2287`.
 - QIR Base retains entry and resource-shape validation, supported control-flow
   and MemRef restrictions, static-ID/register-element accounting, reset and
   irreversible-order rules, and atomic output verification. The historical tests
@@ -488,15 +501,16 @@ valid-input regression, and its own review.
   `HugeFiniteStaticPhasesProduceVerifiedOutput`,
   `DynamicMaxPhasesRemainFiniteAfterFusion`, and the QC/QCO verifier tests for
   non-finite phase angles.
-- `#2302` owns exactly-one-entry and idempotent passthrough/module-flag
+- Merged `#2302` owns exactly-one-entry and idempotent passthrough/module-flag
   metadata. Separate retained metadata findings cover static-resource provenance
   and capacity, malformed or unknown origins, sparse qubit/result capacities,
   all `inttoptr` users, result arrays that must not inflate qubit capacity,
   malformed record declarations, and CFG-sensitive feature classification.
-- QIR cleanup retains nested runtime-call discovery, deduplicated required
-  resource counts, and proven side-effect-free array alloc/release matching.
-  Evidence: `CleanupFindsRuntimeCallsNestedInFunctions`,
-  `CleanupDoesNotDuplicateRequiredResourceCounts`, and
+- `#2318` exclusively owns nested runtime-call discovery and
+  `CleanupPreservesMetadataForNestedRuntimeCalls`; that implementation and test
+  are absent from `#2287`. The residual QIR cleanup findings retain deduplicated
+  required resource counts and proven side-effect-free array alloc/release
+  matching. Evidence: `CleanupDoesNotDuplicateRequiredResourceCounts` and
   `CleanupOnlyRemovesProvenSideEffectFreeArrayPairs`.
 
 ### Valid transformation and resource findings
@@ -507,11 +521,12 @@ valid-input regression, and its own review.
   iterative-traversal claim. The dedicated
   `.agent/audits/global-phase-normalization.md` remains the assertion-level
   audit for that pass.
-- Modifier canonicalization and decomposition retain classical support
-  operations or refuse a rewrite before mutation. Evidence spans the QC/QCO
-  modifier canonicalizer tests, `PreservesClassicalBodyCalls`,
-  `LeavesPostUnitaryClassicalBodyCallInPlace`,
-  `PreservesModifierSupportOperationsWhenRefusingLift`,
+- `#2319` exclusively owns effect-aware refusal during measurement lifting and
+  `PreservesModifierSupportOperationsWhenRefusingLift`; that implementation and
+  test are absent from `#2287`. Other modifier canonicalization and
+  decomposition findings retain classical support operations or refuse a rewrite
+  before mutation. Evidence spans the QC/QCO modifier canonicalizer tests,
+  `PreservesClassicalBodyCalls`, `LeavesPostUnitaryClassicalBodyCallInPlace`,
   `AllMeasuredFastPathsPreserveClassicalBodyCalls`, and the two
   `PartialMeasured...RefusesUnsafeSupportingOpHoist` tests.
 - Mapping retains option and target validation, target-specific representability
@@ -521,13 +536,19 @@ valid-input regression, and its own review.
   nonlinear-input tests.
 - Target synthesis retains support-call preservation and atomic refusal. Drop
   unused-output handling because those fixtures violate QCO linearity.
-- Quantum-loop unrolling retains the factor 4096 and projected-operation 100,000
-  resource limits, identity-yield correctness, required Arith dependency,
+- `#2320` exclusively owns yield-permutation preservation and
+  `PreservesYieldOnlyPermutation`; that implementation and test are absent from
+  `#2287`. Quantum-loop unrolling retains the factor 4096 and
+  projected-operation 100,000 resource limits, required Arith dependency,
   sibling-symbol-safe verification, and clone/verify/commit atomicity. Evidence
-  is the `Excessive...`, `NestedExpansion...`, `PreservesYieldOnlyPermutation`,
+  is the `Excessive...`, `NestedExpansion...`,
   `DynamicTripCountFailureIsAtomic`, and
   `UnrollsFunctionWithSiblingSymbolReference` tests. Drop the generic
   64-region-depth guard.
+- QCO parameter merging retains finite-sum guards. `#2322` exclusively owns
+  SSA-dominance-safe parameter replacement and
+  `GateMergesPreserveParameterDominance`; that implementation and test are
+  absent from `#2287`.
 - DD execution retains its public-boundary aggregate classical-bit cap, shared
   10,000-step sampling/execution budget, and explicit call/region nesting
   limits. Evidence: `RejectsExcessiveClassicalRegisterCapacity`,
@@ -557,9 +578,13 @@ valid-input regression, and its own review.
   `#2306` established no supported-path failure or better finite bound.
 - Remove registration-only assertions and dependency additions unless an
   executed reproducer demonstrates an unloaded-dialect failure.
-- Remove branch copies of all merged or focused findings. Their implementation
+- Remove branch copies of all merged or focused findings. Merged implementation
   and regression live in `#2290`, `#2291`, `#2293`, `#2294`, `#2295`, `#2296`,
-  `#2300`, `#2301`, `#2302`, `#2304`, `#2307`, and `#2308`. Remove all code from
+  `#2300`, `#2301`, `#2302`, `#2304`, `#2307`, and `#2308`. Open `#2318`,
+  `#2319`, `#2320`, `#2321`, and `#2322` own the nested QIR cleanup discovery,
+  modifier-effect measurement lifting, yield-permutation loop unrolling,
+  static-qubit QIR release, and QCO parameter-dominance findings. Those
+  implementations and regressions are absent from `#2287`, as is all code from
   closed `#2303`, `#2305`, `#2306`, and `#2309`.
 
 ## Context and Orientation

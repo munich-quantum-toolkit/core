@@ -382,8 +382,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
     return failure();
   }
   ArrayRef<qc::Qubit> wires = *wiresOr;
-  if (wires.size() >= 63 ||
-      local.rows() != static_cast<int64_t>(size_t{1} << wires.size())) {
+  if (wires.size() >= 63 || local.rows() != (int64_t{1} << wires.size())) {
     return unitary.emitError()
            << "unitary matrix dimension does not match its target count";
   }
@@ -603,7 +602,7 @@ static LogicalResult allocateRegister(cbit::AllocOp alloc,
   const auto rawWidth = alloc.getResult().getType().getWidth();
   if (rawWidth <= 0 ||
       classical.allocatedRegisterBits > maxClassicalRegisterBits ||
-      static_cast<uint64_t>(rawWidth) >
+      static_cast<size_t>(rawWidth) >
           maxClassicalRegisterBits - classical.allocatedRegisterBits) {
     return alloc.emitError()
            << "QCO DD simulation supports at most " << maxClassicalRegisterBits

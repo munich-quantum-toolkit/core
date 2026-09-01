@@ -1001,37 +1001,6 @@ TEST_F(QIRTest, CleanupOnlyRemovesProvenSideEffectFreeArrayPairs) {
   }
 }
 
-TEST_F(QIRTest, CleanupFindsRuntimeCallsNestedInFunctions) {
-  OpBuilder builder(context.get());
-  auto module = ModuleOp::create(builder.getUnknownLoc());
-  builder.setInsertionPointToStart(module.getBody());
-  auto ptrType = LLVM::LLVMPointerType::get(context.get());
-  auto allocateType = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
-  auto allocate = LLVM::LLVMFuncOp::create(builder, builder.getUnknownLoc(),
-                                           QIR_QUBIT_ALLOC, allocateType);
-  auto mainType =
-      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
-  auto main = LLVM::LLVMFuncOp::create(builder, builder.getUnknownLoc(), "main",
-                                       mainType);
-  main->setAttr(
-      "passthrough",
-      builder.getArrayAttr(
-          {builder.getStringAttr("entry_point"),
-           builder.getStrArrayAttr({"dynamic_qubit_management", "true"})}));
-  auto* block = main.addEntryBlock(builder);
-  builder.setInsertionPointToEnd(block);
-  auto null = LLVM::ZeroOp::create(builder, builder.getUnknownLoc(), ptrType);
-  LLVM::CallOp::create(builder, builder.getUnknownLoc(), allocate,
-                       null.getResult());
-  LLVM::ReturnOp::create(builder, builder.getUnknownLoc(), ValueRange{});
-  ASSERT_TRUE(succeeded(verify(module)));
-
-  PassManager manager(context.get());
-  manager.addPass(qir::createQIRCleanupPass());
-  ASSERT_TRUE(succeeded(manager.run(module)));
-  EXPECT_TRUE(findPassthroughEntry(main, "dynamic_qubit_management"));
-}
-
 TEST_F(QIRTest, CleanupDoesNotDuplicateRequiredResourceCounts) {
   OpBuilder builder(context.get());
   const auto location = builder.getUnknownLoc();

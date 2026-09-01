@@ -250,21 +250,17 @@ template <typename OpType>
 LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the same operation
   auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
-  if (!nextOp || op->getBlock() != nextOp->getBlock()) {
+  if (!nextOp) {
     return failure();
   }
   if (!constantParameterSumIsFinite(op.getOperand(1), nextOp.getOperand(1))) {
     return failure();
   }
 
-  // Compute the new parameter where both operands dominate, then move the
-  // merged gate behind it.
-  rewriter.setInsertionPoint(nextOp);
+  // Compute and set the new parameter
   auto newParameter = arith::AddFOp::create(
       rewriter, op.getLoc(), op.getOperand(1), nextOp.getOperand(1));
-  rewriter.modifyOpInPlace(
-      op, [&] { op->setOperand(1, newParameter.getResult()); });
-  rewriter.moveOpBefore(op, nextOp);
+  op->setOperand(1, newParameter.getResult());
 
   // Replace the second operation with the result of the first operation
   rewriter.replaceOp(nextOp, op.getResult());
@@ -287,11 +283,6 @@ template <typename OpType>
 static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
                                                     PatternRewriter& rewriter,
                                                     bool symmetric = false) {
-  if (op->getBlock() != nextOp->getBlock()) {
-    return failure();
-  }
-
-  auto output0 = op.getOutputQubit(0);
 
   // Both qubits have to point to the same successor
   auto nextOp2 = *op.getOutputQubit(1).user_begin();
@@ -299,18 +290,15 @@ static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
     return failure();
   }
 
+  auto output0 = op.getOutputQubit(0);
   if (symmetric || output0 == nextOp.getInputQubit(0)) {
     if (!constantParameterSumIsFinite(op.getOperand(2), nextOp.getOperand(2))) {
       return failure();
     }
-    // Compute the new parameter where both operands dominate, then move the
-    // merged gate behind it.
-    rewriter.setInsertionPoint(nextOp);
+    // Compute and set the new parameter
     auto newParameter = arith::AddFOp::create(
         rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
-    rewriter.modifyOpInPlace(
-        op, [&] { op->setOperand(2, newParameter.getResult()); });
-    rewriter.moveOpBefore(op, nextOp);
+    op->setOperand(2, newParameter.getResult());
     rewriter.replaceOp(nextOp, nextOp.getInputQubits());
     return success();
   }

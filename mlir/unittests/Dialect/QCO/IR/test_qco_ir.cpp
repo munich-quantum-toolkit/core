@@ -2210,60 +2210,6 @@ TEST_F(QCOTest, OverflowingFiniteGateMergesLeaveVerifiedChains) {
         RXXOp::getOperationName());
 }
 
-TEST_F(QCOTest, DynamicGateParametersMergeIntoVerifiedSums) {
-  auto program = parseSourceString<ModuleOp>(R"mlir(
-    module {
-      func.func @rx(%a: f64, %b: f64) {
-        %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.rx(%a) %q0 : !qco.qubit -> !qco.qubit
-        %later = arith.mulf %b, %b : f64
-        %q2 = qco.rx(%later) %q1 : !qco.qubit -> !qco.qubit
-        qco.sink %q2 : !qco.qubit
-        return
-      }
-      func.func @r(%a: f64, %b: f64) {
-        %phi = arith.constant 0.25 : f64
-        %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.r(%a, %phi) %q0 : !qco.qubit -> !qco.qubit
-        %later = arith.mulf %b, %b : f64
-        %q2 = qco.r(%later, %phi) %q1 : !qco.qubit -> !qco.qubit
-        qco.sink %q2 : !qco.qubit
-        return
-      }
-      func.func @rxx(%a: f64, %b: f64) {
-        %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.alloc : !qco.qubit
-        %q2, %q3 = qco.rxx(%a) %q0, %q1 : !qco.qubit, !qco.qubit
-          -> !qco.qubit, !qco.qubit
-        %later = arith.mulf %b, %b : f64
-        %q4, %q5 = qco.rxx(%later) %q2, %q3 : !qco.qubit, !qco.qubit
-          -> !qco.qubit, !qco.qubit
-        qco.sink %q4 : !qco.qubit
-        qco.sink %q5 : !qco.qubit
-        return
-      }
-    }
-  )mlir",
-                                             context.get());
-  ASSERT_TRUE(program);
-  ASSERT_TRUE(succeeded(verify(*program)));
-  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(program.get())));
-  ASSERT_TRUE(succeeded(verify(*program)));
-
-  size_t rxCount = 0;
-  size_t rCount = 0;
-  size_t rxxCount = 0;
-  program->walk([&](RXOp) { ++rxCount; });
-  program->walk([&](ROp) { ++rCount; });
-  program->walk([&](RXXOp) { ++rxxCount; });
-  EXPECT_EQ(rxCount, 1U);
-  EXPECT_EQ(rCount, 1U);
-  EXPECT_EQ(rxxCount, 1U);
-  size_t addCount = 0;
-  program->walk([&](arith::AddFOp) { ++addCount; });
-  EXPECT_EQ(addCount, 3U);
-}
-
 TEST_F(QCOTest, NestedPowAcrossBranchCutDoesNotMerge) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));

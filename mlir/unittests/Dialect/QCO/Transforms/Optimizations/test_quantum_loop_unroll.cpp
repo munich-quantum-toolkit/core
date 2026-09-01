@@ -228,44 +228,6 @@ TEST_F(QuantumLoopUnrollTest, NoOp) {
       mlir::OperationEquivalence::Flags::None));
 }
 
-TEST_F(QuantumLoopUnrollTest, PreservesYieldOnlyPermutation) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main() attributes {mqt.entry_point} {
-    %q0 = qco.static 0 : !qco.qubit
-    %q1 = qco.static 1 : !qco.qubit
-    %lb = arith.constant 0 : index
-    %ub = arith.constant 1 : index
-    %step = arith.constant 1 : index
-    %out0, %out1 = scf.for %iv = %lb to %ub step %step
-        iter_args(%left = %q0, %right = %q1)
-        -> (!qco.qubit, !qco.qubit) {
-      scf.yield %right, %left : !qco.qubit, !qco.qubit
-    }
-    qco.sink %out0 : !qco.qubit
-    qco.sink %out1 : !qco.qubit
-    return
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runPass(module, QuantumLoopUnrollOptions{})));
-  ASSERT_TRUE(succeeded(verify(*module)));
-
-  SmallVector<SinkOp> sinks;
-  module->walk([&](SinkOp sink) { sinks.push_back(sink); });
-  ASSERT_EQ(sinks.size(), 2);
-  auto first = sinks[0].getQubit().getDefiningOp<StaticOp>();
-  auto second = sinks[1].getQubit().getDefiningOp<StaticOp>();
-  ASSERT_TRUE(first);
-  ASSERT_TRUE(second);
-  EXPECT_EQ(first.getIndex(), 1);
-  EXPECT_EQ(second.getIndex(), 0);
-}
-
 TEST_F(QuantumLoopUnrollTest, DynamicTripCountFailureIsAtomic) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {

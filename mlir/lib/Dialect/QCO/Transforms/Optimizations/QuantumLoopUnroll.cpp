@@ -72,15 +72,6 @@ static SmallVector<scf::ForOp> collectQuantumLoops(FunctionOpInterface func) {
   return loops;
 }
 
-/** @brief Whether a loop body only yields its iteration arguments unchanged. */
-static bool hasIdentityYieldOnlyBody(scf::ForOp loop) {
-  if (!llvm::hasSingleElement(loop.getBody()->getOperations())) {
-    return false;
-  }
-  auto yield = dyn_cast<scf::YieldOp>(loop.getBody()->getTerminator());
-  return yield && llvm::equal(yield.getResults(), loop.getRegionIterArgs());
-}
-
 /** @brief Check the projected unrolled IR size before cloning or rewriting. */
 static LogicalResult verifyUnrollExpansionBudget(FunctionOpInterface func,
                                                  int64_t unrollFactor) {
@@ -102,7 +93,7 @@ static LogicalResult verifyUnrollExpansionBudget(FunctionOpInterface func,
     uint64_t nestedMultiplier = multiplier;
     if (auto loop = dyn_cast<scf::ForOp>(operation);
         loop && isQuantumLoop(loop)) {
-      if (hasIdentityYieldOnlyBody(loop)) {
+      if (llvm::hasSingleElement(loop.getBody()->getOperations())) {
         nestedMultiplier = 0;
       } else {
         uint64_t factor = 0;
@@ -166,7 +157,7 @@ static LogicalResult unrollQuantumLoops(FunctionOpInterface func,
 
       bool changed = false;
       for (auto loop : loops) {
-        if (hasIdentityYieldOnlyBody(loop)) {
+        if (llvm::hasSingleElement(loop.getBody()->getOperations())) {
           loop.replaceAllUsesWith(loop.getInitArgs());
           loop.erase();
           changed = true;

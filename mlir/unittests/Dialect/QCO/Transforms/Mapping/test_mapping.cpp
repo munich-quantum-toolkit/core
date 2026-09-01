@@ -678,7 +678,7 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   std::tie(qubits[1], qubits[2]) = builder.rzx(0.5, qubits[1], qubits[2]);
   std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
 
-  for (int64_t i = 0; i < qubits.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
     builder.sink(qubits[i]);
   }
@@ -825,7 +825,7 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
   std::tie(qubits[1], qubits[2]) = builder.cz(qubits[1], qubits[2]);
   std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
-  for (int64_t i = 0; i < qubits.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
     builder.sink(qubits[i]);
   }
@@ -2156,7 +2156,7 @@ TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
     qubits[i] = builder.allocQubit();
   }
   cxcz(builder, qubits);
-  for (int64_t i = 0; i < qubits.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
     builder.sink(qubits[i]);
   }

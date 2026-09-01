@@ -227,29 +227,6 @@ TEST(QCToQIRAdaptiveNativeTest,
   EXPECT_TRUE(isEquivalentToClone(module, before));
 }
 
-TEST(QCToQIRAdaptiveNativeTest, DoesNotReleaseStaticQubits) {
-  MLIRContext context;
-  context.loadDialect<mlir::mqt::MQTDialect, qc::QCDialect, func::FuncDialect,
-                      LLVM::LLVMDialect>();
-  OpBuilder builder(&context);
-  auto loc = builder.getUnknownLoc();
-  auto module = ModuleOp::create(loc);
-  builder.setInsertionPointToStart(module.getBody());
-  auto main = func::FuncOp::create(builder, loc, "main",
-                                   builder.getFunctionType({}, {}));
-  mlir::mqt::setEntryPoint(main);
-  auto* entry = main.addEntryBlock();
-  builder.setInsertionPointToEnd(entry);
-  auto qubit = qc::StaticOp::create(builder, loc, 0);
-  qc::DeallocOp::create(builder, loc, qubit);
-  func::ReturnOp::create(builder, loc);
-  ASSERT_TRUE(succeeded(verify(module)));
-
-  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(module)));
-  ASSERT_TRUE(succeeded(verify(module)));
-  EXPECT_FALSE(module.lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_QUBIT_RELEASE));
-}
-
 TEST(QCToQIRAdaptiveNativeTest, RoutesEveryReturnThroughOneEpilogue) {
   MLIRContext context;
   context.loadDialect<mlir::mqt::MQTDialect, arith::ArithDialect,

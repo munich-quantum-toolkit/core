@@ -11,7 +11,6 @@
 #include "Support/IRVerification.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
@@ -19,11 +18,8 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -691,35 +687,4 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
-}
-
-TEST_F(QCOMeasurementLiftingTest,
-       PreservesModifierSupportOperationsWhenRefusingLift) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
-module {
-  func.func private @observe()
-  func.func @main() {
-    %q = qco.static 0 : !qco.qubit
-    %phase = qco.inv (%arg = %q) {
-      %z = qco.z %arg : !qco.qubit -> !qco.qubit
-      func.call @observe() : () -> ()
-      qco.yield %z : !qco.qubit
-    } : {!qco.qubit} -> {!qco.qubit}
-    %measured, %bit = qco.measure %phase : !qco.qubit
-    qco.sink %measured : !qco.qubit
-    return
-  }
-}
-)mlir",
-                                            &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  OwningOpRef<ModuleOp> original(module->clone());
-
-  PassManager manager(&context);
-  manager.addPass(createMeasurementLifting());
-  EXPECT_TRUE(succeeded(manager.run(*module)));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
 }

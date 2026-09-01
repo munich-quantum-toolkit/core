@@ -18,9 +18,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <utility>
@@ -51,18 +49,6 @@ static bool isDiagonal(Operation* op) {
         *op->getRegion(0).getBlocks().begin()));
   }
   return isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);
-}
-
-/// Return whether nested modifier bodies contain only unitaries and yields.
-static bool hasOnlyUnitaryBodyOperations(Operation* root) {
-  return !root->walk([&](Operation* operation) {
-                if (operation == root || isa<YieldOp>(operation) ||
-                    isa<UnitaryOpInterface>(operation)) {
-                  return WalkResult::advance();
-                }
-                return WalkResult::interrupt();
-              })
-              .wasInterrupted();
 }
 
 /**
@@ -121,12 +107,6 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
     }
 
     if (!isDiagonal(predecessor)) {
-      return mlir::failure();
-    }
-
-    // Erasing or moving the modifier must not discard or reorder its support
-    // operations relative to the measurement.
-    if (!hasOnlyUnitaryBodyOperations(predecessor)) {
       return mlir::failure();
     }
 
@@ -201,10 +181,6 @@ struct LiftMeasurementsAboveControlsPattern final
     auto predecessorCtrl = mlir::dyn_cast<CtrlOp>(predecessor);
 
     if (!predecessorCtrl) {
-      return mlir::failure();
-    }
-
-    if (!hasOnlyUnitaryBodyOperations(predecessor)) {
       return mlir::failure();
     }
 
