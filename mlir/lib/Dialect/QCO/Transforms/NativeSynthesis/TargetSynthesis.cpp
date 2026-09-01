@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -296,7 +297,39 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
 
 static bool requiresTargetSynthesis(Operation* operation,
                                     const CompilerTarget& target) {
-  return target.supports(operation) != true;
+  return !target.supports(operation);
+}
+
+/// Normalize relative phase effects and discard only the unobservable global
+/// phase of an entry point when the target cannot represent it.
+static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
+                                         const CompilerTarget& target) {
+  if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
+    return failure();
+  }
+  SmallVector<CtrlOp> emptyControls;
+  moduleOp.walk([&](CtrlOp op) {
+    if (llvm::hasSingleElement(*op.getBody())) {
+      emptyControls.push_back(op);
+    }
+  });
+  IRRewriter rewriter(moduleOp.getContext());
+  for (auto op : llvm::reverse(emptyControls)) {
+    rewriter.replaceOp(op, op.getOperands());
+  }
+  if (target.supportsOperation("gphase", 0, 1)) {
+    return success();
+  }
+  auto entryPoint = mqt::getEntryPoint(moduleOp);
+  if (!entryPoint) {
+    return success();
+  }
+  for (auto& block : entryPoint.getBody()) {
+    for (auto phase : llvm::make_early_inc_range(block.getOps<GPhaseOp>())) {
+      phase.erase();
+    }
+  }
+  return success();
 }
 
 namespace {
@@ -456,18 +489,14 @@ protected:
       return;
     }
     ModuleOp moduleOp = getOperation();
+    if (failed(prepareGlobalPhases(moduleOp, target))) {
+      signalPassFailure();
+      return;
+    }
     const auto plan = planTargetSynthesis(moduleOp, target);
     if (plan.firstNeed == nullptr) {
       return;
     }
-    if (target.nativeOperationsKind() ==
-        CompilerTarget::NativeOperations::Kind::Unknown) {
-      plan.firstNeed->emitError()
-          << "target-native synthesis requires known native operations";
-      signalPassFailure();
-      return;
-    }
-
     const auto targetBasis = target.synthesisBasis();
     if (!targetBasis) {
       plan.firstNeed->emitError()
@@ -491,7 +520,7 @@ protected:
       lowerTargetOperation(rewriter, cast<UnitaryOpInterface>(operation),
                            *targetBasis);
     }
-    if (failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
+    if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
     }
   }
@@ -551,13 +580,7 @@ protected:
         return WalkResult::advance();
       }
 
-      const auto support = target.supports(operation);
-      if (!support) {
-        operation->emitError()
-            << "target conformance requires known native operations";
-        return WalkResult::interrupt();
-      }
-      if (*support) {
+      if (target.supports(operation)) {
         return WalkResult::advance();
       }
 

@@ -245,8 +245,9 @@ static CompilerTarget getSquareGridTarget(const size_t n) {
     }
   }
 
-  return llvm::cantFail(CompilerTarget::create(
-      numTarget, Connectivity::fromCouplings(couplings)));
+  return llvm::cantFail(
+      CompilerTarget::create(numTarget, Connectivity::fromCouplings(couplings),
+                             NativeOperations::unrestricted()));
 }
 
 /// Creates an N-qubit GHZ state, where N = `qubits.size()` using
@@ -483,7 +484,8 @@ TEST_F(MappingPassFixture, PlaceNoncontiguousTargetCompactly) {
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(19)));
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(42)));
   const auto target = llvm::cantFail(
-      CompilerTarget::create(std::move(sites), Connectivity::allToAll()));
+      CompilerTarget::create(std::move(sites), Connectivity::allToAll(),
+                             NativeOperations::unrestricted()));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize({builder.getI1Type()});
@@ -514,7 +516,8 @@ TEST_F(MappingPassFixture, PlaceTensorOnFirstTargetSites) {
                     llvm::cantFail(CompilerTarget::Site::create(42)),
                     llvm::cantFail(CompilerTarget::Site::create(81))};
   const auto target = llvm::cantFail(CompilerTarget::create(
-      std::move(sites), CompilerTarget::Connectivity::allToAll()));
+      std::move(sites), CompilerTarget::Connectivity::allToAll(),
+      NativeOperations::unrestricted()));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize({builder.getI1Type(), builder.getI1Type()});
@@ -554,7 +557,8 @@ TEST_F(MappingPassFixture, PlaceTensorOnFirstTargetSites) {
 }
 
 TEST_F(MappingPassFixture, RejectNonExplicitTopologyBeforeMutation) {
-  const auto target = llvm::cantFail(CompilerTarget::create(2));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, Connectivity::allToAll(), NativeOperations::unrestricted()));
   QCOProgramBuilder builder(context.get());
   builder.initialize();
   auto qubit = builder.h(builder.allocQubit());
@@ -575,7 +579,8 @@ TEST_F(MappingPassFixture, RejectNonExplicitTopologyBeforeMutation) {
 }
 
 TEST_F(MappingPassFixture, RejectOversizedPlacementBeforeMutation) {
-  const auto target = llvm::cantFail(CompilerTarget::create(1));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      1, Connectivity::allToAll(), NativeOperations::unrestricted()));
   QCOProgramBuilder builder(context.get());
   builder.initialize();
   auto first = builder.allocQubit();
@@ -607,7 +612,8 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
   }
 
   const auto target = llvm::cantFail(CompilerTarget::create(
-      numTargetQubits, Connectivity::fromCouplings(couplings)));
+      numTargetQubits, Connectivity::fromCouplings(couplings),
+      NativeOperations::unrestricted()));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(2, builder.getI1Type()));
@@ -636,54 +642,6 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
   EXPECT_LE(numStatics, 3);
   EXPECT_LT(numStatics, numTargetQubits);
   EXPECT_EQ(numSinks, numStatics);
-}
-
-TEST_F(MappingPassFixture,
-       UnknownConnectivityRejectsMultiSiteUnitaryBeforeMutation) {
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  SmallVector<Value> qubits{builder.allocQubit(), builder.allocQubit()};
-  qubits = builder.barrier(qubits);
-  Value condition;
-  std::tie(qubits[0], condition) = builder.measure(qubits[0]);
-  SmallVector<Value> controlled{qubits[0]};
-  controlled = builder.qcoIf(
-      condition, controlled,
-      [&](ValueRange args) {
-        return SmallVector<Value>{builder.x(args.front())};
-      },
-      [&](ValueRange args) {
-        return SmallVector<Value>{builder.h(args.front())};
-      });
-  builder.sink(controlled.front());
-  builder.sink(qubits[1]);
-  auto moduleOp = builder.finalize();
-  const auto target = llvm::cantFail(CompilerTarget::create(2));
-
-  EXPECT_TRUE(succeeded(runPlacement(moduleOp.get(), target)));
-  EXPECT_TRUE(succeeded(verify(*moduleOp)));
-
-  QCOProgramBuilder twoQubitBuilder(context.get());
-  twoQubitBuilder.initialize();
-  auto first = twoQubitBuilder.allocQubit();
-  auto second = twoQubitBuilder.allocQubit();
-  std::tie(first, second) = twoQubitBuilder.cx(first, second);
-  twoQubitBuilder.sink(first);
-  twoQubitBuilder.sink(second);
-  auto twoQubitModule = twoQubitBuilder.finalize();
-  const auto before = printModule(twoQubitModule.get());
-
-  std::string diagnostics;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    diagnostics += diagnostic.str();
-    return success();
-  });
-  EXPECT_TRUE(failed(runPlacement(twoQubitModule.get(), target)));
-  EXPECT_EQ(printModule(twoQubitModule.get()), before);
-  EXPECT_TRUE(StringRef(diagnostics)
-                  .contains("target placement requires known connectivity for "
-                            "an operation with "
-                            "arity 2"));
 }
 
 TEST_P(MappingPassTest, FailNoEntryPoint) {

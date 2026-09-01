@@ -55,6 +55,7 @@ using Coupling = Target::Coupling;
 using DurationUnit = Target::DurationUnit;
 using GateKind = Target::GateKind;
 using Operation = Target::Operation;
+using Arity = Operation::Arity;
 using NativeOperations = Target::NativeOperations;
 using Site = Target::Site;
 using SiteId = Target::SiteId;
@@ -95,7 +96,7 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   EXPECT_EQ(target.sites()[0].t2(), 80);
   EXPECT_EQ(target.operations()[0].name(), " PRX ");
   EXPECT_EQ(target.operations()[0].canonicalName(), "r");
-  EXPECT_EQ(target.operations()[0].arity(), 1);
+  EXPECT_EQ(target.operations()[0].arity(), Arity::fixed(1));
   EXPECT_EQ(target.operations()[0].numParameters(), 2);
   EXPECT_EQ(target.operations()[0].duration(), 0);
   EXPECT_EQ(target.operations()[0].fidelity(), 0.97);
@@ -109,9 +110,11 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
 }
 
 TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
-  const auto target = valid(Target::create(3, Connectivity::allToAll()));
+  const auto target = valid(Target::create(3, Connectivity::allToAll(),
+                                           NativeOperations::unrestricted()));
   const auto named =
-      valid(Target::create("simulator", 2, Connectivity::allToAll()));
+      valid(Target::create("simulator", 2, Connectivity::allToAll(),
+                           NativeOperations::unrestricted()));
 
   EXPECT_FALSE(target.name());
   ASSERT_TRUE(named.name());
@@ -135,6 +138,26 @@ TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
   target.forEachNeighbour(
       1, [&](const auto neighbour) { neighbours.emplace_back(neighbour); });
   EXPECT_EQ(neighbours, (std::vector<size_t>{0, 2}));
+}
+
+TEST(CompilerTargetTest, ModelsFixedAndVariadicOperationArities) {
+  const auto zero = Arity::fixed(0);
+  EXPECT_EQ(zero.kind(), Arity::Kind::Fixed);
+  EXPECT_EQ(zero.value(), 0U);
+  EXPECT_TRUE(zero.accepts(0));
+  EXPECT_FALSE(zero.accepts(1));
+
+  const auto fixed = Arity::fixed(2);
+  EXPECT_FALSE(fixed.accepts(1));
+  EXPECT_TRUE(fixed.accepts(2));
+  EXPECT_FALSE(fixed.accepts(3));
+
+  const auto variadic = Arity::variadic(2);
+  EXPECT_EQ(variadic.kind(), Arity::Kind::Variadic);
+  EXPECT_EQ(variadic.value(), 2U);
+  EXPECT_FALSE(variadic.accepts(1));
+  EXPECT_TRUE(variadic.accepts(2));
+  EXPECT_TRUE(variadic.accepts(7));
 }
 
 TEST(CompilerTargetTest, PreservesFullNonnegativeSiteIdDomain) {
@@ -162,7 +185,8 @@ TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
                     valid(Site::create(11))};
   const auto target = valid(Target::create(
       std::move(sites),
-      Connectivity::fromCouplings({{11, 2}, {2, 11}, {7, 2}, {2, 7}})));
+      Connectivity::fromCouplings({{11, 2}, {2, 11}, {7, 2}, {2, 7}}),
+      NativeOperations::unrestricted()));
 
   EXPECT_EQ(target.connectivityKind(), Connectivity::Kind::Explicit);
   EXPECT_EQ(target.couplings(), (llvm::ArrayRef<Coupling>{{2, 7}, {2, 11}}));
@@ -183,11 +207,14 @@ TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
 }
 
 TEST(CompilerTargetTest, RejectsInvalidMetadata) {
-  expectInvalid(Target::create(0),
+  expectInvalid(Target::create(0, Connectivity::allToAll(),
+                               NativeOperations::unrestricted()),
                 "Compiler target must contain at least one site");
   if constexpr (sizeof(size_t) >= sizeof(uint64_t)) {
     expectInvalid(
-        Target::create(std::numeric_limits<size_t>::max()),
+        Target::create(std::numeric_limits<size_t>::max(),
+                       Connectivity::allToAll(),
+                       NativeOperations::unrestricted()),
         "Compiler target site count exceeds the nonnegative i64 site domain");
   }
   expectInvalid(Site::create(-1),
@@ -215,8 +242,18 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
       "Compiler target site-tuple fidelity must be finite and in [0, 1]");
   expectInvalid(Operation::create("", 1, 0),
                 "Compiler target operation name must not be empty");
-  expectInvalid(Operation::create("x", 0, 0),
-                "Compiler target operation arity must be positive");
+  expectInvalid(Operation::create("x", Arity::variadic(0), 0),
+                "Compiler target operation variadic minimum must be positive");
+  expectInvalid(
+      Operation::create(
+          "gphase", Arity::fixed(0), 1,
+          std::vector{valid(SiteTuple::create(std::vector<SiteId>{}))}),
+      "Compiler target zero-arity operation cannot contain site tuples");
+  expectInvalid(
+      Operation::create(
+          "h", Arity::variadic(1), 0,
+          std::vector{valid(SiteTuple::create(std::vector<SiteId>{0}))}),
+      "Compiler target variadic operation cannot contain site tuples");
   expectInvalid(
       Operation::create("x", 1, 0,
                         std::vector{valid(SiteTuple::create({0, 1}))}),
@@ -230,56 +267,71 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
                         std::numeric_limits<double>::quiet_NaN()),
       "Compiler target operation fidelity must be finite and in [0, 1]");
 
-  expectInvalid(Target::create(std::vector<Site>{}),
+  expectInvalid(Target::create(std::vector<Site>{}, Connectivity::allToAll(),
+                               NativeOperations::unrestricted()),
                 "Compiler target must contain at least one site");
-  expectInvalid(Target::create("", 1),
+  expectInvalid(Target::create("", 1, Connectivity::allToAll(),
+                               NativeOperations::unrestricted()),
                 "Compiler target name must not be empty when present");
-  expectInvalid(Target::create("invalid", 0),
+  expectInvalid(Target::create("invalid", 0, Connectivity::allToAll(),
+                               NativeOperations::unrestricted()),
                 "Compiler target must contain at least one site");
-  expectInvalid(Target::create(std::vector{valid(Site::create(1)),
-                                           valid(Site::create(1))}),
+  expectInvalid(Target::create(
+                    std::vector{valid(Site::create(1)), valid(Site::create(1))},
+                    Connectivity::allToAll(), NativeOperations::unrestricted()),
                 "Compiler target contains duplicate site IDs");
-  expectInvalid(
-      Target::create(std::vector{valid(Site::create(0, std::nullopt, 1))}),
-      "Compiler target timing metadata requires a duration unit");
-  expectInvalid(Target::create(1, {},
+  expectInvalid(Target::create(
+                    std::vector{valid(Site::create(0, std::nullopt, 1))},
+                    Connectivity::allToAll(), NativeOperations::unrestricted()),
+                "Compiler target timing metadata requires a duration unit");
+  expectInvalid(Target::create(1, Connectivity::allToAll(),
                                NativeOperations::fromOperations({valid(
                                    Operation::create("x", 1, 0, {}, 1))})),
                 "Compiler target timing metadata requires a duration unit");
   expectInvalid(
       Target::create(
-          1, {},
+          1, Connectivity::allToAll(),
           NativeOperations::fromOperations({valid(Operation::create(
               "x", 1, 0, std::vector{valid(SiteTuple::create({0}, 1))}))})),
       "Compiler target timing metadata requires a duration unit");
-  expectInvalid(Target::create(2, Connectivity::fromCouplings({{0, 0}})),
+  expectInvalid(Target::create(2, Connectivity::fromCouplings({{0, 0}}),
+                               NativeOperations::unrestricted()),
                 "Compiler target topology contains a self-coupling");
-  expectInvalid(Target::create(2, Connectivity::fromCouplings({{0, 2}})),
+  expectInvalid(Target::create(2, Connectivity::fromCouplings({{0, 2}}),
+                               NativeOperations::unrestricted()),
                 "Compiler target topology references an unknown site");
-  expectInvalid(Target::create(3, Connectivity::fromCouplings({{0, 1}})),
+  expectInvalid(Target::create(3, Connectivity::fromCouplings({{0, 1}}),
+                               NativeOperations::unrestricted()),
                 "Compiler target topology must be connected");
   expectInvalid(
       Target::create(
-          2, {},
+          2, Connectivity::allToAll(),
           NativeOperations::fromOperations({valid(Operation::create(
               "x", 1, 0, std::vector{valid(SiteTuple::create({2}))}))})),
       "Compiler target operation site tuple references an unknown site");
-  expectInvalid(Target::create(1, {},
+  expectInvalid(Target::create(1, Connectivity::allToAll(),
                                NativeOperations::fromOperations(
                                    {valid(Operation::create("cx", 2, 0))})),
                 "Compiler target operation arity exceeds its site count");
+  expectInvalid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({valid(
+                         Operation::create("h", Arity::variadic(3), 0))})),
+      "Compiler target operation variadic minimum exceeds its site count");
 }
 
-TEST(CompilerTargetTest, DistinguishesOperationKnowledge) {
-  const auto unknown = valid(Target::create(2));
-  const auto unrestricted =
-      valid(Target::create(2, {}, NativeOperations::unrestricted()));
-  const auto closed =
-      valid(Target::create(2, {}, NativeOperations::fromOperations({})));
-
-  EXPECT_EQ(unknown.nativeOperationsKind(), NativeOperations::Kind::Unknown);
-  EXPECT_EQ(unknown.supportsOperation("x", 1), std::nullopt);
-  EXPECT_EQ(unknown.supports(GateKind::CX), std::nullopt);
+TEST(CompilerTargetTest, DistinguishesOperationSupport) {
+  const auto unrestricted = valid(Target::create(
+      2, Connectivity::allToAll(), NativeOperations::unrestricted()));
+  const auto closed = valid(Target::create(
+      2, Connectivity::allToAll(), NativeOperations::fromOperations({})));
+  const auto variadic = valid(Target::create(
+      4, Connectivity::allToAll(),
+      NativeOperations::fromOperations(
+          {valid(Operation::create("gphase", Arity::fixed(0), 1)),
+           valid(Operation::create("h", Arity::variadic(1), 0)),
+           valid(Operation::create("rxx", Arity::variadic(2), 1)),
+           valid(Operation::create("I", Arity::fixed(1), 0))})));
 
   EXPECT_EQ(unrestricted.nativeOperationsKind(),
             NativeOperations::Kind::Unrestricted);
@@ -287,7 +339,7 @@ TEST(CompilerTargetTest, DistinguishesOperationKnowledge) {
   EXPECT_EQ(unrestricted.supports(GateKind::CX), true);
   EXPECT_EQ(unrestricted.supportsOperation("", 1), false);
   EXPECT_EQ(unrestricted.supportsOperation("   ", 1), false);
-  EXPECT_EQ(unrestricted.supportsOperation("x", 0), false);
+  EXPECT_EQ(unrestricted.supportsOperation("gphase", 0), true);
   EXPECT_EQ(unrestricted.supportsOperation("x", 3), false);
 
   EXPECT_EQ(closed.nativeOperationsKind(), NativeOperations::Kind::Explicit);
@@ -296,6 +348,19 @@ TEST(CompilerTargetTest, DistinguishesOperationKnowledge) {
   EXPECT_EQ(closed.supports(GateKind::CX), false);
   EXPECT_TRUE(closed.supportedGates().empty());
   EXPECT_FALSE(closed.synthesisBasis());
+
+  EXPECT_TRUE(variadic.supportsOperation("gphase", 0, 1));
+  EXPECT_FALSE(variadic.supportsOperation("gphase", 1, 1));
+  EXPECT_FALSE(variadic.supportsOperation("h", 0, 0));
+  EXPECT_TRUE(variadic.supportsOperation("h", 1, 0));
+  EXPECT_TRUE(variadic.supportsOperation("h", 4, 0));
+  EXPECT_FALSE(variadic.supportsOperation("h", 5, 0));
+  EXPECT_FALSE(variadic.supportsOperation("rxx", 1, 1));
+  EXPECT_TRUE(variadic.supportsOperation("rxx", 2, 1));
+  EXPECT_TRUE(variadic.supportsOperation("rxx", 4, 1));
+  EXPECT_FALSE(variadic.supportsOperation("rxx", 4, 0));
+  EXPECT_TRUE(variadic.supportsOperation("id", 1, 0));
+  EXPECT_TRUE(variadic.supportsOperation("i", 1, 0));
 }
 
 TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
@@ -367,6 +432,7 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
         auto barrierResults = builder.barrier({q0, q1});
         q0 = barrierResults[0];
         q1 = barrierResults[1];
+        std::tie(q0, q1) = builder.cz(q0, q1);
         builder.gphase(0.25);
         auto [measured, result] = builder.measure(q0);
         static_cast<void>(result);
@@ -379,6 +445,7 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
 
   mlir::Operation* x = nullptr;
   mlir::Operation* cx = nullptr;
+  mlir::Operation* cz = nullptr;
   mlir::Operation* measure = nullptr;
   mlir::Operation* reset = nullptr;
   mlir::Operation* barrier = nullptr;
@@ -386,8 +453,13 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
   moduleOp->walk([&](mlir::Operation* operation) {
     if (mlir::isa<mlir::qco::XOp>(operation) && x == nullptr) {
       x = operation;
-    } else if (mlir::isa<mlir::qco::CtrlOp>(operation)) {
-      cx = operation;
+    } else if (auto controlled = mlir::dyn_cast<mlir::qco::CtrlOp>(operation)) {
+      auto* body = controlled.getBodyUnitary(0).getOperation();
+      if (mlir::isa<mlir::qco::XOp>(body)) {
+        cx = operation;
+      } else if (mlir::isa<mlir::qco::ZOp>(body)) {
+        cz = operation;
+      }
     } else if (mlir::isa<mlir::qco::MeasureOp>(operation)) {
       measure = operation;
     } else if (mlir::isa<mlir::qco::ResetOp>(operation)) {
@@ -400,6 +472,7 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
   });
   ASSERT_NE(x, nullptr);
   ASSERT_NE(cx, nullptr);
+  ASSERT_NE(cz, nullptr);
   ASSERT_NE(measure, nullptr);
   ASSERT_NE(reset, nullptr);
   ASSERT_NE(barrier, nullptr);
@@ -410,25 +483,110 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
                                 valid(SiteTuple::create({20, 10}))};
   std::vector operations{
       valid(Operation::create("x", 1, 0)),
+      valid(Operation::create("gphase", 0, 1)),
       valid(Operation::create("measure", 1, 0)),
       valid(Operation::create("reset", 1, 0)),
-      valid(Operation::create("cnot", 2, 0, std::move(directionalTuples)))};
-  const auto target = valid(Target::create(
-      std::move(sites), {}, NativeOperations::fromOperations(operations)));
+      valid(Operation::create("cnot", 2, 0, std::move(directionalTuples))),
+      valid(Operation::create("cz", 2, 0))};
+  const auto target =
+      valid(Target::create(std::move(sites), Connectivity::allToAll(),
+                           NativeOperations::fromOperations(operations)));
   EXPECT_EQ(target.supports(x), true);
   EXPECT_EQ(target.supports(cx), true);
+  EXPECT_EQ(target.supports(cz), true);
   EXPECT_EQ(target.supports(measure), true);
   EXPECT_EQ(target.supports(reset), true);
   EXPECT_EQ(target.supports(barrier), true);
   EXPECT_EQ(target.supports(gphase), true);
   EXPECT_EQ(target.supports(nullptr), false);
 
-  const auto closed =
-      valid(Target::create(2, {}, NativeOperations::fromOperations({})));
+  const auto closed = valid(Target::create(
+      2, Connectivity::allToAll(), NativeOperations::fromOperations({})));
   EXPECT_EQ(closed.supports(barrier), true);
-  EXPECT_EQ(closed.supports(gphase), true);
+  EXPECT_EQ(closed.supports(gphase), false);
   EXPECT_EQ(closed.supports(x), false);
   EXPECT_EQ(closed.supports(measure), false);
+}
+
+TEST(CompilerTargetTest, SupportsArbitrarilyControlledBaseOperations) {
+  mlir::DialectRegistry registry;
+  registry.insert<mlir::qco::QCODialect, mlir::qtensor::QTensorDialect,
+                  mlir::arith::ArithDialect, mlir::func::FuncDialect>();
+  mlir::MLIRContext context;
+  context.appendDialectRegistry(registry);
+  context.loadAllAvailableDialects();
+
+  auto supportedModule = mlir::qco::QCOProgramBuilder::build(
+      &context, [](mlir::qco::QCOProgramBuilder& builder) {
+        static_cast<void>(
+            builder.mch({builder.staticQubit(0), builder.staticQubit(1)},
+                        builder.staticQubit(2)));
+        static_cast<void>(
+            builder.mcrx(0.25, {builder.staticQubit(3), builder.staticQubit(4)},
+                         builder.staticQubit(5)));
+        static_cast<void>(
+            builder.mcrxx(0.5, {builder.staticQubit(6), builder.staticQubit(7)},
+                          builder.staticQubit(8), builder.staticQubit(9)));
+        static_cast<void>(
+            builder.mcrccx({builder.staticQubit(10), builder.staticQubit(11)},
+                           builder.staticQubit(12), builder.staticQubit(13),
+                           builder.staticQubit(14)));
+        return builder.intConstant(0);
+      });
+  ASSERT_TRUE(supportedModule);
+
+  std::vector<mlir::Operation*> supportedControls;
+  supportedModule->walk([&](mlir::qco::CtrlOp controlled) {
+    supportedControls.emplace_back(controlled.getOperation());
+  });
+  ASSERT_EQ(supportedControls.size(), 4U);
+
+  const auto target = valid(Target::create(
+      5, Connectivity::allToAll(),
+      NativeOperations::fromOperations(
+          {valid(Operation::create("h", Arity::variadic(1), 0)),
+           valid(Operation::create("rx", Arity::variadic(1), 1)),
+           valid(Operation::create("rxx", Arity::variadic(2), 1)),
+           valid(Operation::create("rccx", Arity::variadic(3), 0))})));
+  for (auto* controlled : supportedControls) {
+    EXPECT_TRUE(target.supports(controlled));
+  }
+
+  const auto fixedOnly = valid(
+      Target::create(5, Connectivity::allToAll(),
+                     NativeOperations::fromOperations(
+                         {valid(Operation::create("h", Arity::fixed(3), 0))})));
+  EXPECT_FALSE(fixedOnly.supports(supportedControls.front()));
+
+  auto rejectedModule = mlir::qco::QCOProgramBuilder::build(
+      &context, [](mlir::qco::QCOProgramBuilder& builder) {
+        static_cast<void>(builder.mch({}, builder.staticQubit(0)));
+        static_cast<void>(
+            builder.ctrl({builder.staticQubit(1)},
+                         {builder.staticQubit(2), builder.staticQubit(3)},
+                         [&](mlir::ValueRange targets) {
+                           return llvm::SmallVector<mlir::Value>{
+                               builder.h(targets[0]), builder.x(targets[1])};
+                         }));
+        static_cast<void>(
+            builder.ctrl({builder.staticQubit(4)},
+                         {builder.staticQubit(5), builder.staticQubit(6)},
+                         [&](mlir::ValueRange targets) {
+                           return llvm::SmallVector<mlir::Value>{
+                               builder.h(targets[0]), targets[1]};
+                         }));
+        return builder.intConstant(0);
+      });
+  ASSERT_TRUE(rejectedModule);
+
+  std::vector<mlir::Operation*> rejectedControls;
+  rejectedModule->walk([&](mlir::qco::CtrlOp controlled) {
+    rejectedControls.emplace_back(controlled.getOperation());
+  });
+  ASSERT_EQ(rejectedControls.size(), 3U);
+  for (auto* controlled : rejectedControls) {
+    EXPECT_FALSE(target.supports(controlled));
+  }
 }
 
 } // namespace

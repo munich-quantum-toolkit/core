@@ -2798,6 +2798,8 @@ def test_target_aware_qiskit_export_maps_sparse_site_ids() -> None:
     target = CompilerTarget(
         "sparse target",
         [CompilerTarget.Site(10), CompilerTarget.Site(4294967296)],
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
     program = QCProgram.from_mlir_str(
         """module {
@@ -2824,6 +2826,8 @@ def test_target_aware_qiskit_export_rejects_unknown_site() -> None:
     target = CompilerTarget(
         "sparse target",
         [CompilerTarget.Site(10), CompilerTarget.Site(20)],
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
     program = QCProgram.from_mlir_str(
         """module {
@@ -2856,7 +2860,11 @@ def test_target_aware_qiskit_export_rejects_unknown_site() -> None:
 )
 def test_target_aware_qiskit_export_rejects_dynamic_qubits(allocation: str) -> None:
     """Require target-aware export inputs to use static qubits."""
-    target = CompilerTarget(2)
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
     program = QCProgram.from_mlir_str(
         f"""module {{
   func.func @main() attributes {{mqt.entry_point}} {{

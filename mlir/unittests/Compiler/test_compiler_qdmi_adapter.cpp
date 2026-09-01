@@ -20,7 +20,9 @@
 #include <llvm/Support/Error.h>
 
 #include <cassert>
+#include <initializer_list>
 #include <string>
+#include <utility>
 
 using mlir::CompilerTarget;
 
@@ -90,6 +92,30 @@ TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
             CompilerTarget::Connectivity::Kind::AllToAll);
   EXPECT_EQ(target.nativeOperationsKind(),
             CompilerTarget::NativeOperations::Kind::Explicit);
+  const auto& gphase = findOperation(target, "gphase");
+  EXPECT_EQ(gphase.arity().kind(),
+            CompilerTarget::Operation::Arity::Kind::Fixed);
+  EXPECT_EQ(gphase.arity().value(), 0);
+  for (const auto [name, minimum] :
+       std::initializer_list<std::pair<llvm::StringRef, size_t>>{{"id", 1},
+                                                                 {"h", 1},
+                                                                 {"rx", 1},
+                                                                 {"swap", 2},
+                                                                 {"rxx", 2},
+                                                                 {"rccx", 3}}) {
+    const auto& operation = findOperation(target, name);
+    EXPECT_EQ(operation.arity().kind(),
+              CompilerTarget::Operation::Arity::Kind::Variadic)
+        << name.str();
+    EXPECT_EQ(operation.arity().value(), minimum) << name.str();
+    EXPECT_TRUE(
+        target.supportsOperation(name, minimum, operation.numParameters()))
+        << name.str();
+    EXPECT_TRUE(
+        target.supportsOperation(name, minimum + 4, operation.numParameters()))
+        << name.str();
+  }
+  EXPECT_TRUE(target.supportsOperation("gphase", 0, 1));
   EXPECT_EQ(target.supportsOperation("h", 1, 0), true);
   EXPECT_EQ(target.supportsOperation("cx", 2, 0), true);
   EXPECT_EQ(target.supportsOperation("cswap", 3, 0), true);
@@ -120,7 +146,17 @@ TEST(CompilerQDMIAdapterTest, RejectsNonhomogeneousOperationSupport) {
   ASSERT_FALSE(target);
   const auto message = llvm::toString(target.takeError());
   EXPECT_NE(message.find("homogeneous"), std::string::npos);
-  EXPECT_NE(message.find("every topology edge"), std::string::npos);
+  EXPECT_NE(message.find("all topology edges"), std::string::npos);
+}
+
+TEST(CompilerQDMIAdapterTest, SnapshotsHomogeneousHigherArityOperation) {
+  qdmi::DeviceSessionConfig overrides;
+  overrides.deviceConfiguration =
+      qdmi::FileDeviceConfiguration{MQT_CORE_MLIR_HIGHER_ARITY_SC_CONFIG};
+  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+
+  EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0));
 }
 
 TEST(CompilerQDMIAdapterTest, RejectsDirectionalOperationWithoutReverseSites) {

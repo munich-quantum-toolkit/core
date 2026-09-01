@@ -28,13 +28,18 @@ Target compilation accepts optimized QCO, QC, or QIR output and uses the
 canonical QCO pipeline; it cannot be combined with a custom `qco_pipeline`.
 
 The target can also be constructed directly. Connectivity and native-operation
-metadata are unknown unless the caller states them:
+support are required:
 
 ```python
 target = CompilerTarget(
     3,
     connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
     native_operations=CompilerTarget.NativeOperations([
+        CompilerTarget.Operation(
+            "gphase",
+            arity=CompilerTarget.OperationArity.fixed(0),
+            num_parameters=1,
+        ),
         CompilerTarget.Operation("u", arity=1, num_parameters=3),
         CompilerTarget.Operation("cx", arity=2, num_parameters=0),
         CompilerTarget.Operation("measure", arity=1, num_parameters=0),
@@ -48,9 +53,18 @@ empty `CompilerTarget.NativeOperations([])` reports that no quantum operation is
 native. It can be used with passes that need only topology, but target
 compilation cannot lower quantum operations without a synthesis basis. Use
 `CompilerTarget.NativeOperations.unrestricted()` only when the target accepts
-every operation. The default-constructed metadata objects mean that the
-corresponding support is unknown; target compilation rejects an unknown property
-when a pass needs it.
+every operation. Creating a target from a QDMI device fails if the device does
+not provide a complete connectivity model and a representable native-operation
+set. An explicit operation arity is either fixed or variadic with a positive,
+inclusive minimum. Fixed zero represents a global-phase operation. A variadic
+capability accepts every total width from its minimum through the target's site
+count; site-specific calibration tuples are therefore available only for fixed,
+positive arities. Structural and program-format constructs are not
+compiler-target operations.
+
+Target synthesis preserves a native `gphase`. If the target does not support
+`gphase`, target synthesis preserves relative phase effects and removes only the
+unobservable global phase of the entry point.
 
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` to apply target
 compilation to an existing QCO program. Compilation runs in place. If a pass
@@ -60,8 +74,7 @@ benchmarking, the C++ API exposes separate factories for pre-routing
 optimization, deterministic placement, topology-aware mapping, native synthesis,
 and conformance verification. Target compilation uses compact placement on
 all-to-all targets and the mapper only when the target has an explicit coupling
-graph. A target with unknown connectivity can use compact placement only when no
-non-barrier multi-site operation remains.
+graph.
 
 Target compilation preserves quantum operations even when their final qubit
 values are not measured or returned. This supports measurement-free programs,
@@ -125,8 +138,19 @@ if (!qco || !qco->compileForTarget(*target)) {
 
 The adapter accepts circuit-model devices whose operations are available
 throughout the topology in both operand orientations. Operand-symmetric gates,
-such as CZ, may report each edge once. Neutral-atom zone models require a
+such as CZ, may report each edge once. Operations with arity above two must
+report every ordered tuple of distinct sites. Neutral-atom zone models require a
 different compilation model and are rejected with a diagnostic.
+
+QDMI 1.3 cannot report an operation-arity range. The bundled DDSIM device uses
+an exact, versioned custom-operation marker to state that each canonical
+standard gate with one or more targets accepts arbitrary positive controls. The
+adapter turns such a base gate into a variadic capability whose minimum is the
+base gate's target count. For example, DDSIM reports `h` with minimum one, `rxx`
+with minimum two, and `rccx` with minimum three; each also accepts any
+additional number of controls up to the simulator's site count. Controlled
+aliases such as `mcx` and `mcp` are not enumerated as compiler capabilities.
+This private bridge can be removed when QDMI standardizes equivalent metadata.
 
 The bundled Garnet and Emerald snapshots contain available T1, T2, and fidelity
 data. Operation durations are absent because they were unavailable. See

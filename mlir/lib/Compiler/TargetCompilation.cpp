@@ -31,7 +31,6 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     pm.addPass(qco::createMappingPass(target, qco::MappingPassOptions{}));
     break;
   case CompilerTarget::Connectivity::Kind::AllToAll:
-  case CompilerTarget::Connectivity::Kind::Unknown:
     pm.addPass(qco::createPlacementPass(target));
     break;
   }

@@ -19,7 +19,6 @@
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
 
@@ -89,10 +88,12 @@ constexpr std::array GATE_SPECIFICATIONS{
 
 } // namespace
 
-[[nodiscard]] static std::string canonicalOperationName(const StringRef name) {
+[[nodiscard]] static std::string canonicalOperationName(StringRef name) {
   auto canonical = name.trim().lower();
   if (canonical == "prx") {
     canonical = "r";
+  } else if (canonical == "i") {
+    canonical = "id";
   } else if (canonical == "u3") {
     canonical = "u";
   } else if (canonical == "cnot") {
@@ -107,8 +108,8 @@ constexpr std::array GATE_SPECIFICATIONS{
 }
 
 [[nodiscard]] static llvm::Error
-validatePositiveCoherenceTime(const std::optional<uint64_t> time,
-                              const StringRef description) {
+validatePositiveCoherenceTime(std::optional<uint64_t> time,
+                              StringRef description) {
   if (time && *time == 0) {
     return invalidTarget(description + " must be positive");
   }
@@ -116,8 +117,7 @@ validatePositiveCoherenceTime(const std::optional<uint64_t> time,
 }
 
 [[nodiscard]] static llvm::Error
-validateFidelity(const std::optional<double> fidelity,
-                 const StringRef description) {
+validateFidelity(std::optional<double> fidelity, StringRef description) {
   if (fidelity &&
       (!std::isfinite(*fidelity) || *fidelity < 0. || *fidelity > 1.)) {
     return invalidTarget(description + " must be finite and in [0, 1]");
@@ -129,10 +129,8 @@ CompilerTarget::Connectivity CompilerTarget::Connectivity::allToAll() {
   return {Kind::AllToAll, {}};
 }
 
-CompilerTarget::Connectivity::Connectivity() noexcept : kind_(Kind::Unknown) {}
-
-CompilerTarget::Connectivity CompilerTarget::Connectivity::fromCouplings(
-    const ArrayRef<Coupling> couplings) {
+CompilerTarget::Connectivity
+CompilerTarget::Connectivity::fromCouplings(ArrayRef<Coupling> couplings) {
   return {Kind::Explicit, couplings};
 }
 
@@ -146,12 +144,12 @@ CompilerTarget::Connectivity::couplings() const noexcept {
   return couplings_;
 }
 
-CompilerTarget::Connectivity::Connectivity(const Kind kind,
-                                           const ArrayRef<Coupling> couplings)
+CompilerTarget::Connectivity::Connectivity(Kind kind,
+                                           ArrayRef<Coupling> couplings)
     : kind_(kind), couplings_(couplings) {}
 
 [[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::Site>>
-makeDenseSites(const size_t numSites) {
+makeDenseSites(size_t numSites) {
   if (numSites == 0) {
     return invalidTarget("Compiler target must contain at least one site");
   }
@@ -175,8 +173,7 @@ makeDenseSites(const size_t numSites) {
 }
 
 llvm::Expected<CompilerTarget::DurationUnit>
-CompilerTarget::DurationUnit::create(std::string unit,
-                                     const double scaleFactor) {
+CompilerTarget::DurationUnit::create(std::string unit, double scaleFactor) {
   if (StringRef(unit).trim().empty()) {
     return invalidTarget("Compiler target duration unit must not be empty");
   }
@@ -187,8 +184,7 @@ CompilerTarget::DurationUnit::create(std::string unit,
   return DurationUnit(std::move(unit), scaleFactor);
 }
 
-CompilerTarget::DurationUnit::DurationUnit(std::string unit,
-                                           const double scaleFactor)
+CompilerTarget::DurationUnit::DurationUnit(std::string unit, double scaleFactor)
     : unit_(std::move(unit)), scaleFactor_(scaleFactor) {}
 
 StringRef CompilerTarget::DurationUnit::unit() const noexcept { return unit_; }
@@ -198,9 +194,9 @@ double CompilerTarget::DurationUnit::scaleFactor() const noexcept {
 }
 
 llvm::Expected<CompilerTarget::Site>
-CompilerTarget::Site::create(const SiteId id, std::optional<std::string> name,
-                             const std::optional<uint64_t> t1,
-                             const std::optional<uint64_t> t2) {
+CompilerTarget::Site::create(SiteId id, std::optional<std::string> name,
+                             std::optional<uint64_t> t1,
+                             std::optional<uint64_t> t2) {
   if (id < 0) {
     return invalidTarget("Compiler target site ID must be nonnegative");
   }
@@ -219,9 +215,9 @@ CompilerTarget::Site::create(const SiteId id, std::optional<std::string> name,
   return Site(id, std::move(name), t1, t2);
 }
 
-CompilerTarget::Site::Site(const SiteId id, std::optional<std::string> name,
-                           const std::optional<uint64_t> t1,
-                           const std::optional<uint64_t> t2)
+CompilerTarget::Site::Site(SiteId id, std::optional<std::string> name,
+                           std::optional<uint64_t> t1,
+                           std::optional<uint64_t> t2)
     : id_(id), name_(std::move(name)), t1_(t1), t2_(t2) {}
 
 CompilerTarget::SiteId CompilerTarget::Site::id() const noexcept { return id_; }
@@ -243,8 +239,8 @@ std::optional<uint64_t> CompilerTarget::Site::t2() const noexcept {
 
 llvm::Expected<CompilerTarget::SiteTuple>
 CompilerTarget::SiteTuple::create(std::vector<SiteId> sites,
-                                  const std::optional<uint64_t> duration,
-                                  const std::optional<double> fidelity) {
+                                  std::optional<uint64_t> duration,
+                                  std::optional<double> fidelity) {
   std::unordered_set<SiteId> uniqueSites;
   for (const auto site : sites) {
     if (site < 0) {
@@ -264,8 +260,8 @@ CompilerTarget::SiteTuple::create(std::vector<SiteId> sites,
 }
 
 CompilerTarget::SiteTuple::SiteTuple(std::vector<SiteId> sites,
-                                     const std::optional<uint64_t> duration,
-                                     const std::optional<double> fidelity)
+                                     std::optional<uint64_t> duration,
+                                     std::optional<double> fidelity)
     : sites_(std::move(sites)), duration_(duration), fidelity_(fidelity) {}
 
 ArrayRef<SiteId> CompilerTarget::SiteTuple::sites() const noexcept {
@@ -280,25 +276,69 @@ std::optional<double> CompilerTarget::SiteTuple::fidelity() const noexcept {
   return fidelity_;
 }
 
+CompilerTarget::Operation::Arity
+CompilerTarget::Operation::Arity::fixed(size_t value) noexcept {
+  return {Kind::Fixed, value};
+}
+
+CompilerTarget::Operation::Arity
+CompilerTarget::Operation::Arity::variadic(size_t minimum) noexcept {
+  return {Kind::Variadic, minimum};
+}
+
+CompilerTarget::Operation::Arity::Kind
+CompilerTarget::Operation::Arity::kind() const noexcept {
+  return kind_;
+}
+
+size_t CompilerTarget::Operation::Arity::value() const noexcept {
+  return value_;
+}
+
+bool CompilerTarget::Operation::Arity::accepts(size_t width) const noexcept {
+  return kind_ == Kind::Variadic ? width >= value_ : width == value_;
+}
+
+CompilerTarget::Operation::Arity::Arity(Kind kind, size_t value) noexcept
+    : kind_(kind), value_(value) {}
+
 llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
-    std::string name, const size_t arity, const size_t numParameters,
-    std::vector<SiteTuple> siteTuples, const std::optional<uint64_t> duration,
-    const std::optional<double> fidelity) {
+    std::string name, size_t arity, size_t numParameters,
+    std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
+    std::optional<double> fidelity) {
+  return create(std::move(name), Arity::fixed(arity), numParameters,
+                std::move(siteTuples), duration, fidelity);
+}
+
+llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
+    std::string name, Arity arity, size_t numParameters,
+    std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
+    std::optional<double> fidelity) {
   auto canonicalName = canonicalOperationName(name);
   if (canonicalName.empty()) {
     return invalidTarget("Compiler target operation name must not be empty");
-  }
-  if (arity == 0) {
-    return invalidTarget("Compiler target operation arity must be positive");
   }
   if (auto error =
           validateFidelity(fidelity, "Compiler target operation fidelity")) {
     return std::move(error);
   }
+  if (arity.kind() == Arity::Kind::Variadic && arity.value() == 0) {
+    return invalidTarget(
+        "Compiler target operation variadic minimum must be positive");
+  }
+  if (arity.kind() == Arity::Kind::Variadic && !siteTuples.empty()) {
+    return invalidTarget(
+        "Compiler target variadic operation cannot contain site tuples");
+  }
+  if (arity.kind() == Arity::Kind::Fixed && arity.value() == 0 &&
+      !siteTuples.empty()) {
+    return invalidTarget(
+        "Compiler target zero-arity operation cannot contain site tuples");
+  }
 
   SmallVector<ArrayRef<SiteId>> uniqueSiteCombinations;
   for (const auto& siteTuple : siteTuples) {
-    if (siteTuple.sites().size() != arity) {
+    if (!arity.accepts(siteTuple.sites().size())) {
       return invalidTarget(
           "Compiler target operation site tuple does not match its arity");
     }
@@ -313,12 +353,11 @@ llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
 }
 
 CompilerTarget::Operation::Operation(std::string name,
-                                     std::string canonicalName,
-                                     const size_t arity,
-                                     const size_t numParameters,
+                                     std::string canonicalName, Arity arity,
+                                     size_t numParameters,
                                      std::vector<SiteTuple> siteTuples,
-                                     const std::optional<uint64_t> duration,
-                                     const std::optional<double> fidelity)
+                                     std::optional<uint64_t> duration,
+                                     std::optional<double> fidelity)
     : name_(std::move(name)), canonicalName_(std::move(canonicalName)),
       arity_(arity), numParameters_(numParameters),
       siteTuples_(std::move(siteTuples)), duration_(duration),
@@ -330,7 +369,10 @@ StringRef CompilerTarget::Operation::canonicalName() const noexcept {
   return canonicalName_;
 }
 
-size_t CompilerTarget::Operation::arity() const noexcept { return arity_; }
+CompilerTarget::Operation::Arity
+CompilerTarget::Operation::arity() const noexcept {
+  return arity_;
+}
 
 size_t CompilerTarget::Operation::numParameters() const noexcept {
   return numParameters_;
@@ -354,12 +396,9 @@ CompilerTarget::NativeOperations::unrestricted() {
   return {Kind::Unrestricted, {}};
 }
 
-CompilerTarget::NativeOperations::NativeOperations() noexcept
-    : kind_(Kind::Unknown) {}
-
 CompilerTarget::NativeOperations
 CompilerTarget::NativeOperations::fromOperations(
-    const ArrayRef<Operation> operations) {
+    ArrayRef<Operation> operations) {
   return {Kind::Explicit, operations};
 }
 
@@ -374,7 +413,7 @@ CompilerTarget::NativeOperations::operations() const noexcept {
 }
 
 CompilerTarget::NativeOperations::NativeOperations(
-    const Kind kind, const ArrayRef<Operation> operations)
+    Kind kind, ArrayRef<Operation> operations)
     : kind_(kind), operations_(operations) {}
 
 struct CompilerTarget::Storage {
@@ -395,9 +434,12 @@ struct CompilerTarget::Storage {
 
   [[nodiscard]] llvm::Error initialize();
 
-  [[nodiscard]] std::optional<bool>
+  [[nodiscard]] bool
   supportsOperation(StringRef name, size_t arity,
                     std::optional<size_t> numParameters) const;
+  [[nodiscard]] bool
+  supportsVariadicOperation(StringRef name, size_t arity,
+                            std::optional<size_t> numParameters) const;
   [[nodiscard]] std::optional<SynthesisBasis> resolveSynthesisBasis() const;
 
   std::optional<std::string> name;
@@ -419,9 +461,9 @@ struct CompilerTarget::Storage {
 
 CompilerTarget::Storage::Storage(
     std::optional<std::string> targetName, std::vector<Site> targetSites,
-    const Connectivity::Kind targetConnectivityKind,
+    Connectivity::Kind targetConnectivityKind,
     SmallVector<Coupling> targetCouplings,
-    const NativeOperations::Kind targetNativeOperationsKind,
+    NativeOperations::Kind targetNativeOperationsKind,
     SmallVector<Operation> targetOperations,
     std::optional<DurationUnit> targetDurationUnit)
     : name(std::move(targetName)), durationUnit(std::move(targetDurationUnit)),
@@ -433,9 +475,9 @@ CompilerTarget::Storage::Storage(
 llvm::Expected<std::shared_ptr<const CompilerTarget::Storage>>
 CompilerTarget::Storage::create(
     std::optional<std::string> targetName, std::vector<Site> targetSites,
-    const Connectivity::Kind targetConnectivityKind,
+    Connectivity::Kind targetConnectivityKind,
     SmallVector<Coupling> targetCouplings,
-    const NativeOperations::Kind targetNativeOperationsKind,
+    NativeOperations::Kind targetNativeOperationsKind,
     SmallVector<Operation> targetOperations,
     std::optional<DurationUnit> targetDurationUnit) {
   auto storage = std::make_shared<Storage>(
@@ -521,13 +563,17 @@ llvm::Error CompilerTarget::Storage::initialize() {
         return invalidTarget("Compiler target topology must be connected");
       }
     }
-  } else if (connectivityKind == Connectivity::Kind::AllToAll) {
+  } else {
     maximumDegree = sites.size() - 1;
   }
 
   if (nativeOperationsKind == NativeOperations::Kind::Explicit) {
     for (const auto [index, operation] : llvm::enumerate(operations)) {
-      if (operation.arity() > sites.size()) {
+      if (operation.arity().value() > sites.size()) {
+        if (operation.arity().kind() == Operation::Arity::Kind::Variadic) {
+          return invalidTarget("Compiler target operation variadic minimum "
+                               "exceeds its site count");
+        }
         return invalidTarget(
             "Compiler target operation arity exceeds its site count");
       }
@@ -560,7 +606,7 @@ llvm::Error CompilerTarget::Storage::initialize() {
 
   for (const auto& specification : GATE_SPECIFICATIONS) {
     if (supportsOperation(specification.name, specification.arity,
-                          specification.numParameters) == true) {
+                          specification.numParameters)) {
       supportedGates.emplace_back(specification.kind);
     }
   }
@@ -568,15 +614,12 @@ llvm::Error CompilerTarget::Storage::initialize() {
   return llvm::Error::success();
 }
 
-std::optional<bool> CompilerTarget::Storage::supportsOperation(
-    const StringRef operationName, const size_t arity,
-    const std::optional<size_t> numParameters) const {
+bool CompilerTarget::Storage::supportsOperation(
+    StringRef operationName, size_t arity,
+    std::optional<size_t> numParameters) const {
   const auto canonical = canonicalOperationName(operationName);
-  if (canonical.empty() || arity == 0 || arity > sites.size()) {
+  if (canonical.empty() || arity > sites.size()) {
     return false;
-  }
-  if (nativeOperationsKind == NativeOperations::Kind::Unknown) {
-    return std::nullopt;
   }
   if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
     return true;
@@ -587,14 +630,36 @@ std::optional<bool> CompilerTarget::Storage::supportsOperation(
   }
   return llvm::any_of(found->second, [&](const auto index) {
     const auto& operation = operations[index];
-    return operation.arity() == arity &&
+    return operation.arity().accepts(arity) &&
+           (!numParameters || operation.numParameters() == *numParameters);
+  });
+}
+
+bool CompilerTarget::Storage::supportsVariadicOperation(
+    StringRef operationName, size_t arity,
+    std::optional<size_t> numParameters) const {
+  const auto canonical = canonicalOperationName(operationName);
+  if (canonical.empty() || arity > sites.size()) {
+    return false;
+  }
+  if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
+    return true;
+  }
+  const auto found = capabilities.find(canonical);
+  if (found == capabilities.end()) {
+    return false;
+  }
+  return llvm::any_of(found->second, [&](const auto index) {
+    const auto& operation = operations[index];
+    return operation.arity().kind() == Operation::Arity::Kind::Variadic &&
+           operation.arity().accepts(arity) &&
            (!numParameters || operation.numParameters() == *numParameters);
   });
 }
 
 std::optional<CompilerTarget::SynthesisBasis>
 CompilerTarget::Storage::resolveSynthesisBasis() const {
-  const auto supports = [&](const GateKind gate) {
+  const auto supports = [&](GateKind gate) {
     return llvm::is_contained(supportedGates, gate);
   };
   std::optional<SingleQubitBasis> singleQubit;
@@ -629,7 +694,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
 }
 
 llvm::Expected<CompilerTarget>
-CompilerTarget::create(const size_t numSites, Connectivity connectivity,
+CompilerTarget::create(size_t numSites, Connectivity connectivity,
                        NativeOperations nativeOperations,
                        std::optional<DurationUnit> durationUnit) {
   auto sites = makeDenseSites(numSites);
@@ -641,7 +706,7 @@ CompilerTarget::create(const size_t numSites, Connectivity connectivity,
 }
 
 llvm::Expected<CompilerTarget>
-CompilerTarget::create(std::string name, const size_t numSites,
+CompilerTarget::create(std::string name, size_t numSites,
                        Connectivity connectivity,
                        NativeOperations nativeOperations,
                        std::optional<DurationUnit> durationUnit) {
@@ -715,7 +780,7 @@ ArrayRef<SiteId> CompilerTarget::siteIds() const noexcept {
 }
 
 std::optional<size_t>
-CompilerTarget::vertexForSite(const SiteId site) const noexcept {
+CompilerTarget::vertexForSite(SiteId site) const noexcept {
   const auto found = storage_->siteToVertex.find(site);
   if (found == storage_->siteToVertex.end()) {
     return std::nullopt;
@@ -723,7 +788,7 @@ CompilerTarget::vertexForSite(const SiteId site) const noexcept {
   return found->second;
 }
 
-SiteId CompilerTarget::siteForVertex(const size_t vertex) const {
+SiteId CompilerTarget::siteForVertex(size_t vertex) const {
   assert(vertex < numSites() && "Compiler target vertex is out of range");
   return storage_->siteIds[vertex];
 }
@@ -737,13 +802,9 @@ ArrayRef<CompilerTarget::Coupling> CompilerTarget::couplings() const noexcept {
   return storage_->couplings;
 }
 
-bool CompilerTarget::areAdjacent(const size_t source,
-                                 const size_t target) const {
+bool CompilerTarget::areAdjacent(size_t source, size_t target) const {
   assert(source < numSites() && target < numSites() &&
          "Compiler target vertex is out of range");
-  if (connectivityKind() == Connectivity::Kind::Unknown) {
-    llvm::report_fatal_error("Compiler target connectivity is unknown");
-  }
   if (connectivityKind() == Connectivity::Kind::AllToAll) {
     return source != target;
   }
@@ -751,11 +812,7 @@ bool CompilerTarget::areAdjacent(const size_t source,
 }
 
 void CompilerTarget::forEachNeighbour(
-    const size_t vertex,
-    const llvm::function_ref<void(size_t)> callback) const {
-  if (connectivityKind() == Connectivity::Kind::Unknown) {
-    llvm::report_fatal_error("Compiler target connectivity is unknown");
-  }
+    size_t vertex, llvm::function_ref<void(size_t)> callback) const {
   if (connectivityKind() == Connectivity::Kind::AllToAll) {
     assert(vertex < numSites() && "Compiler target vertex is out of range");
     for (size_t neighbour = 0; neighbour < numSites(); ++neighbour) {
@@ -770,28 +827,21 @@ void CompilerTarget::forEachNeighbour(
   }
 }
 
-size_t CompilerTarget::distanceBetween(const size_t source,
-                                       const size_t target) const {
+size_t CompilerTarget::distanceBetween(size_t source, size_t target) const {
   assert(source < numSites() && target < numSites() &&
          "Compiler target vertex is out of range");
-  if (connectivityKind() == Connectivity::Kind::Unknown) {
-    llvm::report_fatal_error("Compiler target connectivity is unknown");
-  }
   if (connectivityKind() == Connectivity::Kind::AllToAll) {
     return source == target ? 0 : 1;
   }
   return storage_->distances[(source * numSites()) + target];
 }
 
-ArrayRef<size_t> CompilerTarget::explicitNeighbours(const size_t vertex) const {
+ArrayRef<size_t> CompilerTarget::explicitNeighbours(size_t vertex) const {
   assert(vertex < numSites() && "Compiler target vertex is out of range");
   return storage_->adjacency[vertex];
 }
 
 size_t CompilerTarget::maxDegree() const noexcept {
-  if (connectivityKind() == Connectivity::Kind::Unknown) {
-    llvm::report_fatal_error("Compiler target connectivity is unknown");
-  }
   return storage_->maximumDegree;
 }
 
@@ -805,33 +855,45 @@ CompilerTarget::operations() const noexcept {
   return storage_->operations;
 }
 
-std::optional<bool> CompilerTarget::supportsOperation(
-    const StringRef operationName, const size_t arity,
-    const std::optional<size_t> numParameters) const {
+bool CompilerTarget::supportsOperation(
+    StringRef operationName, size_t arity,
+    std::optional<size_t> numParameters) const {
   return storage_->supportsOperation(operationName, arity, numParameters);
 }
 
-std::optional<bool>
-CompilerTarget::supports(::mlir::Operation* operation) const {
+bool CompilerTarget::supports(::mlir::Operation* operation) const {
   if (operation == nullptr) {
     return false;
   }
 
   if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(operation)) {
-    if (isa<qco::BarrierOp, qco::GPhaseOp>(operation)) {
+    if (isa<qco::BarrierOp>(operation)) {
       return true;
     }
-    if (auto controlled = dyn_cast<qco::CtrlOp>(operation);
-        controlled && controlled.getNumControls() == 1 &&
-        controlled.getNumTargets() == 1 &&
-        controlled.getNumBodyUnitaries() == 1) {
-      auto* const body = controlled.getBodyUnitary(0).getOperation();
-      if (isa<qco::XOp>(body)) {
+    if (auto controlled = dyn_cast<qco::CtrlOp>(operation)) {
+      if (controlled.getNumControls() == 0 ||
+          controlled.getNumBodyUnitaries() != 1) {
+        return false;
+      }
+      auto body = controlled.getBodyUnitary(0);
+      if (body.getNumQubits() != controlled.getNumTargets()) {
+        return false;
+      }
+      if (storage_->supportsVariadicOperation(body.getBaseSymbol(),
+                                              controlled.getNumQubits(),
+                                              body.getNumParams())) {
+        return true;
+      }
+      if (controlled.getNumControls() != 1 || controlled.getNumTargets() != 1) {
+        return false;
+      }
+      if (isa<qco::XOp>(body.getOperation())) {
         return storage_->supportsOperation("cx", 2, 0);
       }
-      if (isa<qco::ZOp>(body)) {
+      if (isa<qco::ZOp>(body.getOperation())) {
         return storage_->supportsOperation("cz", 2, 0);
       }
+      return false;
     }
     return storage_->supportsOperation(unitary.getBaseSymbol(),
                                        unitary.getNumQubits(),
@@ -846,10 +908,7 @@ CompilerTarget::supports(::mlir::Operation* operation) const {
   return false;
 }
 
-std::optional<bool> CompilerTarget::supports(const GateKind gate) const {
-  if (nativeOperationsKind() == NativeOperations::Kind::Unknown) {
-    return std::nullopt;
-  }
+bool CompilerTarget::supports(GateKind gate) const {
   return llvm::is_contained(storage_->supportedGates, gate);
 }
 

@@ -38,23 +38,38 @@
 namespace mlir {
 
 /// Target facts that QDMI v1.3 cannot encode compactly.
-/// TODO(#2093): Remove this compatibility marker when QDMI standardizes
-/// explicit unrestricted connectivity and operation applicability.
+/// TODO(#2093): Remove these compatibility markers when QDMI standardizes
+/// explicit unrestricted connectivity, operation applicability, and operation
+/// arity ranges.
 constexpr std::string_view ALL_TO_ALL_HOMOGENEOUS_METADATA =
     "mqt.compiler-target.v1:all-to-all-homogeneous";
+constexpr std::string_view ARBITRARY_POSITIVE_CONTROLS_METADATA =
+    "mqt.compiler-target.v1:arbitrary-positive-controls";
+
+[[nodiscard]] static bool
+matchesMetadata(const std::optional<std::vector<std::byte>>& metadata,
+                const std::string_view expected) {
+  const auto expectedBytes =
+      std::as_bytes(std::span{expected.data(), expected.size() + 1});
+  return metadata && std::ranges::equal(*metadata, expectedBytes);
+}
 
 [[nodiscard]] static bool
 hasAllToAllHomogeneousMetadata(const qdmi::Device& device) {
-  const auto metadata = device.queryCustomProperty<std::vector<std::byte>>(
-      qdmi::CustomProperty::Custom1);
-  const auto expected =
-      std::as_bytes(std::span{ALL_TO_ALL_HOMOGENEOUS_METADATA.data(),
-                              ALL_TO_ALL_HOMOGENEOUS_METADATA.size() + 1});
-  return metadata && std::ranges::equal(*metadata, expected);
+  return matchesMetadata(device.queryCustomProperty<std::vector<std::byte>>(
+                             qdmi::CustomProperty::Custom1),
+                         ALL_TO_ALL_HOMOGENEOUS_METADATA);
+}
+
+[[nodiscard]] static bool
+hasArbitraryPositiveControlsMetadata(const qdmi::Operation& operation) {
+  return matchesMetadata(operation.queryCustomProperty<std::vector<std::byte>>(
+                             qdmi::CustomProperty::Custom1),
+                         ARBITRARY_POSITIVE_CONTROLS_METADATA);
 }
 
 [[nodiscard]] static llvm::Error
-requireAdapterInput(const bool condition, const llvm::Twine& message) {
+requireAdapterInput(bool condition, const llvm::Twine& message) {
   if (!condition) {
     return llvm::createStringError(
         std::make_error_code(std::errc::invalid_argument), message);
@@ -63,8 +78,8 @@ requireAdapterInput(const bool condition, const llvm::Twine& message) {
 }
 
 [[nodiscard]] static llvm::Error
-requireCircuitDevice(const bool condition, const llvm::StringRef deviceName,
-                     const llvm::StringRef detail) {
+requireCircuitDevice(bool condition, llvm::StringRef deviceName,
+                     llvm::StringRef detail) {
   return requireAdapterInput(
       condition, llvm::Twine("QDMI device '") + deviceName +
                      "' cannot be used as an MLIR compiler target: only "
@@ -73,20 +88,19 @@ requireCircuitDevice(const bool condition, const llvm::StringRef deviceName,
                      detail + ")");
 }
 
-[[nodiscard]] static llvm::Error requireHomogeneousOperation(
-    const bool condition, const llvm::StringRef deviceName,
-    const llvm::StringRef operationName, const llvm::StringRef detail) {
+[[nodiscard]] static llvm::Error
+requireRepresentableOperation(bool condition, llvm::StringRef deviceName,
+                              llvm::StringRef operationName,
+                              llvm::StringRef detail) {
   return requireAdapterInput(
       condition, llvm::Twine("QDMI device '") + deviceName + "' operation '" +
                      operationName +
-                     "' cannot be represented by the MLIR compiler target: "
-                     "operation support must be homogeneous across the device "
-                     "(" +
+                     "' cannot be represented by the MLIR compiler target (" +
                      detail + ")");
 }
 
 [[nodiscard]] static llvm::Expected<CompilerTarget::SiteId>
-checkedSiteId(const size_t index) {
+checkedSiteId(size_t index) {
   if (auto error = requireAdapterInput(
           index <= static_cast<uintmax_t>(
                        std::numeric_limits<CompilerTarget::SiteId>::max()),
@@ -98,14 +112,13 @@ checkedSiteId(const size_t index) {
 }
 
 [[nodiscard]] static CompilerTarget::Coupling
-canonicalCoupling(const CompilerTarget::SiteId first,
-                  const CompilerTarget::SiteId second) {
+canonicalCoupling(CompilerTarget::SiteId first, CompilerTarget::SiteId second) {
   return first < second ? CompilerTarget::Coupling{first, second}
                         : CompilerTarget::Coupling{second, first};
 }
 
 [[nodiscard]] static std::optional<size_t>
-allToAllCouplingCount(const size_t numSites) {
+allToAllCouplingCount(size_t numSites) {
   if (numSites < 2) {
     return 0;
   }
@@ -115,7 +128,7 @@ allToAllCouplingCount(const size_t numSites) {
 }
 
 [[nodiscard]] static bool
-isSwapInvariantOperation(const llvm::StringRef operationName) {
+isSwapInvariantOperation(llvm::StringRef operationName) {
   const auto canonicalName = operationName.trim().lower();
   return llvm::StringSwitch<bool>(canonicalName)
       .Cases({"cz", "swap", "iswap"}, true)
@@ -124,28 +137,65 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
 }
 
 [[nodiscard]] static llvm::Error validateHomogeneousSupport(
-    const qdmi::Operation& operation, const size_t arity,
+    const qdmi::Operation& operation, size_t arity,
     const std::vector<qdmi::Site>& flattenedSites,
     const std::vector<CompilerTarget::Site>& deviceSites,
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
-    const llvm::StringRef deviceName) {
+    llvm::StringRef deviceName) {
   const auto operationName = operation.getName();
-  if (auto error = requireHomogeneousOperation(
+  if (auto error = requireRepresentableOperation(
           flattenedSites.size() % arity == 0, deviceName, operationName,
           "the reported site list is not divisible by the fixed arity")) {
     return error;
   }
-  if (auto error = requireHomogeneousOperation(
-          arity <= 2, deviceName, operationName,
-          "explicit site lists are supported only for one- and two-qubit "
-          "operations")) {
-    return error;
-  }
-
   std::unordered_set<CompilerTarget::SiteId> knownSites;
   knownSites.reserve(deviceSites.size());
   for (const auto& site : deviceSites) {
     knownSites.insert(site.id());
+  }
+
+  if (arity > 2) {
+    std::set<std::vector<CompilerTarget::SiteId>> supportedTuples;
+    for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
+      std::vector<CompilerTarget::SiteId> tuple;
+      tuple.reserve(arity);
+      for (size_t index = 0; index < arity; ++index) {
+        auto siteId = checkedSiteId(flattenedSites[offset + index].getIndex());
+        if (!siteId) {
+          return siteId.takeError();
+        }
+        if (auto error = requireRepresentableOperation(
+                knownSites.contains(*siteId) &&
+                    !llvm::is_contained(tuple, *siteId),
+                deviceName, operationName,
+                "each higher-arity site tuple must contain distinct device "
+                "sites")) {
+          return error;
+        }
+        tuple.emplace_back(*siteId);
+      }
+      if (auto error = requireRepresentableOperation(
+              supportedTuples.emplace(std::move(tuple)).second, deviceName,
+              operationName,
+              "the reported higher-arity site tuples must be unique")) {
+        return error;
+      }
+    }
+
+    auto expectedTuples = std::optional<size_t>{1};
+    for (size_t index = 0; index < arity && expectedTuples; ++index) {
+      if (index >= knownSites.size()) {
+        expectedTuples = 0;
+        break;
+      }
+      expectedTuples =
+          llvm::checkedMulUnsigned(*expectedTuples, knownSites.size() - index);
+    }
+    return requireRepresentableOperation(
+        expectedTuples && supportedTuples.size() == *expectedTuples, deviceName,
+        operationName,
+        "support is not homogeneous across all ordered tuples of distinct "
+        "device sites");
   }
 
   if (arity == 1) {
@@ -157,16 +207,16 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
         return siteId.takeError();
       }
       const auto inserted = supportedSites.insert(*siteId).second;
-      if (auto error = requireHomogeneousOperation(
+      if (auto error = requireRepresentableOperation(
               knownSites.contains(*siteId) && inserted, deviceName,
               operationName,
               "the reported one-qubit sites must be unique device sites")) {
         return error;
       }
     }
-    return requireHomogeneousOperation(
+    return requireRepresentableOperation(
         supportedSites.size() == knownSites.size(), deviceName, operationName,
-        "the operation is not available on every device site");
+        "support is not homogeneous across all device sites");
   }
 
   std::set<CompilerTarget::Coupling> reportedTuples;
@@ -183,10 +233,10 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
     const auto inserted = reportedTuples.insert({*first, *second}).second;
     const auto validTuple = *first != *second && knownSites.contains(*first) &&
                             knownSites.contains(*second) && inserted;
-    if (auto error =
-            requireHomogeneousOperation(validTuple, deviceName, operationName,
-                                        "the reported two-qubit sites must be "
-                                        "unique pairs of device sites")) {
+    if (auto error = requireRepresentableOperation(
+            validTuple, deviceName, operationName,
+            "the reported two-qubit sites must be "
+            "unique pairs of device sites")) {
       return error;
     }
     supportedCouplings.insert(canonicalCoupling(*first, *second));
@@ -207,15 +257,15 @@ isSwapInvariantOperation(const llvm::StringRef operationName) {
           return supportedCouplings.contains(coupling);
         });
   }
-  if (auto error = requireHomogeneousOperation(
+  if (auto error = requireRepresentableOperation(
           coversTarget, deviceName, operationName,
-          couplings ? "the operation is not available on every topology edge"
-                    : "the operation is not available on every all-to-all site "
-                      "pair")) {
+          couplings ? "support is not homogeneous across all topology edges"
+                    : "support is not homogeneous across all-to-all site "
+                      "pairs")) {
     return error;
   }
 
-  return requireHomogeneousOperation(
+  return requireRepresentableOperation(
       isSwapInvariantOperation(operationName) ||
           std::ranges::all_of(
               supportedCouplings,
@@ -249,10 +299,10 @@ snapshotDurationUnit(const qdmi::Device& device) {
 }
 
 [[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::SiteTuple>>
-snapshotSiteTuples(const qdmi::Operation& operation, const size_t arity,
+snapshotSiteTuples(const qdmi::Operation& operation, size_t arity,
                    const std::vector<qdmi::Site>& flattenedSites,
-                   const std::optional<uint64_t> defaultDuration,
-                   const std::optional<double> defaultFidelity) {
+                   std::optional<uint64_t> defaultDuration,
+                   std::optional<double> defaultFidelity) {
   std::vector<CompilerTarget::SiteTuple> siteTuples;
   siteTuples.reserve(flattenedSites.size() / arity);
   for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
@@ -289,7 +339,7 @@ snapshotOperations(
     const std::vector<qdmi::Operation>& operations,
     const std::vector<CompilerTarget::Site>& deviceSites,
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
-    const llvm::StringRef deviceName, const bool homogeneousOperationSupport) {
+    llvm::StringRef deviceName, bool homogeneousOperationSupport) {
   std::vector<CompilerTarget::Operation> targetOperations;
   targetOperations.reserve(operations.size());
   for (const auto& operation : operations) {
@@ -299,17 +349,37 @@ snapshotOperations(
       return error;
     }
     const auto arity = operation.getQubitsNum();
-    if (!arity || *arity == 0) {
+    if (!arity) {
       continue;
     }
+    const auto hasArbitraryPositiveControls =
+        hasArbitraryPositiveControlsMetadata(operation);
+    if (auto error = requireRepresentableOperation(
+            !hasArbitraryPositiveControls ||
+                (*arity > 0 && homogeneousOperationSupport),
+            deviceName, operation.getName(),
+            "arbitrary positive controls require a positive base arity and "
+            "homogeneous operation support")) {
+      return error;
+    }
     const auto flattenedSites = operation.getSites();
-    if (!flattenedSites && !homogeneousOperationSupport) {
-      return CompilerTarget::NativeOperations{};
+    if (auto error = requireRepresentableOperation(
+            *arity == 0 || flattenedSites || homogeneousOperationSupport,
+            deviceName, operation.getName(),
+            "the supported sites are not reported")) {
+      return error;
     }
     const auto duration = operation.getDuration();
     const auto fidelity = operation.getFidelity();
     std::vector<CompilerTarget::SiteTuple> siteTuples;
-    if (flattenedSites) {
+    if (*arity == 0) {
+      if (auto error = requireRepresentableOperation(
+              !flattenedSites || flattenedSites->empty(), deviceName,
+              operation.getName(),
+              "a zero-arity operation cannot report supported sites")) {
+        return error;
+      }
+    } else if (flattenedSites) {
       if (auto error =
               validateHomogeneousSupport(operation, *arity, *flattenedSites,
                                          deviceSites, couplings, deviceName)) {
@@ -322,8 +392,18 @@ snapshotOperations(
       }
       siteTuples = std::move(*tuples);
     }
+    if (auto error = requireRepresentableOperation(
+            !hasArbitraryPositiveControls || siteTuples.empty(), deviceName,
+            operation.getName(),
+            "a variadic operation cannot retain site-specific calibration")) {
+      return error;
+    }
+    const auto targetArity =
+        hasArbitraryPositiveControls
+            ? CompilerTarget::Operation::Arity::variadic(*arity)
+            : CompilerTarget::Operation::Arity::fixed(*arity);
     auto targetOperation = CompilerTarget::Operation::create(
-        operation.getName(), *arity, operation.getParametersNum(),
+        operation.getName(), targetArity, operation.getParametersNum(),
         std::move(siteTuples), duration, fidelity);
     if (!targetOperation) {
       return targetOperation.takeError();
@@ -382,6 +462,13 @@ snapshotCompilerTarget(const qdmi::Device& device) {
       couplings->emplace_back(*sourceId, *targetId);
     }
   }
+  if (auto error = requireAdapterInput(
+          couplings || hasHomogeneousAllToAllMetadata || sites.size() == 1,
+          llvm::Twine("QDMI device '") + deviceName +
+              "' cannot be used as an MLIR compiler target: connectivity is "
+              "not reported")) {
+    return error;
+  }
 
   auto operations =
       snapshotOperations(device.getOperations(), sites, couplings, deviceName,
@@ -393,12 +480,9 @@ snapshotCompilerTarget(const qdmi::Device& device) {
   if (!durationUnit) {
     return durationUnit.takeError();
   }
-  CompilerTarget::Connectivity connectivity;
-  if (couplings) {
-    connectivity = CompilerTarget::Connectivity::fromCouplings(*couplings);
-  } else if (hasHomogeneousAllToAllMetadata) {
-    connectivity = CompilerTarget::Connectivity::allToAll();
-  }
+  auto connectivity =
+      couplings ? CompilerTarget::Connectivity::fromCouplings(*couplings)
+                : CompilerTarget::Connectivity::allToAll();
   return CompilerTarget::create(std::move(deviceName), std::move(sites),
                                 std::move(connectivity), std::move(*operations),
                                 std::move(*durationUnit));

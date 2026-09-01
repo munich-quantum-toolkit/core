@@ -1541,14 +1541,14 @@ TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
       llvm::cantFail(Operation::create("sx", 1, 0)),
       llvm::cantFail(Operation::create("rz", 1, 1)),
       llvm::cantFail(Operation::create("cz", 2, 0)),
-      llvm::cantFail(Operation::create("ctrl", 2, 0)),
+      llvm::cantFail(Operation::create("u", Operation::Arity::variadic(1), 3)),
   };
   const auto target = llvm::cantFail(CompilerTarget::create(
       2, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations(operations)));
   ASSERT_TRUE(target.synthesisBasis());
   ASSERT_EQ(target.synthesisBasis()->singleQubit,
-            CompilerTarget::SingleQubitBasis::ZSXX);
+            CompilerTarget::SingleQubitBasis::U);
 
   auto program = QCOProgram::fromMLIRString(source);
   ASSERT_TRUE(program);
@@ -1626,7 +1626,7 @@ reset q[0];
 h q[1];
 )";
   const auto target = llvm::cantFail(
-      CompilerTarget::create(3, CompilerTarget::Connectivity{},
+      CompilerTarget::create(3, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
 
   auto qc = QCProgram::fromQASMString(source);
@@ -1770,7 +1770,9 @@ h q;
       CompilerInput{std::move(*customPipelineInput)}, ProgramFormat::QCO,
       nullptr, "builtin.module(merge-single-qubit-rotation-gates)"));
 
-  const auto target = llvm::cantFail(CompilerTarget::create(1));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
   auto targetedImport = QCProgram::fromQASMString(qasm);
   auto targetedRawQCO = QCProgram::fromQASMString(qasm);
   auto targetedJeff = QCProgram::fromQASMString(qasm);

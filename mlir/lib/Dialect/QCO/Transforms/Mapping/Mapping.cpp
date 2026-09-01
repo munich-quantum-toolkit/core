@@ -339,23 +339,6 @@ protected:
       return;
     }
 
-    if (target.connectivityKind() ==
-        CompilerTarget::Connectivity::Kind::Unknown) {
-      const auto result = func.walk([](UnitaryOpInterface unitary) {
-        if (isa<BarrierOp>(unitary) || unitary.getNumQubits() <= 1) {
-          return WalkResult::advance();
-        }
-        unitary.emitError() << "target placement requires known connectivity "
-                               "for an operation with arity "
-                            << unitary.getNumQubits();
-        return WalkResult::interrupt();
-      });
-      if (result.wasInterrupted()) {
-        signalPassFailure();
-        return;
-      }
-    }
-
     auto computation = discoverComputation(func);
     if (failed(computation) ||
         failed(checkCapacity(func, target, *computation))) {

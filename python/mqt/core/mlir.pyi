@@ -61,8 +61,8 @@ class OutputFormat(enum.Enum):
 class CompilerTarget:
     """Immutable MLIR compiler target.
 
-    Connectivity and native-operation metadata distinguish unknown,
-    unrestricted, and explicitly enumerated support.
+    Every target has either all-to-all or explicitly enumerated connectivity and
+    either unrestricted or explicitly enumerated native-operation support.
     """
 
     @overload
@@ -70,8 +70,8 @@ class CompilerTarget:
         self,
         num_sites: int,
         *,
-        connectivity: CompilerTarget.Connectivity = ...,
-        native_operations: CompilerTarget.NativeOperations = ...,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -80,8 +80,8 @@ class CompilerTarget:
         name: str,
         num_sites: int,
         *,
-        connectivity: CompilerTarget.Connectivity = ...,
-        native_operations: CompilerTarget.NativeOperations = ...,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -89,8 +89,8 @@ class CompilerTarget:
         self,
         sites: Sequence[CompilerTarget.Site],
         *,
-        connectivity: CompilerTarget.Connectivity = ...,
-        native_operations: CompilerTarget.NativeOperations = ...,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -99,8 +99,8 @@ class CompilerTarget:
         name: str,
         sites: Sequence[CompilerTarget.Site],
         *,
-        connectivity: CompilerTarget.Connectivity = ...,
-        native_operations: CompilerTarget.NativeOperations = ...,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
 
@@ -156,13 +156,42 @@ class CompilerTarget:
         def fidelity(self) -> float | None:
             """The operation fidelity, if available."""
 
+    class OperationArityKind(enum.Enum):
+        """How an operation capability accepts qubit widths."""
+
+        FIXED = 0
+
+        VARIADIC = 1
+
+    class OperationArity:
+        """Accepted operation qubit widths."""
+
+        @staticmethod
+        def fixed(value: int) -> CompilerTarget.OperationArity:
+            """Create an exact operation arity."""
+
+        @staticmethod
+        def variadic(minimum: int) -> CompilerTarget.OperationArity:
+            """Create an operation arity with an inclusive minimum. Operation construction requires a positive minimum."""
+
+        @property
+        def kind(self) -> CompilerTarget.OperationArityKind:
+            """The arity kind."""
+
+        @property
+        def value(self) -> int:
+            """The exact arity or inclusive variadic minimum."""
+
+        def accepts(self, width: int) -> bool:
+            """Whether this arity accepts a concrete width."""
+
     class Operation:
         """A homogeneous target-wide operation capability and its calibration."""
 
         def __init__(
             self,
             name: str,
-            arity: int,
+            arity: int | CompilerTarget.OperationArity,
             num_parameters: int,
             site_tuples: Sequence[CompilerTarget.SiteTuple] | None = None,
             duration: int | None = None,
@@ -177,8 +206,8 @@ class CompilerTarget:
             """The normalized compiler operation name."""
 
         @property
-        def arity(self) -> int:
-            """The fixed operation arity."""
+        def arity(self) -> CompilerTarget.OperationArity:
+            """The accepted operation arity."""
 
         @property
         def num_parameters(self) -> int:
@@ -258,64 +287,50 @@ class CompilerTarget:
             """The two-qubit entangler."""
 
     class ConnectivityKind(enum.Enum):
-        """How target connectivity is known."""
+        """The target connectivity model."""
 
-        UNKNOWN = 0
+        ALL_TO_ALL = 0
 
-        ALL_TO_ALL = 1
-
-        EXPLICIT = 2
+        EXPLICIT = 1
 
     class Connectivity:
-        """A target connectivity claim."""
+        """A target connectivity model."""
 
-        @overload
-        def __init__(self) -> None:
-            """Create an unknown connectivity claim."""
-
-        @overload
         def __init__(self, couplings: Sequence[tuple[int, int]]) -> None:
-            """Create an explicit connectivity claim."""
+            """Create an explicit connectivity model."""
 
         @staticmethod
         def all_to_all() -> CompilerTarget.Connectivity:
-            """Create an all-to-all connectivity claim."""
+            """Create an all-to-all connectivity model."""
 
         @property
         def kind(self) -> CompilerTarget.ConnectivityKind:
-            """How the connectivity is known."""
+            """The connectivity model."""
 
         @property
         def couplings(self) -> list[tuple[int, int]]:
             """The explicit couplings, if present."""
 
     class NativeOperationsKind(enum.Enum):
-        """How native target operations are known."""
+        """The native-operation support model."""
 
-        UNKNOWN = 0
+        UNRESTRICTED = 0
 
-        UNRESTRICTED = 1
-
-        EXPLICIT = 2
+        EXPLICIT = 1
 
     class NativeOperations:
-        """A native-operation claim."""
+        """Native-operation support."""
 
-        @overload
-        def __init__(self) -> None:
-            """Create an unknown native-operation claim."""
-
-        @overload
         def __init__(self, operations: Sequence[CompilerTarget.Operation]) -> None:
-            """Create an explicit native-operation claim."""
+            """Create explicit native-operation support."""
 
         @staticmethod
         def unrestricted() -> CompilerTarget.NativeOperations:
-            """Create an unrestricted native-operation claim."""
+            """Create unrestricted native-operation support."""
 
         @property
         def kind(self) -> CompilerTarget.NativeOperationsKind:
-            """How the native operations are known."""
+            """The native-operation support model."""
 
         @property
         def operations(self) -> list[CompilerTarget.Operation]:
@@ -347,7 +362,7 @@ class CompilerTarget:
 
     @property
     def connectivity_kind(self) -> CompilerTarget.ConnectivityKind:
-        """How the target connectivity is known."""
+        """The target connectivity model."""
 
     @property
     def couplings(self) -> list[tuple[int, int]]:
@@ -355,7 +370,7 @@ class CompilerTarget:
 
     @property
     def native_operations_kind(self) -> CompilerTarget.NativeOperationsKind:
-        """How the target native operations are known."""
+        """The target native-operation support model."""
 
     @property
     def operations(self) -> list[CompilerTarget.Operation]:
@@ -369,8 +384,8 @@ class CompilerTarget:
     def synthesis_basis(self) -> CompilerTarget.SynthesisBasis | None:
         """A complete target-wide synthesis basis, if available."""
 
-    def supports_operation(self, name: str, arity: int, num_parameters: int | None = None) -> bool | None:
-        """Whether the target supports an operation, or None if unknown."""
+    def supports_operation(self, name: str, arity: int, num_parameters: int | None = None) -> bool:
+        """Whether the target supports an operation."""
 
 class Program:
     """Base class for a typed MLIR compiler program.

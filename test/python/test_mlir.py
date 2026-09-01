@@ -457,18 +457,28 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     ]
     site_tuple = CompilerTarget.SiteTuple([10, 20], duration=10, fidelity=0.99)
     operation = CompilerTarget.Operation("cx", 2, 0, site_tuples=[site_tuple], duration=20, fidelity=0.98)
+    fixed_zero = CompilerTarget.OperationArity.fixed(0)
+    variadic = CompilerTarget.OperationArity.variadic(2)
+    global_phase = CompilerTarget.Operation("gphase", fixed_zero, 1)
+    multi_controlled_x = CompilerTarget.Operation("x", variadic, 0)
+    connectivity = CompilerTarget.Connectivity.all_to_all()
+    unrestricted = CompilerTarget.NativeOperations.unrestricted()
 
     targets = [
-        CompilerTarget(2, duration_unit=duration_unit),
-        CompilerTarget("dense", 2, duration_unit=duration_unit),
+        CompilerTarget(2, connectivity=connectivity, native_operations=unrestricted, duration_unit=duration_unit),
+        CompilerTarget(
+            "dense", 2, connectivity=connectivity, native_operations=unrestricted, duration_unit=duration_unit
+        ),
         CompilerTarget(
             sites,
+            connectivity=connectivity,
             native_operations=CompilerTarget.NativeOperations([operation]),
             duration_unit=duration_unit,
         ),
         CompilerTarget(
             "sparse",
             sites,
+            connectivity=connectivity,
             native_operations=CompilerTarget.NativeOperations([operation]),
             duration_unit=duration_unit,
         ),
@@ -483,22 +493,53 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     assert site_tuple.sites == [10, 20]
     assert len(operation.site_tuples) == 1
     assert operation.site_tuples[0].sites == [10, 20]
+    assert operation.arity.kind == CompilerTarget.OperationArityKind.FIXED
+    assert operation.arity.value == 2
+    assert global_phase.arity.kind == CompilerTarget.OperationArityKind.FIXED
+    assert global_phase.arity.value == 0
+    assert fixed_zero.accepts(0)
+    assert not fixed_zero.accepts(1)
+    assert multi_controlled_x.arity.kind == CompilerTarget.OperationArityKind.VARIADIC
+    assert multi_controlled_x.arity.value == 2
+    assert not variadic.accepts(1)
+    assert variadic.accepts(2)
+    assert variadic.accepts(5)
     assert duration_unit.unit == "ns"
 
 
 def test_compiler_target_construction_preserves_validation_errors() -> None:
     """Translate explicit C++ construction errors to Python ``ValueError``."""
+    with pytest.raises(TypeError):
+        CompilerTarget(1)  # ty: ignore[no-matching-overload]
     for _ in range(2):
         with pytest.raises(ValueError, match="must contain at least one site"):
-            CompilerTarget(0)
+            CompilerTarget(
+                0,
+                connectivity=CompilerTarget.Connectivity.all_to_all(),
+                native_operations=CompilerTarget.NativeOperations.unrestricted(),
+            )
     with pytest.raises(ValueError, match="site ID must be nonnegative"):
         CompilerTarget.Site(-1)
     with pytest.raises(ValueError, match="contains a duplicate site"):
         CompilerTarget.SiteTuple([0, 0])
     with pytest.raises(ValueError, match="duration unit must not be empty"):
         CompilerTarget.DurationUnit("", 1.0)
-    with pytest.raises(ValueError, match="operation arity must be positive"):
-        CompilerTarget.Operation("x", 0, 0)
+    with pytest.raises(ValueError, match="zero-arity operation cannot contain site tuples"):
+        CompilerTarget.Operation(
+            "gphase",
+            CompilerTarget.OperationArity.fixed(0),
+            1,
+            site_tuples=[CompilerTarget.SiteTuple([])],
+        )
+    with pytest.raises(ValueError, match="variadic minimum must be positive"):
+        CompilerTarget.Operation("x", CompilerTarget.OperationArity.variadic(0), 0)
+    with pytest.raises(ValueError, match="variadic operation cannot contain site tuples"):
+        CompilerTarget.Operation(
+            "x",
+            CompilerTarget.OperationArity.variadic(2),
+            0,
+            site_tuples=[CompilerTarget.SiteTuple([0, 1])],
+        )
 
 
 def test_compiler_target_snapshots_qdmi_device(garnet_target: CompilerTarget) -> None:
@@ -547,7 +588,7 @@ def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
             (
                 operation.name,
                 operation.canonical_name,
-                operation.arity,
+                (operation.arity.kind, operation.arity.value),
                 operation.num_parameters,
                 operation.duration,
                 operation.fidelity,

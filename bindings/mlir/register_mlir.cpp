@@ -356,8 +356,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   auto compilerTarget = nb::class_<mlir::CompilerTarget>(
       m, "CompilerTarget", R"pb(Immutable MLIR compiler target.
 
-Connectivity and native-operation metadata distinguish unknown,
-unrestricted, and explicitly enumerated support.)pb");
+Every target has either all-to-all or explicitly enumerated connectivity and
+either unrestricted or explicitly enumerated native-operation support.)pb");
 
   auto durationUnit = nb::class_<mlir::CompilerTarget::DurationUnit>(
       compilerTarget, "DurationUnit", "Unit for raw target timing metadata.");
@@ -437,10 +437,53 @@ unrestricted, and explicitly enumerated support.)pb");
       .def_prop_ro("fidelity", &mlir::CompilerTarget::SiteTuple::fidelity,
                    "The operation fidelity, if available.");
 
+  nb::enum_<mlir::CompilerTarget::Operation::Arity::Kind>(
+      compilerTarget, "OperationArityKind",
+      "How an operation capability accepts qubit widths.")
+      .value("FIXED", mlir::CompilerTarget::Operation::Arity::Kind::Fixed)
+      .value("VARIADIC",
+             mlir::CompilerTarget::Operation::Arity::Kind::Variadic);
+
+  auto operationArity = nb::class_<mlir::CompilerTarget::Operation::Arity>(
+      compilerTarget, "OperationArity", "Accepted operation qubit widths.");
+  operationArity
+      .def_static("fixed", &mlir::CompilerTarget::Operation::Arity::fixed,
+                  "value"_a, "Create an exact operation arity.")
+      .def_static("variadic", &mlir::CompilerTarget::Operation::Arity::variadic,
+                  "minimum"_a,
+                  "Create an operation arity with an inclusive minimum. "
+                  "Operation construction requires a positive minimum.")
+      .def_prop_ro("kind", &mlir::CompilerTarget::Operation::Arity::kind,
+                   "The arity kind.")
+      .def_prop_ro("value", &mlir::CompilerTarget::Operation::Arity::value,
+                   "The exact arity or inclusive variadic minimum.")
+      .def("accepts", &mlir::CompilerTarget::Operation::Arity::accepts,
+           "width"_a, "Whether this arity accepts a concrete width.");
+
   auto targetOperation = nb::class_<mlir::CompilerTarget::Operation>(
       compilerTarget, "Operation",
       "A homogeneous target-wide operation capability and its calibration.");
   targetOperation
+      .def(
+          "__init__",
+          [](mlir::CompilerTarget::Operation& self, std::string name,
+             const mlir::CompilerTarget::Operation::Arity arity,
+             const size_t numParameters,
+             std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
+                 siteTuples,
+             const std::optional<uint64_t> duration,
+             const std::optional<double> fidelity) {
+            constructFromExpected(
+                self,
+                mlir::CompilerTarget::Operation::create(
+                    std::move(name), arity, numParameters,
+                    std::move(siteTuples)
+                        .value_or(
+                            std::vector<mlir::CompilerTarget::SiteTuple>{}),
+                    duration, fidelity));
+          },
+          "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
+          "duration"_a = nb::none(), "fidelity"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget::Operation& self, std::string name,
@@ -473,7 +516,7 @@ unrestricted, and explicitly enumerated support.)pb");
           },
           "The normalized compiler operation name.")
       .def_prop_ro("arity", &mlir::CompilerTarget::Operation::arity,
-                   "The fixed operation arity.")
+                   "The accepted operation arity.")
       .def_prop_ro("num_parameters",
                    &mlir::CompilerTarget::Operation::numParameters,
                    "The number of real-valued parameters.")
@@ -529,14 +572,13 @@ unrestricted, and explicitly enumerated support.)pb");
               "The two-qubit entangler.");
 
   nb::enum_<mlir::CompilerTarget::Connectivity::Kind>(
-      compilerTarget, "ConnectivityKind", "How target connectivity is known.")
-      .value("UNKNOWN", mlir::CompilerTarget::Connectivity::Kind::Unknown)
+      compilerTarget, "ConnectivityKind", "The target connectivity model.")
       .value("ALL_TO_ALL", mlir::CompilerTarget::Connectivity::Kind::AllToAll)
       .value("EXPLICIT", mlir::CompilerTarget::Connectivity::Kind::Explicit);
 
   auto connectivity = nb::class_<mlir::CompilerTarget::Connectivity>(
-      compilerTarget, "Connectivity", "A target connectivity claim.");
-  connectivity.def(nb::init<>(), "Create an unknown connectivity claim.")
+      compilerTarget, "Connectivity", "A target connectivity model.");
+  connectivity
       .def(
           "__init__",
           [](mlir::CompilerTarget::Connectivity& self,
@@ -544,11 +586,11 @@ unrestricted, and explicitly enumerated support.)pb");
             new (&self) mlir::CompilerTarget::Connectivity(
                 mlir::CompilerTarget::Connectivity::fromCouplings(couplings));
           },
-          "couplings"_a, "Create an explicit connectivity claim.")
+          "couplings"_a, "Create an explicit connectivity model.")
       .def_static("all_to_all", &mlir::CompilerTarget::Connectivity::allToAll,
-                  "Create an all-to-all connectivity claim.")
+                  "Create an all-to-all connectivity model.")
       .def_prop_ro("kind", &mlir::CompilerTarget::Connectivity::kind,
-                   "How the connectivity is known.")
+                   "The connectivity model.")
       .def_prop_ro(
           "couplings",
           [](const mlir::CompilerTarget::Connectivity& value) {
@@ -559,17 +601,15 @@ unrestricted, and explicitly enumerated support.)pb");
 
   nb::enum_<mlir::CompilerTarget::NativeOperations::Kind>(
       compilerTarget, "NativeOperationsKind",
-      "How native target operations are known.")
-      .value("UNKNOWN", mlir::CompilerTarget::NativeOperations::Kind::Unknown)
+      "The native-operation support model.")
       .value("UNRESTRICTED",
              mlir::CompilerTarget::NativeOperations::Kind::Unrestricted)
       .value("EXPLICIT",
              mlir::CompilerTarget::NativeOperations::Kind::Explicit);
 
   auto nativeOperations = nb::class_<mlir::CompilerTarget::NativeOperations>(
-      compilerTarget, "NativeOperations", "A native-operation claim.");
+      compilerTarget, "NativeOperations", "Native-operation support.");
   nativeOperations
-      .def(nb::init<>(), "Create an unknown native-operation claim.")
       .def(
           "__init__",
           [](mlir::CompilerTarget::NativeOperations& self,
@@ -578,12 +618,12 @@ unrestricted, and explicitly enumerated support.)pb");
                 mlir::CompilerTarget::NativeOperations::fromOperations(
                     operations));
           },
-          "operations"_a, "Create an explicit native-operation claim.")
+          "operations"_a, "Create explicit native-operation support.")
       .def_static("unrestricted",
                   &mlir::CompilerTarget::NativeOperations::unrestricted,
-                  "Create an unrestricted native-operation claim.")
+                  "Create unrestricted native-operation support.")
       .def_prop_ro("kind", &mlir::CompilerTarget::NativeOperations::kind,
-                   "How the native operations are known.")
+                   "The native-operation support model.")
       .def_prop_ro(
           "operations",
           [](const mlir::CompilerTarget::NativeOperations& value) {
@@ -604,9 +644,7 @@ unrestricted, and explicitly enumerated support.)pb");
                                             std::move(nativeOperations),
                                             std::move(durationUnit)));
           },
-          "num_sites"_a, nb::kw_only(),
-          "connectivity"_a = mlir::CompilerTarget::Connectivity{},
-          "native_operations"_a = mlir::CompilerTarget::NativeOperations{},
+          "num_sites"_a, nb::kw_only(), "connectivity"_a, "native_operations"_a,
           "duration_unit"_a = nb::none())
       .def(
           "__init__",
@@ -621,10 +659,8 @@ unrestricted, and explicitly enumerated support.)pb");
                                                    std::move(nativeOperations),
                                                    std::move(durationUnit)));
           },
-          "name"_a, "num_sites"_a, nb::kw_only(),
-          "connectivity"_a = mlir::CompilerTarget::Connectivity{},
-          "native_operations"_a = mlir::CompilerTarget::NativeOperations{},
-          "duration_unit"_a = nb::none())
+          "name"_a, "num_sites"_a, nb::kw_only(), "connectivity"_a,
+          "native_operations"_a, "duration_unit"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget& self,
@@ -638,9 +674,7 @@ unrestricted, and explicitly enumerated support.)pb");
                                                    std::move(nativeOperations),
                                                    std::move(durationUnit)));
           },
-          "sites"_a, nb::kw_only(),
-          "connectivity"_a = mlir::CompilerTarget::Connectivity{},
-          "native_operations"_a = mlir::CompilerTarget::NativeOperations{},
+          "sites"_a, nb::kw_only(), "connectivity"_a, "native_operations"_a,
           "duration_unit"_a = nb::none())
       .def(
           "__init__",
@@ -655,10 +689,8 @@ unrestricted, and explicitly enumerated support.)pb");
                                             std::move(nativeOperations),
                                             std::move(durationUnit)));
           },
-          "name"_a, "sites"_a, nb::kw_only(),
-          "connectivity"_a = mlir::CompilerTarget::Connectivity{},
-          "native_operations"_a = mlir::CompilerTarget::NativeOperations{},
-          "duration_unit"_a = nb::none())
+          "name"_a, "sites"_a, nb::kw_only(), "connectivity"_a,
+          "native_operations"_a, "duration_unit"_a = nb::none())
       .def_static(
           "from_device",
           [](const qdmi::Device& device) {
@@ -725,7 +757,7 @@ unrestricted, and explicitly enumerated support.)pb");
           },
           "Detailed sites in compiler-vertex order.")
       .def_prop_ro("connectivity_kind", &mlir::CompilerTarget::connectivityKind,
-                   "How the target connectivity is known.")
+                   "The target connectivity model.")
       .def_prop_ro(
           "couplings",
           [](const mlir::CompilerTarget& target) {
@@ -735,7 +767,7 @@ unrestricted, and explicitly enumerated support.)pb");
           "Canonical undirected couplings in target site IDs.")
       .def_prop_ro("native_operations_kind",
                    &mlir::CompilerTarget::nativeOperationsKind,
-                   "How the target native operations are known.")
+                   "The target native-operation support model.")
       .def_prop_ro(
           "operations",
           [](const mlir::CompilerTarget& target) {
@@ -759,7 +791,7 @@ unrestricted, and explicitly enumerated support.)pb");
             return target.supportsOperation(name, arity, numParameters);
           },
           "name"_a, "arity"_a, "num_parameters"_a = nb::none(),
-          "Whether the target supports an operation, or None if unknown.");
+          "Whether the target supports an operation.");
 
   auto program = nb::class_<mlir::Program>(
       m, "Program", R"pb(Base class for a typed MLIR compiler program.
