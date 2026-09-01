@@ -140,6 +140,13 @@ def test_ghz_options_reference_and_json_roundtrip() -> None:
     assert_generates(benchmark)
 
 
+def test_importing_mlir_preserves_benchmark_overflow_error() -> None:
+    """Preserve nanobind's ``OverflowError`` mapping after loading MLIR."""
+    benchmark = ghz.GHZ(ghz.Options(qubits=2))
+    with pytest.raises(OverflowError, match="total shot count exceeds size_t"):
+        benchmark.evaluate({"00": 2**64 - 1, "11": 1})
+
+
 def test_grover_resolves_iterations_and_reports_success() -> None:
     """Expose Grover's resolved default and marked-outcome score."""
     options = grover.Options(marked_bitstring="10")
