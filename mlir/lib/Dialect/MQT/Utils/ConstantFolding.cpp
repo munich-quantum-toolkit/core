@@ -11,7 +11,6 @@
 #include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 
 #include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Matchers.h>
@@ -41,11 +40,11 @@ std::optional<double> attributeToDouble(Attribute attr) {
 }
 
 std::optional<double> valueToDouble(Value value) {
-  auto constantOp = value.getDefiningOp<arith::ConstantOp>();
-  if (!constantOp) {
+  Attribute attr;
+  if (!matchPattern(value, m_Constant(&attr))) {
     return std::nullopt;
   }
-  return attributeToDouble(constantOp.getValue());
+  return attributeToDouble(attr);
 }
 
 std::optional<Attribute>
