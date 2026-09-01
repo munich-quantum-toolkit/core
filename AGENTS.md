@@ -10,8 +10,6 @@ MQT Core. The project-wide policy for AI-assisted contributions is
   `src/`.
 - `bindings/` contains the nanobind-based Python bindings, and
   `python/mqt/core/` contains the Python package and generated type stubs.
-- `mlir/` contains the optional MQT MLIR dialects, transformations, tools, and
-  unit tests. Building it requires LLVM/MLIR 21.1 or newer.
 - `test/` contains the C++ and Python tests. C++ tests generally mirror the
   corresponding component under `src/`.
 - `docs/` contains the Sphinx and MyST documentation; `json/` contains schemas
@@ -52,13 +50,12 @@ MQT Core. The project-wide policy for AI-assisted contributions is
   one meaning; and use explicit nouns instead of vague pronouns. These are
   mandatory style rules, not a claim of formal ASD-STE100 compliance.
 - Base terminology and phrasing on repository usage and established precedents
-  in the quantum computing, LLVM/MLIR and compiler, high-performance computing,
-  and general computer science communities. Use the established term that most
+  in the quantum computing, LLVM, compiler, high-performance computing, and
+  general computer science communities. Use the established term that most
   precisely matches the concept. If communities use different terms, explain the
   mapping once. Never invent synonyms for variety.
 - Preserve the established capitalization of project and dependency names in
-  prose. For example, write `jeff` for the exchange format and `jeff-mlir` for
-  the related MLIR project.
+  prose.
 - Add or update automated tests for every behavioral code change. During
   development, run the narrowest relevant test first, then the required lint
   checks before handoff.
@@ -66,13 +63,11 @@ MQT Core. The project-wide policy for AI-assisted contributions is
   Never test provisional implementation choices that are not part of the
   supported contract.
 - Place tests in the corresponding test tree, organized by the subsystem that
-  owns the behavior. Within MLIR, keep tests under `mlir/unittests/` or another
-  established test root; never place them under `mlir/tools/` or another
-  production source directory. Prefer pass, compiler, or dialect unit tests for
-  semantic contracts, and reserve subprocess tests for irreducible driver-level
-  CLI behavior. Normal test targets and dependencies belong in the test build;
-  avoid promoting an otherwise optional production tool into the default build
-  solely for subprocess testing.
+  owns the behavior. Prefer component unit tests for semantic contracts, and
+  reserve subprocess tests for irreducible driver-level CLI behavior. Normal
+  test targets and dependencies belong in the test build; avoid promoting an
+  otherwise optional production tool into the default build solely for
+  subprocess testing.
 - Remove obsolete scaffolding and diagnostic suppressions before handoff. Keep a
   workaround or suppression only when it is still necessary, scope it as
   narrowly as possible, and document the technical reason.
@@ -106,8 +101,7 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 
 The C++ code targets C++20 and uses GoogleTest. Use Doxygen-style documentation,
 `#pragma once` in headers, and existing project abstractions. Prefer C++20
-standard-library facilities over custom equivalents. Within `mlir/`, prefer LLVM
-types such as `llvm::SmallVector` and `llvm::function_ref` where appropriate.
+standard-library facilities over custom equivalents.
 
 ### Python and Bindings
 
@@ -156,20 +150,12 @@ Use Google-style Python docstrings. Prefer fixing diagnostics from `ruff` and
   current worktree's local caches. Do not remove cache contents manually while
   another process may be using them.
 
-### MLIR and Documentation
+### Documentation
 
-- Build the MLIR documentation with
-  `./.agent/run.sh cmake --build --preset release --target mlir-doc`.
-- A real focused MLIR test binary is
-  `./build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler`.
 - Build the complete documentation with
   `./.agent/run.sh uvx nox --non-interactive -s docs`.
 - Check documentation links with
   `./.agent/run.sh uvx nox -s docs -- -b linkcheck`.
-- When changing MLIR passes, pipelines, or command-line options, keep summaries
-  and descriptions aligned with the implementation's actual scope, defaults,
-  supported operation shapes, compile-time or runtime limitations, failure
-  modes, and deliberately out-of-scope behavior.
 
 ## Generated Files and Validation
 

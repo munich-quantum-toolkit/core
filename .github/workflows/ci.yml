@@ -30,16 +30,14 @@ jobs:
         include:
           - runs-on: ubuntu-24.04
             compiler: gcc
-            preset: debug-mlir
+            preset: debug
           - runs-on: ubuntu-24.04-arm
             compiler: gcc
-            preset: release-mlir
+            preset: release
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
-      setup-mlir: true
-      llvm-version: 21.1.8
       preset-name: ${{ matrix.preset }}
     permissions:
       contents: read
@@ -54,16 +52,14 @@ jobs:
         include:
           - runs-on: macos-26
             compiler: clang
-            preset: debug-mlir
+            preset: debug
           - runs-on: macos-26-intel
             compiler: clang
-            preset: release-mlir
+            preset: release
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
-      setup-mlir: true
-      llvm-version: 21.1.8
       preset-name: ${{ matrix.preset }}
     permissions:
       contents: read
@@ -78,17 +74,14 @@ jobs:
         include:
           - runs-on: windows-2025
             compiler: msvc
-            preset: debug-windows-mlir
+            preset: debug-windows
           - runs-on: windows-11-arm
             compiler: msvc
-            preset: release-windows-mlir
+            preset: release-windows
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
-      setup-mlir: true
-      llvm-version: 21.1.8
-      mlir-debug: ${{ matrix.preset == 'debug-windows-mlir' }}
       preset-name: ${{ matrix.preset }}
     permissions:
       contents: read
@@ -98,9 +91,6 @@ jobs:
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
-    with:
-      setup-mlir: true
-      llvm-version: 21.1.8
     permissions:
       contents: read
       id-token: write
@@ -120,8 +110,6 @@ jobs:
       # Vendored third-party headers are checked upstream and are not maintained
       # according to MQT Core's clang-tidy configuration.
       cpp-linter-ignore-extra: "vendor/**"
-      setup-mlir: true
-      llvm-version: 21.1.8
     permissions:
       contents: read
       pull-requests: write # Needed to post review comments

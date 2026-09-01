@@ -151,11 +151,6 @@ repos:
         types_or: [c++, c, cuda]
         exclude: ^vendor/
         priority: 5
-      - id: clang-format
-        name: clang-format (TableGen)
-        types_or: [file]
-        files: \.td$
-        priority: 5
 
   ## Format and lint Python files with ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit

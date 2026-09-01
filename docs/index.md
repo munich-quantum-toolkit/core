@@ -36,9 +36,7 @@ installation
 mqt_core_ir
 dd_package
 zx_package
-mlir/index
 qdmi/index
-qir/index
 references
 CHANGELOG
 UPGRADING

@@ -87,10 +87,8 @@ Sources rank as follows, strongest first.
 1. **External and machine-checked.** A specification this repository does not
    own, or one a tool verifies. The QDMI headers that
    `cmake/ExternalDependencies.cmake` fetches at a pinned revision are the
-   clearest case: the repository cannot quietly change them. The MLIR TableGen
-   files under `mlir/include` are the next: an operation's arguments, results,
-   traits, verifier, and assembly format are a checked contract. Then the
-   OpenQASM grammar and the QIR profiles that `docs/qir/` names.
+   clearest case: the repository cannot quietly change them. The OpenQASM
+   grammar and the versioned schemas under `json/` are also checked contracts.
 2. **Published.** A promise this project made to its users in writing.
    `CHANGELOG.md` entries, `UPGRADING.md` migrations, the rendered pages under
    `docs/`, and Doxygen comments on headers in `include/mqt-core/`.
@@ -113,9 +111,8 @@ promises that apply to the scope, each with a citation and its rung. Write it
 before you look at a single test. Number the entries `S1`, `S2`, and so on.
 Every later verdict refers to those numbers.
 
-For MLIR work this gets sharp. If a unit test asserts something about an
-operation that you cannot derive from that operation's TableGen definition, the
-assertion is a candidate by construction.
+For parser work, an assertion about syntax or typing that you cannot derive from
+the OpenQASM grammar or another ledger entry is a candidate by construction.
 
 ## Verdict classes
 
@@ -398,8 +395,7 @@ with citations.
 > into a rubber stamp.
 
 **Wave 2, census.** One agent, cheap tier. Enumerate every test and assertion in
-scope with a stable identifier. No judgment. Cover both C++ test roots: `test/`
-and `mlir/unittests/`. A scan of `test/` alone misses hundreds of tests.
+scope under `test/` with a stable identifier. No judgment.
 
 **Wave 3, prosecutors.** One per twenty or so tests, in parallel, highest tier.
 Each receives the spec ledger, its own cluster, and the code under test. For

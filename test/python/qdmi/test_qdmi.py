@@ -552,57 +552,6 @@ def test_calibration_job_reaches_the_device(ddsim_device: Device, program: str |
         ddsim_device.submit_calibration_job(program)
 
 
-def test_device_executes_qir_program(ddsim_device: Device) -> None:
-    """Compile and execute a QIR program with the DDSIM device."""
-    # Keep this lazy to cover loading MLIR after the QIR-enabled device.
-    mlir = pytest.importorskip("mqt.core.mlir")
-
-    qasm3_program = """
-OPENQASM 3.0;
-include "stdgates.inc";
-qubit[2] q;
-bit[2] c;
-h q[0];
-cx q[0], q[1];
-c = measure q;
-"""
-    program = mlir.compile_program(qasm3_program, output=mlir.OutputFormat.QIR_BASE)
-    assert ProgramFormat.QIR_BASE_STRING in ddsim_device.supported_program_formats()
-
-    job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=10)
-    job.wait()
-
-    assert job.check() == Job.Status.DONE
-    assert sum(job.get_counts().values()) == 10
-
-
-def test_device_executes_binary_qir_program(ddsim_device: Device) -> None:
-    """Submit and retrieve an exact QIR module byte payload."""
-    mlir = pytest.importorskip("mqt.core.mlir")
-
-    qasm3_program = """
-OPENQASM 3.0;
-include "stdgates.inc";
-qubit[2] q;
-bit[2] c;
-h q[0];
-cx q[0], q[1];
-c = measure q;
-"""
-    program = mlir.compile_program(qasm3_program, output=mlir.OutputFormat.QIR_BASE)
-    program_bytes = program.to_bitcode()
-    assert ProgramFormat.QIR_BASE_MODULE in ddsim_device.supported_program_formats()
-
-    job = ddsim_device.submit_job(program_bytes, ProgramFormat.QIR_BASE_MODULE, num_shots=10)
-    assert job.program_bytes == program_bytes
-    with pytest.raises(ValueError, match="binary program"):
-        _ = job.program
-    job.wait()
-
-    assert job.check() == Job.Status.DONE
-    assert sum(job.get_counts().values()) == 10
-
-
 def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> None:
     """Test that submit_job forwards custom job parameters to DDSIM."""
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):

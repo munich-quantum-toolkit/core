@@ -6,6 +6,19 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Removal of the MLIR compiler subsystem and QIR execution stack
+
+MQT Core no longer provides the MQTOpt and MQTRef dialect libraries, conversion
+and transformation passes, `quantum-opt` tool, or the QIR runtime, JIT, and
+standalone runner. Remove `MQT::CoreQIRRuntime`, `MQT::CoreQIRJIT`, the
+`mqt-core-qir-runner` executable, and includes below `mqt-core/qir/` from
+downstream builds. Remove `BUILD_MQT_CORE_MLIR`, `BUILD_MQT_CORE_QIR_RUNNER`,
+`BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR`, `MLIR_DIR`, `LLVM_DIR`, and the MLIR
+preset names from build configurations.
+
+The bundled DDSIM QDMI device no longer accepts QIR Base or Adaptive Profile
+programs in string or module form. Use QASM2 or QASM3 with this device.
+
 ## [3.9.2]
 
 ### Optional QDMI shot counts

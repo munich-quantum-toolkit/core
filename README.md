@@ -33,7 +33,6 @@ forms the backbone of the quantum software tools developed as part of the
 - Fully fledged intermediate representation (IR) for quantum computations.
 - A state-of-the-art decision diagram (DD) package for quantum computing.
 - A dedicated ZX-diagram package for working with the ZX-calculus.
-- A QIR runtime based on the decision diagram package.
 
 If you have any questions, feel free to create a
 [discussion](https://github.com/munich-quantum-toolkit/core/discussions) or an
