@@ -11,9 +11,11 @@
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Support/Passes.h"
@@ -30,6 +32,7 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -152,6 +155,29 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsControlledPhaseWithNonHoistableAngle) {
   });
   EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, DoesNotReleaseStaticQubits) {
+  MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect, qc::QCDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  OpBuilder builder(&context);
+  auto location = builder.getUnknownLoc();
+  auto moduleOp = ModuleOp::create(location);
+  builder.setInsertionPointToStart(moduleOp.getBody());
+  auto main = func::FuncOp::create(builder, location, "main",
+                                   builder.getFunctionType({}, {}));
+  mlir::mqt::setEntryPoint(main);
+  auto* entry = main.addEntryBlock();
+  builder.setInsertionPointToEnd(entry);
+  auto qubit = qc::StaticOp::create(builder, location, 0);
+  qc::DeallocOp::create(builder, location, qubit);
+  func::ReturnOp::create(builder, location);
+  ASSERT_TRUE(succeeded(verify(moduleOp)));
+
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(moduleOp)));
+  ASSERT_TRUE(succeeded(verify(moduleOp)));
+  EXPECT_FALSE(moduleOp.lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_QUBIT_RELEASE));
 }
 
 TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {

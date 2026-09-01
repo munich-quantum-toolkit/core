@@ -412,6 +412,10 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   matchAndRewrite(DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+    if (state.allocationMode == AllocationMode::Static) {
+      rewriter.eraseOp(op);
+      return success();
+    }
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
