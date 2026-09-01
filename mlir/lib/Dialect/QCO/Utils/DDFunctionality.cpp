@@ -28,20 +28,22 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/OperationUtils.h"
 
+#include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/APInt.h>
+#include <llvm/ADT/APSInt.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -57,7 +59,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -65,14 +66,15 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mlir::qco {
 namespace {
 
-constexpr size_t maxCallNesting = 64;
-constexpr size_t maxExecutionSteps = 10'000;
-constexpr size_t maxRegionNesting = 64;
+constexpr size_t MAX_CALL_NESTING = 64;
+constexpr size_t MAX_CONTROL_FLOW_STEPS = 10'000;
+constexpr size_t MAX_REGION_NESTING = 64;
 
 struct QubitMap {
   DenseMap<Value, qc::Qubit> qubits;
@@ -117,18 +119,58 @@ struct QubitMap {
   }
 };
 
+/// Physical wires stored at each tensor index; extracted positions are empty.
+using TensorSlots = SmallVector<std::optional<qc::Qubit>>;
+using TensorState = std::shared_ptr<TensorSlots>;
+
+struct TensorMap {
+  DenseMap<Value, TensorState> tensors;
+
+  void bind(Value value, TensorState slots) {
+    tensors[value] = std::move(slots);
+  }
+
+  [[nodiscard]] TensorState lookup(Value value) const {
+    const auto it = tensors.find(value);
+    return it == tensors.end() ? nullptr : it->second;
+  }
+
+  void erase(Value value) { tensors.erase(value); }
+
+  [[nodiscard]] TensorMap clone() const {
+    TensorMap copy;
+    for (const auto& [value, slots] : tensors) {
+      copy.bind(value, std::make_shared<TensorSlots>(*slots));
+    }
+    return copy;
+  }
+};
+
 struct ClassicalEnv {
   struct RegisterBit {
     std::optional<bool> value;
     std::optional<qc::Qubit> deferredWire;
   };
   using RegisterState = std::vector<RegisterBit>;
+  using MemRefState = SmallVector<Attribute>;
 
-  DenseMap<Value, IntegerAttr> scalars;
+  DenseMap<Value, Attribute> values;
   DenseMap<Value, qc::Qubit> deferredMeasurements;
   /// Shared storage preserves CBit register identity across `func.call`.
   DenseMap<Value, std::shared_ptr<RegisterState>> registers;
   size_t allocatedRegisterBits = 0;
+  /// Shared storage preserves caller-visible writes through `func.call`.
+  DenseMap<Value, std::shared_ptr<MemRefState>> memrefs;
+
+  LogicalResult bindFrom(Value source, Value dest, Operation* op) {
+    const auto it = values.find(source);
+    if (it == values.end()) {
+      return op->emitError()
+             << "classical SSA value is not mapped for QCO DD simulation";
+    }
+    values[dest] = it->second;
+    return success();
+  }
 };
 
 struct DecodedGate {
@@ -138,13 +180,18 @@ struct DecodedGate {
 
 struct WalkState {
   QubitMap* qubits;
+  TensorMap* tensors;
   ClassicalEnv* classical;
   dd::Package* dd;
   std::mt19937_64* rng = nullptr;
   const DenseSet<Operation*>* deferredMeasurements = nullptr;
-  size_t remainingExecutionSteps = maxExecutionSteps;
+  size_t remainingExecutionSteps = MAX_CONTROL_FLOW_STEPS;
   DenseSet<Operation*> activeCalls;
 };
+
+using RuntimeValue = std::variant<qc::Qubit, TensorState, Attribute,
+                                  std::shared_ptr<ClassicalEnv::RegisterState>,
+                                  std::shared_ptr<ClassicalEnv::MemRefState>>;
 struct LoopRange {
   llvm::APInt induction, step;
   size_t trips;
@@ -156,10 +203,50 @@ struct SamplingPlan {
 };
 } // namespace
 
+static LogicalResult consumeExecutionStep(WalkState& walk, Operation* op) {
+  if (walk.remainingExecutionSteps == 0) {
+    return op->emitError(
+        "QCO DD execution exceeds the limit of 10000 control-flow steps");
+  }
+  --walk.remainingExecutionSteps;
+  return success();
+}
+
+[[nodiscard]] static bool isQTensorType(Type type) {
+  const auto tensorType = dyn_cast<RankedTensorType>(type);
+  return tensorType && tensorType.getRank() == 1 &&
+         isa<QubitType>(tensorType.getElementType());
+}
+
+static FailureOr<Attribute>
+lookupAttribute(Value value, const ClassicalEnv& classical, Operation* op) {
+  const auto it = classical.values.find(value);
+  if (it == classical.values.end()) {
+    return op->emitError()
+           << "classical SSA value is not mapped for QCO DD simulation";
+  }
+  return it->second;
+}
+
+static FailureOr<double>
+resolveDouble(Value value, const ClassicalEnv& classical, Operation* op) {
+  if (const auto it = classical.values.find(value);
+      it != classical.values.end()) {
+    if (const auto floating = dyn_cast<FloatAttr>(it->second)) {
+      return floating.getValue().convertToDouble();
+    }
+  }
+  if (const auto constant = mqt::valueToDouble(value)) {
+    return *constant;
+  }
+  return op->emitError()
+         << "floating-point SSA value has no concrete QCO DD binding";
+}
+
 /// `std::nullopt` if @p unitary is not a standard gate; failure if its unitary
-/// matrix is not known at compile time.
+/// parameters are not concrete.
 static FailureOr<std::optional<DecodedGate>>
-decodeStandardGate(UnitaryOpInterface unitary) {
+decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
   Operation* op = unitary.getOperation();
   const auto type =
       TypeSwitch<Operation*, qc::OpType>(op)
@@ -196,15 +283,17 @@ decodeStandardGate(UnitaryOpInterface unitary) {
   if (type == qc::OpType::None) {
     return std::optional<DecodedGate>{std::nullopt};
   }
-  if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
-    return unitary.emitError()
-           << "unitary must have a compile-time constant matrix";
-  }
-
   DecodedGate decoded{.type = type, .params = {}};
   for (Value param : unitary.getParameters()) {
-    decoded.params.push_back(
-        static_cast<dd::fp>(*mlir::mqt::valueToDouble(param)));
+    auto concrete = resolveDouble(param, classical, op);
+    if (failed(concrete)) {
+      return failure();
+    }
+    if (!std::isfinite(*concrete)) {
+      return op->emitError()
+             << "gate parameters must be finite for QCO DD simulation";
+    }
+    decoded.params.push_back(static_cast<dd::fp>(*concrete));
   }
   return std::optional{std::move(decoded)};
 }
@@ -212,66 +301,35 @@ decodeStandardGate(UnitaryOpInterface unitary) {
 static dd::mCachedEdge
 buildEmbeddedLocalDD(dd::Package& dd, const DynamicMatrix& local,
                      const DenseMap<qc::Qubit, size_t>& operandForWire,
-                     size_t numOperands, int64_t rootLevel, size_t rootRow,
-                     size_t rootCol) {
-  struct Frame {
-    int64_t level;
-    size_t row;
-    size_t col;
-    SmallVector<dd::mCachedEdge, 4> children;
-  };
-
-  SmallVector<Frame> frames{
-      {.level = rootLevel, .row = rootRow, .col = rootCol, .children = {}}};
-  while (!frames.empty()) {
-    Frame& frame = frames.back();
-    std::optional<dd::mCachedEdge> completed;
-    if (frame.level < 0) {
-      completed = dd::mCachedEdge::terminal(local(
-          static_cast<int64_t>(frame.row), static_cast<int64_t>(frame.col)));
-    } else {
-      const auto wire = static_cast<qc::Qubit>(frame.level);
-      const auto operand = operandForWire.find(wire);
-      const size_t childCount = operand == operandForWire.end() ? 1 : 4;
-      if (frame.children.size() < childCount) {
-        size_t childRow = frame.row;
-        size_t childCol = frame.col;
-        if (operand != operandForWire.end()) {
-          const size_t operandMask = size_t{1}
-                                     << (numOperands - 1 - operand->second);
-          const size_t child = frame.children.size();
-          if (child >= 2) {
-            childRow |= operandMask;
-          }
-          if ((child & 1U) != 0U) {
-            childCol |= operandMask;
-          }
-        }
-        frames.push_back({.level = frame.level - 1,
-                          .row = childRow,
-                          .col = childCol,
-                          .children = {}});
-        continue;
-      }
-      if (operand == operandForWire.end()) {
-        const auto child = frame.children.front();
-        completed = dd.makeDDNode<dd::mNode, dd::CachedEdge>(
-            wire,
-            {child, dd::mCachedEdge::zero(), dd::mCachedEdge::zero(), child});
-      } else {
-        completed = dd.makeDDNode<dd::mNode, dd::CachedEdge>(
-            wire, {frame.children[0], frame.children[1], frame.children[2],
-                   frame.children[3]});
-      }
-    }
-
-    frames.pop_back();
-    if (frames.empty()) {
-      return *completed;
-    }
-    frames.back().children.push_back(*completed);
+                     size_t numOperands, int64_t level, size_t row,
+                     size_t col) {
+  if (level < 0) {
+    return dd::mCachedEdge::terminal(
+        local(static_cast<int64_t>(row), static_cast<int64_t>(col)));
   }
-  llvm_unreachable("embedded DD construction starts with one frame");
+  const auto wire = static_cast<qc::Qubit>(level);
+  const auto operand = operandForWire.find(wire);
+  if (operand == operandForWire.end()) {
+    const auto child = buildEmbeddedLocalDD(dd, local, operandForWire,
+                                            numOperands, level - 1, row, col);
+    return dd.makeDDNode<dd::mNode, dd::CachedEdge>(
+        wire, {child, dd::mCachedEdge::zero(), dd::mCachedEdge::zero(), child});
+  }
+
+  const size_t operandMask = size_t{1} << (numOperands - 1 - operand->second);
+  const auto edge00 = buildEmbeddedLocalDD(dd, local, operandForWire,
+                                           numOperands, level - 1, row, col);
+  const auto edge01 =
+      buildEmbeddedLocalDD(dd, local, operandForWire, numOperands, level - 1,
+                           row, col | operandMask);
+  const auto edge10 =
+      buildEmbeddedLocalDD(dd, local, operandForWire, numOperands, level - 1,
+                           row | operandMask, col);
+  const auto edge11 =
+      buildEmbeddedLocalDD(dd, local, operandForWire, numOperands, level - 1,
+                           row | operandMask, col | operandMask);
+  return dd.makeDDNode<dd::mNode, dd::CachedEdge>(
+      wire, {edge00, edge01, edge10, edge11});
 }
 
 static dd::MatrixDD makeEmbeddedLocalDD(dd::Package& dd,
@@ -292,19 +350,26 @@ template <typename StateDD>
 static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
                                         WalkState& walk, StateDD& state) {
   Operation* op = unitary.getOperation();
-  if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
-    return unitary.emitError()
-           << "unitary must have a compile-time constant matrix";
-  }
   if (auto gphase = dyn_cast<GPhaseOp>(op)) {
-    const auto theta = *mlir::mqt::valueToDouble(gphase.getTheta());
+    auto theta = resolveDouble(gphase.getTheta(), *walk.classical, op);
+    if (failed(theta)) {
+      return failure();
+    }
+    if (!std::isfinite(*theta)) {
+      return gphase.emitError()
+             << "global phase must be finite for QCO DD simulation";
+    }
     auto id = dd::Package::makeIdent();
-    id.w = walk.dd->cn.lookup(std::cos(theta), std::sin(theta));
+    id.w = walk.dd->cn.lookup(std::cos(*theta), std::sin(*theta));
     state = walk.dd->applyOperation(id, state);
     return success();
   }
   if (isa<BarrierOp>(op)) {
     return walk.qubits->remapUnitary(unitary);
+  }
+  if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
+    return unitary.emitError()
+           << "unitary must have a compile-time constant matrix";
   }
 
   DynamicMatrix local;
@@ -385,9 +450,25 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
 }
 
 static LogicalResult validateReturn(func::ReturnOp returnOp,
-                                    const QubitMap& qubits) {
+                                    const QubitMap& qubits,
+                                    const TensorMap& tensors) {
   qc::Qubit expected = 0;
   for (Value value : returnOp.getOperands()) {
+    if (isQTensorType(value.getType())) {
+      const auto slots = tensors.lookup(value);
+      if (!slots) {
+        return returnOp.emitError()
+               << "returned qtensor is not mapped for QCO DD simulation";
+      }
+      for (const auto wire : *slots) {
+        if (!wire || *wire != expected) {
+          return returnOp.emitError()
+                 << "returned qubits must preserve canonical wire order";
+        }
+        ++expected;
+      }
+      continue;
+    }
     if (!isa<QubitType>(value.getType())) {
       continue;
     }
@@ -409,49 +490,111 @@ static LogicalResult validateReturn(func::ReturnOp returnOp,
   return success();
 }
 
-static void bindInteger(Value result, const llvm::APInt& value,
-                        ClassicalEnv& classical) {
-  classical.scalars[result] = IntegerAttr::get(result.getType(), value);
+[[nodiscard]] static bool isSupportedClassicalType(Type type) {
+  return isa<IndexType, IntegerType>(type) || type.isF64();
+}
+
+static LogicalResult recordConstant(arith::ConstantOp constant,
+                                    ClassicalEnv& classical) {
+  if (!isSupportedClassicalType(constant.getType())) {
+    return constant.emitError()
+           << "QCO DD simulation only supports integer, index, and f64 values";
+  }
+  classical.values[constant.getResult()] = constant.getValue();
+  return success();
+}
+
+static LogicalResult
+applyArgumentBindings(func::FuncOp func,
+                      const DDArgumentBindings& argumentBindings,
+                      ClassicalEnv& classical) {
+  size_t boundArguments = 0;
+  for (Value argument : func.getArguments()) {
+    const auto binding = argumentBindings.find(argument);
+    if (binding == argumentBindings.end()) {
+      continue;
+    }
+    ++boundArguments;
+    const Attribute attr = binding->second;
+    const Type type = argument.getType();
+    if (isQTensorType(type)) {
+      const auto extent = dyn_cast<IntegerAttr>(attr);
+      if (cast<RankedTensorType>(type).isDynamicDim(0) && extent &&
+          isa<IndexType>(extent.getType())) {
+        continue;
+      }
+    } else if (const auto typed = dyn_cast<TypedAttr>(attr);
+               isSupportedClassicalType(type) && typed &&
+               typed.getType() == type) {
+      classical.values[argument] = attr;
+      continue;
+    }
+    return func.emitError() << "QCO DD binding attribute " << attr
+                            << " does not match argument type " << type;
+  }
+  if (boundArguments != argumentBindings.size()) {
+    return func.emitError()
+           << "QCO DD bindings must target entry-block arguments";
+  }
+  return success();
+}
+
+static FailureOr<bool> lookupBool(Value value, const ClassicalEnv& classical,
+                                  Operation* op) {
+  auto attr = lookupAttribute(value, classical, op);
+  const auto integer =
+      succeeded(attr) ? dyn_cast<IntegerAttr>(*attr) : IntegerAttr{};
+  if (!integer || !value.getType().isInteger(1)) {
+    return failure();
+  }
+  return !integer.getValue().isZero();
+}
+
+static FailureOr<int64_t>
+lookupIndex(Value value, const ClassicalEnv& classical, Operation* op) {
+  auto attr = lookupAttribute(value, classical, op);
+  const auto integer =
+      succeeded(attr) ? dyn_cast<IntegerAttr>(*attr) : IntegerAttr{};
+  if (!integer || !isa<IndexType>(value.getType())) {
+    return failure();
+  }
+  return integer.getValue().getSExtValue();
+}
+
+static FailureOr<double> lookupFloat(Value value, const ClassicalEnv& classical,
+                                     Operation* op) {
+  auto attr = lookupAttribute(value, classical, op);
+  const auto floating =
+      succeeded(attr) ? dyn_cast<FloatAttr>(*attr) : FloatAttr{};
+  if (!floating || !value.getType().isF64()) {
+    return failure();
+  }
+  return floating.getValue().convertToDouble();
 }
 
 static FailureOr<llvm::APInt>
-lookupInteger(Value value, ClassicalEnv& classical, Operation* op) {
-  const auto it = classical.scalars.find(value);
-  if (it == classical.scalars.end()) {
-    return op->emitError() << "classical SSA value is not mapped for QCO DD "
-                              "simulation: "
-                           << value.getType();
+lookupInteger(Value value, const ClassicalEnv& classical, Operation* op) {
+  if (!isa<IntegerType, IndexType>(value.getType())) {
+    return op->emitError() << "expected an integer or index SSA value";
   }
-  return it->second.getValue();
-}
-
-static FailureOr<bool> lookupBool(Value value, ClassicalEnv& classical,
-                                  Operation* op) {
-  auto result = lookupInteger(value, classical, op);
-  if (failed(result)) {
+  auto attr = lookupAttribute(value, classical, op);
+  const auto integer =
+      succeeded(attr) ? dyn_cast<IntegerAttr>(*attr) : IntegerAttr{};
+  if (!integer) {
     return failure();
   }
-  return !result->isZero();
+  return integer.getValue();
 }
 
-static FailureOr<int64_t> lookupIndex(Value value, ClassicalEnv& classical,
-                                      Operation* op) {
-  auto result = lookupInteger(value, classical, op);
-  if (failed(result)) {
+static LogicalResult bindInteger(Value dest, const llvm::APInt& value,
+                                 ClassicalEnv& classical) {
+  const Type type = dest.getType();
+  if (!isa<IntegerType, IndexType>(type)) {
     return failure();
   }
-  return result->getSExtValue();
-}
-
-static LogicalResult applyUnsignedIndexCast(Value in, Value out, Operation* op,
-                                            ClassicalEnv& classical) {
-  auto value = lookupInteger(in, classical, op);
-  if (failed(value)) {
-    return failure();
-  }
-  const auto integerType = dyn_cast<IntegerType>(out.getType());
-  const unsigned width = integerType ? integerType.getWidth() : 64U;
-  bindInteger(out, value->zextOrTrunc(width), classical);
+  const unsigned width =
+      isa<IndexType>(type) ? 64U : cast<IntegerType>(type).getWidth();
+  classical.values[dest] = IntegerAttr::get(type, value.zextOrTrunc(width));
   return success();
 }
 
@@ -465,7 +608,7 @@ static LogicalResult allocateRegister(cbit::AllocOp alloc,
           maxClassicalRegisterBits - classical.allocatedRegisterBits) {
     return alloc.emitError()
            << "QCO DD simulation supports at most " << maxClassicalRegisterBits
-           << " classical register bits per module";
+           << " allocated classical register bits per execution";
   }
   const auto width = static_cast<size_t>(rawWidth);
   classical.allocatedRegisterBits += width;
@@ -480,7 +623,7 @@ static LogicalResult allocateRegister(cbit::AllocOp alloc,
 
 static FailureOr<size_t> resolveRegisterIndex(Value index,
                                               cbit::RegisterType type,
-                                              ClassicalEnv& classical,
+                                              const ClassicalEnv& classical,
                                               Operation* op) {
   auto resolved = lookupIndex(index, classical, op);
   if (failed(resolved)) {
@@ -537,86 +680,284 @@ static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical) {
   if (!cell.value) {
     return load.emitError() << "read from an undefined CBit register element";
   }
-  bindInteger(load.getResult(), llvm::APInt(1, *cell.value ? 1 : 0), classical);
+  return bindInteger(load.getResult(),
+                     llvm::APInt(1, static_cast<uint64_t>(*cell.value)),
+                     classical);
+}
+
+static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
+                                              ClassicalEnv& classical,
+                                              Operation* op) {
+  const auto type = dyn_cast<MemRefType>(memref.getType());
+  if (!type || type.getRank() != 1 || indices.size() != 1 ||
+      !isSupportedClassicalType(type.getElementType())) {
+    return op->emitError()
+           << "QCO DD simulation only supports one-dimensional memrefs of "
+              "integer, index, or f64 values";
+  }
+  auto index = lookupIndex(indices[0], classical, op);
+  if (failed(index)) {
+    return failure();
+  }
+  const auto it = classical.memrefs.find(memref);
+  if (it == classical.memrefs.end()) {
+    return op->emitError()
+           << "classical memref is not mapped for QCO DD simulation";
+  }
+  if (*index < 0 || static_cast<size_t>(*index) >= it->second->size()) {
+    return op->emitError()
+           << "classical memref index out of range for QCO DD simulation";
+  }
+  return &(*it->second)[static_cast<size_t>(*index)];
+}
+
+static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
+                                      ClassicalEnv& classical) {
+  const auto type = dyn_cast<MemRefType>(alloc.getType());
+  if (!type || type.getRank() != 1 ||
+      !isSupportedClassicalType(type.getElementType())) {
+    return alloc.emitError()
+           << "QCO DD simulation only supports one-dimensional memrefs of "
+              "integer, index, or f64 values";
+  }
+  if (!alloc.getSymbolOperands().empty()) {
+    return alloc.emitError()
+           << "QCO DD simulation does not support symbolic memref operands";
+  }
+  int64_t size = type.getDimSize(0);
+  if (type.isDynamicDim(0)) {
+    auto dynamicSize =
+        lookupIndex(alloc.getDynamicSizes()[0], classical, alloc);
+    if (failed(dynamicSize)) {
+      return failure();
+    }
+    size = *dynamicSize;
+  }
+  if (size < 0) {
+    return alloc.emitError() << "classical memref size must be non-negative";
+  }
+  classical.memrefs[alloc.getResult()] =
+      std::make_shared<ClassicalEnv::MemRefState>(static_cast<size_t>(size));
   return success();
 }
 
-static LogicalResult applyBinaryInteger(Operation& op,
-                                        ClassicalEnv& classical) {
-  auto lhs = lookupInteger(op.getOperand(0), classical, &op);
-  auto rhs = lookupInteger(op.getOperand(1), classical, &op);
-  if (failed(lhs) || failed(rhs)) {
+static LogicalResult applyMemRefStore(memref::StoreOp store,
+                                      ClassicalEnv& classical) {
+  auto slot =
+      lookupMemRefSlot(store.getMemref(), store.getIndices(), classical, store);
+  const auto value = classical.values.find(store.getValue());
+  if (failed(slot) || value == classical.values.end()) {
+    if (value == classical.values.end()) {
+      store.emitError()
+          << "stored classical value is not mapped for QCO DD simulation";
+    }
     return failure();
   }
-  llvm::APInt result = *lhs;
-  if (isa<arith::AndIOp>(&op)) {
-    result &= *rhs;
-  } else if (isa<arith::OrIOp>(&op)) {
-    result |= *rhs;
-  } else if (isa<arith::XOrIOp>(&op)) {
-    result ^= *rhs;
-  } else if (isa<arith::AddIOp>(&op)) {
-    result += *rhs;
-  } else if (isa<arith::SubIOp>(&op)) {
-    result -= *rhs;
-  } else if (isa<arith::MulIOp>(&op)) {
-    result *= *rhs;
-  } else {
-    if (rhs->isNegative() || rhs->uge(lhs->getBitWidth())) {
-      return op.emitError()
-             << "shift amount out of range for QCO DD simulation";
-    }
-    const auto amount = static_cast<unsigned>(rhs->getZExtValue());
-    result = isa<arith::ShLIOp>(&op) ? lhs->shl(amount) : lhs->lshr(amount);
+  **slot = value->second;
+  return success();
+}
+
+static LogicalResult applyMemRefLoad(memref::LoadOp load,
+                                     ClassicalEnv& classical) {
+  auto slot =
+      lookupMemRefSlot(load.getMemref(), load.getIndices(), classical, load);
+  if (failed(slot)) {
+    return failure();
   }
-  bindInteger(op.getResult(0), result, classical);
+  if (!**slot) {
+    return load.emitError()
+           << "read from an uninitialized classical memref element";
+  }
+  classical.values[load.getResult()] = **slot;
+  return success();
+}
+
+template <typename OpTy, typename Combine>
+static LogicalResult applyDivision(OpTy op, ClassicalEnv& classical,
+                                   Combine combine) {
+  auto rhs = lookupInteger(op.getRhs(), classical, op);
+  if (failed(rhs)) {
+    return failure();
+  }
+  if (rhs->isZero()) {
+    return op.emitError() << "division by zero during QCO DD simulation";
+  }
+  auto lhs = lookupInteger(op.getLhs(), classical, op);
+  if (failed(lhs)) {
+    return failure();
+  }
+  return bindInteger(op.getResult(), combine(*lhs, *rhs), classical);
+}
+
+static LogicalResult applyIntegerCast(Value in, Value out, Operation* op,
+                                      ClassicalEnv& classical, bool isSigned) {
+  auto value = lookupInteger(in, classical, op);
+  if (failed(value)) {
+    return failure();
+  }
+  const unsigned width = isa<IndexType>(out.getType())
+                             ? 64U
+                             : cast<IntegerType>(out.getType()).getWidth();
+  if (width > value->getBitWidth()) {
+    *value = isSigned ? value->sext(width) : value->zext(width);
+  } else if (width < value->getBitWidth()) {
+    *value = value->trunc(width);
+  }
+  return bindInteger(out, *value, classical);
+}
+
+static LogicalResult foldClassicalOp(Operation& op, ClassicalEnv& classical) {
+  if (llvm::any_of(op.getOperandTypes(),
+                   [](Type type) { return !isSupportedClassicalType(type); }) ||
+      llvm::any_of(op.getResultTypes(),
+                   [](Type type) { return !isSupportedClassicalType(type); })) {
+    return op.emitError()
+           << "QCO DD simulation only supports integer, index, and f64 values";
+  }
+
+  // Fold a clone because some arithmetic folders canonicalize in place.
+  Operation* clone = op.clone();
+  const auto destroyClone = llvm::make_scope_exit([&] { clone->destroy(); });
+  Attribute result;
+  for (unsigned attempt = 0; attempt < 2 && !result; ++attempt) {
+    SmallVector<Attribute> operands;
+    operands.reserve(clone->getNumOperands());
+    for (Value operand : clone->getOperands()) {
+      auto attr = lookupAttribute(operand, classical, &op);
+      if (failed(attr)) {
+        return failure();
+      }
+      operands.push_back(*attr);
+    }
+
+    if (isa<arith::ShLIOp, arith::ShRUIOp, arith::ShRSIOp>(op)) {
+      const auto lhs = cast<IntegerAttr>(operands[0]);
+      const auto rhs = cast<IntegerAttr>(operands[1]);
+      if (rhs.getValue().uge(lhs.getValue().getBitWidth())) {
+        return op.emitError()
+               << "shift amount out of range for QCO DD simulation";
+      }
+    }
+
+    SmallVector<OpFoldResult, 1> results;
+    if (failed(clone->fold(operands, results))) {
+      break;
+    }
+    if (results.size() == 1) {
+      result = dyn_cast_if_present<Attribute>(results.front());
+      if (!result) {
+        const auto value = cast<Value>(results.front());
+        if (value != clone->getResult(0)) {
+          return classical.bindFrom(value, op.getResult(0), &op);
+        }
+      }
+    } else if (!results.empty()) {
+      break;
+    }
+  }
+  if (!result) {
+    return op.emitError()
+           << "could not evaluate classical op during QCO DD simulation";
+  }
+  classical.values[op.getResult(0)] = result;
   return success();
 }
 
 static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
+  const auto isUnsupportedFloat = [](Type type) {
+    return isa<FloatType>(type) && !type.isF64();
+  };
+  if (llvm::any_of(op.getOperandTypes(), isUnsupportedFloat) ||
+      llvm::any_of(op.getResultTypes(), isUnsupportedFloat)) {
+    return op.emitError()
+           << "QCO DD simulation only supports f64 classical values";
+  }
   return TypeSwitch<Operation*, LogicalResult>(&op)
       .Case<arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::AddIOp,
-            arith::SubIOp, arith::MulIOp, arith::ShLIOp, arith::ShRUIOp>(
-          [&](Operation* binary) {
-            return applyBinaryInteger(*binary, classical);
+            arith::SubIOp, arith::MulIOp, arith::ShLIOp, arith::ShRUIOp,
+            arith::ShRSIOp, arith::CmpIOp, arith::AddFOp, arith::SubFOp,
+            arith::MulFOp, arith::DivFOp, arith::RemFOp, arith::NegFOp,
+            arith::CmpFOp, arith::SIToFPOp, arith::UIToFPOp>(
+          [&](Operation* foldable) {
+            return foldClassicalOp(*foldable, classical);
           })
-      .Case<arith::CmpIOp>([&](arith::CmpIOp cmp) -> LogicalResult {
-        auto lhs = lookupInteger(cmp.getLhs(), classical, cmp);
-        auto rhs = lookupInteger(cmp.getRhs(), classical, cmp);
-        if (failed(lhs) || failed(rhs)) {
-          return failure();
-        }
-        bindInteger(cmp.getResult(),
-                    llvm::APInt(1, arith::applyCmpPredicate(cmp.getPredicate(),
-                                                            *lhs, *rhs)),
-                    classical);
-        return success();
+      .Case<arith::DivUIOp>([&](arith::DivUIOp value) {
+        return applyDivision(
+            value, classical,
+            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
+              return lhs.udiv(rhs);
+            });
+      })
+      .Case<arith::DivSIOp>([&](arith::DivSIOp value) {
+        return applyDivision(
+            value, classical,
+            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
+              return lhs.sdiv(rhs);
+            });
+      })
+      .Case<arith::RemUIOp>([&](arith::RemUIOp value) {
+        return applyDivision(
+            value, classical,
+            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
+              return lhs.urem(rhs);
+            });
+      })
+      .Case<arith::RemSIOp>([&](arith::RemSIOp value) {
+        return applyDivision(
+            value, classical,
+            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
+              return lhs.srem(rhs);
+            });
       })
       .Case<arith::SelectOp>([&](arith::SelectOp select) -> LogicalResult {
-        auto cond = lookupBool(select.getCondition(), classical, select);
-        if (failed(cond)) {
+        auto condition = lookupBool(select.getCondition(), classical, select);
+        if (failed(condition)) {
           return failure();
         }
-        if (!isa<IntegerType, IndexType>(select.getType())) {
-          return select.emitError()
-                 << "QCO DD simulation only supports integer or index select";
-        }
-        auto t = lookupInteger(select.getTrueValue(), classical, select);
-        auto f = lookupInteger(select.getFalseValue(), classical, select);
-        if (failed(t) || failed(f)) {
-          return failure();
-        }
-        bindInteger(select.getResult(), *cond ? *t : *f, classical);
-        return success();
+        Value selected =
+            *condition ? select.getTrueValue() : select.getFalseValue();
+        return classical.bindFrom(selected, select.getResult(), select);
+      })
+      .Case<arith::ExtUIOp>([&](arith::ExtUIOp ext) {
+        return applyIntegerCast(ext.getIn(), ext.getOut(), ext, classical,
+                                false);
+      })
+      .Case<arith::ExtSIOp>([&](arith::ExtSIOp cast) {
+        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
+                                true);
       })
       .Case<arith::IndexCastUIOp>([&](arith::IndexCastUIOp cast) {
-        return applyUnsignedIndexCast(cast.getIn(), cast.getOut(), cast,
-                                      classical);
+        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
+                                false);
       })
-      .Case<arith::ExtUIOp>([&](arith::ExtUIOp cast) {
-        return applyUnsignedIndexCast(cast.getIn(), cast.getOut(), cast,
-                                      classical);
+      .Case<arith::IndexCastOp>([&](arith::IndexCastOp cast) {
+        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
+                                true);
       })
+      .Case<arith::TruncIOp>([&](arith::TruncIOp cast) {
+        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
+                                false);
+      })
+      .Case<arith::FPToSIOp, arith::FPToUIOp>(
+          [&](Operation* castOp) -> LogicalResult {
+            auto value = lookupFloat(castOp->getOperand(0), classical, castOp);
+            if (failed(value)) {
+              return failure();
+            }
+            Value out = castOp->getResult(0);
+            const unsigned width = cast<IntegerType>(out.getType()).getWidth();
+            const bool isSigned = isa<arith::FPToSIOp>(castOp);
+            llvm::APSInt result(width, /*isUnsigned=*/!isSigned);
+            bool exact = false;
+            const auto status = llvm::APFloat(*value).convertToInteger(
+                result, llvm::APFloat::rmTowardZero, &exact);
+            if ((status & llvm::APFloat::opInvalidOp) != 0) {
+              return castOp->emitError()
+                     << "floating-point value is outside the destination "
+                        "integer range during QCO DD simulation";
+            }
+            return bindInteger(out, result, classical);
+          })
       .Default([](Operation* unsupported) {
         return unsupported->emitError()
                << "unsupported classical op for QCO DD simulation: "
@@ -624,8 +965,8 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
       });
 }
 
-static FailureOr<LoopRange>
-resolveLoop(scf::ForOp forOp, ClassicalEnv& classical, size_t remainingSteps) {
+static FailureOr<LoopRange> resolveLoop(scf::ForOp forOp,
+                                        ClassicalEnv& classical) {
   auto lower = lookupInteger(forOp.getLowerBound(), classical, forOp);
   auto upper = lookupInteger(forOp.getUpperBound(), classical, forOp);
   auto step = lookupInteger(forOp.getStep(), classical, forOp);
@@ -652,56 +993,85 @@ resolveLoop(scf::ForOp forOp, ClassicalEnv& classical, size_t remainingSteps) {
   const llvm::APInt span = upperWide - lowerWide;
   const llvm::APInt trips =
       (span + stepWide - llvm::APInt(wideWidth, 1)).udiv(stepWide);
-  const size_t limited = trips.getLimitedValue(remainingSteps + 1);
-  if (limited > remainingSteps) {
-    return forOp.emitError(
-        "QCO DD execution exceeds the limit of 10000 control-flow steps");
-  }
+  const size_t limited = trips.getLimitedValue(MAX_CONTROL_FLOW_STEPS + 1);
   return LoopRange{.induction = lowerWide, .step = stepWide, .trips = limited};
 }
 
 static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
-                                    WalkState& walk, Operation* op) {
-  if (sources.size() != dests.size()) {
-    return op->emitError()
-           << "source and destination arity mismatch in QCO DD simulation";
-  }
-  const QubitMap sourceQubits = *walk.qubits;
-  const ClassicalEnv sourceClassical = *walk.classical;
+                                    WalkState& walk, Operation* op);
 
-  // Validate the complete transfer before updating either environment.
+static LogicalResult bindValuePairs(ValueRange sources, ValueRange dests,
+                                    WalkState& walk, Operation* op) {
+  SmallVector<RuntimeValue> values;
+  values.reserve(sources.size());
   for (auto [src, dest] : llvm::zip_equal(sources, dests)) {
-    if (src.getType() != dest.getType()) {
-      return op->emitError()
-             << "source and destination type mismatch in QCO DD simulation: "
-             << src.getType() << " versus " << dest.getType();
-    }
     if (isa<QubitType>(dest.getType())) {
-      if (!sourceQubits.lookup(src)) {
+      const auto q = walk.qubits->lookup(src);
+      if (!q) {
         return op->emitError()
                << "qubit SSA value is not mapped for QCO DD construction";
       }
+      values.emplace_back(*q);
+    } else if (isQTensorType(dest.getType())) {
+      const auto slots = walk.tensors->lookup(src);
+      if (!slots) {
+        return op->emitError()
+               << "qtensor SSA value is not mapped for QCO DD simulation";
+      }
+      values.emplace_back(slots);
     } else if (isa<cbit::RegisterType>(dest.getType())) {
-      if (!sourceClassical.registers.contains(src)) {
+      const auto it = walk.classical->registers.find(src);
+      if (it == walk.classical->registers.end()) {
         return op->emitError()
                << "CBit register is not mapped for QCO DD simulation";
       }
-    } else if (!sourceClassical.scalars.contains(src)) {
-      return op->emitError()
-             << "classical SSA value is not mapped for QCO DD simulation";
+      values.emplace_back(it->second);
+    } else if (isa<MemRefType>(dest.getType())) {
+      const auto it = walk.classical->memrefs.find(src);
+      if (it == walk.classical->memrefs.end()) {
+        return op->emitError()
+               << "classical memref is not mapped for QCO DD simulation";
+      }
+      values.emplace_back(it->second);
+    } else {
+      const auto value = walk.classical->values.find(src);
+      if (value == walk.classical->values.end()) {
+        return op->emitError()
+               << "classical SSA value is not mapped for QCO DD simulation";
+      }
+      values.emplace_back(value->second);
     }
   }
 
-  for (auto [src, dest] : llvm::zip_equal(sources, dests)) {
+  for (auto [value, dest] : llvm::zip_equal(values, dests)) {
     if (isa<QubitType>(dest.getType())) {
-      walk.qubits->bind(dest, *sourceQubits.lookup(src));
+      walk.qubits->bind(dest, std::get<qc::Qubit>(value));
+    } else if (isQTensorType(dest.getType())) {
+      walk.tensors->bind(dest, std::get<TensorState>(value));
     } else if (isa<cbit::RegisterType>(dest.getType())) {
-      walk.classical->registers[dest] = sourceClassical.registers.at(src);
+      walk.classical->registers[dest] =
+          std::get<std::shared_ptr<ClassicalEnv::RegisterState>>(value);
+    } else if (isa<MemRefType>(dest.getType())) {
+      walk.classical->memrefs[dest] =
+          std::get<std::shared_ptr<ClassicalEnv::MemRefState>>(value);
     } else {
-      walk.classical->scalars[dest] = sourceClassical.scalars.at(src);
+      walk.classical->values[dest] = std::get<Attribute>(value);
     }
   }
   return success();
+}
+
+static LogicalResult bindYieldResults(YieldOp yield,
+                                      ValueRange classicalResults,
+                                      ValueRange linearResults,
+                                      WalkState& walk) {
+  const size_t numClassical = classicalResults.size();
+  if (failed(bindValuePairs(yield.getOperands().take_front(numClassical),
+                            classicalResults, walk, yield))) {
+    return failure();
+  }
+  return bindValuePairs(yield.getOperands().drop_front(numClassical),
+                        linearResults, walk, yield);
 }
 
 template <typename StateDD>
@@ -718,29 +1088,202 @@ static LogicalResult walkBlock(Block& block, WalkState& walk, StateDD& state) {
 }
 
 template <typename StateDD>
-static LogicalResult applyRegionBranch(ValueRange linearOperands, Block& block,
-                                       WalkState& walk, StateDD& state,
-                                       Operation* parent) {
+static LogicalResult
+applyRegionBranch(ValueRange linearOperands, Block& block,
+                  ValueRange classicalResults, ValueRange linearResults,
+                  WalkState& walk, StateDD& state, Operation* parent) {
   if (failed(
           bindValuePairs(linearOperands, block.getArguments(), walk, parent))) {
+    return failure();
+  }
+  if (failed(consumeExecutionStep(walk, parent))) {
     return failure();
   }
   if (failed(walkBlock(block, walk, state))) {
     return failure();
   }
-  auto yield = cast<YieldOp>(block.getTerminator());
-  return bindValuePairs(yield.getOperands(), parent->getResults(), walk, yield);
+  return bindYieldResults(cast<YieldOp>(block.getTerminator()),
+                          classicalResults, linearResults, walk);
+}
+
+template <typename StateDD>
+static LogicalResult applyScfRegion(Region& region, ValueRange results,
+                                    WalkState& walk, StateDD& state,
+                                    Operation* parent) {
+  if (!region.hasOneBlock()) {
+    return parent->emitError()
+           << "SCF region must contain exactly one block for QCO DD simulation";
+  }
+  Block& block = region.front();
+  if (failed(consumeExecutionStep(walk, parent))) {
+    return failure();
+  }
+  if (failed(walkBlock(block, walk, state))) {
+    return failure();
+  }
+  auto yield = dyn_cast<scf::YieldOp>(block.getTerminator());
+  if (!yield || yield.getNumOperands() != results.size()) {
+    return parent->emitError()
+           << "SCF region must yield one value for each result";
+  }
+  return bindValuePairs(yield.getOperands(), results, walk, parent);
+}
+
+static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
+                                                 dd::VectorDD& state,
+                                                 Operation* op) {
+  if (walk.qubits->numQubits > walk.dd->qubits() ||
+      count > walk.dd->qubits() - walk.qubits->numQubits) {
+    return op->emitError() << "DD package has " << walk.dd->qubits()
+                           << " qubits but allocation requires "
+                           << walk.qubits->numQubits + count;
+  }
+
+  const size_t first = walk.qubits->numQubits;
+  auto zeros = dd::makeZeroState(count, *walk.dd, first);
+  auto extended = walk.dd->kronecker(zeros, state, first, /*incIdx=*/false);
+  walk.dd->incRef(extended);
+  walk.dd->decRef(zeros);
+  walk.dd->decRef(state);
+  state = extended;
+
+  TensorSlots slots;
+  slots.reserve(count);
+  for (size_t i = 0; i < count; ++i) {
+    slots.emplace_back(static_cast<qc::Qubit>(first + i));
+  }
+  walk.qubits->numQubits += count;
+  return slots;
 }
 
 template <typename StateDD>
 static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
   return TypeSwitch<Operation*, LogicalResult>(&op)
-      .template Case<StaticOp, AllocOp, SinkOp>([](auto) { return success(); })
+      .template Case<StaticOp, SinkOp>([](auto) { return success(); })
       .template Case<arith::ConstantOp>([&](arith::ConstantOp constant) {
-        if (auto attr = dyn_cast<IntegerAttr>(constant.getValue())) {
-          walk.classical->scalars[constant.getResult()] = attr;
+        return recordConstant(constant, *walk.classical);
+      })
+      .template Case<AllocOp>([&](AllocOp alloc) -> LogicalResult {
+        if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
+          if (!walk.qubits->lookup(alloc.getResult())) {
+            return alloc.emitError()
+                   << "dynamic qubit allocation is not supported for QCO DD "
+                      "functionality construction";
+          }
+          return success();
+        } else {
+          auto slots = allocateZeroQubits(1, walk, state, alloc);
+          if (failed(slots)) {
+            return failure();
+          }
+          walk.qubits->bind(alloc.getResult(), *slots->front());
+          return success();
         }
-        return success();
+      })
+      .template Case<qtensor::AllocOp>(
+          [&](qtensor::AllocOp alloc) -> LogicalResult {
+            if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
+              return alloc.emitError()
+                     << "qtensor allocation is not supported for QCO DD "
+                        "functionality construction";
+            } else {
+              auto size = lookupIndex(alloc.getSize(), *walk.classical, alloc);
+              if (failed(size)) {
+                return failure();
+              }
+              if (*size <= 0) {
+                return alloc.emitError()
+                       << "qtensor allocation size must be positive";
+              }
+              auto slots = allocateZeroQubits(static_cast<size_t>(*size), walk,
+                                              state, alloc);
+              if (failed(slots)) {
+                return failure();
+              }
+              walk.tensors->bind(
+                  alloc.getResult(),
+                  std::make_shared<TensorSlots>(std::move(*slots)));
+              return success();
+            }
+          })
+      .template Case<qtensor::FromElementsOp>(
+          [&](qtensor::FromElementsOp fromElements) -> LogicalResult {
+            auto wires = walk.qubits->lookupRange(fromElements.getElements(),
+                                                  fromElements);
+            if (failed(wires)) {
+              return failure();
+            }
+            TensorSlots slots;
+            slots.reserve(wires->size());
+            for (const qc::Qubit wire : *wires) {
+              slots.emplace_back(wire);
+            }
+            walk.tensors->bind(fromElements.getResult(),
+                               std::make_shared<TensorSlots>(std::move(slots)));
+            return success();
+          })
+      .template Case<qtensor::ExtractOp>(
+          [&](qtensor::ExtractOp extract) -> LogicalResult {
+            const auto input = walk.tensors->lookup(extract.getTensor());
+            auto index =
+                lookupIndex(extract.getIndex(), *walk.classical, extract);
+            if (!input || failed(index)) {
+              if (!input) {
+                extract.emitError()
+                    << "qtensor is not mapped for QCO DD simulation";
+              }
+              return failure();
+            }
+            if (*index < 0 || static_cast<size_t>(*index) >= input->size()) {
+              return extract.emitError() << "qtensor index out of range";
+            }
+            auto& wire = (*input)[static_cast<size_t>(*index)];
+            if (!wire) {
+              return extract.emitError()
+                     << "qtensor element has already been extracted";
+            }
+            walk.qubits->bind(extract.getResult(), *wire);
+            wire.reset();
+            walk.tensors->bind(extract.getOutTensor(), input);
+            return success();
+          })
+      .template Case<qtensor::InsertOp>(
+          [&](qtensor::InsertOp insert) -> LogicalResult {
+            const auto input = walk.tensors->lookup(insert.getDest());
+            const auto wire = walk.qubits->lookup(insert.getScalar());
+            auto index =
+                lookupIndex(insert.getIndex(), *walk.classical, insert);
+            if (!input || !wire || failed(index)) {
+              if (!input || !wire) {
+                insert.emitError()
+                    << "qtensor or qubit is not mapped for QCO DD simulation";
+              }
+              return failure();
+            }
+            if (*index < 0 || static_cast<size_t>(*index) >= input->size()) {
+              return insert.emitError() << "qtensor index out of range";
+            }
+            (*input)[static_cast<size_t>(*index)] = wire;
+            walk.tensors->bind(insert.getResult(), input);
+            return success();
+          })
+      .template Case<qtensor::DeallocOp>(
+          [&](qtensor::DeallocOp dealloc) -> LogicalResult {
+            if (!walk.tensors->lookup(dealloc.getTensor())) {
+              return dealloc.emitError()
+                     << "qtensor is not mapped for QCO DD simulation";
+            }
+            walk.tensors->erase(dealloc.getTensor());
+            return success();
+          })
+      .template Case<memref::AllocOp>([&](memref::AllocOp alloc) {
+        return applyMemRefAlloc(alloc, *walk.classical);
+      })
+      .template Case<memref::StoreOp>([&](memref::StoreOp store) {
+        return applyMemRefStore(store, *walk.classical);
+      })
+      .template Case<memref::LoadOp>([&](memref::LoadOp load) {
+        return applyMemRefLoad(load, *walk.classical);
       })
       .template Case<cbit::AllocOp>([&](cbit::AllocOp alloc) {
         return allocateRegister(alloc, *walk.classical);
@@ -751,15 +1294,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<cbit::StoreOp>([&](cbit::StoreOp store) {
         return storeRegister(store, *walk.classical);
       })
-      .template Case<arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::AddIOp,
-                     arith::SubIOp, arith::MulIOp, arith::ShLIOp,
-                     arith::ShRUIOp, arith::CmpIOp, arith::SelectOp,
-                     arith::IndexCastUIOp, arith::ExtUIOp>(
-          [&](Operation* classicalOp) {
-            return applyClassicalOp(*classicalOp, *walk.classical);
-          })
+      .template Case<memref::DeallocOp>([](auto) { return success(); })
       .template Case<func::ReturnOp>([&](func::ReturnOp returnOp) {
-        return validateReturn(returnOp, *walk.qubits);
+        return validateReturn(returnOp, *walk.qubits, *walk.tensors);
       })
       .template Case<MeasureOp>([&](MeasureOp measureOp) -> LogicalResult {
         if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
@@ -785,8 +1322,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
             return success();
           }
           const char bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
-          bindInteger(measureOp.getResult(), llvm::APInt(1, bit == '1'),
-                      *walk.classical);
+          walk.classical->values[measureOp.getResult()] =
+              BoolAttr::get(measureOp.getContext(), bit == '1');
           walk.qubits->bind(measureOp.getQubitOut(), *q);
           return success();
         }
@@ -817,107 +1354,148 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         }
       })
       .template Case<IfOp>([&](IfOp ifOp) -> LogicalResult {
-        if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
-          return ifOp.emitError()
-                 << "control-flow is not supported for QCO DD functionality "
-                    "construction";
-        } else {
-          auto condition =
-              lookupBool(ifOp.getCondition(), *walk.classical, ifOp);
-          if (failed(condition)) {
-            return failure();
-          }
-          Block* block = *condition ? ifOp.thenBlock() : ifOp.elseBlock();
-          return applyRegionBranch(ifOp.getQubits(), *block, walk, state, ifOp);
+        auto condition = lookupBool(ifOp.getCondition(), *walk.classical, ifOp);
+        if (failed(condition)) {
+          return failure();
         }
+        Block* block = *condition ? ifOp.thenBlock() : ifOp.elseBlock();
+        return applyRegionBranch(ifOp.getQubits(), *block,
+                                 ifOp.getClassicalResults(),
+                                 ifOp.getLinearResults(), walk, state, ifOp);
       })
       .template Case<IndexSwitchOp>(
           [&](IndexSwitchOp switchOp) -> LogicalResult {
-            if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
-              return switchOp.emitError()
-                     << "control-flow is not supported for QCO DD "
-                        "functionality construction";
-            } else {
-              auto index =
-                  lookupIndex(switchOp.getArg(), *walk.classical, switchOp);
-              if (failed(index)) {
-                return failure();
-              }
-              const auto cases = switchOp.getCases();
-              Block* block = switchOp.getDefaultBlock();
-              for (auto [i, caseValue] : llvm::enumerate(cases)) {
-                if (caseValue == *index) {
-                  block = switchOp.getCaseBlock(i);
-                  break;
-                }
-              }
-              return applyRegionBranch(switchOp.getTargets(), *block, walk,
-                                       state, switchOp);
+            auto selector =
+                lookupIndex(switchOp.getArg(), *walk.classical, switchOp);
+            if (failed(selector)) {
+              return failure();
             }
+            Block* block = switchOp.getDefaultBlock();
+            for (auto [i, caseValue] : llvm::enumerate(switchOp.getCases())) {
+              if (caseValue == *selector) {
+                block = switchOp.getCaseBlock(i);
+                break;
+              }
+            }
+            return applyRegionBranch(
+                switchOp.getTargets(), *block, switchOp.getClassicalResults(),
+                switchOp.getLinearResults(), walk, state, switchOp);
+          })
+      .template Case<scf::IfOp>([&](scf::IfOp ifOp) -> LogicalResult {
+        auto condition = lookupBool(ifOp.getCondition(), *walk.classical, ifOp);
+        if (failed(condition)) {
+          return failure();
+        }
+        Region& selected =
+            *condition ? ifOp.getThenRegion() : ifOp.getElseRegion();
+        if (selected.empty()) {
+          return ifOp.getNumResults() == 0
+                     ? success()
+                     : ifOp.emitError()
+                           << "selected empty scf.if region has results";
+        }
+        return applyScfRegion(selected, ifOp.getResults(), walk, state, ifOp);
+      })
+      .template Case<scf::IndexSwitchOp>(
+          [&](scf::IndexSwitchOp switchOp) -> LogicalResult {
+            auto selector =
+                lookupIndex(switchOp.getArg(), *walk.classical, switchOp);
+            if (failed(selector)) {
+              return failure();
+            }
+            Region* selected = &switchOp.getDefaultRegion();
+            for (auto [i, value] : llvm::enumerate(switchOp.getCases())) {
+              if (value == *selector) {
+                selected = &switchOp.getCaseRegions()[i];
+                break;
+              }
+            }
+            return applyScfRegion(*selected, switchOp.getResults(), walk, state,
+                                  switchOp);
+          })
+      .template Case<scf::ExecuteRegionOp>(
+          [&](scf::ExecuteRegionOp execute) -> LogicalResult {
+            return applyScfRegion(execute.getRegion(), execute.getResults(),
+                                  walk, state, execute);
           })
       .template Case<scf::ForOp>([&](scf::ForOp forOp) -> LogicalResult {
-        if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
-          return forOp.emitError()
-                 << "scf.for is not supported for QCO DD functionality "
-                    "construction";
-        } else {
-          auto range =
-              resolveLoop(forOp, *walk.classical, walk.remainingExecutionSteps);
-          if (failed(range)) {
+        auto range = resolveLoop(forOp, *walk.classical);
+        if (failed(range)) {
+          return failure();
+        }
+
+        Block& body = *forOp.getBody();
+        SmallVector<Value> carried(forOp.getInits().begin(),
+                                   forOp.getInits().end());
+
+        for (size_t t = 0; t < range->trips;
+             ++t, range->induction += range->step) {
+          if (failed(consumeExecutionStep(walk, forOp))) {
             return failure();
           }
-
-          Block& body = *forOp.getBody();
-          SmallVector<Value> carried(forOp.getInits().begin(),
-                                     forOp.getInits().end());
-
-          for (size_t t = 0; t < range->trips;
-               ++t, range->induction += range->step) {
-            if (walk.remainingExecutionSteps == 0) {
-              return forOp.emitError(
-                  "QCO DD execution exceeds the limit of 10000 control-flow "
-                  "steps");
-            }
-            --walk.remainingExecutionSteps;
-            auto iterArgs = body.getArguments().drop_front();
-            if (failed(bindValuePairs(carried, iterArgs, walk, forOp))) {
-              return failure();
-            }
-            bindInteger(
-                body.getArgument(0),
-                range->induction.trunc(range->induction.getBitWidth() - 1),
-                *walk.classical);
-            if (failed(walkBlock(body, walk, state))) {
-              return failure();
-            }
-            auto yield = cast<scf::YieldOp>(body.getTerminator());
-            carried.assign(yield.getOperands().begin(),
-                           yield.getOperands().end());
+          auto iterArgs = body.getArguments().drop_front();
+          if (failed(bindValuePairs(carried, iterArgs, walk, forOp))) {
+            return failure();
           }
-          return bindValuePairs(carried, forOp.getResults(), walk, forOp);
+          if (failed(bindInteger(
+                  body.getArgument(0),
+                  range->induction.trunc(range->induction.getBitWidth() - 1),
+                  *walk.classical))) {
+            return failure();
+          }
+          if (failed(walkBlock(body, walk, state))) {
+            return failure();
+          }
+          auto yield = cast<scf::YieldOp>(body.getTerminator());
+          carried.assign(yield.getOperands().begin(),
+                         yield.getOperands().end());
+        }
+        return bindValuePairs(carried, forOp.getResults(), walk, forOp);
+      })
+      .template Case<scf::WhileOp>([&](scf::WhileOp whileOp) -> LogicalResult {
+        Block& before = whileOp.getBefore().front();
+        Block& after = whileOp.getAfter().front();
+        SmallVector<Value> carried(whileOp.getInits().begin(),
+                                   whileOp.getInits().end());
+        while (true) {
+          if (failed(bindValuePairs(carried, before.getArguments(), walk,
+                                    whileOp)) ||
+              failed(walkBlock(before, walk, state))) {
+            return failure();
+          }
+          auto condition = whileOp.getConditionOp();
+          auto value =
+              lookupBool(condition.getCondition(), *walk.classical, whileOp);
+          if (failed(value)) {
+            return failure();
+          }
+          if (!*value) {
+            return bindValuePairs(condition.getArgs(), whileOp.getResults(),
+                                  walk, whileOp);
+          }
+          if (failed(consumeExecutionStep(walk, whileOp))) {
+            return failure();
+          }
+          if (failed(bindValuePairs(condition.getArgs(), after.getArguments(),
+                                    walk, whileOp)) ||
+              failed(walkBlock(after, walk, state))) {
+            return failure();
+          }
+          auto yield = whileOp.getYieldOp();
+          carried.assign(yield.getOperands().begin(),
+                         yield.getOperands().end());
         }
       })
       .template Case<func::CallOp>([&](func::CallOp call) -> LogicalResult {
         auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
             call, call.getCalleeAttr());
-        if (!callee) {
-          return call.emitError() << "func.call callee @" << call.getCallee()
-                                  << " could not be resolved";
-        }
         if (!callee.getBody().hasOneBlock()) {
           return call.emitError()
                  << "func.call callee must have a single-block body";
         }
-        Block& calleeBody = callee.getBody().front();
-        if (calleeBody.empty()) {
-          return call.emitError() << "func.call callee must end in func.return";
-        }
-        auto returnOp = dyn_cast<func::ReturnOp>(calleeBody.getTerminator());
-        if (!returnOp) {
-          return call.emitError() << "func.call callee must end in func.return";
-        }
-        if (failed(verifyLinearity(callee)) ||
-            failed(verifyRegionNestingDepth(callee, maxRegionNesting))) {
+        auto returnOp =
+            cast<func::ReturnOp>(callee.getBody().front().getTerminator());
+        if (failed(verifyRegionNestingDepth(callee, MAX_REGION_NESTING))) {
           return failure();
         }
         Operation* calleeOp = callee.getOperation();
@@ -928,23 +1506,21 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         }
         const auto guard =
             llvm::make_scope_exit([&] { walk.activeCalls.erase(calleeOp); });
-        if (walk.activeCalls.size() > maxCallNesting) {
-          return call.emitError()
-                 << "func.call nesting exceeds the limit of " << maxCallNesting;
+        if (walk.activeCalls.size() > MAX_CALL_NESTING) {
+          return call.emitError() << "func.call nesting exceeds the limit of "
+                                  << MAX_CALL_NESTING;
         }
-        if (walk.remainingExecutionSteps == 0) {
-          return call.emitError(
-              "QCO DD execution exceeds the limit of 10000 control-flow "
-              "steps");
+
+        if (failed(consumeExecutionStep(walk, call))) {
+          return failure();
         }
-        --walk.remainingExecutionSteps;
 
         if (failed(bindValuePairs(call.getArgOperands(), callee.getArguments(),
                                   walk, call))) {
           return failure();
         }
 
-        if (failed(walkBlock(calleeBody, walk, state))) {
+        if (failed(walkBlock(callee.getBody().front(), walk, state))) {
           return failure();
         }
         return bindValuePairs(returnOp.getOperands(), call.getResults(), walk,
@@ -953,7 +1529,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<CtrlOp>([&](CtrlOp ctrlOp) -> LogicalResult {
         if (auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(
                 *ctrlOp.getBody())) {
-          auto decoded = decodeStandardGate(inner);
+          auto decoded = decodeStandardGate(inner, *walk.classical);
           if (failed(decoded)) {
             return failure();
           }
@@ -975,7 +1551,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       })
       .template Case<UnitaryOpInterface>(
           [&](UnitaryOpInterface unitary) -> LogicalResult {
-            auto decoded = decodeStandardGate(unitary);
+            auto decoded = decodeStandardGate(unitary, *walk.classical);
             if (failed(decoded)) {
               return failure();
             }
@@ -998,6 +1574,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
 template <typename StateDD>
 static LogicalResult walkFunction(func::FuncOp func, WalkState& walkState,
                                   StateDD& state) {
+  walkState.activeCalls.insert(func.getOperation());
   // Function bodies include `func.return` as terminator; region walks skip
   // `qco.yield` and bind it separately.
   for (Operation& op : func.getBody().front()) {
@@ -1008,66 +1585,115 @@ static LogicalResult walkFunction(func::FuncOp func, WalkState& walkState,
   return success();
 }
 
-static FailureOr<QubitMap> prepare(func::FuncOp func, const dd::Package& dd) {
-  if (failed(verifyLinearity(func)) ||
-      failed(verifyRegionNestingDepth(func, maxRegionNesting))) {
+namespace {
+struct PreparedState {
+  QubitMap qubits;
+  TensorMap tensors;
+  ClassicalEnv classical;
+};
+} // namespace
+
+static FailureOr<PreparedState>
+prepare(func::FuncOp func, const dd::Package& dd,
+        const DDArgumentBindings& argumentBindings,
+        bool bindEntryAllocations = false) {
+  if (failed(verifyRegionNestingDepth(func, MAX_REGION_NESTING))) {
     return failure();
   }
   if (!func.getBody().hasOneBlock()) {
     return func.emitError()
            << "QCO DD construction expects a single-block function body";
   }
-  Block& body = func.getBody().front();
-  if (body.empty() || !isa<func::ReturnOp>(body.getTerminator())) {
-    return func.emitError()
-           << "QCO DD construction expects the function to end in func.return";
-  }
 
-  QubitMap qubits;
-  DenseSet<qc::Qubit> staticIndices;
-  for (StaticOp staticOp : body.getOps<StaticOp>()) {
-    const auto index = staticOp.getIndex();
-    if (index > std::numeric_limits<qc::Qubit>::max()) {
-      return staticOp.emitError() << "static qubit index " << index
-                                  << " exceeds the DD qubit-index capacity";
+  PreparedState prepared;
+  if (failed(
+          applyArgumentBindings(func, argumentBindings, prepared.classical))) {
+    return failure();
+  }
+  QubitMap& qubits = prepared.qubits;
+  for (StaticOp staticOp : func.getBody().front().getOps<StaticOp>()) {
+    const auto index = static_cast<size_t>(staticOp.getIndex());
+    if (index >= dd::Package::MAX_POSSIBLE_QUBITS) {
+      return staticOp.emitError()
+             << "static qubit index exceeds the supported qubit range";
     }
     const auto q = static_cast<qc::Qubit>(index);
-    if (!staticIndices.insert(q).second) {
-      return staticOp.emitError() << "duplicate static qubit index " << index
-                                  << " is ambiguous for QCO DD construction";
-    }
     qubits.bind(staticOp.getQubit(), q);
     qubits.numQubits = std::max(qubits.numQubits, static_cast<size_t>(q) + 1);
   }
   if (qubits.numQubits == 0) {
-    qc::Qubit next = 0;
+    size_t next = 0;
     for (Value arg : func.getArguments()) {
-      if (!isa<QubitType>(arg.getType())) {
-        continue;
+      if (isa<QubitType>(arg.getType())) {
+        if (next >= dd::Package::MAX_POSSIBLE_QUBITS) {
+          return func.emitError()
+                 << "QCO function exceeds the supported qubit range";
+        }
+        qubits.bind(arg, static_cast<qc::Qubit>(next++));
+      } else if (isQTensorType(arg.getType())) {
+        const auto type = cast<RankedTensorType>(arg.getType());
+        int64_t size = type.getDimSize(0);
+        if (type.isDynamicDim(0)) {
+          const auto binding = argumentBindings.find(arg);
+          if (binding == argumentBindings.end()) {
+            return func.emitError()
+                   << "dynamic qtensor arguments require an index extent";
+          }
+          size = cast<IntegerAttr>(binding->second).getValue().getSExtValue();
+          if (size < 0) {
+            return func.emitError()
+                   << "dynamic qtensor extent must be non-negative";
+          }
+        }
+        const auto count = static_cast<size_t>(size);
+        if (count > dd::Package::MAX_POSSIBLE_QUBITS - next) {
+          return func.emitError()
+                 << "QCO function exceeds the supported qubit range";
+        }
+        TensorSlots slots;
+        slots.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+          slots.emplace_back(static_cast<qc::Qubit>(next++));
+        }
+        prepared.tensors.bind(arg,
+                              std::make_shared<TensorSlots>(std::move(slots)));
       }
-      qubits.bind(arg, next++);
     }
     qubits.numQubits = next;
   }
-  for (AllocOp alloc : body.getOps<AllocOp>()) {
-    qubits.bind(alloc.getResult(), static_cast<qc::Qubit>(qubits.numQubits++));
+  if (bindEntryAllocations) {
+    for (AllocOp alloc : func.getBody().front().getOps<AllocOp>()) {
+      if (qubits.numQubits >= dd::Package::MAX_POSSIBLE_QUBITS) {
+        return alloc.emitError()
+               << "QCO function exceeds the supported qubit range";
+      }
+      qubits.bind(alloc.getResult(),
+                  static_cast<qc::Qubit>(qubits.numQubits++));
+    }
   }
   if (dd.qubits() < qubits.numQubits) {
     return func.emitError() << "DD package has " << dd.qubits()
                             << " qubits but function uses " << qubits.numQubits;
   }
-  return qubits;
+  return prepared;
 }
 
-FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd) {
-  auto qubitsOr = prepare(func, dd);
-  if (failed(qubitsOr)) {
+FailureOr<dd::MatrixDD>
+buildFunctionality(func::FuncOp func, dd::Package& dd,
+                   const DDArgumentBindings& argumentBindings) {
+  auto prepared =
+      prepare(func, dd, argumentBindings, /*bindEntryAllocations=*/true);
+  if (failed(prepared)) {
     return failure();
   }
-  QubitMap qubits = std::move(*qubitsOr);
-  ClassicalEnv classical;
-  WalkState walkState{
-      .qubits = &qubits, .classical = &classical, .dd = &dd, .rng = nullptr};
+  QubitMap qubits = std::move(prepared->qubits);
+  TensorMap tensors = std::move(prepared->tensors);
+  ClassicalEnv classical = std::move(prepared->classical);
+  WalkState walkState{.qubits = &qubits,
+                      .tensors = &tensors,
+                      .classical = &classical,
+                      .dd = &dd,
+                      .rng = nullptr};
 
   dd::MatrixDD state =
       qubits.numQubits == 0
@@ -1084,20 +1710,23 @@ FailureOr<dd::MatrixDD> buildFunctionality(func::FuncOp func, dd::Package& dd) {
 
 static FailureOr<dd::VectorDD>
 simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
-             const QubitMap& preparedQubits, std::mt19937_64* rng,
+             const PreparedState& prepared, std::mt19937_64* rng,
              const DenseSet<Operation*>* deferredMeasurements = nullptr,
              ClassicalEnv* finalClassical = nullptr) {
   const size_t inputQubits =
       in.isTerminal() ? 0U : static_cast<size_t>(in.p->v) + 1U;
-  if (inputQubits < preparedQubits.numQubits) {
+  if (inputQubits < prepared.qubits.numQubits) {
     dd.decRef(in);
     return func.emitError()
            << "input state has " << inputQubits << " qubits but function uses "
-           << preparedQubits.numQubits;
+           << prepared.qubits.numQubits;
   }
-  QubitMap qubits = preparedQubits;
-  ClassicalEnv classical;
+  QubitMap qubits = prepared.qubits;
+  qubits.numQubits = inputQubits;
+  TensorMap tensors = prepared.tensors.clone();
+  ClassicalEnv classical = prepared.classical;
   WalkState walkState{.qubits = &qubits,
+                      .tensors = &tensors,
                       .classical = &classical,
                       .dd = &dd,
                       .rng = rng,
@@ -1115,13 +1744,14 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 }
 
 FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
-                                 dd::Package& dd, std::mt19937_64& rng) {
-  auto qubits = prepare(func, dd);
-  if (failed(qubits)) {
+                                 dd::Package& dd, std::mt19937_64& rng,
+                                 const DDArgumentBindings& argumentBindings) {
+  auto prepared = prepare(func, dd, argumentBindings);
+  if (failed(prepared)) {
     dd.decRef(in);
     return failure();
   }
-  return simulateImpl(func, in, dd, *qubits, &rng);
+  return simulateImpl(func, in, dd, *prepared, &rng);
 }
 
 static bool isOutputOnlyRegister(Value reg, ArrayRef<Value> outputs) {
@@ -1134,29 +1764,38 @@ static bool isOutputOnlyRegister(Value reg, ArrayRef<Value> outputs) {
          });
 }
 
-static bool isDeferrableMeasurement(MeasureOp measure, Block* entry,
-                                    ArrayRef<Value> outputs) {
-  return measure->getBlock() == entry &&
-         llvm::all_of(measure.getQubitOut().getUses(),
-                      [](const OpOperand& use) {
-                        return isa<SinkOp, func::ReturnOp>(use.getOwner());
-                      }) &&
-         llvm::all_of(measure.getResult().getUses(), [&](const OpOperand& use) {
-           auto store = dyn_cast<cbit::StoreOp>(use.getOwner());
-           return store && isOutputOnlyRegister(store.getReg(), outputs);
-         });
+static bool hasOutputOnlyMeasurementResult(MeasureOp measure,
+                                           ArrayRef<Value> outputs) {
+  return llvm::all_of(measure.getResult().getUses(), [&](const OpOperand& use) {
+    auto store = dyn_cast<cbit::StoreOp>(use.getOwner());
+    return store && isOutputOnlyRegister(store.getReg(), outputs);
+  });
 }
 
-static void analyzeSampling(func::FuncOp func, Block* entry,
+static bool isDeferrableMeasurement(MeasureOp measure, Block* entry,
+                                    ArrayRef<Value> outputs) {
+  if (measure->getBlock() != entry ||
+      !hasOutputOnlyMeasurementResult(measure, outputs)) {
+    return false;
+  }
+  return llvm::all_of(measure.getQubitOut().getUses(), [&](OpOperand& use) {
+    Operation* owner = use.getOwner();
+    return isa<SinkOp>(owner) ||
+           (owner == entry->getTerminator() && isa<func::ReturnOp>(owner));
+  });
+}
+
+static void analyzeSampling(func::FuncOp func, Block* sampledEntry,
                             ArrayRef<Value> outputs,
                             DenseSet<Operation*>& active, SamplingPlan& plan,
                             size_t& remainingSteps) {
   Operation* funcOp = func.getOperation();
-  if (remainingSteps == 0 || active.size() > maxCallNesting ||
+  if (remainingSteps == 0 || active.size() >= MAX_CALL_NESTING ||
       !active.insert(funcOp).second) {
     plan.dynamic = true;
     return;
   }
+  const auto guard = llvm::make_scope_exit([&] { active.erase(funcOp); });
   SmallVector<Block*> blocks;
   for (Block& block : func.getBody()) {
     blocks.push_back(&block);
@@ -1166,7 +1805,6 @@ static void analyzeSampling(func::FuncOp func, Block* entry,
     for (Operation& operation : *block) {
       if (remainingSteps == 0) {
         plan.dynamic = true;
-        active.erase(funcOp);
         return;
       }
       --remainingSteps;
@@ -1174,7 +1812,7 @@ static void analyzeSampling(func::FuncOp func, Block* entry,
       if (isa<ResetOp>(op)) {
         plan.dynamic = true;
       } else if (auto measure = dyn_cast<MeasureOp>(op)) {
-        if (isDeferrableMeasurement(measure, entry, outputs)) {
+        if (isDeferrableMeasurement(measure, sampledEntry, outputs)) {
           plan.deferredMeasurements.insert(op);
         } else {
           plan.dynamic = true;
@@ -1185,7 +1823,8 @@ static void analyzeSampling(func::FuncOp func, Block* entry,
         if (!callee || !callee.getBody().hasOneBlock()) {
           plan.dynamic = true;
         } else {
-          analyzeSampling(callee, entry, outputs, active, plan, remainingSteps);
+          analyzeSampling(callee, sampledEntry, outputs, active, plan,
+                          remainingSteps);
         }
       }
       for (Region& region : op->getRegions()) {
@@ -1195,7 +1834,6 @@ static void analyzeSampling(func::FuncOp func, Block* entry,
       }
     }
   }
-  active.erase(funcOp);
 }
 
 static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {
@@ -1217,14 +1855,14 @@ static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {
   }
 
   DenseSet<Operation*> active;
-  size_t remainingSteps = maxExecutionSteps;
+  size_t remainingSteps = MAX_CONTROL_FLOW_STEPS;
   analyzeSampling(func, &entry, plan.outputs, active, plan, remainingSteps);
   return plan;
 }
 
 static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
                                             const ClassicalEnv& classical,
-                                            StringRef basis, size_t numQubits) {
+                                            StringRef basis) {
   if (outputs.empty()) {
     return basis.str();
   }
@@ -1240,9 +1878,8 @@ static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
       const auto& cell = (*reg->second)[index];
       if (cell.value) {
         outcome.push_back(*cell.value ? '1' : '0');
-      } else if (cell.deferredWire && basis.size() == numQubits &&
-                 *cell.deferredWire < numQubits) {
-        outcome.push_back(basis[numQubits - 1 - *cell.deferredWire]);
+      } else if (cell.deferredWire && *cell.deferredWire < basis.size()) {
+        outcome.push_back(basis[basis.size() - 1 - *cell.deferredWire]);
       } else {
         return emitError(value.getLoc())
                << "returned CBit register element " << index << " is undefined";
@@ -1253,9 +1890,10 @@ static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
 }
 
 FailureOr<std::map<std::string, size_t>>
-sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng) {
-  auto qubits = prepare(func, dd);
-  if (failed(qubits)) {
+sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
+       const DDArgumentBindings& argumentBindings) {
+  auto prepared = prepare(func, dd, argumentBindings);
+  if (failed(prepared)) {
     return failure();
   }
   auto plan = getSamplingPlan(func);
@@ -1268,10 +1906,10 @@ sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng) {
     return counts;
   }
 
-  const size_t numQubits = qubits->numQubits;
+  const size_t numQubits = prepared->qubits.numQubits;
   const auto record = [&](const ClassicalEnv& classical,
                           StringRef basis) -> LogicalResult {
-    auto outcome = encodeOutcome(plan->outputs, classical, basis, numQubits);
+    auto outcome = encodeOutcome(plan->outputs, classical, basis);
     if (failed(outcome)) {
       return failure();
     }
@@ -1282,7 +1920,7 @@ sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng) {
   if (!plan->dynamic) {
     ClassicalEnv classical;
     auto state =
-        simulateImpl(func, dd::makeZeroState(numQubits, dd), dd, *qubits,
+        simulateImpl(func, dd::makeZeroState(numQubits, dd), dd, *prepared,
                      nullptr, &plan->deferredMeasurements, &classical);
     if (failed(state)) {
       return failure();
@@ -1299,7 +1937,7 @@ sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng) {
   for (size_t i = 0; i < shots; ++i) {
     ClassicalEnv classical;
     auto state = simulateImpl(func, dd::makeZeroState(numQubits, dd), dd,
-                              *qubits, &rng, nullptr, &classical);
+                              *prepared, &rng, nullptr, &classical);
     if (failed(state)) {
       return failure();
     }

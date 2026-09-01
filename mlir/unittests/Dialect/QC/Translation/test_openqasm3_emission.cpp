@@ -661,10 +661,11 @@ TEST(OpenQASM3EmissionTest, RejectsExcessiveExpressionNesting) {
   moduleOp.push_back(function);
   Block* body = function.addEntryBlock();
   builder.setInsertionPointToStart(body);
-  Value value = arith::ConstantOp::create(builder, location,
-                                          builder.getI64IntegerAttr(1));
+  Value one = arith::ConstantOp::create(builder, location,
+                                        builder.getI64IntegerAttr(1));
+  Value value = one;
   for (size_t i = 0; i < 256; ++i) {
-    value = arith::AddIOp::create(builder, location, value, value);
+    value = arith::AddIOp::create(builder, location, value, one);
   }
   func::ReturnOp::create(builder, location, value);
   ASSERT_TRUE(succeeded(verify(moduleOp)));

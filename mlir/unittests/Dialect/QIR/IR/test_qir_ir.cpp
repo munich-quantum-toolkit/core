@@ -215,8 +215,8 @@ TEST_F(QIRTest, BuilderReturnsCompleteClassicalRegister) {
 TEST_F(QIRTest, ReusedIrreversibleDeclarationsPreservePassthroughIdempotently) {
   OpBuilder builder(context.get());
   const auto location = builder.getUnknownLoc();
-  auto module = ModuleOp::create(location);
-  builder.setInsertionPointToStart(module.getBody());
+  auto moduleOp = ModuleOp::create(location);
+  builder.setInsertionPointToStart(moduleOp.getBody());
   const auto ptrType = LLVM::LLVMPointerType::get(context.get());
   const auto voidType = LLVM::LLVMVoidType::get(context.get());
   const auto nounwind = builder.getStringAttr("nounwind");
@@ -231,10 +231,10 @@ TEST_F(QIRTest, ReusedIrreversibleDeclarationsPreservePassthroughIdempotently) {
                          builder.getArrayAttr({nounwind, targetCPU}));
 
     EXPECT_EQ(
-        getOrCreateFunctionDeclaration(builder, module, name, functionType),
+        getOrCreateFunctionDeclaration(builder, moduleOp, name, functionType),
         declaration);
     EXPECT_EQ(
-        getOrCreateFunctionDeclaration(builder, module, name, functionType),
+        getOrCreateFunctionDeclaration(builder, moduleOp, name, functionType),
         declaration);
 
     const auto passthrough =
