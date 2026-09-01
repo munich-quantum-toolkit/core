@@ -71,7 +71,8 @@ releases may include breaking changes.
 - ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
   [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
   [#1748], [#1805], [#1870], [#1904], [#1911], [#1951], [#1956], [#1997],
-  [#2016], [#2060]) ([**@MatthiasReumann**], [**@burgholzer**], [**@rturrado**])
+  [#2016], [#2060], [#2184]) ([**@MatthiasReumann**], [**@burgholzer**],
+  [**@rturrado**])
 - ✨ Add modifier and global-phase normalization passes ([#1986], [#1995],
   [#2015]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add single-qubit optimization passes for unitary fusion, Hadamard lifting,
@@ -116,8 +117,6 @@ releases may include breaking changes.
 - 💥 Require LLVM/MLIR 22.1 and QIR support in every MQT Core source build,
   build MLIR by default, and remove the corresponding build options ([#1356],
   [#1549], [#1953]) ([**@burgholzer**], [**@denialhaag**])
-- ♻️ Improve the backward traversal logic for the `WireIterator` class ([#2184])
-  ([**@MatthiasReumann**])
 - 🔧 Build the LLVM/MLIR 23.1 compiler infrastructure and DDSIM QIR support by
   default, with one build option for source builds that omit both parts
   ([#1356], [#1549], [#1953], [#2284], [#2298]) ([**@burgholzer**],
