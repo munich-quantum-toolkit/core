@@ -527,8 +527,13 @@ TEST_P(DeviceTest, ChildDevices) {
 
 TEST_P(DeviceTest, UnsupportedCustomPropertyReturnsNullopt) {
   EXPECT_EQ(device.queryCustomProperty<std::vector<std::byte>>(
-                CustomProperty::Custom1),
+                CustomProperty::Custom2),
             std::nullopt);
+}
+
+TEST_F(DDSimulatorDeviceTest, ReportsCompilerTargetMetadata) {
+  EXPECT_EQ(device.queryCustomProperty<std::string>(CustomProperty::Custom1),
+            "mqt.compiler-target.v1:all-to-all-homogeneous");
 }
 
 TEST_P(SiteTest, Index) {

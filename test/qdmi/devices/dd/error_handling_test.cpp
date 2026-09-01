@@ -161,7 +161,7 @@ TEST_F(ErrorHandling, CustomEnums) {
 
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
                 s.session, QDMI_DEVICE_PROPERTY_CUSTOM1, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
+            QDMI_SUCCESS);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
                 s.session, QDMI_DEVICE_PROPERTY_CUSTOM2, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);

@@ -53,6 +53,15 @@ unrestricted, and an explicit list.
 - [x] (2026-09-01 08:41Z) Archived the pre-refresh heads, rebased onto `main` at
       `30bb9d1f8`, adapted the newly merged mapping regression test to the
       three-state target API, and reran the affected builds and tests.
+- [x] (2026-09-01 11:23Z) Added an exact versioned DDSIM device marker for the
+      all-to-all topology and homogeneous fixed-arity operations that QDMI 1.3
+      cannot encode compactly. Restored the direct `CompilerTarget.from_device`
+      documentation and end-to-end QIR test.
+- [x] (2026-09-01 11:23Z) Diagnosed the Windows ARM failure as two parallel
+      `mqt-cc` tests sharing one scratch directory. Isolated the invalid-input
+      test and repeated both tests concurrently 100 times.
+- [ ] Rebase this pull request onto the independent placement-pass change after
+      that change merges, then rerun final validation.
 
 ## Surprises & Discoveries
 
@@ -80,6 +89,13 @@ unrestricted, and an explicit list.
   multi-site operation, including structured control flow. Evidence: such a
   program cannot change its layout, so branch reconciliation would only query
   topology unnecessarily.
+- Observation: The mapping pass owns both static placement and topology-aware
+  routing. Skipping it for unknown connectivity leaves dynamic allocations that
+  the target-conformance pass rejects. Evidence: `VerifyTargetConformancePass`
+  rejects `qco.alloc` and `qtensor.alloc`.
+- Observation: The Windows ARM failure was a test-data race, not a compiler
+  regression. Evidence: the QIR and invalid-input CTest scripts used the same
+  output directory while the QIR script removed that directory at startup.
 
 ## Decision Log
 
@@ -110,14 +126,26 @@ unrestricted, and an explicit list.
   operation remains. Rationale: the layouts cannot diverge in that case, while
   all-to-all and explicit topologies retain their existing reconciliation.
   Date/Author: 2026-09-01, Lukas Burgholzer with Codex assistance.
+- Decision: Supersede the call-site DDSIM workaround with an exact namespaced
+  marker in the bundled device's first custom property. Rationale: QDMI 1.3
+  cannot enumerate the simulator's all-to-all topology or homogeneous operation
+  support compactly, while an exact marker lets only an explicit provider claim
+  those facts. Date/Author: 2026-09-01, Lukas Burgholzer with Codex assistance.
+- Decision: Split topology-free placement from routing in an independent pull
+  request, then rebase this pull request onto it. Rationale: target compilation
+  must still assign static sites when topology is unknown, but the placement
+  stage does not need a coupling graph. The separate base keeps this pull
+  request and its history reviewable. Date/Author: 2026-09-01, Lukas Burgholzer
+  with Codex assistance.
 
 ## Outcomes & Retrospective
 
-The context-free target contract is implemented in pull request #2218. The
-compiler, mapping, synthesis, and focused Python suites pass. Generated stubs
-are current. Documentation, changed-file C++ lint, full repository lint, and
-final diff checks pass. Durable archive branches preserve both published heads
-from before the rescope and from before the latest `main` refresh.
+The context-free target contract is implemented in pull request #2218. DDSIM now
+exposes enough exact metadata for `CompilerTarget.from_device` under QDMI 1.3,
+and the direct path compiles and executes QIR. The compiler and focused Python
+tests pass. The placement and routing split remains in an independent
+prerequisite pull request. Durable archive branches preserve both published
+heads from before the rescope and from before the latest `main` refresh.
 
 ## Context and Orientation
 

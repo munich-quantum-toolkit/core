@@ -43,10 +43,8 @@ The device implements the full QDMI job interface (except for the
 
 ## Compile and execute QIR
 
-QDMI v1.3 cannot compactly report the DDSIM device's all-to-all topology or the
-site applicability of every operation. State the topology and reconstruct the
-fixed-arity operation list from the device metadata when compiling a program to
-QIR. Submit the resulting bitcode to the same device:
+The compiler can snapshot the DDSIM device as an all-to-all target, compile a
+program to QIR, and submit the resulting bitcode to the same device:
 
 ```python
 from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
@@ -54,24 +52,7 @@ from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
 device = open_device("mqt.ddsim.default")
-operations = []
-for operation in device.operations():
-    arity = operation.qubits_num()
-    if arity is None or arity == 0:
-        continue
-    operations.append(
-        CompilerTarget.Operation(
-            name=operation.name(),
-            arity=arity,
-            num_parameters=operation.parameters_num(),
-        )
-    )
-
-target = CompilerTarget(
-    device.qubits_num(),
-    connectivity=CompilerTarget.Connectivity.all_to_all(),
-    native_operations=CompilerTarget.NativeOperations(operations),
-)
+target = CompilerTarget.from_device(device)
 program = compile_program(
     "bell.qasm",
     target=target,

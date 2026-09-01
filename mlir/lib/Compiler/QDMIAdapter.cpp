@@ -27,6 +27,7 @@
 #include <limits>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -35,6 +36,20 @@
 #include <vector>
 
 namespace mlir {
+
+/// Target facts that QDMI v1.3 cannot encode compactly.
+constexpr std::string_view ALL_TO_ALL_HOMOGENEOUS_METADATA =
+    "mqt.compiler-target.v1:all-to-all-homogeneous";
+
+[[nodiscard]] static bool
+hasAllToAllHomogeneousMetadata(const qdmi::Device& device) {
+  const auto metadata = device.queryCustomProperty<std::vector<std::byte>>(
+      qdmi::CustomProperty::Custom1);
+  const auto expected =
+      std::as_bytes(std::span{ALL_TO_ALL_HOMOGENEOUS_METADATA.data(),
+                              ALL_TO_ALL_HOMOGENEOUS_METADATA.size() + 1});
+  return metadata && std::ranges::equal(*metadata, expected);
+}
 
 [[nodiscard]] static llvm::Error
 requireAdapterInput(const bool condition, const llvm::Twine& message) {
@@ -272,7 +287,7 @@ snapshotOperations(
     const std::vector<qdmi::Operation>& operations,
     const std::vector<CompilerTarget::Site>& deviceSites,
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
-    const llvm::StringRef deviceName) {
+    const llvm::StringRef deviceName, const bool homogeneousOperationSupport) {
   std::vector<CompilerTarget::Operation> targetOperations;
   targetOperations.reserve(operations.size());
   for (const auto& operation : operations) {
@@ -286,24 +301,28 @@ snapshotOperations(
       continue;
     }
     const auto flattenedSites = operation.getSites();
-    if (!flattenedSites) {
+    if (!flattenedSites && !homogeneousOperationSupport) {
       return CompilerTarget::NativeOperations{};
-    }
-    if (auto error =
-            validateHomogeneousSupport(operation, *arity, *flattenedSites,
-                                       deviceSites, couplings, deviceName)) {
-      return error;
     }
     const auto duration = operation.getDuration();
     const auto fidelity = operation.getFidelity();
-    auto siteTuples = snapshotSiteTuples(operation, *arity, *flattenedSites,
-                                         duration, fidelity);
-    if (!siteTuples) {
-      return siteTuples.takeError();
+    std::vector<CompilerTarget::SiteTuple> siteTuples;
+    if (flattenedSites) {
+      if (auto error =
+              validateHomogeneousSupport(operation, *arity, *flattenedSites,
+                                         deviceSites, couplings, deviceName)) {
+        return error;
+      }
+      auto tuples = snapshotSiteTuples(operation, *arity, *flattenedSites,
+                                       duration, fidelity);
+      if (!tuples) {
+        return tuples.takeError();
+      }
+      siteTuples = std::move(*tuples);
     }
     auto targetOperation = CompilerTarget::Operation::create(
         operation.getName(), *arity, operation.getParametersNum(),
-        std::move(*siteTuples), duration, fidelity);
+        std::move(siteTuples), duration, fidelity);
     if (!targetOperation) {
       return targetOperation.takeError();
     }
@@ -315,6 +334,8 @@ snapshotOperations(
 [[nodiscard]] static llvm::Expected<CompilerTarget>
 snapshotCompilerTarget(const qdmi::Device& device) {
   auto deviceName = device.getName();
+  const auto hasHomogeneousAllToAllMetadata =
+      hasAllToAllHomogeneousMetadata(device);
   const auto deviceSites = device.getSites();
   if (auto error = requireCircuitDevice(
           std::ranges::none_of(deviceSites,
@@ -361,7 +382,8 @@ snapshotCompilerTarget(const qdmi::Device& device) {
   }
 
   auto operations =
-      snapshotOperations(device.getOperations(), sites, couplings, deviceName);
+      snapshotOperations(device.getOperations(), sites, couplings, deviceName,
+                         hasHomogeneousAllToAllMetadata);
   if (!operations) {
     return operations.takeError();
   }
@@ -369,9 +391,12 @@ snapshotCompilerTarget(const qdmi::Device& device) {
   if (!durationUnit) {
     return durationUnit.takeError();
   }
-  auto connectivity =
-      couplings ? CompilerTarget::Connectivity::fromCouplings(*couplings)
-                : CompilerTarget::Connectivity{};
+  CompilerTarget::Connectivity connectivity;
+  if (couplings) {
+    connectivity = CompilerTarget::Connectivity::fromCouplings(*couplings);
+  } else if (hasHomogeneousAllToAllMetadata) {
+    connectivity = CompilerTarget::Connectivity::allToAll();
+  }
   return CompilerTarget::create(std::move(deviceName), std::move(sites),
                                 std::move(connectivity), std::move(*operations),
                                 std::move(*durationUnit));
