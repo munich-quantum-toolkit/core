@@ -23,7 +23,7 @@ namespace mlir {
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const CompilerTarget& target) {
   populateQCOCleanupPipeline(pm);
-  populateDecomposeMultiControlledPipeline(pm, 3);
+  pm.addPass(qco::createDecomposeMultiControlled(target));
   populateDefaultQCOOptimizationPipeline(pm);
   pm.addPass(qco::createFuseTwoQubitGates());
   switch (target.connectivityKind()) {

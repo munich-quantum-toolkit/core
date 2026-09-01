@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/MQT/Utils/Parameters.h"
@@ -1318,12 +1319,17 @@ namespace {
 
 struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
   explicit DecomposeControlledGatePattern(MLIRContext* context,
-                                          uint64_t minQubits)
-      : OpRewritePattern<CtrlOp>(context), minQubits_(minQubits) {}
+                                          uint64_t minQubits,
+                                          const CompilerTarget* target)
+      : OpRewritePattern<CtrlOp>(context), minQubits_(minQubits),
+        target_(target) {}
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
     if (op.getNumQubits() < minQubits_) {
+      return failure();
+    }
+    if (target_ != nullptr && target_->supports(op.getOperation())) {
       return failure();
     }
 
@@ -1389,15 +1395,21 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
 
 private:
   uint64_t minQubits_;
+  const CompilerTarget* target_;
 };
 
 struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
-  explicit DecomposeRCCXPattern(MLIRContext* context, uint64_t minQubits)
-      : OpRewritePattern<RCCXOp>(context), minQubits_(minQubits) {}
+  explicit DecomposeRCCXPattern(MLIRContext* context, uint64_t minQubits,
+                                const CompilerTarget* target)
+      : OpRewritePattern<RCCXOp>(context), minQubits_(minQubits),
+        target_(target) {}
 
   LogicalResult matchAndRewrite(RCCXOp op,
                                 PatternRewriter& rewriter) const override {
     if (RCCXOp::getNumQubits() < minQubits_) {
+      return failure();
+    }
+    if (target_ != nullptr && target_->supports(op.getOperation())) {
       return failure();
     }
     rewriter.setInsertionPoint(op);
@@ -1409,11 +1421,17 @@ struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
 
 private:
   uint64_t minQubits_;
+  const CompilerTarget* target_;
 };
 
 struct DecomposeMultiControlled final
     : impl::DecomposeMultiControlledBase<DecomposeMultiControlled> {
   using DecomposeMultiControlledBase::DecomposeMultiControlledBase;
+
+  DecomposeMultiControlled(const CompilerTarget& target, uint64_t minQubitsIn)
+      : target_(target) {
+    minQubits = minQubitsIn;
+  }
 
 protected:
   void runOnOperation() override {
@@ -1424,16 +1442,30 @@ protected:
       return;
     }
 
+    const CompilerTarget* nativeTarget =
+        target_ && target_->connectivityKind() ==
+                       CompilerTarget::Connectivity::Kind::AllToAll
+            ? &*target_
+            : nullptr;
     RewritePatternSet patterns(&getContext());
     patterns.add<DecomposeControlledGatePattern, DecomposeRCCXPattern>(
-        &getContext(), minQubits);
+        &getContext(), minQubits, nativeTarget);
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();
     }
   }
+
+private:
+  std::optional<CompilerTarget> target_;
 };
 
 } // namespace
+
+std::unique_ptr<Pass>
+createDecomposeMultiControlled(const CompilerTarget& target,
+                               uint64_t minQubits) {
+  return std::make_unique<DecomposeMultiControlled>(target, minQubits);
+}
 
 } // namespace mlir::qco
