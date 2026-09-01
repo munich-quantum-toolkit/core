@@ -13,6 +13,7 @@
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
 #include "bench/JSON.hpp"
+#include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QPE.hpp"
 
@@ -49,6 +50,9 @@ using mqt::bench::Grover;
 using mqt::bench::groverFromInstanceSpecificationJSON;
 using mqt::bench::groverFromManifestJSON;
 using mqt::bench::listBenchmarksJSON;
+using mqt::bench::Multiplexer;
+using mqt::bench::multiplexerFromInstanceSpecificationJSON;
+using mqt::bench::multiplexerFromManifestJSON;
 using mqt::bench::Phase;
 using mqt::bench::QFT;
 using mqt::bench::qftFromInstanceSpecificationJSON;
@@ -97,6 +101,13 @@ TEST(BenchmarkJSON,
       toInstanceSpecificationJSON(grover),
       R"({"benchmark":"grover","parameters":{"iterations":1,"marked_bitstring":"10"},"schema_version":1})");
 
+  const auto multiplexer = multiplexerFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7}})");
+  EXPECT_EQ(multiplexer.options().qubits, 7);
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(multiplexer),
+      R"({"benchmark":"multiplexer","parameters":{"qubits":7},"schema_version":1})");
+
   const auto qft = qftFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"qft","parameters":{"qubits":4,"period_exponent":2}})");
   EXPECT_EQ(qft.options().method, QFTMethod::Standard);
@@ -118,6 +129,7 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const GHZ ghz{
       {.qubits = 4, .topology = GHZTopology::Star, .basis = GHZBasis::X}};
   const Grover grover{{.markedBitstring = "001", .iterations = 2}};
+  const Multiplexer multiplexer{{.qubits = 7}};
   const QFT qft{
       {.qubits = 4, .periodExponent = 2, .method = QFTMethod::Semiclassical}};
   const QPE qpe{
@@ -126,22 +138,28 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const auto bvManifest = toManifestJSON(bv);
   const auto ghzManifest = toManifestJSON(ghz);
   const auto groverManifest = toManifestJSON(grover);
+  const auto multiplexerManifest = toManifestJSON(multiplexer);
   const auto qftManifest = toManifestJSON(qft);
   const auto qpeManifest = toManifestJSON(qpe);
   EXPECT_EQ(toManifestJSON(bvFromManifestJSON(bvManifest)), bvManifest);
   EXPECT_EQ(toManifestJSON(ghzFromManifestJSON(ghzManifest)), ghzManifest);
   EXPECT_EQ(toManifestJSON(groverFromManifestJSON(groverManifest)),
             groverManifest);
+  EXPECT_EQ(toManifestJSON(multiplexerFromManifestJSON(multiplexerManifest)),
+            multiplexerManifest);
   EXPECT_EQ(toManifestJSON(qftFromManifestJSON(qftManifest)), qftManifest);
   EXPECT_EQ(toManifestJSON(qpeFromManifestJSON(qpeManifest)), qpeManifest);
   EXPECT_EQ(benchmarkIdFromManifestJSON(bvManifest), "bv");
   EXPECT_EQ(benchmarkIdFromManifestJSON(ghzManifest), "ghz");
   EXPECT_EQ(benchmarkIdFromManifestJSON(groverManifest), "grover");
+  EXPECT_EQ(benchmarkIdFromManifestJSON(multiplexerManifest), "multiplexer");
   EXPECT_EQ(benchmarkIdFromManifestJSON(qftManifest), "qft");
   EXPECT_EQ(benchmarkIdFromManifestJSON(qpeManifest), "qpe");
   EXPECT_NE(ghzManifest.find("\"case_id\":\"" + caseId(ghz) + "\""),
             std::string::npos);
   EXPECT_NE(groverManifest.find("\"success_outcome\":\"001\""),
+            std::string::npos);
+  EXPECT_NE(multiplexerManifest.find("\"model\":\"multiplexer\""),
             std::string::npos);
   EXPECT_EQ(qpeManifest.find("0.333"), std::string::npos);
 }
@@ -158,6 +176,10 @@ TEST(BenchmarkJSON, UsesStableSemanticCaseIds) {
             caseId(QFT{{.qubits = 3,
                         .periodExponent = 1,
                         .method = QFTMethod::Semiclassical}}));
+  EXPECT_EQ(caseId(Multiplexer{{.qubits = 7}}),
+            caseId(Multiplexer{{.qubits = 7}}));
+  EXPECT_NE(caseId(Multiplexer{{.qubits = 7}}),
+            caseId(Multiplexer{{.qubits = 6}}));
   EXPECT_EQ(caseId(linear), "sha256-a222c0c57bcecb4f5e7ea72bab439683"
                             "92861a52c5cb7c9c13aeaffffa059a65");
 }
@@ -221,6 +243,18 @@ TEST(BenchmarkJSON,
       "between 1 and 1075");
   expectInvalid(
       [] {
+        static_cast<void>(multiplexerFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":1}})"));
+      },
+      "between 2 and 31");
+  expectInvalid(
+      [] {
+        static_cast<void>(multiplexerFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7,"angles":[]}})"));
+      },
+      "unknown key 'angles'");
+  expectInvalid(
+      [] {
         static_cast<void>(ghzFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"new","parameters":{}})"));
       },
@@ -279,10 +313,11 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifestData) {
 TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_EQ(
       listBenchmarksJSON(),
-      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qpe"}],"schema_version":1})");
+      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qpe"}],"schema_version":1})");
   const auto bv = describeBenchmarkJSON("bv");
   const auto ghz = describeBenchmarkJSON("ghz");
   const auto grover = describeBenchmarkJSON("grover");
+  const auto multiplexer = describeBenchmarkJSON("multiplexer");
   const auto qft = describeBenchmarkJSON("qft");
   const auto qpe = describeBenchmarkJSON("qpe");
   EXPECT_NE(ghz.find("https://json-schema.org/draft/2020-12/schema"),
@@ -292,6 +327,8 @@ TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_NE(ghz.find("\"maximum\":1075"), std::string::npos);
   EXPECT_NE(bv.find("\"dynamic\""), std::string::npos);
   EXPECT_NE(grover.find("\"maxLength\":62"), std::string::npos);
+  EXPECT_NE(multiplexer.find("\"maximum\":31"), std::string::npos);
+  EXPECT_NE(multiplexer.find("\"minimum\":2"), std::string::npos);
   EXPECT_NE(qft.find("\"period_exponent\""), std::string::npos);
   EXPECT_NE(qpe.find("\"iterative\""), std::string::npos);
   EXPECT_THROW(static_cast<void>(describeBenchmarkJSON("unknown")),
@@ -317,6 +354,15 @@ TEST(BenchmarkJSON, ParsesCountsAndSerializesEvaluations) {
   const auto generic = evaluateJSON(
       toManifestJSON(bv), R"({"schema_version":1,"counts":{"11":8,"00":2}})");
   EXPECT_NE(generic.find("\"success_probability\":0.8"), std::string::npos);
+
+  const Multiplexer multiplexer{{.qubits = 2}};
+  const auto multiplexerEvaluation =
+      evaluateJSON(toManifestJSON(multiplexer),
+                   R"({"schema_version":1,"counts":{"00":8,"01":2}})");
+  EXPECT_NE(multiplexerEvaluation.find("\"success_probability\":null"),
+            std::string::npos);
+  EXPECT_NE(multiplexerEvaluation.find("\"total_variation_distance\":"),
+            std::string::npos);
 
   expectInvalid(
       [] {

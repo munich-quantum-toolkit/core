@@ -11,6 +11,7 @@
 #include "bench/BV.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
+#include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QPE.hpp"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
@@ -65,6 +66,7 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
       BV{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}});
   expectValidQCAndJeff(GHZ{{.qubits = 3}});
   expectValidQCAndJeff(Grover{{.markedBitstring = "101"}});
+  expectValidQCAndJeff(Multiplexer{{.qubits = 3}});
   expectValidQCAndJeff(QFT{{.qubits = 3, .periodExponent = 1}});
   expectValidQCAndJeff(QFT{
       {.qubits = 3, .periodExponent = 1, .method = QFTMethod::Semiclassical}});
@@ -78,6 +80,9 @@ TEST(GenerateProgramTest, OmitsAllocationAdjacentResets) {
   EXPECT_EQ(countOps<qc::ResetOp>(
                 generate(Grover{{.markedBitstring = "101"}})->module()),
             0U);
+  EXPECT_EQ(
+      countOps<qc::ResetOp>(generate(Multiplexer{{.qubits = 3}})->module()),
+      0U);
   EXPECT_EQ(
       countOps<qc::ResetOp>(generate(BV{{.hiddenBitstring = "101"}})->module()),
       0U);
@@ -195,6 +200,32 @@ TEST(GenerateProgramTest, EmitsDirectGroverOracleWithBigEndianMarkedState) {
     EXPECT_EQ(index.value(), 1);
   });
   EXPECT_EQ(markedStateFlips, 2U);
+}
+
+TEST(GenerateProgramTest, KeepsLargeQuantumMultiplexerStructured) {
+  auto program =
+      generate(Multiplexer{{.qubits = MultiplexerOptions::MAX_QUBITS}});
+  ASSERT_TRUE(program);
+  scf::ForOp stateLoop;
+  program->module().walk([&](scf::ForOp loop) {
+    if (!loop.getInitArgs().empty()) {
+      stateLoop = loop;
+    }
+  });
+  ASSERT_TRUE(stateLoop);
+  auto upper =
+      stateLoop.getUpperBound().getDefiningOp<arith::ConstantIndexOp>();
+  ASSERT_TRUE(upper);
+  EXPECT_EQ(upper.value(), int64_t{1} << (MultiplexerOptions::MAX_QUBITS - 1));
+
+  size_t operations = 0;
+  program->module().walk([&](Operation*) { ++operations; });
+  EXPECT_LT(operations, 150U);
+
+  auto compiled = runDefaultPipeline(CompilerInput{std::move(*program)},
+                                     ProgramFormat::Jeff);
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(std::holds_alternative<JeffProgram>(*compiled));
 }
 
 TEST(GenerateProgramTest, KeepsStandardQPEPowerAndResultOrderAligned) {
