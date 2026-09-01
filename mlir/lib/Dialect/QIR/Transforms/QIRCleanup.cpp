@@ -53,17 +53,21 @@ namespace mlir::qir {
 }
 
 [[nodiscard]] static bool moduleHasDynamicQubitRuntimeCalls(ModuleOp module) {
-  return llvm::any_of(module.getOps<LLVM::CallOp>(), [](LLVM::CallOp callOp) {
+  bool found = false;
+  module.walk([&](LLVM::CallOp callOp) {
     const auto callee = getCalleeName(callOp);
-    return callee == QIR_QUBIT_ALLOC || callee == QIR_QUBIT_ARRAY_ALLOC;
+    found |= callee == QIR_QUBIT_ALLOC || callee == QIR_QUBIT_ARRAY_ALLOC;
   });
+  return found;
 }
 
 [[nodiscard]] static bool moduleHasDynamicResultRuntimeCalls(ModuleOp module) {
-  return llvm::any_of(module.getOps<LLVM::CallOp>(), [](LLVM::CallOp callOp) {
+  bool found = false;
+  module.walk([&](LLVM::CallOp callOp) {
     const auto callee = getCalleeName(callOp);
-    return callee == QIR_RESULT_ALLOC || callee == QIR_RESULT_ARRAY_ALLOC;
+    found |= callee == QIR_RESULT_ALLOC || callee == QIR_RESULT_ARRAY_ALLOC;
   });
+  return found;
 }
 
 static void dropUnusedExternalDeclarations(ModuleOp module) {

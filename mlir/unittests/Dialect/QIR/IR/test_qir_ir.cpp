@@ -378,6 +378,50 @@ TEST_F(QIRTest, BaseBuilderUsesGenericSpecializationForThreeControls) {
                       StringAttr::get(context.get(), "base_profile")})));
 }
 
+TEST_F(QIRTest, CleanupPreservesMetadataForNestedRuntimeCalls) {
+  OpBuilder builder(context.get());
+  const auto location = builder.getUnknownLoc();
+  auto module = ModuleOp::create(location);
+  builder.setInsertionPointToStart(module.getBody());
+
+  const auto pointerType = LLVM::LLVMPointerType::get(context.get());
+  const auto allocateType =
+      LLVM::LLVMFunctionType::get(pointerType, {pointerType});
+  auto allocateQubit = LLVM::LLVMFuncOp::create(builder, location,
+                                                QIR_QUBIT_ALLOC, allocateType);
+  auto allocateResult = LLVM::LLVMFuncOp::create(
+      builder, location, QIR_RESULT_ALLOC, allocateType);
+  const auto mainType =
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {});
+  auto main = LLVM::LLVMFuncOp::create(builder, location, "main", mainType);
+  const auto dynamicQubitManagement =
+      builder.getStrArrayAttr({"dynamic_qubit_management", "true"});
+  const auto dynamicResultManagement =
+      builder.getStrArrayAttr({"dynamic_result_management", "true"});
+  main.setPassthroughAttr(builder.getArrayAttr({
+      builder.getStringAttr("entry_point"),
+      dynamicQubitManagement,
+      dynamicResultManagement,
+  }));
+  auto* block = main.addEntryBlock(builder);
+  builder.setInsertionPointToEnd(block);
+  auto null = LLVM::ZeroOp::create(builder, location, pointerType);
+  LLVM::CallOp::create(builder, location, allocateQubit, null.getResult());
+  LLVM::CallOp::create(builder, location, allocateResult, null.getResult());
+  LLVM::ReturnOp::create(builder, location, ValueRange{});
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  PassManager manager(context.get());
+  manager.addPass(qir::createQIRCleanupPass());
+  ASSERT_TRUE(succeeded(manager.run(module)));
+  ASSERT_TRUE(succeeded(verify(module)));
+  ASSERT_TRUE(main.getPassthroughAttr());
+  EXPECT_TRUE(
+      llvm::is_contained(main.getPassthroughAttr(), dynamicQubitManagement));
+  EXPECT_TRUE(
+      llvm::is_contained(main.getPassthroughAttr(), dynamicResultManagement));
+}
+
 TEST_F(QIRTest, UsesTranslationCompatibleModuleFlagWidths) {
   const auto build = [&](const QIRProgramBuilder::Profile profile) {
     return QIRProgramBuilder::build(
