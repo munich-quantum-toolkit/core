@@ -107,9 +107,6 @@ jobs:
       setup-python: true
       install-pkgs: "nanobind==2.15.0"
       cpp-linter-extra-args: "-std=c++20"
-      # Vendored third-party headers are checked upstream and are not maintained
-      # according to MQT Core's clang-tidy configuration.
-      cpp-linter-ignore-extra: "vendor/**"
     permissions:
       contents: read
       pull-requests: write # Needed to post review comments
