@@ -108,11 +108,11 @@ after human review, with a regression that demonstrates the supported contract.
       Reconfirmed that standalone C++ lint cannot start because clang-tidy 22 is
       unavailable on this host.
 - [x] (2026-09-01) Reconciled the audit with the first 16 focused replacement
-      pull requests: seven merged, six open, and three closed without merge.
+      pull requests: seven merged, five open, and four closed without merge.
 - [x] (2026-09-01) Narrowed `#2300` to its demonstrated missing-entry-point
       defect and removed the speculative program-sized traversal worklists.
-- [x] (2026-09-01) Withdrew `#2303`, `#2305`, and `#2306` after review. Marked
-      `#2309` for withdrawal because its regressions use invalid QCO IR.
+- [x] (2026-09-01) Withdrew `#2303`, `#2305`, `#2306`, and `#2309` after review.
+      The `#2309` regressions use invalid QCO IR.
 - [x] (2026-09-01) Revised the audit rules so passes may assume input accepted
       by all owning verifiers, and so each retained finding requires a
       valid-input baseline reproducer at the correct ownership boundary.
@@ -279,11 +279,11 @@ wrongly owned. The branch remains a historical audit artifact and is not
 intended to merge in bulk.
 
 As of 2026-09-01, seven focused replacements have merged: `#2291`, `#2293`,
-`#2294`, `#2295`, `#2296`, `#2301`, and `#2304`. Six remain open: `#2290`,
-`#2300`, `#2302`, `#2307`, `#2308`, and `#2309`. Three closed without merge:
-`#2303`, `#2305`, and `#2306`. Review narrowed `#2300` to the demonstrated
-missing-entry-point case. `#2309` remains open but should be withdrawn because
-its pass-local check and regressions target invalid QCO IR.
+`#2294`, `#2295`, `#2296`, `#2301`, and `#2304`. Five remain open: `#2290`,
+`#2300`, `#2302`, `#2307`, and `#2308`. Four closed without merge: `#2303`,
+`#2305`, `#2306`, and `#2309`. Review narrowed `#2300` to the demonstrated
+missing-entry-point case and rejected `#2309` because its pass-local check and
+regressions target invalid QCO IR.
 
 The original branch passed its recorded build, test, lint, and diff checks.
 Those results prove internal consistency only; they do not establish that each
@@ -312,9 +312,6 @@ Open findings:
 - `#2307`: bound CBit zero-initialization lowering. Review approved the focused
   resource-boundary change.
 - `#2308`: preserve QTensor insert updates in QCO-to-QC.
-- `#2309`: reject nonlinear Hadamard-lifting inputs safely. Withdraw this
-  finding: its tests use invalid QCO IR, and Hadamard lifting may assume QCO
-  linearity.
 
 Closed findings:
 
@@ -324,6 +321,8 @@ Closed findings:
 - `#2306`: the proposed depth-256 regression also passed the existing MLIR walk
   and did not demonstrate a supported bound. Revisit recursion policy in one
   shared change if native MLIR walks need an explicit repository-wide limit.
+- `#2309`: its tests use invalid QCO IR. Hadamard lifting may assume QCO
+  linearity, so the pass-local check and regressions were rejected.
 
 Broader snapshot changes withdrawn by the revised invariant:
 
