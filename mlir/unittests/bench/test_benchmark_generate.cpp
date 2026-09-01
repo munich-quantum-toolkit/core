@@ -70,8 +70,8 @@ TEST(GenerateProgramTest, OmitsAllocationAdjacentResets) {
       test::countOps<qc::ResetOp>(
           generate(QPE{{.precision = 3, .phase = Phase(3, 8)}})->module()),
       0U);
-  EXPECT_EQ(
-      test::countOps<qc::ResetOp>(generate(Teleportation{})->module()), 0U);
+  EXPECT_EQ(test::countOps<qc::ResetOp>(generate(Teleportation{})->module()),
+            0U);
 
   EXPECT_GT(
       test::countOps<qc::ResetOp>(

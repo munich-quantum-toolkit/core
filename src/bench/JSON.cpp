@@ -542,7 +542,7 @@ parseTeleportationParameters(const Json& parameters,
   };
 }
 
-[[nodiscard]] Json parametersJSON(const Teleportation&) {
+[[nodiscard]] Json parametersJSON(const Teleportation& /*unused*/) {
   return Json::object();
 }
 

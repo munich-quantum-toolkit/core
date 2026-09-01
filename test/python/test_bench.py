@@ -21,13 +21,7 @@ from mqt.core.bench import bv, ghz, grover, multiplexer, qft, qpe, teleportation
 
 def assert_generates(
     benchmark: (
-        bv.BV
-        | ghz.GHZ
-        | grover.Grover
-        | multiplexer.Multiplexer
-        | qft.QFT
-        | qpe.QPE
-        | teleportation.Teleportation
+        bv.BV | ghz.GHZ | grover.Grover | multiplexer.Multiplexer | qft.QFT | qpe.QPE | teleportation.Teleportation
     ),
 ) -> None:
     """Exercise the shared Python-to-MLIR generation boundary."""
@@ -199,9 +193,7 @@ def test_teleportation_reference_json_and_generation() -> None:
     assert evaluation.success_probability is None
     assert json.loads(benchmark.instance_specification_json)["parameters"] == {}
 
-    instance_copy = teleportation.Teleportation.from_instance_specification_json(
-        benchmark.instance_specification_json
-    )
+    instance_copy = teleportation.Teleportation.from_instance_specification_json(benchmark.instance_specification_json)
     manifest_copy = teleportation.Teleportation.from_manifest_json(benchmark.manifest_json)
     assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
     assert_generates(benchmark)
