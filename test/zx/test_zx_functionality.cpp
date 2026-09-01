@@ -66,12 +66,12 @@ void checkExactUnitaryEquivalence(const qc::QuantumComputation& qc1,
                                   const qc::QuantumComputation& qc2) {
   ASSERT_EQ(qc1.getNqubits(), qc2.getNqubits());
 
-  dd::Package package(qc1.getNqubits());
-  const auto actual = dd::buildFunctionality(qc1, package);
-  const auto expected = dd::buildFunctionality(qc2, package);
+  const auto package = std::make_unique<dd::Package>(qc1.getNqubits());
+  const auto actual = dd::buildFunctionality(qc1, *package);
+  const auto expected = dd::buildFunctionality(qc2, *package);
   EXPECT_EQ(actual, expected);
-  package.decRef(actual);
-  package.decRef(expected);
+  package->decRef(actual);
+  package->decRef(expected);
 }
 
 void addDirtyAncillaMcx(qc::QuantumComputation& circuit,
