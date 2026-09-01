@@ -415,10 +415,6 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitProgramAsync(
   });
   return QDMI_SUCCESS;
 }
-auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgram() -> QDMI_STATUS {
-  return numShots_ > 0 ? submitQASMProgramSampling()
-                       : submitQASMProgramStateExtraction();
-}
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
     -> QDMI_STATUS {
   return submitProgramAsync([this]() {
@@ -441,7 +437,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
     return QDMI_ERROR_BADSTATE;
   }
   status_.store(QDMI_JOB_STATUS_SUBMITTED);
-  return submitQASMProgram();
+  return numShots_ > 0 ? submitQASMProgramSampling()
+                       : submitQASMProgramStateExtraction();
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::cancel() -> QDMI_STATUS {
   const auto s = status_.load();

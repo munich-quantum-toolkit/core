@@ -12,14 +12,6 @@ categories:
     when:
       labels:
         - "DD"
-  - title: "🐉 MQT Core MLIR"
-    when:
-      labels:
-        - "MLIR"
-  - title: "🐲 MQT Core QIR"
-    when:
-      labels:
-        - "QIR"
   - title: "🔌 MQT Core QDMI"
     when:
       labels:

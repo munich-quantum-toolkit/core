@@ -22,50 +22,24 @@
 #include <cstddef>
 #include <numeric>
 #include <ranges>
-#include <string>
-#include <string_view>
-#include <utility>
 #include <vector>
 
-namespace {
+TEST(ResultsSampling, QASM3Program) {
+  constexpr size_t numShots = 1024;
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+                                  qdmi_test::QASM3_BELL_SAMPLING),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, numShots), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
-class HistogramTest : public ::testing::Test {
-protected:
-  using Histogram = std::pair<std::vector<std::string>, std::vector<size_t>>;
-  static constexpr size_t NUM_SHOTS = 1024;
-
-  static Histogram runProgram(const QDMI_Program_Format format,
-                              const std::string_view program) {
-    const qdmi_test::SessionGuard s{};
-    const qdmi_test::JobGuard j{s.session};
-    EXPECT_EQ(qdmi_test::setProgram(j.job, format, program), QDMI_SUCCESS);
-    EXPECT_EQ(qdmi_test::setShots(j.job, NUM_SHOTS), QDMI_SUCCESS);
-    EXPECT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-    return qdmi_test::getHistogram(j.job);
-  }
-
-  static void checkHistogram(const Histogram& hist) {
-    const auto& [keys, vals] = hist;
-    // Keys and values come from two independent device queries.
-    // Check both vectors have the same size.
-    ASSERT_EQ(keys.size(), vals.size());
-    // Values should sum up to NUM_SHOTS.
-    const auto sum = std::accumulate(vals.cbegin(), vals.cend(), size_t{0});
-    EXPECT_EQ(sum, NUM_SHOTS);
-    // Both keys '00' and '11' should be expected.
-    ASSERT_EQ(keys.size(), 2U);
-    // And no other keys should be expected.
-    EXPECT_TRUE(std::ranges::all_of(
-        keys, [](const auto& k) { return k == "00" || k == "11"; }));
-  }
-};
-
-} // namespace
-
-TEST_F(HistogramTest, QASM3Program) {
-  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM3;
-  constexpr std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
-  checkHistogram(runProgram(format, program));
+  const auto [keys, vals] = qdmi_test::getHistogram(j.job);
+  ASSERT_EQ(keys.size(), vals.size());
+  EXPECT_EQ(std::accumulate(vals.cbegin(), vals.cend(), size_t{0}), numShots);
+  ASSERT_EQ(keys.size(), 2U);
+  EXPECT_TRUE(std::ranges::all_of(
+      keys, [](const auto& key) { return key == "00" || key == "11"; }));
 }
 
 TEST(ResultsSampling, BufferTooSmallErrors) {

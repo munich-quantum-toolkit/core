@@ -23,6 +23,7 @@
 #include <vector>
 
 using testing::AnyOf;
+using testing::ElementsAre;
 
 TEST(DeviceProperties, BasicStringsAndSizes) {
   const qdmi_test::SessionGuard s{};
@@ -118,6 +119,24 @@ TEST(DeviceProperties, SitesAndOperationsLists) {
 
   const auto ops = qdmi_test::queryOperations(s.session);
   EXPECT_FALSE(ops.empty());
+}
+
+TEST(DeviceProperties, SupportedProgramFormats) {
+  const qdmi_test::SessionGuard s{};
+
+  size_t size = 0;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                s.session, QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS, 0,
+                nullptr, &size),
+            QDMI_SUCCESS);
+  ASSERT_EQ(size % sizeof(QDMI_Program_Format), 0U);
+  std::vector<QDMI_Program_Format> formats(size / sizeof(QDMI_Program_Format));
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                s.session, QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS, size,
+                formats.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_THAT(formats, ElementsAre(QDMI_PROGRAM_FORMAT_QASM2,
+                                   QDMI_PROGRAM_FORMAT_QASM3));
 }
 
 TEST(DeviceProperties, QubitsNumAvailable) {

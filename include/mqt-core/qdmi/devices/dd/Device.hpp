@@ -250,10 +250,6 @@ private:
   /// not through the return value.
   auto submitProgramAsync(std::function<void()> body) -> QDMI_STATUS;
 
-  /// Submit a QASM 2 or QASM 3 program.
-  /// Dispatches to the sampling or the state-extraction helper depending on
-  /// @c numShots_.
-  auto submitQASMProgram() -> QDMI_STATUS;
   /// Sampling path for a QASM program (@c numShots_ > 0).
   auto submitQASMProgramSampling() -> QDMI_STATUS;
   /// State-extraction path for a QASM program (@c numShots_ == 0).
