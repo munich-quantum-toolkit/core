@@ -10,8 +10,15 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -19,10 +26,46 @@
 
 namespace mlir::qco {
 
-/// A bidirectional_iterator traversing the def-use chain of a qubit wire.
+/// Resolves how qubits flow across call boundaries.
+///
+/// The mapping follows each qubit argument through the callee instead of
+/// assuming positional correspondence. Results are cached per callee. Mapping
+/// fails for declarations, recursion, and non-straight-line bodies.
+class CallQubitMapping {
+public:
+  /// Gets the result continuing @p operand's wire.
+  ///
+  /// Returns a null value when the callee keeps the qubit and failure when the
+  /// correspondence cannot be derived.
+  [[nodiscard]] FailureOr<Value> getResultForOperand(func::CallOp callOp,
+                                                     Value operand);
+
+  /// Clears all cached correspondence after a callee is changed or erased.
+  void invalidate();
+
+private:
+  friend class WireIterator;
+
+  // Marks a qubit argument that never reaches a result.
+  static constexpr int64_t KEPT = -1;
+
+  // Returns each qubit argument's call-result index, or KEPT.
+  FailureOr<ArrayRef<int64_t>> mappingFor(func::CallOp callOp);
+
+  // Derives a mapping by threading every qubit argument through the callee.
+  FailureOr<SmallVector<int64_t>> computeMapping(func::FuncOp callee);
+
+  // Gets the call operand feeding a result's wire.
+  FailureOr<Value> getOperandForResult(func::CallOp callOp, Value result);
+
+  DenseMap<Operation*, SmallVector<int64_t>> cache;
+  DenseSet<Operation*> inProgress;
+};
+
+/// A bidirectional iterator over the def-use chain of a qubit wire.
 ///
 /// The iterator follows the flow of a qubit through a sequence of quantum
-/// operations while respecting the semantics of the respective operation.
+/// operations while respecting the semantics of each operation.
 class [[nodiscard]] WireIterator {
 public:
   using iterator_category = std::bidirectional_iterator_tag;
@@ -85,8 +128,14 @@ public:
   }
 
 private:
+  friend class CallQubitMapping;
+
   /// Labels the position on the wire.
   enum class Position : uint8_t { BeforeHead, Head, Between, Tail, PastTail };
+
+  WireIterator(Value qubit, CallQubitMapping* mapping) : WireIterator(qubit) {
+    mapping_ = mapping;
+  }
 
   /// Return true, if an op doesn't return, but only consumes, a qubit value.
   static bool isTail(Operation*);
@@ -94,15 +143,25 @@ private:
   /// Return true, if an op doesn't consume, but only returns, a qubit value.
   static bool isHead(Operation*);
 
-  /// Move to the next operation on the qubit wire.
+  // Moves to the next operation on the qubit wire.
   void forward();
 
-  /// Move to the previous operation on the qubit wire.
+  // Moves to the previous operation on the qubit wire.
   void backward();
 
   Operation* op_;
   Value qubit_;
   Position pos_;
+  bool mappingFailed_ = false;
+
+  // Resolves the call result continuing an operand's wire.
+  FailureOr<Value> resultForOperand(func::CallOp callOp, Value operand) const;
+
+  // Resolves the call operand feeding a result's wire.
+  [[nodiscard]] Value operandForResult(func::CallOp callOp, Value result) const;
+
+  // Null means that each call query uses a fresh mapping.
+  CallQubitMapping* mapping_ = nullptr;
 };
 
 /// Categorizes the current traversal direction.
@@ -118,15 +177,7 @@ template <WireDirection Direction> struct WireTraversalTraits {
   }
 };
 
-/**
- * @brief A range over the def-use chain of a qubit wire, usable in range-based
- * for-loops.
- *
- * Example:
- * @code
- * for (auto* op : WireRange(qubit)) { ... }
- * @endcode
- */
+/// A range over the def-use chain of a qubit wire.
 struct WireRange {
   explicit WireRange(Value qubit) : begin_(qubit) {}
 
