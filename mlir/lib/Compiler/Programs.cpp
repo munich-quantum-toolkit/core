@@ -418,7 +418,9 @@ countGatesIf(ModuleOp moduleOp,
     Operation* operation = worklist.pop_back_val();
     auto unitary = dyn_cast<qc::UnitaryOpInterface>(operation);
     if (unitary) {
-      count += !isa<qc::BarrierOp>(unitary) && predicate(unitary);
+      if (!isa<qc::BarrierOp>(unitary) && predicate(unitary)) {
+        ++count;
+      }
       if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp>(unitary)) {
         continue;
       }
