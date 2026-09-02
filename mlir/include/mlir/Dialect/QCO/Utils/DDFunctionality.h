@@ -89,10 +89,11 @@ FailureOr<dd::VectorDD> simulateStatevector(
 
 /// Sample a single-block QCO function from the zero state.
 ///
-/// Returned CBit registers set the outcome in return order and from high to low
-/// bit. Without CBit results, the function samples all DD wires. Terminal
-/// measurements use one simulation for all shots. Programs that use a measured
-/// value or wire, or reset a qubit, run once per shot.
+/// Returned CBit registers use conventional count-string order: the last
+/// returned register comes first, and each register is MSB-first. Without CBit
+/// results, the function samples all DD wires. Terminal measurements use one
+/// simulation for all shots. Programs that use a measured value or wire, or
+/// reset a qubit, run once per shot.
 ///
 /// The containing module must pass MLIR verification and
 /// `qco::verifyLinearity`.

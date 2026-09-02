@@ -62,7 +62,7 @@ TEST(ResultsStatevector, QASM3IgnoresFinalMeasurements) {
   expectBellState(QDMI_PROGRAM_FORMAT_QASM3, qdmi_test::QASM3_BELL_SAMPLING);
 }
 
-TEST(ResultsStatevector, EmptyQASM3YieldsVacuumState) {
+TEST(ResultsStatevector, EmptyQASM3YieldsEmptyResults) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(
@@ -71,29 +71,24 @@ TEST(ResultsStatevector, EmptyQASM3YieldsVacuumState) {
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
-  const auto vec = qdmi_test::getDenseState(j.job);
-  ASSERT_EQ(vec.size(), 1U);
-  EXPECT_EQ(vec.front(), std::complex<double>(1.0, 0.0));
-
-  const size_t keysSize =
-      qdmi_test::querySize(j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS);
-  ASSERT_EQ(keysSize, 1U);
-  std::vector<char> keys(keysSize);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, keys.size(),
-                keys.data(), nullptr),
-            QDMI_SUCCESS);
-  EXPECT_EQ(keys.front(), '\0');
-
-  const size_t valuesSize =
-      qdmi_test::querySize(j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES);
-  ASSERT_EQ(valuesSize, sizeof(std::complex<double>));
-  std::complex<double> value;
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, sizeof(value),
-                &value, nullptr),
-            QDMI_SUCCESS);
-  EXPECT_EQ(value, std::complex<double>(1.0, 0.0));
+  constexpr QDMI_Job_Result results[]{
+      QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+      QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
+      QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
+      QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+      QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
+      QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES};
+  char dummy{};
+  for (const auto result : results) {
+    size_t size = 1;
+    EXPECT_EQ(
+        MQT_DDSIM_QDMI_device_job_get_results(j.job, result, 0, nullptr, &size),
+        QDMI_SUCCESS);
+    EXPECT_EQ(size, 0U);
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, result, 0, &dummy,
+                                                    nullptr),
+              QDMI_SUCCESS);
+  }
 }
 
 TEST(ResultsStatevector, DenseNormalizedAndBufferTooSmall) {

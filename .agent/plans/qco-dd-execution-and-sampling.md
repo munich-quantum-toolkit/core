@@ -30,9 +30,12 @@ final basis state. QC coalesces static references; QCO owns one root per index.
 - Decision: with an MQT entry point, every `qco.static` belongs to its entry
   block with unique indices; helpers take arguments. Verify transforms on both
   sides. Rationale: one QCO ownership boundary. Date: 2026-08-29.
-- Decision: `sample` encodes returned CBits in return order, MSB-first; no CBit
-  uses `measureAll`; mixed or undefined outputs fail. Loops use widened `APInt`
-  and one 10,000-step budget. Date: 2026-08-26.
+- Decision: `sample` uses conventional count-string order: the last returned
+  CBit register comes first, and each register is MSB-first. This avoids adapter
+  reordering. Date: 2026-09-02.
+- Decision: without CBit results, `sample` uses `measureAll`; mixed or undefined
+  outputs fail. Loops use widened `APInt` and one 10,000-step budget. Date:
+  2026-08-26.
 
 ## Outcomes & Retrospective
 

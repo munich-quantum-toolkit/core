@@ -1869,7 +1869,7 @@ static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
     return basis.str();
   }
   std::string outcome;
-  for (Value value : outputs) {
+  for (Value value : llvm::reverse(outputs)) {
     const auto reg = classical.registers.find(value);
     if (reg == classical.registers.end()) {
       return emitError(value.getLoc())

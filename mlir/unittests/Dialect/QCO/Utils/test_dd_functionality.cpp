@@ -1914,7 +1914,7 @@ TEST_F(QCODDFunctionalityTest, SimulateRicherClassicalArithmetic) {
   expectSimulatesFromZero(mainFunc(*mod), true);
 }
 
-TEST_F(QCODDFunctionalityTest, SampleReturnsCBitRegistersInDeclaredOrder) {
+TEST_F(QCODDFunctionalityTest, SampleReturnsCBitRegistersInCountStringOrder) {
   auto mod = buildModule([](QCOProgramBuilder& b) -> SmallVector<Value> {
     auto wide =
         b.allocClassicalBitRegister(2, {}, cbit::Initialization::Undefined);
@@ -1928,7 +1928,8 @@ TEST_F(QCODDFunctionalityTest, SampleReturnsCBitRegistersInDeclaredOrder) {
 
   const auto histogram = sample(mainFunc(*mod), 8, 3);
   ASSERT_TRUE(succeeded(histogram));
-  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"101", 8}}));
+  // Count strings place the last returned register first: "1" + "10".
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"110", 8}}));
 }
 
 TEST_F(QCODDFunctionalityTest, SampleRejectsUndefinedAndMixedResults) {

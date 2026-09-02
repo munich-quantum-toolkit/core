@@ -518,8 +518,9 @@ class QCOProgram(Program):
                 value produces reproducible results.
 
         Returns:
-            Histogram of returned CBit registers in return order, each MSB first. If
-            no CBit result exists, final ``measureAll`` bitstrings instead.
+            Histogram keys use conventional count-string order: the last returned
+            register comes first, and each register is MSB-first. If no CBit result
+            exists, final ``measureAll`` bitstrings are used instead.
 
         Raises:
             ValueError: When the program is unsupported for sampling.
