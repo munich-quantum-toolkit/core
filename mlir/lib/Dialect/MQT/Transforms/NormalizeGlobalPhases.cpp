@@ -312,13 +312,12 @@ private:
   }
 
   void eraseDeadBodyOps(Block& body) {
-    for (auto* op = body.getTerminator()->getPrevNode(); op != nullptr;) {
-      auto* previous = op->getPrevNode();
-      if (!isa<qc::UnitaryOpInterface, qco::UnitaryOpInterface>(op) &&
-          isOpTriviallyDead(op)) {
-        rewriter.eraseOp(op);
+    for (auto& op :
+         llvm::make_early_inc_range(llvm::reverse(body.without_terminator()))) {
+      if (!isa<qc::UnitaryOpInterface, qco::UnitaryOpInterface>(&op) &&
+          isOpTriviallyDead(&op)) {
+        rewriter.eraseOp(&op);
       }
-      op = previous;
     }
   }
 
