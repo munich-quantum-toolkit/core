@@ -75,8 +75,8 @@ public:
         pos_(Position::PastTail) {}
 
   /// Construct a wire iterator pointing at the defining op of a qubit value.
-  explicit WireIterator(Value qubit)
-      : mapping_(nullptr), op_(qubit.getDefiningOp()), qubit_(qubit) {
+  explicit WireIterator(Value qubit, CallQubitMapping* mapping = nullptr)
+      : mapping_(mapping), op_(qubit.getDefiningOp()), qubit_(qubit) {
     if (op_ == nullptr || isHead(op_)) {
       pos_ = Position::Head;
     } else if (isTail(op_)) {
@@ -131,10 +131,6 @@ private:
 
   /// Labels the position on the wire.
   enum class Position : uint8_t { BeforeHead, Head, Between, Tail, PastTail };
-
-  WireIterator(Value qubit, CallQubitMapping* mapping) : WireIterator(qubit) {
-    mapping_ = mapping;
-  }
 
   /// Return true, if an op doesn't return, but only consumes, a qubit value.
   static bool isTail(Operation*);

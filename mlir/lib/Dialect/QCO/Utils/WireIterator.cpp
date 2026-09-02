@@ -257,23 +257,6 @@ void WireIterator::forward() {
   // Find the output from the input qubit SSA value.
   pos_ = Position::Between;
 
-  // A call threads the qubit through to the matching result. When the callee
-  // keeps it, the wire ends here.
-  if (auto callOp = dyn_cast<func::CallOp>(op_)) {
-    auto result = resultForOperand(callOp, qubit_);
-    if (failed(result)) {
-      mappingFailed_ = true;
-      pos_ = Position::Tail;
-      return;
-    }
-    if (!*result) {
-      pos_ = Position::Tail;
-      return;
-    }
-    qubit_ = *result;
-    return;
-  }
-  
   TypeSwitch<Operation*>(op_)
       .Case<UnitaryOpInterface>(
           [&](UnitaryOpInterface op) { qubit_ = op.getOutputForInput(qubit_); })
@@ -294,6 +277,22 @@ void WireIterator::forward() {
           [&](IfOp op) { qubit_ = op.getTiedResult(&(*qubit_.use_begin())); })
       .Case<IndexSwitchOp>([&](IndexSwitchOp op) {
         qubit_ = op.getTiedResult(&(*qubit_.use_begin()));
+      })
+      .Case<func::CallOp>([&](func::CallOp op) {
+        // A call threads the qubit through to the matching result. When the
+        // callee keeps it, the wire ends here.
+
+        auto result = resultForOperand(op, qubit_);
+        if (failed(result)) {
+          mappingFailed_ = true;
+          pos_ = Position::Tail;
+          return;
+        }
+        if (!*result) {
+          pos_ = Position::Tail;
+          return;
+        }
+        qubit_ = *result;
       })
       .Default([&](Operation*) {
         mappingFailed_ = true;
@@ -329,14 +328,6 @@ void WireIterator::backward() {
     bool unknown = false;
     // Find the input from the output qubit SSA value.
     TypeSwitch<Operation*>(op_)
-        .Case<func::CallOp>([&](func::CallOp callOp) {
-          Value operand = operandForResult(callOp, qubit_);
-          if (!operand) {
-            unknown = true;
-            return;
-          }
-          qubit_ = operand;
-        })
         .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
           qubit_ = op.getInputForOutput(qubit_);
         })
@@ -374,6 +365,14 @@ void WireIterator::backward() {
             return;
           }
           llvm::reportFatalInternalError("expected result lookup");
+        })
+        .Case<func::CallOp>([&](func::CallOp callOp) {
+          Value operand = operandForResult(callOp, qubit_);
+          if (!operand) {
+            unknown = true;
+            return;
+          }
+          qubit_ = operand;
         })
         .Default([&](Operation*) { unknown = true; });
 
