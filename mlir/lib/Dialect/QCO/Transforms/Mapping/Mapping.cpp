@@ -1071,7 +1071,7 @@ private:
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
-  Window getWindow(Wires wires, const WireInfos& infos) { // NOLINT
+  Window getWindow(Wires wires, const WireInfos& infos) {
     Window window;
     window.reserve(1 + nlookahead);
 
@@ -1079,7 +1079,8 @@ private:
     SmallVector<IndexPairType> next;
 
     walkProgramGraph<Direction>(
-        wires, [&](const ReadyMap& ready, ReleasedOps& released) {
+        MutableArrayRef(wires.data(), wires.size()),
+        [&](const ReadyMap& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
