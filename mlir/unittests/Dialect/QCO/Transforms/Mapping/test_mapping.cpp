@@ -361,7 +361,7 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   std::tie(qubits[1], qubits[2]) = builder.rzx(0.5, qubits[1], qubits[2]);
   std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
 
-  for (int64_t i = 0; i < qubits.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
     builder.sink(qubits[i]);
   }
@@ -456,7 +456,7 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
   std::tie(qubits[1], qubits[2]) = builder.cz(qubits[1], qubits[2]);
   std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
-  for (int64_t i = 0; i < qubits.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
     builder.sink(qubits[i]);
   }
@@ -667,6 +667,40 @@ TEST_P(MappingPassTest, MapScalarAllocation) {
   m->walk([&](StaticOp) { ++numStatics; });
   EXPECT_EQ(numAllocations, 0);
   EXPECT_EQ(numStatics, 1);
+}
+
+TEST_F(MappingPassFixture, ExpandNonAdjacentTwoQubitIfOnLineTarget) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  Value q0 = builder.allocQubit();
+  Value q1 = builder.allocQubit();
+  Value q2 = builder.allocQubit();
+  std::tie(q0, q1) = builder.swap(q0, q1);
+  std::tie(q1, q2) = builder.swap(q1, q2);
+  SmallVector<Value> conditionalInputs{q0, q2};
+  auto conditionalResults = builder.qcoIf(
+      true, conditionalInputs,
+      [&](ValueRange args) {
+        auto [then0, then2] = builder.swap(args[0], args[1]);
+        return SmallVector<Value>{then0, then2};
+      },
+      [](ValueRange args) { return llvm::to_vector(args); });
+  builder.sink(conditionalResults[0]);
+  builder.sink(q1);
+  builder.sink(conditionalResults[1]);
+  auto moduleOp = builder.finalize();
+
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}}));
+  ASSERT_TRUE(runPass(moduleOp.get(), target, MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(moduleOp.get()), target));
+
+  IfOp conditional;
+  moduleOp->walk([&](IfOp candidate) { conditional = candidate; });
+  ASSERT_TRUE(conditional);
+  EXPECT_EQ(conditional.getQubits().size(), 3U);
 }
 
 TEST_P(MappingPassTest, MapMixedScalarAndTensorAllocations) {
@@ -1866,7 +1900,7 @@ TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
     qubits[i] = builder.allocQubit();
   }
   cxcz(builder, qubits);
-  for (int64_t i = 0; i < qubits.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
     builder.sink(qubits[i]);
   }
