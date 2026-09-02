@@ -63,6 +63,7 @@ void registerMQTCompilerPasses() {
     qco::registerReuseQubits();
     qco::registerContextSensitiveSpecialization();
     qco::registerQuantumArgumentPromotion();
+    qco::registerAuxiliaryQubitHoisting();
     mqt::registerNormalizeGlobalPhases();
     mqt::registerUnrollModifiers();
     PassPipelineRegistration<>("mqt-qco-default",
