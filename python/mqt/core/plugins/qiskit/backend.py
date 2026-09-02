@@ -129,7 +129,11 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
     if circuit.num_clbits:
         initialization = circuit.copy_empty_like(vars_mode="drop")
         initialization.global_phase = 0
+        for register in initialization.cregs:
+            initialization.store(register, 0)
         for clbit in initialization.clbits:
+            if initialization.find_bit(clbit).registers:
+                continue
             initialization.store(
                 clbit,
                 False,  # ruff: ignore[boolean-positional-value-in-call] Qiskit store arguments are positional-only.
