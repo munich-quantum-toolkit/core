@@ -14,6 +14,7 @@
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SetVector.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -100,6 +101,24 @@ public:
    * @param returnTypes The new return types for the main function
    */
   void retype(TypeRange returnTypes);
+
+  //===--------------------------------------------------------------------===//
+  // Functions
+  //===--------------------------------------------------------------------===//
+
+  /// Create a complete private function and infer its result types.
+  ///
+  /// Borrowed qubit arguments are updated in place and must not be returned.
+  func::FuncOp
+  createFunction(StringRef name, TypeRange argumentTypes,
+                 function_ref<SmallVector<Value>(ValueRange)> body);
+
+  /// Create a complete private unitary function.
+  func::FuncOp createUnitaryFunction(StringRef name, TypeRange argumentTypes,
+                                     function_ref<void(ValueRange)> body);
+
+  /// Call a function, using `qc.call` for a unitary function.
+  SmallVector<Value> call(func::FuncOp callee, ValueRange operands);
 
   //===--------------------------------------------------------------------===//
   // Constants

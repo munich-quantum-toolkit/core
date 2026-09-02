@@ -221,6 +221,30 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
         mixedDynamicRegisterThenStaticQubit(builder);
       },
       "Cannot mix dynamic and static qubit allocation modes");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.allocQubit();
+        builder.createFunction("static_helper", {}, [&](ValueRange) {
+          builder.staticQubit(0);
+          return SmallVector<Value>{};
+        });
+      },
+      "Cannot mix dynamic and static qubit allocation modes");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.createFunction("dynamic_helper", {}, [&](ValueRange) {
+          builder.allocQubit();
+          return SmallVector<Value>{};
+        });
+        builder.staticQubit(0);
+      },
+      "Cannot mix dynamic and static qubit allocation modes");
 }
 
 TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
@@ -367,6 +391,139 @@ TEST_F(QCTest, BuilderCanAllocateQubitRegisterStorageWithoutEagerLoads) {
   });
   EXPECT_EQ(allocations, 1U);
   EXPECT_EQ(qubitLoads, 0U);
+}
+
+TEST_F(QCTest, BuilderCreatesGenericAndUnitaryFunctions) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+
+  auto generic = builder.createFunction(
+      "identity", TypeRange{builder.getI1Type()},
+      [](ValueRange arguments) { return SmallVector<Value>{arguments[0]}; });
+  auto unitary = builder.createUnitaryFunction(
+      "flip", TypeRange{QubitType::get(context.get())},
+      [&](ValueRange arguments) { builder.x(arguments[0]); });
+
+  auto bit = builder.boolConstant(true);
+  auto genericResults = builder.call(generic, bit);
+  auto qubit = builder.allocQubit();
+  EXPECT_TRUE(builder.call(unitary, qubit).empty());
+  builder.inv(qubit, [&](Value argument) { builder.call(unitary, argument); });
+  builder.retype(ValueRange(genericResults).getTypes());
+  auto moduleOp = builder.finalize(genericResults);
+
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(generic.isPrivate());
+  EXPECT_FALSE(mlir::mqt::isUnitaryFunction(generic));
+  EXPECT_TRUE(mlir::mqt::isUnitaryFunction(unitary));
+  EXPECT_EQ(generic.getNumResults(), 1U);
+  EXPECT_EQ(unitary.getNumResults(), 0U);
+
+  auto mainFunc = mlir::mqt::getEntryPoint(*moduleOp);
+  ASSERT_TRUE(mainFunc);
+  EXPECT_EQ(llvm::range_size(mainFunc.getBody().getOps<func::CallOp>()), 1U);
+  EXPECT_EQ(llvm::range_size(mainFunc.getBody().getOps<CallOp>()), 1U);
+  auto inverse = *mainFunc.getBody().getOps<InvOp>().begin();
+  auto nestedCall = *inverse.getRegion().getOps<CallOp>().begin();
+  EXPECT_TRUE(isa<UnitaryOpInterface>(nestedCall.getOperation()));
+}
+
+TEST_F(QCTest, BuilderCreatesFunctionLocalStaticQubits) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto helper = builder.createFunction("helper", {}, [&](ValueRange) {
+    builder.x(builder.staticQubit(0));
+    return SmallVector<Value>{};
+  });
+  auto mainQubit = builder.staticQubit(0);
+  builder.x(mainQubit);
+  auto module = builder.finalize();
+
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  auto main = mlir::mqt::getEntryPoint(*module);
+  ASSERT_TRUE(main);
+  EXPECT_EQ(llvm::range_size(helper.getOps<StaticOp>()), 1U);
+  EXPECT_EQ(llvm::range_size(main.getOps<StaticOp>()), 1U);
+}
+
+TEST_F(QCTest, BuilderRejectsInvalidCalls) {
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        auto function = builder.createFunction(
+            "identity", TypeRange{builder.getI1Type()},
+            [](ValueRange arguments) {
+              return SmallVector<Value>{arguments.front()};
+            });
+        builder.call(function, builder.intConstant(0));
+      },
+      "Call operands must match a function in the current module");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder first(context.get());
+        first.initialize();
+        QCProgramBuilder second(context.get());
+        second.initialize();
+        auto function = second.createFunction(
+            "identity", TypeRange{second.getI1Type()},
+            [](ValueRange arguments) {
+              return SmallVector<Value>{arguments.front()};
+            });
+        first.call(function, first.boolConstant(true));
+      },
+      "Call operands must match a function in the current module");
+}
+
+TEST_F(QCTest, UnitaryFunctionMarkerRejectsNonUnitaryBody) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto function = builder.createFunction(
+      "measure", TypeRange{QubitType::get(context.get())},
+      [&](ValueRange arguments) {
+        builder.measure(arguments[0]);
+        return SmallVector<Value>{};
+      });
+  mlir::mqt::setUnitaryFunction(function);
+  auto moduleOp = builder.finalize();
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains(
+                "unitary QC function body contains a non-unitary operation");
+    return success();
+  });
+  EXPECT_TRUE(failed(verify(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCTest, UnitaryFunctionMarkerRequiresFunctionReturn) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto function = builder.createUnitaryFunction(
+      "flip", TypeRange{QubitType::get(context.get())},
+      [&](ValueRange arguments) { builder.x(arguments[0]); });
+  auto module = builder.finalize();
+
+  auto returnOp = cast<func::ReturnOp>(function.getBody().front().back());
+  OpBuilder rewriter(returnOp);
+  YieldOp::create(rewriter, returnOp.getLoc());
+  returnOp.erase();
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("unitary QC function must end in an empty func.return");
+    return success();
+  });
+  EXPECT_TRUE(failed(verify(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
 TEST_F(QCTest, DirectSingleQubitPowBuilder) {

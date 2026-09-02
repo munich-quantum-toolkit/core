@@ -32,12 +32,14 @@ def MQTDialect : Dialect {
     namespace.
     `mqt.entry_point` marks the single defined program entry function in a
     module.
+    `mqt.unitary` marks a private function that defines a unitary operation.
     `#mqt.compilation_target` records compiler-target facts as typed IR.
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
       "::mlir::DictionaryAttr":$parameter_group,
-      "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point);
+      "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point,
+      "::mlir::UnitAttr":$unitary);
 
   let hasOperationAttrVerify = 1;
   let hasRegionArgAttrVerify = 1;
