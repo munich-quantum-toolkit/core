@@ -11,6 +11,7 @@
 from mqt.core.bench import bv as bv
 from mqt.core.bench import ghz as ghz
 from mqt.core.bench import grover as grover
+from mqt.core.bench import multiplexer as multiplexer
 from mqt.core.bench import qft as qft
 from mqt.core.bench import qpe as qpe
 

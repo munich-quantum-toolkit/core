@@ -16,10 +16,13 @@ from fractions import Fraction
 import pytest
 
 from mqt.core import bench, mlir
-from mqt.core.bench import bv, ghz, grover, qft, qpe
+from mqt.core.bench import bv, ghz, grover, multiplexer, qft, qpe
+from mqt.core.dd import DDPackage
 
 
-def assert_generates(benchmark: bv.BV | ghz.GHZ | grover.Grover | qft.QFT | qpe.QPE) -> None:
+def assert_generates(
+    benchmark: bv.BV | ghz.GHZ | grover.Grover | multiplexer.Multiplexer | qft.QFT | qpe.QPE,
+) -> None:
     """Exercise the shared Python-to-MLIR generation boundary."""
     program = benchmark.generate()
     assert isinstance(program, mlir.QCProgram)
@@ -85,6 +88,31 @@ def test_grover_resolves_iterations_and_reports_success() -> None:
     copy = grover.Grover.from_manifest_json(benchmark.manifest_json)
     assert copy.instance_specification_json == benchmark.instance_specification_json
     assert copy.case_id == benchmark.case_id
+    assert_generates(benchmark)
+
+
+def test_multiplexer_reference_json_and_generation() -> None:
+    """Expose the fixed-angle quantum multiplexer as one typed family."""
+    benchmark = multiplexer.Multiplexer(multiplexer.Options(qubits=3))
+    assert benchmark.output.name == "result"
+    assert benchmark.output.width == 3
+    assert benchmark.probability("000") == pytest.approx(0.25)
+    assert benchmark.probability("001") == 0
+
+    evaluation = benchmark.evaluate({"000": 10})
+    assert evaluation.total_variation_distance == pytest.approx(0.75)
+    assert evaluation.squared_hellinger_fidelity == pytest.approx(0.25)
+    assert evaluation.success_probability is None
+    assert json.loads(benchmark.instance_specification_json)["parameters"] == {"qubits": 3}
+
+    instance_copy = multiplexer.Multiplexer.from_instance_specification_json(benchmark.instance_specification_json)
+    manifest_copy = multiplexer.Multiplexer.from_manifest_json(benchmark.manifest_json)
+    assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
+
+    shots = 16_384
+    counts = benchmark.generate().to_qco().sample(DDPackage(3), shots=shots, seed=17)
+    assert sum(counts.values()) == shots
+    assert benchmark.evaluate(counts).total_variation_distance < 0.03
     assert_generates(benchmark)
 
 
