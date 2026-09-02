@@ -23,7 +23,6 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
@@ -1316,6 +1315,19 @@ synthesizeControlledSwap(OpBuilder& builder, Location loc, ValueRange controls,
 // Patterns and pass
 //===----------------------------------------------------------------------===//
 
+static bool isWithinTargetNativeUnitary(Operation* op,
+                                        const CompilerTarget* target) {
+  if (target == nullptr) {
+    return false;
+  }
+  for (; op != nullptr; op = op->getParentOp()) {
+    if (isa<UnitaryOpInterface>(op) && target->supports(op)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 namespace {
 
 struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
@@ -1330,7 +1342,7 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
     if (op.getNumQubits() < minQubits_) {
       return failure();
     }
-    if (target_ != nullptr && target_->supports(op.getOperation())) {
+    if (isWithinTargetNativeUnitary(op.getOperation(), target_)) {
       return failure();
     }
 
@@ -1410,7 +1422,7 @@ struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
     if (RCCXOp::getNumQubits() < minQubits_) {
       return failure();
     }
-    if (target_ != nullptr && target_->supports(op.getOperation())) {
+    if (isWithinTargetNativeUnitary(op.getOperation(), target_)) {
       return failure();
     }
     rewriter.setInsertionPoint(op);
@@ -1449,29 +1461,11 @@ protected:
             ? &*target_
             : nullptr;
 
-    SmallVector<Operation*> rewriteOps;
-    getOperation().walk<WalkOrder::PreOrder>([&](UnitaryOpInterface op) {
-      if (nativeTarget != nullptr &&
-          nativeTarget->supports(op.getOperation())) {
-        return WalkResult::skip();
-      }
-      if (isa<CtrlOp, RCCXOp>(op)) {
-        rewriteOps.push_back(op.getOperation());
-      }
-      return WalkResult::advance();
-    });
-    if (rewriteOps.empty()) {
-      return;
-    }
-
     RewritePatternSet patterns(&getContext());
     patterns.add<DecomposeControlledGatePattern, DecomposeRCCXPattern>(
         &getContext(), minQubits, nativeTarget);
 
-    GreedyRewriteConfig config;
-    config.setStrictness(GreedyRewriteStrictness::ExistingAndNewOps);
-    if (failed(
-            applyOpPatternsGreedily(rewriteOps, std::move(patterns), config))) {
+    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();
     }
   }
