@@ -10,10 +10,8 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Export.hpp"
-#include "dd/GateMatrixDefinitions.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
-#include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
@@ -44,52 +42,93 @@
 
 namespace dd {
 namespace {
+enum class Fixture : std::uint8_t { H, X, Z, S, T, Tdg, SWAP };
+
+constexpr GateMatrix H_MAT{SQRT2_2, SQRT2_2, SQRT2_2, -SQRT2_2};
+constexpr GateMatrix X_MAT{0, 1, 1, 0};
+constexpr GateMatrix Z_MAT{1, 0, 0, -1};
+constexpr GateMatrix S_MAT{1, 0, 0, {0, 1}};
+constexpr GateMatrix T_MAT{1, 0, 0, {SQRT2_2, SQRT2_2}};
+constexpr GateMatrix TDG_MAT{1, 0, 0, {SQRT2_2, -SQRT2_2}};
+constexpr TwoQubitGateMatrix SWAP_MAT{
+    {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}}};
+constexpr ThreeQubitGateMatrix THREE_QUBIT_MAT = [] {
+  ThreeQubitGateMatrix matrix{};
+  for (size_t i = 0; i < THREE_QUBIT_GATE_DIM; ++i) {
+    matrix[i][i] = 1;
+  }
+  return matrix;
+}();
+constexpr ThreeQubitGateMatrix CCX_MAT = [] {
+  auto matrix = THREE_QUBIT_MAT;
+  matrix[6][6] = 0;
+  matrix[7][7] = 0;
+  matrix[6][7] = 1;
+  matrix[7][6] = 1;
+  return matrix;
+}();
+constexpr GateMatrix ZERO_PROJECTOR{1, 0, 0, 0};
+constexpr GateMatrix ONE_PROJECTOR{0, 0, 0, 1};
+
+[[nodiscard]] constexpr GateMatrix singleQubitMatrix(const Fixture type) {
+  switch (type) {
+  case Fixture::H:
+    return H_MAT;
+  case Fixture::X:
+    return X_MAT;
+  case Fixture::Z:
+    return Z_MAT;
+  case Fixture::S:
+    return S_MAT;
+  case Fixture::T:
+    return T_MAT;
+  case Fixture::Tdg:
+    return TDG_MAT;
+  case Fixture::SWAP:
+    break;
+  }
+  throw std::invalid_argument("Expected a single-qubit test matrix");
+}
+
 struct TestGate {
   Controls controls;
   Targets targets;
-  GateType type = GateType::None;
-  std::vector<fp> params;
+  Fixture type;
 
-  TestGate(const Qubit target, const GateType gate,
-           std::vector<fp> parameters = {})
-      : targets{target}, type(gate), params(std::move(parameters)) {}
-  TestGate(Targets gateTargets, const GateType gate,
-           std::vector<fp> parameters = {})
-      : targets(std::move(gateTargets)), type(gate),
-        params(std::move(parameters)) {}
-  TestGate(const Control control, const Qubit target, const GateType gate,
-           std::vector<fp> parameters = {})
-      : controls{control}, targets{target}, type(gate),
-        params(std::move(parameters)) {}
-  TestGate(Controls gateControls, const Qubit target, const GateType gate,
-           std::vector<fp> parameters = {})
-      : controls(std::move(gateControls)), targets{target}, type(gate),
-        params(std::move(parameters)) {}
-  TestGate(const Control control, Targets gateTargets, const GateType gate,
-           std::vector<fp> parameters = {})
-      : controls{control}, targets(std::move(gateTargets)), type(gate),
-        params(std::move(parameters)) {}
-  TestGate(Controls gateControls, Targets gateTargets, const GateType gate,
-           std::vector<fp> parameters = {})
+  TestGate(const Qubit target, const Fixture gate)
+      : targets{target}, type(gate) {}
+  TestGate(Targets gateTargets, const Fixture gate)
+      : targets(std::move(gateTargets)), type(gate) {}
+  TestGate(const Control control, const Qubit target, const Fixture gate)
+      : controls{control}, targets{target}, type(gate) {}
+  TestGate(Controls gateControls, const Qubit target, const Fixture gate)
+      : controls(std::move(gateControls)), targets{target}, type(gate) {}
+  TestGate(const Control control, Targets gateTargets, const Fixture gate)
+      : controls{control}, targets(std::move(gateTargets)), type(gate) {}
+  TestGate(Controls gateControls, Targets gateTargets, const Fixture gate)
       : controls(std::move(gateControls)), targets(std::move(gateTargets)),
-        type(gate), params(std::move(parameters)) {}
+        type(gate) {}
   TestGate(Controls gateControls, const Qubit target0, const Qubit target1,
-           const GateType gate, std::vector<fp> parameters = {})
+           const Fixture gate)
       : controls(std::move(gateControls)), targets{target0, target1},
-        type(gate), params(std::move(parameters)) {}
+        type(gate) {}
 };
 
 MatrixDD getDD(const TestGate& gate, Package& package) {
-  return getGateDD(package, gate.type, gate.params, gate.controls,
-                   gate.targets);
+  if (gate.type == Fixture::SWAP) {
+    return package.makeTwoQubitGateDD(SWAP_MAT, gate.controls,
+                                      gate.targets.at(0), gate.targets.at(1));
+  }
+  return package.makeGateDD(singleQubitMatrix(gate.type), gate.controls,
+                            gate.targets.at(0));
 }
 } // namespace
 TEST(DDPackageTest, TrivialTest) {
   auto dd = std::make_unique<Package>(2);
   EXPECT_EQ(dd->qubits(), 2);
 
-  auto xGate = getDD(TestGate(0, GateType::X), *dd);
-  auto hGate = getDD(TestGate(0, GateType::H), *dd);
+  auto xGate = getDD(TestGate(0, Fixture::X), *dd);
+  auto hGate = getDD(TestGate(0, Fixture::H), *dd);
 
   ASSERT_EQ(hGate.getValueByPath(1, "0"), SQRT2_2);
 
@@ -107,8 +146,8 @@ TEST(DDPackageTest, TrivialTest) {
 TEST(DDPackageTest, BellState) {
   auto dd = std::make_unique<Package>(2);
 
-  auto hGate = getDD(TestGate(1, GateType::H), *dd);
-  auto cxGate = getDD(TestGate(Control{1}, 0, GateType::X), *dd);
+  auto hGate = getDD(TestGate(1, Fixture::H), *dd);
+  auto cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
   auto zeroState = makeZeroState(2, *dd);
 
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
@@ -176,13 +215,13 @@ TEST(DDPackageTest, QFTState) {
   auto dd = std::make_unique<Package>(3);
 
   // Simulate a QFT on 3 qubits
-  auto h0Gate = getDD(TestGate(0, GateType::H), *dd);
-  auto s0Gate = getDD(TestGate(Control{1}, 0, GateType::S), *dd);
-  auto t0Gate = getDD(TestGate(Control{2}, 0, GateType::T), *dd);
-  auto h1Gate = getDD(TestGate(1, GateType::H), *dd);
-  auto s1Gate = getDD(TestGate(Control{2}, 1, GateType::S), *dd);
-  auto h2Gate = getDD(TestGate(2, GateType::H), *dd);
-  auto swapGate = getDD(TestGate(Targets{0, 2}, GateType::SWAP), *dd);
+  auto h0Gate = getDD(TestGate(0, Fixture::H), *dd);
+  auto s0Gate = getDD(TestGate(Control{1}, 0, Fixture::S), *dd);
+  auto t0Gate = getDD(TestGate(Control{2}, 0, Fixture::T), *dd);
+  auto h1Gate = getDD(TestGate(1, Fixture::H), *dd);
+  auto s1Gate = getDD(TestGate(Control{2}, 1, Fixture::S), *dd);
+  auto h2Gate = getDD(TestGate(2, Fixture::H), *dd);
+  auto swapGate = getDD(TestGate(Targets{0, 2}, Fixture::SWAP), *dd);
 
   auto qftOp = dd->multiply(s0Gate, h0Gate);
   qftOp = dd->multiply(t0Gate, qftOp);
@@ -300,8 +339,8 @@ TEST(DDPackageTest, QFTState) {
 TEST(DDPackageTest, CorruptedBellState) {
   auto dd = std::make_unique<Package>(2);
 
-  auto hGate = getDD(TestGate(1, GateType::H), *dd);
-  auto cxGate = getDD(TestGate(Control{1}, 0, GateType::X), *dd);
+  auto hGate = getDD(TestGate(1, Fixture::H), *dd);
+  auto cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
   auto zeroState = makeZeroState(2, *dd);
 
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
@@ -318,37 +357,11 @@ TEST(DDPackageTest, CorruptedBellState) {
   ASSERT_THROW(dd->measureOneCollapsing(bellState, 0, mt), std::runtime_error);
 }
 
-TEST(DDPackageTest, InvalidStandardOperation) {
-  auto dd = std::make_unique<Package>();
-  const std::vector<std::pair<Targets, GateType>> invalidOps{
-      {{Targets{}, GateType::I},
-       {Targets{0, 1}, GateType::I},
-       {Targets{}, GateType::SWAP},
-       {Targets{0}, GateType::SWAP},
-       {Targets{0, 1, 2}, GateType::SWAP},
-       {Targets{}, GateType::RCCX},
-       {Targets{0}, GateType::RCCX},
-       {Targets{0, 1}, GateType::RCCX},
-       {Targets{0, 1, 2, 3}, GateType::RCCX},
-       {Targets{0, 1}, GateType::None}}};
-  for (const auto& [targets, type] : invalidOps) {
-    ASSERT_THROW(getDD(TestGate(targets, type), *dd), std::invalid_argument);
-  }
-  ASSERT_THROW(opToSingleQubitGateMatrix(GateType::SWAP),
-               std::invalid_argument);
-  ASSERT_THROW(opToSingleQubitGateMatrix(GateType::None),
-               std::invalid_argument);
-  ASSERT_THROW(opToTwoQubitGateMatrix(GateType::I), std::invalid_argument);
-  ASSERT_THROW(opToTwoQubitGateMatrix(GateType::None), std::invalid_argument);
-  ASSERT_THROW(opToThreeQubitGateMatrix(GateType::I), std::invalid_argument);
-  ASSERT_THROW(opToThreeQubitGateMatrix(GateType::None), std::invalid_argument);
-}
-
 TEST(DDPackageTest, NegativeControl) {
   auto dd = std::make_unique<Package>(2);
 
   auto xGate =
-      getDD(TestGate(Control{1, Control::Type::Neg}, 0, GateType::X), *dd);
+      getDD(TestGate(Control{1, Control::Type::Neg}, 0, Fixture::X), *dd);
   auto zeroState = makeZeroState(2, *dd);
   auto state01 = dd->multiply(xGate, zeroState);
   EXPECT_EQ(state01.getValueByIndex(0b01).real(), 1.);
@@ -363,7 +376,7 @@ TEST(DDPackageTest, IdentityTrace) {
 
 TEST(DDPackageTest, CNotKronTrace) {
   auto dd = std::make_unique<Package>(4);
-  auto cxGate = getDD(TestGate(Control{1}, 0, GateType::X), *dd);
+  auto cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
   auto cxGateKron = dd->kronecker(cxGate, cxGate, 2);
   auto fullTrace = dd->trace(cxGateKron, 4);
   ASSERT_EQ(fullTrace, 0.25);
@@ -378,7 +391,7 @@ TEST(DDPackageTest, PartialIdentityTrace) {
 
 TEST(DDPackageTest, PartialSWapMatTrace) {
   auto dd = std::make_unique<Package>(2);
-  auto swapGate = getDD(TestGate(Targets{0, 1}, GateType::SWAP), *dd);
+  auto swapGate = getDD(TestGate(Targets{0, 1}, Fixture::SWAP), *dd);
   auto ptr = dd->partialTrace(swapGate, {true, false});
   auto fullTrace = dd->trace(ptr, 1);
   auto fullTraceOriginal = dd->trace(swapGate, 2);
@@ -396,7 +409,7 @@ TEST(DDPackageTest, PartialTraceKeepInnerQubits) {
 
   constexpr std::size_t numQubits = 8;
   auto dd = std::make_unique<Package>(numQubits);
-  const auto swapGate = getDD(TestGate(Targets{0, 1}, GateType::SWAP), *dd);
+  const auto swapGate = getDD(TestGate(Targets{0, 1}, Fixture::SWAP), *dd);
   auto swapKron = swapGate;
   for (std::size_t i = 0; i < 3; ++i) {
     swapKron = dd->kronecker(swapKron, swapGate, 2);
@@ -418,7 +431,7 @@ TEST(DDPackageTest, TraceComplexity) {
   for (std::size_t numQubits = 1; numQubits <= 10; ++numQubits) {
     auto dd = std::make_unique<Package>(numQubits);
     auto& computeTable = dd->getTraceComputeTable();
-    const auto hGate = getDD(TestGate(0, GateType::H), *dd);
+    const auto hGate = getDD(TestGate(0, Fixture::H), *dd);
     auto hKron = hGate;
     for (std::size_t i = 0; i < numQubits - 1; ++i) {
       hKron = dd->kronecker(hKron, hGate, 1);
@@ -437,7 +450,7 @@ TEST(DDPackageTest, KeepBottomQubitsPartialTraceComplexity) {
   constexpr std::size_t numQubits = 8;
   auto dd = std::make_unique<Package>(numQubits);
   auto& uniqueTable = dd->getUniqueTable<mNode>();
-  const auto hGate = getDD(TestGate(0, GateType::H), *dd);
+  const auto hGate = getDD(TestGate(0, Fixture::H), *dd);
   auto hKron = hGate;
   for (std::size_t i = 0; i < numQubits - 1; ++i) {
     hKron = dd->kronecker(hKron, hGate, 1);
@@ -466,7 +479,7 @@ TEST(DDPackageTest, PartialTraceComplexity) {
   constexpr std::size_t numQubits = 9;
   auto dd = std::make_unique<Package>(numQubits);
   auto& uniqueTable = dd->getUniqueTable<mNode>();
-  const auto hGate = getDD(TestGate(0, GateType::H), *dd);
+  const auto hGate = getDD(TestGate(0, Fixture::H), *dd);
   auto hKron = hGate;
   for (std::size_t i = 0; i < numQubits - 2; ++i) {
     hKron = dd->kronecker(hKron, hGate, 1);
@@ -516,8 +529,8 @@ TEST(DDPackageTest, VectorSerializationTest) {
     EXPECT_EQ(dd->deserialize<vNode>(serialized, binary), vEdge::one());
   }
 
-  auto hGate = getDD(TestGate(1, GateType::H), *dd);
-  auto cxGate = getDD(TestGate(Control{1}, 0, GateType::X), *dd);
+  auto hGate = getDD(TestGate(1, Fixture::H), *dd);
+  auto cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
   auto zeroState = makeZeroState(2, *dd);
 
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
@@ -536,8 +549,8 @@ TEST(DDPackageTest, VectorSerializationTest) {
 TEST(DDPackageTest, BellMatrix) {
   auto dd = std::make_unique<Package>(2);
 
-  auto hGate = getDD(TestGate(1, GateType::H), *dd);
-  auto cxGate = getDD(TestGate(Control{1}, 0, GateType::X), *dd);
+  auto hGate = getDD(TestGate(1, Fixture::H), *dd);
+  auto cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
 
   auto bellMatrix = dd->multiply(cxGate, hGate);
 
@@ -624,8 +637,8 @@ TEST(DDPackageTest, MatrixSerializationTest) {
     EXPECT_EQ(dd->deserialize<mNode>(serialized, binary), mEdge::one());
   }
 
-  auto hGate = getDD(TestGate(1, GateType::H), *dd);
-  auto cxGate = getDD(TestGate(Control{1}, 0, GateType::X), *dd);
+  auto hGate = getDD(TestGate(1, Fixture::H), *dd);
+  auto cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
 
   auto bellMatrix = dd->multiply(cxGate, hGate);
 
@@ -644,8 +657,8 @@ TEST(DDPackageTest, MatrixSerializationTest) {
 TEST(DDPackageTest, SerializationErrors) {
   auto dd = std::make_unique<Package>(2);
 
-  auto hGate = getDD(TestGate(1, GateType::H), *dd);
-  auto cxGate = getDD(TestGate(Control{1}, 0, GateType::X), *dd);
+  auto hGate = getDD(TestGate(1, Fixture::H), *dd);
+  auto cxGate = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
   auto zeroState = makeZeroState(2, *dd);
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
 
@@ -694,8 +707,8 @@ TEST(DDPackageTest, SerializationErrors) {
 
 TEST(DDPackageTest, Ancillaries) {
   auto dd = std::make_unique<Package>(4);
-  auto hGate = getDD(TestGate(0, GateType::H), *dd);
-  auto cxGate = getDD(TestGate(Control{0}, 1, GateType::X), *dd);
+  auto hGate = getDD(TestGate(0, Fixture::H), *dd);
+  auto cxGate = getDD(TestGate(Control{0}, 1, Fixture::X), *dd);
   auto bellMatrix = dd->multiply(cxGate, hGate);
 
   dd->incRef(bellMatrix);
@@ -730,8 +743,8 @@ TEST(DDPackageTest, Ancillaries) {
 
 TEST(DDPackageTest, GarbageVector) {
   auto dd = std::make_unique<Package>(4);
-  auto hGate = getDD(TestGate(0, GateType::H), *dd);
-  auto cxGate = getDD(TestGate(Control{0}, 1, GateType::X), *dd);
+  auto hGate = getDD(TestGate(0, Fixture::H), *dd);
+  auto cxGate = getDD(TestGate(Control{0}, 1, Fixture::X), *dd);
   auto zeroState = makeZeroState(2, *dd);
   auto bellState = dd->multiply(dd->multiply(cxGate, hGate), zeroState);
   std::cout << "Bell State:\n";
@@ -764,8 +777,8 @@ TEST(DDPackageTest, GarbageVector) {
 
 TEST(DDPackageTest, GarbageMatrix) {
   auto dd = std::make_unique<Package>(4);
-  auto hGate = getDD(TestGate(0, GateType::H), *dd);
-  auto cxGate = getDD(TestGate(Control{0}, 1, GateType::X), *dd);
+  auto hGate = getDD(TestGate(0, Fixture::H), *dd);
+  auto cxGate = getDD(TestGate(Control{0}, 1, Fixture::X), *dd);
   auto bellMatrix = dd->multiply(cxGate, hGate);
 
   dd->incRef(bellMatrix);
@@ -801,8 +814,8 @@ TEST(DDPackageTest, GarbageMatrix) {
 
 TEST(DDPackageTest, ReduceGarbageVector) {
   auto dd = std::make_unique<Package>(3);
-  auto xGate = getDD(TestGate(2, GateType::X), *dd);
-  auto hGate = getDD(TestGate(2, GateType::H), *dd);
+  auto xGate = getDD(TestGate(2, Fixture::X), *dd);
+  auto hGate = getDD(TestGate(2, Fixture::H), *dd);
   auto zeroState = makeZeroState(3, *dd);
   auto initialState = dd->multiply(dd->multiply(hGate, xGate), zeroState);
   std::cout << "Initial State:\n";
@@ -824,9 +837,9 @@ TEST(DDPackageTest, ReduceGarbageVector) {
 TEST(DDPackageTest, ReduceGarbageVectorTGate) {
   constexpr auto nqubits = 2U;
   const auto dd = std::make_unique<Package>(nqubits);
-  const auto xGate0 = getDD(TestGate(0, GateType::X), *dd);
-  const auto xGate1 = getDD(TestGate(1, GateType::X), *dd);
-  const auto tdgGate0 = getDD(TestGate(0, GateType::Tdg), *dd);
+  const auto xGate0 = getDD(TestGate(0, Fixture::X), *dd);
+  const auto xGate1 = getDD(TestGate(1, Fixture::X), *dd);
+  const auto tdgGate0 = getDD(TestGate(0, Fixture::Tdg), *dd);
 
   auto zeroState = makeZeroState(nqubits, *dd);
   auto initialState = dd->multiply(
@@ -844,8 +857,8 @@ TEST(DDPackageTest, ReduceGarbageVectorTGate) {
 
 TEST(DDPackageTest, ReduceGarbageMatrix) {
   auto dd = std::make_unique<Package>(3);
-  auto hGate = getDD(TestGate(0, GateType::H), *dd);
-  auto cNotGate = getDD(TestGate(Controls{0}, 1, GateType::X), *dd);
+  auto hGate = getDD(TestGate(0, Fixture::H), *dd);
+  auto cNotGate = getDD(TestGate(Controls{0}, 1, Fixture::X), *dd);
 
   auto initialState = dd->multiply(hGate, cNotGate);
 
@@ -887,12 +900,11 @@ TEST(DDPackageTest, ReduceGarbageMatrix2) {
   constexpr auto nqubits = 3U;
   const auto dd = std::make_unique<Package>(nqubits);
   const auto controlledSwapGate =
-      getDD(TestGate(Controls{1}, Targets{0, 2}, GateType::SWAP), *dd);
-  const auto hGate = getDD(TestGate(0, GateType::H), *dd);
-  const auto zGate = getDD(TestGate(2, GateType::Z), *dd);
-  const auto xGate = getDD(TestGate(1, GateType::X), *dd);
-  const auto controlledHGate =
-      getDD(TestGate(Controls{1}, 0, GateType::H), *dd);
+      getDD(TestGate(Controls{1}, Targets{0, 2}, Fixture::SWAP), *dd);
+  const auto hGate = getDD(TestGate(0, Fixture::H), *dd);
+  const auto zGate = getDD(TestGate(2, Fixture::Z), *dd);
+  const auto xGate = getDD(TestGate(1, Fixture::X), *dd);
+  const auto controlledHGate = getDD(TestGate(Controls{1}, 0, Fixture::H), *dd);
 
   auto c1 = dd->multiply(
       controlledSwapGate,
@@ -919,8 +931,8 @@ TEST(DDPackageTest, ReduceGarbageMatrix2) {
 TEST(DDPackageTest, ReduceGarbageMatrixNoGarbage) {
   constexpr auto nqubits = 2U;
   const auto dd = std::make_unique<Package>(nqubits);
-  const auto tdgGate0 = getDD(TestGate(0, GateType::Tdg), *dd);
-  const auto tdgGate1 = getDD(TestGate(1, GateType::Tdg), *dd);
+  const auto tdgGate0 = getDD(TestGate(0, Fixture::Tdg), *dd);
+  const auto tdgGate1 = getDD(TestGate(1, Fixture::Tdg), *dd);
 
   auto c1 = Package::makeIdent();
   auto c2 = dd->multiply(tdgGate0, tdgGate1);
@@ -938,8 +950,8 @@ TEST(DDPackageTest, ReduceGarbageMatrixNoGarbage) {
 TEST(DDPackageTest, ReduceGarbageMatrixTGate) {
   constexpr auto nqubits = 2U;
   const auto dd = std::make_unique<Package>(nqubits);
-  const auto tdgGate0 = getDD(TestGate(0, GateType::Tdg), *dd);
-  const auto tdgGate1 = getDD(TestGate(1, GateType::Tdg), *dd);
+  const auto tdgGate0 = getDD(TestGate(0, Fixture::Tdg), *dd);
+  const auto tdgGate1 = getDD(TestGate(1, Fixture::Tdg), *dd);
 
   auto c1 = Package::makeIdent();
   auto c2 = dd->multiply(tdgGate0, tdgGate1);
@@ -964,57 +976,50 @@ TEST(DDPackageTest, ReduceGarbageMatrixTGate) {
 TEST(DDPackageTest, InvalidMakeBasisStateAndGate) {
   auto nqubits = 2U;
   auto dd = std::make_unique<Package>(nqubits);
-  EXPECT_THROW(getDD(TestGate(3, GateType::X), *dd), std::runtime_error);
+  EXPECT_THROW(getDD(TestGate(3, Fixture::X), *dd), std::runtime_error);
 }
 
 TEST(DDPackageTest, RejectsGateConstructionInEmptyPackage) {
   auto dd = std::make_unique<Package>(0U);
-  EXPECT_THROW(dd->makeGateDD(opToSingleQubitGateMatrix(GateType::X), 0U),
-               std::runtime_error);
-  EXPECT_THROW(
-      dd->makeTwoQubitGateDD(opToTwoQubitGateMatrix(GateType::SWAP), 0U, 0U),
-      std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(
-                   opToThreeQubitGateMatrix(GateType::RCCX), 0U, 0U, 0U),
+  EXPECT_THROW(dd->makeGateDD(X_MAT, 0U), std::runtime_error);
+  EXPECT_THROW(dd->makeTwoQubitGateDD(SWAP_MAT, 0U, 0U), std::runtime_error);
+  EXPECT_THROW(dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 0U, 0U, 0U),
                std::runtime_error);
 }
 
 TEST(DDPackageTest, RejectsOverlappingGateQubits) {
   auto dd = std::make_unique<Package>(5U);
-  const auto rccxMatrix = opToThreeQubitGateMatrix(GateType::RCCX);
 
   // Duplicate two-qubit targets
-  EXPECT_THROW(
-      dd->makeTwoQubitGateDD(opToTwoQubitGateMatrix(GateType::SWAP), 1U, 1U),
-      std::runtime_error);
+  EXPECT_THROW(dd->makeTwoQubitGateDD(SWAP_MAT, 1U, 1U), std::runtime_error);
 
   // Control coincides with single-qubit target
+  EXPECT_THROW(dd->makeGateDD(X_MAT, Controls{{1}}, 1U), std::runtime_error);
+
+  // Duplicate three-qubit targets
+  EXPECT_THROW(dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 0U, 0U, 1U),
+               std::runtime_error);
+  EXPECT_THROW(dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 0U, 1U, 0U),
+               std::runtime_error);
+  EXPECT_THROW(dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 2U, 1U, 2U),
+               std::runtime_error);
+  EXPECT_THROW(dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, 1U, 1U, 1U),
+               std::runtime_error);
+
+  // Extra control coincides with a target
   EXPECT_THROW(
-      dd->makeGateDD(opToSingleQubitGateMatrix(GateType::X), Controls{{1}}, 1U),
+      dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, Controls{{1}}, 0U, 1U, 2U),
       std::runtime_error);
-
-  // Duplicate three-qubit targets (cases skipped by RCCXGateDDConstruction)
-  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, 0U, 0U, 1U),
-               std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, 0U, 1U, 0U),
-               std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, 2U, 1U, 2U),
-               std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, 1U, 1U, 1U),
-               std::runtime_error);
-
-  // Extra control coincides with an RCCX target
-  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, Controls{{1}}, 0U, 1U, 2U),
-               std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, Control{0}, 0U, 1U, 2U),
-               std::runtime_error);
+  EXPECT_THROW(
+      dd->makeThreeQubitGateDD(THREE_QUBIT_MAT, Control{0}, 0U, 1U, 2U),
+      std::runtime_error);
 }
 
 TEST(DDPackageTest, PackageReset) {
   auto dd = std::make_unique<Package>(1);
 
   // one node in unique table of variable 0
-  auto xGate = getDD(TestGate(0, GateType::X), *dd);
+  auto xGate = getDD(TestGate(0, Fixture::X), *dd);
 
   const auto& unique = dd->mUniqueTable.getTables();
   const auto& table = unique[0];
@@ -1026,7 +1031,7 @@ TEST(DDPackageTest, PackageReset) {
   (*dd).reset();
   // after clearing the tables, they should be empty
   EXPECT_EQ(table[ihash], nullptr);
-  xGate = getDD(TestGate(0, GateType::X), *dd);
+  xGate = getDD(TestGate(0, Fixture::X), *dd);
   const auto* node2 = table[ihash];
   // after recreating the DD, it should receive the same node
   EXPECT_EQ(node2, node);
@@ -1039,7 +1044,7 @@ TEST(DDPackageTest, ResetClearsRoots) {
   const auto& mRoots = dd->getRootSet<mNode>();
 
   const auto vec = dd::makeZeroState(2, *dd);
-  const auto mat = getDD(TestGate(0, GateType::X), *dd);
+  const auto mat = getDD(TestGate(0, Fixture::X), *dd);
 
   dd->incRef(vec);
   dd->incRef(mat);
@@ -1071,7 +1076,7 @@ TEST(DDPackageTest, DuplicatetrackDoesNotLeaveStaleRoot) {
   EXPECT_THROW(dd->decRef(vec), std::invalid_argument);
 
   // matrix root
-  auto mat = getDD(TestGate(0, GateType::X), *dd);
+  auto mat = getDD(TestGate(0, Fixture::X), *dd);
   dd->incRef(mat);
   dd->incRef(mat);
   EXPECT_EQ(mRoots.size(), 1U);
@@ -1085,7 +1090,7 @@ TEST(DDPackageTest, DuplicatetrackDoesNotLeaveStaleRoot) {
 
 TEST(DDPackageTest, Inverse) {
   auto dd = std::make_unique<Package>(1);
-  auto x = getDD(TestGate(0, GateType::X), *dd);
+  auto x = getDD(TestGate(0, Fixture::X), *dd);
   auto xdag = dd->conjugateTranspose(x);
   EXPECT_EQ(x, xdag);
   dd->garbageCollect();
@@ -1107,7 +1112,7 @@ TEST(DDPackageTest, trackTwiceThenuntrackTwice) {
 
   auto& mRoots = dd->getRootSet<mNode>();
 
-  auto x = getDD(TestGate(0, GateType::X), *dd);
+  auto x = getDD(TestGate(0, Fixture::X), *dd);
 
   // add the same edge twice
   dd->incRef(x);
@@ -1190,7 +1195,7 @@ TEST(DDPackageTest, SpecialCaseTerminal) {
 
 TEST(DDPackageTest, KroneckerProduct) {
   auto dd = std::make_unique<Package>(2);
-  auto x = getDD(TestGate(0, GateType::X), *dd);
+  auto x = getDD(TestGate(0, Fixture::X), *dd);
   auto kronecker = dd->kronecker(x, x, 1);
   EXPECT_EQ(kronecker.p->v, 1);
   EXPECT_TRUE(kronecker.p->e[0].isZeroTerminal());
@@ -1218,7 +1223,7 @@ TEST(DDPackageTest, KroneckerProductVectors) {
 TEST(DDPackageTest, KroneckerIdentityHandling) {
   auto dd = std::make_unique<Package>(3U);
   // create a Hadamard gate on the middle qubit
-  auto h = getDD(TestGate(1U, GateType::H), *dd);
+  auto h = getDD(TestGate(1U, Fixture::H), *dd);
   // create a single qubit identity
   auto id = Package::makeIdent();
   // kronecker both DDs
@@ -1296,8 +1301,8 @@ TEST(DDPackageTest, NearZeroNormalize) {
 
 TEST(DDPackageTest, DestructiveMeasurementAll) {
   auto dd = std::make_unique<Package>(4);
-  auto hGate0 = getDD(TestGate(0, GateType::H), *dd);
-  auto hGate1 = getDD(TestGate(1, GateType::H), *dd);
+  auto hGate0 = getDD(TestGate(0, Fixture::H), *dd);
+  auto hGate1 = getDD(TestGate(1, Fixture::H), *dd);
   auto plusMatrix = dd->multiply(hGate0, hGate1);
   auto zeroState = makeZeroState(2, *dd);
   auto plusState = dd->multiply(plusMatrix, zeroState);
@@ -1321,8 +1326,8 @@ TEST(DDPackageTest, DestructiveMeasurementAll) {
 
 TEST(DDPackageTest, DestructiveMeasurementOne) {
   auto dd = std::make_unique<Package>(4);
-  auto hGate0 = getDD(TestGate(0, GateType::H), *dd);
-  auto hGate1 = getDD(TestGate(1, GateType::H), *dd);
+  auto hGate0 = getDD(TestGate(0, Fixture::H), *dd);
+  auto hGate1 = getDD(TestGate(1, Fixture::H), *dd);
   auto plusMatrix = dd->multiply(hGate0, hGate1);
   auto zeroState = makeZeroState(2, *dd);
   auto plusState = dd->multiply(plusMatrix, zeroState);
@@ -1470,9 +1475,9 @@ TEST(DDPackageTest, BasicNumericStabilityTest) {
   auto tol = RealNumber::eps;
   ComplexNumbers::setTolerance(limits::epsilon());
   auto state = makeZeroState(1, *dd);
-  auto h = getDD(TestGate(0, GateType::H), *dd);
+  auto h = getDD(TestGate(0, Fixture::H), *dd);
   auto state1 = dd->multiply(h, state);
-  auto z = getDD(TestGate(0, GateType::Z), *dd);
+  auto z = getDD(TestGate(0, Fixture::Z), *dd);
   auto result = dd->multiply(z, state1);
 
   const auto topWeight = result.w.toString(false, limits::max_digits10);
@@ -1494,13 +1499,16 @@ TEST(DDPackageTest, BasicNumericStabilityTest) {
 
 TEST(DDPackageTest, NormalizationNumericStabilityTest) {
   auto dd = std::make_unique<Package>(1);
+  const auto phaseMatrix = [](const fp angle) {
+    return GateMatrix{1, 0, 0, std::polar(1., angle)};
+  };
   for (std::size_t x = 23; x <= 50; ++x) {
     const auto lambda = PI / static_cast<fp>(1ULL << x);
     std::cout << std::setprecision(17) << "x: " << x << " | lambda: " << lambda
               << " | cos(lambda): " << std::cos(lambda)
               << " | sin(lambda): " << std::sin(lambda) << "\n";
-    auto p = getDD(TestGate(0, GateType::P, {lambda}), *dd);
-    auto pdag = getDD(TestGate(0, GateType::P, {-lambda}), *dd);
+    auto p = dd->makeGateDD(phaseMatrix(lambda), 0);
+    auto pdag = dd->makeGateDD(phaseMatrix(-lambda), 0);
     auto result = dd->multiply(p, pdag);
     EXPECT_TRUE(result.isIdentity());
     dd->cUniqueTable.clear();
@@ -1511,9 +1519,9 @@ TEST(DDPackageTest, NormalizationNumericStabilityTest) {
 TEST(DDPackageTest, FidelityOfMeasurementOutcomes) {
   const auto dd = std::make_unique<Package>(3);
 
-  const auto hGate = getDD(TestGate(2, GateType::H), *dd);
-  const auto cxGate1 = getDD(TestGate(Control{2}, 1, GateType::X), *dd);
-  const auto cxGate2 = getDD(TestGate(Control{1}, 0, GateType::X), *dd);
+  const auto hGate = getDD(TestGate(2, Fixture::H), *dd);
+  const auto cxGate1 = getDD(TestGate(Control{2}, 1, Fixture::X), *dd);
+  const auto cxGate2 = getDD(TestGate(Control{1}, 0, Fixture::X), *dd);
   const auto zeroState = makeZeroState(3, *dd);
 
   const auto ghzState = dd->multiply(
@@ -1564,11 +1572,11 @@ TEST(DDPackageTest, CloseToIdentityWithGarbageAtTheBeginning) {
   constexpr auto nqubits = 3U;
   auto dd = std::make_unique<Package>(nqubits);
   auto controlledSwapGate =
-      getDD(TestGate(Controls{1}, Targets{0, 2}, GateType::SWAP), *dd);
-  auto hGate = getDD(TestGate(0, GateType::H), *dd);
-  auto zGate = getDD(TestGate(2, GateType::Z), *dd);
-  auto xGate = getDD(TestGate(1, GateType::X), *dd);
-  auto controlledHGate = getDD(TestGate(Controls{1}, 0, GateType::H), *dd);
+      getDD(TestGate(Controls{1}, Targets{0, 2}, Fixture::SWAP), *dd);
+  auto hGate = getDD(TestGate(0, Fixture::H), *dd);
+  auto zGate = getDD(TestGate(2, Fixture::Z), *dd);
+  auto xGate = getDD(TestGate(1, Fixture::X), *dd);
+  auto controlledHGate = getDD(TestGate(Controls{1}, 0, Fixture::H), *dd);
 
   auto c1 = dd->multiply(
       controlledSwapGate,
@@ -1589,13 +1597,13 @@ TEST(DDPackageTest, CloseToIdentityWithGarbageAtTheEnd) {
   const auto dd = std::make_unique<Package>(nqubits);
 
   const auto controlledSwapGate =
-      getDD(TestGate(Controls{1}, Targets{0, 2}, GateType::SWAP), *dd);
-  const auto xGate = getDD(TestGate(1, GateType::X), *dd);
+      getDD(TestGate(Controls{1}, Targets{0, 2}, Fixture::SWAP), *dd);
+  const auto xGate = getDD(TestGate(1, Fixture::X), *dd);
 
-  const auto hGate2 = getDD(TestGate(2, GateType::H), *dd);
-  const auto zGate2 = getDD(TestGate(0, GateType::Z), *dd);
+  const auto hGate2 = getDD(TestGate(2, Fixture::H), *dd);
+  const auto zGate2 = getDD(TestGate(0, Fixture::Z), *dd);
   const auto controlledHGate2 =
-      getDD(TestGate(Controls{1}, 2, GateType::H), *dd);
+      getDD(TestGate(Controls{1}, 2, Fixture::H), *dd);
 
   const auto c3 = dd->multiply(
       controlledSwapGate,
@@ -1617,14 +1625,14 @@ TEST(DDPackageTest, CloseToIdentityWithGarbageInTheMiddle) {
   constexpr auto nqubits = 3U;
   const auto dd = std::make_unique<Package>(nqubits);
 
-  const auto zGate = getDD(TestGate(2, GateType::Z), *dd);
+  const auto zGate = getDD(TestGate(2, Fixture::Z), *dd);
 
   const auto controlledSwapGate3 =
-      getDD(TestGate(Controls{0}, Targets{1, 2}, GateType::SWAP), *dd);
-  const auto hGate3 = getDD(TestGate(1, GateType::H), *dd);
-  const auto xGate3 = getDD(TestGate(0, GateType::X), *dd);
+      getDD(TestGate(Controls{0}, Targets{1, 2}, Fixture::SWAP), *dd);
+  const auto hGate3 = getDD(TestGate(1, Fixture::H), *dd);
+  const auto xGate3 = getDD(TestGate(0, Fixture::X), *dd);
   const auto controlledHGate3 =
-      getDD(TestGate(Controls{0}, 1, GateType::H), *dd);
+      getDD(TestGate(Controls{0}, 1, Fixture::H), *dd);
 
   const auto c5 = dd->multiply(
       controlledSwapGate3,
@@ -1699,13 +1707,13 @@ TEST(DDPackageTest, expectationValueGlobalOperators) {
     const auto zeroState = makeZeroState(nrQubits, *dd);
 
     // Definition global operators
-    const auto singleSiteX = getDD(TestGate(0, GateType::X), *dd);
+    const auto singleSiteX = getDD(TestGate(0, Fixture::X), *dd);
     auto globalX = singleSiteX;
 
-    const auto singleSiteZ = getDD(TestGate(0, GateType::Z), *dd);
+    const auto singleSiteZ = getDD(TestGate(0, Fixture::Z), *dd);
     auto globalZ = singleSiteZ;
 
-    const auto singleSiteHadamard = getDD(TestGate(0, GateType::H), *dd);
+    const auto singleSiteHadamard = getDD(TestGate(0, Fixture::H), *dd);
     auto globalHadamard = singleSiteHadamard;
 
     for (Qubit i = 1; i < nrQubits; ++i) {
@@ -1731,9 +1739,9 @@ TEST(DDPackageTest, expectationValueLocalOperators) {
     // Local expectation values at each site
     for (Qubit site = 0; site < nrQubits - 1; ++site) {
       // Definition local operators
-      auto xGate = getDD(TestGate(site, GateType::X), *dd);
-      auto zGate = getDD(TestGate(site, GateType::Z), *dd);
-      auto hadamard = getDD(TestGate(site, GateType::H), *dd);
+      auto xGate = getDD(TestGate(site, Fixture::X), *dd);
+      auto zGate = getDD(TestGate(site, Fixture::Z), *dd);
+      auto hadamard = getDD(TestGate(site, Fixture::H), *dd);
 
       EXPECT_EQ(dd->expectationValue(xGate, zeroState), 0);
       EXPECT_EQ(dd->expectationValue(zGate, zeroState), 1);
@@ -1747,7 +1755,7 @@ TEST(DDPackageTest, expectationValueExceptions) {
 
   const auto dd = std::make_unique<Package>(nrQubits);
   const auto zeroState = makeZeroState(nrQubits - 1, *dd);
-  const auto xGate = getDD(TestGate(1, GateType::X), *dd);
+  const auto xGate = getDD(TestGate(1, Fixture::X), *dd);
 
   EXPECT_ANY_THROW(dd->expectationValue(xGate, zeroState));
 }
@@ -1848,8 +1856,7 @@ TEST(DDPackageTest, TwoQubitControlledGateDDConstruction) {
   const auto dd = std::make_unique<Package>(nrQubits);
 
   const auto gateMatrices =
-      std::vector{std::pair{opToSingleQubitGateMatrix(GateType::X), CX_MAT},
-                  std::pair{opToSingleQubitGateMatrix(GateType::Z), CZ_MAT}};
+      std::vector{std::pair{X_MAT, CX_MAT}, std::pair{Z_MAT, CZ_MAT}};
 
   // For every combination of control and target, test that the DD created by
   // makeTwoQubitGateDD is equal to the DD created by makeGateDD. This should
@@ -1875,8 +1882,7 @@ TEST(DDPackageTest, TwoQubitControlledGateDDConstructionNegativeControls) {
   const auto dd = std::make_unique<Package>(nrQubits);
 
   const auto gateMatrices =
-      std::vector{std::pair{opToSingleQubitGateMatrix(GateType::X), CX_MAT},
-                  std::pair{opToSingleQubitGateMatrix(GateType::Z), CZ_MAT}};
+      std::vector{std::pair{X_MAT, CX_MAT}, std::pair{Z_MAT, CZ_MAT}};
 
   // For every combination of controls, control type, and target, test that the
   // DD created by makeTwoQubitGateDD is equal to the DD created by makeGateDD.
@@ -1907,409 +1913,58 @@ TEST(DDPackageTest, TwoQubitControlledGateDDConstructionNegativeControls) {
   }
 }
 
-TEST(DDPackageTest, SWAPGateDDConstruction) {
-  constexpr auto nrQubits = 5U;
+TEST(DDPackageTest, TwoQubitGateDDConstruction) {
+  constexpr auto nrQubits = 4U;
   const auto dd = std::make_unique<Package>(nrQubits);
 
-  for (Qubit control = 0; control < nrQubits; ++control) {
-    for (Qubit target = 0; target < nrQubits; ++target) {
-      if (control == target) {
-        continue;
-      }
-      const auto swapGateDD =
-          getDD(TestGate(Targets{control, target}, GateType::SWAP), *dd);
-
-      auto gateDD = getDD(TestGate(control, target, GateType::X), *dd);
-      gateDD = dd->multiply(
-          gateDD,
-          dd->multiply(getDD(TestGate(target, control, GateType::X), *dd),
-                       gateDD));
-
-      EXPECT_EQ(swapGateDD, gateDD);
-    }
-  }
-}
-
-TEST(DDPackageTest, iSWAPGateDDConstruction) {
-  constexpr auto nrQubits = 5U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-
-  for (Qubit control = 0; control < nrQubits; ++control) {
-    for (Qubit target = 0; target < nrQubits; ++target) {
-      if (control == target) {
-        continue;
-      }
-      const auto iswapGateDD =
-          getDD(TestGate(Targets{control, target}, GateType::iSWAP), *dd);
-
-      auto gateDD = getDD(TestGate(target, GateType::S), *dd); // S q[1)
-      gateDD = dd->multiply(getDD(TestGate(control, GateType::S), *dd),
-                            gateDD); // S q[0)
-      gateDD = dd->multiply(getDD(TestGate(control, GateType::H), *dd),
-                            gateDD); // H q[0)
-      gateDD = dd->multiply(getDD(TestGate(control, target, GateType::X), *dd),
-                            gateDD); // CX q[0], q[1]
-      gateDD = dd->multiply(getDD(TestGate(target, control, GateType::X), *dd),
-                            gateDD); // CX q[1], q[0]
-      gateDD = dd->multiply(getDD(TestGate(target, GateType::H), *dd),
-                            gateDD); // H q[1)
-
-      EXPECT_EQ(iswapGateDD, gateDD);
-    }
-  }
-}
-
-TEST(DDPackageTest, DCXGateDDConstruction) {
-  constexpr auto nrQubits = 5U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-
-  for (Qubit control = 0; control < nrQubits; ++control) {
-    for (Qubit target = 0; target < nrQubits; ++target) {
-      if (control == target) {
-        continue;
-      }
-      const auto dcxGateDD =
-          getDD(TestGate(Targets{control, target}, GateType::DCX), *dd);
-
-      const auto gateDD =
-          dd->multiply(getDD(TestGate(target, control, GateType::X), *dd),
-                       getDD(TestGate(control, target, GateType::X), *dd));
-
-      EXPECT_EQ(dcxGateDD, gateDD);
-    }
-  }
-}
-
-TEST(DDPackageTest, RZZGateDDConstruction) {
-  constexpr auto nrQubits = 5U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-
-  const auto params = {0., PI_2, PI, 2 * PI};
-
-  for (Qubit control = 0; control < nrQubits; ++control) {
-    for (Qubit target = 0; target < nrQubits; ++target) {
-      if (control == target) {
-        continue;
-      }
-      for (const auto& param : params) {
-        const auto rzzGateDD =
-            getDD(TestGate({control, target}, GateType::RZZ, {param}), *dd);
-
-        auto gateDD = getDD(TestGate(control, target, GateType::X), *dd);
-        gateDD = dd->multiply(
-            getDD(TestGate(target, GateType::RZ, {param}), *dd), gateDD);
-        gateDD = dd->multiply(
-            getDD(TestGate(control, target, GateType::X), *dd), gateDD);
-
-        EXPECT_EQ(rzzGateDD, gateDD);
-      }
-    }
-  }
-
-  const auto identity = Package::makeIdent();
-  const auto rzzZero = getDD(TestGate({0, 1}, GateType::RZZ, {0.}), *dd);
-  EXPECT_EQ(rzzZero, identity);
-
-  const auto rzzTwoPi = getDD(TestGate({0, 1}, GateType::RZZ, {2 * PI}), *dd);
-  EXPECT_EQ(rzzTwoPi.p, identity.p);
-  EXPECT_EQ(RealNumber::val(rzzTwoPi.w.r), -1.);
-
-  const auto rzzPi = getDD(TestGate({0, 1}, GateType::RZZ, {PI}), *dd);
-  auto zz = getDD(TestGate(Controls{}, 0, GateType::Z), *dd);
-  zz = dd->multiply(zz, getDD(TestGate(Controls{}, 1, GateType::Z), *dd));
-  EXPECT_EQ(rzzPi.p, zz.p);
-}
-
-TEST(DDPackageTest, RYYGateDDConstruction) {
-  constexpr auto nrQubits = 5U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-
-  const auto params = {0., PI_2, PI};
-
-  for (Qubit control = 0; control < nrQubits; ++control) {
-    for (Qubit target = 0; target < nrQubits; ++target) {
-      if (control == target) {
-        continue;
-      }
-      for (const auto& param : params) {
-        const auto ryyGateDD =
-            getDD(TestGate({control, target}, GateType::RYY, {param}), *dd);
-
-        // no controls are necessary on the RX gates since they cancel if the
-        // controls are 0.
-        auto gateDD = getDD(TestGate(control, GateType::RX, {PI_2}), *dd);
-        gateDD = dd->multiply(
-            getDD(TestGate(target, GateType::RX, {PI_2}), *dd), gateDD);
-        gateDD = dd->multiply(
-            getDD(TestGate({control, target}, GateType::RZZ, {param}), *dd),
-            gateDD);
-        gateDD = dd->multiply(
-            getDD(TestGate(target, GateType::RX, {-PI_2}), *dd), gateDD);
-        gateDD = dd->multiply(
-            getDD(TestGate(control, GateType::RX, {-PI_2}), *dd), gateDD);
-
-        EXPECT_EQ(ryyGateDD, gateDD);
-      }
-    }
-  }
-
-  const auto identity = Package::makeIdent();
-  const auto ryyZero = getDD(TestGate({0, 1}, GateType::RYY, {0.}), *dd);
-  EXPECT_EQ(ryyZero, identity);
-
-  const auto ryyPi = getDD(TestGate({0, 1}, GateType::RYY, {PI}), *dd);
-  auto yy = getDD(TestGate(Controls{}, 0, GateType::Y), *dd);
-  yy = dd->multiply(yy, getDD(TestGate(Controls{}, 1, GateType::Y), *dd));
-  EXPECT_EQ(ryyPi.p, yy.p);
-}
-
-TEST(DDPackageTest, RXXGateDDConstruction) {
-  constexpr auto nrQubits = 5U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-
-  const auto params = {0., PI_2, PI};
-
-  for (Qubit control = 0; control < nrQubits; ++control) {
-    for (Qubit target = 0; target < nrQubits; ++target) {
-      if (control == target) {
-        continue;
-      }
-      for (const auto& param : params) {
-        const auto rxxGateDD =
-            getDD(TestGate({control, target}, GateType::RXX, {param}), *dd);
-
-        auto gateDD = getDD(TestGate(control, GateType::H), *dd);
-        gateDD =
-            dd->multiply(getDD(TestGate(target, GateType::H), *dd), gateDD);
-        gateDD = dd->multiply(
-            getDD(TestGate({control, target}, GateType::RZZ, {param}), *dd),
-            gateDD);
-        gateDD =
-            dd->multiply(getDD(TestGate(target, GateType::H), *dd), gateDD);
-        gateDD =
-            dd->multiply(getDD(TestGate(control, GateType::H), *dd), gateDD);
-
-        EXPECT_EQ(rxxGateDD, gateDD);
-      }
-    }
-  }
-
-  const auto identity = Package::makeIdent();
-  const auto rxxZero = getDD(TestGate({0, 1}, GateType::RXX, {0.}), *dd);
-  EXPECT_EQ(rxxZero, identity);
-
-  const auto rxxPi = getDD(TestGate({0, 1}, GateType::RXX, {PI}), *dd);
-  auto xx = getDD(TestGate(Controls{}, 0, GateType::X), *dd);
-  xx = dd->multiply(xx, getDD(TestGate(Controls{}, 1, GateType::X), *dd));
-  EXPECT_EQ(rxxPi.p, xx.p);
-}
-
-TEST(DDPackageTest, RZXGateDDConstruction) {
-  constexpr auto nrQubits = 5U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-
-  const auto params = {0., PI_2, PI};
-
-  for (Qubit control = 0; control < nrQubits; ++control) {
-    for (Qubit target = 0; target < nrQubits; ++target) {
-      if (control == target) {
-        continue;
-      }
-      for (const auto& param : params) {
-        const auto rzxGateDD =
-            getDD(TestGate({control, target}, GateType::RZX, {param}), *dd);
-
-        // no controls are necessary on the H gates since they cancel if the
-        // controls are 0.
-        auto gateDD = getDD(TestGate(target, GateType::H), *dd);
-        gateDD = dd->multiply(
-            getDD(TestGate({control, target}, GateType::RZZ, {param}), *dd),
-            gateDD);
-        gateDD =
-            dd->multiply(getDD(TestGate(target, GateType::H), *dd), gateDD);
-
-        EXPECT_EQ(rzxGateDD, gateDD);
-      }
-    }
-  }
-
-  const auto identity = Package::makeIdent();
-  const auto rzxZero = getDD(TestGate({0, 1}, GateType::RZX, {0.}), *dd);
-  EXPECT_EQ(rzxZero, identity);
-
-  const auto rzxPi = getDD(TestGate({0, 1}, GateType::RZX, {PI}), *dd);
-  auto zx = getDD(TestGate(Controls{}, 0, GateType::Z), *dd);
-  zx = dd->multiply(zx, getDD(TestGate(Controls{}, 1, GateType::X), *dd));
-  EXPECT_EQ(rzxPi.p, zx.p);
-}
-
-TEST(DDPackageTest, ECRGateDDConstruction) {
-  constexpr auto nrQubits = 5U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-
-  for (Qubit control = 0; control < nrQubits; ++control) {
-    for (Qubit target = 0; target < nrQubits; ++target) {
-      if (control == target) {
-        continue;
-      }
-
-      const auto ecrGateDD =
-          getDD(TestGate(Targets{control, target}, GateType::ECR), *dd);
-
-      auto gateDD =
-          getDD(TestGate({control, target}, GateType::RZX, {PI_4}), *dd);
-      gateDD = dd->multiply(getDD(TestGate(control, GateType::X), *dd), gateDD);
-      gateDD = dd->multiply(
-          getDD(TestGate({control, target}, GateType::RZX, {-PI_4}), *dd),
-          gateDD);
-
-      EXPECT_EQ(ecrGateDD, gateDD);
-    }
-  }
-}
-
-TEST(DDPackageTest, XXMinusYYGateDDConstruction) {
-  constexpr auto nrQubits = 5U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-
-  const auto thetaAngles = {0., PI_2, PI};
-  const auto betaAngles = {0., PI_2, PI};
-
-  for (Qubit control = 0; control < nrQubits; ++control) {
-    for (Qubit target = 0; target < nrQubits; ++target) {
-      if (control == target) {
-        continue;
-      }
-
-      for (const auto& theta : thetaAngles) {
-        for (const auto& beta : betaAngles) {
-          const auto xxMinusYYGateDD = getDD(
-              TestGate({control, target}, GateType::XXminusYY, {theta, beta}),
-              *dd);
-
-          auto gateDD = getDD(TestGate(target, GateType::RZ, {-beta}), *dd);
-          gateDD = dd->multiply(
-              getDD(TestGate(control, GateType::RZ, {-PI_2}), *dd), gateDD);
-          gateDD =
-              dd->multiply(getDD(TestGate(control, GateType::SX), *dd), gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(control, GateType::RZ, {PI_2}), *dd), gateDD);
-          gateDD =
-              dd->multiply(getDD(TestGate(target, GateType::S), *dd), gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(control, target, GateType::X), *dd), gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(control, GateType::RY, {theta / 2.}), *dd),
-              gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(target, GateType::RY, {-theta / 2.}), *dd),
-              gateDD);
-
-          gateDD = dd->multiply(
-              getDD(TestGate(control, target, GateType::X), *dd), gateDD);
-          gateDD =
-              dd->multiply(getDD(TestGate(target, GateType::Sdg), *dd), gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(control, GateType::RZ, {-PI_2}), *dd), gateDD);
-          gateDD = dd->multiply(getDD(TestGate(control, GateType::SXdg), *dd),
-                                gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(control, GateType::RZ, {PI_2}), *dd), gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(target, GateType::RZ, {beta}), *dd), gateDD);
-
-          EXPECT_EQ(xxMinusYYGateDD, gateDD);
-        }
-      }
-    }
-  }
-}
-
-TEST(DDPackageTest, XXPlusYYGateDDConstruction) {
-  constexpr auto nrQubits = 5U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-
-  const auto thetaAngles = {0., PI_2, PI};
-  const auto betaAngles = {0., PI_2, PI};
-
-  for (Qubit control = 0; control < nrQubits; ++control) {
-    for (Qubit target = 0; target < nrQubits; ++target) {
-      if (control == target) {
-        continue;
-      }
-
-      for (const auto& theta : thetaAngles) {
-        for (const auto& beta : betaAngles) {
-          const auto xxPlusYYGateDD = getDD(
-              TestGate({control, target}, GateType::XXplusYY, {theta, beta}),
-              *dd);
-          auto gateDD = getDD(TestGate(control, GateType::RZ, {beta}), *dd);
-          gateDD = dd->multiply(
-              getDD(TestGate(target, GateType::RZ, {-PI_2}), *dd), gateDD);
-          gateDD =
-              dd->multiply(getDD(TestGate(target, GateType::SX), *dd), gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(target, GateType::RZ, {PI_2}), *dd), gateDD);
-          gateDD =
-              dd->multiply(getDD(TestGate(control, GateType::S), *dd), gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(target, control, GateType::X), *dd), gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(control, GateType::RY, {-theta / 2.}), *dd),
-              gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(target, GateType::RY, {-theta / 2.}), *dd),
-              gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(target, control, GateType::X), *dd), gateDD);
-          gateDD = dd->multiply(getDD(TestGate(control, GateType::Sdg), *dd),
-                                gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(target, GateType::RZ, {-PI_2}), *dd), gateDD);
-          gateDD = dd->multiply(getDD(TestGate(target, GateType::SXdg), *dd),
-                                gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(target, GateType::RZ, {PI_2}), *dd), gateDD);
-          gateDD = dd->multiply(
-              getDD(TestGate(control, GateType::RZ, {-beta}), *dd), gateDD);
-
-          EXPECT_EQ(xxPlusYYGateDD, gateDD);
-        }
-      }
-    }
-  }
-}
-
-TEST(DDPackageTest, RCCXGateDDConstruction) {
-  constexpr auto nrQubits = 5U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-  const auto rccxMatrix = opToThreeQubitGateMatrix(GateType::RCCX);
-
-  const auto rccxDecomposition = [&](const Controls& extra,
-                                     const Qubit control0, const Qubit control1,
-                                     const Qubit target) {
-    const auto withCtrl = [&](const Qubit ctrl) {
-      Controls controls = extra;
-      controls.emplace(ctrl);
-      return controls;
+  const auto decomposition = [&](const Controls& extra, const Qubit target0,
+                                 const Qubit target1) {
+    const auto controlledX = [&](const Qubit control, const Qubit target) {
+      auto controls = extra;
+      controls.emplace(control);
+      return dd->makeGateDD(X_MAT, controls, target);
     };
-    auto gateDD = getDD(TestGate(extra, target, GateType::H), *dd);
-    gateDD =
-        dd->multiply(getDD(TestGate(extra, target, GateType::T), *dd), gateDD);
-    gateDD = dd->multiply(
-        getDD(TestGate(withCtrl(control1), target, GateType::X), *dd), gateDD);
-    gateDD = dd->multiply(getDD(TestGate(extra, target, GateType::Tdg), *dd),
-                          gateDD);
-    gateDD = dd->multiply(
-        getDD(TestGate(withCtrl(control0), target, GateType::X), *dd), gateDD);
-    gateDD =
-        dd->multiply(getDD(TestGate(extra, target, GateType::T), *dd), gateDD);
-    gateDD = dd->multiply(
-        getDD(TestGate(withCtrl(control1), target, GateType::X), *dd), gateDD);
-    gateDD = dd->multiply(getDD(TestGate(extra, target, GateType::Tdg), *dd),
-                          gateDD);
-    return dd->multiply(getDD(TestGate(extra, target, GateType::H), *dd),
-                        gateDD);
+    const auto first = controlledX(target0, target1);
+    const auto middle = controlledX(target1, target0);
+    return dd->multiply(first, dd->multiply(middle, first));
+  };
+
+  for (Qubit target0 = 0; target0 < nrQubits; ++target0) {
+    for (Qubit target1 = 0; target1 < nrQubits; ++target1) {
+      if (target0 == target1) {
+        continue;
+      }
+
+      EXPECT_EQ(dd->makeTwoQubitGateDD(SWAP_MAT, target0, target1),
+                decomposition({}, target0, target1));
+
+      for (Qubit extra = 0; extra < nrQubits; ++extra) {
+        if (extra == target0 || extra == target1) {
+          continue;
+        }
+        for (const auto type : {Control::Type::Pos, Control::Type::Neg}) {
+          const Control control{extra, type};
+          const Controls controls{control};
+          const auto controlled =
+              dd->makeTwoQubitGateDD(SWAP_MAT, controls, target0, target1);
+          EXPECT_EQ(controlled, dd->makeTwoQubitGateDD(SWAP_MAT, control,
+                                                       target0, target1));
+          EXPECT_EQ(controlled, decomposition(controls, target0, target1));
+        }
+      }
+    }
+  }
+}
+
+TEST(DDPackageTest, ThreeQubitGateDDConstruction) {
+  constexpr auto nrQubits = 4U;
+  const auto dd = std::make_unique<Package>(nrQubits);
+
+  const auto decomposition = [&](Controls controls, const Qubit control0,
+                                 const Qubit control1, const Qubit target) {
+    controls.emplace(control0);
+    controls.emplace(control1);
+    return dd->makeGateDD(X_MAT, controls, target);
   };
 
   for (Qubit control0 = 0; control0 < nrQubits; ++control0) {
@@ -2322,39 +1977,23 @@ TEST(DDPackageTest, RCCXGateDDConstruction) {
           continue;
         }
 
-        // Bare RCCX via the no-control overload.
-        const auto bareOverload =
-            dd->makeThreeQubitGateDD(rccxMatrix, control0, control1, target);
-        const auto bareControls = dd->makeThreeQubitGateDD(
-            rccxMatrix, Controls{}, control0, control1, target);
-        EXPECT_EQ(bareOverload, bareControls);
-        EXPECT_EQ(bareOverload,
-                  rccxDecomposition({}, control0, control1, target));
+        EXPECT_EQ(dd->makeThreeQubitGateDD(CCX_MAT, control0, control1, target),
+                  decomposition({}, control0, control1, target));
 
-        // Bare RCCX and RCCX with one extra positive/negative control.
-        std::vector<Controls> controlSets{{}};
         for (Qubit extra = 0; extra < nrQubits; ++extra) {
           if (extra == control0 || extra == control1 || extra == target) {
             continue;
           }
-          controlSets.push_back({{extra, Control::Type::Pos}});
-          controlSets.push_back({{extra, Control::Type::Neg}});
-        }
-
-        for (const auto& controls : controlSets) {
-          const auto rccxGateDD = getDD(
-              TestGate(controls, {control0, control1, target}, GateType::RCCX),
-              *dd);
-          EXPECT_EQ(rccxGateDD,
-                    rccxDecomposition(controls, control0, control1, target));
-
-          // Single-control overload matches Controls{control}.
-          if (controls.size() == 1U) {
-            const auto& control = *controls.begin();
-            EXPECT_EQ(dd->makeThreeQubitGateDD(rccxMatrix, control, control0,
-                                               control1, target),
-                      dd->makeThreeQubitGateDD(rccxMatrix, controls, control0,
+          for (const auto type : {Control::Type::Pos, Control::Type::Neg}) {
+            const Control control{extra, type};
+            const Controls controls{control};
+            const auto controlled = dd->makeThreeQubitGateDD(
+                CCX_MAT, controls, control0, control1, target);
+            EXPECT_EQ(controlled,
+                      dd->makeThreeQubitGateDD(CCX_MAT, control, control0,
                                                control1, target));
+            EXPECT_EQ(controlled,
+                      decomposition(controls, control0, control1, target));
           }
         }
       }
@@ -2369,8 +2008,15 @@ TEST(DDPackageTest, InnerProductTopNodeConjugation) {
   constexpr auto nrQubits = 2U;
   const auto dd = std::make_unique<Package>(nrQubits);
   const auto zeroState = makeZeroState(nrQubits, *dd);
-  const auto rxx = getDD(TestGate({0, 1}, GateType::RXX, {-2}), *dd);
-  const auto op = getDD(TestGate(0, GateType::Z), *dd);
+  const auto cosTheta = std::cos(1.);
+  const auto sinTheta = std::sin(1.);
+  const TwoQubitGateMatrix evolutionMatrix{
+      {{cosTheta, 0, 0, {0., sinTheta}},
+       {0, cosTheta, {0., sinTheta}, 0},
+       {0, {0., sinTheta}, cosTheta, 0},
+       {std::complex<fp>{0., sinTheta}, 0, 0, cosTheta}}};
+  const auto rxx = dd->makeTwoQubitGateDD(evolutionMatrix, 0, 1);
+  const auto op = getDD(TestGate(0, Fixture::Z), *dd);
 
   const auto evolvedState = dd->multiply(rxx, zeroState);
 
@@ -2391,8 +2037,8 @@ TEST(DDPackageTest, DDNodeLeakRegressionTest) {
   constexpr auto nqubits = 1U;
   auto dd = std::make_unique<Package>(nqubits);
 
-  const auto dd1 = dd->makeGateDD(MEAS_ZERO_MAT, 0U);
-  const auto dd2 = dd->makeGateDD(MEAS_ONE_MAT, 0U);
+  const auto dd1 = dd->makeGateDD(ZERO_PROJECTOR, 0U);
+  const auto dd2 = dd->makeGateDD(ONE_PROJECTOR, 0U);
   dd->multiply(dd1, dd2);
   dd->garbageCollect(true);
   EXPECT_EQ(dd->mMemoryManager.getStats().numUsed, 0U);
@@ -2408,8 +2054,8 @@ TEST(DDPackageTest, CTPerformanceRegressionTest) {
   constexpr auto nqubits = 1U;
   auto dd = std::make_unique<Package>(nqubits);
 
-  const auto dd1 = dd->makeGateDD(MEAS_ZERO_MAT, 0U);
-  const auto dd2 = dd->makeGateDD(MEAS_ONE_MAT, 0U);
+  const auto dd1 = dd->makeGateDD(ZERO_PROJECTOR, 0U);
+  const auto dd2 = dd->makeGateDD(ONE_PROJECTOR, 0U);
   constexpr auto repetitions = 10U;
   for (auto i = 0U; i < repetitions; ++i) {
     dd->multiply(dd1, dd2);
@@ -2443,7 +2089,7 @@ TEST(DDPackageTest, DataStructureStatistics) {
 TEST(DDPackageTest, DDStatistics) {
   constexpr auto nqubits = 2U;
   const auto dd = std::make_unique<Package>(nqubits);
-  const auto dummyGate = getDD(TestGate(0U, GateType::X), *dd);
+  const auto dummyGate = getDD(TestGate(0U, Fixture::X), *dd);
   EXPECT_NE(dummyGate.p, nullptr);
   const auto statsString = getStatisticsString(*dd, true);
   const auto stats = nlohmann::json::parse(statsString);
@@ -2524,7 +2170,7 @@ TEST(DDPackageTest, ReduceAncillaIdentity) {
 TEST(DDPackageTest, ReduceAncillaIdentityBeforeFirstNode) {
   const auto dd = std::make_unique<Package>(2);
 
-  auto xGate = getDD(TestGate(0, GateType::X), *dd);
+  auto xGate = getDD(TestGate(0, Fixture::X), *dd);
   dd->incRef(xGate);
   const auto outputDD = dd->reduceAncillae(xGate, {false, true});
 
@@ -2537,7 +2183,7 @@ TEST(DDPackageTest, ReduceAncillaIdentityBeforeFirstNode) {
 
 TEST(DDPackageTest, ReduceAncillaIdentityAfterLastNode) {
   const auto dd = std::make_unique<Package>(2);
-  auto xGate = getDD(TestGate(1, GateType::X), *dd);
+  auto xGate = getDD(TestGate(1, Fixture::X), *dd);
   dd->incRef(xGate);
   const auto outputDD = dd->reduceAncillae(xGate, {true, false});
 
@@ -2550,8 +2196,8 @@ TEST(DDPackageTest, ReduceAncillaIdentityAfterLastNode) {
 
 TEST(DDPackageTest, ReduceAncillaIdentityBetweenTwoNodes) {
   const auto dd = std::make_unique<Package>(3);
-  const auto xGate0 = getDD(TestGate(0, GateType::X), *dd);
-  const auto xGate2 = getDD(TestGate(2, GateType::X), *dd);
+  const auto xGate0 = getDD(TestGate(0, Fixture::X), *dd);
+  const auto xGate2 = getDD(TestGate(2, Fixture::X), *dd);
   auto state = dd->multiply(xGate0, xGate2);
 
   dd->incRef(state);
@@ -2584,7 +2230,7 @@ TEST(DDPackageTest, ReduceGarbageIdentity) {
 
 TEST(DDPackageTest, ReduceGarbageIdentityBeforeFirstNode) {
   const auto dd = std::make_unique<Package>(2);
-  auto xGate = getDD(TestGate(0, GateType::X), *dd);
+  auto xGate = getDD(TestGate(0, Fixture::X), *dd);
   dd->incRef(xGate);
 
   auto outputDD = dd->reduceGarbage(xGate, {false, true});
@@ -2604,7 +2250,7 @@ TEST(DDPackageTest, ReduceGarbageIdentityBeforeFirstNode) {
 
 TEST(DDPackageTest, ReduceGarbageIdentityAfterLastNode) {
   const auto dd = std::make_unique<Package>(2);
-  auto xGate = getDD(TestGate(1, GateType::X), *dd);
+  auto xGate = getDD(TestGate(1, Fixture::X), *dd);
   dd->incRef(xGate);
 
   auto outputDD = dd->reduceGarbage(xGate, {true, false});
@@ -2624,8 +2270,8 @@ TEST(DDPackageTest, ReduceGarbageIdentityAfterLastNode) {
 
 TEST(DDPackageTest, ReduceGarbageIdentityBetweenTwoNodes) {
   const auto dd = std::make_unique<Package>(3);
-  const auto xGate0 = getDD(TestGate(0, GateType::X), *dd);
-  const auto xGate2 = getDD(TestGate(2, GateType::X), *dd);
+  const auto xGate0 = getDD(TestGate(0, Fixture::X), *dd);
+  const auto xGate2 = getDD(TestGate(2, Fixture::X), *dd);
   auto state = dd->multiply(xGate0, xGate2);
 
   dd->incRef(state);

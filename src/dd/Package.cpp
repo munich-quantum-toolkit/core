@@ -18,7 +18,6 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/DDpackageConfig.hpp"
 #include "dd/Edge.hpp"
-#include "dd/GateMatrixDefinitions.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
@@ -49,6 +48,11 @@
 #include <vector>
 
 namespace dd {
+namespace {
+constexpr GateMatrix MEAS_ZERO_MAT{1, 0, 0, 0};
+constexpr GateMatrix MEAS_ONE_MAT{0, 0, 0, 1};
+} // namespace
+
 Package::Package(const std::size_t nq, const DDPackageConfig& config)
     : nqubits(nq), config_(config) {
   resize(nq);
