@@ -118,8 +118,8 @@ releases may include breaking changes.
 ### Removed
 
 - 💥 Remove `qc::QuantumComputation`, `MQT::CoreIR`, and `MQT::CoreQASM`. Use
-  compiler-backed QC/QCO APIs in v4 or MQT Core 3.9.x for legacy code ([#2111],
-  [#2112], [#2288]) ([**@burgholzer**], [**@simon1hofmann**])
+  compiler-backed QC/QCO APIs in v4 or the MQT Core v3 release series for legacy
+  code ([#2111], [#2112], [#2288]) ([**@burgholzer**], [**@simon1hofmann**])
 - 💥 Remove the `spdlog` dependency from MQT Core source builds, installed CMake
   packages, and Python wheels. QDMI diagnostics continue to be written to
   standard error ([#2270]) ([**@denialhaag**])

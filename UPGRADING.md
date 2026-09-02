@@ -31,11 +31,11 @@ Qiskit. For decision-diagram simulation, lower to a `QCOProgram` and use its
 functions in `mqt.core.dd` and the operation-taking `DDPackage` methods have
 been removed; the raw vector and matrix DD constructors remain available.
 
-MQT Core 3.9.x continues to provide the classic circuit interfaces for
-repositories that have not migrated. Pin `mqt-core~=3.9.0` and stay on the 3.9
-release line for those consumers. C++ consumers should likewise use the 3.9
-release branch or a matching 3.9 version constraint. MQT Core 3.9 and 4 cannot
-provide their Python or CMake packages in the same environment.
+The MQT Core v3 release series continues to provide the classic circuit
+interfaces for repositories that have not migrated. Pin `mqt-core>=3,<4` and
+stay on that release series. C++ consumers should likewise use a v3 release
+branch or a matching v3 version constraint. MQT Core v3 and v4 cannot provide
+their Python or CMake packages in the same environment.
 
 ### Removal of the `spdlog` dependency
 
