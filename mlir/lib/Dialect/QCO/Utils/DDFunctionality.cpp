@@ -1967,14 +1967,14 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed,
        const DDArgumentBindings& argumentBindings) {
-  dd::Package dd;
+  auto dd = std::make_unique<dd::Package>();
   std::mt19937_64 rng(seed == 0 ? std::random_device{}() : seed);
-  auto prepared = prepare(func, dd, argumentBindings);
+  auto prepared = prepare(func, *dd, argumentBindings);
   if (failed(prepared)) {
     return failure();
   }
-  return sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, dd), dd,
-                    shots, rng, *prepared);
+  return sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, *dd),
+                    *dd, shots, rng, *prepared);
 }
 
 } // namespace mlir::qco
