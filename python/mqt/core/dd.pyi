@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""MQT Core DD  - The MQT Core Decision Diagram (DD) module."""
+"""MQT Core decision diagram module."""
 
 import enum
 from collections.abc import Sequence
@@ -17,17 +17,17 @@ import numpy as np
 from numpy.typing import NDArray
 
 class Control:
-    """A control qubit used by the raw matrix DD constructors.
+    """Control a raw matrix DD operation with one qubit.
 
     Args:
-        qubit: The index of the control qubit.
-        type_: Whether the control is positive or negative.
+        qubit: Control qubit index.
+        type_: Control polarity.
     """
 
     def __init__(self, qubit: int, type_: Control.Type = ...) -> None: ...
 
     class Type(enum.Enum):
-        """Enumeration of control polarities."""
+        """Control polarity."""
 
         Pos = 1
 
@@ -35,11 +35,11 @@ class Control:
 
     @property
     def qubit(self) -> int:
-        """The index of the control qubit."""
+        """Control qubit index."""
 
     @property
     def type_(self) -> Control.Type:
-        """Whether the control is positive or negative."""
+        """Control polarity."""
 
     def __eq__(self, arg: object, /) -> bool: ...
     def __ne__(self, arg: object, /) -> bool: ...

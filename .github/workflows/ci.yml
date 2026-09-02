@@ -132,7 +132,9 @@ jobs:
     with:
       clang-version: 22
       build-project: true
-      files-changed-only: true
+      # Large changes can exceed GitHub's 20,000-line diff limit. Lint the
+      # complete tree so cpp-linter does not depend on a truncated PR patch.
+      files-changed-only: false
       setup-python: true
       install-pkgs: "nanobind==3.0.1"
       cpp-linter-extra-args: "-std=c++20 -Wunused-template"

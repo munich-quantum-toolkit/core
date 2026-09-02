@@ -1082,7 +1082,7 @@ Args:
         value produces reproducible results.
 
 Returns:
-    Histogram keys use conventional count-string order: the last returned
+    Histogram keys use conventional count-string order. The last returned
     register comes first, and each register is MSB-first. If no CBit result
     exists, final ``measureAll`` bitstrings are used instead.
 
