@@ -168,15 +168,114 @@ struct ForwardKnownLoad final : OpRewritePattern<LoadOp> {
     return success();
   }
 };
+
+struct FoldUntouchedZeroComparison final : OpRewritePattern<CompareOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CompareOp compare,
+                                PatternRewriter& rewriter) const override {
+    auto alloc = compare.getReg().getDefiningOp<AllocOp>();
+    if (!alloc || alloc.getInitialization() != Initialization::Zero ||
+        alloc->getBlock() != compare->getBlock()) {
+      return failure();
+    }
+    /// ponytail: folds only untouched zero registers; track stores if broader
+    /// constant folding becomes performance-critical.
+    for (auto* operation = alloc->getNextNode(); operation != compare;
+         operation = operation->getNextNode()) {
+      if (operation == nullptr || operation->getNumRegions() != 0 ||
+          (!isa<LoadOp, CompareOp>(operation) &&
+           llvm::is_contained(operation->getOperands(), compare.getReg()))) {
+        return failure();
+      }
+    }
+    const auto zero = compare.getRhs().isZero();
+    const auto result = [&] {
+      switch (compare.getPredicate()) {
+      case ComparisonPredicate::Equal:
+      case ComparisonPredicate::GreaterEqual:
+        return zero;
+      case ComparisonPredicate::NotEqual:
+      case ComparisonPredicate::Less:
+        return !zero;
+      case ComparisonPredicate::LessEqual:
+        return true;
+      case ComparisonPredicate::Greater:
+        return false;
+      }
+      llvm_unreachable("unknown CBit comparison predicate");
+    }();
+    rewriter.replaceOpWithNewOp<arith::ConstantIntOp>(compare, result, 1);
+    return success();
+  }
+};
+
 } // namespace
 
 LogicalResult LoadOp::verify() {
   return verifyIndex(getOperation(), getReg(), getIndex());
 }
 
+LogicalResult CompareOp::verify() {
+  const auto width = static_cast<unsigned>(getReg().getType().getWidth());
+  if (getRhs().getBitWidth() != width) {
+    return emitOpError("expected integer width must match register width");
+  }
+  return success();
+}
+
+Value mlir::cbit::buildComparison(
+    OpBuilder& builder, const Location location,
+    const ComparisonPredicate predicate, const llvm::APInt& rhs,
+    const llvm::function_ref<Value(int64_t)> loadBit) {
+  auto one = arith::ConstantIntOp::create(builder, location, 1, 1);
+  Value equal = one;
+  Value less;
+  if (predicate != ComparisonPredicate::Equal &&
+      predicate != ComparisonPredicate::NotEqual) {
+    less = arith::ConstantIntOp::create(builder, location, 0, 1);
+  }
+  for (int64_t index = static_cast<int64_t>(rhs.getBitWidth()) - 1; index >= 0;
+       --index) {
+    auto bit = loadBit(index);
+    Value matches = bit;
+    if (!rhs[static_cast<unsigned>(index)]) {
+      matches = arith::XOrIOp::create(builder, location, bit, one);
+    } else if (less) {
+      auto lower = arith::XOrIOp::create(builder, location, bit, one);
+      auto firstDifference =
+          arith::AndIOp::create(builder, location, equal, lower);
+      less = arith::OrIOp::create(builder, location, less, firstDifference);
+    }
+    equal = arith::AndIOp::create(builder, location, equal, matches);
+  }
+  switch (predicate) {
+  case ComparisonPredicate::Equal:
+    return equal;
+  case ComparisonPredicate::NotEqual:
+    return arith::XOrIOp::create(builder, location, equal, one);
+  case ComparisonPredicate::Less:
+    return less;
+  case ComparisonPredicate::LessEqual:
+    return arith::OrIOp::create(builder, location, less, equal);
+  case ComparisonPredicate::Greater: {
+    auto lessOrEqual = arith::OrIOp::create(builder, location, less, equal);
+    return arith::XOrIOp::create(builder, location, lessOrEqual, one);
+  }
+  case ComparisonPredicate::GreaterEqual:
+    return arith::XOrIOp::create(builder, location, less, one);
+  }
+  llvm_unreachable("unknown CBit comparison predicate");
+}
+
 void LoadOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
   results.add<ForwardKnownLoad>(context);
+}
+
+void CompareOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                            MLIRContext* context) {
+  results.add<FoldUntouchedZeroComparison>(context);
 }
 
 LogicalResult StoreOp::verify() {

@@ -134,6 +134,29 @@ TEST_F(CBitToMemRefTest, LargeZeroInitializationProducesBoundedIR) {
   EXPECT_EQ(stores, 1);
 }
 
+TEST_F(CBitToMemRefTest, LowersRegisterComparisons) {
+  auto moduleOp = convert(R"mlir(
+    module {
+      func.func @main() -> i1 {
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
+        %result = cbit.cmp uge, %reg, 5 : i3 : !cbit.reg<3>
+        return %result : i1
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool containsCBit = false;
+  moduleOp->walk([&](Operation* op) {
+    containsCBit |= op->getDialect() == context->getLoadedDialect("cbit");
+  });
+  EXPECT_FALSE(containsCBit);
+  size_t loads = 0;
+  moduleOp->walk([&](memref::LoadOp) { ++loads; });
+  EXPECT_EQ(loads, 3);
+}
+
 TEST_F(CBitToMemRefTest, ConvertsFunctionSignaturesCallsAndReturns) {
   auto moduleOp = convert(R"mlir(
     module {

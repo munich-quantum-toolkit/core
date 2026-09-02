@@ -88,6 +88,25 @@ struct ConvertLoadOp final : OpConversionPattern<cbit::LoadOp> {
   }
 };
 
+struct ConvertCompareOp final : OpConversionPattern<cbit::CompareOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::CompareOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto result = cbit::buildComparison(
+        rewriter, op.getLoc(), op.getPredicate(), op.getRhs(),
+        [&](const int64_t index) -> Value {
+          auto indexValue =
+              arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
+          return memref::LoadOp::create(rewriter, op.getLoc(), adaptor.getReg(),
+                                        ValueRange{indexValue});
+        });
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
 struct ConvertStoreOp final : OpConversionPattern<cbit::StoreOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -123,8 +142,9 @@ protected:
     target.addDynamicallyLegalOp<func::ReturnOp, func::CallOp>(
         [&](Operation* op) { return typeConverter.isLegal(op); });
 
-    patterns.add<ConvertAllocOp, ConvertLoadOp, ConvertStoreOp>(typeConverter,
-                                                                context);
+    patterns
+        .add<ConvertAllocOp, ConvertCompareOp, ConvertLoadOp, ConvertStoreOp>(
+            typeConverter, context);
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
         patterns, typeConverter);
     populateReturnOpTypeConversionPattern(patterns, typeConverter);

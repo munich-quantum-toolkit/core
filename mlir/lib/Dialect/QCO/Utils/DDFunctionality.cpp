@@ -655,6 +655,46 @@ static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical) {
                      classical);
 }
 
+static LogicalResult compareRegister(cbit::CompareOp compare,
+                                     ClassicalEnv& classical) {
+  const auto regIt = classical.registers.find(compare.getReg());
+  if (regIt == classical.registers.end()) {
+    return compare.emitError()
+           << "CBit register is not mapped for QCO DD simulation";
+  }
+  llvm::APInt actual(compare.getRhs().getBitWidth(), 0);
+  for (const auto [index, cell] : llvm::enumerate(*regIt->second)) {
+    if (cell.deferredWire && classical.deferredMeasurementUse != nullptr) {
+      *classical.deferredMeasurementUse = compare.getOperation();
+      return failure();
+    }
+    if (!cell.value) {
+      return compare.emitError()
+             << "read from an undefined CBit register element";
+    }
+    actual.setBitVal(static_cast<unsigned>(index), *cell.value);
+  }
+  const auto result = [&] {
+    switch (compare.getPredicate()) {
+    case cbit::ComparisonPredicate::Equal:
+      return actual.eq(compare.getRhs());
+    case cbit::ComparisonPredicate::NotEqual:
+      return actual.ne(compare.getRhs());
+    case cbit::ComparisonPredicate::Less:
+      return actual.ult(compare.getRhs());
+    case cbit::ComparisonPredicate::LessEqual:
+      return actual.ule(compare.getRhs());
+    case cbit::ComparisonPredicate::Greater:
+      return actual.ugt(compare.getRhs());
+    case cbit::ComparisonPredicate::GreaterEqual:
+      return actual.uge(compare.getRhs());
+    }
+    llvm_unreachable("unknown CBit comparison predicate");
+  }();
+  return bindInteger(compare.getResult(),
+                     llvm::APInt(1, static_cast<uint64_t>(result)), classical);
+}
+
 static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
                                               ClassicalEnv& classical,
                                               Operation* op) {
@@ -1281,6 +1321,9 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       })
       .template Case<cbit::LoadOp>([&](cbit::LoadOp load) {
         return loadRegister(load, *walk.classical);
+      })
+      .template Case<cbit::CompareOp>([&](cbit::CompareOp compare) {
+        return compareRegister(compare, *walk.classical);
       })
       .template Case<cbit::StoreOp>([&](cbit::StoreOp store) {
         return storeRegister(store, *walk.classical);

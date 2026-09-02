@@ -3711,16 +3711,14 @@ private:
       const auto* lhsSymbol = lhsSyntax.kind == Expr::Kind::Identifier
                                   ? lookup(lhsSyntax.identifier)
                                   : nullptr;
-      if (condition.kind == Expr::Kind::Equal && lhsSymbol != nullptr &&
-          lhsSymbol->kind == SymbolKind::Register &&
+      if ((!program.openQASM2 || condition.kind == Expr::Kind::Equal) &&
+          lhsSymbol != nullptr && lhsSymbol->kind == SymbolKind::Register &&
           program.registers[lhsSymbol->id].kind == RegisterKind::Bit &&
           isConstantExpression(*condition.rhs)) {
         const auto& rhsSyntax = syntax.expressions[*condition.rhs];
         MQT_OQ3_TRY_ASSIGN(bits,
                            resolveBits({.location = lhsSyntax.location,
                                         .identifier = lhsSyntax.identifier}));
-        // OpenQASM 2 classical bits default to zero. OpenQASM 3 register
-        // comparisons require every bit to be initialized.
         if (!program.openQASM2) {
           for (const auto& bit : bits) {
             if (failed(ensureBitInitialized(bit, condition.location))) {
@@ -3756,39 +3754,41 @@ private:
           expectedBits = llvm::APInt(/*numBits=*/64, expectedValue);
         }
         if (expectedBits.getActiveBits() > bits.size()) {
-          // Value cannot equal the register contents.
+          const bool result = condition.kind == Expr::Kind::NotEqual ||
+                              condition.kind == Expr::Kind::Less ||
+                              condition.kind == Expr::Kind::LessEqual;
           return addCondition(
               {.kind = ConditionKind::Literal,
                .location = getSourceLocation(condition.location),
-               .literal = false});
+               .literal = result});
         }
         if (expectedBits.getBitWidth() < bits.size()) {
           expectedBits = expectedBits.zext(static_cast<unsigned>(bits.size()));
         } else if (expectedBits.getBitWidth() > bits.size()) {
           expectedBits = expectedBits.trunc(static_cast<unsigned>(bits.size()));
         }
-        auto result =
-            addCondition({.kind = ConditionKind::Literal,
-                          .location = getSourceLocation(condition.location),
-                          .literal = true});
-        for (const auto [index, bit] : llvm::enumerate(bits)) {
-          auto bitCondition =
-              addCondition({.kind = ConditionKind::Bit,
-                            .location = getSourceLocation(condition.location),
-                            .bit = bit});
-          if (!expectedBits[index]) {
-            bitCondition =
-                addCondition({.kind = ConditionKind::Not,
-                              .location = getSourceLocation(condition.location),
-                              .lhs = bitCondition});
-          }
-          result =
-              addCondition({.kind = ConditionKind::And,
-                            .location = getSourceLocation(condition.location),
-                            .lhs = result,
-                            .rhs = bitCondition});
-        }
-        return result;
+        return addCondition({.kind = ConditionKind::RegisterComparison,
+                             .location = getSourceLocation(condition.location),
+                             .reg = lhsSymbol->id,
+                             .expected = std::move(expectedBits),
+                             .comparison = [&] {
+                               switch (condition.kind) {
+                               case Expr::Kind::Equal:
+                                 return ComparisonKind::Equal;
+                               case Expr::Kind::NotEqual:
+                                 return ComparisonKind::NotEqual;
+                               case Expr::Kind::Less:
+                                 return ComparisonKind::Less;
+                               case Expr::Kind::LessEqual:
+                                 return ComparisonKind::LessEqual;
+                               case Expr::Kind::Greater:
+                                 return ComparisonKind::Greater;
+                               case Expr::Kind::GreaterEqual:
+                                 return ComparisonKind::GreaterEqual;
+                               default:
+                                 llvm_unreachable("not a comparison");
+                               }
+                             }()});
       }
       typed.kind = ConditionKind::Comparison;
       MQT_OQ3_TRY_ASSIGN(comparisonLhs, analyzeExpression(*condition.lhs));

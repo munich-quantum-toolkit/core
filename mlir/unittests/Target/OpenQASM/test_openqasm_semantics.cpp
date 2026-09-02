@@ -408,6 +408,12 @@ qubit q;
 bit c;
 if (c) { x q; }
 )qasm";
+  constexpr llvm::StringLiteral unmeasuredRegisterCondition = R"qasm(
+OPENQASM 3.1;
+qubit q;
+bit[2] c;
+if (c >= 1) { x q; }
+)qasm";
 
   auto uninitializedOutput = oq3::frontend::analyzeOpenQASM(unmeasuredOutput);
   ASSERT_FALSE(uninitializedOutput);
@@ -421,6 +427,14 @@ if (c) { x q; }
   ASSERT_FALSE(uninitializedCondition);
   ASSERT_FALSE(uninitializedCondition.diagnostics.empty());
   EXPECT_NE(uninitializedCondition.diagnostics.front().message.find(
+                "has not been initialized"),
+            std::string::npos);
+
+  auto uninitializedRegister =
+      oq3::frontend::analyzeOpenQASM(unmeasuredRegisterCondition);
+  ASSERT_FALSE(uninitializedRegister);
+  ASSERT_FALSE(uninitializedRegister.diagnostics.empty());
+  EXPECT_NE(uninitializedRegister.diagnostics.front().message.find(
                 "has not been initialized"),
             std::string::npos);
 }
@@ -1651,50 +1665,9 @@ if(c==1180591620717411303433) x q[0];
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
-    return c.kind == oq3::frontend::ConditionKind::Bit && c.bit.index == 70;
+    return c.kind == oq3::frontend::ConditionKind::RegisterComparison &&
+           c.expected[70];
   }));
-}
-
-TEST(OpenQASMFrontendTest, AcceptsInitializedRegisterConditionInOpenQASM3) {
-  std::string source = R"qasm(
-OPENQASM 3.1;
-include "stdgates.inc";
-qubit q;
-bit[80] c;
-)qasm";
-  for (size_t index = 0; index < 80; ++index) {
-    source += "c[" + std::to_string(index) + "] = false;\n";
-  }
-  source += R"qasm(
-c[70] = measure q;
-if(c==1180591620717411303424) { x q; }
-)qasm";
-
-  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
-
-  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
-    return c.kind == oq3::frontend::ConditionKind::Bit && c.bit.index == 70;
-  }));
-}
-
-TEST(OpenQASMFrontendTest, RejectsUninitializedRegisterConditionInOpenQASM3) {
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.1;
-include "stdgates.inc";
-qubit q;
-bit[2] c;
-c[0] = measure q;
-if(c==1) { x q; }
-)qasm";
-
-  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
-
-  ASSERT_FALSE(analyzed);
-  ASSERT_FALSE(analyzed.diagnostics.empty());
-  EXPECT_NE(
-      analyzed.diagnostics.front().message.find("has not been initialized"),
-      std::string::npos);
 }
 
 TEST(OpenQASMFrontendTest,
@@ -1711,7 +1684,8 @@ if(c==1_180_591_620_717_411_303_433) x q[0];
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
-    return c.kind == oq3::frontend::ConditionKind::Bit && c.bit.index == 70;
+    return c.kind == oq3::frontend::ConditionKind::RegisterComparison &&
+           c.expected[70];
   }));
 }
 
@@ -1753,12 +1727,10 @@ if(c==1) x q[0];
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  // Truncating to 64 bits would omit Not(c[79]).
-  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [&](const auto& c) {
-    return c.kind == oq3::frontend::ConditionKind::Not &&
-           analyzed.program->conditions[c.lhs].kind ==
-               oq3::frontend::ConditionKind::Bit &&
-           analyzed.program->conditions[c.lhs].bit.index == 79;
+  /// Truncating to 64 bits would omit the leading zero bits.
+  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
+    return c.kind == oq3::frontend::ConditionKind::RegisterComparison &&
+           c.expected.getBitWidth() == 80U && c.expected == 1U;
   }));
 }
 

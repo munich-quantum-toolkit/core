@@ -575,7 +575,33 @@ if (c == 3) x q[2];
     assert restored.data[2].operation.blocks[0].count_ops() == {"x": 1}
     condition = restored.data[2].operation.condition
     assert isinstance(condition, expr.Expr)
-    assert expr.structurally_equivalent(condition, expr.logic_and(*restored.clbits))
+    assert expr.structurally_equivalent(condition, expr.equal(restored.cregs[0], 3))
+
+
+def test_openqasm_register_ordering_exports_to_qiskit_expression() -> None:
+    """Export first-class register ordering as a Qiskit Uint expression."""
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 3.1;
+include "stdgates.inc";
+qubit[3] q;
+bit[2] c;
+c[0] = measure q[0];
+c[1] = measure q[1];
+if (c >= 1) { x q[2]; }
+"""
+    )
+
+    restored = program.to_qiskit()
+    condition = restored.data[2].operation.condition
+
+    assert "cbit.cmp uge" in program.ir
+    assert isinstance(condition, expr.Expr)
+    assert expr.structurally_equivalent(condition, expr.greater_equal(restored.cregs[0], 1))
+
+    reimported = QCProgram.from_qiskit(restored).to_qiskit()
+    reimported_condition = reimported.data[2].operation.condition
+    assert isinstance(reimported_condition, expr.Expr)
+    assert expr.structurally_equivalent(reimported_condition, expr.greater_equal(reimported.cregs[0], 1))
 
 
 def test_openqasm_short_circuit_expression_exports_to_qiskit() -> None:

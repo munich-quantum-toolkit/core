@@ -187,33 +187,60 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
   }
 };
 
+} // namespace
+
+static Value loadCBit(Operation* op, Value reg, Value index,
+                      ConversionPatternRewriter& rewriter,
+                      LoweringState& state) {
+  const auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+  if (!state.resultArrays.contains(reg)) {
+    auto elementptr =
+        LLVM::GEPOp::create(rewriter, op->getLoc(), ptrType,
+                            rewriter.getI1Type(), reg, ValueRange{index});
+    return LLVM::LoadOp::create(rewriter, op->getLoc(), rewriter.getI1Type(),
+                                elementptr);
+  }
+  auto elementptr = LLVM::GEPOp::create(rewriter, op->getLoc(), ptrType,
+                                        ptrType, reg, ValueRange{index});
+  auto result =
+      LLVM::LoadOp::create(rewriter, op->getLoc(), ptrType, elementptr);
+  auto fnSig = LLVM::LLVMFunctionType::get(rewriter.getI1Type(), {ptrType});
+  auto fnDec =
+      getOrCreateFunctionDeclaration(rewriter, op, QIR_READ_RESULT, fnSig);
+  return LLVM::CallOp::create(rewriter, op->getLoc(), fnDec, result.getResult())
+      .getResult();
+}
+
+namespace {
+
 struct ConvertCBitLoadOp final : StatefulOpConversionPattern<cbit::LoadOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(cbit::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    const auto ptrType = LLVM::LLVMPointerType::get(getContext());
-    if (!state.resultArrays.contains(adaptor.getReg())) {
-      auto elementptr = LLVM::GEPOp::create(
-          rewriter, op.getLoc(), ptrType, rewriter.getI1Type(),
-          adaptor.getReg(), ValueRange{adaptor.getIndex()});
-      rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, rewriter.getI1Type(),
-                                                elementptr);
-      return success();
-    }
-    auto elementptr =
-        LLVM::GEPOp::create(rewriter, op.getLoc(), ptrType, ptrType,
-                            adaptor.getReg(), ValueRange{adaptor.getIndex()});
-    auto result =
-        LLVM::LoadOp::create(rewriter, op.getLoc(), ptrType, elementptr);
-    auto fnSig = LLVM::LLVMFunctionType::get(rewriter.getI1Type(), {ptrType});
-    auto fnDec =
-        getOrCreateFunctionDeclaration(rewriter, op, QIR_READ_RESULT, fnSig);
-    auto readResult =
-        LLVM::CallOp::create(rewriter, op.getLoc(), fnDec, result.getResult());
-    rewriter.replaceOp(op, readResult.getResult());
+    rewriter.replaceOp(op, loadCBit(op, adaptor.getReg(), adaptor.getIndex(),
+                                    rewriter, getState()));
+    return success();
+  }
+};
+
+struct ConvertCBitCompareOp final
+    : StatefulOpConversionPattern<cbit::CompareOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::CompareOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto result = cbit::buildComparison(
+        rewriter, op.getLoc(), op.getPredicate(), op.getRhs(),
+        [&](const int64_t index) -> Value {
+          auto indexValue = LLVM::ConstantOp::create(
+              rewriter, op.getLoc(), rewriter.getI64Type(), index);
+          return loadCBit(op, adaptor.getReg(), indexValue, rewriter,
+                          getState());
+        });
+    rewriter.replaceOp(op, result);
     return success();
   }
 };
@@ -542,8 +569,8 @@ static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
                                             MLIRContext* ctx,
                                             LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
-  patterns.add<ConvertCBitAllocOp, ConvertCBitLoadOp, ConvertCBitStoreOp,
-               ConvertMemRefAllocOp, ConvertMemRefLoadOp,
+  patterns.add<ConvertCBitAllocOp, ConvertCBitCompareOp, ConvertCBitLoadOp,
+               ConvertCBitStoreOp, ConvertMemRefAllocOp, ConvertMemRefLoadOp,
                ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
                ConvertQCMeasureOp, ConvertQCResetOp>(typeConverter, ctx,
                                                      &state);

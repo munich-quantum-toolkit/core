@@ -16,6 +16,7 @@
 #include "dd/StateGeneration.hpp"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
@@ -39,6 +40,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <array>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -794,6 +796,33 @@ TEST_F(QCODDFunctionalityTest, SimulateCBitConditionAndMeasurementUpdate) {
   dd->decRef(*measurementOut);
   dd->decRef(zero);
   dd->decRef(one);
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateCBitRegisterComparisons) {
+  constexpr std::array comparisons{
+      std::pair{cbit::ComparisonPredicate::Equal, false},
+      std::pair{cbit::ComparisonPredicate::NotEqual, true},
+      std::pair{cbit::ComparisonPredicate::Less, true},
+      std::pair{cbit::ComparisonPredicate::LessEqual, true},
+      std::pair{cbit::ComparisonPredicate::Greater, false},
+      std::pair{cbit::ComparisonPredicate::GreaterEqual, false},
+  };
+  for (const auto [predicate, expected] : comparisons) {
+    auto mod = buildModule([&](QCOProgramBuilder& b) {
+      auto reg = b.allocClassicalBitRegister(2, "c");
+      auto rhs = b.getIntegerAttr(b.getIntegerType(2), 1);
+      auto condition =
+          cbit::CompareOp::create(b, b.getI1Type(), predicate, reg, rhs);
+      auto q = b.staticQubit(0);
+      q = b.qcoIf(
+          condition, q, [&](Value arg) { return b.x(arg); },
+          [&](Value arg) { return arg; });
+      b.sink(q);
+      return b.intConstant(0);
+    });
+    ASSERT_TRUE(mod);
+    expectSimulatesFromZero(mainFunc(*mod), expected);
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitLoad) {

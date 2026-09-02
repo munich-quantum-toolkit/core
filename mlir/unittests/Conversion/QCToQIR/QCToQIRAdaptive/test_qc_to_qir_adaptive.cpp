@@ -11,6 +11,7 @@
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
@@ -254,6 +255,31 @@ TEST(QCToQIRAdaptiveNativeTest, LowersZeroInitializedClassicalControlRegister) {
   EXPECT_FALSE(
       module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_RESULT_ARRAY_ALLOC));
   EXPECT_FALSE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_READ_RESULT));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersClassicalRegisterComparison) {
+  MLIRContext context;
+  context
+      .loadDialect<cbit::CBitDialect, qc::QCDialect, arith::ArithDialect,
+                   cf::ControlFlowDialect, func::FuncDialect, LLVM::LLVMDialect,
+                   memref::MemRefDialect, scf::SCFDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto q = builder.allocQubit();
+  auto c = builder.allocClassicalBitRegister(3);
+  builder.measure(q, c, 0);
+  auto rhs = builder.getIntegerAttr(builder.getIntegerType(3), 2);
+  auto comparison = cbit::CompareOp::create(
+      builder, builder.getI1Type(), cbit::ComparisonPredicate::Less, c, rhs);
+  builder.scfIf(comparison, [&] { builder.x(q); });
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  bool retainsComparison = false;
+  module->walk([&](cbit::CompareOp) { retainsComparison = true; });
+  EXPECT_FALSE(retainsComparison);
 }
 
 TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleRegisterDestinations) {

@@ -1258,108 +1258,59 @@ if (c == 1) x q[0];
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t conditionals = 0;
+  size_t comparisons = 0;
   moduleOp->walk([&](scf::IfOp) { ++conditionals; });
-  // The register equality and the source-level branch each short-circuit
-  // through their own structured conditional.
-  EXPECT_EQ(conditionals, 2);
+  moduleOp->walk([&](cbit::CompareOp) { ++comparisons; });
+  EXPECT_EQ(conditionals, 1);
+  EXPECT_EQ(comparisons, 1);
 }
 
-TEST(OpenQASMTargetTest,
-     SharesOpenQASM2RegisterConditionsUntilClassicalMutation) {
+TEST(OpenQASMTargetTest, EmitsAllRegisterComparisonPredicates) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+bit[3] c;
+c[0] = true;
+c[1] = false;
+c[2] = true;
+qubit q;
+if (c == 5) { x q; }
+if (c != 5) { x q; }
+if (c < 5) { x q; }
+if (c <= 5) { x q; }
+if (c > 5) { x q; }
+if (c >= 5) { x q; }
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  std::array<bool, 6> predicates{};
+  moduleOp->walk([&](cbit::CompareOp comparison) {
+    predicates.at(static_cast<size_t>(comparison.getPredicate())) = true;
+    EXPECT_EQ(comparison.getRhs(), llvm::APInt(3, 5));
+  });
+  EXPECT_TRUE(llvm::all_of(predicates, [](const bool value) { return value; }));
+}
+
+TEST(OpenQASMTargetTest, PreservesWideRegisterComparisons) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 2.0;
 include "qelib1.inc";
-qreg q[2];
-creg c[2];
-measure q[0] -> c[0];
-if (c == 1) x q[1];
-if (c == 1) h q[1];
-measure q[1] -> c[1];
-if (c == 1) z q[0];
+qreg q[1];
+creg c[65];
+if (c == 18446744073709551616) x q[0];
 )qasm";
 
   MLIRContext context;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  SmallVector<Value> branchConditions;
-  size_t expressionConditionals = 0;
-  size_t classicalLoads = 0;
-  moduleOp->walk([&](scf::IfOp conditional) {
-    if (conditional.getNumResults() == 0) {
-      branchConditions.push_back(conditional.getCondition());
-    } else {
-      ++expressionConditionals;
-    }
-  });
-  moduleOp->walk([&](cbit::LoadOp) { ++classicalLoads; });
-
-  ASSERT_EQ(branchConditions.size(), 3);
-  EXPECT_EQ(branchConditions[0], branchConditions[1]);
-  EXPECT_NE(branchConditions[1], branchConditions[2]);
-  EXPECT_EQ(expressionConditionals, 4);
-  EXPECT_EQ(classicalLoads, 4);
-}
-
-TEST(OpenQASMTargetTest, DoesNotReuseLoopLocalConditionAfterPositiveRangeLoop) {
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.1;
-include "stdgates.inc";
-qubit[2] q;
-bit c = measure q[0];
-for int i in [0:1] {
-  if (c) { x q[1]; }
-}
-if (c) { h q[1]; }
-)qasm";
-
-  MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  SmallVector<Value> branchConditions;
-  moduleOp->walk([&](scf::IfOp conditional) {
-    if (conditional.getNumResults() == 0) {
-      branchConditions.push_back(conditional.getCondition());
-    }
-  });
-
-  ASSERT_EQ(branchConditions.size(), 2);
-  EXPECT_NE(branchConditions[0], branchConditions[1]);
-}
-
-TEST(OpenQASMTargetTest, InvalidatesPositiveRangeLoopConditionsAcrossMutation) {
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.1;
-include "stdgates.inc";
-qubit[2] q;
-bit c = measure q[0];
-if (c) { x q[1]; }
-for int i in [0:1] {
-  if (c) { h q[1]; }
-  c = false;
-}
-if (c) { z q[1]; }
-)qasm";
-
-  MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  SmallVector<Value> branchConditions;
-  moduleOp->walk([&](scf::IfOp conditional) {
-    if (conditional.getNumResults() == 0) {
-      branchConditions.push_back(conditional.getCondition());
-    }
-  });
-
-  ASSERT_EQ(branchConditions.size(), 3);
-  EXPECT_NE(branchConditions[0], branchConditions[1]);
-  EXPECT_NE(branchConditions[1], branchConditions[2]);
-  EXPECT_NE(branchConditions[0], branchConditions[2]);
+  cbit::CompareOp comparison;
+  moduleOp->walk([&](cbit::CompareOp op) { comparison = op; });
+  ASSERT_TRUE(comparison);
+  EXPECT_EQ(comparison.getRhs(), llvm::APInt(65, 1).shl(64));
 }
 
 TEST(OpenQASMTargetTest, ZeroInitializesUnmeasuredOpenQASM2Registers) {

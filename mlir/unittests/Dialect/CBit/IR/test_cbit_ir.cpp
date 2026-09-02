@@ -66,6 +66,7 @@ TEST_F(CBitIRTest, ParsesAndPrintsRegisterOperations) {
         %reg = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<2>
         cbit.store %false, %reg[%c0] : !cbit.reg<2>
         %bit = cbit.load %reg[%c0] : !cbit.reg<2>
+        %matches = cbit.cmp eq, %reg, 1 : i2 : !cbit.reg<2>
         return %reg : !cbit.reg<2>
       }
     }
@@ -84,6 +85,19 @@ TEST_F(CBitIRTest, ParsesAndPrintsRegisterOperations) {
   EXPECT_NE(printed.find("!cbit.reg<2>"), std::string::npos);
   EXPECT_NE(printed.find("cbit.store"), std::string::npos);
   EXPECT_NE(printed.find("cbit.load"), std::string::npos);
+  EXPECT_NE(printed.find("cbit.cmp eq"), std::string::npos);
+}
+
+TEST_F(CBitIRTest, RejectsComparisonWidthMismatch) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %matches = cbit.cmp eq, %reg, 1 : i3 : !cbit.reg<2>
+        return
+      }
+    }
+  )mlir"));
 }
 
 TEST_F(CBitIRTest, RejectsNonPositiveRegisterWidth) {
@@ -146,6 +160,7 @@ TEST_F(CBitIRTest, ReportsMemoryEffects) {
         %reg = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
         cbit.store %false, %reg[%c0] : !cbit.reg<1>
         %bit = cbit.load %reg[%c0] : !cbit.reg<1>
+        %matches = cbit.cmp eq, %reg, 0 : i1 : !cbit.reg<1>
         return
       }
     }
@@ -153,13 +168,16 @@ TEST_F(CBitIRTest, ReportsMemoryEffects) {
   ASSERT_TRUE(moduleOp);
 
   cbit::AllocOp alloc;
+  cbit::CompareOp compare;
   cbit::LoadOp load;
   cbit::StoreOp store;
   moduleOp->walk([&](cbit::AllocOp op) { alloc = op; });
+  moduleOp->walk([&](cbit::CompareOp op) { compare = op; });
   moduleOp->walk([&](cbit::LoadOp op) { load = op; });
   moduleOp->walk([&](cbit::StoreOp op) { store = op; });
 
   ASSERT_NE(alloc.getOperation(), nullptr);
+  ASSERT_NE(compare.getOperation(), nullptr);
   ASSERT_NE(load.getOperation(), nullptr);
   ASSERT_NE(store.getOperation(), nullptr);
 
@@ -173,6 +191,12 @@ TEST_F(CBitIRTest, ReportsMemoryEffects) {
   ASSERT_EQ(effects.size(), 1);
   EXPECT_TRUE(isa<MemoryEffects::Read>(effects.front().getEffect()));
   EXPECT_EQ(effects.front().getValue(), load.getReg());
+
+  effects.clear();
+  compare.getEffects(effects);
+  ASSERT_EQ(effects.size(), 1);
+  EXPECT_TRUE(isa<MemoryEffects::Read>(effects.front().getEffect()));
+  EXPECT_EQ(effects.front().getValue(), compare.getReg());
 
   effects.clear();
   store.getEffects(effects);
