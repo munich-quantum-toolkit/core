@@ -12,6 +12,7 @@
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -21,6 +22,7 @@
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/Error.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -625,6 +627,38 @@ TEST_F(MultiControlledDecompositionTest, LeavesRCCXWhenMinQubitsIsFour) {
   DecomposeMultiControlledOptions options;
   options.minQubits = 4;
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
+  EXPECT_EQ(countRCCXOps(moduleOp.get()), 1U);
+}
+
+TEST_F(MultiControlledDecompositionTest,
+       PreservesTargetNativeControlledRCCXBody) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
+        std::ignore =
+            builder.crccx(builder.staticQubit(0), builder.staticQubit(1),
+                          builder.staticQubit(2), builder.staticQubit(3));
+        return SmallVector<Value>{};
+      });
+  ASSERT_TRUE(moduleOp);
+
+  using Operation = CompilerTarget::Operation;
+  std::vector operations{llvm::cantFail(
+      Operation::create("rccx", Operation::Arity::variadic(4), 0))};
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      4, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations(operations)));
+
+  CtrlOp shell;
+  moduleOp->walk([&](CtrlOp op) { shell = op; });
+  ASSERT_TRUE(shell);
+  ASSERT_EQ(shell.getNumBodyUnitaries(), 1U);
+  ASSERT_TRUE(target.supports(shell.getOperation()));
+  ASSERT_FALSE(target.supports(shell.getBodyUnitary(0).getOperation()));
+
+  PassManager pm(context());
+  pm.addPass(createDecomposeMultiControlled(target));
+  ASSERT_TRUE(pm.run(moduleOp.get()).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 1), 1U);
   EXPECT_EQ(countRCCXOps(moduleOp.get()), 1U);
 }
 

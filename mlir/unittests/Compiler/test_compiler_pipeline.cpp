@@ -11,6 +11,7 @@
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Compiler/Programs.h"
+#include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
@@ -1426,6 +1427,55 @@ TEST_F(CompilerPipelineTest,
   pm.addPass(createRemoveDeadValuesPass());
   ASSERT_TRUE(pm.run(program->module()).succeeded());
   EXPECT_EQ(program->str(), before);
+}
+
+TEST_F(CompilerPipelineTest, QCOProgramPreservesDDSIMControlledOperations) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[5] q;
+x q[0];
+x q[1];
+ctrl(2) @ h q[0], q[1], q[2];
+ctrl(2) @ rx(0.2) q[0], q[1], q[2];
+ctrl @ rxx(0.3) q[0], q[3], q[4];
+ctrl @ swap q[0], q[3], q[4];
+ctrl @ rccx q[0], q[1], q[2], q[3];
+ctrl(2) @ x q[0], q[1], q[4];
+ctrl(2) @ p(0.4) q[0], q[1], q[4];
+rccx q[0], q[1], q[2];
+gphase(0.5);
+)qasm";
+  auto qc = QCProgram::fromQASMString(source);
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+
+  const auto target =
+      llvm::cantFail(compilerTargetFromDeviceId("mqt.ddsim.default"));
+  ASSERT_TRUE(qco->compileForTarget(target));
+
+  auto compiled = parseRecordedModule(qco->str());
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(verify(*compiled).succeeded());
+
+  llvm::StringMap<size_t> controlledOperations;
+  size_t rccxOperations = 0;
+  size_t globalPhases = 0;
+  compiled->walk([&](Operation* operation) {
+    if (auto controlled = dyn_cast<CtrlOp>(operation)) {
+      ASSERT_EQ(controlled.getNumBodyUnitaries(), 1U);
+      ++controlledOperations[controlled.getBodyUnitary(0).getBaseSymbol()];
+    }
+    rccxOperations += isa<RCCXOp>(operation);
+    globalPhases += isa<GPhaseOp>(operation);
+  });
+
+  for (const auto* const name : {"h", "rx", "rxx", "swap", "rccx", "x", "p"}) {
+    EXPECT_EQ(controlledOperations.lookup(name), 1U) << name;
+  }
+  EXPECT_EQ(controlledOperations.size(), 7U);
+  EXPECT_EQ(rccxOperations, 2U);
+  EXPECT_EQ(globalPhases, 1U);
 }
 
 TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {

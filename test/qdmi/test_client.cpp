@@ -547,10 +547,12 @@ TEST_P(DeviceTest, UnsupportedCustomPropertyReturnsNullopt) {
             std::nullopt);
 }
 
+#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 TEST_F(DDSimulatorDeviceTest, ReportsCompilerTargetMetadata) {
   EXPECT_EQ(device.queryCustomProperty<std::string>(CustomProperty::Custom1),
             "mqt.compiler-target.v1:all-to-all-homogeneous");
 }
+#endif
 
 TEST_P(SiteTest, Index) {
   for (const auto& site : sites) {
