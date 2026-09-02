@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
@@ -19,6 +18,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/DDAdapter.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
 #include <gtest/gtest.h>
@@ -131,8 +131,14 @@ enum class ControlledPauli : uint8_t { X, Z };
 }
 
 [[nodiscard]] static dd::GateMatrix pauliMatrix(ControlledPauli pauli) {
-  return dd::opToSingleQubitGateMatrix(
-      pauli == ControlledPauli::X ? dd::GateType::X : dd::GateType::Z);
+  const auto matrix = pauli == ControlledPauli::X ? XOp::getUnitaryMatrix()
+                                                  : ZOp::getUnitaryMatrix();
+  return {matrix(0, 0), matrix(0, 1), matrix(1, 0), matrix(1, 1)};
+}
+
+[[nodiscard]] static dd::GateMatrix phaseMatrix(double theta) {
+  const auto matrix = POp::unitaryMatrix(theta);
+  return {matrix(0, 0), matrix(0, 1), matrix(1, 0), matrix(1, 1)};
 }
 
 [[nodiscard]] static dd::MatrixDD
@@ -350,9 +356,8 @@ static void expectMatchesControlledPauliOnCoherentState(func::FuncOp funcOp,
 
 static void expectMatchesMcpOnCoherentState(func::FuncOp funcOp,
                                             size_t numControls, double theta) {
-  expectMatchesReferenceOnCoherentState(
-      funcOp, numControls, true,
-      dd::opToSingleQubitGateMatrix(dd::GateType::P, {theta}));
+  expectMatchesReferenceOnCoherentState(funcOp, numControls, true,
+                                        phaseMatrix(theta));
 }
 
 static void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
@@ -365,9 +370,8 @@ static void expectImplementsMcp(func::FuncOp funcOp, size_t numControls,
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
-  const auto referenceDD = makeControlledGateDD(
-      *dd, numControls,
-      dd::opToSingleQubitGateMatrix(dd::GateType::P, {theta}));
+  const auto referenceDD =
+      makeControlledGateDD(*dd, numControls, phaseMatrix(theta));
   EXPECT_EQ(*decomposedDD, referenceDD);
   dd->decRef(*decomposedDD);
 }
@@ -696,8 +700,8 @@ TEST_F(MultiControlledDecompositionTest, DecomposesSingleControlledSwap) {
   const auto decomposedDD = buildFunctionality(funcOp, *dd);
   ASSERT_TRUE(succeeded(decomposedDD));
 
-  const auto referenceDD = dd->makeTwoQubitGateDD(
-      dd::opToTwoQubitGateMatrix(dd::GateType::SWAP), dd::Control{0}, 1, 2);
+  const auto referenceDD = makeGateDD(
+      *dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, numQubits, {1, 2}, {{0}});
   EXPECT_EQ(*decomposedDD, referenceDD);
   dd->decRef(*decomposedDD);
 }
@@ -724,8 +728,8 @@ TEST_F(MultiControlledDecompositionTest, DecomposesMultipleControlledSwap) {
   ASSERT_TRUE(succeeded(decomposedDD));
 
   const auto referenceDD =
-      dd->makeTwoQubitGateDD(dd::opToTwoQubitGateMatrix(dd::GateType::SWAP),
-                             dd::Controls{{0}, {1}}, 2, 3);
+      makeGateDD(*dd, DynamicMatrix{SWAPOp::getUnitaryMatrix()}, numQubits,
+                 {2, 3}, {{0}, {1}});
   EXPECT_EQ(*decomposedDD, referenceDD);
   dd->decRef(*decomposedDD);
 }

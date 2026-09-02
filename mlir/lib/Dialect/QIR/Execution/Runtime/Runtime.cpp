@@ -15,6 +15,8 @@
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/DDAdapter.h"
 #include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
 #include "mlir/Dialect/QIR/QIRDefinitions.h"
 
@@ -159,10 +161,9 @@ auto Runtime::translateAddresses(const std::span<Qubit* const> qubits)
   return qubitIds;
 }
 
-auto Runtime::apply(const dd::GateType gate,
-                    const std::span<const dd::fp> params,
-                    const std::span<Qubit* const> controls,
-                    const std::span<Qubit* const> targets) -> void {
+auto Runtime::apply(const mlir::qco::DynamicMatrix& matrix,
+                    std::span<Qubit* const> controls,
+                    std::span<Qubit* const> targets) -> void {
   std::vector<Qubit*> qubits;
   qubits.reserve(controls.size() + targets.size());
   qubits.insert(qubits.end(), controls.begin(), controls.end());
@@ -172,20 +173,35 @@ auto Runtime::apply(const dd::GateType gate,
     return qubitPermutation[address];
   });
 
-  if (gate == dd::GateType::SWAP && controls.empty() && targets.size() == 2) {
-    swap(targets[0], targets[1]);
-    return;
-  }
-
   const auto controlEnd =
       addresses.cbegin() + static_cast<std::ptrdiff_t>(controls.size());
   const dd::Controls mappedControls(addresses.cbegin(), controlEnd);
   const dd::Targets mappedTargets(controlEnd, addresses.cend());
   qState.edge = qState.dd->applyOperation(
-      dd::getGateDD(*qState.dd, gate,
-                    std::vector<dd::fp>(params.begin(), params.end()),
-                    mappedControls, mappedTargets),
+      mlir::qco::makeGateDD(*qState.dd, matrix, qState.numQubits, mappedTargets,
+                            mappedControls),
       qState.edge);
+}
+
+auto Runtime::applyGlobalPhase(dd::fp phase) -> void {
+  qState.edge = dd::applyGlobalPhase(qState.edge, phase, *qState.dd);
+}
+
+auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
+  auto targets = translateAddresses(qubits);
+  std::ranges::transform(targets, targets.begin(), [&](const auto target) {
+    return qubitPermutation[target];
+  });
+  const auto matrix = mlir::qco::getStandardGateMatrix<mlir::qco::XOp>({});
+  for (const auto target : targets) {
+    if (qState.dd->measureOneCollapsing(qState.edge, target, mt) == '1') {
+      const std::array targetArray{target};
+      qState.edge = qState.dd->applyOperation(
+          mlir::qco::makeGateDD(*qState.dd, matrix, qState.numQubits,
+                                targetArray),
+          qState.edge);
+    }
+  }
 }
 
 // NOLINTNEXTLINE(bugprone-exception-escape)
@@ -213,7 +229,7 @@ auto Runtime::qFree(Qubit* qubit) -> void {
   if (qubitMode != ResourceMode::DYNAMIC || !qRegister.contains(qubit)) {
     throw std::out_of_range("QIR qubit was not dynamically allocated");
   }
-  reset<1>({{qubit}});
+  reset(std::array{qubit});
   qRegister.erase(qubit);
 }
 

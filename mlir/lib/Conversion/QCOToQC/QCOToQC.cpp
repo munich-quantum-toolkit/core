@@ -1215,7 +1215,7 @@ protected:
              ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
             typeConverter, context);
 
-#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   addGatePattern<qco::KEY##Op, qc::KEY##Op, (TARGETS), (PARAMS)>(              \
       patterns, typeConverter, context);
 #include "mlir/Conversion/GateTable.def"

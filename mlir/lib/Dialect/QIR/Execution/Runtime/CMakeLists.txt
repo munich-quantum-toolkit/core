@@ -20,6 +20,6 @@ if(NOT TARGET ${TARGET_NAME})
   # Add link libraries
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC MQT::CoreDD
-    PRIVATE MQT::ProjectWarnings MQT::ProjectOptions)
+    PUBLIC MLIRQCODDAdapter MQT::CoreDD
+    PRIVATE MLIRQTensorDialect MQT::ProjectWarnings MQT::ProjectOptions)
 endif()

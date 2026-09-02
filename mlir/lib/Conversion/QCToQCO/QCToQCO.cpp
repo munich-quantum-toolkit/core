@@ -1947,7 +1947,7 @@ protected:
     patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(
         typeConverter, context, &state);
 
-#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   patterns.add<                                                                \
       ConvertQCGateToQCO<qc::KEY##Op, qco::KEY##Op, (TARGETS), (PARAMS)>>(     \
       typeConverter, context, &state);

@@ -407,7 +407,7 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
                              QCToQIRTypeConverter& typeConverter,
                              MLIRContext* ctx, LoweringState& state) {
-#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   patterns.add<ConvertQCUnitaryOpQIR<qc::KEY##Op, (TARGETS), (PARAMS),         \
                                      &getFnName##GETTER>>(typeConverter, ctx,  \
                                                           &state);

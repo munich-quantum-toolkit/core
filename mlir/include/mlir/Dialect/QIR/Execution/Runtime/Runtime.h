@@ -15,9 +15,7 @@
 #pragma once
 
 #include "dd/DDDefinitions.hpp"
-#include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Node.hpp"
-#include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
 
@@ -37,6 +35,10 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+namespace mlir::qco {
+class DynamicMatrix;
+} // namespace mlir::qco
 
 /// @note this struct is purposefully not called ResultImpl to leave the Result
 /// pointer opaque such that it cannot be dereferenced
@@ -260,45 +262,6 @@ private:
   auto translateAddresses(std::span<Qubit* const> qubits)
       -> std::vector<dd::Qubit>;
 
-  template <dd::GateType Gate, typename... Args>
-  auto createGateDD(Args&... args) -> dd::MatrixDD {
-    static_assert(dd::isSingleQubitGate(Gate) || dd::isTwoQubitGate(Gate) ||
-                      dd::isThreeQubitGate(Gate),
-                  "Gate must be a one-, two-, or three-qubit gate.");
-    const auto& params = Utils::packOfType<dd::fp>(args...);
-    const auto& qubits = Utils::packOfType<Qubit*>(args...);
-    static_assert(
-        std::tuple_size_v<std::remove_reference_t<decltype(params)>> +
-                std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> ==
-            sizeof...(Args),
-        "Number of parameters and qubits must match the number of "
-        "arguments. Parameters must come first followed by the qubits.");
-
-    auto addresses = translateAddresses(qubits);
-    for (std::size_t i = 0; i < addresses.size(); ++i) {
-      addresses[i] = qubitPermutation[addresses[i]];
-    }
-    const std::vector<dd::fp> paramVec(params.begin(), params.end());
-    // split addresses into control and target; also see static_assert above
-    constexpr uint8_t t = dd::isSingleQubitGate(Gate)  ? 1
-                          : dd::isTwoQubitGate(Gate)   ? 2
-                          : dd::isThreeQubitGate(Gate) ? 3
-                                                       : 0;
-    static_assert(
-        std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> >= t,
-        "Not enough qubits provided for the operation.");
-    if constexpr (std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> >
-                  t) { // create controlled operation
-      const dd::Controls controls(addresses.cbegin(), addresses.cend() - t);
-      const dd::Targets targets(addresses.cend() - t, addresses.cend());
-      return dd::getGateDD(*qState.dd, Gate, paramVec, controls, targets);
-    }
-    // std::tuple_size_v<std::remove_reference_t<decltype(qubits)>> == t //
-    // create uncontrolled operation
-    const dd::Targets targets(addresses.cbegin(), addresses.cend());
-    return dd::getGateDD(*qState.dd, Gate, paramVec, {}, targets);
-  }
-
   // Helper function to output a type (bool, int...) to @c os, honoring the
   // active @c outputSchema.
   // The label is included only in Labeled mode.
@@ -322,23 +285,11 @@ public:
 
   auto reset() -> void;
   auto seed(uint64_t randomSeed) -> void;
-  template <dd::GateType Gate, typename... Args>
-  auto apply(Args&&... args) -> void {
-    if constexpr (Gate == dd::GateType::SWAP && sizeof...(Args) == 2) {
-      swap(std::forward<Args>(args)...);
-    } else {
-      qState.edge = qState.dd->applyOperation(
-          createGateDD<Gate>(std::forward<Args>(args)...), qState.edge);
-    }
-  }
-  auto applyGlobalPhase(dd::fp phase) -> void {
-    qState.edge = dd::applyGlobalPhase(qState.edge, phase, *qState.dd);
-  }
-  /// Apply a gate with a runtime-sized control set, as required by generic
-  /// controlled QIS specializations.
-  auto apply(dd::GateType gate, std::span<const dd::fp> params,
+  /// Apply a canonical QCO matrix with a runtime-sized control set.
+  auto apply(const mlir::qco::DynamicMatrix& matrix,
              std::span<Qubit* const> controls, std::span<Qubit* const> targets)
       -> void;
+  auto applyGlobalPhase(dd::fp phase) -> void;
   template <typename... Args> auto measure(Args... args) -> void {
     const auto& qubits = Utils::packOfType<Qubit*>(args...);
     const auto& results = Utils::packOfType<Result*>(args...);
@@ -367,19 +318,7 @@ public:
         },
         targets, results);
   }
-  template <size_t SIZE> auto reset(std::array<Qubit*, SIZE> qubits) -> void {
-    auto targets = translateAddresses(qubits);
-    for (std::size_t i = 0; i < targets.size(); ++i) {
-      targets[i] = qubitPermutation[targets[i]];
-    }
-    for (const auto target : targets) {
-      if (qState.dd->measureOneCollapsing(qState.edge, target, mt) == '1') {
-        qState.edge = qState.dd->applyOperation(
-            dd::getGateDD(*qState.dd, dd::GateType::X, {}, {}, {target}),
-            qState.edge);
-      }
-    }
-  }
+  auto reset(std::span<Qubit* const> qubits) -> void;
   auto swap(Qubit* qubit1, Qubit* qubit2) -> void;
   auto qAlloc() -> Qubit*;
   auto qFree(Qubit* qubit) -> void;

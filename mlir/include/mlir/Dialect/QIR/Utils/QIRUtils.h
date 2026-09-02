@@ -91,7 +91,7 @@ inline constexpr auto QIR_TUPLE_CREATE = "__quantum__rt__tuple_create";
 inline constexpr auto QIR_TUPLE_RELEASE =
     "__quantum__rt__tuple_update_reference_count";
 
-#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   inline constexpr auto QIR_##GETTER = "__quantum__qis__" #NAME "__" #SUFFIX;  \
   inline constexpr auto QIR_C##GETTER =                                        \
       "__quantum__qis__c" #NAME "__" #SUFFIX;                                  \
@@ -118,7 +118,7 @@ inline StringRef selectQISFunctionName(const StringRef body,
   }
 }
 
-#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   inline StringRef getFnName##GETTER(const size_t numControls) {               \
     return selectQISFunctionName(QIR_##GETTER, QIR_C##GETTER, QIR_CC##GETTER,  \
                                  QIR_##GETTER##_CTL, numControls);             \

@@ -9,6 +9,8 @@
  */
 
 #include "dd/DDDefinitions.hpp"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/DDAdapter.h"
 #include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
 #include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
 
@@ -100,9 +102,10 @@ TEST_F(QIRRuntimeTest, RejectsStaticQubitBeyondDDRange) {
   constexpr std::array<dd::fp, 0> params{};
   std::array<Qubit*, 0> controls{};
   std::array<Qubit*, 1> targets{qubit};
-  EXPECT_THROW(
-      Runtime::getInstance().apply(dd::GateType::X, params, controls, targets),
-      std::out_of_range);
+  EXPECT_THROW(Runtime::getInstance().apply(
+                   mlir::qco::getStandardGateMatrix<mlir::qco::XOp>(params),
+                   controls, targets),
+               std::out_of_range);
 }
 
 TEST_F(QIRRuntimeTest, RejectsDynamicQubitBeyondDDRange) {
@@ -429,6 +432,31 @@ TEST_F(QIRRuntimeTest, SwapGate) {
   expected << "OUTPUT\tRESULT\t0\tr0\n"
            << "OUTPUT\tRESULT\t1\tr1\n";
   EXPECT_THAT(sink.str(), ::testing::HasSubstr(expected.str()));
+}
+
+TEST_F(QIRRuntimeTest, EmptyGenericControlsUseSwap) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  auto* q1 = reinterpret_cast<Qubit*>(1UL);
+  auto* r0 = reinterpret_cast<Result*>(0UL);
+  auto* r1 = reinterpret_cast<Result*>(1UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__x__body(q0);
+
+  auto* controls = __quantum__rt__array_create_1d(sizeof(Qubit*), 0);
+  struct Args {
+    std::array<Qubit*, 2> targets;
+  };
+  const Args args{.targets = {q0, q1}};
+  auto* tuple = __quantum__rt__tuple_create(sizeof(Args));
+  std::memcpy(tuple, &args, sizeof(Args));
+  __quantum__qis__swap__ctl(controls, tuple);
+
+  __quantum__qis__mz__body(q0, r0);
+  __quantum__qis__mz__body(q1, r1);
+  EXPECT_FALSE(__quantum__rt__read_result(r0));
+  EXPECT_TRUE(__quantum__rt__read_result(r1));
+  __quantum__rt__tuple_update_reference_count(tuple, -1);
+  __quantum__rt__array_update_reference_count(controls, -1);
 }
 
 TEST_F(QIRRuntimeTest, CSwapGate) {
