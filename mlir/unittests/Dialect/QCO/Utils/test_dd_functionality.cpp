@@ -2246,6 +2246,14 @@ TEST_F(QCODDFunctionalityTest, SymbolicParametersUseBindings) {
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 8}}));
 
+  const auto state = simulateStatevector(func, *dd, bindings);
+  ASSERT_TRUE(succeeded(state));
+  const auto vector = state->getVector();
+  ASSERT_EQ(vector.size(), 2U);
+  EXPECT_NEAR(std::norm(vector[0]), 0.0, 1e-12);
+  EXPECT_NEAR(std::norm(vector[1]), 1.0, 1e-12);
+  dd->decRef(*state);
+
   EXPECT_TRUE(failed(buildFunctionality(func, *dd)));
   bindings[func.getArgument(0)] =
       IntegerAttr::get(IntegerType::get(context.get(), 64), 1);

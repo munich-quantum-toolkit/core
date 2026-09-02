@@ -80,7 +80,11 @@ simulate(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 /// The function must have one block. Measurement results can be unused or can
 /// set returned CBit registers. No later operation can use a measured wire.
 /// Called functions cannot measure or reset qubits.
-FailureOr<dd::VectorDD> simulateStatevector(func::FuncOp func, dd::Package& dd);
+///
+/// @param argumentBindings Scalar values and dynamic QTensor argument sizes.
+FailureOr<dd::VectorDD> simulateStatevector(
+    func::FuncOp func, dd::Package& dd,
+    const DDArgumentBindings& argumentBindings = DDArgumentBindings());
 
 /// Sample a single-block QCO function from the zero state.
 ///

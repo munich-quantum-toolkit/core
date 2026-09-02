@@ -1903,9 +1903,10 @@ getSamplingPlan(func::FuncOp func, bool statevectorAnalysis = false) {
   return plan;
 }
 
-FailureOr<dd::VectorDD> simulateStatevector(func::FuncOp func,
-                                            dd::Package& dd) {
-  auto prepared = prepare(func, dd, DDArgumentBindings{});
+FailureOr<dd::VectorDD>
+simulateStatevector(func::FuncOp func, dd::Package& dd,
+                    const DDArgumentBindings& argumentBindings) {
+  auto prepared = prepare(func, dd, argumentBindings);
   if (failed(prepared)) {
     return failure();
   }
