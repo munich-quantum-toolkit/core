@@ -34,7 +34,6 @@ mid-circuit measurements, resets, and classically controlled operations. This
 example compiles and samples a Bell-state program:
 
 ```{code-cell} ipython3
-from mqt.core.dd import DDPackage
 from mqt.core.mlir import OutputFormat, compile_program
 
 bell_qasm = """OPENQASM 3.0;
@@ -47,8 +46,7 @@ result = measure q;
 """
 
 sample_program = compile_program(bell_qasm, output=OutputFormat.QCO_OPTIMIZED)
-sample_package = DDPackage(2)
-counts = sample_program.sample(sample_package, shots=1024, seed=1)
+counts = sample_program.sample(shots=1024, seed=1)
 print(counts)
 ```
 
@@ -60,6 +58,7 @@ or {py:meth}`~mqt.core.dd.MatrixDD.get_matrix`.
 
 ```{code-cell} ipython3
 import numpy as np
+from mqt.core.dd import DDPackage
 from mqt.core.mlir import QCOProgram
 
 unitary_program = QCOProgram.from_mlir_str("""

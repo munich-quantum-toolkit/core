@@ -59,8 +59,6 @@ MATCHER_P2(IsBetween, a, b,
 
 namespace {
 
-namespace {
-
 struct ConfiguredDriverEnvironment {
   ConfiguredDriverEnvironment() noexcept {
 #ifdef _WIN32
@@ -339,8 +337,6 @@ protected:
     DriverTest::TearDown();
   }
 };
-
-} // namespace
 
 TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
   const auto library = std::make_shared<ChildDeviceLibrary>();

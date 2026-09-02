@@ -94,21 +94,37 @@ To support this endeavor, please consider:
 uv pip install mqt.core
 ```
 
-The following code gives an example on the usage:
+The following example compiles an OpenQASM program to QIR and executes it on the
+QDMI DDSIM device:
 
 ```python3
-from mqt.core.mlir import compile_program
+from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
+from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi.driver import open_device
 
-program = compile_program("""OPENQASM 3.0;
+source = """OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
 bit[2] result;
 h q[0];
 cx q[0], q[1];
 result = measure q;
-""")
+"""
 
-print(program.ir)
+device = open_device("mqt.ddsim.default")
+program = compile_program(
+    source,
+    target=CompilerTarget.from_device(device),
+    output=OutputFormat.QIR_BASE,
+)
+job = device.submit_job(
+    program.to_bitcode(),
+    ProgramFormat.QIR_BASE_MODULE,
+    num_shots=1024,
+    custom1=7,
+)
+job.wait()
+print(job.get_counts())
 ```
 
 **Detailed documentation and examples are available at

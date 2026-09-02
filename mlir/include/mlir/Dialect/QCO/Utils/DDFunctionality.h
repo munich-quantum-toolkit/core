@@ -19,6 +19,7 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <random>
 #include <string>
@@ -97,12 +98,11 @@ FailureOr<dd::VectorDD> simulateStatevector(
 /// `qco::verifyLinearity`.
 ///
 /// @param func QCO function to sample.
-/// @param dd DD package. The function grows it when needed.
 /// @param shots Number of samples.
-/// @param rng Random-number generator.
+/// @param seed RNG seed. Zero selects nondeterministic seeding.
 /// @param argumentBindings Scalar values and dynamic QTensor argument sizes.
 /// @return Outcome counts, or failure for an unsupported program.
 FailureOr<std::map<std::string, size_t>>
-sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
+sample(func::FuncOp func, size_t shots, uint64_t seed = 0,
        const DDArgumentBindings& argumentBindings = DDArgumentBindings());
 } // namespace mlir::qco

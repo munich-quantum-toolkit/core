@@ -1965,8 +1965,10 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 }
 
 FailureOr<std::map<std::string, size_t>>
-sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
+sample(func::FuncOp func, size_t shots, uint64_t seed,
        const DDArgumentBindings& argumentBindings) {
+  dd::Package dd;
+  std::mt19937_64 rng(seed == 0 ? std::random_device{}() : seed);
   auto prepared = prepare(func, dd, argumentBindings);
   if (failed(prepared)) {
     return failure();

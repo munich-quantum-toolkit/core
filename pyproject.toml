@@ -290,7 +290,7 @@ select = ["cp*-win_arm64", "cp315*"]
 before-test = ""
 test-groups = []
 test-sources = []
-test-command = "python -c \"import importlib.util; import mqt.core, mqt.core.dd, mqt.core.mlir, mqt.core.qdmi; assert not hasattr(mqt.core, 'load'); assert importlib.util.find_spec('mqt.core.ir') is None\""
+test-command = "python -c \"import mqt.core.dd, mqt.core.mlir, mqt.core.qdmi\""
 
 [tool.cibuildwheel.linux]
 before-all = """

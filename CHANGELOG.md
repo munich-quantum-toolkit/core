@@ -117,8 +117,9 @@ releases may include breaking changes.
 
 ### Removed
 
-- 💥 Remove the classic circuit APIs and adapters. Use compiler-backed QC/QCO
-  APIs in v4 or MQT Core 3.9.x for legacy code ([#2288]) ([**@simon1hofmann**])
+- 💥 Remove `qc::QuantumComputation`, `MQT::CoreIR`, and `MQT::CoreQASM`. Use
+  compiler-backed QC/QCO APIs in v4 or MQT Core 3.9.x for legacy code ([#2111],
+  [#2112], [#2288]) ([**@burgholzer**], [**@simon1hofmann**])
 - 💥 Remove the `spdlog` dependency from MQT Core source builds, installed CMake
   packages, and Python wheels. QDMI diagnostics continue to be written to
   standard error ([#2270]) ([**@denialhaag**])
@@ -916,6 +917,8 @@ for previous changelogs._
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2115]: https://github.com/munich-quantum-toolkit/core/pull/2115
 [#2114]: https://github.com/munich-quantum-toolkit/core/pull/2114
+[#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
+[#2111]: https://github.com/munich-quantum-toolkit/core/pull/2111
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105

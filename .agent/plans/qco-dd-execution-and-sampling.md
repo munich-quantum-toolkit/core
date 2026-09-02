@@ -51,8 +51,8 @@ checks public transform boundaries; and
 
 The Python API is `program.build_functionality(dd_package) -> MatrixDD`,
 `program.simulate(initial_state, dd_package, seed=0) -> VectorDD`, and
-`program.sample(dd_package, shots=1024, seed=0) -> dict[str, int]`. The public
-C++ simulation function always receives an RNG. Static sampling evolves once,
+`program.sample(shots=1024, seed=0) -> dict[str, int]`. The public C++
+simulation function always receives an RNG. Static sampling evolves once,
 adaptive control runs per shot, and returned CBits share storage across calls.
 
 ## Milestones

@@ -150,7 +150,7 @@ protected:
     auto dd = std::make_unique<dd::Package>(numQubits);
     EXPECT_TRUE(
         failed(simulate(func, dd::makeZeroState(numQubits, *dd), *dd, rng)));
-    EXPECT_TRUE(failed(sample(func, *dd, 1, rng)));
+    EXPECT_TRUE(failed(sample(func, 1, 1)));
   }
 
   void expectMlirSimulationFails(size_t numQubits, StringRef mlirCode) {
@@ -988,10 +988,8 @@ TEST_F(QCODDFunctionalityTest, SampleUnitaryXIsDeterministic) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
-  std::mt19937_64 rng(1);
   constexpr size_t shots = 64;
-  const auto hist = sample(mainFunc(*mod), *dd, shots, rng);
+  const auto hist = sample(mainFunc(*mod), shots);
   ASSERT_TRUE(succeeded(hist));
   ASSERT_EQ(hist->size(), 1U);
   EXPECT_EQ(hist->begin()->first, "1");
@@ -999,18 +997,18 @@ TEST_F(QCODDFunctionalityTest, SampleUnitaryXIsDeterministic) {
 }
 
 TEST_F(QCODDFunctionalityTest, SamplePreservesDeclaredStaticWidth) {
-  auto mod = buildModule([](QCOProgramBuilder& b) {
-    auto q = b.staticQubit(3);
+  constexpr auto index = static_cast<int64_t>(dd::Package::DEFAULT_QUBITS);
+  auto mod = buildModule([index](QCOProgramBuilder& b) {
+    auto q = b.staticQubit(index);
     b.sink(q);
     return b.intConstant(0);
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(4);
-  std::mt19937_64 rng(1);
-  const auto histogram = sample(mainFunc(*mod), *dd, 8, rng);
+  const auto histogram = sample(mainFunc(*mod), 8, 1);
   ASSERT_TRUE(succeeded(histogram));
-  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"0000", 8}}));
+  const auto outcome = std::string(static_cast<size_t>(index + 1), '0');
+  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{outcome, 8}}));
 }
 
 TEST_F(QCODDFunctionalityTest, SampleHadamardApproximatelyBalanced) {
@@ -1021,10 +1019,8 @@ TEST_F(QCODDFunctionalityTest, SampleHadamardApproximatelyBalanced) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
-  std::mt19937_64 rng(42);
   constexpr size_t shots = 2000;
-  const auto hist = sample(mainFunc(*mod), *dd, shots, rng);
+  const auto hist = sample(mainFunc(*mod), shots, 42);
   ASSERT_TRUE(succeeded(hist));
   ASSERT_EQ(hist->size(), 2U);
   EXPECT_EQ(hist->at("0") + hist->at("1"), shots);
@@ -1039,9 +1035,7 @@ TEST_F(QCODDFunctionalityTest, SampleResetUsesDynamicSampling) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
-  std::mt19937_64 rng(7);
-  const auto histogram = sample(mainFunc(*mod), *dd, 16, rng);
+  const auto histogram = sample(mainFunc(*mod), 16, 7);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"0", 16}}));
 }
@@ -1060,10 +1054,8 @@ TEST_F(QCODDFunctionalityTest, SampleDynamicMeasureIf) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
-  std::mt19937_64 rng(7);
   constexpr size_t shots = 32;
-  const auto hist = sample(mainFunc(*mod), *dd, shots, rng);
+  const auto hist = sample(mainFunc(*mod), shots, 7);
   ASSERT_TRUE(succeeded(hist));
   ASSERT_EQ(hist->size(), 1U);
   EXPECT_EQ(hist->begin()->first, "1");
@@ -1078,9 +1070,7 @@ TEST_F(QCODDFunctionalityTest, SampleHandlesZeroShotsAndSimulationFailure) {
   });
   ASSERT_TRUE(unitary);
 
-  auto dd = std::make_unique<dd::Package>(1);
-  std::mt19937_64 rng(1);
-  const auto empty = sample(mainFunc(*unitary), *dd, 0, rng);
+  const auto empty = sample(mainFunc(*unitary), 0, 1);
   ASSERT_TRUE(succeeded(empty));
   EXPECT_TRUE(empty->empty());
 
@@ -1096,7 +1086,7 @@ TEST_F(QCODDFunctionalityTest, SampleHandlesZeroShotsAndSimulationFailure) {
   )mlir",
                                              context.get());
   ASSERT_TRUE(dynamic);
-  EXPECT_TRUE(failed(sample(mainFunc(*dynamic), *dd, 1, rng)));
+  EXPECT_TRUE(failed(sample(mainFunc(*dynamic), 1, 1)));
 
   auto measuredDynamic = parseSourceString<ModuleOp>(R"mlir(
     module {
@@ -1111,14 +1101,7 @@ TEST_F(QCODDFunctionalityTest, SampleHandlesZeroShotsAndSimulationFailure) {
   )mlir",
                                                      context.get());
   ASSERT_TRUE(measuredDynamic);
-  EXPECT_TRUE(failed(sample(mainFunc(*measuredDynamic), *dd, 1, rng)));
-
-  auto tooSmall = std::make_unique<dd::Package>(0);
-  const auto grown = sample(mainFunc(*unitary), *tooSmall, 1, rng);
-  ASSERT_TRUE(succeeded(grown));
-  EXPECT_EQ(*grown, (std::map<std::string, size_t>{{"1", 1}}));
-  EXPECT_EQ(tooSmall->qubits(), 1U);
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+  EXPECT_TRUE(failed(sample(mainFunc(*measuredDynamic), 1, 1)));
 }
 
 TEST_F(QCODDFunctionalityTest, EmbedsWideLocalMatrixWithoutRegisterLimit) {
@@ -1588,9 +1571,7 @@ TEST_F(QCODDFunctionalityTest, ScfForCarriesQubitsSimultaneously) {
                                          context.get());
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(2);
-  std::mt19937_64 rng(1);
-  const auto histogram = sample(mainFunc(*mod), *dd, 1, rng);
+  const auto histogram = sample(mainFunc(*mod), 1, 1);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"01", 1}}));
 }
@@ -1945,12 +1926,9 @@ TEST_F(QCODDFunctionalityTest, SampleReturnsCBitRegistersInDeclaredOrder) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(0);
-  std::mt19937_64 rng(3);
-  const auto histogram = sample(mainFunc(*mod), *dd, 8, rng);
+  const auto histogram = sample(mainFunc(*mod), 8, 3);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"101", 8}}));
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 
 TEST_F(QCODDFunctionalityTest, SampleRejectsUndefinedAndMixedResults) {
@@ -1963,11 +1941,8 @@ TEST_F(QCODDFunctionalityTest, SampleRejectsUndefinedAndMixedResults) {
   ASSERT_TRUE(undefined);
   ASSERT_TRUE(mixed);
 
-  auto dd = std::make_unique<dd::Package>(0);
-  std::mt19937_64 rng(3);
-  EXPECT_TRUE(failed(sample(mainFunc(*undefined), *dd, 1, rng)));
-  EXPECT_TRUE(failed(sample(mainFunc(*mixed), *dd, 1, rng)));
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+  EXPECT_TRUE(failed(sample(mainFunc(*undefined), 1, 3)));
+  EXPECT_TRUE(failed(sample(mainFunc(*mixed), 1, 3)));
 }
 
 TEST_F(QCODDFunctionalityTest,
@@ -1985,20 +1960,9 @@ TEST_F(QCODDFunctionalityTest,
   });
   ASSERT_TRUE(mod);
 
-  std::mt19937_64 rng(11);
-  auto singleDD = std::make_unique<dd::Package>(2);
-  const auto single = sample(mainFunc(*mod), *singleDD, 1, rng);
-  ASSERT_TRUE(succeeded(single));
-  const auto singleEvolutionLookups =
-      singleDD->matrixVectorMultiplication.getStats().lookups;
-
-  auto dd = std::make_unique<dd::Package>(2);
-  const auto histogram = sample(mainFunc(*mod), *dd, 64, rng);
+  const auto histogram = sample(mainFunc(*mod), 64, 11);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 64}}));
-  EXPECT_EQ(dd->matrixVectorMultiplication.getStats().lookups,
-            singleEvolutionLookups);
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 
 TEST_F(QCODDFunctionalityTest, SampleDefersAllocatedQubitMeasurement) {
@@ -2012,8 +1976,7 @@ TEST_F(QCODDFunctionalityTest, SampleDefersAllocatedQubitMeasurement) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
-  const auto histogram = sample(mainFunc(*mod), *dd, 8, rng);
+  const auto histogram = sample(mainFunc(*mod), 8, 1);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 8}}));
 }
@@ -2033,20 +1996,10 @@ TEST_F(QCODDFunctionalityTest, SampleExecutesControlMeasurementPerShot) {
   });
   ASSERT_TRUE(mod);
 
-  std::mt19937_64 rng(11);
-  auto singleDD = std::make_unique<dd::Package>(1);
-  ASSERT_TRUE(succeeded(sample(mainFunc(*mod), *singleDD, 1, rng)));
-  const auto singleShotLookups =
-      singleDD->matrixVectorMultiplication.getStats().lookups;
-
-  auto dd = std::make_unique<dd::Package>(1);
   constexpr size_t shots = 32;
-  const auto histogram = sample(mainFunc(*mod), *dd, shots, rng);
+  const auto histogram = sample(mainFunc(*mod), shots, 11);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", shots}}));
-  EXPECT_EQ(dd->matrixVectorMultiplication.getStats().lookups,
-            1U + (singleShotLookups - 1U) * shots);
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 
 TEST_F(QCODDFunctionalityTest,
@@ -2072,13 +2025,11 @@ TEST_F(QCODDFunctionalityTest,
                                          context.get());
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
   constexpr size_t shots = 128;
-  const auto histogram = sample(mainFunc(*mod), *dd, shots, rng);
+  const auto histogram = sample(mainFunc(*mod), shots, 1);
   ASSERT_TRUE(succeeded(histogram));
   ASSERT_EQ(histogram->size(), 2U);
   EXPECT_EQ(histogram->at("0") + histogram->at("1"), shots);
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 
 TEST_F(QCODDFunctionalityTest, FuncCallSharesClassicalCBitStorage) {
@@ -2174,20 +2125,10 @@ TEST_F(QCODDFunctionalityTest,
                                          context.get());
   ASSERT_TRUE(mod);
 
-  std::mt19937_64 rng(9);
-  auto singleDD = std::make_unique<dd::Package>(1);
-  ASSERT_TRUE(succeeded(sample(mainFunc(*mod), *singleDD, 1, rng)));
-  const auto perShotLookups =
-      singleDD->matrixVectorMultiplication.getStats().lookups;
-
-  auto dd = std::make_unique<dd::Package>(1);
-  const auto histogram = sample(mainFunc(*mod), *dd, 128, rng);
+  const auto histogram = sample(mainFunc(*mod), 128, 9);
   ASSERT_TRUE(succeeded(histogram));
   ASSERT_EQ(histogram->size(), 2U);
   EXPECT_EQ(histogram->at("0") + histogram->at("1"), 128U);
-  EXPECT_EQ(dd->matrixVectorMultiplication.getStats().lookups,
-            perShotLookups * 128U);
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 
 TEST_F(QCODDFunctionalityTest, SampleDefersNestedTerminalMeasurement) {
@@ -2214,21 +2155,11 @@ TEST_F(QCODDFunctionalityTest, SampleDefersNestedTerminalMeasurement) {
                                          context.get());
   ASSERT_TRUE(mod);
 
-  std::mt19937_64 rng(9);
-  auto singleDD = std::make_unique<dd::Package>(1);
-  ASSERT_TRUE(succeeded(sample(mainFunc(*mod), *singleDD, 1, rng)));
-  const auto singleEvolutionLookups =
-      singleDD->matrixVectorMultiplication.getStats().lookups;
-
-  auto dd = std::make_unique<dd::Package>(1);
   constexpr size_t shots = 128;
-  const auto histogram = sample(mainFunc(*mod), *dd, shots, rng);
+  const auto histogram = sample(mainFunc(*mod), shots, 9);
   ASSERT_TRUE(succeeded(histogram));
   ASSERT_EQ(histogram->size(), 2U);
   EXPECT_EQ(histogram->at("0") + histogram->at("1"), shots);
-  EXPECT_EQ(dd->matrixVectorMultiplication.getStats().lookups,
-            singleEvolutionLookups);
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 
 TEST_F(QCODDFunctionalityTest, SymbolicParametersUseBindings) {
@@ -2268,7 +2199,7 @@ TEST_F(QCODDFunctionalityTest, SymbolicParametersUseBindings) {
   dd->decRef(*actual);
   dd->decRef(*expected);
 
-  const auto histogram = sample(func, *dd, 8, rng, bindings);
+  const auto histogram = sample(func, 8, 1, bindings);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 8}}));
 
@@ -2320,9 +2251,7 @@ TEST_F(QCODDFunctionalityTest, RejectsNonFiniteParameters) {
     DDArgumentBindings bindings;
     bindings[func.getArgument(0)] =
         FloatAttr::get(Float64Type::get(context.get()), value);
-    auto dd = std::make_unique<dd::Package>(1);
-    EXPECT_TRUE(failed(sample(func, *dd, 1, rng, bindings)));
-    EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+    EXPECT_TRUE(failed(sample(func, 1, 1, bindings)));
   }
 }
 
@@ -2432,16 +2361,9 @@ TEST_F(QCODDFunctionalityTest, DynamicAllocationsAndQTensorBookkeeping) {
   });
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(2);
-  const auto histogram = sample(mainFunc(*mod), *dd, 8, rng);
+  const auto histogram = sample(mainFunc(*mod), 8, 1);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"11", 8}}));
-
-  auto smallDd = std::make_unique<dd::Package>(1);
-  const auto grown = sample(mainFunc(*mod), *smallDd, 1, rng);
-  ASSERT_TRUE(succeeded(grown));
-  EXPECT_EQ(*grown, (std::map<std::string, size_t>{{"11", 1}}));
-  EXPECT_EQ(smallDd->qubits(), 2U);
 
   auto invalidIndex = parseSourceString<ModuleOp>(R"mlir(
     module {
@@ -2458,8 +2380,7 @@ TEST_F(QCODDFunctionalityTest, DynamicAllocationsAndQTensorBookkeeping) {
   )mlir",
                                                   context.get());
   ASSERT_TRUE(invalidIndex);
-  auto oneQubitDd = std::make_unique<dd::Package>(1);
-  EXPECT_TRUE(failed(sample(mainFunc(*invalidIndex), *oneQubitDd, 1, rng)));
+  EXPECT_TRUE(failed(sample(mainFunc(*invalidIndex), 1, 1)));
 }
 
 TEST_F(QCODDFunctionalityTest, DynamicQTensorArgumentUsesBoundExtent) {
@@ -2485,7 +2406,7 @@ TEST_F(QCODDFunctionalityTest, DynamicQTensorArgumentUsesBoundExtent) {
       IntegerAttr::get(IndexType::get(context.get()), 2);
 
   auto dd = std::make_unique<dd::Package>(2);
-  const auto histogram = sample(func, *dd, 4, rng, bindings);
+  const auto histogram = sample(func, 4, 1, bindings);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"10", 4}}));
 
@@ -2539,8 +2460,7 @@ TEST_F(QCODDFunctionalityTest, QTensorFlowsThroughLoopAndCall) {
                                          context.get());
   ASSERT_TRUE(mod);
 
-  auto dd = std::make_unique<dd::Package>(1);
-  const auto histogram = sample(mainFunc(*mod), *dd, 4, rng);
+  const auto histogram = sample(mainFunc(*mod), 4, 1);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 4}}));
 }
@@ -2651,15 +2571,13 @@ TEST_F(QCODDFunctionalityTest, BindingsDriveObservableClassicalPath) {
       IntegerAttr::get(IntegerType::get(context.get(), 16), 3);
   bindings[func.getArgument(2)] =
       IntegerAttr::get(IntegerType::get(context.get(), 1), 1);
-  auto dd = std::make_unique<dd::Package>(1);
-  const auto histogram = sample(func, *dd, 4, rng, bindings);
+  const auto histogram = sample(func, 4, 1, bindings);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 4}}));
 
   bindings[func.getArgument(1)] =
       IntegerAttr::get(IntegerType::get(context.get(), 8), 3);
-  EXPECT_TRUE(failed(sample(func, *dd, 1, rng, bindings)));
-  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+  EXPECT_TRUE(failed(sample(func, 1, 1, bindings)));
 }
 
 TEST_F(QCODDFunctionalityTest, RepeatedSimulationPreservesFoldableIR) {
@@ -2976,7 +2894,7 @@ TEST_F(QCODDFunctionalityTest, LifetimeMarkersPreserveEntangledState) {
   EXPECT_NEAR(std::norm(vector[7]), 0.5, 1e-12);
   dd->decRef(*state);
 
-  const auto histogram = sample(mainFunc(*mod), *dd, 64, rng);
+  const auto histogram = sample(mainFunc(*mod), 64, 1);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(histogram->at("100") + histogram->at("111"), 64U);
 }

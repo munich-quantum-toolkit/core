@@ -509,11 +509,10 @@ class QCOProgram(Program):
                 has too few qubits, or the program is unsupported for simulation.
         """
 
-    def sample(self, dd_package: mqt.core.dd.DDPackage, shots: int = 1024, seed: int = 0) -> dict[str, int]:
+    def sample(self, shots: int = 1024, seed: int = 0) -> dict[str, int]:
         """Sample the declared outputs of a QCO program.
 
         Args:
-            dd_package: DD package with enough qubits for the program.
             shots: Number of shots (default 1024).
             seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
                 value produces reproducible results.

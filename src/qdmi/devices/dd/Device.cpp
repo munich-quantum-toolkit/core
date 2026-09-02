@@ -49,7 +49,6 @@
 #include <mutex>
 #include <numeric>
 #include <optional>
-#include <random>
 #include <ranges>
 #include <span>
 #include <sstream>
@@ -196,14 +195,6 @@ reverseRegisterSegments(mlir::func::FuncOp entryPoint,
     reordered.emplace(std::move(key), count);
   }
   return reordered;
-}
-
-[[nodiscard]] auto makeJobRng(const std::optional<int> seed)
-    -> std::mt19937_64 {
-  using Seed = std::mt19937_64::result_type;
-  return std::mt19937_64(seed.has_value()
-                             ? static_cast<Seed>(*seed)
-                             : static_cast<Seed>(std::random_device{}()));
 }
 
 } // namespace
@@ -526,9 +517,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
       std::cerr << "Error: QCO program has no entry point\n";
       return false;
     }
-    dd::Package package;
-    auto rng = makeJobRng(seed_);
-    auto counts = mlir::qco::sample(entryPoint, package, numShots_, rng);
+    auto counts = mlir::qco::sample(entryPoint, numShots_,
+                                    static_cast<uint64_t>(seed_.value_or(0)));
     if (mlir::failed(counts)) {
       std::cerr << "Error: failed to sample the QCO program\n";
       return false;
