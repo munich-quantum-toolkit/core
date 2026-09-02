@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file Device.cpp
- * @brief The MQT QDMI device implementation for its DD-based simulator.
- */
+/// @file Device.cpp
+/// The MQT QDMI device implementation for its DD-based simulator.
 
 #include "qdmi/devices/dd/Device.hpp"
 
@@ -74,61 +73,73 @@ struct OperationInfo {
   std::size_t numSites{};
   std::size_t numParams{};
   bool isVariadic = false;
+  bool supportsArbitraryPositiveControls = false;
 };
+
+constexpr auto ARBITRARY_POSITIVE_CONTROLS_METADATA =
+    "mqt.compiler-target.v1:arbitrary-positive-controls";
+
+constexpr auto controllableOperation(const char* name, const size_t numSites,
+                                     const size_t numParams) -> OperationInfo {
+  return OperationInfo{.name = name,
+                       .numSites = numSites,
+                       .numParams = numParams,
+                       .supportsArbitraryPositiveControls = true};
+}
 
 constexpr std::array OPERATIONS{
     OperationInfo{.name = "gphase", .numSites = 0, .numParams = 1},
-    OperationInfo{.name = "i", .numSites = 1, .numParams = 0},
-    OperationInfo{.name = "x", .numSites = 1, .numParams = 0},
+    controllableOperation("i", 1, 0),
+    controllableOperation("x", 1, 0),
     OperationInfo{.name = "cx", .numSites = 2, .numParams = 0},
     OperationInfo{.name = "ccx", .numSites = 3, .numParams = 0},
     OperationInfo{
         .name = "mcx", .numSites = 0, .numParams = 0, .isVariadic = true},
-    OperationInfo{.name = "y", .numSites = 1, .numParams = 0},
+    controllableOperation("y", 1, 0),
     OperationInfo{.name = "cy", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "z", .numSites = 1, .numParams = 0},
+    controllableOperation("z", 1, 0),
     OperationInfo{.name = "cz", .numSites = 2, .numParams = 0},
     OperationInfo{.name = "ccz", .numSites = 3, .numParams = 0},
-    OperationInfo{.name = "h", .numSites = 1, .numParams = 0},
+    controllableOperation("h", 1, 0),
     OperationInfo{.name = "ch", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "s", .numSites = 1, .numParams = 0},
+    controllableOperation("s", 1, 0),
     OperationInfo{.name = "cs", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "sdg", .numSites = 1, .numParams = 0},
+    controllableOperation("sdg", 1, 0),
     OperationInfo{.name = "csdg", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "t", .numSites = 1, .numParams = 0},
-    OperationInfo{.name = "tdg", .numSites = 1, .numParams = 0},
-    OperationInfo{.name = "sx", .numSites = 1, .numParams = 0},
+    controllableOperation("t", 1, 0),
+    controllableOperation("tdg", 1, 0),
+    controllableOperation("sx", 1, 0),
     OperationInfo{.name = "csx", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "sxdg", .numSites = 1, .numParams = 0},
-    OperationInfo{.name = "r", .numSites = 1, .numParams = 2},
-    OperationInfo{.name = "rx", .numSites = 1, .numParams = 1},
+    controllableOperation("sxdg", 1, 0),
+    controllableOperation("r", 1, 2),
+    controllableOperation("rx", 1, 1),
     OperationInfo{.name = "crx", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "ry", .numSites = 1, .numParams = 1},
+    controllableOperation("ry", 1, 1),
     OperationInfo{.name = "cry", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "rz", .numSites = 1, .numParams = 1},
+    controllableOperation("rz", 1, 1),
     OperationInfo{.name = "crz", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "p", .numSites = 1, .numParams = 1},
+    controllableOperation("p", 1, 1),
     OperationInfo{.name = "cp", .numSites = 2, .numParams = 1},
     OperationInfo{
         .name = "mcp", .numSites = 0, .numParams = 1, .isVariadic = true},
     OperationInfo{.name = "u1", .numSites = 1, .numParams = 1},
     OperationInfo{.name = "cu1", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "u2", .numSites = 1, .numParams = 2},
-    OperationInfo{.name = "u", .numSites = 1, .numParams = 3},
+    controllableOperation("u2", 1, 2),
+    controllableOperation("u", 1, 3),
     OperationInfo{.name = "u3", .numSites = 1, .numParams = 3},
     OperationInfo{.name = "cu3", .numSites = 2, .numParams = 3},
-    OperationInfo{.name = "swap", .numSites = 2, .numParams = 0},
+    controllableOperation("swap", 2, 0),
     OperationInfo{.name = "cswap", .numSites = 3, .numParams = 0},
-    OperationInfo{.name = "iswap", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "dcx", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "ecr", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "rxx", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "ryy", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "rzz", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "rzx", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "xx_minus_yy", .numSites = 2, .numParams = 2},
-    OperationInfo{.name = "xx_plus_yy", .numSites = 2, .numParams = 2},
-    OperationInfo{.name = "rccx", .numSites = 3, .numParams = 0},
+    controllableOperation("iswap", 2, 0),
+    controllableOperation("dcx", 2, 0),
+    controllableOperation("ecr", 2, 0),
+    controllableOperation("rxx", 2, 1),
+    controllableOperation("ryy", 2, 1),
+    controllableOperation("rzz", 2, 1),
+    controllableOperation("rzx", 2, 1),
+    controllableOperation("xx_minus_yy", 2, 2),
+    controllableOperation("xx_plus_yy", 2, 2),
+    controllableOperation("rccx", 3, 0),
     OperationInfo{.name = "measure", .numSites = 1, .numParams = 0},
     OperationInfo{.name = "reset", .numSites = 1, .numParams = 0},
     OperationInfo{
@@ -223,6 +234,12 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                     prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
                     OPERATION_ADDRESSES, prop, size, value, sizeRet)
+  /// Target facts that QDMI v1.3 cannot encode compactly.
+  /// TODO(#2093): Remove this compatibility marker when QDMI standardizes
+  /// explicit unrestricted connectivity and operation applicability.
+  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_CUSTOM1,
+                      "mqt.compiler-target.v1:all-to-all-homogeneous", prop,
+                      size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS,
                     QDMI_Program_Format, SUPPORTED_PROGRAM_FORMATS, prop, size,
                     value, sizeRet)
@@ -327,7 +344,8 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryOperationProperty(
       IS_INVALID_ARGUMENT(prop, QDMI_OPERATION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  const auto& [name_, numSites_, numParams_, isVariadic] =
+  const auto& [name_, numSites_, numParams_, isVariadic,
+               supportsArbitraryPositiveControls] =
       *reinterpret_cast<const OperationInfo*>(operation);
   ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, name_, prop, size, value,
                       sizeRet)
@@ -342,6 +360,11 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryOperationProperty(
                             numParams_, prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double, 1.0, prop,
                             size, value, sizeRet)
+  if (supportsArbitraryPositiveControls) {
+    ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_CUSTOM1,
+                        ARBITRARY_POSITIVE_CONTROLS_METADATA, prop, size, value,
+                        sizeRet)
+  }
   return QDMI_ERROR_NOTSUPPORTED;
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::free() -> void {

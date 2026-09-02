@@ -236,12 +236,12 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
 static LogicalResult checkCapacity(func::FuncOp func,
                                    const CompilerTarget& target,
                                    const Computation& computation) {
-  if (computation.wires.size() <= target.numQubits()) {
+  if (computation.wires.size() <= target.numSites()) {
     return success();
   }
   return func.emitError() << "requires " << computation.wires.size()
-                          << " qubits, but the target supports "
-                          << target.numQubits();
+                          << " program qubits, but the target site count is "
+                          << target.numSites();
 }
 
 /// Replace dynamic qubit roots with the target sites selected by `layout`.
@@ -484,14 +484,14 @@ private:
   /// Describes the graph F of arXiv:1602.05150v3.
   struct FGraph {
     explicit FGraph(const CompilerTarget& target)
-        : f_(llvm::to_vector(llvm::seq(target.numQubits()))),
+        : f_(llvm::to_vector(llvm::seq(target.numSites()))),
           target_(&target) {};
 
     /// Build F-graph: Add edges to F for each edge in the coupling graph.
     /// Note that this assumes that the coupling graph is directed, but
     /// symmetric (essentially: undirected).
     void construct(const Layout& from, const Layout& to) {
-      for (size_t u = 0; u < target_->numQubits(); ++u) {
+      for (size_t u = 0; u < target_->numSites(); ++u) {
         target_->forEachNeighbour(u, [&](const auto v) {
           if (shouldAddEdge(u, v, from, to)) {
             f_.addEdge(u, v);
@@ -577,7 +577,8 @@ protected:
     }
 
     auto moduleOp = getOperation();
-    if (!target->hasExplicitTopology()) {
+    if (target->connectivityKind() !=
+        CompilerTarget::Connectivity::Kind::Explicit) {
       moduleOp.emitError()
           << "place-and-route requires an explicit target topology";
       signalPassFailure();
@@ -828,8 +829,8 @@ private:
       trials.emplace_back(
           RoutingBundle{.wires = wires,
                         .infos = infos,
-                        .layout = Layout::random(target->numQubits(),
-                                                 target->numQubits(), rng())});
+                        .layout = Layout::random(target->numSites(),
+                                                 target->numSites(), rng())});
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
@@ -892,7 +893,7 @@ private:
                                                const Layout& layout) const {
     constexpr size_t cap = 25'000'000UL;
 
-    const size_t b = target->maxDegree() * ((target->numQubits() + 1) / 2);
+    const size_t b = target->maxDegree() * ((target->numSites() + 1) / 2);
     const size_t budget = std::min(b * b * b, cap);
 
     const Parameters params{.alpha = alpha, .lambda = lambda};
@@ -1289,7 +1290,7 @@ private:
       included.insert(index);
     }
 
-    const auto allIndices = to_vector(llvm::seq(target->numQubits()));
+    const auto allIndices = to_vector(llvm::seq(target->numSites()));
 
     const SmallVector<size_t> excluded(llvm::make_filter_range(
         allIndices, [&](const size_t i) { return !included.contains(i); }));

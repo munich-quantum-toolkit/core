@@ -26,10 +26,13 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   populateDecomposeMultiControlledPipeline(pm, 3);
   populateDefaultQCOOptimizationPipeline(pm);
   pm.addPass(qco::createFuseTwoQubitGates());
-  if (target.hasExplicitTopology()) {
+  switch (target.connectivityKind()) {
+  case CompilerTarget::Connectivity::Kind::Explicit:
     pm.addPass(qco::createMappingPass(target, qco::MappingPassOptions{}));
-  } else {
+    break;
+  case CompilerTarget::Connectivity::Kind::AllToAll:
     pm.addPass(qco::createPlacementPass(target));
+    break;
   }
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createTargetNativeSynthesis(target));

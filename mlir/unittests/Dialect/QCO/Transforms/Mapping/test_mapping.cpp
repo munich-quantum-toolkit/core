@@ -62,6 +62,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 using mlir::mqt::getEntryPoint;
+using Connectivity = CompilerTarget::Connectivity;
+using NativeOperations = CompilerTarget::NativeOperations;
 
 static std::string printModule(ModuleOp moduleOp) {
   std::string result;
@@ -244,7 +246,8 @@ static CompilerTarget getSquareGridTarget(const size_t n) {
   }
 
   return llvm::cantFail(
-      CompilerTarget::create(numTarget, std::move(couplings)));
+      CompilerTarget::create(numTarget, Connectivity::fromCouplings(couplings),
+                             NativeOperations::unrestricted()));
 }
 
 /// Creates an N-qubit GHZ state, where N = `qubits.size()` using
@@ -342,9 +345,9 @@ class MappingPassTest : public MappingPassFixture,
 TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   constexpr int64_t size = 3;
 
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
-      std::vector<CompilerTarget::Operation>{}));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::fromOperations({})));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -395,9 +398,9 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
 
 TEST_F(MappingPassFixture,
        KeepClassicallyDependentMeasurementBeforeRoutingSwaps) {
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
-      std::vector<CompilerTarget::Operation>{}));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::fromOperations({})));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -439,9 +442,8 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(42)));
 
   const auto target = llvm::cantFail(CompilerTarget::create(
-      std::move(sites),
-      std::vector<CompilerTarget::Coupling>{{7, 19}, {19, 42}},
-      std::vector<CompilerTarget::Operation>{}));
+      std::move(sites), Connectivity::fromCouplings({{7, 19}, {19, 42}}),
+      NativeOperations::fromOperations({})));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -481,7 +483,9 @@ TEST_F(MappingPassFixture, PlaceNoncontiguousTargetCompactly) {
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(7)));
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(19)));
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(42)));
-  const auto target = llvm::cantFail(CompilerTarget::create(std::move(sites)));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(std::move(sites), Connectivity::allToAll(),
+                             NativeOperations::unrestricted()));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize({builder.getI1Type()});
@@ -511,7 +515,9 @@ TEST_F(MappingPassFixture, PlaceTensorOnFirstTargetSites) {
                     llvm::cantFail(CompilerTarget::Site::create(19)),
                     llvm::cantFail(CompilerTarget::Site::create(42)),
                     llvm::cantFail(CompilerTarget::Site::create(81))};
-  const auto target = llvm::cantFail(CompilerTarget::create(std::move(sites)));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      std::move(sites), CompilerTarget::Connectivity::allToAll(),
+      NativeOperations::unrestricted()));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize({builder.getI1Type(), builder.getI1Type()});
@@ -551,7 +557,8 @@ TEST_F(MappingPassFixture, PlaceTensorOnFirstTargetSites) {
 }
 
 TEST_F(MappingPassFixture, RejectNonExplicitTopologyBeforeMutation) {
-  const auto target = llvm::cantFail(CompilerTarget::create(2));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, Connectivity::allToAll(), NativeOperations::unrestricted()));
   QCOProgramBuilder builder(context.get());
   builder.initialize();
   auto qubit = builder.h(builder.allocQubit());
@@ -572,7 +579,8 @@ TEST_F(MappingPassFixture, RejectNonExplicitTopologyBeforeMutation) {
 }
 
 TEST_F(MappingPassFixture, RejectOversizedPlacementBeforeMutation) {
-  const auto target = llvm::cantFail(CompilerTarget::create(1));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      1, Connectivity::allToAll(), NativeOperations::unrestricted()));
   QCOProgramBuilder builder(context.get());
   builder.initialize();
   auto first = builder.allocQubit();
@@ -589,8 +597,10 @@ TEST_F(MappingPassFixture, RejectOversizedPlacementBeforeMutation) {
   });
   EXPECT_TRUE(failed(runPlacement(moduleOp.get(), target)));
   EXPECT_EQ(printModule(moduleOp.get()), before);
-  EXPECT_TRUE(StringRef(diagnostics)
-                  .contains("requires 2 qubits, but the target supports 1"));
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains(
+              "requires 2 program qubits, but the target site count is 1"));
 }
 
 TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
@@ -601,8 +611,9 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
     couplings.emplace_back(0, static_cast<int64_t>(site));
   }
 
-  const auto target = llvm::cantFail(
-      CompilerTarget::create(numTargetQubits, std::move(couplings)));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      numTargetQubits, Connectivity::fromCouplings(couplings),
+      NativeOperations::unrestricted()));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(2, builder.getI1Type()));
@@ -690,8 +701,9 @@ TEST_F(MappingPassFixture, ExpandNonAdjacentTwoQubitIfOnLineTarget) {
   builder.sink(conditionalResults[1]);
   auto moduleOp = builder.finalize();
 
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}}));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::unrestricted()));
   ASSERT_TRUE(runPass(moduleOp.get(), target, MappingPassOptions{.ntrials = 1})
                   .succeeded());
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
@@ -918,7 +930,7 @@ TEST_P(MappingPassTest, FailNoExtractAfterInsert) {
 
 TEST_P(MappingPassTest, FailTooManyQubitsForArch) {
   const auto& target = GetParam();
-  const auto size = static_cast<int64_t>(target.numQubits()) + 1;
+  const auto size = static_cast<int64_t>(target.numSites()) + 1;
 
   SmallVector<Value> bits(size);
   SmallVector<Value> qubits(size);
@@ -984,7 +996,7 @@ TEST_P(MappingPassTest, MapFlatGHZ) {
 
 TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
   const auto& target = GetParam();
-  const auto size = static_cast<int64_t>(target.numQubits());
+  const auto size = static_cast<int64_t>(target.numSites());
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
@@ -1846,7 +1858,7 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
 
 TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
   const auto& target = GetParam();
-  const auto size = (target.numQubits() + 1) / 2;
+  const auto size = (target.numSites() + 1) / 2;
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
