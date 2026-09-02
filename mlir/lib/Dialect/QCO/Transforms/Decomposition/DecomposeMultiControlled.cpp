@@ -23,6 +23,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
@@ -1447,11 +1448,30 @@ protected:
                        CompilerTarget::Connectivity::Kind::AllToAll
             ? &*target_
             : nullptr;
+
+    SmallVector<Operation*> rewriteOps;
+    getOperation().walk<WalkOrder::PreOrder>([&](UnitaryOpInterface op) {
+      if (nativeTarget != nullptr &&
+          nativeTarget->supports(op.getOperation())) {
+        return WalkResult::skip();
+      }
+      if (isa<CtrlOp, RCCXOp>(op)) {
+        rewriteOps.push_back(op.getOperation());
+      }
+      return WalkResult::advance();
+    });
+    if (rewriteOps.empty()) {
+      return;
+    }
+
     RewritePatternSet patterns(&getContext());
     patterns.add<DecomposeControlledGatePattern, DecomposeRCCXPattern>(
         &getContext(), minQubits, nativeTarget);
 
-    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
+    GreedyRewriteConfig config;
+    config.setStrictness(GreedyRewriteStrictness::ExistingAndNewOps);
+    if (failed(
+            applyOpPatternsGreedily(rewriteOps, std::move(patterns), config))) {
       signalPassFailure();
     }
   }
