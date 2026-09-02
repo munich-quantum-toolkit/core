@@ -17,7 +17,9 @@ add_mlir_library(
   MLIRMQTDialect
   MLIRSCFDialect
   MLIRQCODialect
+  MLIRQCOUtils
   MLIRQTensorDialect
+  MLIRQTensorUtils
   PRIVATE
   MLIRMQTUtils)
 

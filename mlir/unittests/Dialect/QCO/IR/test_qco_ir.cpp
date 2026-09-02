@@ -323,6 +323,155 @@ TEST_F(QCOTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
       "undefined");
 }
 
+TEST_F(QCOTest, BuilderSupportsAdditionalFunctions) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  Type qubitType = builder.getQubitType();
+
+  SmallVector<Value> args =
+      builder.startFunction("thread", {qubitType}, {qubitType});
+  builder.endFunction({builder.h(args[0])});
+
+  Value qubit = builder.allocQubit();
+  Value tensor = builder.qtensorAlloc(2);
+  SmallVector<Value> results = builder.call("thread", {qubit});
+  builder.sink(results[0]);
+  builder.qtensorDealloc(tensor);
+  EXPECT_TRUE(builder.finalize());
+}
+
+TEST_F(QCOTest, BuilderTracksKeptAndCreatedLinearValues) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  Type qubitType = builder.getQubitType();
+  Type tensorType = builder.getQubitTensorType(2);
+
+  SmallVector<Value> args = builder.startFunction(
+      "replace", {qubitType, tensorType}, {qubitType, tensorType});
+  builder.sink(args[0]);
+  builder.qtensorDealloc(args[1]);
+  builder.endFunction({builder.allocQubit(), builder.qtensorAlloc(2)});
+
+  Value qubit = builder.allocQubit();
+  Value tensor = builder.qtensorAlloc(2);
+  SmallVector<Value> results = builder.call("replace", {qubit, tensor});
+  builder.sink(results[0]);
+  builder.qtensorDealloc(results[1]);
+  EXPECT_TRUE(builder.finalize());
+}
+
+TEST_F(QCOTest, BuilderRejectsInvalidFunctionStateAndSymbols) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        Type qubitType = builder.getQubitType();
+        builder.startFunction("f", {qubitType}, {qubitType});
+        builder.startFunction("g", {qubitType}, {qubitType});
+      },
+      "Cannot start a function while another one is being built");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.endFunction({});
+      },
+      "endFunction\\(\\) called without a matching startFunction\\(\\)");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.call("does_not_exist", {});
+      },
+      "Callee not found in module");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        Type qubitType = builder.getQubitType();
+        SmallVector<Value> args =
+            builder.startFunction("f", {qubitType}, {qubitType});
+        builder.call("f", {args[0]});
+      },
+      "Cannot derive linear-value correspondence for callee");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        Type qubitType = builder.getQubitType();
+        SmallVector<Value> args =
+            builder.startFunction("f", {qubitType}, {qubitType});
+        builder.endFunction({args[0]});
+        builder.startFunction("f", {qubitType}, {qubitType});
+      },
+      "Function with the same name already exists");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.allocQubit();
+        Type qubitType = builder.getQubitType();
+        builder.startFunction("f", {qubitType}, {qubitType});
+      },
+      "Functions must be defined before operations in main");
+}
+
+TEST_F(QCOTest, BuilderRejectsInvalidFunctionValues) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        Type qubitType = builder.getQubitType();
+        SmallVector<Value> args =
+            builder.startFunction("f", {qubitType}, {qubitType});
+        auto measured = builder.measure(args[0]);
+        builder.sink(measured.first);
+        builder.endFunction({measured.second});
+      },
+      "Return values do not match the declared function result types");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        Type qubitType = builder.getQubitType();
+        SmallVector<Value> args =
+            builder.startFunction("f", {qubitType}, {qubitType});
+        builder.endFunction({args[0]});
+        builder.call("f", {builder.floatConstant(0.5)});
+      },
+      "Call operands do not match the declared function argument types");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        Type qubitType = builder.getQubitType();
+        SmallVector<Value> args =
+            builder.startFunction("f", {qubitType}, {qubitType});
+        builder.allocQubit();
+        builder.endFunction({args[0]});
+      },
+      "neither returned nor consumed");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        Type qubitType = builder.getQubitType();
+        SmallVector<Value> args =
+            builder.startFunction("f", {qubitType}, {qubitType});
+        builder.qtensorAlloc(2);
+        builder.endFunction({args[0]});
+      },
+      "neither returned nor deallocated");
+}
+
 TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
