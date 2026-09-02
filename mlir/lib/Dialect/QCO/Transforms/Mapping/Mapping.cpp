@@ -1071,7 +1071,9 @@ private:
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
-  Window getWindow(Wires wires, const WireInfos& infos) { // NOLINT(performance-unnecessary-value-param)
+  Window getWindow(
+      Wires wires,
+      const WireInfos& infos) { // NOLINT(performance-unnecessary-value-param)
     Window window;
     window.reserve(1 + nlookahead);
 
