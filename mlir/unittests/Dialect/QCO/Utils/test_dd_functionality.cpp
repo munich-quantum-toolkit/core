@@ -2992,7 +2992,7 @@ TEST_F(QCODDFunctionalityTest, LifetimeMarkersPreserveEntangledState) {
   EXPECT_EQ(histogram->at("100") + histogram->at("111"), 64U);
 }
 
-TEST_F(QCODDFunctionalityTest, StatevectorPreallocatesKnownQubits) {
+TEST_F(QCODDFunctionalityTest, StatevectorSkipsUnreachedAllocations) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @main() {
@@ -3015,7 +3015,7 @@ TEST_F(QCODDFunctionalityTest, StatevectorPreallocatesKnownQubits) {
   auto dd = std::make_unique<dd::Package>(0);
   const auto state = simulateStatevector(mainFunc(*mod), *dd);
   ASSERT_TRUE(succeeded(state));
-  EXPECT_EQ(dd->qubits(), 3U);
+  EXPECT_EQ(dd->qubits(), 0U);
   const auto vector = state->getVector();
   ASSERT_EQ(vector.size(), 1U);
   EXPECT_NEAR(std::norm(vector[0]), 1.0, 1e-12);

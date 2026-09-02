@@ -1617,38 +1617,8 @@ struct PreparedState {
   QubitMap qubits;
   TensorMap tensors;
   ClassicalEnv classical;
-  size_t knownAllocations = 0;
 };
 } // namespace
-
-static size_t countKnownAllocations(func::FuncOp func,
-                                    const ClassicalEnv& classical) {
-  size_t count = 0;
-  func.walk([&](Operation* op) {
-    size_t allocation = isa<AllocOp>(op) ? 1U : 0U;
-    if (auto alloc = dyn_cast<qtensor::AllocOp>(op)) {
-      const auto type = cast<RankedTensorType>(alloc.getType());
-      if (!type.isDynamicDim(0)) {
-        allocation = static_cast<size_t>(type.getDimSize(0));
-      } else {
-        Attribute size;
-        if (const auto it = classical.values.find(alloc.getSize());
-            it != classical.values.end()) {
-          size = it->second;
-        } else if (const auto folded =
-                       mqt::valueToConstantAttr(alloc.getSize())) {
-          size = *folded;
-        }
-        if (const auto integer = dyn_cast_if_present<IntegerAttr>(size)) {
-          const int64_t value = integer.getValue().getSExtValue();
-          allocation = value > 0 ? static_cast<size_t>(value) : 0U;
-        }
-      }
-    }
-    count += std::min(allocation, dd::Package::MAX_POSSIBLE_QUBITS - count);
-  });
-  return count;
-}
 
 static FailureOr<PreparedState>
 prepare(func::FuncOp func, dd::Package& dd,
@@ -1725,9 +1695,6 @@ prepare(func::FuncOp func, dd::Package& dd,
                   static_cast<qc::Qubit>(qubits.numQubits++));
     }
   }
-  if (!bindEntryAllocations) {
-    prepared.knownAllocations = countKnownAllocations(func, prepared.classical);
-  }
   if (dd.qubits() < qubits.numQubits) {
     dd.resize(qubits.numQubits);
   }
@@ -1780,13 +1747,6 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
     return func.emitError()
            << "input state has " << inputQubits << " qubits but function uses "
            << prepared.qubits.numQubits;
-  }
-  if (prepared.knownAllocations <=
-      dd::Package::MAX_POSSIBLE_QUBITS - inputQubits) {
-    const size_t required = inputQubits + prepared.knownAllocations;
-    if (dd.qubits() < required) {
-      dd.resize(required);
-    }
   }
   QubitMap qubits = prepared.qubits;
   qubits.numQubits = inputQubits;
