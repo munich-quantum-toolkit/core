@@ -33,10 +33,9 @@ releases may include breaking changes.
   instance specifications, analytic references, deterministic manifests, and
   C++, Python, and command-line interfaces ([#2135], [#2315])
   ([**@burgholzer**], [**@denialhaag**])
-- ✨ Add decision diagram-based construction, simulation, and output-aware
-  sampling for QCO programs, with C++ and Python APIs and support for classical
-  control flow and dynamic quantum data ([#1915], [#1973], [#2077], [#2078])
-  ([**@simon1hofmann**], [**@burgholzer**])
+- ✨ Add DD construction, simulation, statevector extraction, and sampling for
+  QCO programs with structured control and dynamic quantum data ([#1915],
+  [#1973], [#2077], [#2078], [#2079]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
   compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
   [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
@@ -927,6 +926,7 @@ for previous changelogs._
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
 [#2082]: https://github.com/munich-quantum-toolkit/core/pull/2082
+[#2079]: https://github.com/munich-quantum-toolkit/core/pull/2079
 [#2078]: https://github.com/munich-quantum-toolkit/core/pull/2078
 [#2077]: https://github.com/munich-quantum-toolkit/core/pull/2077
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
