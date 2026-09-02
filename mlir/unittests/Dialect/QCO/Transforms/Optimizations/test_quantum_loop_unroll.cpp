@@ -26,6 +26,8 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
@@ -109,6 +111,112 @@ TEST_F(QuantumLoopUnrollTest, InvalidUnrollFactor) {
   ASSERT_TRUE(res.failed());
 }
 
+TEST_F(QuantumLoopUnrollTest, ExcessiveExplicitFactorFailureIsAtomic) {
+  auto module = getGHZ(context.get(), 2);
+  OwningOpRef<ModuleOp> original(module->clone());
+
+  EXPECT_TRUE(
+      failed(runPass(module, QuantumLoopUnrollOptions{.unrollFactor = 4097})));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(QuantumLoopUnrollTest,
+       ExcessiveExplicitFactorRejectsIdentityLoopWithoutMutation) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qco.static 0 : !qco.qubit
+    %lb = arith.constant 0 : index
+    %ub = arith.constant 2 : index
+    %step = arith.constant 1 : index
+    %out = scf.for %iv = %lb to %ub step %step
+        iter_args(%arg = %q) -> (!qco.qubit) {
+      scf.yield %arg : !qco.qubit
+    }
+    qco.sink %out : !qco.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+
+  EXPECT_TRUE(
+      failed(runPass(module, QuantumLoopUnrollOptions{.unrollFactor = 4097})));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(QuantumLoopUnrollTest, ExcessiveStaticTripCountFailureIsAtomic) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qco.static 0 : !qco.qubit
+    %lb = arith.constant 0 : index
+    %ub = arith.constant 4097 : index
+    %step = arith.constant 1 : index
+    %out = scf.for %iv = %lb to %ub step %step
+        iter_args(%arg = %q) -> (!qco.qubit) {
+      %next = qco.x %arg : !qco.qubit -> !qco.qubit
+      scf.yield %next : !qco.qubit
+    }
+    qco.sink %out : !qco.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+
+  EXPECT_TRUE(failed(runPass(module, QuantumLoopUnrollOptions{})));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(QuantumLoopUnrollTest, NestedExpansionBudgetFailureIsAtomic) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qco.static 0 : !qco.qubit
+    %lb = arith.constant 0 : index
+    %ub = arith.constant 400 : index
+    %step = arith.constant 1 : index
+    %out = scf.for %outer = %lb to %ub step %step
+        iter_args(%outer_arg = %q) -> (!qco.qubit) {
+      %inner_out = scf.for %inner = %lb to %ub step %step
+          iter_args(%inner_arg = %outer_arg) -> (!qco.qubit) {
+        %next = qco.x %inner_arg : !qco.qubit -> !qco.qubit
+        scf.yield %next : !qco.qubit
+      }
+      scf.yield %inner_out : !qco.qubit
+    }
+    qco.sink %out : !qco.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+
+  EXPECT_TRUE(failed(runPass(module, QuantumLoopUnrollOptions{})));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
 TEST_F(QuantumLoopUnrollTest, NoOp) {
   auto m = getGHZ(context.get(), 2);
   auto mClone = m->clone();
@@ -118,6 +226,43 @@ TEST_F(QuantumLoopUnrollTest, NoOp) {
   EXPECT_TRUE(mlir::OperationEquivalence::isEquivalentTo(
       m->getOperation(), mClone.getOperation(),
       mlir::OperationEquivalence::Flags::None));
+}
+
+TEST_F(QuantumLoopUnrollTest, DynamicTripCountFailureIsAtomic) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%upper: index) attributes {mqt.entry_point} {
+    %q0 = qco.static 0 : !qco.qubit
+    %q1 = qco.static 1 : !qco.qubit
+    %lb = arith.constant 0 : index
+    %static_ub = arith.constant 2 : index
+    %step = arith.constant 1 : index
+    %out0 = scf.for %iv = %lb to %static_ub step %step
+        iter_args(%q = %q0) -> (!qco.qubit) {
+      %next = qco.x %q : !qco.qubit -> !qco.qubit
+      scf.yield %next : !qco.qubit
+    }
+    %out1 = scf.for %iv = %lb to %upper step %step
+        iter_args(%q = %q1) -> (!qco.qubit) {
+      %next = qco.h %q : !qco.qubit -> !qco.qubit
+      scf.yield %next : !qco.qubit
+    }
+    qco.sink %out0 : !qco.qubit
+    qco.sink %out1 : !qco.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+
+  EXPECT_TRUE(failed(runPass(module, QuantumLoopUnrollOptions{})));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
 }
 
 TEST_F(QuantumLoopUnrollTest, UnrollFull) {
@@ -137,6 +282,40 @@ TEST_F(QuantumLoopUnrollTest, UnrollFull) {
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 0);
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 5);
   EXPECT_EQ(range_size(entry.getOps<qtensor::InsertOp>()), 5);
+}
+
+TEST_F(QuantumLoopUnrollTest, UnrollsFunctionWithSiblingSymbolReference) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @helper()
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qco.static 0 : !qco.qubit
+    %lb = arith.constant 0 : index
+    %ub = arith.constant 2 : index
+    %step = arith.constant 1 : index
+    %out = scf.for %iv = %lb to %ub step %step
+        iter_args(%arg = %q) -> (!qco.qubit) {
+      func.call @helper() : () -> ()
+      %next = qco.x %arg : !qco.qubit -> !qco.qubit
+      scf.yield %next : !qco.qubit
+    }
+    qco.sink %out : !qco.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(succeeded(runPass(module, QuantumLoopUnrollOptions{})));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  EXPECT_TRUE(main.getOps<scf::ForOp>().empty());
+  EXPECT_EQ(llvm::range_size(main.getOps<func::CallOp>()), 2U);
 }
 
 TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {

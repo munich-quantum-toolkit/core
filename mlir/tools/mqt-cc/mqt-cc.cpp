@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/TargetCompilation.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
@@ -29,7 +30,6 @@
 #include "mlir/Support/Passes.h"
 
 #include <jeff/IR/JeffDialect.h>
-#include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
 #include <llvm/ADT/Twine.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
@@ -66,6 +66,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -300,26 +301,20 @@ static ParsedProgram loadJeffFile(const StringRef filename,
     return {};
   }
 
-  std::string errorMessage;
-  if (!openInputFile(filename, &errorMessage)) {
-    llvm::errs() << "Failed to load file '" << filename << "': '"
-                 << errorMessage << "'\n";
-    return {};
-  }
-
-  auto mod = deserializeFromFile(context, filename);
-  if (!mod) {
+  auto mod = detail::deserializeJeffFile(context,
+                                         std::filesystem::path(filename.str()));
+  if (failed(mod)) {
     llvm::errs() << "Failed to deserialize jeff file '" << filename << "'.\n";
     return {};
   }
 
   PassManager pm(context);
   pm.addPass(createJeffToQCO());
-  if (pm.run(*mod).failed()) {
+  if (pm.run(**mod).failed()) {
     llvm::errs() << "Failed to convert jeff input to QCO.\n";
     return {};
   }
-  return {.mod = std::move(mod), .dialect = InputDialect::QCO};
+  return {.mod = std::move(*mod), .dialect = InputDialect::QCO};
 }
 
 /**
@@ -483,6 +478,9 @@ static int runCompiler(int argc, char** argv) {
   if (!program.mod) {
     return 1;
   }
+  if (failed(mqt::verifyProgramMetadata(*program.mod))) {
+    return 1;
+  }
 
   if (*parsedOutputFormat == OutputFormat::QCImport &&
       program.dialect != InputDialect::QC) {
@@ -514,7 +512,10 @@ static int runCompiler(int argc, char** argv) {
         if (failed(populate(pm))) {
           return failure();
         }
-        return pm.run(*program.mod);
+        if (failed(pm.run(*program.mod))) {
+          return failure();
+        }
+        return mqt::verifyProgramMetadata(*program.mod);
       };
 
   if (*parsedOutputFormat != OutputFormat::QCImport &&

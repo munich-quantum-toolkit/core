@@ -1335,6 +1335,10 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
 
     // MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b).
     if (op.getNumTargets() == 2 && isa<SWAPOp>(inner.getOperation())) {
+      if (failed(mqt::hoistSupportingOpsBefore(
+              *op.getBody(), inner.getOperation(), op, rewriter))) {
+        return failure();
+      }
       rewriter.setInsertionPoint(op);
       rewriter.replaceOp(op, synthesizeControlledSwap(
                                  rewriter, op.getLoc(), op.getControlsIn(),
@@ -1350,6 +1354,10 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
+    if (failed(mqt::hoistSupportingOpsBefore(
+            *op.getBody(), inner.getOperation(), op, rewriter))) {
+      return failure();
+    }
     ControlledTarget gate = spec->gate;
     // A compile-time phase of +/- pi is exactly Z; route it through the
     // multi-controlled-Z path (elementary at 3–4 qubits, relative-phase / Vale

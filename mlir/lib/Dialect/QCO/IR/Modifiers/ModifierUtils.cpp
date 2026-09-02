@@ -10,17 +10,21 @@
 
 #include "ModifierUtils.h"
 
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/CallInterfaces.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
@@ -30,28 +34,51 @@
 
 namespace mlir::qco::detail {
 
-LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
-  const auto hasNonUnitaryOperation =
-      body.walk([](Operation* operation) {
-            return isa<cbit::AllocOp, cbit::LoadOp, cbit::StoreOp, AllocOp,
-                       SinkOp, StaticOp, MeasureOp, ResetOp>(operation)
-                       ? WalkResult::interrupt()
-                       : WalkResult::advance();
-          })
-          .wasInterrupted();
-  if (hasNonUnitaryOperation) {
-    return modifierOp->emitOpError(
-        "body must not contain non-unitary operations or access registers");
+[[nodiscard]] static bool containsQubit(Type type) {
+  if (isa<QubitType>(type)) {
+    return true;
   }
+  const auto shapedType = dyn_cast<ShapedType>(type);
+  return shapedType && isa<QubitType>(shapedType.getElementType());
+}
 
+[[nodiscard]] static bool
+isForbiddenModifierBodyOperation(Operation* operation) {
+  const auto carriesQubit =
+      llvm::any_of(operation->getOperandTypes(), containsQubit) ||
+      llvm::any_of(operation->getResultTypes(), containsQubit);
+  if (isa<UnitaryOpInterface>(operation) ||
+      operation->hasTrait<OpTrait::IsTerminator>() ||
+      operation->hasTrait<OpTrait::HasRecursiveMemoryEffects>()) {
+    return false;
+  }
+  if (isa<CallOpInterface>(operation)) {
+    return carriesQubit;
+  }
+  if (!isMemoryEffectFree(operation)) {
+    return true;
+  }
+  return carriesQubit;
+}
+
+LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   SetVector<Value> captures;
   getUsedValuesDefinedAbove(modifierOp->getRegions(), captures);
   if (llvm::any_of(captures, [](Value value) {
-        return isa<QubitType>(value.getType());
+        return containsQubit(value.getType());
       })) {
     return modifierOp->emitOpError(
         "body must not capture qubits from above; use only its aliased block "
         "arguments");
+  }
+
+  const auto walkResult = body.walk([](Operation* operation) {
+    return isForbiddenModifierBodyOperation(operation) ? WalkResult::interrupt()
+                                                       : WalkResult::advance();
+  });
+  if (walkResult.wasInterrupted()) {
+    return modifierOp->emitOpError(
+        "body must not contain non-unitary operations or access registers");
   }
 
   return success();

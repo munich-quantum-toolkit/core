@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -67,6 +68,11 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
           return mqt::getValueFromBlockArgument(t, outerQubits);
         });
 
+    if (failed(mqt::hoistSupportingOpsBefore(*op.getBody(), innerCtrlOp, op,
+                                             rewriter))) {
+      return failure();
+    }
+
     rewriter.replaceOpWithNewOp<CtrlOp>(
         op, controls, targets, [&](ValueRange targetArgs) {
           InvOp::create(rewriter, op.getLoc(), targetArgs,
@@ -103,8 +109,10 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
 
     // Move supporting ops (constants, arithmetic) out of the body so their
     // Values are accessible from outside and survive InvOp erasure.
-    mqt::hoistSupportingOpsBefore(*invOp.getBody(), innerPow.getOperation(),
-                                  invOp, rewriter);
+    if (failed(mqt::hoistSupportingOpsBefore(
+            *invOp.getBody(), innerPow.getOperation(), invOp, rewriter))) {
+      return failure();
+    }
     Value negExponent =
         arith::NegFOp::create(rewriter, invOp.getLoc(), innerPow.getExponent());
     // The inner pow's operands alias the inv's block args; translate them back
@@ -323,6 +331,10 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
         llvm::map_to_vector(innerInvOp.getQubits(), [&](Value q) {
           return mqt::getValueFromBlockArgument(q, op.getQubits());
         });
+    if (failed(mqt::hoistSupportingOpsBefore(*op.getBody(), innerInvOp, op,
+                                             rewriter))) {
+      return failure();
+    }
     mqt::inlineModifierBody(op, *innerInvOp.getBody(), replacements, rewriter);
     return success();
   }
@@ -335,11 +347,13 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 0) {
+    if (llvm::any_of(*op.getBody(), [](Operation& operation) {
+          return mqt::containsUnitaryOperation<UnitaryOpInterface>(&operation);
+        })) {
       return failure();
     }
 
-    rewriter.eraseOp(op);
+    mqt::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
     return success();
   }
 };

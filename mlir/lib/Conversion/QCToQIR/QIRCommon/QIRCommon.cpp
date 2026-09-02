@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
@@ -34,16 +35,20 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -430,27 +435,278 @@ Value getResultPtr(LoweringState& state, Operation* op,
   return result;
 }
 
-LogicalResult prepareClassicalResults(Operation* moduleOp,
-                                      LoweringState& state) {
-  bool hasInvalidMemory = false;
-  SmallVector<cbit::StoreOp> consumedStores;
-  moduleOp->walk([&](func::FuncOp funcOp) {
-    if (!mqt::isEntryPoint(funcOp)) {
+LogicalResult validateQIRConversionInput(ModuleOp moduleOp,
+                                         bool requireSingleBlock,
+                                         LoweringState& state) {
+  for (Operation& operation : moduleOp.getBody()->getOperations()) {
+    const auto symbol = SymbolTable::getSymbolName(&operation);
+    if (!symbol || !symbol.getValue().starts_with("__quantum__")) {
+      continue;
+    }
+    if (auto function = dyn_cast<func::FuncOp>(operation);
+        function && function.isExternal()) {
+      continue;
+    }
+    if (auto function = dyn_cast<LLVM::LLVMFuncOp>(operation);
+        function && function.isExternal()) {
+      continue;
+    }
+    return operation.emitError()
+           << "QIR conversion reserves runtime symbol " << symbol.getValue()
+           << " for a function declaration";
+  }
+  auto entryPoint = mqt::getEntryPoint(moduleOp);
+  if (!entryPoint) {
+    moduleOp.emitError(
+        "QIR conversion requires a program entry function marked with "
+        "mqt.entry_point");
+    return failure();
+  }
+  if (entryPoint.isExternal()) {
+    entryPoint.emitError("QIR conversion requires a defined entry function");
+    return failure();
+  }
+  if (entryPoint.getNumArguments() != 0) {
+    entryPoint.emitError(
+        "QIR conversion does not support entry-function arguments");
+    return failure();
+  }
+  if (requireSingleBlock && !entryPoint.getBody().hasOneBlock()) {
+    entryPoint.emitError(
+        "QIR Base Profile conversion requires a single-block entry function");
+    return failure();
+  }
+  if (requireSingleBlock &&
+      !isa<func::ReturnOp>(entryPoint.getBody().front().getTerminator())) {
+    entryPoint.emitError(
+        "QIR Base Profile conversion requires straight-line control flow "
+        "ending in func.return");
+    return failure();
+  }
+
+  bool invalid = false;
+  moduleOp.walk([&](Operation* operation) {
+    if (invalid || operation == moduleOp || operation == entryPoint) {
       return;
     }
+    const auto dialect = operation->getName().getDialectNamespace();
+    if (dialect != qc::QCDialect::getDialectNamespace() &&
+        dialect != cbit::CBitDialect::getDialectNamespace() &&
+        dialect != memref::MemRefDialect::getDialectNamespace()) {
+      return;
+    }
+    if (operation->getParentOfType<func::FuncOp>() != entryPoint) {
+      operation->emitError(
+          "QIR conversion only supports QC, CBit, and MemRef operations in "
+          "the program entry function");
+      invalid = true;
+    }
+  });
+  if (invalid) {
+    return failure();
+  }
 
-    funcOp.walk([&](memref::AllocOp allocOp) {
-      const auto type = allocOp.getType();
-      if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
-        allocOp.emitError(
-            "QIR conversion only supports generic memrefs for "
-            "one-dimensional qc.qubit registers; use CBit for classical "
-            "registers");
-        hasInvalidMemory = true;
+  if (requireSingleBlock) {
+    moduleOp.walk([&](Operation* operation) {
+      if (invalid || operation == moduleOp || isa<CtrlOp>(operation) ||
+          !isa<RegionBranchOpInterface>(operation)) {
+        return;
+      }
+      operation->emitError(
+          "QIR Base Profile conversion does not support region-based control "
+          "flow other than qc.ctrl");
+      invalid = true;
+    });
+    if (invalid) {
+      return failure();
+    }
+
+    entryPoint.walk([&](Operation* operation) {
+      if (invalid || operation == entryPoint) {
+        return;
+      }
+      const auto dialect = operation->getName().getDialectNamespace();
+      if (dialect != qc::QCDialect::getDialectNamespace() &&
+          dialect != cbit::CBitDialect::getDialectNamespace() &&
+          dialect != memref::MemRefDialect::getDialectNamespace()) {
+        return;
+      }
+      for (Operation* parent = operation->getParentOp();
+           parent && parent != entryPoint; parent = parent->getParentOp()) {
+        if (parent->getNumRegions() == 0 || isa<CtrlOp>(parent)) {
+          continue;
+        }
+        operation->emitError(
+            "QIR Base Profile conversion does not support QC, CBit, or "
+            "MemRef operations nested in preserved region operations");
+        invalid = true;
+        return;
       }
     });
+    if (invalid) {
+      return failure();
+    }
+  }
 
-    funcOp.walk([&](cbit::AllocOp allocOp) {
+  entryPoint.walk([&](Operation* operation) {
+    if (auto op = dyn_cast<memref::AllocOp>(operation)) {
+      const auto type = op.getType();
+      if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
+        op.emitError("QIR conversion only supports generic memrefs for "
+                     "one-dimensional qc.qubit registers; use CBit for "
+                     "classical registers");
+        invalid = true;
+      }
+    }
+    if (auto op = dyn_cast<memref::LoadOp>(operation)) {
+      const auto type = cast<MemRefType>(op.getMemref().getType());
+      if (type.getRank() != 1 || op.getIndices().size() != 1 ||
+          !isa<QubitType>(type.getElementType())) {
+        op.emitError("QIR conversion only supports one-dimensional qubit "
+                     "register loads with exactly one index");
+        invalid = true;
+      }
+    }
+  });
+  if (invalid) {
+    return failure();
+  }
+
+  if (!requireSingleBlock) {
+    Operation* staticAllocation = nullptr;
+    Operation* dynamicAllocation = nullptr;
+    entryPoint.walk([&](Operation* operation) {
+      if (isa<StaticOp>(operation)) {
+        staticAllocation = operation;
+      } else if (isa<AllocOp, memref::AllocOp>(operation)) {
+        dynamicAllocation = operation;
+      }
+    });
+    if (staticAllocation != nullptr && dynamicAllocation != nullptr) {
+      dynamicAllocation->emitError(
+          "QIR Adaptive Profile conversion cannot mix static and dynamic "
+          "qubit allocations");
+      return failure();
+    }
+    return success();
+  }
+
+  SmallVector<std::pair<Value, int64_t>> loadedRegisterElements;
+  uint64_t freshStaticQubitIds = 0;
+  entryPoint.walk([&](Operation* operation) {
+    if (auto op = dyn_cast<StaticOp>(operation)) {
+      const auto rawIndex = op.getIndex();
+      if (rawIndex >=
+          static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+        op.emitError("static qubit index exceeds the supported QIR range");
+        invalid = true;
+        return;
+      }
+      const auto index = static_cast<int64_t>(rawIndex);
+      state.nextStaticQubitIndex =
+          std::max(state.nextStaticQubitIndex, index + 1);
+      return;
+    }
+    if (auto op = dyn_cast<AllocOp>(operation)) {
+      ++freshStaticQubitIds;
+      return;
+    }
+    if (auto op = dyn_cast<memref::AllocOp>(operation)) {
+      const auto type = op.getType();
+      if (type.isDynamicDim(0)) {
+        op.emitError("QIR Base Profile conversion requires statically sized "
+                     "one-dimensional qc.qubit memrefs");
+        invalid = true;
+      }
+      return;
+    }
+    auto op = dyn_cast<memref::LoadOp>(operation);
+    if (!op) {
+      return;
+    }
+    auto allocation = op.getMemref().getDefiningOp<memref::AllocOp>();
+    const auto index = getConstantIntValue(op.getIndices().front());
+    if (!allocation || !index || *index < 0 ||
+        *index >= allocation.getType().getDimSize(0)) {
+      op.emitError("QIR Base Profile conversion requires a constant, "
+                   "in-bounds index into a direct qubit-register allocation");
+      invalid = true;
+      return;
+    }
+    const std::pair<Value, int64_t> element{op.getMemref(), *index};
+    if (!llvm::is_contained(loadedRegisterElements, element)) {
+      loadedRegisterElements.push_back(element);
+      ++freshStaticQubitIds;
+    }
+  });
+  if (invalid) {
+    return failure();
+  }
+  const auto availableStaticQubitIds = static_cast<uint64_t>(
+      std::numeric_limits<int64_t>::max() - state.nextStaticQubitIndex);
+  if (freshStaticQubitIds > availableStaticQubitIds) {
+    entryPoint.emitError(
+        "QIR Base Profile conversion exhausts the supported static qubit "
+        "index range");
+    return failure();
+  }
+  return success();
+}
+
+LogicalResult prepareClassicalResults(Operation* moduleOp,
+                                      LoweringState& state) {
+  constexpr uint64_t maxClassicalResultSlots = 1U << 20;
+  uint64_t numClassicalResultSlots = 0;
+  bool exceedsResultLimit = false;
+  moduleOp->walk([&](Operation* operation) {
+    auto allocOp = dyn_cast<cbit::AllocOp>(operation);
+    if (!allocOp || exceedsResultLimit) {
+      return;
+    }
+    const auto width = allocOp.getResult().getType().getWidth();
+    if (width <= 0 || static_cast<uint64_t>(width) >
+                          maxClassicalResultSlots - numClassicalResultSlots) {
+      allocOp.emitError() << "QIR conversion supports at most "
+                          << maxClassicalResultSlots
+                          << " classical result slots per module";
+      exceedsResultLimit = true;
+      return;
+    }
+    numClassicalResultSlots += static_cast<uint64_t>(width);
+  });
+  if (exceedsResultLimit) {
+    return failure();
+  }
+
+  struct ReturnRewrite {
+    func::FuncOp function;
+    func::ReturnOp returnOp;
+    SmallVector<Value> keptOperands;
+    SmallVector<Type> keptTypes;
+    bool needsStatusResult = false;
+    bool recordsClassicalOutput = false;
+  };
+
+  bool hasInvalidMemory = false;
+  SmallVector<cbit::StoreOp> consumedStores;
+  SmallVector<ReturnRewrite> returnRewrites;
+  SmallVector<func::FuncOp> entryPoints;
+  moduleOp->walk([&](Operation* operation) {
+    if (auto function = dyn_cast<func::FuncOp>(operation);
+        function && mqt::isEntryPoint(function)) {
+      entryPoints.push_back(function);
+    }
+  });
+  for (auto funcOp : entryPoints) {
+
+    funcOp.walk([&](Operation* operation) {
+      if (operation->getParentOfType<func::FuncOp>() != funcOp) {
+        return;
+      }
+      auto allocOp = dyn_cast<cbit::AllocOp>(operation);
+      if (!allocOp) {
+        return;
+      }
       const auto [it, inserted] = state.cregIndices.try_emplace(
           allocOp.getOperation(), state.cregs.size());
       if (inserted) {
@@ -467,7 +723,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       reg.results.assign(static_cast<size_t>(size), Value{});
     });
 
-    const auto markRegisterForRecording = [&](const size_t registerIndex) {
+    const auto markRegisterForRecording = [&](size_t registerIndex) {
       auto& reg = state.cregs[registerIndex];
       if (reg.record) {
         return;
@@ -479,40 +735,58 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       state.returnedCregs.push_back(registerIndex);
     };
 
-    funcOp.walk([&](func::ReturnOp returnOp) {
-      SmallVector<Value> keptOperands;
-      SmallVector<Type> keptReturnTypes;
+    funcOp.walk([&](Operation* operation) {
+      if (operation->getParentOfType<func::FuncOp>() != funcOp) {
+        return;
+      }
+      auto returnOp = dyn_cast<func::ReturnOp>(operation);
+      if (!returnOp) {
+        return;
+      }
+      ReturnRewrite rewrite{.function = funcOp, .returnOp = returnOp};
 
       for (auto operand : returnOp.getOperands()) {
         if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
           state.returnedStaticResults.insert(measureOp.getOperation());
+          rewrite.recordsClassicalOutput = true;
         } else if (auto allocOp = operand.getDefiningOp<cbit::AllocOp>();
                    allocOp &&
                    state.cregIndices.contains(allocOp.getOperation())) {
           markRegisterForRecording(
               state.cregIndices.at(allocOp.getOperation()));
+          rewrite.recordsClassicalOutput = true;
         } else {
-          keptOperands.push_back(operand);
-          keptReturnTypes.push_back(operand.getType());
+          rewrite.keptOperands.push_back(operand);
+          rewrite.keptTypes.push_back(operand.getType());
         }
       }
 
-      if (keptOperands.empty() && !returnOp.getOperands().empty()) {
-        OpBuilder builder(returnOp);
-        auto zero =
-            arith::ConstantIntOp::create(builder, returnOp.getLoc(), 0, 64);
-        keptOperands.push_back(zero);
-        keptReturnTypes.push_back(zero.getType());
-      }
-
-      returnOp.getOperandsMutable().assign(keptOperands);
-
-      funcOp.setFunctionType(FunctionType::get(
-          funcOp.getContext(), funcOp.getFunctionType().getInputs(),
-          keptReturnTypes));
+      rewrite.needsStatusResult =
+          rewrite.keptOperands.empty() && !returnOp.getOperands().empty();
+      returnRewrites.push_back(std::move(rewrite));
     });
 
-    funcOp.walk([&](cbit::StoreOp storeOp) {
+    if (returnRewrites.size() > 1) {
+      auto* recordedReturn =
+          llvm::find_if(returnRewrites, [](const ReturnRewrite& rewrite) {
+            return rewrite.recordsClassicalOutput;
+          });
+      if (recordedReturn != returnRewrites.end()) {
+        recordedReturn->returnOp.emitError(
+            "QIR conversion requires a single entry-function return when "
+            "recording classical outputs");
+        return failure();
+      }
+    }
+
+    funcOp.walk([&](Operation* operation) {
+      if (operation->getParentOfType<func::FuncOp>() != funcOp) {
+        return;
+      }
+      auto storeOp = dyn_cast<cbit::StoreOp>(operation);
+      if (!storeOp) {
+        return;
+      }
       auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
       if (!allocOp || !state.cregIndices.contains(allocOp.getOperation())) {
         storeOp.emitError(
@@ -544,9 +818,38 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       }
       consumedStores.push_back(storeOp);
     });
-  });
+  }
   if (hasInvalidMemory) {
     return failure();
+  }
+
+  DenseMap<Operation*, SmallVector<Type>> loweredReturnTypes;
+  for (auto& rewrite : returnRewrites) {
+    if (rewrite.needsStatusResult) {
+      rewrite.keptTypes.push_back(
+          IntegerType::get(rewrite.function.getContext(), 64));
+    }
+    const auto [it, inserted] = loweredReturnTypes.try_emplace(
+        rewrite.function.getOperation(), rewrite.keptTypes);
+    if (!inserted && it->second != rewrite.keptTypes) {
+      rewrite.returnOp.emitError(
+          "QIR conversion requires every entry-function return to have the "
+          "same lowered result types");
+      return failure();
+    }
+  }
+
+  for (auto& rewrite : returnRewrites) {
+    if (rewrite.needsStatusResult) {
+      OpBuilder builder(rewrite.returnOp);
+      auto zero = arith::ConstantIntOp::create(
+          builder, rewrite.returnOp.getLoc(), 0, 64);
+      rewrite.keptOperands.push_back(zero);
+    }
+    rewrite.returnOp.getOperandsMutable().assign(rewrite.keptOperands);
+    rewrite.function.setFunctionType(FunctionType::get(
+        rewrite.function.getContext(),
+        rewrite.function.getFunctionType().getInputs(), rewrite.keptTypes));
   }
   for (auto storeOp : consumedStores) {
     storeOp.erase();

@@ -85,6 +85,9 @@ struct MergeSubsequentR final : OpRewritePattern<ROp> {
     if (!valuesMatchWithinTolerance(op.getPhi(), nextOp.getPhi())) {
       return failure();
     }
+    if (!constantParameterSumIsFinite(op.getTheta(), nextOp.getTheta())) {
+      return failure();
+    }
 
     auto newParameter = arith::AddFOp::create(rewriter, op.getLoc(),
                                               op.getTheta(), nextOp.getTheta());

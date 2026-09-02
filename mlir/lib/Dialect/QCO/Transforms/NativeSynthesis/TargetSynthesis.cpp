@@ -10,6 +10,7 @@
 
 #include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -23,6 +24,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
 #include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -59,6 +61,21 @@ struct FusableTwoQubitRun {
 };
 
 } // namespace
+
+static Block* getModifierBody(Operation* operation) {
+  if (!isa<CtrlOp, InvOp, PowOp>(operation)) {
+    return nullptr;
+  }
+  return &operation->getRegion(0).front();
+}
+
+static bool hasModifierSupportingOps(Operation* operation) {
+  Block* body = getModifierBody(operation);
+  return body != nullptr &&
+         llvm::any_of(body->without_terminator(), [](Operation& bodyOp) {
+           return mqt::containsSupportingOperation<UnitaryOpInterface>(&bodyOp);
+         });
+}
 
 // --- Run membership ------------------------------------------------------- //
 
@@ -97,7 +114,8 @@ static bool assignTwoQubitOpMatrix(Operation* op, Matrix4x4& matrix) {
 static std::optional<Matrix2x2>
 oneQubitRunMemberMatrix(UnitaryOpInterface unitary) {
   if (!unitary || !unitary.isSingleQubit() ||
-      !isWalkableUnitaryShell(unitary.getOperation())) {
+      !isWalkableUnitaryShell(unitary.getOperation()) ||
+      hasModifierSupportingOps(unitary.getOperation())) {
     return std::nullopt;
   }
   Matrix2x2 matrix;
@@ -111,7 +129,8 @@ oneQubitRunMemberMatrix(UnitaryOpInterface unitary) {
 static std::optional<Matrix4x4>
 twoQubitRunMemberMatrix(UnitaryOpInterface unitary) {
   if (!unitary || !unitary.isTwoQubit() ||
-      !isWalkableUnitaryShell(unitary.getOperation())) {
+      !isWalkableUnitaryShell(unitary.getOperation()) ||
+      hasModifierSupportingOps(unitary.getOperation())) {
     return std::nullopt;
   }
   Matrix4x4 matrix;
@@ -304,6 +323,7 @@ namespace {
 struct SynthesisPlan {
   Operation* firstNeed = nullptr;
   Operation* matrixUnavailable = nullptr;
+  Operation* supportNotHoistable = nullptr;
   SmallVector<Operation*> operations;
 };
 
@@ -323,6 +343,13 @@ static SynthesisPlan planTargetSynthesis(Operation* root,
     }
     if (plan.firstNeed == nullptr) {
       plan.firstNeed = operation;
+    }
+
+    if (Block* body = getModifierBody(operation);
+        body != nullptr &&
+        !mqt::canHoistSupportingOps<UnitaryOpInterface>(*body)) {
+      plan.supportNotHoistable = operation;
+      return WalkResult::interrupt();
     }
 
     if (unitary.isSingleQubit()) {
@@ -345,16 +372,23 @@ static SynthesisPlan planTargetSynthesis(Operation* root,
   return plan;
 }
 
-static void lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
-                                 const CompilerTarget::SynthesisBasis basis) {
-  Operation* const operation = op.getOperation();
+static LogicalResult
+lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
+                     CompilerTarget::SynthesisBasis basis) {
+  Operation* operation = op.getOperation();
+  if (Block* body = getModifierBody(operation);
+      body != nullptr &&
+      failed(mqt::hoistSupportingOpsBefore<UnitaryOpInterface>(*body, operation,
+                                                               rewriter))) {
+    return failure();
+  }
   rewriter.setInsertionPoint(operation);
   if (op.isSingleQubit()) {
     Matrix2x2 matrix;
     if (!op.getUnitaryMatrix2x2(matrix)) {
       decomposition::synthesizeParameterizedUnitary1Q(rewriter, operation,
                                                       basis.singleQubit);
-      return;
+      return success();
     }
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
@@ -366,7 +400,7 @@ static void lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
     decomposition::emitGPhaseIfNeeded(rewriter, operation->getLoc(),
                                       synthesized->globalPhase);
     rewriter.replaceOp(operation, synthesized->qubit);
-    return;
+    return success();
   }
 
   Matrix4x4 matrix;
@@ -388,6 +422,7 @@ static void lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
                                     synthesized.globalPhase);
   rewriter.replaceOp(operation,
                      ValueRange{synthesized.qubit0, synthesized.qubit1});
+  return success();
 }
 
 static LogicalResult fuseTwoQubitGates(ModuleOp moduleOp) {
@@ -469,6 +504,14 @@ protected:
       signalPassFailure();
       return;
     }
+    if (plan.supportNotHoistable != nullptr) {
+      plan.supportNotHoistable->emitError()
+          << "target-native synthesis cannot lower modifier because an "
+             "operation in its body cannot move across the unitary "
+             "operations without changing semantics";
+      signalPassFailure();
+      return;
+    }
     if (plan.matrixUnavailable != nullptr) {
       plan.matrixUnavailable->emitError()
           << "target-native synthesis cannot lower operation '"
@@ -480,8 +523,14 @@ protected:
 
     IRRewriter rewriter(&getContext());
     for (Operation* operation : plan.operations) {
-      lowerTargetOperation(rewriter, cast<UnitaryOpInterface>(operation),
-                           *targetBasis);
+      if (failed(lowerTargetOperation(
+              rewriter, cast<UnitaryOpInterface>(operation), *targetBasis))) {
+        operation->emitError()
+            << "target-native synthesis cannot hoist modifier support "
+               "operations without changing semantics";
+        signalPassFailure();
+        return;
+      }
     }
     if (failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();

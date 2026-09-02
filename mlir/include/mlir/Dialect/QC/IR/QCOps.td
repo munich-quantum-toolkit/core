@@ -961,7 +961,9 @@ def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-def YieldOp : QCOp<"yield", traits = [Terminator]> {
+def YieldOp
+    : QCOp<"yield",
+           traits = [Terminator, ParentOneOf<["CtrlOp", "InvOp", "PowOp"]>]> {
   let summary = "Yield from a modifier region";
   let description = [{
         Terminates a modifier region, yielding control back to the enclosing operation.

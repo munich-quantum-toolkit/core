@@ -16,6 +16,7 @@
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -37,10 +38,12 @@
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -222,30 +225,63 @@ static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
 }
 
 /**
- * @brief Gets the name of the entry point from the module attributes
+ * @brief Validates and returns the entry-point name encoded by jeff metadata.
  */
-static FailureOr<StringRef> getEntryPointName(ModuleOp moduleOp) {
-  auto entryPointAttr = moduleOp->getAttrOfType<IntegerAttr>("jeff.entrypoint");
-  if (!entryPointAttr || !entryPointAttr.getType().isUnsignedInteger()) {
-    return moduleOp.emitError(
-        "requires an unsigned integer 'jeff.entrypoint' attribute");
+static FailureOr<StringAttr> validateJeffEntryPoint(ModuleOp module) {
+  const auto entryPoint = module->getAttrOfType<IntegerAttr>("jeff.entrypoint");
+  if (!entryPoint || !entryPoint.getType().isUnsignedInteger()) {
+    module.emitError(
+        "jeff-to-qco requires an unsigned integer 'jeff.entrypoint' "
+        "attribute");
+    return failure();
   }
-  auto entryPoint = entryPointAttr.getUInt();
-
-  auto stringsAttr = moduleOp->getAttrOfType<ArrayAttr>("jeff.strings");
-  if (!stringsAttr) {
-    return moduleOp.emitError("requires an array 'jeff.strings' attribute");
+  const auto strings = module->getAttrOfType<ArrayAttr>("jeff.strings");
+  if (!strings) {
+    module.emitError(
+        "jeff-to-qco requires an array 'jeff.strings' module attribute");
+    return failure();
   }
-
-  if (entryPoint >= stringsAttr.size()) {
-    return moduleOp.emitError("'jeff.entrypoint' index is out of bounds");
+  if (entryPoint.getValue().isNegative() ||
+      entryPoint.getValue().getActiveBits() > 64) {
+    module.emitError("'jeff.entrypoint' must be a nonnegative function index");
+    return failure();
   }
-
-  auto name = dyn_cast<StringAttr>(stringsAttr[entryPoint]);
-  if (!name) {
-    return moduleOp.emitError("'jeff.entrypoint' must index a string");
+  const auto index = entryPoint.getValue().getZExtValue();
+  if (!llvm::all_of(strings,
+                    [](Attribute value) { return isa<StringAttr>(value); })) {
+    module.emitError("'jeff.entrypoint' must index a string and all entries in "
+                     "'jeff.strings' must be strings");
+    return failure();
   }
-  return name.getValue();
+  func::FuncOp function;
+  uint64_t functionIndex = 0;
+  for (auto candidate : module.getOps<func::FuncOp>()) {
+    if (functionIndex++ == index) {
+      function = candidate;
+      break;
+    }
+  }
+  if (!function) {
+    module.emitError(
+        "'jeff.entrypoint' index is out of bounds for the function list");
+    return failure();
+  }
+  const auto name = function.getSymNameAttr();
+  if (!llvm::any_of(strings, [name](Attribute value) {
+        return cast<StringAttr>(value) == name;
+      })) {
+    module.emitError("the jeff entry-point function name is absent from "
+                     "'jeff.strings'");
+    return failure();
+  }
+  if (function.isExternal() || !function.getBody().hasOneBlock() ||
+      !isa<func::ReturnOp>(function.getBody().front().getTerminator())) {
+    function.emitError(
+        "jeff-to-qco requires a defined, single-block entry function ending "
+        "in func.return");
+    return failure();
+  }
+  return name;
 }
 
 /**
@@ -1178,12 +1214,15 @@ struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
  * ```
  */
 struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
-  using OpConversionPattern::OpConversionPattern;
+  ConvertJeffMainToQCO(TypeConverter& typeConverter, MLIRContext* context,
+                       StringAttr entryPointName)
+      : OpConversionPattern(typeConverter, context, PatternBenefit(2)),
+        entryPointName(entryPointName) {}
 
   LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getSymName() != getEntryPointName(op->getParentOfType<ModuleOp>())) {
+    if (op.getSymNameAttr() != entryPointName) {
       return failure();
     }
 
@@ -1229,6 +1268,9 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
 
     return success();
   }
+
+private:
+  StringAttr entryPointName;
 };
 
 /**
@@ -1270,8 +1312,10 @@ struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto moduleOp = getOperation();
-    auto entryPointName = getEntryPointName(moduleOp);
+    auto original = getOperation();
+    OwningOpRef<ModuleOp> converted(original.clone());
+    auto module = *converted;
+    const auto entryPointName = validateJeffEntryPoint(module);
     if (failed(entryPointName)) {
       signalPassFailure();
       return;
@@ -1289,7 +1333,8 @@ protected:
                          tensor::TensorDialect, scf::SCFDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return (op.getSymName() != *entryPointName || mqt::isEntryPoint(op)) &&
+      return (op.getSymNameAttr() != *entryPointName ||
+              mqt::isEntryPoint(op)) &&
              typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
     });
@@ -1303,8 +1348,9 @@ protected:
     populateReturnOpTypeConversionPattern(patterns, typeConverter);
     patterns.add<ConvertJeffIntArrayZeroOpToCBit,
                  ConvertJeffIntArraySetIndexOpToCBit,
-                 ConvertJeffIntArrayGetIndexOpToCBit, ConvertJeffMainToQCO>(
-        typeConverter, context, PatternBenefit(2));
+                 ConvertJeffIntArrayGetIndexOpToCBit>(typeConverter, context,
+                                                      PatternBenefit(2));
+    patterns.add<ConvertJeffMainToQCO>(typeConverter, context, *entryPointName);
     patterns.add<
         ConvertJeffQuregAllocOpToQCO, ConvertJeffQuregExtractIndexOpToQCO,
         ConvertJeffQuregInsertIndexOpToQCO, ConvertJeffQuregFreeZeroOpToQCO,
@@ -1329,19 +1375,25 @@ protected:
                                                           context);
 
     // Apply the conversion
-    if (applyPartialConversion(moduleOp, target, std::move(patterns))
-            .failed()) {
+    if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
       signalPassFailure();
       return;
     }
 
-    moduleOp->removeAttr("jeff.entrypoint");
-    moduleOp->removeAttr("jeff.strings");
-    moduleOp->removeAttr("jeff.tool");
-    moduleOp->removeAttr("jeff.toolVersion");
-    moduleOp->removeAttr("jeff.version");
-    moduleOp->removeAttr("jeff.versionMinor");
-    moduleOp->removeAttr("jeff.versionPatch");
+    module->removeAttr("jeff.entrypoint");
+    module->removeAttr("jeff.strings");
+    module->removeAttr("jeff.tool");
+    module->removeAttr("jeff.toolVersion");
+    module->removeAttr("jeff.version");
+    module->removeAttr("jeff.versionMinor");
+    module->removeAttr("jeff.versionPatch");
+    if (failed(verify(module)) || failed(mqt::verifyProgramMetadata(module)) ||
+        failed(qco::verifyLinearity(module))) {
+      signalPassFailure();
+      return;
+    }
+    original->setAttrs(module->getAttrDictionary());
+    original.getBodyRegion().takeBody(module.getBodyRegion());
   }
 };
 

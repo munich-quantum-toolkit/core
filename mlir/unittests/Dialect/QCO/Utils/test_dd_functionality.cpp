@@ -35,6 +35,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -527,6 +528,17 @@ TEST_F(QCODDFunctionalityTest, RejectsStaticQubitBeyondDDRange) {
   EXPECT_TRUE(failed(buildFunctionality(mainFunc(*mod), *dd)));
   EXPECT_TRUE(
       failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsExcessiveClassicalRegisterCapacity) {
+  expectMlirFails(1, R"mlir(
+    module {
+      func.func @main() {
+        %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1073741824>
+        return
+      }
+    }
+  )mlir");
 }
 
 TEST_F(QCODDFunctionalityTest, SimulationConsumesInputReference) {
@@ -1755,6 +1767,34 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedFuncCalls) {
                                                  context.get());
   ASSERT_TRUE(declaration);
   expectSimulationFails(mainFunc(*declaration), 1);
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsExcessiveFuncCallNesting) {
+  OwningOpRef<ModuleOp> mod = ModuleOp::create(UnknownLoc::get(context.get()));
+  OpBuilder builder(context.get());
+  const auto qubitType = QubitType::get(context.get());
+  const auto functionType = builder.getFunctionType({qubitType}, {qubitType});
+  constexpr size_t numFunctions = 66;
+
+  for (size_t i = 0; i < numFunctions; ++i) {
+    builder.setInsertionPointToEnd(mod->getBody());
+    const std::string name = i == 0 ? "main" : "f" + std::to_string(i);
+    auto function =
+        func::FuncOp::create(builder, mod->getLoc(), name, functionType);
+    Block* entry = function.addEntryBlock();
+    builder.setInsertionPointToStart(entry);
+    Value result = entry->getArgument(0);
+    if (i + 1 < numFunctions) {
+      result = func::CallOp::create(builder, mod->getLoc(),
+                                    "f" + std::to_string(i + 1), qubitType,
+                                    ValueRange{result})
+                   .getResult(0);
+    }
+    func::ReturnOp::create(builder, mod->getLoc(), result);
+  }
+
+  ASSERT_TRUE(succeeded(verify(*mod)));
+  expectSimulationFails(mainFunc(*mod), 1);
 }
 
 TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {

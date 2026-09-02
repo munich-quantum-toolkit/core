@@ -38,6 +38,27 @@ if(BUILD_MQT_CORE_MLIR)
     FetchContent_MakeAvailable(jeff-mlir)
   endfunction()
   _mqt_core_make_jeff_available()
+
+  # jeff-mlir currently reports malformed serialized input through LLVM's fatal error API. Compile
+  # its translation boundary with exceptions and redirect those reports so the public MQT importer
+  # can diagnose them without exiting. MLIR uses an object target when available. Visual Studio
+  # generators compile the sources in the library target directly.
+  if(TARGET obj.MLIRJeffTranslation)
+    set(_mqt_core_jeff_translation_target obj.MLIRJeffTranslation)
+  else()
+    set(_mqt_core_jeff_translation_target MLIRJeffTranslation)
+  endif()
+  if(MSVC)
+    target_compile_options(
+      ${_mqt_core_jeff_translation_target}
+      PRIVATE /EHsc "/FI${PROJECT_SOURCE_DIR}/mlir/include/mlir/Compiler/JeffFatalErrorRedirect.h")
+  else()
+    target_compile_options(
+      ${_mqt_core_jeff_translation_target}
+      PRIVATE -fexceptions -include
+              "${PROJECT_SOURCE_DIR}/mlir/include/mlir/Compiler/JeffFatalErrorRedirect.h")
+  endif()
+  unset(_mqt_core_jeff_translation_target)
 endif()
 
 set(JSON_VERSION

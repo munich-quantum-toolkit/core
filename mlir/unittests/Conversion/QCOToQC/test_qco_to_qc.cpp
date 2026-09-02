@@ -29,8 +29,10 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
@@ -143,6 +145,90 @@ module {
   }
   EXPECT_EQ(loadsBeforeLoop.size(), 1U);
   EXPECT_EQ(loadsAfterLoop.size(), 2U);
+}
+
+TEST(QCOToQCRegressionTest, RejectsYieldPermutationWithoutMutation) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q0 = qco.alloc : !qco.qubit
+    %q1 = qco.alloc : !qco.qubit
+    %lb = arith.constant 0 : index
+    %ub = arith.constant 1 : index
+    %step = arith.constant 1 : index
+    %out0, %out1 = scf.for %iv = %lb to %ub step %step
+        iter_args(%left = %q0, %right = %q1)
+        -> (!qco.qubit, !qco.qubit) {
+      scf.yield %right, %left : !qco.qubit, !qco.qubit
+    }
+    qco.sink %out0 : !qco.qubit
+    qco.sink %out1 : !qco.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str()).contains("preserve input order");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST(QCOToQCRegressionTest, RejectsMixedAllocationModesWithoutMutation) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %static = qco.static 0 : !qco.qubit
+    %dynamic = qco.alloc : !qco.qubit
+    qco.sink %static : !qco.qubit
+    qco.sink %dynamic : !qco.qubit
+    return
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str()).contains("cannot mix static and dynamic");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
 }
 
 TEST(QCOToQCRegressionTest, RetainsQubitRegisterName) {

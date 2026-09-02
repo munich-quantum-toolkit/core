@@ -1124,13 +1124,14 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
         static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp has no parameters"); }
         static OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "barrier"; }
-        [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix() const { return true; }
-        [[nodiscard]] DynamicMatrix getUnitaryMatrix();
+        [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
+        [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits)>];
 
   let hasCanonicalizer = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

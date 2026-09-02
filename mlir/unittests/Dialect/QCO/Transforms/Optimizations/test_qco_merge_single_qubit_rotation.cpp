@@ -28,6 +28,7 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
@@ -36,6 +37,7 @@
 #include <cmath>
 #include <complex>
 #include <cstdint>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <tuple>
@@ -578,6 +580,26 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergePPGates) {
   EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
+TEST_F(MergeSingleQubitRotationGatesTest,
+       HugeFiniteStaticPhasesProduceVerifiedOutput) {
+  auto qubit = builder.staticQubit(0);
+  qubit = builder.p(std::numeric_limits<double>::max(), qubit);
+  qubit = builder.p(std::numeric_limits<double>::max(), qubit);
+  builder.sink(qubit);
+  module = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(succeeded(runMergePass(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  module->walk([&](UnitaryOpInterface operation) {
+    for (Value parameter : operation.getParameters()) {
+      const auto constant = mlir::mqt::valueToConstantDouble(parameter);
+      ASSERT_TRUE(constant);
+      EXPECT_TRUE(std::isfinite(*constant));
+    }
+  });
+}
+
 /**
  * @brief Test: R->R should merge into a single U gate (same multi-parameter
  * type always uses quaternion merge)
@@ -879,7 +901,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalSmallAngles) {
 }
 
 /**
- * @brief Test: RX(PI)->RY(PI) should merge into U(0, -PI, 0.)
+ * @brief Test: RX(PI)->RY(PI) should merge into U(0, PI, 0.)
  */
 TEST_F(MergeSingleQubitRotationGatesTest, numericalGimbalLock) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {PI}},
@@ -889,7 +911,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalGimbalLock) {
   EXPECT_EQ(countOps<RXOp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
-  expectUGateParams(0., -PI, 0.);
+  expectUGateParams(0., PI, 0.);
   expectGPhaseParam(1.57079632679490);
 }
 
@@ -1158,4 +1180,42 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   EXPECT_NEAR(*lambda, 0.0, 1e-6);
   EXPECT_NEAR(*phase, 0.0, 1e-6);
   EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*phase));
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest,
+       DynamicMaxPhasesRemainFiniteAfterFusion) {
+  auto q = builder.allocQubitRegister(1);
+  q[0] = builder.p(0.3, q[0]);
+  q[0] = builder.p(0.4, q[0]);
+  module = builder.finalize();
+
+  auto funcOp = cast<func::FuncOp>(module->getBody()->front());
+  const auto f64 = Float64Type::get(&context);
+  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
+  funcOp.insertArgument(1, f64, {}, funcOp.getLoc());
+  SmallVector<POp> phases;
+  module->walk([&](POp op) { phases.emplace_back(op); });
+  ASSERT_EQ(phases.size(), 2U);
+  phases[0].getThetaMutable().assign(funcOp.getArgument(0));
+  phases[1].getThetaMutable().assign(funcOp.getArgument(1));
+
+  ASSERT_TRUE(succeeded(runMergePass(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_GT(countOps<arith::RemFOp>(), 0);
+
+  constexpr double max = std::numeric_limits<double>::max();
+  bindLeadingArgs(funcOp, {max, max});
+  module->walk([&](UnitaryOpInterface operation) {
+    for (Value parameter : operation.getParameters()) {
+      const auto constant = mlir::mqt::valueToConstantDouble(parameter);
+      ASSERT_TRUE(constant);
+      EXPECT_TRUE(std::isfinite(*constant));
+    }
+  });
+  module->walk([&](GPhaseOp phase) {
+    const auto constant =
+        mlir::mqt::valueToConstantDouble(phase.getParameter(0));
+    ASSERT_TRUE(constant);
+    EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*constant));
+  });
 }

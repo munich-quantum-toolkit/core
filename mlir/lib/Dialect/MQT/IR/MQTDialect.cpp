@@ -15,6 +15,8 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/StringSet.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -24,11 +26,15 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 
+#include <cstdint>
 #include <string>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::mqt;
@@ -55,12 +61,6 @@ verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
            << "' requires a defined module-level function";
   }
 
-  for (Operation& candidate : moduleOp.getBody()->getOperations()) {
-    if (&candidate != operation && isEntryPoint(&candidate)) {
-      return operation->emitError()
-             << "module must contain at most one program entry point";
-    }
-  }
   return success();
 }
 
@@ -173,24 +173,6 @@ verifyRegisterName(Operation* operation, const NamedAttribute attribute) {
            << "' requires an allocation in a function entry block";
   }
 
-  const auto name = cast<StringAttr>(attribute.getValue());
-  for (unsigned index = 0; index < function.getNumArguments(); ++index) {
-    if (function.getArgAttrOfType<StringAttr>(
-            index, MQTDialect::InputNameAttrHelper::getNameStr()) == name) {
-      return operation->emitError()
-             << "duplicate program name '" << name.getValue() << "'";
-    }
-  }
-  for (Operation& candidate : function.getFunctionBody().front()) {
-    if (&candidate == operation) {
-      continue;
-    }
-    if (candidate.getAttrOfType<StringAttr>(
-            MQTDialect::RegisterNameAttrHelper::getNameStr()) == name) {
-      return operation->emitError()
-             << "duplicate program name '" << name.getValue() << "'";
-    }
-  }
   return success();
 }
 
@@ -245,27 +227,6 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
   if (failed(verifyName(operation, attribute))) {
     return failure();
   }
-
-  const auto name = cast<StringAttr>(attribute.getValue());
-  for (unsigned index = 0; index < function.getNumArguments(); ++index) {
-    if (index == argIndex) {
-      continue;
-    }
-    if (function.getArgAttrOfType<StringAttr>(index, attribute.getName()) ==
-        name) {
-      return operation->emitError()
-             << "duplicate program name '" << name.getValue() << "'";
-    }
-  }
-  if (!function.getFunctionBody().empty()) {
-    for (Operation& candidate : function.getFunctionBody().front()) {
-      if (candidate.getAttrOfType<StringAttr>(
-              RegisterNameAttrHelper::getNameStr()) == name) {
-        return operation->emitError()
-               << "duplicate program name '" << name.getValue() << "'";
-      }
-    }
-  }
   return success();
 }
 
@@ -275,6 +236,79 @@ LogicalResult MQTDialect::verifyRegionResultAttribute(
   return operation->emitError()
          << "attribute '" << attribute.getName().getValue()
          << "' is not valid on a region result";
+}
+
+[[nodiscard]] static LogicalResult
+verifyProgramNames(FunctionOpInterface function) {
+  llvm::StringSet<> names;
+  DenseMap<StringAttr, std::pair<StringAttr, int64_t>> groupDescriptions;
+  for (unsigned index = 0; index < function.getNumArguments(); ++index) {
+    const auto name = function.getArgAttrOfType<StringAttr>(
+        index, MQTDialect::InputNameAttrHelper::getNameStr());
+    if (name && !names.insert(name.getValue()).second) {
+      return function.emitError()
+             << "duplicate program name '" << name.getValue() << "'";
+    }
+    const auto group = function.getArgAttrOfType<DictionaryAttr>(
+        index, MQTDialect::ParameterGroupAttrHelper::getNameStr());
+    if (!group) {
+      continue;
+    }
+    if (failed(verifyInputGroup(function, function.getOperation(), index,
+                                group))) {
+      return failure();
+    }
+    const auto identity = group.getAs<StringAttr>("identity");
+    const auto groupName = group.getAs<StringAttr>("name");
+    const auto groupSize = group.getAs<IntegerAttr>("size").getInt();
+    const auto [description, inserted] = groupDescriptions.try_emplace(
+        identity, std::pair<StringAttr, int64_t>{groupName, groupSize});
+    if (!inserted && description->second !=
+                         std::pair<StringAttr, int64_t>{groupName, groupSize}) {
+      return function.emitError()
+             << "parameter-group identity '" << identity.getValue()
+             << "' has inconsistent name or size";
+    }
+  }
+  if (function.getFunctionBody().empty()) {
+    return success();
+  }
+  for (Operation& operation : function.getFunctionBody().front()) {
+    const auto name = operation.getAttrOfType<StringAttr>(
+        MQTDialect::RegisterNameAttrHelper::getNameStr());
+    if (name && !names.insert(name.getValue()).second) {
+      return operation.emitError()
+             << "duplicate program name '" << name.getValue() << "'";
+    }
+  }
+  return success();
+}
+
+LogicalResult mlir::mqt::verifyProgramMetadata(ModuleOp moduleOp) {
+  Operation* entryPoint = nullptr;
+  const auto walkResult = moduleOp.walk([&](Operation* operation) {
+    if (isEntryPoint(operation)) {
+      auto function = dyn_cast<FunctionOpInterface>(operation);
+      if (!function || operation->getParentOp() != moduleOp.getOperation() ||
+          function.getFunctionBody().empty()) {
+        operation->emitError(
+            "program entry point must be a defined module-level function");
+        return WalkResult::interrupt();
+      }
+      if (entryPoint != nullptr) {
+        operation->emitError(
+            "module must contain at most one program entry point");
+        return WalkResult::interrupt();
+      }
+      entryPoint = operation;
+    }
+    if (auto function = dyn_cast<FunctionOpInterface>(operation);
+        function && failed(verifyProgramNames(function))) {
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return walkResult.wasInterrupted() ? failure() : success();
 }
 
 void mlir::mqt::setEntryPoint(Operation* operation) {

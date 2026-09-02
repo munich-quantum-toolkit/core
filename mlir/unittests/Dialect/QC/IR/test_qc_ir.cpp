@@ -45,6 +45,7 @@
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <array>
 #include <complex>
@@ -429,6 +430,63 @@ TEST_F(QCTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
   }
 }
 
+TEST_F(QCTest, GlobalPhaseVerifierRejectsDirectAndFoldedNonFiniteAngles) {
+  constexpr std::array<StringLiteral, 4> invalidPrograms{
+      R"mlir(
+        module {
+          func.func @main() {
+            %infinity = arith.constant 0x7FF0000000000000 : f64
+            qc.gphase(%infinity)
+            return
+          }
+        }
+      )mlir",
+      R"mlir(
+        module {
+          func.func @main() {
+            %nan = arith.constant 0x7FF8000000000000 : f64
+            qc.gphase(%nan)
+            return
+          }
+        }
+      )mlir",
+      R"mlir(
+        module {
+          func.func @main() {
+            %max = arith.constant 1.7976931348623157E+308 : f64
+            %infinity = arith.addf %max, %max : f64
+            qc.gphase(%infinity)
+            return
+          }
+        }
+      )mlir",
+      R"mlir(
+        module {
+          func.func @main() {
+            %zero = arith.constant 0.0 : f64
+            %nan = arith.divf %zero, %zero : f64
+            qc.gphase(%nan)
+            return
+          }
+        }
+      )mlir"};
+
+  for (const auto source : invalidPrograms) {
+    bool sawExpectedDiagnostic = false;
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains(
+                  "constant parameter expression at index 0 must be finite");
+      return success();
+    });
+    EXPECT_FALSE(parseSourceString<ModuleOp>(source, context.get()));
+    EXPECT_TRUE(sawExpectedDiagnostic) << diagnostics;
+  }
+}
+
 TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
   const auto matrixType = RankedTensorType::get(
       {2, 2}, ComplexType::get(Float64Type::get(context.get())));
@@ -619,6 +677,8 @@ enum class ForbiddenModifierBodyOp : std::uint8_t {
   Dealloc,
   Measure,
   Reset,
+  QubitRegisterAlloc,
+  QubitRegisterDealloc,
   QubitRegisterLoad,
   QubitRegisterStore,
   CBitAlloc,
@@ -650,6 +710,10 @@ static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
     return "measure";
   case ForbiddenModifierBodyOp::Reset:
     return "reset";
+  case ForbiddenModifierBodyOp::QubitRegisterAlloc:
+    return "qubit-register-alloc";
+  case ForbiddenModifierBodyOp::QubitRegisterDealloc:
+    return "qubit-register-dealloc";
   case ForbiddenModifierBodyOp::QubitRegisterLoad:
     return "qubit-register-load";
   case ForbiddenModifierBodyOp::QubitRegisterStore:
@@ -682,6 +746,13 @@ static void emitForbiddenModifierBodyOperation(QCProgramBuilder& builder,
   case ForbiddenModifierBodyOp::Reset:
     ResetOp::create(builder, argument);
     return;
+  case ForbiddenModifierBodyOp::QubitRegisterAlloc:
+    memref::AllocOp::create(
+        builder, MemRefType::get({1}, QubitType::get(builder.getContext())));
+    return;
+  case ForbiddenModifierBodyOp::QubitRegisterDealloc:
+    memref::DeallocOp::create(builder, qubitReg);
+    return;
   case ForbiddenModifierBodyOp::QubitRegisterLoad:
     memref::LoadOp::create(builder, qubitReg, index);
     return;
@@ -705,7 +776,7 @@ static void emitForbiddenModifierBodyOperation(QCProgramBuilder& builder,
 
 static OwningOpRef<ModuleOp>
 buildInvalidNestedModifierProgram(MLIRContext* context,
-                                  const VerifierModifierKind modifier,
+                                  VerifierModifierKind modifier,
                                   ForbiddenModifierBodyOp forbiddenOperation) {
   QCProgramBuilder builder(context);
   builder.initialize();
@@ -746,6 +817,8 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
       ForbiddenModifierBodyOp::Dealloc,
       ForbiddenModifierBodyOp::Measure,
       ForbiddenModifierBodyOp::Reset,
+      ForbiddenModifierBodyOp::QubitRegisterAlloc,
+      ForbiddenModifierBodyOp::QubitRegisterDealloc,
       ForbiddenModifierBodyOp::QubitRegisterLoad,
       ForbiddenModifierBodyOp::QubitRegisterStore,
       ForbiddenModifierBodyOp::CBitAlloc,
@@ -765,10 +838,20 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
       bool sawExpectedDiagnostic = false;
       ScopedDiagnosticHandler handler(
           context.get(), [&](Diagnostic& diagnostic) {
+            const bool capturesQubitRegister =
+                forbiddenOperation ==
+                    ForbiddenModifierBodyOp::QubitRegisterDealloc ||
+                forbiddenOperation ==
+                    ForbiddenModifierBodyOp::QubitRegisterLoad ||
+                forbiddenOperation ==
+                    ForbiddenModifierBodyOp::QubitRegisterStore;
+            const StringRef expected =
+                capturesQubitRegister
+                    ? "body must not capture qubits from above"
+                    : "body must not contain non-unitary operations or access "
+                      "registers";
             sawExpectedDiagnostic |=
-                StringRef(diagnostic.str())
-                    .contains("body must not contain non-unitary operations or "
-                              "access registers");
+                StringRef(diagnostic.str()).contains(expected);
             return success();
           });
       EXPECT_TRUE(failed(verify(*moduleOp)));
@@ -779,8 +862,7 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
 
 static OwningOpRef<ModuleOp>
 buildInvalidModifierCaptureProgram(MLIRContext* context,
-                                   const VerifierModifierKind modifier,
-                                   const bool nested) {
+                                   VerifierModifierKind modifier, bool nested) {
   QCProgramBuilder builder(context);
   builder.initialize();
   auto target = builder.allocQubit();
@@ -835,6 +917,238 @@ TEST_F(QCTest, ModifiersRejectDirectAndNestedQubitCaptures) {
       EXPECT_TRUE(sawExpectedDiagnostic);
     }
   }
+}
+
+TEST_F(QCTest, ModifiersRejectCapturedQubitRegisters) {
+  constexpr std::array modifiers{VerifierModifierKind::Inv,
+                                 VerifierModifierKind::Ctrl,
+                                 VerifierModifierKind::Pow};
+  for (const auto modifier : modifiers) {
+    SCOPED_TRACE(testing::Message()
+                 << "modifier=" << modifierName(modifier).str());
+    QCProgramBuilder builder(context.get());
+    builder.initialize();
+    auto captured = builder.allocQubitRegisterStorage(1);
+    auto target = builder.allocQubit();
+    auto control = builder.allocQubit();
+    const auto body = [&](Value) {
+      memref::DeallocOp::create(builder, captured);
+    };
+    Operation* modifierOp = nullptr;
+    switch (modifier) {
+    case VerifierModifierKind::Inv:
+      modifierOp = InvOp::create(builder, target, body).getOperation();
+      break;
+    case VerifierModifierKind::Ctrl:
+      modifierOp =
+          CtrlOp::create(builder, control, target, body).getOperation();
+      break;
+    case VerifierModifierKind::Pow:
+      modifierOp = PowOp::create(builder, 2.0, target, body).getOperation();
+      break;
+    }
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains("body must not capture qubits from above; use "
+                        "only its aliased block arguments");
+      return success();
+    });
+    EXPECT_TRUE(failed(verify(modifierOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+TEST_F(QCTest, ModifierCanonicalizersPreserveClassicalCalls) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @observe()
+
+      func.func @empty_inv() {
+        %q = qc.alloc : !qc.qubit
+        qc.inv (%arg = %q) {
+          func.call @observe() : () -> ()
+          qc.yield
+        } : !qc.qubit
+        qc.dealloc %q : !qc.qubit
+        return
+      }
+
+      func.func @empty_ctrl() {
+        %control = qc.alloc : !qc.qubit
+        %target = qc.alloc : !qc.qubit
+        qc.ctrl(%control) targets(%arg = %target) {
+          func.call @observe() : () -> ()
+          qc.yield
+        } : {!qc.qubit}, {!qc.qubit}
+        qc.dealloc %control : !qc.qubit
+        qc.dealloc %target : !qc.qubit
+        return
+      }
+
+      func.func @empty_pow() {
+        %q = qc.alloc : !qc.qubit
+        %two = arith.constant 2.0 : f64
+        qc.pow(%two) (%arg = %q) {
+          func.call @observe() : () -> ()
+          qc.yield
+        } : !qc.qubit
+        qc.dealloc %q : !qc.qubit
+        return
+      }
+
+      func.func @zero_pow() {
+        %q = qc.alloc : !qc.qubit
+        %zero = arith.constant 0.0 : f64
+        qc.pow(%zero) (%arg = %q) {
+          func.call @observe() : () -> ()
+          qc.x %arg : !qc.qubit
+          qc.yield
+        } : !qc.qubit
+        qc.dealloc %q : !qc.qubit
+        return
+      }
+
+      func.func @move_inv_ctrl() {
+        %control = qc.alloc : !qc.qubit
+        %target = qc.alloc : !qc.qubit
+        qc.inv (%outer_control = %control, %outer_target = %target) {
+          func.call @observe() : () -> ()
+          qc.ctrl(%outer_control) targets(%inner_target = %outer_target) {
+            qc.x %inner_target : !qc.qubit
+            qc.yield
+          } : {!qc.qubit}, {!qc.qubit}
+          qc.yield
+        } : !qc.qubit, !qc.qubit
+        qc.dealloc %control : !qc.qubit
+        qc.dealloc %target : !qc.qubit
+        return
+      }
+
+      func.func @nested_unitary(%condition: i1) {
+        %q = qc.alloc : !qc.qubit
+        qc.inv (%arg = %q) {
+          scf.if %condition {
+            qc.x %arg : !qc.qubit
+          }
+          qc.yield
+        } : !qc.qubit
+        qc.dealloc %q : !qc.qubit
+        return
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  PassManager manager(context.get());
+  manager.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(manager.run(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  size_t calls = 0;
+  module->walk([&](func::CallOp) { ++calls; });
+  EXPECT_EQ(calls, 5U);
+
+  auto nestedUnitary = module->lookupSymbol<func::FuncOp>("nested_unitary");
+  ASSERT_TRUE(nestedUnitary);
+  EXPECT_EQ(range_size(nestedUnitary.getOps<InvOp>()), 1U);
+  size_t nestedXOps = 0;
+  nestedUnitary.walk([&](XOp) { ++nestedXOps; });
+  EXPECT_EQ(nestedXOps, 1U);
+}
+
+static Operation* createEmptyModifier(QCProgramBuilder& builder,
+                                      VerifierModifierKind modifier,
+                                      Value control, Value target) {
+  switch (modifier) {
+  case VerifierModifierKind::Inv:
+    return InvOp::create(builder, target, [](Value) {}).getOperation();
+  case VerifierModifierKind::Ctrl:
+    return CtrlOp::create(builder, control, target, [](Value) {})
+        .getOperation();
+  case VerifierModifierKind::Pow:
+    return PowOp::create(builder, 2.0, target, [](Value) {}).getOperation();
+  }
+  llvm_unreachable("unknown modifier");
+}
+
+TEST_F(QCTest, ModifiersRejectMismatchedBodyArguments) {
+  constexpr std::array modifiers{VerifierModifierKind::Inv,
+                                 VerifierModifierKind::Ctrl,
+                                 VerifierModifierKind::Pow};
+  for (const auto modifier : modifiers) {
+    for (const bool wrongType : {false, true}) {
+      SCOPED_TRACE(testing::Message()
+                   << "modifier=" << modifierName(modifier).str()
+                   << ", wrongType=" << wrongType);
+      QCProgramBuilder builder(context.get());
+      builder.initialize();
+      auto target = builder.allocQubit();
+      auto control = builder.allocQubit();
+      Operation* modifierOp =
+          createEmptyModifier(builder, modifier, control, target);
+      Block& body = modifierOp->getRegion(0).front();
+      if (wrongType) {
+        body.getArgument(0).setType(builder.getI1Type());
+      } else {
+        body.addArgument(QubitType::get(context.get()), builder.getLoc());
+      }
+
+      ScopedDiagnosticHandler handler(context.get(),
+                                      [](Diagnostic&) { return success(); });
+      EXPECT_TRUE(failed(verify(modifierOp)));
+    }
+  }
+}
+
+TEST_F(QCTest, ModifiersRejectDuplicateTargets) {
+  constexpr std::array modifiers{VerifierModifierKind::Inv,
+                                 VerifierModifierKind::Ctrl,
+                                 VerifierModifierKind::Pow};
+  for (const auto modifier : modifiers) {
+    SCOPED_TRACE(testing::Message()
+                 << "modifier=" << modifierName(modifier).str());
+    QCProgramBuilder builder(context.get());
+    builder.initialize();
+    auto target = builder.allocQubit();
+    auto control = builder.allocQubit();
+    const SmallVector<Value> targets{target, target};
+    Operation* modifierOp = nullptr;
+    switch (modifier) {
+    case VerifierModifierKind::Inv:
+      modifierOp =
+          InvOp::create(builder, targets, [](ValueRange) {}).getOperation();
+      break;
+    case VerifierModifierKind::Ctrl:
+      modifierOp =
+          CtrlOp::create(builder, ValueRange{control}, targets, [](ValueRange) {
+          }).getOperation();
+      break;
+    case VerifierModifierKind::Pow:
+      modifierOp = PowOp::create(builder, 2.0, targets, [](ValueRange) {
+                   }).getOperation();
+      break;
+    }
+
+    ScopedDiagnosticHandler handler(context.get(),
+                                    [](Diagnostic&) { return success(); });
+    EXPECT_TRUE(failed(verify(modifierOp)));
+  }
+}
+
+TEST_F(QCTest, YieldRejectsNonModifierParent) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto yield = YieldOp::create(builder);
+
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  EXPECT_TRUE(failed(verify(yield)));
+  yield.erase();
 }
 
 /// \name QC/Modifiers/CtrlOp.cpp
@@ -925,6 +1239,112 @@ TEST_F(QCTest, PowExponentIsUnitaryParameter) {
   EXPECT_EQ(unitary.getParameter(0), powOp.getExponent());
   ASSERT_EQ(unitary.getParameters().size(), 1);
   EXPECT_EQ(unitary.getParameters().front(), powOp.getExponent());
+}
+
+TEST_F(QCTest, OverflowingFinitePowFoldsLeaveVerifiedModifiers) {
+  const auto build = [&](bool nested) {
+    return QCProgramBuilder::build(context.get(), [&](auto& builder) {
+      auto qubits = builder.allocQubitRegister(1);
+      if (nested) {
+        builder.pow(2.0, qubits[0], [&](Value outer) {
+          builder.pow(std::numeric_limits<double>::max(), outer,
+                      [&](Value inner) { builder.x(inner); });
+        });
+      } else {
+        builder.pow(std::numeric_limits<double>::max(), qubits[0],
+                    [&](Value target) { builder.x(target); });
+      }
+      return builder.measure(qubits[0]);
+    });
+  };
+
+  for (const bool nested : {false, true}) {
+    auto program = build(nested);
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(succeeded(verify(*program)));
+    ASSERT_TRUE(succeeded(runQCCleanupPipeline(program.get())));
+    ASSERT_TRUE(succeeded(verify(*program)));
+    size_t powCount = 0;
+    program->walk([&](PowOp) { ++powCount; });
+    EXPECT_EQ(powCount, nested ? 2U : 1U);
+  }
+
+  auto foldedParameter =
+      QCProgramBuilder::build(context.get(), [](auto& builder) {
+        auto qubits = builder.allocQubitRegister(1);
+        builder.pow(2.0, qubits[0], [&](Value target) {
+          auto half = arith::ConstantOp::create(
+              builder, builder.getUnknownLoc(),
+              builder.getF64FloatAttr(std::numeric_limits<double>::max() /
+                                      2.0));
+          auto theta =
+              arith::AddFOp::create(builder, builder.getUnknownLoc(),
+                                    half.getResult(), half.getResult());
+          builder.rx(theta.getResult(), target);
+        });
+        return builder.measure(qubits[0]);
+      });
+  ASSERT_TRUE(foldedParameter);
+  ASSERT_TRUE(succeeded(verify(*foldedParameter)));
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(foldedParameter.get())));
+  ASSERT_TRUE(succeeded(verify(*foldedParameter)));
+  size_t foldedPowCount = 0;
+  foldedParameter->walk([&](PowOp) { ++foldedPowCount; });
+  EXPECT_EQ(foldedPowCount, 1U);
+}
+
+TEST_F(QCTest, DynamicPowScalingDoesNotIntroduceRuntimeOverflow) {
+  auto program = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @dynamic_parameter(%theta: f64) {
+        %two = arith.constant 2.0 : f64
+        %q = qc.alloc : !qc.qubit
+        qc.pow(%two) (%arg = %q) {
+          qc.rx(%theta) %arg : !qc.qubit
+          qc.yield
+        } : !qc.qubit
+        qc.dealloc %q : !qc.qubit
+        return
+      }
+      func.func @dynamic_nested(%inner_exponent: f64) {
+        %two = arith.constant 2.0 : f64
+        %q = qc.alloc : !qc.qubit
+        qc.pow(%two) (%outer = %q) {
+          qc.pow(%inner_exponent) (%inner = %outer) {
+            qc.x %inner : !qc.qubit
+            qc.yield
+          } : !qc.qubit
+          qc.yield
+        } : !qc.qubit
+        qc.dealloc %q : !qc.qubit
+        return
+      }
+      func.func @foldable_nested() {
+        %two = arith.constant 2.0 : f64
+        %q = qc.alloc : !qc.qubit
+        qc.pow(%two) (%outer = %q) {
+          %half = arith.constant 8.988465674311579E+307 : f64
+          %inner_exponent = arith.addf %half, %half : f64
+          qc.pow(%inner_exponent) (%inner = %outer) {
+            qc.x %inner : !qc.qubit
+            qc.yield
+          } : !qc.qubit
+          qc.yield
+        } : !qc.qubit
+        qc.dealloc %q : !qc.qubit
+        return
+      }
+    }
+  )mlir",
+                                             context.get());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(program.get())));
+  ASSERT_TRUE(succeeded(verify(*program)));
+
+  size_t powCount = 0;
+  program->walk([&](PowOp) { ++powCount; });
+  EXPECT_EQ(powCount, 5U);
 }
 
 TEST_F(QCTest, PositiveIntegralPowUCanonicalizes) {

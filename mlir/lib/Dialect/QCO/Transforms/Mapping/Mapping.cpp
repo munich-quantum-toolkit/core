@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/Graph.h"
 #include "mlir/Dialect/QCO/Utils/Layout.h"
@@ -34,14 +35,17 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Dominance.h>
 #include <mlir/IR/Location.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
@@ -49,6 +53,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <iterator>
 #include <memory>
@@ -568,54 +573,88 @@ public:
 
 protected:
   void runOnOperation() override {
-    assert(alpha > 0 && "expected alpha > 0");
-    assert(niterations > 0 && "expected niterations > 0");
-    assert(ntrials > 0 && "expected ntrials > 0");
+    constexpr size_t maxSearchOption = 4096;
+    auto mod = getOperation();
+    const auto alphaValue = alpha.getValue();
+    const auto lambdaValue = lambda.getValue();
+    if (!std::isfinite(alphaValue) || !(alphaValue > 0)) {
+      mod.emitError() << "requires finite alpha > 0";
+      signalPassFailure();
+      return;
+    }
+    if (!std::isfinite(lambdaValue)) {
+      mod.emitError() << "requires finite lambda";
+      signalPassFailure();
+      return;
+    }
+    if (nlookahead > maxSearchOption) {
+      mod.emitError() << "requires nlookahead <= " << maxSearchOption;
+      signalPassFailure();
+      return;
+    }
+    if (niterations == 0 || niterations > maxSearchOption) {
+      mod.emitError() << "requires 0 < niterations <= " << maxSearchOption;
+      signalPassFailure();
+      return;
+    }
+    if (ntrials == 0 || ntrials > maxSearchOption) {
+      mod.emitError() << "requires 0 < ntrials <= " << maxSearchOption;
+      signalPassFailure();
+      return;
+    }
 
     if (!target) {
-      llvm::reportFatalUsageError("No compiler target specified!");
+      mod.emitError() << "requires a compiler target";
+      signalPassFailure();
+      return;
     }
 
-    auto moduleOp = getOperation();
     if (!target->hasExplicitTopology()) {
-      moduleOp.emitError()
-          << "place-and-route requires an explicit target topology";
+      mod.emitError() << "place-and-route requires an explicit target topology";
       signalPassFailure();
       return;
     }
 
-    auto func = mqt::getEntryPoint(moduleOp);
-    if (!func) {
-      moduleOp.emitError() << "does not contain an entry point function";
+    auto entryPoint = mqt::getEntryPoint(mod);
+    if (!entryPoint) {
+      mod.emitError() << "does not contain an entry point function";
       signalPassFailure();
       return;
     }
 
-    if (failed(validateRoutingOperations(func))) {
+    if (failed(validateMappingInput(entryPoint)) ||
+        failed(validateRoutingOperations(entryPoint))) {
       signalPassFailure();
       return;
     }
 
-    auto computation = discoverComputation(func);
-    if (failed(computation) ||
-        failed(checkCapacity(func, *target, *computation))) {
+    OwningOpRef<ModuleOp> transformedModule(mod.clone());
+    auto transformedFunc = mqt::getEntryPoint(*transformedModule);
+    auto comp = discoverComputation(transformedFunc);
+    if (failed(comp) ||
+        failed(checkCapacity(transformedFunc, *target, *comp))) {
       signalPassFailure();
       return;
     }
 
-    auto& body = func.getFunctionBody();
-    auto& wires = computation->wires;
-    auto& infos = computation->infos;
+    // A classical-only entry point has nothing to place or route.
+    if (comp->wires.empty()) {
+      return;
+    }
+
+    auto& body = transformedFunc.getFunctionBody();
+    auto& wires = comp->wires;
+    auto& infos = comp->infos;
     auto layout = generateLayout(wires, infos);
     if (failed(layout)) {
-      func.emitError() << "failed to refine random initial layouts";
+      transformedFunc.emitError() << "failed to refine random initial layouts";
       signalPassFailure();
       return;
     }
 
     IRRewriter rewriter(&getContext());
-    std::tie(wires, infos) = std::move(
-        applyPlacement(body, *target, *layout, *computation, rewriter));
+    std::tie(wires, infos) =
+        std::move(applyPlacement(body, *target, *layout, *comp, rewriter));
 
     RoutingBundle bundle{.wires = std::move(wires),
                          .infos = std::move(infos),
@@ -624,20 +663,258 @@ protected:
     const auto routeRes =
         route<WireDirection::Forward, RoutingMode::Hot>(bundle, &rewriter);
     if (failed(routeRes)) {
-      func.emitError() << "failed to map the function";
+      transformedFunc.emitError() << "failed to map the function";
       signalPassFailure();
       return;
     }
 
-    // Collect statistics.
-    const auto stats = *routeRes;
-    numSwaps += stats.nswaps;
-
     // Fix SSA Dominance issues.
     llvm::for_each(body.getBlocks(), [](Block& b) { sortTopologically(&b); });
+
+    if (failed(verify(transformedFunc)) ||
+        failed(qco::verifyLinearity(transformedFunc))) {
+      transformedFunc.emitError() << "target mapping produced invalid IR";
+      signalPassFailure();
+      return;
+    }
+
+    entryPoint.getFunctionBody().takeBody(transformedFunc.getFunctionBody());
+    numSwaps += routeRes->nswaps;
   }
 
 private:
+  /// Return whether a type carries value-semantics quantum state.
+  static bool isQuantumType(Type type) {
+    if (isa<QubitType>(type)) {
+      return true;
+    }
+    const auto shaped = dyn_cast<ShapedType>(type);
+    return shaped && isa<QubitType>(shaped.getElementType());
+  }
+
+  /// Return whether a type is a tensor carrying value-semantics quantum state.
+  static bool isQuantumTensorType(Type type) {
+    const auto tensor = dyn_cast<RankedTensorType>(type);
+    return tensor && isa<QubitType>(tensor.getElementType());
+  }
+
+  struct WhileTensorTrace {
+    Value conditionArgument;
+    Value result;
+  };
+
+  /// Follow one tensor init through a while's before region to its result.
+  static FailureOr<WhileTensorTrace> traceWhileTensorInit(scf::WhileOp whileOp,
+                                                          size_t initIndex) {
+    Block* beforeBody = whileOp.getBeforeBody();
+    if (initIndex >= beforeBody->getNumArguments()) {
+      whileOp.emitError(
+          "target mapping cannot match an scf.while tensor init to its "
+          "before-region argument");
+      return failure();
+    }
+
+    Value current = beforeBody->getArgument(initIndex);
+    DenseSet<Value> visited;
+    while (visited.insert(current).second) {
+      OpOperand& use = *current.use_begin();
+      Operation* user = use.getOwner();
+      if (auto condition = dyn_cast<scf::ConditionOp>(user)) {
+        if (condition->getParentOp() != whileOp) {
+          whileOp.emitError(
+              "target mapping requires every quantum tensor scf.while init "
+              "to reach its condition");
+          return failure();
+        }
+
+        auto conditionArgs = condition.getArgs();
+        const auto conditionIt = llvm::find(conditionArgs, current);
+        if (conditionIt == conditionArgs.end()) {
+          whileOp.emitError(
+              "target mapping cannot match an scf.while tensor value to a "
+              "condition result");
+          return failure();
+        }
+        const auto resultIndex = static_cast<size_t>(
+            std::distance(conditionArgs.begin(), conditionIt));
+        if (resultIndex >= whileOp.getNumResults() ||
+            !isQuantumTensorType(whileOp.getResult(resultIndex).getType())) {
+          whileOp.emitError(
+              "target mapping cannot match an scf.while tensor value to a "
+              "quantum tensor result");
+          return failure();
+        }
+        return WhileTensorTrace{current, whileOp.getResult(resultIndex)};
+      }
+
+      Value next;
+      if (auto extract = dyn_cast<qtensor::ExtractOp>(user)) {
+        next = extract.getOutTensor();
+      } else if (auto insert = dyn_cast<qtensor::InsertOp>(user)) {
+        next = insert.getResult();
+      } else if (auto forOp = dyn_cast<scf::ForOp>(user)) {
+        next = forOp.getTiedLoopResult(&use);
+      } else if (auto nestedWhile = dyn_cast<scf::WhileOp>(user)) {
+        auto nestedTrace =
+            traceWhileTensorInit(nestedWhile, use.getOperandNumber());
+        if (failed(nestedTrace)) {
+          return failure();
+        }
+        next = nestedTrace->result;
+      } else if (auto ifOp = dyn_cast<IfOp>(user)) {
+        next = ifOp.getTiedResult(&use);
+      } else if (auto switchOp = dyn_cast<IndexSwitchOp>(user)) {
+        next = switchOp.getTiedResult(&use);
+      }
+
+      if (!next || !isQuantumTensorType(next.getType())) {
+        whileOp.emitError(
+            "target mapping requires every quantum tensor scf.while init to "
+            "reach its condition");
+        return failure();
+      }
+      current = next;
+    }
+
+    whileOp.emitError("target mapping found a cyclic scf.while tensor flow");
+    return failure();
+  }
+
+  /// Validate the assumptions used by TensorIterator for scf.while tensors.
+  static LogicalResult validateWhileTensorFlow(scf::WhileOp whileOp) {
+    auto inits = whileOp.getInits();
+    auto results = whileOp.getResults();
+    const auto numValues = std::max(inits.size(), results.size());
+    for (size_t index = 0; index < numValues; ++index) {
+      const bool initIsQubit =
+          index < inits.size() && isa<QubitType>(inits[index].getType());
+      const bool resultIsQubit =
+          index < results.size() && isa<QubitType>(results[index].getType());
+      if (initIsQubit != resultIsQubit) {
+        return whileOp.emitError(
+            "target mapping requires positional scalar-qubit scf.while "
+            "inputs and results");
+      }
+    }
+
+    auto condition =
+        dyn_cast<scf::ConditionOp>(whileOp.getBeforeBody()->getTerminator());
+    if (!condition) {
+      return whileOp.emitError(
+          "target mapping requires scf.while before regions to terminate with "
+          "scf.condition");
+    }
+
+    DenseSet<Value> conditionTensors;
+    for (Value argument : condition.getArgs()) {
+      if (isQuantumTensorType(argument.getType())) {
+        conditionTensors.insert(argument);
+      }
+    }
+
+    DenseSet<Value> reachedConditionTensors;
+    for (auto [index, init] : llvm::enumerate(whileOp.getInits())) {
+      if (!isQuantumTensorType(init.getType())) {
+        continue;
+      }
+      auto trace = traceWhileTensorInit(whileOp, index);
+      if (failed(trace)) {
+        return failure();
+      }
+      if (!conditionTensors.contains(trace->conditionArgument) ||
+          !reachedConditionTensors.insert(trace->conditionArgument).second) {
+        return whileOp.emitError(
+            "target mapping requires one-to-one scf.while tensor flow");
+      }
+    }
+
+    if (reachedConditionTensors.size() != conditionTensors.size()) {
+      return whileOp.emitError(
+          "target mapping requires every quantum tensor scf.while condition "
+          "result to originate from an init");
+    }
+    return success();
+  }
+
+  /// Return whether Mapping knows how to follow quantum values through an op.
+  static bool isSupportedQuantumCarrier(Operation* op) {
+    return isa<AllocOp, StaticOp, SinkOp, MeasureOp, ResetOp, YieldOp,
+               qtensor::AllocOp, ExtractOp, InsertOp, DeallocOp, scf::ForOp,
+               scf::WhileOp, scf::YieldOp, scf::ConditionOp, IfOp,
+               IndexSwitchOp, func::ReturnOp>(op) ||
+           isa<UnitaryOpInterface>(op);
+  }
+
+  /// Return whether Mapping recursively routes an operation's regions.
+  static bool isSupportedStructuredOperation(Operation* op) {
+    return isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(op);
+  }
+
+  /// Validate carrier support and bound recursive structured-region routing.
+  static LogicalResult validateMappingInput(func::FuncOp func) {
+    if (!func.getBody().hasOneBlock()) {
+      return func.emitError(
+          "target mapping supports only single-block entry functions");
+    }
+    if (llvm::any_of(func.getArgumentTypes(), isQuantumType) ||
+        llvm::any_of(func.getFunctionType().getResults(), isQuantumType)) {
+      return func.emitError(
+          "target mapping does not support quantum function arguments or "
+          "results; allocate qubits in the entry function body");
+    }
+
+    const WalkResult validation = func.walk([&](Operation* op) {
+      if (op == func.getOperation()) {
+        return WalkResult::advance();
+      }
+      if (isa<StaticOp>(op)) {
+        op->emitError() << "target mapping requires dynamically allocated "
+                           "qubits; static qubits are already placed";
+        return WalkResult::interrupt();
+      }
+      const bool carriesQuantum =
+          llvm::any_of(op->getOperandTypes(), isQuantumType) ||
+          llvm::any_of(op->getResultTypes(), isQuantumType);
+      if (carriesQuantum && !isSupportedQuantumCarrier(op)) {
+        op->emitError()
+            << "target mapping does not support quantum values carried by "
+            << op->getName();
+        return WalkResult::interrupt();
+      }
+
+      if (carriesQuantum) {
+        for (Operation* parent = op->getParentOp();
+             parent != nullptr && parent != func.getOperation();
+             parent = parent->getParentOp()) {
+          if (parent->getNumRegions() != 0 &&
+              !isSupportedStructuredOperation(parent) &&
+              !isa<UnitaryOpInterface>(parent)) {
+            parent->emitError()
+                << "target mapping does not support quantum operations nested "
+                   "in "
+                << parent->getName();
+            return WalkResult::interrupt();
+          }
+        }
+      }
+
+      if (auto whileOp = dyn_cast<scf::WhileOp>(op);
+          whileOp && failed(validateWhileTensorFlow(whileOp))) {
+        return WalkResult::interrupt();
+      }
+
+      // Mapping treats a unitary, including a modifier, as one routing node.
+      // Its region is the implementation of that node rather than nested
+      // structured control flow to route independently.
+      if (isa<UnitaryOpInterface>(op)) {
+        return WalkResult::skip();
+      }
+      return WalkResult::advance();
+    });
+
+    return validation.wasInterrupted() ? failure() : success();
+  }
+
   /// Return the qubit values in `values`, preserving their relative order.
   static SmallVector<Value> getQubitValues(ValueRange values) {
     return to_vector(llvm::make_filter_range(
@@ -1237,8 +1514,7 @@ private:
           continue;
         }
 
-        if (op->getNumRegions() > 0 && visited.insert(op).second) {
-          assert((isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(op)));
+        if (isSupportedStructuredOperation(op) && visited.insert(op).second) {
           composites.emplace_back(op, indices);
           continue;
         }
@@ -1268,9 +1544,9 @@ private:
   /// adding operands for indices not in the composite's index set. Returns a
   /// patch with the updated wire mapping which preserves the parent's wire
   /// infos and layout.
-  RoutingBundle::Patch place(CompositeUnitary& composite,
-                             const RoutingBundle& parent,
-                             IRRewriter& rewriter) {
+  FailureOr<RoutingBundle::Patch> place(CompositeUnitary& composite,
+                                        const RoutingBundle& parent,
+                                        IRRewriter& rewriter) {
     DenseSet<size_t> included; // Already included indices.
     included.reserve(composite.indices.size());
 
@@ -1297,16 +1573,18 @@ private:
       return it.qubit();
     }));
 
-    composite = CompositeUnitary{
-        .op = TypeSwitch<Operation*, Operation*>(composite.op)
-                  .Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
-                      [&](auto cfOp) { return extend(cfOp, addons, rewriter); })
-                  .Default([](Operation* op) {
-                    report_fatal_error("place: unhandled op: " +
-                                       op->getName().getStringRef());
-                    return nullptr;
-                  }),
-        .indices = allIndices};
+    Operation* originalOp = composite.op;
+    Operation* extendedOp =
+        TypeSwitch<Operation*, Operation*>(originalOp)
+            .Case<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(
+                [&](auto cfOp) { return extend(cfOp, addons, rewriter); })
+            .Default([](Operation*) { return nullptr; });
+    if (extendedOp == nullptr) {
+      originalOp->emitError(
+          "target mapping cannot place this region operation");
+      return failure();
+    }
+    composite = CompositeUnitary{.op = extendedOp, .indices = allIndices};
 
     auto results = composite.op->getResults();
 
@@ -1628,7 +1906,10 @@ private:
         for (auto& composite : composites) {
           if constexpr (Mode == RoutingMode::Hot) {
             auto patch = place(composite, bundle, *rewriter);
-            bundle.applyPatch(std::move(patch));
+            if (failed(patch)) {
+              return failure();
+            }
+            bundle.applyPatch(std::move(*patch));
           }
 
           auto res = dispatch<Direction, Mode>(composite, bundle, rewriter);
@@ -1671,7 +1952,7 @@ private:
         for (WireIterator it : wires) {
           if (it == std::default_sentinel) {
             std::advance(it, -2);
-            while (isa_and_nonnull<MeasureOp>(it.operation())) {
+            while (isa_and_nonnull<MeasureOp, ResetOp>(it.operation())) {
               std::advance(it, -1);
             }
           } else {
@@ -1692,21 +1973,21 @@ private:
           }
         }
 
-        // Keep terminal measurements after routing SWAPs. A measurement can
-        // only move past the routing frontier if doing so does not move it past
-        // a classical use of its result.
+        // Keep terminal measurements and resets after routing SWAPs. A
+        // measurement can only move past the routing frontier if doing so does
+        // not move it past a classical use of its result.
         for (auto& it : wires) {
           if (it != std::default_sentinel) {
             std::advance(it, -1);
             continue;
           }
-
           std::advance(it, -2);
           if (!comparable) {
             continue;
           }
-          while (auto measure = dyn_cast_or_null<MeasureOp>(it.operation())) {
-            if (latest != nullptr &&
+          while (isa_and_nonnull<MeasureOp, ResetOp>(it.operation())) {
+            auto measure = dyn_cast<MeasureOp>(it.operation());
+            if (measure && latest != nullptr &&
                 llvm::any_of(measure.getResult().getUsers(),
                              [&](Operation* user) {
                                while (user != nullptr &&

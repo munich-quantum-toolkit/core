@@ -14,11 +14,12 @@ def JeffToQCO : Pass<"jeff-to-qco", "mlir::ModuleOp"> {
   let description = [{
     This pass converts all operations from the `jeff` dialect to their equivalent operations in the QCO dialect.
     It ensures that the returned module is a valid QCO module.
-
     Note that this pass is still in development as QCO and `jeff` do not have full feature parity yet.
 
     Known limitations:
 
+    - `jeff.entrypoint` must select a string in `jeff.strings` that names a
+      defined, single-block `func.func` ending in `func.return`
     - Only specific `CustomOp`s are currently supported
     - Only specific `PPROp`s are currently supported
     - Support for multiple functions is currently limited
@@ -26,7 +27,8 @@ def JeffToQCO : Pass<"jeff-to-qco", "mlir::ModuleOp"> {
 
   let dependentDialects = ["mlir::arith::ArithDialect",
                            "mlir::cbit::CBitDialect", "mlir::math::MathDialect",
-                           "mlir::mqt::MQTDialect", "mlir::scf::SCFDialect",
+                           "mlir::func::FuncDialect", "mlir::mqt::MQTDialect",
+                           "mlir::scf::SCFDialect",
                            "mlir::tensor::TensorDialect",
                            "mlir::qco::QCODialect",
                            "mlir::qtensor::QTensorDialect",

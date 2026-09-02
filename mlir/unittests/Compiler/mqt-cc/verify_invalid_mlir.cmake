@@ -19,7 +19,14 @@ endfunction()
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 set(input_file "${OUTPUT_DIR}/invalid.mlir")
 file(WRITE "${input_file}" "module {\n")
+set(duplicate_entry_points "${OUTPUT_DIR}/duplicate-entry-points.mlir")
+file(
+  WRITE "${duplicate_entry_points}"
+  "module {\n  func.func @first() attributes {mqt.entry_point} { return }\n  func.func @second() attributes {mqt.entry_point} { return }\n}\n"
+)
 
 require_failure("invalid MLIR" "expected operation name" "${MQT_CC}" "${input_file}")
+require_failure("duplicate entry points" "module must contain at most one program entry point"
+                "${MQT_CC}" "${duplicate_entry_points}" "--emit=qc-import")
 require_failure("nonlinear QCO" "expected linear QCO value to have exactly one use" "${MQT_CC}"
                 "${NONLINEAR_QCO_INPUT}" "--emit=qco")

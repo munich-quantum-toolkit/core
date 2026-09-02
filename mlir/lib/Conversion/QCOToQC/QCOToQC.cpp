@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
@@ -29,15 +30,19 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
+#include <optional>
 #include <utility>
 
 namespace mlir {
@@ -83,6 +88,27 @@ struct LoweringState {
         "cannot mix static and dynamic qubit allocation modes in QCO program");
   }
 };
+
+} // namespace
+
+[[nodiscard]] static LogicalResult
+validateAllocationContracts(Operation* root, LoweringState& state) {
+  const auto result = root->walk([&](Operation* op) {
+    std::optional<AllocationMode> mode;
+    if (isa<qco::StaticOp>(op)) {
+      mode = AllocationMode::Static;
+    } else if (isa<qco::AllocOp, qtensor::AllocOp>(op)) {
+      mode = AllocationMode::Dynamic;
+    }
+    if (mode && failed(state.ensureAllocationMode(*mode, op))) {
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return failure(result.wasInterrupted());
+}
+
+namespace {
 
 /**
  * @brief Base class for conversion patterns that need access to lowering state
@@ -144,6 +170,123 @@ static void inlineRegion(Region& sourceRegion, Region& targetRegion,
   }
   const auto memref = dyn_cast<MemRefType>(type);
   return memref && isa<qc::QubitType>(memref.getElementType());
+}
+
+/// Trace a value-semantics quantum value to its reference-semantics input.
+[[nodiscard]] static Value traceReferenceInput(Value value) {
+  while (auto result = dyn_cast<OpResult>(value)) {
+    Operation* op = result.getOwner();
+    if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
+      value = unitary.getInputForOutput(value);
+      continue;
+    }
+    if (auto measure = dyn_cast<qco::MeasureOp>(op)) {
+      value = measure.getQubitIn();
+      continue;
+    }
+    if (auto reset = dyn_cast<qco::ResetOp>(op)) {
+      value = reset.getQubitIn();
+      continue;
+    }
+    if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
+      if (value != extract.getOutTensor()) {
+        return {};
+      }
+      value = extract.getTensor();
+      continue;
+    }
+    if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
+      value = insert.getDest();
+      continue;
+    }
+    if (auto forOp = dyn_cast<scf::ForOp>(op)) {
+      value = forOp.getTiedLoopInit(result)->get();
+      continue;
+    }
+    if (auto whileOp = dyn_cast<scf::WhileOp>(op)) {
+      value = whileOp.getInits()[result.getResultNumber()];
+      continue;
+    }
+    if (auto ifOp = dyn_cast<qco::IfOp>(op)) {
+      auto* input = ifOp.getTiedQubit(result);
+      if (input == nullptr) {
+        return {};
+      }
+      value = input->get();
+      continue;
+    }
+    if (auto switchOp = dyn_cast<qco::IndexSwitchOp>(op)) {
+      auto* input = switchOp.getTiedTarget(result);
+      if (input == nullptr) {
+        return {};
+      }
+      value = input->get();
+      continue;
+    }
+    return {};
+  }
+  return value;
+}
+
+[[nodiscard]] static LogicalResult
+validateReferencePreservingYield(Operation* terminator, ValueRange yielded,
+                                 ValueRange inputs) {
+  SmallVector<Value> quantumYields;
+  SmallVector<Value> quantumInputs;
+  llvm::copy_if(yielded, std::back_inserter(quantumYields), [](Value value) {
+    return isQuantumStateType(value.getType());
+  });
+  llvm::copy_if(inputs, std::back_inserter(quantumInputs), [](Value value) {
+    return isQuantumStateType(value.getType());
+  });
+  if (quantumYields.size() != quantumInputs.size()) {
+    return terminator->emitOpError(
+        "QCO-to-QC conversion requires quantum region results to match the "
+        "region inputs");
+  }
+  for (auto [yieldedValue, input] :
+       llvm::zip_equal(quantumYields, quantumInputs)) {
+    if (traceReferenceInput(yieldedValue) != input) {
+      return terminator->emitOpError(
+          "QCO-to-QC conversion requires quantum region results to preserve "
+          "input order");
+    }
+  }
+  return success();
+}
+
+[[nodiscard]] static LogicalResult
+validateReferencePreservingYields(Operation* root) {
+  const auto result = root->walk([&](Operation* op) {
+    ValueRange yielded;
+    if (auto yieldOp = dyn_cast<qco::YieldOp>(op)) {
+      yielded = yieldOp.getTargets();
+    } else if (auto yieldOp = dyn_cast<scf::YieldOp>(op)) {
+      if (!isa<scf::ForOp, scf::WhileOp>(op->getParentOp())) {
+        if (llvm::none_of(yieldOp.getResults(), [](Value value) {
+              return isQuantumStateType(value.getType());
+            })) {
+          return WalkResult::advance();
+        }
+        yieldOp.emitOpError(
+            "QCO-to-QC conversion supports quantum state in scf.yield only "
+            "for scf.for and scf.while");
+        return WalkResult::interrupt();
+      }
+      yielded = yieldOp.getResults();
+    } else if (auto conditionOp = dyn_cast<scf::ConditionOp>(op)) {
+      yielded = conditionOp.getArgs();
+    } else {
+      return WalkResult::advance();
+    }
+
+    SmallVector<Value> inputs(op->getBlock()->getArguments());
+    if (failed(validateReferencePreservingYield(op, yielded, inputs))) {
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return failure(result.wasInterrupted());
 }
 
 [[nodiscard]] static SmallVector<Value>
@@ -1177,10 +1320,18 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto moduleOp = getOperation();
+    auto original = getOperation();
+    OwningOpRef<ModuleOp> converted(original.clone());
+    auto module = *converted;
 
     // Create state object to track the qubit addressing mode
     LoweringState state;
+
+    if (failed(validateAllocationContracts(module, state)) ||
+        failed(validateReferencePreservingYields(module))) {
+      signalPassFailure();
+      return;
+    }
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
@@ -1254,9 +1405,16 @@ protected:
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
     // Apply the conversion
-    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
+    if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
+      return;
     }
+    if (failed(verify(module))) {
+      signalPassFailure();
+      return;
+    }
+    original->setAttrs(module->getAttrDictionary());
+    original.getBodyRegion().takeBody(module.getBodyRegion());
   }
 };
 

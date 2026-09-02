@@ -18,11 +18,13 @@
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -101,6 +103,179 @@ class QCOReplaceClassicalControlsRZZTest
       public testing::WithParamInterface<size_t> {};
 
 } // namespace
+
+TEST_F(QCOReplaceClassicalControlsTest,
+       AllMeasuredFastPathsPreserveClassicalBodyCalls) {
+  programBuilder.initialize();
+
+  auto rzControl = programBuilder.h(programBuilder.allocQubit());
+  auto rzTarget = programBuilder.h(programBuilder.allocQubit());
+  std::tie(rzControl, std::ignore) = programBuilder.measure(rzControl);
+  std::tie(rzTarget, std::ignore) = programBuilder.measure(rzTarget);
+  std::tie(rzControl, rzTarget) =
+      programBuilder.crz(0.789, rzControl, rzTarget);
+  programBuilder.sink(rzControl);
+  programBuilder.sink(rzTarget);
+
+  auto rzzControl = programBuilder.h(programBuilder.allocQubit());
+  auto rzzTarget0 = programBuilder.h(programBuilder.allocQubit());
+  auto rzzTarget1 = programBuilder.h(programBuilder.allocQubit());
+  std::tie(rzzControl, std::ignore) = programBuilder.measure(rzzControl);
+  std::tie(rzzTarget0, std::ignore) = programBuilder.measure(rzzTarget0);
+  std::tie(rzzTarget1, std::ignore) = programBuilder.measure(rzzTarget1);
+  auto [rzzControlOut, rzzTargetsOut] =
+      programBuilder.crzz(0.789, rzzControl, rzzTarget0, rzzTarget1);
+  programBuilder.sink(rzzControlOut);
+  programBuilder.sink(rzzTargetsOut.first);
+  programBuilder.sink(rzzTargetsOut.second);
+  program = programBuilder.finalize();
+  ASSERT_TRUE(program);
+
+  OpBuilder moduleBuilder(&context);
+  moduleBuilder.setInsertionPointToStart(program->getBody());
+  auto observe =
+      func::FuncOp::create(moduleBuilder, program->getLoc(), "observe",
+                           moduleBuilder.getFunctionType({}, {}));
+  observe.setPrivate();
+
+  size_t controls = 0;
+  program->walk([&](CtrlOp ctrl) {
+    ++controls;
+    OpBuilder bodyBuilder(&context);
+    bodyBuilder.setInsertionPointToStart(ctrl.getBody());
+    func::CallOp::create(bodyBuilder, ctrl.getLoc(), "observe", TypeRange{},
+                         ValueRange{});
+  });
+  ASSERT_EQ(controls, 2U);
+  ASSERT_TRUE(succeeded(verify(*program)));
+
+  ASSERT_TRUE(runReplaceClassicalControlsPass(*program).succeeded());
+  ASSERT_TRUE(succeeded(verify(*program)));
+  size_t calls = 0;
+  program->walk([&](func::CallOp) { ++calls; });
+  EXPECT_EQ(calls, 2U);
+}
+
+TEST_F(QCOReplaceClassicalControlsTest,
+       PartialMeasuredRZRefusesUnsafeSupportingOpHoist) {
+  auto input = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @observe()
+
+      func.func @main() {
+        %theta = arith.constant 0.789 : f64
+        %control = qco.static 0 : !qco.qubit
+        %target = qco.static 1 : !qco.qubit
+        %measured, %result = qco.measure %target : !qco.qubit
+        %control_out, %target_out = qco.ctrl(%control)
+            targets(%arg = %measured) {
+          %body = qco.rz(%theta) %arg : !qco.qubit -> !qco.qubit
+          func.call @observe() : () -> ()
+          qco.yield %body : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit})
+          -> ({!qco.qubit}, {!qco.qubit})
+        qco.sink %control_out : !qco.qubit
+        qco.sink %target_out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                           &context);
+  ASSERT_TRUE(input);
+  ASSERT_TRUE(succeeded(verify(*input)));
+
+  SmallVector<CtrlOp> controls;
+  input->walk([&](CtrlOp op) { controls.push_back(op); });
+  ASSERT_EQ(controls.size(), 1U);
+  Operation* originalControl = controls.front().getOperation();
+  auto& originalBody = *controls.front().getBody();
+  auto originalRotations = llvm::to_vector(originalBody.getOps<RZOp>());
+  auto originalCalls = llvm::to_vector(originalBody.getOps<func::CallOp>());
+  ASSERT_EQ(originalRotations.size(), 1U);
+  ASSERT_EQ(originalCalls.size(), 1U);
+  Operation* originalRotation = originalRotations.front().getOperation();
+  Operation* originalCall = originalCalls.front().getOperation();
+
+  ASSERT_TRUE(succeeded(runReplaceClassicalControlsPass(*input)));
+  ASSERT_TRUE(succeeded(verify(*input)));
+
+  controls.clear();
+  input->walk([&](CtrlOp op) { controls.push_back(op); });
+  ASSERT_EQ(controls.size(), 1U);
+  EXPECT_EQ(controls.front().getOperation(), originalControl);
+
+  auto& body = *controls.front().getBody();
+  auto rotations = llvm::to_vector(body.getOps<RZOp>());
+  auto calls = llvm::to_vector(body.getOps<func::CallOp>());
+  ASSERT_EQ(rotations.size(), 1U);
+  ASSERT_EQ(calls.size(), 1U);
+  EXPECT_EQ(rotations.front().getOperation(), originalRotation);
+  EXPECT_EQ(calls.front().getOperation(), originalCall);
+  EXPECT_TRUE(rotations.front()->isBeforeInBlock(calls.front()));
+  EXPECT_TRUE(calls.front()->isBeforeInBlock(body.getTerminator()));
+}
+
+TEST_F(QCOReplaceClassicalControlsTest,
+       PartialMeasuredRZZRefusesUnsafeSupportingOpHoist) {
+  auto input = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @observe()
+
+      func.func @main() {
+        %theta = arith.constant 0.789 : f64
+        %control = qco.static 0 : !qco.qubit
+        %target0 = qco.static 1 : !qco.qubit
+        %target1 = qco.static 2 : !qco.qubit
+        %measured, %result = qco.measure %target0 : !qco.qubit
+        %control_out, %target0_out, %target1_out = qco.ctrl(%control)
+            targets(%arg0 = %measured, %arg1 = %target1) {
+          %body0, %body1 = qco.rzz(%theta) %arg0, %arg1
+              : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          func.call @observe() : () -> ()
+          qco.yield %body0, %body1 : !qco.qubit, !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+          -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+        qco.sink %control_out : !qco.qubit
+        qco.sink %target0_out : !qco.qubit
+        qco.sink %target1_out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                           &context);
+  ASSERT_TRUE(input);
+  ASSERT_TRUE(succeeded(verify(*input)));
+
+  SmallVector<CtrlOp> controls;
+  input->walk([&](CtrlOp op) { controls.push_back(op); });
+  ASSERT_EQ(controls.size(), 1U);
+  Operation* originalControl = controls.front().getOperation();
+  auto& originalBody = *controls.front().getBody();
+  auto originalRotations = llvm::to_vector(originalBody.getOps<RZZOp>());
+  auto originalCalls = llvm::to_vector(originalBody.getOps<func::CallOp>());
+  ASSERT_EQ(originalRotations.size(), 1U);
+  ASSERT_EQ(originalCalls.size(), 1U);
+  Operation* originalRotation = originalRotations.front().getOperation();
+  Operation* originalCall = originalCalls.front().getOperation();
+
+  ASSERT_TRUE(succeeded(runReplaceClassicalControlsPass(*input)));
+  ASSERT_TRUE(succeeded(verify(*input)));
+
+  controls.clear();
+  input->walk([&](CtrlOp op) { controls.push_back(op); });
+  ASSERT_EQ(controls.size(), 1U);
+  EXPECT_EQ(controls.front().getOperation(), originalControl);
+
+  auto& body = *controls.front().getBody();
+  auto rotations = llvm::to_vector(body.getOps<RZZOp>());
+  auto calls = llvm::to_vector(body.getOps<func::CallOp>());
+  ASSERT_EQ(rotations.size(), 1U);
+  ASSERT_EQ(calls.size(), 1U);
+  EXPECT_EQ(rotations.front().getOperation(), originalRotation);
+  EXPECT_EQ(calls.front().getOperation(), originalCall);
+  EXPECT_TRUE(rotations.front()->isBeforeInBlock(calls.front()));
+  EXPECT_TRUE(calls.front()->isBeforeInBlock(body.getTerminator()));
+}
 
 TEST(QCOClassicalControlPhaseIdentityTest,
      controlledRZAndRZZRewritesPreserveBasisPhases) {

@@ -43,6 +43,12 @@ struct LoweringState {
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
 
+  /// Cache Base Profile qubit-register elements by source register and index.
+  DenseMap<Value, DenseMap<int64_t, Value>> staticQubitRegisterElements;
+
+  /// Next physical qubit index after all explicitly referenced static qubits.
+  int64_t nextStaticQubitIndex = 0;
+
   /// Cache qubit register sizes for reuse
   DenseMap<Value, Value> qregSizes;
 
@@ -89,6 +95,14 @@ struct LoweringState {
 struct QCToQIRTypeConverter final : LLVMTypeConverter {
   explicit QCToQIRTypeConverter(MLIRContext* ctx);
 };
+
+/**
+ * Validate the module-wide assumptions shared by the QIR conversions before
+ * either pass mutates the input module.
+ */
+[[nodiscard]] LogicalResult validateQIRConversionInput(ModuleOp moduleOp,
+                                                       bool requireSingleBlock,
+                                                       LoweringState& state);
 
 /**
  * @brief Base class for conversion patterns that need access to lowering state

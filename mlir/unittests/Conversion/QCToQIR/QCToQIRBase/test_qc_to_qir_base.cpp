@@ -11,9 +11,11 @@
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Support/Passes.h"
@@ -22,6 +24,7 @@
 
 #include <gtest/gtest.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/Affine/IR/AffineOps.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
@@ -31,17 +34,22 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
 #include <iosfwd>
+#include <limits>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -91,6 +99,18 @@ static LogicalResult runQCToQIRBaseConversion(ModuleOp moduleOp) {
   return pm.run(moduleOp);
 }
 
+static LogicalResult runQCToQIRBasePass(ModuleOp module) {
+  PassManager pm(module.getContext());
+  pm.addPass(createQCToQIRBase());
+  return pm.run(module);
+}
+
+static bool isEquivalentToClone(ModuleOp module, ModuleOp clone) {
+  return OperationEquivalence::isEquivalentTo(
+      module.getOperation(), clone.getOperation(),
+      OperationEquivalence::Flags::None);
+}
+
 static void expectFollowingXIsUncontrolled(
     const function_ref<void(qc::QCProgramBuilder&, Value, Value)>
         buildModifier) {
@@ -126,35 +146,518 @@ TEST(QCToQIRBaseNativeTest, EmptyCtrlDoesNotControlFollowingGate) {
       });
 }
 
+TEST(QCToQIRBaseNativeTest, LowersResetInIrreversibleBlock) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto qubit = builder.allocQubit();
+  builder.reset(qubit);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(succeeded(runQCToQIRBasePass(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  auto main = qir::getMainFunction(*module);
+  ASSERT_TRUE(main);
+  SmallVector<Block*> blocks;
+  for (Block& block : main.getBody()) {
+    blocks.push_back(&block);
+  }
+  ASSERT_EQ(blocks.size(), 4U);
+
+  LLVM::CallOp resetCall;
+  main.walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_RESET) {
+      resetCall = call;
+    }
+  });
+  ASSERT_TRUE(resetCall);
+  EXPECT_EQ(resetCall->getBlock(), blocks[2]);
+}
+
+TEST(QCToQIRBaseNativeTest,
+     RejectsReversibleOperationAfterIrreversibleWithoutMutation) {
+  for (const bool useMeasurement : {false, true}) {
+    SCOPED_TRACE(useMeasurement ? "measurement" : "reset");
+    MLIRContext context;
+    context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                        LLVM::LLVMDialect>();
+    qc::QCProgramBuilder builder(&context);
+    builder.initialize();
+    auto qubit = builder.allocQubit();
+    if (useMeasurement) {
+      (void)builder.measure(qubit);
+    } else {
+      builder.reset(qubit);
+    }
+    builder.h(qubit);
+    auto module = builder.finalize();
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    auto before = module->clone();
+
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCToQIRBasePass(*module)));
+    EXPECT_TRUE(StringRef(diagnostics)
+                    .contains("requires operations with observable effects or "
+                              "non-speculatable behavior to precede all "
+                              "measurements and resets"));
+    EXPECT_TRUE(isEquivalentToClone(*module, before));
+  }
+}
+
+TEST(QCToQIRBaseNativeTest,
+     AllowsIndependentUnitaryAndGlobalPhaseAfterIrreversible) {
+  for (const bool useMeasurement : {false, true}) {
+    SCOPED_TRACE(useMeasurement ? "measurement" : "reset");
+    MLIRContext context;
+    context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                        LLVM::LLVMDialect>();
+    qc::QCProgramBuilder builder(&context);
+    builder.initialize();
+    auto first = builder.staticQubit(0);
+    auto second = builder.staticQubit(1);
+    if (useMeasurement) {
+      (void)builder.measure(first);
+    } else {
+      builder.reset(first);
+    }
+    builder.h(second);
+    builder.gphase(0.25);
+    auto module = builder.finalize();
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
+
+    EXPECT_TRUE(succeeded(runQCToQIRBasePass(*module)));
+    EXPECT_TRUE(succeeded(verify(*module)));
+  }
+}
+
+TEST(QCToQIRBaseNativeTest,
+     RejectsAliasedStaticQubitAfterIrreversibleWithoutMutation) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  (void)builder.measure(builder.staticQubit(7));
+  builder.h(builder.staticQubit(7));
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  auto before = module->clone();
+
+  EXPECT_TRUE(failed(runQCToQIRBasePass(*module)));
+  EXPECT_TRUE(isEquivalentToClone(*module, before));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsSideEffectAfterIrreversibleWithoutMutation) {
+  for (const bool useMeasurement : {false, true}) {
+    SCOPED_TRACE(useMeasurement ? "measurement" : "reset");
+    MLIRContext context;
+    context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                        LLVM::LLVMDialect>();
+    qc::QCProgramBuilder builder(&context);
+    builder.initialize();
+    auto qubit = builder.allocQubit();
+    if (useMeasurement) {
+      (void)builder.measure(qubit);
+    } else {
+      builder.reset(qubit);
+    }
+    func::CallOp::create(builder, builder.getLoc(), "side_effect", TypeRange{},
+                         ValueRange{});
+    auto module = builder.finalize();
+    ASSERT_TRUE(module);
+    OpBuilder moduleBuilder(&context);
+    moduleBuilder.setInsertionPointToStart(module->getBody());
+    auto callee =
+        func::FuncOp::create(moduleBuilder, module->getLoc(), "side_effect",
+                             moduleBuilder.getFunctionType({}, {}));
+    callee.setPrivate();
+    ASSERT_TRUE(succeeded(verify(*module)));
+    auto before = module->clone();
+
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCToQIRBasePass(*module)));
+    EXPECT_TRUE(StringRef(diagnostics)
+                    .contains("requires operations with observable effects or "
+                              "non-speculatable behavior to precede all "
+                              "measurements and resets"));
+    EXPECT_TRUE(isEquivalentToClone(*module, before));
+  }
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsLiveMeasurementResultUseWithoutMutation) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto qubit = builder.allocQubit();
+  auto result = builder.measure(qubit);
+  auto extended = arith::ExtUIOp::create(builder, builder.getI64Type(), result);
+  auto module = builder.finalize(extended.getResult());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  auto before = module->clone();
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBasePass(*module)));
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("only supports measurement results returned "
+                            "directly or stored directly in returned CBit "
+                            "registers"));
+  EXPECT_TRUE(isEquivalentToClone(*module, before));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsExcessiveClassicalResultCapacityAtomically) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  auto module =
+      qc::QCProgramBuilder::build(&context, [](qc::QCProgramBuilder& builder) {
+        builder.allocClassicalBitRegister(1LL << 30);
+        return builder.intConstant(0);
+      });
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  auto before = module->clone();
+
+  EXPECT_TRUE(failed(runQCToQIRBasePass(*module)));
+  EXPECT_TRUE(isEquivalentToClone(*module, before));
+}
+
 TEST(QCToQIRBaseNativeTest, RejectsMultiBlockEntryFunctionWithoutMutation) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                       LLVM::LLVMDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  auto moduleOp = builder.finalize();
-  ASSERT_TRUE(moduleOp);
-  auto entryPoint = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  auto entryPoint = module->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(entryPoint);
   auto* extraBlock = &entryPoint.getBody().emplaceBlock();
   builder.setInsertionPointToEnd(extraBlock);
   auto status =
       arith::ConstantIntOp::create(builder, builder.getUnknownLoc(), 0, 64);
   func::ReturnOp::create(builder, builder.getUnknownLoc(), status.getResult());
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  auto before = module->clone();
+
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(isEquivalentToClone(*module, before));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsSingleBlockBackedgeBeforeMutation) {
+  MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect, func::FuncDialect,
+                      cf::ControlFlowDialect>();
+  OpBuilder builder(&context);
+  auto module = ModuleOp::create(builder.getUnknownLoc());
+  builder.setInsertionPointToStart(module.getBody());
+  auto main = func::FuncOp::create(builder, builder.getUnknownLoc(), "main",
+                                   builder.getFunctionType({}, {}));
+  mlir::mqt::setEntryPoint(main);
+  auto* entry = main.addEntryBlock();
+  builder.setInsertionPointToEnd(entry);
+  cf::BranchOp::create(builder, builder.getUnknownLoc(), entry);
+  auto before = module.clone();
+
+  EXPECT_TRUE(failed(runQCToQIRBasePass(module)));
+  EXPECT_TRUE(isEquivalentToClone(module, before));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsStructuredControlFlowBeforeMutation) {
+  MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect, arith::ArithDialect,
+                      func::FuncDialect, scf::SCFDialect>();
+  OpBuilder builder(&context);
+  auto module = ModuleOp::create(builder.getUnknownLoc());
+  builder.setInsertionPointToStart(module.getBody());
+  auto main = func::FuncOp::create(builder, builder.getUnknownLoc(), "main",
+                                   builder.getFunctionType({}, {}));
+  mlir::mqt::setEntryPoint(main);
+  auto* entry = main.addEntryBlock();
+  builder.setInsertionPointToEnd(entry);
+  const auto loc = builder.getUnknownLoc();
+  auto condition = arith::ConstantIntOp::create(builder, loc, 1, 1);
+  scf::IfOp::create(builder, loc, TypeRange{}, condition, false);
+  func::ReturnOp::create(builder, builder.getUnknownLoc());
+  ASSERT_TRUE(succeeded(verify(module)));
+  auto before = module.clone();
+
+  EXPECT_TRUE(failed(runQCToQIRBasePass(module)));
+  EXPECT_TRUE(isEquivalentToClone(module, before));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsAffineIfMeasurementBeforeMutation) {
+  MLIRContext context;
+  context
+      .loadDialect<mlir::mqt::MQTDialect, qc::QCDialect, affine::AffineDialect,
+                   arith::ArithDialect, func::FuncDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %qubit = qc.static 0 : !qc.qubit
+        %zero = arith.constant 0 : index
+        affine.if affine_set<(d0) : (d0 >= 0)>(%zero) {
+          %result = qc.measure %qubit : !qc.qubit -> i1
+        }
+        return
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  auto before = module->clone();
 
   bool sawExpectedDiagnostic = false;
   ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
     std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "QIR Base Profile requires a single-block entry function");
+    llvm::raw_string_ostream(message) << diagnostic;
+    sawExpectedDiagnostic |=
+        StringRef(message).contains("does not support region-based control");
     return success();
   });
-  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
+  EXPECT_TRUE(failed(runQCToQIRBasePass(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
-  EXPECT_EQ(entryPoint.getBlocks().size(), 2);
+  EXPECT_TRUE(isEquivalentToClone(*module, before));
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsControlFlowInHelperBeforeMutation) {
+  MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect, arith::ArithDialect,
+                      func::FuncDialect, scf::SCFDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @helper(%condition: i1) {
+        scf.if %condition {
+        }
+        return
+      }
+      func.func @main() attributes {mqt.entry_point} {
+        %condition = arith.constant true
+        func.call @helper(%condition) : (i1) -> ()
+        return
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  auto before = module->clone();
+
+  EXPECT_TRUE(failed(runQCToQIRBasePass(*module)));
+  EXPECT_TRUE(isEquivalentToClone(*module, before));
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRBaseNativeTest, PreservesNonControlRegionOperations) {
+  MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect, arith::ArithDialect,
+                      func::FuncDialect, tensor::TensorDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %generated = tensor.generate {
+        ^bb0(%index: index):
+          %value = arith.constant 7 : i64
+          tensor.yield %value : i64
+        } : tensor<1xi64>
+        return
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  ASSERT_TRUE(succeeded(runQCToQIRBasePass(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  size_t generated = 0;
+  module->walk([&](tensor::GenerateOp) { ++generated; });
+  EXPECT_EQ(generated, 1U);
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsEntryArgumentsBeforeMutation) {
+  MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect, func::FuncDialect>();
+  OpBuilder builder(&context);
+  auto module = ModuleOp::create(builder.getUnknownLoc());
+  builder.setInsertionPointToStart(module.getBody());
+  auto main =
+      func::FuncOp::create(builder, builder.getUnknownLoc(), "main",
+                           builder.getFunctionType({builder.getI64Type()}, {}));
+  mlir::mqt::setEntryPoint(main);
+  auto* entry = main.addEntryBlock();
+  builder.setInsertionPointToEnd(entry);
+  func::ReturnOp::create(builder, builder.getUnknownLoc());
+  ASSERT_TRUE(succeeded(verify(module)));
+  auto before = module.clone();
+
+  EXPECT_TRUE(failed(runQCToQIRBasePass(module)));
+  EXPECT_TRUE(isEquivalentToClone(module, before));
+}
+
+TEST(QCToQIRBaseNativeTest, ReusesRepeatedRegisterLoads) {
+  MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect, qc::QCDialect, arith::ArithDialect,
+                      func::FuncDialect, LLVM::LLVMDialect,
+                      memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto reg = builder.allocQubitRegisterStorage(2);
+  auto index = arith::ConstantIndexOp::create(builder, 0);
+  auto first = builder.loadQubit(reg, index);
+  builder.h(first);
+  auto second = builder.loadQubit(reg, index);
+  builder.x(second);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runQCToQIRBasePass(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  Value hQubit;
+  Value xQubit;
+  module->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_H) {
+      hQubit = call.getOperand(0);
+    } else if (call.getCallee() == qir::QIR_X) {
+      xQubit = call.getOperand(0);
+    }
+  });
+  ASSERT_TRUE(hQubit);
+  ASSERT_TRUE(xQubit);
+  EXPECT_EQ(hQubit, xQubit);
+}
+
+TEST(QCToQIRBaseNativeTest, AllocatesAfterSparseStaticQubitIds) {
+  MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect, qc::QCDialect, arith::ArithDialect,
+                      func::FuncDialect, LLVM::LLVMDialect>();
+  OpBuilder builder(&context);
+  auto module = ModuleOp::create(builder.getUnknownLoc());
+  builder.setInsertionPointToStart(module.getBody());
+  auto main = func::FuncOp::create(builder, builder.getUnknownLoc(), "main",
+                                   builder.getFunctionType({}, {}));
+  mlir::mqt::setEntryPoint(main);
+  auto* block = main.addEntryBlock();
+  builder.setInsertionPointToEnd(block);
+  auto fixed = qc::StaticOp::create(builder, builder.getUnknownLoc(), 2);
+  auto allocated = qc::AllocOp::create(builder, builder.getUnknownLoc());
+  qc::HOp::create(builder, builder.getUnknownLoc(), fixed);
+  qc::HOp::create(builder, builder.getUnknownLoc(), allocated);
+  qc::DeallocOp::create(builder, builder.getUnknownLoc(), allocated);
+  func::ReturnOp::create(builder, builder.getUnknownLoc());
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  ASSERT_TRUE(succeeded(runQCToQIRBasePass(module)));
+  ASSERT_TRUE(succeeded(verify(module)));
+  SmallVector<int64_t> qubitIds;
+  module.walk([&](LLVM::CallOp call) {
+    if (call.getCallee() != qir::QIR_H) {
+      return;
+    }
+    auto pointer = call.getOperand(0).getDefiningOp<LLVM::IntToPtrOp>();
+    ASSERT_TRUE(pointer);
+    auto index = pointer.getArg().getDefiningOp<LLVM::ConstantOp>();
+    ASSERT_TRUE(index);
+    qubitIds.push_back(cast<IntegerAttr>(index.getValue()).getInt());
+  });
+  llvm::sort(qubitIds);
+  EXPECT_EQ(qubitIds, SmallVector<int64_t>({2, 3}));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsDynamicRegisterIndexBeforeMutation) {
+  MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect, qc::QCDialect, arith::ArithDialect,
+                      func::FuncDialect, LLVM::LLVMDialect,
+                      memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto reg = builder.allocQubitRegisterStorage(2);
+  auto unknown = LLVM::UndefOp::create(builder, builder.getI64Type());
+  auto index = arith::IndexCastOp::create(builder, builder.getIndexType(),
+                                          unknown.getResult());
+  builder.h(builder.loadQubit(reg, index));
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  auto before = module->clone();
+
+  EXPECT_TRUE(failed(runQCToQIRBasePass(*module)));
+  EXPECT_TRUE(isEquivalentToClone(*module, before));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsRankZeroLoadBeforeMutation) {
+  MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect, qc::QCDialect, func::FuncDialect,
+                      memref::MemRefDialect>();
+  OpBuilder builder(&context);
+  const auto loc = builder.getUnknownLoc();
+  auto module = ModuleOp::create(loc);
+  builder.setInsertionPointToStart(module.getBody());
+  auto main = func::FuncOp::create(builder, loc, "main",
+                                   builder.getFunctionType({}, {}));
+  mlir::mqt::setEntryPoint(main);
+  auto* block = main.addEntryBlock();
+  builder.setInsertionPointToEnd(block);
+  const auto type = MemRefType::get({}, qc::QubitType::get(&context));
+  auto storage = memref::AllocaOp::create(builder, loc, type);
+  memref::LoadOp::create(builder, loc, storage, ValueRange{});
+  func::ReturnOp::create(builder, loc);
+  ASSERT_TRUE(succeeded(verify(module)));
+  auto before = module.clone();
+
+  EXPECT_TRUE(failed(runQCToQIRBasePass(module)));
+  EXPECT_TRUE(isEquivalentToClone(module, before));
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsStaticQubitIndexExhaustionBeforeMutation) {
+  MLIRContext context;
+  context
+      .loadDialect<mlir::mqt::MQTDialect, qc::QCDialect, func::FuncDialect>();
+  OpBuilder builder(&context);
+  const auto loc = builder.getUnknownLoc();
+  auto module = ModuleOp::create(loc);
+  builder.setInsertionPointToStart(module.getBody());
+  auto main = func::FuncOp::create(builder, loc, "main",
+                                   builder.getFunctionType({}, {}));
+  mlir::mqt::setEntryPoint(main);
+  auto* block = main.addEntryBlock();
+  builder.setInsertionPointToEnd(block);
+  auto fixed = qc::StaticOp::create(
+      builder, loc,
+      static_cast<uint64_t>(std::numeric_limits<int64_t>::max() - 1));
+  qc::HOp::create(builder, loc, fixed.getQubit());
+  auto allocated = qc::AllocOp::create(builder, loc);
+  qc::DeallocOp::create(builder, loc, allocated.getResult());
+  func::ReturnOp::create(builder, loc);
+  ASSERT_TRUE(succeeded(verify(module)));
+  auto before = module.clone();
+
+  EXPECT_TRUE(failed(runQCToQIRBasePass(module)));
+  EXPECT_TRUE(isEquivalentToClone(module, before));
 }
 
 TEST(QCToQIRBaseNativeTest, ControlledBarrierDoesNotControlFollowingGate) {
@@ -308,6 +811,7 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {
   builder.retype(c.getType());
   auto module = builder.finalize(c);
   ASSERT_TRUE(module);
+  auto before = module->clone();
 
   bool sawExpectedDiagnostic = false;
   ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
@@ -320,6 +824,7 @@ TEST(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {
   });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
+  EXPECT_TRUE(isEquivalentToClone(*module, before));
 }
 
 TEST(QCToQIRBaseNativeTest, AcceptsZeroInitializedClassicalRegister) {

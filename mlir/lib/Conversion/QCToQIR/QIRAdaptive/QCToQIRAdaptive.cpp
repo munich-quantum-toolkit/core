@@ -21,6 +21,7 @@
 #include "mlir/Dialect/QIR/QIRDefinitions.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <llvm/ADT/SmallPtrSet.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
@@ -37,14 +38,18 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -117,6 +122,31 @@ convertQubitMemRefAllocOp(memref::AllocOp op, memref::AllocOp::Adaptor adaptor,
 
   rewriter.replaceOp(op, array);
   return success();
+}
+
+static bool canReleaseInOutputBlock(Operation* release,
+                                    const LoweringState& state) {
+  Block* releaseBlock = release->getBlock();
+  SmallVector<Block*> worklist;
+  for (Block* successor : releaseBlock->getSuccessors()) {
+    worklist.push_back(successor);
+  }
+  SmallPtrSet<Block*, 8> visited;
+  while (!worklist.empty()) {
+    Block* block = worklist.pop_back_val();
+    if (block == releaseBlock) {
+      return false;
+    }
+    if (!visited.insert(block).second) {
+      continue;
+    }
+    for (Block* successor : block->getSuccessors()) {
+      worklist.push_back(successor);
+    }
+  }
+
+  const DominanceInfo dominance(state.outputBlock->getParentOp());
+  return dominance.dominates(release, state.outputBlock->getTerminator());
 }
 
 namespace {
@@ -324,30 +354,29 @@ struct ConvertMemRefDeallocOp final
           op, "Only one-dimensional registers are supported");
     }
     auto& state = getState();
+    auto size = state.qregSizes.lookup(op.getMemref());
+    if (!size) {
+      return rewriter.notifyMatchFailure(op, "unknown qubit register");
+    }
     auto* ctx = getContext();
     auto i64Type = rewriter.getI64Type();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
-
-    // Save current insertion point
-    const OpBuilder::InsertionGuard guard(rewriter);
-
-    // Release resources in output block
-    rewriter.setInsertionPoint(state.outputBlock->getTerminator());
 
     auto fnSig = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
                                              {i64Type, ptrType});
     auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
                                                 QIR_QUBIT_ARRAY_RELEASE, fnSig);
 
-    auto size = state.qregSizes.lookup(op.getMemref());
-    if (!size) {
-      return rewriter.notifyMatchFailure(op, "unknown qubit register");
+    if (canReleaseInOutputBlock(op, state)) {
+      const OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPoint(state.outputBlock->getTerminator());
+      LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
+                           ValueRange{size, adaptor.getMemref()});
+      rewriter.eraseOp(op);
+    } else {
+      rewriter.replaceOpWithNewOp<LLVM::CallOp>(
+          op, fnDec, ValueRange{size, adaptor.getMemref()});
     }
-
-    // Create the release call
-    LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
-                         ValueRange{size, adaptor.getMemref()});
-    rewriter.eraseOp(op);
 
     return success();
   }
@@ -415,19 +444,19 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
-    // Save current insertion point
-    const OpBuilder::InsertionGuard guard(rewriter);
-
-    // Release resources in output block
-    rewriter.setInsertionPoint(state.outputBlock->getTerminator());
-
     auto fnSig =
         LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), {ptrType});
     auto fnDec =
         getOrCreateFunctionDeclaration(rewriter, op, QIR_QUBIT_RELEASE, fnSig);
 
-    LLVM::CallOp::create(rewriter, op.getLoc(), fnDec, adaptor.getQubit());
-    rewriter.eraseOp(op);
+    if (canReleaseInOutputBlock(op, state)) {
+      const OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPoint(state.outputBlock->getTerminator());
+      LLVM::CallOp::create(rewriter, op.getLoc(), fnDec, adaptor.getQubit());
+      rewriter.eraseOp(op);
+    } else {
+      rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDec, adaptor.getQubit());
+    }
 
     return success();
   }
@@ -560,13 +589,12 @@ namespace {
  *
  * Conversion stages:
  * 1. Convert scf dialect to cf
- * 2. Cpmvert func dialect to LLVM
+ * 2. Convert func dialect to LLVM
  * 3. Ensure proper block structure for QIR Adaptive Profile
  * 4. Add QIR initialization call
  * 5. Convert QC and memref operations to QIR calls
- * 6. Set QIR metadata attributes
- * 7. Convert arith and cf dialects to LLVM
- * 8. Reconcile unrealized casts
+ * 6. Convert arith, cf, and math dialects to LLVM
+ * 7. Reconcile unrealized casts
  */
 struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   using QCToQIRAdaptiveBase::QCToQIRAdaptiveBase;
@@ -580,8 +608,7 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
    * 1. **Entry block**: Contains constant operations and initialization
    * 2. **Intermediate blocks**: Original function structure containing
    * quantum operations
-   * 3. **Output block**: Contains output recording calls and qubit release
-   * calls
+   * 3. **Output block**: Contains output recording and result-release calls
    *
    * @param main The main LLVM function to restructure
    * @param state The LoweringState of the conversion pass
@@ -589,7 +616,6 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
     OpBuilder builder(main.getBody());
     auto* firstBlock = &main.front();
-    auto* lastBlock = &main.back();
 
     auto* entryBlock = builder.createBlock(&main.getBody());
     main.getBlocks().splice(Region::iterator(firstBlock), main.getBlocks(),
@@ -601,11 +627,36 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
 
     builder.setInsertionPointToEnd(entryBlock);
     LLVM::BrOp::create(builder, main->getLoc(), firstBlock);
-    auto* terminatorOp = lastBlock->getTerminator();
-    terminatorOp->moveBefore(outputBlock, outputBlock->end());
 
-    builder.setInsertionPointToEnd(lastBlock);
-    LLVM::BrOp::create(builder, main->getLoc(), outputBlock);
+    SmallVector<LLVM::ReturnOp> returns;
+    for (auto& block : main.getBody()) {
+      if (!block.empty()) {
+        if (auto returnOp = dyn_cast<LLVM::ReturnOp>(block.back())) {
+          returns.push_back(returnOp);
+        }
+      }
+    }
+    if (returns.size() == 1) {
+      auto returnOp = returns.front();
+      auto* returnBlock = returnOp->getBlock();
+      returnOp->moveBefore(outputBlock, outputBlock->end());
+      builder.setInsertionPointToEnd(returnBlock);
+      LLVM::BrOp::create(builder, main.getLoc(), outputBlock);
+    } else {
+      const auto returnType = main.getFunctionType().getReturnType();
+      if (!isa<LLVM::LLVMVoidType>(returnType)) {
+        outputBlock->addArgument(returnType, main.getLoc());
+      }
+      for (auto returnOp : returns) {
+        builder.setInsertionPoint(returnOp);
+        LLVM::BrOp::create(builder, returnOp.getLoc(), returnOp.getOperands(),
+                           outputBlock);
+        returnOp.erase();
+      }
+      builder.setInsertionPointToEnd(outputBlock);
+      LLVM::ReturnOp::create(builder, main.getLoc(),
+                             outputBlock->getArguments());
+    }
 
     // Move up all constants to the beginning
     auto& entryOps = entryBlock->getOperations();
@@ -686,22 +737,22 @@ protected:
    */
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
-    auto moduleOp = getOperation();
-    auto entryPoint = mqt::getEntryPoint(moduleOp);
-    if (!entryPoint) {
-      moduleOp->emitError("no main function with mqt.entry_point found");
+    auto original = getOperation();
+    OwningOpRef<ModuleOp> converted(original.clone());
+    auto moduleOp = *converted;
+    LoweringState state;
+    if (failed(validateQIRConversionInput(
+            moduleOp, /*requireSingleBlock=*/false, state))) {
       signalPassFailure();
       return;
     }
-    auto entryPointName = entryPoint.getSymNameAttr();
+    auto entryPointName = mqt::getEntryPoint(moduleOp).getSymNameAttr();
     if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
       return;
     }
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);
-    LoweringState state;
-
     target.addLegalDialect<LLVM::LLVMDialect>();
 
     // Stage 1: Convert scf dialect to cf
@@ -719,7 +770,7 @@ protected:
     }
 
     // Stage 2.0: Prepare classical result registers
-    if (failed(prepareClassicalResults(moduleOp, state))) {
+    if (failed(prepareClassicalResults(moduleOp.getOperation(), state))) {
       signalPassFailure();
       return;
     }
@@ -739,7 +790,7 @@ protected:
 
     auto main = moduleOp.lookupSymbol<LLVM::LLVMFuncOp>(entryPointName);
     if (!main) {
-      moduleOp->emitError("no main function with mqt.entry_point found");
+      moduleOp.emitError("no main function with mqt.entry_point found");
       signalPassFailure();
       return;
     }
@@ -796,7 +847,15 @@ protected:
     passManager.addPass(createReconcileUnrealizedCastsPass());
     if (passManager.run(moduleOp).failed()) {
       signalPassFailure();
+      return;
     }
+    if (failed(verify(moduleOp)) ||
+        failed(mqt::verifyProgramMetadata(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
+    original->setAttrs(moduleOp->getAttrDictionary());
+    original.getBodyRegion().takeBody(moduleOp.getBodyRegion());
   }
 };
 

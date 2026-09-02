@@ -50,8 +50,10 @@
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
 #include <cmath>
@@ -70,6 +72,7 @@
 namespace mlir::qco {
 namespace {
 
+constexpr size_t MAX_CALL_NESTING = 64;
 constexpr size_t MAX_CONTROL_FLOW_STEPS = 10'000;
 
 struct QubitMap {
@@ -154,6 +157,7 @@ struct ClassicalEnv {
   DenseMap<Value, qc::Qubit> deferredMeasurements;
   /// Shared storage preserves CBit register identity across `func.call`.
   DenseMap<Value, std::shared_ptr<RegisterState>> registers;
+  size_t allocatedRegisterBits = 0;
   /// Shared storage preserves caller-visible writes through `func.call`.
   DenseMap<Value, std::shared_ptr<MemRefState>> memrefs;
 
@@ -378,8 +382,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
     return failure();
   }
   ArrayRef<qc::Qubit> wires = *wiresOr;
-  if (wires.size() >= 63 ||
-      local.rows() != static_cast<int64_t>(size_t{1} << wires.size())) {
+  if (wires.size() >= 63 || local.rows() != (int64_t{1} << wires.size())) {
     return unitary.emitError()
            << "unitary matrix dimension does not match its target count";
   }
@@ -595,8 +598,18 @@ static LogicalResult bindInteger(Value dest, const llvm::APInt& value,
 
 static LogicalResult allocateRegister(cbit::AllocOp alloc,
                                       ClassicalEnv& classical) {
-  const auto width =
-      static_cast<size_t>(alloc.getResult().getType().getWidth());
+  constexpr size_t maxClassicalRegisterBits = 1U << 20;
+  const auto rawWidth = alloc.getResult().getType().getWidth();
+  if (rawWidth <= 0 ||
+      classical.allocatedRegisterBits > maxClassicalRegisterBits ||
+      static_cast<size_t>(rawWidth) >
+          maxClassicalRegisterBits - classical.allocatedRegisterBits) {
+    return alloc.emitError()
+           << "QCO DD simulation supports at most " << maxClassicalRegisterBits
+           << " allocated classical register bits per execution";
+  }
+  const auto width = static_cast<size_t>(rawWidth);
+  classical.allocatedRegisterBits += width;
   ClassicalEnv::RegisterBit initialValue;
   if (alloc.getInitialization() == cbit::Initialization::Zero) {
     initialValue.value = false;
@@ -1488,6 +1501,10 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         }
         const auto guard =
             llvm::make_scope_exit([&] { walk.activeCalls.erase(calleeOp); });
+        if (walk.activeCalls.size() > MAX_CALL_NESTING) {
+          return call.emitError() << "func.call nesting exceeds the limit of "
+                                  << MAX_CALL_NESTING;
+        }
 
         if (failed(consumeExecutionStep(walk, call))) {
           return failure();
@@ -1762,13 +1779,21 @@ static bool isDeferrableMeasurement(MeasureOp measure, Block* entry,
 
 static void analyzeSampling(func::FuncOp func, Block* sampledEntry,
                             ArrayRef<Value> outputs,
-                            DenseSet<Operation*>& active, SamplingPlan& plan) {
+                            DenseSet<Operation*>& active, SamplingPlan& plan,
+                            size_t& remainingSteps) {
   Operation* funcOp = func.getOperation();
-  if (!active.insert(funcOp).second) {
+  if (remainingSteps == 0 || active.size() >= MAX_CALL_NESTING ||
+      !active.insert(funcOp).second) {
     plan.dynamic = true;
     return;
   }
+  const auto guard = llvm::make_scope_exit([&] { active.erase(funcOp); });
   func.getBody().walk([&](Operation* op) {
+    if (remainingSteps == 0) {
+      plan.dynamic = true;
+      return WalkResult::interrupt();
+    }
+    --remainingSteps;
     if (isa<ResetOp>(op)) {
       plan.dynamic = true;
     } else if (auto measure = dyn_cast<MeasureOp>(op)) {
@@ -1784,11 +1809,12 @@ static void analyzeSampling(func::FuncOp func, Block* sampledEntry,
           !callee.getBody().hasOneBlock()) {
         plan.dynamic = true;
       } else {
-        analyzeSampling(callee, sampledEntry, outputs, active, plan);
+        analyzeSampling(callee, sampledEntry, outputs, active, plan,
+                        remainingSteps);
       }
     }
+    return WalkResult::advance();
   });
-  active.erase(funcOp);
 }
 
 static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {
@@ -1810,7 +1836,8 @@ static FailureOr<SamplingPlan> getSamplingPlan(func::FuncOp func) {
   }
 
   DenseSet<Operation*> active;
-  analyzeSampling(func, &entry, plan.outputs, active, plan);
+  size_t remainingSteps = MAX_CONTROL_FLOW_STEPS;
+  analyzeSampling(func, &entry, plan.outputs, active, plan, remainingSteps);
   return plan;
 }
 

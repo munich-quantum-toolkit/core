@@ -54,6 +54,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
+#include <limits>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -346,6 +347,191 @@ TEST_F(QCOTest, DirectSingleQubitPowBuilder) {
   EXPECT_TRUE(pow.verify().succeeded());
 }
 
+TEST_F(QCOTest, BarrierRejectsMismatchedInputAndOutputArity) {
+  EXPECT_FALSE(parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %qubit = qco.alloc : !qco.qubit
+        "qco.barrier"(%qubit) : (!qco.qubit) -> ()
+        return
+      }
+    }
+  )mlir",
+                                           context.get()));
+}
+
+TEST_F(QCOTest, BarrierCanonicalizationPreservesPartialOverlap) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.static 1 : !qco.qubit
+        %q2 = qco.static 2 : !qco.qubit
+        %q3, %q4 = qco.barrier %q0, %q1
+          : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q5, %q6 = qco.barrier %q3, %q2
+          : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        qco.sink %q5 : !qco.qubit
+        qco.sink %q4 : !qco.qubit
+        qco.sink %q6 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  PassManager manager(context.get());
+  manager.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(manager.run(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  auto function = *module->getOps<func::FuncOp>().begin();
+  SmallVector<BarrierOp> barriers;
+  function.walk([&](BarrierOp barrier) { barriers.push_back(barrier); });
+  ASSERT_EQ(barriers.size(), 2U);
+  EXPECT_EQ(barriers[1].getQubitsIn()[0], barriers[0].getQubitsOut()[0]);
+}
+
+TEST_F(QCOTest, BarrierCanonicalizationMergesIdenticalSuccessors) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.static 1 : !qco.qubit
+        %q2, %q3 = qco.barrier %q0, %q1
+          : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        %q4, %q5 = qco.barrier %q2, %q3
+          : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        qco.sink %q4 : !qco.qubit
+        qco.sink %q5 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  PassManager manager(context.get());
+  manager.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(manager.run(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  auto function = *module->getOps<func::FuncOp>().begin();
+  auto statics = llvm::to_vector(function.getOps<StaticOp>());
+  auto barriers = llvm::to_vector(function.getOps<BarrierOp>());
+  ASSERT_EQ(statics.size(), 2U);
+  ASSERT_EQ(barriers.size(), 1U);
+  EXPECT_EQ(barriers[0].getQubitsIn()[0], statics[0].getQubit());
+  EXPECT_EQ(barriers[0].getQubitsIn()[1], statics[1].getQubit());
+}
+
+TEST_F(QCOTest, CtrlRejectsMismatchedInputAndOutputArity) {
+  for (const bool mismatchControls : {false, true}) {
+    SCOPED_TRACE(testing::Message() << "mismatchControls=" << mismatchControls);
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    auto control = builder.allocQubit();
+    auto target = builder.allocQubit();
+    const SmallVector<Type> controlsOut =
+        mismatchControls ? SmallVector<Type>{}
+                         : SmallVector<Type>{control.getType()};
+    const SmallVector<Type> targetsOut =
+        mismatchControls ? SmallVector<Type>{target.getType()}
+                         : SmallVector<Type>{};
+    OperationState state(builder.getLoc(), CtrlOp::getOperationName());
+    CtrlOp::build(builder, state, controlsOut, targetsOut, ValueRange{control},
+                  ValueRange{target});
+    Block& body = state.regions.front()->emplaceBlock();
+    body.addArgument(QubitType::get(context.get()), builder.getLoc());
+    {
+      const OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPointToStart(&body);
+      YieldOp::create(builder, body.getArgument(0));
+    }
+    auto ctrl = cast<CtrlOp>(builder.create(state));
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      const StringRef expected =
+          mismatchControls
+              ? "number of input controls must match the number of output "
+                "controls"
+              : "number of input targets must match the number of output "
+                "targets";
+      sawExpectedDiagnostic |= StringRef(diagnostic.str()).contains(expected);
+      return success();
+    });
+    EXPECT_TRUE(failed(ctrl.verify()));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+TEST_F(QCOTest, InvAndPowRejectMismatchedInputAndOutputArity) {
+  for (const bool isPower : {false, true}) {
+    SCOPED_TRACE(testing::Message() << "isPower=" << isPower);
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    auto target = builder.allocQubit();
+    OperationState state(builder.getLoc(), isPower ? PowOp::getOperationName()
+                                                   : InvOp::getOperationName());
+    if (isPower) {
+      auto exponent = builder.floatConstant(2.0);
+      PowOp::build(builder, state, TypeRange{}, exponent, ValueRange{target});
+    } else {
+      InvOp::build(builder, state, TypeRange{}, ValueRange{target});
+    }
+    Block& body = state.regions.front()->emplaceBlock();
+    body.addArgument(QubitType::get(context.get()), builder.getLoc());
+    {
+      const OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPointToStart(&body);
+      YieldOp::create(builder, body.getArgument(0));
+    }
+    auto* modifier = builder.create(state);
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains("number of input qubits must match the number of "
+                        "output qubits");
+      return success();
+    });
+    EXPECT_TRUE(failed(verify(modifier)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+TEST_F(QCOTest, InvAndPowRejectDuplicateYieldedQubits) {
+  for (const bool isPower : {false, true}) {
+    SCOPED_TRACE(testing::Message() << "isPower=" << isPower);
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    auto qubits = builder.allocQubitRegister(2);
+    Operation* modifier = nullptr;
+    const auto duplicateYield = [](ValueRange args) {
+      return SmallVector<Value>{args[0], args[0]};
+    };
+    if (isPower) {
+      modifier = PowOp::create(builder, qubits.qubits, 2.0, duplicateYield);
+    } else {
+      modifier = InvOp::create(builder, qubits.qubits, duplicateYield);
+    }
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str()).contains("duplicate yielded qubit");
+      return success();
+    });
+    EXPECT_TRUE(failed(verify(modifier)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
 TEST_F(QCOTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
   constexpr std::array<StringLiteral, 2> invalidPrograms{
       R"mlir(
@@ -388,11 +574,70 @@ TEST_F(QCOTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
   }
 }
 
+TEST_F(QCOTest, GlobalPhaseVerifierRejectsDirectAndFoldedNonFiniteAngles) {
+  constexpr std::array<StringLiteral, 4> invalidPrograms{
+      R"mlir(
+        module {
+          func.func @main() {
+            %infinity = arith.constant 0x7FF0000000000000 : f64
+            qco.gphase(%infinity)
+            return
+          }
+        }
+      )mlir",
+      R"mlir(
+        module {
+          func.func @main() {
+            %nan = arith.constant 0x7FF8000000000000 : f64
+            qco.gphase(%nan)
+            return
+          }
+        }
+      )mlir",
+      R"mlir(
+        module {
+          func.func @main() {
+            %max = arith.constant 1.7976931348623157E+308 : f64
+            %infinity = arith.addf %max, %max : f64
+            qco.gphase(%infinity)
+            return
+          }
+        }
+      )mlir",
+      R"mlir(
+        module {
+          func.func @main() {
+            %zero = arith.constant 0.0 : f64
+            %nan = arith.divf %zero, %zero : f64
+            qco.gphase(%nan)
+            return
+          }
+        }
+      )mlir"};
+
+  for (const auto source : invalidPrograms) {
+    bool sawExpectedDiagnostic = false;
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains(
+                  "constant parameter expression at index 0 must be finite");
+      return success();
+    });
+    EXPECT_FALSE(parseSourceString<ModuleOp>(source, context.get()));
+    EXPECT_TRUE(sawExpectedDiagnostic) << diagnostics;
+  }
+}
+
 namespace {
 
 enum class VerifierModifierKind : uint8_t { Inv, Ctrl, Pow };
 enum class ForbiddenModifierBodyOp : uint8_t {
   Measure,
+  QTensorAlloc,
+  QTensorFromElements,
   CBitAlloc,
   CBitLoad,
   CBitStore
@@ -416,6 +661,10 @@ static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
   switch (kind) {
   case ForbiddenModifierBodyOp::Measure:
     return "measure";
+  case ForbiddenModifierBodyOp::QTensorAlloc:
+    return "qtensor.alloc";
+  case ForbiddenModifierBodyOp::QTensorFromElements:
+    return "qtensor.from_elements";
   case ForbiddenModifierBodyOp::CBitAlloc:
     return "cbit.alloc";
   case ForbiddenModifierBodyOp::CBitLoad:
@@ -469,12 +718,20 @@ buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
   auto condition = builder.boolConstant(true);
   auto cbitReg = builder.allocClassicalBitRegister(1);
   auto index = arith::ConstantIndexOp::create(builder, 0);
+  auto one = arith::ConstantIndexOp::create(builder, 1);
   const auto modifierBody = [&](Value argument) -> Value {
     auto ifOp = IfOp::create(
         builder, condition, argument, [&](Value nestedArgument) -> Value {
           switch (forbiddenOperation) {
           case ForbiddenModifierBodyOp::Measure:
             return MeasureOp::create(builder, nestedArgument).getQubitOut();
+          case ForbiddenModifierBodyOp::QTensorAlloc:
+            qtensor::AllocOp::create(builder, one);
+            break;
+          case ForbiddenModifierBodyOp::QTensorFromElements:
+            qtensor::FromElementsOp::create(builder,
+                                            ValueRange{nestedArgument});
+            break;
           case ForbiddenModifierBodyOp::CBitAlloc:
             cbit::AllocOp::create(
                 builder, cbit::RegisterType::get(builder.getContext(), 1),
@@ -511,8 +768,12 @@ TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
                                  VerifierModifierKind::Ctrl,
                                  VerifierModifierKind::Pow};
   constexpr std::array forbiddenOperations{
-      ForbiddenModifierBodyOp::Measure, ForbiddenModifierBodyOp::CBitAlloc,
-      ForbiddenModifierBodyOp::CBitLoad, ForbiddenModifierBodyOp::CBitStore};
+      ForbiddenModifierBodyOp::Measure,
+      ForbiddenModifierBodyOp::QTensorAlloc,
+      ForbiddenModifierBodyOp::QTensorFromElements,
+      ForbiddenModifierBodyOp::CBitAlloc,
+      ForbiddenModifierBodyOp::CBitLoad,
+      ForbiddenModifierBodyOp::CBitStore};
 
   for (const auto modifier : modifiers) {
     for (const auto forbiddenOperation : forbiddenOperations) {
@@ -565,6 +826,160 @@ TEST_F(QCOTest, ModifiersRejectDirectAndNestedQubitCaptures) {
       EXPECT_TRUE(sawExpectedDiagnostic);
     }
   }
+}
+
+TEST_F(QCOTest, ModifiersRejectCapturedQubitTensors) {
+  constexpr std::array modifiers{VerifierModifierKind::Inv,
+                                 VerifierModifierKind::Ctrl,
+                                 VerifierModifierKind::Pow};
+  for (const auto modifier : modifiers) {
+    SCOPED_TRACE(testing::Message()
+                 << "modifier=" << modifierName(modifier).str());
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    auto one = arith::ConstantIndexOp::create(builder, 1);
+    auto captured = qtensor::AllocOp::create(builder, one);
+    auto target = builder.allocQubit();
+    auto control = builder.allocQubit();
+    const auto body = [&](Value argument) {
+      qtensor::DeallocOp::create(builder, captured);
+      return argument;
+    };
+    Operation* modifierOp = nullptr;
+    switch (modifier) {
+    case VerifierModifierKind::Inv:
+      modifierOp = InvOp::create(builder, target, body).getOperation();
+      break;
+    case VerifierModifierKind::Ctrl:
+      modifierOp =
+          CtrlOp::create(builder, control, target, body).getOperation();
+      break;
+    case VerifierModifierKind::Pow:
+      modifierOp = PowOp::create(builder, target, 2.0, body).getOperation();
+      break;
+    }
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains("body must not capture qubits from above; use "
+                        "only its aliased block arguments");
+      return success();
+    });
+    EXPECT_TRUE(failed(verify(modifierOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+TEST_F(QCOTest, ModifierCanonicalizersPreserveClassicalCalls) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @observe()
+
+      func.func @empty_inv() {
+        %q = qco.alloc : !qco.qubit
+        %out = qco.inv (%arg = %q) {
+          func.call @observe() : () -> ()
+          qco.yield %arg : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        qco.sink %out : !qco.qubit
+        return
+      }
+
+      func.func @empty_ctrl() {
+        %control = qco.alloc : !qco.qubit
+        %target = qco.alloc : !qco.qubit
+        %control_out, %target_out = qco.ctrl(%control)
+            targets(%arg = %target) {
+          func.call @observe() : () -> ()
+          qco.yield %arg : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit})
+          -> ({!qco.qubit}, {!qco.qubit})
+        qco.sink %control_out : !qco.qubit
+        qco.sink %target_out : !qco.qubit
+        return
+      }
+
+      func.func @empty_pow() {
+        %q = qco.alloc : !qco.qubit
+        %two = arith.constant 2.0 : f64
+        %out = qco.pow(%two) (%arg = %q) {
+          func.call @observe() : () -> ()
+          qco.yield %arg : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        qco.sink %out : !qco.qubit
+        return
+      }
+
+      func.func @zero_pow() {
+        %q = qco.alloc : !qco.qubit
+        %zero = arith.constant 0.0 : f64
+        %out = qco.pow(%zero) (%arg = %q) {
+          func.call @observe() : () -> ()
+          %body = qco.x %arg : !qco.qubit -> !qco.qubit
+          qco.yield %body : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        qco.sink %out : !qco.qubit
+        return
+      }
+
+      func.func @move_inv_ctrl() {
+        %control = qco.alloc : !qco.qubit
+        %target = qco.alloc : !qco.qubit
+        %control_out, %target_out = qco.inv
+            (%outer_control = %control, %outer_target = %target) {
+          func.call @observe() : () -> ()
+          %inner_control_out, %inner_target_out = qco.ctrl(%outer_control)
+              targets(%inner_target = %outer_target) {
+            %body = qco.x %inner_target : !qco.qubit -> !qco.qubit
+            qco.yield %body : !qco.qubit
+          } : ({!qco.qubit}, {!qco.qubit})
+            -> ({!qco.qubit}, {!qco.qubit})
+          qco.yield %inner_control_out, %inner_target_out
+              : !qco.qubit, !qco.qubit
+        } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
+        qco.sink %control_out : !qco.qubit
+        qco.sink %target_out : !qco.qubit
+        return
+      }
+
+      func.func @nested_unitary(%condition: i1) {
+        %q = qco.alloc : !qco.qubit
+        %out = qco.inv (%arg = %q) {
+          %branch = qco.if %condition args(%nested_arg = %arg)
+              -> (!qco.qubit) {
+            %nested = qco.x %nested_arg : !qco.qubit -> !qco.qubit
+            qco.yield %nested : !qco.qubit
+          } else args(%nested_arg = %arg) {
+            qco.yield %nested_arg : !qco.qubit
+          }
+          qco.yield %branch : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        qco.sink %out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  PassManager manager(context.get());
+  manager.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(manager.run(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  size_t calls = 0;
+  module->walk([&](func::CallOp) { ++calls; });
+  EXPECT_EQ(calls, 5U);
+
+  auto nestedUnitary = module->lookupSymbol<func::FuncOp>("nested_unitary");
+  ASSERT_TRUE(nestedUnitary);
+  EXPECT_EQ(range_size(nestedUnitary.getOps<InvOp>()), 1U);
+  size_t nestedXOps = 0;
+  nestedUnitary.walk([&](XOp) { ++nestedXOps; });
+  EXPECT_EQ(nestedXOps, 1U);
 }
 
 TEST_F(QCOTest, DirectIfBuilder) {
@@ -1641,6 +2056,158 @@ TEST_F(QCOTest, PowExponentIsUnitaryParameter) {
   EXPECT_EQ(unitary.getParameter(0), powOp.getExponent());
   ASSERT_EQ(unitary.getParameters().size(), 1);
   EXPECT_EQ(unitary.getParameters().front(), powOp.getExponent());
+}
+
+TEST_F(QCOTest, OverflowingFinitePowFoldsLeaveVerifiedModifiers) {
+  const auto build = [&](bool nested) {
+    return QCOProgramBuilder::build(context.get(), [&](auto& builder) {
+      auto qubit = builder.allocQubit();
+      if (nested) {
+        qubit = builder.pow(2.0, qubit, [&](Value outer) {
+          return builder.pow(std::numeric_limits<double>::max(), outer,
+                             [&](Value inner) { return builder.x(inner); });
+        });
+      } else {
+        qubit = builder.pow(std::numeric_limits<double>::max(), qubit,
+                            [&](Value target) { return builder.x(target); });
+      }
+      return builder.measure(qubit).second;
+    });
+  };
+
+  for (const bool nested : {false, true}) {
+    auto program = build(nested);
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(succeeded(verify(*program)));
+    ASSERT_TRUE(succeeded(runQCOCleanupPipeline(program.get())));
+    ASSERT_TRUE(succeeded(verify(*program)));
+    EXPECT_EQ(llvm::range_size(program->getOps<PowOp>()), 0U);
+    size_t powCount = 0;
+    program->walk([&](PowOp) { ++powCount; });
+    EXPECT_EQ(powCount, nested ? 2U : 1U);
+  }
+
+  auto foldedParameter =
+      QCOProgramBuilder::build(context.get(), [](auto& builder) {
+        auto qubit = builder.allocQubit();
+        qubit = builder.pow(2.0, qubit, [&](Value target) {
+          auto half =
+              builder.floatConstant(std::numeric_limits<double>::max() / 2.0);
+          auto theta = arith::AddFOp::create(builder, builder.getUnknownLoc(),
+                                             half, half);
+          return builder.rx(theta.getResult(), target);
+        });
+        return builder.measure(qubit).second;
+      });
+  ASSERT_TRUE(foldedParameter);
+  ASSERT_TRUE(succeeded(verify(*foldedParameter)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(foldedParameter.get())));
+  ASSERT_TRUE(succeeded(verify(*foldedParameter)));
+  EXPECT_EQ(llvm::range_size(foldedParameter->getOps<PowOp>()), 0U);
+  size_t foldedPowCount = 0;
+  foldedParameter->walk([&](PowOp) { ++foldedPowCount; });
+  EXPECT_EQ(foldedPowCount, 1U);
+}
+
+TEST_F(QCOTest, DynamicPowScalingDoesNotIntroduceRuntimeOverflow) {
+  auto program = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @dynamic_parameter(%theta: f64) {
+        %two = arith.constant 2.0 : f64
+        %q = qco.alloc : !qco.qubit
+        %out = qco.pow(%two) (%arg = %q) {
+          %rotated = qco.rx(%theta) %arg : !qco.qubit -> !qco.qubit
+          qco.yield %rotated : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        qco.sink %out : !qco.qubit
+        return
+      }
+      func.func @dynamic_nested(%inner_exponent: f64) {
+        %two = arith.constant 2.0 : f64
+        %q = qco.alloc : !qco.qubit
+        %out = qco.pow(%two) (%outer = %q) {
+          %inner_out = qco.pow(%inner_exponent) (%inner = %outer) {
+            %x = qco.x %inner : !qco.qubit -> !qco.qubit
+            qco.yield %x : !qco.qubit
+          } : {!qco.qubit} -> {!qco.qubit}
+          qco.yield %inner_out : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        qco.sink %out : !qco.qubit
+        return
+      }
+      func.func @foldable_nested() {
+        %two = arith.constant 2.0 : f64
+        %q = qco.alloc : !qco.qubit
+        %out = qco.pow(%two) (%outer = %q) {
+          %half = arith.constant 8.988465674311579E+307 : f64
+          %inner_exponent = arith.addf %half, %half : f64
+          %inner_out = qco.pow(%inner_exponent) (%inner = %outer) {
+            %x = qco.x %inner : !qco.qubit -> !qco.qubit
+            qco.yield %x : !qco.qubit
+          } : {!qco.qubit} -> {!qco.qubit}
+          qco.yield %inner_out : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        qco.sink %out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                             context.get());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(program.get())));
+  ASSERT_TRUE(succeeded(verify(*program)));
+
+  size_t powCount = 0;
+  program->walk([&](PowOp) { ++powCount; });
+  EXPECT_EQ(powCount, 5U);
+}
+
+TEST_F(QCOTest, OverflowingFiniteGateMergesLeaveVerifiedChains) {
+  const auto check = [&](OwningOpRef<ModuleOp> program, StringRef name) {
+    SCOPED_TRACE(name.str());
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(succeeded(verify(*program)));
+    ASSERT_TRUE(succeeded(runQCOCleanupPipeline(program.get())));
+    ASSERT_TRUE(succeeded(verify(*program)));
+    size_t count = 0;
+    program->walk([&](Operation* operation) {
+      count += operation->getName().getStringRef() == name;
+    });
+    EXPECT_EQ(count, 2U);
+  };
+
+  check(QCOProgramBuilder::build(
+            context.get(),
+            [](auto& builder) {
+              auto qubit = builder.allocQubit();
+              qubit = builder.rx(std::numeric_limits<double>::max(), qubit);
+              qubit = builder.rx(std::numeric_limits<double>::max(), qubit);
+              return builder.measure(qubit).second;
+            }),
+        RXOp::getOperationName());
+  check(QCOProgramBuilder::build(
+            context.get(),
+            [](auto& builder) {
+              auto qubit = builder.allocQubit();
+              qubit =
+                  builder.r(std::numeric_limits<double>::max(), 0.25, qubit);
+              qubit =
+                  builder.r(std::numeric_limits<double>::max(), 0.25, qubit);
+              return builder.measure(qubit).second;
+            }),
+        ROp::getOperationName());
+  check(QCOProgramBuilder::build(
+            context.get(),
+            [](auto& builder) {
+              auto qubits = builder.allocQubitRegister(2);
+              std::tie(qubits[0], qubits[1]) = builder.rxx(
+                  std::numeric_limits<double>::max(), qubits[0], qubits[1]);
+              std::tie(qubits[0], qubits[1]) = builder.rxx(
+                  std::numeric_limits<double>::max(), qubits[0], qubits[1]);
+              return measureRegister(builder, qubits.qubits);
+            }),
+        RXXOp::getOperationName());
 }
 
 TEST_F(QCOTest, NestedPowAcrossBranchCutDoesNotMerge) {

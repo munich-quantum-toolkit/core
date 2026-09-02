@@ -49,7 +49,7 @@ def MergeSingleQubitRotationGates
     parameters at run time.
 
     The emitted `UOp` is defined by $U = \exp [i (\phi + \lambda) / 2] R_z (\phi) R_y (\theta) R_z (\lambda)$.
-    Normalizing either extracted Z angle into $[-\pi, \pi)$ by $\pm 2\pi$ flips
+    Normalizing either extracted Z angle into $(-\pi, \pi]$ by $\pm 2\pi$ flips
     the $\mathrm{SU}(2)$ representative; half of each removed angle is returned
     as an Euler-wrap phase correction. Each merge therefore computes
     $\mathrm{inputPhase} - (\phi + \lambda) / 2 + \mathrm{eulerPhase}$, which
@@ -96,7 +96,8 @@ def FuseSingleQubitUnitaryRuns
 
 def QuantumLoopUnroll
     : InterfacePass<"quantum-loop-unroll", "FunctionOpInterface"> {
-  let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect"];
+  let dependentDialects = ["mlir::arith::ArithDialect", "mlir::qco::QCODialect",
+                           "mlir::scf::SCFDialect"];
   let summary = "Unroll bounded loops containing quantum operations";
   let description = [{
     This pass unrolls `scf.for` operations which contain quantum operations. Classical loops are not unrolled.
@@ -106,8 +107,9 @@ def QuantumLoopUnroll
   }];
   let options = [Option<"unrollFactor", "unroll-factor", "int64_t",
                         /*default=*/"-1",
-                        "Use this unroll factor for all loops being unrolled, "
-                        "set it to -1, and it will fully unroll.">];
+                        "Use this unroll factor (maximum 4096) for all loops "
+                        "being unrolled; -1 fully unrolls static loops within "
+                        "the same limit.">];
 }
 
 //===----------------------------------------------------------------------===//
@@ -132,6 +134,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     as routing workspace are materialized. Then, the pass traverses the circuit
     and inserts `qco.swap` operations to ensure that all two-qubit operations
     are executable on the target architecture, a process known as routing.
+    Routing keeps terminal measurements and resets after any inserted swaps so
+    that irreversible operations remain terminal on each logical qubit.
 
     For routing, the pass first divides the circuit into layers. A layer is a set of independently executable (sequences
     or blocks of) two-qubit operations. Subsequently, the pass performs an A* search for each layer to find and insert a
@@ -160,17 +164,20 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     The pass option `ntrials` determines how many random initial layouts the pass explores. If compiled with multi-threading on, these trials will be executed in parallel.
   }];
   let options = [Option<"nlookahead", "nlookahead", "std::size_t", "1",
-                        "The number of lookahead steps.">,
+                        "The number of lookahead steps. Must be <= 4096.">,
                  Option<"alpha", "alpha", "float", "1.0F",
-                        "The alpha factor in the cost function. Must be > 0.">,
+                        "The alpha factor in the cost function. Must be finite "
+                        "and > 0.">,
                  Option<"lambda", "lambda", "float", "0.5F",
-                        "The lambda factor in the cost function.">,
+                        "The lambda factor in the cost function. Must be "
+                        "finite.">,
                  Option<"niterations", "niterations", "std::size_t", "1",
                         "The number of forwards and backwards traversal to "
-                        "improve the initial layout. Must be > 0.">,
+                        "improve the initial layout. Must be in [1, 4096].">,
                  Option<"ntrials", "ntrials", "std::size_t", "4",
                         "The number of (possibly parallel) random trials of "
-                        "the forwards and backwards mechanism. Must be > 0.">,
+                        "the forwards and backwards mechanism. Must be in [1, "
+                        "4096].">,
                  Option<"seed", "seed", "std::size_t", "42",
                         "A seed used for randomization.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",

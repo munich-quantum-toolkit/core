@@ -46,6 +46,7 @@ target_sources(
                                 ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/QDMIAdapter.h)
 
 # Build the compiler pipeline library
+set(LLVM_REQUIRES_EH ON)
 add_mlir_library(
   MQTCompilerPipeline
   PARTIAL_SOURCES_INTENDED
@@ -81,6 +82,7 @@ add_mlir_library(
   MQT::MLIRSupport)
 
 mqt_mlir_target_use_project_options(MQTCompilerPipeline)
+unset(LLVM_REQUIRES_EH)
 
 # collect header files
 file(GLOB_RECURSE COMPILER_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/*.h")

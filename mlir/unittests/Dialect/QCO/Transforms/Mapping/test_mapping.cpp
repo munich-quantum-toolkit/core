@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -30,12 +31,14 @@
 #include <llvm/Support/LogicalResult.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
@@ -52,6 +55,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <random>
 #include <string>
@@ -305,7 +309,8 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<mqt::MQTDialect, QCODialect, qtensor::QTensorDialect,
-                    scf::SCFDialect, arith::ArithDialect, func::FuncDialect>();
+                    scf::SCFDialect, arith::ArithDialect,
+                    cf::ControlFlowDialect, func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -339,6 +344,341 @@ class MappingPassTest : public MappingPassFixture,
 
 }; // namespace
 
+TEST_F(MappingPassFixture, MissingTargetFailsWithoutMutation) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto qubit = builder.allocQubit();
+  builder.sink(qubit);
+  auto module = builder.finalize();
+  OwningOpRef<ModuleOp> original(module->clone());
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  PassManager pm(context.get());
+  pm.addPass(createMappingPass());
+  EXPECT_TRUE(failed(pm.run(*module)));
+  EXPECT_TRUE(StringRef(diagnostics).contains("requires a compiler target"))
+      << diagnostics;
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(MappingPassFixture, InvalidOptionsFailWithoutMutation) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto qubit = builder.allocQubit();
+  builder.sink(qubit);
+  auto source = builder.finalize();
+  const auto target = llvm::cantFail(CompilerTarget::create(1));
+
+  const auto checkInvalid = [&](const MappingPassOptions& options,
+                                StringRef expected) {
+    OwningOpRef<ModuleOp> module(source->clone());
+    OwningOpRef<ModuleOp> original(module->clone());
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(runPass(*module, target, options)));
+    EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
+    EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+        module->getOperation(), original->getOperation(),
+        OperationEquivalence::Flags::None));
+  };
+
+  checkInvalid(MappingPassOptions{.alpha = 0}, "requires finite alpha > 0");
+  checkInvalid(
+      MappingPassOptions{.alpha = std::numeric_limits<float>::infinity()},
+      "requires finite alpha > 0");
+  checkInvalid(
+      MappingPassOptions{.lambda = std::numeric_limits<float>::infinity()},
+      "requires finite lambda");
+  checkInvalid(
+      MappingPassOptions{.nlookahead = std::numeric_limits<size_t>::max()},
+      "requires nlookahead <= 4096");
+  checkInvalid(MappingPassOptions{.niterations = 0},
+               "requires 0 < niterations <= 4096");
+  checkInvalid(
+      MappingPassOptions{.niterations = std::numeric_limits<size_t>::max()},
+      "requires 0 < niterations <= 4096");
+  checkInvalid(MappingPassOptions{.ntrials = 0},
+               "requires 0 < ntrials <= 4096");
+  checkInvalid(
+      MappingPassOptions{.ntrials = std::numeric_limits<size_t>::max()},
+      "requires 0 < ntrials <= 4096");
+}
+
+TEST_F(MappingPassFixture, StaticInputFailsWithoutMutation) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q0 = qco.static 0 : !qco.qubit
+        %q2 = qco.static 2 : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        qco.sink %q2 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}}));
+
+  EXPECT_TRUE(failed(runPass(*module, target, MappingPassOptions{})));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(MappingPassFixture, QuantumVectorSignatureFailsWithoutMutation) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main(%qubits: vector<2x!qco.qubit>)
+          -> vector<2x!qco.qubit> attributes {mqt.entry_point} {
+        return %qubits : vector<2x!qco.qubit>
+      }
+    }
+  )mlir";
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, std::vector<CompilerTarget::Coupling>{{0, 1}}));
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPass(*module, target, MappingPassOptions{})));
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("does not support quantum function arguments or "
+                            "results"))
+      << diagnostics;
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(MappingPassFixture, MultiBlockInputFailsWithoutMutation) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        qco.sink %q0 : !qco.qubit
+        cf.br ^next
+      ^next:
+        %q1 = qco.alloc : !qco.qubit
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, std::vector<CompilerTarget::Coupling>{{0, 1}}));
+
+  EXPECT_TRUE(failed(runPass(*module, target, MappingPassOptions{})));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(MappingPassFixture, ClassicalOnlyInputIsUnchanged) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> i64 attributes {mqt.entry_point} {
+        %value = arith.constant 7 : i64
+        return %value : i64
+      }
+    }
+  )mlir";
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, std::vector<CompilerTarget::Coupling>{{0, 1}}));
+
+  ASSERT_TRUE(succeeded(runPass(*module, target, MappingPassOptions{})));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(MappingPassFixture, UnsupportedQubitConsumerFailsWithoutMutation) {
+  constexpr StringLiteral source = R"mlir(
+module {
+  func.func private @opaque(!qco.qubit) -> !qco.qubit
+  func.func @main() attributes {mqt.entry_point} {
+    %q0 = qco.alloc : !qco.qubit
+    %q1 = func.call @opaque(%q0) : (!qco.qubit) -> !qco.qubit
+    qco.sink %q1 : !qco.qubit
+    return
+  }
+}
+)mlir";
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, std::vector<CompilerTarget::Coupling>{}));
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPass(*module, target, MappingPassOptions{})));
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("target mapping does not support quantum values "
+                            "carried by func.call"))
+      << diagnostics;
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(MappingPassFixture, UnsupportedWhileTensorFlowFailsWithoutMutation) {
+  constexpr StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %c1 = arith.constant 1 : index
+    %false = arith.constant false
+    %dropped = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+    %captured = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+    %result = scf.while (%arg = %dropped)
+        : (tensor<1x!qco.qubit>) -> tensor<1x!qco.qubit> {
+      qtensor.dealloc %arg : tensor<1x!qco.qubit>
+      scf.condition(%false) %captured : tensor<1x!qco.qubit>
+    } do {
+    ^bb0(%arg: tensor<1x!qco.qubit>):
+      scf.yield %arg : tensor<1x!qco.qubit>
+    }
+    qtensor.dealloc %result : tensor<1x!qco.qubit>
+    return
+  }
+}
+)mlir";
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(2, std::vector<CompilerTarget::Coupling>{{0, 1}}));
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPass(*module, target, MappingPassOptions{})));
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains("requires every quantum tensor scf.while init to reach its "
+                    "condition"))
+      << diagnostics;
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(MappingPassFixture, NonPositionalWhileQubitFlowFailsWithoutMutation) {
+  constexpr StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %false = arith.constant false
+    %state = arith.constant 0 : i32
+    %q = qco.alloc : !qco.qubit
+    %next_q, %next_state =
+        scf.while (%iter_state = %state, %iter_q = %q)
+            : (i32, !qco.qubit) -> (!qco.qubit, i64) {
+      %extended_state = arith.extsi %iter_state : i32 to i64
+      scf.condition(%false) %iter_q, %extended_state
+          : !qco.qubit, i64
+    } do {
+    ^bb0(%after_q: !qco.qubit, %after_state: i64):
+      %truncated_state = arith.trunci %after_state : i64 to i32
+      scf.yield %truncated_state, %after_q : i32, !qco.qubit
+    }
+    qco.sink %next_q : !qco.qubit
+    return
+  }
+}
+)mlir";
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, std::vector<CompilerTarget::Coupling>{}));
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPass(*module, target, MappingPassOptions{})));
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains("requires positional scalar-qubit scf.while inputs and "
+                    "results"))
+      << diagnostics;
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(MappingPassFixture, UnsupportedQuantumRegionFailsWithoutMutation) {
+  constexpr StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qco.alloc : !qco.qubit
+    scf.execute_region {
+      qco.sink %q : !qco.qubit
+      scf.yield
+    }
+    return
+  }
+}
+)mlir";
+  auto module = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  OwningOpRef<ModuleOp> original(module->clone());
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, std::vector<CompilerTarget::Coupling>{}));
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPass(*module, target, MappingPassOptions{})));
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains("target mapping does not support quantum operations nested "
+                    "in scf.execute_region"))
+      << diagnostics;
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      module->getOperation(), original->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
 TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   constexpr int64_t size = 3;
 
@@ -361,7 +701,7 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   std::tie(qubits[1], qubits[2]) = builder.rzx(0.5, qubits[1], qubits[2]);
   std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
 
-  for (int64_t i = 0; i < qubits.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
     builder.sink(qubits[i]);
   }
@@ -391,6 +731,58 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   });
   EXPECT_EQ(numMeasurements, size);
   EXPECT_GT(numMeasurementsAfterSwap, 0);
+}
+
+TEST_F(MappingPassFixture, KeepTerminalResetsAfterRoutingSwaps) {
+  constexpr int64_t size = 3;
+
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
+      std::vector<CompilerTarget::Operation>{}));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  SmallVector<Value> qubits(size);
+  for (int64_t i = 0; i < size; ++i) {
+    qubits[i] = builder.allocQubit();
+  }
+
+  qubits[0] = builder.x(qubits[0]);
+  std::tie(qubits[0], qubits[1]) = builder.rxx(0.25, qubits[0], qubits[1]);
+  std::tie(qubits[1], qubits[2]) = builder.rzx(0.5, qubits[1], qubits[2]);
+  std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
+
+  for (Value& qubit : qubits) {
+    qubit = builder.reset(qubit);
+    builder.sink(qubit);
+  }
+
+  auto m = builder.finalize();
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+
+  size_t numSwaps = 0;
+  m->walk([&](SWAPOp) { ++numSwaps; });
+  EXPECT_GT(numSwaps, 0);
+
+  size_t numResets = 0;
+  size_t numResetsAfterSwap = 0;
+  m->walk([&](ResetOp op) {
+    ++numResets;
+    if (op.getQubitIn().getDefiningOp<SWAPOp>()) {
+      ++numResetsAfterSwap;
+    }
+    const bool hasOneUse = op.getQubitOut().hasOneUse();
+    EXPECT_TRUE(hasOneUse);
+    if (hasOneUse) {
+      EXPECT_TRUE(isa<SinkOp>(*op.getQubitOut().getUsers().begin()));
+    }
+  });
+  EXPECT_EQ(numResets, size);
+  EXPECT_GT(numResetsAfterSwap, 0);
 }
 
 TEST_F(MappingPassFixture,
@@ -456,7 +848,7 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
   std::tie(qubits[1], qubits[2]) = builder.cz(qubits[1], qubits[2]);
   std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
-  for (int64_t i = 0; i < qubits.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
     builder.sink(qubits[i]);
   }
@@ -1866,7 +2258,7 @@ TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
     qubits[i] = builder.allocQubit();
   }
   cxcz(builder, qubits);
-  for (int64_t i = 0; i < qubits.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
     builder.sink(qubits[i]);
   }

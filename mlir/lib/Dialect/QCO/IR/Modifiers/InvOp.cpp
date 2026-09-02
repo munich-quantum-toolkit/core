@@ -80,6 +80,11 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
           return mqt::getValueFromBlockArgument(t, outerQubits);
         });
 
+    if (failed(mqt::hoistSupportingOpsBefore(*op.getBody(), innerCtrlOp, op,
+                                             rewriter))) {
+      return failure();
+    }
+
     auto newCtrl =
         CtrlOp::create(rewriter, op.getLoc(), controls, targets,
                        [&](ValueRange targetArgs) -> SmallVector<Value> {
@@ -132,8 +137,10 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
 
     // Move supporting ops (constants, arithmetic) out of the body so their
     // Values are accessible from outside and survive InvOp erasure.
-    mqt::hoistSupportingOpsBefore(*invOp.getBody(), innerPow.getOperation(),
-                                  invOp, rewriter);
+    if (failed(mqt::hoistSupportingOpsBefore(
+            *invOp.getBody(), innerPow.getOperation(), invOp, rewriter))) {
+      return failure();
+    }
     Value negExponent =
         arith::NegFOp::create(rewriter, invOp.getLoc(), innerPow.getExponent());
     // The inner pow's operands alias the inv's block args; translate them back
@@ -376,6 +383,10 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
         llvm::map_to_vector(innerInvOp.getInputQubits(), [&](Value q) {
           return mqt::getValueFromBlockArgument(q, op.getInputQubits());
         });
+    if (failed(mqt::hoistSupportingOpsBefore(*op.getBody(), innerInvOp, op,
+                                             rewriter))) {
+      return failure();
+    }
     mqt::inlineModifierBody(op, *innerInvOp.getBody(), replacements, rewriter);
     return success();
   }
@@ -388,11 +399,13 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 0) {
+    if (llvm::any_of(*op.getBody(), [](Operation& operation) {
+          return mqt::containsUnitaryOperation<UnitaryOpInterface>(&operation);
+        })) {
       return failure();
     }
 
-    rewriter.replaceOp(op, op.getOperands());
+    mqt::inlineModifierBody(op, *op.getBody(), op.getInputQubits(), rewriter);
     return success();
   }
 };
@@ -472,6 +485,10 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
 }
 
 LogicalResult InvOp::verify() {
+  if (getQubitsIn().size() != getQubitsOut().size()) {
+    return emitOpError(
+        "number of input qubits must match the number of output qubits");
+  }
   auto& block = *getBody();
   if (failed(detail::verifyModifierBody(getOperation(), block))) {
     return failure();
@@ -503,6 +520,13 @@ LogicalResult InvOp::verify() {
     }
   }
 
+  SmallPtrSet<Value, 4> uniqueQubitsOut;
+  for (Value target : blockTerminator->getOperands()) {
+    if (!uniqueQubitsOut.insert(target).second) {
+      return emitOpError("duplicate yielded qubit found");
+    }
+  }
+
   return success();
 }
 
@@ -514,28 +538,17 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 bool InvOp::hasCompileTimeKnownUnitaryMatrix() {
-  return all_of(getBody()->getOps<UnitaryOpInterface>(),
-                [](UnitaryOpInterface op) {
-                  return op.hasCompileTimeKnownUnitaryMatrix();
-                });
+  if (!isModifierMatrixSizeSupported(getNumTargets())) {
+    return false;
+  }
+  return hasComposableBodyMatrix(*getBody(), getNumTargets());
 }
 
 std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
-  if (getNumBodyUnitaries() == 0) {
-    return DynamicMatrix::identity(1LL << getNumTargets());
-  }
-
-  // Single inner unitary (e.g. `inv { h }`, `inv { cx }`).
-  if (auto bodyUnitary =
-          mqt::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
-    if (const auto targetMatrix =
-            bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
-      return targetMatrix->adjoint();
-    }
+  if (!isModifierMatrixSizeSupported(getNumTargets())) {
     return std::nullopt;
   }
-
-  // Composed body (e.g., `ctrl { h; x }` or `ctrl { swap; ry }`)
+  // Compose the complete body so pass-through targets are represented too.
   if (const auto composed = composeBodyMatrix(*getBody(), getNumTargets())) {
     return composed->adjoint();
   }

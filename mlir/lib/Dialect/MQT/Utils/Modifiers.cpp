@@ -21,6 +21,7 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
@@ -58,13 +59,24 @@ Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
   return qubit;
 }
 
-void hoistSupportingOpsBefore(Block& body, Operation* keep, Operation* target,
-                              RewriterBase& rewriter) {
+LogicalResult hoistSupportingOpsBefore(Block& body, Operation* keep,
+                                       Operation* target,
+                                       RewriterBase& rewriter) {
+  bool sawKeep = false;
+  for (Operation& bodyOp : body) {
+    if (&bodyOp == keep) {
+      sawKeep = true;
+    } else if (sawKeep && !bodyOp.hasTrait<OpTrait::IsTerminator>() &&
+               !isPure(&bodyOp)) {
+      return failure();
+    }
+  }
   for (auto& bodyOp : llvm::make_early_inc_range(body)) {
     if (&bodyOp != keep && !bodyOp.hasTrait<OpTrait::IsTerminator>()) {
       rewriter.moveOpBefore(&bodyOp, target);
     }
   }
+  return success();
 }
 
 void inlineModifierBody(Operation* operation, Block& body,

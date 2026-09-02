@@ -20,19 +20,28 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
 
     - Input is a valid module in the QC dialect.
     - The entry function must be marked with `mqt.entry_point`.
+    - The entry function must be defined and have no arguments.
+    - QC, CBit, and MemRef operations must occur only in the entry function.
+    - The total width of all `cbit.alloc` operations must not exceed 1,048,576
+      (`1 << 20`) classical result slots per module.
+    - Existing `__quantum__` runtime symbols must be Func or LLVM function
+      declarations.
+    - Static and dynamic qubit allocation modes must not be mixed.
+    - Qubit MemRef registers and loads must be one-dimensional.
 
     Behavior:
 
     - Each QC quantum operation is replaced by a call to the corresponding QIR function in the LLVM dialect.
     - Operations from the scf dialect are lowered into the cf dialect before they are lowered to the LLVM dialect.
-    - Required QIR module flags are attached to the MLIR module.
-    - Required attributes are attached to the entry function.
+    - QIR module flags and entry-point passthrough metadata are attached by the
+      separate QIR metadata pass, normally through the QIR cleanup pipeline.
     - The pass extends the existing block structure of the entry function with an entry block and an epilogue block:
       0. Initialization block: Sets up the execution environment and performs required runtime initialization.
       1. Epilogue block: Records measurement results and returns from the entry function.
       Any blocks in-between have no restrictions regarding their operations as long as they are supported.
     - Measurement results may be used as classical values to drive conditional branches.
-    - Non-quantum dialects are lowered via MLIR's built-in conversions.
+    - Supported Func, SCF, Arith, CF, and Math operations are lowered via
+      MLIR's built-in conversions; other dialects are preserved.
   }];
 
   let dependentDialects = ["mlir::LLVM::LLVMDialect"];

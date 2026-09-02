@@ -11,6 +11,7 @@
 #pragma once
 
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -21,6 +22,15 @@ inline constexpr double MAX_GLOBAL_PHASE_ANGLE = 1.0e4;
 
 /// Normalize an angle to (-pi, pi].
 [[nodiscard]] double normalizeAngle(double theta);
+
+/// Normalize a finite runtime angle to (-pi, pi] without overflowing an
+/// intermediate computation.
+[[nodiscard]] Value normalizeAngle(RewriterBase& rewriter, Location loc,
+                                   Value theta);
+
+/// Scale an angle by a finite, exactly integral floating-point factor without
+/// overflowing, and normalize the result to (-pi, pi].
+[[nodiscard]] double scaleAngleByInteger(double theta, double factor);
 
 /// Check the compiler-wide global-phase angle contract.
 [[nodiscard]] bool isValidGlobalPhaseAngle(double theta);
