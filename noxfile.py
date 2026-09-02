@@ -112,7 +112,7 @@ def cpp_lint(session: nox.Session) -> None:
             f"--files-changed-only={'false' if all_files else 'true'}",
             "--lines-changed-only=false",
             *(() if all_files else (f"--diff-base={diff_base}",)),
-            "--file-annotations=true",
+            "--file-annotations=false",
             "--jobs=0",
             "--verbosity=info",
             env={"GITHUB_OUTPUT": str(output)},
