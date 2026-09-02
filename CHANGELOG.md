@@ -18,7 +18,7 @@ releases may include breaking changes.
   ([#2259]) ([**@denialhaag**])
 - 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
   [**@burgholzer**])
-- ⬆️ Update `nanobind` to version 3.0.1 ([#2209]) ([**@denialhaag**],
+- ⬆️ Update `nanobind` to version 3.0.1 ([#2209], [#2283]) ([**@denialhaag**],
   [**@burgholzer**])
 - 📦 Publish one split-mode `cp311-abi3` wheel for GIL-enabled CPython 3.11 and
   newer ([#2209]) ([**@denialhaag**], [**@burgholzer**])
@@ -750,6 +750,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2314]: https://github.com/munich-quantum-toolkit/core/pull/2314
+[#2283]: https://github.com/munich-quantum-toolkit/core/pull/2283
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
