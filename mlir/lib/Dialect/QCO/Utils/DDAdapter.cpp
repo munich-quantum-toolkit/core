@@ -25,10 +25,9 @@
 #include <utility>
 
 namespace mlir::qco {
-namespace {
 
-auto addIdentityWires(dd::Package& package, dd::mCachedEdge child,
-                      std::size_t firstWire, std::size_t endWire)
+static auto addIdentityWires(dd::Package& package, dd::mCachedEdge child,
+                             std::size_t firstWire, std::size_t endWire)
     -> dd::mCachedEdge {
   for (auto wire = firstWire; wire < endWire; ++wire) {
     child = package.makeDDNode<dd::mNode, dd::CachedEdge>(
@@ -38,9 +37,11 @@ auto addIdentityWires(dd::Package& package, dd::mCachedEdge child,
   return child;
 }
 
-auto buildEmbeddedLocalDD(dd::Package& package, const DynamicMatrix& local,
-                          llvm::ArrayRef<dd::Qubit> wires, std::size_t maxWire,
-                          std::size_t row, std::size_t col) -> dd::mCachedEdge {
+static auto buildEmbeddedLocalDD(dd::Package& package,
+                                 const DynamicMatrix& local,
+                                 llvm::ArrayRef<dd::Qubit> wires,
+                                 std::size_t maxWire, std::size_t row,
+                                 std::size_t col) -> dd::mCachedEdge {
   std::optional<std::pair<dd::Qubit, std::size_t>> highestOperand;
   for (std::size_t operand = 0; operand < wires.size(); ++operand) {
     const auto wire = wires[operand];
@@ -72,21 +73,20 @@ auto buildEmbeddedLocalDD(dd::Package& package, const DynamicMatrix& local,
                           maxWire);
 }
 
-auto makeEmbeddedLocalDD(dd::Package& package, const DynamicMatrix& local,
-                         std::size_t numQubits, llvm::ArrayRef<dd::Qubit> wires)
+static auto
+makeEmbeddedLocalDD(dd::Package& package, const DynamicMatrix& local,
+                    std::size_t numQubits, llvm::ArrayRef<dd::Qubit> wires)
     -> dd::MatrixDD {
   const auto root =
       buildEmbeddedLocalDD(package, local, wires, numQubits, 0, 0);
   return {.p = root.p, .w = package.cn.lookup(root.w)};
 }
 
-} // namespace
-
 auto makeGateDD(dd::Package& package, const DynamicMatrix& matrix,
                 std::size_t numQubits, llvm::ArrayRef<dd::Qubit> targets,
                 const dd::Controls& controls) -> dd::MatrixDD {
-  if (targets.size() >= std::numeric_limits<std::size_t>::digits ||
-      matrix.rows() != static_cast<int64_t>(std::size_t{1} << targets.size())) {
+  if (targets.size() >= std::numeric_limits<int64_t>::digits ||
+      matrix.rows() != (int64_t{1} << targets.size())) {
     throw std::invalid_argument(
         "Unitary matrix dimension does not match its target count");
   }

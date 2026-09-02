@@ -59,14 +59,12 @@
 using namespace mlir;
 using namespace qco;
 
-namespace {
-
 template <std::size_t Dimension>
 using LiteralMatrix =
     std::array<std::array<std::complex<double>, Dimension>, Dimension>;
 
 template <std::size_t Dimension>
-[[nodiscard]] constexpr auto
+[[nodiscard]] static constexpr auto
 makePermutationMatrix(const std::array<std::size_t, Dimension>& rowForColumn)
     -> LiteralMatrix<Dimension> {
   LiteralMatrix<Dimension> matrix{};
@@ -77,8 +75,8 @@ makePermutationMatrix(const std::array<std::size_t, Dimension>& rowForColumn)
 }
 
 template <std::size_t Dimension>
-[[nodiscard]] auto toDynamicMatrix(const LiteralMatrix<Dimension>& source)
-    -> DynamicMatrix {
+[[nodiscard]] static auto
+toDynamicMatrix(const LiteralMatrix<Dimension>& source) -> DynamicMatrix {
   DynamicMatrix matrix(static_cast<int64_t>(Dimension));
   for (std::size_t row = 0; row < Dimension; ++row) {
     for (std::size_t column = 0; column < Dimension; ++column) {
@@ -89,10 +87,9 @@ template <std::size_t Dimension>
   return matrix;
 }
 
-[[nodiscard]] auto embedPermutation(std::size_t numQubits,
-                                    llvm::ArrayRef<dd::Qubit> targets,
-                                    llvm::ArrayRef<std::size_t> rowForColumn)
-    -> dd::CMat {
+[[nodiscard]] static auto
+embedPermutation(std::size_t numQubits, llvm::ArrayRef<dd::Qubit> targets,
+                 llvm::ArrayRef<std::size_t> rowForColumn) -> dd::CMat {
   const auto dimension = std::size_t{1} << numQubits;
   dd::CMat matrix(dimension, dd::CVec(dimension));
   for (std::size_t column = 0; column < dimension; ++column) {
@@ -118,6 +115,8 @@ template <std::size_t Dimension>
   return matrix;
 }
 
+namespace {
+
 struct ReferenceGate {
   DynamicMatrix (*matrix)(llvm::ArrayRef<double>);
   dd::Targets targets;
@@ -125,21 +124,26 @@ struct ReferenceGate {
   dd::Controls controls;
 };
 
+} // namespace
+
 template <typename GateOp>
-[[nodiscard]] ReferenceGate referenceGate(dd::Targets targets,
-                                          std::vector<double> params = {},
-                                          dd::Controls controls = {}) {
+[[nodiscard]] static ReferenceGate
+referenceGate(dd::Targets targets, std::vector<double> params = {},
+              dd::Controls controls = {}) {
   return {&getStandardGateMatrix<GateOp>, std::move(targets), std::move(params),
           std::move(controls)};
 }
 
 template <typename GateOp>
-[[nodiscard]] dd::MatrixDD
-referenceGateDD(dd::Package& package, dd::Targets targets,
-                std::vector<double> params = {}, dd::Controls controls = {}) {
+[[nodiscard]] static dd::MatrixDD
+referenceGateDD(dd::Package& package, llvm::ArrayRef<dd::Qubit> targets,
+                llvm::ArrayRef<double> params = {},
+                const dd::Controls& controls = {}) {
   return makeGateDD(package, getStandardGateMatrix<GateOp>(params),
                     package.qubits(), targets, controls);
 }
+
+namespace {
 
 class QCODDFunctionalityTest : public testing::Test {
 protected:
