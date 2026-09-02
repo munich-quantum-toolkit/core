@@ -650,7 +650,7 @@ loadClassicalBit(mlir::qc::QCProgramBuilder& builder,
   for (size_t index = 0U; index < reg.bits.size(); ++index) {
     const auto& bit =
         classicalBitRef(classicalBits, rootClbitMap, reg.bits[index]);
-    if (bit.index != static_cast<int64_t>(index) ||
+    if (std::cmp_not_equal(bit.index, index) ||
         (storage && bit.storage != storage)) {
       return {};
     }
