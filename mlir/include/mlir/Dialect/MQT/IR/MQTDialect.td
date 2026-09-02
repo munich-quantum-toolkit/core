@@ -149,11 +149,14 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
   let summary = "One native compiler-target operation";
   let description = [{
     The operation records its spelling, arity, parameter count, and optional
-    global or site-specific calibration data. For example,
-    `#mqt.native_operation<name = "cx",
-    arity = #mqt.operation_arity<kind = fixed, value = 2>,
-    num_parameters = 0, site_tuples = [<sites = [4, 7]>]>` records a placed
-    controlled-X operation.
+    global or site-specific calibration data. The following example records a
+    placed controlled-X operation:
+
+    ```mlir
+    #mqt.native_operation<name = "cx",
+        arity = #mqt.operation_arity<kind = fixed, value = 2>,
+        num_parameters = 0, site_tuples = [<sites = [4, 7]>]>
+    ```
   }];
   let parameters = (ins "StringAttr":$name, "OperationArityAttr":$arity,
       "uint64_t":$num_parameters,
