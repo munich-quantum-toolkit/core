@@ -543,6 +543,40 @@ vector[0] = scalar;
   EXPECT_FALSE(analyzed.program->registers[1].isScalar);
 }
 
+TEST(OpenQASMFrontendTest, AcceptsLiteralZeroForWholeBitRegisters) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+output bit[1] single;
+output bit[3] first;
+output bit[2] second;
+single = 0;
+first = 0;
+second = 0;
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, RejectsOtherWholeBitRegisterScalarAssignments) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      "OPENQASM 3.1; bit[1] c; c = 1;",
+      "OPENQASM 3.1; bit[2] c; c = 1;",
+      "OPENQASM 3.1; bit[2] c; c = -1;",
+      "OPENQASM 3.1; bit[2] c; c = 1 - 1;",
+      "OPENQASM 3.1; int zero = 0; bit[2] c; c = zero;",
+  });
+
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find("integer literal zero"),
+              std::string::npos);
+  }
+}
+
 TEST(OpenQASMFrontendTest, RejectsInvalidBitVectorBuiltinUses) {
   const std::vector<llvm::StringLiteral> invalidSources{
       "OPENQASM 3.1; qubit q; uint n = popcount(q);",

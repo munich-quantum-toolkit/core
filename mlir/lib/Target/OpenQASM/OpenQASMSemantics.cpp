@@ -2868,10 +2868,23 @@ private:
       return success();
     }
     MQT_OQ3_TRY_ASSIGN(targets, resolveBits(assignment.target));
-    if (targets.size() > 1) {
-      return fail(
-          location,
-          "whole-register bit assignment requires a bit-register value");
+    if (!assignment.target.index && !program.registers[targetReg].isScalar) {
+      if (value.kind != Expr::Kind::Int || !value.wideInteger.empty() ||
+          value.integer != 0) {
+        return fail(location,
+                    "whole-register bit assignment requires a bit-register "
+                    "value or the integer literal zero");
+      }
+      MQT_OQ3_TRY_ASSIGN(condition, analyzeBoolValue(assignment.value));
+      for (const auto& target : targets) {
+        markBitInitialized(target);
+        MQT_OQ3_TRY_ASSIGN(
+            statement,
+            addStatement(location, BitAssignmentStatement{.target = target,
+                                                          .value = condition}));
+        destination.push_back(statement);
+      }
+      return success();
     }
     MQT_OQ3_TRY_ASSIGN(condition, analyzeBoolValue(assignment.value));
     markBitInitialized(targets.front());
