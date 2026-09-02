@@ -49,13 +49,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runs-on: macos-26
-            compiler: clang
-            preset: release
-          - runs-on: macos-26
-            compiler: clang
-            preset: debug
+        runs-on: [macos-26]
+        compiler: [clang]
+        preset: [release, debug]
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@f33c11c5cf68957b3074fff11ae43cfce2aaf593 # v2.2.3
     with:
       runs-on: ${{ matrix.runs-on }}
