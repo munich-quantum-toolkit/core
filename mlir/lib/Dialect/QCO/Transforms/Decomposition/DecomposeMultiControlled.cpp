@@ -1315,13 +1315,13 @@ synthesizeControlledSwap(OpBuilder& builder, Location loc, ValueRange controls,
 // Patterns and pass
 //===----------------------------------------------------------------------===//
 
-static bool isWithinTargetNativeUnitary(Operation* op,
+static bool isWithinTargetNativeUnitary(UnitaryOpInterface op,
                                         const CompilerTarget* target) {
   if (target == nullptr) {
     return false;
   }
-  for (; op != nullptr; op = op->getParentOp()) {
-    if (isa<UnitaryOpInterface>(op) && target->supports(op)) {
+  for (; op; op = op->getParentOfType<UnitaryOpInterface>()) {
+    if (target->supports(op.getOperation())) {
       return true;
     }
   }
@@ -1342,7 +1342,7 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
     if (op.getNumQubits() < minQubits_) {
       return failure();
     }
-    if (isWithinTargetNativeUnitary(op.getOperation(), target_)) {
+    if (isWithinTargetNativeUnitary(op, target_)) {
       return failure();
     }
 
@@ -1422,7 +1422,7 @@ struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
     if (RCCXOp::getNumQubits() < minQubits_) {
       return failure();
     }
-    if (isWithinTargetNativeUnitary(op.getOperation(), target_)) {
+    if (isWithinTargetNativeUnitary(op, target_)) {
       return failure();
     }
     rewriter.setInsertionPoint(op);
