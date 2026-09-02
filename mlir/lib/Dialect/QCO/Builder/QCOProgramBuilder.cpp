@@ -34,6 +34,7 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -270,37 +271,39 @@ Value QCOProgramBuilder::prepareInitArg(Value initArg,
     return initArg;
   }
 
-  validateTensorValue(initArg);
-  const auto regId = validTensors.find(initArg)->regId;
+  if (auto t = dyn_cast<RankedTensorType>(initArg.getType());
+      t && isa<QubitType>(t.getElementType())) {
+    validateTensorValue(initArg);
+    const auto regId = validTensors.find(initArg)->regId;
 
-  SmallVector<Qubit> qubitsToInsert;
-  for (const auto& qubit : validQubits) {
-    if (qubit.regId == regId &&
-        (initQubits == nullptr || !initQubits->contains(qubit))) {
-      qubitsToInsert.push_back(qubit);
+    SmallVector<Qubit> qubitsToInsert;
+    for (const auto& qubit : validQubits) {
+      if (qubit.regId == regId &&
+          (initQubits == nullptr || !initQubits->contains(qubit))) {
+        qubitsToInsert.push_back(qubit);
+      }
     }
+
+    auto currentTensor = initArg;
+    for (const auto& qubit : qubitsToInsert) {
+      auto newTensor =
+          qtensor::InsertOp::create(*this, qubit, currentTensor, qubit.regIndex)
+              .getResult();
+      updateTensorTracking(currentTensor, newTensor);
+      currentTensor = newTensor;
+      validQubits.erase(qubit);
+    }
+    return currentTensor;
   }
 
-  auto currentTensor = initArg;
-  for (const auto& qubit : qubitsToInsert) {
-    auto newTensor =
-        qtensor::InsertOp::create(*this, qubit, currentTensor, qubit.regIndex)
-            .getResult();
-    updateTensorTracking(currentTensor, newTensor);
-    currentTensor = newTensor;
-    validQubits.erase(qubit);
-  }
-  return currentTensor;
+  return initArg;
 }
 
 Value QCOProgramBuilder::prepareInitArg(Value initArg) {
-  checkQubitType(ValueRange{initArg});
   return prepareInitArg(initArg, nullptr);
 }
 
 SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
-  checkQubitType(initArgs);
-
   DenseSet<Value> initQubits;
   for (auto initArg : initArgs) {
     if (isa<QubitType>(initArg.getType())) {
@@ -313,6 +316,7 @@ SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
   for (auto initArg : initArgs) {
     updatedArgs.emplace_back(prepareInitArg(initArg, &initQubits));
   }
+
   return updatedArgs;
 }
 
@@ -323,8 +327,11 @@ void QCOProgramBuilder::updateQubitValueTracking(Value oldValue,
   }
   if (isa<QubitType>(oldValue.getType())) {
     updateQubitTracking(oldValue, newValue);
-  } else {
+  } else if (auto t = dyn_cast<RankedTensorType>(oldValue.getType());
+             t && isa<QubitType>(t.getElementType())) {
+    llvm::dbgs() << "tst!\n";
     updateTensorTracking(oldValue, newValue);
+    llvm::dbgs() << "xxxx!\n";
   }
 }
 
@@ -1171,7 +1178,6 @@ ValueRange QCOProgramBuilder::scfWhile(
     updateQubitValueTracking(innerInitArgs, blockArgs);
     // Construct the body
     const auto& results = body(blockArgs);
-
     if (results.size() != innerInitArgs.size()) {
       llvm::reportFatalUsageError(
           "scf.while body must return exactly one value per iter arg");
@@ -1389,14 +1395,14 @@ ValueRange QCOProgramBuilder::qcoIf(
 QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
                                                    ValueRange yieldedValues) {
   checkFinalized();
-  checkQubitType(yieldedValues);
 
   // Validate the yieldedValues, the qubit values are updated in the scf.while
   // builder
   for (auto yieldedValue : yieldedValues) {
     if (isa<QubitType>(yieldedValue.getType())) {
       validateQubitValue(yieldedValue);
-    } else {
+    } else if (auto t = dyn_cast<RankedTensorType>(yieldedValue.getType());
+               t && isa<QubitType>(t.getElementType())) {
       validateTensorValue(yieldedValue);
     }
   }
@@ -1524,7 +1530,6 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
-
   return cast<ModuleOp>(module);
 }
 

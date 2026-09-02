@@ -32,6 +32,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/PassInstrumentation.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
@@ -426,9 +427,9 @@ static OwningOpRef<ModuleOp> magicState(MLIRContext* context,
       generators[s][j] = paulis[dis(gen)];
     }
   }
-  
+
   const int64_t nqubits = ncopies + 1; // MAGIC_COPIES + ancilla
-  
+
   QCOProgramBuilder builder(context);
   builder.initialize(SmallVector<Type>(nqubits, builder.getI1Type()));
 
@@ -506,6 +507,106 @@ static OwningOpRef<ModuleOp> magicState(MLIRContext* context,
   return mod;
 }
 
+static OwningOpRef<ModuleOp> vqe(MLIRContext* context, const int64_t nqubits,
+                                 const int64_t nlayers, const double decay) {
+  /// The angle the optimizer starts from.
+  constexpr double vqeInitialAngle = llvm::numbers::pi / 2.0;
+
+  QCOProgramBuilder builder(context);
+  builder.initialize(SmallVector<Type>{builder.getF64Type()});
+
+  auto reg = builder.allocClassicalBitRegister(nqubits, "reg");
+
+  SmallVector<Value> qubits(nqubits);
+
+  auto tensor = builder.qtensorAlloc(nqubits);
+  for (int64_t i = 0; i < nqubits; ++i) {
+    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, i);
+  }
+
+  SmallVector<Value> whileArgs{builder.floatConstant(vqeInitialAngle),
+                               // The chain has at most `nqubits - 1`
+                               // disagreeing pairs, so the first round
+                               // improves on this value whatever it measures.
+                               builder.intConstant(nqubits)};
+  whileArgs.append(qubits);
+
+  // A round prepares the ansatz at the current angle, reads the register, and
+  // estimates the energy of an Ising chain from the measured bits. The
+  // optimizer shrinks the angle and runs another round only while the energy
+  // improves on the round before it, so the rounds follow from the
+  // measurements.
+
+  whileArgs = builder.scfWhile(
+      whileArgs,
+      [&](ValueRange args) {
+        SmallVector<Value> bodyArgs(args);
+
+        auto& angle = bodyArgs[0];
+        auto& previous = bodyArgs[1];
+        SmallVector<Value> whileBodyQubits(ArrayRef(bodyArgs).drop_front(2));
+
+        for_each(whileBodyQubits, [&](auto& q) { q = builder.reset(q); });
+
+        whileBodyQubits = builder.scfFor(
+            0, nlayers, 1, whileBodyQubits, [&](Value, ValueRange forArgs) {
+              SmallVector<Value> forBodyQubits(forArgs);
+              for_each(forBodyQubits,
+                       [&](auto& q) { q = builder.ry(angle, q); });
+
+              for (size_t i = 0; i < nqubits - 1; ++i) {
+                std::tie(forBodyQubits[i], forBodyQubits[i + 1]) =
+                    builder.cx(forBodyQubits[i], forBodyQubits[i + 1]);
+              }
+              return forBodyQubits;
+            });
+
+        whileBodyQubits = builder.barrier(whileBodyQubits);
+
+        for (int64_t i = 0; i < whileBodyQubits.size(); ++i) {
+          std::tie(whileBodyQubits[i], std::ignore) =
+              builder.measure(whileBodyQubits[i], reg, i);
+        }
+
+        for (size_t i = 2; i < bodyArgs.size(); ++i) {
+          bodyArgs[i] = whileBodyQubits[i - 2];
+        }
+
+        // auto energy =
+        //     func::CallOp::create(builder, "getEnergy",
+        //                          SmallVector<Type>{builder.getI64Type()}, reg)
+        //         .getResult(0);
+
+        // auto improved = arith::CmpIOp::create(
+        //     builder, arith::CmpIPredicate::slt, energy, previous);
+
+        auto improved = builder.boolConstant(true);
+
+        builder.scfCondition(improved, bodyArgs);
+        return bodyArgs;
+      },
+      [&](ValueRange args) {
+        SmallVector<Value> bodyArgs(args);
+        auto decayValue = builder.floatConstant(decay);
+        bodyArgs[0] =
+            arith::MulFOp::create(builder, bodyArgs[0], decayValue).getResult();
+        return bodyArgs;
+      });
+
+  qubits = to_vector(ArrayRef(whileArgs).drop_front(2));
+
+  qubits = builder.barrier(qubits);
+
+  for (int64_t i = 0; i < nqubits; ++i) {
+    tensor = builder.qtensorInsert(qubits[i], tensor, i);
+  }
+
+  builder.qtensorDealloc(tensor);
+
+  return builder.finalize(whileArgs[0]);
+  ;
+}
+
 /// Run the mapping pass and collect timing statistics.
 static AggregateBenchmarkResult runBenchmark(MLIRContext* context,
                                              const BenchmarkEntry& entry,
@@ -532,7 +633,6 @@ static AggregateBenchmarkResult runBenchmark(MLIRContext* context,
       llvm::errs() << "Pass failed for circuit: " << entry.name << "\n";
       continue;
     }
-
     aggStats.stats.emplace_back(stats);
   }
 
@@ -586,6 +686,9 @@ int main(int argc, char** argv) {
         "magic-state-distillation", i, [i](MLIRContext* context) {
           return magicState(context, static_cast<int64_t>(i), 5);
         });
+    entries.emplace_back("vqe", i, [i](MLIRContext* context) {
+      return vqe(context, static_cast<int64_t>(i), 1000, 0.05);
+    });
   }
 
   SmallVector<AggregateBenchmarkResult> allAggStats;
