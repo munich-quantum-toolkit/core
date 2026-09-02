@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <array>
+#include <barrier>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -31,6 +32,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -974,6 +976,63 @@ TEST(DeviceRegistrationTest, RegistersOnlyWhenIdIsAbsent) {
   EXPECT_THROW(driver.registerDevice(disabled), std::invalid_argument);
 }
 
+TEST(DeviceRegistrationTest, ConcurrentRegistrationInsertsOnce) {
+  constexpr size_t threadCount = 8;
+  auto& driver = qdmi::Driver::get();
+  const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
+  const qdmi::DeviceDefinition definition{
+      .id = "test.concurrent-insert-if-absent",
+      .library = library,
+      .prefix = prefix,
+      .session = {}};
+  std::array<bool, threadCount> inserted{};
+  std::barrier start(threadCount);
+  std::vector<std::thread> threads;
+  threads.reserve(threadCount);
+
+  for (size_t thread = 0; thread < threadCount; ++thread) {
+    threads.emplace_back([&, thread] {
+      start.arrive_and_wait();
+      inserted[thread] = driver.registerDeviceIfAbsent(definition);
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  EXPECT_EQ(std::ranges::count(inserted, true), 1);
+  EXPECT_EQ(std::ranges::count(driver.registeredDeviceIds(), definition.id), 1);
+}
+
+TEST(DeviceRegistrationTest, ConcurrentOpenReturnsOnePersistentDevice) {
+  constexpr size_t threadCount = 8;
+  auto& driver = qdmi::Driver::get();
+  const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
+  const qdmi::DeviceDefinition definition{.id = "test.concurrent-open",
+                                          .library = library,
+                                          .prefix = prefix,
+                                          .session = {}};
+  driver.registerDevice(definition);
+  std::array<QDMI_Device, threadCount> devices{};
+  std::barrier start(threadCount);
+  std::vector<std::thread> threads;
+  threads.reserve(threadCount);
+
+  for (size_t thread = 0; thread < threadCount; ++thread) {
+    threads.emplace_back([&, thread] {
+      start.arrive_and_wait();
+      devices[thread] = driver.open(definition.id);
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  ASSERT_NE(devices.front(), nullptr);
+  EXPECT_TRUE(std::ranges::all_of(
+      devices, [&](const auto device) { return device == devices.front(); }));
+}
+
 TEST(DeviceRegistrationTest, RegistrationDoesNotLoadLibraries) {
   auto& driver = qdmi::Driver::get();
   driver.registerDevice({.id = "test.missing-library",
@@ -1346,6 +1405,43 @@ TEST(DeviceRegistrationTest, TextJobDoesNotRequireShots) {
   EXPECT_THROW(std::ignore = device.submitJob(std::string{"binary"},
                                               QDMI_PROGRAM_FORMAT_QPY),
                std::invalid_argument);
+}
+
+TEST(DeviceRegistrationTest, ConcurrentlyFreesDistinctJobs) {
+  constexpr size_t threadCount = 8;
+  constexpr size_t jobCount = 64;
+  registerSessionTestDevice();
+  const auto device = fomac::Session::openDevice("test.session-overrides");
+  size_t freedBefore = 0;
+  ASSERT_EQ(QDMI_device_query_device_property(
+                device, QDMI_DEVICE_PROPERTY_CUSTOM5, sizeof(freedBefore),
+                &freedBefore, nullptr),
+            QDMI_SUCCESS);
+  std::array<QDMI_Job, jobCount> jobs{};
+  for (auto& job : jobs) {
+    ASSERT_EQ(QDMI_device_create_job(device, &job), QDMI_SUCCESS);
+  }
+
+  std::barrier start(threadCount);
+  std::vector<std::thread> threads;
+  threads.reserve(threadCount);
+  for (size_t thread = 0; thread < threadCount; ++thread) {
+    threads.emplace_back([&, thread] {
+      start.arrive_and_wait();
+      for (size_t job = thread; job < jobCount; job += threadCount) {
+        QDMI_job_free(jobs[job]);
+      }
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+  size_t freedAfter = 0;
+  ASSERT_EQ(QDMI_device_query_device_property(
+                device, QDMI_DEVICE_PROPERTY_CUSTOM5, sizeof(freedAfter),
+                &freedAfter, nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(freedAfter - freedBefore, jobCount);
 }
 
 TEST(DeviceRegistrationTest, RetrievesExistingJobs) {

@@ -18,7 +18,7 @@ from mqt.core.qdmi import slurm as slurm
 class Job:
     """A job represents a submitted quantum program execution."""
 
-    def check(self) -> Status:
+    def check(self) -> Job.Status:
         """Returns the current status of the job."""
 
     def wait(self, timeout: int = 0) -> bool:
@@ -223,7 +223,7 @@ class Device:
     def version(self) -> str:
         """Returns the version of the device."""
 
-    def status(self) -> Status:
+    def status(self) -> Device.Status:
         """Returns the current status of the device."""
 
     def library_version(self) -> str:
@@ -232,19 +232,19 @@ class Device:
     def qubits_num(self) -> int:
         """Returns the number of qubits available on the device."""
 
-    def sites(self) -> list[Site]:
+    def sites(self) -> list[Device.Site]:
         """Returns the list of all sites (zone and regular sites) available on the device."""
 
-    def regular_sites(self) -> list[Site]:
+    def regular_sites(self) -> list[Device.Site]:
         """Returns the list of regular sites (without zone sites) available on the device."""
 
-    def zones(self) -> list[Site]:
+    def zones(self) -> list[Device.Site]:
         """Returns the list of zone sites (without regular sites) available on the device."""
 
-    def operations(self) -> list[Operation]:
+    def operations(self) -> list[Device.Operation]:
         """Returns the list of operations supported by the device."""
 
-    def coupling_map(self) -> list[tuple[Site, Site]] | None:
+    def coupling_map(self) -> list[tuple[Device.Site, Device.Site]] | None:
         """Returns the coupling map of the device as a list of site pairs."""
 
     def needs_calibration(self) -> int | None:
@@ -274,7 +274,7 @@ class Device:
     def child_devices(self) -> list[Device]:
         """Returns the direct child devices managed by this device."""
 
-    def query_custom_operations(self, custom_property: CustomProperty) -> list[Operation] | None:
+    def query_custom_operations(self, custom_property: CustomProperty) -> list[Device.Operation] | None:
         """Query a custom device property that contains operation handles.
 
         Returns normal :class:`Device.Operation` objects, or ``None`` when the custom

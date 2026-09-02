@@ -10,6 +10,25 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- 💥 Drop support for x86 macOS and stop publishing the respective wheels
+  ([#2259]) ([**@denialhaag**])
+- ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++
+  ([#2259]) ([**@denialhaag**])
+- 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
+  [**@burgholzer**])
+- ⬆️ Update `nanobind` to version 3.0.1 ([#2209], [#2283]) ([**@denialhaag**],
+  [**@burgholzer**])
+- 📦 Publish one split-mode `cp311-abi3` wheel for GIL-enabled CPython 3.11 and
+  newer ([#2209]) ([**@denialhaag**], [**@burgholzer**])
+- 📦 Publish one `cp315-abi3t` wheel for free-threaded CPython 3.15 and newer
+  ([#2209]) ([**@denialhaag**], [**@burgholzer**])
+- ⚡ Remove an extra dense copy from `VectorDD.get_vector` ([#2209])
+  ([**@burgholzer**])
+- 🐛 Protect process-wide DD, IR, and QDMI state for free-threaded Python
+  ([#2209]) ([**@burgholzer**])
+
 ### Removed
 
 - 💥 Remove MQT Core's optional MLIR stack, including its dialects, conversions,
@@ -731,8 +750,11 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2314]: https://github.com/munich-quantum-toolkit/core/pull/2314
+[#2283]: https://github.com/munich-quantum-toolkit/core/pull/2283
+[#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
+[#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156

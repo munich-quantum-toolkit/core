@@ -83,7 +83,8 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
 
 template <class Node> auto Edge<Node>::size() const -> std::size_t {
   static constexpr std::size_t NODECOUNT_BUCKETS = 200000U;
-  static std::unordered_set<const Node*> visited{NODECOUNT_BUCKETS};
+  static thread_local std::unordered_set<const Node*> visited{
+      NODECOUNT_BUCKETS};
   visited.max_load_factor(10);
   visited.clear();
   return size(visited);
@@ -678,10 +679,9 @@ template auto Edge<dNode>::traverseDiagonal(const fp& prob, std::size_t i,
 ///                         \n Hash related code \n
 ///-----------------------------------------------------------------------------
 
-namespace std {
 template <class Node>
-auto hash<dd::Edge<Node>>::operator()(const dd::Edge<Node>& e) const noexcept
-    -> std::size_t {
+auto std::hash<dd::Edge<Node>>::operator()(
+    const dd::Edge<Node>& e) const noexcept -> std::size_t {
   const auto h1 = dd::murmur64(reinterpret_cast<std::size_t>(e.p));
   const auto h2 = std::hash<dd::Complex>{}(e.w);
   auto h3 = qc::combineHash(h1, h2);
@@ -696,7 +696,9 @@ auto hash<dd::Edge<Node>>::operator()(const dd::Edge<Node>& e) const noexcept
   return h3;
 }
 
-template struct hash<dd::Edge<dd::vNode>>;
-template struct hash<dd::Edge<dd::mNode>>;
-template struct hash<dd::Edge<dd::dNode>>;
-} // namespace std
+// NOLINTNEXTLINE(bugprone-std-namespace-modification)
+template struct std::hash<dd::Edge<dd::vNode>>;
+// NOLINTNEXTLINE(bugprone-std-namespace-modification)
+template struct std::hash<dd::Edge<dd::mNode>>;
+// NOLINTNEXTLINE(bugprone-std-namespace-modification)
+template struct std::hash<dd::Edge<dd::dNode>>;

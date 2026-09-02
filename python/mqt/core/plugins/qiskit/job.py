@@ -124,7 +124,7 @@ class QDMIJob(JobV1):
             qobj_id=self.job_id(),
             job_id=self.job_id(),
             success=overall_success,
-            date=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            date=datetime.datetime.now(datetime.UTC).isoformat(),
             results=experiment_results,
         )
 
