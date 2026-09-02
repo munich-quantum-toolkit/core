@@ -13,6 +13,8 @@
 #include "EvaluationUtils.hpp"
 #include "bench/Evaluation.hpp"
 
+#include <cmath>
+#include <numbers>
 #include <stdexcept>
 #include <string_view>
 
@@ -21,7 +23,8 @@ namespace mqt::bench {
 Multiplexer::Multiplexer(MultiplexerOptions options)
     : options_(options), output_{.name = "result", .width = options_.qubits} {
   if (options_.qubits < 2 || options_.qubits > MultiplexerOptions::MAX_QUBITS) {
-    throw std::invalid_argument("multiplexer qubits must be between 2 and 31");
+    throw std::invalid_argument(
+        "multiplexer qubits must be between 2 and 1024");
   }
 }
 
@@ -33,7 +36,18 @@ const Output& Multiplexer::output() const noexcept { return output_; }
 
 double Multiplexer::probability(const std::string_view outcome) const {
   detail::validateOutcome(outcome, output_.width);
-  return outcome.find('1') == std::string_view::npos ? 1. : 0.;
+
+  double state = 0.;
+  double weight = 0.5;
+  for (const auto bit : outcome.substr(0, outcome.size() - 1)) {
+    state += bit == '1' ? weight : 0.;
+    weight *= 0.5;
+  }
+  const auto angle = std::numbers::pi * state;
+  const auto amplitude =
+      outcome.back() == '0' ? std::cos(angle / 2.) : std::sin(angle / 2.);
+  return std::ldexp(amplitude * amplitude,
+                    1 - static_cast<int>(options_.qubits));
 }
 
 Evaluation Multiplexer::evaluate(const Counts& counts) const {

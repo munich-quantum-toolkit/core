@@ -161,7 +161,7 @@ if(NOT EXISTS "${percent_program_path}" OR NOT EXISTS "${percent_manifest_path}"
 endif()
 
 set(counts "${OUTPUT_DIR}/counts.json")
-file(WRITE "${counts}" "{\"schema_version\":1,\"counts\":{\"00\":10}}\n")
+file(WRITE "${counts}" "{\"schema_version\":1,\"counts\":{\"00\":2,\"10\":1,\"11\":1}}\n")
 execute_process(
   COMMAND "${CLI}" evaluate --manifest "${manifest_path}" --counts -
   INPUT_FILE "${counts}"
@@ -176,7 +176,7 @@ if(NOT evaluation_result EQUAL 0)
 endif()
 string(JSON evaluated_case_id GET "${evaluation_output}" case_id)
 string(JSON total_variation_distance GET "${evaluation_output}" metrics total_variation_distance)
-if(NOT evaluated_case_id STREQUAL case_id OR NOT total_variation_distance EQUAL 0)
+if(NOT evaluated_case_id STREQUAL case_id OR total_variation_distance GREATER 1e-15)
   message(FATAL_ERROR "evaluation did not use the generated manifest reference")
 endif()
 

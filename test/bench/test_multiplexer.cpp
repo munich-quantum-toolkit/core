@@ -13,6 +13,7 @@
 
 #include <gtest/gtest.h>
 
+#include <numbers>
 #include <stdexcept>
 #include <string>
 
@@ -39,11 +40,26 @@ TEST(Multiplexer, ValidatesTheConfiguredInstance) {
                std::invalid_argument);
 }
 
-TEST(Multiplexer, HasTheExactZeroInputReference) {
+TEST(Multiplexer, GivesTheUniformControlDistribution) {
   const Multiplexer benchmark{{.qubits = 3}};
-  EXPECT_DOUBLE_EQ(benchmark.probability("000"), 1.);
-  EXPECT_DOUBLE_EQ(benchmark.probability("001"), 0.);
-  EXPECT_DOUBLE_EQ(benchmark.probability("100"), 0.);
+  const auto high = (2. + std::numbers::sqrt2) / 16.;
+  const auto low = (2. - std::numbers::sqrt2) / 16.;
+
+  EXPECT_NEAR(benchmark.probability("000"), 0.25, 1e-15);
+  EXPECT_NEAR(benchmark.probability("001"), 0., 1e-15);
+  EXPECT_NEAR(benchmark.probability("010"), high, 1e-15);
+  EXPECT_NEAR(benchmark.probability("011"), low, 1e-15);
+  EXPECT_NEAR(benchmark.probability("100"), 0.125, 1e-15);
+  EXPECT_NEAR(benchmark.probability("101"), 0.125, 1e-15);
+  EXPECT_NEAR(benchmark.probability("110"), low, 1e-15);
+  EXPECT_NEAR(benchmark.probability("111"), high, 1e-15);
+
+  double total = 0.;
+  for (const auto* outcome :
+       {"000", "001", "010", "011", "100", "101", "110", "111"}) {
+    total += benchmark.probability(outcome);
+  }
+  EXPECT_NEAR(total, 1., 1e-15);
   EXPECT_THROW(static_cast<void>(benchmark.probability("00")),
                std::invalid_argument);
   EXPECT_THROW(static_cast<void>(benchmark.probability("00x")),
@@ -52,10 +68,17 @@ TEST(Multiplexer, HasTheExactZeroInputReference) {
 
 TEST(Multiplexer, EvaluatesTheReferenceWithoutASuccessOutcome) {
   const Multiplexer benchmark{{.qubits = 3}};
-  const auto evaluation = benchmark.evaluate({{"000", 80}, {"001", 20}});
-  EXPECT_DOUBLE_EQ(evaluation.totalVariationDistance, 0.2);
-  EXPECT_DOUBLE_EQ(evaluation.squaredHellingerFidelity, 0.8);
+  const auto evaluation = benchmark.evaluate({{"000", 100}});
+  EXPECT_DOUBLE_EQ(evaluation.totalVariationDistance, 0.75);
+  EXPECT_DOUBLE_EQ(evaluation.squaredHellingerFidelity, 0.25);
   EXPECT_FALSE(evaluation.successProbability);
+}
+
+TEST(Multiplexer, KeepsTheLargestUniformControlWeightRepresentable) {
+  const Multiplexer benchmark{{.qubits = MultiplexerOptions::MAX_QUBITS}};
+  EXPECT_GT(
+      benchmark.probability(std::string(MultiplexerOptions::MAX_QUBITS, '0')),
+      0.);
 }
 
 } // namespace

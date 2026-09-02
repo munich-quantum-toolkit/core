@@ -246,7 +246,7 @@ TEST(BenchmarkJSON,
         static_cast<void>(multiplexerFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":1}})"));
       },
-      "between 2 and 31");
+      "between 2 and 1024");
   expectInvalid(
       [] {
         static_cast<void>(multiplexerFromInstanceSpecificationJSON(
@@ -327,7 +327,7 @@ TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_NE(ghz.find("\"maximum\":1075"), std::string::npos);
   EXPECT_NE(bv.find("\"dynamic\""), std::string::npos);
   EXPECT_NE(grover.find("\"maxLength\":62"), std::string::npos);
-  EXPECT_NE(multiplexer.find("\"maximum\":31"), std::string::npos);
+  EXPECT_NE(multiplexer.find("\"maximum\":1024"), std::string::npos);
   EXPECT_NE(multiplexer.find("\"minimum\":2"), std::string::npos);
   EXPECT_NE(qft.find("\"period_exponent\""), std::string::npos);
   EXPECT_NE(qpe.find("\"iterative\""), std::string::npos);

@@ -30,8 +30,7 @@ using namespace mlir;
 SmallVector<Value> multiplexer(qc::QCProgramBuilder& builder,
                                const Multiplexer& benchmark) {
   const auto numControls = static_cast<int64_t>(benchmark.options().qubits - 1);
-  const auto numStates = int64_t{1} << numControls;
-  auto controls = builder.allocQubitRegister(numControls, "controls");
+  auto controls = builder.allocQubitRegisterStorage(numControls, "controls");
   auto target = builder.allocQubit();
   auto result = builder.allocClassicalBitRegister(
       static_cast<int64_t>(benchmark.output().width), benchmark.output().name);
@@ -39,41 +38,31 @@ SmallVector<Value> multiplexer(qc::QCProgramBuilder& builder,
   auto zero = builder.indexConstant(0);
   auto one = builder.indexConstant(1);
 
-  const auto flipZeroControls = [&](Value state) {
-    builder.scfFor(0, numControls, 1, [&](Value bitPosition) {
-      auto shifted = arith::ShRSIOp::create(builder, state, bitPosition);
-      auto bit = arith::AndIOp::create(builder, shifted, one);
-      auto isZero =
-          arith::CmpIOp::create(builder, arith::CmpIPredicate::eq, bit, zero);
-      builder.scfIf(isZero, [&] {
-        builder.x(builder.loadQubit(controls.value, bitPosition));
-      });
-    });
-  };
+  builder.scfFor(0, numControls, 1, [&](Value index) {
+    builder.h(builder.loadQubit(controls, index));
+  });
 
-  auto states = builder.indexConstant(numStates);
-  auto firstAngle = builder.floatConstant(0.);
-  auto angleIncrement =
-      builder.floatConstant(std::numbers::pi / static_cast<double>(numStates));
-  auto stateLoop =
-      scf::ForOp::create(builder, zero, states, one, ValueRange{firstAngle});
+  auto upper = builder.indexConstant(numControls);
+  auto last = builder.indexConstant(numControls - 1);
+  auto firstAngle = builder.floatConstant(std::numbers::pi / 2.);
+  auto half = builder.floatConstant(0.5);
+  auto rotationLoop =
+      scf::ForOp::create(builder, zero, upper, one, ValueRange{firstAngle});
   {
     OpBuilder::InsertionGuard guard(builder);
-    builder.setInsertionPointToStart(stateLoop.getBody());
-    auto angle = stateLoop.getRegionIterArg(0);
-    auto state = stateLoop.getInductionVar();
-    flipZeroControls(state);
-    builder.mcry(angle, controls.qubits, target);
-    flipZeroControls(state);
-    auto nextAngle = arith::AddFOp::create(builder, angle, angleIncrement);
+    builder.setInsertionPointToStart(rotationLoop.getBody());
+    auto angle = rotationLoop.getRegionIterArg(0);
+    auto control =
+        arith::SubIOp::create(builder, last, rotationLoop.getInductionVar());
+    builder.cry(angle, builder.loadQubit(controls, control), target);
+    auto nextAngle = arith::MulFOp::create(builder, angle, half);
     scf::YieldOp::create(builder, ValueRange{nextAngle});
   }
 
   builder.measure(target, result, 0);
   builder.scfFor(0, numControls, 1, [&](Value index) {
     auto resultIndex = arith::AddIOp::create(builder, index, one);
-    builder.measure(builder.loadQubit(controls.value, index), result,
-                    resultIndex);
+    builder.measure(builder.loadQubit(controls, index), result, resultIndex);
   });
   return {result};
 }

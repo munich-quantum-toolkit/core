@@ -20,7 +20,7 @@ namespace mqt::bench {
 
 /// Parameters for one quantum multiplexer benchmark instance.
 struct MultiplexerOptions {
-  static constexpr size_t MAX_QUBITS = 31;
+  static constexpr size_t MAX_QUBITS = 1'024;
 
   /// Total number of control and target qubits.
   size_t qubits;
