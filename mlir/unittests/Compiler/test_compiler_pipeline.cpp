@@ -1408,7 +1408,8 @@ TEST_F(CompilerPipelineTest,
   std::vector operations{llvm::cantFail(TargetOperation::create("u", 1, 3)),
                          llvm::cantFail(TargetOperation::create("cz", 2, 0))};
   auto target = llvm::cantFail(CompilerTarget::create(
-      2, std::vector<CompilerTarget::Coupling>{{0, 1}}, std::move(operations)));
+      2, CompilerTarget::Connectivity::fromCouplings({{0, 1}}),
+      CompilerTarget::NativeOperations::fromOperations(operations)));
 
   ASSERT_TRUE(program->compileForTarget(target));
   const std::string before = program->str();
