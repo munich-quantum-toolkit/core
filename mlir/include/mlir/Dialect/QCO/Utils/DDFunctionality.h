@@ -19,6 +19,7 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <random>
 #include <string>
@@ -88,21 +89,21 @@ FailureOr<dd::VectorDD> simulateStatevector(
 
 /// Sample a single-block QCO function from the zero state.
 ///
-/// Returned CBit registers set the outcome in return order and from high to low
-/// bit. Without CBit results, the function samples all DD wires. Terminal
-/// measurements use one simulation for all shots. Programs that use a measured
-/// value or wire, or reset a qubit, run once per shot.
+/// Returned CBit registers use conventional count-string order: the last
+/// returned register comes first, and each register is MSB-first. Without CBit
+/// results, the function samples all DD wires. Terminal measurements use one
+/// simulation for all shots. Programs that use a measured value or wire, or
+/// reset a qubit, run once per shot.
 ///
 /// The containing module must pass MLIR verification and
 /// `qco::verifyLinearity`.
 ///
 /// @param func QCO function to sample.
-/// @param dd DD package. The function grows it when needed.
 /// @param shots Number of samples.
-/// @param rng Random-number generator.
+/// @param seed RNG seed. Zero selects nondeterministic seeding.
 /// @param argumentBindings Scalar values and dynamic QTensor argument sizes.
 /// @return Outcome counts, or failure for an unsupported program.
 FailureOr<std::map<std::string, size_t>>
-sample(func::FuncOp func, dd::Package& dd, size_t shots, std::mt19937_64& rng,
+sample(func::FuncOp func, size_t shots, uint64_t seed = 0,
        const DDArgumentBindings& argumentBindings = DDArgumentBindings());
 } // namespace mlir::qco

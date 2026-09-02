@@ -290,7 +290,7 @@ select = ["cp*-win_arm64", "cp315*"]
 before-test = ""
 test-groups = []
 test-sources = []
-test-command = "python -c \"import mqt.core.dd, mqt.core.ir, mqt.core.mlir, mqt.core.qdmi\""
+test-command = "python -c \"import mqt.core.dd, mqt.core.mlir, mqt.core.qdmi\""
 
 [tool.cibuildwheel.linux]
 before-all = """

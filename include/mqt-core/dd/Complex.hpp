@@ -16,7 +16,6 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
-#include "ir/Definitions.hpp"
 
 #include <complex>
 #include <cstddef>
@@ -164,6 +163,6 @@ template <> struct std::hash<dd::Complex> {
   std::size_t operator()(dd::Complex const& c) const noexcept {
     const auto h1 = dd::murmur64(reinterpret_cast<std::size_t>(c.r));
     const auto h2 = dd::murmur64(reinterpret_cast<std::size_t>(c.i));
-    return qc::combineHash(h1, h2);
+    return dd::combineHash(h1, h2);
   }
 };

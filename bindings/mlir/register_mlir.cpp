@@ -1151,26 +1151,25 @@ Raises:
 
   qcoProgram.def(
       "sample",
-      [](const mlir::QCOProgram& program, dd::Package& ddPackage,
-         const size_t shots, const uint64_t seed) {
+      [](const mlir::QCOProgram& program, const size_t shots,
+         const uint64_t seed) {
         auto func = entryFunc(program);
-        auto rng = makeRng(seed);
         return takeFailureOr(
             func.getContext(), "cannot sample this QCO program",
-            [&] { return mlir::qco::sample(func, ddPackage, shots, rng); });
+            [&] { return mlir::qco::sample(func, shots, seed); });
       },
-      "dd_package"_a, "shots"_a = 1024U, "seed"_a = 0U,
+      "shots"_a = 1024U, "seed"_a = 0U,
       R"pb(Sample the declared outputs of a QCO program.
 
 Args:
-    dd_package: DD package with enough qubits for the program.
     shots: Number of shots (default 1024).
     seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
         value produces reproducible results.
 
 Returns:
-    Histogram of returned CBit registers in return order, each MSB first. If
-    no CBit result exists, final ``measureAll`` bitstrings instead.
+    Histogram keys use conventional count-string order. The last returned
+    register comes first, and each register is MSB-first. If no CBit result
+    exists, final ``measureAll`` bitstrings are used instead.
 
 Raises:
     ValueError: When the program is unsupported for sampling.)pb");

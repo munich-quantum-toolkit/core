@@ -22,7 +22,6 @@ from qiskit import QuantumCircuit, qasm3
 from qiskit.circuit import Gate, library
 from qiskit.quantum_info import Operator
 
-from mqt.core.ir import QuantumComputation
 from mqt.core.mlir import (
     CompilerTarget,
     JeffProgram,
@@ -175,12 +174,6 @@ def test_compile_program_qasm_file(tmp_path: Path) -> None:
     result = compile_program(path)
     assert isinstance(result, QCProgram)
     _assert_bell_program(result, measured=True)
-
-
-def test_compile_program_rejects_quantum_computation() -> None:
-    """Reject the removed legacy compiler input."""
-    with pytest.raises(RuntimeError, match="is not supported"):
-        compile_program(QuantumComputation(1))  # ty: ignore[invalid-argument-type]
 
 
 @requires_qiskit_translation

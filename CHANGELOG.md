@@ -95,8 +95,6 @@ releases may include breaking changes.
   ([#2259]) ([**@denialhaag**])
 - ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++
   ([#2259]) ([**@denialhaag**])
-- 💥 Move circuit IR OpenQASM serialization from operation subclasses to
-  `OpenQASMSerializer` ([#2249]) ([**@simon1hofmann**])
 - 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
   [**@burgholzer**])
 - ⬆️ Update `nanobind` to version 3.0.1 ([#2209], [#2283]) ([**@denialhaag**],
@@ -109,8 +107,6 @@ releases may include breaking changes.
   ([**@burgholzer**])
 - 🐛 Protect process-wide DD, IR, and QDMI state for free-threaded Python
   ([#2209]) ([**@burgholzer**])
-- 💥 Prune dead and misleading CoreIR APIs and remove random-number generator
-  state from `QuantumComputation` ([#2111], [#2112]) ([**@simon1hofmann**])
 - 💥 Update QIR execution for QIR 2.1, isolated runtimes, deterministic QDMI
   sampling, and safe statevector extraction ([#2035], [#2036], [#2246])
   ([**@burgholzer**], [**@denialhaag**])
@@ -121,13 +117,15 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove `qc::QuantumComputation`, `MQT::CoreIR`, and `MQT::CoreQASM`. Use
+  compiler-backed QC/QCO APIs in v4 or the MQT Core v3 release series for legacy
+  code ([#2111], [#2112], [#2288]) ([**@burgholzer**], [**@simon1hofmann**])
 - 💥 Remove the `spdlog` dependency from MQT Core source builds, installed CMake
   packages, and Python wheels. QDMI diagnostics continue to be written to
   standard error ([#2270]) ([**@denialhaag**])
-- 💥 Remove `CircuitOptimizer`. Move circuit flattening and final-measurement
-  removal to `QuantumComputation`, equivalence-checking transformations to MQT
-  QCEC, and mapping transformations to MQT QMAP. Move single-qubit gate fusion
-  to both downstream packages. Remove the public circuit dependency graph and
+- 💥 Remove `CircuitOptimizer`. Move equivalence-checking transformations to MQT
+  QCEC and mapping transformations to MQT QMAP. Move single-qubit gate fusion to
+  both downstream packages. Remove the public circuit dependency graph and
   transformations without production consumers ([#2262]) ([**@simon1hofmann**])
 - 💥 Remove test-only DD state generators and recursive functionality
   construction from MQT Core ([#2257]) ([**@simon1hofmann**])
@@ -871,13 +869,13 @@ for previous changelogs._
 [#2298]: https://github.com/munich-quantum-toolkit/core/pull/2298
 [#2284]: https://github.com/munich-quantum-toolkit/core/pull/2284
 [#2283]: https://github.com/munich-quantum-toolkit/core/pull/2283
+[#2288]: https://github.com/munich-quantum-toolkit/core/pull/2288
 [#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278
 [#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270
 [#2262]: https://github.com/munich-quantum-toolkit/core/pull/2262
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
-[#2249]: https://github.com/munich-quantum-toolkit/core/pull/2249
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2228]: https://github.com/munich-quantum-toolkit/core/pull/2228

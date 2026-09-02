@@ -38,17 +38,15 @@ if(NOT TARGET ${TARGET_NAME})
            ${QDMI_HDRS})
 
   # Add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQASM MQT::CoreQDMICommon)
-  if(BUILD_MQT_CORE_MLIR)
-    mqt_llvm_target_disable_rtti(${TARGET_NAME})
-    target_compile_definitions(${TARGET_NAME} PRIVATE BUILD_MQT_CORE_MLIR)
-    if(UNIX AND NOT APPLE)
-      # Keep symbols from static dependencies local. A plugin-enabled host can otherwise interpose
-      # LLVM's process-wide registries when it loads this device.
-      target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
-    endif()
-    target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRJIT MQT::CoreQIRRuntime)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon)
+  mqt_llvm_target_disable_rtti(${TARGET_NAME})
+  if(UNIX AND NOT APPLE)
+    # Keep symbols from static dependencies local. A plugin-enabled host can otherwise interpose
+    # LLVM's process-wide registries when it loads this device.
+    target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
   endif()
+  target_link_libraries(${TARGET_NAME} PRIVATE MLIRQCODDFunctionality MQTCompilerPipeline
+                                               MQT::CoreQIRJIT MQT::CoreQIRRuntime)
 
   mqt_configure_qdmi_device(${TARGET_NAME} ID mqt.ddsim.default PREFIX ${QDMI_PREFIX})
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})

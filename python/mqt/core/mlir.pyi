@@ -588,18 +588,18 @@ class QCOProgram(Program):
                 has too few qubits, or the program is unsupported for simulation.
         """
 
-    def sample(self, dd_package: mqt.core.dd.DDPackage, shots: int = 1024, seed: int = 0) -> dict[str, int]:
+    def sample(self, shots: int = 1024, seed: int = 0) -> dict[str, int]:
         """Sample the declared outputs of a QCO program.
 
         Args:
-            dd_package: DD package with enough qubits for the program.
             shots: Number of shots (default 1024).
             seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
                 value produces reproducible results.
 
         Returns:
-            Histogram of returned CBit registers in return order, each MSB first. If
-            no CBit result exists, final ``measureAll`` bitstrings instead.
+            Histogram keys use conventional count-string order. The last returned
+            register comes first, and each register is MSB-first. If no CBit result
+            exists, final ``measureAll`` bitstrings are used instead.
 
         Raises:
             ValueError: When the program is unsupported for sampling.

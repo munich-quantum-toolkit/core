@@ -40,9 +40,7 @@ if TYPE_CHECKING or HAS_QISKIT:
         UnsupportedOperationError,
     )
     from .job import QDMIJob
-    from .mqt_to_qiskit import mqt_to_qiskit
     from .provider import QDMIProvider
-    from .qiskit_to_mqt import qiskit_to_mqt
     from .sampler import QDMISampler
     from .serializers import (
         ProgramSerializer,
@@ -64,9 +62,7 @@ if TYPE_CHECKING or HAS_QISKIT:
         "TranslationError",
         "UnsupportedFormatError",
         "UnsupportedOperationError",
-        "mqt_to_qiskit",
         "program_serializer",
-        "qiskit_to_mqt",
         "register_program_serializer",
         "unregister_program_serializer",
     ]
