@@ -602,6 +602,51 @@ module {
       << *emitted;
 }
 
+TEST(OpenQASM3EmissionTest, DoesNotFuseMeasurementsUsedByUnfoldedExpressions) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> !cbit.reg<1> {
+    %bits = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "bits"}
+        : !cbit.reg<1>
+    %qubit = qc.alloc : !qc.qubit
+    %zero = arith.constant 0 : index
+    %false = arith.constant false
+    %true = arith.constant true
+    %measured = qc.measure %qubit : !qc.qubit -> i1
+    cbit.store %measured, %bits[%zero] : !cbit.reg<1>
+    %negated = arith.xori %measured, %true : i1
+    scf.if %negated {
+      qc.x %qubit : !qc.qubit
+    }
+    cbit.store %false, %bits[%zero] : !cbit.reg<1>
+    scf.if %negated {
+      qc.h %qubit : !qc.qubit
+    }
+    qc.dealloc %qubit : !qc.qubit
+    return %bits : !cbit.reg<1>
+  }
+}
+)mlir";
+  const DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("bit _mqt_b0 = measure"), std::string::npos)
+      << *emitted;
+  EXPECT_NE(emitted->find("bits[0] = _mqt_b0;"), std::string::npos) << *emitted;
+  EXPECT_EQ(emitted->find("bits[0] = measure"), std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("if (bits == 0)"), std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("if ((!_mqt_b0))"), std::string::npos) << *emitted;
+  auto analyzed = oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict});
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message << '\n'
+                        << *emitted;
+}
+
 TEST(OpenQASM3EmissionTest, DoesNotUseStoreAfterConsumerForRegisterEquality) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {

@@ -703,7 +703,7 @@ private:
   }
 
   [[nodiscard]] static bool
-  hasExternalExpressionUse(const ArrayRef<Operation*> expressionIfs,
+  hasExternalExpressionUse(ArrayRef<Operation*> expressionIfs,
                            const DenseSet<Operation*>& matchedOperations) {
     return llvm::any_of(expressionIfs, [&](Operation* expressionIf) {
       return llvm::any_of(expressionIf->getResults(), [&](Value result) {
@@ -712,6 +712,32 @@ private:
         });
       });
     });
+  }
+
+  [[nodiscard]] bool hasExternalFoldedUse(Operation* root) const {
+    SmallVector<Operation*> pending{root};
+    DenseSet<Operation*> visited;
+    while (!pending.empty()) {
+      auto* operation = pending.pop_back_val();
+      if (!visited.insert(operation).second) {
+        continue;
+      }
+      for (Value result : operation->getResults()) {
+        for (Operation* user : result.getUsers()) {
+          if (registerEqualities.contains(user)) {
+            continue;
+          }
+          Operation* continuation =
+              isa<scf::YieldOp>(user) ? user->getParentOp() : user;
+          if (!foldedRegisterExpressionOperations.contains(continuation) &&
+              !foldedConditionIfs.contains(continuation)) {
+            return true;
+          }
+          pending.push_back(continuation);
+        }
+      }
+    }
+    return false;
   }
 
   [[nodiscard]] static Operation*
@@ -908,10 +934,15 @@ private:
           store = candidateStore;
           continue;
         }
+        if (foldedRegisterExpressionOperations.contains(user)) {
+          if (hasExternalFoldedUse(user)) {
+            return;
+          }
+          continue;
+        }
         auto consumer = dyn_cast<scf::IfOp>(user);
-        if (!foldedRegisterExpressionOperations.contains(user) &&
-            (!consumer ||
-             !registerEqualities.contains(consumer.getOperation()))) {
+        if (!consumer ||
+            !registerEqualities.contains(consumer.getOperation())) {
           return;
         }
       }
@@ -1174,6 +1205,25 @@ private:
       return emitBinary(cmp.getLhs(), predicate, cmp.getRhs());
     }
     const auto name = operation->getName().getStringRef();
+    if (auto xorOp = dyn_cast<arith::XOrIOp>(operation);
+        xorOp && value.getType().isInteger(1)) {
+      auto constant = getConstantInteger(xorOp.getLhs());
+      Value operand = xorOp.getRhs();
+      if (!constant) {
+        constant = getConstantInteger(xorOp.getRhs());
+        operand = xorOp.getLhs();
+      }
+      if (constant) {
+        auto expression = emitExpression(operand);
+        if (failed(expression)) {
+          return failure();
+        }
+        if (*constant == 0) {
+          return std::move(*expression);
+        }
+        return (Twine("(!") + *expression + ")").str();
+      }
+    }
     if (name == "arith.remf") {
       auto lhs = emitExpression(operation->getOperand(0));
       if (failed(lhs)) {
