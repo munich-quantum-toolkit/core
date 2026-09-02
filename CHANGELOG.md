@@ -100,7 +100,7 @@ releases may include breaking changes.
   `OpenQASMSerializer` ([#2249]) ([**@simon1hofmann**])
 - 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
   [**@burgholzer**])
-- ⬆️ Update `nanobind` to version 3.0.0 ([#2209]) ([**@denialhaag**],
+- ⬆️ Update `nanobind` to version 3.0.1 ([#2209], [#2283]) ([**@denialhaag**],
   [**@burgholzer**])
 - 📦 Publish one split-mode `cp311-abi3` wheel for GIL-enabled CPython 3.11 and
   newer ([#2209]) ([**@denialhaag**], [**@burgholzer**])
@@ -873,6 +873,7 @@ for previous changelogs._
 [#2315]: https://github.com/munich-quantum-toolkit/core/pull/2315
 [#2298]: https://github.com/munich-quantum-toolkit/core/pull/2298
 [#2284]: https://github.com/munich-quantum-toolkit/core/pull/2284
+[#2283]: https://github.com/munich-quantum-toolkit/core/pull/2283
 [#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278
 [#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270
 [#2262]: https://github.com/munich-quantum-toolkit/core/pull/2262
