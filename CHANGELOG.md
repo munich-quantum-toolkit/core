@@ -72,8 +72,8 @@ releases may include breaking changes.
 - ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
   [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
   [#1748], [#1805], [#1870], [#1904], [#1911], [#1951], [#1956], [#1997],
-  [#2016], [#2060], [#2184], [#2185]) ([**@MatthiasReumann**], [**@burgholzer**],
-  [**@rturrado**])
+  [#2016], [#2060], [#2184], [#2185]) ([**@MatthiasReumann**],
+  [**@burgholzer**], [**@rturrado**])
 - ✨ Add modifier and global-phase normalization passes ([#1986], [#1995],
   [#2015]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add single-qubit optimization passes for unitary fusion, Hadamard lifting,
@@ -119,7 +119,8 @@ releases may include breaking changes.
   default, with one build option for source builds that omit both parts
   ([#1356], [#1549], [#1953], [#2284], [#2298]) ([**@burgholzer**],
   [**@denialhaag**], [**@simon1hofmann**])
-- ♻️ Improve the backward traversal logic for the `WireIterator` class ([#2184]) ([**@MatthiasReumann**])
+- ♻️ Improve the backward traversal logic for the `WireIterator` class ([#2184])
+  ([**@MatthiasReumann**])
 
 ### Removed
 

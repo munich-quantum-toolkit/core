@@ -273,7 +273,7 @@ void WireIterator::forward() {
     qubit_ = *result;
     return;
   }
-  
+
   TypeSwitch<Operation*>(op_)
       .Case<UnitaryOpInterface>(
           [&](UnitaryOpInterface op) { qubit_ = op.getOutputForInput(qubit_); })

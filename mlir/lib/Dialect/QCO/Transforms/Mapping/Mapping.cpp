@@ -814,7 +814,8 @@ private:
           return it == std::default_sentinel;
         }));
 
-        for_each(t.bundle.wires, [](auto& it) { std::ranges::advance(it, -1); });
+        for_each(t.bundle.wires,
+                 [](auto& it) { std::ranges::advance(it, -1); });
 
         const auto bwRouteRes = route<WireDirection::Backward>(t.bundle);
         if (failed(bwRouteRes)) {
@@ -1459,7 +1460,8 @@ private:
       totalStats.merge(*stats);
 
       if constexpr (Mode == RoutingMode::Hot) {
-        for_each(children[1].wires, [](auto& it) { std::ranges::advance(it, -2); });
+        for_each(children[1].wires,
+                 [](auto& it) { std::ranges::advance(it, -2); });
       }
     }
 
@@ -1596,7 +1598,8 @@ private:
           // respective wires.
 
           for_each(composite.indices, [&](size_t i) {
-            std::ranges::advance(wires[i], WireTraversalTraits<Direction>::stride());
+            std::ranges::advance(wires[i],
+                                 WireTraversalTraits<Direction>::stride());
           });
         }
       }
