@@ -9,10 +9,10 @@ repository root.
 
 ## Purpose / Big Picture
 
-MQT Core currently implements every supported named quantum gate twice: once
-as a QCO operation matrix and once in the low-level decision-diagram (DD)
-package. After this change, QCO is the sole source of named-gate semantics. The
-QCO interpreter and QIR runtime obtain canonical QCO matrices through one small
+MQT Core currently implements every supported named quantum gate twice: once as
+a QCO operation matrix and once in the low-level decision-diagram (DD) package.
+After this change, QCO is the sole source of named-gate semantics. The QCO
+interpreter and QIR runtime obtain canonical QCO matrices through one small
 adapter and turn those matrices into DD operations. The exported `MQT::CoreDD`
 library remains an MLIR-independent collection of backend-neutral DD data
 structures and matrix-to-DD primitives, including in builds configured with
@@ -20,28 +20,28 @@ structures and matrix-to-DD primitives, including in builds configured with
 
 Users can observe the result by running the existing QCO DD simulation and QIR
 runtime tests: fixed, parameterized, controlled, and multi-qubit gates retain
-their behavior. A DD-only build still configures and tests successfully, but
-the obsolete public `dd::GateType`, `dd::opTo*GateMatrix`, and `dd::getGateDD`
+their behavior. A DD-only build still configures and tests successfully, but the
+obsolete public `dd::GateType`, `dd::opTo*GateMatrix`, and `dd::getGateDD`
 convenience API no longer exists in the v4 C++ surface.
 
 ## Progress
 
-- [x] (2026-09-02 23:10 CEST) Read issue #2331, its two originating #2288
-      review discussions, repository policy, and the DD/QCO/QIR build and
-      source surfaces.
+- [x] (2026-09-02 23:10 CEST) Read issue #2331, its two originating #2288 review
+      discussions, repository policy, and the DD/QCO/QIR build and source
+      surfaces.
 - [x] (2026-09-02 23:10 CEST) Chose a one-way QCO-to-DD adapter while retaining
       an independent and exported CoreDD target.
 - [x] (2026-09-02 23:45 CEST) Added the shared adapter and migrated QCO DD
       execution to canonical QCO matrices.
-- [x] (2026-09-02 23:45 CEST) Migrated the QIR runtime and central gate
-      registry away from `dd::GateType`.
+- [x] (2026-09-02 23:45 CEST) Migrated the QIR runtime and central gate registry
+      away from `dd::GateType`.
 - [x] (2026-09-02 23:45 CEST) Removed DD-owned named-gate semantics and
       preserved DD-only package tests with raw test matrices.
 - [x] (2026-09-03 00:30 CEST) Added independent adapter tests for asymmetric
       one-, two-, three-, and four-target matrices, including operand
       permutations, sparse controls, and noncontiguous embedding.
-- [x] (2026-09-03 02:05 CEST) Updated the existing changelog entry for #2335
-      and documented the v4 API migration.
+- [x] (2026-09-03 02:05 CEST) Updated the existing changelog entry for #2335 and
+      documented the v4 API migration.
 - [x] (2026-09-03 02:05 CEST) Completed focused, DD-only, full build, test,
       formatting, and lint validation and inspected the final diff.
 
@@ -54,8 +54,7 @@ convenience API no longer exists in the v4 C++ surface.
   bindings before calling each operation's static QCO matrix factory.
 - Observation: Controlled QCO operations must keep a base matrix plus sparse
   `dd::Controls`. Materializing `CtrlOp`'s full dense matrix would grow
-  exponentially with the number of controls and lose the existing DD fast
-  path.
+  exponentially with the number of controls and lose the existing DD fast path.
 - Observation: QIR Runtime and JIT are internal build-tree targets, whereas
   CoreDD is installed and exported. Making CoreDD depend on a QCO target would
   give the installed static library an unexported dependency and reverse the
@@ -66,8 +65,8 @@ convenience API no longer exists in the v4 C++ surface.
 - Observation: `dd::applyGlobalPhase` does not duplicate named-gate semantics;
   it is a backend-neutral operation that mutates and returns a `VectorDD`.
   Keeping it also avoids an unrelated v4 API removal.
-- Observation: `llvm::DenseMap<dd::Qubit, ...>` cannot key the two largest
-  valid qubit indices because LLVM reserves those values as sentinels. The
+- Observation: `llvm::DenseMap<dd::Qubit, ...>` cannot key the two largest valid
+  qubit indices because LLVM reserves those values as sentinels. The
   arbitrary-target adapter now scans its small target list instead; its
   recursion follows target levels only and adds intervening identity levels
   iteratively.
@@ -87,9 +86,9 @@ convenience API no longer exists in the v4 C++ surface.
   canonical QCO matrices to DD nodes; sharing only this narrow conversion avoids
   linking QIR to the complete interpreter. Date/Author: 2026-09-02 / Codex.
 - Decision: Remove the DD-specific operation column from `GateTable.def` and
-  generate QIR dispatch directly from the existing QCO operation key.
-  Rationale: A second named-gate enum is redundant once QCO owns the matrices.
-  Date/Author: 2026-09-02 / Codex.
+  generate QIR dispatch directly from the existing QCO operation key. Rationale:
+  A second named-gate enum is redundant once QCO owns the matrices. Date/Author:
+  2026-09-02 / Codex.
 - Decision: Keep measurement projector matrices private to `Package.cpp` and
   retain raw DD matrix aliases and constructors. Rationale: Projectors are DD
   implementation details, while raw matrices are the backend-neutral boundary.
@@ -101,17 +100,17 @@ convenience API no longer exists in the v4 C++ surface.
 - Decision: Treat qubit-range, uniqueness, and control/target disjointness as
   verified-IR invariants at the internal adapter boundary. Rationale: QCO
   execution and generated QIR may assume valid IR; duplicating their verifiers
-  in the matrix adapter would add guardrails for unreachable inputs. The
-  adapter retains the existing matrix-arity check needed by dynamic custom
-  unitaries. Date/Author: 2026-09-03 / Codex.
+  in the matrix adapter would add guardrails for unreachable inputs. The adapter
+  retains the existing matrix-arity check needed by dynamic custom unitaries.
+  Date/Author: 2026-09-03 / Codex.
 
 ## Outcomes & Retrospective
 
 QCO now owns every named-gate matrix used by MQT Core. One internal adapter
 turns those matrices into DDs for both direct QCO interpretation and QIR
-execution. CoreDD remains an installed, MLIR-independent primitive library;
-its raw matrix constructors and global-phase operation remain available, while
-the duplicate `dd::GateType`, named matrix formulas, and dispatch are gone.
+execution. CoreDD remains an installed, MLIR-independent primitive library; its
+raw matrix constructors and global-phase operation remain available, while the
+duplicate `dd::GateType`, named matrix formulas, and dispatch are gone.
 
 The release build and all 3,781 discovered tests passed, with one test skipped.
 Focused validation passed 173 QCO utility tests, 72 QIR runtime tests, and 155
@@ -232,22 +231,22 @@ mention an MLIR target. No production source may define a second named-gate
 formula or `dd::GateType`. QCO matrices must remain the only formula source and
 the central gate table must no longer carry a DD operation spelling.
 
-`git diff --check`, C++ lint, and `uvx nox -s lint` must pass, unless an external
-tool failure is recorded with its exact diagnostic and does not originate in
-the change.
+`git diff --check`, C++ lint, and `uvx nox -s lint` must pass, unless an
+external tool failure is recorded with its exact diagnostic and does not
+originate in the change.
 
 ## Idempotence and Recovery
 
-Configuration, builds, tests, searches, formatting, and lint are repeatable.
-Use separate build directories for MLIR-enabled and DD-only validation. If a
-build directory is stale, rerun CMake configuration; do not delete user files or
-reset the worktree. All source edits remain recoverable in Git. Inspect
+Configuration, builds, tests, searches, formatting, and lint are repeatable. Use
+separate build directories for MLIR-enabled and DD-only validation. If a build
+directory is stale, rerun CMake configuration; do not delete user files or reset
+the worktree. All source edits remain recoverable in Git. Inspect
 `git status --short` before broad edits and preserve changes outside this plan.
 
 ## Artifacts and Notes
 
-Issue #2331 follows the review discussions on #2288 that identified duplicate
-DD gate matrices and the QIR runtime as their second consumer. Those discussions
+Issue #2331 follows the review discussions on #2288 that identified duplicate DD
+gate matrices and the QIR runtime as their second consumer. Those discussions
 also explicitly defer the architectural cleanup from #2288 to this follow-up.
 
 ## Interfaces and Dependencies
@@ -261,7 +260,7 @@ matrix aliases plus `dd::Package` constructors. It has no MLIR dependency.
 `MQT_CORE_TARGETS` or exported as part of the installed CMake package.
 
 The QIR C ABI remains unchanged. The C++ DD convenience surface removes
-`dd::GateType`, `dd::opToSingleQubitGateMatrix`,
-`dd::opToTwoQubitGateMatrix`, `dd::opToThreeQubitGateMatrix`, and
-`dd::getGateDD` for v4. Existing callers construct DDs from raw matrices or use
-the QCO-owned adapter when compiling inside the MLIR stack.
+`dd::GateType`, `dd::opToSingleQubitGateMatrix`, `dd::opToTwoQubitGateMatrix`,
+`dd::opToThreeQubitGateMatrix`, and `dd::getGateDD` for v4. Existing callers
+construct DDs from raw matrices or use the QCO-owned adapter when compiling
+inside the MLIR stack.
