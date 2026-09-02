@@ -19,6 +19,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -31,6 +32,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -76,6 +78,91 @@ void QCProgramBuilder::retype(TypeRange returnTypes) {
   auto funcType =
       getFunctionType(mainFunc.getFunctionType().getInputs(), returnTypes);
   mainFunc.setType(funcType);
+}
+
+func::FuncOp QCProgramBuilder::createFunction(
+    const StringRef name, const TypeRange argumentTypes,
+    const function_ref<SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+  auto moduleOp = cast<ModuleOp>(module);
+  auto mainFunc = mqt::getEntryPoint(moduleOp);
+  if (!mainFunc) {
+    llvm::reportFatalUsageError(
+        "QCProgramBuilder must be initialized before creating a function");
+  }
+  if (SymbolTable::lookupSymbolIn(moduleOp, name)) {
+    llvm::reportFatalUsageError("Function name is already defined");
+  }
+
+  const InsertionGuard insertionGuard(*this);
+  auto savedAllocatedQubits = std::move(allocatedQubits);
+  auto savedAllocatedQregs = std::move(allocatedQregs);
+  auto savedStaticQubits = std::move(staticQubits);
+  const auto savedAllocationMode = allocationMode;
+  auto stateGuard = llvm::make_scope_exit([&] {
+    allocatedQubits = std::move(savedAllocatedQubits);
+    allocatedQregs = std::move(savedAllocatedQregs);
+    staticQubits = std::move(savedStaticQubits);
+    allocationMode = savedAllocationMode;
+  });
+  allocatedQubits.clear();
+  allocatedQregs.clear();
+  staticQubits.clear();
+  allocationMode = AllocationMode::Unset;
+
+  setInsertionPoint(mainFunc);
+  auto function = func::FuncOp::create(
+      *this, name, getFunctionType(argumentTypes, TypeRange{}));
+  function.setPrivate();
+  auto* block = function.addEntryBlock();
+  setInsertionPointToStart(block);
+
+  SmallVector<Value> results = body(block->getArguments());
+  if (block->mightHaveTerminator()) {
+    llvm::reportFatalUsageError(
+        "Function callback must not create a terminator");
+  }
+
+  for (Value result : results) {
+    allocatedQubits.remove(result);
+    allocatedQregs.remove(result);
+  }
+  for (Value qubit : allocatedQubits) {
+    DeallocOp::create(*this, qubit);
+  }
+  for (Value qreg : allocatedQregs) {
+    memref::DeallocOp::create(*this, qreg);
+  }
+
+  function.setType(
+      getFunctionType(argumentTypes, ValueRange(results).getTypes()));
+  func::ReturnOp::create(*this, results);
+  return function;
+}
+
+func::FuncOp QCProgramBuilder::createUnitaryFunction(
+    const StringRef name, const TypeRange argumentTypes,
+    const function_ref<void(ValueRange)> body) {
+  auto function =
+      createFunction(name, argumentTypes, [&](ValueRange arguments) {
+        body(arguments);
+        return SmallVector<Value>{};
+      });
+  mqt::setUnitaryFunction(function);
+  return function;
+}
+
+SmallVector<Value> QCProgramBuilder::call(func::FuncOp callee,
+                                          ValueRange operands) {
+  checkFinalized();
+  if (mqt::isUnitaryFunction(callee)) {
+    CallOp::create(*this,
+                   FlatSymbolRefAttr::get(getContext(), callee.getName()),
+                   operands);
+    return {};
+  }
+  auto callOp = func::CallOp::create(*this, callee, operands);
+  return SmallVector<Value>(callOp.getResults());
 }
 
 Value QCProgramBuilder::boolConstant(const bool value) {
