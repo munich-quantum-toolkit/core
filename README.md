@@ -121,7 +121,6 @@ job = device.submit_job(
     program.to_bitcode(),
     ProgramFormat.QIR_BASE_MODULE,
     num_shots=1024,
-    custom1=7,
 )
 job.wait()
 print(job.get_counts())
