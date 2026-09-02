@@ -378,11 +378,11 @@ module {
     %true = arith.constant true
     %first = cbit.load %bits[%zero] : !cbit.reg<2>
     %condition = scf.if %first -> i1 {
-      scf.yield %false : i1
-    } else {
       %second = cbit.load %bits[%one] : !cbit.reg<2>
       %inverted = arith.xori %second, %true : i1
       scf.yield %inverted : i1
+    } else {
+      scf.yield %false : i1
     }
     scf.if %condition {
       qc.x %qubit : !qc.qubit
@@ -404,9 +404,9 @@ module {
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  const auto firstCondition = emitted->find("if (c == 0)");
+  const auto firstCondition = emitted->find("if (c == 1)");
   ASSERT_NE(firstCondition, std::string::npos) << *emitted;
-  EXPECT_NE(emitted->find("if (c == 0)", firstCondition + 1),
+  EXPECT_NE(emitted->find("if (c == 1)", firstCondition + 1),
             std::string::npos);
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
       *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
