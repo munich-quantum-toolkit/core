@@ -10,6 +10,7 @@
 
 #include "mlir/Compiler/Target.h"
 
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
@@ -19,6 +20,8 @@
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
 
@@ -746,6 +749,120 @@ CompilerTarget::create(std::string name, std::vector<Site> sites,
 }
 
 llvm::Expected<CompilerTarget>
+CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
+  if (!attribute) {
+    return invalidTarget("Compiler target attribute must not be null");
+  }
+  if (attribute.getConnectivity() != mqt::ConnectivityKind::Explicit &&
+      !attribute.getCouplings().empty()) {
+    return invalidTarget(
+        "Compiler target couplings require explicit connectivity");
+  }
+  if (attribute.getNativeOperations() != mqt::NativeOperationsKind::Explicit &&
+      !attribute.getOperations().empty()) {
+    return invalidTarget(
+        "Compiler target operations require explicit native operations");
+  }
+
+  std::optional<std::string> name;
+  if (const auto nameAttr = attribute.getName()) {
+    name = nameAttr.getValue().str();
+  }
+
+  std::vector<Site> sites;
+  sites.reserve(attribute.getSites().size());
+  for (const auto siteAttr : attribute.getSites()) {
+    std::optional<std::string> siteName;
+    if (const auto nameAttr = siteAttr.getName()) {
+      siteName = nameAttr.getValue().str();
+    }
+    auto site = Site::create(siteAttr.getId(), std::move(siteName),
+                             siteAttr.getT1(), siteAttr.getT2());
+    if (!site) {
+      return site.takeError();
+    }
+    sites.emplace_back(std::move(*site));
+  }
+
+  std::optional<DurationUnit> durationUnit;
+  if (const auto unitAttr = attribute.getDurationUnit()) {
+    auto unit =
+        DurationUnit::create(unitAttr.getUnit().getValue().str(),
+                             unitAttr.getScaleFactor().getValueAsDouble());
+    if (!unit) {
+      return unit.takeError();
+    }
+    durationUnit = std::move(*unit);
+  }
+
+  std::vector<Coupling> couplings;
+  if (attribute.getConnectivity() == mqt::ConnectivityKind::Explicit) {
+    couplings.reserve(attribute.getCouplings().size());
+    for (const auto coupling : attribute.getCouplings()) {
+      couplings.emplace_back(coupling.getSource(), coupling.getTarget());
+    }
+  }
+  auto connectivity =
+      attribute.getConnectivity() == mqt::ConnectivityKind::AllToAll
+          ? Connectivity::allToAll()
+          : Connectivity::fromCouplings(couplings);
+
+  auto nativeOperations = NativeOperations::unrestricted();
+  if (attribute.getNativeOperations() == mqt::NativeOperationsKind::Explicit) {
+    std::vector<Operation> operations;
+    operations.reserve(attribute.getOperations().size());
+    for (const auto operationAttr : attribute.getOperations()) {
+      if (operationAttr.getArity().getValue() >
+              std::numeric_limits<size_t>::max() ||
+          operationAttr.getNumParameters() >
+              std::numeric_limits<size_t>::max()) {
+        return invalidTarget(
+            "Compiler target operation size exceeds the host size domain");
+      }
+      std::vector<SiteTuple> siteTuples;
+      siteTuples.reserve(operationAttr.getSiteTuples().size());
+      for (const auto tupleAttr : operationAttr.getSiteTuples()) {
+        std::optional<double> fidelity;
+        if (const auto fidelityAttr = tupleAttr.getFidelity()) {
+          fidelity = fidelityAttr.getValueAsDouble();
+        }
+        auto siteTuple =
+            SiteTuple::create(std::vector<SiteId>(tupleAttr.getSites().begin(),
+                                                  tupleAttr.getSites().end()),
+                              tupleAttr.getDuration(), fidelity);
+        if (!siteTuple) {
+          return siteTuple.takeError();
+        }
+        siteTuples.emplace_back(std::move(*siteTuple));
+      }
+
+      std::optional<double> fidelity;
+      if (const auto fidelityAttr = operationAttr.getFidelity()) {
+        fidelity = fidelityAttr.getValueAsDouble();
+      }
+      const auto arity =
+          operationAttr.getArity().getKind() == mqt::OperationArityKind::Fixed
+              ? Operation::Arity::fixed(
+                    static_cast<size_t>(operationAttr.getArity().getValue()))
+              : Operation::Arity::variadic(
+                    static_cast<size_t>(operationAttr.getArity().getValue()));
+      auto operation = Operation::create(
+          operationAttr.getName().getValue().str(), arity,
+          static_cast<size_t>(operationAttr.getNumParameters()),
+          std::move(siteTuples), operationAttr.getDuration(), fidelity);
+      if (!operation) {
+        return operation.takeError();
+      }
+      operations.emplace_back(std::move(*operation));
+    }
+    nativeOperations = NativeOperations::fromOperations(operations);
+  }
+
+  return createImpl(std::move(name), std::move(sites), std::move(connectivity),
+                    std::move(nativeOperations), std::move(durationUnit));
+}
+
+llvm::Expected<CompilerTarget>
 CompilerTarget::createImpl(std::optional<std::string> name,
                            std::vector<Site> sites, Connectivity connectivity,
                            NativeOperations nativeOperations,
@@ -927,6 +1044,82 @@ ArrayRef<GateKind> CompilerTarget::supportedGates() const noexcept {
 std::optional<CompilerTarget::SynthesisBasis>
 CompilerTarget::synthesisBasis() const noexcept {
   return storage_->basis;
+}
+
+mqt::CompilationTargetAttr
+CompilerTarget::materialize(MLIRContext& context) const {
+  Builder builder(&context);
+
+  StringAttr nameAttr;
+  if (const auto targetName = name()) {
+    nameAttr = builder.getStringAttr(*targetName);
+  }
+
+  SmallVector<mqt::SiteAttr> siteAttrs;
+  siteAttrs.reserve(sites().size());
+  for (const auto& site : sites()) {
+    StringAttr siteNameAttr;
+    if (const auto siteName = site.name()) {
+      siteNameAttr = builder.getStringAttr(*siteName);
+    }
+    siteAttrs.emplace_back(mqt::SiteAttr::get(&context, site.id(), siteNameAttr,
+                                              site.t1(), site.t2()));
+  }
+
+  mqt::DurationUnitAttr durationUnitAttr;
+  if (const auto& unit = durationUnit()) {
+    durationUnitAttr = mqt::DurationUnitAttr::get(
+        &context, builder.getStringAttr(unit->unit()),
+        builder.getF64FloatAttr(unit->scaleFactor()));
+  }
+
+  SmallVector<mqt::CouplingAttr> couplingAttrs;
+  couplingAttrs.reserve(couplings().size());
+  for (const auto& [source, target] : couplings()) {
+    couplingAttrs.emplace_back(
+        mqt::CouplingAttr::get(&context, source, target));
+  }
+
+  SmallVector<mqt::NativeOperationAttr> operationAttrs;
+  operationAttrs.reserve(operations().size());
+  for (const auto& operation : operations()) {
+    SmallVector<mqt::SiteTupleAttr> siteTupleAttrs;
+    siteTupleAttrs.reserve(operation.siteTuples().size());
+    for (const auto& siteTuple : operation.siteTuples()) {
+      FloatAttr fidelityAttr;
+      if (const auto fidelity = siteTuple.fidelity()) {
+        fidelityAttr = builder.getF64FloatAttr(*fidelity);
+      }
+      siteTupleAttrs.emplace_back(mqt::SiteTupleAttr::get(
+          &context, siteTuple.sites(), siteTuple.duration(), fidelityAttr));
+    }
+
+    FloatAttr fidelityAttr;
+    if (const auto fidelity = operation.fidelity()) {
+      fidelityAttr = builder.getF64FloatAttr(*fidelity);
+    }
+    const auto arityKind =
+        operation.arity().kind() == Operation::Arity::Kind::Fixed
+            ? mqt::OperationArityKind::Fixed
+            : mqt::OperationArityKind::Variadic;
+    const auto arityAttr = mqt::OperationArityAttr::get(
+        &context, arityKind, operation.arity().value());
+    operationAttrs.emplace_back(mqt::NativeOperationAttr::get(
+        &context, builder.getStringAttr(operation.name()), arityAttr,
+        operation.numParameters(), siteTupleAttrs, operation.duration(),
+        fidelityAttr));
+  }
+
+  const auto connectivity = connectivityKind() == Connectivity::Kind::AllToAll
+                                ? mqt::ConnectivityKind::AllToAll
+                                : mqt::ConnectivityKind::Explicit;
+  const auto nativeOperations =
+      nativeOperationsKind() == NativeOperations::Kind::Unrestricted
+          ? mqt::NativeOperationsKind::Unrestricted
+          : mqt::NativeOperationsKind::Explicit;
+  return mqt::CompilationTargetAttr::get(
+      &context, nameAttr, siteAttrs, durationUnitAttr, connectivity,
+      couplingAttrs, nativeOperations, operationAttrs);
 }
 
 } // namespace mlir
