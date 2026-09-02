@@ -68,6 +68,7 @@ using mlir::ValueRange;
 using mlir::qco::CtrlOp;
 using mlir::qco::GPhaseOp;
 using mlir::qco::HOp;
+using mlir::qco::POp;
 using mlir::qco::QCOProgramBuilder;
 using mlir::qco::RXXOp;
 using mlir::qco::RYOp;
@@ -573,6 +574,30 @@ TEST_F(TargetSynthesisTest,
   EXPECT_EQ(countOps<GPhaseOp>(*module), 1U);
   EXPECT_EQ(llvm::range_size(functions[0].getOps<GPhaseOp>()), 1U);
   EXPECT_EQ(llvm::range_size(functions[1].getOps<GPhaseOp>()), 0U);
+}
+
+TEST_F(TargetSynthesisTest,
+       TargetNativeSynthesisPreservesControlledGlobalPhaseSemantics) {
+  const auto controlledPhase = [](QCOProgramBuilder& builder) {
+    auto control = builder.staticQubit(0);
+    control = builder.cgphase(0.25, control);
+    static_cast<void>(control);
+    return builder.intConstant(0);
+  };
+  auto expected = build(controlledPhase);
+  auto synthesized = build(controlledPhase);
+  const auto target = valid(Target::create(
+      1, Connectivity::allToAll(),
+      NativeOperations::fromOperations({valid(Operation::create("p", 1, 1))})));
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*synthesized, mlir::qco::createTargetNativeSynthesis(target))));
+  EXPECT_EQ(countOps<GPhaseOp>(*synthesized), 0U);
+  EXPECT_EQ(countOps<CtrlOp>(*synthesized), 0U);
+  EXPECT_EQ(countOps<POp>(*synthesized), 1U);
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*synthesized, mlir::qco::createVerifyTargetConformance(target))));
+  expectEquivalent(expected, synthesized);
 }
 
 TEST_F(TargetSynthesisTest, TargetNativeSynthesisUsesHomogeneousCapability) {

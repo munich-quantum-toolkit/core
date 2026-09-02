@@ -307,6 +307,16 @@ static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
   if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
     return failure();
   }
+  SmallVector<CtrlOp> emptyControls;
+  moduleOp.walk([&](CtrlOp op) {
+    if (llvm::hasSingleElement(*op.getBody())) {
+      emptyControls.push_back(op);
+    }
+  });
+  IRRewriter rewriter(moduleOp.getContext());
+  for (auto op : llvm::reverse(emptyControls)) {
+    rewriter.replaceOp(op, op.getOperands());
+  }
   if (target.supportsOperation("gphase", 0, 1)) {
     return success();
   }
