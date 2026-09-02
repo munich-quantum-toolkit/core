@@ -163,8 +163,12 @@ TEST_F(MQTIRTest, RejectsInvalidTargetLeaves) {
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.site<id = -1>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.site<id = 0, name = "">)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.site<id = 0, t1 = 0>)mlir"));
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.site<id = 0, t1 =>)mlir"));
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.site<id = 0, t2 =>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.coupling<source = 0, target = 0>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.site_tuple<sites = [0, 0]>)mlir"));
+  EXPECT_FALSE(
+      parseAttr(R"mlir(#mqt.site_tuple<sites = [0], duration =>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.site_tuple<sites = [0],
       fidelity = 1.100000e+00 : f64>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.operation_arity<
@@ -185,6 +189,9 @@ TEST_F(MQTIRTest, RejectsInvalidTargetLeaves) {
       arity = #mqt.operation_arity<kind = fixed, value = 1>,
       num_parameters = 0,
       site_tuples = [<sites = [0]>, <sites = [0]>]>)mlir"));
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "x",
+      arity = #mqt.operation_arity<kind = fixed, value = 1>,
+      num_parameters = 0, site_tuples = [], duration =>)mlir"));
 }
 
 TEST_F(MQTIRTest, RejectsInvalidCompilationTargets) {

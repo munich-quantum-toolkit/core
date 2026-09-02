@@ -55,6 +55,11 @@ class MQTArrayRefParameter<string element, string desc = "">
   let printer = "::mlir::mqt::detail::printArray($_printer, $_self)";
 }
 
+class MQTOptionalUInt64Parameter
+    : OptionalParameter<"std::optional<uint64_t>"> {
+  let parser = "::mlir::FieldParser<uint64_t>::parse($_parser)";
+}
+
 def ConnectivityKind
     : I32EnumAttr<"ConnectivityKind", "Target connectivity",
                   [I32EnumAttrCase<"AllToAll", 0, "all_to_all">,
@@ -99,8 +104,7 @@ def SiteAttr : MQTAttr<"Site", "site"> {
     one named site.
   }];
   let parameters = (ins "int64_t":$id, OptionalParameter<"StringAttr">:$name,
-      OptionalParameter<"std::optional<uint64_t>">:$t1,
-      OptionalParameter<"std::optional<uint64_t>">:$t2);
+      MQTOptionalUInt64Parameter<>:$t1, MQTOptionalUInt64Parameter<>:$t2);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
 }
@@ -125,7 +129,7 @@ def SiteTupleAttr : MQTAttr<"SiteTuple", "site_tuple"> {
     two-site placement with a raw duration of 40.
   }];
   let parameters = (ins MQTArrayRefParameter<"int64_t">:$sites,
-      OptionalParameter<"std::optional<uint64_t>">:$duration,
+      MQTOptionalUInt64Parameter<>:$duration,
       OptionalParameter<"FloatAttr">:$fidelity);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
@@ -161,7 +165,7 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
   let parameters = (ins "StringAttr":$name, "OperationArityAttr":$arity,
       "uint64_t":$num_parameters,
       MQTArrayRefParameter<"SiteTupleAttr">:$site_tuples,
-      OptionalParameter<"std::optional<uint64_t>">:$duration,
+      MQTOptionalUInt64Parameter<>:$duration,
       OptionalParameter<"FloatAttr">:$fidelity);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
