@@ -1547,39 +1547,6 @@ exportCondition(mlir::Value value, ExportState& state,
         "Qiskit control-flow conditions must have Boolean type");
   }
   validateClassicalSnapshot(value, consumer);
-  if (auto comparison = value.getDefiningOp<mlir::arith::CmpIOp>();
-      comparison &&
-      comparison.getPredicate() == mlir::arith::CmpIPredicate::eq) {
-    for (auto [actual, expected] :
-         std::array{std::pair{comparison.getLhs(), comparison.getRhs()},
-                    std::pair{comparison.getRhs(), comparison.getLhs()}}) {
-      const auto constant = constantUnsignedInteger(expected);
-      if (!constant) {
-        continue;
-      }
-      if (auto load = actual.getDefiningOp<mlir::cbit::LoadOp>();
-          load && actual.getType().isInteger(1) && *constant <= 1U) {
-        state.expressionOperations.insert(comparison);
-        state.expressionOperations.insert(load);
-        return {.kind = ClassicalTargetKind::ClassicalBit,
-                .bit = classicalBitIndex(load, state),
-                .expectedBit = *constant != 0U};
-      }
-      if (auto packed = matchPackedRegister(actual, state, evaluationBlock)) {
-        if (packed->reg.bits.size() != 64U &&
-            *constant >= (uint64_t{1} << packed->reg.bits.size())) {
-          continue;
-        }
-        state.expressionOperations.insert(comparison);
-        acceptPackedRegister(*packed, state);
-        return {.kind = ClassicalTargetKind::ClassicalRegister,
-                .reg = std::move(packed->reg),
-                .expectedRegister = *constant,
-                .width =
-                    llvm::cast<mlir::IntegerType>(actual.getType()).getWidth()};
-      }
-    }
-  }
   ClassicalTarget target{.kind = ClassicalTargetKind::Expression};
   target.expression = exportExpression(value, state, evaluationBlock);
   return target;

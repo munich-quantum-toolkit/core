@@ -598,10 +598,75 @@ if (c >= 1) { x q[2]; }
     assert isinstance(condition, expr.Expr)
     assert expr.structurally_equivalent(condition, expr.greater_equal(restored.cregs[0], 1))
 
-    reimported = QCProgram.from_qiskit(restored).to_qiskit()
-    reimported_condition = reimported.data[2].operation.condition
+    reimported = QCProgram.from_qiskit(restored)
+    assert "cbit.cmp uge" in reimported.ir
+    reimported_circuit = reimported.to_qiskit()
+    reimported_condition = reimported_circuit.data[2].operation.condition
     assert isinstance(reimported_condition, expr.Expr)
-    assert expr.structurally_equivalent(reimported_condition, expr.greater_equal(reimported.cregs[0], 1))
+    assert expr.structurally_equivalent(reimported_condition, expr.greater_equal(reimported_circuit.cregs[0], 1))
+
+
+@pytest.mark.parametrize(
+    ("comparison", "predicate"),
+    [
+        (None, "eq"),
+        ("equal", "eq"),
+        ("not_equal", "ne"),
+        ("less", "ult"),
+        ("less_equal", "ule"),
+        ("greater", "ugt"),
+        ("greater_equal", "uge"),
+    ],
+)
+def test_qiskit_register_conditions_import_canonically(comparison: str | None, predicate: str) -> None:
+    """Import tuple and typed register conditions as first-class comparisons."""
+    circuit = QuantumCircuit(1, 3)
+    condition = (circuit.cregs[0], 1) if comparison is None else getattr(expr, comparison)(circuit.cregs[0], 1)
+    with circuit.if_test(condition):
+        circuit.x(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert f"cbit.cmp {predicate}" in ir
+    assert "cbit.load" not in ir
+
+
+@pytest.mark.parametrize(
+    ("comparison", "predicate"),
+    [
+        ("equal", "eq"),
+        ("not_equal", "ne"),
+        ("less", "ugt"),
+        ("less_equal", "uge"),
+        ("greater", "ult"),
+        ("greater_equal", "ule"),
+    ],
+)
+def test_qiskit_reversed_register_conditions_import_canonically(comparison: str, predicate: str) -> None:
+    """Canonicalize Qiskit comparisons with the constant on the left."""
+    circuit = QuantumCircuit(1, 3)
+    with circuit.if_test(getattr(expr, comparison)(1, circuit.cregs[0])):
+        circuit.x(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert f"cbit.cmp {predicate}" in ir
+    assert "cbit.load" not in ir
+
+
+def test_qiskit_oversized_tuple_condition_is_false() -> None:
+    """Fold an impossible Qiskit register equality instead of widening it."""
+    circuit = QuantumCircuit(1, 2)
+    with circuit.if_test((circuit.cregs[0], 4)):
+        circuit.x(0)
+
+    program = QCProgram.from_qiskit(circuit)
+
+    assert "arith.constant false" in program.ir
+    assert "cbit.cmp" not in program.ir
+    condition = program.to_qiskit().data[0].operation.condition
+    assert isinstance(condition, expr.Value)
+    assert condition.value == 0
 
 
 def test_openqasm_short_circuit_expression_exports_to_qiskit() -> None:
@@ -1932,12 +1997,12 @@ def test_uint_register_cast_to_bool_tests_all_bits() -> None:
     program = QCProgram.from_qiskit(circuit)
     ir = program.ir
 
-    assert "arith.cmpi ne" in ir
+    assert "cbit.cmp ne" in ir
     assert "arith.trunci" not in ir
 
     restored = program.to_qiskit()
     round_trip_ir = QCProgram.from_qiskit(restored).ir
-    assert "arith.cmpi ne" in round_trip_ir
+    assert "cbit.cmp ne" in round_trip_ir
     assert "arith.trunci" not in round_trip_ir
 
 
@@ -2129,7 +2194,7 @@ def test_nested_condition_only_expression_uses_parent_capture_map() -> None:
     assert ir.count("scf.if") == 2
 
 
-def test_nested_legacy_clbit_condition_uses_root_index() -> None:
+def test_nested_tuple_clbit_condition_uses_root_index() -> None:
     """Resolve a nested tuple condition through its enclosing Clbit map."""
     circuit = QuantumCircuit(2, 2)
     with circuit.for_loop(range(2), None, None, None, None, label=None) as iteration:

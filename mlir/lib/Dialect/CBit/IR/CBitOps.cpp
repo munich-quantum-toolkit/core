@@ -18,6 +18,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectImplementation.h> // IWYU pragma: keep
 #include <mlir/IR/PatternMatch.h>
@@ -176,17 +177,16 @@ struct FoldUntouchedZeroComparison final : OpRewritePattern<CompareOp> {
                                 PatternRewriter& rewriter) const override {
     auto alloc = compare.getReg().getDefiningOp<AllocOp>();
     if (!alloc || alloc.getInitialization() != Initialization::Zero ||
-        alloc->getBlock() != compare->getBlock()) {
+        alloc->getBlock() != compare->getBlock() ||
+        !alloc->isBeforeInBlock(compare)) {
       return failure();
     }
-    /// ponytail: folds only untouched zero registers; track stores if broader
-    /// constant folding becomes performance-critical.
-    for (auto* operation = alloc->getNextNode(); operation != compare;
-         operation = operation->getNextNode()) {
-      if (operation == nullptr || operation->getNumRegions() != 0 ||
-          (!isa<LoadOp, CompareOp>(operation) &&
-           llvm::is_contained(operation->getOperands(), compare.getReg()))) {
-        return failure();
+    for (auto* user : compare.getReg().getUsers()) {
+      if (!isa<LoadOp, CompareOp>(user)) {
+        auto* ancestor = compare->getBlock()->findAncestorOpInBlock(*user);
+        if (ancestor != nullptr && ancestor->isBeforeInBlock(compare)) {
+          return failure();
+        }
       }
     }
     const auto zero = compare.getRhs().isZero();
