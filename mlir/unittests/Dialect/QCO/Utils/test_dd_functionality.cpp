@@ -800,12 +800,12 @@ TEST_F(QCODDFunctionalityTest, SimulateCBitConditionAndMeasurementUpdate) {
 
 TEST_F(QCODDFunctionalityTest, SimulateCBitRegisterComparisons) {
   constexpr std::array comparisons{
-      std::pair{cbit::ComparisonPredicate::Equal, false},
-      std::pair{cbit::ComparisonPredicate::NotEqual, true},
-      std::pair{cbit::ComparisonPredicate::Less, true},
-      std::pair{cbit::ComparisonPredicate::LessEqual, true},
-      std::pair{cbit::ComparisonPredicate::Greater, false},
-      std::pair{cbit::ComparisonPredicate::GreaterEqual, false},
+      std::pair{arith::CmpIPredicate::eq, false},
+      std::pair{arith::CmpIPredicate::ne, true},
+      std::pair{arith::CmpIPredicate::ult, true},
+      std::pair{arith::CmpIPredicate::ule, true},
+      std::pair{arith::CmpIPredicate::ugt, false},
+      std::pair{arith::CmpIPredicate::uge, false},
   };
   for (const auto [predicate, expected] : comparisons) {
     auto mod = buildModule([&](QCOProgramBuilder& b) {
@@ -850,7 +850,7 @@ TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitRegisterComparison) {
         b.allocClassicalBitRegister(1, "c", cbit::Initialization::Undefined);
     auto rhs = b.getIntegerAttr(b.getIntegerType(1), 0);
     auto condition = cbit::CompareOp::create(
-        b, b.getI1Type(), cbit::ComparisonPredicate::Equal, reg, rhs);
+        b, b.getI1Type(), arith::CmpIPredicate::eq, reg, rhs);
     auto q = b.staticQubit(0);
     q = b.qcoIf(
         condition, q, [&](Value arg) { return arg; },

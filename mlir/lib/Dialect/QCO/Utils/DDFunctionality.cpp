@@ -674,23 +674,8 @@ static LogicalResult compareRegister(cbit::CompareOp compare,
     }
     actual.setBitVal(static_cast<unsigned>(index), *cell.value);
   }
-  const auto result = [&] {
-    switch (compare.getPredicate()) {
-    case cbit::ComparisonPredicate::Equal:
-      return actual.eq(compare.getRhs());
-    case cbit::ComparisonPredicate::NotEqual:
-      return actual.ne(compare.getRhs());
-    case cbit::ComparisonPredicate::Less:
-      return actual.ult(compare.getRhs());
-    case cbit::ComparisonPredicate::LessEqual:
-      return actual.ule(compare.getRhs());
-    case cbit::ComparisonPredicate::Greater:
-      return actual.ugt(compare.getRhs());
-    case cbit::ComparisonPredicate::GreaterEqual:
-      return actual.uge(compare.getRhs());
-    }
-    llvm_unreachable("unknown CBit comparison predicate");
-  }();
+  const auto result = arith::applyCmpPredicate(compare.getPredicate(), actual,
+                                               compare.getRhs());
   return bindInteger(compare.getResult(),
                      llvm::APInt(1, static_cast<uint64_t>(result)), classical);
 }

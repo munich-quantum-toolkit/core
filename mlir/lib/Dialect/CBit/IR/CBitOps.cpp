@@ -190,22 +190,9 @@ struct FoldUntouchedZeroComparison final : OpRewritePattern<CompareOp> {
         }
       }
     }
-    const auto zero = compare.getRhs().isZero();
-    const auto result = [&] {
-      switch (compare.getPredicate()) {
-      case ComparisonPredicate::Equal:
-      case ComparisonPredicate::GreaterEqual:
-        return zero;
-      case ComparisonPredicate::NotEqual:
-      case ComparisonPredicate::Less:
-        return !zero;
-      case ComparisonPredicate::LessEqual:
-        return true;
-      case ComparisonPredicate::Greater:
-        return false;
-      }
-      llvm_unreachable("unknown CBit comparison predicate");
-    }();
+    const auto result = arith::applyCmpPredicate(
+        compare.getPredicate(), llvm::APInt(compare.getRhs().getBitWidth(), 0),
+        compare.getRhs());
     rewriter.replaceOpWithNewOp<arith::ConstantIntOp>(compare, result, 1);
     return success();
   }
@@ -218,6 +205,17 @@ LogicalResult LoadOp::verify() {
 }
 
 LogicalResult CompareOp::verify() {
+  switch (getPredicate()) {
+  case arith::CmpIPredicate::eq:
+  case arith::CmpIPredicate::ne:
+  case arith::CmpIPredicate::ult:
+  case arith::CmpIPredicate::ule:
+  case arith::CmpIPredicate::ugt:
+  case arith::CmpIPredicate::uge:
+    break;
+  default:
+    return emitOpError("predicate must be an unsigned integer comparison");
+  }
   if (std::cmp_not_equal(getRhs().getBitWidth(),
                          getReg().getType().getWidth())) {
     return emitOpError("expected integer width must match register width");
@@ -227,13 +225,13 @@ LogicalResult CompareOp::verify() {
 
 Value mlir::cbit::buildComparison(
     OpBuilder& builder, const Location location,
-    const ComparisonPredicate predicate, const llvm::APInt& rhs,
+    const arith::CmpIPredicate predicate, const llvm::APInt& rhs,
     const llvm::function_ref<Value(int64_t)> loadBit) {
   auto one = arith::ConstantIntOp::create(builder, location, 1, 1);
   Value equal = one;
   Value less;
-  if (predicate != ComparisonPredicate::Equal &&
-      predicate != ComparisonPredicate::NotEqual) {
+  if (predicate != arith::CmpIPredicate::eq &&
+      predicate != arith::CmpIPredicate::ne) {
     less = arith::ConstantIntOp::create(builder, location, 0, 1);
   }
   for (int64_t index = static_cast<int64_t>(rhs.getBitWidth()) - 1; index >= 0;
@@ -251,22 +249,23 @@ Value mlir::cbit::buildComparison(
     equal = arith::AndIOp::create(builder, location, equal, matches);
   }
   switch (predicate) {
-  case ComparisonPredicate::Equal:
+  case arith::CmpIPredicate::eq:
     return equal;
-  case ComparisonPredicate::NotEqual:
+  case arith::CmpIPredicate::ne:
     return arith::XOrIOp::create(builder, location, equal, one);
-  case ComparisonPredicate::Less:
+  case arith::CmpIPredicate::ult:
     return less;
-  case ComparisonPredicate::LessEqual:
+  case arith::CmpIPredicate::ule:
     return arith::OrIOp::create(builder, location, less, equal);
-  case ComparisonPredicate::Greater: {
+  case arith::CmpIPredicate::ugt: {
     auto lessOrEqual = arith::OrIOp::create(builder, location, less, equal);
     return arith::XOrIOp::create(builder, location, lessOrEqual, one);
   }
-  case ComparisonPredicate::GreaterEqual:
+  case arith::CmpIPredicate::uge:
     return arith::XOrIOp::create(builder, location, less, one);
+  default:
+    llvm_unreachable("CBit comparisons must use an unsigned predicate");
   }
-  llvm_unreachable("unknown CBit comparison predicate");
 }
 
 void LoadOp::getCanonicalizationPatterns(RewritePatternSet& results,

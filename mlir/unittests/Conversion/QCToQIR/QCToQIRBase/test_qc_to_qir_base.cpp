@@ -168,7 +168,7 @@ TEST(QCToQIRBaseNativeTest, RejectsClassicalRegisterComparisons) {
   auto reg = builder.allocClassicalBitRegister(1);
   auto rhs = builder.getIntegerAttr(builder.getIntegerType(1), 0);
   (void)cbit::CompareOp::create(builder, builder.getI1Type(),
-                                cbit::ComparisonPredicate::Equal, reg, rhs);
+                                arith::CmpIPredicate::eq, reg, rhs);
   auto module = builder.finalize();
   ASSERT_TRUE(module);
 

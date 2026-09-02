@@ -673,20 +673,21 @@ private:
       }
       const auto* predicate = [&] {
         switch (comparison.getPredicate()) {
-        case cbit::ComparisonPredicate::Equal:
+        case arith::CmpIPredicate::eq:
           return "==";
-        case cbit::ComparisonPredicate::NotEqual:
+        case arith::CmpIPredicate::ne:
           return "!=";
-        case cbit::ComparisonPredicate::Less:
+        case arith::CmpIPredicate::ult:
           return "<";
-        case cbit::ComparisonPredicate::LessEqual:
+        case arith::CmpIPredicate::ule:
           return "<=";
-        case cbit::ComparisonPredicate::Greater:
+        case arith::CmpIPredicate::ugt:
           return ">";
-        case cbit::ComparisonPredicate::GreaterEqual:
+        case arith::CmpIPredicate::uge:
           return ">=";
+        default:
+          llvm_unreachable("CBit comparisons must use an unsigned predicate");
         }
-        llvm_unreachable("unknown CBit comparison predicate");
       }();
       llvm::SmallString<32> rhs;
       comparison.getRhs().toString(rhs, 10, false);

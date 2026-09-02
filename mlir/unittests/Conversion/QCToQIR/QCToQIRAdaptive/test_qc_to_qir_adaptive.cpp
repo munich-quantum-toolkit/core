@@ -270,8 +270,8 @@ TEST(QCToQIRAdaptiveNativeTest, LowersClassicalRegisterComparison) {
   auto c = builder.allocClassicalBitRegister(3);
   builder.measure(q, c, 0);
   auto rhs = builder.getIntegerAttr(builder.getIntegerType(3), 2);
-  auto comparison = cbit::CompareOp::create(
-      builder, builder.getI1Type(), cbit::ComparisonPredicate::Less, c, rhs);
+  auto comparison = cbit::CompareOp::create(builder, builder.getI1Type(),
+                                            arith::CmpIPredicate::ult, c, rhs);
   builder.scfIf(comparison, [&] { builder.x(q); });
   auto module = builder.finalize();
   ASSERT_TRUE(module);

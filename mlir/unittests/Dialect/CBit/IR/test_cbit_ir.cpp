@@ -163,6 +163,18 @@ TEST_F(CBitIRTest, RejectsInvalidOperandTypes) {
   )mlir"));
 }
 
+TEST_F(CBitIRTest, RejectsSignedRegisterComparisons) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %matches = cbit.cmp slt, %reg, 0 : i1 : !cbit.reg<1>
+        return
+      }
+    }
+  )mlir"));
+}
+
 TEST_F(CBitIRTest, ReportsMemoryEffects) {
   auto moduleOp = parse(R"mlir(
     module {

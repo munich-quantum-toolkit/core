@@ -645,7 +645,7 @@ loadClassicalBit(mlir::qc::QCProgramBuilder& builder,
     mlir::qc::QCProgramBuilder& builder,
     const llvm::ArrayRef<ClassicalBitRef> classicalBits,
     const llvm::ArrayRef<uint32_t> rootClbitMap, const Register& reg,
-    mlir::cbit::ComparisonPredicate predicate, uint64_t expected) {
+    mlir::arith::CmpIPredicate predicate, uint64_t expected) {
   mlir::Value storage;
   for (size_t index = 0U; index < reg.bits.size(); ++index) {
     const auto& bit =
@@ -711,26 +711,26 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
   return terms.front();
 }
 
-[[nodiscard]] static std::optional<mlir::cbit::ComparisonPredicate>
-registerComparisonPredicate(const BinaryOperation operation,
-                            const bool reverse) {
+[[nodiscard]] static std::optional<mlir::arith::CmpIPredicate>
+integerComparisonPredicate(const BinaryOperation operation,
+                           const bool reverse) {
   switch (operation) {
   case BinaryOperation::Equal:
-    return mlir::cbit::ComparisonPredicate::Equal;
+    return mlir::arith::CmpIPredicate::eq;
   case BinaryOperation::NotEqual:
-    return mlir::cbit::ComparisonPredicate::NotEqual;
+    return mlir::arith::CmpIPredicate::ne;
   case BinaryOperation::Less:
-    return reverse ? mlir::cbit::ComparisonPredicate::Greater
-                   : mlir::cbit::ComparisonPredicate::Less;
+    return reverse ? mlir::arith::CmpIPredicate::ugt
+                   : mlir::arith::CmpIPredicate::ult;
   case BinaryOperation::LessEqual:
-    return reverse ? mlir::cbit::ComparisonPredicate::GreaterEqual
-                   : mlir::cbit::ComparisonPredicate::LessEqual;
+    return reverse ? mlir::arith::CmpIPredicate::uge
+                   : mlir::arith::CmpIPredicate::ule;
   case BinaryOperation::Greater:
-    return reverse ? mlir::cbit::ComparisonPredicate::Less
-                   : mlir::cbit::ComparisonPredicate::Greater;
+    return reverse ? mlir::arith::CmpIPredicate::ult
+                   : mlir::arith::CmpIPredicate::ugt;
   case BinaryOperation::GreaterEqual:
-    return reverse ? mlir::cbit::ComparisonPredicate::LessEqual
-                   : mlir::cbit::ComparisonPredicate::GreaterEqual;
+    return reverse ? mlir::arith::CmpIPredicate::ule
+                   : mlir::arith::CmpIPredicate::uge;
   default:
     return std::nullopt;
   }
@@ -774,7 +774,7 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
         expression.left->width == expression.left->reg.bits.size()) {
       if (auto comparison = emitRegisterComparison(
               builder, classicalBits, rootClbitMap, expression.left->reg,
-              mlir::cbit::ComparisonPredicate::NotEqual, 0U)) {
+              mlir::arith::CmpIPredicate::ne, 0U)) {
         return comparison;
       }
     }
@@ -861,7 +861,7 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
         reverse ? *expression.right : *expression.left;
     const auto& expected = reverse ? *expression.left : *expression.right;
     if (const auto predicate =
-            registerComparisonPredicate(expression.binaryOperation, reverse);
+            integerComparisonPredicate(expression.binaryOperation, reverse);
         predicate &&
         registerExpression.kind == ExpressionKind::ClassicalRegister &&
         registerExpression.type == ClassicalType::Uint &&
@@ -911,31 +911,26 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     auto right =
         emitExpression(builder, *expression.right, classicalBits, rootClbitMap);
     const auto comparison = [&]() -> std::optional<mlir::Value> {
-      std::optional<mlir::arith::CmpIPredicate> integerPredicate;
+      const auto integerPredicate =
+          integerComparisonPredicate(expression.binaryOperation, false);
       std::optional<mlir::arith::CmpFPredicate> floatPredicate;
       switch (expression.binaryOperation) {
       case BinaryOperation::Equal:
-        integerPredicate = mlir::arith::CmpIPredicate::eq;
         floatPredicate = mlir::arith::CmpFPredicate::OEQ;
         break;
       case BinaryOperation::NotEqual:
-        integerPredicate = mlir::arith::CmpIPredicate::ne;
         floatPredicate = mlir::arith::CmpFPredicate::UNE;
         break;
       case BinaryOperation::Less:
-        integerPredicate = mlir::arith::CmpIPredicate::ult;
         floatPredicate = mlir::arith::CmpFPredicate::OLT;
         break;
       case BinaryOperation::LessEqual:
-        integerPredicate = mlir::arith::CmpIPredicate::ule;
         floatPredicate = mlir::arith::CmpFPredicate::OLE;
         break;
       case BinaryOperation::Greater:
-        integerPredicate = mlir::arith::CmpIPredicate::ugt;
         floatPredicate = mlir::arith::CmpFPredicate::OGT;
         break;
       case BinaryOperation::GreaterEqual:
-        integerPredicate = mlir::arith::CmpIPredicate::uge;
         floatPredicate = mlir::arith::CmpFPredicate::OGE;
         break;
       default:

@@ -1287,12 +1287,16 @@ if (c >= 5) { x q; }
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
-  std::array<bool, 6> predicates{};
+  std::vector<arith::CmpIPredicate> predicates;
   moduleOp->walk([&](cbit::CompareOp comparison) {
-    predicates.at(static_cast<size_t>(comparison.getPredicate())) = true;
+    predicates.emplace_back(comparison.getPredicate());
     EXPECT_EQ(comparison.getRhs(), llvm::APInt(3, 5));
   });
-  EXPECT_TRUE(llvm::all_of(predicates, [](const bool value) { return value; }));
+  EXPECT_EQ(
+      predicates,
+      (std::vector{arith::CmpIPredicate::eq, arith::CmpIPredicate::ne,
+                   arith::CmpIPredicate::ult, arith::CmpIPredicate::ule,
+                   arith::CmpIPredicate::ugt, arith::CmpIPredicate::uge}));
 }
 
 TEST(OpenQASMTargetTest, PreservesWideRegisterComparisons) {

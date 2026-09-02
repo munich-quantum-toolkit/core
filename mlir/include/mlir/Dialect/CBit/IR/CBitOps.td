@@ -11,6 +11,7 @@
 
 include "mlir/Dialect/CBit/IR/CBitDialect.td"
 
+include "mlir/Dialect/Arith/IR/ArithBase.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
@@ -20,28 +21,9 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 // Attributes and types
 //===----------------------------------------------------------------------===//
 
-def CBit_Initialization
-    : I32EnumAttr<"Initialization", "Classical-bit register initialization",
-                  [I32EnumAttrCase<"Zero", 0, "zero">,
-                   I32EnumAttrCase<"Undefined", 1, "undefined">]> {
-  let cppNamespace = "::mlir::cbit";
-  let genSpecializedAttr = 0;
-}
-
 def CBit_InitializationAttr
     : EnumAttr<CBitDialect, CBit_Initialization, "init"> {
   let assemblyFormat = "`<` $value `>`";
-}
-
-def CBit_ComparisonPredicate
-    : I64EnumAttr<"ComparisonPredicate", "unsigned comparison predicate",
-                  [I64EnumAttrCase<"Equal", 0, "eq">,
-                   I64EnumAttrCase<"NotEqual", 1, "ne">,
-                   I64EnumAttrCase<"Less", 2, "ult">,
-                   I64EnumAttrCase<"LessEqual", 3, "ule">,
-                   I64EnumAttrCase<"Greater", 4, "ugt">,
-                   I64EnumAttrCase<"GreaterEqual", 5, "uge">]> {
-  let cppNamespace = "::mlir::cbit";
 }
 
 def CBit_RegisterType : TypeDef<CBitDialect, "Register"> {
@@ -119,7 +101,7 @@ def CompareOp : CBitOp<"cmp"> {
     ```
   }];
 
-  let arguments = (ins CBit_ComparisonPredicate:$predicate,
+  let arguments = (ins Arith_CmpIPredicateAttr:$predicate,
       Arg<CBit_RegisterType, "register", [MemRead]>:$reg, APIntAttr:$rhs);
   let results = (outs I1:$result);
   let assemblyFormat = [{

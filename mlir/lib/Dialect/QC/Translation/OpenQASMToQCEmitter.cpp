@@ -1874,23 +1874,24 @@ private:
     return builder.loadClassicalBit(reg, registerIndex.getResult());
   }
 
-  [[nodiscard]] static cbit::ComparisonPredicate
-  registerPredicate(const frontend::ComparisonKind comparison) {
+  [[nodiscard]] static arith::CmpIPredicate
+  integerPredicate(const frontend::ComparisonKind comparison,
+                   const bool isUnsigned) {
     switch (comparison) {
     case frontend::ComparisonKind::Equal:
-      return cbit::ComparisonPredicate::Equal;
+      return arith::CmpIPredicate::eq;
     case frontend::ComparisonKind::NotEqual:
-      return cbit::ComparisonPredicate::NotEqual;
+      return arith::CmpIPredicate::ne;
     case frontend::ComparisonKind::Less:
-      return cbit::ComparisonPredicate::Less;
+      return isUnsigned ? arith::CmpIPredicate::ult : arith::CmpIPredicate::slt;
     case frontend::ComparisonKind::LessEqual:
-      return cbit::ComparisonPredicate::LessEqual;
+      return isUnsigned ? arith::CmpIPredicate::ule : arith::CmpIPredicate::sle;
     case frontend::ComparisonKind::Greater:
-      return cbit::ComparisonPredicate::Greater;
+      return isUnsigned ? arith::CmpIPredicate::ugt : arith::CmpIPredicate::sgt;
     case frontend::ComparisonKind::GreaterEqual:
-      return cbit::ComparisonPredicate::GreaterEqual;
+      return isUnsigned ? arith::CmpIPredicate::uge : arith::CmpIPredicate::sge;
     }
-    llvm_unreachable("unknown register comparison");
+    llvm_unreachable("unknown integer comparison");
   }
 
   [[nodiscard]] Value
@@ -1924,28 +1925,8 @@ private:
       return arith::CmpFOp::create(builder, predicate, lhs, rhs);
     }
 
-    const bool isUnsigned = lhsType == frontend::ScalarType::Uint;
-    const auto predicate = [&] {
-      switch (condition.comparison) {
-      case frontend::ComparisonKind::Equal:
-        return arith::CmpIPredicate::eq;
-      case frontend::ComparisonKind::NotEqual:
-        return arith::CmpIPredicate::ne;
-      case frontend::ComparisonKind::Less:
-        return isUnsigned ? arith::CmpIPredicate::ult
-                          : arith::CmpIPredicate::slt;
-      case frontend::ComparisonKind::LessEqual:
-        return isUnsigned ? arith::CmpIPredicate::ule
-                          : arith::CmpIPredicate::sle;
-      case frontend::ComparisonKind::Greater:
-        return isUnsigned ? arith::CmpIPredicate::ugt
-                          : arith::CmpIPredicate::sgt;
-      case frontend::ComparisonKind::GreaterEqual:
-        return isUnsigned ? arith::CmpIPredicate::uge
-                          : arith::CmpIPredicate::sge;
-      }
-      llvm_unreachable("unknown integer comparison");
-    }();
+    const auto predicate = integerPredicate(
+        condition.comparison, lhsType == frontend::ScalarType::Uint);
     return arith::CmpIOp::create(builder, predicate, lhs, rhs);
   }
 
@@ -1971,7 +1952,8 @@ private:
           builder.getIntegerType(condition.expected.getBitWidth()),
           condition.expected);
       return cbit::CompareOp::create(builder, builder.getI1Type(),
-                                     registerPredicate(condition.comparison),
+                                     integerPredicate(condition.comparison,
+                                                      /*isUnsigned=*/true),
                                      reg, rhs);
     }
     case frontend::ConditionKind::Not:

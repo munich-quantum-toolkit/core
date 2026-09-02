@@ -1006,22 +1006,24 @@ static void setExpressionType(Expression& expression, const mlir::Type type) {
 }
 
 [[nodiscard]] static BinaryOperation
-comparisonOperation(const mlir::cbit::ComparisonPredicate predicate) {
+comparisonOperation(const mlir::arith::CmpIPredicate predicate) {
   switch (predicate) {
-  case mlir::cbit::ComparisonPredicate::Equal:
+  case mlir::arith::CmpIPredicate::eq:
     return BinaryOperation::Equal;
-  case mlir::cbit::ComparisonPredicate::NotEqual:
+  case mlir::arith::CmpIPredicate::ne:
     return BinaryOperation::NotEqual;
-  case mlir::cbit::ComparisonPredicate::Less:
+  case mlir::arith::CmpIPredicate::ult:
     return BinaryOperation::Less;
-  case mlir::cbit::ComparisonPredicate::LessEqual:
+  case mlir::arith::CmpIPredicate::ule:
     return BinaryOperation::LessEqual;
-  case mlir::cbit::ComparisonPredicate::Greater:
+  case mlir::arith::CmpIPredicate::ugt:
     return BinaryOperation::Greater;
-  case mlir::cbit::ComparisonPredicate::GreaterEqual:
+  case mlir::arith::CmpIPredicate::uge:
     return BinaryOperation::GreaterEqual;
+  default:
+    throw std::runtime_error(
+        "Qiskit Uint expressions do not support signed comparisons");
   }
-  llvm_unreachable("unknown CBit comparison predicate");
 }
 
 [[noreturn]] static void throwClassicalExpressionSizeError() {
@@ -1248,31 +1250,8 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
                                 depth + 1U, nodeCount);
   }
   if (auto op = llvm::dyn_cast<mlir::arith::CmpIOp>(operation)) {
-    auto kind = BinaryOperation::Equal;
-    switch (op.getPredicate()) {
-    case mlir::arith::CmpIPredicate::eq:
-      kind = BinaryOperation::Equal;
-      break;
-    case mlir::arith::CmpIPredicate::ne:
-      kind = BinaryOperation::NotEqual;
-      break;
-    case mlir::arith::CmpIPredicate::ult:
-      kind = BinaryOperation::Less;
-      break;
-    case mlir::arith::CmpIPredicate::ule:
-      kind = BinaryOperation::LessEqual;
-      break;
-    case mlir::arith::CmpIPredicate::ugt:
-      kind = BinaryOperation::Greater;
-      break;
-    case mlir::arith::CmpIPredicate::uge:
-      kind = BinaryOperation::GreaterEqual;
-      break;
-    default:
-      throw std::runtime_error(
-          "Qiskit Uint expressions do not support signed comparisons");
-    }
-    return binary(kind, op.getLhs(), op.getRhs());
+    return binary(comparisonOperation(op.getPredicate()), op.getLhs(),
+                  op.getRhs());
   }
   if (auto op = llvm::dyn_cast<mlir::arith::CmpFOp>(operation)) {
     auto kind = BinaryOperation::Equal;
