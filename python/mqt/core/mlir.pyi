@@ -675,6 +675,60 @@ class QIRProgram(Program):
     def write_bitcode(self, path: str | os.PathLike) -> None:
         """Write this program as LLVM bitcode."""
 
+def build_functionality(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    dd_package: mqt.core.dd.DDPackage,
+) -> mqt.core.dd.MatrixDD:
+    """Build a matrix DD after lowering a supported input directly to QCO.
+
+    An existing QCO program is used without copying. See
+    {py:meth}`QCOProgram.build_functionality` for DD package requirements and
+    errors.
+    """
+
+def simulate(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    initial_state: mqt.core.dd.VectorDD,
+    dd_package: mqt.core.dd.DDPackage,
+    seed: int = 0,
+) -> mqt.core.dd.VectorDD:
+    """Simulate a supported input after lowering it directly to QCO.
+
+    An existing QCO program is used without copying. See
+    {py:meth}`QCOProgram.simulate` for the state, DD package, seed, and error
+    contracts.
+    """
+
+def sample(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    shots: int = 1024,
+    seed: int = 0,
+) -> dict[str, int]:
+    """Sample a supported input after lowering it directly to QCO.
+
+    An existing QCO program is used without copying. See
+    {py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error
+    contracts.
+    """
+
 @overload
 def compile_program(
     program: str

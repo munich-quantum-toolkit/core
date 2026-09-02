@@ -40,6 +40,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <random>
@@ -49,6 +50,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt {
@@ -300,6 +302,72 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
   return takeResult(mlir::runDefaultPipeline(programFromInput(program, inplace),
                                              output, target, qcoPipeline,
                                              enableTiming, enableStatistics));
+}
+
+template <class Function>
+[[nodiscard]] static auto withQCOProgram(const nb::object& program,
+                                         Function&& function) {
+  if (nb::isinstance<mlir::QCOProgram>(program)) {
+    return std::forward<Function>(function)(
+        nb::cast<const mlir::QCOProgram&>(program));
+  }
+  auto compiled = takeResult(mlir::runDefaultPipeline(
+      programFromInput(program, false), mlir::ProgramFormat::QCO));
+  return std::forward<Function>(function)(std::get<mlir::QCOProgram>(compiled));
+}
+
+[[nodiscard]] static dd::MatrixDD
+buildQCOFunctionality(const mlir::QCOProgram& program, dd::Package& ddPackage) {
+  auto func = entryFunc(program);
+  return takeFailureOr(
+      func.getContext(), "cannot build DD functionality for this QCO program",
+      [&] { return mlir::qco::buildFunctionality(func, ddPackage); });
+}
+
+[[nodiscard]] static dd::VectorDD simulateQCO(const mlir::QCOProgram& program,
+                                              const dd::VectorDD& initialState,
+                                              dd::Package& ddPackage,
+                                              uint64_t seed) {
+  if (dd::VectorDD::trackingRequired(initialState) &&
+      !ddPackage.getRootSet<dd::vNode>().contains(initialState)) {
+    throw nb::value_error(
+        "initial_state must have a live reference in dd_package");
+  }
+  auto func = entryFunc(program);
+  auto rng = makeRng(seed);
+  return takeFailureOr(
+      func.getContext(), "cannot simulate this QCO program",
+      [&] { return mlir::qco::simulate(func, initialState, ddPackage, rng); });
+}
+
+[[nodiscard]] static std::map<std::string, size_t>
+sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
+  auto func = entryFunc(program);
+  return takeFailureOr(func.getContext(), "cannot sample this QCO program",
+                       [&] { return mlir::qco::sample(func, shots, seed); });
+}
+
+[[nodiscard]] static dd::MatrixDD buildFunctionality(const nb::object& program,
+                                                     dd::Package& ddPackage) {
+  return withQCOProgram(program, [&](const mlir::QCOProgram& qco) {
+    return buildQCOFunctionality(qco, ddPackage);
+  });
+}
+
+[[nodiscard]] static dd::VectorDD simulate(const nb::object& program,
+                                           const dd::VectorDD& initialState,
+                                           dd::Package& ddPackage,
+                                           uint64_t seed) {
+  return withQCOProgram(program, [&](const mlir::QCOProgram& qco) {
+    return simulateQCO(qco, initialState, ddPackage, seed);
+  });
+}
+
+[[nodiscard]] static std::map<std::string, size_t>
+sample(const nb::object& program, size_t shots, uint64_t seed) {
+  return withQCOProgram(program, [&](const mlir::QCOProgram& qco) {
+    return sampleQCO(qco, shots, seed);
+  });
 }
 
 [[nodiscard]] static mlir::QCProgram
@@ -1091,15 +1159,7 @@ LLVM bitcode.)pb");
   nb::module_::import_("mqt.core.dd");
 
   qcoProgram.def(
-      "build_functionality",
-      [](const mlir::QCOProgram& program, dd::Package& ddPackage) {
-        auto func = entryFunc(program);
-        return takeFailureOr(
-            func.getContext(),
-            "cannot build DD functionality for this QCO program",
-            [&] { return mlir::qco::buildFunctionality(func, ddPackage); });
-      },
-      "dd_package"_a,
+      "build_functionality", &buildQCOFunctionality, "dd_package"_a,
       // Keep the DD package alive while the returned matrix DD is alive.
       nb::keep_alive<0, 2>(),
       R"pb(Build a matrix DD for a static unitary QCO program.
@@ -1114,22 +1174,8 @@ Raises:
     ValueError: When the program is unsupported for functionality construction.)pb");
 
   qcoProgram.def(
-      "simulate",
-      [](const mlir::QCOProgram& program, const dd::VectorDD& initialState,
-         dd::Package& ddPackage, const uint64_t seed) {
-        if (dd::VectorDD::trackingRequired(initialState) &&
-            !ddPackage.getRootSet<dd::vNode>().contains(initialState)) {
-          throw nb::value_error(
-              "initial_state must have a live reference in dd_package");
-        }
-        auto func = entryFunc(program);
-        auto rng = makeRng(seed);
-        return takeFailureOr(
-            func.getContext(), "cannot simulate this QCO program", [&] {
-              return mlir::qco::simulate(func, initialState, ddPackage, rng);
-            });
-      },
-      "initial_state"_a, "dd_package"_a, "seed"_a = 0U,
+      "simulate", &simulateQCO, "initial_state"_a, "dd_package"_a,
+      "seed"_a = 0U,
       // Keep the DD package alive while the returned vector DD is alive.
       nb::keep_alive<0, 3>(),
       R"pb(Simulate a QCO program on a DD state.
@@ -1149,17 +1195,8 @@ Raises:
     ValueError: When ``initial_state`` has no live reference in ``dd_package``,
         has too few qubits, or the program is unsupported for simulation.)pb");
 
-  qcoProgram.def(
-      "sample",
-      [](const mlir::QCOProgram& program, const size_t shots,
-         const uint64_t seed) {
-        auto func = entryFunc(program);
-        return takeFailureOr(
-            func.getContext(), "cannot sample this QCO program",
-            [&] { return mlir::qco::sample(func, shots, seed); });
-      },
-      "shots"_a = 1024U, "seed"_a = 0U,
-      R"pb(Sample the declared outputs of a QCO program.
+  qcoProgram.def("sample", &sampleQCO, "shots"_a = 1024U, "seed"_a = 0U,
+                 R"pb(Sample the declared outputs of a QCO program.
 
 Args:
     shots: Number of shots (default 1024).
@@ -1173,6 +1210,45 @@ Returns:
 
 Raises:
     ValueError: When the program is unsupported for sampling.)pb");
+
+  m.def("build_functionality", &buildFunctionality, "program"_a, "dd_package"_a,
+        // Keep the DD package alive while the returned matrix DD is alive.
+        nb::keep_alive<0, 2>(),
+        nb::sig("def build_functionality(program: str | os.PathLike[str] | "
+                "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
+                "JeffProgram | OpenQASMProgram, dd_package: "
+                "mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD"),
+        R"pb(Build a matrix DD after lowering a supported input directly to QCO.
+
+An existing QCO program is used without copying. See
+{py:meth}`QCOProgram.build_functionality` for DD package requirements and
+errors.)pb");
+
+  m.def("simulate", &simulate, "program"_a, "initial_state"_a, "dd_package"_a,
+        "seed"_a = 0U,
+        // Keep the DD package alive while the returned vector DD is alive.
+        nb::keep_alive<0, 3>(),
+        nb::sig("def simulate(program: str | os.PathLike[str] | "
+                "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
+                "JeffProgram | OpenQASMProgram, initial_state: "
+                "mqt.core.dd.VectorDD, dd_package: mqt.core.dd.DDPackage, "
+                "seed: int = 0) -> mqt.core.dd.VectorDD"),
+        R"pb(Simulate a supported input after lowering it directly to QCO.
+
+An existing QCO program is used without copying. See
+{py:meth}`QCOProgram.simulate` for the state, DD package, seed, and error
+contracts.)pb");
+
+  m.def("sample", &sample, "program"_a, "shots"_a = 1024U, "seed"_a = 0U,
+        nb::sig("def sample(program: str | os.PathLike[str] | "
+                "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
+                "JeffProgram | OpenQASMProgram, shots: int = 1024, seed: int = "
+                "0) -> dict[str, int]"),
+        R"pb(Sample a supported input after lowering it directly to QCO.
+
+An existing QCO program is used without copying. See
+{py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error
+contracts.)pb");
 
   m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
         "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,

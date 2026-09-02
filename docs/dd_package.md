@@ -34,7 +34,7 @@ mid-circuit measurements, resets, and classically controlled operations. This
 example compiles and samples a Bell-state program:
 
 ```{code-cell} ipython3
-from mqt.core.mlir import OutputFormat, compile_program
+from mqt.core.mlir import sample
 
 bell_qasm = """OPENQASM 3.0;
 include "stdgates.inc";
@@ -45,21 +45,23 @@ cx q[0], q[1];
 result = measure q;
 """
 
-sample_program = compile_program(bell_qasm, output=OutputFormat.QCO_OPTIMIZED)
-counts = sample_program.sample(shots=1024, seed=1)
+counts = sample(bell_qasm, shots=1024, seed=1)
 print(counts)
 ```
 
-Use {py:meth}`~mqt.core.mlir.QCOProgram.simulate` to obtain a state DD and
-{py:meth}`~mqt.core.mlir.QCOProgram.build_functionality` to obtain a matrix DD.
-These methods avoid constructing an exponentially large dense array unless the
-result is explicitly converted with {py:meth}`~mqt.core.dd.VectorDD.get_vector`
-or {py:meth}`~mqt.core.dd.MatrixDD.get_matrix`.
+The {py:func}`~mqt.core.mlir.sample`, {py:func}`~mqt.core.mlir.simulate`, and
+{py:func}`~mqt.core.mlir.build_functionality` functions accept source text,
+paths, Qiskit circuits, and typed compiler programs. They lower each input
+directly to QCO. The corresponding {py:class}`~mqt.core.mlir.QCOProgram` methods
+remain useful when the program is already compiled. Both forms avoid
+constructing an exponentially large dense array unless the result is explicitly
+converted with {py:meth}`~mqt.core.dd.VectorDD.get_vector` or
+{py:meth}`~mqt.core.dd.MatrixDD.get_matrix`.
 
 ```{code-cell} ipython3
 import numpy as np
 from mqt.core.dd import DDPackage
-from mqt.core.mlir import QCOProgram
+from mqt.core.mlir import QCOProgram, build_functionality, simulate
 
 unitary_program = QCOProgram.from_mlir_str("""
 module {
@@ -80,12 +82,12 @@ module {
 
 dd = DDPackage(2)
 zero_state_dd = dd.zero_state(2)
-out_state_dd = unitary_program.simulate(zero_state_dd, dd)
+out_state_dd = simulate(unitary_program, zero_state_dd, dd)
 vec = np.array(out_state_dd.get_vector(), copy=False)
 with np.printoptions(precision=3, suppress=True):
   print(vec)
 
-functionality_dd = unitary_program.build_functionality(dd)
+functionality_dd = build_functionality(unitary_program, dd)
 unitary = np.array(functionality_dd.get_matrix(2), copy=False)
 with np.printoptions(precision=3, suppress=True):
   print(unitary)
