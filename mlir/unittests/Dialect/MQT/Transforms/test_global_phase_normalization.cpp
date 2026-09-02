@@ -233,6 +233,33 @@ TEST_F(GlobalPhaseNormalizationTest,
   expectNormalizedQCUnitary(moduleOp, 3);
 }
 
+TEST_F(GlobalPhaseNormalizationTest, RemovesQCControlEmptiedByPhaseExtraction) {
+  auto moduleOp = mlir::qc::QCProgramBuilder::build(
+      context.get(), [](mlir::qc::QCProgramBuilder& builder) {
+        builder.cgphase(0.25, builder.staticQubit(0));
+        return builder.intConstant(0);
+      });
+  ASSERT_TRUE(moduleOp);
+  auto cloned = cast<ModuleOp>((*moduleOp)->clone());
+  OwningOpRef<ModuleOp> expected(cloned);
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  ASSERT_EQ(llvm::range_size(function.getBody().getOps<mlir::qc::CtrlOp>()),
+            1U);
+
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
+  EXPECT_TRUE(function.getBody().getOps<mlir::qc::CtrlOp>().empty());
+  EXPECT_EQ(llvm::range_size(function.getBody().getOps<mlir::qc::POp>()), 1U);
+
+  for (ModuleOp candidate : {expected.get(), moduleOp.get()}) {
+    PassManager pm(candidate.getContext());
+    pm.addPass(createQCToQCO());
+    ASSERT_TRUE(pm.run(candidate).succeeded());
+    ASSERT_TRUE(verify(candidate).succeeded());
+  }
+  ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 1);
+}
+
 TEST_F(GlobalPhaseNormalizationTest,
        QCInverseAndIntegralPowerPreserveFullUnitary) {
   auto moduleOp = mlir::qc::QCProgramBuilder::build(
@@ -439,6 +466,42 @@ TEST_F(GlobalPhaseNormalizationTest, FactorsControlledPhaseOntoControl) {
   auto p = *func.getBody().getOps<qco::POp>().begin();
   EXPECT_EQ(returnOp.getOperand(0), p.getOutputTarget(0));
   EXPECT_EQ(returnOp.getOperand(1), ctrl.getOutputTarget(0));
+}
+
+TEST_F(GlobalPhaseNormalizationTest,
+       RemovesQCOControlEmptiedByPhaseExtraction) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @test(%control: !qco.qubit, %lhs: !qco.qubit,
+                      %rhs: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit, !qco.qubit) {
+        %control_out, %lhs_out, %rhs_out = qco.ctrl(%control)
+            targets(%lhs_arg = %lhs, %rhs_arg = %rhs) {
+          %phase = arith.constant 0.25 : f64
+          qco.gphase(%phase)
+          qco.yield %rhs_arg, %lhs_arg : !qco.qubit, !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+          -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+        return %control_out, %lhs_out, %rhs_out
+            : !qco.qubit, !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  ASSERT_EQ(llvm::range_size(function.getBody().getOps<qco::CtrlOp>()), 1U);
+
+  ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
+  EXPECT_TRUE(function.getBody().getOps<qco::CtrlOp>().empty());
+  EXPECT_EQ(llvm::range_size(function.getBody().getOps<qco::POp>()), 1U);
+  auto returnOp =
+      cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  auto p = *function.getBody().getOps<qco::POp>().begin();
+  EXPECT_EQ(returnOp.getOperand(0), p.getOutputTarget(0));
+  EXPECT_EQ(returnOp.getOperand(1), function.getArgument(2));
+  EXPECT_EQ(returnOp.getOperand(2), function.getArgument(1));
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
