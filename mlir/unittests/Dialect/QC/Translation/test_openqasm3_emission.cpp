@@ -275,8 +275,28 @@ module {
     %q = qc.alloc : !qc.qubit
     %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
         : !cbit.reg<3>
-    %condition = cbit.cmp uge, %c, 5 : i3 : !cbit.reg<3>
-    scf.if %condition {
+    %eq = cbit.cmp eq, %c, 5 : i3 : !cbit.reg<3>
+    %ne = cbit.cmp ne, %c, 5 : i3 : !cbit.reg<3>
+    %ult = cbit.cmp ult, %c, 5 : i3 : !cbit.reg<3>
+    %ule = cbit.cmp ule, %c, 5 : i3 : !cbit.reg<3>
+    %ugt = cbit.cmp ugt, %c, 5 : i3 : !cbit.reg<3>
+    %uge = cbit.cmp uge, %c, 5 : i3 : !cbit.reg<3>
+    scf.if %eq {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %ne {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %ult {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %ule {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %ugt {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %uge {
       qc.x %q : !qc.qubit
     }
     return %c : !cbit.reg<3>
@@ -291,7 +311,10 @@ module {
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_NE(emitted->find("if ((c >= 5))"), std::string::npos) << *emitted;
+  for (const auto* comparison :
+       {"c == 5", "c != 5", "c < 5", "c <= 5", "c > 5", "c >= 5"}) {
+    EXPECT_NE(emitted->find(comparison), std::string::npos) << *emitted;
+  }
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
       *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
       << *emitted;

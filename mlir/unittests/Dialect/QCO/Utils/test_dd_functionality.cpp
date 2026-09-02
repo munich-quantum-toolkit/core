@@ -844,6 +844,28 @@ TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitLoad) {
       failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
 }
 
+TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitRegisterComparison) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto reg =
+        b.allocClassicalBitRegister(1, "c", cbit::Initialization::Undefined);
+    auto rhs = b.getIntegerAttr(b.getIntegerType(1), 0);
+    auto condition = cbit::CompareOp::create(
+        b, b.getI1Type(), cbit::ComparisonPredicate::Equal, reg, rhs);
+    auto q = b.staticQubit(0);
+    q = b.qcoIf(
+        condition, q, [&](Value arg) { return arg; },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  std::mt19937_64 rng(1);
+  EXPECT_TRUE(
+      failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+}
+
 TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIndexSwitch) {
   // |1> → measure → index_castui → index_switch case 1 applies X → |0>.
   auto mod = buildModule([](QCOProgramBuilder& b) {

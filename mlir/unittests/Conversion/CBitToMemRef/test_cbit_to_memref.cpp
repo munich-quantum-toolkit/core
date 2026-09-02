@@ -137,10 +137,15 @@ TEST_F(CBitToMemRefTest, LargeZeroInitializationProducesBoundedIR) {
 TEST_F(CBitToMemRefTest, LowersRegisterComparisons) {
   auto moduleOp = convert(R"mlir(
     module {
-      func.func @main() -> i1 {
+      func.func @main() -> (i1, i1, i1, i1, i1, i1) {
         %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
-        %result = cbit.cmp uge, %reg, 5 : i3 : !cbit.reg<3>
-        return %result : i1
+        %eq = cbit.cmp eq, %reg, 5 : i3 : !cbit.reg<3>
+        %ne = cbit.cmp ne, %reg, 5 : i3 : !cbit.reg<3>
+        %ult = cbit.cmp ult, %reg, 5 : i3 : !cbit.reg<3>
+        %ule = cbit.cmp ule, %reg, 5 : i3 : !cbit.reg<3>
+        %ugt = cbit.cmp ugt, %reg, 5 : i3 : !cbit.reg<3>
+        %uge = cbit.cmp uge, %reg, 5 : i3 : !cbit.reg<3>
+        return %eq, %ne, %ult, %ule, %ugt, %uge : i1, i1, i1, i1, i1, i1
       }
     }
   )mlir");
@@ -154,7 +159,7 @@ TEST_F(CBitToMemRefTest, LowersRegisterComparisons) {
   EXPECT_FALSE(containsCBit);
   size_t loads = 0;
   moduleOp->walk([&](memref::LoadOp) { ++loads; });
-  EXPECT_EQ(loads, 3);
+  EXPECT_EQ(loads, 18);
 }
 
 TEST_F(CBitToMemRefTest, ConvertsFunctionSignaturesCallsAndReturns) {
