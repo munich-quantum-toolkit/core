@@ -745,15 +745,14 @@ static LogicalResult applyMemRefStore(memref::StoreOp store,
                                       ClassicalEnv& classical) {
   auto slot =
       lookupMemRefSlot(store.getMemref(), store.getIndices(), classical, store);
-  const auto value = classical.values.find(store.getValue());
-  if (failed(slot) || value == classical.values.end()) {
-    if (value == classical.values.end()) {
-      store.emitError()
-          << "stored classical value is not mapped for QCO DD simulation";
-    }
+  if (failed(slot)) {
     return failure();
   }
-  **slot = value->second;
+  auto value = lookupAttribute(store.getValue(), classical, store);
+  if (failed(value)) {
+    return failure();
+  }
+  **slot = *value;
   return success();
 }
 

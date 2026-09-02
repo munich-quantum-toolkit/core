@@ -2055,6 +2055,38 @@ TEST_F(QCODDFunctionalityTest, SampleExecutesControlMeasurementPerShot) {
   EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 
+TEST_F(QCODDFunctionalityTest,
+       SampleFallsBackWhenDeferredMeasurementIsStoredInMemRef) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> !cbit.reg<1> {
+        %out = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
+        %memory = memref.alloc() : memref<1xi1>
+        %zero = arith.constant 0 : index
+        %q = qco.static 0 : !qco.qubit
+        %q1 = qco.h %q : !qco.qubit -> !qco.qubit
+        %q2, %bit = qco.measure %q1 : !qco.qubit
+        memref.store %bit, %memory[%zero] : memref<1xi1>
+        %loaded = memref.load %memory[%zero] : memref<1xi1>
+        cbit.store %loaded, %out[%zero] : !cbit.reg<1>
+        memref.dealloc %memory : memref<1xi1>
+        qco.sink %q2 : !qco.qubit
+        return %out : !cbit.reg<1>
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+
+  auto dd = std::make_unique<dd::Package>(1);
+  constexpr size_t shots = 128;
+  const auto histogram = sample(mainFunc(*mod), *dd, shots, rng);
+  ASSERT_TRUE(succeeded(histogram));
+  ASSERT_EQ(histogram->size(), 2U);
+  EXPECT_EQ(histogram->at("0") + histogram->at("1"), shots);
+  EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
+}
+
 TEST_F(QCODDFunctionalityTest, FuncCallSharesClassicalCBitStorage) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
