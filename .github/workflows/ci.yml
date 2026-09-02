@@ -127,11 +127,12 @@ jobs:
     name: 🇨 Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-linter)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@063c90c8e7e094bfffb73f8436eb55341c1e820f # v2.3.0
+    # Temporary canary for munich-quantum-toolkit/workflows#448.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@c032cc32bc19f970118e0f6d3c57e86e6e683beb
     with:
-      clang-version: 22
+      clang-version: 23
       build-project: true
-      files-changed-only: true
+      files-changed-only: false
       setup-python: true
       install-pkgs: "nanobind==3.0.1"
       cpp-linter-extra-args: "-std=c++20 -Wunused-template"
