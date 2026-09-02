@@ -701,8 +701,9 @@ TEST_F(MappingPassFixture, ExpandNonAdjacentTwoQubitIfOnLineTarget) {
   builder.sink(conditionalResults[1]);
   auto moduleOp = builder.finalize();
 
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}}));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::unrestricted()));
   ASSERT_TRUE(runPass(moduleOp.get(), target, MappingPassOptions{.ntrials = 1})
                   .succeeded());
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
