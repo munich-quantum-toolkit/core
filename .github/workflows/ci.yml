@@ -138,7 +138,9 @@ jobs:
       cpp-linter-extra-args: "-std=c++20 -Wunused-template"
       # Vendored third-party headers are checked upstream and are not maintained
       # according to MQT Core's clang-tidy configuration.
-      cpp-linter-ignore-extra: "vendor/**"
+      # GitHub omits patch data for the removed large parser test. No source
+      # remains to lint.
+      cpp-linter-ignore-extra: "vendor/**|test/ir/test_qasm3_parser.cpp"
       setup-mlir: true
       llvm-version: 23.1.0
     permissions:
