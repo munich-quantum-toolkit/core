@@ -374,9 +374,13 @@ private:
   /// Statistics collected while routing.
   struct Statistics {
     /// The number of inserted swaps.
-    size_t nswaps{0};
+    size_t numRoutingSWAPs{0};
+    size_t numAppendixSWAPs{0};
     /// Merge another statistics object into this one.
-    void merge(const Statistics& other) { nswaps += other.nswaps; }
+    void merge(const Statistics& other) {
+      numRoutingSWAPs += other.numRoutingSWAPs;
+      numAppendixSWAPs += other.numAppendixSWAPs;
+    }
   };
 
   /// Parameters influencing the behavior of the A* search algorithm.
@@ -631,7 +635,8 @@ protected:
 
     // Collect statistics.
     const auto stats = *routeRes;
-    numSwaps += stats.nswaps;
+    numRoutingSWAPs = stats.numRoutingSWAPs;
+    numAppendixSWAPs = stats.numAppendixSWAPs;
 
     // Fix SSA Dominance issues.
     llvm::for_each(body.getBlocks(), [](Block& b) { sortTopologically(&b); });
@@ -791,6 +796,10 @@ private:
       RoutingBundle bundle;
       Statistics stats{};
       bool success{false};
+
+      size_t metric() const {
+        return stats.numAppendixSWAPs + stats.numRoutingSWAPs;
+      }
     };
 
     SmallVector<Trial, 0> trials;
@@ -836,7 +845,7 @@ private:
     Trial* best = nullptr;
     for (Trial& t : trials) {
       if (t.success &&
-          (best == nullptr || best->stats.nswaps > t.stats.nswaps)) {
+          (best == nullptr || best->metric() > t.metric())) {
         best = &t;
       }
     }
@@ -1164,7 +1173,7 @@ private:
   /// expects that each wire points at the correct insertion point.
   template <RoutingMode Mode>
   static void insertSWAPs(ArrayRef<IndexPairType> swaps, RoutingBundle& bundle,
-                          Statistics& stats, IRRewriter* rewriter) {
+                          IRRewriter* rewriter) {
     auto& [wires, infos, layout] = bundle;
     for (const auto& [hw0, hw1] : swaps) {
       const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
@@ -1198,8 +1207,6 @@ private:
 
       layout.swap(hw0, hw1);
     }
-
-    stats.nswaps += swaps.size();
   }
 
   /// Advance past all executable gates and return operations with nested
@@ -1518,12 +1525,14 @@ private:
         TypeSwitch<Operation*, Layout>(op)
             .Case<scf::ForOp>([&](scf::ForOp) {
               const auto swaps = restore(children[0].layout, parent.layout);
-              insertSWAPs<Mode>(swaps, children[0], totalStats, rewriter);
+              insertSWAPs<Mode>(swaps, children[0], rewriter);
+              totalStats.numAppendixSWAPs += swaps.size();
               return parent.layout;
             })
             .template Case<scf::WhileOp>([&](scf::WhileOp) {
               const auto swaps = restore(children[1].layout, parent.layout);
-              insertSWAPs<Mode>(swaps, children[1], totalStats, rewriter);
+              insertSWAPs<Mode>(swaps, children[1], rewriter);
+              totalStats.numAppendixSWAPs += swaps.size();
               // The scf::YieldOp is the terminator in the before region and
               // thus determines the final output layout.
               return children[0].layout;
@@ -1531,8 +1540,10 @@ private:
             .template Case<IfOp>([&](IfOp) {
               const auto [convergedLayout, fst, snd] =
                   converge(children[0].layout, children[1].layout);
-              insertSWAPs<Mode>(fst, children[0], totalStats, rewriter);
-              insertSWAPs<Mode>(snd, children[1], totalStats, rewriter);
+              insertSWAPs<Mode>(fst, children[0], rewriter);
+              insertSWAPs<Mode>(snd, children[1], rewriter);
+              totalStats.numAppendixSWAPs += fst.size();
+              totalStats.numAppendixSWAPs += snd.size();
               return convergedLayout;
             })
             .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
@@ -1542,7 +1553,8 @@ private:
                   }));
               for (RoutingBundle& child : children) {
                 const auto swaps = restore(child.layout, compromise);
-                insertSWAPs<Mode>(swaps, child, totalStats, rewriter);
+                insertSWAPs<Mode>(swaps, child, rewriter);
+                totalStats.numAppendixSWAPs += swaps.size();
               }
               return compromise;
             });
@@ -1723,7 +1735,8 @@ private:
         }
       }
 
-      insertSWAPs<Mode>(*swaps, bundle, stats, rewriter);
+      insertSWAPs<Mode>(*swaps, bundle, rewriter);
+      stats.numRoutingSWAPs += swaps->size();
 
       if constexpr (Mode == RoutingMode::Hot) {
 

@@ -39,6 +39,7 @@ endfunction()
 
 # add main library code
 add_subdirectory(bench)
+add_subdirectory(benchmarks)
 add_subdirectory(include)
 add_subdirectory(lib)
 add_subdirectory(tools)

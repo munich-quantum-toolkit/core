@@ -173,8 +173,11 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                         "the forwards and backwards mechanism. Must be > 0.">,
                  Option<"seed", "seed", "std::size_t", "42",
                         "A seed used for randomization.">];
-  let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
-                              "The number of inserted SWAPs">];
+  let statistics = [
+    Statistic<"numRoutingSWAPs", "num-routing-swaps",
+              "The number of routing SWAPs">,
+    Statistic<"numAppendixSWAPs", "num-appendix-swaps",
+              "The number of appendix SWAPs">];
 }
 
 //===----------------------------------------------------------------------===//

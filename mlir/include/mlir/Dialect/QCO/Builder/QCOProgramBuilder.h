@@ -128,6 +128,8 @@ public:
    */
   Value intConstant(int64_t value);
 
+  Value indexConstant(int64_t value);
+
   /**
    * @brief Create a constant float value
    * @param value The value to store in the constant
