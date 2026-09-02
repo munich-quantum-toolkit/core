@@ -18,11 +18,13 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -37,6 +39,7 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -85,6 +88,167 @@ void QCOProgramBuilder::retype(TypeRange returnTypes) {
   auto funcType =
       getFunctionType(mainFunc.getFunctionType().getInputs(), returnTypes);
   mainFunc.setType(funcType);
+}
+
+static bool isQubitTensor(Type type) {
+  auto tensor = dyn_cast<RankedTensorType>(type);
+  return tensor && isa<QubitType>(tensor.getElementType());
+}
+
+func::FuncOp QCOProgramBuilder::createFunction(
+    const StringRef name, const TypeRange argumentTypes,
+    const function_ref<SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+  auto moduleOp = cast<ModuleOp>(module);
+  auto mainFunc = mqt::getEntryPoint(moduleOp);
+  if (!mainFunc) {
+    llvm::reportFatalUsageError(
+        "QCOProgramBuilder must be initialized before creating a function");
+  }
+  if (SymbolTable::lookupSymbolIn(moduleOp, name)) {
+    llvm::reportFatalUsageError("Function name is already defined");
+  }
+
+  const InsertionGuard insertionGuard(*this);
+  auto savedQubits = std::move(validQubits);
+  auto savedTensors = std::move(validTensors);
+  const auto savedTensorCounter = tensorCounter;
+  auto stateGuard = llvm::make_scope_exit([&] {
+    validQubits = std::move(savedQubits);
+    validTensors = std::move(savedTensors);
+    tensorCounter = savedTensorCounter;
+  });
+  validQubits.clear();
+  validTensors.clear();
+
+  setInsertionPoint(mainFunc);
+  auto function = func::FuncOp::create(
+      *this, name, getFunctionType(argumentTypes, TypeRange{}));
+  function.setPrivate();
+  auto* block = function.addEntryBlock();
+  setInsertionPointToStart(block);
+  for (auto argument : block->getArguments()) {
+    if (isa<QubitType>(argument.getType())) {
+      validQubits.insert(argument);
+    } else if (isQubitTensor(argument.getType())) {
+      validTensors.insert(Tensor{argument, tensorCounter++});
+    }
+  }
+
+  SmallVector<Value> results = body(block->getArguments());
+  if (block->mightHaveTerminator()) {
+    llvm::reportFatalUsageError(
+        "Function callback must not create a terminator");
+  }
+  function.setType(
+      getFunctionType(argumentTypes, ValueRange(results).getTypes()));
+  SmallVector<unsigned> qubitArguments;
+  for (auto [index, argument] : llvm::enumerate(block->getArguments())) {
+    if (isa<QubitType>(argument.getType())) {
+      qubitArguments.emplace_back(index);
+    }
+  }
+  if (results.size() < qubitArguments.size()) {
+    llvm::reportFatalUsageError(
+        "Function must return every qubit argument as a trailing result");
+  }
+  const auto firstQubitResult = results.size() - qubitArguments.size();
+  if (llvm::any_of(
+          ValueRange(results).drop_front(firstQubitResult),
+          [](Value result) { return !isa<QubitType>(result.getType()); })) {
+    llvm::reportFatalUsageError(
+        "Function must return every qubit argument as a trailing result");
+  }
+  for (auto [offset, argument] : llvm::enumerate(qubitArguments)) {
+    auto origin =
+        traceQubitArgument(function, results[firstQubitResult + offset]);
+    if (failed(origin) || *origin != argument) {
+      llvm::reportFatalUsageError(
+          "Function must return every qubit argument as a trailing result");
+    }
+  }
+  for (auto [index, result] : llvm::enumerate(results)) {
+    if (isa<QubitType>(result.getType())) {
+      validateQubitValue(result);
+      validQubits.erase(result);
+    } else if (isQubitTensor(result.getType())) {
+      validateTensorValue(result);
+      validTensors.erase(result);
+    }
+  }
+  disposeLinearValues();
+  func::ReturnOp::create(*this, results);
+  return function;
+}
+
+func::FuncOp QCOProgramBuilder::createUnitaryFunction(
+    const StringRef name, const TypeRange argumentTypes,
+    const function_ref<SmallVector<Value>(ValueRange)> body) {
+  auto function = createFunction(name, argumentTypes, body);
+  mqt::setUnitaryFunction(function);
+  return function;
+}
+
+SmallVector<Value> QCOProgramBuilder::call(func::FuncOp callee,
+                                           ValueRange operands) {
+  checkFinalized();
+  if (callee->getParentOp() != module ||
+      callee.getArgumentTypes() != operands.getTypes()) {
+    llvm::reportFatalUsageError(
+        "Call operands must match a function in the current module");
+  }
+  if (llvm::any_of(operands, [](Value operand) {
+        return isQubitTensor(operand.getType());
+      })) {
+    llvm::reportFatalUsageError(
+        "Quantum tensor function calls are not supported");
+  }
+
+  SmallVector<Qubit> qubitArguments;
+  for (auto operand : operands) {
+    if (!isa<QubitType>(operand.getType())) {
+      continue;
+    }
+    validateQubitValue(operand);
+    auto iterator = validQubits.find(operand);
+    qubitArguments.emplace_back(*iterator);
+    validQubits.erase(iterator);
+  }
+
+  SmallVector<Value> results;
+  if (mqt::isUnitaryFunction(callee)) {
+    auto call = CallOp::create(
+        *this, FlatSymbolRefAttr::get(getContext(), callee.getName()),
+        operands);
+    llvm::append_range(results, call.getResults());
+  } else {
+    auto call = func::CallOp::create(*this, callee, operands);
+    llvm::append_range(results, call.getResults());
+  }
+
+  if (results.size() < qubitArguments.size()) {
+    llvm::reportFatalUsageError(
+        "Callee does not return its qubit arguments positionally");
+  }
+  const auto firstQubitResult = results.size() - qubitArguments.size();
+  if (llvm::any_of(
+          ValueRange(results).drop_front(firstQubitResult),
+          [](Value result) { return !isa<QubitType>(result.getType()); })) {
+    llvm::reportFatalUsageError(
+        "Callee does not return its qubit arguments positionally");
+  }
+  for (auto [index, result] : llvm::enumerate(results)) {
+    if (!isa<QubitType>(result.getType())) {
+      continue;
+    }
+    if (index >= firstQubitResult) {
+      const auto& tracked = qubitArguments[index - firstQubitResult];
+      validQubits.insert(Qubit{result, tracked.regId, tracked.regIndex});
+    } else {
+      validQubits.insert(result);
+    }
+  }
+  return results;
 }
 
 Value QCOProgramBuilder::intConstant(const int64_t value) {
@@ -1443,6 +1607,33 @@ void QCOProgramBuilder::ensureAllocationMode(
   llvm::reportFatalUsageError(message.c_str());
 }
 
+void QCOProgramBuilder::disposeLinearValues() {
+  DenseSet<int64_t> validTensorIds;
+  for (const auto& tensor : validTensors) {
+    validTensorIds.insert(tensor.regId);
+  }
+
+  DenseMap<int64_t, SmallVector<Qubit>> qubitsByRegister;
+  for (const auto& qubit : validQubits) {
+    if (qubit.regId == -1 || !validTensorIds.contains(qubit.regId)) {
+      SinkOp::create(*this, qubit);
+    } else {
+      qubitsByRegister[qubit.regId].emplace_back(qubit);
+    }
+  }
+  for (const auto& tensor : validTensors) {
+    Value currentTensor = tensor;
+    for (const auto& qubit : qubitsByRegister[tensor.regId]) {
+      currentTensor =
+          qtensor::InsertOp::create(*this, qubit, currentTensor, qubit.regIndex)
+              .getResult();
+    }
+    qtensor::DeallocOp::create(*this, currentTensor);
+  }
+  validQubits.clear();
+  validTensors.clear();
+}
+
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   checkFinalized();
 
@@ -1484,35 +1675,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
     }
   }
 
-  DenseSet<int64_t> validTensorIds;
-  for (const auto& tensor : validTensors) {
-    validTensorIds.insert(tensor.regId);
-  }
-
-  DenseMap<int64_t, SmallVector<Qubit>> qubitsByRegister;
-  for (const auto& qubit : validQubits) {
-    if (qubit.regId == -1 || !validTensorIds.contains(qubit.regId)) {
-      // Automatically deallocate all still-allocated qubits
-      SinkOp::create(*this, qubit);
-    } else {
-      qubitsByRegister[qubit.regId].emplace_back(qubit);
-    }
-  }
-
-  // Automatically deallocate all still-allocated tensors
-  for (const auto& tensor : validTensors) {
-    Value currentTensor = tensor;
-    // Filter out qubits belonging to this tensor
-    for (const auto& qubit : qubitsByRegister[tensor.regId]) {
-      currentTensor =
-          qtensor::InsertOp::create(*this, qubit, currentTensor, qubit.regIndex)
-              .getResult();
-    }
-    // Deallocate tensor
-    qtensor::DeallocOp::create(*this, currentTensor);
-  }
-  validQubits.clear();
-  validTensors.clear();
+  disposeLinearValues();
 
   // Add return statement with the given return values to the main function
   func::ReturnOp::create(*this, returnValues);

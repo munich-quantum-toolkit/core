@@ -33,6 +33,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/AsmState.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -321,6 +322,71 @@ TEST_F(QCOTest, BuilderSupportsIndependentClassicalRegisterInitialization) {
               ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
           .getValue(),
       "undefined");
+}
+
+TEST_F(QCOTest, BuilderCreatesGenericAndUnitaryFunctions) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto qubitType = QubitType::get(context.get());
+
+  auto reset = builder.createFunction(
+      "reset", TypeRange{qubitType}, [&](ValueRange arguments) {
+        return SmallVector<Value>{builder.reset(arguments[0])};
+      });
+  auto flip = builder.createUnitaryFunction(
+      "flip", TypeRange{qubitType}, [&](ValueRange arguments) {
+        return SmallVector<Value>{builder.x(arguments[0])};
+      });
+
+  Value qubit = builder.allocQubit();
+  qubit = builder.call(reset, qubit).front();
+  qubit = builder.call(flip, qubit).front();
+  qubit = builder.inv(qubit, [&](Value argument) {
+    return builder.call(flip, argument).front();
+  });
+  builder.sink(qubit);
+  auto moduleOp = builder.finalize();
+
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(reset.getResultTypes(), reset.getArgumentTypes());
+  EXPECT_EQ(flip.getResultTypes(), flip.getArgumentTypes());
+  EXPECT_FALSE(mlir::mqt::isUnitaryFunction(reset));
+  EXPECT_TRUE(mlir::mqt::isUnitaryFunction(flip));
+
+  auto mainFunc = mlir::mqt::getEntryPoint(*moduleOp);
+  ASSERT_TRUE(mainFunc);
+  EXPECT_EQ(llvm::range_size(mainFunc.getBody().getOps<func::CallOp>()), 1U);
+  EXPECT_EQ(llvm::range_size(mainFunc.getBody().getOps<CallOp>()), 1U);
+  auto inverse = *mainFunc.getBody().getOps<InvOp>().begin();
+  EXPECT_TRUE(isa<UnitaryOpInterface>(&inverse.getRegion().front().front()));
+}
+
+TEST_F(QCOTest, UnitaryVerifierDiagnosesMalformedCalls) {
+  ParserConfig config(context.get(), false);
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @malformed(%q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %left, %right = qco.call @malformed(%q)
+            : (!qco.qubit) -> (!qco.qubit, !qco.qubit)
+        return %left : !qco.qubit
+      }
+    }
+  )mlir",
+                                            config);
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("requires one trailing qubit operand for every qubit "
+                      "result");
+    return success();
+  });
+  EXPECT_TRUE(failed(verify(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
 TEST_F(QCOTest, DirectSingleQubitPowBuilder) {

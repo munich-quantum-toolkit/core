@@ -14,6 +14,7 @@
 
 #include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/DenseSet.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -108,6 +109,28 @@ public:
    * @param returnTypes The new return types for the main function
    */
   void retype(TypeRange returnTypes);
+
+  //===--------------------------------------------------------------------===//
+  // Functions
+  //===--------------------------------------------------------------------===//
+
+  /// Create a private function.
+  ///
+  /// The callback must return one trailing qubit for every qubit argument, in
+  /// qubit-argument order.
+  func::FuncOp
+  createFunction(StringRef name, TypeRange argumentTypes,
+                 function_ref<SmallVector<Value>(ValueRange)> body);
+
+  /// Create a complete private unitary function.
+  func::FuncOp
+  createUnitaryFunction(StringRef name, TypeRange argumentTypes,
+                        function_ref<SmallVector<Value>(ValueRange)> body);
+
+  /// Call a function, using `qco.call` for a unitary function.
+  ///
+  /// Ordinary results are followed by the updated qubit arguments.
+  SmallVector<Value> call(func::FuncOp callee, ValueRange operands);
 
   //===--------------------------------------------------------------------===//
   // Constants
@@ -2004,6 +2027,9 @@ private:
    * @param outputTensor New output tensor being produced
    */
   void updateTensorTracking(Value inputTensor, Value outputTensor);
+
+  /// Dispose of every live linear value in the current function.
+  void disposeLinearValues();
 
   /**
    * @brief Prepares initial arguments for operations by re-inserting extracted

@@ -10,54 +10,13 @@
 
 #pragma once
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
-#include <cstdint>
 #include <iterator>
 
 namespace mlir::qco {
-
-/// Resolves how qubits flow across call boundaries.
-///
-/// The mapping follows each qubit argument through the callee instead of
-/// assuming positional correspondence. Results are cached per callee. Mapping
-/// fails for declarations, recursion, and non-straight-line bodies.
-class CallQubitMapping {
-public:
-  /// Gets the result continuing @p operand's wire.
-  ///
-  /// Returns a null value when the callee keeps the qubit and failure when the
-  /// correspondence cannot be derived.
-  [[nodiscard]] FailureOr<Value> getResultForOperand(func::CallOp callOp,
-                                                     Value operand);
-
-  /// Clears all cached correspondence after a callee is changed or erased.
-  void invalidate();
-
-private:
-  friend class WireIterator;
-
-  // Marks a qubit argument that never reaches a result.
-  static constexpr int64_t KEPT = -1;
-
-  // Returns each qubit argument's call-result index, or KEPT.
-  FailureOr<ArrayRef<int64_t>> mappingFor(func::CallOp callOp);
-
-  // Derives a mapping by threading every qubit argument through the callee.
-  FailureOr<SmallVector<int64_t>> computeMapping(func::FuncOp callee);
-
-  // Gets the call operand feeding a result's wire.
-  FailureOr<Value> getOperandForResult(func::CallOp callOp, Value result);
-
-  DenseMap<Operation*, SmallVector<int64_t>> cache;
-  DenseSet<Operation*> inProgress;
-};
 
 /// A bidirectional iterator over the def-use chain of a qubit wire.
 ///
@@ -70,13 +29,11 @@ public:
   using value_type = Operation*;
 
   /// Construct a dead-end sentinel wire-iterator.
-  WireIterator()
-      : mapping_(nullptr), op_(nullptr), qubit_(nullptr),
-        pos_(Position::PastTail) {}
+  WireIterator() : op_(nullptr), qubit_(nullptr), pos_(Position::PastTail) {}
 
   /// Construct a wire iterator pointing at the defining op of a qubit value.
-  explicit WireIterator(Value qubit, CallQubitMapping* mapping = nullptr)
-      : mapping_(mapping), op_(qubit.getDefiningOp()), qubit_(qubit) {
+  explicit WireIterator(Value qubit)
+      : op_(qubit.getDefiningOp()), qubit_(qubit) {
     if (op_ == nullptr || isHead(op_)) {
       pos_ = Position::Head;
     } else if (isTail(op_)) {
@@ -127,8 +84,6 @@ public:
   }
 
 private:
-  friend class CallQubitMapping;
-
   /// Labels the position on the wire.
   enum class Position : uint8_t { BeforeHead, Head, Between, Tail, PastTail };
 
@@ -144,18 +99,9 @@ private:
   // Moves to the previous operation on the qubit wire.
   void backward();
 
-  // Resolves the call result continuing an operand's wire.
-  FailureOr<Value> resultForOperand(func::CallOp callOp, Value operand) const;
-
-  // Resolves the call operand feeding a result's wire.
-  [[nodiscard]] Value operandForResult(func::CallOp callOp, Value result) const;
-
-  // Null means that each call query uses a fresh mapping.
-  CallQubitMapping* mapping_;
   Operation* op_;
   Value qubit_;
   Position pos_;
-  bool mappingFailed_ = false;
 };
 
 /// Categorizes the current traversal direction.

@@ -12,14 +12,17 @@
 
 #include "mlir/Conversion/ConversionUtils.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -30,6 +33,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -66,6 +70,9 @@ enum class AllocationMode : std::uint8_t {
 struct LoweringState {
   /// Per-region map from a register's indices to its loaded qubit values.
   DenseMap<Region*, DenseMap<Value, DenseMap<Value, Value>>> qubitValues;
+  /// Original qubit argument positions, retained while signatures are
+  /// rewritten.
+  DenseMap<Operation*, SmallVector<unsigned>> qubitArguments;
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
 
@@ -246,6 +253,185 @@ public:
       }
       return type;
     });
+  }
+};
+
+[[nodiscard]] static LogicalResult
+collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
+  for (auto function : moduleOp.getOps<func::FuncOp>()) {
+    auto& qubitArguments = state.qubitArguments[function];
+    for (auto [index, type] : llvm::enumerate(function.getArgumentTypes())) {
+      if (isa<qco::QubitType>(type)) {
+        qubitArguments.emplace_back(index);
+      }
+    }
+    if (qubitArguments.empty()) {
+      continue;
+    }
+    if (function.getNumResults() < qubitArguments.size() ||
+        llvm::any_of(function.getResultTypes().take_back(qubitArguments.size()),
+                     [](Type type) { return !isa<qco::QubitType>(type); })) {
+      return function.emitOpError()
+             << "must return one trailing qubit for each qubit argument";
+    }
+    const auto firstQubitResult =
+        function.getNumResults() - qubitArguments.size();
+    for (unsigned index = firstQubitResult; index < function.getNumResults();
+         ++index) {
+      if (auto attrs = function.getResultAttrDict(index);
+          attrs && !attrs.empty()) {
+        return function.emitOpError(
+            "cannot preserve attributes on pass-through qubit results in QC");
+      }
+    }
+    if (function.isDeclaration()) {
+      continue;
+    }
+    if (!function.getBody().hasOneBlock()) {
+      return function.emitOpError()
+             << "with qubit arguments must have one outer block";
+    }
+    auto returnOp = dyn_cast<func::ReturnOp>(function.getBody().front().back());
+    if (!returnOp) {
+      return function.emitOpError("must terminate with func.return");
+    }
+    auto returnedQubits =
+        returnOp.getOperands().take_back(qubitArguments.size());
+    for (auto [argument, value] :
+         llvm::zip_equal(qubitArguments, returnedQubits)) {
+      auto origin = qco::traceQubitArgument(function, value);
+      if (failed(origin) || *origin != argument) {
+        return function.emitOpError()
+               << "must return its qubit arguments positionally";
+      }
+    }
+  }
+  return success();
+}
+
+struct ConvertFuncOp final : StatefulOpConversionPattern<func::FuncOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    TypeConverter::SignatureConversion signature(op.getNumArguments());
+    if (failed(getTypeConverter()->convertSignatureArgs(op.getArgumentTypes(),
+                                                        signature))) {
+      return failure();
+    }
+    SmallVector<Type> inputs;
+    if (failed(
+            getTypeConverter()->convertTypes(op.getArgumentTypes(), inputs))) {
+      return failure();
+    }
+
+    const auto& qubitArguments = getState().qubitArguments[op];
+    const auto firstQubitResult = op.getNumResults() - qubitArguments.size();
+    SmallVector<Type> results;
+    if (failed(getTypeConverter()->convertTypes(
+            op.getResultTypes().take_front(firstQubitResult), results))) {
+      return failure();
+    }
+    SmallVector<DictionaryAttr> resultAttrs;
+    for (unsigned index = 0; index < firstQubitResult; ++index) {
+      resultAttrs.emplace_back(op.getResultAttrDict(index));
+    }
+
+    rewriter.modifyOpInPlace(op, [&] {
+      op.setType(rewriter.getFunctionType(inputs, results));
+      function_interface_impl::setAllResultAttrDicts(op, resultAttrs);
+    });
+    if (!op.isExternal() &&
+        failed(rewriter.convertRegionTypes(&op.getBody(), *getTypeConverter(),
+                                           &signature))) {
+      return failure();
+    }
+    return success();
+  }
+};
+
+struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto function = op->getParentOfType<func::FuncOp>();
+    const auto numQubitArguments = getState().qubitArguments[function].size();
+    rewriter.replaceOpWithNewOp<func::ReturnOp>(
+        op, adaptor.getOperands().drop_back(numQubitArguments));
+    return success();
+  }
+};
+
+struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+        op, op.getCalleeAttr());
+    if (!callee) {
+      return rewriter.notifyMatchFailure(op, "callee is not defined");
+    }
+    const auto& qubitArguments = getState().qubitArguments[callee];
+    const auto firstQubitResult = op.getNumResults() - qubitArguments.size();
+    auto resultAttrs = op.getResAttrsAttr();
+    if (resultAttrs &&
+        llvm::any_of(resultAttrs.getValue().take_back(qubitArguments.size()),
+                     [](Attribute attr) {
+                       return !cast<DictionaryAttr>(attr).empty();
+                     })) {
+      return op.emitOpError(
+          "cannot preserve attributes on pass-through qubit results in QC");
+    }
+
+    SmallVector<Type> keptResultTypes(op.getResultTypes());
+    keptResultTypes.resize(firstQubitResult);
+    SmallVector<Type> resultTypes;
+    if (failed(
+            getTypeConverter()->convertTypes(keptResultTypes, resultTypes))) {
+      return failure();
+    }
+    auto call = func::CallOp::create(rewriter, op.getLoc(), op.getCallee(),
+                                     resultTypes, adaptor.getOperands());
+    call->setAttrs(op->getAttrs());
+    if (resultAttrs) {
+      call.setResAttrsAttr(rewriter.getArrayAttr(
+          resultAttrs.getValue().take_front(firstQubitResult)));
+    }
+
+    SmallVector<Value> replacements;
+    llvm::append_range(replacements, call.getResults());
+    for (const auto argument : qubitArguments) {
+      replacements.emplace_back(adaptor.getOperands()[argument]);
+    }
+    rewriter.replaceOp(op, replacements);
+    return success();
+  }
+};
+
+struct ConvertQCOCallOp final : OpConversionPattern<qco::CallOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::CallOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (auto attrs = op.getResAttrsAttr();
+        attrs && llvm::any_of(attrs, [](Attribute attr) {
+          return !cast<DictionaryAttr>(attr).empty();
+        })) {
+      return op.emitOpError(
+          "cannot preserve unitary call result attributes in QC");
+    }
+    auto call = qc::CallOp::create(rewriter, op.getLoc(), op.getCalleeAttr(),
+                                   adaptor.getOperands());
+    call->setAttrs(op->getAttrs());
+    call.removeResAttrsAttr();
+    rewriter.replaceOp(op, adaptor.getOperands().take_back(op.getNumResults()));
+    return success();
   }
 };
 
@@ -1181,6 +1367,23 @@ protected:
 
     // Create state object to track the qubit addressing mode
     LoweringState state;
+    if (failed(collectFunctionQubitArguments(moduleOp, state))) {
+      signalPassFailure();
+      return;
+    }
+
+    SmallVector<func::FuncOp> unitaryFunctions;
+    for (auto function : moduleOp.getOps<func::FuncOp>()) {
+      if (mqt::isUnitaryFunction(function)) {
+        unitaryFunctions.emplace_back(function);
+        function->removeAttr(mqt::MQTDialect::UnitaryAttrHelper::getNameStr());
+      }
+    }
+    auto unitaryGuard = llvm::make_scope_exit([&] {
+      for (auto function : unitaryFunctions) {
+        mqt::setUnitaryFunction(function);
+      }
+    });
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
@@ -1231,31 +1434,30 @@ protected:
                  ConvertQTensorAllocOp, ConvertQCOAllocOp, ConvertQCOStaticOp,
                  ConvertQCOSinkOp>(typeConverter, context, &state);
 
-    // Conversion of qco types in func.func signatures
-    // Note: This currently has limitations with signature changes
-    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
-        patterns, typeConverter);
+    /// QCO qubit arguments are returned positionally and become in-place QC
+    /// references again.
+    patterns.add<ConvertFuncOp>(typeConverter, context, &state);
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
       return typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
     });
 
-    // Conversion of qco types in func.return
-    populateReturnOpTypeConversionPattern(patterns, typeConverter);
+    patterns.add<ConvertFuncReturnOp>(typeConverter, context, &state);
     target.addDynamicallyLegalOp<func::ReturnOp>(
         [&](func::ReturnOp op) { return typeConverter.isLegal(op); });
 
-    // Conversion of qco types in func.call
-    populateCallOpTypeConversionPattern(patterns, typeConverter);
+    patterns.add<ConvertFuncCallOp>(typeConverter, context, &state);
     target.addDynamicallyLegalOp<func::CallOp>(
         [&](func::CallOp op) { return typeConverter.isLegal(op); });
+
+    patterns.add<ConvertQCOCallOp>(typeConverter, context);
 
     // Conversion of qco types in control-flow ops (e.g., cf.br, cf.cond_br)
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
-    // Apply the conversion
     if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
       signalPassFailure();
+      return;
     }
   }
 };

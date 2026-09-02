@@ -14,8 +14,10 @@
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -29,6 +31,7 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
@@ -38,6 +41,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <array>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -86,6 +90,196 @@ static LogicalResult runQCOToQCConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCOToQC());
   return pm.run(module);
+}
+
+TEST(QCOToQCRegressionTest, StripsPositionalQubitResultsFromUnitaryCalls) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                  func::FuncDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @flip(%q: !qco.qubit) -> !qco.qubit
+      attributes {mqt.unitary} {
+    %out = qco.x %q : !qco.qubit -> !qco.qubit
+    return %out : !qco.qubit
+  }
+  func.func @main(%q: !qco.qubit) -> !qco.qubit
+      attributes {mqt.entry_point} {
+    %out = qco.call @flip(%q) : (!qco.qubit) -> !qco.qubit
+    return %out : !qco.qubit
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  for (auto function : module->getOps<func::FuncOp>()) {
+    EXPECT_EQ(function.getNumResults(), 0U);
+  }
+  std::size_t calls = 0;
+  module->walk([&](qc::CallOp) { ++calls; });
+  EXPECT_EQ(calls, 1U);
+}
+
+TEST(QCOToQCRegressionTest, StripsPositionalQubitResultsFromGenericCalls) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                  arith::ArithDialect, func::FuncDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @reset(%q: !qco.qubit) -> (i1, !qco.qubit) {
+    %out = qco.reset %q : !qco.qubit -> !qco.qubit
+    %flag = arith.constant true
+    return %flag, %out : i1, !qco.qubit
+  }
+  func.func @main(%q: !qco.qubit) -> (i1, !qco.qubit)
+      attributes {mqt.entry_point} {
+    %flag, %out = func.call @reset(%q)
+        : (!qco.qubit) -> (i1, !qco.qubit)
+    return %flag, %out : i1, !qco.qubit
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  for (auto function : module->getOps<func::FuncOp>()) {
+    ASSERT_EQ(function.getNumResults(), 1U);
+    EXPECT_TRUE(function.getResultTypes().front().isInteger(1));
+  }
+  auto main = mlir::mqt::getEntryPoint(*module);
+  ASSERT_TRUE(main);
+  auto call = *main.getBody().getOps<func::CallOp>().begin();
+  ASSERT_EQ(call.getNumResults(), 1U);
+  EXPECT_TRUE(call.getResult(0).getType().isInteger(1));
+}
+
+TEST(QCOToQCRegressionTest, RejectsUnrepresentableCallResultAttributes) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                  arith::ArithDialect, func::FuncDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"mlir(
+module {
+  func.func private @reset(%q: !qco.qubit) -> (i1, !qco.qubit) {
+    %out = qco.reset %q : !qco.qubit -> !qco.qubit
+    %flag = arith.constant true
+    return %flag, %out : i1, !qco.qubit
+  }
+  func.func @main(%q: !qco.qubit) -> (i1, !qco.qubit)
+      attributes {mqt.entry_point} {
+    %flag, %out = func.call @reset(%q) {
+        res_attrs = [{}, {tag = "wire"}]
+      } : (!qco.qubit) -> (i1, !qco.qubit)
+    return %flag, %out : i1, !qco.qubit
+  }
+}
+)mlir",
+      R"mlir(
+module {
+  func.func private @flip(%q: !qco.qubit) -> !qco.qubit
+      attributes {mqt.unitary} {
+    %out = qco.x %q : !qco.qubit -> !qco.qubit
+    return %out : !qco.qubit
+  }
+  func.func @main(%q: !qco.qubit) -> !qco.qubit
+      attributes {mqt.entry_point} {
+    %out = qco.call @flip(%q) {res_attrs = [{tag = "wire"}]}
+        : (!qco.qubit) -> !qco.qubit
+    return %out : !qco.qubit
+  }
+}
+)mlir",
+  });
+
+  for (const auto source : sources) {
+    auto module = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str()).contains("cannot preserve");
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCOToQCConversion(*module)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+TEST(QCOToQCRegressionTest, RejectsUnrepresentableFunctionResultAttributes) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                  arith::ArithDialect, func::FuncDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  qco::QCOProgramBuilder builder(&context);
+  builder.initialize();
+  auto function = builder.createFunction(
+      "passthrough", TypeRange{qco::QubitType::get(&context)},
+      [](ValueRange arguments) {
+        return SmallVector<Value>{arguments.front()};
+      });
+  function.setResultAttr(0, "test.tag", StringAttr::get(&context, "wire"));
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str()).contains("cannot preserve attributes");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCOToQCRegressionTest, RejectsNonPositionalQubitResults) {
+  DialectRegistry registry;
+  registry.insert<qco::QCODialect, func::FuncDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @swap(%left: !qco.qubit, %right: !qco.qubit)
+      -> (!qco.qubit, !qco.qubit) {
+    return %right, %left : !qco.qubit, !qco.qubit
+  }
+}
+)mlir";
+
+  auto module = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |= StringRef(diagnostic.str())
+                                 .contains("must return its qubit arguments "
+                                           "positionally");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
 TEST(QCOToQCRegressionTest, PreservesDynamicQTensorSlotSwapAcrossLoop) {

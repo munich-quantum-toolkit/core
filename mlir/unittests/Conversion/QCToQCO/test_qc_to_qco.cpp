@@ -11,6 +11,7 @@
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/ConversionUtils.h"
+#include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
@@ -18,6 +19,7 @@
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -46,6 +48,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Matchers.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Verifier.h>
@@ -109,6 +112,12 @@ protected:
 static LogicalResult runQCToQCOConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCToQCO());
+  return pm.run(module);
+}
+
+static LogicalResult runQCOToQCConversion(ModuleOp module) {
+  PassManager pm(module.getContext());
+  pm.addPass(createQCOToQC());
   return pm.run(module);
 }
 
@@ -852,10 +861,8 @@ module {
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
-TEST_F(QCToQCORegressionTest,
-       PreflightRejectsUnsupportedQuantumBlockArguments) {
-  constexpr auto sources = std::to_array<llvm::StringLiteral>({
-      R"mlir(
+TEST_F(QCToQCORegressionTest, ConvertsQubitFunctionArgumentsToTrailingResults) {
+  constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%q: !qc.qubit)
       attributes {mqt.entry_point} {
@@ -863,7 +870,162 @@ module {
     return
   }
 }
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  ASSERT_EQ(function.getNumArguments(), 1U);
+  EXPECT_TRUE(isa<qco::QubitType>(function.getArgument(0).getType()));
+  ASSERT_EQ(function.getNumResults(), 1U);
+  EXPECT_TRUE(isa<qco::QubitType>(function.getResultTypes().front()));
+  auto x = *function.getBody().front().getOps<qco::XOp>().begin();
+  EXPECT_EQ(
+      cast<func::ReturnOp>(function.getBody().front().back()).getOperand(0),
+      x.getQubitOut());
+}
+
+TEST_F(QCToQCORegressionTest, RoundTripsUnitaryFunctionCalls) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @flip(%q: !qc.qubit) attributes {mqt.unitary} {
+    qc.x %q : !qc.qubit
+    return
+  }
+  func.func private @reset(%q: !qc.qubit) -> i1 {
+    qc.reset %q : !qc.qubit
+    %flag = arith.constant true
+    return %flag : i1
+  }
+  func.func @main(%q: !qc.qubit) -> i1 attributes {mqt.entry_point} {
+    qc.call @flip(%q) {
+        arg_attrs = [{tag = "unitary-input"}], tag = "unitary-call"
+      }
+        : !qc.qubit
+    %flag = func.call @reset(%q) {
+        arg_attrs = [{tag = "generic-input"}], no_inline,
+        res_attrs = [{tag = "ordinary-result"}], tag = "generic-call"
+      } : (!qc.qubit) -> i1
+    return %flag : i1
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  SmallVector<qco::CallOp> qcoCalls;
+  moduleOp->walk([&](qco::CallOp call) { qcoCalls.emplace_back(call); });
+  ASSERT_EQ(qcoCalls.size(), 1U);
+  ASSERT_TRUE(qcoCalls.front().getArgAttrsAttr());
+  EXPECT_EQ(cast<DictionaryAttr>(qcoCalls.front().getArgAttrsAttr()[0])
+                .getAs<StringAttr>("tag")
+                .getValue(),
+            "unitary-input");
+  EXPECT_EQ(qcoCalls.front()->getAttrOfType<StringAttr>("tag").getValue(),
+            "unitary-call");
+  EXPECT_FALSE(qcoCalls.front().getResAttrsAttr());
+
+  SmallVector<func::CallOp> genericCalls;
+  moduleOp->walk([&](func::CallOp call) { genericCalls.emplace_back(call); });
+  ASSERT_EQ(genericCalls.size(), 1U);
+  EXPECT_TRUE(genericCalls.front().getNoInline());
+  EXPECT_EQ(genericCalls.front()->getAttrOfType<StringAttr>("tag").getValue(),
+            "generic-call");
+  ASSERT_EQ(genericCalls.front().getResAttrsAttr().size(), 2U);
+  EXPECT_EQ(cast<DictionaryAttr>(genericCalls.front().getResAttrsAttr()[0])
+                .getAs<StringAttr>("tag")
+                .getValue(),
+            "ordinary-result");
+  EXPECT_TRUE(
+      cast<DictionaryAttr>(genericCalls.front().getResAttrsAttr()[1]).empty());
+
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  std::size_t qcCalls = 0;
+  moduleOp->walk([&](qc::CallOp call) {
+    ++qcCalls;
+    ASSERT_TRUE(call.getArgAttrsAttr());
+    EXPECT_EQ(cast<DictionaryAttr>(call.getArgAttrsAttr()[0])
+                  .getAs<StringAttr>("tag")
+                  .getValue(),
+              "unitary-input");
+    EXPECT_EQ(call->getAttrOfType<StringAttr>("tag").getValue(),
+              "unitary-call");
+  });
+  EXPECT_EQ(qcCalls, 1U);
+  auto genericCall = *mlir::mqt::getEntryPoint(*moduleOp)
+                          .getBody()
+                          .getOps<func::CallOp>()
+                          .begin();
+  EXPECT_TRUE(genericCall.getNoInline());
+  EXPECT_EQ(genericCall->getAttrOfType<StringAttr>("tag").getValue(),
+            "generic-call");
+  ASSERT_EQ(genericCall.getResAttrsAttr().size(), 1U);
+  EXPECT_EQ(cast<DictionaryAttr>(genericCall.getResAttrsAttr()[0])
+                .getAs<StringAttr>("tag")
+                .getValue(),
+            "ordinary-result");
+  for (auto function : moduleOp->getOps<func::FuncOp>()) {
+    EXPECT_TRUE(isa<qc::QubitType>(function.getArgument(0).getType()));
+    EXPECT_EQ(function.getNumResults(), function.getName() == "flip" ? 0U : 1U);
+  }
+}
+
+TEST_F(QCToQCORegressionTest, PreflightRejectsAliasedAndDuplicateQubitResults) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"mlir(
+module {
+  func.func private @borrowed(%q: !qc.qubit) -> !qc.qubit {
+    return %q : !qc.qubit
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    return
+  }
+}
 )mlir",
+      R"mlir(
+module {
+  func.func private @duplicate() -> (!qc.qubit, !qc.qubit) {
+    %q = qc.alloc : !qc.qubit
+    return %q, %q : !qc.qubit, !qc.qubit
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    return
+  }
+}
+)mlir",
+  });
+  constexpr std::array<StringLiteral, 2> diagnostics{
+      "cannot return a borrowed qubit argument explicitly",
+      "cannot return the same qubit more than once"};
+
+  for (auto [source, expected] : llvm::zip_equal(sources, diagnostics)) {
+    auto module = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |= StringRef(diagnostic.str()).contains(expected);
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCToQCOConversion(*module)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+    EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+        module->getOperation(), original->getOperation(),
+        OperationEquivalence::Flags::None));
+  }
+}
+
+TEST_F(QCToQCORegressionTest,
+       PreflightRejectsUnsupportedQuantumRegisterBlockArguments) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
       R"mlir(
 module {
   func.func @main(%reg: memref<1x!qc.qubit>)
