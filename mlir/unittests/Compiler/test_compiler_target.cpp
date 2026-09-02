@@ -415,6 +415,30 @@ TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
   }
 }
 
+TEST(CompilerTargetTest, DerivesControlledEntanglersFromVariadicBases) {
+  constexpr std::array bases{
+      std::pair{std::string_view{"x"}, GateKind::CX},
+      std::pair{std::string_view{"z"}, GateKind::CZ},
+  };
+  const auto globalU = valid(Operation::create("u", 1, 3));
+
+  for (const auto& [base, entangler] : bases) {
+    SCOPED_TRACE(base);
+    const auto variadic =
+        valid(Operation::create(std::string{base}, Arity::variadic(1), 0));
+    const auto target = valid(
+        Target::create(2, Connectivity::allToAll(),
+                       NativeOperations::fromOperations({globalU, variadic})));
+
+    EXPECT_TRUE(target.supports(entangler));
+    EXPECT_TRUE(llvm::is_contained(target.supportedGates(), entangler));
+    ASSERT_TRUE(target.synthesisBasis());
+    EXPECT_EQ(target.synthesisBasis()->singleQubit,
+              Target::SingleQubitBasis::U);
+    EXPECT_EQ(target.synthesisBasis()->entangler, entangler);
+  }
+}
+
 TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
   mlir::DialectRegistry registry;
   registry.insert<mlir::qco::QCODialect, mlir::qtensor::QTensorDialect,

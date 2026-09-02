@@ -605,7 +605,15 @@ llvm::Error CompilerTarget::Storage::initialize() {
   }
 
   for (const auto& specification : GATE_SPECIFICATIONS) {
-    if (supportsOperation(specification.name, specification.arity,
+    const bool supportsControlledBase =
+        (specification.kind == GateKind::CX &&
+         supportsVariadicOperation("x", specification.arity,
+                                   specification.numParameters)) ||
+        (specification.kind == GateKind::CZ &&
+         supportsVariadicOperation("z", specification.arity,
+                                   specification.numParameters));
+    if (supportsControlledBase ||
+        supportsOperation(specification.name, specification.arity,
                           specification.numParameters)) {
       supportedGates.emplace_back(specification.kind);
     }
