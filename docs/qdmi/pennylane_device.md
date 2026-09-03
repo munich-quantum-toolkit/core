@@ -72,6 +72,14 @@ Core reports the OpenQASM 3 error rather than retrying with OpenQASM 2. A device
 that advertises only OpenQASM 2 uses PennyLane's `qp.to_openqasm` serializer
 after device preprocessing.
 
+The converter reuses successful capability checks for each gate and wire
+location within its device session. Every circuit still validates its own
+parameters and wire arguments. Open a new device session to use changed
+capabilities or topology.
+
+QDMI waits and sample/count retrieval release the Python GIL, allowing unrelated
+Python threads to run while a provider waits or downloads results.
+
 ## End-to-end use case: finite-shot MaxCut QAOA
 
 Consider MaxCut on the fixed graph with $E=\{(0,1),(0,2),(1,2),(2,3)\}$.
