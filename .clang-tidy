@@ -21,6 +21,7 @@ Checks: |
   google-*,
   -google-readability-todo,
   -google-build-using-namespace,
+  llvm-formatv-string,
   misc-*,
   -misc-no-recursion,
   -misc-non-private-member-variables-in-classes,
