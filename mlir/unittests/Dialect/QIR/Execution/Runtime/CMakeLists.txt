@@ -30,6 +30,7 @@ macro(ADD_QIR_CIRCUIT target_name circuit_path)
       DEPENDS ${circuit_path}
       COMMENT "Compiling ${circuit_path} to ${circuit_name}.o with llc")
     add_executable(${target_name} ${circuit_name}.o)
+    set_property(TARGET ${target_name} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
     target_link_libraries(${target_name} PRIVATE MQT::CoreQIRRuntime)
     set_target_properties(${target_name} PROPERTIES LINKER_LANGUAGE CXX)
   endif()

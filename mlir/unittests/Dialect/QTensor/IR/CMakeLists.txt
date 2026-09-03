@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 set(qtensor_ir_target mqt-core-mlir-unittest-qtensor-ir)
-add_executable(${qtensor_ir_target} test_qtensor_ir.cpp)
+add_executable(${qtensor_ir_target} test_qtensor_canonicalization.cpp test_qtensor_ir.cpp)
 target_link_libraries(${qtensor_ir_target} PRIVATE GTest::gtest_main MLIRParser MLIRSupportMQT
                                                    MLIRQCOProgramBuilder MLIRQCOPrograms)
 mqt_mlir_configure_unittest_target(${qtensor_ir_target})
