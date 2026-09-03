@@ -1,8 +1,8 @@
 #include "mlir/Dialect/QCO/Utils/Sorting.h"
 
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/Block.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
@@ -33,8 +33,8 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
   // Construct unresolved map: The dependencies of each operation.
 
   DenseMap<Operation*, size_t> inDegree;
-  DenseMap<Operation*, SmallVector<Operation*>> successors;
-  DenseMap<Operation*, SmallVector<Operation*>> predecessors;
+  DenseMap<Operation*, llvm::SmallDenseSet<Operation*, 16>> successors;
+  DenseMap<Operation*, llvm::SmallDenseSet<Operation*, 16>> predecessors;
 
   for (Operation& op : block) {
 
@@ -47,8 +47,8 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
     for (Value v : op.getOperands()) {
       Operation* def = v.getDefiningOp();
       if (def != nullptr && v.getParentBlock() == &block &&
-          !is_contained(pres, def)) {
-        pres.emplace_back(def);
+          !pres.contains(def)) {
+        pres.insert(def);
         ++inDegree[&op];
       }
     }
@@ -60,8 +60,8 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
 
     for (Operation* user : op.getUsers()) {
       if (user->getBlock() == &block) {
-        if (!is_contained(succs, user)) {
-          succs.emplace_back(user);
+        if (!succs.contains(user)) {
+          succs.insert(user);
         }
         continue;
       }
@@ -70,13 +70,13 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
           parent != nullptr) {
 
         auto& parentPre = predecessors[parent];
-        if (!is_contained(parentPre, &op)) {
-          parentPre.emplace_back(&op);
+        if (!parentPre.contains(&op)) {
+          parentPre.insert(&op);
           ++inDegree[parent];
         }
 
-        if (!is_contained(succs, parent)) {
-          succs.emplace_back(parent);
+        if (!succs.contains(parent)) {
+          succs.insert(parent);
         }
       }
     }
