@@ -29,10 +29,10 @@ namespace mlir {
  *
  * @details The returned target owns all queried metadata and remains valid
  * after the originating device and session have been destroyed. Neutral-atom
- * zone models are not supported. Explicit QDMI site lists are accepted for
- * one- and two-qubit operations only: one-qubit lists must cover every site and
- * two-qubit lists every undirected topology edge. Their ordered tuples and
- * calibration data are preserved.
+ * zone models are not supported. Explicit QDMI site lists must cover every
+ * site for one-qubit operations, every undirected topology edge for two-qubit
+ * operations, and every ordered tuple of distinct sites for higher arities.
+ * Their ordered applicability and calibration data are preserved separately.
  */
 [[nodiscard]] llvm::Expected<CompilerTarget>
 compilerTargetFromDevice(const qdmi::Device& device);

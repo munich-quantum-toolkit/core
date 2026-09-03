@@ -265,6 +265,27 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
                                               valid(SiteTuple::create({0}))}),
                 "Compiler target operation contains a duplicate site tuple");
   expectInvalid(
+      Operation::create("x", 1, 0, {}, std::nullopt, std::nullopt,
+                        std::vector<std::vector<SiteId>>{{-1}}),
+      "Compiler target operation applicable site tuple contains a negative "
+      "site ID");
+  expectInvalid(
+      Operation::create("cx", 2, 0, {}, std::nullopt, std::nullopt,
+                        std::vector<std::vector<SiteId>>{{0, 0}}),
+      "Compiler target operation applicable site tuple contains a duplicate "
+      "site");
+  expectInvalid(
+      Operation::create("cx", 2, 0, {}, std::nullopt, std::nullopt,
+                        std::vector<std::vector<SiteId>>{{0}}),
+      "Compiler target operation applicable site tuple does not match its "
+      "arity");
+  expectInvalid(
+      Operation::create("x", 1, 0, std::vector{valid(SiteTuple::create({0}))},
+                        std::nullopt, std::nullopt,
+                        std::vector<std::vector<SiteId>>{{1}}),
+      "Compiler target operation calibration references an inapplicable site "
+      "tuple");
+  expectInvalid(
       Operation::create("x", 1, 0, {}, std::nullopt,
                         std::numeric_limits<double>::quiet_NaN()),
       "Compiler target operation fidelity must be finite and in [0, 1]");
@@ -311,6 +332,13 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
           NativeOperations::fromOperations({valid(Operation::create(
               "x", 1, 0, std::vector{valid(SiteTuple::create({2}))}))})),
       "Compiler target operation site tuple references an unknown site");
+  expectInvalid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({valid(Operation::create(
+                         "x", 1, 0, {}, std::nullopt, std::nullopt,
+                         std::vector<std::vector<SiteId>>{{2}}))})),
+      "Compiler target operation applicable site tuple references an unknown "
+      "site");
   expectInvalid(Target::create(1, Connectivity::allToAll(),
                                NativeOperations::fromOperations(
                                    {valid(Operation::create("cx", 2, 0))})),
@@ -428,6 +456,32 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
   EXPECT_EQ(reconstructed.operations()[2].arity(), Arity::fixed(0));
   EXPECT_EQ(reconstructed.operations()[3].arity(), Arity::variadic(1));
   EXPECT_EQ(reconstructed.synthesisBasis(), target.synthesisBasis());
+}
+
+TEST(CompilerTargetTest, SupportsMaximumSiteIds) {
+  constexpr auto maxSite = std::numeric_limits<SiteId>::max();
+  constexpr auto nextSite = maxSite - 1;
+  std::vector sites{valid(Site::create(nextSite)),
+                    valid(Site::create(maxSite))};
+  const auto x = valid(Operation::create(
+      "x", 1, 0, std::vector{valid(SiteTuple::create({maxSite}))}, std::nullopt,
+      std::nullopt, std::vector<std::vector<SiteId>>{{nextSite}, {maxSite}}));
+  const auto cx = valid(Operation::create(
+      "cx", 2, 0, std::vector{valid(SiteTuple::create({nextSite, maxSite}))},
+      std::nullopt, std::nullopt,
+      std::vector<std::vector<SiteId>>{{nextSite, maxSite}}));
+  const auto target =
+      valid(Target::create(std::move(sites), Connectivity::allToAll(),
+                           NativeOperations::fromOperations({x, cx})));
+
+  EXPECT_TRUE(target.supports(GateKind::X, {nextSite}));
+  EXPECT_TRUE(target.supports(GateKind::X, {maxSite}));
+  EXPECT_TRUE(target.supports(GateKind::CX, {nextSite, maxSite}));
+
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto attribute = target.materialize(context);
+  EXPECT_EQ(valid(Target::create(attribute)).materialize(context), attribute);
 }
 
 TEST(CompilerTargetTest, RoundTripsSupportedTargetStates) {
@@ -560,6 +614,19 @@ TEST(CompilerTargetTest, DerivesControlledEntanglersFromVariadicBases) {
               Target::SingleQubitBasis::U);
     EXPECT_EQ(target.synthesisBasis()->entangler, entangler);
   }
+}
+
+TEST(CompilerTargetTest, ResolvesLargeAllToAllVariadicBasis) {
+  constexpr size_t numSites = 65'535;
+  const auto target = valid(Target::create(
+      numSites, Connectivity::allToAll(),
+      NativeOperations::fromOperations(
+          {valid(Operation::create("u", 1, 3)),
+           valid(Operation::create("x", Arity::variadic(1), 0))})));
+
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_EQ(target.synthesisBasis()->singleQubit, Target::SingleQubitBasis::U);
+  EXPECT_EQ(target.synthesisBasis()->entangler, GateKind::CX);
 }
 
 TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {

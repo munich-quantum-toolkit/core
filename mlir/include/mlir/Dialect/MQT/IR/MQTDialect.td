@@ -84,6 +84,14 @@ def OperationArityKind
   let genSpecializedAttr = 0;
 }
 
+def OperationApplicabilityKind
+    : I32EnumAttr<"OperationApplicabilityKind", "Operation applicability",
+                  [I32EnumAttrCase<"Unrestricted", 0, "unrestricted">,
+                   I32EnumAttrCase<"Explicit", 1, "explicit">]> {
+  let cppNamespace = "::mlir::mqt";
+  let genSpecializedAttr = 0;
+}
+
 def DurationUnitAttr : MQTAttr<"DurationUnit", "duration_unit"> {
   let summary = "Unit for raw compiler-target durations";
   let description = [{
@@ -124,13 +132,26 @@ def CouplingAttr : MQTAttr<"Coupling", "coupling"> {
 def SiteTupleAttr : MQTAttr<"SiteTuple", "site_tuple"> {
   let summary = "Calibration data for an ordered site tuple";
   let description = [{
-    The tuple defines one placement of a native operation. For example,
+    The tuple records calibration for one ordered placement without constraining
+    operation applicability. For example,
     `#mqt.site_tuple<sites = [4, 7], duration = 40>` records an ordered
     two-site placement with a raw duration of 40.
   }];
   let parameters = (ins MQTArrayRefParameter<"int64_t">:$sites,
       MQTOptionalUInt64Parameter<>:$duration,
       OptionalParameter<"FloatAttr">:$fidelity);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def ApplicableSiteTupleAttr
+    : MQTAttr<"ApplicableSiteTuple", "applicable_site_tuple"> {
+  let summary = "One ordered site tuple supporting an operation";
+  let description = [{
+    The tuple records one exact ordered placement on which a native operation
+    is available. Unlike `#mqt.site_tuple`, it carries no calibration data.
+  }];
+  let parameters = (ins MQTArrayRefParameter<"int64_t">:$sites);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
 }
@@ -153,20 +174,24 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
   let summary = "One native compiler-target operation";
   let description = [{
     The operation records its spelling, arity, parameter count, and optional
-    global or site-specific calibration data. The following example records a
-    placed controlled-X operation:
+    global or site-specific calibration data. Applicability is either
+    unrestricted or an explicit list of exact ordered site tuples. The
+    following example records a directional controlled-X operation:
 
     ```mlir
     #mqt.native_operation<name = "cx",
         arity = #mqt.operation_arity<kind = fixed, value = 2>,
-        num_parameters = 0, site_tuples = [<sites = [4, 7]>]>
+        num_parameters = 0, site_tuples = [], applicability = explicit,
+        applicable_site_tuples = [<sites = [4, 7]>]>
     ```
   }];
   let parameters = (ins "StringAttr":$name, "OperationArityAttr":$arity,
       "uint64_t":$num_parameters,
       MQTArrayRefParameter<"SiteTupleAttr">:$site_tuples,
       MQTOptionalUInt64Parameter<>:$duration,
-      OptionalParameter<"FloatAttr">:$fidelity);
+      OptionalParameter<"FloatAttr">:$fidelity,
+      EnumParameter<OperationApplicabilityKind>:$applicability,
+      MQTArrayRefParameter<"ApplicableSiteTupleAttr">:$applicable_site_tuples);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
 }
@@ -188,7 +213,8 @@ def CompilationTargetAttr : MQTAttr<"CompilationTarget", "compilation_target"> {
         native_operations = explicit,
         operations = [<name = "cx",
             arity = #mqt.operation_arity<kind = fixed, value = 2>,
-            num_parameters = 0, site_tuples = []>]>
+            num_parameters = 0, site_tuples = [], applicability = explicit,
+            applicable_site_tuples = [<sites = [4, 7]>]>]>
     ```
   }];
   let parameters = (ins OptionalParameter<"StringAttr">:$name,

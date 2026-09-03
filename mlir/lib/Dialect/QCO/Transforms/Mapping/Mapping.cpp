@@ -10,8 +10,7 @@
 
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
-#include "mlir/Compiler/Target.h"
-#include "mlir/Compiler/TargetCost.h"
+#include "mlir/Compiler/MappingTarget.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -53,7 +52,6 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <iterator>
 #include <memory>
@@ -440,25 +438,20 @@ private:
     /// Construct a non-root node from its parent node. Apply the given swap to
     /// the layout of the parent node.
     Node(Node* parent, const IndexPairType& swap, const Window& window,
-         const CompilerTarget& target, const TargetGateCosts* gateCosts,
-         const Parameters& params)
+         const MappingTarget& target, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
           depth(parent->depth + 1), f(0) {
       layout.swap(swap.first, swap.second);
-      f = g(params.alpha) + h(window, target, gateCosts, params); // NOLINT
+      f = g(params.alpha) + h(window, target, params); // NOLINT
     }
 
     /// Return true, if the current SWAP sequence makes all gates in the front
     /// executable.
     [[nodiscard]] bool isGoal(const IndexPairType& front,
-                              const CompilerTarget& target,
-                              const TargetGateCosts* gateCosts) const {
+                              const MappingTarget& target) const {
       const auto [hw0, hw1] =
           layout.getHardwareIndices(front.first, front.second);
-      if (gateCosts != nullptr) {
-        return gateCosts->routingCostBetween(hw0, hw1) == 0.F;
-      }
-      return target.areAdjacent(hw0, hw1);
+      return target.isExecutable(hw0, hw1);
     }
 
   private:
@@ -475,19 +468,14 @@ private:
     /// between its hardware qubits. Intuitively, this is the number of SWAPs
     /// that a naive router would insert to route the layers (with a constant
     /// layout).
-    [[nodiscard]] float h(const Window& window, const CompilerTarget& target,
-                          const TargetGateCosts* gateCosts,
+    [[nodiscard]] float h(const Window& window, const MappingTarget& target,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
 
       for (const auto& [prog0, prog1] : window) {
         const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-        const auto routingCost =
-            gateCosts != nullptr
-                ? gateCosts->routingCostBetween(hw0, hw1)
-                : static_cast<float>(target.distanceBetween(hw0, hw1) - 1);
-        costs += decay * routingCost;
+        costs += decay * target.pathCostBetween(hw0, hw1);
         decay *= params.lambda;
       }
       return costs;
@@ -496,7 +484,7 @@ private:
 
   /// Describes the graph F of arXiv:1602.05150v3.
   struct FGraph {
-    explicit FGraph(const CompilerTarget& target)
+    explicit FGraph(const MappingTarget& target)
         : f_(llvm::to_vector(llvm::seq(target.numSites()))),
           target_(&target) {};
 
@@ -563,7 +551,7 @@ private:
     }
 
     Graph f_;
-    const CompilerTarget* target_;
+    const MappingTarget* target_;
   };
 
 public:
@@ -577,14 +565,7 @@ public:
   /// Construct mapping for a compiler target.
   explicit MappingPass(const CompilerTarget& compilerTarget,
                        const MappingPassOptions& options)
-      : MappingPassBase(options), target(compilerTarget) {
-    if (const auto basis = compilerTarget.synthesisBasis()) {
-      gateCosts.emplace(compilerTarget, basis->entangler);
-      if (gateCosts->isUniform()) {
-        gateCosts.reset();
-      }
-    }
-  }
+      : MappingPassBase(options), target(compilerTarget) {}
 
 protected:
   void runOnOperation() override {
@@ -597,7 +578,7 @@ protected:
     }
 
     auto moduleOp = getOperation();
-    if (target->connectivityKind() !=
+    if (target->compilerTarget().connectivityKind() !=
         CompilerTarget::Connectivity::Kind::Explicit) {
       moduleOp.emitError()
           << "place-and-route requires an explicit target topology";
@@ -619,7 +600,7 @@ protected:
 
     auto computation = discoverComputation(func);
     if (failed(computation) ||
-        failed(checkCapacity(func, *target, *computation))) {
+        failed(checkCapacity(func, target->compilerTarget(), *computation))) {
       signalPassFailure();
       return;
     }
@@ -635,8 +616,8 @@ protected:
     }
 
     IRRewriter rewriter(&getContext());
-    std::tie(wires, infos) = std::move(
-        applyPlacement(body, *target, *layout, *computation, rewriter));
+    std::tie(wires, infos) = std::move(applyPlacement(
+        body, target->compilerTarget(), *layout, *computation, rewriter));
 
     RoutingBundle bundle{.wires = std::move(wires),
                          .infos = std::move(infos),
@@ -940,8 +921,7 @@ private:
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
 
-      if (curr->isGoal(window.front(), *target,
-                       gateCosts ? &*gateCosts : nullptr)) {
+      if (curr->isGoal(window.front(), *target)) {
         SmallVector<IndexPairType> seq(curr->depth);
         size_t j = seq.size() - 1;
         for (const Node* n = curr; n->parent != nullptr; n = n->parent) {
@@ -959,9 +939,6 @@ private:
       for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->layout.getHardwareIndex(prog);
         target->forEachNeighbour(hw0, [&](const auto hw1) {
-          if (!canSwap(hw0, hw1)) {
-            return;
-          }
           // Ensure consistent hashing/comparison.
           const IndexPairType swap = std::minmax(hw0, hw1);
           if (is_contained(expansionSet, swap)) {
@@ -969,9 +946,8 @@ private:
           }
           expansionSet.push_back(swap);
 
-          frontier.emplace(
-              std::construct_at(arena.Allocate(), curr, swap, window, *target,
-                                gateCosts ? &*gateCosts : nullptr, params));
+          frontier.emplace(std::construct_at(arena.Allocate(), curr, swap,
+                                             window, *target, params));
         });
       }
 
@@ -1105,20 +1081,22 @@ private:
     return curr;
   }
 
-  [[nodiscard]] static IndexPairType
-  orderedPrograms(UnitaryOpInterface unitary, const ArrayRef<size_t> indices,
-                  const Wires& wires, const WireInfos& infos) {
+  [[nodiscard]] static IndexPairType orderedPrograms(UnitaryOpInterface unitary,
+                                                     ArrayRef<size_t> indices,
+                                                     const Wires& wires,
+                                                     const WireInfos& infos) {
     assert(unitary.getNumQubits() == 2 && indices.size() == 2 &&
            "expected a ready two-qubit operation");
-    const auto programForOutput = [&](Value output) {
-      const auto* const found = llvm::find_if(indices, [&](const size_t index) {
-        return wires[index].qubit() == output;
-      });
-      assert(found != indices.end() && "operation result has no ready wire");
-      return infos.lookupProgram(*found);
-    };
-    return {programForOutput(unitary.getOutputQubit(0)),
-            programForOutput(unitary.getOutputQubit(1))};
+    const bool reversed =
+        wires[indices.front()].qubit() == unitary.getOutputQubit(1);
+    assert(wires[indices.front()].qubit() ==
+               unitary.getOutputQubit(reversed ? 1 : 0) &&
+           wires[indices.back()].qubit() ==
+               unitary.getOutputQubit(reversed ? 0 : 1) &&
+           "ready wires do not match operation results");
+    const IndexPairType programs{infos.lookupProgram(indices.front()),
+                                 infos.lookupProgram(indices.back())};
+    return reversed ? IndexPairType{programs.second, programs.first} : programs;
   }
 
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
@@ -1176,20 +1154,9 @@ private:
   /// Insert SWAP operations, exchanging two qubits, virtually
   /// (`RoutingMode::Cold`) or into the IR (`RoutingMode::Hot`). The function
   /// expects that each wire points at the correct insertion point.
-  [[nodiscard]] bool canSwap(const size_t hw0, const size_t hw1) const {
-    return !gateCosts || std::isfinite(gateCosts->routingCostBetween(hw0, hw1));
-  }
-
   template <RoutingMode Mode>
-  LogicalResult insertSWAPs(ArrayRef<IndexPairType> swaps,
-                            RoutingBundle& bundle, Statistics& stats,
-                            IRRewriter* rewriter) {
-    if (llvm::any_of(swaps, [&](const auto& swap) {
-          return !canSwap(swap.first, swap.second);
-        })) {
-      return failure();
-    }
-
+  static void insertSWAPs(ArrayRef<IndexPairType> swaps, RoutingBundle& bundle,
+                          Statistics& stats, IRRewriter* rewriter) {
     auto& [wires, infos, layout] = bundle;
     for (const auto& [hw0, hw1] : swaps) {
       const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
@@ -1225,7 +1192,6 @@ private:
     }
 
     stats.nswaps += swaps.size();
-    return success();
   }
 
   /// Advance past all executable gates and return operations with nested
@@ -1259,10 +1225,7 @@ private:
                           orderedPrograms(unitary, indices, wires, infos);
                       const auto [hw0, hw1] =
                           layout.getHardwareIndices(prog0, prog1);
-                      return gateCosts
-                                 ? gateCosts->routingCostBetween(hw0, hw1) ==
-                                       0.F
-                                 : target->areAdjacent(hw0, hw1);
+                      return target->isExecutable(hw0, hw1);
                     })
                 .template Case<ResetOp>([](auto&) { return true; })
                 .template Case<MeasureOp>([](MeasureOp& m) {
@@ -1602,19 +1565,16 @@ private:
     // using the restore (scf::ForOp, scf::While), converge (IfOp), and vote
     // and restore (IndexSwitchOp) strategies.
 
-    bool swapInsertionFailed = false;
     Layout exit =
         TypeSwitch<Operation*, Layout>(op)
             .Case<scf::ForOp>([&](scf::ForOp) {
               const auto swaps = restore(children[0].layout, parent.layout);
-              swapInsertionFailed = failed(
-                  insertSWAPs<Mode>(swaps, children[0], totalStats, rewriter));
+              insertSWAPs<Mode>(swaps, children[0], totalStats, rewriter);
               return parent.layout;
             })
             .template Case<scf::WhileOp>([&](scf::WhileOp) {
               const auto swaps = restore(children[1].layout, parent.layout);
-              swapInsertionFailed = failed(
-                  insertSWAPs<Mode>(swaps, children[1], totalStats, rewriter));
+              insertSWAPs<Mode>(swaps, children[1], totalStats, rewriter);
               // The scf::YieldOp is the terminator in the before region and
               // thus determines the final output layout.
               return children[0].layout;
@@ -1622,11 +1582,8 @@ private:
             .template Case<IfOp>([&](IfOp) {
               const auto [convergedLayout, fst, snd] =
                   converge(children[0].layout, children[1].layout);
-              swapInsertionFailed =
-                  failed(insertSWAPs<Mode>(fst, children[0], totalStats,
-                                           rewriter)) ||
-                  failed(insertSWAPs<Mode>(snd, children[1], totalStats,
-                                           rewriter));
+              insertSWAPs<Mode>(fst, children[0], totalStats, rewriter);
+              insertSWAPs<Mode>(snd, children[1], totalStats, rewriter);
               return convergedLayout;
             })
             .template Case<IndexSwitchOp>([&](IndexSwitchOp) {
@@ -1636,18 +1593,10 @@ private:
                   }));
               for (RoutingBundle& child : children) {
                 const auto swaps = restore(child.layout, compromise);
-                if (failed(insertSWAPs<Mode>(swaps, child, totalStats,
-                                             rewriter))) {
-                  swapInsertionFailed = true;
-                  break;
-                }
+                insertSWAPs<Mode>(swaps, child, totalStats, rewriter);
               }
               return compromise;
             });
-
-    if (swapInsertionFailed) {
-      return failure();
-    }
 
     if constexpr (Mode == RoutingMode::Hot) {
       // Realign terminator values to ensure that i-th input qubit and the
@@ -1772,9 +1721,7 @@ private:
         for_each(wires, [](auto& it) { std::ranges::advance(it, -1); });
       }
 
-      if (failed(insertSWAPs<Mode>(*swaps, bundle, stats, rewriter))) {
-        return failure();
-      }
+      insertSWAPs<Mode>(*swaps, bundle, stats, rewriter);
 
       if constexpr (Mode == RoutingMode::Hot) {
 
@@ -1792,8 +1739,7 @@ private:
     return stats;
   }
 
-  std::optional<CompilerTarget> target;
-  std::optional<TargetGateCosts> gateCosts;
+  std::optional<MappingTarget> target;
 };
 
 } // namespace

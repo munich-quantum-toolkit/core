@@ -494,12 +494,17 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     assert site_tuple.sites == [10, 20]
     assert len(operation.site_tuples) == 1
     assert operation.site_tuples[0].sites == [10, 20]
-    assert operation.has_explicit_applicability
     assert operation.applicable_site_tuples == [[10, 20]]
-    assert not CompilerTarget.Operation("x", 1, 0).has_explicit_applicability
+    assert CompilerTarget.Operation("x", 1, 0).applicable_site_tuples is None
     explicitly_unavailable = CompilerTarget.Operation("ecr", 2, 0, applicable_site_tuples=[])
-    assert explicitly_unavailable.has_explicit_applicability
     assert explicitly_unavailable.applicable_site_tuples == []
+    explicitly_unavailable_target = CompilerTarget(
+        2,
+        connectivity=connectivity,
+        native_operations=CompilerTarget.NativeOperations([explicitly_unavailable]),
+    )
+    assert targets[0].supports_operation("ecr", 2, sites=[0, 1])
+    assert not explicitly_unavailable_target.supports_operation("ecr", 2, sites=[0, 1])
     assert targets[2].supports_operation("cx", 2, sites=[10, 20])
     assert not targets[2].supports_operation("cx", 2, sites=[20, 10])
     assert operation.arity.kind == CompilerTarget.OperationArityKind.FIXED
@@ -548,6 +553,18 @@ def test_compiler_target_construction_preserves_validation_errors() -> None:
             CompilerTarget.OperationArity.variadic(2),
             0,
             site_tuples=[CompilerTarget.SiteTuple([0, 1])],
+        )
+    with pytest.raises(ValueError, match="applicable site tuple does not match its arity"):
+        CompilerTarget.Operation("cx", 2, 0, applicable_site_tuples=[[0]])
+    with pytest.raises(ValueError, match="applicable site tuple contains a duplicate site"):
+        CompilerTarget.Operation("cx", 2, 0, applicable_site_tuples=[[0, 0]])
+    with pytest.raises(ValueError, match="calibration references an inapplicable site tuple"):
+        CompilerTarget.Operation(
+            "cx",
+            2,
+            0,
+            site_tuples=[CompilerTarget.SiteTuple([0, 1])],
+            applicable_site_tuples=[[1, 0]],
         )
 
 
@@ -601,6 +618,7 @@ def _compiler_target_metadata(target: CompilerTarget) -> dict[str, object]:
                 operation.num_parameters,
                 operation.duration,
                 operation.fidelity,
+                operation.applicable_site_tuples,
                 [(site_tuple.sites, site_tuple.duration, site_tuple.fidelity) for site_tuple in operation.site_tuples],
             )
             for operation in target.operations

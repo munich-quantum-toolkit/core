@@ -654,17 +654,19 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                 operation.siteTuples().begin(), operation.siteTuples().end());
           },
           "Ordered site-specific calibration data.")
-      .def_prop_ro("has_explicit_applicability",
-                   &mlir::CompilerTarget::Operation::hasExplicitApplicability,
-                   "Whether ordered site applicability is explicit.")
       .def_prop_ro(
           "applicable_site_tuples",
-          [](const mlir::CompilerTarget::Operation& operation) {
+          [](const mlir::CompilerTarget::Operation& operation)
+              -> std::optional<
+                  std::vector<std::vector<mlir::CompilerTarget::SiteId>>> {
+            if (!operation.hasExplicitApplicability()) {
+              return std::nullopt;
+            }
             return std::vector<std::vector<mlir::CompilerTarget::SiteId>>(
                 operation.applicableSiteTuples().begin(),
                 operation.applicableSiteTuples().end());
           },
-          "The explicitly applicable ordered target-site tuples.")
+          "The ordered target-site tuples, or None when unrestricted.")
       .def_prop_ro("duration", &mlir::CompilerTarget::Operation::duration,
                    "The raw default duration, if available.")
       .def_prop_ro("fidelity", &mlir::CompilerTarget::Operation::fidelity,

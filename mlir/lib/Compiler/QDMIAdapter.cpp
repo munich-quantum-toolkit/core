@@ -273,13 +273,27 @@ snapshotDurationUnit(const qdmi::Device& device) {
   return std::optional<CompilerTarget::DurationUnit>(std::move(*durationUnit));
 }
 
-[[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::SiteTuple>>
-snapshotSiteTuples(const qdmi::Operation& operation, size_t arity,
-                   const std::vector<qdmi::Site>& flattenedSites,
-                   std::optional<uint64_t> defaultDuration,
-                   std::optional<double> defaultFidelity) {
-  std::vector<CompilerTarget::SiteTuple> siteTuples;
-  siteTuples.reserve(flattenedSites.size() / arity);
+namespace {
+
+struct OperationSiteSnapshot {
+  std::vector<CompilerTarget::SiteTuple> calibration;
+  std::optional<std::vector<std::vector<CompilerTarget::SiteId>>> applicability;
+};
+
+} // namespace
+
+[[nodiscard]] static llvm::Expected<OperationSiteSnapshot>
+snapshotOperationSites(const qdmi::Operation& operation, size_t arity,
+                       const std::vector<qdmi::Site>& flattenedSites,
+                       std::optional<uint64_t> defaultDuration,
+                       std::optional<double> defaultFidelity,
+                       bool preserveApplicability) {
+  OperationSiteSnapshot result;
+  result.calibration.reserve(flattenedSites.size() / arity);
+  if (preserveApplicability) {
+    result.applicability.emplace();
+    result.applicability->reserve(flattenedSites.size() / arity);
+  }
   for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
     std::vector<qdmi::Site> sites;
     std::vector<CompilerTarget::SiteId> siteIds;
@@ -297,37 +311,23 @@ snapshotSiteTuples(const qdmi::Operation& operation, size_t arity,
 
     const auto duration = operation.getDuration(sites);
     const auto fidelity = operation.getFidelity(sites);
-    if (duration != defaultDuration || fidelity != defaultFidelity) {
+    const bool hasSiteCalibration =
+        duration != defaultDuration || fidelity != defaultFidelity;
+    if (hasSiteCalibration) {
+      if (result.applicability) {
+        result.applicability->emplace_back(siteIds);
+      }
       auto siteTuple = CompilerTarget::SiteTuple::create(std::move(siteIds),
                                                          duration, fidelity);
       if (!siteTuple) {
         return siteTuple.takeError();
       }
-      siteTuples.emplace_back(std::move(*siteTuple));
+      result.calibration.emplace_back(std::move(*siteTuple));
+    } else if (result.applicability) {
+      result.applicability->emplace_back(std::move(siteIds));
     }
   }
-  return siteTuples;
-}
-
-[[nodiscard]] static llvm::Expected<
-    std::vector<std::vector<CompilerTarget::SiteId>>>
-snapshotApplicableSiteTuples(size_t arity,
-                             const std::vector<qdmi::Site>& flattenedSites) {
-  std::vector<std::vector<CompilerTarget::SiteId>> applicableSiteTuples;
-  applicableSiteTuples.reserve(flattenedSites.size() / arity);
-  for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
-    std::vector<CompilerTarget::SiteId> siteIds;
-    siteIds.reserve(arity);
-    for (size_t index = 0; index < arity; ++index) {
-      auto siteId = checkedSiteId(flattenedSites[offset + index].getIndex());
-      if (!siteId) {
-        return siteId.takeError();
-      }
-      siteIds.emplace_back(*siteId);
-    }
-    applicableSiteTuples.emplace_back(std::move(siteIds));
-  }
-  return applicableSiteTuples;
+  return result;
 }
 
 [[nodiscard]] static llvm::Expected<CompilerTarget::NativeOperations>
@@ -383,19 +383,14 @@ snapshotOperations(
                                          deviceSites, couplings, deviceName)) {
         return error;
       }
-      auto tuples = snapshotSiteTuples(operation, *arity, *flattenedSites,
-                                       duration, fidelity);
+      auto tuples =
+          snapshotOperationSites(operation, *arity, *flattenedSites, duration,
+                                 fidelity, !hasArbitraryPositiveControls);
       if (!tuples) {
         return tuples.takeError();
       }
-      siteTuples = std::move(*tuples);
-      if (!hasArbitraryPositiveControls) {
-        auto applicable = snapshotApplicableSiteTuples(*arity, *flattenedSites);
-        if (!applicable) {
-          return applicable.takeError();
-        }
-        applicableSiteTuples = std::move(*applicable);
-      }
+      siteTuples = std::move(tuples->calibration);
+      applicableSiteTuples = std::move(tuples->applicability);
     }
     if (auto error = requireRepresentableOperation(
             !hasArbitraryPositiveControls || siteTuples.empty(), deviceName,

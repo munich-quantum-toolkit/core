@@ -39,6 +39,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 using namespace mlir;
@@ -125,7 +126,7 @@ SiteTupleAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
                       const ArrayRef<int64_t> sites,
                       const std::optional<uint64_t> /*duration*/,
                       const FloatAttr fidelity) {
-  llvm::SmallDenseSet<int64_t> seen;
+  std::unordered_set<int64_t> seen;
   seen.reserve(sites.size());
   for (const int64_t site : sites) {
     if (site < 0) {
@@ -139,6 +140,24 @@ SiteTupleAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
   }
   return verifyFidelity(emitError, fidelity,
                         "compiler target site-tuple fidelity");
+}
+
+LogicalResult ApplicableSiteTupleAttr::verify(
+    const function_ref<InFlightDiagnostic()> emitError,
+    ArrayRef<int64_t> sites) {
+  std::unordered_set<int64_t> seen;
+  seen.reserve(sites.size());
+  for (int64_t site : sites) {
+    if (site < 0) {
+      return emitError() << "compiler target applicable site tuple contains a "
+                            "negative site ID";
+    }
+    if (!seen.insert(site).second) {
+      return emitError() << "compiler target applicable site tuple contains a "
+                            "duplicate site";
+    }
+  }
+  return success();
 }
 
 LogicalResult
@@ -156,7 +175,9 @@ LogicalResult NativeOperationAttr::verify(
     const function_ref<InFlightDiagnostic()> emitError, const StringAttr name,
     const OperationArityAttr arity, const uint64_t /*numParameters*/,
     const ArrayRef<SiteTupleAttr> siteTuples,
-    const std::optional<uint64_t> /*duration*/, const FloatAttr fidelity) {
+    const std::optional<uint64_t> /*duration*/, const FloatAttr fidelity,
+    OperationApplicabilityKind applicability,
+    ArrayRef<ApplicableSiteTupleAttr> applicableSiteTuples) {
   if (name.getValue().trim().empty()) {
     return emitError() << "compiler target operation name must not be empty";
   }
@@ -187,6 +208,41 @@ LogicalResult NativeOperationAttr::verify(
     }
     seen.emplace_back(siteTuple.getSites());
   }
+
+  if (applicability != OperationApplicabilityKind::Explicit &&
+      !applicableSiteTuples.empty()) {
+    return emitError() << "compiler target applicable site tuples require "
+                          "explicit operation applicability";
+  }
+
+  SmallVector<ArrayRef<int64_t>> seenApplicable;
+  seenApplicable.reserve(applicableSiteTuples.size());
+  for (ApplicableSiteTupleAttr siteTuple : applicableSiteTuples) {
+    const auto numSites = siteTuple.getSites().size();
+    const bool acceptsArity = arity.getKind() == OperationArityKind::Variadic
+                                  ? numSites >= arity.getValue()
+                                  : numSites == arity.getValue();
+    if (!acceptsArity) {
+      return emitError() << "compiler target operation applicable site tuple "
+                            "does not match its arity";
+    }
+    if (llvm::is_contained(seenApplicable, siteTuple.getSites())) {
+      return emitError() << "compiler target operation contains a duplicate "
+                            "applicable site tuple";
+    }
+    seenApplicable.emplace_back(siteTuple.getSites());
+  }
+  if (applicability == OperationApplicabilityKind::Explicit &&
+      llvm::any_of(siteTuples, [&](const SiteTupleAttr siteTuple) {
+        return llvm::none_of(applicableSiteTuples,
+                             [&](const ApplicableSiteTupleAttr applicable) {
+                               return applicable.getSites() ==
+                                      siteTuple.getSites();
+                             });
+      })) {
+    return emitError() << "compiler target operation calibration references "
+                          "an inapplicable site tuple";
+  }
   return success();
 }
 
@@ -203,7 +259,7 @@ LogicalResult CompilationTargetAttr::verify(
     return emitError() << "compiler target must contain at least one site";
   }
 
-  llvm::SmallDenseSet<int64_t> siteIds;
+  std::unordered_set<int64_t> siteIds;
   siteIds.reserve(sites.size());
   for (const SiteAttr site : sites) {
     if (!siteIds.insert(site.getId()).second) {
@@ -253,6 +309,16 @@ LogicalResult CompilationTargetAttr::verify(
           })) {
         return emitError() << "compiler target operation site tuple references "
                               "an unknown site";
+      }
+    }
+    for (ApplicableSiteTupleAttr siteTuple :
+         operation.getApplicableSiteTuples()) {
+      if (llvm::any_of(siteTuple.getSites(), [&](const int64_t site) {
+            return !siteIds.contains(site);
+          })) {
+        return emitError()
+               << "compiler target operation applicable site tuple references "
+                  "an unknown site";
       }
     }
   }

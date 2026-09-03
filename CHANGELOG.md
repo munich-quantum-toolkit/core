@@ -38,9 +38,10 @@ releases may include breaking changes.
   direct lowering and dense-array helpers for supported compiler inputs
   ([#1915], [#1973], [#2077], [#2078], [#2079], [#2334]) ([**@simon1hofmann**],
   [**@burgholzer**])
-- ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
-  compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
-  [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
+- ✨ Add immutable MLIR compiler targets, QDMI device integration, ordered
+  operation applicability, directional mapping, and target compilation through
+  C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999], [#2049], [#2285])
+  ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
 
 #### Import and export
 
@@ -876,6 +877,7 @@ for previous changelogs._
 [#2315]: https://github.com/munich-quantum-toolkit/core/pull/2315
 [#2299]: https://github.com/munich-quantum-toolkit/core/pull/2299
 [#2298]: https://github.com/munich-quantum-toolkit/core/pull/2298
+[#2285]: https://github.com/munich-quantum-toolkit/core/pull/2285
 [#2284]: https://github.com/munich-quantum-toolkit/core/pull/2284
 [#2283]: https://github.com/munich-quantum-toolkit/core/pull/2283
 [#2288]: https://github.com/munich-quantum-toolkit/core/pull/2288

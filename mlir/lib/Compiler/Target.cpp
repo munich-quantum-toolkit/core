@@ -381,6 +381,14 @@ llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
       }
       uniqueApplicableSiteCombinations.emplace_back(sites);
     }
+    if (llvm::any_of(siteTuples, [&](const auto& siteTuple) {
+          return llvm::none_of(*applicableSiteTuples, [&](const auto& sites) {
+            return ArrayRef<SiteId>(sites) == siteTuple.sites();
+          });
+        })) {
+      return invalidTarget("Compiler target operation calibration references "
+                           "an inapplicable site tuple");
+    }
   }
   return Operation(std::move(name), std::move(canonicalName), arity,
                    numParameters, std::move(siteTuples), duration, fidelity,
@@ -481,22 +489,14 @@ struct CompilerTarget::Storage {
 
   [[nodiscard]] llvm::Error initialize();
 
-  [[nodiscard]] bool isApplicable(size_t operationIndex, size_t arity) const;
-  [[nodiscard]] bool isApplicable(size_t operationIndex,
-                                  ArrayRef<SiteId> orderedSites) const;
+  [[nodiscard]] bool
+  isApplicable(size_t operationIndex, size_t arity,
+               std::optional<ArrayRef<SiteId>> orderedSites) const;
   [[nodiscard]] bool
   supportsOperation(StringRef name, size_t arity,
-                    std::optional<size_t> numParameters) const;
-  [[nodiscard]] bool supportsOperation(StringRef name, size_t arity,
-                                       std::optional<size_t> numParameters,
-                                       ArrayRef<SiteId> orderedSites) const;
-  [[nodiscard]] bool
-  supportsVariadicOperation(StringRef name, size_t arity,
-                            std::optional<size_t> numParameters) const;
-  [[nodiscard]] bool
-  supportsVariadicOperation(StringRef name, size_t arity,
-                            std::optional<size_t> numParameters,
-                            ArrayRef<SiteId> orderedSites) const;
+                    std::optional<size_t> numParameters,
+                    std::optional<ArrayRef<SiteId>> orderedSites = std::nullopt,
+                    bool variadicOnly = false) const;
   [[nodiscard]] bool supportsGate(GateKind gate,
                                   ArrayRef<SiteId> orderedSites) const;
   [[nodiscard]] std::optional<SynthesisBasis> resolveSynthesisBasis() const;
@@ -514,7 +514,7 @@ struct CompilerTarget::Storage {
   NativeOperations::Kind nativeOperationsKind;
   SmallVector<Operation> operations;
   llvm::StringMap<SmallVector<size_t, 1>> capabilities;
-  std::vector<std::optional<llvm::DenseSet<SiteId>>> explicitOneQubitSites;
+  std::vector<std::optional<std::unordered_set<SiteId>>> explicitOneQubitSites;
   std::vector<std::optional<llvm::DenseSet<Coupling>>> explicitTwoQubitSites;
   SmallVector<GateKind> supportedGates;
   std::optional<SynthesisBasis> basis;
@@ -690,11 +690,13 @@ llvm::Error CompilerTarget::Storage::initialize() {
   for (const auto& specification : GATE_SPECIFICATIONS) {
     const bool supportsControlledBase =
         (specification.kind == GateKind::CX &&
-         supportsVariadicOperation("x", specification.arity,
-                                   specification.numParameters)) ||
+         supportsOperation("x", specification.arity,
+                           specification.numParameters, std::nullopt,
+                           /*variadicOnly=*/true)) ||
         (specification.kind == GateKind::CZ &&
-         supportsVariadicOperation("z", specification.arity,
-                                   specification.numParameters));
+         supportsOperation("z", specification.arity,
+                           specification.numParameters, std::nullopt,
+                           /*variadicOnly=*/true));
     if (supportsControlledBase ||
         supportsOperation(specification.name, specification.arity,
                           specification.numParameters)) {
@@ -705,77 +707,52 @@ llvm::Error CompilerTarget::Storage::initialize() {
   return llvm::Error::success();
 }
 
-bool CompilerTarget::Storage::isApplicable(size_t operationIndex,
-                                           size_t arity) const {
+bool CompilerTarget::Storage::isApplicable(
+    size_t operationIndex, size_t arity,
+    std::optional<ArrayRef<SiteId>> orderedSites) const {
   const auto& operation = operations[operationIndex];
   if (!operation.hasExplicitApplicability()) {
     return true;
+  }
+  if (!orderedSites) {
+    if (arity == 1) {
+      return !explicitOneQubitSites[operationIndex]->empty();
+    }
+    if (arity == 2) {
+      return !explicitTwoQubitSites[operationIndex]->empty();
+    }
+    return llvm::any_of(operation.applicableSiteTuples(),
+                        [&](const auto& applicableSites) {
+                          return applicableSites.size() == arity;
+                        });
   }
   if (arity == 1) {
-    return !explicitOneQubitSites[operationIndex]->empty();
+    return explicitOneQubitSites[operationIndex]->contains((*orderedSites)[0]);
   }
   if (arity == 2) {
-    return !explicitTwoQubitSites[operationIndex]->empty();
-  }
-  return llvm::any_of(operation.applicableSiteTuples(),
-                      [&](const auto& applicableSites) {
-                        return applicableSites.size() == arity;
-                      });
-}
-
-bool CompilerTarget::Storage::isApplicable(
-    size_t operationIndex, ArrayRef<SiteId> orderedSites) const {
-  const auto& operation = operations[operationIndex];
-  if (!operation.hasExplicitApplicability()) {
-    return true;
-  }
-  if (orderedSites.size() == 1) {
-    return explicitOneQubitSites[operationIndex]->contains(orderedSites[0]);
-  }
-  if (orderedSites.size() == 2) {
     return explicitTwoQubitSites[operationIndex]->contains(
-        {orderedSites[0], orderedSites[1]});
+        {(*orderedSites)[0], (*orderedSites)[1]});
   }
   return llvm::any_of(
       operation.applicableSiteTuples(), [&](const auto& applicableSites) {
-        return ArrayRef<SiteId>(applicableSites) == orderedSites;
+        return ArrayRef<SiteId>(applicableSites) == *orderedSites;
       });
 }
 
 bool CompilerTarget::Storage::supportsOperation(
-    StringRef operationName, size_t arity,
-    std::optional<size_t> numParameters) const {
-  const auto canonical = canonicalOperationName(operationName);
-  if (canonical.empty() || arity > sites.size()) {
-    return false;
-  }
-  if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
-    return true;
-  }
-  const auto found = capabilities.find(canonical);
-  if (found == capabilities.end()) {
-    return false;
-  }
-  return llvm::any_of(found->second, [&](const auto index) {
-    const auto& operation = operations[index];
-    return operation.arity().accepts(arity) &&
-           (!numParameters || operation.numParameters() == *numParameters) &&
-           isApplicable(index, arity);
-  });
-}
-
-bool CompilerTarget::Storage::supportsOperation(
     StringRef operationName, size_t arity, std::optional<size_t> numParameters,
-    ArrayRef<SiteId> orderedSites) const {
+    std::optional<ArrayRef<SiteId>> orderedSites, bool variadicOnly) const {
   const auto canonical = canonicalOperationName(operationName);
   if (canonical.empty() || arity > sites.size() ||
-      orderedSites.size() != arity) {
+      (orderedSites && orderedSites->size() != arity)) {
     return false;
   }
-  for (const auto [index, site] : llvm::enumerate(orderedSites)) {
-    if (!siteToVertex.contains(site) ||
-        llvm::is_contained(orderedSites.take_front(index), site)) {
-      return false;
+  if (orderedSites) {
+    for (const auto [index, site] : llvm::enumerate(*orderedSites)) {
+      if (!siteToVertex.contains(site) ||
+          llvm::is_contained(orderedSites->take_front(index), site)) {
+        return false;
+      }
     }
   }
   if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
@@ -787,74 +764,23 @@ bool CompilerTarget::Storage::supportsOperation(
   }
   return llvm::any_of(found->second, [&](const auto index) {
     const auto& operation = operations[index];
-    return operation.arity().accepts(arity) &&
-           (!numParameters || operation.numParameters() == *numParameters) &&
-           isApplicable(index, orderedSites);
-  });
-}
-
-bool CompilerTarget::Storage::supportsVariadicOperation(
-    StringRef operationName, size_t arity,
-    std::optional<size_t> numParameters) const {
-  const auto canonical = canonicalOperationName(operationName);
-  if (canonical.empty() || arity > sites.size()) {
-    return false;
-  }
-  if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
-    return true;
-  }
-  const auto found = capabilities.find(canonical);
-  if (found == capabilities.end()) {
-    return false;
-  }
-  return llvm::any_of(found->second, [&](const auto index) {
-    const auto& operation = operations[index];
-    return operation.arity().kind() == Operation::Arity::Kind::Variadic &&
+    return (!variadicOnly ||
+            operation.arity().kind() == Operation::Arity::Kind::Variadic) &&
            operation.arity().accepts(arity) &&
            (!numParameters || operation.numParameters() == *numParameters) &&
-           isApplicable(index, arity);
-  });
-}
-
-bool CompilerTarget::Storage::supportsVariadicOperation(
-    StringRef operationName, size_t arity, std::optional<size_t> numParameters,
-    ArrayRef<SiteId> orderedSites) const {
-  const auto canonical = canonicalOperationName(operationName);
-  if (canonical.empty() || arity > sites.size() ||
-      orderedSites.size() != arity) {
-    return false;
-  }
-  for (const auto [index, site] : llvm::enumerate(orderedSites)) {
-    if (!siteToVertex.contains(site) ||
-        llvm::is_contained(orderedSites.take_front(index), site)) {
-      return false;
-    }
-  }
-  if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
-    return true;
-  }
-  const auto found = capabilities.find(canonical);
-  if (found == capabilities.end()) {
-    return false;
-  }
-  return llvm::any_of(found->second, [&](const auto index) {
-    const auto& operation = operations[index];
-    return operation.arity().kind() == Operation::Arity::Kind::Variadic &&
-           operation.arity().accepts(arity) &&
-           (!numParameters || operation.numParameters() == *numParameters) &&
-           isApplicable(index, orderedSites);
+           isApplicable(index, arity, orderedSites);
   });
 }
 
 bool CompilerTarget::Storage::supportsGate(
     GateKind gate, ArrayRef<SiteId> orderedSites) const {
   if ((gate == GateKind::CX &&
-       supportsVariadicOperation("x", 2, 0, orderedSites)) ||
+       supportsOperation("x", 2, 0, orderedSites, /*variadicOnly=*/true)) ||
       (gate == GateKind::CZ &&
-       supportsVariadicOperation("z", 2, 0, orderedSites))) {
+       supportsOperation("z", 2, 0, orderedSites, /*variadicOnly=*/true))) {
     return true;
   }
-  const auto specification =
+  const decltype(GATE_SPECIFICATIONS.cbegin()) specification =
       std::ranges::find_if(GATE_SPECIFICATIONS, [&](const auto& candidate) {
         return candidate.kind == gate;
       });
@@ -866,6 +792,25 @@ bool CompilerTarget::Storage::supportsGate(
 
 std::optional<CompilerTarget::SynthesisBasis>
 CompilerTarget::Storage::resolveSynthesisBasis() const {
+  const auto supportsEveryPlacement = [&](StringRef operationName, size_t arity,
+                                          size_t numParameters,
+                                          bool variadicOnly = false) {
+    if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
+      return true;
+    }
+    const auto found = capabilities.find(operationName);
+    if (found == capabilities.end()) {
+      return false;
+    }
+    return llvm::any_of(found->second, [&](const auto index) {
+      const auto& operation = operations[index];
+      return (!variadicOnly ||
+              operation.arity().kind() == Operation::Arity::Kind::Variadic) &&
+             operation.arity().accepts(arity) &&
+             operation.numParameters() == numParameters &&
+             !operation.hasExplicitApplicability();
+    });
+  };
   const auto supportsOnEverySite = [&](GateKind gate) {
     return llvm::all_of(siteIds, [&](SiteId site) {
       return supportsGate(gate, ArrayRef<SiteId>(&site, 1));
@@ -895,6 +840,20 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     if (sites.size() < 2) {
       return false;
     }
+    if ((gate == GateKind::CX && supportsEveryPlacement("x", 2, 0, true)) ||
+        (gate == GateKind::CZ && supportsEveryPlacement("z", 2, 0, true))) {
+      return true;
+    }
+    const decltype(GATE_SPECIFICATIONS.cbegin()) specification =
+        std::ranges::find_if(GATE_SPECIFICATIONS, [&](const auto& candidate) {
+          return candidate.kind == gate;
+        });
+    assert(specification != GATE_SPECIFICATIONS.end() &&
+           "unknown compiler target gate");
+    if (supportsEveryPlacement(specification->name, specification->arity,
+                               specification->numParameters)) {
+      return true;
+    }
     const auto supportsPair = [&](SiteId source, SiteId target) {
       const std::array forward{source, target};
       const std::array reverse{target, source};
@@ -919,7 +878,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       GateKind::RXX,   GateKind::RYY, GateKind::RZX, GateKind::RZZ,
       GateKind::ISWAP, GateKind::CZ,  GateKind::CX,  GateKind::ECR,
   };
-  const auto entangler =
+  const decltype(entanglerPreference.cbegin()) entangler =
       std::ranges::find_if(entanglerPreference, supportsOnEveryCoupling);
   if (!singleQubit || entangler == entanglerPreference.end()) {
     return std::nullopt;
@@ -1069,6 +1028,9 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
           applicableSiteTuples->emplace_back(tupleAttr.getSites().begin(),
                                              tupleAttr.getSites().end());
         }
+      } else if (!operationAttr.getApplicableSiteTuples().empty()) {
+        return invalidTarget("Compiler target applicable site tuples require "
+                             "explicit operation applicability");
       }
 
       std::optional<double> fidelity;
@@ -1230,54 +1192,16 @@ bool CompilerTarget::supportsOperation(StringRef operationName, size_t arity,
 }
 
 bool CompilerTarget::supports(::mlir::Operation* operation) const {
-  if (operation == nullptr) {
-    return false;
-  }
-
-  if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(operation)) {
-    if (isa<qco::BarrierOp>(operation)) {
-      return true;
-    }
-    if (auto controlled = dyn_cast<qco::CtrlOp>(operation)) {
-      if (controlled.getNumControls() == 0 ||
-          controlled.getNumBodyUnitaries() != 1) {
-        return false;
-      }
-      auto body = controlled.getBodyUnitary(0);
-      if (body.getNumQubits() != controlled.getNumTargets()) {
-        return false;
-      }
-      if (storage_->supportsVariadicOperation(body.getBaseSymbol(),
-                                              controlled.getNumQubits(),
-                                              body.getNumParams())) {
-        return true;
-      }
-      if (controlled.getNumControls() != 1 || controlled.getNumTargets() != 1) {
-        return false;
-      }
-      if (isa<qco::XOp>(body.getOperation())) {
-        return storage_->supportsOperation("cx", 2, 0);
-      }
-      if (isa<qco::ZOp>(body.getOperation())) {
-        return storage_->supportsOperation("cz", 2, 0);
-      }
-      return false;
-    }
-    return storage_->supportsOperation(unitary.getBaseSymbol(),
-                                       unitary.getNumQubits(),
-                                       unitary.getNumParams());
-  }
-  if (isa<qco::MeasureOp>(operation)) {
-    return storage_->supportsOperation("measure", 1, 0);
-  }
-  if (isa<qco::ResetOp>(operation)) {
-    return storage_->supportsOperation("reset", 1, 0);
-  }
-  return false;
+  return supportsImpl(operation, std::nullopt);
 }
 
 bool CompilerTarget::supports(::mlir::Operation* operation,
                               ArrayRef<SiteId> sites) const {
+  return supportsImpl(operation, sites);
+}
+
+bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
+                                  std::optional<ArrayRef<SiteId>> sites) const {
   if (operation == nullptr) {
     return false;
   }
@@ -1295,9 +1219,10 @@ bool CompilerTarget::supports(::mlir::Operation* operation,
       if (body.getNumQubits() != controlled.getNumTargets()) {
         return false;
       }
-      if (storage_->supportsVariadicOperation(body.getBaseSymbol(),
-                                              controlled.getNumQubits(),
-                                              body.getNumParams(), sites)) {
+      if (storage_->supportsOperation(body.getBaseSymbol(),
+                                      controlled.getNumQubits(),
+                                      body.getNumParams(), sites,
+                                      /*variadicOnly=*/true)) {
         return true;
       }
       if (controlled.getNumControls() != 1 || controlled.getNumTargets() != 1) {

@@ -10,8 +10,8 @@
 add_mlir_library(
   MQTCompilerTarget
   PARTIAL_SOURCES_INTENDED
+  MappingTarget.cpp
   Target.cpp
-  TargetCost.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler
   LINK_LIBS
@@ -29,8 +29,8 @@ target_sources(
          BASE_DIRS
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}
          FILES
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/Target.h
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/TargetCost.h)
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/MappingTarget.h
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/Target.h)
 
 # Build the optional QDMI-to-compiler-target adapter
 set(LLVM_REQUIRES_EH ON)
@@ -93,7 +93,7 @@ mqt_mlir_target_use_project_options(MQTCompilerPipeline)
 
 # collect header files
 file(GLOB_RECURSE COMPILER_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/*.h")
-list(FILTER COMPILER_HEADERS_SOURCE EXCLUDE REGEX "/(QDMIAdapter|Target)\\.h$")
+list(FILTER COMPILER_HEADERS_SOURCE EXCLUDE REGEX "/(MappingTarget|QDMIAdapter|Target)\\.h$")
 
 target_sources(MQTCompilerPipeline PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
                                           FILES ${COMPILER_HEADERS_SOURCE})

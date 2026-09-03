@@ -21,8 +21,10 @@
 
 #include <cassert>
 #include <initializer_list>
+#include <numeric>
 #include <string>
 #include <utility>
+#include <vector>
 
 using mlir::CompilerTarget;
 
@@ -66,12 +68,16 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   EXPECT_EQ(cz.siteTuples().size(), 30);
   EXPECT_EQ(measure.siteTuples().size(), 20);
   for (const auto& operation : target.operations()) {
+    EXPECT_TRUE(operation.hasExplicitApplicability());
     EXPECT_FALSE(operation.duration());
     for (const auto& tuple : operation.siteTuples()) {
       EXPECT_FALSE(tuple.duration());
       EXPECT_TRUE(tuple.fidelity());
     }
   }
+  EXPECT_EQ(r.applicableSiteTuples().size(), 20);
+  EXPECT_EQ(cz.applicableSiteTuples().size(), 30);
+  EXPECT_EQ(measure.applicableSiteTuples().size(), 20);
 
   EXPECT_EQ(target.supportsOperation("r", 1, 2), true);
   EXPECT_EQ(target.supportsOperation("cz", 2, 0), true);
@@ -108,11 +114,17 @@ TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
               CompilerTarget::Operation::Arity::Kind::Variadic)
         << name.str();
     EXPECT_EQ(operation.arity().value(), minimum) << name.str();
+    EXPECT_FALSE(operation.hasExplicitApplicability()) << name.str();
     EXPECT_TRUE(
         target.supportsOperation(name, minimum, operation.numParameters()))
         << name.str();
     EXPECT_TRUE(
         target.supportsOperation(name, minimum + 4, operation.numParameters()))
+        << name.str();
+    std::vector<CompilerTarget::SiteId> sites(minimum + 4);
+    std::iota(sites.begin(), sites.end(), 0);
+    EXPECT_TRUE(target.supportsOperation(name, minimum + 4,
+                                         operation.numParameters(), sites))
         << name.str();
   }
   EXPECT_TRUE(target.supportsOperation("gphase", 0, 1));
@@ -157,6 +169,9 @@ TEST(CompilerQDMIAdapterTest, SnapshotsHomogeneousHigherArityOperation) {
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0));
+  EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0, {0, 1, 2}));
+  EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0, {2, 1, 0}));
+  EXPECT_FALSE(target.supportsOperation("ccnot", 3, 0, {0, 1, 3}));
 }
 
 TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
@@ -166,16 +181,17 @@ TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
   const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
-  ASSERT_EQ(target.couplings().size(), 1);
+  ASSERT_EQ(target.couplings().size(), 1U);
   const auto& cx = findOperation(target, "cx");
-  EXPECT_TRUE(cx.hasExplicitSiteTuples());
-  ASSERT_EQ(cx.siteTuples().size(), 1);
-  EXPECT_EQ(cx.siteTuples()[0].sites(),
-            (llvm::ArrayRef<CompilerTarget::SiteId>{0, 1}));
-  EXPECT_FALSE(cx.siteTuples()[0].duration());
-  EXPECT_FALSE(cx.siteTuples()[0].fidelity());
-  EXPECT_TRUE(target.supports(CompilerTarget::GateKind::CX, {0, 1}));
-  EXPECT_FALSE(target.supports(CompilerTarget::GateKind::CX, {1, 0}));
+  EXPECT_TRUE(cx.hasExplicitApplicability());
+  ASSERT_EQ(cx.applicableSiteTuples().size(), 1U);
+  EXPECT_EQ(cx.applicableSiteTuples()[0],
+            (std::vector<CompilerTarget::SiteId>{0, 1}));
+  EXPECT_TRUE(cx.siteTuples().empty());
+  EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {0, 1}));
+  EXPECT_FALSE(target.supportsOperation("cx", 2, 0, {1, 0}));
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CX);
 }
 
 TEST(CompilerQDMIAdapterTest,
@@ -188,7 +204,14 @@ TEST(CompilerQDMIAdapterTest,
 
   ASSERT_EQ(target.couplings().size(), 1);
   const auto& cx = findOperation(target, "cx");
-  EXPECT_TRUE(cx.hasExplicitSiteTuples());
+  EXPECT_TRUE(cx.hasExplicitApplicability());
+  ASSERT_EQ(cx.applicableSiteTuples().size(), 2U);
+  EXPECT_EQ(cx.applicableSiteTuples()[0],
+            (std::vector<CompilerTarget::SiteId>{0, 1}));
+  EXPECT_EQ(cx.applicableSiteTuples()[1],
+            (std::vector<CompilerTarget::SiteId>{1, 0}));
+  EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {0, 1}));
+  EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {1, 0}));
   ASSERT_EQ(cx.siteTuples().size(), 2);
   EXPECT_EQ(cx.siteTuples()[0].sites(),
             (llvm::ArrayRef<CompilerTarget::SiteId>{0, 1}));
