@@ -432,6 +432,18 @@ TEST_F(QCTest, BuilderCreatesGenericAndUnitaryFunctions) {
   EXPECT_TRUE(isa<UnitaryOpInterface>(nestedCall.getOperation()));
 }
 
+TEST_F(QCTest, BuilderFinalizesRenamedEntryPoint) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto entry = cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp());
+  entry.setName("entry");
+
+  auto module = builder.finalize();
+
+  ASSERT_TRUE(module);
+  EXPECT_EQ(mlir::mqt::getEntryPoint(*module).getName(), "entry");
+}
+
 TEST_F(QCTest, BuilderCreatesFunctionLocalStaticQubits) {
   QCProgramBuilder builder(context.get());
   builder.initialize();

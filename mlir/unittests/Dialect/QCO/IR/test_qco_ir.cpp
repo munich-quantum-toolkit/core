@@ -366,6 +366,18 @@ TEST_F(QCOTest, BuilderCreatesGenericAndUnitaryFunctions) {
   EXPECT_TRUE(isa<UnitaryOpInterface>(&inverse.getRegion().front().front()));
 }
 
+TEST_F(QCOTest, BuilderFinalizesRenamedEntryPoint) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto entry = cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp());
+  entry.setName("entry");
+
+  auto module = builder.finalize();
+
+  ASSERT_TRUE(module);
+  EXPECT_EQ(mlir::mqt::getEntryPoint(*module).getName(), "entry");
+}
+
 TEST_F(QCOTest, UnitaryVerifierDiagnosesMalformedCalls) {
   ParserConfig config(context.get(), false);
   auto module = parseSourceString<ModuleOp>(R"mlir(

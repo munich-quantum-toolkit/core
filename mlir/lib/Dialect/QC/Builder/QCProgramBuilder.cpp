@@ -888,17 +888,12 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
 OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
   checkFinalized();
 
-  // Ensure that main function exists and insertion point is valid
+  /// Ensure that the entry-point function exists and the insertion point is
+  /// valid.
   auto* insertionBlock = getInsertionBlock();
-  func::FuncOp mainFunc = nullptr;
-  for (auto op : cast<ModuleOp>(module).getOps<func::FuncOp>()) {
-    if (op.getName() == "main") {
-      mainFunc = op;
-      break;
-    }
-  }
-  if (!mainFunc) {
-    llvm::reportFatalUsageError("Could not find main function");
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(module));
+  if (mainFunc == nullptr) {
+    llvm::reportFatalUsageError("Could not find entry-point function");
   }
   if ((insertionBlock == nullptr) ||
       insertionBlock != &mainFunc.getBody().front()) {
