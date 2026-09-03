@@ -602,12 +602,14 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
         RegisterAccess{.reg = regIt->second, .index = op.getIndices().front()});
 
     for (Operation* user : op.getResult().getUsers()) {
-      if (isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp>(user)) {
+      if (isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp,
+              func::CallOp>(user)) {
         continue;
       }
       user->emitOpError(
-          "cannot consume a register-backed qubit reference; only QC quantum "
-          "operations support register-backed qubits");
+          "cannot consume a register-backed qubit reference; only supported "
+          "quantum operations and function calls support register-backed "
+          "qubits");
       return WalkResult::interrupt();
     }
     return WalkResult::advance();
@@ -618,14 +620,23 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
   }
 
   const auto distinctResult = root->walk([&](Operation* operation) {
-    auto unitary = dyn_cast<qc::UnitaryOpInterface>(operation);
-    if (!unitary || unitary.getNumQubits() < 2) {
+    SmallVector<Value> operationQubits;
+    if (auto unitary = dyn_cast<qc::UnitaryOpInterface>(operation)) {
+      llvm::append_range(operationQubits, unitary.getQubits());
+    } else if (auto call = dyn_cast<func::CallOp>(operation)) {
+      for (auto operand : call.getOperands()) {
+        if (isa<qc::QubitType>(operand.getType())) {
+          operationQubits.emplace_back(operand);
+        }
+      }
+    }
+    if (operationQubits.size() < 2) {
       return WalkResult::advance();
     }
 
     llvm::SmallDenseSet<Value, 4> qubits;
     DenseMap<RegisterId, SeenRegisterIndices> registerIndices;
-    for (auto qubit : unitary.getQubits()) {
+    for (auto qubit : operationQubits) {
       if (!qubits.insert(qubit).second) {
         operation->emitOpError("requires distinct qubit operands");
         return WalkResult::interrupt();
@@ -935,23 +946,26 @@ struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
       return rewriter.notifyMatchFailure(op, "callee is not defined");
     }
 
-    SmallVector<Value> operands;
-    for (auto [source, converted] :
-         llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
-      operands.emplace_back(isa<qc::QubitType, qco::QubitType>(source.getType())
-                                ? lookupMappedQubit(getState(), op, source)
-                                : converted);
+    auto& state = getState();
+    SmallVector<Value> qcQubits;
+    for (auto operand : op.getOperands()) {
+      if (isa<qc::QubitType, qco::QubitType>(operand.getType())) {
+        qcQubits.emplace_back(operand);
+      }
     }
     SmallVector<Type> resultTypes;
     if (failed(getTypeConverter()->convertTypes(op.getResultTypes(),
                                                 resultTypes))) {
       return failure();
     }
-    SmallVector<unsigned> qubitArguments;
-    for (auto [index, operand] : llvm::enumerate(op.getOperands())) {
-      if (isa<qc::QubitType, qco::QubitType>(operand.getType())) {
-        qubitArguments.emplace_back(index);
-        resultTypes.emplace_back(qco::QubitType::get(op.getContext()));
+    resultTypes.append(qcQubits.size(), qco::QubitType::get(op.getContext()));
+
+    auto materialized = materializeQubits(state, op, qcQubits, rewriter);
+    SmallVector<Value> operands(adaptor.getOperands());
+    size_t qubitIndex = 0;
+    for (auto [index, source] : llvm::enumerate(op.getOperands())) {
+      if (isa<qc::QubitType, qco::QubitType>(source.getType())) {
+        operands[index] = materialized.values[qubitIndex++];
       }
     }
     auto call = func::CallOp::create(rewriter, op.getLoc(), op.getCallee(),
@@ -959,19 +973,18 @@ struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
     call->setAttrs(op->getAttrs());
     if (auto attrs = op.getResAttrsAttr()) {
       SmallVector<Attribute> resultAttrs(attrs.getValue());
-      resultAttrs.append(qubitArguments.size(), rewriter.getDictionaryAttr({}));
+      resultAttrs.append(qcQubits.size(), rewriter.getDictionaryAttr({}));
       call.setResAttrsAttr(rewriter.getArrayAttr(resultAttrs));
     }
 
     for (auto [index, source] : llvm::enumerate(op.getResults())) {
       if (isa<qc::QubitType>(source.getType())) {
-        assignMappedQubit(getState(), call, source, call.getResult(index));
+        assignMappedQubit(state, call, source, call.getResult(index));
       }
     }
-    for (auto [offset, argument] : llvm::enumerate(qubitArguments)) {
-      assignMappedQubit(getState(), call, op.getOperand(argument),
-                        call.getResult(op.getNumResults() + offset));
-    }
+    commitQubits(state, op, qcQubits,
+                 call.getResults().drop_front(op.getNumResults()), materialized,
+                 rewriter);
     rewriter.replaceOp(op, call.getResults().take_front(op.getNumResults()));
     return success();
   }
@@ -983,24 +996,23 @@ struct ConvertQCCallOp final : StatefulOpConversionPattern<qc::CallOp> {
   LogicalResult
   matchAndRewrite(qc::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    SmallVector<Value> operands;
-    for (auto [source, converted] :
-         llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
-      operands.emplace_back(isa<qc::QubitType, qco::QubitType>(source.getType())
-                                ? lookupMappedQubit(getState(), op, source)
-                                : converted);
-    }
+    auto& state = getState();
+    const auto firstQubit =
+        llvm::find_if(op.getOperands(), [](Value operand) {
+          return isa<qc::QubitType, qco::QubitType>(operand.getType());
+        });
+    const auto numParams = static_cast<size_t>(
+        std::distance(op.getOperands().begin(), firstQubit));
+    auto qcQubits = op.getOperands().drop_front(numParams);
+    auto materialized = materializeQubits(state, op, qcQubits, rewriter);
+    SmallVector<Value> operands(adaptor.getOperands().take_front(numParams));
+    llvm::append_range(operands, materialized.values);
     auto call = qco::CallOp::create(rewriter, op.getLoc(), op.getCalleeAttr(),
                                     operands);
     call->setAttrs(op->getAttrs());
     call.removeResAttrsAttr();
-    unsigned result = 0;
-    for (auto operand : op.getOperands()) {
-      if (isa<qc::QubitType, qco::QubitType>(operand.getType())) {
-        assignMappedQubit(getState(), call, operand,
-                          call.getOutputQubit(result++));
-      }
-    }
+    commitQubits(state, op, qcQubits, call.getOutputQubits(), materialized,
+                 rewriter);
     rewriter.eraseOp(op);
     return success();
   }

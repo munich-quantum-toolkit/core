@@ -768,15 +768,21 @@ module {
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
 
-TEST_F(QCToQCORegressionTest, RejectsRegisterBackedReferenceEscapes) {
+TEST_F(QCToQCORegressionTest, ConvertsRegisterBackedGenericCalls) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
-  func.func private @escape(!qc.qubit)
+  func.func private @reset(%flag: i1, %q: !qc.qubit, %value: i64) -> i1 {
+    qc.reset %q : !qc.qubit
+    return %flag : i1
+  }
   func.func @main() attributes {mqt.entry_point} {
     %reg = memref.alloc() : memref<1x!qc.qubit>
     %c0 = arith.constant 0 : index
     %q = memref.load %reg[%c0] : memref<1x!qc.qubit>
-    func.call @escape(%q) : (!qc.qubit) -> ()
+    %true = arith.constant true
+    %value = arith.constant 42 : i64
+    %result = func.call @reset(%true, %q, %value)
+        : (i1, !qc.qubit, i64) -> i1
     memref.dealloc %reg : memref<1x!qc.qubit>
     return
   }
@@ -786,16 +792,20 @@ module {
   auto moduleOp = parseSourceString<ModuleOp>(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    sawExpectedDiagnostic |=
-        StringRef(diagnostic.str())
-            .contains("cannot consume a register-backed qubit reference");
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  auto call = *mlir::mqt::getEntryPoint(*moduleOp)
+                   .getBody()
+                   .getOps<func::CallOp>()
+                   .begin();
+  ASSERT_EQ(call.getNumOperands(), 3U);
+  EXPECT_TRUE(isa<qco::QubitType>(call.getOperand(1).getType()));
+  ASSERT_EQ(call.getNumResults(), 2U);
+  EXPECT_TRUE(isa<qco::QubitType>(call.getResult(1).getType()));
+  EXPECT_TRUE(call.getOperand(1).getDefiningOp<qtensor::ExtractOp>());
+  ASSERT_TRUE(call.getResult(1).hasOneUse());
+  EXPECT_TRUE(isa<qtensor::InsertOp>(*call.getResult(1).getUsers().begin()));
 }
 
 TEST_F(QCToQCORegressionTest, PreflightRejectsNonOneDimensionalQubitRegisters) {
@@ -975,6 +985,50 @@ module {
     EXPECT_TRUE(isa<qc::QubitType>(function.getArgument(0).getType()));
     EXPECT_EQ(function.getNumResults(), function.getName() == "flip" ? 0U : 1U);
   }
+}
+
+TEST_F(QCToQCORegressionTest, ConvertsRegisterBackedUnitaryCalls) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @rotate(%theta: f64, %q: !qc.qubit)
+      attributes {mqt.unitary} {
+    qc.rx(%theta) %q : !qc.qubit
+    return
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    %reg = memref.alloc() : memref<1x!qc.qubit>
+    %c0 = arith.constant 0 : index
+    %theta = arith.constant 5.000000e-01 : f64
+    %q = memref.load %reg[%c0] : memref<1x!qc.qubit>
+    qc.call @rotate(%theta, %q) : f64, !qc.qubit
+    %two = arith.constant 2.000000e+00 : f64
+    qc.pow(%two) (%arg0 = %q) {
+      qc.call @rotate(%theta, %arg0) : f64, !qc.qubit
+      qc.yield
+    } : !qc.qubit
+    memref.dealloc %reg : memref<1x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  size_t calls = 0;
+  size_t extracts = 0;
+  size_t inserts = 0;
+  moduleOp->walk([&](Operation* operation) {
+    calls += isa<qco::CallOp>(operation);
+    extracts += isa<qtensor::ExtractOp>(operation);
+    inserts += isa<qtensor::InsertOp>(operation);
+  });
+  EXPECT_EQ(calls, 2);
+  EXPECT_EQ(extracts, 2);
+  EXPECT_EQ(inserts, 2);
 }
 
 TEST_F(QCToQCORegressionTest, PreflightRejectsAliasedAndDuplicateQubitResults) {
@@ -1675,11 +1729,12 @@ TEST_F(QCToQCORegressionTest,
        RejectsSameDynamicRegisterIndexWithinOneOperation) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
+  func.func private @touch(!qc.qubit, !qc.qubit)
   func.func @main(%i: index) attributes {mqt.entry_point} {
     %reg = memref.alloc() : memref<2x!qc.qubit>
     %q0 = memref.load %reg[%i] : memref<2x!qc.qubit>
     %q1 = memref.load %reg[%i] : memref<2x!qc.qubit>
-    qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+    func.call @touch(%q0, %q1) : (!qc.qubit, !qc.qubit) -> ()
     memref.dealloc %reg : memref<2x!qc.qubit>
     return
   }
