@@ -73,6 +73,8 @@ template <typename GateOp>
  * @param numQubits Number of wires in the surrounding state.
  * @param targets Target wires in matrix-operand order.
  * @param controls Sparse DD controls applied to the local matrix.
+ * @pre `numQubits <= package.qubits()`. Every target and control is smaller
+ *      than `numQubits`; targets are unique and disjoint from controls.
  * @return A matrix decision diagram for the embedded operation.
  * @throws std::invalid_argument If the matrix dimension and target count differ
  *         or sparse controls accompany a matrix with more than three targets.
