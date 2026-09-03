@@ -66,6 +66,7 @@ TEST_F(CBitIRTest, ParsesAndPrintsRegisterOperations) {
         %reg = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<2>
         cbit.store %false, %reg[%c0] : !cbit.reg<2>
         %bit = cbit.load %reg[%c0] : !cbit.reg<2>
+        %matches = cbit.cmp eq, %reg, 1 : i2 : !cbit.reg<2>
         return %reg : !cbit.reg<2>
       }
     }
@@ -84,6 +85,31 @@ TEST_F(CBitIRTest, ParsesAndPrintsRegisterOperations) {
   EXPECT_NE(printed.find("!cbit.reg<2>"), std::string::npos);
   EXPECT_NE(printed.find("cbit.store"), std::string::npos);
   EXPECT_NE(printed.find("cbit.load"), std::string::npos);
+  EXPECT_NE(printed.find("cbit.cmp eq"), std::string::npos);
+}
+
+TEST_F(CBitIRTest, RejectsComparisonWidthMismatch) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %matches = cbit.cmp eq, %reg, 1 : i3 : !cbit.reg<2>
+        return
+      }
+    }
+  )mlir"));
+}
+
+TEST_F(CBitIRTest, RejectsUnsupportedComparisonWidth) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %reg = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<4294967297>
+        %matches = cbit.cmp eq, %reg, 0 : i1 : !cbit.reg<4294967297>
+        return
+      }
+    }
+  )mlir"));
 }
 
 TEST_F(CBitIRTest, RejectsNonPositiveRegisterWidth) {
@@ -146,6 +172,7 @@ TEST_F(CBitIRTest, ReportsMemoryEffects) {
         %reg = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
         cbit.store %false, %reg[%c0] : !cbit.reg<1>
         %bit = cbit.load %reg[%c0] : !cbit.reg<1>
+        %matches = cbit.cmp eq, %reg, 0 : i1 : !cbit.reg<1>
         return
       }
     }
@@ -153,13 +180,16 @@ TEST_F(CBitIRTest, ReportsMemoryEffects) {
   ASSERT_TRUE(moduleOp);
 
   cbit::AllocOp alloc;
+  cbit::CompareOp compare;
   cbit::LoadOp load;
   cbit::StoreOp store;
   moduleOp->walk([&](cbit::AllocOp op) { alloc = op; });
+  moduleOp->walk([&](cbit::CompareOp op) { compare = op; });
   moduleOp->walk([&](cbit::LoadOp op) { load = op; });
   moduleOp->walk([&](cbit::StoreOp op) { store = op; });
 
   ASSERT_NE(alloc.getOperation(), nullptr);
+  ASSERT_NE(compare.getOperation(), nullptr);
   ASSERT_NE(load.getOperation(), nullptr);
   ASSERT_NE(store.getOperation(), nullptr);
 
@@ -175,6 +205,12 @@ TEST_F(CBitIRTest, ReportsMemoryEffects) {
   EXPECT_EQ(effects.front().getValue(), load.getReg());
 
   effects.clear();
+  compare.getEffects(effects);
+  ASSERT_EQ(effects.size(), 1);
+  EXPECT_TRUE(isa<MemoryEffects::Read>(effects.front().getEffect()));
+  EXPECT_EQ(effects.front().getValue(), compare.getReg());
+
+  effects.clear();
   store.getEffects(effects);
   ASSERT_EQ(effects.size(), 1);
   EXPECT_TRUE(isa<MemoryEffects::Write>(effects.front().getEffect()));
@@ -184,15 +220,16 @@ TEST_F(CBitIRTest, ReportsMemoryEffects) {
 TEST_F(CBitIRTest, ForwardsStraightLineStoresAndZeroInitialization) {
   auto moduleOp = parse(R"mlir(
     module {
-      func.func @main() -> (i1, i1) {
+      func.func @main() -> (i1, i1, i1) {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         %true = arith.constant true
         %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
         %zero = cbit.load %reg[%c0] : !cbit.reg<2>
+        %matches = cbit.cmp eq, %reg, 0 : i2 : !cbit.reg<2>
         cbit.store %true, %reg[%c1] : !cbit.reg<2>
         %stored = cbit.load %reg[%c1] : !cbit.reg<2>
-        return %zero, %stored : i1, i1
+        return %zero, %stored, %matches : i1, i1, i1
       }
     }
   )mlir");
@@ -209,24 +246,29 @@ TEST_F(CBitIRTest, ForwardsStraightLineStoresAndZeroInitialization) {
   moduleOp->print(canonicalizedStream);
   APInt zero;
   APInt stored;
+  APInt matches;
   EXPECT_TRUE(matchPattern(returnOp.getOperand(0), m_ConstantInt(&zero)))
       << canonicalized;
   EXPECT_TRUE(matchPattern(returnOp.getOperand(1), m_ConstantInt(&stored)))
       << canonicalized;
+  EXPECT_TRUE(matchPattern(returnOp.getOperand(2), m_ConstantInt(&matches)))
+      << canonicalized;
   EXPECT_TRUE(zero.isZero());
   EXPECT_TRUE(stored.isOne());
+  EXPECT_TRUE(matches.isOne());
 }
 
 TEST_F(CBitIRTest, DoesNotForwardAcrossAnAmbiguousStore) {
   auto moduleOp = parse(R"mlir(
     module {
-      func.func @main(%dynamic: index) -> i1 {
+      func.func @main(%dynamic: index) -> (i1, i1) {
         %c0 = arith.constant 0 : index
         %true = arith.constant true
         %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
         cbit.store %true, %reg[%dynamic] : !cbit.reg<2>
         %value = cbit.load %reg[%c0] : !cbit.reg<2>
-        return %value : i1
+        %matches = cbit.cmp eq, %reg, 0 : i2 : !cbit.reg<2>
+        return %value, %matches : i1, i1
       }
     }
   )mlir");
@@ -239,5 +281,6 @@ TEST_F(CBitIRTest, DoesNotForwardAcrossAnAmbiguousStore) {
   auto funcOp = *moduleOp->getOps<func::FuncOp>().begin();
   auto returnOp = *funcOp.getOps<func::ReturnOp>().begin();
   EXPECT_TRUE(returnOp.getOperand(0).getDefiningOp<cbit::LoadOp>());
+  EXPECT_TRUE(returnOp.getOperand(1).getDefiningOp<cbit::CompareOp>());
 }
 } // namespace

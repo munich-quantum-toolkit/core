@@ -15,6 +15,7 @@
 #include "jeff/IR/JeffDialect.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Utils/DenseUnitary.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
@@ -620,18 +621,53 @@ struct ClassicalBitRef {
 };
 } // namespace
 
-[[nodiscard]] static mlir::Value
-loadClassicalBit(mlir::qc::QCProgramBuilder& builder,
-                 const llvm::ArrayRef<ClassicalBitRef> classicalBits,
-                 const llvm::ArrayRef<uint32_t> rootClbitMap,
-                 const uint32_t index) {
+[[nodiscard]] static const ClassicalBitRef&
+classicalBitRef(const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+                const llvm::ArrayRef<uint32_t> rootClbitMap, uint32_t index) {
   if (index >= rootClbitMap.size() ||
       rootClbitMap[index] >= classicalBits.size()) {
     throw std::runtime_error(
         "Qiskit control flow references an invalid classical bit");
   }
-  const auto& bit = classicalBits[rootClbitMap[index]];
+  return classicalBits[rootClbitMap[index]];
+}
+
+[[nodiscard]] static mlir::Value
+loadClassicalBit(mlir::qc::QCProgramBuilder& builder,
+                 const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+                 const llvm::ArrayRef<uint32_t> rootClbitMap,
+                 const uint32_t index) {
+  const auto& bit = classicalBitRef(classicalBits, rootClbitMap, index);
   return builder.loadClassicalBit(bit.storage, bit.index);
+}
+
+[[nodiscard]] static mlir::Value emitRegisterComparison(
+    mlir::qc::QCProgramBuilder& builder,
+    const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+    const llvm::ArrayRef<uint32_t> rootClbitMap, const Register& reg,
+    mlir::cbit::ComparisonPredicate predicate, uint64_t expected) {
+  mlir::Value storage;
+  for (size_t index = 0U; index < reg.bits.size(); ++index) {
+    const auto& bit =
+        classicalBitRef(classicalBits, rootClbitMap, reg.bits[index]);
+    if (std::cmp_not_equal(bit.index, index) ||
+        (storage && bit.storage != storage)) {
+      return {};
+    }
+    storage = bit.storage;
+  }
+  if (!storage) {
+    return {};
+  }
+  const auto width = static_cast<unsigned>(reg.bits.size());
+  if (llvm::cast<mlir::cbit::RegisterType>(storage.getType()).getWidth() !=
+      width) {
+    return {};
+  }
+  const auto rhs = builder.getIntegerAttr(builder.getIntegerType(width),
+                                          llvm::APInt(width, expected, false));
+  return mlir::cbit::CompareOp::create(builder, builder.getI1Type(), predicate,
+                                       storage, rhs);
 }
 
 [[nodiscard]] static mlir::Value
@@ -675,6 +711,31 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
   return terms.front();
 }
 
+[[nodiscard]] static std::optional<mlir::cbit::ComparisonPredicate>
+registerComparisonPredicate(const BinaryOperation operation,
+                            const bool reverse) {
+  switch (operation) {
+  case BinaryOperation::Equal:
+    return mlir::cbit::ComparisonPredicate::Equal;
+  case BinaryOperation::NotEqual:
+    return mlir::cbit::ComparisonPredicate::NotEqual;
+  case BinaryOperation::Less:
+    return reverse ? mlir::cbit::ComparisonPredicate::Greater
+                   : mlir::cbit::ComparisonPredicate::Less;
+  case BinaryOperation::LessEqual:
+    return reverse ? mlir::cbit::ComparisonPredicate::GreaterEqual
+                   : mlir::cbit::ComparisonPredicate::LessEqual;
+  case BinaryOperation::Greater:
+    return reverse ? mlir::cbit::ComparisonPredicate::Less
+                   : mlir::cbit::ComparisonPredicate::Greater;
+  case BinaryOperation::GreaterEqual:
+    return reverse ? mlir::cbit::ComparisonPredicate::LessEqual
+                   : mlir::cbit::ComparisonPredicate::GreaterEqual;
+  default:
+    return std::nullopt;
+  }
+}
+
 [[nodiscard]] static mlir::Value
 emitExpression(mlir::qc::QCProgramBuilder& builder,
                const Expression& expression,
@@ -708,6 +769,15 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
         target);
   }
   case ExpressionKind::Cast: {
+    if (expression.type == ClassicalType::Bool &&
+        expression.left->kind == ExpressionKind::ClassicalRegister &&
+        expression.left->width == expression.left->reg.bits.size()) {
+      if (auto comparison = emitRegisterComparison(
+              builder, classicalBits, rootClbitMap, expression.left->reg,
+              mlir::cbit::ComparisonPredicate::NotEqual, 0U)) {
+        return comparison;
+      }
+    }
     auto operand =
         emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
     if (operand.getType() == resultType) {
@@ -784,6 +854,27 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     break;
   }
   case ExpressionKind::Binary: {
+    const auto reverse =
+        expression.left->kind == ExpressionKind::Value &&
+        expression.right->kind == ExpressionKind::ClassicalRegister;
+    const auto& registerExpression =
+        reverse ? *expression.right : *expression.left;
+    const auto& expected = reverse ? *expression.left : *expression.right;
+    if (const auto predicate =
+            registerComparisonPredicate(expression.binaryOperation, reverse);
+        predicate &&
+        registerExpression.kind == ExpressionKind::ClassicalRegister &&
+        registerExpression.type == ClassicalType::Uint &&
+        registerExpression.width == registerExpression.reg.bits.size() &&
+        expected.kind == ExpressionKind::Value &&
+        expected.type == ClassicalType::Uint &&
+        expected.width == registerExpression.width) {
+      if (auto comparison = emitRegisterComparison(
+              builder, classicalBits, rootClbitMap, registerExpression.reg,
+              *predicate, expected.uintValue)) {
+        return comparison;
+      }
+    }
     auto left =
         emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
     if (expression.binaryOperation == BinaryOperation::LogicAnd ||
@@ -956,36 +1047,17 @@ emitCondition(mlir::qc::QCProgramBuilder& builder,
               const ClassicalTarget& target,
               const llvm::ArrayRef<ClassicalBitRef> classicalBits,
               const llvm::ArrayRef<uint32_t> rootClbitMap) {
-  switch (target.kind) {
-  case ClassicalTargetKind::ClassicalBit: {
-    auto actual =
-        loadClassicalBit(builder, classicalBits, rootClbitMap, target.bit);
-    return mlir::arith::CmpIOp::create(builder, mlir::arith::CmpIPredicate::eq,
-                                       actual,
-                                       builder.boolConstant(target.expectedBit))
-        .getResult();
+  if (target.kind != ClassicalTargetKind::Expression || !target.expression) {
+    throw std::runtime_error(
+        "Qiskit control-flow condition has no classical expression");
   }
-  case ClassicalTargetKind::ClassicalRegister: {
-    auto actual = castInteger(
-        builder, packRegister(builder, classicalBits, rootClbitMap, target.reg),
-        builder.getIntegerType(target.width));
-    auto expected =
-        integerConstant(builder, target.width, target.expectedRegister);
-    return mlir::arith::CmpIOp::create(builder, mlir::arith::CmpIPredicate::eq,
-                                       actual, expected)
-        .getResult();
+  auto condition =
+      emitExpression(builder, *target.expression, classicalBits, rootClbitMap);
+  if (!condition.getType().isInteger(1)) {
+    throw std::runtime_error(
+        "Qiskit control-flow condition expression must have Boolean type");
   }
-  case ClassicalTargetKind::Expression: {
-    auto condition = emitExpression(builder, *target.expression, classicalBits,
-                                    rootClbitMap);
-    if (!condition.getType().isInteger(1)) {
-      throw std::runtime_error(
-          "Qiskit control-flow condition expression must have Boolean type");
-    }
-    return condition;
-  }
-  }
-  throw std::runtime_error("unknown normalized Qiskit condition type");
+  return condition;
 }
 
 [[nodiscard]] static mlir::Value

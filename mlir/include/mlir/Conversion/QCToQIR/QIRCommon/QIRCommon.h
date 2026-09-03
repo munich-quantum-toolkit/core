@@ -40,6 +40,9 @@ struct LoweringState {
   /// Result-array pointers to be deallocated at the end of the program
   DenseSet<Value> resultArrays;
 
+  /// CBit read operations whose register is backed by a result array.
+  DenseSet<Operation*> returnedCBitReads;
+
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
 

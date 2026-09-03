@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/ADT/APInt.h>
 #include <llvm/ADT/StringRef.h>
 
 #include <cstddef>
@@ -208,6 +209,7 @@ enum class ConditionKind : uint8_t {
   Not,
   And,
   Or,
+  RegisterComparison,
   Comparison,
 };
 
@@ -220,6 +222,8 @@ struct ConditionExpression {
   QubitReference measurement;
   ConditionId lhs = 0;
   ConditionId rhs = 0;
+  RegisterId reg = 0;
+  llvm::APInt expected = llvm::APInt(1, 0);
   ExpressionId comparisonLhs = 0;
   ExpressionId comparisonRhs = 0;
   ComparisonKind comparison = ComparisonKind::Equal;

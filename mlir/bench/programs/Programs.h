@@ -21,6 +21,7 @@ namespace mqt::bench {
 class BV;
 class GHZ;
 class Grover;
+class Multiplexer;
 class QFT;
 class QPE;
 } // namespace mqt::bench
@@ -38,6 +39,10 @@ SmallVector<Value> ghz(qc::QCProgramBuilder& builder, const GHZ& benchmark);
 /// Emit one configured Grover benchmark.
 SmallVector<Value> grover(qc::QCProgramBuilder& builder,
                           const Grover& benchmark);
+
+/// Emit one configured quantum multiplexer benchmark.
+SmallVector<Value> multiplexer(qc::QCProgramBuilder& builder,
+                               const Multiplexer& benchmark);
 
 /// Emit one configured QFT benchmark.
 SmallVector<Value> qft(qc::QCProgramBuilder& builder, const QFT& benchmark);

@@ -29,9 +29,6 @@
 #include "dd/RealNumberUniqueTable.hpp"
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
-#include "ir/Definitions.hpp"
-#include "ir/Permutation.hpp"
-#include "ir/operations/Control.hpp"
 
 #include <array>
 #include <cmath>
@@ -341,7 +338,7 @@ public:
    * @param target The target qubit
    * @return A decision diagram for the gate
    */
-  mEdge makeGateDD(const GateMatrix& mat, qc::Qubit target);
+  mEdge makeGateDD(const GateMatrix& mat, Qubit target);
 
   /**
    * @brief Construct the DD for a single-qubit controlled gate
@@ -350,8 +347,7 @@ public:
    * @param target The target qubit
    * @return A decision diagram for the gate
    */
-  mEdge makeGateDD(const GateMatrix& mat, const qc::Control& control,
-                   qc::Qubit target);
+  mEdge makeGateDD(const GateMatrix& mat, const Control& control, Qubit target);
 
   /**
    * @brief Construct the DD for a multi-controlled single-qubit gate
@@ -360,8 +356,8 @@ public:
    * @param target The target qubit
    * @return A decision diagram for the gate
    */
-  mEdge makeGateDD(const GateMatrix& mat, const qc::Controls& controls,
-                   qc::Qubit target);
+  mEdge makeGateDD(const GateMatrix& mat, const Controls& controls,
+                   Qubit target);
 
   /**
    * @brief Creates the DD for a two-qubit gate
@@ -372,8 +368,8 @@ public:
    * @throws std::runtime_error if the number of qubits is larger than the
    * package configuration
    */
-  mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, qc::Qubit target0,
-                           qc::Qubit target1);
+  mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, Qubit target0,
+                           Qubit target1);
 
   /**
    * @brief Creates the DD for a two-qubit gate
@@ -386,8 +382,8 @@ public:
    * package configuration
    */
   mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                           const qc::Control& control, qc::Qubit target0,
-                           qc::Qubit target1);
+                           const Control& control, Qubit target0,
+                           Qubit target1);
 
   /**
    * @brief Creates the DD for a two-qubit gate
@@ -400,8 +396,8 @@ public:
    * package configuration
    */
   mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                           const qc::Controls& controls, qc::Qubit target0,
-                           qc::Qubit target1);
+                           const Controls& controls, Qubit target0,
+                           Qubit target1);
 
   /**
    * @brief Creates the DD for a three-qubit gate
@@ -413,8 +409,8 @@ public:
    * @throws std::runtime_error if the number of qubits is larger than the
    * package configuration
    */
-  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, qc::Qubit target0,
-                             qc::Qubit target1, qc::Qubit target2);
+  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, Qubit target0,
+                             Qubit target1, Qubit target2);
 
   /**
    * @brief Creates the DD for a three-qubit gate
@@ -428,8 +424,8 @@ public:
    * package configuration
    */
   mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                             const qc::Control& control, qc::Qubit target0,
-                             qc::Qubit target1, qc::Qubit target2);
+                             const Control& control, Qubit target0,
+                             Qubit target1, Qubit target2);
 
   /**
    * @brief Creates the DD for a three-qubit gate
@@ -443,8 +439,8 @@ public:
    * package configuration
    */
   mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                             const qc::Controls& controls, qc::Qubit target0,
-                             qc::Qubit target1, qc::Qubit target2);
+                             const Controls& controls, Qubit target0,
+                             Qubit target1, Qubit target2);
 
   /**
    * @brief Converts a given matrix to a decision diagram
@@ -1210,9 +1206,9 @@ public:
    * @param permutation An optional permutation of qubits.
    * @return The fidelity of the measurement outcomes.
    */
-  static fp
-  fidelityOfMeasurementOutcomes(const vEdge& e, const SparsePVec& probs,
-                                const qc::Permutation& permutation = {});
+  static fp fidelityOfMeasurementOutcomes(const vEdge& e,
+                                          const SparsePVec& probs,
+                                          const Permutation& permutation = {});
 
 private:
   /**
@@ -1246,7 +1242,7 @@ private:
    */
   static fp fidelityOfMeasurementOutcomesRecursive(
       const vEdge& e, const SparsePVec& probs, std::size_t i,
-      const qc::Permutation& permutation, std::size_t nQubits);
+      const Permutation& permutation, std::size_t nQubits);
 
 public:
   /**

@@ -28,6 +28,7 @@ add_mlir_dialect_library(
   LINK_LIBS
   PUBLIC
   MLIRCBitDialect
+  MLIRFuncDialect
   MLIRMQTUtils
   MLIRQCODialect
   MLIRSCFDialect)
@@ -70,6 +71,7 @@ add_mlir_library(
   MLIRQCOMatrix
   MLIRArithDialect
   MLIRFuncDialect
+  MLIRMathDialect
   MLIRSCFDialect
   MQT::CoreDD
   PRIVATE

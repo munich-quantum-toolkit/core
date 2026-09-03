@@ -977,6 +977,53 @@ static void setExpressionType(Expression& expression, const mlir::Type type) {
   return checkedAdd(info->second.base, checked, "classical-bit");
 }
 
+[[nodiscard]] static Register classicalRegister(mlir::Value value,
+                                                const ExportState& state) {
+  const auto info = state.classicalRegisterInfo.find(value);
+  if (info == state.classicalRegisterInfo.end() || info->second.size == 0U ||
+      info->second.size > 64U) {
+    throw std::runtime_error(
+        "Qiskit register comparisons require between 1 and 64 bits");
+  }
+  if (info->second.initialization != mlir::cbit::Initialization::Zero) {
+    const auto written = state.unconditionalWrites.find(value);
+    if (written == state.unconditionalWrites.end() ||
+        written->second.size() != info->second.size) {
+      throw std::runtime_error(
+          "Qiskit register comparison reads undefined classical bits");
+    }
+  }
+  Register result;
+  result.bits.resize(info->second.size);
+  std::iota(result.bits.begin(), result.bits.end(), info->second.base);
+  for (const auto& candidate : state.classicalRegisters) {
+    if (candidate.bits == result.bits) {
+      result.name = candidate.name;
+      break;
+    }
+  }
+  return result;
+}
+
+[[nodiscard]] static BinaryOperation
+comparisonOperation(const mlir::cbit::ComparisonPredicate predicate) {
+  switch (predicate) {
+  case mlir::cbit::ComparisonPredicate::Equal:
+    return BinaryOperation::Equal;
+  case mlir::cbit::ComparisonPredicate::NotEqual:
+    return BinaryOperation::NotEqual;
+  case mlir::cbit::ComparisonPredicate::Less:
+    return BinaryOperation::Less;
+  case mlir::cbit::ComparisonPredicate::LessEqual:
+    return BinaryOperation::LessEqual;
+  case mlir::cbit::ComparisonPredicate::Greater:
+    return BinaryOperation::Greater;
+  case mlir::cbit::ComparisonPredicate::GreaterEqual:
+    return BinaryOperation::GreaterEqual;
+  }
+  llvm_unreachable("unknown CBit comparison predicate");
+}
+
 [[noreturn]] static void throwClassicalExpressionSizeError() {
   throw std::runtime_error(
       "QC classical expression exceeds the size limit of 4096 nodes");
@@ -1070,6 +1117,31 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
   if (auto load = llvm::dyn_cast<mlir::cbit::LoadOp>(operation)) {
     result->kind = ExpressionKind::ClassicalBit;
     result->bit = classicalBitIndex(load, state);
+    state.expressionOperations.insert(operation);
+    return result;
+  }
+  if (auto comparison = llvm::dyn_cast<mlir::cbit::CompareOp>(operation)) {
+    const auto width = comparison.getRhs().getBitWidth();
+    if (width > 64U) {
+      throw std::runtime_error(
+          "Qiskit register comparisons support at most 64 bits");
+    }
+    countExpressionNode(nodeCount);
+    auto left = std::make_unique<Expression>();
+    left->kind = ExpressionKind::ClassicalRegister;
+    left->type = ClassicalType::Uint;
+    left->width = width;
+    left->reg = classicalRegister(comparison.getReg(), state);
+    countExpressionNode(nodeCount);
+    auto right = std::make_unique<Expression>();
+    right->kind = ExpressionKind::Value;
+    right->type = ClassicalType::Uint;
+    right->width = width;
+    right->uintValue = comparison.getRhs().getZExtValue();
+    result->kind = ExpressionKind::Binary;
+    result->binaryOperation = comparisonOperation(comparison.getPredicate());
+    result->left = std::move(left);
+    result->right = std::move(right);
     state.expressionOperations.insert(operation);
     return result;
   }
@@ -1393,7 +1465,7 @@ static void acceptPackedRegister(PackedRegister& packed, ExportState& state) {
 static void validateClassicalSnapshot(mlir::Value expression,
                                       mlir::Operation& consumer) {
   llvm::DenseSet<mlir::Value> visited;
-  llvm::SmallVector<mlir::cbit::LoadOp> loads;
+  llvm::SmallVector<std::pair<mlir::Operation*, mlir::Value>> reads;
   llvm::SmallVector<mlir::Value, 16> worklist{expression};
   while (!worklist.empty()) {
     auto value = worklist.pop_back_val();
@@ -1408,7 +1480,11 @@ static void validateClassicalSnapshot(mlir::Value expression,
       continue;
     }
     if (auto load = llvm::dyn_cast<mlir::cbit::LoadOp>(operation)) {
-      loads.push_back(load);
+      reads.emplace_back(load, load.getReg());
+      continue;
+    }
+    if (auto comparison = llvm::dyn_cast<mlir::cbit::CompareOp>(operation)) {
+      reads.emplace_back(comparison, comparison.getReg());
       continue;
     }
     if (auto ifOp = llvm::dyn_cast<mlir::scf::IfOp>(operation)) {
@@ -1422,9 +1498,9 @@ static void validateClassicalSnapshot(mlir::Value expression,
     }
     worklist.append(operation->operand_begin(), operation->operand_end());
   }
-  for (auto load : loads) {
-    mlir::Operation* anchor = load;
-    auto* anchorBlock = load->getBlock();
+  for (auto [read, reg] : reads) {
+    mlir::Operation* anchor = read;
+    auto* anchorBlock = read->getBlock();
     while (anchorBlock != consumer.getBlock()) {
       auto* parent = anchorBlock->getParentOp();
       auto parentIf = llvm::dyn_cast_if_present<mlir::scf::IfOp>(parent);
@@ -1448,13 +1524,13 @@ static void validateClassicalSnapshot(mlir::Value expression,
             "Qiskit control-flow expression does not dominate its consumer");
       }
       if (auto store = llvm::dyn_cast<mlir::cbit::StoreOp>(operation);
-          store && store.getReg() == load.getReg()) {
+          store && store.getReg() == reg) {
         throw std::runtime_error(
             "Qiskit control-flow export cannot preserve a stale classical "
             "snapshot");
       }
       if (operation->getNumRegions() != 0U &&
-          storesToValueRecursively(*operation, load.getReg())) {
+          storesToValueRecursively(*operation, reg)) {
         throw std::runtime_error(
             "Qiskit control-flow export cannot preserve a classical "
             "snapshot across nested control flow");
@@ -1471,39 +1547,6 @@ exportCondition(mlir::Value value, ExportState& state,
         "Qiskit control-flow conditions must have Boolean type");
   }
   validateClassicalSnapshot(value, consumer);
-  if (auto comparison = value.getDefiningOp<mlir::arith::CmpIOp>();
-      comparison &&
-      comparison.getPredicate() == mlir::arith::CmpIPredicate::eq) {
-    for (auto [actual, expected] :
-         std::array{std::pair{comparison.getLhs(), comparison.getRhs()},
-                    std::pair{comparison.getRhs(), comparison.getLhs()}}) {
-      const auto constant = constantUnsignedInteger(expected);
-      if (!constant) {
-        continue;
-      }
-      if (auto load = actual.getDefiningOp<mlir::cbit::LoadOp>();
-          load && actual.getType().isInteger(1) && *constant <= 1U) {
-        state.expressionOperations.insert(comparison);
-        state.expressionOperations.insert(load);
-        return {.kind = ClassicalTargetKind::ClassicalBit,
-                .bit = classicalBitIndex(load, state),
-                .expectedBit = *constant != 0U};
-      }
-      if (auto packed = matchPackedRegister(actual, state, evaluationBlock)) {
-        if (packed->reg.bits.size() != 64U &&
-            *constant >= (uint64_t{1} << packed->reg.bits.size())) {
-          continue;
-        }
-        state.expressionOperations.insert(comparison);
-        acceptPackedRegister(*packed, state);
-        return {.kind = ClassicalTargetKind::ClassicalRegister,
-                .reg = std::move(packed->reg),
-                .expectedRegister = *constant,
-                .width =
-                    llvm::cast<mlir::IntegerType>(actual.getType()).getWidth()};
-      }
-    }
-  }
   ClassicalTarget target{.kind = ClassicalTargetKind::Expression};
   target.expression = exportExpression(value, state, evaluationBlock);
   return target;
@@ -1866,6 +1909,10 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportState& state,
       deferredExpressions.push_back(&operation);
       continue;
     }
+    if (llvm::isa<mlir::cbit::CompareOp>(operation)) {
+      deferredExpressions.push_back(&operation);
+      continue;
+    }
     if (auto dealloc = llvm::dyn_cast<mlir::memref::DeallocOp>(operation)) {
       if (topLevel && state.quantumBases.contains(dealloc.getMemref())) {
         continue;
@@ -2109,7 +2156,7 @@ nb::object exportCircuit(const mlir::QCProgram& program,
   ExportState state;
   collectParameters(function, state);
   if (target != nullptr) {
-    state.numQubits = checkedIndex(static_cast<uint64_t>(target->numQubits()),
+    state.numQubits = checkedIndex(static_cast<uint64_t>(target->numSites()),
                                    "target qubit count");
   }
   collectResources(function, state, target);

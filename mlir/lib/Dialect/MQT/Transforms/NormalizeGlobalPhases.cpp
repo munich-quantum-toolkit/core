@@ -13,6 +13,7 @@
 #include "mlir/Dialect/MQT/Utils/Angles.h"
 #include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mlir/Dialect/MQT/Utils/GatePowering.h"
+#include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -310,66 +311,87 @@ private:
     return phase;
   }
 
+  void eraseDeadBodyOps(Block& body) {
+    for (auto* op = body.getTerminator()->getPrevNode(); op != nullptr;) {
+      auto* previous = op->getPrevNode();
+      if (!isa<qc::UnitaryOpInterface, qco::UnitaryOpInterface>(op) &&
+          isOpTriviallyDead(op)) {
+        rewriter.eraseOp(op);
+      }
+      op = previous;
+    }
+  }
+
   [[nodiscard]] std::optional<PhaseContribution> factorControl(qc::CtrlOp op) {
     auto phase = normalizeBlock(*op.getBody(), op);
-    if (!phase || op.getNumControls() == 0) {
-      return phase;
+    const bool releasePhase = phase.has_value() && op.getNumControls() == 0;
+    if (phase && !releasePhase && !phase->expression.isZero()) {
+      rewriter.setInsertionPoint(op);
+      auto angle = phase->expression.materialize(rewriter, phase->loc);
+      rewriter.setInsertionPointAfter(op);
+      if (op.getNumControls() == 1) {
+        qc::POp::create(rewriter, phase->loc, op.getControl(0), angle);
+      } else {
+        auto controls = op.getControls();
+        qc::CtrlOp::create(rewriter, phase->loc, controls.drop_back(),
+                           controls.back(), [&](Value target) {
+                             qc::POp::create(rewriter, phase->loc, target,
+                                             angle);
+                           });
+      }
     }
-    if (phase->expression.isZero()) {
-      return std::nullopt;
+    if (phase) {
+      eraseDeadBodyOps(*op.getBody());
     }
-
-    rewriter.setInsertionPoint(op);
-    auto angle = phase->expression.materialize(rewriter, phase->loc);
-    rewriter.setInsertionPointAfter(op);
-    if (op.getNumControls() == 1) {
-      qc::POp::create(rewriter, phase->loc, op.getControl(0), angle);
-      return std::nullopt;
+    if (llvm::hasSingleElement(*op.getBody())) {
+      rewriter.eraseOp(op);
     }
-    auto controls = op.getControls();
-    qc::CtrlOp::create(rewriter, phase->loc, controls.drop_back(),
-                       controls.back(), [&](Value target) {
-                         qc::POp::create(rewriter, phase->loc, target, angle);
-                       });
-    return std::nullopt;
+    return releasePhase ? phase : std::nullopt;
   }
 
   [[nodiscard]] std::optional<PhaseContribution> factorControl(qco::CtrlOp op) {
     auto phase = normalizeBlock(*op.getBody(), op);
-    if (!phase || op.getNumControls() == 0) {
-      return phase;
-    }
-    if (phase->expression.isZero()) {
-      return std::nullopt;
-    }
+    const bool releasePhase = phase.has_value() && op.getNumControls() == 0;
+    if (phase && !releasePhase && !phase->expression.isZero()) {
+      rewriter.setInsertionPoint(op);
+      auto angle = phase->expression.materialize(rewriter, phase->loc);
+      rewriter.setInsertionPointAfter(op);
+      SmallVector<Value> oldControls(op.getOutputControls());
+      SmallVector<Value> newControls;
+      Operation* relativePhase = nullptr;
+      if (op.getNumControls() == 1) {
+        auto p =
+            qco::POp::create(rewriter, phase->loc, oldControls.front(), angle);
+        newControls.push_back(p.getOutputTarget(0));
+        relativePhase = p;
+      } else {
+        auto relative = qco::CtrlOp::create(
+            rewriter, phase->loc, ValueRange(oldControls).drop_back(),
+            oldControls.back(), [&](Value target) {
+              return qco::POp::create(rewriter, phase->loc, target, angle)
+                  .getOutputTarget(0);
+            });
+        llvm::append_range(newControls, relative.getOutputQubits());
+        relativePhase = relative;
+      }
 
-    rewriter.setInsertionPoint(op);
-    auto angle = phase->expression.materialize(rewriter, phase->loc);
-    rewriter.setInsertionPointAfter(op);
-    SmallVector<Value> oldControls(op.getOutputControls());
-    SmallVector<Value> newControls;
-    Operation* relativePhase = nullptr;
-    if (op.getNumControls() == 1) {
-      auto p =
-          qco::POp::create(rewriter, phase->loc, oldControls.front(), angle);
-      newControls.push_back(p.getOutputTarget(0));
-      relativePhase = p;
-    } else {
-      auto relative = qco::CtrlOp::create(
-          rewriter, phase->loc, ValueRange(oldControls).drop_back(),
-          oldControls.back(), [&](Value target) {
-            return qco::POp::create(rewriter, phase->loc, target, angle)
-                .getOutputTarget(0);
-          });
-      llvm::append_range(newControls, relative.getOutputQubits());
-      relativePhase = relative;
+      for (auto [oldControl, newControl] :
+           llvm::zip_equal(oldControls, newControls)) {
+        rewriter.replaceAllUsesExcept(oldControl, newControl, relativePhase);
+      }
     }
-
-    for (auto [oldControl, newControl] :
-         llvm::zip_equal(oldControls, newControls)) {
-      rewriter.replaceAllUsesExcept(oldControl, newControl, relativePhase);
+    if (phase) {
+      eraseDeadBodyOps(*op.getBody());
     }
-    return std::nullopt;
+    if (llvm::hasSingleElement(*op.getBody())) {
+      SmallVector<Value> replacements(op.getInputControls());
+      for (auto yielded : op.getBody()->getTerminator()->getOperands()) {
+        replacements.push_back(
+            getValueFromBlockArgument(yielded, op.getInputTargets()));
+      }
+      rewriter.replaceOp(op, replacements);
+    }
+    return releasePhase ? phase : std::nullopt;
   }
 
   void normalizeRegion(Region& region) {

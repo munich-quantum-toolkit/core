@@ -268,6 +268,109 @@ switch (selector) {
       << *emitted;
 }
 
+TEST(OpenQASM3EmissionTest, RoundTripsRegisterComparisonInWhileCondition) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+bit[1] c = measure q;
+while (c == 1) {
+  c[0] = measure q;
+}
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("while ("), std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("c == 1"), std::string::npos) << *emitted;
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
+}
+
+TEST(OpenQASM3EmissionTest, EmitsRegisterComparisonsDirectly) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> !cbit.reg<3> attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
+        : !cbit.reg<3>
+    %eq = cbit.cmp eq, %c, 5 : i3 : !cbit.reg<3>
+    %ne = cbit.cmp ne, %c, 5 : i3 : !cbit.reg<3>
+    %ult = cbit.cmp ult, %c, 5 : i3 : !cbit.reg<3>
+    %ule = cbit.cmp ule, %c, 5 : i3 : !cbit.reg<3>
+    %ugt = cbit.cmp ugt, %c, 5 : i3 : !cbit.reg<3>
+    %uge = cbit.cmp uge, %c, 5 : i3 : !cbit.reg<3>
+    scf.if %eq {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %ne {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %ult {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %ule {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %ugt {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %uge {
+      qc.x %q : !qc.qubit
+    }
+    return %c : !cbit.reg<3>
+  }
+}
+)mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  for (const auto* comparison :
+       {"c == 5", "c != 5", "c < 5", "c <= 5", "c > 5", "c >= 5"}) {
+    EXPECT_NE(emitted->find(comparison), std::string::npos) << *emitted;
+  }
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
+}
+
+TEST(OpenQASM3EmissionTest, RejectsComparisonAfterInterveningRegisterWrite) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> !cbit.reg<3> attributes {mqt.entry_point} {
+    %zero = arith.constant 0 : index
+    %true = arith.constant true
+    %q = qc.alloc : !qc.qubit
+    %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
+        : !cbit.reg<3>
+    %condition = cbit.cmp eq, %c, 0 : i3 : !cbit.reg<3>
+    %false = arith.constant false
+    %forwarded = arith.xori %condition, %false : i1
+    cbit.store %true, %c[%zero] : !cbit.reg<3>
+    scf.if %forwarded {
+      qc.x %q : !qc.qubit
+    }
+    return %c : !cbit.reg<3>
+  }
+}
+)mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+}
+
 TEST(OpenQASM3EmissionTest, EmitsNativeIndexSwitch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {

@@ -109,10 +109,8 @@ MQT Core. The project-wide policy for AI-assisted contributions is
   `cpp-linter` check on every line of each changed C++ file. A changed-line
   `clang-tidy` run is useful while iterating but is not sufficient validation.
 - Run a component binary directly when iterating, for example
-  `./build/release/test/ir/mqt-core-ir-test` or
   `./build/release/test/qdmi/driver/mqt-core-qdmi-driver-test`.
-- Use GoogleTest filters to narrow a binary further, for example
-  `./build/release/test/ir/mqt-core-ir-test --gtest_filter='StandardOperation.*'`.
+- Use GoogleTest filters to narrow a binary further.
 - Replace `release` with `debug` for a debug build. Consult `CMakePresets.json`
   for other supported configurations.
 

@@ -30,9 +30,12 @@ final basis state. QC coalesces static references; QCO owns one root per index.
 - Decision: with an MQT entry point, every `qco.static` belongs to its entry
   block with unique indices; helpers take arguments. Verify transforms on both
   sides. Rationale: one QCO ownership boundary. Date: 2026-08-29.
-- Decision: `sample` encodes returned CBits in return order, MSB-first; no CBit
-  uses `measureAll`; mixed or undefined outputs fail. Loops use widened `APInt`
-  and one 10,000-step budget. Date: 2026-08-26.
+- Decision: `sample` uses conventional count-string order: the last returned
+  CBit register comes first, and each register is MSB-first. This avoids adapter
+  reordering. Date: 2026-09-02.
+- Decision: without CBit results, `sample` uses `measureAll`; mixed or undefined
+  outputs fail. Loops use widened `APInt` and one 10,000-step budget. Date:
+  2026-08-26.
 
 ## Outcomes & Retrospective
 
@@ -51,8 +54,8 @@ checks public transform boundaries; and
 
 The Python API is `program.build_functionality(dd_package) -> MatrixDD`,
 `program.simulate(initial_state, dd_package, seed=0) -> VectorDD`, and
-`program.sample(dd_package, shots=1024, seed=0) -> dict[str, int]`. The public
-C++ simulation function always receives an RNG. Static sampling evolves once,
+`program.sample(shots=1024, seed=0) -> dict[str, int]`. The public C++
+simulation function always receives an RNG. Static sampling evolves once,
 adaptive control runs per shot, and returned CBits share storage across calls.
 
 ## Milestones

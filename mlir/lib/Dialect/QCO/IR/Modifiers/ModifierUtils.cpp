@@ -33,8 +33,9 @@ namespace mlir::qco::detail {
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   const auto hasNonUnitaryOperation =
       body.walk([](Operation* operation) {
-            return isa<cbit::AllocOp, cbit::LoadOp, cbit::StoreOp, AllocOp,
-                       SinkOp, StaticOp, MeasureOp, ResetOp>(operation)
+            return isa<cbit::AllocOp, cbit::CompareOp, cbit::LoadOp,
+                       cbit::StoreOp, AllocOp, SinkOp, StaticOp, MeasureOp,
+                       ResetOp>(operation)
                        ? WalkResult::interrupt()
                        : WalkResult::advance();
           })

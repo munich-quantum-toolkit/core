@@ -15,6 +15,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
+#include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QPE.hpp"
 
@@ -365,6 +366,19 @@ void requireBenchmark(const Json& root, const std::string_view expected,
   }
 }
 
+[[nodiscard]] Multiplexer
+parseMultiplexerParameters(const Json& parameters,
+                           const std::string_view source) {
+  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
+  try {
+    return Multiplexer({.qubits = sizeValue(required(parameters, "qubits",
+                                                     source, "$/parameters"),
+                                            source, "$/parameters/qubits")});
+  } catch (const std::invalid_argument& error) {
+    fail(source, "$/parameters", error.what());
+  }
+}
+
 [[nodiscard]] QFT parseQFTParameters(const Json& parameters,
                                      const std::string_view source) {
   rejectUnknownKeys(parameters, {"qubits", "period_exponent", "method"}, source,
@@ -471,6 +485,10 @@ void requireBenchmark(const Json& root, const std::string_view expected,
           {"marked_bitstring", options.markedBitstring}};
 }
 
+[[nodiscard]] Json parametersJSON(const Multiplexer& benchmark) {
+  return {{"qubits", benchmark.options().qubits}};
+}
+
 [[nodiscard]] Json parametersJSON(const QFT& benchmark) {
   const auto& options = benchmark.options();
   return {{"method", methodName(options.method)},
@@ -510,6 +528,14 @@ void requireBenchmark(const Json& root, const std::string_view expected,
           {"outcome_order", "big_endian"},
           {"output", benchmark.output().name},
           {"success_outcome", benchmark.options().markedBitstring},
+          {"version", 1}};
+}
+
+[[nodiscard]] Json referenceJSON(const Multiplexer& benchmark) {
+  return {{"kind", "analytic"},
+          {"model", "multiplexer"},
+          {"outcome_order", "big_endian"},
+          {"output", benchmark.output().name},
           {"version", 1}};
 }
 
@@ -659,6 +685,18 @@ template <class Benchmark>
            {"pattern", "^[01]+$"},
            {"type", "string"}}}}},
        {"required", {"marked_bitstring"}},
+       {"type", "object"}});
+}
+
+[[nodiscard]] Json multiplexerInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<Multiplexer>(
+      {{"additionalProperties", false},
+       {"properties",
+        {{"qubits",
+          {{"maximum", MultiplexerOptions::MAX_QUBITS},
+           {"minimum", 2},
+           {"type", "integer"}}}}},
+       {"required", {"qubits"}},
        {"type", "object"}});
 }
 

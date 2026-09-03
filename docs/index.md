@@ -4,14 +4,14 @@ MQT Core is an open-source C++20 and Python library for quantum computing that
 forms the backbone of the quantum software tools developed as part of the
 _{doc}`Munich Quantum Toolkit (MQT) <mqt:index>`_. To this end, MQT Core
 consists of multiple components that are used throughout the MQT, including a
-fully fledged intermediate representation (IR) for quantum computations, a
-state-of-the-art decision diagram (DD) package for quantum computing, and a QIR
-runtime based on the decision diagram package.
+compiler collection built on MLIR, a state-of-the-art decision diagram (DD)
+package for quantum computing, and a QIR runtime based on the decision diagram
+package.
 
 This documentation provides a comprehensive guide to the MQT Core library,
 including {doc}`installation instructions <installation>`, a
-{doc}`quickstart guide for the MQT Core IR <mqt_core_ir>`, its
-{doc}`decision diagram (DD) package <dd_package>`, as well as detailed
+{doc}`guide to the MQT Compiler Collection <mlir/python_compiler_collection>`,
+its {doc}`decision diagram (DD) package <dd_package>`, as well as detailed
 {doc}`API documentation <api/mqt/core/index>` and the
 <a href="cpp/index.html">C++ API reference</a>. The source code of MQT Core is
 publicly available on GitHub at
@@ -34,7 +34,6 @@ self
 
 installation
 benchmarks
-mqt_core_ir
 dd_package
 mlir/index
 qdmi/index

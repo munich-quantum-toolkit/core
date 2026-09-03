@@ -78,6 +78,7 @@ protected:
   void SetUp() override { operations = device.getOperations(); }
 };
 
+#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 class DDSimulatorDeviceTest : public testing::Test {
 protected:
   Device device;
@@ -130,6 +131,7 @@ cx q[0], q[1];
     return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 0);
   }
 };
+#endif
 
 } // namespace
 
@@ -273,6 +275,18 @@ TEST(QueuePositionTest, PropagatesOtherQueryErrors) {
   EXPECT_THROW(std::ignore = detail::queuePositionFromResult(
                    QDMI_ERROR_INVALIDARGUMENT, 0),
                std::invalid_argument);
+}
+
+TEST(JobShotsTest, PreservesZeroWidthShots) {
+  EXPECT_EQ(detail::parseShots("", 0), std::vector<std::string>{});
+  EXPECT_EQ(detail::parseShots("", 1), std::vector<std::string>{""});
+  EXPECT_EQ(detail::parseShots(",,,", 4),
+            (std::vector<std::string>{"", "", "", ""}));
+}
+
+TEST(JobShotsTest, ValidatesShotCount) {
+  EXPECT_THROW(std::ignore = detail::parseShots("0,1", 1), std::runtime_error);
+  EXPECT_THROW(std::ignore = detail::parseShots("0", 2), std::runtime_error);
 }
 
 TEST(QDMITest, StatusToString) {
@@ -493,9 +507,11 @@ TEST_P(DeviceTest, NeedsCalibration) {
   EXPECT_NO_THROW(std::ignore = device.getNeedsCalibration());
 }
 
+#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 TEST_F(DDSimulatorDeviceTest, QueueLengthIsUnavailable) {
   EXPECT_EQ(device.getQueueLength(), std::nullopt);
 }
+#endif
 
 TEST_P(DeviceTest, LengthUnit) {
   EXPECT_NO_THROW(std::ignore = device.getLengthUnit());
@@ -527,9 +543,16 @@ TEST_P(DeviceTest, ChildDevices) {
 
 TEST_P(DeviceTest, UnsupportedCustomPropertyReturnsNullopt) {
   EXPECT_EQ(device.queryCustomProperty<std::vector<std::byte>>(
-                CustomProperty::Custom1),
+                CustomProperty::Custom2),
             std::nullopt);
 }
+
+#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
+TEST_F(DDSimulatorDeviceTest, ReportsCompilerTargetMetadata) {
+  EXPECT_EQ(device.queryCustomProperty<std::string>(CustomProperty::Custom1),
+            "mqt.compiler-target.v1:all-to-all-homogeneous");
+}
+#endif
 
 TEST_P(SiteTest, Index) {
   for (const auto& site : sites) {
@@ -770,7 +793,7 @@ TEST_P(OperationTest, MeanShuttlingSpeed) {
 TEST_P(OperationTest, UnsupportedCustomPropertyReturnsNullopt) {
   for (const auto& operation : operations) {
     EXPECT_EQ(operation.queryCustomProperty<std::vector<std::byte>>(
-                  CustomProperty::Custom1),
+                  CustomProperty::Custom2),
               std::nullopt);
   }
 }
@@ -792,6 +815,7 @@ TEST_P(DeviceTest, RegularSitesAndZones) {
   }
 }
 
+#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
 TEST_F(DDSimulatorDeviceTest, SubmitJobReturnsValidJob) {
   const std::string qasm3Program = R"(
 OPENQASM 3.0;
@@ -1120,6 +1144,7 @@ TEST_F(SimulatorJobTest, getSparseProbabilitiesReturnsValidProbabilities) {
   ASSERT_NE(it11, sparseProbabilities.end());
   EXPECT_NEAR(it11->second, 0.5, 1e-10);
 }
+#endif
 
 TEST(AuthenticationTest, SessionParameterToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_TOKEN), "TOKEN");

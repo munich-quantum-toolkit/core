@@ -15,7 +15,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 include(CMakeFindDependencyMacro)
 find_dependency(qdmi)
 
-if(TARGET MQT::Core)
+if(TARGET MQT::CoreDD)
   return()
 endif()
 

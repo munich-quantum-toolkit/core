@@ -28,6 +28,7 @@
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/LogicalResult.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -61,6 +62,16 @@
 using namespace mlir;
 using namespace mlir::qco;
 using mlir::mqt::getEntryPoint;
+using Connectivity = CompilerTarget::Connectivity;
+using NativeOperations = CompilerTarget::NativeOperations;
+
+static std::string printModule(ModuleOp moduleOp) {
+  std::string result;
+  llvm::raw_string_ostream stream(result);
+  moduleOp.print(stream);
+  stream.flush();
+  return result;
+}
 
 static SmallVector<Value> getQubitValues(ValueRange values) {
   return to_vector(llvm::make_filter_range(
@@ -235,7 +246,8 @@ static CompilerTarget getSquareGridTarget(const size_t n) {
   }
 
   return llvm::cantFail(
-      CompilerTarget::create(numTarget, std::move(couplings)));
+      CompilerTarget::create(numTarget, Connectivity::fromCouplings(couplings),
+                             NativeOperations::unrestricted()));
 }
 
 /// Creates an N-qubit GHZ state, where N = `qubits.size()` using
@@ -315,6 +327,13 @@ protected:
     return applyPatternsGreedily(m, std::move(patterns));
   }
 
+  static LogicalResult runPlacement(ModuleOp moduleOp,
+                                    const CompilerTarget& target) {
+    PassManager pm(moduleOp->getContext());
+    pm.addPass(createPlacementPass(target));
+    return pm.run(moduleOp);
+  }
+
   std::unique_ptr<MLIRContext> context;
 };
 
@@ -326,9 +345,9 @@ class MappingPassTest : public MappingPassFixture,
 TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   constexpr int64_t size = 3;
 
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
-      std::vector<CompilerTarget::Operation>{}));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::fromOperations({})));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -345,7 +364,7 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   std::tie(qubits[1], qubits[2]) = builder.rzx(0.5, qubits[1], qubits[2]);
   std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
 
-  for (int64_t i = 0; i < qubits.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
     builder.sink(qubits[i]);
   }
@@ -379,9 +398,9 @@ TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
 
 TEST_F(MappingPassFixture,
        KeepClassicallyDependentMeasurementBeforeRoutingSwaps) {
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}},
-      std::vector<CompilerTarget::Operation>{}));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::fromOperations({})));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -423,9 +442,8 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(42)));
 
   const auto target = llvm::cantFail(CompilerTarget::create(
-      std::move(sites),
-      std::vector<CompilerTarget::Coupling>{{7, 19}, {19, 42}},
-      std::vector<CompilerTarget::Operation>{}));
+      std::move(sites), Connectivity::fromCouplings({{7, 19}, {19, 42}}),
+      NativeOperations::fromOperations({})));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(size, builder.getI1Type()));
@@ -440,7 +458,7 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
   std::tie(qubits[1], qubits[2]) = builder.cz(qubits[1], qubits[2]);
   std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
-  for (int64_t i = 0; i < qubits.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
     builder.sink(qubits[i]);
   }
@@ -460,12 +478,14 @@ TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   EXPECT_EQ(numStatics, 3);
 }
 
-TEST_F(MappingPassFixture, MapNoncontiguousTargetWithUnusedSites) {
+TEST_F(MappingPassFixture, PlaceNoncontiguousTargetCompactly) {
   std::vector<CompilerTarget::Site> sites;
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(7)));
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(19)));
   sites.emplace_back(llvm::cantFail(CompilerTarget::Site::create(42)));
-  const auto target = llvm::cantFail(CompilerTarget::create(std::move(sites)));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(std::move(sites), Connectivity::allToAll(),
+                             NativeOperations::unrestricted()));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize({builder.getI1Type()});
@@ -475,25 +495,112 @@ TEST_F(MappingPassFixture, MapNoncontiguousTargetWithUnusedSites) {
   builder.sink(qubit);
   auto module = builder.finalize(bit);
 
-  PassManager pm(module->getContext());
-  pm.addPass(createMappingPass(target, MappingPassOptions{.ntrials = 1}));
-  ASSERT_TRUE(pm.run(module.get()).succeeded());
+  ASSERT_TRUE(runPlacement(module.get(), target).succeeded());
   ASSERT_TRUE(succeeded(verify(*module)));
   EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target));
 
-  const DenseSet<CompilerTarget::SiteId> expectedSites{7, 19, 42};
   size_t numAllocations = 0;
-  size_t numStatics = 0;
+  SmallVector<int64_t> staticSites;
   size_t numSinks = 0;
   module->walk([&](AllocOp) { ++numAllocations; });
-  module->walk([&](StaticOp op) {
-    ++numStatics;
-    EXPECT_TRUE(expectedSites.contains(op.getIndex()));
-  });
+  module->walk([&](StaticOp op) { staticSites.emplace_back(op.getIndex()); });
   module->walk([&](SinkOp) { ++numSinks; });
   EXPECT_EQ(numAllocations, 0);
-  EXPECT_EQ(numStatics, 3);
-  EXPECT_EQ(numSinks, 3);
+  EXPECT_EQ(staticSites, (SmallVector<int64_t>{7}));
+  EXPECT_EQ(numSinks, 1);
+}
+
+TEST_F(MappingPassFixture, PlaceTensorOnFirstTargetSites) {
+  std::vector sites{llvm::cantFail(CompilerTarget::Site::create(7)),
+                    llvm::cantFail(CompilerTarget::Site::create(19)),
+                    llvm::cantFail(CompilerTarget::Site::create(42)),
+                    llvm::cantFail(CompilerTarget::Site::create(81))};
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      std::move(sites), CompilerTarget::Connectivity::allToAll(),
+      NativeOperations::unrestricted()));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize({builder.getI1Type(), builder.getI1Type()});
+  Value tensor = builder.qtensorAlloc(2);
+  Value first;
+  Value second;
+  std::tie(tensor, first) = builder.qtensorExtract(tensor, 0);
+  std::tie(tensor, second) = builder.qtensorExtract(tensor, 1);
+  std::tie(first, second) = builder.cx(first, second);
+  Value firstBit;
+  Value secondBit;
+  std::tie(first, firstBit) = builder.measure(first);
+  std::tie(second, secondBit) = builder.measure(second);
+  tensor = builder.qtensorInsert(first, tensor, 0);
+  tensor = builder.qtensorInsert(second, tensor, 1);
+  builder.qtensorDealloc(tensor);
+  auto moduleOp = builder.finalize({firstBit, secondBit});
+
+  ASSERT_TRUE(runPlacement(moduleOp.get(), target).succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(moduleOp.get()), target));
+
+  SmallVector<int64_t> staticSites;
+  size_t tensorOperations = 0;
+  size_t swaps = 0;
+  moduleOp->walk([&](Operation* operation) {
+    if (auto staticOp = dyn_cast<StaticOp>(operation)) {
+      staticSites.emplace_back(staticOp.getIndex());
+    }
+    tensorOperations += isa<qtensor::AllocOp, qtensor::ExtractOp,
+                            qtensor::InsertOp, qtensor::DeallocOp>(operation);
+    swaps += isa<SWAPOp>(operation);
+  });
+  EXPECT_EQ(staticSites, (SmallVector<int64_t>{7, 19}));
+  EXPECT_EQ(tensorOperations, 0);
+  EXPECT_EQ(swaps, 0);
+}
+
+TEST_F(MappingPassFixture, RejectNonExplicitTopologyBeforeMutation) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, Connectivity::allToAll(), NativeOperations::unrestricted()));
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto qubit = builder.h(builder.allocQubit());
+  builder.sink(qubit);
+  auto moduleOp = builder.finalize();
+  const auto before = printModule(moduleOp.get());
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPass(moduleOp.get(), target, MappingPassOptions{})));
+  EXPECT_EQ(printModule(moduleOp.get()), before);
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains("place-and-route requires an explicit target topology"));
+}
+
+TEST_F(MappingPassFixture, RejectOversizedPlacementBeforeMutation) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      1, Connectivity::allToAll(), NativeOperations::unrestricted()));
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto first = builder.allocQubit();
+  auto second = builder.allocQubit();
+  builder.sink(first);
+  builder.sink(second);
+  auto moduleOp = builder.finalize();
+  const auto before = printModule(moduleOp.get());
+
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPlacement(moduleOp.get(), target)));
+  EXPECT_EQ(printModule(moduleOp.get()), before);
+  EXPECT_TRUE(
+      StringRef(diagnostics)
+          .contains(
+              "requires 2 program qubits, but the target site count is 1"));
 }
 
 TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
@@ -504,8 +611,9 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
     couplings.emplace_back(0, static_cast<int64_t>(site));
   }
 
-  const auto target = llvm::cantFail(
-      CompilerTarget::create(numTargetQubits, std::move(couplings)));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      numTargetQubits, Connectivity::fromCouplings(couplings),
+      NativeOperations::unrestricted()));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize(SmallVector<Type>(2, builder.getI1Type()));
@@ -570,6 +678,44 @@ TEST_P(MappingPassTest, MapScalarAllocation) {
   m->walk([&](StaticOp) { ++numStatics; });
   EXPECT_EQ(numAllocations, 0);
   EXPECT_EQ(numStatics, 1);
+}
+
+TEST_F(MappingPassFixture, ExpandNonAdjacentTwoQubitIfOnLineTarget) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  Value q0 = builder.allocQubit();
+  Value q1 = builder.allocQubit();
+  Value q2 = builder.allocQubit();
+
+  std::tie(q0, q1) = builder.swap(q0, q1);
+  std::tie(q1, q2) = builder.swap(q1, q2);
+
+  auto conditionalResults = builder.qcoIf(
+      true, {q0, q2},
+      [&](ValueRange args) {
+        auto [then0, then2] = builder.swap(args[0], args[1]);
+        return SmallVector<Value>{then0, then2};
+      },
+      [](ValueRange args) { return llvm::to_vector(args); });
+
+  builder.sink(conditionalResults[0]);
+  builder.sink(q1);
+  builder.sink(conditionalResults[1]);
+  auto moduleOp = builder.finalize();
+
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::unrestricted()));
+  ASSERT_TRUE(runPass(moduleOp.get(), target, MappingPassOptions{.ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(moduleOp.get()), target));
+
+  IfOp conditional;
+  moduleOp->walk([&](IfOp candidate) { conditional = candidate; });
+  ASSERT_TRUE(conditional);
+  EXPECT_EQ(conditional.getQubits().size(), 3U);
 }
 
 TEST_P(MappingPassTest, MapMixedScalarAndTensorAllocations) {
@@ -675,11 +821,10 @@ TEST_P(MappingPassTest, FailNestedScalarAllocation) {
     return success();
   });
   EXPECT_TRUE(failed(runPass(m.get(), target, MappingPassOptions{})));
-  EXPECT_TRUE(
-      StringRef(diagnostics)
-          .contains(
-              "target mapping requires dynamic qubit allocations in the entry "
-              "function body"))
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("target placement requires dynamic qubit "
+                            "allocations in the entry "
+                            "function body"))
       << diagnostics;
 }
 
@@ -714,11 +859,10 @@ TEST_P(MappingPassTest, FailNestedTensorAllocation) {
     return success();
   });
   EXPECT_TRUE(failed(runPass(m.get(), target, MappingPassOptions{})));
-  EXPECT_TRUE(
-      StringRef(diagnostics)
-          .contains(
-              "target mapping requires dynamic qubit allocations in the entry "
-              "function body"))
+  EXPECT_TRUE(StringRef(diagnostics)
+                  .contains("target placement requires dynamic qubit "
+                            "allocations in the entry "
+                            "function body"))
       << diagnostics;
 }
 
@@ -789,7 +933,7 @@ TEST_P(MappingPassTest, FailNoExtractAfterInsert) {
 
 TEST_P(MappingPassTest, FailTooManyQubitsForArch) {
   const auto& target = GetParam();
-  const auto size = static_cast<int64_t>(target.numQubits()) + 1;
+  const auto size = static_cast<int64_t>(target.numSites()) + 1;
 
   SmallVector<Value> bits(size);
   SmallVector<Value> qubits(size);
@@ -855,7 +999,7 @@ TEST_P(MappingPassTest, MapFlatGHZ) {
 
 TEST_P(MappingPassTest, MapLoopBasedGHZByUnrolling) {
   const auto& target = GetParam();
-  const auto size = static_cast<int64_t>(target.numQubits());
+  const auto size = static_cast<int64_t>(target.numSites());
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
@@ -1715,51 +1859,9 @@ TEST_P(MappingPassTest, MapNestedForSwitch) {
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
-TEST_P(MappingPassTest, MapIndexSwitchUsesVotedLayout) {
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, std::vector<CompilerTarget::Coupling>{{0, 1}, {1, 2}}));
-
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-
-  Value tensor = builder.qtensorAlloc(3);
-  SmallVector<Value> qubits(3);
-  for (int64_t i = 0; i < 3; ++i) {
-    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, i);
-  }
-
-  const auto routeTriangle = [&](ValueRange initArgs) {
-    SmallVector<Value> args(initArgs);
-    std::tie(args[0], args[1]) = builder.cx(args[0], args[1]);
-    std::tie(args[1], args[2]) = builder.cx(args[1], args[2]);
-    std::tie(args[0], args[2]) = builder.cx(args[0], args[2]);
-    return args;
-  };
-  const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies(
-      3, routeTriangle);
-  qubits = llvm::to_vector(builder.qcoIndexSwitch(
-      0, qubits, SmallVector<int64_t>{0, 1, 2}, caseBodies,
-      [](ValueRange args) { return llvm::to_vector(args); }));
-
-  for (int64_t i = 0; i < 3; ++i) {
-    tensor = builder.qtensorInsert(qubits[i], tensor, i);
-  }
-  builder.qtensorDealloc(tensor);
-
-  auto m = builder.finalize();
-  ASSERT_TRUE(
-      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
-
-  size_t numSwaps = 0;
-  m->walk([&](SWAPOp) { ++numSwaps; });
-  // The three routed cases agree on the voted exit layout; only the default
-  // case must be restored to it. Restoring every case to the parent needs 12.
-  EXPECT_EQ(numSwaps, 6UL);
-}
-
 TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
   const auto& target = GetParam();
-  const auto size = (target.numQubits() + 1) / 2;
+  const auto size = (target.numSites() + 1) / 2;
 
   SmallVector<Value> qubits(size);
   SmallVector<Value> bits(size);
@@ -1771,12 +1873,163 @@ TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
     qubits[i] = builder.allocQubit();
   }
   cxcz(builder, qubits);
-  for (int64_t i = 0; i < qubits.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
     builder.sink(qubits[i]);
   }
 
   auto m = builder.finalize(bits);
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+}
+
+TEST_F(MappingPassFixture, ProduceStableOutputForFixedSeed) {
+  constexpr size_t repetitions = 4;
+  const auto target = getSquareGridTarget(10);
+  SmallVector<OwningOpRef<ModuleOp>> modules;
+  size_t expectedSwaps = 0;
+  std::string expectedModule;
+
+  for (size_t repetition = 0; repetition < repetitions; ++repetition) {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+
+    SmallVector<Value> qubits((target.numSites() + 1) / 2);
+    for (Value& qubit : qubits) {
+      qubit = builder.allocQubit();
+    }
+    cxcz(builder, qubits);
+    for (Value qubit : qubits) {
+      builder.sink(qubit);
+    }
+
+    auto module = builder.finalize();
+    ASSERT_TRUE(runPass(module.get(), target,
+                        MappingPassOptions{.ntrials = 4, .seed = 42})
+                    .succeeded());
+
+    size_t swaps = 0;
+    module->walk([&](SWAPOp) { ++swaps; });
+    const auto printed = printModule(module.get());
+    if (repetition == 0) {
+      expectedSwaps = swaps;
+      expectedModule = printed;
+    } else {
+      EXPECT_EQ(swaps, expectedSwaps);
+      EXPECT_EQ(printed, expectedModule);
+    }
+    modules.emplace_back(std::move(module));
+  }
+}
+
+TEST_P(MappingPassTest, MapCircuitWithQubitPairBlock) {
+  const auto& target = GetParam();
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  SmallVector<Value> qubits(5);
+  for (size_t i = 0; i < 5; ++i) {
+    qubits[i] = builder.allocQubit();
+  }
+
+  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
+  std::tie(qubits[3], qubits[4]) = builder.cx(qubits[3], qubits[4]);
+  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
+  std::tie(qubits[0], qubits[4]) = builder.cx(qubits[0], qubits[4]);
+  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
+  std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
+
+  for (size_t i = 0; i < 5; ++i) {
+    builder.sink(qubits[i]);
+  }
+
+  auto m = builder.finalize();
+  ASSERT_TRUE(runPass(m.get(), target,
+                      MappingPassOptions{.nlookahead = 15, .ntrials = 1})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+}
+
+TEST_P(MappingPassTest, MapClassicalResultCapturedByNestedRegion) {
+  const auto& target = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> i1 attributes {mqt.entry_point} {
+        %b0 = arith.constant 0 : i1
+        %b1 = arith.constant 1 : i1
+
+        %q0_0 = qco.alloc : !qco.qubit
+        %q1_0 = qco.alloc : !qco.qubit
+        %q2_0 = qco.alloc : !qco.qubit
+
+        %q2_1, %classical = qco.measure %q2_0 : !qco.qubit
+
+        %cond = arith.cmpi "eq", %classical, %b1 : i1
+        %result, %q0_1, %q1_1 = qco.if %cond
+            args(%arg0 = %q0_0, %arg1 = %q1_0)
+            -> (i1, !qco.qubit, !qco.qubit) {
+          %local_classical = arith.addi %classical, %b0 : i1
+          %then0, %then1 = qco.swap %arg0, %arg1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %local_classical, %then0, %then1 : i1, !qco.qubit, !qco.qubit
+        } else args(%arg0 = %q0_0, %arg1 = %q1_0) {
+          %else0, %else1 = qco.swap %arg0, %arg1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %b0, %else0, %else1 : i1, !qco.qubit, !qco.qubit
+        }
+
+        qco.sink %q0_1 : !qco.qubit
+        qco.sink %q1_1 : !qco.qubit
+        qco.sink %q2_1 : !qco.qubit
+
+        return %result : i1
+      }
+    }
+  )mlir";
+
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+}
+
+TEST_P(MappingPassTest, MapOpsWithClassicalDependencyChain) {
+  const auto& target = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> i1 attributes {mqt.entry_point} {
+        %qx = qco.alloc : !qco.qubit
+        %q0_0 = qco.alloc : !qco.qubit
+        %q1_0 = qco.alloc : !qco.qubit
+
+        %q1_1, %classical = qco.measure %q1_0 : !qco.qubit
+
+        %b0 = arith.constant 0 : i1
+        %cond = arith.cmpi "eq", %classical, %b0 : i1
+        %q0_1 = qco.if %cond
+            args(%arg0 = %q0_0) -> (!qco.qubit) {
+          qco.yield %arg0 : !qco.qubit
+        } else args(%arg0 = %q0_0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+
+        qco.sink %qx : !qco.qubit
+        qco.sink %q0_1 : !qco.qubit
+        qco.sink %q1_1 : !qco.qubit
+
+        return %cond : i1
+      }
+    }
+  )mlir";
+
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
   ASSERT_TRUE(
       runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
   ASSERT_TRUE(succeeded(verify(*m)));

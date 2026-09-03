@@ -14,6 +14,7 @@
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
@@ -28,5 +29,10 @@ namespace mlir::cbit {
 /// Validates a static index used by a CBit register builder operation.
 void validateStaticRegisterIndex(Value reg,
                                  const std::variant<int64_t, Value>& index);
+
+/// Builds an equivalent comparison from individual register bits.
+Value buildComparison(OpBuilder& builder, Location location,
+                      ComparisonPredicate predicate, const llvm::APInt& rhs,
+                      llvm::function_ref<Value(int64_t)> loadBit);
 
 } // namespace mlir::cbit

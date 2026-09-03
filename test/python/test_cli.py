@@ -122,6 +122,7 @@ def test_benchmark_cli(script_runner: ScriptRunner) -> None:
     assert ret.success
     assert '"ghz"' in ret.stdout
     assert '"grover"' in ret.stdout
+    assert '"multiplexer"' in ret.stdout
     assert '"qpe"' in ret.stdout
 
 

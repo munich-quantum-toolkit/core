@@ -257,7 +257,7 @@ private:
   /// @returns @c QDMI_SUCCESS once the worker has been spawned.
   /// Failures inside @p body are reported through the job status (FAILED),
   /// not through the return value.
-  auto submitProgramAsync(std::function<void()> body) -> QDMI_STATUS;
+  auto submitProgramAsync(std::function<bool()> body) -> QDMI_STATUS;
 
   /// Submit a QASM 2 or QASM 3 program.
   /// Dispatches to the sampling or the state-extraction helper depending on
