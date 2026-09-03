@@ -19,6 +19,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -31,6 +32,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -47,7 +49,7 @@ namespace mlir::qc {
 QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qc-program-builder>", 1, 1), context),
-      ctx(context), module(ModuleOp::create(*this)) {
+      ctx(context), moduleOp_(ModuleOp::create(*this)) {
   ctx->loadDialect<cbit::CBitDialect, mqt::MQTDialect, QCDialect>();
 }
 
@@ -55,7 +57,7 @@ void QCProgramBuilder::initialize() { initialize({getI64Type()}); }
 
 void QCProgramBuilder::initialize(TypeRange returnTypes) {
   // Set insertion point to the module body
-  setInsertionPointToStart(cast<ModuleOp>(module).getBody());
+  setInsertionPointToStart(cast<ModuleOp>(moduleOp_).getBody());
 
   // Create main function as entry point
   auto funcType = getFunctionType({}, returnTypes);
@@ -69,13 +71,100 @@ void QCProgramBuilder::initialize(TypeRange returnTypes) {
 }
 
 void QCProgramBuilder::retype(TypeRange returnTypes) {
-  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(module));
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
   if (!mainFunc) {
     llvm::reportFatalUsageError("Main function not found for retyping");
   }
   auto funcType =
       getFunctionType(mainFunc.getFunctionType().getInputs(), returnTypes);
   mainFunc.setType(funcType);
+}
+
+func::FuncOp QCProgramBuilder::createFunction(
+    const StringRef name, const TypeRange argumentTypes,
+    const function_ref<SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+  auto moduleOp = cast<ModuleOp>(moduleOp_);
+  auto mainFunc = mqt::getEntryPoint(moduleOp);
+  if (!mainFunc) {
+    llvm::reportFatalUsageError(
+        "QCProgramBuilder must be initialized before creating a function");
+  }
+  if (SymbolTable::lookupSymbolIn(moduleOp, name) != nullptr) {
+    llvm::reportFatalUsageError("Function name is already defined");
+  }
+
+  const InsertionGuard insertionGuard(*this);
+  auto savedAllocatedQubits = std::move(allocatedQubits);
+  auto savedAllocatedQregs = std::move(allocatedQregs);
+  auto savedStaticQubits = std::move(staticQubits);
+  auto stateGuard = llvm::make_scope_exit([&] {
+    allocatedQubits = std::move(savedAllocatedQubits);
+    allocatedQregs = std::move(savedAllocatedQregs);
+    staticQubits = std::move(savedStaticQubits);
+  });
+  allocatedQubits.clear();
+  allocatedQregs.clear();
+  staticQubits.clear();
+
+  setInsertionPoint(mainFunc);
+  auto function = func::FuncOp::create(
+      *this, name, getFunctionType(argumentTypes, TypeRange{}));
+  function.setPrivate();
+  auto* block = function.addEntryBlock();
+  setInsertionPointToStart(block);
+
+  SmallVector<Value> results = body(block->getArguments());
+  if (block->mightHaveTerminator()) {
+    llvm::reportFatalUsageError(
+        "Function callback must not create a terminator");
+  }
+
+  for (Value result : results) {
+    allocatedQubits.remove(result);
+    allocatedQregs.remove(result);
+  }
+  for (Value qubit : allocatedQubits) {
+    DeallocOp::create(*this, qubit);
+  }
+  for (Value qreg : allocatedQregs) {
+    memref::DeallocOp::create(*this, qreg);
+  }
+
+  function.setType(
+      getFunctionType(argumentTypes, ValueRange(results).getTypes()));
+  func::ReturnOp::create(*this, results);
+  return function;
+}
+
+func::FuncOp QCProgramBuilder::createUnitaryFunction(
+    const StringRef name, const TypeRange argumentTypes,
+    const function_ref<void(ValueRange)> body) {
+  auto function =
+      createFunction(name, argumentTypes, [&](ValueRange arguments) {
+        body(arguments);
+        return SmallVector<Value>{};
+      });
+  mqt::setUnitaryFunction(function);
+  return function;
+}
+
+SmallVector<Value> QCProgramBuilder::call(func::FuncOp callee,
+                                          ValueRange operands) {
+  checkFinalized();
+  if (callee->getParentOp() != moduleOp_ ||
+      callee.getArgumentTypes() != operands.getTypes()) {
+    llvm::reportFatalUsageError(
+        "Call operands must match a function in the current module");
+  }
+  if (mqt::isUnitaryFunction(callee)) {
+    CallOp::create(*this,
+                   FlatSymbolRefAttr::get(getContext(), callee.getName()),
+                   operands);
+    return {};
+  }
+  auto callOp = func::CallOp::create(*this, callee, operands);
+  return SmallVector<Value>(callOp.getResults());
 }
 
 Value QCProgramBuilder::boolConstant(const bool value) {
@@ -128,8 +217,15 @@ Value QCProgramBuilder::staticQubit(const uint64_t index) {
   }
 
   OpBuilder::InsertionGuard guard(*this);
-  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(module));
-  setInsertionPointToStart(&mainFunc.getBody().front());
+  Operation* parent = getInsertionBlock()->getParentOp();
+  auto function = dyn_cast<func::FuncOp>(parent);
+  if (!function) {
+    function = parent->getParentOfType<func::FuncOp>();
+  }
+  if (!function) {
+    llvm::reportFatalInternalError("Static qubit has no enclosing function");
+  }
+  setInsertionPointToStart(&function.getBody().front());
   auto qubit = StaticOp::create(*this, index).getQubit();
   staticQubits.try_emplace(index, qubit);
   return qubit;
@@ -792,17 +888,12 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
 OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
   checkFinalized();
 
-  // Ensure that main function exists and insertion point is valid
+  // Ensure that the entry-point function exists and the insertion point is
+  // valid.
   auto* insertionBlock = getInsertionBlock();
-  func::FuncOp mainFunc = nullptr;
-  for (auto op : cast<ModuleOp>(module).getOps<func::FuncOp>()) {
-    if (op.getName() == "main") {
-      mainFunc = op;
-      break;
-    }
-  }
-  if (!mainFunc) {
-    llvm::reportFatalUsageError("Could not find main function");
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
+  if (mainFunc == nullptr) {
+    llvm::reportFatalUsageError("Could not find entry-point function");
   }
   if ((insertionBlock == nullptr) ||
       insertionBlock != &mainFunc.getBody().front()) {
@@ -827,7 +918,7 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
   ctx = nullptr;
 
   // Transfer ownership to the caller
-  return cast<ModuleOp>(module);
+  return cast<ModuleOp>(moduleOp_);
 }
 
 OwningOpRef<ModuleOp> QCProgramBuilder::build(

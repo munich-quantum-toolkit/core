@@ -116,7 +116,11 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 
 The C++ code targets C++20 and uses GoogleTest. Follow these rules:
 
-- Write Doxygen comments with `///`.
+- Write Doxygen API and `@file` descriptions with `///`, preserving their
+  content. Keep `//!<` or `///<` for trailing member documentation and block
+  documentation inside continued macros.
+- Use `//` for ordinary code comments and namespace closing comments. Keep
+  inline `/* ... */` comments, including unused parameter names.
 - Use `#pragma once` in headers and use existing project abstractions.
 - Prefer C++20 standard-library facilities over custom equivalents.
 - Within the `mlir` namespace and its nested namespaces, prefer LLVM types such
@@ -128,6 +132,7 @@ The C++ code targets C++20 and uses GoogleTest. Follow these rules:
   the header that provides each type.
 - Do not use `module` as a C++ variable or parameter name because it conflicts
   with the C++20 keyword. Use `moduleOp` for `mlir::ModuleOp` values.
+- Generally give non-public data members a trailing underscore.
 - Follow the canonical general and MLIR-specific coding policies in
   [`docs/development.md`](docs/development.md) and
   [`docs/mlir/development.md`](docs/mlir/development.md).

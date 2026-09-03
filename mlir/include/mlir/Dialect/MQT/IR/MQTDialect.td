@@ -24,6 +24,8 @@ def MQTDialect : Dialect {
     across quantum dialect conversions. It defines no operations or types.
 
     `mqt.input_name` records the source-level name of a function input.
+    `mqt.source_name` records a source-level function name when the IR symbol
+    must be uniquified.
     `mqt.parameter_group` optionally preserves the source-level vector
     identity, name, element index, and size of a function input or a lexically
     bound `scf.for` parameter.
@@ -32,12 +34,15 @@ def MQTDialect : Dialect {
     namespace.
     `mqt.entry_point` marks the single defined program entry function in a
     module.
+    `mqt.unitary` marks a private function that defines a unitary operation.
     `#mqt.compilation_target` records compiler-target facts as typed IR.
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
+      "::mlir::StringAttr":$source_name,
       "::mlir::DictionaryAttr":$parameter_group,
-      "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point);
+      "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point,
+      "::mlir::UnitAttr":$unitary);
 
   let hasOperationAttrVerify = 1;
   let hasRegionArgAttrVerify = 1;
