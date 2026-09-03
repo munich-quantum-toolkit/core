@@ -1233,6 +1233,8 @@ x q;
   EXPECT_TRUE(mlir::verify(*reparsed).succeeded());
   const std::vector<std::byte> invalid(1);
   EXPECT_FALSE(JeffProgram::fromBytes(invalid));
+  EXPECT_FALSE(
+      JeffProgram::fromFile(path.parent_path() / "missing" / "input.jeff"));
   EXPECT_FALSE(jeff.write(path.parent_path() / "missing" / "output.jeff"));
 }
 
