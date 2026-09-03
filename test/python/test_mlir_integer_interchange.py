@@ -10,9 +10,17 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
+import qiskit
+from packaging.version import Version
 
 from mqt.core.mlir import JeffProgram, QCProgram
+
+supports_qiskit_translation = Version("2.5.0") <= Version(qiskit.__version__) < Version(
+    "2.6.0"
+) or qiskit.__version__ == os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
 
 
 def _program(width: int, body: str, result_width: int, initial: int) -> QCProgram:
@@ -52,13 +60,13 @@ def _check_paths(program: QCProgram, width: int, expected: int) -> None:
     assert _observe(program, width) == expected
     restored_qasm = QCProgram.from_qasm_str(program.to_openqasm3().source)
     assert _observe(restored_qasm, width) == expected
-    restored_qiskit = QCProgram.from_qiskit(program.to_qiskit())
-    assert _observe(restored_qiskit, width) == expected
     jeff = program.to_qco(copy=True).to_jeff()
     restored_jeff = JeffProgram.from_bytes(jeff.to_bytes()).to_qco().to_qc()
     assert _observe(restored_jeff, width) == expected
     assert _observe(QCProgram.from_qasm_str(restored_jeff.to_openqasm3().source), width) == expected
-    assert _observe(QCProgram.from_qiskit(restored_jeff.to_qiskit()), width) == expected
+    if supports_qiskit_translation:
+        for candidate in (program, restored_jeff):
+            assert _observe(QCProgram.from_qiskit(candidate.to_qiskit()), width) == expected
 
 
 @pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
