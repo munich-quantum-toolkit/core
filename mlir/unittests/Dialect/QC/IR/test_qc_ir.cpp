@@ -698,7 +698,7 @@ static void emitForbiddenModifierBodyOperation(QCProgramBuilder& builder,
     return;
   case ForbiddenModifierBodyOp::CBitCompare:
     cbit::CompareOp::create(builder, builder.getI1Type(),
-                            cbit::ComparisonPredicate::Equal, cbitReg,
+                            arith::CmpIPredicate::eq, cbitReg,
                             builder.getIntegerAttr(builder.getI1Type(), 0));
     return;
   case ForbiddenModifierBodyOp::CBitLoad:

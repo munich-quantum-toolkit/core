@@ -1237,7 +1237,7 @@ buildInvalidCBitModifierProgram(MLIRContext* context,
         break;
       case CBitModifierBodyOp::Compare:
         cbit::CompareOp::create(builder, builder.getI1Type(),
-                                cbit::ComparisonPredicate::Equal, reg,
+                                arith::CmpIPredicate::eq, reg,
                                 builder.getIntegerAttr(builder.getI1Type(), 0));
         break;
       case CBitModifierBodyOp::Load:

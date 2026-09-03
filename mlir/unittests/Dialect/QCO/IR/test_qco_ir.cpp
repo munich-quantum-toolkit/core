@@ -485,8 +485,8 @@ buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
             break;
           case ForbiddenModifierBodyOp::CBitCompare:
             cbit::CompareOp::create(
-                builder, builder.getI1Type(), cbit::ComparisonPredicate::Equal,
-                cbitReg, builder.getIntegerAttr(builder.getI1Type(), 0));
+                builder, builder.getI1Type(), arith::CmpIPredicate::eq, cbitReg,
+                builder.getIntegerAttr(builder.getI1Type(), 0));
             break;
           case ForbiddenModifierBodyOp::CBitLoad:
             cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg,

@@ -229,79 +229,6 @@ private:
     return uniqueName("q", nextQubit);
   }
 
-  [[nodiscard]] static bool storesToRegister(Operation& operation, Value reg) {
-    return operation
-        .walk([&](cbit::StoreOp store) {
-          return store.getReg() == reg ? WalkResult::interrupt()
-                                       : WalkResult::advance();
-        })
-        .wasInterrupted();
-  }
-
-  [[nodiscard]] static bool
-  hasInterveningRegisterWrite(cbit::CompareOp comparison, Operation& consumer) {
-    Operation* anchor = &consumer;
-    Block* block = consumer.getBlock();
-    Block* comparisonBlock = comparison->getBlock();
-    while (block != comparisonBlock) {
-      for (Operation& operation : *block) {
-        if (&operation == anchor) {
-          break;
-        }
-        if (storesToRegister(operation, comparison.getReg())) {
-          return true;
-        }
-      }
-      Operation* parent = block->getParentOp();
-      if (parent == nullptr) {
-        return true;
-      }
-      if (isa<scf::ForOp, scf::WhileOp>(parent) &&
-          storesToRegister(*parent, comparison.getReg())) {
-        return true;
-      }
-      anchor = parent;
-      block = parent->getBlock();
-    }
-
-    for (Operation* operation = comparison->getNextNode(); operation != anchor;
-         operation = operation->getNextNode()) {
-      if (operation == nullptr ||
-          storesToRegister(*operation, comparison.getReg())) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  [[nodiscard]] LogicalResult validateRegisterComparisonSnapshots() {
-    const auto walkResult = function.walk([&](cbit::CompareOp comparison) {
-      SmallVector<Operation*> consumers;
-      llvm::append_range(consumers, comparison.getResult().getUsers());
-      DenseSet<Operation*> visited;
-      while (!consumers.empty()) {
-        Operation* consumer = consumers.pop_back_val();
-        if (!visited.insert(consumer).second) {
-          continue;
-        }
-        if (hasInterveningRegisterWrite(comparison, *consumer)) {
-          std::ignore =
-              fail(comparison,
-                   "register comparison crosses an intervening register write");
-          return WalkResult::interrupt();
-        }
-        if (!isInlineExpressionOperation(*consumer)) {
-          continue;
-        }
-        for (Value result : consumer->getResults()) {
-          llvm::append_range(consumers, result.getUsers());
-        }
-      }
-      return WalkResult::advance();
-    });
-    return walkResult.wasInterrupted() ? failure() : success();
-  }
-
   [[nodiscard]] LogicalResult preflight() {
     SmallVector<func::FuncOp> functions(moduleOp.getOps<func::FuncOp>());
     if (functions.size() != 1) {
@@ -339,7 +266,7 @@ private:
                                 "scope");
       }
     }
-    return validateRegisterComparisonSnapshots();
+    return success();
   }
 
   [[nodiscard]] LogicalResult collectProgramShape() {

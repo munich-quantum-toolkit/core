@@ -290,7 +290,8 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsMixedClassicalRegisterRepresentations) {
                       LLVM::LLVMDialect, scf::SCFDialect>();
   auto module = parseSourceString<ModuleOp>(R"mlir(
     module {
-      func.func @main() -> (i1, i1, !cbit.reg<1>) attributes {mqt.entry_point} {
+      func.func @main() -> (i1, i1, i1, !cbit.reg<1>)
+          attributes {mqt.entry_point} {
         %true = arith.constant true
         %c0 = arith.constant 0 : index
         %returned = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
@@ -301,8 +302,11 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsMixedClassicalRegisterRepresentations) {
           scf.yield %local : !cbit.reg<1>
         }
         %bit = cbit.load %selected[%c0] : !cbit.reg<1>
+        %whole = cbit.read %selected : !cbit.reg<1> -> i1
         %matches = cbit.cmp eq, %selected, 0 : i1 : !cbit.reg<1>
-        return %bit, %matches, %returned : i1, i1, !cbit.reg<1>
+        cbit.write %true, %selected : i1, !cbit.reg<1>
+        return %bit, %whole, %matches, %returned
+            : i1, i1, i1, !cbit.reg<1>
       }
     }
   )mlir",
@@ -321,7 +325,7 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsMixedClassicalRegisterRepresentations) {
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
-  EXPECT_EQ(mixedRepresentationDiagnostics, 2);
+  EXPECT_EQ(mixedRepresentationDiagnostics, 4);
 }
 
 TEST(QCToQIRAdaptiveNativeTest, LowersReturnedRegisterMerge) {
@@ -331,7 +335,7 @@ TEST(QCToQIRAdaptiveNativeTest, LowersReturnedRegisterMerge) {
                       LLVM::LLVMDialect, scf::SCFDialect>();
   auto module = parseSourceString<ModuleOp>(R"mlir(
     module {
-      func.func @main() -> (i1, i1, !cbit.reg<1>, !cbit.reg<1>)
+      func.func @main() -> (i1, i1, i1, !cbit.reg<1>, !cbit.reg<1>)
           attributes {mqt.entry_point} {
         %true = arith.constant true
         %c0 = arith.constant 0 : index
@@ -343,9 +347,10 @@ TEST(QCToQIRAdaptiveNativeTest, LowersReturnedRegisterMerge) {
           scf.yield %second : !cbit.reg<1>
         }
         %bit = cbit.load %selected[%c0] : !cbit.reg<1>
+        %whole = cbit.read %selected : !cbit.reg<1> -> i1
         %matches = cbit.cmp eq, %selected, 0 : i1 : !cbit.reg<1>
-        return %bit, %matches, %first, %second
-            : i1, i1, !cbit.reg<1>, !cbit.reg<1>
+        return %bit, %whole, %matches, %first, %second
+            : i1, i1, i1, !cbit.reg<1>, !cbit.reg<1>
       }
     }
   )mlir",
@@ -358,7 +363,46 @@ TEST(QCToQIRAdaptiveNativeTest, LowersReturnedRegisterMerge) {
   module->walk([&](LLVM::CallOp call) {
     resultReads += call.getCallee() == qir::QIR_READ_RESULT;
   });
-  EXPECT_EQ(resultReads, 2);
+  EXPECT_EQ(resultReads, 3);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsWriteThroughReturnedRegisterMerge) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, arith::ArithDialect,
+                      cf::ControlFlowDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, scf::SCFDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> (!cbit.reg<1>, !cbit.reg<1>)
+          attributes {mqt.entry_point} {
+        %true = arith.constant true
+        %first = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %second = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %selected = scf.if %true -> (!cbit.reg<1>) {
+          scf.yield %first : !cbit.reg<1>
+        } else {
+          scf.yield %second : !cbit.reg<1>
+        }
+        cbit.write %true, %selected : i1, !cbit.reg<1>
+        return %first, %second : !cbit.reg<1>, !cbit.reg<1>
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool sawExpectedDiagnostic = false;
+  const ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "does not support non-measurement writes to returned CBit registers");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
 TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleRegisterDestinations) {
