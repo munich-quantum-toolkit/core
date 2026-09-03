@@ -77,15 +77,13 @@ cx q[0], q[1];
 // Measure all qubits
 c = measure q;
 // Add dynamic component
-if (c == 3) {
+if (c[0]) {
   rx(0.7) q[0];
   ry(0.5) q[1];
   rz(1.1) q[2];
   ry(0.3) q[3];
   rx(0.9) q[4];
 }
-// Measure all qubits again
-c = measure q;
 )";
 
 } // namespace qdmi_test
