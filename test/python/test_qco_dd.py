@@ -184,7 +184,7 @@ module {
     with pytest.raises(ValueError, match=r"no func\.func"):
         program.build_functionality(package)
     with pytest.raises(ValueError, match=r"no func\.func"):
-        build_functionality(program, package)
+        build_functionality(program)
 
 
 @pytest.mark.parametrize(
@@ -206,24 +206,8 @@ def test_sample_accepts_compiler_inputs(kind: str, tmp_path: Path) -> None:
     assert sample(program, shots=8, seed=7) == {"1": 8}
 
 
-def test_build_and_simulate_accept_source() -> None:
-    """Build and simulate a source program through the convenience API."""
-    package = DDPackage(1)
-    matrix = build_functionality(UNITARY_QASM, package)
-    assert np.allclose(matrix.get_matrix(1), [[0, 1], [1, 0]])
-    package.dec_ref_mat(matrix)
-
-    # OpenQASM declares and allocates its own qubit, so the incoming state is empty.
-    zero = package.zero_state(0)
-    out = simulate(UNITARY_QASM, zero, package, seed=7)
-    expected_state = package.computational_basis_state(1, [True])
-    assert np.allclose(out.get_vector(), expected_state.get_vector())
-    package.dec_ref_vec(out)
-    package.dec_ref_vec(expected_state)
-
-
-def test_dense_build_and_simulate_hide_dd_package() -> None:
-    """Dense overloads own the DD package and return NumPy arrays."""
+def test_build_and_simulate_return_dense_arrays() -> None:
+    """Top-level helpers own the DD package and return NumPy arrays."""
     matrix = build_functionality(_x_program())
     assert isinstance(matrix, np.ndarray)
     assert matrix.dtype == np.complex128
@@ -231,21 +215,19 @@ def test_dense_build_and_simulate_hide_dd_package() -> None:
     assert matrix.base is not None
     assert np.allclose(matrix, [[0, 1], [1, 0]])
 
-    initial_state = np.array([1, 0], dtype=np.complex128)
-    initial_state.flags.writeable = False  # spellchecker:disable-line
-    state = simulate(_x_program(), initial_state, seed=7)
+    state = simulate(_x_program())
     assert isinstance(state, np.ndarray)
     assert state.dtype == np.complex128
     assert state.flags.c_contiguous
     assert state.base is not None
     assert np.allclose(state, [0, 1])
 
-    # Compiler frontends allocate qubits from a scalar state and retain its phase.
-    assert np.allclose(simulate(UNITARY_QASM, [1j], seed=7), [0, 1j])
+    assert np.allclose(build_functionality(UNITARY_QASM), matrix)
+    assert np.allclose(simulate(UNITARY_QASM), state)
 
 
-def test_dense_build_handles_zero_qubits_and_size_limit() -> None:
-    """Dense functionality handles scalars and rejects impractical matrices."""
+def test_dense_results_handle_zero_qubits_and_address_space() -> None:
+    """Dense results handle scalars and reject unaddressable arrays."""
     empty = QCOProgram.from_mlir_str("""
 module {
   func.func @main() attributes {mqt.entry_point} {
@@ -257,24 +239,25 @@ module {
 """)
     assert np.array_equal(build_functionality(empty), [[1]])
 
-    too_large = QCOProgram.from_mlir_str("""
+    too_wide = QCOProgram.from_mlir_str("""
 module {
   func.func @main() attributes {mqt.entry_point} {
-    %q = qco.static 20 : !qco.qubit
+    %q = qco.static 63 : !qco.qubit
     qco.sink %q : !qco.qubit
     return
   }
 }
 """)
-    with pytest.raises(ValueError, match=r"practical limit of 20"):
-        build_functionality(too_large)
+    with pytest.raises(ValueError, match=r"addressable memory"):
+        build_functionality(too_wide)
+    with pytest.raises(ValueError, match=r"addressable memory"):
+        simulate(too_wide)
 
 
-@pytest.mark.parametrize("initial_state", [[], [1, 0, 0], [[1, 0]]])
-def test_dense_simulate_rejects_invalid_shape(initial_state: list[int] | list[list[int]]) -> None:
-    """Dense simulation requires a one-dimensional power-of-two state."""
-    with pytest.raises(ValueError, match=r"initial_state"):
-        simulate(_x_program(), initial_state)
+def test_dense_simulate_rejects_measurement_feedback() -> None:
+    """Top-level statevector simulation rejects nonterminal measurements."""
+    with pytest.raises(ValueError, match=r"measurement result or measured qubit"):
+        simulate(_measure_program())
 
 
 @pytest.mark.parametrize(

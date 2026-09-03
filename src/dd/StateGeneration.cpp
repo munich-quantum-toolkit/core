@@ -21,9 +21,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <complex>
 #include <cstddef>
-#include <span>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -50,7 +49,8 @@ void suitablePackage(const std::size_t n, const Package& dd) {
  * @brief Constructs a decision diagram (DD) from a state vector using a
  * recursive algorithm.
  *
- * @param vec The state vector.
+ * @param begin Iterator pointing to the beginning of the state vector.
+ * @param end Iterator pointing to the end of the state vector.
  * @param v The current level of recursion. Starts at the highest level of
  * the state vector (log base 2 of the vector size - 1).
  * @param dd The DD package to use.
@@ -67,17 +67,18 @@ void suitablePackage(const std::size_t n, const Package& dd) {
  *
  * @note This function assumes that the state vector size is a power of two.
  */
-vCachedEdge makeStateFromVector(const std::span<const std::complex<fp>> vec,
-                                const Qubit v, Package& dd) {
+vCachedEdge makeStateFromVector(const CVec::const_iterator& begin,
+                                const CVec::const_iterator& end, const Qubit v,
+                                Package& dd) {
   if (v == 0U) {
-    const auto zeroSuccessor = vCachedEdge::terminal(vec[0]);
-    const auto oneSuccessor = vCachedEdge::terminal(vec[1]);
+    const auto zeroSuccessor = vCachedEdge::terminal(*begin);
+    const auto oneSuccessor = vCachedEdge::terminal(*(begin + 1));
     return dd.makeDDNode<vNode, CachedEdge>(0, {zeroSuccessor, oneSuccessor});
   }
 
-  const auto half = vec.size() / 2;
-  const auto zeroSuccessor = makeStateFromVector(vec.first(half), v - 1, dd);
-  const auto oneSuccessor = makeStateFromVector(vec.subspan(half), v - 1, dd);
+  const auto pivot = std::next(begin, std::distance(begin, end) / 2);
+  const auto zeroSuccessor = makeStateFromVector(begin, pivot, v - 1, dd);
+  const auto oneSuccessor = makeStateFromVector(pivot, end, v - 1, dd);
   return dd.makeDDNode<vNode, CachedEdge>(v, {zeroSuccessor, oneSuccessor});
 }
 
@@ -201,8 +202,7 @@ VectorDD makeWState(const std::size_t n, Package& dd) {
   return leftSubtree;
 }
 
-VectorDD makeStateFromVector(const std::span<const std::complex<fp>> vec,
-                             Package& dd) {
+VectorDD makeStateFromVector(const CVec& vec, Package& dd) {
   const std::size_t sz = vec.size();
 
   if ((sz & (sz - 1)) != 0) {
@@ -215,22 +215,16 @@ VectorDD makeStateFromVector(const std::span<const std::complex<fp>> vec,
   }
 
   if (sz == 1) {
-    const auto state = vEdge::terminal(dd.cn.lookup(vec[0]));
-    dd.incRef(state);
-    return state;
+    return vEdge::terminal(dd.cn.lookup(vec[0]));
   }
 
   const auto v = static_cast<Qubit>(std::log2(sz) - 1);
   suitablePackage(v, dd);
 
-  const vCachedEdge state = makeStateFromVector(vec, v, dd);
+  const vCachedEdge state = makeStateFromVector(vec.begin(), vec.end(), v, dd);
 
   const vEdge ret{.p = state.p, .w = dd.cn.lookup(state.w)};
   dd.incRef(ret);
   return ret;
-}
-
-VectorDD makeStateFromVector(const CVec& vec, Package& dd) {
-  return makeStateFromVector(std::span{vec}, dd);
 }
 } // namespace dd

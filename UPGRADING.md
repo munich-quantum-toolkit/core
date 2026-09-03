@@ -27,9 +27,11 @@ qco_program = compile_program(qc_program, output=OutputFormat.QCO_OPTIMIZED)
 Use `QCProgram.from_qasm_str` for source text, `QCProgram.from_qiskit` for a
 Qiskit `QuantumCircuit`, and `QCProgram.to_qiskit` for conversion back to
 Qiskit. For decision-diagram simulation, pass any compiler input to the
-`sample`, `simulate`, or `build_functionality` function in `mqt.core.mlir`.
+`sample`, `simulate`, or `build_functionality` function in `mqt.core.mlir`. The
+top-level `simulate` function runs a closed program from the all-zero state.
 Lower to a `QCOProgram` and call the corresponding method when the compiled
-program is reused. The circuit-taking functions in `mqt.core.dd` and the
+program is reused, a custom initial state is required, or the result should
+remain a DD. The circuit-taking functions in `mqt.core.dd` and the
 operation-taking `DDPackage` methods have been removed; the raw vector and
 matrix DD constructors remain available.
 
@@ -97,8 +99,9 @@ MQT Core also removed `dd::buildFunctionalityRecursive`. The Python
 `build_functionality` functions were removed together with the classic circuit
 representation. Use the `mqt.core.mlir.sample`, `simulate`, or
 `build_functionality` function instead. Compile to a `mqt.core.mlir.QCOProgram`
-and call the corresponding method when the program is reused. Use MQT DDSIM's
-unitary simulator when recursive pairwise construction is required.
+and call the corresponding method for custom initial states, DD results, or
+program reuse. Use MQT DDSIM's unitary simulator when recursive pairwise
+construction is required.
 
 The zero, basis, GHZ, W, dense-vector, dense-matrix, and raw gate-matrix DD
 constructors remain available.

@@ -21,7 +21,6 @@
 #include <cstddef>
 #include <memory>
 #include <numbers>
-#include <span>
 #include <stdexcept>
 #include <vector>
 
@@ -206,7 +205,7 @@ TEST(StateGenerationTest, FromVectorZero) {
   const CVec vec{};
 
   auto dd = std::make_unique<Package>(nq);
-  auto psi = makeStateFromVector(std::span{vec}, *dd);
+  auto psi = makeStateFromVector(vec, *dd);
 
   EXPECT_EQ(psi, vEdge::one());
 }
@@ -226,7 +225,6 @@ TEST(StateGenerationTest, FromVectorScalar) {
 
   EXPECT_TRUE(psi.isTerminal());
   EXPECT_TRUE(psi.w.approximatelyEquals(dd->cn.lookup(alpha)));
-  dd->decRef(psi);
 }
 
 TEST(StateGenerationTest, FromVector) {

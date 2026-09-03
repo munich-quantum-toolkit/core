@@ -11,7 +11,7 @@
 import enum
 import os
 from collections.abc import Sequence
-from typing import Literal, Unpack, overload
+from typing import Annotated, Literal, Unpack, overload
 
 import numpy as np
 import qiskit.circuit
@@ -676,7 +676,6 @@ class QIRProgram(Program):
     def write_bitcode(self, path: str | os.PathLike) -> None:
         """Write this program as LLVM bitcode."""
 
-@overload
 def build_functionality(
     program: str
     | os.PathLike[str]
@@ -685,36 +684,20 @@ def build_functionality(
     | QCOProgram
     | JeffProgram
     | OpenQASMProgram,
-    dd_package: mqt.core.dd.DDPackage,
-) -> mqt.core.dd.MatrixDD:
-    """Build a matrix DD after lowering a supported input directly to QCO.
-
-    An existing QCO program is used without copying. See
-    {py:meth}`QCOProgram.build_functionality` for DD package requirements and
-    errors.
-    """
-
-@overload
-def build_functionality(
-    program: str
-    | os.PathLike[str]
-    | qiskit.circuit.QuantumCircuit
-    | QCProgram
-    | QCOProgram
-    | JeffProgram
-    | OpenQASMProgram,
-) -> np.typing.NDArray[np.complex128]:
+) -> Annotated[np.typing.NDArray[np.complex128], {"shape": (None, None)}]:
     """Build the full unitary matrix of a supported compiler input.
 
     The DD package is managed internally. The matrix is materialized directly into
-    the returned NumPy array without an additional copy. Functionality construction
-    is limited to 20 qubits because the dense result grows exponentially.
+    the returned NumPy array without an additional copy. The full matrix grows
+    exponentially, and the caller is responsible for requesting a result that fits
+    in memory.
 
     Raises:
-        ValueError: When the program is unsupported or exceeds 20 qubits.
+        MemoryError: When the dense matrix does not fit in memory.
+        ValueError: When the program is unsupported or the matrix dimensions exceed
+            addressable memory.
     """
 
-@overload
 def simulate(
     program: str
     | os.PathLike[str]
@@ -723,51 +706,24 @@ def simulate(
     | QCOProgram
     | JeffProgram
     | OpenQASMProgram,
-    initial_state: mqt.core.dd.VectorDD,
-    dd_package: mqt.core.dd.DDPackage,
-    seed: int = 0,
-) -> mqt.core.dd.VectorDD:
-    """Simulate a supported input after lowering it directly to QCO.
+) -> Annotated[np.typing.NDArray[np.complex128], {"shape": (None,)}]:
+    """Simulate a closed compiler input from the all-zero state.
 
-    Source, QC, OpenQASM, and Qiskit inputs allocate their declared qubits during
-    lowering and therefore normally use ``dd_package.zero_state(0)`` as the initial
-    state. An existing QCO program is used without copying and keeps its explicit
-    allocation and static-qubit semantics. See {py:meth}`QCOProgram.simulate` for
-    the state, DD package, seed, and error contracts.
-    """
-
-@overload
-def simulate(
-    program: str
-    | os.PathLike[str]
-    | qiskit.circuit.QuantumCircuit
-    | QCProgram
-    | QCOProgram
-    | JeffProgram
-    | OpenQASMProgram,
-    initial_state: np.typing.ArrayLike,
-    seed: int = 0,
-) -> np.typing.NDArray[np.complex128]:
-    """Simulate a supported compiler input and return its full statevector.
-
-    Compatible one-dimensional, C-contiguous ``complex128`` arrays are read
-    directly. Other array-like inputs are converted once. The input length must be
-    a nonzero power of two. Source, QC, OpenQASM, and Qiskit inputs allocate their
-    declared qubits and therefore normally start with the one-amplitude state
-    ``[1]``.
+    The DD package is managed internally. Terminal measurements that only assemble
+    returned classical registers do not collapse the state. Mid-circuit measurement
+    feedback and resets are unsupported; use {py:meth}`QCOProgram.simulate` with an
+    explicit DD package for those workflows or for a custom initial state.
 
     Args:
         program: Compiler input to lower directly to QCO.
-        initial_state: Dense state before the program's explicit allocations.
-        seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
-            value produces reproducible measurement and reset results.
 
     Returns:
         Full statevector, materialized directly into the returned NumPy array.
 
     Raises:
-        ValueError: When the input state shape is invalid or the program is
-            unsupported for simulation.
+        MemoryError: When the dense statevector does not fit in memory.
+        ValueError: When the program is not closed, is unsupported for statevector
+            simulation, or the statevector dimensions exceed addressable memory.
     """
 
 def sample(

@@ -53,16 +53,13 @@ The {py:func}`~mqt.core.mlir.sample`, {py:func}`~mqt.core.mlir.simulate`, and
 {py:func}`~mqt.core.mlir.build_functionality` functions accept source text,
 paths, Qiskit circuits, and typed compiler programs. They lower each input
 directly to QCO. The corresponding {py:class}`~mqt.core.mlir.QCOProgram` methods
-remain useful when the program is already compiled. Without an explicit DD
-package, `simulate` and `build_functionality` manage one internally and return
-NumPy arrays. A compatible `complex128` input array is read directly, and the
-result is materialized without an additional copy. Compiler frontends allocate
-their declared qubits, so dense simulation of source, QC, OpenQASM, or Qiskit
-inputs normally starts with the scalar state `[1]`.
+provide the DD-native interface for reusable compiled programs, custom initial
+states, and dynamic simulation. The top-level `simulate` function starts a
+closed program in the all-zero state. It and `build_functionality` manage the DD
+package internally and materialize their results directly into NumPy arrays.
 
-Pass an explicit {py:class}`~mqt.core.dd.DDPackage` to return DDs instead. These
-overloads and the `QCOProgram` methods avoid constructing exponentially large
-dense arrays unless the result is explicitly converted with
+The `QCOProgram` methods avoid constructing exponentially large dense arrays
+unless the result is explicitly converted with
 {py:meth}`~mqt.core.dd.VectorDD.get_vector` or
 {py:meth}`~mqt.core.dd.MatrixDD.get_matrix`.
 
@@ -88,9 +85,7 @@ module {
 }
 """)
 
-zero_state = np.zeros(4, dtype=np.complex128)
-zero_state[0] = 1
-vec = simulate(unitary_program, zero_state)
+vec = simulate(unitary_program)
 unitary = build_functionality(unitary_program)
 
 dd = DDPackage(2)

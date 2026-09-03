@@ -12,7 +12,6 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
-#include "dd/StateGeneration.hpp"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
@@ -40,12 +39,12 @@
 #include <nanobind/stl/variant.h>
 #include <nanobind/stl/vector.h>
 
-#include <bit>
 #include <cctype>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -64,9 +63,6 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-using DenseVectorInput =
-    nb::ndarray<nb::numpy, const std::complex<dd::fp>, nb::ndim<1>,
-                nb::c_contig, nb::device::cpu>;
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
 using DenseMatrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>,
@@ -361,39 +357,16 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
                        [&] { return mlir::qco::sample(func, shots, seed); });
 }
 
-[[nodiscard]] static dd::MatrixDD buildFunctionality(const nb::object& program,
-                                                     dd::Package& ddPackage) {
-  return withQCOProgram(program, [&](const mlir::QCOProgram& qco) {
-    return buildQCOFunctionality(qco, ddPackage);
-  });
-}
-
-[[nodiscard]] static dd::VectorDD simulate(const nb::object& program,
-                                           const dd::VectorDD& initialState,
-                                           dd::Package& ddPackage,
-                                           uint64_t seed) {
-  return withQCOProgram(program, [&](const mlir::QCOProgram& qco) {
-    return simulateQCO(qco, initialState, ddPackage, seed);
-  });
-}
-
-[[nodiscard]] static DenseVectorInput
-asDenseVector(const nb::object& initialState) {
-  DenseVectorInput state;
-  if (nb::try_cast(initialState, state, false)) {
-    return state;
-  }
-
-  const auto numpy = nb::module_::import_("numpy");
-  const auto array = numpy.attr("asarray")(
-      initialState, "dtype"_a = numpy.attr("complex128"), "order"_a = "C");
-  if (nb::cast<size_t>(array.attr("ndim")) != 1U) {
-    throw nb::value_error("initial_state must be one-dimensional");
-  }
-  return nb::cast<DenseVectorInput>(array, false);
-}
-
 [[nodiscard]] static DenseVector toDenseVector(const dd::VectorDD& state) {
+  if (!state.isTerminal()) {
+    const auto numQubits = static_cast<size_t>(state.p->v) + 1U;
+    if (numQubits >= std::numeric_limits<size_t>::digits ||
+        (size_t{1} << numQubits) >
+            std::numeric_limits<size_t>::max() / sizeof(std::complex<dd::fp>)) {
+      throw nb::value_error(
+          "dense statevector dimensions exceed addressable memory");
+    }
+  }
   auto dataPtr = std::make_unique<dd::CVec>(state.getVector());
   auto* const data = dataPtr->data();
   const auto size = dataPtr->size();
@@ -406,11 +379,15 @@ asDenseVector(const nb::object& initialState) {
 
 [[nodiscard]] static DenseMatrix toDenseMatrix(const dd::MatrixDD& matrix,
                                                size_t numQubits) {
-  if (numQubits > 20U) {
-    throw nb::value_error("num_qubits exceeds practical limit of 20");
+  if (numQubits >= std::numeric_limits<size_t>::digits) {
+    throw nb::value_error("dense unitary dimensions exceed addressable memory");
   }
 
-  const size_t dim = 1ULL << numQubits;
+  const size_t dim = size_t{1} << numQubits;
+  if (dim >
+      std::numeric_limits<size_t>::max() / sizeof(std::complex<dd::fp>) / dim) {
+    throw nb::value_error("dense unitary dimensions exceed addressable memory");
+  }
   auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(dim * dim);
   matrix.traverseMatrix(
       std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
@@ -428,28 +405,22 @@ asDenseVector(const nb::object& initialState) {
 
 [[nodiscard]] static DenseMatrix
 buildDenseFunctionality(const nb::object& program) {
-  dd::Package ddPackage(0);
-  const auto matrix = buildFunctionality(program, ddPackage);
-  return toDenseMatrix(matrix, ddPackage.qubits());
+  return withQCOProgram(program, [](const mlir::QCOProgram& qco) {
+    dd::Package ddPackage(0);
+    const auto matrix = buildQCOFunctionality(qco, ddPackage);
+    return toDenseMatrix(matrix, ddPackage.qubits());
+  });
 }
 
-[[nodiscard]] static DenseVector simulateDense(const nb::object& program,
-                                               const nb::object& initialState,
-                                               uint64_t seed) {
-  const auto denseState = asDenseVector(initialState);
-  const size_t size = denseState.size();
-  if (!std::has_single_bit(size)) {
-    throw nb::value_error(
-        "initial_state must be a nonempty one-dimensional array with a "
-        "power-of-two length");
-  }
-
-  const size_t numQubits = std::countr_zero(size); // spellchecker:disable-line
-  dd::Package ddPackage(numQubits);
-  const auto input = dd::makeStateFromVector(
-      std::span<const std::complex<dd::fp>>(denseState.data(), size),
-      ddPackage);
-  return toDenseVector(simulate(program, input, ddPackage, seed));
+[[nodiscard]] static DenseVector simulateDense(const nb::object& program) {
+  return withQCOProgram(program, [](const mlir::QCOProgram& qco) {
+    dd::Package ddPackage(0);
+    auto func = entryFunc(qco);
+    const auto state = takeFailureOr(
+        func.getContext(), "cannot simulate this QCO program",
+        [&] { return mlir::qco::simulateStatevector(func, ddPackage); });
+    return toDenseVector(state);
+  });
 }
 
 [[nodiscard]] static std::map<std::string, size_t>
@@ -1300,77 +1271,47 @@ Returns:
 Raises:
     ValueError: When the program is unsupported for sampling.)pb");
 
-  m.def("build_functionality", &buildFunctionality, "program"_a, "dd_package"_a,
-        // Keep the DD package alive while the returned matrix DD is alive.
-        nb::keep_alive<0, 2>(),
-        nb::sig("def build_functionality(program: str | os.PathLike[str] | "
-                "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
-                "JeffProgram | OpenQASMProgram, dd_package: "
-                "mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD"),
-        R"pb(Build a matrix DD after lowering a supported input directly to QCO.
-
-An existing QCO program is used without copying. See
-{py:meth}`QCOProgram.build_functionality` for DD package requirements and
-errors.)pb");
-
   m.def("build_functionality", &buildDenseFunctionality, "program"_a,
         nb::sig("def build_functionality(program: str | os.PathLike[str] | "
                 "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
                 "JeffProgram | OpenQASMProgram) -> "
-                "numpy.typing.NDArray[numpy.complex128]"),
+                "typing.Annotated[numpy.typing.NDArray[numpy.complex128], "
+                "{'shape': (None, None)}]"),
         R"pb(Build the full unitary matrix of a supported compiler input.
 
 The DD package is managed internally. The matrix is materialized directly into
-the returned NumPy array without an additional copy. Functionality construction
-is limited to 20 qubits because the dense result grows exponentially.
+the returned NumPy array without an additional copy. The full matrix grows
+exponentially, and the caller is responsible for requesting a result that fits
+in memory.
 
 Raises:
-    ValueError: When the program is unsupported or exceeds 20 qubits.)pb");
+    MemoryError: When the dense matrix does not fit in memory.
+    ValueError: When the program is unsupported or the matrix dimensions exceed
+        addressable memory.)pb");
 
-  m.def("simulate", &simulate, "program"_a, "initial_state"_a, "dd_package"_a,
-        "seed"_a = 0U,
-        // Keep the DD package alive while the returned vector DD is alive.
-        nb::keep_alive<0, 3>(),
+  m.def("simulate", &simulateDense, "program"_a,
         nb::sig("def simulate(program: str | os.PathLike[str] | "
                 "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
-                "JeffProgram | OpenQASMProgram, initial_state: "
-                "mqt.core.dd.VectorDD, dd_package: mqt.core.dd.DDPackage, "
-                "seed: int = 0) -> mqt.core.dd.VectorDD"),
-        R"pb(Simulate a supported input after lowering it directly to QCO.
+                "JeffProgram | OpenQASMProgram) -> "
+                "typing.Annotated[numpy.typing.NDArray[numpy.complex128], "
+                "{'shape': (None,)}]"),
+        R"pb(Simulate a closed compiler input from the all-zero state.
 
-Source, QC, OpenQASM, and Qiskit inputs allocate their declared qubits during
-lowering and therefore normally use ``dd_package.zero_state(0)`` as the initial
-state. An existing QCO program is used without copying and keeps its explicit
-allocation and static-qubit semantics. See {py:meth}`QCOProgram.simulate` for
-the state, DD package, seed, and error contracts.)pb");
-
-  m.def(
-      "simulate", &simulateDense, "program"_a, "initial_state"_a, "seed"_a = 0U,
-      nb::sig("def simulate(program: str | os.PathLike[str] | "
-              "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
-              "JeffProgram | OpenQASMProgram, initial_state: "
-              "numpy.typing.ArrayLike, seed: int = 0) -> "
-              "numpy.typing.NDArray[numpy.complex128]"),
-      R"pb(Simulate a supported compiler input and return its full statevector.
-
-Compatible one-dimensional, C-contiguous ``complex128`` arrays are read
-directly. Other array-like inputs are converted once. The input length must be
-a nonzero power of two. Source, QC, OpenQASM, and Qiskit inputs allocate their
-declared qubits and therefore normally start with the one-amplitude state
-``[1]``.
+The DD package is managed internally. Terminal measurements that only assemble
+returned classical registers do not collapse the state. Mid-circuit measurement
+feedback and resets are unsupported; use {py:meth}`QCOProgram.simulate` with an
+explicit DD package for those workflows or for a custom initial state.
 
 Args:
     program: Compiler input to lower directly to QCO.
-    initial_state: Dense state before the program's explicit allocations.
-    seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
-        value produces reproducible measurement and reset results.
 
 Returns:
     Full statevector, materialized directly into the returned NumPy array.
 
 Raises:
-    ValueError: When the input state shape is invalid or the program is
-        unsupported for simulation.)pb");
+    MemoryError: When the dense statevector does not fit in memory.
+    ValueError: When the program is not closed, is unsupported for statevector
+        simulation, or the statevector dimensions exceed addressable memory.)pb");
 
   m.def("sample", &sample, "program"_a, "shots"_a = 1024U, "seed"_a = 0U,
         nb::sig("def sample(program: str | os.PathLike[str] | "
