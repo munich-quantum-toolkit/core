@@ -15,7 +15,6 @@ from typing import Literal, Unpack, overload
 
 import numpy as np
 import qiskit.circuit
-from numpy.typing import ArrayLike, NDArray
 
 import mqt.core.dd
 from mqt.core.qdmi import Device
@@ -704,7 +703,7 @@ def build_functionality(
     | QCOProgram
     | JeffProgram
     | OpenQASMProgram,
-) -> NDArray[np.complex128]:
+) -> np.typing.NDArray[np.complex128]:
     """Build the full unitary matrix of a supported compiler input.
 
     The DD package is managed internally. The matrix is materialized directly into
@@ -746,9 +745,9 @@ def simulate(
     | QCOProgram
     | JeffProgram
     | OpenQASMProgram,
-    initial_state: ArrayLike,
+    initial_state: np.typing.ArrayLike,
     seed: int = 0,
-) -> NDArray[np.complex128]:
+) -> np.typing.NDArray[np.complex128]:
     """Simulate a supported compiler input and return its full statevector.
 
     Compatible one-dimensional, C-contiguous ``complex128`` arrays are read
