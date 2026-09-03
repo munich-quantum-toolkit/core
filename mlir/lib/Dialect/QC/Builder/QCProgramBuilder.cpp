@@ -49,7 +49,7 @@ namespace mlir::qc {
 QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qc-program-builder>", 1, 1), context),
-      ctx(context), module(ModuleOp::create(*this)) {
+      ctx(context), moduleOp_(ModuleOp::create(*this)) {
   ctx->loadDialect<cbit::CBitDialect, mqt::MQTDialect, QCDialect>();
 }
 
@@ -57,7 +57,7 @@ void QCProgramBuilder::initialize() { initialize({getI64Type()}); }
 
 void QCProgramBuilder::initialize(TypeRange returnTypes) {
   // Set insertion point to the module body
-  setInsertionPointToStart(cast<ModuleOp>(module).getBody());
+  setInsertionPointToStart(cast<ModuleOp>(moduleOp_).getBody());
 
   // Create main function as entry point
   auto funcType = getFunctionType({}, returnTypes);
@@ -71,7 +71,7 @@ void QCProgramBuilder::initialize(TypeRange returnTypes) {
 }
 
 void QCProgramBuilder::retype(TypeRange returnTypes) {
-  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(module));
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
   if (!mainFunc) {
     llvm::reportFatalUsageError("Main function not found for retyping");
   }
@@ -84,7 +84,7 @@ func::FuncOp QCProgramBuilder::createFunction(
     const StringRef name, const TypeRange argumentTypes,
     const function_ref<SmallVector<Value>(ValueRange)> body) {
   checkFinalized();
-  auto moduleOp = cast<ModuleOp>(module);
+  auto moduleOp = cast<ModuleOp>(moduleOp_);
   auto mainFunc = mqt::getEntryPoint(moduleOp);
   if (!mainFunc) {
     llvm::reportFatalUsageError(
@@ -152,7 +152,7 @@ func::FuncOp QCProgramBuilder::createUnitaryFunction(
 SmallVector<Value> QCProgramBuilder::call(func::FuncOp callee,
                                           ValueRange operands) {
   checkFinalized();
-  if (callee->getParentOp() != module ||
+  if (callee->getParentOp() != moduleOp_ ||
       callee.getArgumentTypes() != operands.getTypes()) {
     llvm::reportFatalUsageError(
         "Call operands must match a function in the current module");
@@ -359,7 +359,7 @@ QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {
       const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     ctrl(controls, ValueRange{},                                               \
-         [&](ValueRange /*targets*/) { OP_CLASS::create(*this, param); });     \
+         [&](ValueRange) { OP_CLASS::create(*this, param); });                 \
     return *this;                                                              \
   }
 
@@ -888,10 +888,10 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
 OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
   checkFinalized();
 
-  /// Ensure that the entry-point function exists and the insertion point is
-  /// valid.
+  // Ensure that the entry-point function exists and the insertion point is
+  // valid.
   auto* insertionBlock = getInsertionBlock();
-  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(module));
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
   if (mainFunc == nullptr) {
     llvm::reportFatalUsageError("Could not find entry-point function");
   }
@@ -918,7 +918,7 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
   ctx = nullptr;
 
   // Transfer ownership to the caller
-  return cast<ModuleOp>(module);
+  return cast<ModuleOp>(moduleOp_);
 }
 
 OwningOpRef<ModuleOp> QCProgramBuilder::build(

@@ -58,7 +58,7 @@ namespace mlir::qco {
 QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qco-program-builder>", 1, 1), context),
-      ctx(context), module(ModuleOp::create(*this)) {
+      ctx(context), moduleOp_(ModuleOp::create(*this)) {
   ctx->loadDialect<cbit::CBitDialect, mqt::MQTDialect, QCODialect,
                    qtensor::QTensorDialect>();
 }
@@ -67,7 +67,7 @@ void QCOProgramBuilder::initialize() { initialize({getI64Type()}); }
 
 void QCOProgramBuilder::initialize(TypeRange returnTypes) {
   // Set insertion point to the module body
-  setInsertionPointToStart(cast<ModuleOp>(module).getBody());
+  setInsertionPointToStart(cast<ModuleOp>(moduleOp_).getBody());
 
   // Create main function as entry point
   auto funcType = getFunctionType({}, returnTypes);
@@ -81,7 +81,7 @@ void QCOProgramBuilder::initialize(TypeRange returnTypes) {
 }
 
 void QCOProgramBuilder::retype(TypeRange returnTypes) {
-  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(module));
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
   if (!mainFunc) {
     llvm::reportFatalUsageError("Main function not found for retyping");
   }
@@ -99,7 +99,7 @@ func::FuncOp QCOProgramBuilder::createFunction(
     const StringRef name, const TypeRange argumentTypes,
     const function_ref<SmallVector<Value>(ValueRange)> body) {
   checkFinalized();
-  auto moduleOp = cast<ModuleOp>(module);
+  auto moduleOp = cast<ModuleOp>(moduleOp_);
   auto mainFunc = mqt::getEntryPoint(moduleOp);
   if (!mainFunc) {
     llvm::reportFatalUsageError(
@@ -192,7 +192,7 @@ func::FuncOp QCOProgramBuilder::createUnitaryFunction(
 SmallVector<Value> QCOProgramBuilder::call(func::FuncOp callee,
                                            ValueRange operands) {
   checkFinalized();
-  if (callee->getParentOp() != module ||
+  if (callee->getParentOp() != moduleOp_ ||
       callee.getArgumentTypes() != operands.getTypes()) {
     llvm::reportFatalUsageError(
         "Call operands must match a function in the current module");
@@ -658,7 +658,7 @@ Value QCOProgramBuilder::reset(Value qubit) {
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     auto controlsOut =                                                         \
-        ctrl(control, {}, [&](ValueRange /*targets*/) -> SmallVector<Value> {  \
+        ctrl(control, {}, [&](ValueRange) -> SmallVector<Value> {              \
           OP_NAME(param);                                                      \
           return {};                                                           \
         }).first;                                                              \
@@ -669,7 +669,7 @@ Value QCOProgramBuilder::reset(Value qubit) {
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     auto controlsOut =                                                         \
-        ctrl(controls, {}, [&](ValueRange /*targets*/) -> SmallVector<Value> { \
+        ctrl(controls, {}, [&](ValueRange) -> SmallVector<Value> {             \
           OP_NAME(param);                                                      \
           return {};                                                           \
         }).first;                                                              \
@@ -1644,10 +1644,10 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
   checkFinalized();
 
-  /// Ensure that the entry-point function exists and the insertion point is
-  /// valid.
+  // Ensure that the entry-point function exists and the insertion point is
+  // valid.
   auto* insertionBlock = getInsertionBlock();
-  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(module));
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
   if (mainFunc == nullptr) {
     llvm::reportFatalUsageError("Could not find entry-point function");
   }
@@ -1678,7 +1678,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
 
-  return cast<ModuleOp>(module);
+  return cast<ModuleOp>(moduleOp_);
 }
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::build(

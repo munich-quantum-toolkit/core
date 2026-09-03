@@ -129,8 +129,7 @@ verifyFidelity(const function_ref<InFlightDiagnostic()>& emitError,
 LogicalResult
 SiteTupleAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
                       const ArrayRef<int64_t> sites,
-                      const std::optional<uint64_t> /*duration*/,
-                      const FloatAttr fidelity) {
+                      const std::optional<uint64_t>, const FloatAttr fidelity) {
   llvm::SmallDenseSet<int64_t> seen;
   seen.reserve(sites.size());
   for (const int64_t site : sites) {
@@ -160,9 +159,9 @@ OperationArityAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
 
 LogicalResult NativeOperationAttr::verify(
     const function_ref<InFlightDiagnostic()> emitError, const StringAttr name,
-    const OperationArityAttr arity, const uint64_t /*numParameters*/,
-    const ArrayRef<SiteTupleAttr> siteTuples,
-    const std::optional<uint64_t> /*duration*/, const FloatAttr fidelity) {
+    const OperationArityAttr arity, const uint64_t,
+    const ArrayRef<SiteTupleAttr> siteTuples, const std::optional<uint64_t>,
+    const FloatAttr fidelity) {
   if (name.getValue().trim().empty()) {
     return emitError() << "compiler target operation name must not be empty";
   }
@@ -701,8 +700,7 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
 }
 
 LogicalResult MQTDialect::verifyRegionResultAttribute(
-    Operation* operation, unsigned /*regionIndex*/, unsigned /*resultIndex*/,
-    const NamedAttribute attribute) {
+    Operation* operation, unsigned, unsigned, const NamedAttribute attribute) {
   return operation->emitError()
          << "attribute '" << attribute.getName().getValue()
          << "' is not valid on a region result";

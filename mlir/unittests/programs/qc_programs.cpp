@@ -44,6 +44,26 @@ static Value measureAndReturn(QCProgramBuilder& b, ValueRange qubits) {
 
 Value emptyQC(QCProgramBuilder& b) { return b.intConstant(0); }
 
+Value reusableUnitaryFunction(QCProgramBuilder& b) {
+  auto qubit = b.allocQubit();
+  auto rotate = b.createUnitaryFunction(
+      "rotate", TypeRange{b.getF64Type(), qubit.getType()},
+      [&](ValueRange arguments) { b.rx(arguments[0], arguments[1]); });
+  b.call(rotate, {b.floatConstant(0.5), qubit});
+  return b.measure(qubit);
+}
+
+Value reusableResetFunction(QCProgramBuilder& b) {
+  auto qubit = b.allocQubit();
+  auto reset = b.createFunction("reset", TypeRange{qubit.getType()},
+                                [&](ValueRange arguments) {
+                                  b.reset(arguments[0]);
+                                  return SmallVector<Value>{};
+                                });
+  b.call(reset, qubit);
+  return b.measure(qubit);
+}
+
 Value allocQubit(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   return measureToRegister(b, q);
@@ -335,7 +355,7 @@ Value trivialControlledGlobalPhase(QCProgramBuilder& b) {
 }
 
 Value inverseGlobalPhase(QCProgramBuilder& b) {
-  b.inv(ValueRange{}, [&](ValueRange /*qubits*/) { b.gphase(-0.123); });
+  b.inv(ValueRange{}, [&](ValueRange) { b.gphase(-0.123); });
   return b.intConstant(0);
 }
 
@@ -2116,7 +2136,7 @@ Value trivialCtrl(QCProgramBuilder& b) {
 Value emptyCtrl(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rxx(0.123, q[0], q[1]);
-  b.ctrl(q[0], q[1], [&](Value /*target*/) {});
+  b.ctrl(q[0], q[1], [&](Value) {});
   return measureAndReturn(b, q.qubits);
 }
 
@@ -2262,14 +2282,14 @@ Value modifierBodyReuseReorderedRef(QCProgramBuilder& b) {
 Value emptyInv(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rxx(0.123, q[0], q[1]);
-  b.inv({q[0], q[1]}, [&](ValueRange /*targets*/) {});
+  b.inv({q[0], q[1]}, [&](ValueRange) {});
   return measureAndReturn(b, q.qubits);
 }
 
 Value emptyPow(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rxx(0.123, q[0], q[1]);
-  b.pow(2.0, {q[0], q[1]}, [&](ValueRange /*qubits*/) {});
+  b.pow(2.0, {q[0], q[1]}, [&](ValueRange) {});
   return measureAndReturn(b, q.qubits);
 }
 
@@ -2662,7 +2682,7 @@ Value indexSwitchMultiCase(QCProgramBuilder& b) {
                                                        b.x(reg[0]);
                                                        b.x(reg[1]);
                                                      }},
-                   [&] { /* no-op */ });
+                   [&] {});
 
   return measureAndReturn(b, reg.qubits);
 }
@@ -2746,7 +2766,7 @@ Value nestedForLoopSwitchOp(QCProgramBuilder& b) {
                                                          b.x(q);
                                                          b.y(q);
                                                        }},
-                     [&] { /* error */ });
+                     [&] {});
   });
   return measureAndReturn(b, reg.qubits);
 }

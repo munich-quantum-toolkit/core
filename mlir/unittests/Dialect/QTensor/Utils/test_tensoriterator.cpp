@@ -267,7 +267,7 @@ TEST_F(TensorIteratorTest, Traversal) {
 }
 
 TEST_F(TensorIteratorTest, CallResultStartsALifeChain) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
 func.func private @relabel(%t: tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit> {
   return %t : tensor<2x!qco.qubit>
 }
@@ -283,12 +283,12 @@ func.func @main() {
   return
 }
 )mlir",
-                                            context.get());
-  ASSERT_TRUE(module);
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
 
   func::CallOp call;
   ExtractOp extract;
-  module->walk([&](Operation* op) {
+  moduleOp->walk([&](Operation* op) {
     if (auto c = dyn_cast<func::CallOp>(op)) {
       call = c;
     }
@@ -343,12 +343,12 @@ TEST_F(TensorIteratorTest, TraversesMixedResultConditionals) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   qtensor::AllocOp alloc;
-  module->walk([&](qtensor::AllocOp candidate) { alloc = candidate; });
+  moduleOp->walk([&](qtensor::AllocOp candidate) { alloc = candidate; });
   ASSERT_TRUE(alloc);
 
   TensorIterator iterator(alloc.getResult());

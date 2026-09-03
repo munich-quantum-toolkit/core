@@ -8,11 +8,6 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file test_mqt_ir.cpp
- * @brief Unit tests for the MQT metadata dialect.
- */
-
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/MQT/IR/MQTAttributes.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"

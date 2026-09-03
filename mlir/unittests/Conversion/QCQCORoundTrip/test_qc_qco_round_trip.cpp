@@ -8,16 +8,22 @@
  * Licensed under the MIT License
  */
 
+#include "TestCaseUtils.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "qc_programs.h"
+#include "qco_programs.h"
 
 #include <gtest/gtest.h>
 #include <llvm/Support/raw_ostream.h>
@@ -36,7 +42,9 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <array>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 
@@ -49,23 +57,30 @@ protected:
   QCQCORoundTripTest() {
     DialectRegistry registry;
     registry
-        .insert<cbit::CBitDialect, mqt::MQTDialect, qc::QCDialect,
+        .insert<cbit::CBitDialect, ::mlir::mqt::MQTDialect, qc::QCDialect,
                 qco::QCODialect, qtensor::QTensorDialect, arith::ArithDialect,
                 func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
   }
 
-  [[nodiscard]] LogicalResult runRoundTrip(ModuleOp module) {
+  [[nodiscard]] LogicalResult runRoundTrip(ModuleOp moduleOp) {
     PassManager pm(&context);
     pm.addPass(createQCToQCO());
     pm.addPass(createQCOToQC());
-    return pm.run(module);
+    return pm.run(moduleOp);
   }
 
-  static void expectNoScratchStorage(ModuleOp module) {
+  [[nodiscard]] LogicalResult runReverseRoundTrip(ModuleOp moduleOp) {
+    PassManager pm(&context);
+    pm.addPass(createQCOToQC());
+    pm.addPass(createQCToQCO());
+    return pm.run(moduleOp);
+  }
+
+  static void expectNoScratchStorage(ModuleOp moduleOp) {
     bool containsScratchStorage = false;
-    module.walk([&](Operation* operation) {
+    moduleOp.walk([&](Operation* operation) {
       containsScratchStorage |=
           isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(operation);
     });
@@ -95,13 +110,13 @@ module {
 
   auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(function);
-  EXPECT_TRUE(mqt::isEntryPoint(function));
+  EXPECT_TRUE(::mlir::mqt::isEntryPoint(function));
   auto sourceName = function->getAttrOfType<StringAttr>(
-      mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
+      ::mlir::mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
   ASSERT_TRUE(sourceName);
   EXPECT_EQ(sourceName.getValue(), "source");
   const auto inputName = function.getArgAttrOfType<StringAttr>(
-      0, mqt::MQTDialect::InputNameAttrHelper::getNameStr());
+      0, ::mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr());
   ASSERT_TRUE(inputName);
   EXPECT_EQ(inputName.getValue(), "theta");
 
@@ -109,9 +124,39 @@ module {
   moduleOp->walk([&](memref::AllocOp op) { allocation = op; });
   ASSERT_TRUE(allocation);
   const auto registerName = allocation->getAttrOfType<StringAttr>(
-      mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
+      ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
   ASSERT_TRUE(registerName);
   EXPECT_EQ(registerName.getValue(), "q");
+}
+
+TEST_F(QCQCORoundTripTest, PreservesReusableFunctions) {
+  const std::array cases{
+      std::tuple{MQT_NAMED_BUILDER(qc::reusableUnitaryFunction),
+                 MQT_NAMED_BUILDER(qco::reusableUnitaryFunction), true},
+      std::tuple{MQT_NAMED_BUILDER(qc::reusableResetFunction),
+                 MQT_NAMED_BUILDER(qco::reusableResetFunction), false}};
+
+  for (const auto& [qcBuilder, qcoBuilder, unitary] : cases) {
+    SCOPED_TRACE(qcBuilder.name);
+    auto qcModule = ::mqt::test::buildMLIRProgram(&context, qcBuilder);
+    auto qcoModule = ::mqt::test::buildMLIRProgram(&context, qcoBuilder);
+    ASSERT_TRUE(qcModule);
+    ASSERT_TRUE(qcoModule);
+    ASSERT_TRUE(succeeded(runRoundTrip(*qcModule)));
+    ASSERT_TRUE(succeeded(runReverseRoundTrip(*qcoModule)));
+    ASSERT_TRUE(succeeded(verify(*qcModule)));
+    ASSERT_TRUE(succeeded(verify(*qcoModule)));
+
+    for (ModuleOp moduleOp : {*qcModule, *qcoModule}) {
+      size_t unitaryCalls = 0;
+      size_t genericCalls = 0;
+      moduleOp.walk([&](qc::CallOp) { ++unitaryCalls; });
+      moduleOp.walk([&](qco::CallOp) { ++unitaryCalls; });
+      moduleOp.walk([&](func::CallOp) { ++genericCalls; });
+      EXPECT_EQ(unitaryCalls, unitary ? 1U : 0U);
+      EXPECT_EQ(genericCalls, unitary ? 0U : 1U);
+    }
+  }
 }
 
 TEST_F(QCQCORoundTripTest, PreservesClassicalRegistersWithoutConversion) {
@@ -148,18 +193,20 @@ module {
   ASSERT_EQ(loads.size(), 1);
   ASSERT_EQ(stores.size(), 2);
   EXPECT_EQ(allocations[0].getInitialization(), cbit::Initialization::Zero);
-  EXPECT_EQ(allocations[0]
-                ->getAttrOfType<StringAttr>(
-                    mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
-                .getValue(),
-            "zero");
+  EXPECT_EQ(
+      allocations[0]
+          ->getAttrOfType<StringAttr>(
+              ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
+          .getValue(),
+      "zero");
   EXPECT_EQ(allocations[1].getInitialization(),
             cbit::Initialization::Undefined);
-  EXPECT_EQ(allocations[1]
-                ->getAttrOfType<StringAttr>(
-                    mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
-                .getValue(),
-            "undefined");
+  EXPECT_EQ(
+      allocations[1]
+          ->getAttrOfType<StringAttr>(
+              ::mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())
+          .getValue(),
+      "undefined");
   EXPECT_EQ(loads.front().getReg(), allocations.front().getResult());
   EXPECT_EQ(stores.front().getReg(), allocations.front().getResult());
   EXPECT_EQ(stores.back().getReg(), allocations.back().getResult());
@@ -191,22 +238,22 @@ module {
 }
 )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runRoundTrip(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runRoundTrip(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   scf::IfOp ifOp;
-  module->walk([&](scf::IfOp candidate) { ifOp = candidate; });
+  moduleOp->walk([&](scf::IfOp candidate) { ifOp = candidate; });
   ASSERT_TRUE(ifOp);
   ASSERT_EQ(ifOp.getNumResults(), 1);
 
-  auto main = module->lookupSymbol<func::FuncOp>("main");
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(main);
   auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
   EXPECT_EQ(returnOp.getOperand(0), ifOp.getResult(0));
-  expectNoScratchStorage(*module);
+  expectNoScratchStorage(*moduleOp);
 }
 
 TEST_F(QCQCORoundTripTest, PreservesClassicalIndexSwitchResultWithoutScratch) {
@@ -232,22 +279,22 @@ module {
 }
 )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runRoundTrip(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runRoundTrip(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   scf::IndexSwitchOp switchOp;
-  module->walk([&](scf::IndexSwitchOp candidate) { switchOp = candidate; });
+  moduleOp->walk([&](scf::IndexSwitchOp candidate) { switchOp = candidate; });
   ASSERT_TRUE(switchOp);
   ASSERT_EQ(switchOp.getNumResults(), 1);
 
-  auto main = module->lookupSymbol<func::FuncOp>("main");
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(main);
   auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
   EXPECT_EQ(returnOp.getOperand(0), switchOp.getResult(0));
-  expectNoScratchStorage(*module);
+  expectNoScratchStorage(*moduleOp);
 }
 
 TEST_F(QCQCORoundTripTest, PreservesDenseUnitaryMatrixAndQubitArity) {
@@ -269,18 +316,18 @@ module {
 }
 )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   ElementsAttr originalMatrix;
-  module->walk(
+  moduleOp->walk(
       [&](qc::UnitaryOp unitary) { originalMatrix = unitary.getMatrix(); });
   ASSERT_TRUE(originalMatrix);
 
   std::string serialized;
   llvm::raw_string_ostream stream(serialized);
-  module->print(stream);
+  moduleOp->print(stream);
   stream.flush();
   auto reparsed = parseSourceString<ModuleOp>(serialized, &context);
   ASSERT_TRUE(reparsed);
@@ -291,11 +338,11 @@ module {
   EXPECT_EQ(reparsedUnitary.getQubits().size(), 2U);
   EXPECT_EQ(reparsedUnitary.getMatrix(), originalMatrix);
 
-  ASSERT_TRUE(succeeded(runRoundTrip(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runRoundTrip(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   qc::UnitaryOp unitary;
-  module->walk([&](qc::UnitaryOp candidate) { unitary = candidate; });
+  moduleOp->walk([&](qc::UnitaryOp candidate) { unitary = candidate; });
   ASSERT_TRUE(unitary);
   EXPECT_EQ(unitary.getQubits().size(), 2U);
   EXPECT_EQ(unitary.getMatrix(), originalMatrix);

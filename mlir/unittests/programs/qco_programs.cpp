@@ -85,6 +85,27 @@ static Value measureAndReturn(QCOProgramBuilder& b, ValueRange qubits) {
 
 Value emptyQCO(QCOProgramBuilder& b) { return b.intConstant(0); }
 
+Value reusableUnitaryFunction(QCOProgramBuilder& b) {
+  auto qubit = b.allocQubit();
+  auto rotate = b.createUnitaryFunction(
+      "rotate", TypeRange{b.getF64Type(), qubit.getType()},
+      [&](ValueRange arguments) {
+        return SmallVector<Value>{b.rx(arguments[0], arguments[1])};
+      });
+  qubit = b.call(rotate, {b.floatConstant(0.5), qubit}).back();
+  return b.measure(qubit).second;
+}
+
+Value reusableResetFunction(QCOProgramBuilder& b) {
+  auto qubit = b.allocQubit();
+  auto reset = b.createFunction(
+      "reset", TypeRange{qubit.getType()}, [&](ValueRange arguments) {
+        return SmallVector<Value>{b.reset(arguments[0])};
+      });
+  qubit = b.call(reset, {qubit}).back();
+  return b.measure(qubit).second;
+}
+
 Value allocQubit(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
   return measureToRegister(b, q);
@@ -415,7 +436,7 @@ Value multipleControlledGlobalPhase(QCOProgramBuilder& b) {
 }
 
 Value inverseGlobalPhase(QCOProgramBuilder& b) {
-  b.inv(ValueRange{}, [&](ValueRange /*qubits*/) {
+  b.inv(ValueRange{}, [&](ValueRange) {
     b.gphase(-0.123);
     return SmallVector<Value>{};
   });
@@ -433,7 +454,7 @@ Value inverseMultipleControlledGlobalPhase(QCOProgramBuilder& b) {
 }
 
 Value powGphaseScaled(QCOProgramBuilder& b) {
-  b.pow(3.0, ValueRange{}, [&](mlir::ValueRange /*qubits*/) {
+  b.pow(3.0, ValueRange{}, [&](mlir::ValueRange) {
     b.gphase(0.123);
     return llvm::SmallVector<mlir::Value>{};
   });
@@ -446,7 +467,7 @@ Value powGphaseScaledRef(QCOProgramBuilder& b) {
 }
 
 Value negPowGphase(QCOProgramBuilder& b) {
-  b.pow(-3.0, ValueRange{}, [&](mlir::ValueRange /*qubits*/) {
+  b.pow(-3.0, ValueRange{}, [&](mlir::ValueRange) {
     b.gphase(0.123);
     return llvm::SmallVector<mlir::Value>{};
   });

@@ -93,7 +93,7 @@ TEST_F(WireIteratorFixture, TraversalRespectsStraightLineSemantics) {
   const auto [q12, c1] = builder.measure(q11);
   builder.sink(q03);
   builder.sink(q12);
-  [[maybe_unused]] auto module = builder.finalize(c0);
+  [[maybe_unused]] auto moduleOp = builder.finalize(c0);
 
   const auto fwChain0 = getChain(q00);
   const auto fwChain1 = getChain(q10);
@@ -127,7 +127,7 @@ TEST_F(WireIteratorFixture, TraversalVisitsSourcesAndSinks) {
 
   const auto q0 = builder.staticQubit(0);
   builder.sink(q0);
-  [[maybe_unused]] auto module = builder.finalize();
+  [[maybe_unused]] auto moduleOp = builder.finalize();
 
   WireIterator it(q0);
   ASSERT_EQ(it.qubit(), q0);
@@ -164,7 +164,7 @@ TEST_F(WireIteratorFixture, TraversalRespectsNestedBoundaries) {
   })[0];
   builder.sink(q1);
 
-  [[maybe_unused]] auto module = builder.finalize();
+  [[maybe_unused]] auto moduleOp = builder.finalize();
 
   WireIterator it(inLoop);
   ASSERT_EQ(it.qubit(), inLoop);
@@ -195,7 +195,7 @@ TEST_F(WireIteratorFixture, FailOnSentinelAccess) {
 
   const auto q0 = builder.staticQubit(0);
   builder.sink(q0);
-  [[maybe_unused]] auto module = builder.finalize();
+  [[maybe_unused]] auto moduleOp = builder.finalize();
 
   WireIterator it(q0);
   --it;
@@ -248,7 +248,7 @@ TEST_F(WireIteratorFixture, TraversalRespectsStructuredSemantics) {
   const auto tensor2 = builder.qtensorInsert(q15, tensor1, 1);
   builder.qtensorDealloc(tensor2);
 
-  [[maybe_unused]] auto module = builder.finalize();
+  [[maybe_unused]] auto moduleOp = builder.finalize();
 
   const auto fwChain0 = getChain(q00);
   const auto fwChain1 = getChain(q10);
@@ -288,13 +288,13 @@ TEST_F(WireIteratorFixture, TraversalRespectsStructuredSemantics) {
 TEST_F(WireIteratorFixture, TraversalTerminatesAtFunctionReturn) {
   Value source;
   Value output;
-  auto module =
+  auto moduleOp =
       qco::QCOProgramBuilder::build(context.get(), [&](auto& builder) -> Value {
         source = builder.allocQubit();
         output = builder.h(source);
         return output;
       });
-  ASSERT_TRUE(module);
+  ASSERT_TRUE(moduleOp);
 
   qco::WireIterator it(source);
   ASSERT_EQ(it.operation(), source.getDefiningOp());
@@ -323,8 +323,8 @@ TEST_F(WireIteratorFixture, TraversalTerminatesAtFunctionReturn) {
 TEST_F(WireIteratorFixture, TraversalTerminatesAtUnknownCarrier) {
   OpBuilder builder(context.get());
   const auto location = builder.getUnknownLoc();
-  auto module = ModuleOp::create(location);
-  builder.setInsertionPointToStart(module.getBody());
+  auto moduleOp = ModuleOp::create(location);
+  builder.setInsertionPointToStart(moduleOp.getBody());
   auto function = func::FuncOp::create(builder, location, "main",
                                        builder.getFunctionType({}, {}));
   Block* body = function.addEntryBlock();
@@ -359,8 +359,8 @@ TEST_F(WireIteratorFixture, UnitaryCallContinuesWire) {
   Value input = builder.allocQubit();
   Value output = builder.call(flip, input).front();
   builder.sink(output);
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
 
   WireIterator iterator(input);
   ++iterator;
@@ -381,8 +381,8 @@ TEST_F(WireIteratorFixture, GenericCallIsWireBoundary) {
   Value input = builder.allocQubit();
   Value output = builder.call(reset, input).front();
   builder.sink(output);
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
 
   WireIterator forward(input);
   ++forward;

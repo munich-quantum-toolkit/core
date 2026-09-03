@@ -23,8 +23,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-void CallOp::build(OpBuilder& /*builder*/, OperationState& state,
-                   FlatSymbolRefAttr callee, ValueRange operands) {
+void CallOp::build(OpBuilder&, OperationState& state, FlatSymbolRefAttr callee,
+                   ValueRange operands) {
   state.addAttribute("callee", callee);
   state.addOperands(operands);
   for (Value operand : operands) {

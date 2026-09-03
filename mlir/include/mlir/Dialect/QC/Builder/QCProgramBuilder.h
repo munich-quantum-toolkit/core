@@ -35,71 +35,59 @@ class ValueRange;
 
 namespace qc {
 
-/**
- * @brief Builder API for constructing quantum programs in the QC dialect
- *
- * @details
- * The QCProgramBuilder provides a type-safe interface for constructing
- * quantum circuits using reference semantics. Operations modify qubits in
- * place without producing new SSA values, providing a natural mapping to
- * hardware execution models.
- *
- * @par Qubit addressing:
- * A program must use either static qubits (`staticQubit`) or dynamic allocation
- * (`allocQubit` / `allocQubitRegister`), never both. The builder terminates
- * with a usage error if the modes are mixed.
- *
- * @par Example Usage:
- * ```c++
- * QCProgramBuilder builder(context);
- * builder.initialize();
- *
- * auto q0 = builder.staticQubit(0);
- * auto q1 = builder.staticQubit(1);
- *
- * // Operations modify qubits in place
- * builder.h(q0).cx(q0, q1);
- *
- * auto module = builder.finalize();
- * ```
- */
+/// Builder API for constructing quantum programs in the QC dialect
+///
+/// The QCProgramBuilder provides a type-safe interface for constructing
+/// quantum circuits using reference semantics. Operations modify qubits in
+/// place without producing new SSA values, providing a natural mapping to
+/// hardware execution models.
+///
+/// @par Qubit addressing:
+/// A program must use either static qubits (`staticQubit`) or dynamic
+/// allocation
+/// (`allocQubit` / `allocQubitRegister`), never both. The builder terminates
+/// with a usage error if the modes are mixed.
+///
+/// @par Example Usage:
+/// ```c++
+/// QCProgramBuilder builder(context);
+/// builder.initialize();
+///
+/// auto q0 = builder.staticQubit(0);
+/// auto q1 = builder.staticQubit(1);
+///
+/// // Operations modify qubits in place
+/// builder.h(q0).cx(q0, q1);
+///
+/// auto moduleOp = builder.finalize();
+/// ```
 class QCProgramBuilder final : public ImplicitLocOpBuilder {
 public:
-  /**
-   * @brief Construct a new QCProgramBuilder
-   * @param context The MLIR context to use for building operations
-   */
+  /// Construct a new QCProgramBuilder
+  /// @param context The MLIR context to use for building operations
   explicit QCProgramBuilder(MLIRContext* context);
 
   //===--------------------------------------------------------------------===//
   // Initialization
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Initialize the builder and prepare for program construction, with
-   * a default return type of i64.
-   *
-   * @details
-   * Creates a main function with an `mqt.entry_point` attribute. Must be called
-   * before adding operations.
-   */
+  /// Initialize the builder and prepare for program construction, with
+  /// a default return type of i64.
+  ///
+  /// Creates a main function with an `mqt.entry_point` attribute. Must be
+  /// called before adding operations.
   void initialize();
 
-  /**
-   * @brief Initialize the builder and prepare for program construction
-   * with specified return types.
-   * @param returnTypes The return types for the main function
-   *
-   * @details
-   * Creates a main function with an `mqt.entry_point` attribute. Must be called
-   * before adding operations.
-   */
+  /// Initialize the builder and prepare for program construction
+  /// with specified return types.
+  /// @param returnTypes The return types for the main function
+  ///
+  /// Creates a main function with an `mqt.entry_point` attribute. Must be
+  /// called before adding operations.
   void initialize(TypeRange returnTypes);
 
-  /**
-   * @brief Modify the return types of the main function after initialization.
-   * @param returnTypes The new return types for the main function
-   */
+  /// Modify the return types of the main function after initialization.
+  /// @param returnTypes The new return types for the main function
   void retype(TypeRange returnTypes);
 
   //===--------------------------------------------------------------------===//
@@ -140,56 +128,46 @@ public:
   // Memory Management
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Represents a qubit register with its qubits.
-   */
+  /// Represents a qubit register with its qubits.
   struct QubitRegister {
     /// The memref value representing the qubit register
     Value value;
     /// The allocated qubit values
     SmallVector<Value> qubits;
 
-    /**
-     * @brief Access a specific qubit in the register
-     * @param index The index of the qubit to access
-     * @return The specified qubit value
-     */
+    /// Access a specific qubit in the register
+    /// @param index The index of the qubit to access
+    /// @return The specified qubit value
     Value operator[](size_t index) const;
 
-    /**
-     * @brief Conversion to the backing memref value
-     * @return The memref value representing the qubit register
-     */
+    /// Conversion to the backing memref value
+    /// @return The memref value representing the qubit register
     explicit operator Value() const { return value; }
   };
 
-  /**
-   * @brief Allocate a single qubit initialized to |0⟩
-   * @return A qubit reference
-   *
-   * @par Example:
-   * ```c++
-   * auto q = builder.allocQubit();
-   * ```
-   * ```mlir
-   * %q = qc.alloc : !qc.qubit
-   * ```
-   */
+  /// Allocate a single qubit initialized to |0⟩
+  /// @return A qubit reference
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto q = builder.allocQubit();
+  /// ```
+  /// ```mlir
+  /// %q = qc.alloc : !qc.qubit
+  /// ```
   Value allocQubit();
 
-  /**
-   * @brief Get a static qubit by index
-   * @param index The qubit index
-   * @return A qubit reference
-   *
-   * @par Example:
-   * ```c++
-   * auto q0 = builder.staticQubit(0);
-   * ```
-   * ```mlir
-   * %q0 = qc.static 0 : !qc.qubit
-   * ```
-   */
+  /// Get a static qubit by index
+  /// @param index The qubit index
+  /// @return A qubit reference
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto q0 = builder.staticQubit(0);
+  /// ```
+  /// ```mlir
+  /// %q0 = qc.static 0 : !qc.qubit
+  /// ```
   Value staticQubit(uint64_t index);
 
   /// Allocate a qubit register and eagerly load every element.
@@ -222,44 +200,40 @@ public:
   /// \returns The memref value that represents the qubit register.
   Value allocQubitRegisterStorage(int64_t size, StringRef name = {});
 
-  /**
-   * @brief Explicitly loads a qubit from a memref
-   *
-   * @param memref Source memref
-   * @param index The index from where the qubit is loaded
-   * @return The loaded qubit
-   *
-   * @par Example:
-   * ```c++
-   * auto q0 = builder.loadQubit(memref, index);
-   * ```
-   * ```mlir
-   * %q0 = memref.load %memref[%index] : memref<3x!qc.qubit>
-   * ```
-   */
+  /// Explicitly loads a qubit from a memref
+  ///
+  /// @param memref Source memref
+  /// @param index The index from where the qubit is loaded
+  /// @return The loaded qubit
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto q0 = builder.loadQubit(memref, index);
+  /// ```
+  /// ```mlir
+  /// %q0 = memref.load %memref[%index] : memref<3x!qc.qubit>
+  /// ```
   Value loadQubit(Value memref, Value index);
 
-  /**
-   * @brief Allocate a classical bit register
-   *
-   * @details The register uses `!cbit.reg<N>`. Its initialization is explicit
-   * and independent of every other register built by this builder.
-   *
-   * @param size Number of bits (must be positive)
-   * @param name Optional source-level register name; defaults to no name
-   * @param initialization Initial value of the register elements; defaults to
-   * zero
-   * @return The CBit register value
-   *
-   * @par Example:
-   * ```c++
-   * auto c = builder.allocClassicalBitRegister(3, "c");
-   * ```
-   * ```mlir
-   * %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
-   *     : !cbit.reg<3>
-   * ```
-   */
+  /// Allocate a classical bit register
+  ///
+  /// The register uses `!cbit.reg<N>`. Its initialization is explicit
+  /// and independent of every other register built by this builder.
+  ///
+  /// @param size Number of bits (must be positive)
+  /// @param name Optional source-level register name; defaults to no name
+  /// @param initialization Initial value of the register elements; defaults to
+  /// zero
+  /// @return The CBit register value
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto c = builder.allocClassicalBitRegister(3, "c");
+  /// ```
+  /// ```mlir
+  /// %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
+  ///     : !cbit.reg<3>
+  /// ```
   Value allocClassicalBitRegister(
       int64_t size, StringRef name = {},
       cbit::Initialization initialization = cbit::Initialization::Zero);
@@ -275,45 +249,41 @@ public:
   // Measurement and Reset
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Measure a qubit in the computational basis
-   *
-   * @details Measures a qubit in place and returns the classical measurement
-   * result.
-   *
-   * @param qubit The qubit to measure
-   * @return Classical measurement result (`i1`)
-   *
-   * @par Example:
-   * ```c++
-   * auto result = builder.measure(q);
-   * ```
-   * ```mlir
-   * %result = qc.measure %q : !qc.qubit -> i1
-   * ```
-   */
+  /// Measure a qubit in the computational basis
+  ///
+  /// Measures a qubit in place and returns the classical measurement
+  /// result.
+  ///
+  /// @param qubit The qubit to measure
+  /// @return Classical measurement result (`i1`)
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto result = builder.measure(q);
+  /// ```
+  /// ```mlir
+  /// %result = qc.measure %q : !qc.qubit -> i1
+  /// ```
   Value measure(Value qubit);
 
-  /**
-   * @brief Measure a qubit and store the result in a classical bit register
-   *
-   * @details Measures the qubit and stores the classical result in the given
-   * classical register at the given index, in addition to returning it.
-   *
-   * @param qubit The qubit to measure
-   * @param reg The CBit register
-   * @param index The index within the classical register
-   * @return Classical measurement result (`i1`)
-   *
-   * @par Example:
-   * ```c++
-   * builder.measure(q0, c, 0);
-   * ```
-   * ```mlir
-   * %r0 = qc.measure %q0 : !qc.qubit -> i1
-   * cbit.store %r0, %c[%c0] : !cbit.reg<3>
-   * ```
-   */
+  /// Measure a qubit and store the result in a classical bit register
+  ///
+  /// Measures the qubit and stores the classical result in the given
+  /// classical register at the given index, in addition to returning it.
+  ///
+  /// @param qubit The qubit to measure
+  /// @param reg The CBit register
+  /// @param index The index within the classical register
+  /// @return Classical measurement result (`i1`)
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.measure(q0, c, 0);
+  /// ```
+  /// ```mlir
+  /// %r0 = qc.measure %q0 : !qc.qubit -> i1
+  /// cbit.store %r0, %c[%c0] : !cbit.reg<3>
+  /// ```
   Value measure(Value qubit, Value reg,
                 const std::variant<int64_t, Value>& index);
 
@@ -329,23 +299,20 @@ public:
   QCProgramBuilder& measureQubitRegister(Value qubits, Value bits,
                                          int64_t size);
 
-  /**
-   * @brief Reset a qubit to |0⟩ state
-   *
-   * @details
-   * Resets a qubit to the |0⟩ state in place.
-   *
-   * @param qubit The qubit to reset
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.reset(q);
-   * ```
-   * ```mlir
-   * qc.reset %q : !qc.qubit
-   * ```
-   */
+  /// Reset a qubit to |0⟩ state
+  ///
+  /// Resets a qubit to the |0⟩ state in place.
+  ///
+  /// @param qubit The qubit to reset
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.reset(q);
+  /// ```
+  /// ```mlir
+  /// qc.reset %q : !qc.qubit
+  /// ```
   QCProgramBuilder& reset(Value qubit);
 
   //===--------------------------------------------------------------------===//
@@ -355,57 +322,9 @@ public:
   // ZeroTargetOneParameter
 
 #define DECLARE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)            \
-  /**                                                                          \
-   * @brief Apply a OP_CLASS                                                   \
-   *                                                                           \
-   * @param PARAM Rotation angle in radians                                    \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.OP_NAME(PARAM);                                                   \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM)                                                        \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM));        \
-  /**                                                                          \
-   * Apply a controlled OP_CLASS                                               \
-   *                                                                           \
-   * @param PARAM Rotation angle in radians                                    \
-   * @param control Control qubit                                              \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.c##OP_NAME(PARAM, q);                                             \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q) {                                                             \
-   *   qc.OP_NAME(%PARAM)                                                      \
-   * } : !qc.qubit                                                             \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),      \
                                Value control);                                 \
-  /**                                                                          \
-   * @brief Apply a multi-controlled OP_CLASS                                  \
-   *                                                                           \
-   * @param PARAM Rotation angle in radians                                    \
-   * @param controls Control qubits                                            \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.mc##OP_NAME(PARAM, {q0, q1});                                     \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) {                                                       \
-   *   qc.OP_NAME(%PARAM)                                                      \
-   * } : !qc.qubit, !qc.qubit                                                  \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),     \
                                 ValueRange controls);
 
@@ -416,56 +335,8 @@ public:
   // OneTargetZeroParameter
 
 #define DECLARE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                   \
-  /**                                                                          \
-   * @brief Apply a OP_CLASS                                                   \
-   *                                                                           \
-   * @param qubit Target qubit                                                 \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.OP_NAME(q);                                                       \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.OP_NAME %q : !qc.qubit                                                 \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& OP_NAME(Value qubit);                                      \
-  /**                                                                          \
-   * @brief Apply a controlled OP_CLASS                                        \
-   *                                                                           \
-   * @param control Control qubit                                              \
-   * @param target Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.c##OP_NAME(q0, q1);                                               \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
-   *   qc.OP_NAME %a0 : !qc.qubit                                              \
-   * } : !qc.qubit                                                             \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& c##OP_NAME(Value control, Value target);                   \
-  /**                                                                          \
-   * @brief Apply a multi-controlled OP_CLASS                                  \
-   *                                                                           \
-   * @param controls Control qubits                                            \
-   * @param target Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.mc##OP_NAME({q0, q1}, q2);                                        \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) targets(%a0 = %q2) {                                    \
-   *   qc.OP_NAME %a0 : !qc.qubit                                              \
-   * } : !qc.qubit, !qc.qubit                                                  \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(ValueRange controls, Value target);
 
   DECLARE_ONE_TARGET_ZERO_PARAMETER(IdOp, id)
@@ -485,61 +356,10 @@ public:
   // OneTargetOneParameter
 
 #define DECLARE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
-  /**                                                                          \
-   * @brief Apply a OP_CLASS                                                   \
-   *                                                                           \
-   * @param PARAM Rotation angle in radians                                    \
-   * @param qubit Target qubit                                                 \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.OP_NAME(PARAM, q);                                                \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM) %q : !qc.qubit                                         \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM),         \
                             Value qubit);                                      \
-  /**                                                                          \
-   * @brief Apply a controlled OP_CLASS                                        \
-   *                                                                           \
-   * @param PARAM Rotation angle in radians                                    \
-   * @param control Control qubit                                              \
-   * @param target Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.c##OP_NAME(PARAM, q0, q1);                                        \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
-   *   qc.OP_NAME(%PARAM) %a0 : !qc.qubit                                      \
-   * } : !qc.qubit                                                             \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),      \
                                Value control, Value target);                   \
-  /**                                                                          \
-   * @brief Apply a multi-controlled OP_CLASS                                  \
-   *                                                                           \
-   * @param PARAM Rotation angle in radians                                    \
-   * @param controls Control qubits                                            \
-   * @param target Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.mc##OP_NAME(PARAM, {q0, q1}, q2);                                 \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) targets(%a0 = %q2) {                                    \
-   *   qc.OP_NAME(%PARAM) %a0 : !qc.qubit                                      \
-   * } : !qc.qubit, !qc.qubit                                                  \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),     \
                                 ValueRange controls, Value target);
 
@@ -553,66 +373,12 @@ public:
   // OneTargetTwoParameter
 
 #define DECLARE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)    \
-  /**                                                                          \
-   * @brief Apply a OP_CLASS                                                   \
-   *                                                                           \
-   * @param PARAM1 Rotation angle in radians                                   \
-   * @param PARAM2 Rotation angle in radians                                   \
-   * @param qubit Target qubit                                                 \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.OP_NAME(PARAM1, PARAM2, q);                                       \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM1, %PARAM2) %q : !qc.qubit                               \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),        \
                             const std::variant<double, Value>&(PARAM2),        \
                             Value qubit);                                      \
-  /**                                                                          \
-   * @brief Apply a controlled OP_CLASS                                        \
-   *                                                                           \
-   * @param PARAM1 Rotation angle in radians                                   \
-   * @param PARAM2 Rotation angle in radians                                   \
-   * @param control Control qubit                                              \
-   * @param target Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1);                               \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
-   *   qc.OP_NAME(%PARAM1, %PARAM2) %a0 : !qc.qubit                            \
-   * } : !qc.qubit                                                             \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),     \
                                const std::variant<double, Value>&(PARAM2),     \
                                Value control, Value target);                   \
-  /**                                                                          \
-   * @brief Apply a multi-controlled OP_CLASS                                  \
-   *                                                                           \
-   * @param PARAM1 Rotation angle in radians                                   \
-   * @param PARAM2 Rotation angle in radians                                   \
-   * @param controls Control qubits                                            \
-   * @param target Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.mc##OP_NAME(PARAM1, PARAM2, {q0, q1}, q2);                        \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) targets(%a0 = %q2) {                                    \
-   *   qc.OP_NAME(%PARAM1, %PARAM2) %a0 : !qc.qubit                            \
-   * } : !qc.qubit, !qc.qubit                                                  \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
                                 const std::variant<double, Value>&(PARAM2),    \
                                 ValueRange controls, Value target);
@@ -626,71 +392,14 @@ public:
 
 #define DECLARE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2,  \
                                            PARAM3)                             \
-  /**                                                                          \
-   * @brief Apply a OP_CLASS                                                   \
-   *                                                                           \
-   * @param PARAM1 Rotation angle in radians                                   \
-   * @param PARAM2 Rotation angle in radians                                   \
-   * @param PARAM3 Rotation angle in radians                                   \
-   * @param qubit Target qubit                                                 \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.OP_NAME(PARAM1, PARAM2, PARAM3, q);                               \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q : !qc.qubit                      \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),        \
                             const std::variant<double, Value>&(PARAM2),        \
                             const std::variant<double, Value>&(PARAM3),        \
                             Value qubit);                                      \
-  /**                                                                          \
-   * @brief Apply a controlled OP_CLASS                                        \
-   *                                                                           \
-   * @param PARAM1 Rotation angle in radians                                   \
-   * @param PARAM2 Rotation angle in radians                                   \
-   * @param PARAM3 Rotation angle in radians                                   \
-   * @param control Control qubit                                              \
-   * @param target Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.c##OP_NAME(PARAM1, PARAM2, PARAM3, q0, q1);                       \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
-   *   qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %a0 : !qc.qubit                   \
-   * } : !qc.qubit                                                             \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),     \
                                const std::variant<double, Value>&(PARAM2),     \
                                const std::variant<double, Value>&(PARAM3),     \
                                Value control, Value target);                   \
-  /**                                                                          \
-   * @brief Apply a multi-controlled OP_CLASS                                  \
-   *                                                                           \
-   * @param PARAM1 Rotation angle in radians                                   \
-   * @param PARAM2 Rotation angle in radians                                   \
-   * @param PARAM3 Rotation angle in radians                                   \
-   * @param controls Control qubits                                            \
-   * @param target Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.mc##OP_NAME(PARAM1, PARAM2, PARAM3, {q0, q1}, q2);                \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) targets(%a0 = %q2) {                                    \
-   *   qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %a0 : !qc.qubit                   \
-   * } : !qc.qubit, !qc.qubit                                                  \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
                                 const std::variant<double, Value>&(PARAM2),    \
                                 const std::variant<double, Value>&(PARAM3),    \
@@ -703,59 +412,8 @@ public:
   // TwoTargetZeroParameter
 
 #define DECLARE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                   \
-  /**                                                                          \
-   * @brief Apply a OP_CLASS                                                   \
-   *                                                                           \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.OP_NAME(q0, q1);                                                  \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.OP_NAME %q0, %q1 : !qc.qubit, !qc.qubit                                \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& OP_NAME(Value qubit0, Value qubit1);                       \
-  /**                                                                          \
-   * @brief Apply a controlled OP_CLASS                                        \
-   *                                                                           \
-   * @param control Control qubit                                              \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.c##OP_NAME(q0, q1, q2);                                           \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2) {                              \
-   *   qc.OP_NAME %a0, %a1 : !qc.qubit, !qc.qubit                              \
-   * } : !qc.qubit                                                             \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1);     \
-  /**                                                                          \
-   * @brief Apply a multi-controlled OP_CLASS                                  \
-   *                                                                           \
-   * @param controls Control qubits                                            \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.mc##OP_NAME({q0, q1}, q2, q3);                                    \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3) {                         \
-   *   qc.OP_NAME %a0, %a1 : !qc.qubit, !qc.qubit                              \
-   * } : !qc.qubit, !qc.qubit                                                  \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,             \
                                 Value qubit1);
 
@@ -769,64 +427,10 @@ public:
   // TwoTargetOneParameter
 
 #define DECLARE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
-  /**                                                                          \
-   * @brief Apply a OP_CLASS                                                   \
-   *                                                                           \
-   * @param PARAM Rotation angle in radians                                    \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.OP_NAME(PARAM, q0, q1);                                           \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM) %q0, %q1 : !qc.qubit, !qc.qubit                        \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM),         \
                             Value qubit0, Value qubit1);                       \
-  /**                                                                          \
-   * @brief Apply a controlled OP_CLASS                                        \
-   *                                                                           \
-   * @param PARAM Rotation angle in radians                                    \
-   * @param control Control qubit                                              \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.c##OP_NAME(PARAM, q0, q1, q2);                                    \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2) {                              \
-   *   qc.OP_NAME(%PARAM) %a0, %a1 : !qc.qubit, !qc.qubit                      \
-   * } : !qc.qubit                                                             \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),      \
                                Value control, Value qubit0, Value qubit1);     \
-  /**                                                                          \
-   * @brief Apply a multi-controlled OP_CLASS                                  \
-   *                                                                           \
-   * @param PARAM Rotation angle in radians                                    \
-   * @param controls Control qubits                                            \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.mc##OP_NAME(PARAM, {q0, q1}, q2, q3);                             \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3) {                         \
-   *   qc.OP_NAME(%PARAM) %a0, %a1 : !qc.qubit, !qc.qubit                      \
-   * } : !qc.qubit, !qc.qubit                                                  \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),     \
                                 ValueRange controls, Value qubit0,             \
                                 Value qubit1);
@@ -841,70 +445,12 @@ public:
   // TwoTargetTwoParameter
 
 #define DECLARE_TWO_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)    \
-  /**                                                                          \
-   * @brief Apply a OP_CLASS                                                   \
-   *                                                                           \
-   * @param PARAM1 Rotation angle in radians                                   \
-   * @param PARAM2 Rotation angle in radians                                   \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.OP_NAME(PARAM1, PARAM2, q0, q1);                                  \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM1, %PARAM2) %q0, %q1 : !qc.qubit, !qc.qubit              \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),        \
                             const std::variant<double, Value>&(PARAM2),        \
                             Value qubit0, Value qubit1);                       \
-  /**                                                                          \
-   * @brief Apply a controlled OP_CLASS                                        \
-   *                                                                           \
-   * @param PARAM1 Rotation angle in radians                                   \
-   * @param PARAM2 Rotation angle in radians                                   \
-   * @param control Control qubit                                              \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1, q2);                           \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2) {                              \
-   *   qc.OP_NAME(%PARAM1, %PARAM2) %a0, %a1 : !qc.qubit,                      \
-   * !qc.qubit                                                                 \
-   * } : !qc.qubit                                                             \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),     \
                                const std::variant<double, Value>&(PARAM2),     \
                                Value control, Value qubit0, Value qubit1);     \
-  /**                                                                          \
-   * @brief Apply a multi-controlled OP_CLASS                                  \
-   *                                                                           \
-   * @param PARAM1 Rotation angle in radians                                   \
-   * @param PARAM2 Rotation angle in radians                                   \
-   * @param controls Control qubits                                            \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.mc##OP_NAME(PARAM1, PARAM2, {q0, q1}, q2, q3);                    \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3) {                         \
-   *  qc.OP_NAME(%PARAM1, %PARAM2) %a0, %a1 : !qc.qubit, !qc.qubit             \
-   * } : !qc.qubit, !qc.qubit                                                  \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
                                 const std::variant<double, Value>&(PARAM2),    \
                                 ValueRange controls, Value qubit0,             \
@@ -918,63 +464,9 @@ public:
   // ThreeTargetZeroParameter
 
 #define DECLARE_THREE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                 \
-  /**                                                                          \
-   * @brief Apply a OP_CLASS                                                   \
-   *                                                                           \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @param qubit2 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.OP_NAME(q0, q1, q2);                                              \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.OP_NAME %q0, %q1, %q2 : !qc.qubit, !qc.qubit, !qc.qubit                \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& OP_NAME(Value qubit0, Value qubit1, Value qubit2);         \
-  /**                                                                          \
-   * @brief Apply a controlled OP_CLASS                                        \
-   *                                                                           \
-   * @param control Control qubit                                              \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @param qubit2 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.c##OP_NAME(q0, q1, q2, q3);                                       \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2, %a2 = %q3) {                   \
-   *   qc.OP_NAME %a0, %a1, %a2 : !qc.qubit, !qc.qubit, !qc.qubit              \
-   * } : !qc.qubit                                                             \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1,      \
                                Value qubit2);                                  \
-  /**                                                                          \
-   * @brief Apply a multi-controlled OP_CLASS                                  \
-   *                                                                           \
-   * @param controls Control qubits                                            \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @param qubit2 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.mc##OP_NAME({q0, q1}, q2, q3, q4);                                \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3, %a2 = %q4) {              \
-   *   qc.OP_NAME %a0, %a1, %a2 : !qc.qubit, !qc.qubit, !qc.qubit              \
-   * } : !qc.qubit, !qc.qubit                                                  \
-   * ```                                                                       \
-   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,             \
                                 Value qubit1, Value qubit2);
 
@@ -984,173 +476,155 @@ public:
 
   // BarrierOp
 
-  /**
-   * @brief Apply a BarrierOp
-   *
-   * @param qubits Target qubits
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.barrier({q0, q1});
-   * ```
-   * ```mlir
-   * qc.barrier %q0, %q1 : !qc.qubit, !qc.qubit
-   * ```
-   */
+  /// Apply a BarrierOp
+  ///
+  /// @param qubits Target qubits
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.barrier({q0, q1});
+  /// ```
+  /// ```mlir
+  /// qc.barrier %q0, %q1 : !qc.qubit, !qc.qubit
+  /// ```
   QCProgramBuilder& barrier(ValueRange qubits);
 
-  /**
-   * @brief Apply an explicitly represented dense unitary matrix
-   *
-   * @param qubits Target qubits, ordered from the most-significant basis bit
-   * to the least-significant basis bit
-   * @param matrix Square row-major `complex<f64>` matrix
-   * @return Reference to this builder for method chaining
-   */
+  /// Apply an explicitly represented dense unitary matrix
+  ///
+  /// @param qubits Target qubits, ordered from the most-significant basis bit
+  /// to the least-significant basis bit
+  /// @param matrix Square row-major `complex<f64>` matrix
+  /// @return Reference to this builder for method chaining
   QCProgramBuilder& unitary(ValueRange qubits, DenseElementsAttr matrix);
 
   //===--------------------------------------------------------------------===//
   // Modifiers
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Apply a control modifier to a collection of gates
-   *
-   * @param controls Control qubits
-   * @param targets Target qubits the body operates on
-   * @param body Function that builds the body containing the target gates
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.ctrl(q0, q1, [&](ValueRange targets) {
-   *   builder.x(targets[0]);
-   * });
-   * ```
-   * ```mlir
-   * qc.ctrl(%q0) targets(%a0 = %q1) {
-   *   qc.x %a0 : !qc.qubit
-   * } : !qc.qubit
-   * ```
-   */
+  /// Apply a control modifier to a collection of gates
+  ///
+  /// @param controls Control qubits
+  /// @param targets Target qubits the body operates on
+  /// @param body Function that builds the body containing the target gates
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.ctrl(q0, q1, [&](ValueRange targets) {
+  ///   builder.x(targets[0]);
+  /// });
+  /// ```
+  /// ```mlir
+  /// qc.ctrl(%q0) targets(%a0 = %q1) {
+  ///   qc.x %a0 : !qc.qubit
+  /// } : !qc.qubit
+  /// ```
   QCProgramBuilder& ctrl(ValueRange controls, ValueRange targets,
                          const function_ref<void(ValueRange)>& body);
 
-  /**
-   * @brief Apply a control modifier with a single target and one-qubit body.
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @param body Function that builds the body containing the target operation
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.ctrl({q0_in, q1_in}, q2_in, [&](Value target) {
-   *   builder.x(target);
-   * });
-   * ```
-   */
+  /// Apply a control modifier with a single target and one-qubit body.
+  ///
+  /// @param controls Control qubits
+  /// @param target Target qubit
+  /// @param body Function that builds the body containing the target operation
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.ctrl({q0_in, q1_in}, q2_in, [&](Value target) {
+  ///   builder.x(target);
+  /// });
+  /// ```
   QCProgramBuilder& ctrl(ValueRange controls, Value target,
                          const function_ref<void(Value)>& body);
 
-  /**
-   * @brief Apply a control modifier with one control and one target.
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @param body Function that builds the body containing the target operation
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.ctrl(q0_in, q1_in, [&](Value target) {
-   *   builder.x(target);
-   * });
-   * ```
-   */
+  /// Apply a control modifier with one control and one target.
+  ///
+  /// @param control Control qubit
+  /// @param target Target qubit
+  /// @param body Function that builds the body containing the target operation
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.ctrl(q0_in, q1_in, [&](Value target) {
+  ///   builder.x(target);
+  /// });
+  /// ```
   QCProgramBuilder& ctrl(Value control, Value target,
                          const function_ref<void(Value)>& body);
 
-  /**
-   * @brief Apply an inverse (i.e., adjoint) modifier to a collection of gates
-   *
-   * @param qubits The qubits the body operates on
-   * @param body Function that builds the body containing the gates to invert
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.inv(q0, [&](ValueRange qubits) {
-   *   builder.h(qubits[0]);
-   * });
-   * ```
-   * ```mlir
-   * qc.inv (%a0 = %q0) {
-   *   qc.s %a0 : !qc.qubit
-   * }
-   * ```
-   */
+  /// Apply an inverse (i.e., adjoint) modifier to a collection of gates
+  ///
+  /// @param qubits The qubits the body operates on
+  /// @param body Function that builds the body containing the gates to invert
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.inv(q0, [&](ValueRange qubits) {
+  ///   builder.h(qubits[0]);
+  /// });
+  /// ```
+  /// ```mlir
+  /// qc.inv (%a0 = %q0) {
+  ///   qc.s %a0 : !qc.qubit
+  /// }
+  /// ```
   QCProgramBuilder& inv(ValueRange qubits,
                         const function_ref<void(ValueRange)>& body);
 
-  /**
-   * @brief Apply an inverse modifier on a single qubit.
-   *
-   * @param qubit Qubit involved in the operation
-   * @param body Function that builds the body containing the operation to
-   * invert
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.inv(q0_in, [&](Value qubit) {
-   *   builder.h(qubit);
-   * });
-   * ```
-   */
+  /// Apply an inverse modifier on a single qubit.
+  ///
+  /// @param qubit Qubit involved in the operation
+  /// @param body Function that builds the body containing the operation to
+  /// invert
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.inv(q0_in, [&](Value qubit) {
+  ///   builder.h(qubit);
+  /// });
+  /// ```
   QCProgramBuilder& inv(Value qubit, const function_ref<void(Value)>& body);
 
-  /**
-   * @brief Apply a power modifier to a collection of gates
-   *
-   * @param exponent The exponent to raise the operation to
-   * @param qubits The qubits the body operates on
-   * @param body Function that builds the body containing the gates to
-   * exponentiate
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.pow(2.0, {q0, q1}, [&](ValueRange qubits) {
-   *   builder.swap(qubits[0], qubits[1]);
-   * });
-   * ```
-   * ```mlir
-   * qc.pow(%exponent) (%a0 = %q0) {
-   *   qc.s %a0 : !qc.qubit
-   * } : !qc.qubit
-   * ```
-   */
+  /// Apply a power modifier to a collection of gates
+  ///
+  /// @param exponent The exponent to raise the operation to
+  /// @param qubits The qubits the body operates on
+  /// @param body Function that builds the body containing the gates to
+  /// exponentiate
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.pow(2.0, {q0, q1}, [&](ValueRange qubits) {
+  ///   builder.swap(qubits[0], qubits[1]);
+  /// });
+  /// ```
+  /// ```mlir
+  /// qc.pow(%exponent) (%a0 = %q0) {
+  ///   qc.s %a0 : !qc.qubit
+  /// } : !qc.qubit
+  /// ```
   QCProgramBuilder& pow(const std::variant<double, Value>& exponent,
                         ValueRange qubits,
                         const function_ref<void(ValueRange)>& body);
 
-  /**
-   * @brief Apply a power modifier on a single qubit.
-   *
-   * @param exponent The exponent to raise the operation to
-   * @param qubit Qubit involved in the operation
-   * @param body Function that builds the body containing the operation to
-   * exponentiate
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.pow(2.0, q0, [&](Value qubit) { builder.s(qubit); });
-   * ```
-   */
+  /// Apply a power modifier on a single qubit.
+  ///
+  /// @param exponent The exponent to raise the operation to
+  /// @param qubit Qubit involved in the operation
+  /// @param body Function that builds the body containing the operation to
+  /// exponentiate
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.pow(2.0, q0, [&](Value qubit) { builder.s(qubit); });
+  /// ```
   QCProgramBuilder& pow(const std::variant<double, Value>& exponent,
                         Value qubit, const function_ref<void(Value)>& body);
 
@@ -1158,189 +632,173 @@ public:
   // Deallocation
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Explicitly deallocate a qubit
-   *
-   * @details
-   * Deallocates a qubit and removes it from tracking. Optional, finalize()
-   * automatically deallocates all remaining allocated qubits.
-   *
-   * @param qubit The qubit to deallocate
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.dealloc(q);
-   * ```
-   * ```mlir
-   * qc.dealloc %q : !qc.qubit
-   * ```
-   */
+  /// Explicitly deallocate a qubit
+  ///
+  /// Deallocates a qubit and removes it from tracking. Optional, finalize()
+  /// automatically deallocates all remaining allocated qubits.
+  ///
+  /// @param qubit The qubit to deallocate
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.dealloc(q);
+  /// ```
+  /// ```mlir
+  /// qc.dealloc %q : !qc.qubit
+  /// ```
   QCProgramBuilder& dealloc(Value qubit);
 
   //===--------------------------------------------------------------------===//
   // SCF operations
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Construct an scf.for operation
-   *
-   * @param lowerbound Lower bound of the loop
-   * @param upperbound Upper bound of the loop
-   * @param step Step size of the loop
-   * @param body Function that builds the body of the for operation
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.scfFor(lb, ub, step, [&](Value iv) {
-   *   auto q0 = builder.loadQubit(memref, iv);
-   *   builder.h(q0);
-   * });
-   * ```
-   * ```mlir
-   * scf.for %iv = %lb to %ub step %step {
-   *   %q0 = memref.load %memref[%iv] : memref<3x!qc.qubit>
-   *   qc.h %q0 : !qc.qubit
-   * }
-   * ```
-   */
+  /// Construct an scf.for operation
+  ///
+  /// @param lowerbound Lower bound of the loop
+  /// @param upperbound Upper bound of the loop
+  /// @param step Step size of the loop
+  /// @param body Function that builds the body of the for operation
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.scfFor(lb, ub, step, [&](Value iv) {
+  ///   auto q0 = builder.loadQubit(memref, iv);
+  ///   builder.h(q0);
+  /// });
+  /// ```
+  /// ```mlir
+  /// scf.for %iv = %lb to %ub step %step {
+  ///   %q0 = memref.load %memref[%iv] : memref<3x!qc.qubit>
+  ///   qc.h %q0 : !qc.qubit
+  /// }
+  /// ```
   QCProgramBuilder& scfFor(const std::variant<int64_t, Value>& lowerbound,
                            const std::variant<int64_t, Value>& upperbound,
                            const std::variant<int64_t, Value>& step,
                            const function_ref<void(Value)>& body);
 
-  /**
-   * @brief Construct an scf.while operation
-   *
-   * @param beforeBody Function that builds the before body of the while
-   * operation
-   * @param afterBody Function that builds the after body of the while operation
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.scfWhile([&] {
-   *   auto res = builder.measure(q0);
-   *   builder.scfCondition(res);
-   * }, [&] {
-   *   builder.h(q0);
-   * });
-   * ```
-   * ```mlir
-   * scf.while : () -> () {
-   *   %res = qc.measure %q0 : !qc.qubit -> i1
-   *   scf.condition(%res)
-   * } do {
-   *   qc.h %q0 : !qc.qubit
-   *   scf.yield
-   * }
-   * ```
-   */
+  /// Construct an scf.while operation
+  ///
+  /// @param beforeBody Function that builds the before body of the while
+  /// operation
+  /// @param afterBody Function that builds the after body of the while
+  /// operation
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.scfWhile([&] {
+  ///   auto res = builder.measure(q0);
+  ///   builder.scfCondition(res);
+  /// }, [&] {
+  ///   builder.h(q0);
+  /// });
+  /// ```
+  /// ```mlir
+  /// scf.while : () -> () {
+  ///   %res = qc.measure %q0 : !qc.qubit -> i1
+  ///   scf.condition(%res)
+  /// } do {
+  ///   qc.h %q0 : !qc.qubit
+  ///   scf.yield
+  /// }
+  /// ```
   QCProgramBuilder& scfWhile(const function_ref<void()>& beforeBody,
                              const function_ref<void()>& afterBody);
 
-  /**
-   * @brief Construct an scf.if operation
-   *
-   * @param condition Condition for the if operation
-   * @param thenBody Function that builds the then body of the if operation
-   * @param elseBody Function that builds the else body of the if operation
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.scfIf(condition, [&] {
-   *   builder.x(q0);
-   * }, [&] {
-   *   builder.z(q0);
-   * });
-   * ```
-   * ```mlir
-   * scf.if %condition {
-   *   qc.x %q0 : !qc.qubit
-   * } else {
-   *   qc.z %q0 : !qc.qubit
-   * }
-   * ```
-   */
+  /// Construct an scf.if operation
+  ///
+  /// @param condition Condition for the if operation
+  /// @param thenBody Function that builds the then body of the if operation
+  /// @param elseBody Function that builds the else body of the if operation
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.scfIf(condition, [&] {
+  ///   builder.x(q0);
+  /// }, [&] {
+  ///   builder.z(q0);
+  /// });
+  /// ```
+  /// ```mlir
+  /// scf.if %condition {
+  ///   qc.x %q0 : !qc.qubit
+  /// } else {
+  ///   qc.z %q0 : !qc.qubit
+  /// }
+  /// ```
   QCProgramBuilder& scfIf(const std::variant<bool, Value>& condition,
                           const function_ref<void()>& thenBody,
                           const function_ref<void()>& elseBody = nullptr);
 
-  /**
-   * @brief Construct an scf.if operation conditioned on a classical bit
-   *
-   * @details Loads the classical bit from the given classical register at the
-   * given index and uses it as the condition of the if operation.
-   *
-   * @param reg The memref representing the classical register
-   * @param index The index within the register to load the condition from
-   * @param thenBody Function that builds the then body of the if operation
-   * @param elseBody Function that builds the else body of the if operation
-   * @return Reference to this builder for method chaining
-   */
+  /// Construct an scf.if operation conditioned on a classical bit
+  ///
+  /// Loads the classical bit from the given classical register at the
+  /// given index and uses it as the condition of the if operation.
+  ///
+  /// @param reg The memref representing the classical register
+  /// @param index The index within the register to load the condition from
+  /// @param thenBody Function that builds the then body of the if operation
+  /// @param elseBody Function that builds the else body of the if operation
+  /// @return Reference to this builder for method chaining
   QCProgramBuilder& scfIf(Value reg, const std::variant<int64_t, Value>& index,
                           const function_ref<void()>& thenBody,
                           const function_ref<void()>& elseBody = nullptr);
 
-  /**
-   * @brief Construct an scf.index_switch operation
-   *
-   * @param arg Index argument.
-   * @param cases The individual switch cases.
-   * @param caseBodies An array of functions that build the case bodies.
-   * @param defaultBody Function that builds the default body.
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.scfIndexSwitch(index,
-   *   SmallVector<int64_t>{0},
-   *   SmallVector<function_ref<void()>>{[&] { b.x(q0); }},
-   *   [&] { b.z(q0); });
-   * ```
-   * ```mlir
-   * scf.index_switch %condition
-   * case 0 {
-   *   qc.x %q0 : !qc.qubit
-   * }
-   * default {
-   *   qc.z %q0 : !qc.qubit
-   * }
-   * ```
-   */
+  /// Construct an scf.index_switch operation
+  ///
+  /// @param arg Index argument.
+  /// @param cases The individual switch cases.
+  /// @param caseBodies An array of functions that build the case bodies.
+  /// @param defaultBody Function that builds the default body.
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.scfIndexSwitch(index,
+  ///   SmallVector<int64_t>{0},
+  ///   SmallVector<function_ref<void()>>{[&] { b.x(q0); }},
+  ///   [&] { b.z(q0); });
+  /// ```
+  /// ```mlir
+  /// scf.index_switch %condition
+  /// case 0 {
+  ///   qc.x %q0 : !qc.qubit
+  /// }
+  /// default {
+  ///   qc.z %q0 : !qc.qubit
+  /// }
+  /// ```
   QCProgramBuilder& scfIndexSwitch(const std::variant<int64_t, Value>& arg,
                                    ArrayRef<int64_t> cases,
                                    ArrayRef<function_ref<void()>> caseBodies,
                                    const function_ref<void()>& defaultBody);
 
-  /**
-   * @brief Construct an scf.condition operation
-   *
-   * @param condition Condition for the condition operation
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.scfCondition(condition);
-   * ```
-   * ```mlir
-   * scf.condition(%condition)
-   * ```
-   */
+  /// Construct an scf.condition operation
+  ///
+  /// @param condition Condition for the condition operation
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.scfCondition(condition);
+  /// ```
+  /// ```mlir
+  /// scf.condition(%condition)
+  /// ```
   QCProgramBuilder& scfCondition(Value condition);
 
-  /**
-   * @brief Construct an scf.condition operation conditioned on a classical bit
-   *
-   * @details Loads the classical bit from the given classical register at the
-   * given index and uses it as the condition of the condition operation.
-   *
-   * @param reg The memref representing the classical register
-   * @param index The index within the register to load the condition from
-   * @return Reference to this builder for method chaining
-   */
+  /// Construct an scf.condition operation conditioned on a classical bit
+  ///
+  /// Loads the classical bit from the given classical register at the
+  /// given index and uses it as the condition of the condition operation.
+  ///
+  /// @param reg The memref representing the classical register
+  /// @param index The index within the register to load the condition from
+  /// @return Reference to this builder for method chaining
   QCProgramBuilder& scfCondition(Value reg,
                                  const std::variant<int64_t, Value>& index);
 
@@ -1348,60 +806,51 @@ public:
   // Finalization
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Finalize the program and return the constructed module
-   *
-   * @details
-   * Automatically deallocates all remaining allocated qubits, adds a return
-   * statement with exit code 0 (indicating successful execution), and
-   * transfers ownership of the module to the caller.
-   * The builder should not be used after calling this method.
-   *
-   * @return OwningOpRef containing the constructed quantum program module
-   */
+  /// Finalize the program and return the constructed module
+  ///
+  /// Automatically deallocates all remaining allocated qubits, adds a return
+  /// statement with exit code 0 (indicating successful execution), and
+  /// transfers ownership of the module to the caller.
+  /// The builder should not be used after calling this method.
+  ///
+  /// @return OwningOpRef containing the constructed quantum program module
   OwningOpRef<ModuleOp> finalize();
 
-  /**
-   * @brief Finalize the program with the given return values and return the
-   * constructed module
-   * @param returnValues Values representing the return values of the main
-   * function.
-   *
-   * @details
-   * Automatically deallocates all remaining valid qubits and tensors of qubits,
-   * adds a return statement with the given return values, and
-   * transfers ownership of the module to the caller. The builder should not
-   * be used after calling this method.
-   *
-   * The return values must have the types indicated by the function signature
-   * of the main function, which returns an `i64` by default and can be
-   * modified by passing different arguments to the `initialize()` method.
-   *
-   * @return OwningOpRef containing the constructed quantum program module
-   */
+  /// Finalize the program with the given return values and return the
+  /// constructed module
+  /// @param returnValues Values representing the return values of the main
+  /// function.
+  ///
+  /// Automatically deallocates all remaining valid qubits and tensors of
+  /// qubits, adds a return statement with the given return values, and
+  /// transfers ownership of the module to the caller. The builder should not
+  /// be used after calling this method.
+  ///
+  /// The return values must have the types indicated by the function signature
+  /// of the main function, which returns an `i64` by default and can be
+  /// modified by passing different arguments to the `initialize()` method.
+  ///
+  /// @return OwningOpRef containing the constructed quantum program module
   OwningOpRef<ModuleOp> finalize(ValueRange returnValues);
 
-  /**
-   * @brief Convenience method for building quantum programs.
-   * @param context The MLIR context to use for building the program
-   * @param buildFunc A function that takes a reference to a QCProgramBuilder
-   * and uses it to build the desired quantum program. The builder will be
-   * properly initialized before calling this function, and the resulting module
-   * will be finalized using the returned Values after this function completes.
-   * @return The module containing the quantum program built by buildFunc.
-   */
+  /// Convenience method for building quantum programs.
+  /// @param context The MLIR context to use for building the program
+  /// @param buildFunc A function that takes a reference to a QCProgramBuilder
+  /// and uses it to build the desired quantum program. The builder will be
+  /// properly initialized before calling this function, and the resulting
+  /// module will be finalized using the returned Values after this function
+  /// completes.
+  /// @return The module containing the quantum program built by buildFunc.
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
         const function_ref<SmallVector<Value>(QCProgramBuilder&)>& buildFunc);
 
-  /**
-   * @brief Convenience method for building quantum programs with one return
-   * value.
-   * @param context The MLIR context to use for building the program
-   * @param buildFunc A function that takes a reference to a QCProgramBuilder
-   * and returns the single result value of the desired quantum program.
-   * @return The module containing the quantum program built by buildFunc.
-   */
+  /// Convenience method for building quantum programs with one return
+  /// value.
+  /// @param context The MLIR context to use for building the program
+  /// @param buildFunc A function that takes a reference to a QCProgramBuilder
+  /// and returns the single result value of the desired quantum program.
+  /// @return The module containing the quantum program built by buildFunc.
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
         const function_ref<Value(QCProgramBuilder&)>& buildFunc);
@@ -1410,7 +859,7 @@ private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
 
   MLIRContext* ctx{};
-  Operation* module;
+  Operation* moduleOp_;
 
   /// Track allocated qubits for automatic deallocation
   SetVector<Value> allocatedQubits;
