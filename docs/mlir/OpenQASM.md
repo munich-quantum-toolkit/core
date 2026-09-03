@@ -240,9 +240,12 @@ results, loop-carried values, and nonempty `scf.yield` are outside the export
 subset. Multi-operation modifier bodies must have a target qubit and cannot
 capture additional qubits from an enclosing scope.
 
-The OpenQASM path additionally supports arbitrary bit-register widths,
-`popcount`, `rotl`, and `rotr`. Qiskit interoperability uses the common subset
-described in the Python compiler documentation.
+OpenQASM export supports arbitrary bit-register widths for bitwise operations,
+unsigned comparisons, `popcount`, `rotl`, and `rotr`. Scalar arithmetic, integer
+casts, signed comparisons, and logical shifts require widths of at most 64 bits.
+Rotation counts must be constant or represented by at most 64 bits, optionally
+zero-extended to the register width. Qiskit interoperability uses the common
+subset described in the Python compiler documentation.
 
 The exporter inlines a whole-register read only in the block that contains the
 read and only when no later write to that register precedes the expression use.

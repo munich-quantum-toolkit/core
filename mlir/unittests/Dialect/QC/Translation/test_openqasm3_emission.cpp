@@ -556,6 +556,72 @@ result = rotl(result, 2);
   EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context)) << *emitted;
 }
 
+TEST(OpenQASM3EmissionTest, RoundTripsWideBitVectorBuiltins) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+output bit[65] c;
+c = 1;
+int distance = int(bool(c));
+c = rotl(c, distance);
+c = rotr(c, 2);
+output uint count;
+count = popcount(c);
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  auto restored = qc::translateQASM3ToQC(*emitted, &context);
+  ASSERT_TRUE(restored) << *emitted;
+  EXPECT_TRUE(succeeded(verify(*restored)));
+}
+
+TEST(OpenQASM3EmissionTest, RejectsWideScalarIntegerExpressions) {
+  constexpr auto expressions = std::to_array<llvm::StringLiteral>({
+      R"mlir(%sum = arith.addi %value, %zero : i80
+             %condition = arith.cmpi eq, %sum, %zero : i80)mlir",
+      R"mlir(%condition = arith.cmpi slt, %value, %zero : i80)mlir",
+      R"mlir(%narrow = arith.trunci %value : i80 to i64
+             %zero64 = arith.constant 0 : i64
+             %condition = arith.cmpi eq, %narrow, %zero64 : i64)mlir",
+  });
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  for (const auto expression : expressions) {
+    SCOPED_TRACE(expression.str());
+    const auto source = R"mlir(module {
+      func.func @main() -> i1 attributes {mqt.entry_point} {
+        %bits = cbit.alloc(#cbit.init<zero>) : !cbit.reg<80>
+        %value = cbit.read %bits : !cbit.reg<80> -> i80
+        %zero = arith.constant 0 : i80
+    )mlir" + expression.str() +
+                        R"mlir(
+        return %condition : i1
+      }
+    })mlir";
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+  }
+}
+
+TEST(OpenQASM3EmissionTest, EmitsIndexArithmetic) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main() -> index attributes {mqt.entry_point} {
+      %one = arith.constant 1 : index
+      %sum = arith.addi %one, %one : index
+      return %sum : index
+    }
+  })mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context)) << *emitted;
+}
+
 TEST(OpenQASM3EmissionTest, EmitsNativeIndexSwitch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {

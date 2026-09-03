@@ -327,15 +327,6 @@ static Value loadCBit(Operation* op, Value reg, Value index,
       .getResult();
 }
 
-static void storeCBit(Operation* op, Value value, Value reg, Value index,
-                      ConversionPatternRewriter& rewriter) {
-  const auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
-  auto elementptr =
-      LLVM::GEPOp::create(rewriter, op->getLoc(), ptrType, rewriter.getI1Type(),
-                          reg, ValueRange{index});
-  LLVM::StoreOp::create(rewriter, op->getLoc(), value, elementptr);
-}
-
 namespace {
 
 struct ConvertCBitLoadOp final : StatefulOpConversionPattern<cbit::LoadOp> {
@@ -363,8 +354,12 @@ struct ConvertCBitStoreOp final : StatefulOpConversionPattern<cbit::StoreOp> {
           "non-measurement stores to returned CBit registers are not "
           "supported by QIR conversion");
     }
-    storeCBit(op, adaptor.getValue(), adaptor.getReg(), adaptor.getIndex(),
-              rewriter);
+    const auto ptrType = LLVM::LLVMPointerType::get(getContext());
+    auto elementptr = LLVM::GEPOp::create(
+        rewriter, op.getLoc(), ptrType, rewriter.getI1Type(), adaptor.getReg(),
+        ValueRange{adaptor.getIndex()});
+    LLVM::StoreOp::create(rewriter, op.getLoc(), adaptor.getValue(),
+                          elementptr);
     rewriter.eraseOp(op);
     return success();
   }

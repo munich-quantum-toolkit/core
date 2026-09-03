@@ -371,8 +371,7 @@ private:
           expression.type == frontend::ScalarType::Angle) {
         return remember(unary(1));
       }
-      return remember(
-          unary(expression.type == frontend::ScalarType::Uint ? 2 : 10));
+      return remember(unary(2));
     case frontend::ExpressionKind::ArcCos:
     case frontend::ExpressionKind::ArcSin:
     case frontend::ExpressionKind::ArcTan:
@@ -392,20 +391,9 @@ private:
     case frontend::ExpressionKind::Add:
     case frontend::ExpressionKind::Subtract:
     case frontend::ExpressionKind::Multiply:
-      if (expression.type == frontend::ScalarType::Float ||
-          expression.type == frontend::ScalarType::Angle) {
-        return remember(binary(3));
-      }
-      return remember(
-          binary(expression.type == frontend::ScalarType::Uint ? 2 : 11));
     case frontend::ExpressionKind::Divide:
     case frontend::ExpressionKind::Modulo:
-      if (expression.type == frontend::ScalarType::Float ||
-          expression.type == frontend::ScalarType::Angle) {
-        return remember(binary(3));
-      }
-      return remember(
-          binary(expression.type == frontend::ScalarType::Uint ? 5 : 13));
+      return remember(binary(1));
     case frontend::ExpressionKind::Power:
       if (expression.type == frontend::ScalarType::Float) {
         return remember(binary(3));
@@ -967,25 +955,6 @@ private:
     return preflightStatements(program.body, projectedEmission);
   }
 
-  [[nodiscard]] static Value checkedSignedResult(OpBuilder& opBuilder,
-                                                 Location loc, Value wide,
-                                                 const StringRef message) {
-    auto i128 = opBuilder.getIntegerType(128);
-    auto minimum = arith::ConstantIntOp::create(
-        opBuilder, loc, i128, std::numeric_limits<int64_t>::min());
-    auto maximum = arith::ConstantIntOp::create(
-        opBuilder, loc, i128, std::numeric_limits<int64_t>::max());
-    auto aboveMinimum = arith::CmpIOp::create(
-        opBuilder, loc, arith::CmpIPredicate::sge, wide, minimum);
-    auto belowMaximum = arith::CmpIOp::create(
-        opBuilder, loc, arith::CmpIPredicate::sle, wide, maximum);
-    auto fits =
-        arith::AndIOp::create(opBuilder, loc, aboveMinimum, belowMaximum);
-    cf::AssertOp::create(opBuilder, loc, fits, message);
-    return arith::TruncIOp::create(opBuilder, loc, opBuilder.getI64Type(),
-                                   wide);
-  }
-
   [[nodiscard]] static Value conditionalIntegerMultiply(OpBuilder& opBuilder,
                                                         Location loc,
                                                         Value condition,
@@ -1065,6 +1034,9 @@ private:
   [[nodiscard]] static Value
   emitExactlyRepresentableIntegerAsF64(OpBuilder& opBuilder, Location loc,
                                        Value integer, const bool isUnsigned) {
+    const auto type =
+        isUnsigned ? frontend::ScalarType::Uint : frontend::ScalarType::Int;
+    integer = emitScalarCast(opBuilder, loc, integer, type, type);
     auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
     Value magnitude = integer;
     if (!isUnsigned) {
@@ -1188,6 +1160,9 @@ private:
     }
 
     auto distance = emitExpression(opBuilder, expression.distance, {});
+    distance =
+        emitScalarCast(opBuilder, loc, distance, frontend::ScalarType::Int,
+                       frontend::ScalarType::Int);
     auto widthConstant = arith::ConstantIntOp::create(
         opBuilder, loc, static_cast<int64_t>(expression.width), 64);
     auto remainder =
@@ -1420,6 +1395,8 @@ private:
                                        const int64_t width,
                                        const llvm::StringRef message) {
     auto index = emitExpression(builder, expression, {});
+    const auto type = program.expressions.at(expression).type;
+    index = emitScalarCast(builder, builder.getLoc(), index, type, type);
     auto zero = builder.intConstant(0);
     auto upper = builder.intConstant(width);
     Value inBounds;
@@ -1948,8 +1925,8 @@ private:
       auto rhs = builder.getIntegerAttr(
           builder.getIntegerType(condition.expected.getBitWidth()),
           condition.expected);
-      const auto predicate = integerPredicate(
-          condition.comparison, !condition.signedRegisterComparison);
+      const auto predicate =
+          integerPredicate(condition.comparison, /*isUnsigned=*/true);
       auto value = cbit::ReadOp::create(builder, rhs.getType(), reg);
       auto constant = arith::ConstantOp::create(builder, rhs);
       return arith::CmpIOp::create(builder, predicate, value, constant);
@@ -2552,6 +2529,8 @@ private:
     const auto savedScalars = scalarValues;
 
     auto control = emitExpression(builder, switchStatement.control, {});
+    const auto type = program.expressions.at(switchStatement.control).type;
+    control = emitScalarCast(builder, builder.getLoc(), control, type, type);
     auto selector =
         arith::IndexCastOp::create(builder, builder.getIndexType(), control);
     auto switchOp = scf::IndexSwitchOp::create(

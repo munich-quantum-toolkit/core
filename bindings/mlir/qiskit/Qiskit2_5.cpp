@@ -39,7 +39,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -1724,13 +1723,10 @@ public:
     case ClassicalTargetKind::ClassicalBit:
       return expressionModule_.attr("lift")(classicalBit(target.bit));
     case ClassicalTargetKind::ClassicalRegister:
-      if (const auto reg = registeredClassicalRegister(target.reg)) {
-        return expressionModule_.attr("lift")(
-            *reg, classicalType(ClassicalType::Uint,
-                                static_cast<uint32_t>(target.reg.bits.size())));
-      }
-      throw std::runtime_error(
-          "Qiskit register Store requires a registered lvalue");
+      return expressionModule_.attr("lift")(
+          registeredClassicalRegister(target.reg),
+          classicalType(ClassicalType::Uint,
+                        static_cast<uint32_t>(target.reg.bits.size())));
     case ClassicalTargetKind::Expression:
       if (!target.expression) {
         throw std::runtime_error("Qiskit Store has no lvalue expression");
@@ -1761,10 +1757,7 @@ public:
         throw std::runtime_error(
             "Qiskit switch registers must contain between 1 and 64 bits");
       }
-      if (const auto reg = registeredClassicalRegister(target.reg)) {
-        return *reg;
-      }
-      return packedRegister(target.reg);
+      return registeredClassicalRegister(target.reg);
     case ClassicalTargetKind::Expression:
       if (!target.expression) {
         throw std::runtime_error("Qiskit switch target has no expression");
@@ -1812,11 +1805,8 @@ private:
     return nb::borrow<nb::object>(clbits_[bit]);
   }
 
-  [[nodiscard]] std::optional<nb::object>
+  [[nodiscard]] nb::object
   registeredClassicalRegister(const Register& reg) const {
-    if (reg.name.empty()) {
-      return std::nullopt;
-    }
     for (const nb::handle candidateHandle : nb::iter(cregs_)) {
       auto candidate = nb::borrow<nb::object>(candidateHandle);
       if (pythonStringAttribute(candidate, "name",
@@ -1825,50 +1815,8 @@ private:
         return candidate;
       }
     }
-    return std::nullopt;
-  }
-
-  [[nodiscard]] nb::object
-  packedRegister(const Register& reg,
-                 const uint32_t expressionWidth = 0U) const {
-    const auto width = expressionWidth == 0U
-                           ? static_cast<uint32_t>(reg.bits.size())
-                           : expressionWidth;
-    if (reg.bits.empty() || reg.bits.size() > 64U || width < reg.bits.size() ||
-        width > 64U) {
-      throw std::runtime_error(
-          "Qiskit expression register has an invalid width");
-    }
-    std::unordered_set<uint32_t> seen;
-    std::vector<nb::object> terms;
-    terms.reserve(reg.bits.size());
-    const auto type = classicalType(ClassicalType::Uint, width);
-    for (size_t index = 0U; index < reg.bits.size(); ++index) {
-      if (!seen.insert(reg.bits[index]).second) {
-        throw std::runtime_error(
-            "Qiskit expression register contains a repeated bit");
-      }
-      auto term =
-          expressionModule_.attr("cast")(classicalBit(reg.bits[index]), type);
-      if (index != 0U) {
-        term = expressionModule_.attr("shift_left")(term, nb::int_(index));
-      }
-      terms.emplace_back(std::move(term));
-    }
-    while (terms.size() > 1U) {
-      std::vector<nb::object> reduced;
-      reduced.reserve((terms.size() + 1U) / 2U);
-      for (size_t index = 0U; index < terms.size(); index += 2U) {
-        if (index + 1U == terms.size()) {
-          reduced.emplace_back(std::move(terms[index]));
-          continue;
-        }
-        reduced.emplace_back(
-            expressionModule_.attr("bit_or")(terms[index], terms[index + 1U]));
-      }
-      terms = std::move(reduced);
-    }
-    return std::move(terms.front());
+    throw std::runtime_error(
+        "Qiskit classical expression references a missing register");
   }
 
   [[nodiscard]] static const char* binaryFunction(const BinaryOperation op) {
@@ -1973,11 +1921,9 @@ private:
         throw std::runtime_error(
             "Qiskit classical-register expression has an invalid type");
       }
-      if (const auto reg = registeredClassicalRegister(value.reg)) {
-        return expressionModule_.attr("lift")(
-            *reg, classicalType(ClassicalType::Uint, value.width));
-      }
-      return packedRegister(value.reg, value.width);
+      return expressionModule_.attr("lift")(
+          registeredClassicalRegister(value.reg),
+          classicalType(ClassicalType::Uint, value.width));
     case ExpressionKind::Unary:
       return expressionModule_.attr(unaryFunction(value.unaryOperation))(
           expression(*requireOperand(value.left), depth + 1U));

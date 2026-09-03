@@ -664,23 +664,6 @@ registerStorage(const llvm::ArrayRef<ClassicalBitRef> classicalBits,
   return storage;
 }
 
-[[nodiscard]] static mlir::Value emitRegisterComparison(
-    mlir::qc::QCProgramBuilder& builder,
-    const llvm::ArrayRef<ClassicalBitRef> classicalBits,
-    const llvm::ArrayRef<uint32_t> rootClbitMap, const Register& reg,
-    mlir::arith::CmpIPredicate predicate, uint64_t expected) {
-  auto storage = registerStorage(classicalBits, rootClbitMap, reg);
-  if (!storage) {
-    return {};
-  }
-  const auto width = static_cast<unsigned>(reg.bits.size());
-  const auto rhs = builder.getIntegerAttr(builder.getIntegerType(width),
-                                          llvm::APInt(width, expected, false));
-  auto value = mlir::cbit::ReadOp::create(builder, rhs.getType(), storage);
-  auto constant = mlir::arith::ConstantOp::create(builder, rhs);
-  return mlir::arith::CmpIOp::create(builder, predicate, value, constant);
-}
-
 [[nodiscard]] static mlir::Value
 packRegister(mlir::qc::QCProgramBuilder& builder,
              const llvm::ArrayRef<ClassicalBitRef> classicalBits,
@@ -725,93 +708,6 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
   return terms.front();
 }
 
-[[nodiscard]] static std::optional<mlir::arith::CmpIPredicate>
-integerComparisonPredicate(const BinaryOperation operation,
-                           const bool reverse) {
-  switch (operation) {
-  case BinaryOperation::Equal:
-    return mlir::arith::CmpIPredicate::eq;
-  case BinaryOperation::NotEqual:
-    return mlir::arith::CmpIPredicate::ne;
-  case BinaryOperation::Less:
-    return reverse ? mlir::arith::CmpIPredicate::ugt
-                   : mlir::arith::CmpIPredicate::ult;
-  case BinaryOperation::LessEqual:
-    return reverse ? mlir::arith::CmpIPredicate::uge
-                   : mlir::arith::CmpIPredicate::ule;
-  case BinaryOperation::Greater:
-    return reverse ? mlir::arith::CmpIPredicate::ult
-                   : mlir::arith::CmpIPredicate::ugt;
-  case BinaryOperation::GreaterEqual:
-    return reverse ? mlir::arith::CmpIPredicate::ule
-                   : mlir::arith::CmpIPredicate::uge;
-  default:
-    return std::nullopt;
-  }
-}
-
-namespace {
-struct RegisterComparison {
-  const Register* reg;
-  mlir::arith::CmpIPredicate predicate;
-  uint64_t expected;
-};
-} // namespace
-
-[[nodiscard]] static std::optional<RegisterComparison>
-signedRegisterComparison(const Expression& expression) {
-  const auto reverse = expression.left->kind == ExpressionKind::Value;
-  const auto& biasedRegister = reverse ? *expression.right : *expression.left;
-  const auto& biasedExpected = reverse ? *expression.left : *expression.right;
-  const auto predicate =
-      integerComparisonPredicate(expression.binaryOperation, reverse);
-  if (!predicate || biasedRegister.kind != ExpressionKind::Binary ||
-      biasedRegister.binaryOperation != BinaryOperation::BitXor ||
-      biasedRegister.type != ClassicalType::Uint ||
-      biasedExpected.kind != ExpressionKind::Value ||
-      biasedExpected.type != ClassicalType::Uint ||
-      biasedExpected.width != biasedRegister.width) {
-    return std::nullopt;
-  }
-  const auto& left = *biasedRegister.left;
-  const auto& right = *biasedRegister.right;
-  const auto* reg = left.kind == ExpressionKind::ClassicalRegister    ? &left
-                    : right.kind == ExpressionKind::ClassicalRegister ? &right
-                                                                      : nullptr;
-  const auto* mask = left.kind == ExpressionKind::Value    ? &left
-                     : right.kind == ExpressionKind::Value ? &right
-                                                           : nullptr;
-  if (reg == nullptr || mask == nullptr || reg->type != ClassicalType::Uint ||
-      reg->width == 0U || reg->width != reg->reg.bits.size() ||
-      reg->width != biasedRegister.width || mask->type != ClassicalType::Uint ||
-      mask->width != reg->width ||
-      mask->uintValue != (uint64_t{1} << (reg->width - 1U))) {
-    return std::nullopt;
-  }
-  const auto signedPredicate =
-      [&]() -> std::optional<mlir::arith::CmpIPredicate> {
-    switch (*predicate) {
-    case mlir::arith::CmpIPredicate::ult:
-      return mlir::arith::CmpIPredicate::slt;
-    case mlir::arith::CmpIPredicate::ule:
-      return mlir::arith::CmpIPredicate::sle;
-    case mlir::arith::CmpIPredicate::ugt:
-      return mlir::arith::CmpIPredicate::sgt;
-    case mlir::arith::CmpIPredicate::uge:
-      return mlir::arith::CmpIPredicate::sge;
-    default:
-      return std::nullopt;
-    }
-  }();
-  if (!signedPredicate) {
-    return std::nullopt;
-  }
-  return RegisterComparison{.reg = &reg->reg,
-                            .predicate = *signedPredicate,
-                            .expected =
-                                biasedExpected.uintValue ^ mask->uintValue};
-}
-
 [[nodiscard]] static mlir::Value
 emitExpression(mlir::qc::QCProgramBuilder& builder,
                const Expression& expression,
@@ -845,15 +741,6 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
         target);
   }
   case ExpressionKind::Cast: {
-    if (expression.type == ClassicalType::Bool &&
-        expression.left->kind == ExpressionKind::ClassicalRegister &&
-        expression.left->width == expression.left->reg.bits.size()) {
-      if (auto comparison = emitRegisterComparison(
-              builder, classicalBits, rootClbitMap, expression.left->reg,
-              mlir::arith::CmpIPredicate::ne, 0U)) {
-        return comparison;
-      }
-    }
     auto operand =
         emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
     if (operand.getType() == resultType) {
@@ -930,52 +817,6 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     break;
   }
   case ExpressionKind::Binary: {
-    if (const auto comparison = signedRegisterComparison(expression)) {
-      if (auto result = emitRegisterComparison(
-              builder, classicalBits, rootClbitMap, *comparison->reg,
-              comparison->predicate, comparison->expected)) {
-        return result;
-      }
-    }
-    const auto reverse =
-        expression.left->kind == ExpressionKind::Value &&
-        expression.right->kind == ExpressionKind::ClassicalRegister;
-    const auto& registerExpression =
-        reverse ? *expression.right : *expression.left;
-    const auto& expected = reverse ? *expression.left : *expression.right;
-    const Expression* registerValue = nullptr;
-    if (registerExpression.kind == ExpressionKind::ClassicalRegister &&
-        registerExpression.type == ClassicalType::Uint &&
-        registerExpression.width == registerExpression.reg.bits.size()) {
-      registerValue = &registerExpression;
-    } else if (registerExpression.kind == ExpressionKind::Cast &&
-               registerExpression.type == ClassicalType::Uint &&
-               registerExpression.left->kind ==
-                   ExpressionKind::ClassicalRegister &&
-               registerExpression.left->type == ClassicalType::Uint &&
-               registerExpression.left->width ==
-                   registerExpression.left->reg.bits.size() &&
-               registerExpression.width >= registerExpression.left->width &&
-               expected.kind == ExpressionKind::Value &&
-               expected.type == ClassicalType::Uint &&
-               expected.width == registerExpression.width &&
-               (registerExpression.left->width == 64U ||
-                expected.uintValue <
-                    (uint64_t{1} << registerExpression.left->width))) {
-      registerValue = registerExpression.left.get();
-    }
-    if (const auto predicate =
-            integerComparisonPredicate(expression.binaryOperation, reverse);
-        predicate && registerValue != nullptr &&
-        expected.kind == ExpressionKind::Value &&
-        expected.type == ClassicalType::Uint &&
-        expected.width == registerExpression.width) {
-      if (auto comparison = emitRegisterComparison(
-              builder, classicalBits, rootClbitMap, registerValue->reg,
-              *predicate, expected.uintValue)) {
-        return comparison;
-      }
-    }
     auto left =
         emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
     if (expression.binaryOperation == BinaryOperation::LogicAnd ||
@@ -1012,34 +853,38 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     auto right =
         emitExpression(builder, *expression.right, classicalBits, rootClbitMap);
     const auto comparison = [&]() -> std::optional<mlir::Value> {
-      const auto integerPredicate =
-          integerComparisonPredicate(expression.binaryOperation, false);
-      std::optional<mlir::arith::CmpFPredicate> floatPredicate;
+      mlir::arith::CmpIPredicate integerPredicate;
+      mlir::arith::CmpFPredicate floatPredicate;
       switch (expression.binaryOperation) {
       case BinaryOperation::Equal:
+        integerPredicate = mlir::arith::CmpIPredicate::eq;
         floatPredicate = mlir::arith::CmpFPredicate::OEQ;
         break;
       case BinaryOperation::NotEqual:
+        integerPredicate = mlir::arith::CmpIPredicate::ne;
         floatPredicate = mlir::arith::CmpFPredicate::UNE;
         break;
       case BinaryOperation::Less:
+        integerPredicate = mlir::arith::CmpIPredicate::ult;
         floatPredicate = mlir::arith::CmpFPredicate::OLT;
         break;
       case BinaryOperation::LessEqual:
+        integerPredicate = mlir::arith::CmpIPredicate::ule;
         floatPredicate = mlir::arith::CmpFPredicate::OLE;
         break;
       case BinaryOperation::Greater:
+        integerPredicate = mlir::arith::CmpIPredicate::ugt;
         floatPredicate = mlir::arith::CmpFPredicate::OGT;
         break;
       case BinaryOperation::GreaterEqual:
+        integerPredicate = mlir::arith::CmpIPredicate::uge;
         floatPredicate = mlir::arith::CmpFPredicate::OGE;
         break;
       default:
         return std::nullopt;
       }
       if (left.getType().isF64() && right.getType().isF64()) {
-        return mlir::arith::CmpFOp::create(builder, *floatPredicate, left,
-                                           right)
+        return mlir::arith::CmpFOp::create(builder, floatPredicate, left, right)
             .getResult();
       }
       if (left.getType() != right.getType() ||
@@ -1047,8 +892,7 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
         throw std::runtime_error(
             "Qiskit classical comparison has incompatible operand types");
       }
-      return mlir::arith::CmpIOp::create(builder, *integerPredicate, left,
-                                         right)
+      return mlir::arith::CmpIOp::create(builder, integerPredicate, left, right)
           .getResult();
     }();
     if (comparison) {
@@ -1093,10 +937,6 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
       return mlir::arith::OrIOp::create(builder, left, right).getResult();
     case BinaryOperation::BitXor:
       return mlir::arith::XOrIOp::create(builder, left, right).getResult();
-    case BinaryOperation::ShiftLeft:
-      return mlir::arith::ShLIOp::create(builder, left, right).getResult();
-    case BinaryOperation::ShiftRight:
-      return mlir::arith::ShRUIOp::create(builder, left, right).getResult();
     case BinaryOperation::Add:
       return mlir::arith::AddIOp::create(builder, left, right).getResult();
     case BinaryOperation::Subtract:

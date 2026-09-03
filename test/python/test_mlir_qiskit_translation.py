@@ -1867,6 +1867,39 @@ def test_stale_classical_snapshot_is_rejected(write_operations: tuple[str, ...])
         program.to_qiskit()
 
 
+@pytest.mark.parametrize(
+    "overwrite",
+    [
+        "cbit.store %false, %classical[%zero] : !cbit.reg<1>",
+        "cbit.write %false, %classical : i1, !cbit.reg<1>",
+        """qc.x %q : !qc.qubit
+        %next = qc.measure %q : !qc.qubit -> i1
+        cbit.store %next, %classical[%zero] : !cbit.reg<1>""",
+        """scf.if %measured {
+          cbit.store %false, %classical[%zero] : !cbit.reg<1>
+        }""",
+    ],
+    ids=["bit-store", "register-write", "measurement", "nested-store"],
+)
+def test_measurement_snapshot_rejects_overwritten_destination(overwrite: str) -> None:
+    """A measurement SSA value retains its value when its destination changes."""
+    program = _single_qubit_program(
+        [
+            '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+            "%zero = arith.constant 0 : index",
+            "%false = arith.constant false",
+            "qc.x %q : !qc.qubit",
+            "%measured = qc.measure %q : !qc.qubit -> i1",
+            "cbit.store %measured, %classical[%zero] : !cbit.reg<1>",
+            overwrite,
+            "scf.if %measured { qc.x %q : !qc.qubit }",
+        ],
+        returns_classical=True,
+    )
+    with pytest.raises(RuntimeError, match=r"cannot preserve a (?:stale )?classical snapshot"):
+        program.to_qiskit()
+
+
 def test_delayed_measurement_store_is_rejected() -> None:
     """Reject a delayed write that would change a captured bit snapshot."""
     program = QCProgram.from_mlir_str(
@@ -1980,6 +2013,12 @@ def test_conditional_measurement_does_not_initialize_returned_cbit() -> None:
     ("expression", "error"),
     [
         (
+            """%left = arith.constant 0 : index
+    %right = arith.constant 1 : index
+    %condition = arith.cmpi eq, %left, %right : index""",
+            "integer comparisons require integer operands",
+        ),
+        (
             """%left = arith.constant 0 : i65
     %right = arith.constant 1 : i65
     %condition = arith.cmpi eq, %left, %right : i65""",
@@ -1992,7 +2031,7 @@ def test_conditional_measurement_does_not_initialize_returned_cbit() -> None:
             "floating-point literals must be finite",
         ),
     ],
-    ids=["width", "nonfinite"],
+    ids=["index", "width", "nonfinite"],
 )
 def test_unsupported_export_expressions_fail_closed(expression: str, error: str) -> None:
     """Reject unsupported expression forms before modifying the source program."""

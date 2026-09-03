@@ -252,12 +252,12 @@ allocation receives a collision-free `_mqt_cN` name. This preserves the CBit
 register boundary and gives whole-register writes a valid Qiskit lvalue. Loose
 input Clbits therefore round trip semantically, but not as loose output bits.
 
-Conditions and switch targets may read a zero-initialized public CBit register.
-An undefined public CBit may be read only after an unconditional top-level
-measurement write to that bit, and every bit of an undefined returned register
-must be written unconditionally. Branch-local writes do not establish definite
-initialization. A captured classical snapshot must not cross a later CBit write
-or a nested write to the same register.
+Conditions and switch targets may read a zero-initialized CBit register. An
+undefined CBit may be read only after an unconditional top-level write to that
+bit, and every bit of an undefined returned register must be written
+unconditionally. Branch-local writes do not establish definite initialization. A
+captured classical snapshot must not cross a later CBit write or a nested write
+to the same register.
 
 Each exported measurement must write to one static public CBit in the same
 block. Destinations may be reused; later measurements overwrite earlier values
@@ -265,7 +265,8 @@ in program order. A measurement's destination store must follow it directly,
 apart from constant operations. A conditional or otherwise delayed destination
 store is rejected because Qiskit cannot preserve it as one measurement
 instruction. The measurement result may feed supported classical expressions
-after that store and is exported as the destination CBit.
+after that store and before any overwrite of the destination register. It is
+exported as the destination CBit.
 
 Dense numeric unitaries remain explicit matrix operations during import and
 export. Target compilation synthesizes supported one- and two-qubit matrices to
@@ -377,6 +378,12 @@ pipeline. It is applied when compilation proceeds beyond the raw
 
 {code}`jeff` is a serializable representation that can be stored and compiled
 again in a later process.
+
+Integer expressions support widths through 64 bits. Integer absolute value and
+power require jeff's native widths: 1, 8, 16, 32, or 64. Import preserves
+straight-line array snapshots, but rejects live old array values across mutating
+control flow and shared array updates inside switch or while regions. Integer
+selection branches must contain only constants and their yielded values.
 
 ```{code-cell} ipython3
 from pathlib import Path

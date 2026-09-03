@@ -1010,7 +1010,7 @@ static void setExpressionType(Expression& expression, const mlir::Type type) {
         !written->second.contains(checked)) {
       throw std::runtime_error(
           "Qiskit classical expression loads an undefined classical bit "
-          "before an unconditional measurement write");
+          "before an unconditional write");
     }
   }
   return checkedAdd(info->second.base, checked, "classical-bit");
@@ -1391,27 +1391,20 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
                                 depth + 1U, nodeCount);
   }
   if (auto op = llvm::dyn_cast<mlir::arith::CmpIOp>(operation)) {
-    const auto width =
-        llvm::cast<mlir::IntegerType>(op.getLhs().getType()).getWidth();
+    const auto type = llvm::dyn_cast<mlir::IntegerType>(op.getLhs().getType());
+    if (!type) {
+      throw std::runtime_error(
+          "Qiskit integer comparisons require integer operands");
+    }
+    const auto width = type.getWidth();
     auto comparison = binary(
         comparisonOperation(mlir::mqt::unsignedPredicate(op.getPredicate())),
         op.getLhs(), op.getRhs(), width);
     if (mlir::mqt::unsignedPredicate(op.getPredicate()) != op.getPredicate()) {
       for (auto* operand : {&comparison->left, &comparison->right}) {
-        countExpressionNode(nodeCount);
-        countExpressionNode(nodeCount);
-        auto mask = std::make_unique<Expression>();
-        mask->type = ClassicalType::Uint;
-        mask->width = width;
-        mask->uintValue = uint64_t{1} << (width - 1U);
-        auto biased = std::make_unique<Expression>();
-        biased->kind = ExpressionKind::Binary;
-        biased->type = ClassicalType::Uint;
-        biased->width = width;
-        biased->binaryOperation = BinaryOperation::BitXor;
-        biased->left = std::move(*operand);
-        biased->right = std::move(mask);
-        *operand = std::move(biased);
+        *operand =
+            uintBinary(BinaryOperation::BitXor, width, std::move(*operand),
+                       uintLiteral(width, uint64_t{1} << (width - 1U)));
       }
     }
     return comparison;
@@ -1617,6 +1610,14 @@ static void validateClassicalSnapshot(mlir::Value expression,
     }
     if (auto read = llvm::dyn_cast<mlir::cbit::ReadOp>(operation)) {
       reads.emplace_back(read, read.getReg());
+      continue;
+    }
+    if (auto measure = llvm::dyn_cast<mlir::qc::MeasureOp>(operation)) {
+      for (auto* user : measure.getResult().getUsers()) {
+        if (auto store = llvm::dyn_cast<mlir::cbit::StoreOp>(user)) {
+          reads.emplace_back(store, store.getReg());
+        }
+      }
       continue;
     }
     if (auto ifOp = llvm::dyn_cast<mlir::scf::IfOp>(operation)) {

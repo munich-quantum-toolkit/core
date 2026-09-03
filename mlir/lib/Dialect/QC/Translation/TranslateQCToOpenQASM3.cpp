@@ -703,8 +703,11 @@ private:
         return text;
       }
       const auto width = operandType.getWidth();
-      if (width > 64 && !isSigned) {
-        return text;
+      if (width > 64) {
+        return isSigned
+                   ? failExpression(operand,
+                                    "signed integers support at most 64 bits")
+                   : text;
       }
       return (Twine(isSigned ? "int[" : "uint[") + Twine(width) + "](" + *text +
               ")")
@@ -742,16 +745,22 @@ private:
       return type.isInteger(1) ? "bool(" + selected + ")" : selected;
     }
     if (isa<arith::ExtUIOp, arith::ExtSIOp, arith::TruncIOp>(operation)) {
-      auto operand =
-          integer(operation->getOperand(0), isa<arith::ExtSIOp>(operation));
+      auto input = operation->getOperand(0);
+      if (cast<IntegerType>(type).getWidth() > 64 ||
+          (cast<IntegerType>(input.getType()).getWidth() > 64 &&
+           (input.getDefiningOp() == nullptr ||
+            input.getDefiningOp()->getName().getStringRef() != "math.ctpop"))) {
+        return failExpression(value, "integer casts support at most 64 bits");
+      }
+      auto operand = integer(input, isa<arith::ExtSIOp>(operation));
       if (failed(operand)) {
         return failure();
       }
       const auto width = cast<IntegerType>(type).getWidth();
       if (width == 1) {
         return (Twine("((") + *operand + " & uint[" +
-                Twine(cast<IntegerType>(operation->getOperand(0).getType())
-                          .getWidth()) +
+                Twine(std::min(cast<IntegerType>(input.getType()).getWidth(),
+                               64U)) +
                 "](1)) != 0)")
             .str();
       }
@@ -760,7 +769,14 @@ private:
     if (isa<arith::AddIOp, arith::SubIOp, arith::MulIOp, arith::DivUIOp,
             arith::DivSIOp, arith::RemUIOp, arith::RemSIOp, arith::AndIOp,
             arith::OrIOp, arith::XOrIOp, arith::ShLIOp, arith::ShRUIOp,
-            arith::ShRSIOp>(operation)) {
+            arith::ShRSIOp>(operation) &&
+        isa<IntegerType>(type)) {
+      const auto width = cast<IntegerType>(type).getWidth();
+      if (width > 64 &&
+          !isa<arith::AndIOp, arith::OrIOp, arith::XOrIOp>(operation)) {
+        return failExpression(value,
+                              "integer arithmetic supports at most 64 bits");
+      }
       const bool isSigned =
           isa<arith::DivSIOp, arith::RemSIOp, arith::ShRSIOp>(operation);
       auto lhs = integer(operation->getOperand(0), isSigned);
@@ -776,9 +792,8 @@ private:
       }
       if (isa<arith::ShRSIOp>(operation)) {
         /// OpenQASM only has a zero-filling shift. Bias the sign bit around it.
-        const auto width = cast<IntegerType>(type).getWidth();
         auto source = integer(operation->getOperand(0));
-        if (failed(source) || width > 64) {
+        if (failed(source)) {
           return failExpression(value,
                                 "signed right shifts support at most 64 bits");
         }
@@ -791,19 +806,12 @@ private:
             .str();
       }
       const auto name = operation->getName().getStringRef();
-      const auto op = isa<arith::AndIOp>(operation)    ? StringRef("&")
-                      : isa<arith::OrIOp>(operation)   ? StringRef("|")
-                      : isa<arith::XOrIOp>(operation)  ? StringRef("^")
-                      : isa<arith::ShRSIOp>(operation) ? StringRef(">>")
-                                                       : binaryOperator(name);
+      const auto op = isa<arith::AndIOp>(operation)   ? StringRef("&")
+                      : isa<arith::OrIOp>(operation)  ? StringRef("|")
+                      : isa<arith::XOrIOp>(operation) ? StringRef("^")
+                                                      : binaryOperator(name);
       const auto expression =
           (Twine("(") + *lhs + " " + op + " " + *rhs + ")").str();
-      if (cast<IntegerType>(type).getWidth() > 64 &&
-          isa<arith::ShLIOp, arith::ShRUIOp>(operation)) {
-        return failExpression(
-            value, "integer shift distances support at most 64 bits");
-      }
-      const auto width = cast<IntegerType>(type).getWidth();
       if (width == 1) {
         return (Twine("(uint[1](") + expression + ") != 0)").str();
       }
@@ -828,21 +836,31 @@ private:
       }
       auto operand = emitExpression(operation->getOperand(0),
                                     ExpressionContext::BitVector);
-      auto distance = integer(operation->getOperand(2));
-      if (failed(operand) || failed(distance)) {
-        return failure();
-      }
       const auto width = cast<IntegerType>(type).getWidth();
+      auto count = operation->getOperand(2);
+      if (auto extension = count.getDefiningOp<arith::ExtUIOp>()) {
+        count = extension.getIn();
+      }
+      FailureOr<std::string> distance = failure();
+      if (auto constant = count.getDefiningOp<arith::ConstantOp>()) {
+        const auto bits = cast<IntegerAttr>(constant.getValue()).getValue();
+        distance = std::to_string(bits.urem(width));
+      } else if (cast<IntegerType>(count.getType()).getWidth() <= 64) {
+        distance = integer(count);
+        if (succeeded(distance)) {
+          /// OpenQASM rotations take signed counts; reduce before interpreting.
+          *distance = (Twine("int[64](uint[64](") + *distance +
+                       ") % uint[64](" + Twine(width) + "))")
+                          .str();
+        }
+      }
+      if (failed(operand) || failed(distance)) {
+        return failExpression(value, "rotation counts support at most 64 bits");
+      }
       if (width <= 64) {
         *operand = (Twine("bit[") + Twine(width) + "](uint[" + Twine(width) +
                     "](" + *operand + "))")
                        .str();
-      }
-      if (width <= 64) {
-        /// OpenQASM rotations take signed counts; reduce before interpreting.
-        *distance = (Twine("int[64](") + *distance + " % uint[" + Twine(width) +
-                     "](" + Twine(width) + "))")
-                        .str();
       }
       auto rotation = (Twine(name == "llvm.intr.fshl" ? "rotl(" : "rotr(") +
                        *operand + ", " + *distance + ")")
@@ -961,13 +979,12 @@ private:
   }
 
   [[nodiscard]] FailureOr<std::string>
-  emitBinary(Value lhsValue, const StringRef operation, Value rhsValue,
-             const ExpressionContext context = ExpressionContext::Scalar) {
-    auto lhs = emitExpression(lhsValue, context);
+  emitBinary(Value lhsValue, const StringRef operation, Value rhsValue) {
+    auto lhs = emitExpression(lhsValue);
     if (failed(lhs)) {
       return failure();
     }
-    auto rhs = emitExpression(rhsValue, context);
+    auto rhs = emitExpression(rhsValue);
     if (failed(rhs)) {
       return failure();
     }

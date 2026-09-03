@@ -248,7 +248,6 @@ struct ConditionExpression {
   ConditionId rhs = 0;
   RegisterId reg = 0;
   llvm::APInt expected = llvm::APInt(1, 0);
-  bool signedRegisterComparison = false;
   BitVectorExpressionId bitVectorComparisonLhs = 0;
   BitVectorExpressionId bitVectorComparisonRhs = 0;
   ExpressionId comparisonLhs = 0;

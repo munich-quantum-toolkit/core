@@ -1041,6 +1041,38 @@ if ((value << (value & 1)) == 0) {}
   EXPECT_TRUE(hasShift);
 }
 
+TEST(OpenQASMTargetTest, WidensSizedIntegerBuiltinAndIndexOperands) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"qasm(OPENQASM 3.1;
+bit[3] c = 1;
+int[3] distance = -1;
+c = rotl(c, distance);
+c = rotr(c, distance);
+)qasm",
+      R"qasm(OPENQASM 3.1;
+bit[3] c = 0;
+uint[2] positive = 2;
+int[2] negative = -1;
+c[positive] = true;
+c[negative] = false;
+)qasm",
+      R"qasm(OPENQASM 3.1;
+qubit q;
+int[3] signedExponent = -1;
+uint[3] unsignedExponent = 7;
+pow(signedExponent) @ x q;
+pow(unsignedExponent) @ x q;
+)qasm",
+  });
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    MLIRContext context;
+    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    ASSERT_TRUE(moduleOp);
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  }
+}
+
 TEST(OpenQASMTargetTest, SupportsWidthOneBitVectorBuiltins) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
@@ -1574,6 +1606,33 @@ switch (selector) {
     EXPECT_TRUE(switchOp.getResult(0).getType().isInteger(64));
   });
   EXPECT_EQ(switches, 1);
+}
+
+TEST(OpenQASMTargetTest, PreservesNarrowUnsignedSwitchValues) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+uint[3] selector = 7;
+output int result;
+result = 0;
+switch (selector) {
+  case 7 { result = 42; }
+  default { result = -1; }
+}
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  PassManager canonicalizer(&context);
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
+
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto result =
+      cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  ASSERT_EQ(result.getNumOperands(), 1);
+  APInt value;
+  ASSERT_TRUE(matchPattern(result.getOperand(0), m_ConstantInt(&value)));
+  EXPECT_EQ(value.getSExtValue(), 42);
 }
 
 TEST(OpenQASMTargetTest, LoadsDynamicQubitMeasurementsDirectly) {

@@ -154,12 +154,6 @@ static std::optional<KnownLoadValue> findKnownLoadValue(LoadOp load) {
   return std::nullopt;
 }
 
-static Value buildRead(OpBuilder& builder, Location location, unsigned width,
-                       llvm::function_ref<Value(int64_t)> loadBit);
-static void buildWrite(OpBuilder& builder, Location location, Value value,
-                       unsigned width,
-                       llvm::function_ref<void(int64_t, Value)> storeBit);
-
 namespace {
 struct ForwardKnownLoad final : OpRewritePattern<LoadOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -184,14 +178,25 @@ struct DecomposeRead final : OpRewritePattern<ReadOp> {
 
   LogicalResult matchAndRewrite(ReadOp read,
                                 PatternRewriter& rewriter) const override {
-    auto result = buildRead(
-        rewriter, read.getLoc(), read.getResult().getType().getWidth(),
-        [&](const int64_t index) -> Value {
-          auto indexValue =
-              arith::ConstantIndexOp::create(rewriter, read.getLoc(), index);
-          return LoadOp::create(rewriter, read.getLoc(), rewriter.getI1Type(),
-                                read.getReg(), indexValue);
-        });
+    auto loc = read.getLoc();
+    const auto type = read.getResult().getType();
+    const auto width = type.getWidth();
+    Value result;
+    for (unsigned index = 0; index < width; ++index) {
+      auto indexValue = arith::ConstantIndexOp::create(rewriter, loc, index);
+      Value bit = LoadOp::create(rewriter, loc, rewriter.getI1Type(),
+                                 read.getReg(), indexValue);
+      if (width != 1) {
+        bit = arith::ExtUIOp::create(rewriter, loc, type, bit);
+      }
+      if (index == 0) {
+        result = bit;
+      } else {
+        auto shift = arith::ConstantIntOp::create(rewriter, loc, type, index);
+        bit = arith::ShLIOp::create(rewriter, loc, bit, shift);
+        result = arith::OrIOp::create(rewriter, loc, result, bit);
+      }
+    }
     rewriter.replaceOp(read, result);
     return success();
   }
@@ -202,14 +207,21 @@ struct DecomposeWrite final : OpRewritePattern<WriteOp> {
 
   LogicalResult matchAndRewrite(WriteOp write,
                                 PatternRewriter& rewriter) const override {
-    buildWrite(rewriter, write.getLoc(), write.getValue(),
-               write.getValue().getType().getWidth(),
-               [&](const int64_t index, Value bit) {
-                 auto indexValue = arith::ConstantIndexOp::create(
-                     rewriter, write.getLoc(), index);
-                 StoreOp::create(rewriter, write.getLoc(), bit, write.getReg(),
-                                 indexValue);
-               });
+    auto loc = write.getLoc();
+    const auto type = write.getValue().getType();
+    const auto width = type.getWidth();
+    for (unsigned index = 0; index < width; ++index) {
+      Value bit = write.getValue();
+      if (index != 0) {
+        auto shift = arith::ConstantIntOp::create(rewriter, loc, type, index);
+        bit = arith::ShRUIOp::create(rewriter, loc, bit, shift);
+      }
+      if (width != 1) {
+        bit = arith::TruncIOp::create(rewriter, loc, rewriter.getI1Type(), bit);
+      }
+      auto indexValue = arith::ConstantIndexOp::create(rewriter, loc, index);
+      StoreOp::create(rewriter, loc, bit, write.getReg(), indexValue);
+    }
     rewriter.eraseOp(write);
     return success();
   }
@@ -235,45 +247,6 @@ LogicalResult WriteOp::verify() {
     return emitOpError("value width must match register width");
   }
   return success();
-}
-
-static Value buildRead(OpBuilder& builder, const Location location,
-                       const unsigned width,
-                       const llvm::function_ref<Value(int64_t)> loadBit) {
-  assert(width > 0);
-  if (width == 1) {
-    return loadBit(0);
-  }
-
-  const auto type = builder.getIntegerType(width);
-  Value result = arith::ExtUIOp::create(builder, location, type, loadBit(0));
-  for (unsigned index = 1; index < width; ++index) {
-    Value bit = arith::ExtUIOp::create(builder, location, type, loadBit(index));
-    auto shift = arith::ConstantIntOp::create(builder, location, type, index);
-    bit = arith::ShLIOp::create(builder, location, bit, shift);
-    result = arith::OrIOp::create(builder, location, result, bit);
-  }
-  return result;
-}
-
-static void
-buildWrite(OpBuilder& builder, const Location location, Value value,
-           const unsigned width,
-           const llvm::function_ref<void(int64_t, Value)> storeBit) {
-  assert(width > 0);
-  const auto type = builder.getIntegerType(width);
-  for (unsigned index = 0; index < width; ++index) {
-    Value selected = value;
-    if (index != 0) {
-      auto shift = arith::ConstantIntOp::create(builder, location, type, index);
-      selected = arith::ShRUIOp::create(builder, location, value, shift);
-    }
-    if (width != 1) {
-      selected = arith::TruncIOp::create(builder, location, builder.getI1Type(),
-                                         selected);
-    }
-    storeBit(index, selected);
-  }
 }
 
 void mlir::cbit::populateCBitDecompositionPatterns(

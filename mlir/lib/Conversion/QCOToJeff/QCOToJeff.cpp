@@ -913,8 +913,9 @@ struct ConvertIntegerExpression final : ConversionPattern {
       const auto unsignedPredicate = mqt::unsignedPredicate(predicate);
       if (unsignedPredicate != predicate) {
         auto operandType = cast<IntegerType>(lhs.getType());
+        auto sourceType = dyn_cast<IntegerType>(comparison.getLhs().getType());
         auto sourceWidth =
-            cast<IntegerType>(comparison.getLhs().getType()).getWidth();
+            sourceType ? sourceType.getWidth() : operandType.getWidth();
         auto sign = integerConstant(
             rewriter, loc, operandType,
             APInt::getOneBitSet(operandType.getWidth(), sourceWidth - 1));
@@ -956,6 +957,8 @@ struct ConvertIntegerExpression final : ConversionPattern {
             .Case("arith.divsi", jeff::IntBinaryOperation::_divS)
             .Case("arith.remui", jeff::IntBinaryOperation::_remU)
             .Case("arith.remsi", jeff::IntBinaryOperation::_remS)
+            .Case("arith.minsi", jeff::IntBinaryOperation::_minS)
+            .Case("arith.maxsi", jeff::IntBinaryOperation::_maxS)
             .Case("arith.andi", jeff::IntBinaryOperation::_and)
             .Case("arith.ori", jeff::IntBinaryOperation::_or)
             .Case("arith.xori", jeff::IntBinaryOperation::_xor)
@@ -968,7 +971,8 @@ struct ConvertIntegerExpression final : ConversionPattern {
     }
     auto lhs = operands[0];
     auto rhs = operands[1];
-    if (isa<arith::DivSIOp, arith::RemSIOp>(op)) {
+    if (isa<arith::DivSIOp, arith::RemSIOp, arith::MinSIOp, arith::MaxSIOp>(
+            op)) {
       lhs = signedInteger(rewriter, loc, lhs, width);
       rhs = signedInteger(rewriter, loc, rhs, width);
     }
@@ -2323,6 +2327,21 @@ protected:
     arith::CmpIOp::getCanonicalizationPatterns(comparisons, context);
     mqt::populateIntegerExpansionPatterns(comparisons);
     if (failed(applyPatternsGreedily(moduleOp, std::move(comparisons)))) {
+      signalPassFailure();
+      return;
+    }
+    const auto unsupportedMath = moduleOp.walk([](Operation* op) {
+      if (isa<math::AbsIOp, math::IPowIOp>(op)) {
+        auto type = dyn_cast<IntegerType>(op->getResult(0).getType());
+        if (type && nativeIntegerWidth(type.getWidth()) != type.getWidth()) {
+          op->emitError(
+              "jeff requires a native integer width for this operation");
+          return WalkResult::interrupt();
+        }
+      }
+      return WalkResult::advance();
+    });
+    if (unsupportedMath.wasInterrupted()) {
       signalPassFailure();
       return;
     }

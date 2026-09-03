@@ -33,6 +33,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -552,6 +553,148 @@ TEST(JeffRoundTripRegressionTest, PreservesLiveOldArrayValues) {
       qco::sample(program->lookupSymbol<func::FuncOp>("main"), 1, 1);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(histogram->at("10"), 1);
+}
+
+TEST(JeffRoundTripRegressionTest, ConvertsSignedIndexComparison) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, arith::ArithDialect, func::FuncDialect,
+                      jeff::JeffDialect>();
+  auto program = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%lhs: index, %rhs: index) -> i1 attributes {mqt.entry_point} {
+      %q = qco.alloc : !qco.qubit
+      %result = arith.cmpi slt, %lhs, %rhs : index
+      qco.sink %q : !qco.qubit
+      return %result : i1
+    }
+  })mlir",
+                                             &context);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+  EXPECT_TRUE(succeeded(verify(*program)));
+}
+
+TEST(JeffRoundTripRegressionTest, PreservesPromotedSignedMinMax) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, qco::QCODialect, arith::ArithDialect,
+                      func::FuncDialect, jeff::JeffDialect>();
+  auto program = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() -> (!cbit.reg<3>, !cbit.reg<3>) attributes {mqt.entry_point} {
+      %q = qco.alloc : !qco.qubit
+      %source = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
+      %negative = arith.constant -3 : i3
+      cbit.write %negative, %source : i3, !cbit.reg<3>
+      %value = cbit.read %source : !cbit.reg<3> -> i3
+      %positive = arith.constant 2 : i3
+      %minimum = arith.minsi %value, %positive : i3
+      %maximum = arith.maxsi %value, %positive : i3
+      %min = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
+      %max = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
+      cbit.write %minimum, %min : i3, !cbit.reg<3>
+      cbit.write %maximum, %max : i3, !cbit.reg<3>
+      qco.sink %q : !qco.qubit
+      return %min, %max : !cbit.reg<3>, !cbit.reg<3>
+    }
+  })mlir",
+                                             &context);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+  auto bytes = serialize(*program);
+  program = deserialize(&context, bytes);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+  auto histogram =
+      qco::sample(program->lookupSymbol<func::FuncOp>("main"), 1, 1);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(histogram->at("010101"), 1);
+}
+
+TEST(JeffRoundTripRegressionTest, RejectsPromotedUnsupportedMath) {
+  MLIRContext context;
+  context.loadDialect<arith::ArithDialect, func::FuncDialect, math::MathDialect,
+                      jeff::JeffDialect>();
+  for (const auto* const expression :
+       {"math.absi %value", "math.ipowi %value, %value"}) {
+    auto program = parseSourceString<ModuleOp>(
+        std::string("module { func.func @main(%value: i3) -> i3 "
+                    "attributes {mqt.entry_point} { %result = ") +
+            expression + " : i3 return %result : i3 }}",
+        &context);
+    ASSERT_TRUE(program);
+    EXPECT_TRUE(failed(convertQCOToJeff(*program)));
+  }
+}
+
+TEST(JeffRoundTripRegressionTest, RejectsEffectsInIntegerSelection) {
+  MLIRContext context;
+  context.loadDialect<arith::ArithDialect, func::FuncDialect, qco::QCODialect,
+                      jeff::JeffDialect>();
+  auto program = parseSourceString<ModuleOp>(R"mlir(
+    module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
+      func.func @main(%select: i1, %value: i8) -> i8 {
+        %q = jeff.qubit_alloc : !jeff.qubit
+        %result = jeff.switch (%select, %q, %value) : (i1, !jeff.qubit, i8) -> (i8)
+        case 0 args(%inner, %integer) {
+          jeff.qubit_free %inner : !jeff.qubit
+          jeff.yield %integer : i8
+        }
+        case 1 args(%inner, %integer) {
+          jeff.qubit_free %inner : !jeff.qubit
+          jeff.yield %integer : i8
+        }
+        default args(%inner, %integer) {
+          jeff.qubit_free %inner : !jeff.qubit
+          jeff.yield %integer : i8
+        }
+        return %result : i8
+      }
+    })mlir",
+                                             &context);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(failed(convertJeffToQCO(*program)));
+}
+
+TEST(JeffRoundTripRegressionTest, RejectsLiveOldArrayAcrossSwitchRegions) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, arith::ArithDialect, func::FuncDialect,
+                      qco::QCODialect, jeff::JeffDialect>();
+  constexpr llvm::StringLiteral source = R"mlir(
+    module attributes {jeff.entrypoint = 0 : ui16, jeff.strings = ["main"]} {
+      func.func @main(%select: i1) -> (tensor<1xi1>, tensor<1xi1>) {
+        %length = jeff.int_const32(1) : i32
+        %index = jeff.int_const32(0) : i32
+        %bit = jeff.int_const1(true) : i1
+        %old = jeff.int_array_zero(%length) : tensor<1xi1>
+        %result = jeff.switch (%select, %old, %index, %bit)
+            : (i1, tensor<1xi1>, i32, i1) -> (tensor<1xi1>)
+        case 0 args(%array, %idx, %value) {
+          jeff.yield %array : tensor<1xi1>
+        }
+        case 1 args(%array, %idx, %value) {
+          %new = jeff.int_array_set_index(%idx) %array %value
+              : i32, tensor<1xi1>, i1 -> tensor<1xi1>
+          jeff.yield %new : tensor<1xi1>
+        }
+        default args(%array, %idx, %value) {
+          jeff.yield %array : tensor<1xi1>
+        }
+        return %old, %result : tensor<1xi1>, tensor<1xi1>
+      }
+    })mlir";
+  for (const bool oldValueOutside : {true, false}) {
+    auto program = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(program);
+    if (!oldValueOutside) {
+      auto main = program->lookupSymbol<func::FuncOp>("main");
+      auto returned =
+          cast<func::ReturnOp>(main.getBody().front().getTerminator());
+      returned->setOperand(0, returned.getOperand(1));
+      auto selection = *main.getOps<jeff::SwitchOp>().begin();
+      auto& branch = selection.getBranches()[1].front();
+      branch.getTerminator()->setOperand(0, branch.getArgument(0));
+    }
+    ASSERT_TRUE(succeeded(verify(*program)));
+    EXPECT_TRUE(failed(convertJeffToQCO(*program)));
+  }
 }
 
 TEST(JeffRoundTripRegressionTest, RejectsClassicalIfResultsPrecisely) {

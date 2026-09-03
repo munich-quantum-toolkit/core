@@ -394,7 +394,7 @@ enum class VerifierModifierKind : uint8_t { Inv, Ctrl, Pow };
 enum class ForbiddenModifierBodyOp : uint8_t {
   Measure,
   CBitAlloc,
-  CBitCompare,
+  CBitRead,
   CBitLoad,
   CBitStore
 };
@@ -419,7 +419,7 @@ static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
     return "measure";
   case ForbiddenModifierBodyOp::CBitAlloc:
     return "cbit.alloc";
-  case ForbiddenModifierBodyOp::CBitCompare:
+  case ForbiddenModifierBodyOp::CBitRead:
     return "cbit.read";
   case ForbiddenModifierBodyOp::CBitLoad:
     return "cbit.load";
@@ -483,7 +483,7 @@ buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
                 builder, cbit::RegisterType::get(builder.getContext(), 1),
                 cbit::Initialization::Zero);
             break;
-          case ForbiddenModifierBodyOp::CBitCompare:
+          case ForbiddenModifierBodyOp::CBitRead:
             cbit::ReadOp::create(builder, builder.getI1Type(), cbitReg);
             break;
           case ForbiddenModifierBodyOp::CBitLoad:
@@ -518,7 +518,7 @@ TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
                                  VerifierModifierKind::Pow};
   constexpr std::array forbiddenOperations{
       ForbiddenModifierBodyOp::Measure, ForbiddenModifierBodyOp::CBitAlloc,
-      ForbiddenModifierBodyOp::CBitCompare, ForbiddenModifierBodyOp::CBitLoad,
+      ForbiddenModifierBodyOp::CBitRead, ForbiddenModifierBodyOp::CBitLoad,
       ForbiddenModifierBodyOp::CBitStore};
 
   for (const auto modifier : modifiers) {

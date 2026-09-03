@@ -266,6 +266,19 @@ static cbit::RegisterType getCBitType(Type type) {
   return cbit::RegisterType::get(type.getContext(), tensorType.getShape()[0]);
 }
 
+/// Earlier bit reads finish using an array before a later storage update.
+/// Other users can pass an alias to values that remain live after the update.
+static bool needsArrayCopy(Value value, Operation* update) {
+  return llvm::any_of(value.getUsers(), [&](Operation* user) {
+    if (user == update) {
+      return false;
+    }
+    auto* ancestor = update->getBlock()->findAncestorOpInBlock(*user);
+    return !isa<jeff::IntArrayGetIndexOp>(user) || ancestor == nullptr ||
+           !ancestor->isBeforeInBlock(update);
+  });
+}
+
 /**
  * @brief Moves a region from a jeff operation to a QCO/SCF operation
  */
@@ -1017,7 +1030,12 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
       SmallVector<Value> falseValues;
       SmallVector<Value> trueValues;
       for (auto [index, region] : llvm::enumerate(op.getBranches())) {
-        if (region.front().getOperations().size() > 2) {
+        if (llvm::any_of(
+                region.front().without_terminator(), [](Operation& nested) {
+                  return !isa<jeff::IntConst1Op, jeff::IntConst8Op,
+                              jeff::IntConst16Op, jeff::IntConst32Op,
+                              jeff::IntConst64Op, arith::ConstantOp>(nested);
+                })) {
           return rewriter.notifyMatchFailure(
               op,
               "integer switches require expression-only selection branches");
@@ -1353,11 +1371,42 @@ protected:
     }
 
     DenseSet<Operation*> sharedArrayUpdates;
-    moduleOp.walk([&](jeff::IntArraySetIndexOp op) {
-      if (!op.getInArray().hasOneUse()) {
-        sharedArrayUpdates.insert(op);
+    const auto unsupportedSnapshots = moduleOp.walk([&](Operation* operation) {
+      if (auto update = dyn_cast<jeff::IntArraySetIndexOp>(operation);
+          update && getCBitType(update.getInArray().getType()) &&
+          needsArrayCopy(update.getInArray(), update)) {
+        if (update->getParentOfType<jeff::SwitchOp>() ||
+            update->getParentOfType<jeff::WhileOp>()) {
+          update.emitError("live old array values inside jeff switch or while "
+                           "regions are not supported");
+          return WalkResult::interrupt();
+        }
+        sharedArrayUpdates.insert(update);
       }
+      /// ponytail: reject live arrays across any mutating region; track region
+      /// argument aliases if independent live arrays need support.
+      if (isa<jeff::SwitchOp, jeff::ForOp, jeff::WhileOp>(operation) &&
+          llvm::any_of(operation->getOperands(), [&](Value value) {
+            return getCBitType(value.getType()) &&
+                   needsArrayCopy(value, operation);
+          })) {
+        bool updatesArray = false;
+        operation->walk([&](jeff::IntArraySetIndexOp update) {
+          updatesArray |=
+              static_cast<bool>(getCBitType(update.getInArray().getType()));
+        });
+        if (updatesArray) {
+          operation->emitError("live old array values across jeff control "
+                               "flow are not supported");
+          return WalkResult::interrupt();
+        }
+      }
+      return WalkResult::advance();
     });
+    if (unsupportedSnapshots.wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     JeffToQCOTypeConverter typeConverter(context);
