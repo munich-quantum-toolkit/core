@@ -268,6 +268,29 @@ switch (selector) {
       << *emitted;
 }
 
+TEST(OpenQASM3EmissionTest, RoundTripsRegisterComparisonInWhileCondition) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+bit[1] c = measure q;
+while (c == 1) {
+  c[0] = measure q;
+}
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("while ("), std::string::npos) << *emitted;
+  EXPECT_NE(emitted->find("c == 1"), std::string::npos) << *emitted;
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
+}
+
 TEST(OpenQASM3EmissionTest, EmitsRegisterComparisonsDirectly) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {

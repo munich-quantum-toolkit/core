@@ -1042,8 +1042,8 @@ private:
       return fail(whileOp, "scf.while loop-carried values are not supported");
     }
     for (Operation& operation : before.without_terminator()) {
-      if (auto load = dyn_cast<cbit::LoadOp>(operation)) {
-        if (failed(emitExpression(load.getResult()))) {
+      if (isa<cbit::LoadOp, cbit::CompareOp>(operation)) {
+        if (failed(emitExpression(operation.getResult(0)))) {
           return failure();
         }
         continue;
