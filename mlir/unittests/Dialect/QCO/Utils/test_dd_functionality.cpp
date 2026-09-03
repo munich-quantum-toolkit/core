@@ -59,27 +59,27 @@
 using namespace mlir;
 using namespace qco;
 
-template <std::size_t Dimension>
+template <size_t Dimension>
 using LiteralMatrix =
     std::array<std::array<std::complex<double>, Dimension>, Dimension>;
 
-template <std::size_t Dimension>
+template <size_t Dimension>
 [[nodiscard]] static constexpr auto
-makePermutationMatrix(const std::array<std::size_t, Dimension>& rowForColumn)
+makePermutationMatrix(const std::array<size_t, Dimension>& rowForColumn)
     -> LiteralMatrix<Dimension> {
   LiteralMatrix<Dimension> matrix{};
-  for (std::size_t column = 0; column < Dimension; ++column) {
+  for (size_t column = 0; column < Dimension; ++column) {
     matrix[rowForColumn[column]][column] = 1.;
   }
   return matrix;
 }
 
-template <std::size_t Dimension>
+template <size_t Dimension>
 [[nodiscard]] static auto
 toDynamicMatrix(const LiteralMatrix<Dimension>& source) -> DynamicMatrix {
   DynamicMatrix matrix(static_cast<int64_t>(Dimension));
-  for (std::size_t row = 0; row < Dimension; ++row) {
-    for (std::size_t column = 0; column < Dimension; ++column) {
+  for (size_t row = 0; row < Dimension; ++row) {
+    for (size_t column = 0; column < Dimension; ++column) {
       matrix(static_cast<int64_t>(row), static_cast<int64_t>(column)) =
           source[row][column];
     }
@@ -87,23 +87,23 @@ toDynamicMatrix(const LiteralMatrix<Dimension>& source) -> DynamicMatrix {
   return matrix;
 }
 
-[[nodiscard]] static auto
-embedPermutation(std::size_t numQubits, llvm::ArrayRef<dd::Qubit> targets,
-                 llvm::ArrayRef<std::size_t> rowForColumn) -> dd::CMat {
-  const auto dimension = std::size_t{1} << numQubits;
+[[nodiscard]] static auto embedPermutation(size_t numQubits,
+                                           llvm::ArrayRef<dd::Qubit> targets,
+                                           llvm::ArrayRef<size_t> rowForColumn)
+    -> dd::CMat {
+  const auto dimension = size_t{1} << numQubits;
   dd::CMat matrix(dimension, dd::CVec(dimension));
-  for (std::size_t column = 0; column < dimension; ++column) {
-    std::size_t localColumn = 0;
+  for (size_t column = 0; column < dimension; ++column) {
+    size_t localColumn = 0;
     for (const auto target : targets) {
       localColumn = (localColumn << 1U) | ((column >> target) & 1U);
     }
 
     auto row = column;
     const auto localRow = rowForColumn[localColumn];
-    for (std::size_t operand = 0; operand < targets.size(); ++operand) {
-      const auto targetMask = std::size_t{1} << targets[operand];
-      const auto operandMask = std::size_t{1}
-                               << (targets.size() - 1U - operand);
+    for (size_t operand = 0; operand < targets.size(); ++operand) {
+      const auto targetMask = size_t{1} << targets[operand];
+      const auto operandMask = size_t{1} << (targets.size() - 1U - operand);
       if ((localRow & operandMask) != 0U) {
         row |= targetMask;
       } else {
@@ -240,7 +240,7 @@ protected:
 TEST(DDAdapterTest, MatchesRawSingleQubitConstructor) {
   constexpr LiteralMatrix<2> literal{{{{0., 1.}}, {{-1., 0.}}}};
   constexpr dd::GateMatrix raw{0., 1., -1., 0.};
-  constexpr std::size_t numQubits = 4;
+  constexpr size_t numQubits = 4;
   const dd::Controls controls{{0, dd::Control::Type::Neg}, {3}};
   dd::Package package(numQubits);
 
@@ -250,9 +250,9 @@ TEST(DDAdapterTest, MatchesRawSingleQubitConstructor) {
 }
 
 TEST(DDAdapterTest, PreservesTwoQubitOperandOrder) {
-  constexpr std::array<std::size_t, 4> rowForColumn{2, 0, 3, 1};
+  constexpr std::array<size_t, 4> rowForColumn{2, 0, 3, 1};
   constexpr auto literal = makePermutationMatrix(rowForColumn);
-  constexpr std::size_t numQubits = 5;
+  constexpr size_t numQubits = 5;
   const dd::Controls controls{{4, dd::Control::Type::Neg}};
   dd::Package package(numQubits);
 
@@ -266,9 +266,9 @@ TEST(DDAdapterTest, PreservesTwoQubitOperandOrder) {
 }
 
 TEST(DDAdapterTest, PreservesThreeQubitOperandOrder) {
-  constexpr std::array<std::size_t, 8> rowForColumn{3, 6, 1, 4, 7, 0, 5, 2};
+  constexpr std::array<size_t, 8> rowForColumn{3, 6, 1, 4, 7, 0, 5, 2};
   constexpr auto literal = makePermutationMatrix(rowForColumn);
-  constexpr std::size_t numQubits = 6;
+  constexpr size_t numQubits = 6;
   const dd::Controls controls{{5}};
   dd::Package package(numQubits);
 
@@ -282,10 +282,10 @@ TEST(DDAdapterTest, PreservesThreeQubitOperandOrder) {
 }
 
 TEST(DDAdapterTest, EmbedsFourQubitMatrixOnNoncontiguousTargets) {
-  constexpr std::array<std::size_t, 16> rowForColumn{0, 2, 4, 6, 8, 10, 12, 14,
-                                                     1, 3, 5, 7, 9, 11, 13, 15};
+  constexpr std::array<size_t, 16> rowForColumn{0, 2, 4, 6, 8, 10, 12, 14,
+                                                1, 3, 5, 7, 9, 11, 13, 15};
   constexpr auto literal = makePermutationMatrix(rowForColumn);
-  constexpr std::size_t numQubits = 6;
+  constexpr size_t numQubits = 6;
   constexpr std::array<dd::Qubit, 4> targets{4, 1, 5, 2};
   dd::Package package(numQubits);
 

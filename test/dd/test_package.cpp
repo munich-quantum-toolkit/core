@@ -42,7 +42,7 @@
 
 namespace dd {
 namespace {
-enum class Fixture : std::uint8_t { H, X, Z, S, T, Tdg, SWAP };
+enum class Fixture : uint8_t { H, X, Z, S, T, Tdg, SWAP };
 
 constexpr GateMatrix H_MAT{SQRT2_2, SQRT2_2, SQRT2_2, -SQRT2_2};
 constexpr GateMatrix X_MAT{0, 1, 1, 0};

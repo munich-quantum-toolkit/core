@@ -77,10 +77,9 @@ template <typename GateOp>
  * @throws std::invalid_argument If the matrix dimension and target count differ
  *         or sparse controls accompany a matrix with more than three targets.
  */
-[[nodiscard]] auto makeGateDD(dd::Package& package, const DynamicMatrix& matrix,
-                              std::size_t numQubits,
-                              llvm::ArrayRef<dd::Qubit> targets,
-                              const dd::Controls& controls = {})
+[[nodiscard]] auto
+makeGateDD(dd::Package& package, const DynamicMatrix& matrix, size_t numQubits,
+           llvm::ArrayRef<dd::Qubit> targets, const dd::Controls& controls = {})
     -> dd::MatrixDD;
 
 } // namespace mlir::qco

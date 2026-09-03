@@ -81,7 +81,7 @@ static auto applyGateMatrix(llvm::ArrayRef<double> parameters,
                 targets);
 }
 
-template <typename GateOp, std::size_t NumTargets, typename... Args>
+template <typename GateOp, size_t NumTargets, typename... Args>
 static auto applyGate(Args... args) -> void {
   auto parameters = qir::Utils::packOfType<double>(args...);
   auto qubits = qir::Utils::packOfType<Qubit*>(args...);
@@ -102,7 +102,7 @@ static auto applyControlled(Array* controlArray, Qubit* target) -> void {
   applyGateMatrix<GateOp>({}, controls, targets);
 }
 
-template <typename GateOp, std::size_t NumParams, std::size_t NumTargets>
+template <typename GateOp, size_t NumParams, size_t NumTargets>
 static auto applyControlledTuple(Array* controls, Tuple* tuple) -> void {
   if (tuple == nullptr) {
     throw std::invalid_argument(
