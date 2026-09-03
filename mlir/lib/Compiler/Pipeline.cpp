@@ -210,9 +210,9 @@ bool QCOProgram::reuseQubits() {
 }
 
 bool QCOProgram::runQubitReusePipeline() {
-  return succeeded(runQCOTransformPasses(
-      mod(), [](OpPassManager& pm) { populateQubitReusePipeline(pm); },
-      "failed to run the qubit reuse pipeline"));
+  return succeeded(
+      runQCOTransformPasses(mod(), populateQubitReusePipeline,
+                            "failed to run the qubit reuse pipeline"));
 }
 
 bool QCOProgram::decomposeMultiControlled(uint64_t minQubits) {
@@ -509,21 +509,13 @@ runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
     return CompilerProgram(std::move(*qc));
   }
   if (output == ProgramFormat::OpenQASM3) {
-    auto openQASM = qc->toOpenQASM3();
-    if (!openQASM) {
-      return std::nullopt;
-    }
-    return CompilerProgram(std::move(*openQASM));
+    return qc->toOpenQASM3();
   }
 
   const auto profile = output == ProgramFormat::QIRAdaptive
                            ? QIRProfile::Adaptive
                            : QIRProfile::Base;
-  auto qir = std::move(*qc).intoQIR(profile);
-  if (!qir) {
-    return std::nullopt;
-  }
-  return CompilerProgram(std::move(*qir));
+  return std::move(*qc).intoQIR(profile);
 }
 
 } // namespace mlir
