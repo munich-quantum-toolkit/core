@@ -1885,6 +1885,45 @@ TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
+TEST_F(MappingPassFixture, ProduceStableOutputForFixedSeed) {
+  constexpr size_t repetitions = 4;
+  const auto target = getSquareGridTarget(10);
+  SmallVector<OwningOpRef<ModuleOp>> modules;
+  size_t expectedSwaps = 0;
+  std::string expectedModule;
+
+  for (size_t repetition = 0; repetition < repetitions; ++repetition) {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+
+    SmallVector<Value> qubits((target.numSites() + 1) / 2);
+    for (Value& qubit : qubits) {
+      qubit = builder.allocQubit();
+    }
+    cxcz(builder, qubits);
+    for (Value qubit : qubits) {
+      builder.sink(qubit);
+    }
+
+    auto module = builder.finalize();
+    ASSERT_TRUE(runPass(module.get(), target,
+                        MappingPassOptions{.ntrials = 4, .seed = 42})
+                    .succeeded());
+
+    size_t swaps = 0;
+    module->walk([&](SWAPOp) { ++swaps; });
+    const auto printed = printModule(module.get());
+    if (repetition == 0) {
+      expectedSwaps = swaps;
+      expectedModule = printed;
+    } else {
+      EXPECT_EQ(swaps, expectedSwaps);
+      EXPECT_EQ(printed, expectedModule);
+    }
+    modules.emplace_back(std::move(module));
+  }
+}
+
 TEST_P(MappingPassTest, MapCircuitWithQubitPairBlock) {
   const auto& target = GetParam();
 

@@ -12,6 +12,7 @@
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SetVector.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -41,7 +42,7 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
   // Construct unresolved map: The dependencies of each operation.
 
   DenseMap<Operation*, size_t> inDegree;
-  DenseMap<Operation*, llvm::SmallDenseSet<Operation*, 16>> successors;
+  DenseMap<Operation*, llvm::SmallSetVector<Operation*, 16>> successors;
   DenseMap<Operation*, llvm::SmallDenseSet<Operation*, 16>> predecessors;
 
   for (Operation& op : block) {
@@ -94,9 +95,9 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
 
   SmallVector<Operation*> worklist;
   worklist.reserve(range_size(block));
-  for (const auto& [op, ndeps] : inDegree) {
-    if (ndeps == 0) {
-      worklist.emplace_back(op);
+  for (Operation& op : block) {
+    if (inDegree.lookup(&op) == 0) {
+      worklist.emplace_back(&op);
     }
   }
 
